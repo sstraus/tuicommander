@@ -1044,3 +1044,125 @@
   font-size: var(--font-2xs);
   line-height: 1.4;
 }
+
+/* ---------------------------------------------------------------------------
+   Plugin sidebar sections
+   --------------------------------------------------------------------------- */
+
+.pluginSection {
+  margin-top: 4px;
+  padding-left: 16px;
+}
+
+.pluginSectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  font-size: var(--font-2xs);
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  user-select: none;
+}
+
+.pluginSectionHeader:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-secondary);
+}
+
+.pluginSectionIcon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.pluginSectionIcon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.pluginSectionLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pluginSectionBadge {
+  font-size: var(--font-3xs);
+  background: var(--accent);
+  color: var(--bg-primary);
+  padding: 0 5px;
+  border-radius: 8px;
+  line-height: 1.4;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.pluginSectionChevron {
+  font-size: 8px;
+  flex-shrink: 0;
+  color: var(--fg-muted);
+}
+
+.pluginSectionItems {
+  padding-top: 1px;
+}
+
+.pluginItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: var(--radius-md);
+  margin: 1px 0;
+  transition: background 0.1s;
+  min-height: 26px;
+}
+
+.pluginItem:hover {
+  background: var(--bg-highlight);
+}
+
+.pluginItemIcon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.pluginItemIcon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.pluginItemText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.pluginItemLabel {
+  display: block;
+  font-size: var(--font-sm);
+  color: var(--fg-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pluginItemSubtitle {
+  display: block;
+  font-size: var(--font-2xs);
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

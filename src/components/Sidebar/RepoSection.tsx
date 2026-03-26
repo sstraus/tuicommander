@@ -18,6 +18,8 @@ import { compareBranches } from "../../utils/branchSort";
 import { invoke } from "../../invoke";
 import { cx } from "../../utils";
 import { t } from "../../i18n";
+import { sidebarPluginStore } from "../../stores/sidebarPluginStore";
+import { SidebarPluginSection } from "./SidebarPluginSection";
 import type { BranchPrStatus } from "../../types";
 import { PrDetailContent } from "../PrDetailPopover/PrDetailContent";
 import { mdTabsStore } from "../../stores/mdTabs";
@@ -879,6 +881,11 @@ export const RepoSection: Component<{
             <div class={s.repoEmpty}>{t("sidebar.noBranches", "No branches loaded")}</div>
           </Show>
         </div>
+      </Show>
+      <Show when={props.repo.expanded && !props.repo.collapsed && sidebarPluginStore.getPanels().length > 0}>
+        <For each={sidebarPluginStore.getPanels()}>
+          {(panel) => <SidebarPluginSection panel={panel} />}
+        </For>
       </Show>
       <ContextMenu
         items={repoMenuItems()}

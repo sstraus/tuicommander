@@ -326,7 +326,10 @@ function createPluginRegistry() {
 
       registerSidebarPanel(options: import("../stores/sidebarPluginStore").SidebarPanelOptions) {
         requireCapability(pluginId, capabilities, "ui:sidebar");
-        return track(sidebarPluginStore.registerPanel(pluginId, options));
+        const handle = sidebarPluginStore.registerPanel(pluginId, options);
+        // Track dispose for auto-cleanup, but return the full handle
+        track({ dispose: () => handle.dispose() });
+        return handle;
       },
 
       async writePty(sessionId: string, data: string): Promise<void> {
