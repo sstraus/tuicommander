@@ -62,6 +62,7 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
   "worktree-manager": { label: "Worktree manager", category: "Git" },
   "quick-branch-switch": { label: "Quick branch switch", category: "Git" },
   "toggle-error-log": { label: "Error log", category: "Navigation" },
+  "toggle-mcp-popup": { label: "MCP servers (per-repo)", category: "Panels" },
 };
 
 /**
@@ -107,6 +108,7 @@ export function getActionEntries(handlers: ShortcutHandlers): ActionEntry[] {
     "worktree-manager": handlers.toggleWorktreeManager,
     "quick-branch-switch": handlers.toggleBranchSwitcher,
     "toggle-error-log": handlers.toggleErrorLog,
+    "toggle-mcp-popup": handlers.toggleMcpPopup,
   };
 
   for (const [actionId, meta] of Object.entries(ACTION_META)) {

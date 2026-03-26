@@ -56,6 +56,7 @@ export interface ShortcutHandlers {
   toggleBranchSwitcher: () => void;
   toggleErrorLog: () => void;
   toggleBranchesTab: () => void;
+  toggleMcpPopup: () => void;
 }
 
 /** Keys that are modifiers only — not real shortcut targets */
@@ -134,6 +135,7 @@ function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean
     case "quick-branch-switch": handlers.toggleBranchSwitcher(); return true;
     case "toggle-error-log": handlers.toggleErrorLog(); return true;
     case "toggle-branches-tab": handlers.toggleBranchesTab(); return true;
+    case "toggle-mcp-popup": handlers.toggleMcpPopup(); return true;
 
     // Tab navigation
     case "prev-tab": handlers.navigateTab("prev"); return true;

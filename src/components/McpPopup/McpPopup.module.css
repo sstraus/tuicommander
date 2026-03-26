@@ -1,0 +1,132 @@
+/* MCP Servers popup — lightweight overlay */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 80px;
+  z-index: 1000;
+}
+
+.popup {
+  width: 420px;
+  max-width: 90vw;
+  max-height: 60vh;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-popup);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.title {
+  font-size: var(--font-base);
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.statusDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.name {
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--fg-primary);
+}
+
+.badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.badgeHttp {
+  background: rgba(97, 175, 239, 0.15);
+  color: #61afef;
+}
+
+.badgeStdio {
+  background: rgba(152, 195, 121, 0.15);
+  color: #98c379;
+}
+
+.tools {
+  font-size: 11px;
+  color: var(--fg-muted);
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.checkbox {
+  flex-shrink: 0;
+}
+
+.empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: var(--font-md);
+}
+
+.footer {
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: center;
+}
+
+.footerLink {
+  font-size: 12px;
+  color: var(--accent);
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 4px 8px;
+}
+
+.footerLink:hover {
+  text-decoration: underline;
+}

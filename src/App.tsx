@@ -34,9 +34,11 @@ import { BranchSwitcher } from "./components/BranchSwitcher/BranchSwitcher";
 import { ActivityDashboard } from "./components/ActivityDashboard";
 import { WorktreeManager, type WorktreeActions } from "./components/WorktreeManager";
 import { ErrorLogPanel } from "./components/ErrorLogPanel";
+import { McpPopup } from "./components/McpPopup/McpPopup";
 import { DictationToast } from "./components/DictationToast/DictationToast";
 import { commandPaletteStore } from "./stores/commandPalette";
 import { branchSwitcherStore } from "./stores/branchSwitcher";
+import { mcpPopupStore } from "./stores/mcpPopup";
 import { activityDashboardStore } from "./stores/activityDashboard";
 import { worktreeManagerStore } from "./stores/worktreeManager";
 import { errorLogStore } from "./stores/errorLog";
@@ -903,6 +905,7 @@ const App: Component = () => {
     toggleBranchSwitcher: () => branchSwitcherStore.toggle(),
     toggleErrorLog: () => errorLogStore.toggle(),
     toggleBranchesTab: () => uiStore.toggleGitPanelOnTab("branches"),
+    toggleMcpPopup: () => mcpPopupStore.toggle(),
   };
 
   // Worktree manager action callbacks
@@ -1121,6 +1124,7 @@ const App: Component = () => {
         case "command-palette": commandPaletteStore.toggle(); break;
         case "activity-dashboard": activityDashboardStore.toggle(); break;
         case "error-log": errorLogStore.toggle(); break;
+        case "mcp-popup": mcpPopupStore.toggle(); break;
         case "check-for-updates": updaterStore.checkForUpdate().catch((err) => appLogger.warn("app", "Updater manual check failed", err)); break;
         case "about": setHelpPanelVisible(true); break;
 
@@ -1377,6 +1381,9 @@ const App: Component = () => {
 
       {/* Worktree manager */}
       <WorktreeManager actions={worktreeActions} />
+
+      {/* MCP servers popup (per-repo) */}
+      <McpPopup onOpenSettings={openSettings} />
 
       {/* Error log panel */}
       <ErrorLogPanel />
