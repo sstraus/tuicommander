@@ -324,6 +324,18 @@ function createPluginRegistry() {
         return track(contextMenuActionsStore.registerAction(pluginId, guardedAction));
       },
 
+      registerContextMenuAction(action: import("../stores/contextMenuActionsStore").ContextMenuAction): Disposable {
+        requireCapability(pluginId, capabilities, "ui:context-menu");
+        const guarded: import("../stores/contextMenuActionsStore").ContextMenuAction = {
+          ...action,
+          action: (ctx) => {
+            if (!plugins.has(pluginId)) return;
+            action.action(ctx);
+          },
+        };
+        return track(contextMenuActionsStore.registerContextAction(pluginId, guarded));
+      },
+
       registerSidebarPanel(options: import("../stores/sidebarPluginStore").SidebarPanelOptions) {
         requireCapability(pluginId, capabilities, "ui:sidebar");
         const handle = sidebarPluginStore.registerPanel(pluginId, options);

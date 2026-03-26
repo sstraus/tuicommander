@@ -182,6 +182,13 @@ export interface StateChangeEvent {
 }
 
 // ---------------------------------------------------------------------------
+// Context menu actions (multi-target)
+// ---------------------------------------------------------------------------
+
+/** Re-export from store for convenience */
+export type { ContextMenuTarget, ContextMenuAction, ContextMenuContext } from "../stores/contextMenuActionsStore";
+
+// ---------------------------------------------------------------------------
 // Sidebar plugin panel items
 // ---------------------------------------------------------------------------
 
@@ -466,6 +473,13 @@ export interface PluginHost {
    * captured at right-click time.
    */
   registerTerminalAction(action: TerminalAction): Disposable;
+
+  /**
+   * Register an action in context menus for a specific target type.
+   * Requires "ui:context-menu" capability.
+   * Target types: "terminal", "branch", "repo", "tab".
+   */
+  registerContextMenuAction(action: import("../stores/contextMenuActionsStore").ContextMenuAction): Disposable;
 
   /**
    * Register a collapsible panel section in the sidebar (below branch list).

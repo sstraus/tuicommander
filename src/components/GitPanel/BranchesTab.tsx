@@ -10,7 +10,7 @@ import type { BranchDetail } from "./types";
 import s from "./BranchesTab.module.css";
 
 /** Convert a git remote URL (SSH or HTTPS) to a GitHub web URL, or null if not GitHub. */
-function remoteUrlToGitHub(remoteUrl: string): string | null {
+export function remoteUrlToGitHub(remoteUrl: string): string | null {
   // SSH: git@github.com:owner/repo.git
   const sshMatch = remoteUrl.match(/^git@github\.com:(.+?)(?:\.git)?$/);
   if (sshMatch) return `https://github.com/${sshMatch[1]}`;

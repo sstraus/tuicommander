@@ -19,7 +19,10 @@ import { invoke } from "../../invoke";
 import { cx } from "../../utils";
 import { t } from "../../i18n";
 import { sidebarPluginStore } from "../../stores/sidebarPluginStore";
+import { contextMenuActionsStore } from "../../stores/contextMenuActionsStore";
 import { SidebarPluginSection } from "./SidebarPluginSection";
+import { remoteUrlToGitHub } from "../GitPanel/BranchesTab";
+import { handleOpenUrl } from "../../utils/openUrl";
 import type { BranchPrStatus } from "../../types";
 import { PrDetailContent } from "../PrDetailPopover/PrDetailContent";
 import { mdTabsStore } from "../../stores/mdTabs";
@@ -187,6 +190,7 @@ export const BranchItem: Component<{
   onSwitchBranch?: (branchName: string) => void;
   switchBranchList?: () => string[];
   currentBranch?: () => string;
+  githubBaseUrl?: string | null;
 }> = (props) => {
   const ctxMenu = createContextMenu();
 
@@ -264,6 +268,30 @@ export const BranchItem: Component<{
           disabled: name === current,
         }));
         items.push({ label: t("sidebar.switchBranch", "Switch Branch"), action: () => {}, children: branchChildren, separator: true });
+      }
+    }
+    // GitHub links
+    if (props.githubBaseUrl) {
+      const ghBase = props.githubBaseUrl;
+      const branchUrl = `${ghBase}/tree/${encodeURIComponent(props.branch.name)}`;
+      items.push({ label: "Open in GitHub", action: () => handleOpenUrl(branchUrl), separator: true });
+      // If branch has an open PR, add direct link
+      const prStatus = githubStore.getPrStatus(props.repoPath, props.branch.name);
+      if (prStatus?.url) {
+        items.push({ label: "Open PR", action: () => handleOpenUrl(prStatus.url) });
+      }
+    }
+    // Plugin-registered branch actions
+    const branchActions = contextMenuActionsStore.getContextActions("branch");
+    if (branchActions.length > 0) {
+      const ctx = { target: "branch" as const, repoPath: props.repoPath, branchName: props.branch.name };
+      for (const a of branchActions) {
+        items.push({
+          label: a.label,
+          action: () => a.action(ctx),
+          disabled: a.disabled?.(ctx),
+          separator: branchActions.indexOf(a) === 0,
+        });
       }
     }
     return items;
@@ -721,6 +749,14 @@ export const RepoSection: Component<{
   const [groupPromptVisible, setGroupPromptVisible] = createSignal(false);
   const [remoteOnlyPopoverVisible, setRemoteOnlyPopoverVisible] = createSignal(false);
   const [remoteCleanupActive, setRemoteCleanupActive] = createSignal(false);
+  const [githubBaseUrl, setGithubBaseUrl] = createSignal<string | null>(null);
+
+  // Fetch GitHub URL for "Open in GitHub" context menu actions
+  if (props.repo.isGitRepo !== false) {
+    invoke<string | null>("get_remote_url", { path: props.repo.path }).then((url) => {
+      if (url) setGithubBaseUrl(remoteUrlToGitHub(url));
+    }).catch(() => {});
+  }
 
   const branches = createMemo(() => Object.values(props.repo.branches));
   // Pre-compute PR statuses once per poll cycle; avoids calling getPrStatus inside sort comparator
@@ -775,8 +811,26 @@ export const RepoSection: Component<{
     });
     items.push({ label: "Move to Group", action: () => {}, children });
 
-    items.push({ label: "Park Repository", action: () => repositoriesStore.setPark(props.repo.path, true) });
+    // GitHub link
+    const ghUrl = githubBaseUrl();
+    if (ghUrl) {
+      items.push({ label: "Open in GitHub", action: () => handleOpenUrl(ghUrl), separator: true });
+    }
+    items.push({ label: "Park Repository", action: () => repositoriesStore.setPark(props.repo.path, true), separator: !ghUrl });
     items.push({ label: "Remove Repository", action: () => props.onRemove() });
+    // Plugin-registered repo actions
+    const repoActions = contextMenuActionsStore.getContextActions("repo");
+    if (repoActions.length > 0) {
+      const ctx = { target: "repo" as const, repoPath: props.repo.path };
+      for (const a of repoActions) {
+        items.push({
+          label: a.label,
+          action: () => a.action(ctx),
+          disabled: a.disabled?.(ctx),
+          separator: repoActions.indexOf(a) === 0,
+        });
+      }
+    }
     return items;
   };
 
@@ -874,6 +928,7 @@ export const RepoSection: Component<{
                 onSwitchBranch={branch.worktreePath === props.repo.path ? (name) => props.onSwitchBranch(name) : undefined}
                 switchBranchList={branch.worktreePath === props.repo.path ? props.switchBranchList : undefined}
                 currentBranch={branch.worktreePath === props.repo.path ? props.currentBranch : undefined}
+                githubBaseUrl={githubBaseUrl()}
               />
             )}
           </For>
