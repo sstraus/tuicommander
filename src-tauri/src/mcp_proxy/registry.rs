@@ -230,7 +230,8 @@ impl UpstreamRegistry {
             });
         }
         // Status changes to/from Ready affect the merged tool list
-        if matches!(status, "Ready" | "Error" | "Disconnected")
+        let status_lower = status.to_ascii_lowercase();
+        if matches!(status_lower.as_str(), "ready" | "error" | "disconnected" | "failed" | "circuit_open")
             && let Some(tx) = self.mcp_tools_tx.read().as_ref()
         {
             let _ = tx.send(());
