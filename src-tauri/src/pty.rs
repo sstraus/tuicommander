@@ -95,6 +95,18 @@ const RESIZE_GRACE: std::time::Duration = std::time::Duration::from_millis(1000)
 /// How long after user input to ignore `?`-ending echo lines from the PTY.
 const ECHO_SUPPRESS_WINDOW: std::time::Duration = std::time::Duration::from_millis(500);
 
+/// Grace period after PTY session start during which notifications (Question,
+/// RateLimit, ApiError) are suppressed. When a CLI tool replays conversation
+/// history (e.g. `claude --continue`), the burst of historical output contains
+/// old errors and questions that would otherwise trigger stale notifications.
+/// The grace ends when output pauses for STARTUP_SETTLE_SILENCE seconds,
+/// indicating the replay is over and live output is starting.
+const STARTUP_SETTLE_SILENCE: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Safety cap: startup grace never lasts longer than this, even if output
+/// never pauses (e.g. continuous build log).
+const STARTUP_GRACE_MAX: std::time::Duration = std::time::Duration::from_secs(120);
+
 /// Shell idle threshold: 500ms without real PTY output → transition busy→idle.
 /// Matches the frontend's previous 500ms setTimeout in checkIdle.
 const SHELL_IDLE_MS: u64 = 500;
@@ -222,6 +234,13 @@ pub(crate) struct SilenceState {
     /// `?` line to reappear in changed_rows at a different row position.
     /// Cleared on user input (new conversation cycle).
     last_emitted_text: Option<String>,
+    /// When this session was created. Used with `startup_settled` to suppress
+    /// notifications during the initial output burst (e.g. `--continue` replay).
+    created_at: std::time::Instant,
+    /// True once the session has settled after the initial output burst.
+    /// Settled = output paused for STARTUP_SETTLE_SILENCE seconds, or
+    /// STARTUP_GRACE_MAX has elapsed since creation.
+    pub(crate) startup_settled: bool,
 }
 
 impl SilenceState {
@@ -235,6 +254,8 @@ impl SilenceState {
             last_status_line_at: None,
             output_chunks_after_question: 0,
             last_emitted_text: None,
+            created_at: std::time::Instant::now(),
+            startup_settled: false,
         }
     }
 
@@ -251,6 +272,30 @@ impl SilenceState {
         self.last_resize_at
             .map(|t| t.elapsed() < RESIZE_GRACE)
             .unwrap_or(false)
+    }
+
+    /// Returns true if we are still in the startup grace period.
+    /// During this window, notifications are suppressed to avoid reacting to
+    /// historical output replayed by `--continue` or similar session restore.
+    pub(crate) fn is_startup_grace(&self) -> bool {
+        !self.startup_settled
+    }
+
+    /// Check if the startup grace should end and update the flag.
+    /// Called by the silence timer thread every second.
+    pub(crate) fn check_startup_settle(&mut self) {
+        if self.startup_settled {
+            return;
+        }
+        // Safety cap: always settle after STARTUP_GRACE_MAX
+        if self.created_at.elapsed() >= STARTUP_GRACE_MAX {
+            self.startup_settled = true;
+            return;
+        }
+        // Settle after STARTUP_SETTLE_SILENCE without output
+        if self.last_output_at.elapsed() >= STARTUP_SETTLE_SILENCE {
+            self.startup_settled = true;
+        }
     }
 
     /// Called by the reader thread after each chunk.
@@ -483,6 +528,15 @@ fn spawn_silence_timer(
                 && try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE)
             {
                 emit_shell_state(&state, app.as_ref(), &session_id, "idle");
+            }
+
+            // Update startup grace state (checks if output has settled).
+            {
+                let mut sl = silence.lock();
+                sl.check_startup_settle();
+                if sl.is_startup_grace() {
+                    continue; // Still in startup burst — suppress question detection
+                }
             }
 
             // Check temporal conditions first (shared by both strategies).
@@ -743,7 +797,11 @@ impl ChunkProcessor {
         }
 
         // Parse events: OSC 9;4 progress from raw stream, others from clean rows.
-        let in_resize_grace = silence.lock().is_resize_grace();
+        let (in_resize_grace, in_startup_grace) = {
+            let sl = silence.lock();
+            (sl.is_resize_grace(), sl.is_startup_grace())
+        };
+        let suppress_notifications = in_resize_grace || in_startup_grace;
         let mut events = Vec::new();
         if let Some(evt) = crate::output_parser::parse_osc94(data) {
             events.push(evt);
@@ -761,13 +819,13 @@ impl ChunkProcessor {
             }
         }
 
-        let regex_found_question = if in_resize_grace { false } else {
+        let regex_found_question = if suppress_notifications { false } else {
             events.iter().any(|e| matches!(e, ParsedEvent::Question { .. }))
         };
 
-        // Emit events with dedup, resize-grace filtering, and PlanFile resolution.
+        // Emit events with dedup, grace filtering, and PlanFile resolution.
         for event in &events {
-            if in_resize_grace && matches!(event,
+            if suppress_notifications && matches!(event,
                 ParsedEvent::Question { .. }
                 | ParsedEvent::RateLimit { .. }
                 | ParsedEvent::ApiError { .. }
@@ -3039,6 +3097,53 @@ mod tests {
         assert!(s.is_resize_grace(), "second resize should restart grace period");
     }
 
+
+    // --- Startup grace period tests ---
+
+    #[test]
+    fn test_startup_grace_active_on_new_session() {
+        let s = SilenceState::new();
+        assert!(s.is_startup_grace(), "startup grace should be active on new session");
+    }
+
+    #[test]
+    fn test_startup_grace_settles_after_silence() {
+        let mut s = SilenceState::new();
+        // Simulate output stopping long enough ago
+        s.last_output_at = std::time::Instant::now() - STARTUP_SETTLE_SILENCE - std::time::Duration::from_millis(100);
+        s.check_startup_settle();
+        assert!(!s.is_startup_grace(), "startup grace should end after output silence");
+    }
+
+    #[test]
+    fn test_startup_grace_persists_during_output() {
+        let mut s = SilenceState::new();
+        // Output is recent — grace should persist
+        s.last_output_at = std::time::Instant::now();
+        s.check_startup_settle();
+        assert!(s.is_startup_grace(), "startup grace should persist while output is flowing");
+    }
+
+    #[test]
+    fn test_startup_grace_safety_cap() {
+        let mut s = SilenceState::new();
+        // Created long ago, but output is recent — safety cap should force settle
+        s.created_at = std::time::Instant::now() - STARTUP_GRACE_MAX - std::time::Duration::from_secs(1);
+        s.last_output_at = std::time::Instant::now(); // output still flowing
+        s.check_startup_settle();
+        assert!(!s.is_startup_grace(), "startup grace should end at safety cap");
+    }
+
+    #[test]
+    fn test_startup_grace_idempotent_after_settle() {
+        let mut s = SilenceState::new();
+        s.last_output_at = std::time::Instant::now() - STARTUP_SETTLE_SILENCE - std::time::Duration::from_millis(100);
+        s.check_startup_settle();
+        assert!(s.startup_settled);
+        // Calling again doesn't change anything
+        s.check_startup_settle();
+        assert!(s.startup_settled);
+    }
 
     // --- VtLogBuffer + parse_clean_lines pipeline tests ---
 
