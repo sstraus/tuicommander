@@ -12,6 +12,9 @@ import type { SidebarPanelHandle } from "../stores/sidebarPluginStore";
 
 const PLUGIN_ID = "plan";
 
+/** Statuses that appear in the sidebar (active work). Everything else goes to the full panel. */
+const ACTIVE_STATUSES = new Set(["in_progress", "in progress", "approved", "designed"]);
+
 // Inline document SVG icon
 const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor">
   <path fill-rule="evenodd" d="M3 1.5A1.5 1.5 0 0 1 4.5 0h4.379a1.5 1.5 0 0 1 1.06.44l3.122 3.12A1.5 1.5 0 0 1 13.5 4.622V13.5A1.5 1.5 0 0 1 12 15H4.5A1.5 1.5 0 0 1 3 13.5v-12Zm1.5-.5a.5.5 0 0 0-.5.5v12a.5.5 0 0 0 .5.5H12a.5.5 0 0 0 .5-.5V5h-2.25A1.25 1.25 0 0 1 9 3.75V1H4.5Zm5 .5v2.25c0 .138.112.25.25.25H12L9.5 1.5Z" clip-rule="evenodd"/>
@@ -31,6 +34,20 @@ function displayName(absolutePath: string): string {
 /** Build the contentUri for a plan file path. */
 function contentUri(absolutePath: string): string {
   return `plan:file?path=${encodeURIComponent(absolutePath)}`;
+}
+
+/** Make a path relative to a repo root. */
+function relativePath(absolutePath: string, repoPath: string | null): string {
+  if (repoPath && absolutePath.startsWith(repoPath)) {
+    return absolutePath.slice(repoPath.length).replace(/^\//, "");
+  }
+  return absolutePath;
+}
+
+/** Check if a status is "active" (should appear in sidebar). */
+function isActiveStatus(status: string | null | undefined): boolean {
+  if (!status) return false;
+  return ACTIVE_STATUSES.has(status.toLowerCase().trim());
 }
 
 // ---------------------------------------------------------------------------
@@ -59,8 +76,72 @@ const planMarkdownProvider: MarkdownProvider = {
 interface PlanEntry {
   path: string;
   title: string;
-  subtitle: string;
-  metadata?: Record<string, string>;
+  status: string | null;
+  effort: string | null;
+  enriched: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// All Plans panel HTML builder
+// ---------------------------------------------------------------------------
+
+function buildAllPlansHtml(plans: Map<string, PlanEntry>, repoPath: string | null): string {
+  // Group by status
+  const groups = new Map<string, PlanEntry[]>();
+  for (const entry of plans.values()) {
+    const status = entry.status?.toLowerCase().trim() ?? "unknown";
+    if (!groups.has(status)) groups.set(status, []);
+    groups.get(status)!.push(entry);
+  }
+
+  // Sort: active first, then draft, then completed, then rest
+  const statusOrder = ["in_progress", "in progress", "approved", "designed", "draft", "completed", "parked", "unknown"];
+  const sortedStatuses = [...groups.keys()].sort((a, b) => {
+    const ai = statusOrder.indexOf(a);
+    const bi = statusOrder.indexOf(b);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
+
+  let rows = "";
+  for (const status of sortedStatuses) {
+    const entries = groups.get(status) ?? [];
+    for (const entry of entries) {
+      const relPath = relativePath(entry.path, repoPath);
+      const badgeClass = status === "in_progress" || status === "in progress" ? "badge-accent"
+        : status === "completed" ? "badge-success"
+        : status === "draft" ? "badge-muted"
+        : status === "parked" ? "badge-warning"
+        : "badge-muted";
+      rows += `<tr data-path="${entry.path}" style="cursor:pointer">
+        <td>${entry.title}</td>
+        <td><span class="${badgeClass}">${status}</span></td>
+        <td>${entry.effort ?? "—"}</td>
+        <td style="color:var(--fg-muted);font-size:var(--font-2xs)">${relPath}</td>
+      </tr>`;
+    }
+  }
+
+  return `<!DOCTYPE html><html><head><style>
+    body { padding: 12px; }
+    h2 { margin: 0 0 12px; font-size: var(--font-md); }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; font-size: var(--font-2xs); color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.04em; padding: 4px 8px; border-bottom: 1px solid var(--border); }
+    td { padding: 6px 8px; font-size: var(--font-sm); }
+    tr:hover { background: var(--bg-highlight); }
+  </style></head><body>
+    <h2>All Plans (${plans.size})</h2>
+    <table>
+      <tr><th>Title</th><th>Status</th><th>Effort</th><th>Path</th></tr>
+      ${rows}
+    </table>
+    <script>
+      document.querySelectorAll("tr[data-path]").forEach(tr => {
+        tr.addEventListener("click", () => {
+          window.parent.postMessage({ action: "open-plan", path: tr.dataset.path }, "*");
+        });
+      });
+    </script>
+  </body></html>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -71,9 +152,11 @@ class PlanPlugin implements TuiPlugin {
   readonly id = PLUGIN_ID;
   private panelHandle: SidebarPanelHandle | null = null;
   private plans = new Map<string, PlanEntry>();
+  private repoPath: string | null = null;
 
   onload(host: PluginHost): void {
     this.plans.clear();
+    this.repoPath = host.getActiveRepoPath();
 
     this.panelHandle = host.registerSidebarPanel({
       id: "active-plans",
@@ -83,26 +166,45 @@ class PlanPlugin implements TuiPlugin {
       collapsed: false,
     });
 
+    // Context menu: "View All Plans" opens a full panel
+    host.registerTerminalAction({
+      id: "view-all-plans",
+      label: "View All Plans",
+      action: () => {
+        const html = buildAllPlansHtml(this.plans, this.repoPath);
+        const handle = host.openPanel({
+          id: "all-plans",
+          title: "All Plans",
+          html,
+          onMessage: (data) => {
+            if (typeof data === "object" && data !== null && (data as Record<string, unknown>).action === "open-plan") {
+              const path = (data as { path: string }).path;
+              mdTabsStore.addVirtual(displayName(path), contentUri(path));
+            }
+          },
+        });
+        // Update handle reference for refreshes — but panel is static snapshot
+        void handle;
+      },
+      disabled: () => this.plans.size === 0,
+    });
+
     host.registerStructuredEventHandler("plan-file", (payload, sessionId) => {
       if (typeof payload !== "object" || payload === null || typeof (payload as Record<string, unknown>).path !== "string") return;
       const rawPath = (payload as { path: string }).path;
 
-      // Resolve relative paths to absolute using session CWD via PluginHost
       const cwd = host.getSessionCwd(sessionId);
       const absolutePath = rawPath.startsWith("/") ? rawPath
         : cwd ? `${cwd.replace(/\/$/, "")}/${rawPath}` : rawPath;
 
-      // Only show plans from terminals belonging to the active repo
       const activeRepo = host.getActiveRepoPath();
       if (activeRepo !== null) {
         if (!cwd || !cwd.startsWith(activeRepo)) return;
       }
 
       const isNew = !this.plans.has(absolutePath);
-
       this.addPlan(absolutePath);
 
-      // Auto-open new plans belonging to the active repo as a background tab
       if (isNew && activeRepo) {
         mdTabsStore.addVirtualBackground(displayName(absolutePath), contentUri(absolutePath), activeRepo);
       }
@@ -110,7 +212,6 @@ class PlanPlugin implements TuiPlugin {
 
     host.registerMarkdownProvider("plan", planMarkdownProvider);
 
-    // Scan plans/ directory for the active repo on startup
     const activeRepo = host.getActiveRepoPath();
     if (activeRepo) {
       this.scanPlansDirectory(activeRepo);
@@ -123,15 +224,17 @@ class PlanPlugin implements TuiPlugin {
       this.plans.set(absolutePath, {
         path: absolutePath,
         title: displayName(absolutePath),
-        subtitle: absolutePath,
+        status: null,
+        effort: null,
+        enriched: false,
       });
     }
-    this.refreshPanel();
     this.enrichPlan(absolutePath);
   }
 
   /** Scan a repo's plans/ directory and add discovered plan files. */
   scanPlansDirectory(repoPath: string): void {
+    this.repoPath = repoPath;
     invoke<DirEntry[]>("list_directory", { repoPath, subdir: "plans" })
       .then((entries) => {
         const mdFiles = entries.filter((e) => !e.is_dir && e.name.endsWith(".md"));
@@ -153,34 +256,36 @@ class PlanPlugin implements TuiPlugin {
         const entry = this.plans.get(absolutePath);
         if (!entry) return;
 
-        const updates: Record<string, string> = {};
-        if (meta.status) updates.status = meta.status;
-        if (meta.effort) updates.effort = meta.effort;
-        if (meta.priority) updates.priority = meta.priority;
-        if (meta.story) updates.story = meta.story;
-        if (meta.created) updates.created = meta.created;
-
         entry.title = meta.title ?? displayName(absolutePath);
-        entry.metadata = Object.keys(updates).length > 0 ? updates : undefined;
+        entry.status = meta.status ?? null;
+        entry.effort = meta.effort ?? null;
+        entry.enriched = true;
         this.refreshPanel();
       })
       .catch(() => {
-        // File read failed — keep fallback title, no metadata
+        // File read failed — mark as enriched (with no data) to avoid retry
+        const entry = this.plans.get(absolutePath);
+        if (entry) {
+          entry.enriched = true;
+          this.refreshPanel();
+        }
       });
   }
 
-  /** Rebuild sidebar items from the internal plans map. */
+  /** Rebuild sidebar items — only active plans shown. */
   private refreshPanel(): void {
     if (!this.panelHandle) return;
     const items: SidebarItem[] = [];
     for (const [, entry] of this.plans) {
-      const subtitle = entry.metadata?.status
-        ? `${entry.metadata.status}${entry.metadata.effort ? ` · ${entry.metadata.effort}` : ""}`
-        : entry.subtitle;
+      // Only show plans with active status in sidebar
+      if (!isActiveStatus(entry.status)) continue;
+      const relPath = relativePath(entry.path, this.repoPath);
       items.push({
         id: `plan:${entry.path}`,
         label: entry.title,
-        subtitle,
+        subtitle: entry.status
+          ? `${entry.status}${entry.effort ? ` · ${entry.effort}` : ""}`
+          : relPath,
         icon: ICON_SVG,
         onClick: () => {
           mdTabsStore.addVirtual(entry.title, contentUri(entry.path));
@@ -199,6 +304,7 @@ class PlanPlugin implements TuiPlugin {
   onunload(): void {
     this.panelHandle = null;
     this.plans.clear();
+    this.repoPath = null;
   }
 }
 

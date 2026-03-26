@@ -78,7 +78,6 @@ describe("planPlugin lifecycle", () => {
   it("registers a plan markdown provider on load", async () => {
     mockedInvoke.mockResolvedValue("# Plan Content");
     pluginRegistry.register(planPlugin);
-    // Provider is registered for the "plan" scheme
     const result = await markdownProviderRegistry.resolve("plan:file?path=/foo/bar.md");
     expect(result).not.toBeNull();
     expect(mockedInvoke).toHaveBeenCalledWith("plugin_read_file", { path: "/foo/bar.md", pluginId: "plan" });
@@ -101,46 +100,75 @@ describe("plan-file structured event", () => {
     pluginRegistry.register(planPlugin);
   });
 
-  it("adds an item to sidebar panel on plan-file event", async () => {
+  it("adds a plan to internal tracking on plan-file event", async () => {
+    // Plan without status → not shown in sidebar (draft by default)
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/foo.md" }, "s1");
+    await flushMicrotasks();
+    await flushMicrotasks();
+    // No status enrichment → not in sidebar (only active plans shown)
+    expect(getPlanItems()).toHaveLength(0);
+  });
+
+  it("shows plan in sidebar when status is in_progress", async () => {
+    mockedInvoke.mockResolvedValue("---\nstatus: in_progress\n---\n# My Plan");
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/active.md" }, "s1");
+    await flushMicrotasks();
     await flushMicrotasks();
     const items = getPlanItems();
     expect(items).toHaveLength(1);
-    expect(items[0].id).toBe("plan:/repo/plans/foo.md");
+    expect(items[0].label).toBe("My Plan");
   });
 
-  it("item label is the plan display name (basename without extension)", async () => {
-    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/my-cool-plan.md" }, "s1");
+  it("does not show draft plans in sidebar", async () => {
+    mockedInvoke.mockResolvedValue("---\nstatus: draft\n---\n# Draft Plan");
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/draft.md" }, "s1");
     await flushMicrotasks();
-    const item = getPlanItems()[0];
-    expect(item.label).toBe("my-cool-plan");
+    await flushMicrotasks();
+    expect(getPlanItems()).toHaveLength(0);
   });
 
-  it("item subtitle is the full path initially", async () => {
-    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/foo.md" }, "s1");
+  it("does not show completed plans in sidebar", async () => {
+    mockedInvoke.mockResolvedValue("---\nstatus: completed\n---\n# Done Plan");
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/done.md" }, "s1");
     await flushMicrotasks();
-    const item = getPlanItems()[0];
-    expect(item.subtitle).toBe("/repo/plans/foo.md");
+    await flushMicrotasks();
+    expect(getPlanItems()).toHaveLength(0);
+  });
+
+  it("shows plan with approved status in sidebar", async () => {
+    mockedInvoke.mockResolvedValue("---\nstatus: approved\n---\n# Approved Plan");
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/approved.md" }, "s1");
+    await flushMicrotasks();
+    await flushMicrotasks();
+    expect(getPlanItems()).toHaveLength(1);
   });
 
   it("deduplicates: second event with same path does not duplicate", async () => {
+    mockedInvoke.mockResolvedValue("---\nstatus: in_progress\n---\n# Plan");
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/foo.md" }, "s1");
     await flushMicrotasks();
+    await flushMicrotasks();
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/foo.md" }, "s1");
+    await flushMicrotasks();
     await flushMicrotasks();
     expect(getPlanItems()).toHaveLength(1);
   });
 
   it("different paths create separate items", async () => {
+    mockedInvoke.mockResolvedValue("---\nstatus: in_progress\n---\n# Plan");
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/plans/a.md" }, "s1");
     await flushMicrotasks();
+    await flushMicrotasks();
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/plans/b.md" }, "s1");
+    await flushMicrotasks();
     await flushMicrotasks();
     expect(getPlanItems()).toHaveLength(2);
   });
 
   it("item has an icon (non-empty SVG string)", async () => {
+    mockedInvoke.mockResolvedValue("---\nstatus: in_progress\n---\n# Plan");
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/plans/foo.md" }, "s1");
+    await flushMicrotasks();
     await flushMicrotasks();
     const item = getPlanItems()[0];
     expect(item.icon).toContain("<svg");
@@ -170,13 +198,21 @@ describe("plan-file structured event", () => {
     expect(getPlanItems()).toHaveLength(0);
   });
 
-  it("updates badge count when items are added", async () => {
-    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/plans/a.md" }, "s1");
+  it("updates badge count for active plans only", async () => {
+    mockedInvoke.mockImplementation((cmd: string, args?: Record<string, unknown>) => {
+      const path = (args as Record<string, string>)?.path ?? "";
+      if (cmd === "plugin_read_file" && path.includes("active")) {
+        return Promise.resolve("---\nstatus: in_progress\n---\n# Active");
+      }
+      return Promise.resolve("---\nstatus: draft\n---\n# Draft");
+    });
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/plans/active.md" }, "s1");
     await flushMicrotasks();
-    expect(getPlanPanel()!.badge).toBe("1");
-    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/plans/b.md" }, "s1");
     await flushMicrotasks();
-    expect(getPlanPanel()!.badge).toBe("2");
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/plans/draft.md" }, "s1");
+    await flushMicrotasks();
+    await flushMicrotasks();
+    expect(getPlanPanel()!.badge).toBe("1"); // only the active one
   });
 });
 
@@ -184,26 +220,36 @@ describe("plan-file structured event", () => {
 // repoPath attachment and path resolution
 // ---------------------------------------------------------------------------
 
-describe("plan-file repoPath and path resolution", () => {
+describe("plan-file path resolution", () => {
   beforeEach(() => {
     pluginRegistry.register(planPlugin);
   });
 
   it("resolves relative plan path to absolute using session CWD", async () => {
+    mockedInvoke.mockResolvedValue("---\nstatus: in_progress\n---\n# Plan");
     addTerminalWithSession("sess-2", "/Users/dev/my-project");
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "plans/feature.md" }, "sess-2");
     await flushMicrotasks();
-    const item = getPlanItems()[0];
-    // Subtitle shows the full path before enrichment replaces it
-    expect(item.subtitle).toBe("/Users/dev/my-project/plans/feature.md");
+    await flushMicrotasks();
+    const items = getPlanItems();
+    expect(items).toHaveLength(1);
+    // ID contains the resolved absolute path
+    expect(items[0].id).toBe("plan:/Users/dev/my-project/plans/feature.md");
   });
 
-  it("keeps absolute path unchanged", async () => {
-    addTerminalWithSession("sess-3", "/Users/dev/my-project");
-    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/absolute/plans/bar.md" }, "sess-3");
+  it("shows relative path in subtitle when repo is set", async () => {
+    repositoriesStore.add({ path: "/my/repo", displayName: "repo" });
+    repositoriesStore.setActive("/my/repo");
+    mockedInvoke.mockResolvedValue("---\nstatus: in_progress\n---\n# Plan");
+    addTerminalWithSession("sess-3", "/my/repo");
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/my/repo/plans/feature.md" }, "sess-3");
+    await flushMicrotasks();
     await flushMicrotasks();
     const item = getPlanItems()[0];
-    expect(item.subtitle).toBe("/absolute/plans/bar.md");
+    // Subtitle shows status, not path, when enriched
+    expect(item.subtitle).toBe("in_progress");
+    repositoriesStore.setActive(null);
+    repositoriesStore.remove("/my/repo");
   });
 });
 
@@ -265,7 +311,7 @@ describe("plan-file metadata enrichment", () => {
   });
 
   it("enriches item title with H1 from file content", async () => {
-    mockedInvoke.mockResolvedValue("# Implementation Plan: My Feature\n\n**Status:** Draft\n**Estimated Effort:** M");
+    mockedInvoke.mockResolvedValue("---\nstatus: in_progress\n---\n# Implementation Plan: My Feature\n\n**Estimated Effort:** M");
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/my-feature.md" }, "s1");
     await flushMicrotasks();
     await flushMicrotasks();
@@ -273,26 +319,17 @@ describe("plan-file metadata enrichment", () => {
     expect(item.label).toBe("My Feature");
   });
 
-  it("populates subtitle with status and effort after enrichment", async () => {
-    mockedInvoke.mockResolvedValue("# Plan: Cool Feature\n\n**Status:** In Progress\n**Estimated Effort:** L-XL\n**Priority:** P1\n**Story:** 420-e0ea");
+  it("shows status and effort in subtitle", async () => {
+    mockedInvoke.mockResolvedValue("---\nstatus: in_progress\n---\n# Plan: Cool Feature\n\n**Estimated Effort:** L-XL");
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/cool.md" }, "s1");
     await flushMicrotasks();
     await flushMicrotasks();
     const item = getPlanItems()[0];
-    expect(item.subtitle).toBe("In Progress · L-XL");
-  });
-
-  it("uses YAML frontmatter status over inline status", async () => {
-    mockedInvoke.mockResolvedValue("---\nstatus: completed\n---\n# Plan\n\n**Status:** Draft\n**Estimated Effort:** S");
-    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/done.md" }, "s1");
-    await flushMicrotasks();
-    await flushMicrotasks();
-    const item = getPlanItems()[0];
-    expect(item.subtitle).toContain("completed");
+    expect(item.subtitle).toBe("in_progress · L-XL");
   });
 
   it("falls back to basename when file has no H1", async () => {
-    mockedInvoke.mockResolvedValue("No heading here\n\n**Status:** Draft");
+    mockedInvoke.mockResolvedValue("---\nstatus: in_progress\n---\nNo heading here");
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/orphan.md" }, "s1");
     await flushMicrotasks();
     await flushMicrotasks();
@@ -305,8 +342,8 @@ describe("plan-file metadata enrichment", () => {
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/missing.md" }, "s1");
     await flushMicrotasks();
     await flushMicrotasks();
-    const item = getPlanItems()[0];
-    expect(item.label).toBe("missing");
+    // Not in sidebar (no status), but should be tracked internally
+    expect(getPlanItems()).toHaveLength(0);
   });
 });
 
@@ -365,7 +402,7 @@ describe("plan auto-open", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Session-to-repo filtering (via host.getSessionCwd / host.getActiveRepoPath)
+// Session-to-repo filtering
 // ---------------------------------------------------------------------------
 
 describe("plan-file session filtering", () => {
@@ -374,8 +411,10 @@ describe("plan-file session filtering", () => {
   });
 
   it("shows plan when no active repo (pass-through)", async () => {
+    mockedInvoke.mockResolvedValue("---\nstatus: in_progress\n---\n# Plan");
     const termId = terminalsStore.add({ sessionId: "s1", fontSize: 14, name: "T", cwd: "/some/path", awaitingInput: null });
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/some/path/plan.md" }, "s1");
+    await flushMicrotasks();
     await flushMicrotasks();
     expect(getPlanItems()).toHaveLength(1);
     terminalsStore.remove(termId);
@@ -384,8 +423,10 @@ describe("plan-file session filtering", () => {
   it("shows plan when session cwd starts with active repo path", async () => {
     repositoriesStore.add({ path: "/my/repo", displayName: "repo" });
     repositoriesStore.setActive("/my/repo");
+    mockedInvoke.mockResolvedValue("---\nstatus: in_progress\n---\n# Plan");
     const termId = terminalsStore.add({ sessionId: "s-repo", fontSize: 14, name: "T", cwd: "/my/repo/subdir", awaitingInput: null });
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/my/repo/plan.md" }, "s-repo");
+    await flushMicrotasks();
     await flushMicrotasks();
     expect(getPlanItems()).toHaveLength(1);
     terminalsStore.remove(termId);
@@ -396,8 +437,10 @@ describe("plan-file session filtering", () => {
   it("hides plan when session cwd does not belong to active repo", async () => {
     repositoriesStore.add({ path: "/my/repo", displayName: "repo" });
     repositoriesStore.setActive("/my/repo");
+    mockedInvoke.mockResolvedValue("---\nstatus: in_progress\n---\n# Plan");
     const termId = terminalsStore.add({ sessionId: "s-other", fontSize: 14, name: "T", cwd: "/other/project", awaitingInput: null });
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/other/project/plan.md" }, "s-other");
+    await flushMicrotasks();
     await flushMicrotasks();
     expect(getPlanItems()).toHaveLength(0);
     terminalsStore.remove(termId);
