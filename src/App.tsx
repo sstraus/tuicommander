@@ -1019,6 +1019,21 @@ const App: Component = () => {
       }
     }
 
+    // Dynamic: plugin-registered terminal actions (context menu + multi-target)
+    for (const action of contextMenuActionsStore.getActions()) {
+      entries.push({
+        id: `plugin-action:${action.id}`,
+        label: action.label,
+        category: "Plugins",
+        keybinding: "",
+        execute: () => {
+          const activeId = terminalsStore.state.activeId;
+          const terminal = activeId ? terminalsStore.get(activeId) : null;
+          action.action({ sessionId: terminal?.sessionId ?? null, repoPath: null });
+        },
+      });
+    }
+
     return entries;
   });
 
