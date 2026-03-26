@@ -6,6 +6,6 @@
   "main": "main.js",
   "description": "Forwards terminal notifications to Telegram with per-event toggles and sound control.",
   "author": "TUICommander",
-  "capabilities": ["net:http", "ui:panel", "ui:ticker"],
+  "capabilities": ["net:http", "ui:panel", "ui:ticker", "ui:context-menu"],
   "allowedUrls": ["https://api.telegram.org/*"]
 }

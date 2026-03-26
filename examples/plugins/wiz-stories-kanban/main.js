@@ -786,22 +786,10 @@ export default {
   onload(host) {
     hostRef = host;
 
-    host.registerSection({
-      id: SECTION_ID,
-      label: "STORIES",
-      priority: 40,
-      canDismissAll: false,
-    });
-
-    host.addItem({
-      id: `${PLUGIN_ID}:open`,
-      pluginId: PLUGIN_ID,
-      sectionId: SECTION_ID,
-      title: "Stories Kanban",
-      subtitle: "Open Kanban board",
-      icon: ICON_KANBAN,
-      dismissible: false,
-      onClick: openKanban,
+    host.registerTerminalAction({
+      id: "open-kanban",
+      label: "Stories Kanban",
+      action: () => openKanban(),
     });
 
     host.onStateChange((event) => {

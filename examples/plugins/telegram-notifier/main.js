@@ -414,10 +414,6 @@ export default {
           return;
         }
         updateTicker();
-        host.updateItem(`${PLUGIN_ID}:settings`, {
-          subtitle: isConfigured() ? "Configured" : "Click to set up",
-          iconColor: isConfigured() ? "#89b4fa" : "var(--fg-muted)",
-        });
         panelHandle.send({ type: "tg-result", ok: true, message: "Configuration saved" });
         host.log("info", "Configuration saved");
       }
@@ -472,17 +468,10 @@ export default {
       });
     }
 
-    // Persistent item to open settings
-    host.addItem({
-      id: `${PLUGIN_ID}:settings`,
-      pluginId: PLUGIN_ID,
-      sectionId: SECTION_ID,
-      title: "Telegram Notifier",
-      subtitle: isConfigured() ? "Configured" : "Click to set up",
-      icon: ICON_TELEGRAM,
-      iconColor: isConfigured() ? "#89b4fa" : "var(--fg-muted)",
-      dismissible: false,
-      onClick: openSettings,
+    host.registerTerminalAction({
+      id: "telegram-settings",
+      label: "Telegram Settings",
+      action: () => openSettings(),
     });
 
     // ── Structured event: question ──

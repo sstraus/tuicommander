@@ -22,13 +22,6 @@ export default {
   onload(host) {
     hostRef = host;
 
-    host.registerSection({
-      id: SECTION_ID,
-      label: "DASHBOARD",
-      priority: 45,
-      canDismissAll: false,
-    });
-
     // Register markdown provider that generates the dashboard dynamically
     host.registerMarkdownProvider("dashboard", {
       provideContent() {
@@ -80,16 +73,10 @@ export default {
       },
     });
 
-    // Add a persistent item that opens the dashboard
-    host.addItem({
-      id: "dashboard:overview",
-      pluginId: PLUGIN_ID,
-      sectionId: SECTION_ID,
-      title: "Repo Dashboard",
-      subtitle: "View repository overview",
-      icon: ICON,
-      dismissible: false,
-      contentUri: "dashboard:overview",
+    host.registerTerminalAction({
+      id: "open-repo-dashboard",
+      label: "Repo Dashboard",
+      action: () => host.openMarkdownPanel("Repo Dashboard", "dashboard:overview"),
     });
   },
 
