@@ -106,6 +106,16 @@ describe("PluginHost.registerSection", () => {
     pluginRegistry.unregister("p1");
     expect(activityStore.getSections().some((s) => s.id === "s2")).toBe(false);
   });
+
+  it("double dispose is idempotent (no crash)", () => {
+    let disposable: { dispose: () => void } | null = null;
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      disposable = host.registerSection({ id: "s3", label: "S3", priority: 10, canDismissAll: false });
+    }));
+    // Plugin manually disposes, then unregister disposes again — must not throw
+    disposable!.dispose();
+    expect(() => pluginRegistry.unregister("p1")).not.toThrow();
+  });
 });
 
 // ---------------------------------------------------------------------------

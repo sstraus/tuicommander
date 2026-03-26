@@ -120,8 +120,18 @@ function createPluginRegistry() {
     allowedUrls: readonly string[] = [],
   ): PluginHost {
     function track(d: Disposable): Disposable {
-      disposables.push(d);
-      return d;
+      // Wrap in idempotent guard: plugins may manually dispose() and then the
+      // registry disposes again on unload — second call must be a no-op.
+      let disposed = false;
+      const safe: Disposable = {
+        dispose() {
+          if (disposed) return;
+          disposed = true;
+          d.dispose();
+        },
+      };
+      disposables.push(safe);
+      return safe;
     }
 
     const logger = pluginStore.getLogger(pluginId);
