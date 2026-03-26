@@ -8,6 +8,7 @@ import { repoSettingsStore } from "../stores/repoSettings";
 import { notificationsStore } from "../stores/notifications";
 import { mdTabsStore } from "../stores/mdTabs";
 import { contextMenuActionsStore } from "../stores/contextMenuActionsStore";
+import { sidebarPluginStore } from "../stores/sidebarPluginStore";
 
 import { pluginStore } from "../stores/pluginStore";
 import { markdownProviderRegistry } from "./markdownProviderRegistry";
@@ -321,6 +322,11 @@ function createPluginRegistry() {
           },
         };
         return track(contextMenuActionsStore.registerAction(pluginId, guardedAction));
+      },
+
+      registerSidebarPanel(options: import("../stores/sidebarPluginStore").SidebarPanelOptions) {
+        requireCapability(pluginId, capabilities, "ui:sidebar");
+        return track(sidebarPluginStore.registerPanel(pluginId, options));
       },
 
       async writePty(sessionId: string, data: string): Promise<void> {

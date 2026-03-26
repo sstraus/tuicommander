@@ -182,6 +182,38 @@ export interface StateChangeEvent {
 }
 
 // ---------------------------------------------------------------------------
+// Sidebar plugin panel items
+// ---------------------------------------------------------------------------
+
+/** An item displayed in a plugin's sidebar panel section. */
+export interface SidebarItem {
+  /** Unique item identifier (scoped to the panel) */
+  id: string;
+  /** Primary display text */
+  label: string;
+  /** Secondary display text (smaller, muted) */
+  subtitle?: string;
+  /** Inline SVG icon (fill="currentColor") */
+  icon?: string;
+  /** CSS color for the icon */
+  iconColor?: string;
+  /** Click handler */
+  onClick?: () => void;
+  /** Right-click context menu actions */
+  contextMenu?: SidebarItemAction[];
+}
+
+/** An action in a sidebar item's right-click context menu. */
+export interface SidebarItemAction {
+  /** Display label */
+  label: string;
+  /** Handler invoked when the user clicks the action */
+  action: () => void;
+  /** Whether the action is disabled */
+  disabled?: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Terminal context menu actions
 // ---------------------------------------------------------------------------
 
@@ -237,7 +269,8 @@ export type PluginCapability =
   | "ui:ticker"
   | "exec:cli"
   | "git:read"
-  | "ui:context-menu";
+  | "ui:context-menu"
+  | "ui:sidebar";
 
 /** Valid sound names for playNotificationSound — single source of truth */
 export const NOTIFICATION_SOUNDS = ["question", "error", "completion", "warning", "info"] as const;
@@ -433,6 +466,13 @@ export interface PluginHost {
    * captured at right-click time.
    */
   registerTerminalAction(action: TerminalAction): Disposable;
+
+  /**
+   * Register a collapsible panel section in the sidebar (below branch list).
+   * Requires "ui:sidebar" capability.
+   * Returns a handle to set items, badge, and dispose the panel.
+   */
+  registerSidebarPanel(options: import("../stores/sidebarPluginStore").SidebarPanelOptions): import("../stores/sidebarPluginStore").SidebarPanelHandle;
 
   /** Send input to a terminal session. Requires "pty:write" capability. */
   writePty(sessionId: string, data: string): Promise<void>;
