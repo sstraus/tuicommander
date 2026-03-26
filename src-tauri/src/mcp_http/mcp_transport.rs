@@ -248,12 +248,12 @@ fn native_tool_definitions() -> serde_json::Value {
         },
         {
             "name": "knowledge",
-            "description": "Cross-repo knowledge base powered by mdkb. Search docs, code, symbols, and call graphs across all repos in a workspace group.\n\nActions (pass as 'action' parameter):\n- search: Hybrid search (BM25 + semantic) across repos in a group. Requires query. Optional: group, scope (docs/memory/code/symbols), limit.\n- code_graph: Query call graph across repos. Requires name (symbol). Optional: group, direction (calls/callers/impact), max_depth.\n- status: Returns indexing status for all mdkb instances.\n- setup: Auto-provision mdkb upstream servers for all repos (or a specific group).",
+            "description": "Cross-repo knowledge base powered by mdkb (single instance). Search docs, code, symbols, and call graphs.\n\nActions (pass as 'action' parameter):\n- search: Hybrid search (BM25 + semantic). Requires query. Optional: root (repo path or '*' for all), scope (docs/memory/code/symbols), limit.\n- code_graph: Query call graph. Requires name (symbol). Optional: root, direction (calls/callers/impact), max_depth.\n- status: Returns mdkb upstream status.\n- setup: Auto-provision the mdkb upstream server.",
             "inputSchema": { "type": "object", "properties": {
                 "action": { "type": "string", "description": "One of: search, code_graph, status, setup" },
                 "query": { "type": "string", "description": "Search query text (action=search)" },
                 "name": { "type": "string", "description": "Symbol name to look up (action=code_graph)" },
-                "group": { "type": "string", "description": "Group name to scope the search. Omit to search all repos." },
+                "root": { "type": "string", "description": "Repo path to scope search. Use '*' for cross-repo (default for search)." },
                 "scope": { "type": "string", "description": "Search scope: docs, memory, code, symbols (action=search)" },
                 "direction": { "type": "string", "description": "Graph direction: calls, callers, impact (action=code_graph, default: calls)" },
                 "max_depth": { "type": "integer", "description": "Max traversal depth (action=code_graph, default: 3)" },
@@ -1310,162 +1310,51 @@ fn handle_notify(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Val
 // ---------------------------------------------------------------------------
 
 /// Slug a repo path for use as an upstream name: `mdkb-{last_component}`.
-fn mdkb_upstream_name(repo_path: &str) -> String {
-    let path = std::path::Path::new(repo_path);
-    // Use parent/name to reduce collision risk (e.g. /work/api vs /personal/api)
-    let mut parts: Vec<&str> = Vec::new();
-    if let Some(parent) = path.parent().and_then(|p| p.file_name()).and_then(|n| n.to_str()) {
-        parts.push(parent);
-    }
-    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-        parts.push(name);
-    }
-    let combined = if parts.is_empty() { "unknown".to_string() } else { parts.join("-") };
-    // Sanitize to [a-z0-9_-]
-    let slug: String = combined.to_lowercase().chars().map(|c| {
-        if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' }
-    }).collect();
-    format!("mdkb-{slug}")
-}
+/// Single upstream name for the global mdkb instance.
+const MDKB_UPSTREAM_NAME: &str = "mdkb";
 
-/// Get repo paths, optionally filtered by group name.
-fn get_repo_paths_for_group(group_filter: Option<&str>) -> Vec<String> {
-    let repo_data = crate::config::load_repositories();
-    let repo_order = repo_data.get("repoOrder")
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
-    let groups = repo_data.get("groups").cloned().unwrap_or(serde_json::json!({}));
 
-    // Build group→repos mapping
-    let mut group_repos: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
-    if let Some(groups_obj) = groups.as_object() {
-        for (_gid, group) in groups_obj {
-            let gname = group["name"].as_str().unwrap_or("").to_lowercase();
-            if let Some(order) = group["repoOrder"].as_array() {
-                let paths: Vec<String> = order.iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect();
-                group_repos.insert(gname, paths);
-            }
-        }
-    }
 
-    if let Some(filter) = group_filter {
-        let filter_lower = filter.to_lowercase();
-        group_repos.get(&filter_lower).cloned().unwrap_or_default()
-    } else {
-        // All repos
-        repo_order.iter()
-            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-            .collect()
-    }
-}
-
-/// Result of auto-provisioning mdkb upstreams.
-struct ProvisionResult {
-    created: Vec<String>,
-    skipped_registered: Vec<String>,
-    skipped_no_mdkb: Vec<String>,
-    errors: Vec<(String, String)>,
-}
-
-/// Auto-provision mdkb upstreams for repos that have a `.mdkb/` directory
-/// but are not yet registered in the upstream registry.
-async fn ensure_mdkb_provisioned(state: &Arc<AppState>, paths: &[String]) -> ProvisionResult {
+/// Ensure the single global mdkb upstream is registered and connected.
+/// Returns true if the upstream is ready, false if provisioning failed.
+async fn ensure_mdkb_provisioned(state: &Arc<AppState>) -> Result<(), String> {
     let registry = &state.mcp_upstream_registry;
-    let self_port = state.config.read().remote_access_port;
 
-    let mut result = ProvisionResult {
-        created: Vec::new(),
-        skipped_registered: Vec::new(),
-        skipped_no_mdkb: Vec::new(),
-        errors: Vec::new(),
+    // Already registered?
+    if registry.status(MDKB_UPSTREAM_NAME).is_some() {
+        return Ok(());
+    }
+
+    let self_port = state.config.read().remote_access_port;
+    let server = crate::mcp_upstream_config::UpstreamMcpServer {
+        id: uuid::Uuid::new_v4().to_string(),
+        name: MDKB_UPSTREAM_NAME.to_string(),
+        transport: crate::mcp_upstream_config::UpstreamTransport::Stdio {
+            command: "mdkb".to_string(),
+            args: vec!["serve".to_string()],
+            env: std::collections::HashMap::new(),
+            cwd: None, // global instance — mdkb uses its own config
+        },
+        enabled: true,
+        timeout_secs: 60,
+        tool_filter: None,
     };
 
-    // Collect servers to provision (filter already-registered and missing .mdkb/)
-    let mut to_provision = Vec::new();
-    for path in paths {
-        let name = mdkb_upstream_name(path);
-        if registry.status(&name).is_some() {
-            result.skipped_registered.push(name);
-            continue;
-        }
-        // Non-blocking filesystem check
-        let mdkb_path = std::path::PathBuf::from(path).join(".mdkb");
-        let is_dir = tokio::fs::metadata(&mdkb_path).await.map(|m| m.is_dir()).unwrap_or(false);
-        if !is_dir {
-            result.skipped_no_mdkb.push(name);
-            continue;
-        }
-        let server = crate::mcp_upstream_config::UpstreamMcpServer {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: name.clone(),
-            transport: crate::mcp_upstream_config::UpstreamTransport::Stdio {
-                command: "mdkb".to_string(),
-                args: vec!["serve".to_string()],
-                env: std::collections::HashMap::new(),
-                cwd: Some(path.clone()),
-            },
-            enabled: true,
-            timeout_secs: 60,
-            tool_filter: None,
-        };
-        to_provision.push((path.clone(), name, server));
-    }
+    let server_copy = server.clone();
+    registry.connect_upstream(server, Some(self_port)).await
+        .map_err(|e| format!("Failed to connect mdkb: {e}"))?;
+    tracing::info!(source = "knowledge", "Auto-provisioned global mdkb upstream");
 
-    if to_provision.is_empty() {
-        return result;
-    }
-
-    // Connect all upstreams concurrently
-    let futs: Vec<_> = to_provision.into_iter().map(|(path, name, server)| {
-        let registry = Arc::clone(&state.mcp_upstream_registry);
-        async move {
-            let server_copy = server.clone();
-            match registry.connect_upstream(server, Some(self_port)).await {
-                Ok(()) => {
-                    tracing::info!(source = "knowledge", repo = %path, "Auto-provisioned mdkb upstream");
-                    Ok((name, server_copy))
-                }
-                Err(e) => {
-                    tracing::warn!(source = "knowledge", repo = %path, "Auto-provision failed: {e}");
-                    Err((name, e))
-                }
-            }
-        }
-    }).collect();
-
-    let outcomes = futures_util::future::join_all(futs).await;
-    let mut new_servers = Vec::new();
-    for outcome in outcomes {
-        match outcome {
-            Ok((name, server)) => {
-                result.created.push(name);
-                new_servers.push(server);
-            }
-            Err((name, e)) => {
-                result.errors.push((name, e));
-            }
-        }
-    }
-
-    // Persist newly created servers (deduplicate by name to avoid corruption)
-    if !new_servers.is_empty() {
-        let mut config = crate::mcp_upstream_config::load_mcp_upstreams();
-        let existing_names: std::collections::HashSet<String> =
-            config.servers.iter().map(|s| s.name.clone()).collect();
-        for server in new_servers {
-            if !existing_names.contains(&server.name) {
-                config.servers.push(server);
-            }
-        }
+    // Persist
+    let mut config = crate::mcp_upstream_config::load_mcp_upstreams();
+    if !config.servers.iter().any(|s| s.name == MDKB_UPSTREAM_NAME) {
+        config.servers.push(server_copy);
         if let Err(e) = crate::config::save_json_config("mcp-upstreams.json", &config) {
-            tracing::warn!(source = "knowledge", "Failed to persist mdkb upstreams: {e}");
+            tracing::warn!(source = "knowledge", "Failed to persist mdkb upstream: {e}");
         }
     }
 
-    result
+    Ok(())
 }
 
 async fn handle_knowledge(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
@@ -1474,41 +1363,20 @@ async fn handle_knowledge(state: &Arc<AppState>, args: &serde_json::Value) -> se
         Err(e) => return e,
     };
 
-    let group_filter = args["group"].as_str();
-
     match action {
         "setup" => {
-            // Auto-provision mdkb upstreams for all repos (or repos in a group)
-            let paths = get_repo_paths_for_group(group_filter);
-            if paths.is_empty() {
-                return serde_json::json!({"error": "No repos found. Add repos to the workspace first."});
+            match ensure_mdkb_provisioned(state).await {
+                Ok(()) => serde_json::json!({"ok": true, "upstream": MDKB_UPSTREAM_NAME}),
+                Err(e) => serde_json::json!({"error": e}),
             }
-
-            let r = ensure_mdkb_provisioned(state, &paths).await;
-            let errors: Vec<serde_json::Value> = r.errors.iter()
-                .map(|(name, e)| serde_json::json!({"name": name, "error": e}))
-                .collect();
-            serde_json::json!({
-                "created": r.created,
-                "skipped": r.skipped_registered,
-                "skipped_no_mdkb": r.skipped_no_mdkb,
-                "errors": errors,
-            })
         }
 
         "status" => {
-            // Show mdkb upstream status for all repos
-            let paths = get_repo_paths_for_group(group_filter);
             let registry = &state.mcp_upstream_registry;
-            let mut statuses = Vec::new();
-            for path in &paths {
-                let name = mdkb_upstream_name(path);
-                let status = registry.status(&name)
-                    .map(|s| format!("{s:?}"))
-                    .unwrap_or_else(|| "not provisioned".to_string());
-                statuses.push(serde_json::json!({"repo": path, "upstream": name, "status": status}));
-            }
-            serde_json::json!(statuses)
+            let status = registry.status(MDKB_UPSTREAM_NAME)
+                .map(|s| format!("{s:?}"))
+                .unwrap_or_else(|| "not provisioned".to_string());
+            serde_json::json!({"upstream": MDKB_UPSTREAM_NAME, "status": status})
         }
 
         "search" => {
@@ -1519,28 +1387,25 @@ async fn handle_knowledge(state: &Arc<AppState>, args: &serde_json::Value) -> se
             let scope = args["scope"].as_str();
             let limit = args["limit"].as_u64().unwrap_or(10);
 
-            let paths = get_repo_paths_for_group(group_filter);
-            ensure_mdkb_provisioned(state, &paths).await;
-            let registry = &state.mcp_upstream_registry;
-            let mut all_results = Vec::new();
-
-            for path in &paths {
-                let name = mdkb_upstream_name(path);
-                let tool_name = format!("{name}__search");
-                let mut tool_args = serde_json::json!({"query": query, "limit": limit});
-                if let Some(s) = scope {
-                    tool_args["scope"] = serde_json::json!(s);
-                }
-                match registry.proxy_tool_call(&tool_name, tool_args).await {
-                    Ok(result) => {
-                        all_results.push(serde_json::json!({"repo": path, "results": result}));
-                    }
-                    Err(e) => {
-                        all_results.push(serde_json::json!({"repo": path, "error": e}));
-                    }
-                }
+            if let Err(e) = ensure_mdkb_provisioned(state).await {
+                return serde_json::json!({"error": e});
             }
-            serde_json::json!(all_results)
+            let registry = &state.mcp_upstream_registry;
+            let tool_name = format!("{MDKB_UPSTREAM_NAME}__search");
+            let mut tool_args = serde_json::json!({"query": query, "limit": limit});
+            if let Some(s) = scope {
+                tool_args["scope"] = serde_json::json!(s);
+            }
+            // Use root="*" for cross-repo search, or specific root if provided
+            if let Some(root) = args["root"].as_str() {
+                tool_args["root"] = serde_json::json!(root);
+            } else {
+                tool_args["root"] = serde_json::json!("*");
+            }
+            match registry.proxy_tool_call(&tool_name, tool_args).await {
+                Ok(result) => result,
+                Err(e) => serde_json::json!({"error": e}),
+            }
         }
 
         "code_graph" => {
@@ -1551,29 +1416,23 @@ async fn handle_knowledge(state: &Arc<AppState>, args: &serde_json::Value) -> se
             let direction = args["direction"].as_str().unwrap_or("calls");
             let max_depth = args["max_depth"].as_u64().unwrap_or(3);
 
-            let paths = get_repo_paths_for_group(group_filter);
-            ensure_mdkb_provisioned(state, &paths).await;
-            let registry = &state.mcp_upstream_registry;
-            let mut all_results = Vec::new();
-
-            for path in &paths {
-                let name = mdkb_upstream_name(path);
-                let tool_name = format!("{name}__code_graph");
-                let tool_args = serde_json::json!({
-                    "name": symbol_name,
-                    "direction": direction,
-                    "max_depth": max_depth,
-                });
-                match registry.proxy_tool_call(&tool_name, tool_args).await {
-                    Ok(result) => {
-                        all_results.push(serde_json::json!({"repo": path, "results": result}));
-                    }
-                    Err(e) => {
-                        all_results.push(serde_json::json!({"repo": path, "error": e}));
-                    }
-                }
+            if let Err(e) = ensure_mdkb_provisioned(state).await {
+                return serde_json::json!({"error": e});
             }
-            serde_json::json!(all_results)
+            let registry = &state.mcp_upstream_registry;
+            let tool_name = format!("{MDKB_UPSTREAM_NAME}__code_graph");
+            let mut tool_args = serde_json::json!({
+                "name": symbol_name,
+                "direction": direction,
+                "max_depth": max_depth,
+            });
+            if let Some(root) = args["root"].as_str() {
+                tool_args["root"] = serde_json::json!(root);
+            }
+            match registry.proxy_tool_call(&tool_name, tool_args).await {
+                Ok(result) => result,
+                Err(e) => serde_json::json!({"error": e}),
+            }
         }
 
         other => serde_json::json!({"error": format!(
