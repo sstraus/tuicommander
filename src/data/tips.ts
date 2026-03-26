@@ -244,4 +244,9 @@ export const TIPS: Tip[] = [
     description: "Sign in to GitHub from Settings > GitHub for automatic PR and CI monitoring. No need to manage tokens manually.",
     shortcut: null,
   },
+  {
+    feature: "MCP Per-Repo",
+    description: "Choose which upstream MCP servers are active for each repo. Toggle servers on/off per-repo, or share the list via .tuic.json.",
+    shortcut: `${mod}+Shift+M`,
+  },
 ];

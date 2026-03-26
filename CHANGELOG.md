@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **MCP Per-Repo Scoping** — Each repo can define which upstream MCP servers are relevant via an allowlist in repo settings (3-layer: per-repo > `.tuic.json` > defaults). Quick toggle via **Cmd+Shift+M** popup with live status, transport badges, tool counts, and per-repo checkboxes
+
+### Fixed
+- **MCP upstream URL overflow** — Long URLs in the Services tab no longer push action buttons off-screen; URLs now truncate with ellipsis
+
 ## [0.9.7] - 2026-03-26
 
 ### Added

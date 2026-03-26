@@ -782,6 +782,7 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - MCP connection info: bridge sidecar auto-installs configs for supported agents (Claude Code, Cursor, etc.)
 - TUIC native tool toggles: enable/disable individual MCP tools (`session`, `git`, `agent`, `config`, `workspace`, `notify`, `knowledge`, `plugin_dev_guide`) to restrict what AI agents can access
 - MCP Upstreams: add/edit/remove upstream MCP servers (HTTP or stdio with optional `cwd`), per-upstream enable/disable, reconnect, credential storage via OS keyring, live status dots, tool count and metrics. Saved upstreams auto-connect on boot
+- MCP Per-Repo Scoping: each repo can define which upstream MCP servers are relevant via an allowlist in repo settings (3-layer: per-repo > `.tuic.json` > defaults). Null/empty allowlist = all servers. Quick toggle via **Cmd+Shift+M** popup
 - Remote access: port, username, password (bcrypt hash), URL display, QR code, token duration, IPv6 dual-stack, LAN auth bypass
 - Voice dictation: full setup (see section 9)
 
@@ -1221,6 +1222,12 @@ TUICommander aggregates upstream MCP servers and exposes them through its own `/
 - Allow list: only matching tools are exposed
 - Deny list: all tools except matching ones are exposed
 - Pattern syntax: exact match or trailing-`*` prefix glob
+
+### 19.6.1 Per-Repo Scoping
+- Each repository can define an allowlist of upstream server names in `RepoSettings.mcpUpstreams`
+- 3-layer merge: per-repo user settings > `.tuic.json` (team-shareable) > defaults (null = all servers)
+- Quick toggle via **Cmd+Shift+M** popup: shows all upstream servers with status, transport, tool count, and per-repo checkboxes
+- Toggling a checkbox immediately persists to repo settings (reactive, no refresh needed)
 
 ### 19.7 Hot-Reload
 - Adding, removing, or changing upstreams takes effect on save without restarting TUIC or AI clients

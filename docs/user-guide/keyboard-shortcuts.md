@@ -94,6 +94,7 @@ Font size range: 8px to 32px, step 2px per action.
 | `Cmd+J` | Task queue |
 | `Cmd+P` | Toggle plan panel |
 | `Cmd+Shift+E` | Toggle error log |
+| `Cmd+Shift+M` | MCP servers popup (per-repo) |
 
 Note: File browser and Markdown panels are mutually exclusive — opening one closes the other.
 
@@ -232,5 +233,6 @@ Hold to record, release to transcribe and inject text into active terminal.
 | `command-palette` | `Cmd+Shift+P` | Command palette |
 | `activity-dashboard` | `Cmd+Shift+A` | Activity dashboard |
 | `toggle-error-log` | `Cmd+Shift+E` | Toggle error log |
+| `toggle-mcp-popup` | `Cmd+Shift+M` | MCP servers popup (per-repo) |
 | `toggle-plan` | `Cmd+P` | Toggle plan panel |
 | `switch-branch-1..9` | `Cmd+Ctrl+1..9` | Switch to branch N |
