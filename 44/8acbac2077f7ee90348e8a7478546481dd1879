@@ -1,0 +1,23 @@
+src-tauri/tauri.conf.json
+  7ec2f77b48334f66 73-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.19",
+  "base_commit_sha": "448acbac2077f7ee90348e8a7478546481dd1879",
+  "prompts": {
+    "7ec2f77b48334f66": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f8f8170c-3121-4579-8bb4-b76ac4f35052",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 2,
+      "total_deletions": 1,
+      "accepted_lines": 2,
+      "overriden_lines": 0
+    }
+  }
+}
