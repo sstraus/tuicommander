@@ -777,7 +777,14 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
   }
 
   async function removeUpstream(id: string, name: string) {
-    if (!confirm(`Remove upstream "${name}"?`)) return;
+    let confirmed: boolean;
+    try {
+      const { confirm } = await import("@tauri-apps/plugin-dialog");
+      confirmed = await confirm(`Remove upstream "${name}"?`, { title: "Remove MCP upstream", kind: "warning" });
+    } catch {
+      confirmed = window.confirm(`Remove upstream "${name}"?`);
+    }
+    if (!confirmed) return;
     await rpc("delete_mcp_upstream_credential", { name }).catch((e) => appLogger.error("settings", "Failed to delete MCP upstream credential", { error: String(e) }));
     await saveUpstreams(upstreams().filter(s => s.id !== id));
   }
