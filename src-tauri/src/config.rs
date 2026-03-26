@@ -588,6 +588,9 @@ pub(crate) struct RepoLocalConfig {
     pub(crate) after_merge: Option<WorktreeAfterMerge>,
     #[serde(default)]
     pub(crate) auto_delete_on_pr_close: Option<AutoDeleteOnPrClose>,
+    /// Allowlist of upstream MCP server names relevant to this repo (None = all)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) mcp_upstreams: Option<Vec<String>>,
 }
 
 const REPO_LOCAL_CONFIG_FILE: &str = ".tuic.json";
@@ -658,6 +661,9 @@ pub(crate) struct RepoSettingsEntry {
     /// Auto-delete local branch when PR is merged/closed
     #[serde(default)]
     pub(crate) auto_delete_on_pr_close: Option<AutoDeleteOnPrClose>,
+    /// Allowlist of upstream MCP server names relevant to this repo (None = all)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) mcp_upstreams: Option<Vec<String>>,
 }
 
 impl RepoSettingsEntry {

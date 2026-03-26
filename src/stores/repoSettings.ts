@@ -41,6 +41,8 @@ export interface RepoSettings {
   autoFetchIntervalMinutes: number | null;
   /** Auto-delete local branch on PR merge/close (null = inherit, off/ask/auto) */
   autoDeleteOnPrClose: AutoDeleteOnPrClose | null;
+  /** Allowlist of upstream MCP server names for this repo (null = all servers) */
+  mcpUpstreams: string[] | null;
 }
 
 /** Fully resolved settings with no nulls — use getEffective() to obtain */
@@ -64,6 +66,8 @@ export interface EffectiveRepoSettings {
   afterMerge: WorktreeAfterMerge;
   autoFetchIntervalMinutes: number;
   autoDeleteOnPrClose: AutoDeleteOnPrClose;
+  /** Resolved MCP upstream allowlist (null = all servers) */
+  mcpUpstreams: string[] | null;
 }
 
 /** Fields that can be overridden per-repo (all others are repo-specific) */
@@ -74,6 +78,7 @@ const OVERRIDABLE_NULL_DEFAULTS: Pick<
   | "autoArchiveMerged" | "orphanCleanup" | "prMergeStrategy" | "afterMerge"
   | "autoFetchIntervalMinutes"
   | "autoDeleteOnPrClose"
+  | "mcpUpstreams"
 > = {
   baseBranch: null,
   copyIgnoredFiles: null,
@@ -91,6 +96,7 @@ const OVERRIDABLE_NULL_DEFAULTS: Pick<
   afterMerge: null,
   autoFetchIntervalMinutes: null,
   autoDeleteOnPrClose: null,
+  mcpUpstreams: null,
 };
 
 /** Repo-local config loaded from .tuic.json (team-shareable, snake_case from Rust) */
@@ -106,6 +112,7 @@ interface RepoLocalConfig {
   pr_merge_strategy?: MergeStrategy;
   after_merge?: WorktreeAfterMerge;
   auto_delete_on_pr_close?: AutoDeleteOnPrClose;
+  mcp_upstreams?: string[];
 }
 
 /** Repository settings store state */
@@ -221,6 +228,7 @@ function createRepoSettingsStore() {
         afterMerge: settings.afterMerge ?? local?.after_merge ?? defaults.afterMerge,
         autoFetchIntervalMinutes: settings.autoFetchIntervalMinutes ?? defaults.autoFetchIntervalMinutes,
         autoDeleteOnPrClose: settings.autoDeleteOnPrClose ?? local?.auto_delete_on_pr_close ?? defaults.autoDeleteOnPrClose,
+        mcpUpstreams: settings.mcpUpstreams ?? local?.mcp_upstreams ?? null,
       };
     },
 
