@@ -1089,6 +1089,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
         // The GPU texture can corrupt during display:none periods.
         if (wasActuallyHidden && terminal) {
           terminal.clearTextureAtlas();
+          // Force full redraw after atlas rebuild to avoid gradual recomposition
+          requestAnimationFrame(() => terminal!.refresh(0, terminal!.rows - 1));
           wasHidden = false;
         }
         // Only fit if the terminal was actually hidden or never fitted.
