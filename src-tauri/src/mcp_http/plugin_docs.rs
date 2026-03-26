@@ -195,9 +195,12 @@ host.getGitDiff(repoPath, scope?)       // unified diff string (scope: "staged" 
 | `await host.renamePath(from: string, to: string): Promise<void>` | `fs:rename` |
 | `await host.httpFetch(url: string, options?): Promise<HttpResponse>` | `net:http` |
 | `host.registerTerminalAction({ id, label, action(ctx), disabled?(ctx) }): Disposable` | `ui:context-menu` |
+| `host.registerContextMenuAction({ id, label, target, action(ctx), disabled?(ctx) }): Disposable` | `ui:context-menu` |
 | `host.registerSidebarPanel({ id, label, icon?, priority?, collapsed? }): SidebarPanelHandle` | `ui:sidebar` |
 
 TerminalActionContext (passed to action/disabled at right-click time): `{ sessionId: string | null, repoPath: string | null }`. Actions appear in terminal right-click "Actions" submenu. Submenu hidden when no actions registered. Stale handlers (after plugin unload) are no-ops.
+
+ContextMenuAction targets: `"terminal"`, `"branch"`, `"repo"`, `"tab"`. ContextMenuContext: `{ target, sessionId?, repoPath?, branchName?, tabId? }`. Actions appear after built-in items in the respective context menus.
 
 SidebarPanelHandle: `{ setItems(items), setBadge(text), dispose() }`. SidebarItem: `{ id, label, subtitle?, icon?, iconColor?, onClick?, contextMenu?: [{ label, action, disabled? }] }`. Panels appear below branches in the sidebar, scoped per-repo. Badge shows a counter pill on the header.
 

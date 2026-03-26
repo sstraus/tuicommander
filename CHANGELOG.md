@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - **Sidebar Plugin Panels** — New `ui:sidebar` capability lets plugins register collapsible panel sections in the sidebar below the branch list. Panels display structured data (items with icon, label, subtitle, badge, context menu) scoped per-repo. Built-in plan plugin migrated from Activity Center to sidebar panel
+- **Multi-target context menu actions** — Plugins can now register actions in branch, repo, and tab context menus (not just terminal). New `registerContextMenuAction()` API with target types and typed context
+- **Open in GitHub** — Branch and repo right-click context menus now include "Open in GitHub" (opens branch/repo on github.com) and "Open PR" (direct link to the PR if one exists)
 - **Startup notification suppression** — PTY sessions now suppress Question, RateLimit, and ApiError notifications during the initial output burst (e.g. `claude --continue` replaying conversation history). Grace ends after 5s without output or 120s max
 
 ### Fixed

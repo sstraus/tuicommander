@@ -685,7 +685,7 @@ panel.setBadge("1");
 - Badge appears as a small counter pill on the section header
 - On plugin unload, panels are automatically removed
 
-### Tier 3f: Terminal Context Menu Actions (capability-gated)
+### Tier 3f: Context Menu Actions (capability-gated)
 
 #### host.registerTerminalAction(action) -> Disposable
 
@@ -726,7 +726,50 @@ const d = host.registerTerminalAction({
 - `disabled` callback is re-evaluated each time the context menu opens
 - On plugin unload, actions are automatically removed; stale handler references are no-ops
 
-### Tier 3f: Credential Access (capability-gated)
+#### host.registerContextMenuAction(action) -> Disposable
+
+Register an action in context menus for a specific target type. **Requires `"ui:context-menu"` capability.**
+
+```typescript
+type ContextMenuTarget = "terminal" | "branch" | "repo" | "tab";
+
+interface ContextMenuAction {
+  id: string;
+  label: string;
+  icon?: string;              // Inline SVG
+  target: ContextMenuTarget;
+  action: (ctx: ContextMenuContext) => void;
+  disabled?: (ctx: ContextMenuContext) => boolean;
+}
+
+interface ContextMenuContext {
+  target: ContextMenuTarget;
+  sessionId?: string;     // terminal, tab
+  repoPath?: string;      // branch, repo, terminal
+  branchName?: string;    // branch only
+  tabId?: string;         // tab only
+}
+```
+
+Example:
+
+```typescript
+host.registerContextMenuAction({
+  id: "deploy",
+  label: "Deploy Branch",
+  target: "branch",
+  action: (ctx) => {
+    if (ctx.branchName) deploy(ctx.repoPath, ctx.branchName);
+  },
+});
+```
+
+**Behavior:**
+- Actions appear after built-in items, separated by a divider
+- `disabled` callback is re-evaluated each time the context menu opens
+- On plugin unload, actions are automatically removed
+
+### Tier 3g: Credential Access (capability-gated)
 
 #### host.readCredential(serviceName) -> Promise<string | null>
 
