@@ -110,8 +110,8 @@ fn event_payload(event: &AppEvent) -> serde_json::Value {
         AppEvent::RepoChanged { repo_path } => {
             serde_json::json!({ "repo_path": repo_path })
         }
-        AppEvent::SessionCreated { session_id, cwd } => {
-            serde_json::json!({ "session_id": session_id, "cwd": cwd })
+        AppEvent::SessionCreated { session_id, cwd, agent_type } => {
+            serde_json::json!({ "session_id": session_id, "cwd": cwd, "agent_type": agent_type })
         }
         AppEvent::SessionClosed { session_id, reason } => {
             serde_json::json!({ "session_id": session_id, "reason": reason })

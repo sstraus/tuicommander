@@ -888,9 +888,11 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
 
             // Broadcast session-created to SSE/WebSocket consumers
             let cwd_str = args["cwd"].as_str().map(|s| s.to_string());
+            let agent_type_str = args["agent_type"].as_str().map(|s| s.to_string());
             let _ = state.event_bus.send(crate::state::AppEvent::SessionCreated {
                 session_id: session_id.clone(),
                 cwd: cwd_str.clone(),
+                agent_type: agent_type_str,
             });
 
             let app_handle = state.app_handle.read().clone();

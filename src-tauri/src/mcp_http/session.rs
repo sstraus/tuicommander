@@ -342,6 +342,7 @@ pub(super) fn spawn_pty_session(
     let _ = state.event_bus.send(crate::state::AppEvent::SessionCreated {
         session_id: session_id.clone(),
         cwd: cwd.clone(),
+        agent_type: None,
     });
 
     // Use full reader thread (with Tauri events) when AppHandle is available,

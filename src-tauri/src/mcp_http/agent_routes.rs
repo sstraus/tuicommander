@@ -224,6 +224,7 @@ pub(super) async fn spawn_agent_session(
     let _ = state.event_bus.send(crate::state::AppEvent::SessionCreated {
         session_id: session_id.clone(),
         cwd: body.cwd.clone(),
+        agent_type: body.agent_type.clone(),
     });
 
     let app_handle = state.app_handle.read().clone();

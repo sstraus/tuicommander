@@ -1258,6 +1258,7 @@ mod tests {
                 after_merge: None,
                 auto_fetch_interval_minutes: None,
                 auto_delete_on_pr_close: None,
+                mcp_upstreams: None,
             },
         );
         let loaded: RepoSettingsMap =

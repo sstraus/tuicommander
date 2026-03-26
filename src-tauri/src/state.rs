@@ -35,6 +35,7 @@ pub enum AppEvent {
     SessionCreated {
         session_id: String,
         cwd: Option<String>,
+        agent_type: Option<String>,
     },
     #[serde(rename = "session-closed")]
     SessionClosed {
@@ -1065,9 +1066,10 @@ impl AppState {
             .as_millis() as u64;
 
         match event {
-            AppEvent::SessionCreated { session_id, .. } => {
+            AppEvent::SessionCreated { session_id, agent_type, .. } => {
                 state.session_states.insert(session_id.clone(), SessionState {
                     last_activity_ms: now_ms,
+                    agent_type: agent_type.clone(),
                     ..Default::default()
                 });
             }
