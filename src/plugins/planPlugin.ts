@@ -3,17 +3,13 @@ import { mdTabsStore } from "../stores/mdTabs";
 import { appLogger } from "../stores/appLogger";
 import { stripFrontmatter, extractPlanMetadata } from "../utils/frontmatter";
 import type { DirEntry } from "../types/fs";
-import type { MarkdownProvider, PluginHost, TuiPlugin, SidebarItem } from "./types";
-import type { SidebarPanelHandle } from "../stores/sidebarPluginStore";
+import type { MarkdownProvider, PluginHost, TuiPlugin } from "./types";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 const PLUGIN_ID = "plan";
-
-/** Statuses that appear in the sidebar (active work). Everything else goes to the full panel. */
-const ACTIVE_STATUSES = new Set(["in_progress", "in progress", "approved", "designed"]);
 
 // Inline document SVG icon
 const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor">
@@ -44,12 +40,6 @@ function relativePath(absolutePath: string, repoPath: string | null): string {
   return absolutePath;
 }
 
-/** Check if a status is "active" (should appear in sidebar). */
-function isActiveStatus(status: string | null | undefined): boolean {
-  if (!status) return false;
-  return ACTIVE_STATUSES.has(status.toLowerCase().trim());
-}
-
 // ---------------------------------------------------------------------------
 // MarkdownProvider implementation
 // ---------------------------------------------------------------------------
@@ -78,7 +68,6 @@ interface PlanEntry {
   title: string;
   status: string | null;
   effort: string | null;
-  enriched: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -115,7 +104,7 @@ function buildAllPlansHtml(plans: Map<string, PlanEntry>, repoPath: string | nul
       rows += `<tr data-path="${entry.path}" style="cursor:pointer">
         <td>${entry.title}</td>
         <td><span class="${badgeClass}">${status}</span></td>
-        <td>${entry.effort ?? "—"}</td>
+        <td>${entry.effort ?? "\u2014"}</td>
         <td style="color:var(--fg-muted);font-size:var(--font-2xs)">${relPath}</td>
       </tr>`;
     }
@@ -150,7 +139,6 @@ function buildAllPlansHtml(plans: Map<string, PlanEntry>, repoPath: string | nul
 
 class PlanPlugin implements TuiPlugin {
   readonly id = PLUGIN_ID;
-  private panelHandle: SidebarPanelHandle | null = null;
   private plans = new Map<string, PlanEntry>();
   private repoPath: string | null = null;
 
@@ -158,21 +146,13 @@ class PlanPlugin implements TuiPlugin {
     this.plans.clear();
     this.repoPath = host.getActiveRepoPath();
 
-    this.panelHandle = host.registerSidebarPanel({
-      id: "active-plans",
-      label: "ACTIVE PLANS",
-      icon: ICON_SVG,
-      priority: 10,
-      collapsed: false,
-    });
-
-    // Context menu: "View All Plans" opens a full panel
+    // Context menu + Command Palette: "View All Plans" opens a panel
     host.registerTerminalAction({
       id: "view-all-plans",
       label: "View All Plans",
       action: () => {
         const html = buildAllPlansHtml(this.plans, this.repoPath);
-        const handle = host.openPanel({
+        host.openPanel({
           id: "all-plans",
           title: "All Plans",
           html,
@@ -183,8 +163,6 @@ class PlanPlugin implements TuiPlugin {
             }
           },
         });
-        // Update handle reference for refreshes — but panel is static snapshot
-        void handle;
       },
       disabled: () => this.plans.size === 0,
     });
@@ -218,7 +196,7 @@ class PlanPlugin implements TuiPlugin {
     }
   }
 
-  /** Add or update a plan entry and refresh the sidebar panel. */
+  /** Add or update a plan entry, then enrich with file metadata. */
   private addPlan(absolutePath: string): void {
     if (!this.plans.has(absolutePath)) {
       this.plans.set(absolutePath, {
@@ -226,7 +204,6 @@ class PlanPlugin implements TuiPlugin {
         title: displayName(absolutePath),
         status: null,
         effort: null,
-        enriched: false,
       });
     }
     this.enrichPlan(absolutePath);
@@ -255,45 +232,13 @@ class PlanPlugin implements TuiPlugin {
         const meta = extractPlanMetadata(raw);
         const entry = this.plans.get(absolutePath);
         if (!entry) return;
-
         entry.title = meta.title ?? displayName(absolutePath);
         entry.status = meta.status ?? null;
         entry.effort = meta.effort ?? null;
-        entry.enriched = true;
-        this.refreshPanel();
       })
       .catch(() => {
-        // File read failed — mark as enriched (with no data) to avoid retry
-        const entry = this.plans.get(absolutePath);
-        if (entry) {
-          entry.enriched = true;
-          this.refreshPanel();
-        }
+        // File read failed — keep fallback title
       });
-  }
-
-  /** Rebuild sidebar items — only active plans shown. */
-  private refreshPanel(): void {
-    if (!this.panelHandle) return;
-    const items: SidebarItem[] = [];
-    for (const [, entry] of this.plans) {
-      // Only show plans with active status in sidebar
-      if (!isActiveStatus(entry.status)) continue;
-      const relPath = relativePath(entry.path, this.repoPath);
-      items.push({
-        id: `plan:${entry.path}`,
-        label: entry.title,
-        subtitle: entry.status
-          ? `${entry.status}${entry.effort ? ` · ${entry.effort}` : ""}`
-          : relPath,
-        icon: ICON_SVG,
-        onClick: () => {
-          mdTabsStore.addVirtual(entry.title, contentUri(entry.path));
-        },
-      });
-    }
-    this.panelHandle.setItems(items);
-    this.panelHandle.setBadge(items.length > 0 ? String(items.length) : null);
   }
 
   /** Get current plan entries (for testing). */
@@ -302,7 +247,6 @@ class PlanPlugin implements TuiPlugin {
   }
 
   onunload(): void {
-    this.panelHandle = null;
     this.plans.clear();
     this.repoPath = null;
   }
@@ -311,7 +255,7 @@ class PlanPlugin implements TuiPlugin {
 const planPluginInstance = new PlanPlugin();
 export const planPlugin: TuiPlugin = planPluginInstance;
 
-/** Scan a repo's plans/ directory and populate the sidebar panel.
+/** Scan a repo's plans/ directory and populate the plans panel.
  *  Safe to call multiple times — uses stable IDs for dedup. */
 export function scanPlans(repoPath: string): void {
   planPluginInstance.scanPlansDirectory(repoPath);
