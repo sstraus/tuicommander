@@ -939,7 +939,7 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
                       </span>
                     </Show>
                   </div>
-                  <div class={s.hint} style={{ margin: 0, "font-family": "monospace", "font-size": "11px" }}>
+                  <div class={s.hint} style={{ margin: 0, "font-family": "monospace", "font-size": "11px", overflow: "hidden", "text-overflow": "ellipsis", "white-space": "nowrap" }}>
                     {server.transport.type === "http"
                       ? server.transport.url
                       : server.transport.command + (server.transport.args?.length ? " " + server.transport.args.join(" ") : "")}
@@ -954,9 +954,10 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
                     )}
                   </Show>
                 </div>
-                {/* Edit */}
+                {/* Action buttons — never shrink */}
                 <button
                   class={s.copyBtn}
+                  style={{ "flex-shrink": 0 }}
                   title="Edit"
                   onClick={() => isEditing() ? setEditingId(null) : startEdit(server)}
                 >
@@ -967,6 +968,7 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
                 {/* Reconnect */}
                 <button
                   class={s.copyBtn}
+                  style={{ "flex-shrink": 0 }}
                   title="Reconnect"
                   onClick={() => rpc("reconnect_mcp_upstream", { name: server.name }).catch(e => appLogger.warn("network", String(e)))}
                 >
@@ -980,7 +982,7 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
                   class={s.copyBtn}
                   title="Remove"
                   onClick={() => removeUpstream(server.id, server.name)}
-                  style={{ color: "var(--error, #e06c75)" }}
+                  style={{ color: "var(--error, #e06c75)", "flex-shrink": 0 }}
                 >
                   <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
                     <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
