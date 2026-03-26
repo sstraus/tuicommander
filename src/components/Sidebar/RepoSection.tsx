@@ -937,8 +937,8 @@ export const RepoSection: Component<{
           </Show>
         </div>
       </Show>
-      <Show when={props.repo.expanded && !props.repo.collapsed && sidebarPluginStore.getPanels().length > 0}>
-        <For each={sidebarPluginStore.getPanels()}>
+      <Show when={props.repo.expanded && !props.repo.collapsed}>
+        <For each={sidebarPluginStore.getPanels().filter((p) => p.items.length > 0)}>
           {(panel) => <SidebarPluginSection panel={panel} />}
         </For>
       </Show>
