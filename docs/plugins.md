@@ -621,7 +621,71 @@ All standard elements (buttons, inputs, tables) will look correct automatically.
 
 **Security:** The iframe uses `sandbox="allow-scripts"` without `allow-same-origin`, blocking access to Tauri IPC and the parent page DOM. The `close-panel` message type is handled as a system message; all other messages are routed to the `onMessage` callback.
 
-### Tier 3e: Terminal Context Menu Actions (capability-gated)
+### Tier 3e: Sidebar Plugin Panels (capability-gated)
+
+#### host.registerSidebarPanel(options) -> SidebarPanelHandle
+
+Register a collapsible panel section in the sidebar, displayed below the branch list for each repo. **Requires `"ui:sidebar"` capability.**
+
+Panels display structured data (not HTML) — the app renders items natively for visual consistency with the rest of the sidebar.
+
+```typescript
+interface SidebarPanelOptions {
+  id: string;              // Unique panel ID (scoped to plugin)
+  label: string;           // Section header text
+  icon?: string;           // Inline SVG for header
+  priority?: number;       // Lower = higher in sidebar (default 100)
+  collapsed?: boolean;     // Initial collapsed state (default true)
+}
+
+interface SidebarPanelHandle {
+  setItems(items: SidebarItem[]): void;     // Replace all items
+  setBadge(text: string | null): void;      // Header badge (e.g. "3")
+  dispose(): void;                          // Remove panel
+}
+
+interface SidebarItem {
+  id: string;              // Unique item ID (scoped to panel)
+  label: string;           // Primary text
+  subtitle?: string;       // Secondary text (smaller, muted)
+  icon?: string;           // Inline SVG (fill="currentColor")
+  iconColor?: string;      // CSS color
+  onClick?: () => void;    // Click handler
+  contextMenu?: SidebarItemAction[];  // Right-click actions
+}
+
+interface SidebarItemAction {
+  label: string;
+  action: () => void;
+  disabled?: boolean;
+}
+```
+
+Example:
+
+```typescript
+const panel = host.registerSidebarPanel({
+  id: "active-plans",
+  label: "ACTIVE PLANS",
+  icon: '<svg ...>...</svg>',
+  priority: 10,
+  collapsed: false,
+});
+
+panel.setItems([
+  { id: "plan-1", label: "Feature Plan", subtitle: "In Progress · M", onClick: () => openPlan() },
+]);
+panel.setBadge("1");
+```
+
+**Behavior:**
+- Panels appear inside `RepoSection`, below branches, only when the repo is expanded
+- Items are rendered as native sidebar list items (same style as branches)
+- Right-click on items shows a context menu with plugin-defined actions
+- Badge appears as a small counter pill on the section header
+- On plugin unload, panels are automatically removed
+
+### Tier 3f: Terminal Context Menu Actions (capability-gated)
 
 #### host.registerTerminalAction(action) -> Disposable
 
@@ -817,6 +881,7 @@ Capabilities gate access to Tier 3 and Tier 4 methods. Declare them in `manifest
 | `exec:cli` | `host.execCli()` | Can execute whitelisted CLI binaries (see below) |
 | `git:read` | `host.getGitBranches()`, `host.getRecentCommits()`, `host.getGitDiff()` | Read-only access to git repository state |
 | `ui:context-menu` | `host.registerTerminalAction()` | Can add actions to the terminal right-click "Actions" submenu |
+| `ui:sidebar` | `host.registerSidebarPanel()` | Can register collapsible panel sections in the sidebar |
 
 Tier 1, Tier 2, and plugin data commands are always available without capabilities.
 

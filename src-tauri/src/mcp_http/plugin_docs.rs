@@ -32,7 +32,7 @@ Constraints:
 - `id` must match directory name exactly, non-empty
 - `main` must be a filename only (no path separators or `..`)
 - `minAppVersion` must be <= current app version (current: 0.3.x)
-- `capabilities`: subset of `pty:write`, `ui:markdown`, `ui:sound`, `ui:panel`, `ui:ticker`, `ui:context-menu`, `net:http`, `credentials:read`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`, `fs:write`, `fs:rename`, `exec:cli`, `git:read`
+- `capabilities`: subset of `pty:write`, `ui:markdown`, `ui:sound`, `ui:panel`, `ui:ticker`, `ui:context-menu`, `ui:sidebar`, `net:http`, `credentials:read`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`, `fs:write`, `fs:rename`, `exec:cli`, `git:read`
 - `allowedUrls`: URL patterns for `net:http` (supports `*` wildcard for path prefix matching)
 - `agentTypes`: optional array of agent type strings. When set, output watchers and structured event handlers only fire for terminals running a matching agent. Omit or use `[]` for universal plugins. Valid values: `claude`, `gemini`, `opencode`, `aider`, `codex`, `amp`, `cursor`, `warp`, `droid`, `git`.
 - Module default export must have `id`, `onload(host)`, `onunload()`
@@ -195,8 +195,11 @@ host.getGitDiff(repoPath, scope?)       // unified diff string (scope: "staged" 
 | `await host.renamePath(from: string, to: string): Promise<void>` | `fs:rename` |
 | `await host.httpFetch(url: string, options?): Promise<HttpResponse>` | `net:http` |
 | `host.registerTerminalAction({ id, label, action(ctx), disabled?(ctx) }): Disposable` | `ui:context-menu` |
+| `host.registerSidebarPanel({ id, label, icon?, priority?, collapsed? }): SidebarPanelHandle` | `ui:sidebar` |
 
 TerminalActionContext (passed to action/disabled at right-click time): `{ sessionId: string | null, repoPath: string | null }`. Actions appear in terminal right-click "Actions" submenu. Submenu hidden when no actions registered. Stale handlers (after plugin unload) are no-ops.
+
+SidebarPanelHandle: `{ setItems(items), setBadge(text), dispose() }`. SidebarItem: `{ id, label, subtitle?, icon?, iconColor?, onClick?, contextMenu?: [{ label, action, disabled? }] }`. Panels appear below branches in the sidebar, scoped per-repo. Badge shows a counter pill on the header.
 
 PanelHandle: `{ tabId, update(html), close(), send(data) }` — HTML rendered in sandboxed iframe with automatic base stylesheet + CSS theme variable injection. Write minimal plugin-specific CSS only (see Panel CSS Design Strategy above). Use `onMessage` callback to receive messages from iframe, `send()` to post messages back.
 HttpResponse: `{ status: number, headers: Record<string, string>, body: string }` — non-2xx is NOT an error.

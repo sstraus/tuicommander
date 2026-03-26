@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Sidebar Plugin Panels** — New `ui:sidebar` capability lets plugins register collapsible panel sections in the sidebar below the branch list. Panels display structured data (items with icon, label, subtitle, badge, context menu) scoped per-repo. Built-in plan plugin migrated from Activity Center to sidebar panel
+- **Startup notification suppression** — PTY sessions now suppress Question, RateLimit, and ApiError notifications during the initial output burst (e.g. `claude --continue` replaying conversation history). Grace ends after 5s without output or 120s max
+
+### Fixed
+- **Plugin double-dispose crash** — Plugin disposables are now idempotent; calling `dispose()` twice no longer crashes with "undefined is not an object (evaluating 'listeners[eventId].handlerId')"
+- **awaitingInput not cleared on idle→busy** — Question notifications are now properly cleared when the agent resumes work (idle→busy transition). The null→busy case is excluded since the agent hasn't been idle yet
+
 ## [0.9.6] - 2026-03-25
 
 ### Added
