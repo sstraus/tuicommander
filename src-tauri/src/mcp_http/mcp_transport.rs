@@ -526,7 +526,7 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
                 let _ = session.writer.flush();
                 drop(session);
                 drop(entry);
-                crate::pty::cleanup_session(session_id, &state);
+                crate::pty::cleanup_session(session_id, state);
                 serde_json::json!({"ok": true})
             } else {
                 serde_json::json!({"error": "Session not found"})
@@ -544,7 +544,7 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
                 }
                 drop(session);
                 drop(entry);
-                crate::pty::cleanup_session(session_id, &state);
+                crate::pty::cleanup_session(session_id, state);
                 tracing::info!(source = "session", session_id = %session_id, "Session killed: SIGKILL");
                 let _ = state.event_bus.send(crate::state::AppEvent::SessionClosed {
                     session_id: session_id.to_string(),
