@@ -336,6 +336,13 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
       body: { path: args.path, files: args.files },
     }),
   },
+  git_apply_reverse_patch: {
+    map: (args) => ({
+      method: "POST",
+      path: "/repo/apply-reverse-patch",
+      body: { path: args.path, patch: args.patch, scope: args.scope },
+    }),
+  },
   git_commit: {
     map: (args) => ({
       method: "POST",

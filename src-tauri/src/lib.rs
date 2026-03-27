@@ -842,6 +842,7 @@ pub fn run() {
             git::git_stage_files,
             git::git_unstage_files,
             git::git_discard_files,
+            git::git_apply_reverse_patch,
             git::git_commit,
             git::get_commit_log,
             git::get_stash_list,

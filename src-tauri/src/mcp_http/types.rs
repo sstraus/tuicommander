@@ -355,6 +355,13 @@ pub(super) struct StageFilesRequest {
 }
 
 #[derive(Deserialize)]
+pub(super) struct ReversePatchRequest {
+    pub path: String,
+    pub patch: String,
+    pub scope: Option<String>,
+}
+
+#[derive(Deserialize)]
 pub(super) struct CommitRequest {
     pub path: String,
     pub message: String,

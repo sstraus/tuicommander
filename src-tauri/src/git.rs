@@ -1750,6 +1750,64 @@ pub(crate) fn git_discard_files(path: String, files: Vec<String>) -> Result<(), 
     Ok(())
 }
 
+// --- Hunk-level discard / unstage via reverse patch ---
+
+/// Apply a unified diff patch in reverse to revert specific hunks.
+///
+/// - `scope = None` → working tree discard (`git apply --reverse`)
+/// - `scope = Some("staged")` → unstage from index (`git apply --reverse --cached`)
+///
+/// The `patch` must be a valid unified diff (starting with `diff --git` or `---`).
+/// Pipe the patch via stdin to avoid temp files.
+#[tauri::command]
+pub(crate) fn git_apply_reverse_patch(path: String, patch: String, scope: Option<String>) -> Result<(), String> {
+    let repo_path = PathBuf::from(&path);
+
+    // Validate patch is non-empty and looks like a unified diff
+    let trimmed = patch.trim();
+    if trimmed.is_empty() {
+        return Err("Patch is empty".to_string());
+    }
+    if !trimmed.starts_with("diff --git") && !trimmed.starts_with("---") {
+        return Err("Invalid patch: must start with 'diff --git' or '---'".to_string());
+    }
+
+    let mut args = vec!["apply", "--reverse"];
+    if scope.as_deref() == Some("staged") {
+        args.push("--cached");
+    }
+
+    use std::process::{Command, Stdio};
+    use std::io::Write;
+
+    let git_bin = crate::cli::resolve_cli("git");
+    let mut child = Command::new(&git_bin)
+        .current_dir(&repo_path)
+        .args(&args)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn git apply: {e}"))?;
+
+    // Write patch to stdin
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(patch.as_bytes())
+            .map_err(|e| format!("Failed to write patch to stdin: {e}"))?;
+    }
+
+    let output = child.wait_with_output()
+        .map_err(|e| format!("Failed to wait for git apply: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(format!("git apply --reverse failed: {stderr}"));
+    }
+
+    Ok(())
+}
+
 // --- git commit ---
 
 /// Commit staged changes and return the new commit hash.
@@ -3613,5 +3671,91 @@ filename test.txt
         let result = get_recent_branches_impl(Path::new("/nonexistent/path/xyz"), 5);
         // A non-existent path must produce an error (git spawn or non-zero exit)
         assert!(result.is_err(), "nonexistent path should return an error");
+    }
+
+    // --- Tests for git_apply_reverse_patch ---
+
+    #[test]
+    fn apply_reverse_patch_reverts_working_tree_hunk() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        // Write a multi-line file and commit it
+        std::fs::write(path.join("multi.txt"), "line1\nline2\nline3\n").expect("write");
+        std::process::Command::new("git").current_dir(&path).args(["add", "multi.txt"]).output().expect("add");
+        std::process::Command::new("git").current_dir(&path).args(["commit", "-m", "add multi"]).output().expect("commit");
+
+        // Modify the file (working tree change)
+        std::fs::write(path.join("multi.txt"), "line1\nMODIFIED\nline3\n").expect("modify");
+
+        // Build a patch that represents this change (get it from git diff)
+        let diff_out = std::process::Command::new("git").current_dir(&path)
+            .args(["diff", "--color=never", "--", "multi.txt"])
+            .output().expect("diff");
+        let patch = String::from_utf8_lossy(&diff_out.stdout).to_string();
+        assert!(!patch.is_empty(), "diff should produce output");
+
+        // Apply the reverse patch to revert the hunk
+        let result = git_apply_reverse_patch(path.to_string_lossy().to_string(), patch, None);
+        assert!(result.is_ok(), "reverse patch should succeed: {:?}", result.err());
+
+        // Verify file is restored to committed state
+        let content = std::fs::read_to_string(path.join("multi.txt")).expect("read");
+        assert_eq!(content, "line1\nline2\nline3\n");
+    }
+
+    #[test]
+    fn apply_reverse_patch_unstages_cached_hunk() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        std::fs::write(path.join("staged.txt"), "original\n").expect("write");
+        std::process::Command::new("git").current_dir(&path).args(["add", "staged.txt"]).output().expect("add");
+        std::process::Command::new("git").current_dir(&path).args(["commit", "-m", "add staged"]).output().expect("commit");
+
+        // Modify and stage the change
+        std::fs::write(path.join("staged.txt"), "modified\n").expect("modify");
+        std::process::Command::new("git").current_dir(&path).args(["add", "staged.txt"]).output().expect("stage");
+
+        // Get the staged diff
+        let diff_out = std::process::Command::new("git").current_dir(&path)
+            .args(["diff", "--cached", "--color=never", "--", "staged.txt"])
+            .output().expect("diff --cached");
+        let patch = String::from_utf8_lossy(&diff_out.stdout).to_string();
+        assert!(!patch.is_empty(), "staged diff should produce output");
+
+        // Apply reverse patch with staged scope (unstage the hunk)
+        let result = git_apply_reverse_patch(
+            path.to_string_lossy().to_string(),
+            patch,
+            Some("staged".to_string()),
+        );
+        assert!(result.is_ok(), "reverse patch --cached should succeed: {:?}", result.err());
+
+        // Verify: staged diff should now be empty (unstaged)
+        let verify = std::process::Command::new("git").current_dir(&path)
+            .args(["diff", "--cached", "--name-only"])
+            .output().expect("verify");
+        let staged_files = String::from_utf8_lossy(&verify.stdout).trim().to_string();
+        assert!(staged_files.is_empty() || !staged_files.contains("staged.txt"),
+            "staged.txt should no longer be staged");
+    }
+
+    #[test]
+    fn apply_reverse_patch_rejects_malformed_patch() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        let result = git_apply_reverse_patch(
+            path.to_string_lossy().to_string(),
+            "this is not a valid patch".to_string(),
+            None,
+        );
+        assert!(result.is_err(), "malformed patch should be rejected");
+    }
+
+    #[test]
+    fn apply_reverse_patch_rejects_empty_patch() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        let result = git_apply_reverse_patch(
+            path.to_string_lossy().to_string(),
+            "".to_string(),
+            None,
+        );
+        assert!(result.is_err(), "empty patch should be rejected");
     }
 }

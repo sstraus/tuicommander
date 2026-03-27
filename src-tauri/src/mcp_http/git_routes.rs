@@ -321,6 +321,18 @@ pub(super) async fn discard_files_http(Json(body): Json<StageFilesRequest>) -> R
     }
 }
 
+pub(super) async fn apply_reverse_patch_http(Json(body): Json<ReversePatchRequest>) -> Response {
+    if let Err(e) = validate_repo_path(&body.path) { return e.into_response(); }
+    let path = body.path;
+    let patch = body.patch;
+    let scope = body.scope;
+    match tokio::task::spawn_blocking(move || crate::git::git_apply_reverse_patch(path, patch, scope)).await {
+        Ok(Ok(())) => Json(serde_json::json!({"ok": true})).into_response(),
+        Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {e}")).into_response(),
+    }
+}
+
 pub(super) async fn git_commit_http(Json(body): Json<CommitRequest>) -> Response {
     if let Err(e) = validate_repo_path(&body.path) { return e.into_response(); }
     let path = body.path;
