@@ -1,0 +1,40 @@
+docs/user-guide/prompt-library.md
+  6cf9ef103a779cbc 3,5,7-8,10,12,14-33,35,37-43,45-48,50,52,54-56,60-61,72-85,87,89,91,93,95,99,104
+docs/user-guide/command-palette.md
+  6cf9ef103a779cbc 5,9-11,13,19-21,23-25,29-31,33,37
+docs/user-guide/file-browser.md
+  6cf9ef103a779cbc 5,7,11-15,17,19,21-30,36-50,52,54,56-60,62,64-66,70-82,84-85,89,91,95,99,113,119-126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "d4d7179e79515ed945114d7ce43d0b3267a760e4",
+  "prompts": {
+    "6cf9ef103a779cbc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "51d440b2-01da-4ffa-82ab-e10cd4580419",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 78,
+      "total_deletions": 28,
+      "accepted_lines": 160,
+      "overriden_lines": 0
+    },
+    "91159334feb8722d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d11c4-82d2-7e33-b4e8-4b8cd98493cc",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 54,
+      "overriden_lines": 0
+    }
+  }
+}

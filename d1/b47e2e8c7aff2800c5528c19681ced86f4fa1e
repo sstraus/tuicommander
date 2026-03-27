@@ -1,0 +1,23 @@
+src/components/GitPanel/BranchesTab.tsx
+  880c28d8bcc2cf20 8,12-21,513-527,601
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "d1b47e2e8c7aff2800c5528c19681ced86f4fa1e",
+  "prompts": {
+    "880c28d8bcc2cf20": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b553277-6441-46e7-8860-208006c53865",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 28,
+      "total_deletions": 0,
+      "accepted_lines": 28,
+      "overriden_lines": 0
+    }
+  }
+}

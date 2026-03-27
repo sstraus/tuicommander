@@ -1,0 +1,23 @@
+src/components/GitPanel/BranchesTab.tsx
+  91159334feb8722d 563,565,569-571,573,580-585,591-593,595-598,602-604,607,791-792,799,802,818
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "2266714502f1fd6a5b85142dcd0901d93ea7bc09",
+  "prompts": {
+    "91159334feb8722d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d11c4-82d2-7e33-b4e8-4b8cd98493cc",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 45,
+      "overriden_lines": 0
+    }
+  }
+}

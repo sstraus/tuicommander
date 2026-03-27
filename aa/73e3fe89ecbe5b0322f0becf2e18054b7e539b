@@ -1,0 +1,38 @@
+src-tauri/src/pty.rs
+  98c3ae497f1a232e 592-595,605,609-648,827-851,982-984,992,1009-1019
+src/stores/appLogger.ts
+  4f1d22fc29a917a2 34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.15",
+  "base_commit_sha": "aa73e3fe89ecbe5b0322f0becf2e18054b7e539b",
+  "prompts": {
+    "4f1d22fc29a917a2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3ce9562f-4b45-4ca6-bb08-c0fcb9db69c3",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 2,
+      "total_deletions": 1,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    },
+    "98c3ae497f1a232e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e3edb90-6f96-4eb7-9d4f-02359e06a83a",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 92,
+      "total_deletions": 13,
+      "accepted_lines": 85,
+      "overriden_lines": 0
+    }
+  }
+}

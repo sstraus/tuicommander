@@ -1,0 +1,36 @@
+CHANGELOG.md
+  6af5fe2322e27900 14-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.15",
+  "base_commit_sha": "25e1545c6e1ec664aa9db07a394f8d95ebb1c090",
+  "prompts": {
+    "6af5fe2322e27900": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f7c62c11-a1ea-451d-b2d0-91b192515790",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 5,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "8d1ed47a66089fef": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8fff92c-49b3-4dd5-9c54-44c16a60013b",
+        "model": "<synthetic>"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    }
+  }
+}

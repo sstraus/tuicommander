@@ -1,0 +1,36 @@
+src/hooks/useCiHeal.ts
+  6af5fe2322e27900 1-182
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.15",
+  "base_commit_sha": "70d503a7bbf0cd01faa96808da28961814fc9c90",
+  "prompts": {
+    "1b91f1da6f1dd3dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "51ea5764-c25f-4630-b146-95d001745dd5",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 0,
+      "overriden_lines": 0
+    },
+    "6af5fe2322e27900": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f7c62c11-a1ea-451d-b2d0-91b192515790",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 182,
+      "total_deletions": 0,
+      "accepted_lines": 182,
+      "overriden_lines": 0
+    }
+  }
+}

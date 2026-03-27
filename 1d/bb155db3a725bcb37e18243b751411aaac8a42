@@ -1,0 +1,21 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "1dbb155db3a725bcb37e18243b751411aaac8a42",
+  "prompts": {
+    "91159334feb8722d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d11c4-82d2-7e33-b4e8-4b8cd98493cc",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 3,
+      "overriden_lines": 0
+    }
+  }
+}

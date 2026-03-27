@@ -1,0 +1,29 @@
+src-tauri/src/mcp_http/mcp_transport.rs
+  880c28d8bcc2cf20 1717-1718
+src-tauri/src/lib.rs
+  880c28d8bcc2cf20 612-613
+src-tauri/src/state.rs
+  880c28d8bcc2cf20 711-749,842-846,1791-1792,2213-2214
+src-tauri/src/mcp_http/mod.rs
+  880c28d8bcc2cf20 618-619
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "519d7ec1c62ede2317373988055e66d0190e460f",
+  "prompts": {
+    "880c28d8bcc2cf20": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b553277-6441-46e7-8860-208006c53865",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 54,
+      "total_deletions": 0,
+      "accepted_lines": 54,
+      "overriden_lines": 0
+    }
+  }
+}

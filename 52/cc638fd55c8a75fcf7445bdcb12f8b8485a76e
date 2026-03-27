@@ -1,0 +1,25 @@
+src/components/SettingsPanel/tabs/GitHubTab.module.css
+  91159334feb8722d 188-195
+src/components/SettingsPanel/SettingsPanel.tsx
+  91159334feb8722d 42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "52cc638fd55c8a75fcf7445bdcb12f8b8485a76e",
+  "prompts": {
+    "91159334feb8722d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d11c4-82d2-7e33-b4e8-4b8cd98493cc",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 54,
+      "overriden_lines": 0
+    }
+  }
+}

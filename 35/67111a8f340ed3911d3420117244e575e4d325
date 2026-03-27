@@ -1,0 +1,35 @@
+src/__tests__/components/SettingsPanel/GeneralTab.test.tsx
+  880c28d8bcc2cf20 102-113,115,121,127,137,147,149,153,166,172-173,180,190,199-202,211-213
+src/__tests__/plugins/pluginRegistry.test.ts
+  880c28d8bcc2cf20 499,508,518,527,536,545,576,585,592,594,601,603,612,621,634,636,643,645,690,712,721,737,753,772,781,799,833,844,854,870,879,888,911,920,929,1012,1015
+src/__tests__/components/SettingsPanel.test.tsx
+  880c28d8bcc2cf20 157,159
+src/__tests__/transport.test.ts
+  880c28d8bcc2cf20 401,423,425,428-429,431
+src/__tests__/components/SuggestOverlay.test.tsx
+  880c28d8bcc2cf20 14,16,101,105,107
+src/__tests__/plugins/planPlugin.test.ts
+  880c28d8bcc2cf20 209,211,217-220
+src/__tests__/plugins/pluginRegistry.contextMenu.test.ts
+  880c28d8bcc2cf20 32-33,43,45,64-65,76,78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "3567111a8f340ed3911d3420117244e575e4d325",
+  "prompts": {
+    "880c28d8bcc2cf20": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6b553277-6441-46e7-8860-208006c53865",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 235,
+      "total_deletions": 84,
+      "accepted_lines": 234,
+      "overriden_lines": 0
+    }
+  }
+}

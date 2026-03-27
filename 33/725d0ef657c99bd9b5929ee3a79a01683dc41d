@@ -1,0 +1,33 @@
+src/components/MarkdownTab/MarkdownTab.tsx
+  91159334feb8722d 70-71,73-78,103-105,108-110
+src/plugins/pluginRegistry.ts
+  91159334feb8722d 663
+src/mobile/components/TerminalKeybar.tsx
+  91159334feb8722d 27-28
+src/components/GitPanel/BranchesTab.tsx
+  91159334feb8722d 563,565,569-571,573,580-585,591-593,595-598,602-604,607,791-792,799,802,818
+src/components/SettingsPanel/tabs/GitHubTab.module.css
+  91159334feb8722d 188-195
+src/components/SettingsPanel/SettingsPanel.tsx
+  91159334feb8722d 42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "33725d0ef657c99bd9b5929ee3a79a01683dc41d",
+  "prompts": {
+    "91159334feb8722d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d11c4-82d2-7e33-b4e8-4b8cd98493cc",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 54,
+      "overriden_lines": 0
+    }
+  }
+}

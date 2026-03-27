@@ -1,0 +1,40 @@
+docs/backend/github.md
+  6cf9ef103a779cbc 27-28,38-42,178,180
+docs/user-guide/settings.md
+  6cf9ef103a779cbc 44-56
+docs/frontend/components.md
+  6cf9ef103a779cbc 11-13,20-33,38,40,42,49,62-65,69,131,220,223,225-226,229-237
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "6d6388b05042a490f751ff07f17a8beeb7ec7561",
+  "prompts": {
+    "6cf9ef103a779cbc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "51d440b2-01da-4ffa-82ab-e10cd4580419",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 150,
+      "total_deletions": 57,
+      "accepted_lines": 150,
+      "overriden_lines": 0
+    },
+    "91159334feb8722d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d11c4-82d2-7e33-b4e8-4b8cd98493cc",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 54,
+      "overriden_lines": 0
+    }
+  }
+}
