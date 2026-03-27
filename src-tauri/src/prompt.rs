@@ -113,7 +113,13 @@ fn truncate(s: String, max: usize) -> String {
     if s.len() <= max {
         return s;
     }
-    let mut truncated = s[..max].to_string();
+    // Find the last char boundary at or before `max` bytes
+    let end = s.char_indices()
+        .take_while(|(i, _)| *i < max)
+        .last()
+        .map(|(i, c)| i + c.len_utf8())
+        .unwrap_or(max);
+    let mut truncated = s[..end].to_string();
     truncated.push_str("\n[...truncated]");
     truncated
 }
@@ -321,7 +327,7 @@ mod tests {
     fn truncate_long_string() {
         let long = "x".repeat(60_000);
         let result = truncate(long, MAX_VARIABLE_LEN);
-        assert!(result.len() < 60_000);
+        assert!(result.len() <= MAX_VARIABLE_LEN + 15); // max + marker
         assert!(result.ends_with("[...truncated]"));
     }
 
@@ -330,5 +336,15 @@ mod tests {
         let short = "hello".to_string();
         let result = truncate(short.clone(), MAX_VARIABLE_LEN);
         assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn truncate_multibyte_boundary() {
+        // 3-byte chars: each "é" is 2 bytes. Create a string where max falls mid-char.
+        let s = "é".repeat(30_000); // 60,000 bytes
+        let result = truncate(s, 50_001); // odd byte count, likely mid-char
+        assert!(result.ends_with("[...truncated]"));
+        // Verify it's valid UTF-8 (won't panic if we got here)
+        assert!(result.len() <= 50_003 + 15); // max + char_len + marker
     }
 }

@@ -69,7 +69,9 @@ export function useSmartPrompts() {
         vars["pr_state"] = pr.state;
         vars["merge_status"] = pr.mergeable;
         vars["review_decision"] = pr.review_decision;
-        vars["pr_checks"] = `${pr.checks.passed} passed, ${pr.checks.failed} failed, ${pr.checks.pending} pending`;
+        if (pr.checks) {
+          vars["pr_checks"] = `${pr.checks.passed} passed, ${pr.checks.failed} failed, ${pr.checks.pending} pending`;
+        }
       }
     }
 

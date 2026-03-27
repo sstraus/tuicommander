@@ -78,8 +78,6 @@ function createPromptLibraryStore() {
         if (legacy) {
           try {
             const parsed = JSON.parse(legacy) as Record<string, SavedPrompt>;
-            // Save full prompts as-is via a generic save (the Rust struct is simplified;
-            // we store the full data as JSON for lossless round-trip)
             const promptArray = Object.values(parsed).map((p) => ({
               id: p.id,
               label: p.name,
@@ -87,8 +85,10 @@ function createPromptLibraryStore() {
               pinned: p.isFavorite,
             }));
             await invoke("save_prompt_library", { config: { prompts: promptArray } });
-          } catch { /* ignore corrupt legacy data */ }
-          localStorage.removeItem(LEGACY_STORAGE_KEY);
+            localStorage.removeItem(LEGACY_STORAGE_KEY);
+          } catch (err) {
+            appLogger.warn("store", "Legacy prompt migration failed, will retry next launch", err);
+          }
         }
 
         const loaded = await invoke<{ prompts?: Array<{ id: string; label: string; text: string; pinned: boolean }> }>("load_prompt_library");
@@ -99,8 +99,8 @@ function createPromptLibraryStore() {
             try {
               const full = JSON.parse(entry.text) as SavedPrompt;
               restored[full.id] = full;
-            } catch {
-              // Simple prompt entry
+            } catch (err) {
+              appLogger.warn("store", `Prompt "${entry.id}" has non-JSON text field, using simple format`, err);
               restored[entry.id] = {
                 id: entry.id,
                 name: entry.label,
@@ -126,6 +126,7 @@ function createPromptLibraryStore() {
           } else if (existing.builtIn && existing.content === builtin.content) {
             // Unmodified built-in: update metadata silently (version, placement, etc.)
             merged[builtin.id] = { ...existing, ...builtin, content: existing.content };
+            changed = true;
           }
           // If user has overridden content, keep their version
         }
@@ -134,7 +135,7 @@ function createPromptLibraryStore() {
           savePrompts(merged);
         }
       } catch (err) {
-        appLogger.debug("store", "Failed to hydrate prompt library", err);
+        appLogger.error("store", "Failed to hydrate prompt library", err);
       }
     },
 
@@ -284,7 +285,12 @@ function createPromptLibraryStore() {
      * Returns git/repo variables from Rust. Frontend store variables (GitHub, agent, etc.)
      * are merged by the execution engine (useSmartPrompts hook) to avoid circular deps. */
     async resolveVariables(repoPath: string): Promise<Record<string, string>> {
-      return invoke<Record<string, string>>("resolve_context_variables", { repoPath });
+      try {
+        return await invoke<Record<string, string>>("resolve_context_variables", { repoPath });
+      } catch (err) {
+        appLogger.warn("store", "Failed to resolve context variables", err);
+        return {};
+      }
     },
   };
 

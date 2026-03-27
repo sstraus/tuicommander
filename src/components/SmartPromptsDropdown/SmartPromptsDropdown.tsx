@@ -115,6 +115,8 @@ export const SmartPromptsDropdown: Component<SmartPromptsDropdownProps> = (props
     }
     if (result.ok) {
       close();
+    } else {
+      appLogger.error("prompts", `Failed to execute "${prompt.name}": ${result.reason}`);
     }
   };
 

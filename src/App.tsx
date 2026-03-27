@@ -270,7 +270,9 @@ const App: Component = () => {
           label: p.name,
           target: "branch",
           action: (ctx) => {
-            void smartPrompts.executeSmartPrompt(p, ctx.branchName ? { branch_name: ctx.branchName } : undefined);
+            smartPrompts.executeSmartPrompt(p, ctx.branchName ? { branch_name: ctx.branchName } : undefined).catch((err) =>
+              appLogger.error("prompts", "Smart prompt execution failed", err)
+            );
           },
         }),
       );
@@ -1054,7 +1056,7 @@ const App: Component = () => {
         label: `Smart: ${p.name}`,
         category: "Smart Prompts",
         keybinding: p.shortcut ?? "",
-        execute: () => { void smartPrompts.executeSmartPrompt(p); },
+        execute: () => { smartPrompts.executeSmartPrompt(p).catch((err) => appLogger.error("prompts", "Smart prompt execution failed", err)); },
       });
     }
 
