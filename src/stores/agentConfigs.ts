@@ -4,7 +4,7 @@ import type { AgentType, AgentRunConfig, AgentsConfig } from "../agents";
 import { appLogger } from "./appLogger";
 
 interface AgentConfigsState {
-  agents: Record<string, { run_configs: AgentRunConfig[]; auto_retry_on_error?: boolean }>;
+  agents: Record<string, { run_configs: AgentRunConfig[]; auto_retry_on_error?: boolean; headless_template?: string }>;
   loaded: boolean;
 }
 
@@ -120,6 +120,26 @@ function createAgentConfigsStore() {
           s.agents[type] = { run_configs: [] };
         }
         s.agents[type].auto_retry_on_error = enabled;
+      }));
+      try {
+        await saveToDisk();
+      } catch (err) {
+        // saveToDisk already logged the error
+      }
+    },
+
+    /** Get the headless command template for an agent, or undefined */
+    getHeadlessTemplate(type: AgentType): string | undefined {
+      return state.agents[type]?.headless_template;
+    },
+
+    /** Set the headless command template for an agent */
+    async setHeadlessTemplate(type: AgentType, template: string): Promise<void> {
+      setState(produce((s) => {
+        if (!s.agents[type]) {
+          s.agents[type] = { run_configs: [] };
+        }
+        s.agents[type].headless_template = template || undefined;
       }));
       try {
         await saveToDisk();

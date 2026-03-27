@@ -2,7 +2,9 @@ import { promptLibraryStore, type SavedPrompt } from "../stores/promptLibrary";
 import { terminalsStore } from "../stores/terminals";
 import { githubStore } from "../stores/github";
 import { repositoriesStore } from "../stores/repositories";
+import { agentConfigsStore } from "../stores/agentConfigs";
 import { usePty } from "./usePty";
+import { invoke } from "../invoke";
 import { isTauri } from "../transport";
 import { appLogger } from "../stores/appLogger";
 
@@ -26,7 +28,13 @@ export function useSmartPrompts() {
         // In PWA mode, headless falls back to inject — check inject requirements
         return canExecuteInject(prompt);
       }
-      // Headless template support will be wired by story 929
+      // Headless requires a configured template for the active agent
+      const active = terminalsStore.getActive();
+      const agentType = active?.agentType;
+      const template = agentType ? agentConfigsStore.getHeadlessTemplate(agentType) : undefined;
+      if (!template) {
+        return { ok: false, reason: "No headless template configured for this agent" };
+      }
       return { ok: true };
     }
 
@@ -132,11 +140,32 @@ export function useSmartPrompts() {
     }
   }
 
-  async function executeHeadless(_prompt: SavedPrompt, _content: string): Promise<SmartPromptResult> {
-    // Headless execution requires a Rust backend command (execute_headless_prompt)
-    // that will be added by story 929. For now, fall back to inject.
-    appLogger.warn("prompts", `Headless mode not yet available for "${_prompt.name}", falling back to inject`);
-    return executeInject(_prompt, _content);
+  async function executeHeadless(prompt: SavedPrompt, content: string): Promise<SmartPromptResult> {
+    const active = terminalsStore.getActive();
+    const agentType = active?.agentType;
+    const template = agentType ? agentConfigsStore.getHeadlessTemplate(agentType) : undefined;
+    if (!template) {
+      // No template configured — fall back to inject
+      return executeInject(prompt, content);
+    }
+
+    // Substitute {prompt} in template, escaping double quotes in content
+    const escaped = content.replace(/"/g, '\\"');
+    const commandLine = template.replace("{prompt}", escaped);
+
+    const repoPath = active?.cwd ?? repositoriesStore.getActive()?.path ?? "";
+    try {
+      const output = await invoke<string>("execute_headless_prompt", {
+        commandLine,
+        timeoutMs: 300000,
+        repoPath,
+      });
+      promptLibraryStore.markAsUsed(prompt.id);
+      return { ok: true, output };
+    } catch (err) {
+      appLogger.error("prompts", `Headless execution failed for "${prompt.name}"`, err);
+      return { ok: false, reason: String(err) };
+    }
   }
 
   return {

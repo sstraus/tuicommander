@@ -353,6 +353,7 @@ export interface AgentRunConfig {
 export interface AgentSettingsConfig {
   run_configs: AgentRunConfig[];
   auto_retry_on_error?: boolean;
+  headless_template?: string;
 }
 
 /** Full agents config (matches Rust AgentsConfig) */

@@ -286,6 +286,19 @@ const AgentRow: Component<{
             <p class={s.hint}>Inject "continue" on 5xx errors with backoff (5s, 15s, 30s)</p>
           </div>
 
+          {/* Headless Command Template */}
+          <div class={a.expandedSection}>
+            <div class={a.expandedLabel}>Headless Command Template</div>
+            <input
+              class={`${a.formInput} ${a.mono}`}
+              placeholder={`${AGENTS[props.agentType].binary} -p "{prompt}" --no-input`}
+              value={agentConfigsStore.getHeadlessTemplate(props.agentType) ?? ""}
+              onInput={(e) => agentConfigsStore.setHeadlessTemplate(props.agentType, e.currentTarget.value)}
+              onClick={(e) => e.stopPropagation()}
+            />
+            <p class={s.hint}>Command template for one-shot execution. Use {"{prompt}"} as placeholder for the prompt text.</p>
+          </div>
+
           {/* Run Configurations */}
           <div class={a.expandedSection}>
             <div class={a.expandedLabel}>Run Configurations</div>
