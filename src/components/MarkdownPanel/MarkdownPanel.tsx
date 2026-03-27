@@ -8,6 +8,7 @@ import { getModifierSymbol, shortenHomePath } from "../../platform";
 import { globToRegex } from "../../utils";
 import { pathBasename, pathDirname } from "../../utils/pathUtils";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
+import { Dropdown } from "../ui/Dropdown";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
 import p from "../shared/panel.module.css";
@@ -19,7 +20,10 @@ interface MdFileEntry {
   path: string;
   git_status: string;
   is_ignored: boolean;
+  modified_at: number;
 }
+
+type SortMode = "folder" | "date";
 
 export interface MarkdownPanelProps {
   visible: boolean;
@@ -44,6 +48,8 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [searchQuery, setSearchQuery] = createSignal("");
+  const [sortBy, setSortBy] = createSignal<SortMode>("folder");
+  const [sortDropdownOpen, setSortDropdownOpen] = createSignal(false);
   const repo = useRepository();
   const contextMenu = createContextMenu();
   const [contextEntry, setContextEntry] = createSignal<MdFileEntry | null>(null);
@@ -90,18 +96,23 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
     mdTabsStore.add(props.repoPath, filePath, fsRoot || undefined);
   };
 
-  /** Group files by directory for tree view, sorted by dir name */
+  /** Group files by directory for tree view, sorted by dir name — or flat list sorted by date */
   const sortedGroups = createMemo(() => {
     const allFiles = filteredFiles();
-    const groups: Record<string, MdFileEntry[]> = {};
 
+    if (sortBy() === "date") {
+      // Flat list sorted by modification time (newest first), single group with empty key
+      const sorted = [...allFiles].sort((a, b) => b.modified_at - a.modified_at);
+      return [["", sorted]] as [string, MdFileEntry[]][];
+    }
+
+    const groups: Record<string, MdFileEntry[]> = {};
     for (const entry of allFiles) {
       const dir = pathDirname(entry.path);
       const key = dir || "/";
       if (!groups[key]) groups[key] = [];
       groups[key].push(entry);
     }
-
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
   });
 
@@ -147,7 +158,7 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
         </button>
       </div>
 
-      {/* Search filter */}
+      {/* Search filter + sort control */}
       <div class={p.search}>
         <input
           type="text"
@@ -159,6 +170,27 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
         <Show when={searchQuery()}>
           <button class={p.searchClear} onClick={() => setSearchQuery("")}>&times;</button>
         </Show>
+        <div class={s.sortControl}>
+          <button
+            class={s.sortTrigger}
+            onClick={() => setSortDropdownOpen((v) => !v)}
+            title={`${t("markdownPanel.sortBy", "Sort by")} ${sortBy()}`}
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M1 2h14L9.5 8.5V13l-3 1.5V8.5z" />
+            </svg>
+          </button>
+          <Dropdown
+            items={[
+              { id: "folder", label: t("markdownPanel.sortFolder", "Folder") },
+              { id: "date", label: t("markdownPanel.sortDate", "Date") },
+            ]}
+            selected={sortBy()}
+            visible={sortDropdownOpen()}
+            onSelect={(id) => { setSortBy(id as SortMode); setSortDropdownOpen(false); }}
+            onClose={() => setSortDropdownOpen(false)}
+          />
+        </div>
       </div>
 
       <div class={p.content}>
@@ -185,12 +217,13 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
             <For each={sortedGroups()}>
               {([dir, dirEntries]) => (
                 <>
-                  <Show when={dir !== "/"}>
+                  <Show when={dir && dir !== "/"}>
                     <div class={s.dirHeader}>{dir}/</div>
                   </Show>
                   <For each={dirEntries}>
                     {(entry) => {
                       const fileName = pathBasename(entry.path) || entry.path;
+                      const dirName = pathDirname(entry.path);
                       return (
                         <div
                           class={cx(s.fileItem, entry.is_ignored && s.fileIgnored)}
@@ -199,7 +232,12 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
                           title={entry.path}
                         >
                           <span class={s.fileIcon}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span>
-                          <div class={s.fileName}>{fileName}</div>
+                          <div class={s.fileName}>
+                            {fileName}
+                            <Show when={sortBy() === "date" && dirName}>
+                              <span class={s.filePath}>{dirName}/</span>
+                            </Show>
+                          </div>
                           <Show when={entry.git_status}>
                             <span class={cx(g.dot, getStatusClass(entry.git_status))} title={entry.git_status} />
                           </Show>

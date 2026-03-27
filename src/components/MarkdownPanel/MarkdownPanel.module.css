@@ -86,3 +86,38 @@
   text-align: center;
   color: var(--error);
 }
+
+/* Sort control (inline with search) */
+.sortControl {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.sortTrigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: color 0.1s, background 0.1s;
+}
+
+.sortTrigger:hover {
+  color: var(--fg-secondary);
+  background: var(--bg-highlight);
+  border-color: var(--border);
+}
+
+.filePath {
+  display: block;
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

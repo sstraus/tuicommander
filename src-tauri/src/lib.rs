@@ -359,6 +359,8 @@ pub(crate) struct MarkdownFileEntry {
     pub git_status: String,
     /// Whether the file is listed in .gitignore.
     pub is_ignored: bool,
+    /// Last modification time as Unix epoch seconds (0 if unavailable).
+    pub modified_at: u64,
 }
 
 /// List all markdown files in a repository recursively, with git status (shared logic)
@@ -371,7 +373,7 @@ pub(crate) fn list_markdown_files_impl(path: String) -> Result<Vec<MarkdownFileE
 
     // Walk the filesystem to find all .md files (fast, skips heavy dirs).
     // We avoid `git ls-files --others` which is extremely slow on large repos.
-    fn walk_dir(dir: &Path, base: &Path, md_paths: &mut Vec<String>) -> std::io::Result<()> {
+    fn walk_dir(dir: &Path, base: &Path, md_paths: &mut Vec<(String, u64)>) -> std::io::Result<()> {
         if dir.is_dir() {
             for entry in std::fs::read_dir(dir)? {
                 let entry = entry?;
@@ -387,7 +389,13 @@ pub(crate) fn list_markdown_files_impl(path: String) -> Result<Vec<MarkdownFileE
                     walk_dir(&path, base, md_paths)?;
                 } else if path.extension().and_then(|s| s.to_str()) == Some("md")
                     && let Ok(relative) = path.strip_prefix(base) {
-                        md_paths.push(relative.to_string_lossy().replace('\\', "/"));
+                        let mtime = entry.metadata()
+                            .and_then(|m| m.modified())
+                            .ok()
+                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                            .map(|d| d.as_secs())
+                            .unwrap_or(0);
+                        md_paths.push((relative.to_string_lossy().replace('\\', "/"), mtime));
                     }
             }
         }
@@ -403,15 +411,16 @@ pub(crate) fn list_markdown_files_impl(path: String) -> Result<Vec<MarkdownFileE
     let git_statuses = fs::parse_git_status(&path, "");
 
     // Detect gitignored paths
-    let ignored_set = fs::get_ignored_paths(&path, &md_paths);
+    let just_paths: Vec<String> = md_paths.iter().map(|(p, _)| p.clone()).collect();
+    let ignored_set = fs::get_ignored_paths(&path, &just_paths);
 
     // Build entries with status
     let mut entries: Vec<MarkdownFileEntry> = md_paths
         .into_iter()
-        .map(|p| {
+        .map(|(p, mtime)| {
             let git_status = git_statuses.get(&p).cloned().unwrap_or_default();
             let is_ignored = ignored_set.contains(&p);
-            MarkdownFileEntry { path: p, git_status, is_ignored }
+            MarkdownFileEntry { path: p, git_status, is_ignored, modified_at: mtime }
         })
         .collect();
 

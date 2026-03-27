@@ -92,6 +92,7 @@ export function useRepository() {
     path: string;
     git_status: string; // "modified" | "staged" | "untracked" | ""
     is_ignored: boolean;
+    modified_at: number; // Unix epoch seconds (0 if unavailable)
   }
 
   /** List all markdown files in repository with git status */
