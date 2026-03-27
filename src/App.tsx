@@ -86,6 +86,7 @@ import { startAutoFetch } from "./hooks/useAutoFetch";
 import { useAutoDeleteBranch } from "./hooks/useAutoDeleteBranch";
 import { useWorktreeSwitchPrompt } from "./hooks/useWorktreeSwitchPrompt";
 import { useCiHeal } from "./hooks/useCiHeal";
+import { useSmartPrompts } from "./hooks/useSmartPrompts";
 import { applyAppTheme, applyFontFamily } from "./themes";
 import { createLongPressHandlerFromHotkey } from "./hooks/useLongPressHotkey";
 import { applyPlatformClass, getModifierSymbol, isQuickSwitcherActive, isQuickSwitcherRelease } from "./platform";
@@ -242,6 +243,7 @@ const App: Component = () => {
 
   // Agent detection for context menu
   const agentDetection = useAgentDetection();
+  const smartPrompts = useSmartPrompts();
 
   // Auto-delete local branches when their PR is merged/closed
   useAutoDeleteBranch({ confirm: (opts) => dialogs.confirm(opts) });
@@ -254,6 +256,26 @@ const App: Component = () => {
 
   // Auto-heal CI failures by injecting logs into agent terminals
   useCiHeal();
+
+  // Register git-branches smart prompts as branch context menu actions.
+  // Reactive: re-registers when prompts are enabled/disabled.
+  createEffect(() => {
+    const disposables: Array<{ dispose(): void }> = [];
+    for (const prompt of promptLibraryStore.getSmartByPlacement("git-branches")) {
+      const p = prompt;
+      disposables.push(
+        contextMenuActionsStore.registerContextAction("smart-prompts", {
+          id: `smart:${p.id}`,
+          label: p.name,
+          target: "branch",
+          action: (ctx) => {
+            void smartPrompts.executeSmartPrompt(p, ctx.branchName ? { branch_name: ctx.branchName } : undefined);
+          },
+        }),
+      );
+    }
+    onCleanup(() => disposables.forEach((d) => d.dispose()));
+  });
 
   // Stop GitHub polling on component teardown — registered at body level so
   // SolidJS can track it synchronously (onCleanup inside async onMount is unreliable).
@@ -1020,6 +1042,18 @@ const App: Component = () => {
           execute: () => gitOps.moveTerminalToWorktree(activeTermId, wt.path),
         });
       }
+    }
+
+    // Dynamic: smart prompts with command-palette placement
+    for (const prompt of promptLibraryStore.getSmartByPlacement("command-palette")) {
+      const p = prompt; // capture for closure
+      entries.push({
+        id: `smart:${p.id}`,
+        label: `Smart: ${p.name}`,
+        category: "Smart Prompts",
+        keybinding: p.shortcut ?? "",
+        execute: () => { void smartPrompts.executeSmartPrompt(p); },
+      });
     }
 
     // Dynamic: plugin-registered terminal actions (context menu + multi-target)
