@@ -19,6 +19,9 @@ const SETTINGS_NAV_DEFAULT_WIDTH = 180;
 /** Git panel tab names */
 export type GitPanelTab = "changes" | "log" | "stashes" | "branches";
 
+/** Diff viewer display mode */
+export type DiffViewMode = "split" | "unified";
+
 /** UI store state */
 interface UIStoreState {
   // Sidebar visibility
@@ -43,6 +46,9 @@ interface UIStoreState {
   planPanelWidth: number;
   gitPanelWidth: number;
   settingsNavWidth: number;
+
+  // Diff viewer mode (persisted)
+  diffViewMode: DiffViewMode;
 
   // Active dropdown (mutually exclusive)
   activeDropdown: "ide" | "font" | "agent" | null;
@@ -72,6 +78,7 @@ function createUIStore() {
     planPanelWidth: PLAN_PANEL_DEFAULT_WIDTH,
     gitPanelWidth: GIT_PANEL_DEFAULT_WIDTH,
     settingsNavWidth: SETTINGS_NAV_DEFAULT_WIDTH,
+    diffViewMode: "split" as DiffViewMode,
     activeDropdown: null,
     isLoading: false,
     loadingMessage: "",
@@ -93,6 +100,7 @@ function createUIStore() {
         plan_panel_width: state.planPanelWidth,
         git_panel_width: state.gitPanelWidth,
         settings_nav_width: state.settingsNavWidth,
+        diff_view_mode: state.diffViewMode,
       },
     }).catch((err) => appLogger.debug("store", "Failed to save UI prefs", err));
   }
@@ -150,6 +158,7 @@ function createUIStore() {
           plan_panel_width?: number;
           git_panel_width?: number;
           settings_nav_width?: number;
+          diff_view_mode?: string;
         }>("load_ui_prefs");
         if (loaded) {
           if (loaded.sidebar_visible !== undefined) {
@@ -188,10 +197,19 @@ function createUIStore() {
           if (loaded.settings_nav_width !== undefined) {
             setState("settingsNavWidth", loaded.settings_nav_width);
           }
+          if (loaded.diff_view_mode === "split" || loaded.diff_view_mode === "unified") {
+            setState("diffViewMode", loaded.diff_view_mode);
+          }
         }
       } catch (err) {
         appLogger.debug("store", "Failed to hydrate UI prefs", err);
       }
+    },
+
+    // Diff view mode
+    setDiffViewMode(mode: DiffViewMode): void {
+      setState("diffViewMode", mode);
+      saveUIPrefs();
     },
 
     // Panel toggles — mutually exclusive
