@@ -225,8 +225,15 @@ The live registry exposes status via SSE events (`upstream_status_changed`). Val
 
 | Command | Args | Returns | Description |
 |---------|------|---------|-------------|
-| `extract_prompt_variables` | `content` | `Vec<String>` | Parse `{{var}}` placeholders |
+| `extract_prompt_variables` | `content` | `Vec<String>` | Parse `{var}` placeholders |
 | `process_prompt_content` | `content, variables` | `String` | Substitute variables |
+| `resolve_context_variables` | `repo_path: String` | `HashMap<String, String>` | Resolve git context variables (branch, diff, changed_files, commit_log, etc.) for smart prompt substitution. Best-effort: variables that fail are omitted |
+
+## Smart Prompt Execution (`smart_prompt.rs`)
+
+| Command | Args | Returns | Description |
+|---------|------|---------|-------------|
+| `execute_headless_prompt` | `command_line: String, timeout_ms: u64, repo_path: String` | `Result<String, String>` | Execute a one-shot shell command for headless prompt mode. Runs via platform shell (sh/cmd), captures stdout. Timeout capped at 5 minutes |
 
 ## Claude Usage (`claude_usage.rs`)
 

@@ -249,4 +249,19 @@ export const TIPS: Tip[] = [
     description: "Choose which upstream MCP servers are active for each repo. Toggle servers on/off per-repo, or share the list via .tuic.json.",
     shortcut: `${mod}+Shift+M`,
   },
+  {
+    feature: "Smart Prompts",
+    description: "One-click AI automation for common git and code tasks — commit, review, create PRs, fix CI, and more.",
+    shortcut: `${mod}+Shift+K`,
+  },
+  {
+    feature: "Smart Prompts Toolbar",
+    description: "Smart Prompts like Review Changes inject context-aware prompts into your agent. Find them in the toolbar lightning bolt menu.",
+    shortcut: null,
+  },
+  {
+    feature: "Custom Smart Prompts",
+    description: "Customize Smart Prompts in Settings > Smart Prompts. You can edit built-in prompts or create your own.",
+    shortcut: null,
+  },
 ];

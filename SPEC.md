@@ -301,6 +301,7 @@ All stores persist to localStorage:
 - [x] Notes/Ideas: mark as used, badge count in status bar
 - [x] Notes/Ideas: image paste support (Ctrl+V), thumbnails, send absolute paths to terminal
 - [x] Inter-Agent Messaging (`messaging` MCP tool: register, list_peers, send, inbox with channel push + polling fallback)
+- [x] Smart Prompts (24 built-in AI prompts with context variable resolution, inject/headless execution, toolbar dropdown, SmartButtonStrip, Command Palette integration)
 
 ### Completed (Voice Dictation)
 - [x] Local Whisper inference via whisper-rs (Metal GPU acceleration)

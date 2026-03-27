@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Smart Prompts** — AI automation layer with 24 built-in context-aware prompts
+  - Toolbar dropdown (Cmd+Shift+K) with category grouping and search
+  - SmartButtonStrip in Git Panel Changes tab and PR Detail Popover
+  - Command Palette integration (all prompts with "Smart:" prefix)
+  - Branch context menu integration
+  - Inject mode: PTY write into active agent with idle check
+  - Headless mode: one-shot agent execution with configurable per-agent templates
+  - Auto-resolved context variables ({diff}, {branch}, {pr_number}, etc.)
+  - Settings > Smart Prompts tab for management (enable/disable, edit, reset to default)
+  - Settings > Agents: headless command template per agent
 - **MCP Per-Repo Scoping** — Each repo can define which upstream MCP servers are relevant via an allowlist in repo settings (3-layer: per-repo > `.tuic.json` > defaults). Quick toggle via **Cmd+Shift+M** popup with live status, transport badges, tool counts, and per-repo checkboxes
 
 ### Fixed

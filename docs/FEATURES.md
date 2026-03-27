@@ -756,6 +756,82 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - `Cmd+Shift+R`: edit command before running
 - Configure per-repo in Settings → Repository → Scripts
 
+### 10.5 Smart Prompts
+
+AI automation layer with 24 built-in context-aware prompts. Prompts auto-resolve git context variables and execute via inject (PTY write) or headless (one-shot subprocess) mode.
+
+- **Open**: `Cmd+Shift+K` or toolbar lightning bolt button
+- Dropdown with category grouping, search, and enable/disable toggles
+- Prompts are context-aware: variables like `{branch}`, `{diff}`, `{changed_files}` are resolved automatically at execution time
+
+### 10.6 Built-in Prompts by Category
+
+| Category | Prompts |
+|----------|---------|
+| **Git & Commit** | Smart Commit, Commit & Push, Amend Commit, Generate Commit Message |
+| **Code Review** | Review Changes, Review Staged, Review PR, Address Review Comments |
+| **Pull Requests** | Create PR, Update PR Description, Generate PR Description |
+| **Merge & Conflicts** | Resolve Conflicts, Merge Main Into Branch, Rebase on Main |
+| **CI & Quality** | Fix CI Failures, Fix Lint Issues, Write Tests, Run & Fix Tests |
+| **Investigation** | Investigate Issue, What Changed?, Summarize Branch, Explain Changes |
+| **Code Operations** | Suggest Refactoring, Security Audit |
+
+### 10.7 Context Variables
+
+Variables are resolved from the Rust backend (`resolve_context_variables`) and frontend stores:
+
+| Variable | Source | Description |
+|----------|--------|-------------|
+| `{branch}` | git | Current branch name |
+| `{base_branch}` | git | Detected default branch (main/master/develop) |
+| `{repo_name}` | git | Repository directory name |
+| `{diff}` | git | Full working tree diff (truncated) |
+| `{staged_diff}` | git | Staged changes diff (truncated) |
+| `{changed_files}` | git | Short status output |
+| `{commit_log}` | git | Last 20 commits (oneline) |
+| `{last_commit}` | git | Last commit hash + message |
+| `{conflict_files}` | git | Files with merge conflicts |
+| `{stash_list}` | git | Stash entries |
+| `{pr_number}` | GitHub store | PR number for current branch |
+| `{pr_title}` | GitHub store | PR title |
+| `{pr_url}` | GitHub store | PR URL |
+| `{pr_state}` | GitHub store | PR state (OPEN, MERGED, CLOSED) |
+| `{pr_checks}` | GitHub store | CI check summary (passed/failed/pending) |
+| `{merge_status}` | GitHub store | PR mergeable status |
+| `{review_decision}` | GitHub store | PR review decision |
+| `{agent_type}` | terminal store | Active agent type (claude, gemini, etc.) |
+| `{cwd}` | terminal store | Active terminal working directory |
+| `{issue_number}` | manual | Prompted from user at execution time |
+
+### 10.8 Execution Modes
+
+- **Inject** (default): writes the resolved prompt text into the active terminal's PTY. Checks agent idle state before sending (configurable via `requiresIdle`). Appends newline for auto-execution
+- **Headless**: runs a one-shot subprocess via `execute_headless_prompt` Tauri command. Requires a per-agent headless template configured in Settings → Agents (e.g. `claude -p "{prompt}"`). Output routed to clipboard or toast depending on `outputTarget`. Falls back to inject in PWA mode. 5-minute timeout cap
+
+### 10.9 UI Integration Points
+
+| Location | Prompts shown | Trigger |
+|----------|---------------|---------|
+| **Toolbar dropdown** | All enabled prompts with `toolbar` placement | `Cmd+Shift+K` or lightning bolt button |
+| **Git Panel — Changes tab** | SmartButtonStrip with `git-changes` placement | Inline buttons above changed files |
+| **PR Detail Popover** | SmartButtonStrip with `pr-popover` placement | Inline buttons in PR detail view |
+| **Command Palette** | All prompts with `Smart:` prefix | `Cmd+Shift+P` then type "Smart" |
+| **Branch context menu** | Prompts with `git-branches` placement | Right-click branch in Branches tab |
+
+### 10.10 Settings — Smart Prompts Tab
+
+- Enable/disable individual prompts
+- Edit prompt content (built-in prompts show a reset-to-default button)
+- View placement and execution mode per prompt
+- Create custom smart prompts with the same placement and variable system
+
+### 10.11 Headless Template Configuration
+
+- Settings → Agents → per-agent "Headless Command Template" field
+- Template uses `{prompt}` placeholder for the resolved prompt text
+- Example: `claude -p "{prompt}"`, `gemini -p "{prompt}"`
+- Required for headless execution mode; without it, headless prompts fall back to inject
+
 ---
 
 ## 11. Settings
