@@ -3,6 +3,8 @@ import { githubStore } from "../../stores/github";
 import { repositoriesStore } from "../../stores/repositories";
 import { appLogger } from "../../stores/appLogger";
 import { CiRing } from "../ui/CiRing";
+import { SmartButtonStrip } from "../SmartButtonStrip/SmartButtonStrip";
+import type { SavedPrompt } from "../../stores/promptLibrary";
 import { relativeTime } from "../../utils/time";
 import { handleOpenUrl } from "../../utils/openUrl";
 import { getCiIcon, getCiClass } from "../../utils/ciDisplay";
@@ -235,6 +237,18 @@ export const PrDetailContent: Component<PrDetailContentProps> = (props) => {
 
           {/* Extra content (action buttons in accordion mode) */}
           {props.children}
+
+          {/* Smart prompt buttons — conditional on PR state */}
+          <SmartButtonStrip
+            placement="pr-popover"
+            repoPath={props.repoPath}
+            extraFilter={(p: SavedPrompt) => {
+              if (p.id === "smart-fix-ci") return (checkSummary()?.failed ?? 0) > 0;
+              if (p.id === "smart-resolve-conflicts") return pr().mergeable === "CONFLICTING";
+              if (p.id === "smart-review-comments") return pr().review_decision === "CHANGES_REQUESTED";
+              return true;
+            }}
+          />
 
           {/* Open on GitHub */}
           <Show when={pr().url}>

@@ -1,0 +1,43 @@
+/* SmartButtonStrip — compact inline prompt buttons */
+
+.strip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg-secondary);
+  font-size: var(--font-xs);
+  font-family: var(--font-ui);
+  padding: 2px 8px;
+  height: 22px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+}
+
+.btn:hover:not(.btnDisabled) {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+  border-color: var(--fg-secondary);
+}
+
+.btnDisabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.icon {
+  font-size: 11px;
+  line-height: 1;
+}

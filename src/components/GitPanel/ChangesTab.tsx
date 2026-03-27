@@ -1,9 +1,11 @@
 import { Component, createEffect, createMemo, createSignal, For, Show, onCleanup } from "solid-js";
 import { invoke } from "../../invoke";
 import { repositoriesStore } from "../../stores/repositories";
+import { terminalsStore } from "../../stores/terminals";
 import { diffTabsStore, isDiffStatus } from "../../stores/diffTabs";
 import { appLogger } from "../../stores/appLogger";
 import { ConfirmDialog } from "../ConfirmDialog";
+import { SmartButtonStrip } from "../SmartButtonStrip/SmartButtonStrip";
 import { cx, globToRegex } from "../../utils";
 import type { CommitLogEntry, WorkingTreeStatus } from "./types";
 import s from "./ChangesTab.module.css";
@@ -100,6 +102,15 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
     if (!q) return unstaged();
     const re = globToRegex(q);
     return unstaged().filter((f) => re.test(f.path));
+  });
+
+  /** True when at least one terminal with a detected agent has cwd inside this repo */
+  const hasAgentForRepo = createMemo(() => {
+    const repoPath = props.repoPath;
+    if (!repoPath) return false;
+    return Object.values(terminalsStore.state.terminals).some(
+      (t) => t.agentType && t.cwd?.startsWith(repoPath),
+    );
   });
 
   // Commit section signals
@@ -502,6 +513,11 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
             </div>
           </Show>
         </div>
+      </Show>
+
+      {/* Smart prompt buttons — visible when an agent terminal exists for this repo */}
+      <Show when={props.repoPath && hasAgentForRepo()}>
+        <SmartButtonStrip placement="git-changes" repoPath={props.repoPath!} />
       </Show>
 
       {/* Empty state */}
