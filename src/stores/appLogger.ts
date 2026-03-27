@@ -31,7 +31,8 @@ export type AppLogSource =
   | "store"
   | "config"
   | "settings"
-  | "mcp";
+  | "mcp"
+  | "prompts";
 
 export interface AppLogEntry {
   id: number;
