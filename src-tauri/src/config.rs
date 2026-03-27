@@ -526,6 +526,13 @@ pub(crate) struct UIPrefsConfig {
     pub(crate) git_panel_width: u32,
     #[serde(default = "default_settings_nav_width")]
     pub(crate) settings_nav_width: u32,
+    /// Diff viewer mode: "split" (side-by-side) or "unified" (inline).
+    #[serde(default = "default_diff_view_mode")]
+    pub(crate) diff_view_mode: String,
+}
+
+fn default_diff_view_mode() -> String {
+    "split".to_string()
 }
 
 impl Default for UIPrefsConfig {
@@ -545,6 +552,7 @@ impl Default for UIPrefsConfig {
             plan_panel_width: default_plan_panel_width(),
             git_panel_width: default_git_panel_width(),
             settings_nav_width: default_settings_nav_width(),
+            diff_view_mode: default_diff_view_mode(),
         }
     }
 }
@@ -1227,6 +1235,7 @@ mod tests {
             plan_panel_width: 350,
             git_panel_width: 380,
             settings_nav_width: 200,
+            diff_view_mode: "split".to_string(),
         };
         let loaded: UIPrefsConfig = round_trip_in_dir(dir.path(), "ui-prefs.json", &cfg);
         assert!(!loaded.sidebar_visible);
@@ -1235,6 +1244,7 @@ mod tests {
         assert_eq!(loaded.markdown_panel_width, 450);
         assert_eq!(loaded.notes_panel_width, 320);
         assert_eq!(loaded.settings_nav_width, 200);
+        assert_eq!(loaded.diff_view_mode, "split");
     }
 
     #[test]
