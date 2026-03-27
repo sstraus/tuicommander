@@ -1119,6 +1119,19 @@ export const Terminal: Component<TerminalProps> = (props) => {
         if (resizeObserver && containerRef) {
           resizeObserver.observe(containerRef);
         }
+
+        // Safety re-fit: at first app launch the flex layout may not have stabilized
+        // when safeFit runs (sidebar, toolbar, status bar still mounting). Schedule a
+        // deferred fit+resize to catch the final container dimensions.
+        setTimeout(() => {
+          if (!terminal || !containerRef || containerRef.offsetWidth <= 0) return;
+          const prevCols = terminal.cols;
+          const prevRows = terminal.rows;
+          doFit();
+          if (sessionId && (terminal.cols !== prevCols || terminal.rows !== prevRows)) {
+            pty.resize(sessionId, terminal.rows, terminal.cols).catch(() => {});
+          }
+        }, 300);
       });
 
       onCleanup(() => {
