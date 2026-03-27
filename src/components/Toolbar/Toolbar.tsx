@@ -11,6 +11,7 @@ import { activityStore } from "../../stores/activityStore";
 import { getModifierSymbol } from "../../platform";
 import { IdeLauncher } from "../IdeLauncher";
 import { PrDetailPopover } from "../PrDetailPopover/PrDetailPopover";
+import { SmartPromptsDropdown } from "../SmartPromptsDropdown/SmartPromptsDropdown";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
 import type { ActivityItem } from "../../plugins/types";
@@ -63,6 +64,7 @@ export interface ToolbarProps {
   onBranchClick?: () => void;
   onRun?: (shiftKey: boolean) => void;
   onReviewPr?: (repoPath: string, branchName: string, command: string) => void;
+  onOpenSettings?: () => void;
 }
 
 export const Toolbar: Component<ToolbarProps> = (props) => {
@@ -222,6 +224,8 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
       </div>
 
       <div class={s.right}>
+        <SmartPromptsDropdown repoPath={props.repoPath} onOpenSettings={props.onOpenSettings} />
+
         {/* Notification group: last-item shortcut + bell (bell always visible) */}
         <div class={s.notifGroup} ref={notifRef}>
           {/* Last-item shortcut — only when there are items */}

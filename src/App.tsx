@@ -39,6 +39,7 @@ import { DictationToast } from "./components/DictationToast/DictationToast";
 import { commandPaletteStore } from "./stores/commandPalette";
 import { branchSwitcherStore } from "./stores/branchSwitcher";
 import { mcpPopupStore } from "./stores/mcpPopup";
+import { smartPromptsDropdownStore } from "./stores/smartPromptsDropdown";
 import { activityDashboardStore } from "./stores/activityDashboard";
 import { worktreeManagerStore } from "./stores/worktreeManager";
 import { errorLogStore } from "./stores/errorLog";
@@ -928,6 +929,7 @@ const App: Component = () => {
     toggleErrorLog: () => errorLogStore.toggle(),
     toggleBranchesTab: () => uiStore.toggleGitPanelOnTab("branches"),
     toggleMcpPopup: () => mcpPopupStore.toggle(),
+    toggleSmartPrompts: () => smartPromptsDropdownStore.toggle(),
   };
 
   // Worktree manager action callbacks
@@ -1255,6 +1257,7 @@ const App: Component = () => {
         }}
         onRun={(shiftKey) => gitOps.handleRunCommand(shiftKey, () => setRunCommandDialogVisible(true))}
         onReviewPr={gitOps.handleReviewPr}
+        onOpenSettings={() => setSettingsPanelVisible(true)}
       />
 
       {/* Body: sidebar + main content side by side */}

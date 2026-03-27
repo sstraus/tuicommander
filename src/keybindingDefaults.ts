@@ -43,6 +43,7 @@ export const ACTION_NAMES = [
   "toggle-file-browser-content-search",
   "toggle-branches-tab",
   "toggle-mcp-popup",
+  "toggle-smart-prompts",
   // Numbered tabs and branches
   ...Array.from({ length: 9 }, (_, i) => `switch-tab-${i + 1}`),
   ...Array.from({ length: 9 }, (_, i) => `switch-branch-${i + 1}`),
@@ -98,6 +99,7 @@ export const DEFAULT_BINDINGS: Record<ActionName, string> = {
   "toggle-file-browser-content-search": "Cmd+Shift+F",
   "toggle-branches-tab": "Cmd+G",
   "toggle-mcp-popup": "Cmd+Shift+M",
+  "toggle-smart-prompts": "Cmd+Shift+K",
   // Numbered tabs
   ...Object.fromEntries(
     Array.from({ length: 9 }, (_, i) => [`switch-tab-${i + 1}`, `Cmd+${i + 1}`]),
