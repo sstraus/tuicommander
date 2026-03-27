@@ -1,0 +1,261 @@
+/* SmartPromptsTab — prompt list, category groups, inline editor */
+
+.promptList {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+/* Category group */
+
+.categoryHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  cursor: pointer;
+  user-select: none;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--fg-secondary);
+  text-transform: capitalize;
+}
+
+.categoryHeader:hover {
+  background: var(--bg-highlight);
+}
+
+.categoryChevron {
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  transition: transform 0.15s;
+  flex-shrink: 0;
+}
+
+.categoryChevron.open {
+  transform: rotate(90deg);
+}
+
+.categoryCount {
+  font-size: var(--font-2xs);
+  color: var(--fg-muted);
+  font-weight: 400;
+  margin-left: auto;
+}
+
+/* Prompt row */
+
+.promptRow {
+  background: var(--bg-primary);
+}
+
+.promptHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s;
+}
+
+.promptHeader:hover {
+  background: var(--bg-highlight);
+}
+
+.promptIcon {
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  flex-shrink: 0;
+  min-width: 20px;
+  text-align: center;
+}
+
+.promptName {
+  font-weight: 600;
+  font-size: var(--font-base);
+  color: var(--fg-primary);
+}
+
+.badge {
+  font-size: var(--font-2xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.badge[data-type="inject"] {
+  background: rgba(88, 166, 255, 0.15);
+  color: var(--accent);
+}
+
+.badge[data-type="headless"] {
+  background: rgba(192, 132, 252, 0.15);
+  color: #c084fc;
+}
+
+.badge[data-type="placement"] {
+  background: var(--bg-tertiary);
+  color: var(--fg-muted);
+}
+
+.badge[data-type="builtin"] {
+  background: var(--bg-tertiary);
+  color: var(--fg-muted);
+}
+
+.badge[data-type="update"] {
+  background: rgba(224, 175, 104, 0.15);
+  color: var(--warning);
+}
+
+.promptMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* Expanded editor */
+
+.promptExpanded {
+  border-top: 1px solid var(--border);
+  padding: 12px;
+  background: var(--bg-secondary);
+}
+
+.editorSection {
+  margin-bottom: 12px;
+}
+
+.editorSection:last-child {
+  margin-bottom: 0;
+}
+
+.editorLabel {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--fg-secondary);
+  margin-bottom: 6px;
+  display: block;
+}
+
+.editorInput {
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg-primary);
+  font-size: var(--font-base);
+  box-sizing: border-box;
+}
+
+.editorInput:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.editorInput:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.editorTextarea {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg-primary);
+  font-size: var(--font-sm);
+  font-family: var(--font-mono);
+  resize: vertical;
+  min-height: 120px;
+  box-sizing: border-box;
+}
+
+.editorTextarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.placementGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.placementCheck {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-sm);
+  color: var(--fg-secondary);
+  cursor: pointer;
+}
+
+.editorActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.smallBtn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--fg-secondary);
+  font-size: var(--font-sm);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.smallBtn:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+  border-color: var(--accent);
+}
+
+.dangerBtn {
+  composes: smallBtn;
+}
+
+.dangerBtn:hover {
+  background: rgba(248, 81, 73, 0.1);
+  color: var(--error);
+  border-color: var(--error);
+}
+
+/* Footer add button */
+
+.addBtn {
+  width: 100%;
+  padding: 10px;
+  margin-top: 12px;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--fg-secondary);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+
+.addBtn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg-tertiary);
+}
