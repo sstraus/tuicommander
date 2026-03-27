@@ -28,13 +28,13 @@ export interface ChangesTabProps {
 // SVG icons as inline components (monochrome, fill="currentColor")
 const StageIcon = () => (
   <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-    <path d="M8 1a.5.5 0 0 1 .5.5v6.793l2.146-2.147a.5.5 0 0 1 .708.708l-3 3a.5.5 0 0 1-.708 0l-3-3a.5.5 0 1 1 .708-.708L7.5 8.293V1.5A.5.5 0 0 1 8 1zM2 13.5a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11a.5.5 0 0 1-.5-.5z" />
+    <path d="M8 15a.5.5 0 0 1-.5-.5V7.707L5.354 9.854a.5.5 0 1 1-.708-.708l3-3a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 7.707V14.5A.5.5 0 0 1 8 15zM2 2.5a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11a.5.5 0 0 1-.5-.5z" />
   </svg>
 );
 
 const UnstageIcon = () => (
   <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-    <path d="M8 15a.5.5 0 0 1-.5-.5V7.707L5.354 9.854a.5.5 0 1 1-.708-.708l3-3a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 7.707V14.5A.5.5 0 0 1 8 15zM2 2.5a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11a.5.5 0 0 1-.5-.5z" />
+    <path d="M8 1a.5.5 0 0 1 .5.5v6.793l2.146-2.147a.5.5 0 0 1 .708.708l-3 3a.5.5 0 0 1-.708 0l-3-3a.5.5 0 1 1 .708-.708L7.5 8.293V1.5A.5.5 0 0 1 8 1zM2 13.5a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11a.5.5 0 0 1-.5-.5z" />
   </svg>
 );
 
@@ -350,6 +350,10 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
   }
 
   function handleListKeyDown(e: KeyboardEvent) {
+    // Don't intercept keys when typing in input fields (commit textarea, filter input)
+    const tag = (e.target as HTMLElement)?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
     const files = visibleFiles();
     if (files.length === 0) return;
 

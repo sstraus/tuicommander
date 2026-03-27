@@ -229,6 +229,9 @@ export const LogTab: Component<LogTabProps> = (props) => {
   const graphPad = () => graphWidth(graphNodes());
 
   function handleListKeyDown(e: KeyboardEvent) {
+    const tag = (e.target as HTMLElement)?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
     const total = commits().length;
     if (total === 0) return;
 

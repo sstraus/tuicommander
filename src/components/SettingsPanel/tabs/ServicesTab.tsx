@@ -817,7 +817,11 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
               class={s.input}
               placeholder="Name (e.g. context7, github)"
               value={form().name}
-              onInput={e => setForm(f => ({ ...f, name: e.currentTarget.value }))}
+              onInput={e => {
+                const normalized = e.currentTarget.value.toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+                e.currentTarget.value = normalized;
+                setForm(f => ({ ...f, name: normalized }));
+              }}
             />
             <select
               class={s.input}

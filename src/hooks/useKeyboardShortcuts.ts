@@ -183,7 +183,10 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): () => void {
     if (handlers.isQuickSwitcherOpen()) return;
 
     // Navigate between split panes (Alt+Arrow) — layout-dependent, not configurable
-    if (e.altKey && !(e.metaKey || e.ctrlKey) && !e.shiftKey) {
+    // Skip when focus is in an input field (Alt+Arrow = move cursor by word on macOS)
+    const activeTag = (e.target as HTMLElement)?.tagName;
+    const inInputField = activeTag === "INPUT" || activeTag === "TEXTAREA" || activeTag === "SELECT";
+    if (e.altKey && !(e.metaKey || e.ctrlKey) && !e.shiftKey && !inInputField) {
       const layout = terminalsStore.state.layout;
       if (layout.direction !== "none" && layout.panes.length > 1) {
         let delta = 0;

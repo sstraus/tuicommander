@@ -149,6 +149,9 @@ export const StashesTab: Component<StashesTabProps> = (props) => {
   }
 
   function handleListKeyDown(e: KeyboardEvent) {
+    const tag = (e.target as HTMLElement)?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
     const total = stashes().length;
     if (total === 0) return;
 
