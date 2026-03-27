@@ -1,6 +1,7 @@
 import { createStore, reconcile } from "solid-js/store";
 import { invoke } from "../invoke";
 import { appLogger } from "./appLogger";
+import { SMART_PROMPTS_BUILTIN } from "../data/smartPromptsBuiltIn";
 
 /** Prompt category */
 export type PromptCategory = "custom" | "recent" | "favorite";
@@ -112,6 +113,25 @@ function createPromptLibraryStore() {
             }
           }
           setState("prompts", restored);
+        }
+
+        // Merge built-in smart prompts: add new ones, update unmodified metadata, preserve user overrides
+        const merged = { ...state.prompts };
+        let changed = false;
+        for (const builtin of SMART_PROMPTS_BUILTIN) {
+          const existing = merged[builtin.id];
+          if (!existing) {
+            merged[builtin.id] = builtin;
+            changed = true;
+          } else if (existing.builtIn && existing.content === builtin.content) {
+            // Unmodified built-in: update metadata silently (version, placement, etc.)
+            merged[builtin.id] = { ...existing, ...builtin, content: existing.content };
+          }
+          // If user has overridden content, keep their version
+        }
+        if (changed) {
+          setState("prompts", merged);
+          savePrompts(merged);
         }
       } catch (err) {
         appLogger.debug("store", "Failed to hydrate prompt library", err);
