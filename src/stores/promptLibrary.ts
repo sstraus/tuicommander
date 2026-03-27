@@ -278,6 +278,14 @@ function createPromptLibraryStore() {
     async extractVariables(content: string): Promise<string[]> {
       return invoke<string[]>("extract_prompt_variables", { content });
     },
+
+    /** Resolve all auto-resolvable git context variables for smart prompt execution.
+     *
+     * Returns git/repo variables from Rust. Frontend store variables (GitHub, agent, etc.)
+     * are merged by the execution engine (useSmartPrompts hook) to avoid circular deps. */
+    async resolveVariables(repoPath: string): Promise<Record<string, string>> {
+      return invoke<Record<string, string>>("resolve_context_variables", { repoPath });
+    },
   };
 
   return { state, ...actions };

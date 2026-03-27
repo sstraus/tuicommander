@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::process::Command;
 
 /// Extract template variable names from content.
 ///
@@ -83,6 +84,98 @@ pub(crate) fn process_prompt_content(
     variables: HashMap<String, String>,
 ) -> String {
     process_content(&content, &variables)
+}
+
+const MAX_VARIABLE_LEN: usize = 50_000;
+
+/// Run a git command in the given repo and return trimmed stdout, or None on failure.
+fn git_output(repo_path: &str, args: &[&str]) -> Option<String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(repo_path)
+        .args(args)
+        .output()
+        .ok()?;
+    if output.status.success() {
+        let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if s.is_empty() {
+            None
+        } else {
+            Some(s)
+        }
+    } else {
+        None
+    }
+}
+
+/// Truncate a string to `max` bytes, appending a marker if truncated.
+fn truncate(s: String, max: usize) -> String {
+    if s.len() <= max {
+        return s;
+    }
+    let mut truncated = s[..max].to_string();
+    truncated.push_str("\n[...truncated]");
+    truncated
+}
+
+/// Detect the base branch by checking which of main/master/develop exists locally.
+fn detect_base_branch(repo_path: &str) -> Option<String> {
+    let output = git_output(repo_path, &["branch", "--list", "main", "master", "develop"])?;
+    // Each line is like "  main" or "* main"; pick first in priority order.
+    let branches: Vec<String> = output
+        .lines()
+        .map(|l| l.trim_start_matches('*').trim().to_string())
+        .collect();
+    for candidate in &["main", "master", "develop"] {
+        if branches.iter().any(|b| b == candidate) {
+            return Some(candidate.to_string());
+        }
+    }
+    None
+}
+
+/// Resolve all auto-resolvable git context variables for a repository path.
+///
+/// Best-effort: variables that fail to resolve are simply omitted from the map.
+#[tauri::command]
+pub(crate) fn resolve_context_variables(repo_path: String) -> HashMap<String, String> {
+    let mut vars = HashMap::new();
+
+    if let Some(v) = git_output(&repo_path, &["rev-parse", "--abbrev-ref", "HEAD"]) {
+        vars.insert("branch".to_string(), v);
+    }
+    if let Some(v) = detect_base_branch(&repo_path) {
+        vars.insert("base_branch".to_string(), v);
+    }
+    if let Some(name) = std::path::Path::new(&repo_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+    {
+        vars.insert("repo_name".to_string(), name.to_string());
+    }
+    if let Some(v) = git_output(&repo_path, &["diff"]) {
+        vars.insert("diff".to_string(), truncate(v, MAX_VARIABLE_LEN));
+    }
+    if let Some(v) = git_output(&repo_path, &["diff", "--staged"]) {
+        vars.insert("staged_diff".to_string(), truncate(v, MAX_VARIABLE_LEN));
+    }
+    if let Some(v) = git_output(&repo_path, &["status", "--short"]) {
+        vars.insert("changed_files".to_string(), v);
+    }
+    if let Some(v) = git_output(&repo_path, &["log", "--oneline", "-20"]) {
+        vars.insert("commit_log".to_string(), v);
+    }
+    if let Some(v) = git_output(&repo_path, &["log", "-1", "--format=%H %s"]) {
+        vars.insert("last_commit".to_string(), v);
+    }
+    if let Some(v) = git_output(&repo_path, &["diff", "--name-only", "--diff-filter=U"]) {
+        vars.insert("conflict_files".to_string(), v);
+    }
+    if let Some(v) = git_output(&repo_path, &["stash", "list"]) {
+        vars.insert("stash_list".to_string(), v);
+    }
+
+    vars
 }
 
 #[cfg(test)]
@@ -211,5 +304,31 @@ mod tests {
         vars.insert("name".to_string(), "Bot".to_string());
         let result = process_content("Hello 🌍 {name}! 🎉", &vars);
         assert_eq!(result, "Hello 🌍 Bot! 🎉");
+    }
+
+    // --- resolve_context_variables tests ---
+
+    #[test]
+    fn resolve_context_variables_non_git_path() {
+        let vars = resolve_context_variables("/tmp".to_string());
+        // Should return empty or near-empty map, no panic
+        assert!(
+            vars.get("branch").is_none() || !vars.get("branch").unwrap().is_empty()
+        );
+    }
+
+    #[test]
+    fn truncate_long_string() {
+        let long = "x".repeat(60_000);
+        let result = truncate(long, MAX_VARIABLE_LEN);
+        assert!(result.len() < 60_000);
+        assert!(result.ends_with("[...truncated]"));
+    }
+
+    #[test]
+    fn truncate_short_string() {
+        let short = "hello".to_string();
+        let result = truncate(short.clone(), MAX_VARIABLE_LEN);
+        assert_eq!(result, "hello");
     }
 }

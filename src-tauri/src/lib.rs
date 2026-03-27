@@ -936,6 +936,7 @@ pub fn run() {
             agent_mcp::get_agent_config_path,
             prompt::extract_prompt_variables,
             prompt::process_prompt_content,
+            prompt::resolve_context_variables,
             head_watcher::start_head_watcher,
             head_watcher::stop_head_watcher,
             repo_watcher::start_repo_watcher,
