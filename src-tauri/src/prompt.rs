@@ -90,7 +90,8 @@ const MAX_VARIABLE_LEN: usize = 50_000;
 
 /// Run a git command in the given repo and return trimmed stdout, or None on failure.
 fn git_output(repo_path: &str, args: &[&str]) -> Option<String> {
-    let output = Command::new("git")
+    let git_bin = crate::cli::resolve_cli("git");
+    let output = Command::new(&git_bin)
         .arg("-C")
         .arg(repo_path)
         .args(args)
@@ -142,14 +143,43 @@ fn detect_base_branch(repo_path: &str) -> Option<String> {
 
 /// Resolve all auto-resolvable git context variables for a repository path.
 ///
+/// Runs independent git commands in parallel via rayon for lower latency.
 /// Best-effort: variables that fail to resolve are simply omitted from the map.
 #[tauri::command]
 pub(crate) fn resolve_context_variables(repo_path: String) -> HashMap<String, String> {
-    let mut vars = HashMap::new();
+    // Define all git variable resolvers as (key, args) pairs
+    let commands: Vec<(&str, Vec<&str>, bool)> = vec![
+        ("branch", vec!["rev-parse", "--abbrev-ref", "HEAD"], false),
+        ("diff", vec!["diff"], true),
+        ("staged_diff", vec!["diff", "--staged"], true),
+        ("changed_files", vec!["status", "--short"], false),
+        ("commit_log", vec!["log", "--oneline", "-20"], false),
+        ("last_commit", vec!["log", "-1", "--format=%H %s"], false),
+        ("conflict_files", vec!["diff", "--name-only", "--diff-filter=U"], false),
+        ("stash_list", vec!["stash", "list"], false),
+    ];
 
-    if let Some(v) = git_output(&repo_path, &["rev-parse", "--abbrev-ref", "HEAD"]) {
-        vars.insert("branch".to_string(), v);
+    // Run all git commands in parallel using std threads
+    let results: Vec<(String, Option<String>)> = std::thread::scope(|s| {
+        let handles: Vec<_> = commands.into_iter().map(|(key, args, should_truncate)| {
+            let rp = &repo_path;
+            s.spawn(move || {
+                let val = git_output(rp, &args);
+                let val = if should_truncate { val.map(|v| truncate(v, MAX_VARIABLE_LEN)) } else { val };
+                (key.to_string(), val)
+            })
+        }).collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+
+    let mut vars = HashMap::new();
+    for (key, val) in results {
+        if let Some(v) = val {
+            vars.insert(key, v);
+        }
     }
+
+    // These depend on other results or are non-git
     if let Some(v) = detect_base_branch(&repo_path) {
         vars.insert("base_branch".to_string(), v);
     }
@@ -158,27 +188,6 @@ pub(crate) fn resolve_context_variables(repo_path: String) -> HashMap<String, St
         .and_then(|n| n.to_str())
     {
         vars.insert("repo_name".to_string(), name.to_string());
-    }
-    if let Some(v) = git_output(&repo_path, &["diff"]) {
-        vars.insert("diff".to_string(), truncate(v, MAX_VARIABLE_LEN));
-    }
-    if let Some(v) = git_output(&repo_path, &["diff", "--staged"]) {
-        vars.insert("staged_diff".to_string(), truncate(v, MAX_VARIABLE_LEN));
-    }
-    if let Some(v) = git_output(&repo_path, &["status", "--short"]) {
-        vars.insert("changed_files".to_string(), v);
-    }
-    if let Some(v) = git_output(&repo_path, &["log", "--oneline", "-20"]) {
-        vars.insert("commit_log".to_string(), v);
-    }
-    if let Some(v) = git_output(&repo_path, &["log", "-1", "--format=%H %s"]) {
-        vars.insert("last_commit".to_string(), v);
-    }
-    if let Some(v) = git_output(&repo_path, &["diff", "--name-only", "--diff-filter=U"]) {
-        vars.insert("conflict_files".to_string(), v);
-    }
-    if let Some(v) = git_output(&repo_path, &["stash", "list"]) {
-        vars.insert("stash_list".to_string(), v);
     }
 
     vars

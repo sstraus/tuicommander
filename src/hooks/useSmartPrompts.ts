@@ -151,14 +151,16 @@ export function useSmartPrompts() {
       return executeInject(prompt, content);
     }
 
-    // Substitute {prompt} in template, escaping double quotes in content
-    const escaped = content.replace(/"/g, '\\"');
-    const commandLine = template.replace("{prompt}", escaped);
+    // Pass prompt content via stdin to avoid shell injection.
+    // The template's {prompt} placeholder is replaced with a stdin pipe marker
+    // so the backend reads content from stdin instead of interpolating into sh -c.
+    const commandLine = template.replace("{prompt}", "");
 
     const repoPath = active?.cwd ?? repositoriesStore.getActive()?.path ?? "";
     try {
       const output = await invoke<string>("execute_headless_prompt", {
         commandLine,
+        stdinContent: content,
         timeoutMs: 300000,
         repoPath,
       });

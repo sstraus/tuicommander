@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal } from "solid-js";
+import { Component, For, Show, createSignal, createMemo } from "solid-js";
 import { promptLibraryStore, type SavedPrompt, type SmartPlacement } from "../../../stores/promptLibrary";
 import { SMART_PROMPTS_BUILTIN } from "../../../data/smartPromptsBuiltIn";
 import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
@@ -298,7 +298,7 @@ const CategoryGroup: Component<{ category: string; prompts: SavedPrompt[] }> = (
 // ---------------------------------------------------------------------------
 
 export const SmartPromptsTab: Component = () => {
-  const groups = () => groupByCategory(getAllSmartPrompts());
+  const groups = createMemo(() => groupByCategory(getAllSmartPrompts()));
 
   // Ordered categories, with "other" at the end if present
   const orderedCategories = () => {

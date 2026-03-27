@@ -1773,8 +1773,10 @@ pub(crate) fn git_apply_reverse_patch(path: String, patch: String, scope: Option
     }
 
     let mut args = vec!["apply", "--reverse"];
-    if scope.as_deref() == Some("staged") {
-        args.push("--cached");
+    match scope.as_deref() {
+        None => {}
+        Some("staged") => args.push("--cached"),
+        Some(other) => return Err(format!("Invalid scope: {:?}. Expected None or \"staged\"", other)),
     }
 
     use std::process::{Command, Stdio};

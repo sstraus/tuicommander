@@ -32,12 +32,12 @@ export const SmartButtonStrip: Component<SmartButtonStripProps> = (props) => {
       <div class={s.strip}>
         <For each={prompts()}>
           {(prompt) => {
-            const disabled = () => !canExecute(prompt).ok;
+            const check = createMemo(() => canExecute(prompt));
             return (
               <button
-                class={cx(s.btn, disabled() && s.btnDisabled)}
-                disabled={disabled()}
-                title={disabled() ? canExecute(prompt).reason : prompt.description}
+                class={cx(s.btn, !check().ok && s.btnDisabled)}
+                disabled={!check().ok}
+                title={!check().ok ? check().reason : prompt.description}
                 onClick={() => handleClick(prompt)}
               >
                 <Show when={prompt.icon}>

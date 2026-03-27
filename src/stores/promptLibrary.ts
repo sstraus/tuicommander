@@ -1,4 +1,5 @@
 import { createStore, reconcile } from "solid-js/store";
+import { createMemo } from "solid-js";
 import { invoke } from "../invoke";
 import { appLogger } from "./appLogger";
 import { SMART_PROMPTS_BUILTIN } from "../data/smartPromptsBuiltIn";
@@ -45,18 +46,21 @@ function generateId(): string {
   return `prompt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
-/** Persist prompts to Rust backend (fire-and-forget) */
+/** Debounced persist to Rust backend — coalesces rapid updates (e.g. markAsUsed) */
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
 function savePrompts(prompts: Record<string, SavedPrompt>): void {
-  // Convert to array format for the Rust config struct
-  const promptArray = Object.values(prompts).map((p) => ({
-    id: p.id,
-    label: p.name,
-    text: p.content,
-    pinned: p.isFavorite,
-  }));
-  invoke("save_prompt_library", { config: { prompts: promptArray } }).catch((err) =>
-    appLogger.error("store", "Failed to save prompt library", err),
-  );
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    const promptArray = Object.values(prompts).map((p) => ({
+      id: p.id,
+      label: p.name,
+      text: JSON.stringify(p),
+      pinned: p.isFavorite,
+    }));
+    invoke("save_prompt_library", { config: { prompts: promptArray } }).catch((err) =>
+      appLogger.error("store", "Failed to save prompt library", err),
+    );
+  }, 500);
 }
 
 /** Create the prompt library store */
@@ -98,6 +102,14 @@ function createPromptLibraryStore() {
             // Try to parse full SavedPrompt from text field (migration format)
             try {
               const full = JSON.parse(entry.text) as SavedPrompt;
+              // Validate security-relevant fields before trusting deserialized data
+              if (full.executionMode && full.executionMode !== "inject" && full.executionMode !== "headless") {
+                appLogger.warn("store", `Prompt "${entry.id}" has invalid executionMode "${full.executionMode}", resetting to inject`);
+                full.executionMode = "inject";
+              }
+              if (full.placement && !Array.isArray(full.placement)) {
+                full.placement = undefined;
+              }
               restored[full.id] = full;
             } catch (err) {
               appLogger.warn("store", `Prompt "${entry.id}" has non-JSON text field, using simple format`, err);
@@ -270,6 +282,54 @@ function createPromptLibraryStore() {
       });
     },
 
+    /** Get enabled smart prompts, sorted by category then name (memoized) */
+    getSmartPrompts: (() => {
+      const memo = createMemo(() =>
+        Object.values(state.prompts)
+          .filter((p) => p.enabled !== false && p.tags?.includes("smart"))
+          .sort((a, b) => {
+            const catCmp = a.category.localeCompare(b.category);
+            return catCmp !== 0 ? catCmp : a.name.localeCompare(b.name);
+          }),
+      );
+      return () => memo();
+    })(),
+
+    /** Get enabled smart prompts for a specific UI placement */
+    getSmartByPlacement(placement: SmartPlacement): SavedPrompt[] {
+      return actions.getSmartPrompts().filter((p) => p.placement?.includes(placement));
+    },
+
+    /** Get a smart prompt by ID (must have the smart tag) */
+    getSmartById(id: string): SavedPrompt | undefined {
+      const p = state.prompts[id];
+      return p?.tags?.includes("smart") ? p : undefined;
+    },
+
+    /** Replace prompt content with the default, keeping user preferences */
+    resetToDefault(id: string, defaultPrompt: SavedPrompt): void {
+      const existing = state.prompts[id];
+      if (!existing) return;
+      setState("prompts", id, {
+        ...defaultPrompt,
+        enabled: existing.enabled,
+        shortcut: existing.shortcut,
+        updatedAt: Date.now(),
+      });
+      savePrompts(state.prompts);
+    },
+
+    /** Check if the prompt's content differs from the default */
+    isOverridden(id: string, defaultContent: string): boolean {
+      const p = state.prompts[id];
+      return p !== undefined && p.content !== defaultContent;
+    },
+
+    /** Check if the prompt's builtInVersion is less than latestVersion */
+    hasUpdate(id: string, latestVersion: number): boolean {
+      const p = state.prompts[id];
+      return p !== undefined && (p.builtInVersion ?? 0) < latestVersion;
+    },
     /** Process prompt content with variable substitution (Rust backend) */
     async processContent(prompt: SavedPrompt, variables: Record<string, string>): Promise<string> {
       return invoke<string>("process_prompt_content", { content: prompt.content, variables });
