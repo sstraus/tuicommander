@@ -804,6 +804,10 @@ pub(crate) struct AgentSettings {
     /// Retries up to 3 times with exponential backoff (5s, 15s, 30s).
     #[serde(default)]
     pub(crate) auto_retry_on_error: bool,
+    /// Shell command template for headless (one-shot) prompt execution.
+    /// Placeholders like `{prompt}` are replaced before invocation.
+    #[serde(default)]
+    pub(crate) headless_template: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Default)]
@@ -1487,6 +1491,7 @@ mod tests {
                     },
                 ],
                 auto_retry_on_error: false,
+                headless_template: None,
             },
         );
         let loaded: AgentsConfig = round_trip_in_dir(dir.path(), "agents.json", &agents);

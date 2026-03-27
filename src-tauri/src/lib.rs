@@ -32,6 +32,7 @@ pub(crate) mod plugin_fs;
 pub(crate) mod plugin_http;
 pub(crate) mod plugins;
 pub(crate) mod prompt;
+pub(crate) mod smart_prompt;
 pub(crate) mod registry;
 pub(crate) mod pty;
 pub(crate) mod relay_client;
@@ -937,6 +938,7 @@ pub fn run() {
             prompt::extract_prompt_variables,
             prompt::process_prompt_content,
             prompt::resolve_context_variables,
+            smart_prompt::execute_headless_prompt,
             head_watcher::start_head_watcher,
             head_watcher::stop_head_watcher,
             repo_watcher::start_repo_watcher,
