@@ -1841,23 +1841,31 @@ pub(crate) fn close_pty(
     Ok(())
 }
 
-/// Look up the process name for a given PID using `ps`.
-/// Returns None on Windows or if the lookup fails.
-#[cfg(not(windows))]
+/// Look up the process name for a given PID using OS-native syscalls.
+/// On macOS uses `proc_pidpath`, on Linux reads `/proc/{pid}/comm`.
+/// Returns None if the lookup fails.
+#[cfg(target_os = "macos")]
 pub(crate) fn process_name_from_pid(pid: u32) -> Option<String> {
-    let output = std::process::Command::new("ps")
-        .args(["-p", &pid.to_string(), "-o", "comm="])
-        .output()
-        .ok()?;
-    if !output.status.success() {
+    let mut buf = [0u8; libc::MAXPATHLEN as usize];
+    // SAFETY: proc_pidpath writes into the provided buffer up to buffersize bytes.
+    // The buffer is stack-allocated with known size. pid is a valid u32 cast to i32.
+    let ret = unsafe {
+        libc::proc_pidpath(pid as i32, buf.as_mut_ptr().cast(), buf.len() as u32)
+    };
+    if ret <= 0 {
         return None;
     }
-    let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if name.is_empty() {
-        return None;
-    }
-    // ps may return full path; extract just the binary name
-    name.rsplit('/').next().map(|s| s.to_string())
+    let path = std::str::from_utf8(&buf[..ret as usize]).ok()?;
+    // Extract just the binary name from the full path
+    path.rsplit('/').next().map(|s| s.to_string())
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn process_name_from_pid(pid: u32) -> Option<String> {
+    std::fs::read_to_string(format!("/proc/{pid}/comm"))
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 #[cfg(windows)]

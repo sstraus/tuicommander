@@ -28,7 +28,7 @@ use serde_json::Value;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::Mutex;
+// tokio::sync::RwLock used inline for UpstreamClient::Http
 
 // ---------------------------------------------------------------------------
 // Circuit breaker constants
@@ -155,7 +155,7 @@ impl UpstreamMetrics {
 /// The stdio variant uses `Arc<std::sync::Mutex<…>>` so that the Arc can be
 /// cloned into `spawn_blocking` closures without any unsafe lifetime extension.
 pub(crate) enum UpstreamClient {
-    Http(Mutex<HttpMcpClient>),
+    Http(tokio::sync::RwLock<HttpMcpClient>),
     Stdio(Arc<std::sync::Mutex<StdioMcpClient>>),
 }
 
@@ -550,7 +550,7 @@ fn build_client(name: &str, config: &UpstreamMcpServer) -> Result<UpstreamClient
                 config.timeout_secs,
             )
             .ok_or_else(|| format!("Failed to build HTTP client for '{name}'"))?;
-            Ok(UpstreamClient::Http(Mutex::new(client)))
+            Ok(UpstreamClient::Http(tokio::sync::RwLock::new(client)))
         }
         UpstreamTransport::Stdio { .. } => {
             let client = StdioMcpClient::from_upstream_config(name.to_string(), &config.transport)
@@ -593,9 +593,24 @@ async fn dispatch_tool_call(
     args: Value,
 ) -> Result<Value, String> {
     match client {
-        UpstreamClient::Http(mutex) => {
-            let mut guard = mutex.lock().await;
-            guard.call_tool_with_reconnect(tool_name, args).await
+        UpstreamClient::Http(rwlock) => {
+            // Try with read lock first — allows concurrent tool calls
+            let result = {
+                let guard = rwlock.read().await;
+                guard.call_tool(tool_name, args.clone()).await
+            };
+            match result {
+                Ok(val) => Ok(val),
+                Err(e) if e.contains("400") || e.contains("connection") || e.contains("session") => {
+                    // Reconnectable error — take exclusive lock for initialize + retry
+                    let mut guard = rwlock.write().await;
+                    guard.initialize().await.map_err(|ie| {
+                        format!("Upstream reconnect failed: {ie} (original: {e})")
+                    })?;
+                    guard.call_tool(tool_name, args).await
+                }
+                Err(e) => Err(e),
+            }
         }
         UpstreamClient::Stdio(mutex) => {
             // StdioMcpClient is sync — clone the Arc and run in a blocking thread.
@@ -620,8 +635,8 @@ async fn initialize_entry(
     bus: Option<&tokio::sync::broadcast::Sender<crate::state::AppEvent>>,
 ) {
     let result = match &entry.client {
-        UpstreamClient::Http(mutex) => {
-            let mut guard = mutex.lock().await;
+        UpstreamClient::Http(rwlock) => {
+            let mut guard = rwlock.write().await;
             guard.initialize().await
         }
         UpstreamClient::Stdio(mutex) => {
@@ -748,8 +763,8 @@ async fn run_health_checks(registry: &UpstreamRegistry) {
 /// Returns the refreshed tool list on success, or an error string on failure.
 async fn health_check_entry(entry: &UpstreamEntry) -> Result<Vec<UpstreamToolDef>, String> {
     match &entry.client {
-        UpstreamClient::Http(mutex) => {
-            let guard = mutex.lock().await;
+        UpstreamClient::Http(rwlock) => {
+            let guard = rwlock.read().await;
             guard.health_check().await
         }
         UpstreamClient::Stdio(mutex) => {
@@ -884,7 +899,7 @@ mod tests {
         let config = http_server_config(name, "http://example.com/mcp");
         // Build a dummy HTTP client (won't be called in aggregation tests)
         let client = HttpMcpClient::new(name.to_string(), "http://example.com/mcp".to_string(), 10);
-        let entry = Arc::new(UpstreamEntry::new(config, UpstreamClient::Http(Mutex::new(client))));
+        let entry = Arc::new(UpstreamEntry::new(config, UpstreamClient::Http(tokio::sync::RwLock::new(client))));
         *entry.tools.write() = tools;
         *entry.status.write() = UpstreamStatus::Ready;
         (name.to_string(), entry)
@@ -951,7 +966,7 @@ mod tests {
         let config = config_with_filter(FilterMode::Deny, &["secret_*"]);
         let name = config.name.clone(); // "test"
         let client = HttpMcpClient::new(name.clone(), "http://x/mcp".to_string(), 10);
-        let entry = Arc::new(UpstreamEntry::new(config, UpstreamClient::Http(Mutex::new(client))));
+        let entry = Arc::new(UpstreamEntry::new(config, UpstreamClient::Http(tokio::sync::RwLock::new(client))));
         *entry.tools.write() = vec![make_tool_def("secret_key"), make_tool_def("safe_read")];
         *entry.status.write() = UpstreamStatus::Ready;
         registry.entries.insert(name.clone(), entry);
