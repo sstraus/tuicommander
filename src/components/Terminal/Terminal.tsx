@@ -136,6 +136,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
   // Kitty keyboard protocol: current flags for this session (0 = disabled)
   let kittyFlags = 0;
 
+  // Periodic WebGL atlas rebuild to prevent progressive rendering corruption.
+  // The WebGL texture atlas packer can degrade over prolonged use with diverse
+  // Unicode characters (status bars, progress indicators, box-drawing).
+  // Re-assigning fontSize forces a full renderer rebuild without visible change.
+  const ATLAS_REBUILD_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+  let atlasRebuildTimer: ReturnType<typeof setInterval> | undefined;
+
   // Buffer for PTY output arriving before terminal.open()
   let outputBuffer: string[] = [];
   let outputBufferBytes = 0;
@@ -1079,14 +1086,22 @@ export const Terminal: Component<TerminalProps> = (props) => {
         const wasActuallyHidden = wasHidden;
         scrollTracker.setVisible(true);
         openTerminal();
-        // Rebuild WebGL glyph atlas only on actual hidden→visible transition.
-        // The GPU texture can corrupt during display:none periods.
+        // Rebuild WebGL renderer on actual hidden→visible transition.
+        // clearTextureAtlas() alone is insufficient — it clears cached glyphs
+        // but doesn't fix structural corruption in the atlas packer. Re-assigning
+        // fontSize forces a full renderer rebuild (same mechanism as zoom).
         if (wasActuallyHidden && terminal) {
-          terminal.clearTextureAtlas();
-          // Force full redraw after atlas rebuild to avoid gradual recomposition
-          requestAnimationFrame(() => terminal!.refresh(0, terminal!.rows - 1));
+          terminal.options.fontSize = terminal.options.fontSize;
           wasHidden = false;
         }
+
+        // Start periodic atlas rebuild timer for this visible terminal
+        clearInterval(atlasRebuildTimer);
+        atlasRebuildTimer = setInterval(() => {
+          if (terminal && isVisible()) {
+            terminal.options.fontSize = terminal.options.fontSize;
+          }
+        }, ATLAS_REBUILD_INTERVAL_MS);
         // Only fit if the terminal was actually hidden or never fitted.
         // When the visibility effect re-triggers without a real hide (e.g.,
         // activeId flips null→id), skip the fit to avoid resetting scroll.
@@ -1137,6 +1152,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
       onCleanup(() => {
         if (rafHandle) cancelAnimationFrame(rafHandle);
+        clearInterval(atlasRebuildTimer);
         resizeObserver?.disconnect();
         // Only mark hidden if the terminal is actually becoming invisible.
         // SolidJS re-runs the effect (and its cleanup) when reactive deps
@@ -1180,9 +1196,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     clearTimeout(resizeTimer);
     clearTimeout(resizeObserverTimer);
     clearTimeout(retryTimer);
-    // shellState is now Rust-authoritative — no need to force idle on unmount.
-    // Rust will emit idle when the agent actually stops. On remount,
-    // attachSessionListeners syncs via get_shell_state.
+    clearInterval(atlasRebuildTimer);
     resizeObserver?.disconnect();
     unsubscribePty?.();
     unlistenParsed?.();
