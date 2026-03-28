@@ -56,6 +56,7 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `git_stash_pop` | `path, index` | `()` | Pop stash entry by index |
 | `git_stash_drop` | `path, index` | `()` | Drop stash entry by index |
 | `git_stash_show` | `path, index` | `String` | Show diff of stash entry |
+| `git_apply_reverse_patch` | `path, patch, scope?` | `()` | Apply a unified diff patch in reverse (`git apply --reverse`). Used for hunk/line restore. `scope="staged"` adds `--cached`. Patch passed via stdin (no temp files). Path-traversal validated |
 | `get_file_history` | `path, file, count?, after?` | `Vec<CommitLogEntry>` | Per-file commit log following renames (default 50, max 500) |
 | `get_file_blame` | `path, file` | `Vec<BlameLine>` | Per-line blame: hash, author, author_time (unix), line_number, content |
 | `get_branches_detail` | `path` | `Vec<BranchDetail>` | Rich branch listing: name, ahead/behind, last commit date, tracking upstream, merged status |

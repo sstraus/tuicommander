@@ -18,6 +18,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Settings > Smart Prompts tab for management (enable/disable, edit, reset to default)
   - Settings > Agents: headless command template per agent
 - **MCP Per-Repo Scoping** — Each repo can define which upstream MCP servers are relevant via an allowlist in repo settings (3-layer: per-repo > `.tuic.json` > defaults). Quick toggle via **Cmd+Shift+M** popup with live status, transport badges, tool counts, and per-repo checkboxes
+- **Side-by-Side Diff Viewer** — Split and unified view modes with `@git-diff-view/solid`, word-level highlighting, and synchronized scrolling. Toggle persisted in ui-prefs.
+- **Hunk & Line-Level Restore** — Revert individual hunks or selected lines in working tree and staged diffs via `git apply --reverse`. Click lines to select, shift-click for ranges, floating action bar with line count.
 
 ### Fixed
 - **MCP upstream URL overflow** — Long URLs in the Services tab no longer push action buttons off-screen; URLs now truncate with ellipsis

@@ -599,6 +599,11 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - Working tree diff and per-commit diff via Git Panel Changes tab
 - Per-file diff counts (additions/deletions) shown inline in Changes tab
 - Click a file row to view its diff
+- **Side-by-side (split) and unified (inline) view modes** — toggle in toolbar, preference persisted
+- **Auto-unified for new/deleted files** — split view is forced to unified when the diff is one-sided
+- **Word-level diff highlighting** via `@git-diff-view/solid` with virtualized rendering
+- **Hunk-level restore** — hover a hunk header to reveal a revert button (discard for working tree, unstage for staged)
+- **Line-level restore** — click individual addition/deletion lines to select them (shift+click for ranges), then restore only the selected lines via partial patch
 - Text selection and copy enabled in diff panels (`user-select: text`)
 - `Cmd+F` search in diff tabs via SearchBar + DomSearchEngine
 - Submodule entries are filtered from working tree status (not shown as regular files)

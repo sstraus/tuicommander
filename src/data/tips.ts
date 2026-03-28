@@ -264,4 +264,14 @@ export const TIPS: Tip[] = [
     description: "Customize Smart Prompts in Settings > Smart Prompts. You can edit built-in prompts or create your own.",
     shortcut: null,
   },
+  {
+    feature: "Split/Unified Diff",
+    description: "Toggle between side-by-side and inline diff views with the toolbar buttons in any diff tab. Your preference is saved.",
+    shortcut: null,
+  },
+  {
+    feature: "Line-Level Restore",
+    description: "Click individual lines in a diff to select them, then discard or unstage just those lines. Shift+click for range selection.",
+    shortcut: null,
+  },
 ];
