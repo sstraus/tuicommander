@@ -137,8 +137,12 @@ fn save_config(state: State<'_, Arc<AppState>>, config: config::AppConfig) -> Re
 
 /// Hash a plaintext password with bcrypt for remote access config
 #[tauri::command]
-fn hash_password(password: String) -> Result<String, String> {
-    bcrypt::hash(&password, 12).map_err(|e| format!("Failed to hash password: {e}"))
+async fn hash_password(password: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        bcrypt::hash(&password, 12).map_err(|e| format!("Failed to hash password: {e}"))
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 /// Clear all git/GitHub operation caches
