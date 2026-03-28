@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Benchmark IPC latency for key git commands via the HTTP API.
+# Benchmark IPC latency for key git commands via the HTTP API (Unix socket).
 # Requires TUICommander to be running with at least one repo configured.
 #
 # Measures:
@@ -17,28 +17,54 @@
 #   scripts/perf/bench-ipc.sh /path/to/repo 50   # custom iterations
 set -euo pipefail
 
-PORT=9877
-BASE="http://localhost:$PORT"
+# Resolve the Unix socket path (same logic as Rust config_dir + mcp.sock)
+resolve_socket() {
+  local candidates=(
+    "$HOME/Library/Application Support/com.tuic.commander/mcp.sock"
+    "${XDG_CONFIG_HOME:-$HOME/.config}/com.tuic.commander/mcp.sock"
+  )
+  for sock in "${candidates[@]}"; do
+    if [[ -S "$sock" ]]; then
+      echo "$sock"
+      return 0
+    fi
+  done
+  return 1
+}
+
+SOCK=$(resolve_socket) || {
+  echo "ERROR: TUICommander Unix socket not found."
+  echo "Start the app first, then re-run this script."
+  exit 1
+}
+
 ITERATIONS="${2:-20}"
 
-# Check if app is running
-if ! curl -sf "$BASE/health" >/dev/null 2>&1; then
-  echo "ERROR: TUICommander not running on port $PORT"
-  echo "Start the app first, then re-run this script."
+# Verify health
+if ! curl -sf --unix-socket "$SOCK" "http://localhost/health" >/dev/null 2>&1; then
+  echo "ERROR: TUICommander not responding on socket $SOCK"
   exit 1
 fi
 
-# Auto-detect repo path from workspace
+# curl wrapper for Unix socket
+scurl() {
+  curl --unix-socket "$SOCK" "$@"
+}
+
+# Auto-detect repo path
 if [[ -n "${1:-}" ]]; then
   REPO="$1"
 else
-  REPO=$(curl -sf "$BASE/api/workspace" 2>/dev/null | python3 -c "
+  REPO=$(scurl -sf "http://localhost/health" 2>/dev/null | python3 -c "
 import sys, json
-data = json.load(sys.stdin)
-repos = data if isinstance(data, list) else data.get('repos', [])
-if repos:
-    r = repos[0]
-    print(r.get('path', r) if isinstance(r, dict) else r)
+# health doesn't return repos — fall back to current directory if it's a git repo
+import subprocess
+try:
+    result = subprocess.run(['git', 'rev-parse', '--show-toplevel'], capture_output=True, text=True)
+    if result.returncode == 0:
+        print(result.stdout.strip())
+except:
+    pass
 " 2>/dev/null || echo "")
   if [[ -z "$REPO" ]]; then
     echo "ERROR: Could not auto-detect repo. Pass path as argument."
@@ -52,7 +78,7 @@ ENCODED_REPO=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$REPO'
 echo "=== IPC Latency Benchmark ==="
 echo "Repo: $REPO"
 echo "Iterations: $ITERATIONS"
-echo "Port: $PORT"
+echo "Socket: $SOCK"
 echo ""
 
 OUTPUT_DIR="$(cd "$(dirname "$0")" && pwd)/results"
@@ -67,11 +93,11 @@ bench() {
   local times=()
 
   # Warm up (1 call)
-  curl -sf "$url" >/dev/null 2>&1 || true
+  scurl -sf "$url" >/dev/null 2>&1 || true
 
   for ((i=0; i<ITERATIONS; i++)); do
     local t
-    t=$(curl -sf -o /dev/null -w '%{time_total}' "$url" 2>/dev/null || echo "0")
+    t=$(scurl -sf -o /dev/null -w '%{time_total}' "$url" 2>/dev/null || echo "0")
     times+=("$t")
   done
 
@@ -95,14 +121,14 @@ echo "" > "$RESULTS"
 echo "# IPC Benchmark — $(date) — repo: $REPO — iterations: $ITERATIONS" >> "$RESULTS"
 echo "" >> "$RESULTS"
 
-bench "repo_info"         "$BASE/api/git/repo-info?path=$ENCODED_REPO"
-bench "git_panel_context" "$BASE/api/git/panel-context?path=$ENCODED_REPO"
-bench "diff_stats"        "$BASE/api/git/diff-stats?path=$ENCODED_REPO"
-bench "changed_files"     "$BASE/api/git/changed-files?path=$ENCODED_REPO"
-bench "branches"          "$BASE/api/git/branches?path=$ENCODED_REPO"
-bench "recent_commits"    "$BASE/api/git/recent-commits?path=$ENCODED_REPO"
-bench "stash_list"        "$BASE/api/git/stash-list?path=$ENCODED_REPO"
-bench "remote_url"        "$BASE/api/git/remote-url?path=$ENCODED_REPO"
+bench "repo_info"         "http://localhost/repo/info?path=$ENCODED_REPO"
+bench "panel_context"     "http://localhost/repo/panel-context?path=$ENCODED_REPO"
+bench "diff_stats"        "http://localhost/repo/diff-stats?path=$ENCODED_REPO"
+bench "changed_files"     "http://localhost/repo/files?path=$ENCODED_REPO"
+bench "branches"          "http://localhost/repo/branches?path=$ENCODED_REPO"
+bench "recent_commits"    "http://localhost/repo/recent-commits?path=$ENCODED_REPO"
+bench "stash_list"        "http://localhost/repo/stash?path=$ENCODED_REPO"
+bench "remote_url"        "http://localhost/repo/remote-url?path=$ENCODED_REPO"
 
 echo ""
 echo "Results saved: $RESULTS"
