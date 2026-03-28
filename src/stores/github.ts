@@ -108,13 +108,20 @@ function createGitHubStore() {
       }
     }
 
-    // Detect CI recovery (failed → all passing) — separate from the notification type system
-    if (ciRecoveredCallback && newState === "OPEN") {
+    // Detect CI recovery (failed → all passing) — skip if "ready" already covers it
+    if (type !== "ready" && newState === "OPEN") {
       const oldFailed = oldPr.checks?.failed ?? 0;
       const newFailed = newPr.checks?.failed ?? 0;
       const newPending = newPr.checks?.pending ?? 0;
       if (oldFailed > 0 && newFailed === 0 && newPending === 0) {
-        ciRecoveredCallback(repoPath, newPr.branch, newPr.number);
+        prNotificationsStore.add({
+          repoPath,
+          branch: newPr.branch,
+          prNumber: newPr.number,
+          title: newPr.title,
+          type: "ci_recovered",
+        });
+        ciRecoveredCallback?.(repoPath, newPr.branch, newPr.number);
       }
     }
   }

@@ -6,6 +6,7 @@ export type PrNotificationType =
   | "closed"
   | "blocked"
   | "ci_failed"
+  | "ci_recovered"
   | "changes_requested"
   | "ready";
 
