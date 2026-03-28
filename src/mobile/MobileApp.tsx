@@ -10,6 +10,12 @@ import { useSessions } from "./useSessions";
 import { useMobileNotifications } from "./useMobileNotifications";
 import styles from "./MobileApp.module.css";
 
+// Register service worker for push notifications (only on HTTPS or localhost)
+if ("serviceWorker" in navigator &&
+    (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+}
+
 export default function MobileApp() {
   const [activeTab, setActiveTab] = createSignal<TabId>("sessions");
   const [selectedSessionId, setSelectedSessionId] = createSignal<string | null>(null);

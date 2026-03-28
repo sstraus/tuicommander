@@ -91,6 +91,13 @@
   transform: translateX(20px);
 }
 
+.hint {
+  font-size: 12px;
+  color: var(--fg-muted);
+  padding: 4px 0 8px;
+  line-height: 1.4;
+}
+
 .link {
   display: block;
   padding: 12px 0;
