@@ -51,3 +51,41 @@
   background: var(--bg-highlight);
   border-color: var(--accent);
 }
+
+/* Diff content wrapper (positions revert overlay) */
+.diffWrapper {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* Hunk revert button (positioned absolutely over hunk header rows) */
+.revertBtn {
+  position: absolute;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s, color 0.1s;
+  z-index: 2;
+}
+
+.revertBtnVisible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.revertBtn:hover {
+  color: var(--error);
+  border-color: var(--error);
+}
