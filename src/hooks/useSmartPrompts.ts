@@ -23,19 +23,17 @@ export function useSmartPrompts() {
     if (prompt.enabled === false) return { ok: false, reason: "Prompt is disabled" };
 
     if (prompt.executionMode === "headless") {
-      // Headless requires Tauri backend for subprocess execution
       if (!isTauri()) {
         // In PWA mode, headless falls back to inject — check inject requirements
         return canExecuteInject(prompt);
       }
-      // Headless requires a configured template for the active agent
+      // If a headless template is configured, the prompt can run without an active agent
       const active = terminalsStore.getActive();
       const agentType = active?.agentType;
       const template = agentType ? agentConfigsStore.getHeadlessTemplate(agentType) : undefined;
-      if (!template) {
-        return { ok: false, reason: "No headless template configured for this agent" };
-      }
-      return { ok: true };
+      if (template) return { ok: true };
+      // No template — execution will fall back to inject, so check inject requirements
+      return canExecuteInject(prompt);
     }
 
     return canExecuteInject(prompt);

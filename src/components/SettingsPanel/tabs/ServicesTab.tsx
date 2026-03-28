@@ -508,7 +508,7 @@ export const ServicesTab: Component = () => {
                           const updated = await rpc<TailscaleStatus>("recheck_tailscale_status");
                           setTailscaleState(updated);
                         } catch (e) {
-                          console.error("Tailscale recheck failed", e);
+                          appLogger.error("tailscale", "Recheck failed", e);
                         }
                       }}
                       title={t("services.action.recheckTailscale", "Recheck Tailscale status")}

@@ -242,6 +242,7 @@ export const PrDetailContent: Component<PrDetailContentProps> = (props) => {
           <SmartButtonStrip
             placement="pr-popover"
             repoPath={props.repoPath}
+            defaultPromptId="smart-review-pr"
             extraFilter={(p: SavedPrompt) => {
               if (p.id === "smart-fix-ci") return (checkSummary()?.failed ?? 0) > 0;
               if (p.id === "smart-resolve-conflicts") return pr().mergeable === "CONFLICTING";

@@ -25,6 +25,8 @@ export interface AgentConfig {
   sessionDiscovery: SessionDiscoveryConfig | null;
   spawnArgs: (prompt: string, options?: AgentSpawnOptions) => string[];
   outputFormat: "text" | "jsonl" | "markdown";
+  /** Default headless command template. Used when user hasn't configured a custom one. */
+  defaultHeadlessTemplate?: string;
   detectPatterns: {
     rateLimit: RegExp[];
     completion: RegExp[];
@@ -48,6 +50,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     name: "Claude Code",
     binary: "claude",
     description: "Anthropic's Claude Code CLI",
+    defaultHeadlessTemplate: "claude --print --output-format text -p \"{prompt}\"",
     resumeCommand: "claude --continue",
     sessionDiscovery: { resumeWithId: (id) => `claude --resume ${id}` },
     spawnArgs: (prompt, options = {}) => {
@@ -87,6 +90,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     name: "Gemini CLI",
     binary: "gemini",
     description: "Google's Gemini CLI",
+    defaultHeadlessTemplate: "gemini \"{prompt}\"",
     resumeCommand: "gemini --resume",
     sessionDiscovery: { resumeWithId: (id) => `gemini --resume ${id}` },
     spawnArgs: (prompt, options = {}) => {
@@ -121,6 +125,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     name: "OpenCode",
     binary: "opencode",
     description: "OpenAI-based coding assistant",
+    defaultHeadlessTemplate: "opencode \"{prompt}\"",
     resumeCommand: "opencode -c",
     sessionDiscovery: null, // sessions stored in SQLite DB — not yet supported
     spawnArgs: (prompt, options = {}) => {
@@ -153,6 +158,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     name: "Aider",
     binary: "aider",
     description: "AI pair programming in terminal",
+    defaultHeadlessTemplate: "aider --yes-always --message \"{prompt}\"",
     resumeCommand: "aider --restore-chat-history",
     sessionDiscovery: null, // single .aider.chat.history.md per project, no session IDs
     spawnArgs: (prompt, options = {}) => {
@@ -187,6 +193,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     name: "Codex CLI",
     binary: "codex",
     description: "OpenAI Codex CLI",
+    defaultHeadlessTemplate: "codex \"{prompt}\"",
     resumeCommand: "codex resume --last",
     sessionDiscovery: { resumeWithId: (id) => `codex resume ${id}` },
     spawnArgs: (prompt, options = {}) => {
@@ -219,6 +226,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     name: "Amp",
     binary: "amp",
     description: "Sourcegraph's AI coding agent",
+    defaultHeadlessTemplate: "amp \"{prompt}\"",
     resumeCommand: "amp threads continue",
     sessionDiscovery: null, // cloud-only, no local session files
     spawnArgs: (prompt) => {
@@ -249,6 +257,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     name: "Cursor Agent",
     binary: "cursor-agent",
     description: "Cursor's standalone coding agent CLI",
+    defaultHeadlessTemplate: "cursor-agent \"{prompt}\"",
     resumeCommand: "cursor-agent resume",
     sessionDiscovery: null, // closed-source, storage path undocumented
     spawnArgs: (prompt) => {
@@ -276,6 +285,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     name: "Warp Oz",
     binary: "oz",
     description: "Warp's AI agent (local + cloud)",
+    defaultHeadlessTemplate: "oz agent run \"{prompt}\"",
     resumeCommand: null,
     sessionDiscovery: null,
     spawnArgs: (prompt) => {
@@ -300,6 +310,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     name: "Droid",
     binary: "droid",
     description: "Factory's agent-native software development CLI",
+    defaultHeadlessTemplate: "droid \"{prompt}\"",
     resumeCommand: null,
     sessionDiscovery: null,
     spawnArgs: (prompt) => {

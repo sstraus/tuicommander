@@ -3,6 +3,7 @@ import { invoke } from "../../invoke";
 import { repositoriesStore } from "../../stores/repositories";
 import { appLogger } from "../../stores/appLogger";
 import { ConfirmDialog } from "../ConfirmDialog";
+import { SmartButtonStrip } from "../SmartButtonStrip/SmartButtonStrip";
 import { ContextMenu, createContextMenu, type ContextMenuItem } from "../ContextMenu/ContextMenu";
 import { cx } from "../../utils";
 import { handleOpenUrl } from "../../utils/openUrl";
@@ -1017,6 +1018,16 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
           </label>
           <button class={s.createConfirmBtn} onClick={doCreateBranch}>Create</button>
           <button class={s.createCancelBtn} onClick={cancelCreate}>Cancel</button>
+        </div>
+      </Show>
+
+      <Show when={props.repoPath}>
+        <div class={s.smartActions}>
+          <SmartButtonStrip
+            placement="git-branches"
+            repoPath={props.repoPath!}
+            defaultPromptId="smart-create-pr"
+          />
         </div>
       </Show>
 

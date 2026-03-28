@@ -95,10 +95,10 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
   builtin(
     "smart-commit-msg",
     "Generate Commit Message",
-    "Generate a conventional commit message from staged diff",
+    "Generate a conventional commit message from current changes",
     "sparkle",
     ["git-changes"],
-    "Generate a conventional commit message for these staged changes. Output ONLY the commit message, nothing else.\n\n{staged_diff}",
+    "Generate a conventional commit message for these changes. Output ONLY the commit message, nothing else.\n\nChanged files:\n{changed_files}\n\nDiff:\n{diff}",
     ["git"],
     { executionMode: "headless", outputTarget: "commit-message" },
   ),

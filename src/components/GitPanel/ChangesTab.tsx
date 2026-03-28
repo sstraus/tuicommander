@@ -6,6 +6,7 @@ import { promptLibraryStore, type SavedPrompt } from "../../stores/promptLibrary
 import { useSmartPrompts } from "../../hooks/useSmartPrompts";
 import { appLogger } from "../../stores/appLogger";
 import { ConfirmDialog } from "../ConfirmDialog";
+import { SmartButtonStrip } from "../SmartButtonStrip/SmartButtonStrip";
 import { cx, globToRegex } from "../../utils";
 import type { CommitLogEntry, WorkingTreeStatus } from "./types";
 import s from "./ChangesTab.module.css";
@@ -122,27 +123,8 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
   let savedDraftMsg = "";
   let successTimeout: ReturnType<typeof setTimeout> | undefined;
 
-  // Smart prompts menu
-  const { canExecute, executeSmartPrompt } = useSmartPrompts();
-  const [smartMenuOpen, setSmartMenuOpen] = createSignal(false);
+  const { canExecute: canExecPrompt, executeSmartPrompt } = useSmartPrompts();
   const [generating, setGenerating] = createSignal(false);
-
-  const smartPrompts = createMemo(() =>
-    promptLibraryStore.getSmartByPlacement("git-changes"),
-  );
-
-  /** The most recently used smart prompt for this placement, or the first one */
-  const lastUsedPrompt = createMemo((): SavedPrompt | undefined => {
-    const all = smartPrompts();
-    if (all.length === 0) return undefined;
-    // Find the most recently used among git-changes prompts
-    const recent = promptLibraryStore.state.recentIds;
-    const allIds = new Set(all.map((p) => p.id));
-    for (const id of recent) {
-      if (allIds.has(id)) return all.find((p) => p.id === id);
-    }
-    return all[0]; // fallback to first
-  });
 
   // Listen for generated commit messages from headless smart prompts
   const handleCommitMsg = (e: Event) => {
@@ -278,30 +260,23 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
   }
 
   async function generateCommitMsg() {
-    const prompt = smartPrompts().find((p) => p.id === "smart-commit-msg");
+    const prompt = promptLibraryStore.getSmartByPlacement("git-changes")
+      .find((p) => p.id === "smart-commit-msg");
     if (!prompt) return;
+    const check = canExecPrompt(prompt);
+    if (!check.ok) {
+      setCommitError(check.reason ?? "Cannot generate commit message");
+      return;
+    }
+    setCommitError(null);
     setGenerating(true);
     try {
-      await executeSmartPrompt(prompt);
+      const result = await executeSmartPrompt(prompt);
+      if (!result.ok) setCommitError(result.reason ?? "Failed to generate commit message");
     } catch (err) {
-      appLogger.error("prompts", "Generate commit message failed", err);
+      setCommitError(String(err));
     } finally {
       setGenerating(false);
-    }
-  }
-
-  async function handleSmartPromptClick(prompt: SavedPrompt) {
-    setSmartMenuOpen(false);
-    const check = canExecute(prompt);
-    if (!check.ok) return;
-    if (prompt.outputTarget === "commit-message") {
-      setGenerating(true);
-      try { await executeSmartPrompt(prompt); }
-      finally { setGenerating(false); }
-    } else {
-      executeSmartPrompt(prompt).catch((err) =>
-        appLogger.error("prompts", `Failed to execute "${prompt.name}"`, err),
-      );
     }
   }
 
@@ -576,57 +551,12 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
               />
               Amend
             </label>
-            {/* Smart prompts split button: last-used action + dropdown */}
-            <Show when={lastUsedPrompt()}>
-              <div class={s.smartSplit}>
-                <button
-                  class={cx(s.smartSplitMain, !canExecute(lastUsedPrompt()!).ok && s.smartMenuItemDisabled)}
-                  disabled={!canExecute(lastUsedPrompt()!).ok}
-                  onClick={() => handleSmartPromptClick(lastUsedPrompt()!)}
-                  title={lastUsedPrompt()!.description}
-                >
-                  <SparkleIcon /> {lastUsedPrompt()!.name}
-                </button>
-                <button
-                  class={cx(s.smartSplitArrow, smartMenuOpen() && s.smartSplitArrowOpen)}
-                  onClick={() => setSmartMenuOpen(!smartMenuOpen())}
-                  title="More actions"
-                >
-                  <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="2" fill="none" />
-                  </svg>
-                </button>
-                <Show when={smartMenuOpen()}>
-                  <div class={s.smartMenu} onClick={() => setSmartMenuOpen(false)}>
-                    <For each={smartPrompts()}>
-                      {(prompt) => {
-                        const check = () => canExecute(prompt);
-                        const isActive = () => prompt.id === lastUsedPrompt()?.id;
-                        return (
-                          <button
-                            class={cx(
-                              s.smartMenuItem,
-                              isActive() && s.smartMenuItemActive,
-                              !check().ok && s.smartMenuItemDisabled,
-                            )}
-                            disabled={!check().ok}
-                            title={!check().ok ? check().reason : prompt.description}
-                            onClick={(e) => { e.stopPropagation(); handleSmartPromptClick(prompt); }}
-                          >
-                            {prompt.name}
-                            <Show when={isActive()}>
-                              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" class={s.checkMark}>
-                                <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z" />
-                              </svg>
-                            </Show>
-                          </button>
-                        );
-                      }}
-                    </For>
-                  </div>
-                </Show>
-              </div>
-            </Show>
+            <SmartButtonStrip
+              placement="git-changes"
+              repoPath={props.repoPath!}
+              defaultPromptId="smart-commit"
+              onError={(msg) => setCommitError(msg || null)}
+            />
           </div>
           <Show when={commitError()}>
             <div class={s.commitError}>{commitError()}</div>

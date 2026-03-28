@@ -1188,20 +1188,21 @@ pub(crate) fn get_branches_detail_impl(path: &Path) -> Result<Vec<BranchDetail>,
         })
         .collect();
 
-    // Compute base ahead/behind for local branches with tuicommander-base set
+    // Compute base ahead/behind for local branches with tuicommander-base set.
+    // Uses --left-right to get both counts in a single subprocess per branch.
     let path_str = path.to_string_lossy();
     for branch in &mut branches {
         if branch.is_remote { continue; }
         if let Some(base) = crate::worktree::get_branch_base(&path_str, &branch.name) {
-            branch.base_branch = Some(base.clone());
-            // git rev-list --count base..branch (ahead)
-            if let Ok(out) = git_cmd(path).args(["rev-list", "--count", &format!("{base}..{}", branch.name)]).run() {
-                branch.base_ahead = out.stdout.trim().parse().ok();
+            let range = format!("{base}...{}", branch.name);
+            if let Ok(out) = git_cmd(path).args(["rev-list", "--count", "--left-right", &range]).run() {
+                let parts: Vec<&str> = out.stdout.trim().split('\t').collect();
+                if parts.len() == 2 {
+                    branch.base_behind = parts[0].trim().parse().ok();
+                    branch.base_ahead = parts[1].trim().parse().ok();
+                }
             }
-            // git rev-list --count branch..base (behind)
-            if let Ok(out) = git_cmd(path).args(["rev-list", "--count", &format!("{}..{base}", branch.name)]).run() {
-                branch.base_behind = out.stdout.trim().parse().ok();
-            }
+            branch.base_branch = Some(base);
         }
     }
 

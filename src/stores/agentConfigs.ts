@@ -1,6 +1,6 @@
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "../invoke";
-import type { AgentType, AgentRunConfig, AgentsConfig } from "../agents";
+import { AGENTS, type AgentType, type AgentRunConfig, type AgentsConfig } from "../agents";
 import { appLogger } from "./appLogger";
 
 interface AgentConfigsState {
@@ -128,9 +128,9 @@ function createAgentConfigsStore() {
       }
     },
 
-    /** Get the headless command template for an agent, or undefined */
+    /** Get the headless command template for an agent (user override or built-in default) */
     getHeadlessTemplate(type: AgentType): string | undefined {
-      return state.agents[type]?.headless_template;
+      return state.agents[type]?.headless_template ?? AGENTS[type]?.defaultHeadlessTemplate;
     },
 
     /** Set the headless command template for an agent */

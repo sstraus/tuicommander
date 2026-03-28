@@ -1,43 +1,129 @@
-/* SmartButtonStrip — compact inline prompt buttons */
+/* SmartButtonStrip — split button with dropdown for smart prompts */
 
-.strip {
+.split {
+  position: relative;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: visible;
+}
+
+.splitMain {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 8px;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  background: none;
+  border: none;
+  border-right: 1px solid var(--border);
   color: var(--fg-secondary);
   font-size: var(--font-xs);
   font-family: var(--font-ui);
-  padding: 2px 8px;
-  height: 22px;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+  transition: color 0.15s, background 0.15s;
 }
 
-.btn:hover:not(.btnDisabled) {
-  background: var(--bg-highlight);
+.splitMain:hover:not(:disabled) {
   color: var(--fg-primary);
-  border-color: var(--fg-secondary);
+  background: var(--bg-highlight);
 }
 
-.btnDisabled {
+.splitDisabled {
   opacity: 0.4;
-  cursor: default;
+  cursor: not-allowed;
 }
 
-.icon {
-  font-size: 11px;
-  line-height: 1;
+.splitBusy {
+  color: var(--accent);
+}
+
+.splitArrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  padding: 2px 0;
+  background: none;
+  border: none;
+  color: var(--fg-secondary);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.splitArrow:hover {
+  color: var(--fg-primary);
+  background: var(--bg-highlight);
+}
+
+.splitArrowOpen {
+  background: var(--bg-highlight);
+}
+
+.menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  min-width: 180px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-dropdown);
+  z-index: 100;
+  padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  background: none;
+  border: none;
+  text-align: left;
+  font-size: var(--font-sm);
+  font-family: var(--font-ui);
+  color: var(--fg-primary);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.menuItem:hover:not(:disabled) {
+  background: var(--bg-highlight);
+}
+
+.menuItemActive {
+  color: var(--accent);
+}
+
+.menuItemDisabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.checkMark {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
 }

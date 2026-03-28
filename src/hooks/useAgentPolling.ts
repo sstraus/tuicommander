@@ -1,4 +1,4 @@
-import { createEffect, onCleanup, untrack } from "solid-js";
+import { createEffect, onCleanup } from "solid-js";
 import { invoke } from "../invoke";
 import { terminalsStore } from "../stores/terminals";
 import { appLogger } from "../stores/appLogger";
@@ -6,6 +6,13 @@ import { type AgentType, AGENT_TYPES, AGENTS } from "../agents";
 
 /** Polling interval for foreground process detection (ms) */
 const POLL_INTERVAL_MS = 3000;
+
+/**
+ * Number of consecutive null polls required before clearing a detected agent.
+ * Prevents flickering when the agent spawns short-lived subprocesses (git, node, etc.)
+ * that briefly become the foreground process group.
+ */
+const NULL_THRESHOLD = 3;
 
 /** Validate a string from the backend is a known AgentType */
 function toAgentType(value: string | null): AgentType | null {
@@ -26,33 +33,27 @@ function toAgentType(value: string | null): AgentType | null {
 export function useAgentPolling(): void {
   // Track which terminals we've already attempted discovery for (cleared on agent exit)
   const discoveryAttempted = new Set<string>();
+  // Count consecutive null polls per terminal (for debounce)
+  const nullStreak = new Map<string, number>();
 
   createEffect(() => {
     // Read terminal IDs reactively so the effect re-runs when terminals are added/removed
     const allIds = terminalsStore.getIds();
-    // Snapshot sessionIds WITHOUT tracking — pollAll() mutates the store and we
-    // must not re-trigger this effect on every poll cycle.
-    const sessions = untrack(() => {
-      const result: Array<{ termId: string; sessionId: string }> = [];
-      for (const id of allIds) {
-        const sess = terminalsStore.state.terminals[id]?.sessionId;
-        if (sess) result.push({ termId: id, sessionId: sess });
-      }
-      return result;
-    });
 
-    if (sessions.length === 0) return;
+    // Nothing to poll if no terminals exist at all
+    if (allIds.length === 0) return;
 
     const pollAll = async () => {
-      // Re-read current sessions inside poll since they may have changed
-      const currentSessions = untrack(() => {
-        const result: Array<{ termId: string; sessionId: string }> = [];
-        for (const id of allIds) {
-          const sess = terminalsStore.state.terminals[id]?.sessionId;
-          if (sess) result.push({ termId: id, sessionId: sess });
-        }
-        return result;
-      });
+      // Read current sessions inside poll — sessionIds may arrive after the
+      // terminal is added (terminal add fires getIds() before sessionId is set),
+      // so we must re-read here on every tick instead of snapshotting once.
+      const currentSessions: Array<{ termId: string; sessionId: string }> = [];
+      for (const id of allIds) {
+        const sess = terminalsStore.state.terminals[id]?.sessionId;
+        if (sess) currentSessions.push({ termId: id, sessionId: sess });
+      }
+      if (currentSessions.length === 0) return;
+
       const results = await Promise.allSettled(
         currentSessions.map(async ({ termId, sessionId }) => {
           const result = await invoke<string | null>("get_session_foreground_process", {
@@ -80,6 +81,19 @@ export function useAgentPolling(): void {
 
         const prevAgentType = current.agentType;
 
+        // Debounce agent→null: require N consecutive null polls before clearing.
+        // This prevents flickering when the agent spawns subprocesses.
+        if (prevAgentType !== null && agentType === null) {
+          const streak = (nullStreak.get(termId) ?? 0) + 1;
+          nullStreak.set(termId, streak);
+          if (streak < NULL_THRESHOLD) continue; // hold previous agentType
+        }
+
+        // Any non-null result resets the streak
+        if (agentType !== null) {
+          nullStreak.delete(termId);
+        }
+
         if (prevAgentType !== agentType) {
           appLogger.debug("app", `[AgentPoll] ${termId} agentType "${prevAgentType}" → "${agentType}"`);
           terminalsStore.update(termId, { agentType });
@@ -88,6 +102,7 @@ export function useAgentPolling(): void {
           if (prevAgentType !== null && agentType === null) {
             terminalsStore.update(termId, { agentSessionId: null });
             discoveryAttempted.delete(termId);
+            nullStreak.delete(termId);
           }
         }
 

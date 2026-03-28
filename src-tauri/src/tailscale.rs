@@ -163,7 +163,7 @@ pub(crate) async fn provision_cert(fqdn: &str) -> anyhow::Result<(Vec<u8>, Vec<u
     {
         // Try Unix socket first (Linux with tailscaled); fall back to CLI (macOS App Store).
         let socket_path = std::path::Path::new("/var/run/tailscale/tailscaled.sock");
-        if socket_path.exists() {
+        if tokio::fs::metadata(socket_path).await.is_ok() {
             provision_cert_unix(fqdn).await
         } else {
             provision_cert_cli(fqdn).await
@@ -172,6 +172,10 @@ pub(crate) async fn provision_cert(fqdn: &str) -> anyhow::Result<(Vec<u8>, Vec<u
     #[cfg(windows)]
     {
         provision_cert_cli(fqdn).await
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        Err(anyhow::anyhow!("TLS certificate provisioning is not supported on this platform"))
     }
 }
 
@@ -212,7 +216,9 @@ async fn provision_cert_unix(fqdn: &str) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
     Ok((cert_pem, key_pem))
 }
 
-/// Provision cert via `tailscale cert` CLI (used on macOS App Store and Windows).
+/// Provision cert via `tailscale cert` CLI.
+/// Used on macOS App Store (no Unix socket), Windows, and any Unix system
+/// where the tailscaled socket is not present.
 async fn provision_cert_cli(fqdn: &str) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
     let binary = find_binary().ok_or_else(|| anyhow::anyhow!("Tailscale binary not found"))?;
 
@@ -222,13 +228,18 @@ async fn provision_cert_cli(fqdn: &str) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
     let cert_path = temp_dir.join(format!("{fqdn}.crt"));
     let key_path = temp_dir.join(format!("{fqdn}.key"));
 
+    let cert_path_str = cert_path.to_str()
+        .ok_or_else(|| anyhow::anyhow!("cert path is not valid UTF-8: {cert_path:?}"))?;
+    let key_path_str = key_path.to_str()
+        .ok_or_else(|| anyhow::anyhow!("key path is not valid UTF-8: {key_path:?}"))?;
+
     let output = tokio::process::Command::new(&binary)
         .args([
             "cert",
             "--cert-file",
-            cert_path.to_str().unwrap_or_default(),
+            cert_path_str,
             "--key-file",
-            key_path.to_str().unwrap_or_default(),
+            key_path_str,
             fqdn,
         ])
         .output()

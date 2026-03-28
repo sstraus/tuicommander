@@ -98,12 +98,10 @@ fn git_output(repo_path: &str, args: &[&str]) -> Option<String> {
         .output()
         .ok()?;
     if output.status.success() {
-        let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if s.is_empty() {
-            None
-        } else {
-            Some(s)
-        }
+        // Return empty string for successful commands with no output (e.g. no staged changes).
+        // This ensures the variable exists in the context map so prompts don't report
+        // "unresolved_variables" — they can check for empty content themselves.
+        Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
     } else {
         None
     }
