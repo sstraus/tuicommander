@@ -413,7 +413,12 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
 ///
 /// Both listeners share a single shutdown signal so `save_config` can restart
 /// the server cleanly.
-pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enabled: bool) {
+pub async fn start_server(
+    state: Arc<AppState>,
+    mcp_enabled: bool,
+    remote_enabled: bool,
+    tls_config: Option<axum_server::tls_rustls::RustlsConfig>,
+) {
     let config = state.config.read().clone();
 
     // Register shutdown channel so save_config can restart server
@@ -559,19 +564,21 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
     };
 
     // --- TCP listener (only for remote access with auth) ---
+    // Supports dual-protocol (HTTP+HTTPS on same port) when TLS cert is available.
     let tcp_handle = if remote_enabled {
         let base_port = if config.remote_access_port == 0 { 0 } else { config.remote_access_port };
         let host = if config.ipv6_enabled { "[::]" } else { "0.0.0.0" };
         const MAX_PORT_ATTEMPTS: u16 = 3;
 
-        let mut listener_result = None;
+        let mut listener_result: Option<std::net::TcpListener> = None;
         // Port 0 = OS-assigned, no retry needed
         let attempts = if base_port == 0 { 1 } else { MAX_PORT_ATTEMPTS };
         for attempt in 0..attempts {
             let port = base_port + attempt;
             let bind_addr = format!("{host}:{port}");
-            match tokio::net::TcpListener::bind(&bind_addr).await {
+            match std::net::TcpListener::bind(&bind_addr) {
                 Ok(listener) => {
+                    listener.set_nonblocking(true).ok();
                     if attempt > 0 {
                         tracing::info!(source = "mcp_http", "Port {base_port} busy, using {port}");
                     }
@@ -591,17 +598,33 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
             let addr = listener.local_addr().unwrap_or_else(|_| {
                 std::net::SocketAddr::from(([0, 0, 0, 0], 0))
             });
-            tracing::info!(source = "mcp_http", %addr, "TCP listening (remote access enabled)");
 
             let app = build_router(state.clone(), true, mcp_enabled);
-            Some(tokio::spawn(async move {
-                if let Err(e) = axum::serve(
-                    listener,
-                    app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
-                ).await {
-                    tracing::error!(source = "mcp_http", "TCP server error: {e}");
-                }
-            }))
+            let svc = app.into_make_service_with_connect_info::<std::net::SocketAddr>();
+
+            if let Some(tls) = tls_config.clone() {
+                tracing::info!(source = "mcp_http", %addr, "TCP listening with dual-protocol HTTP+HTTPS");
+                Some(tokio::spawn(async move {
+                    use axum_server_dual_protocol::ServerExt;
+                    if let Err(e) = axum_server_dual_protocol::from_tcp_dual_protocol(listener, tls)
+                        .set_upgrade(false)
+                        .serve(svc)
+                        .await
+                    {
+                        tracing::error!(source = "mcp_http", "TCP/TLS server error: {e}");
+                    }
+                }))
+            } else {
+                tracing::info!(source = "mcp_http", %addr, "TCP listening (HTTP only, remote access enabled)");
+                Some(tokio::spawn(async move {
+                    if let Err(e) = axum_server::from_tcp(listener)
+                        .serve(svc)
+                        .await
+                    {
+                        tracing::error!(source = "mcp_http", "TCP server error: {e}");
+                    }
+                }))
+            }
         } else {
             None
         }

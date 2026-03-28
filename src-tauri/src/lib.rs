@@ -143,7 +143,7 @@ fn save_config(state: State<'_, Arc<AppState>>, config: config::AppConfig) -> Re
             let rt = tokio::runtime::Runtime::new()
                 .expect("tokio runtime for HTTP server restart");
             rt.block_on(async move {
-                mcp_http::start_server(state_arc, true, remote_enabled).await;
+                mcp_http::start_server(state_arc, true, remote_enabled, None).await;
             });
         });
     }
@@ -651,7 +651,7 @@ pub fn run() {
                 // Auto-connect saved upstream MCP servers on boot
                 crate::mcp_upstream_config::auto_connect_saved_upstreams(&boot_registry_state).await;
 
-                mcp_http::start_server(mcp_state, true, remote_enabled).await;
+                mcp_http::start_server(mcp_state, true, remote_enabled, None).await;
             });
         });
     }

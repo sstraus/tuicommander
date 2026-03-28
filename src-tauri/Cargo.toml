@@ -69,6 +69,10 @@ tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] }
 aes-gcm = "0.10"
 sha2 = "0.10"
 hkdf = "0.12"
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+axum-server-dual-protocol = "0.7"
+web-push-native = "0.4"
+base64ct = { version = "1", features = ["alloc"] }
 anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
