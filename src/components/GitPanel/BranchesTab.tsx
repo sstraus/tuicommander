@@ -587,6 +587,23 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
     });
   }
 
+  // --- Update from base ---
+
+  async function doUpdateFromBase(branch: BranchDetail) {
+    if (!props.repoPath) return;
+    try {
+      const result = await invoke<string>("update_from_base", {
+        path: props.repoPath,
+        branchName: branch.name,
+        strategy: "rebase",
+      });
+      appLogger.info("git", result);
+      repositoriesStore.bumpRevision(props.repoPath);
+    } catch (err) {
+      appLogger.error("git", `Update from base failed for ${branch.name}`, err);
+    }
+  }
+
   // --- Context menu ---
 
   function openContextMenu(e: MouseEvent, branch: BranchDetail) {
@@ -618,6 +635,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
         { label: "Push", shortcut: "\u21E7P", action: () => void doPush(branch) },
         { label: "Pull", shortcut: "p", action: () => void doPull(branch) },
         { label: "Fetch", shortcut: "f", action: () => void doFetch(branch) },
+        { label: "Update from base (rebase)", action: () => void doUpdateFromBase(branch) },
         sep,
         { label: "Rename", shortcut: "\u21E7R", action: () => startRename(branch, getFlatIndex(branch)) },
         sep,
@@ -634,6 +652,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
       { label: "Push", shortcut: "\u21E7P", action: () => void doPush(branch) },
       { label: "Pull", shortcut: "p", action: () => void doPull(branch) },
       { label: "Fetch", shortcut: "f", action: () => void doFetch(branch) },
+      { label: "Update from base (rebase)", action: () => void doUpdateFromBase(branch) },
     ];
 
     if (!branch.is_main) {
