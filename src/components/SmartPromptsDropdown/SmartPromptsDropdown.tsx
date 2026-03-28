@@ -162,10 +162,15 @@ export const SmartPromptsDropdown: Component<SmartPromptsDropdownProps> = (props
                         return (
                           <div
                             class={cx(s.item, !enabled() && s.itemDisabled)}
-                            title={!enabled() ? check().reason : prompt.description ?? prompt.name}
+                            title={!enabled() ? check().reason : ""}
                             onClick={() => enabled() && handleItemClick(prompt)}
                           >
-                            <span class={s.itemName}>{prompt.name}</span>
+                            <div class={s.itemContent}>
+                              <span class={s.itemName}>{prompt.name}</span>
+                              <Show when={prompt.description}>
+                                <span class={s.itemDesc}>{prompt.description}</span>
+                              </Show>
+                            </div>
                             <Show when={prompt.shortcut}>
                               <span class={s.itemShortcut}>{prompt.shortcut}</span>
                             </Show>

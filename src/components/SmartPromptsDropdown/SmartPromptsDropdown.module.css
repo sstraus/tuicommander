@@ -39,10 +39,10 @@
 .dropdown {
   position: absolute;
   top: 100%;
-  left: 0;
+  right: 0;
   margin-top: 4px;
-  width: 280px;
-  max-height: 400px;
+  width: 320px;
+  max-height: min(500px, calc(100vh - 80px));
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
@@ -54,18 +54,18 @@
 }
 
 .searchWrapper {
-  padding: 6px 8px;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--border);
 }
 
 .searchInput {
   width: 100%;
-  padding: 4px 8px;
+  padding: 6px 10px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   color: var(--fg-primary);
-  font-size: var(--font-sm);
+  font-size: var(--font-base);
   font-family: inherit;
   outline: none;
 }
@@ -85,10 +85,10 @@
 }
 
 .categoryHeader {
-  padding: 6px 10px 3px;
-  font-size: var(--font-2xs);
+  padding: 8px 12px 4px;
+  font-size: var(--font-xs);
   font-weight: 600;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -96,14 +96,19 @@
 .item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
+  gap: 8px;
+  padding: 7px 12px;
   cursor: pointer;
   transition: background 0.1s;
 }
 
 .item:hover {
   background: var(--bg-highlight);
+  border-radius: var(--radius-md);
+}
+
+.item:hover .itemName {
+  color: var(--accent);
 }
 
 .itemDisabled {
@@ -115,13 +120,28 @@
   background: transparent;
 }
 
-.itemName {
+.itemContent {
   flex: 1;
-  font-size: var(--font-sm);
+  min-width: 0;
+}
+
+.itemName {
+  display: block;
+  font-size: var(--font-base);
   color: var(--fg-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.itemDesc {
+  display: block;
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 1px;
 }
 
 .itemShortcut {
