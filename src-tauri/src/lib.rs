@@ -544,11 +544,21 @@ fn regenerate_session_token(state: State<'_, Arc<AppState>>) {
 
 /// Build a QR-code connect URL server-side so the raw session token
 /// never reaches JS (where a malicious plugin could steal it).
+/// Uses HTTPS + Tailscale FQDN when TLS is active on a Tailscale IP.
 #[tauri::command]
 fn get_connect_url(state: State<'_, Arc<AppState>>, ip: String) -> String {
     let port = state.config.read().remote_access_port;
     let token = state.session_token.read().clone();
-    build_connect_url(&ip, port, &token)
+
+    // If TLS is active and the IP is a Tailscale address, use https + FQDN
+    let ts = state.tailscale_state.read().clone();
+    if let tailscale::TailscaleState::Running { ref fqdn, https_enabled: true } = ts {
+        if crate::mcp_http::auth::is_tailscale_ip(&ip) {
+            return build_connect_url("https", fqdn, port, &token);
+        }
+    }
+
+    build_connect_url("http", &ip, port, &token)
 }
 
 /// Get Tailscale daemon status for the frontend Settings panel.
@@ -1075,9 +1085,13 @@ pub fn run() {
 
 /// Build a connect URL for QR-code authentication.
 /// Brackets IPv6 addresses for valid URL syntax.
-fn build_connect_url(ip: &str, port: u16, token: &str) -> String {
-    let host = if ip.contains(':') { format!("[{ip}]") } else { ip.to_string() };
-    format!("http://{host}:{port}/?token={token}")
+fn build_connect_url(scheme: &str, host: &str, port: u16, token: &str) -> String {
+    let host = if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]")
+    } else {
+        host.to_string()
+    };
+    format!("{scheme}://{host}:{port}/?token={token}")
 }
 
 #[cfg(test)]
@@ -1087,7 +1101,7 @@ mod tests {
     #[test]
     fn build_connect_url_ipv4() {
         assert_eq!(
-            build_connect_url("192.168.1.1", 8080, "abc-123"),
+            build_connect_url("http", "192.168.1.1", 8080, "abc-123"),
             "http://192.168.1.1:8080/?token=abc-123"
         );
     }
@@ -1095,7 +1109,7 @@ mod tests {
     #[test]
     fn build_connect_url_ipv6() {
         assert_eq!(
-            build_connect_url("fe80::1", 9443, "tok"),
+            build_connect_url("http", "fe80::1", 9443, "tok"),
             "http://[fe80::1]:9443/?token=tok"
         );
     }
@@ -1103,8 +1117,16 @@ mod tests {
     #[test]
     fn build_connect_url_localhost() {
         assert_eq!(
-            build_connect_url("127.0.0.1", 3000, "t"),
+            build_connect_url("http", "127.0.0.1", 3000, "t"),
             "http://127.0.0.1:3000/?token=t"
+        );
+    }
+
+    #[test]
+    fn build_connect_url_https_fqdn() {
+        assert_eq!(
+            build_connect_url("https", "myhost.tail-abc.ts.net", 9876, "tok"),
+            "https://myhost.tail-abc.ts.net:9876/?token=tok"
         );
     }
 }

@@ -93,11 +93,13 @@ fn has_valid_url_token(req: &Request<axum::body::Body>, session_token: &str) -> 
 
 /// Build a Set-Cookie header value for the session token.
 /// `max_age_secs` controls cookie lifetime (0 = session cookie that expires on browser close).
-fn session_cookie_value(token: &str, max_age_secs: u64) -> String {
+fn session_cookie_value(token: &str, max_age_secs: u64, secure: bool) -> String {
     // HttpOnly: JS cannot read the cookie (XSS protection)
     // SameSite=Strict: only sent on same-origin requests (stronger CSRF protection)
     // Path=/: valid for all routes
-    let base = format!("{SESSION_COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/");
+    // Secure: only sent over HTTPS (when TLS is active)
+    let secure_flag = if secure { "; Secure" } else { "" };
+    let base = format!("{SESSION_COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/{secure_flag}");
     if max_age_secs > 0 {
         format!("{base}; Max-Age={max_age_secs}")
     } else {
@@ -137,6 +139,26 @@ fn is_private_ipv6(ip: &Ipv6Addr) -> bool {
     false
 }
 
+/// Check if a string IP address belongs to the Tailscale CGNAT range (100.64/10)
+/// or the Tailscale IPv6 prefix (fd7a:115c:a1e0::/48).
+pub(crate) fn is_tailscale_ip(ip_str: &str) -> bool {
+    use std::net::IpAddr;
+    let ip: IpAddr = match ip_str.parse() {
+        Ok(ip) => ip,
+        Err(_) => return false,
+    };
+    match ip {
+        IpAddr::V4(v4) => {
+            let o = v4.octets();
+            o[0] == 100 && (64..=127).contains(&o[1])
+        }
+        IpAddr::V6(v6) => {
+            let s = v6.segments();
+            s[0] == 0xfd7a && s[1] == 0x115c && (s[2] & 0xffff) == 0xa1e0
+        }
+    }
+}
+
 /// Basic Auth middleware that validates credentials against config.
 ///
 /// Flow:
@@ -168,6 +190,12 @@ pub async fn basic_auth_middleware(
     let session_token = state.session_token.read().clone();
     let token_duration_secs = state.config.read().session_token_duration_secs;
 
+    // Detect TLS for Secure cookie flag (dual-protocol injects Protocol extension)
+    let is_tls = req
+        .extensions()
+        .get::<axum_server_dual_protocol::Protocol>()
+        .is_some_and(|p| matches!(p, axum_server_dual_protocol::Protocol::Tls));
+
     // Fast path: valid session cookie skips bcrypt entirely
     if has_valid_session_cookie(&req, &session_token) {
         return next.run(req).await;
@@ -178,7 +206,7 @@ pub async fn basic_auth_middleware(
     // We set a session cookie so the SPA's subsequent fetch() calls are also authenticated.
     if has_valid_url_token(&req, &session_token) {
         let mut response = next.run(req).await;
-        if let Ok(val) = session_cookie_value(&session_token, token_duration_secs).parse() {
+        if let Ok(val) = session_cookie_value(&session_token, token_duration_secs, is_tls).parse() {
             response.headers_mut().insert(header::SET_COOKIE, val);
         }
         return response;
@@ -210,7 +238,7 @@ pub async fn basic_auth_middleware(
         AuthResult::Ok => {
             // Set session cookie so subsequent JS fetch() calls are authenticated
             let mut response = next.run(req).await;
-            if let Ok(val) = session_cookie_value(&session_token, token_duration_secs).parse() {
+            if let Ok(val) = session_cookie_value(&session_token, token_duration_secs, is_tls).parse() {
                 response.headers_mut().insert(header::SET_COOKIE, val);
             }
             response
@@ -277,16 +305,17 @@ mod tests {
 
     #[test]
     fn session_cookie_with_max_age() {
-        let cookie = session_cookie_value("abc-123", 86400);
+        let cookie = session_cookie_value("abc-123", 86400, false);
         assert!(cookie.contains("tui-session=abc-123"));
         assert!(cookie.contains("Max-Age=86400"));
         assert!(cookie.contains("HttpOnly"));
         assert!(cookie.contains("SameSite=Strict"));
+        assert!(!cookie.contains("Secure"));
     }
 
     #[test]
     fn session_cookie_zero_duration_omits_max_age() {
-        let cookie = session_cookie_value("abc-123", 0);
+        let cookie = session_cookie_value("abc-123", 0, false);
         assert!(cookie.contains("tui-session=abc-123"));
         assert!(!cookie.contains("Max-Age"));
         assert!(cookie.contains("HttpOnly"));
@@ -294,8 +323,26 @@ mod tests {
 
     #[test]
     fn session_cookie_never_duration() {
-        let cookie = session_cookie_value("tok", 31536000);
+        let cookie = session_cookie_value("tok", 31536000, false);
         assert!(cookie.contains("Max-Age=31536000"));
+    }
+
+    #[test]
+    fn session_cookie_secure_flag_on_tls() {
+        let cookie = session_cookie_value("tok", 86400, true);
+        assert!(cookie.contains("; Secure"));
+    }
+
+    #[test]
+    fn tailscale_ip_detection() {
+        assert!(is_tailscale_ip("100.80.90.53"));
+        assert!(is_tailscale_ip("100.64.0.1"));
+        assert!(is_tailscale_ip("100.127.255.255"));
+        assert!(!is_tailscale_ip("100.128.0.1"));
+        assert!(!is_tailscale_ip("192.168.1.1"));
+        assert!(is_tailscale_ip("fd7a:115c:a1e0::c601:5a3a"));
+        assert!(!is_tailscale_ip("fe80::1"));
+        assert!(!is_tailscale_ip("not-an-ip"));
     }
 
     #[test]
