@@ -1,11 +1,12 @@
-import { Component, createMemo, For, Show } from "solid-js";
+import { Component, createEffect, createMemo, createSignal, on, Show } from "solid-js";
+import { DiffView, DiffModeEnum } from "@git-diff-view/solid";
+import { DiffFile } from "@git-diff-view/core";
+import "@git-diff-view/solid/styles/diff-view.css";
+import type { DiffViewMode } from "../../stores/ui";
 
-export interface DiffViewerProps {
-  diff: string;
-  emptyMessage?: string;
-  /** Callback to expose the content DOM element for search */
-  contentRef?: (el: HTMLElement) => void;
-}
+// ---------------------------------------------------------------------------
+// Legacy types & parsers (kept for backward compatibility with PrDiffTab, tests)
+// ---------------------------------------------------------------------------
 
 type LineType = "header" | "hunk" | "addition" | "deletion" | "context";
 
@@ -74,24 +75,75 @@ export function parseDiffFiles(diff: string): DiffFileSection[] {
   return sections;
 }
 
+// ---------------------------------------------------------------------------
+// Extract file name from unified diff header
+// ---------------------------------------------------------------------------
+
+function extractFileName(diff: string): string {
+  const match = diff.match(/^diff --git a\/.+ b\/(.+)$/m);
+  return match ? match[1] : "";
+}
+
+// ---------------------------------------------------------------------------
+// DiffViewer component — powered by @git-diff-view/solid
+// ---------------------------------------------------------------------------
+
+export interface DiffViewerProps {
+  diff: string;
+  emptyMessage?: string;
+  /** Display mode: "split" for side-by-side, "unified" for inline */
+  mode?: DiffViewMode;
+  /** Callback to expose the content DOM element for search */
+  contentRef?: (el: HTMLElement) => void;
+}
+
+/** Convert our mode string to the library's enum */
+function toModeEnum(mode: DiffViewMode | undefined): DiffModeEnum {
+  return mode === "unified" ? DiffModeEnum.Unified : DiffModeEnum.Split;
+}
+
 export const DiffViewer: Component<DiffViewerProps> = (props) => {
-  // Memoize parsed diff to avoid re-parsing on every render
-  const lines = createMemo(() => parseDiff(props.diff));
   const isEmpty = createMemo(() => props.diff.trim() === "");
+
+  // Build a DiffFile instance from the raw unified diff string.
+  // DiffFile.createInstance expects hunks as an array of diff strings.
+  const [diffFile, setDiffFile] = createSignal<DiffFile | undefined>(undefined);
+
+  createEffect(on(
+    () => props.diff,
+    (diff) => {
+      if (!diff.trim()) {
+        setDiffFile(undefined);
+        return;
+      }
+      const fileName = extractFileName(diff);
+      const df = DiffFile.createInstance({
+        oldFile: { fileName },
+        newFile: { fileName },
+        hunks: [diff],
+      });
+      df.init();
+      df.buildSplitDiffLines();
+      df.buildUnifiedDiffLines();
+      setDiffFile(df);
+    },
+  ));
 
   return (
     <div id="diff-content" ref={(el) => props.contentRef?.(el)}>
       <Show
-        when={!isEmpty()}
+        when={!isEmpty() && diffFile()}
         fallback={
           <div class="diff-empty">{props.emptyMessage || "No changes"}</div>
         }
       >
-        <For each={lines()}>
-          {(line) => (
-            <div class={`diff-line ${line.type}`}>{line.content}</div>
-          )}
-        </For>
+        <DiffView
+          diffFile={diffFile()}
+          diffViewMode={toModeEnum(props.mode)}
+          diffViewTheme="dark"
+          diffViewWrap={false}
+          diffViewFontSize={13}
+        />
       </Show>
     </div>
   );
