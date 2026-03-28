@@ -12,6 +12,7 @@ import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
+import { editorTabsStore } from "../../stores/editorTabs";
 import { extractHunks, buildPartialPatch } from "./diffPatch";
 import s from "./DiffTab.module.css";
 
@@ -387,6 +388,17 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
             <path d="M1 2h14v12H1V2zm1 1v10h12V3H2z" />
           </svg>
         </button>
+        <div style={{ "margin-left": "auto" }}>
+          <button
+            class={s.modeBtn}
+            onClick={() => editorTabsStore.add(props.repoPath, props.filePath)}
+            title={t("diffTab.editFile", "Edit file")}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M12.1 1.3a1.5 1.5 0 0 1 2.1 0l.5.5a1.5 1.5 0 0 1 0 2.1L5.8 12.8l-3.5.9.9-3.5L12.1 1.3zM11 3.4 4.1 10.3l-.5 1.9 1.9-.5L12.4 4.8 11 3.4z" />
+            </svg>
+          </button>
+        </div>
       </div>
       <SearchBar
         visible={searchVisible()}
