@@ -88,6 +88,13 @@ export const ServicesTab: Component = () => {
   const [disabledNativeTools, setDisabledNativeTools] = createSignal<string[]>([]);
   const [upstreamStatus, setUpstreamStatus] = createSignal<UpstreamStatusEntry[]>([]);
 
+  // Tailscale state
+  const [tailscaleState, setTailscaleState] = createSignal<{
+    state: "NotInstalled" | "NotRunning" | "Running";
+    fqdn?: string;
+    https_enabled?: boolean;
+  } | null>(null);
+
   // Relay state
   const [relayEnabled, setRelayEnabled] = createSignal(false);
   const [relayUrl, setRelayUrl] = createSignal("wss://relay.tuicommander.com");
@@ -168,11 +175,17 @@ export const ServicesTab: Component = () => {
     }
   };
 
-  onMount(() => {
+  onMount(async () => {
     refreshStatus();
     loadRemoteConfig();
     const interval = setInterval(refreshStatus, 3000);
     onCleanup(() => clearInterval(interval));
+
+    // Load Tailscale status
+    try {
+      const ts = await rpc<{ state: string; fqdn?: string; https_enabled?: boolean }>("get_tailscale_status");
+      setTailscaleState(ts as any);
+    } catch { /* Tailscale detection not available */ }
   });
 
   /** Save a single config field (load-modify-save pattern matching other tabs) */
@@ -468,6 +481,31 @@ export const ServicesTab: Component = () => {
               ? t("services.hint.lanAuthBypassWarning", "Devices on your local network can access without a password. Only use on trusted networks.")
               : t("services.hint.lanAuthBypassDescription", "Skips authentication for private/LAN IP addresses (RFC1918, Tailscale, IPv6 ULA)")}
           </p>
+        </div>
+      </Show>
+
+      {/* ── Tailscale TLS ── */}
+      <Show when={tailscaleState()}>
+        <h3 style={{ "margin-top": "24px" }}>Tailscale HTTPS</h3>
+        <div class={s.group}>
+          <div class={s.row}>
+            <span class={s.label}>{t("services.label.tailscaleStatus", "Status")}</span>
+            <span class={s.value}>
+              {tailscaleState()?.state === "Running" && tailscaleState()?.https_enabled
+                ? `HTTPS active (${tailscaleState()?.fqdn})`
+                : tailscaleState()?.state === "Running"
+                  ? "Running (HTTPS not enabled)"
+                  : tailscaleState()?.state === "NotRunning"
+                    ? "Not running"
+                    : "Not installed"}
+            </span>
+          </div>
+          <Show when={tailscaleState()?.state === "Running" && !tailscaleState()?.https_enabled}>
+            <p class={s.hint}>
+              {t("services.hint.tailscaleEnableHttps",
+                "Enable HTTPS certificates in your Tailscale admin console to serve the PWA over HTTPS.")}
+            </p>
+          </Show>
         </div>
       </Show>
 
