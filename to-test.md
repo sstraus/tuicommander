@@ -2,6 +2,32 @@
 
 Features to test when TUICommander is more usable.
 
+## Notification Bell Enhancements
+- [ ] Click bell with no notifications → shows "No notifications" (not empty 1px dropdown)
+- [ ] Run `git push` via toolbar → git result appears in bell dropdown under "GIT" section
+- [ ] Failed `git push` → shows error item with red icon
+- [ ] PR CI transitions from failed to all-passing → "CI Passed" notification appears
+- [ ] CI recovery when PR is also "ready" → only "Ready" shows (no duplicate ci_recovered)
+- [ ] Create worktree via MCP → "Worktree: branch-name" item appears under "WORKTREES"
+- [ ] Dismiss individual items and "Dismiss All" work for each section
+
+## TCP Port Retry
+- [ ] Start two instances of TUIC → second instance binds to port+1 (check logs)
+- [ ] Start three instances → third binds to port+2
+- [ ] Start four → third fails with clear error message showing port range attempted
+
+## Stale Suggestions Fix
+- [ ] Agent emits suggestions → chips appear at bottom
+- [ ] Dismiss suggestions → resize terminal → suggestions do NOT reappear
+- [ ] Tab switch away and back → old suggestions do NOT reappear
+- [ ] New agent cycle (user input) → new suggestions appear correctly
+
+## Browser Mode Parsed Events
+- [ ] Open TUI in browser (http://localhost:9876) → agent status-line shows task name
+- [ ] Rate-limit events trigger warning notification in browser mode
+- [ ] Suggest chips appear in browser mode when agent finishes
+- [ ] Question detection works in browser mode (awaiting input indicator)
+
 ## MCP Ctrl+C Forwarding (904-5deb — verified non-bug)
 - [ ] Create PTY via MCP `session create`, run `sleep 1000`, send `session input special_key=ctrl+c` → sleep exits
 - [ ] Same with nested shell: `sh -c 'sleep 1000'` → ctrl+c kills inner sleep

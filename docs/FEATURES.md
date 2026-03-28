@@ -368,12 +368,16 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
 - Click: `.md`/`.mdx` files open in Markdown panel; others open in IDE
 - Dismiss (×) button to hide without opening
 
-### 4.4 PR Notification Bell
-- Bell icon with count badge when PRs have updates
+### 4.4 Notification Bell
+- Bell icon with count badge when notifications are available
 - Click: opens popover listing all active notifications
-- Notification types: Merged, Closed, Conflicts, CI Failed, Changes Requested, Ready
-- Click notification item: opens full PR detail popover for that branch
-- Individual dismiss (×) per notification, or "Dismiss All"
+- Empty state: shows "No notifications" when nothing is pending
+- **PR Updates section** — types: Merged, Closed, Conflicts, CI Failed, CI Passed, Changes Requested, Ready
+- **Git section** — background git operation results (push, pull, fetch) with success/failure status
+- **Worktrees section** — worktree creation events (from MCP/agent)
+- **Plugin activity sections** — registered by plugins via activityStore
+- Click PR notification: opens full PR detail popover for that branch
+- Individual dismiss (×) per notification, section "Dismiss All", auto-dismiss after 5min focused time
 
 ### 4.5 IDE Launcher
 - Button with current IDE icon — click to open repo/file in IDE

@@ -21,7 +21,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Side-by-Side Diff Viewer** — Split and unified view modes with `@git-diff-view/solid`, word-level highlighting, and synchronized scrolling. Toggle persisted in ui-prefs.
 - **Hunk & Line-Level Restore** — Revert individual hunks or selected lines in working tree and staged diffs via `git apply --reverse`. Click lines to select, shift-click for ranges, floating action bar with line count.
 
+- **Notification Bell Enhancements** — CI recovery ("CI Passed") notifications, background git operation results, worktree creation events. Empty state shows "No notifications" instead of 1px dropdown.
+- **TCP Port Retry** — MCP HTTP server tries up to 3 adjacent ports when the configured port is busy, with clear error message on failure.
+
 ### Fixed
+- **Browser mode parsed events** — Structured events (suggest, status-line, rate-limit, question, progress, etc.) now work in browser/remote mode via WebSocket, not just Tauri desktop.
+- **Stale suggestion chips** — Follow-up suggestions no longer reappear from buffer re-scans during resize/tab-switch; requires agent idle state.
+- **Git spawn error diagnostics** — "Spawn failed" errors now include the working directory path in the log message for easier debugging.
 - **MCP upstream URL overflow** — Long URLs in the Services tab no longer push action buttons off-screen; URLs now truncate with ellipsis
 
 ## [0.9.7] - 2026-03-26
