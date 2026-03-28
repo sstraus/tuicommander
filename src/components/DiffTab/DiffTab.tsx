@@ -3,10 +3,12 @@ import { DiffViewer } from "../ui";
 import { useRepository } from "../../hooks/useRepository";
 import { repositoriesStore } from "../../stores/repositories";
 import { diffTabsStore } from "../../stores/diffTabs";
+import { uiStore, type DiffViewMode } from "../../stores/ui";
 import { DomSearchEngine } from "../shared/DomSearchEngine";
 import type { SearchOptions } from "../shared/DomSearchEngine";
 import { SearchBar } from "../shared/SearchBar";
 import { t } from "../../i18n";
+import { cx } from "../../utils";
 import s from "./DiffTab.module.css";
 
 export interface DiffTabProps {
@@ -69,16 +71,19 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
     })();
   });
 
-  // Re-apply search when diff content changes
+  // Re-apply search when diff content changes or view mode changes
   createEffect(() => {
     diff();
+    uiStore.state.diffViewMode;
     if (!searchVisible() || !lastSearchTerm) return;
+    // Delay to let the library re-render after mode switch
     requestAnimationFrame(() => rerunSearch());
   });
 
   function rerunSearch() {
     if (!contentRef) return;
-    if (!engine) engine = new DomSearchEngine(contentRef);
+    // Recreate engine after mode switch (DOM structure changes)
+    engine = new DomSearchEngine(contentRef);
     const count = engine.search(lastSearchTerm, lastSearchOpts);
     setMatchCount(count);
     setMatchIndex(count > 0 ? 0 : -1);
@@ -118,8 +123,31 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
     setMatchIndex(-1);
   };
 
+  const mode = (): DiffViewMode => uiStore.state.diffViewMode;
+
   return (
     <div class={s.content}>
+      {/* Toolbar with view mode toggle */}
+      <div class={s.toolbar}>
+        <button
+          class={cx(s.modeBtn, mode() === "split" && s.modeBtnActive)}
+          onClick={() => uiStore.setDiffViewMode("split")}
+          title={t("diffTab.splitView", "Side-by-side")}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M1 2h6v12H1V2zm8 0h6v12H9V2zM2 3v10h4V3H2zm8 0v10h4V3h-4z" />
+          </svg>
+        </button>
+        <button
+          class={cx(s.modeBtn, mode() === "unified" && s.modeBtnActive)}
+          onClick={() => uiStore.setDiffViewMode("unified")}
+          title={t("diffTab.unifiedView", "Inline")}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M1 2h14v12H1V2zm1 1v10h12V3H2z" />
+          </svg>
+        </button>
+      </div>
       <SearchBar
         visible={searchVisible()}
         onSearch={handleSearch}
@@ -131,6 +159,7 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
       />
       <DiffViewer
         diff={diff()}
+        mode={mode()}
         contentRef={(el: HTMLElement) => { contentRef = el; }}
         emptyMessage={
           loading()

@@ -9,7 +9,45 @@
   width: 100%;
   height: 100%;
   overflow: auto;
+  display: flex;
+  flex-direction: column;
   /* Override global user-select:none so diff text can be highlighted & copied */
   -webkit-user-select: text;
   user-select: text;
+}
+
+/* Toolbar with view mode toggle */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+}
+
+.modeBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 22px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: color 0.1s, background 0.1s;
+}
+
+.modeBtn:hover {
+  color: var(--fg-secondary);
+  background: var(--bg-highlight);
+}
+
+.modeBtnActive {
+  color: var(--accent);
+  background: var(--bg-highlight);
+  border-color: var(--accent);
 }
