@@ -633,7 +633,20 @@ export const Terminal: Component<TerminalProps> = (props) => {
       // window.confirm("WARNING: potentially dangerous") + window.open(), which
       // shows a scary dialog and then fails in Tauri (window.open is a no-op).
       linkHandler: {
-        activate: (_event, uri) => handleOpenUrl(uri),
+        activate: (_event, uri) => {
+          // Route file:// URIs to the file opener (e.g. OSC 8 links from Claude Code)
+          if (uri.startsWith("file://") && props.onOpenFilePath) {
+            try {
+              const parsed = new URL(uri);
+              const filePath = decodeURIComponent(parsed.pathname);
+              if (filePath) {
+                props.onOpenFilePath(filePath);
+                return;
+              }
+            } catch { /* fall through to handleOpenUrl */ }
+          }
+          handleOpenUrl(uri);
+        },
       },
     });
 
