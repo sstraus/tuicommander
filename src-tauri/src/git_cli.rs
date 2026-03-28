@@ -121,7 +121,7 @@ impl GitCmd {
         match self.run() {
             Ok(o) => Some(o),
             Err(GitError::SpawnFailed(e)) => {
-                tracing::error!(source = "git_cli", cwd = %cwd.display(), "Spawn failed: {e}");
+                tracing::error!(source = "git_cli", "Spawn failed in {}: {e}", cwd.display());
                 None
             }
             Err(GitError::NonZeroExit { .. }) => None,
