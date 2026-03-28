@@ -148,6 +148,11 @@
   color: var(--fg-muted);
 }
 
+.baseBehind {
+  color: var(--warning, #e5a200);
+  font-weight: 600;
+}
+
 .metaDate {
   color: var(--fg-muted);
   white-space: nowrap;

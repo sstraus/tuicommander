@@ -1094,6 +1094,12 @@ pub(crate) struct BranchDetail {
     pub last_commit_date: Option<String>,     // ISO 8601
     pub last_commit_message: Option<String>,  // first line only
     pub last_commit_author: Option<String>,
+    /// Commits ahead of the stored base branch (tuicommander-base)
+    pub base_ahead: Option<u32>,
+    /// Commits behind the stored base branch (tuicommander-base)
+    pub base_behind: Option<u32>,
+    /// The stored base branch name, if any
+    pub base_branch: Option<String>,
 }
 
 /// Field separator used in `git for-each-ref` output.
@@ -1175,9 +1181,29 @@ pub(crate) fn get_branches_detail_impl(path: &Path) -> Result<Vec<BranchDetail>,
                 last_commit_date,
                 last_commit_message,
                 last_commit_author,
+                base_ahead: None,
+                base_behind: None,
+                base_branch: None,
             })
         })
         .collect();
+
+    // Compute base ahead/behind for local branches with tuicommander-base set
+    let path_str = path.to_string_lossy();
+    for branch in &mut branches {
+        if branch.is_remote { continue; }
+        if let Some(base) = crate::worktree::get_branch_base(&path_str, &branch.name) {
+            branch.base_branch = Some(base.clone());
+            // git rev-list --count base..branch (ahead)
+            if let Ok(out) = git_cmd(path).args(["rev-list", "--count", &format!("{base}..{}", branch.name)]).run() {
+                branch.base_ahead = out.stdout.trim().parse().ok();
+            }
+            // git rev-list --count branch..base (behind)
+            if let Ok(out) = git_cmd(path).args(["rev-list", "--count", &format!("{}..{base}", branch.name)]).run() {
+                branch.base_behind = out.stdout.trim().parse().ok();
+            }
+        }
+    }
 
     // Sort: main/primary branches first, then alphabetical
     branches.sort_by(|a, b| {

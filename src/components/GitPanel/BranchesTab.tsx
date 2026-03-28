@@ -881,6 +881,9 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
           <Show when={isLocal && (branch.behind ?? 0) > 0}>
             <span class={s.behind}>&#x2193;{branch.behind}</span>
           </Show>
+          <Show when={isLocal && (branch.base_behind ?? 0) > 0}>
+            <span class={s.baseBehind} title={`${branch.base_behind} behind ${branch.base_branch ?? "base"}`}>&#x21E3;{branch.base_behind}</span>
+          </Show>
           <Show when={branch.is_merged}>
             <span class={s.merged}>merged</span>
           </Show>

@@ -50,4 +50,10 @@ export interface BranchDetail {
   last_commit_date: string | null;
   last_commit_message: string | null;
   last_commit_author: string | null;
+  /** Commits ahead of stored base branch (tuicommander-base) */
+  base_ahead: number | null;
+  /** Commits behind stored base branch (tuicommander-base) */
+  base_behind: number | null;
+  /** The stored base branch name, if any */
+  base_branch: string | null;
 }
