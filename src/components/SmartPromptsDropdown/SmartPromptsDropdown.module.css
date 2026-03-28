@@ -104,11 +104,6 @@
 
 .item:hover {
   background: var(--bg-highlight);
-  border-radius: var(--radius-md);
-}
-
-.item:hover .itemName {
-  color: var(--accent);
 }
 
 .itemDisabled {
