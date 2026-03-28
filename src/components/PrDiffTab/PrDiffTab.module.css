@@ -158,6 +158,44 @@
   /* default styling */
 }
 
+/* Per-file diff content (wraps DiffViewer) */
+.fileDiff {
+  border-bottom: 1px solid var(--border);
+}
+
+/* Mode toggle in header */
+.modeToggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.modeBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 18px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: color 0.1s, background 0.1s;
+}
+
+.modeBtn:hover {
+  color: var(--fg-secondary);
+  background: var(--bg-highlight);
+}
+
+.modeBtnActive {
+  color: var(--accent);
+  background: var(--bg-highlight);
+  border-color: var(--accent);
+}
+
 .emptyState {
   padding: 24px;
   text-align: center;

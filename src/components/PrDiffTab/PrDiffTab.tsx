@@ -1,6 +1,8 @@
 import { Component, createSignal, For, Show } from "solid-js";
-import { parseDiffFiles, type DiffFileSection } from "../ui/DiffViewer";
+import { DiffViewer, parseDiffFiles, type DiffFileSection } from "../ui/DiffViewer";
+import { uiStore, type DiffViewMode } from "../../stores/ui";
 import { t } from "../../i18n";
+import { cx } from "../../utils";
 import s from "./PrDiffTab.module.css";
 
 export interface PrDiffTabProps {
@@ -9,50 +11,13 @@ export interface PrDiffTabProps {
   diff: string;
 }
 
-/** Parse hunk header "@@ -a,b +c,d @@" to extract the starting line numbers */
-function parseHunkStart(hunk: string): { oldStart: number; newStart: number } {
-  const match = hunk.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-  return match ? { oldStart: parseInt(match[1]), newStart: parseInt(match[2]) } : { oldStart: 0, newStart: 0 };
+/** Reconstruct the raw diff string for a single file section */
+function sectionToRawDiff(section: DiffFileSection): string {
+  return section.lines.map((l) => l.content).join("\n");
 }
 
-const FileSection: Component<{ file: DiffFileSection }> = (props) => {
+const FileSection: Component<{ file: DiffFileSection; mode: DiffViewMode }> = (props) => {
   const [collapsed, setCollapsed] = createSignal(false);
-
-  /** Build line numbers by walking the diff lines */
-  const numberedLines = () => {
-    const result: Array<{ oldNum: string; newNum: string; content: string; type: string }> = [];
-    let oldLine = 0;
-    let newLine = 0;
-
-    for (const line of props.file.lines) {
-      if (line.type === "header" || line.content.startsWith("---") || line.content.startsWith("+++") ||
-          line.content.startsWith("index ") || line.content.startsWith("similarity") ||
-          line.content.startsWith("rename ") || line.content.startsWith("new file") ||
-          line.content.startsWith("deleted file")) {
-        // Skip meta lines from numbered display
-        continue;
-      }
-      if (line.type === "hunk") {
-        const { oldStart, newStart } = parseHunkStart(line.content);
-        oldLine = oldStart;
-        newLine = newStart;
-        result.push({ oldNum: "", newNum: "", content: line.content, type: "hunk" });
-        continue;
-      }
-      if (line.type === "addition") {
-        result.push({ oldNum: "", newNum: String(newLine), content: line.content, type: "addition" });
-        newLine++;
-      } else if (line.type === "deletion") {
-        result.push({ oldNum: String(oldLine), newNum: "", content: line.content, type: "deletion" });
-        oldLine++;
-      } else {
-        result.push({ oldNum: String(oldLine), newNum: String(newLine), content: line.content, type: "context" });
-        oldLine++;
-        newLine++;
-      }
-    }
-    return result;
-  };
 
   return (
     <div class={s.fileSection}>
@@ -74,24 +39,12 @@ const FileSection: Component<{ file: DiffFileSection }> = (props) => {
         </span>
       </div>
       <Show when={!collapsed()}>
-        <table class={s.diffTable}>
-          <tbody>
-            <For each={numberedLines()}>
-              {(line) => (
-                <tr class={
-                  line.type === "addition" ? s.lineAddition :
-                  line.type === "deletion" ? s.lineDeletion :
-                  line.type === "hunk" ? s.lineHunk :
-                  s.lineContext
-                }>
-                  <td class={s.lineNum}>{line.oldNum}</td>
-                  <td class={s.lineNum}>{line.newNum}</td>
-                  <td class={s.lineContent}>{line.content}</td>
-                </tr>
-              )}
-            </For>
-          </tbody>
-        </table>
+        <div class={s.fileDiff}>
+          <DiffViewer
+            diff={sectionToRawDiff(props.file)}
+            mode={props.mode}
+          />
+        </div>
       </Show>
     </div>
   );
@@ -101,6 +54,8 @@ export const PrDiffTab: Component<PrDiffTabProps> = (props) => {
   const files = () => parseDiffFiles(props.diff);
   const totalAdd = () => files().reduce((sum, f) => sum + f.additions, 0);
   const totalDel = () => files().reduce((sum, f) => sum + f.deletions, 0);
+
+  const mode = (): DiffViewMode => uiStore.state.diffViewMode;
 
   return (
     <div class={s.container}>
@@ -115,10 +70,30 @@ export const PrDiffTab: Component<PrDiffTabProps> = (props) => {
           {" "}
           <span class={s.statDel}>-{totalDel()}</span>
         </span>
+        <div class={s.modeToggle}>
+          <button
+            class={cx(s.modeBtn, mode() === "split" && s.modeBtnActive)}
+            onClick={() => uiStore.setDiffViewMode("split")}
+            title={t("diffTab.splitView", "Side-by-side")}
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M1 2h6v12H1V2zm8 0h6v12H9V2zM2 3v10h4V3H2zm8 0v10h4V3h-4z" />
+            </svg>
+          </button>
+          <button
+            class={cx(s.modeBtn, mode() === "unified" && s.modeBtnActive)}
+            onClick={() => uiStore.setDiffViewMode("unified")}
+            title={t("diffTab.unifiedView", "Inline")}
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M1 2h14v12H1V2zm1 1v10h12V3H2z" />
+            </svg>
+          </button>
+        </div>
       </div>
       <Show when={files().length > 0} fallback={<div class={s.emptyState}>{t("prDiff.empty", "No changes")}</div>}>
         <For each={files()}>
-          {(file) => <FileSection file={file} />}
+          {(file) => <FileSection file={file} mode={mode()} />}
         </For>
       </Show>
     </div>
