@@ -18,7 +18,6 @@ import {
   GitHubTab,
   RepoWorktreeTab,
   RepoScriptsTab,
-  SmartPromptsTab,
 } from "./tabs";
 import { t } from "../../i18n";
 import s from "./Settings.module.css";
@@ -44,7 +43,6 @@ const GLOBAL_TABS: SettingsShellTab[] = [
   { key: "services", label: t("settings.services", "Services") },
   { key: "plugins", label: t("settings.plugins", "Plugins") },
   { key: "agents", label: t("settings.agents", "Agents") },
-  { key: "smart-prompts", label: "Smart Prompts" },
 ];
 
 function defaultTab(ctx: SettingsContext): string {
@@ -177,9 +175,6 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
       </Show>
       <Show when={activeTab() === "agents"}>
         <AgentsTab />
-      </Show>
-      <Show when={activeTab() === "smart-prompts"}>
-        <SmartPromptsTab />
       </Show>
     </SettingsShell>
   );

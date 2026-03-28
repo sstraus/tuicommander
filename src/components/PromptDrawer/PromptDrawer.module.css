@@ -383,3 +383,87 @@
   background: rgba(var(--error-rgb, 220, 53, 69), 0.1);
   border-radius: var(--radius-md);
 }
+
+/* Placement checkbox grid */
+.placementGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.placementCheck {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-sm);
+  color: var(--fg-secondary);
+  cursor: pointer;
+}
+
+.placementCheck input {
+  cursor: pointer;
+}
+
+/* Toggle row for auto-execute */
+.toggleRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.fieldHint {
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  margin-top: 2px;
+}
+
+/* Reset button */
+.resetBtn {
+  background: transparent !important;
+  color: var(--warning, #e5a300) !important;
+  border: 1px solid var(--warning, #e5a300) !important;
+}
+
+/* Badge */
+.badge {
+  display: inline-block;
+  font-size: var(--font-2xs);
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+  margin-left: 6px;
+  vertical-align: middle;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* Disabled items */
+.itemDisabled {
+  opacity: 0.45;
+}
+
+/* Enable/disable toggle button */
+.toggleBtn {
+  font-size: 10px !important;
+}
+
+.toggleOff {
+  opacity: 0.4;
+}
+
+/* Variable dialog enhancements */
+.varLabel {
+  font-family: var(--font-mono);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.varDesc {
+  display: block;
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  margin-bottom: 4px;
+}

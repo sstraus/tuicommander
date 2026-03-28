@@ -1,5 +1,6 @@
 import { Component, For, Show, createEffect, createSignal, onCleanup } from "solid-js";
-import { promptLibraryStore, type SavedPrompt, type PromptCategory } from "../../stores/promptLibrary";
+import { promptLibraryStore, type SavedPrompt, type PromptCategory, type SmartPlacement } from "../../stores/promptLibrary";
+import { SMART_PROMPTS_BUILTIN, VARIABLE_DESCRIPTIONS } from "../../data/smartPromptsBuiltIn";
 import { terminalsStore } from "../../stores/terminals";
 import { usePty } from "../../hooks/usePty";
 import { appLogger } from "../../stores/appLogger";
@@ -21,6 +22,13 @@ const CATEGORY_LABELS: Record<PromptCategory | "all", string> = {
   recent: "Recent",
   favorite: "Favorites",
 };
+
+const ALL_PLACEMENTS: SmartPlacement[] = [
+  "toolbar", "git-changes", "git-branches", "pr-popover", "tab-context", "command-palette",
+];
+
+/** Built-in defaults indexed by ID for quick lookup */
+const BUILTIN_BY_ID = new Map(SMART_PROMPTS_BUILTIN.map((p) => [p.id, p]));
 
 export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
   const [selectedIndex, setSelectedIndex] = createSignal(0);
@@ -47,7 +55,6 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
     if (!isOpen()) return;
 
     const handleKeydown = (e: KeyboardEvent) => {
-      // If showing variable dialog, handle differently
       if (showVariableDialog()) {
         if (e.key === "Escape") {
           setShowVariableDialog(false);
@@ -56,7 +63,6 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
         return;
       }
 
-      // If showing editor, handle differently
       if (showEditor()) {
         if (e.key === "Escape") {
           setShowEditor(false);
@@ -118,18 +124,19 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
 
   /** Inject prompt into active terminal */
   const injectPrompt = async (prompt: SavedPrompt, executeImmediately: boolean = false) => {
+    if (prompt.enabled === false) return;
+
     const variables = await promptLibraryStore.extractVariables(prompt.content);
 
-    // If prompt has variables, show variable dialog
     if (variables.length > 0) {
       setPendingPrompt(prompt);
-      setVariableValues(
-        variables.reduce((acc, v) => {
-          const promptVar = prompt.variables?.find((pv) => pv.name === v);
-          acc[v] = promptVar?.defaultValue || "";
-          return acc;
-        }, {} as Record<string, string>)
-      );
+      // Pre-populate with auto-resolved values where possible
+      const autoVars: Record<string, string> = {};
+      for (const v of variables) {
+        const promptVar = prompt.variables?.find((pv) => pv.name === v);
+        autoVars[v] = promptVar?.defaultValue || "";
+      }
+      setVariableValues(autoVars);
       setShowVariableDialog(true);
       return;
     }
@@ -137,24 +144,20 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
     await doInject(prompt, {}, executeImmediately);
   };
 
-  /** Actually inject the prompt */
   const doInject = async (
     prompt: SavedPrompt,
     variables: Record<string, string>,
-    executeImmediately: boolean = false
+    executeImmediately: boolean = false,
   ) => {
     const activeTerminal = terminalsStore.getActive();
     if (!activeTerminal?.sessionId) return;
 
-    // Process content with variables
     let content = await promptLibraryStore.processContent(prompt, variables);
 
-    // Add newline if executing immediately
     if (executeImmediately) {
       content += "\n";
     }
 
-    // Write to terminal
     try {
       await pty.write(activeTerminal.sessionId, content);
       promptLibraryStore.markAsUsed(prompt.id);
@@ -166,7 +169,6 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
     }
   };
 
-  /** Handle variable dialog submit */
   const handleVariableSubmit = (executeImmediately: boolean) => {
     const prompt = pendingPrompt();
     if (!prompt) return;
@@ -176,20 +178,18 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
     setPendingPrompt(null);
   };
 
-  /** Create new prompt */
   const createNewPrompt = () => {
     setEditingPrompt(null);
     setShowEditor(true);
   };
 
-  /** Edit existing prompt */
   const editPrompt = (prompt: SavedPrompt) => {
     setEditingPrompt(prompt);
     setShowEditor(true);
   };
 
-  /** Delete prompt */
   const deletePrompt = async (prompt: SavedPrompt) => {
+    if (prompt.builtIn) return;
     const confirmed = await dialogs.confirm({
       title: "Delete prompt?",
       message: `Delete "${prompt.name}"?`,
@@ -201,6 +201,11 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
     }
   };
 
+  const toggleEnabled = (e: MouseEvent, prompt: SavedPrompt) => {
+    e.stopPropagation();
+    promptLibraryStore.updatePrompt(prompt.id, { enabled: prompt.enabled === false });
+  };
+
   return (
     <>
     <Show when={isOpen()}>
@@ -208,7 +213,7 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
         <div class={s.drawer} onClick={(e) => e.stopPropagation()}>
           {/* Header */}
           <div class={s.header}>
-            <h3>{t("promptDrawer.title", "Prompt Library")}</h3>
+            <h3>{t("promptDrawer.title", "Smart Prompts Library")}</h3>
             <button class={s.close} onClick={() => promptLibraryStore.closeDrawer()}>
               &times;
             </button>
@@ -251,53 +256,59 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
               }
             >
               <For each={filteredPrompts()}>
-                {(prompt, index) => (
-                  <div
-                    class={cx(s.promptItem, index() === selectedIndex() && s.selected)}
-                    onClick={() => injectPrompt(prompt)}
-                    onDblClick={() => injectPrompt(prompt, true)}
-                  >
-                    <div class={s.itemContent}>
-                      <div class={s.itemName}>
-                        {prompt.isFavorite && <span class={s.favoriteStar}>★</span>}
-                        {prompt.name}
-                        {prompt.shortcut && <span class={s.shortcut}>{prompt.shortcut}</span>}
+                {(prompt, index) => {
+                  const isDisabled = () => prompt.enabled === false;
+                  return (
+                    <div
+                      class={cx(s.promptItem, index() === selectedIndex() && s.selected, isDisabled() && s.itemDisabled)}
+                      onClick={() => injectPrompt(prompt)}
+                      onDblClick={() => injectPrompt(prompt, true)}
+                    >
+                      <div class={s.itemContent}>
+                        <div class={s.itemName}>
+                          {prompt.isFavorite && <span class={s.favoriteStar}>★</span>}
+                          {prompt.name}
+                          <Show when={prompt.builtIn}>
+                            <span class={s.badge}>built-in</span>
+                          </Show>
+                          {prompt.shortcut && <span class={s.shortcut}>{prompt.shortcut}</span>}
+                        </div>
+                        <Show when={prompt.description}>
+                          <div class={s.itemDescription}>{prompt.description}</div>
+                        </Show>
                       </div>
-                      <Show when={prompt.description}>
-                        <div class={s.itemDescription}>{prompt.description}</div>
-                      </Show>
+                      <div class={s.itemActions}>
+                        <button
+                          title={isDisabled() ? "Enable" : "Disable"}
+                          onClick={(e) => toggleEnabled(e, prompt)}
+                          class={cx(s.toggleBtn, isDisabled() && s.toggleOff)}
+                        >
+                          {isDisabled() ? "○" : "●"}
+                        </button>
+                        <button
+                          title={t("promptDrawer.edit", "Edit")}
+                          onClick={(e) => { e.stopPropagation(); editPrompt(prompt); }}
+                        >
+                          ✎
+                        </button>
+                        <button
+                          title={prompt.isFavorite ? "Unfavorite" : "Favorite"}
+                          onClick={(e) => { e.stopPropagation(); promptLibraryStore.toggleFavorite(prompt.id); }}
+                        >
+                          {prompt.isFavorite ? "★" : "☆"}
+                        </button>
+                        <Show when={!prompt.builtIn}>
+                          <button
+                            title={t("promptDrawer.delete", "Delete")}
+                            onClick={(e) => { e.stopPropagation(); deletePrompt(prompt); }}
+                          >
+                            ✕
+                          </button>
+                        </Show>
+                      </div>
                     </div>
-                    <div class={s.itemActions}>
-                      <button
-                        title={t("promptDrawer.edit", "Edit")}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          editPrompt(prompt);
-                        }}
-                      >
-                        ✎
-                      </button>
-                      <button
-                        title={prompt.isFavorite ? t("promptDrawer.unfavorite", "Unfavorite") : t("promptDrawer.favorite", "Favorite")}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          promptLibraryStore.toggleFavorite(prompt.id);
-                        }}
-                      >
-                        {prompt.isFavorite ? "★" : "☆"}
-                      </button>
-                      <button
-                        title={t("promptDrawer.delete", "Delete")}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deletePrompt(prompt);
-                        }}
-                      >
-                        🗑
-                      </button>
-                    </div>
-                  </div>
-                )}
+                  );
+                }}
               </For>
             </Show>
           </div>
@@ -316,18 +327,21 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
       <Show when={showVariableDialog() && pendingPrompt()}>
         <div class={s.variableOverlay} onClick={() => setShowVariableDialog(false)}>
           <div class={s.variableDialog} onClick={(e) => e.stopPropagation()}>
-            <h4>{t("promptDrawer.fillVariables", "Fill in variables")}</h4>
+            <h4>{pendingPrompt()?.name ?? "Fill in variables"}</h4>
             <For each={Object.keys(variableValues())}>
               {(varName) => (
                 <div class={s.variableInput}>
-                  <label>{varName}</label>
+                  <label class={s.varLabel}>{`{${varName}}`}</label>
+                  <Show when={VARIABLE_DESCRIPTIONS[varName]}>
+                    <span class={s.varDesc}>{VARIABLE_DESCRIPTIONS[varName]}</span>
+                  </Show>
                   <input
                     type="text"
                     value={variableValues()[varName] || ""}
                     onInput={(e) =>
                       setVariableValues((v) => ({ ...v, [varName]: e.currentTarget.value }))
                     }
-                    placeholder={pendingPrompt()?.variables?.find((v) => v.name === varName)?.description || varName}
+                    placeholder={VARIABLE_DESCRIPTIONS[varName] ?? varName}
                   />
                 </div>
               )}
@@ -349,7 +363,6 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
             if (editingPrompt()) {
               promptLibraryStore.updatePrompt(editingPrompt()!.id, promptData);
             } else {
-              // For new prompts, ensure required fields are present
               if (promptData.name && promptData.content) {
                 promptLibraryStore.createPrompt({
                   name: promptData.name,
@@ -358,6 +371,11 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
                   shortcut: promptData.shortcut,
                   category: "custom",
                   isFavorite: false,
+                  tags: promptData.tags,
+                  placement: promptData.placement,
+                  autoExecute: promptData.autoExecute,
+                  executionMode: promptData.executionMode,
+                  enabled: true,
                 });
               }
             }
@@ -385,7 +403,7 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
   );
 };
 
-/** Prompt editor dialog */
+/** Full-featured prompt editor dialog */
 interface PromptEditorProps {
   prompt: SavedPrompt | null;
   onSave: (data: Partial<SavedPrompt>) => void;
@@ -393,15 +411,42 @@ interface PromptEditorProps {
 }
 
 const PromptEditor: Component<PromptEditorProps> = (props) => {
+  const isBuiltIn = () => !!props.prompt?.builtIn;
+  const builtInDefault = () => props.prompt ? BUILTIN_BY_ID.get(props.prompt.id) : undefined;
+
   const [name, setName] = createSignal(props.prompt?.name || "");
   const [description, setDescription] = createSignal(props.prompt?.description || "");
   const [content, setContent] = createSignal(props.prompt?.content || "");
   const [shortcut, setShortcut] = createSignal(props.prompt?.shortcut || "");
+  const [placement, setPlacement] = createSignal<SmartPlacement[]>(props.prompt?.placement ?? []);
+  const [autoExecute, setAutoExecute] = createSignal(props.prompt?.autoExecute ?? false);
   const [validationError, setValidationError] = createSignal<string | null>(null);
+
+  const isOverridden = () => {
+    const def = builtInDefault();
+    return def ? content() !== def.content : false;
+  };
+
+  const handleReset = () => {
+    const def = builtInDefault();
+    if (def) {
+      setContent(def.content);
+      setName(def.name);
+      setDescription(def.description ?? "");
+      setPlacement(def.placement ?? []);
+      setAutoExecute(def.autoExecute ?? false);
+    }
+  };
+
+  const handlePlacementToggle = (p: SmartPlacement) => {
+    setPlacement((prev) =>
+      prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p],
+    );
+  };
 
   const handleSave = () => {
     if (!name().trim() || !content().trim()) {
-      setValidationError(t("promptDrawer.validationError", "Name and content are required"));
+      setValidationError("Name and content are required");
       return;
     }
     setValidationError(null);
@@ -411,61 +456,103 @@ const PromptEditor: Component<PromptEditorProps> = (props) => {
       description: description().trim() || undefined,
       content: content(),
       shortcut: shortcut().trim() || undefined,
+      placement: placement().length > 0 ? placement() : undefined,
+      autoExecute: autoExecute(),
     });
   };
 
   return (
     <div class={s.editorOverlay} onClick={props.onCancel}>
       <div class={s.editor} onClick={(e) => e.stopPropagation()}>
-        <h4>{props.prompt ? t("promptDrawer.editPrompt", "Edit Prompt") : t("promptDrawer.newPromptTitle", "New Prompt")}</h4>
+        <h4>
+          {props.prompt ? "Edit Prompt" : "New Prompt"}
+          <Show when={isBuiltIn()}>
+            <span class={s.badge} style={{ "margin-left": "8px" }}>built-in</span>
+          </Show>
+        </h4>
 
         <Show when={validationError()}>
           <p class={s.validationError}>{validationError()}</p>
         </Show>
 
         <div class={s.editorField}>
-          <label>{t("promptDrawer.nameLabel", "Name *")}</label>
+          <label>Name *</label>
           <input
             type="text"
             value={name()}
+            disabled={isBuiltIn()}
             onInput={(e) => { setName(e.currentTarget.value); setValidationError(null); }}
-            placeholder={t("promptDrawer.namePlaceholder", "My Prompt")}
+            placeholder="My Prompt"
             autofocus
           />
         </div>
 
         <div class={s.editorField}>
-          <label>{t("promptDrawer.descriptionLabel", "Description")}</label>
+          <label>Description</label>
           <input
             type="text"
             value={description()}
             onInput={(e) => setDescription(e.currentTarget.value)}
-            placeholder={t("promptDrawer.descriptionPlaceholder", "What does this prompt do?")}
+            placeholder="What does this prompt do?"
           />
         </div>
 
         <div class={s.editorField}>
-          <label>{t("promptDrawer.contentLabel", "Content * (use {variable} for variables)")}</label>
+          <label>Content * (use {"{variable}"} for context variables)</label>
           <textarea
             value={content()}
             onInput={(e) => setContent(e.currentTarget.value)}
-            placeholder={t("promptDrawer.contentPlaceholder", "Enter your prompt text here...")}
+            placeholder="Enter your prompt text here..."
             rows={6}
           />
         </div>
 
         <div class={s.editorField}>
-          <label>{t("promptDrawer.shortcutLabel", "Keyboard Shortcut")}</label>
+          <label>Placement</label>
+          <div class={s.placementGrid}>
+            <For each={ALL_PLACEMENTS}>
+              {(p) => (
+                <label class={s.placementCheck}>
+                  <input
+                    type="checkbox"
+                    checked={placement().includes(p)}
+                    onChange={() => handlePlacementToggle(p)}
+                  />
+                  <span>{p}</span>
+                </label>
+              )}
+            </For>
+          </div>
+        </div>
+
+        <div class={s.editorField}>
+          <label class={s.toggleRow}>
+            <input
+              type="checkbox"
+              checked={autoExecute()}
+              onChange={() => setAutoExecute(!autoExecute())}
+            />
+            <span>Auto-execute</span>
+          </label>
+          <span class={s.fieldHint}>Run immediately without confirmation when triggered</span>
+        </div>
+
+        <div class={s.editorField}>
+          <label>Keyboard Shortcut</label>
           <KeyComboCapture
             value={shortcut()}
             onChange={setShortcut}
-            placeholder={t("promptDrawer.shortcutPlaceholder", "Click to set shortcut")}
+            placeholder="Click to set shortcut"
           />
         </div>
 
         <div class={s.editorActions}>
-          <button onClick={handleSave}>{t("promptDrawer.save", "Save")}</button>
-          <button onClick={props.onCancel}>{t("promptDrawer.cancel", "Cancel")}</button>
+          <Show when={isBuiltIn() && isOverridden()}>
+            <button class={s.resetBtn} onClick={handleReset}>Reset to Default</button>
+          </Show>
+          <div style={{ flex: "1" }} />
+          <button onClick={handleSave}>Save</button>
+          <button onClick={props.onCancel}>Cancel</button>
         </div>
       </div>
     </div>
