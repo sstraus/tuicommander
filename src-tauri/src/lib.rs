@@ -637,6 +637,13 @@ fn get_relay_status(state: State<'_, Arc<AppState>>) -> serde_json::Value {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Install the rustls CryptoProvider before anything touches TLS.
+    // With both `ring` and `aws-lc-rs` features active, rustls cannot
+    // auto-detect which provider to use and panics at runtime.
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls CryptoProvider");
+
     // Create the shared log ring buffer and initialise the tracing subscriber.
     // This must happen before any other code so all log output is captured —
     // including config loading, migration warnings, etc.
