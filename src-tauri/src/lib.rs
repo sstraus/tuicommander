@@ -119,9 +119,6 @@ fn save_config(state: State<'_, Arc<AppState>>, config: config::AppConfig) -> Re
         || old.remote_access_password_hash != config.remote_access_password_hash
         || old.ipv6_enabled != config.ipv6_enabled;
 
-    // Capture flags before moving config into state
-    let remote_access_enabled = config.remote_access_enabled;
-
     let tools_changed = old.disabled_native_tools != config.disabled_native_tools;
 
     config::save_app_config(config.clone())?;  // clone goes to disk
@@ -132,21 +129,7 @@ fn save_config(state: State<'_, Arc<AppState>>, config: config::AppConfig) -> Re
     }
 
     if server_changed {
-        // Shutdown existing server (if any)
-        if let Some(tx) = state.server_shutdown.lock().take() {
-            let _ = tx.send(());
-        }
-
-        // Always restart with Unix socket on; TCP only if remote access enabled
-        let remote_enabled = remote_access_enabled;
-        let state_arc = state.inner().clone();
-        std::thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new()
-                .expect("tokio runtime for HTTP server restart");
-            rt.block_on(async move {
-                mcp_http::start_server(state_arc, true, remote_enabled, None).await;
-            });
-        });
+        restart_server(state.inner());
     }
 
     Ok(())
@@ -568,6 +551,73 @@ fn get_tailscale_status(state: State<'_, Arc<AppState>>) -> tailscale::Tailscale
     state.tailscale_state.read().clone()
 }
 
+/// Provision TLS config from current Tailscale state.
+/// Returns Some(RustlsConfig) if Tailscale is running with HTTPS enabled and cert provisioning succeeds.
+async fn provision_tls_config(ts_state: &tailscale::TailscaleState) -> Option<axum_server::tls_rustls::RustlsConfig> {
+    if let tailscale::TailscaleState::Running { fqdn, https_enabled: true } = ts_state {
+        match tailscale::provision_cert(fqdn).await {
+            Ok((cert_pem, key_pem)) => {
+                match axum_server::tls_rustls::RustlsConfig::from_pem(cert_pem, key_pem).await {
+                    Ok(tls) => {
+                        tracing::info!(source = "tailscale", fqdn, "TLS cert provisioned");
+                        return Some(tls);
+                    }
+                    Err(e) => tracing::error!(source = "tailscale", "Failed to load TLS config: {e}"),
+                }
+            }
+            Err(e) => tracing::error!(source = "tailscale", "Failed to provision cert: {e}"),
+        }
+    }
+    None
+}
+
+/// Restart the HTTP/MCP server with fresh TLS config (reuses the shutdown/spawn pattern from save_config).
+fn restart_server(state: &Arc<AppState>) {
+    // Shutdown existing server
+    if let Some(tx) = state.server_shutdown.lock().take() {
+        let _ = tx.send(());
+    }
+    let remote_enabled = state.config.read().remote_access_enabled;
+    let state_arc = state.clone();
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new()
+            .expect("tokio runtime for HTTP server restart");
+        rt.block_on(async move {
+            let ts = state_arc.tailscale_state.read().clone();
+            let tls_config = provision_tls_config(&ts).await;
+            mcp_http::start_server(state_arc, true, remote_enabled, tls_config).await;
+        });
+    });
+}
+
+/// Re-detect Tailscale daemon status and restart server if HTTPS availability changed.
+#[tauri::command]
+async fn recheck_tailscale_status(state: State<'_, Arc<AppState>>) -> Result<tailscale::TailscaleState, String> {
+    let old_https = matches!(
+        *state.tailscale_state.read(),
+        tailscale::TailscaleState::Running { https_enabled: true, .. }
+    );
+
+    let new_state = tokio::task::spawn_blocking(tailscale::detect)
+        .await
+        .map_err(|e| format!("detect task failed: {e}"))?;
+
+    let new_https = matches!(
+        new_state,
+        tailscale::TailscaleState::Running { https_enabled: true, .. }
+    );
+
+    *state.tailscale_state.write() = new_state.clone();
+
+    // Restart server if HTTPS availability changed (HTTP→HTTPS or HTTPS→HTTP)
+    if old_https != new_https && state.config.read().remote_access_enabled {
+        tracing::info!(source = "tailscale", old_https, new_https, "HTTPS state changed, restarting server");
+        restart_server(&state);
+    }
+
+    Ok(new_state)
+}
+
 /// Get relay client status (enabled, connected, url, session_id).
 #[tauri::command]
 fn get_relay_status(state: State<'_, Arc<AppState>>) -> serde_json::Value {
@@ -678,30 +728,7 @@ pub fn run() {
                         .unwrap_or(tailscale::TailscaleState::NotInstalled);
                     tracing::info!(source = "tailscale", ?ts_state, "Tailscale detection result");
                     *ts_state_ref.tailscale_state.write() = ts_state.clone();
-
-                    match ts_state {
-                        tailscale::TailscaleState::Running { ref fqdn, https_enabled: true } => {
-                            match tailscale::provision_cert(fqdn).await {
-                                Ok((cert_pem, key_pem)) => {
-                                    match axum_server::tls_rustls::RustlsConfig::from_pem(cert_pem, key_pem).await {
-                                        Ok(tls) => {
-                                            tracing::info!(source = "tailscale", fqdn, "TLS cert provisioned");
-                                            Some(tls)
-                                        }
-                                        Err(e) => {
-                                            tracing::error!(source = "tailscale", "Failed to load TLS config: {e}");
-                                            None
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    tracing::error!(source = "tailscale", "Failed to provision cert: {e}");
-                                    None
-                                }
-                            }
-                        }
-                        _ => None,
-                    }
+                    provision_tls_config(&ts_state).await
                 } else {
                     None
                 };
@@ -881,6 +908,8 @@ pub fn run() {
             worktree::create_worktree,
             git::rename_branch,
             git::create_branch,
+            git::get_branch_base,
+            git::update_from_base,
             git::delete_branch,
             worktree::get_worktree_paths,
             git::get_git_branches,
@@ -941,6 +970,7 @@ pub fn run() {
             get_connect_url,
             regenerate_session_token,
             get_tailscale_status,
+            recheck_tailscale_status,
             get_relay_status,
             dictation::commands::get_dictation_status,
             dictation::commands::get_model_info,
