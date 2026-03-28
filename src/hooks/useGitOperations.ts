@@ -38,7 +38,7 @@ export interface GitOperationsDeps {
     renameBranch: (repoPath: string, oldName: string, newName: string) => Promise<void>;
     generateWorktreeName: (existingNames: string[]) => Promise<string>;
     generateCloneBranchName: (sourceBranch: string, existingNames: string[]) => Promise<string>;
-    listBaseRefOptions: (repoPath: string) => Promise<string[]>;
+    listBaseRefOptions: (repoPath: string) => Promise<import("./useRepository").BaseRefOption[]>;
     mergeAndArchiveWorktree: (repoPath: string, branchName: string, targetBranch: string, afterMerge: string) => Promise<{ merged: boolean; action: string; archive_path: string | null }>;
     finalizeMergedWorktree: (repoPath: string, branchName: string, action: "archive" | "delete") => Promise<{ merged: boolean; action: string; archive_path: string | null }>;
     listLocalBranches: (repoPath: string) => Promise<string[]>;
@@ -87,7 +87,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
     existingBranches: string[];
     worktreeBranches: string[];
     worktreesDir: string;
-    baseRefs: string[];
+    baseRefs: import("./useRepository").BaseRefOption[];
   } | null>(null);
 
   /** Pending merge context — set when afterMerge=ask; cleared once the user picks or skips cleanup */
@@ -805,7 +805,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
       await confirmCreateWorktree({
         branchName: suggestedName,
         createBranch: true,
-        baseRef: baseRefs[0] ?? "HEAD",
+        baseRef: baseRefs[0]?.name ?? "HEAD",
       });
       return;
     }

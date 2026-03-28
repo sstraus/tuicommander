@@ -10,6 +10,15 @@ export interface ChangedFile {
   deletions: number;
 }
 
+/** A base ref option with metadata for grouped dropdown display */
+export interface BaseRefOption {
+  name: string;
+  /** "local" or "remote" */
+  kind: string;
+  /** Whether this is the default branch (e.g. main/master) */
+  is_default: boolean;
+}
+
 /** Repository hook for git operations */
 export function useRepository() {
   /** Get repository info */
@@ -125,10 +134,10 @@ export function useRepository() {
     return await invoke<string>("generate_clone_branch_name_cmd", { sourceBranch, existingNames });
   }
 
-  /** List base ref options for the create worktree dropdown (default branch first) */
-  async function listBaseRefOptions(repoPath: string): Promise<string[]> {
+  /** List base ref options for branch/worktree creation (local + remote, grouped) */
+  async function listBaseRefOptions(repoPath: string): Promise<BaseRefOption[]> {
     try {
-      return await invoke<string[]>("list_base_ref_options", { repoPath });
+      return await invoke<BaseRefOption[]>("list_base_ref_options", { repoPath });
     } catch (err) {
       appLogger.error("git", `Failed to list base ref options for ${repoPath}`, err);
       return [];

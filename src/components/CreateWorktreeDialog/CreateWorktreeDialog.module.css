@@ -119,6 +119,16 @@
   background: var(--accent-hover);
 }
 
+.dropdownSectionHeader {
+  padding: 4px 10px 2px;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  user-select: none;
+}
+
 .branchList {
   max-height: 150px;
   overflow-y: auto;

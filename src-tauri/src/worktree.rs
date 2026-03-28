@@ -656,23 +656,81 @@ pub(crate) fn get_remote_default_branch(repo_path: &str) -> Result<String, Strin
     Ok("main".to_string())
 }
 
-/// List available base ref options for the CreateWorktreeDialog dropdown.
-///
-/// Returns a list of refs with the remote default branch first, followed by
-/// all local branches (excluding the default which is already listed).
-#[tauri::command]
-pub(crate) fn list_base_ref_options(repo_path: String) -> Result<Vec<String>, String> {
-    let default_branch = get_remote_default_branch(&repo_path)?;
-    let all_branches = list_local_branches(repo_path)?;
+/// A base ref option with metadata for grouped dropdown display.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct BaseRefOption {
+    pub name: String,
+    /// "local" or "remote"
+    pub kind: String,
+    /// Whether this is the default branch (e.g. main/master)
+    pub is_default: bool,
+}
 
-    let mut refs = vec![default_branch.clone()];
-    for branch in all_branches {
-        if branch != default_branch {
-            refs.push(branch);
+/// List available base ref options for branch/worktree creation.
+///
+/// Returns structured refs: default branch first (flagged), then local branches,
+/// then remote tracking branches. Filters out origin/HEAD and deduplicates
+/// where a local branch has the same name as its remote tracking branch.
+#[tauri::command]
+pub(crate) fn list_base_ref_options(repo_path: String) -> Result<Vec<BaseRefOption>, String> {
+    let default_branch = get_remote_default_branch(&repo_path)?;
+    let repo = Path::new(&repo_path);
+
+    // Get all refs (local + remote) in one git call
+    let out = git_cmd(repo)
+        .args(["for-each-ref", "--format=%(refname:short)\t%(refname)", "refs/heads/", "refs/remotes/"])
+        .run()
+        .map_err(|e| format!("git for-each-ref failed: {e}"))?;
+
+    let mut local_refs: Vec<BaseRefOption> = Vec::new();
+    let mut remote_refs: Vec<BaseRefOption> = Vec::new();
+    let mut local_names: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for line in out.stdout.lines() {
+        let line = line.trim();
+        if line.is_empty() { continue; }
+
+        let parts: Vec<&str> = line.splitn(2, '\t').collect();
+        if parts.len() != 2 { continue; }
+
+        let short_name = parts[0].to_string();
+        let full_ref = parts[1];
+
+        if full_ref.starts_with("refs/heads/") {
+            local_names.insert(short_name.clone());
+            if short_name != default_branch {
+                local_refs.push(BaseRefOption {
+                    name: short_name,
+                    kind: "local".to_string(),
+                    is_default: false,
+                });
+            }
+        } else if full_ref.starts_with("refs/remotes/") {
+            // Skip origin/HEAD (synthetic ref)
+            if short_name.ends_with("/HEAD") { continue; }
+            remote_refs.push(BaseRefOption {
+                name: short_name,
+                kind: "remote".to_string(),
+                is_default: false,
+            });
         }
     }
 
-    Ok(refs)
+    // Sort alphabetically within each group
+    local_refs.sort_by(|a, b| a.name.cmp(&b.name));
+    remote_refs.sort_by(|a, b| a.name.cmp(&b.name));
+
+    // Build result: default first, then local, then remote
+    let mut result = Vec::with_capacity(1 + local_refs.len() + remote_refs.len());
+    result.push(BaseRefOption {
+        name: default_branch,
+        kind: "local".to_string(),
+        is_default: true,
+    });
+    result.extend(local_refs);
+    result.extend(remote_refs);
+
+    Ok(result)
 }
 
 /// Result of switching the main worktree to a different branch.
@@ -1243,17 +1301,20 @@ mod tests {
 
         let refs = list_base_ref_options(repo_path).unwrap();
         assert!(refs.len() >= 2, "Expected at least 2 refs, got: {refs:?}");
-        // First entry should be the default branch (main or master)
+        // First entry should be the default branch (main or master), flagged is_default
         assert!(
-            refs[0] == "main" || refs[0] == "master",
+            refs[0].name == "main" || refs[0].name == "master",
             "First ref should be default branch, got: {}",
-            refs[0]
+            refs[0].name
         );
+        assert!(refs[0].is_default, "First ref should have is_default=true");
+        assert_eq!(refs[0].kind, "local");
         // feature-x should be in the list
-        assert!(refs.contains(&"feature-x".to_string()), "feature-x not found in {refs:?}");
-        // No duplicates
-        let unique: std::collections::HashSet<_> = refs.iter().collect();
-        assert_eq!(unique.len(), refs.len(), "Duplicate refs found: {refs:?}");
+        let names: Vec<&str> = refs.iter().map(|r| r.name.as_str()).collect();
+        assert!(names.contains(&"feature-x"), "feature-x not found in {names:?}");
+        // No duplicate names
+        let unique: std::collections::HashSet<&str> = names.iter().copied().collect();
+        assert_eq!(unique.len(), refs.len(), "Duplicate refs found: {names:?}");
     }
 
     #[test]
@@ -1690,5 +1751,73 @@ branch refs/heads/feat
         // None script — should proceed normally
         let result = archive_worktree(repo.path(), "archive-noscript-test", None);
         assert!(result.is_ok(), "archive without script should succeed: {:?}", result);
+    }
+
+    #[test]
+    fn test_list_base_ref_options_returns_structured_refs() {
+        let repo = setup_test_repo();
+        let path = repo.path().to_string_lossy().to_string();
+
+        // Create extra local branches
+        git_cmd(repo.path()).args(["branch", "feature-a"]).run().unwrap();
+        git_cmd(repo.path()).args(["branch", "feature-b"]).run().unwrap();
+
+        let refs = list_base_ref_options(path).unwrap();
+
+        // Should have at least the default + 2 feature branches
+        assert!(refs.len() >= 3, "expected at least 3 refs, got {}", refs.len());
+
+        // First ref should be the default branch, flagged is_default
+        let default_ref = &refs[0];
+        assert!(default_ref.is_default, "first ref should be the default branch");
+        assert_eq!(default_ref.kind, "local");
+
+        // All refs should have non-empty names
+        for r in &refs {
+            assert!(!r.name.is_empty(), "ref name should not be empty");
+            assert!(r.kind == "local" || r.kind == "remote", "kind should be local or remote");
+        }
+
+        // feature-a and feature-b should be present as local
+        let names: Vec<&str> = refs.iter().map(|r| r.name.as_str()).collect();
+        assert!(names.contains(&"feature-a"), "feature-a should be in refs");
+        assert!(names.contains(&"feature-b"), "feature-b should be in refs");
+
+        // No origin/HEAD should appear
+        assert!(!names.contains(&"origin/HEAD"), "origin/HEAD should be filtered out");
+    }
+
+    #[test]
+    fn test_list_base_ref_options_includes_remote_refs() {
+        let repo = setup_test_repo();
+        let path_str = repo.path().to_string_lossy().to_string();
+
+        // Create a bare remote and push to it to get remote tracking refs
+        let remote_dir = TempDir::new().unwrap();
+        git_cmd(remote_dir.path()).args(["init", "--bare"]).run().unwrap();
+        git_cmd(repo.path())
+            .args(["remote", "add", "origin", &remote_dir.path().to_string_lossy()])
+            .run().unwrap();
+        git_cmd(repo.path()).args(["push", "-u", "origin", "main"]).run()
+            .or_else(|_| git_cmd(repo.path()).args(["push", "-u", "origin", "master"]).run())
+            .unwrap();
+
+        // Create a remote-only branch
+        git_cmd(repo.path()).args(["branch", "remote-only"]).run().unwrap();
+        git_cmd(repo.path()).args(["push", "origin", "remote-only"]).run().unwrap();
+        git_cmd(repo.path()).args(["branch", "-D", "remote-only"]).run().unwrap();
+
+        // Fetch so we have remote tracking refs
+        git_cmd(repo.path()).args(["fetch", "origin"]).run().unwrap();
+
+        let refs = list_base_ref_options(path_str).unwrap();
+
+        // Should include remote refs
+        let remote_refs: Vec<&BaseRefOption> = refs.iter().filter(|r| r.kind == "remote").collect();
+        assert!(!remote_refs.is_empty(), "should include remote refs, got: {:?}", refs);
+
+        // origin/remote-only should appear as remote
+        let names: Vec<&str> = refs.iter().map(|r| r.name.as_str()).collect();
+        assert!(names.contains(&"origin/remote-only"), "origin/remote-only should be in refs, got: {:?}", names);
     }
 }

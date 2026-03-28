@@ -1,6 +1,7 @@
 import { Component, createSignal, createEffect, createMemo, onCleanup, Show, For } from "solid-js";
 import { t } from "../../i18n";
 import { validateBranchName } from "../RenameBranchDialog/RenameBranchDialog";
+import type { BaseRefOption } from "../../hooks/useRepository";
 import d from "../shared/dialog.module.css";
 import s from "./CreateWorktreeDialog.module.css";
 
@@ -21,7 +22,7 @@ export interface CreateWorktreeDialogProps {
   /** Base directory where worktrees are created */
   worktreesDir: string;
   /** Available base refs for the "Start from" dropdown (first is default) */
-  baseRefs?: string[];
+  baseRefs?: BaseRefOption[];
   /** Generate a random branch name */
   onGenerateName?: () => Promise<string>;
   onClose: () => void;
@@ -33,15 +34,18 @@ function sanitizeForPath(name: string): string {
   return name.replace(/\//g, "-");
 }
 
-/** Custom styled dropdown replacing native <select> */
+/** Custom styled dropdown replacing native <select>, with local/remote grouping */
 const BaseRefDropdown: Component<{
   value: string;
-  options: string[];
+  options: BaseRefOption[];
   onChange: (value: string) => void;
 }> = (props) => {
   const [open, setOpen] = createSignal(false);
   let triggerRef: HTMLButtonElement | undefined;
   let listRef: HTMLDivElement | undefined;
+
+  const localRefs = () => props.options.filter(r => r.kind === "local");
+  const remoteRefs = () => props.options.filter(r => r.kind === "remote");
 
   // Close on outside click
   const handleDocClick = (e: MouseEvent) => {
@@ -55,6 +59,15 @@ const BaseRefDropdown: Component<{
     document.addEventListener("mousedown", handleDocClick);
     onCleanup(() => document.removeEventListener("mousedown", handleDocClick));
   });
+
+  const renderItem = (option: BaseRefOption) => (
+    <div
+      class={`${s.dropdownItem} ${option.name === props.value ? s.dropdownItemActive : ""}`}
+      onClick={() => { props.onChange(option.name); setOpen(false); }}
+    >
+      {option.name}{option.is_default ? ` (${t("createWorktree.default", "default")})` : ""}
+    </div>
+  );
 
   return (
     <div class={s.baseRefRow}>
@@ -73,16 +86,14 @@ const BaseRefDropdown: Component<{
         </button>
         <Show when={open()}>
           <div ref={listRef} class={s.dropdownList}>
-            <For each={props.options}>
-              {(option) => (
-                <div
-                  class={`${s.dropdownItem} ${option === props.value ? s.dropdownItemActive : ""}`}
-                  onClick={() => { props.onChange(option); setOpen(false); }}
-                >
-                  {option}
-                </div>
-              )}
-            </For>
+            <Show when={localRefs().length > 0}>
+              <div class={s.dropdownSectionHeader}>{t("createWorktree.localBranches", "Local")}</div>
+              <For each={localRefs()}>{renderItem}</For>
+            </Show>
+            <Show when={remoteRefs().length > 0}>
+              <div class={s.dropdownSectionHeader}>{t("createWorktree.remoteBranches", "Remote")}</div>
+              <For each={remoteRefs()}>{renderItem}</For>
+            </Show>
           </div>
         </Show>
       </div>
@@ -132,7 +143,7 @@ export const CreateWorktreeDialog: Component<CreateWorktreeDialogProps> = (props
   createEffect(() => {
     if (props.visible) {
       setBranchName("");
-      setBaseRef(availableBaseRefs()[0] ?? "");
+      setBaseRef(availableBaseRefs()[0]?.name ?? "");
       setError(null);
       setTimeout(() => {
         if (inputRef) {

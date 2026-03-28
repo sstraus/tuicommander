@@ -33,7 +33,7 @@ describe("useGitOperations", () => {
     renameBranch: vi.fn().mockResolvedValue(undefined),
     generateWorktreeName: vi.fn().mockResolvedValue("bold-nexus-042"),
     generateCloneBranchName: vi.fn().mockResolvedValue("feat-auth--bold-nexus-042"),
-    listBaseRefOptions: vi.fn().mockResolvedValue(["main"]),
+    listBaseRefOptions: vi.fn().mockResolvedValue([{ name: "main", kind: "local", is_default: true }]),
     mergeAndArchiveWorktree: vi.fn().mockResolvedValue({ merged: true, action: "archived", archive_path: null }),
     finalizeMergedWorktree: vi.fn().mockResolvedValue({ merged: true, action: "archived", archive_path: null }),
     listLocalBranches: vi.fn().mockResolvedValue(["main"]),
@@ -1118,7 +1118,7 @@ describe("useGitOperations", () => {
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
       mockRepo.generateWorktreeName.mockResolvedValue("cool-ripley-007");
       mockRepo.listLocalBranches.mockResolvedValue(["main", "develop"]);
-      mockRepo.listBaseRefOptions.mockResolvedValue(["develop", "main"]);
+      mockRepo.listBaseRefOptions.mockResolvedValue([{ name: "develop", kind: "local", is_default: false }, { name: "main", kind: "local", is_default: true }]);
       mockRepo.createWorktree.mockResolvedValue({
         name: "cool-ripley-007",
         path: "/repo/.worktrees/cool-ripley-007",
