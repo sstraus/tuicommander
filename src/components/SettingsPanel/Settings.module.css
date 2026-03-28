@@ -651,6 +651,23 @@
   color: var(--fg-primary);
 }
 
+.inlineBtn {
+  margin-left: 8px;
+  padding: 2px 8px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.inlineBtn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .saveBtn {
   padding: 8px 16px;
   background: var(--accent);

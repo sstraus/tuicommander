@@ -499,7 +499,23 @@ export const ServicesTab: Component = () => {
               <div class={s.group}>
                 <div class={s.row}>
                   <span class={s.label}>{t("services.label.tailscaleStatus", "Status")}</span>
-                  <span class={s.value}>{statusText}</span>
+                  <span class={s.value}>
+                    {statusText}
+                    <button
+                      class={s.inlineBtn}
+                      onClick={async () => {
+                        try {
+                          const updated = await rpc<TailscaleStatus>("recheck_tailscale_status");
+                          setTailscaleState(updated);
+                        } catch (e) {
+                          console.error("Tailscale recheck failed", e);
+                        }
+                      }}
+                      title={t("services.action.recheckTailscale", "Recheck Tailscale status")}
+                    >
+                      {t("services.action.recheck", "Recheck")}
+                    </button>
+                  </span>
                 </div>
                 <Show when={showHint}>
                   <p class={s.hint}>
