@@ -560,33 +560,50 @@ pub async fn start_server(state: Arc<AppState>, mcp_enabled: bool, remote_enable
 
     // --- TCP listener (only for remote access with auth) ---
     let tcp_handle = if remote_enabled {
-        let port = if config.remote_access_port == 0 { 0 } else { config.remote_access_port };
-        let bind_addr = if config.ipv6_enabled {
-            format!("[::]:{port}")
-        } else {
-            format!("0.0.0.0:{port}")
-        };
-        match tokio::net::TcpListener::bind(&bind_addr).await {
-            Ok(listener) => {
-                let addr = listener.local_addr().unwrap_or_else(|_| {
-                    std::net::SocketAddr::from(([0, 0, 0, 0], 0))
-                });
-                tracing::info!(source = "mcp_http", %addr, "TCP listening (remote access enabled)");
+        let base_port = if config.remote_access_port == 0 { 0 } else { config.remote_access_port };
+        let host = if config.ipv6_enabled { "[::]" } else { "0.0.0.0" };
+        const MAX_PORT_ATTEMPTS: u16 = 3;
 
-                let app = build_router(state.clone(), true, mcp_enabled);
-                Some(tokio::spawn(async move {
-                    if let Err(e) = axum::serve(
-                        listener,
-                        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
-                    ).await {
-                        tracing::error!(source = "mcp_http", "TCP server error: {e}");
+        let mut listener_result = None;
+        // Port 0 = OS-assigned, no retry needed
+        let attempts = if base_port == 0 { 1 } else { MAX_PORT_ATTEMPTS };
+        for attempt in 0..attempts {
+            let port = base_port + attempt;
+            let bind_addr = format!("{host}:{port}");
+            match tokio::net::TcpListener::bind(&bind_addr).await {
+                Ok(listener) => {
+                    if attempt > 0 {
+                        tracing::info!(source = "mcp_http", "Port {base_port} busy, using {port}");
                     }
-                }))
+                    listener_result = Some(listener);
+                    break;
+                }
+                Err(_) if attempt + 1 < attempts => {
+                    tracing::warn!(source = "mcp_http", "Port {port} busy, trying {}", port + 1);
+                }
+                Err(e) => {
+                    tracing::error!(source = "mcp_http", "Failed to bind TCP on ports {base_port}–{port}: {e}");
+                }
             }
-            Err(e) => {
-                tracing::error!(source = "mcp_http", bind_addr = %bind_addr, "Failed to bind TCP: {e}");
-                None
-            }
+        }
+
+        if let Some(listener) = listener_result {
+            let addr = listener.local_addr().unwrap_or_else(|_| {
+                std::net::SocketAddr::from(([0, 0, 0, 0], 0))
+            });
+            tracing::info!(source = "mcp_http", %addr, "TCP listening (remote access enabled)");
+
+            let app = build_router(state.clone(), true, mcp_enabled);
+            Some(tokio::spawn(async move {
+                if let Err(e) = axum::serve(
+                    listener,
+                    app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+                ).await {
+                    tracing::error!(source = "mcp_http", "TCP server error: {e}");
+                }
+            }))
+        } else {
+            None
         }
     } else {
         None
