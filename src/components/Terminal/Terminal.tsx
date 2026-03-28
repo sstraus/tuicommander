@@ -307,6 +307,158 @@ export const Terminal: Component<TerminalProps> = (props) => {
   /** Set up event listeners for a known session ID */
   const attachSessionListeners = async (targetSessionId: string) => {
 
+    // Shared handler for structured events from Rust OutputParser.
+    // Used by both Tauri (listen) and browser (WebSocket onParsed) modes.
+    const handleParsedEvent = (parsed: ParsedEvent) => {
+      switch (parsed.type) {
+        case "progress": {
+          const awProg = terminalsStore.get(props.id)?.awaitingInput;
+          if (awProg && awProg !== "error" && awProg !== "question") {
+            terminalsStore.clearAwaitingInput(props.id);
+          }
+          if (parsed.state === 0) {
+            terminalsStore.update(props.id, { progress: null });
+          } else if (parsed.state === 1 || parsed.state === 2 || parsed.state === 3) {
+            terminalsStore.update(props.id, { progress: Math.min(100, Math.max(0, parsed.value)) });
+          }
+          break;
+        }
+        case "status-line": {
+          retryCount = 0;
+          const awState = terminalsStore.get(props.id)?.awaitingInput;
+          if (awState && awState !== "error" && awState !== "question") {
+            terminalsStore.clearAwaitingInput(props.id);
+          }
+          terminalsStore.update(props.id, { currentTask: parsed.task_name });
+          break;
+        }
+        case "active-subtasks": {
+          terminalsStore.update(props.id, { activeSubTasks: parsed.count });
+          break;
+        }
+        case "rate-limit": {
+          const terminal = terminalsStore.get(props.id);
+          const detectedAgent = terminal?.agentType;
+          appLogger.debug("terminal", `[RateLimit] pattern=${parsed.pattern_name} matched="${parsed.matched_text}" agent=${detectedAgent ?? "none"} shellState=${terminal?.shellState} sessionId=${targetSessionId}`);
+          if (terminal?.shellState === "busy") {
+            appLogger.debug("terminal", `[RateLimit] IGNORED (shellState=busy, likely false positive) pattern=${parsed.pattern_name}`);
+            break;
+          }
+          const existing = rateLimitStore.getRateLimitInfo(targetSessionId);
+          const recentlyDetected = existing && (Date.now() - existing.detectedAt) < 5000;
+          if (detectedAgent && !recentlyDetected) {
+            const info = {
+              agentType: detectedAgent,
+              sessionId: targetSessionId,
+              retryAfterMs: parsed.retry_after_ms,
+              message: `Rate limit detected (${parsed.pattern_name}): ${parsed.matched_text}`,
+              detectedAt: Date.now(),
+            };
+            rateLimitStore.addRateLimit(info);
+            props.onRateLimit?.(props.id, targetSessionId, parsed.retry_after_ms);
+            appLogger.info("terminal", `[Notify] ${props.id} warning — rate-limit pattern=${parsed.pattern_name} matched="${parsed.matched_text}"`);
+            notificationsStore.playWarning();
+          }
+          break;
+        }
+        case "question": {
+          const qTerminal = terminalsStore.get(props.id);
+          if (!parsed.confident && (qTerminal?.shellState === "busy" || (qTerminal?.activeSubTasks ?? 0) > 0)) {
+            appLogger.debug("terminal", `[ParsedEvent] ${props.id} question IGNORED (busy=${qTerminal?.shellState === "busy"} subTasks=${qTerminal?.activeSubTasks} low-confidence) prompt="${parsed.prompt_text}"`);
+            break;
+          }
+          terminalsStore.setAwaitingInput(props.id, "question", !!parsed.confident);
+          break;
+        }
+        case "usage-limit": {
+          const current = terminalsStore.get(props.id)?.usageLimit;
+          if (current?.percentage !== parsed.percentage || current?.limitType !== parsed.limit_type) {
+            terminalsStore.update(props.id, {
+              usageLimit: { percentage: parsed.percentage, limitType: parsed.limit_type },
+            });
+          }
+          break;
+        }
+        case "plan-file":
+          if (terminalsStore.state.activeId !== props.id && !planFileNotified) {
+            planFileNotified = true;
+            appLogger.info("terminal", `[Notify] ${props.id} info — plan-file path="${parsed.path}" (background tab)`);
+            notificationsStore.playInfo();
+          }
+          break;
+        case "user-input":
+          planFileNotified = false;
+          terminalsStore.update(props.id, { suggestDismissed: false, activeSubTasks: 0 });
+          invoke<string | null>("get_last_prompt", { sessionId: targetSessionId }).then((prompt) => {
+            if (prompt !== null) terminalsStore.setLastPrompt(props.id, prompt);
+          }).catch(() => {});
+          break;
+        case "api-error": {
+          const agent = terminalsStore.get(props.id)?.agentType;
+          const { error_kind: kind, pattern_name: patternName, matched_text: matchedText } = parsed;
+          appLogger.debug("terminal", `[ApiError] ${props.id} pattern=${patternName} kind=${kind} agent=${agent ?? "none"} matched="${matchedText}"`);
+          const label = agent ?? "Agent";
+          const kindLabel = kind === "server" ? "server error" : kind === "auth" ? "auth failure" : "API error";
+          appLogger.error("terminal", `${label}: ${kindLabel} (${patternName})`);
+          terminalsStore.setAwaitingInput(props.id, "error");
+
+          if (kind === "server" && agent && agentConfigsStore.isAutoRetryEnabled(agent) && !retryTimer) {
+            if (retryCount < RETRY_DELAYS.length) {
+              const delay = RETRY_DELAYS[retryCount];
+              const attempt = retryCount + 1;
+              appLogger.info("terminal", `[AutoRetry] ${label}: attempt ${attempt}/${RETRY_DELAYS.length} in ${delay / 1000}s`);
+              retryTimer = setTimeout(() => {
+                retryTimer = undefined;
+                const current = terminalsStore.get(props.id);
+                if (sessionId && current?.awaitingInput === "error") {
+                  appLogger.info("terminal", `[AutoRetry] ${label}: injecting "continue" (attempt ${attempt})`);
+                  pty.write(sessionId, "continue\r").catch((err) =>
+                    appLogger.error("terminal", "[AutoRetry] Failed to write", { error: String(err) }),
+                  );
+                }
+              }, delay);
+              retryCount++;
+            } else {
+              appLogger.warn("terminal", `[AutoRetry] ${label}: exhausted ${RETRY_DELAYS.length} retries, manual intervention needed`);
+            }
+          }
+          break;
+        }
+        case "intent":
+          retryCount = 0;
+          terminalsStore.setAgentIntent(props.id, parsed.text);
+          if (parsed.title && settingsStore.state.intentTabTitle) {
+            terminalsStore.update(props.id, { name: parsed.title });
+          }
+          break;
+        case "suggest":
+          if (settingsStore.state.suggestFollowups && parsed.items?.length) {
+            const t = terminalsStore.get(props.id);
+            // Guard: only show suggestions when agent is idle — prevents stale
+            // suggestions from buffer re-scans during resize/tab-switch
+            if (!t?.suggestDismissed && t?.shellState === "idle") {
+              terminalsStore.setSuggestedActions(props.id, parsed.items);
+            }
+          }
+          break;
+        case "shell-state": {
+          terminalsStore.update(props.id, { shellState: parsed.state });
+          if (parsed.state === "idle") {
+            const initCmd = terminalsStore.get(props.id)?.pendingInitCommand;
+            if (initCmd && targetSessionId) {
+              terminalsStore.update(props.id, { pendingInitCommand: null });
+              pty.write(targetSessionId, initCmd + "\r").catch((e) =>
+                appLogger.error("terminal", "Failed to write init command", { error: String(e) }),
+              );
+            }
+          }
+          break;
+        }
+      }
+
+      pluginRegistry.dispatchStructuredEvent(parsed.type, parsed, targetSessionId);
+    };
+
     // PTY output + exit via transport abstraction (Tauri listen or WebSocket)
     unsubscribePty = await subscribePty(
       targetSessionId,
@@ -336,181 +488,20 @@ export const Terminal: Component<TerminalProps> = (props) => {
       {
         onReconnecting: (attempt, max) => setReconnecting({ attempt, max }),
         onReconnected: () => setReconnecting(null),
+        // Browser mode: receive parsed events via WebSocket JSON frames
+        onParsed: (frame) => {
+          if (frame.type === "parsed" && frame.event) {
+            handleParsedEvent(frame.event as ParsedEvent);
+          }
+        },
       },
     );
 
-    // Structured events from Rust OutputParser (Tauri-only, not available via HTTP)
+    // Tauri-only listeners (kitty keyboard, shell state sync)
     if (isTauri()) {
       const { listen } = await import("@tauri-apps/api/event");
       unlistenParsed = await listen<ParsedEvent>(`pty-parsed-${targetSessionId}`, (event) => {
-        const parsed = event.payload;
-
-        switch (parsed.type) {
-          case "progress": {
-            // Don't clear error/question state on progress — API errors are
-            // persistent, and question state should survive timer ticks.
-            const awProg = terminalsStore.get(props.id)?.awaitingInput;
-            if (awProg && awProg !== "error" && awProg !== "question") {
-              terminalsStore.clearAwaitingInput(props.id);
-            }
-            if (parsed.state === 0) {
-              terminalsStore.update(props.id, { progress: null });
-            } else if (parsed.state === 1 || parsed.state === 2 || parsed.state === 3) {
-              terminalsStore.update(props.id, { progress: Math.min(100, Math.max(0, parsed.value)) });
-            }
-            break;
-          }
-          case "status-line": {
-            retryCount = 0; // Reset auto-retry — agent is working again
-            // Agent is working again — clear awaiting input state, EXCEPT:
-            // - "error": API errors are persistent (only cleared by user input / exit)
-            // - "question": timer ticks while waiting for input emit status-line
-            //   events but should not dismiss the question notification
-            const awState = terminalsStore.get(props.id)?.awaitingInput;
-            if (awState && awState !== "error" && awState !== "question") {
-              terminalsStore.clearAwaitingInput(props.id);
-            }
-            terminalsStore.update(props.id, { currentTask: parsed.task_name });
-            break;
-          }
-          case "active-subtasks": {
-            terminalsStore.update(props.id, { activeSubTasks: parsed.count });
-            break;
-          }
-          case "rate-limit": {
-            const terminal = terminalsStore.get(props.id);
-            const detectedAgent = terminal?.agentType;
-            appLogger.debug("terminal", `[RateLimit] pattern=${parsed.pattern_name} matched="${parsed.matched_text}" agent=${detectedAgent ?? "none"} shellState=${terminal?.shellState} sessionId=${targetSessionId}`);
-            // Guard: if the terminal is actively producing output, the agent is
-            // not actually rate-limited — the match is a false positive from the
-            // agent reading/discussing code that contains rate-limit strings.
-            if (terminal?.shellState === "busy") {
-              appLogger.debug("terminal", `[RateLimit] IGNORED (shellState=busy, likely false positive) pattern=${parsed.pattern_name}`);
-              break;
-            }
-            // Deduplicate: skip if this session was rate-limited less than 5s ago
-            // (resize redraws can re-match the same rate-limit text)
-            const existing = rateLimitStore.getRateLimitInfo(targetSessionId);
-            const recentlyDetected = existing && (Date.now() - existing.detectedAt) < 5000;
-            if (detectedAgent && !recentlyDetected) {
-              const info = {
-                agentType: detectedAgent,
-                sessionId: targetSessionId,
-                retryAfterMs: parsed.retry_after_ms,
-                message: `Rate limit detected (${parsed.pattern_name}): ${parsed.matched_text}`,
-                detectedAt: Date.now(),
-              };
-              rateLimitStore.addRateLimit(info);
-              props.onRateLimit?.(props.id, targetSessionId, parsed.retry_after_ms);
-              appLogger.info("terminal", `[Notify] ${props.id} warning — rate-limit pattern=${parsed.pattern_name} matched="${parsed.matched_text}"`);
-              notificationsStore.playWarning();
-            }
-            break;
-          }
-          case "question": {
-            // Guard: if the terminal is actively producing output or has active
-            // sub-tasks (tool use), low-confidence questions are false positives.
-            const qTerminal = terminalsStore.get(props.id);
-            if (!parsed.confident && (qTerminal?.shellState === "busy" || (qTerminal?.activeSubTasks ?? 0) > 0)) {
-              appLogger.debug("terminal", `[ParsedEvent] ${props.id} question IGNORED (busy=${qTerminal?.shellState === "busy"} subTasks=${qTerminal?.activeSubTasks} low-confidence) prompt="${parsed.prompt_text}"`);
-              break;
-            }
-            terminalsStore.setAwaitingInput(props.id, "question", !!parsed.confident);
-            break;
-          }
-          case "usage-limit": {
-            const current = terminalsStore.get(props.id)?.usageLimit;
-            if (current?.percentage !== parsed.percentage || current?.limitType !== parsed.limit_type) {
-              terminalsStore.update(props.id, {
-                usageLimit: { percentage: parsed.percentage, limitType: parsed.limit_type },
-              });
-            }
-            break;
-          }
-          case "plan-file":
-            // Play info tone at most once per agent cycle (between user-input events)
-            if (terminalsStore.state.activeId !== props.id && !planFileNotified) {
-              planFileNotified = true;
-              appLogger.info("terminal", `[Notify] ${props.id} info — plan-file path="${parsed.path}" (background tab)`);
-              notificationsStore.playInfo();
-            }
-            // Also handled by planPlugin via dispatchStructuredEvent below
-            break;
-          case "user-input":
-            // New user input means a new agent cycle — reset dedup and sub-task count
-            planFileNotified = false;
-            terminalsStore.update(props.id, { suggestDismissed: false, activeSubTasks: 0 });
-            // Refresh last relevant prompt from Rust (word-count filtering happens backend-side)
-            invoke<string | null>("get_last_prompt", { sessionId: targetSessionId }).then((prompt) => {
-              if (prompt !== null) terminalsStore.setLastPrompt(props.id, prompt);
-            }).catch(() => {});
-            break;
-          case "api-error": {
-            const agent = terminalsStore.get(props.id)?.agentType;
-            const { error_kind: kind, pattern_name: patternName, matched_text: matchedText } = parsed;
-            appLogger.debug("terminal", `[ApiError] ${props.id} pattern=${patternName} kind=${kind} agent=${agent ?? "none"} matched="${matchedText}"`);
-            const label = agent ?? "Agent";
-            const kindLabel = kind === "server" ? "server error" : kind === "auth" ? "auth failure" : "API error";
-            appLogger.error("terminal", `${label}: ${kindLabel} (${patternName})`);
-            terminalsStore.setAwaitingInput(props.id, "error");
-
-            // Auto-retry: inject "continue" for server errors when enabled per-agent
-            if (kind === "server" && agent && agentConfigsStore.isAutoRetryEnabled(agent) && !retryTimer) {
-              if (retryCount < RETRY_DELAYS.length) {
-                const delay = RETRY_DELAYS[retryCount];
-                const attempt = retryCount + 1;
-                appLogger.info("terminal", `[AutoRetry] ${label}: attempt ${attempt}/${RETRY_DELAYS.length} in ${delay / 1000}s`);
-                retryTimer = setTimeout(() => {
-                  retryTimer = undefined;
-                  const current = terminalsStore.get(props.id);
-                  if (sessionId && current?.awaitingInput === "error") {
-                    appLogger.info("terminal", `[AutoRetry] ${label}: injecting "continue" (attempt ${attempt})`);
-                    pty.write(sessionId, "continue\r").catch((err) =>
-                      appLogger.error("terminal", "[AutoRetry] Failed to write", { error: String(err) }),
-                    );
-                  }
-                }, delay);
-                retryCount++;
-              } else {
-                appLogger.warn("terminal", `[AutoRetry] ${label}: exhausted ${RETRY_DELAYS.length} retries, manual intervention needed`);
-              }
-            }
-            break;
-          }
-          case "intent":
-            retryCount = 0; // Reset auto-retry on successful agent output
-            terminalsStore.setAgentIntent(props.id, parsed.text);
-            if (parsed.title && settingsStore.state.intentTabTitle) {
-              terminalsStore.update(props.id, { name: parsed.title });
-            }
-            break;
-          case "suggest":
-            if (settingsStore.state.suggestFollowups && parsed.items?.length) {
-              const t = terminalsStore.get(props.id);
-              // Don't re-show after user dismissed — wait for next user-input to reset
-              if (!t?.suggestDismissed) {
-                terminalsStore.setSuggestedActions(props.id, parsed.items);
-              }
-            }
-            break;
-          case "shell-state": {
-            terminalsStore.update(props.id, { shellState: parsed.state });
-            // Execute pending init command on first idle (migrated from checkIdle)
-            if (parsed.state === "idle") {
-              const initCmd = terminalsStore.get(props.id)?.pendingInitCommand;
-              if (initCmd && targetSessionId) {
-                terminalsStore.update(props.id, { pendingInitCommand: null });
-                pty.write(targetSessionId, initCmd + "\r").catch((e) =>
-                  appLogger.error("terminal", "Failed to write init command", { error: String(e) }),
-                );
-              }
-            }
-            break;
-          }
-        }
-
-        // Also dispatch to plugin structured event handlers
-        pluginRegistry.dispatchStructuredEvent(parsed.type, parsed, targetSessionId);
+        handleParsedEvent(event.payload);
       });
 
       // Listen for kitty keyboard protocol flag changes from Rust
