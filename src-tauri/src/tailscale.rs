@@ -233,6 +233,35 @@ async fn provision_cert_cli(fqdn: &str) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
     Ok((cert_pem, key_pem))
 }
 
+/// Background loop that re-provisions the TLS certificate every 24 hours.
+///
+/// The Tailscale Local API automatically issues a fresh cert when the current
+/// one is near expiry, so we simply re-call `provision_cert` periodically and
+/// hot-reload via `RustlsConfig::reload_from_pem`.
+pub(crate) async fn cert_renewal_loop(
+    fqdn: String,
+    tls_config: axum_server::tls_rustls::RustlsConfig,
+) {
+    const CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(24 * 3600);
+
+    loop {
+        tokio::time::sleep(CHECK_INTERVAL).await;
+
+        tracing::info!(source = "tailscale", "Checking TLS cert renewal for {fqdn}");
+        match provision_cert(&fqdn).await {
+            Ok((cert_pem, key_pem)) => {
+                match tls_config.reload_from_pem(cert_pem, key_pem).await {
+                    Ok(()) => tracing::info!(source = "tailscale", "TLS cert renewed for {fqdn}"),
+                    Err(e) => tracing::error!(source = "tailscale", "TLS reload failed: {e}"),
+                }
+            }
+            Err(e) => {
+                tracing::warn!(source = "tailscale", "Cert renewal failed (will retry in 24h): {e}");
+            }
+        }
+    }
+}
+
 /// Extract HTTP response body from raw HTTP/1.1 response bytes.
 #[cfg(unix)]
 fn extract_http_body(response: &[u8]) -> anyhow::Result<Vec<u8>> {

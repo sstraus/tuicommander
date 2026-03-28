@@ -632,6 +632,21 @@ pub async fn start_server(
         None
     };
 
+    // Spawn TLS cert renewal task (checks every 24h, renews if < 30 days to expiry)
+    let renewal_handle = if let Some(ref tls) = tls_config {
+        let ts_state = state.tailscale_state.read().clone();
+        if let crate::tailscale::TailscaleState::Running { fqdn, https_enabled: true } = ts_state {
+            let tls_clone = tls.clone();
+            Some(tokio::spawn(async move {
+                crate::tailscale::cert_renewal_loop(fqdn, tls_clone).await;
+            }))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     // Wait for shutdown signal
     let _ = shutdown_rx.await;
 
@@ -645,6 +660,9 @@ pub async fn start_server(
         h.abort();
     }
     if let Some(h) = tcp_handle {
+        h.abort();
+    }
+    if let Some(h) = renewal_handle {
         h.abort();
     }
     reaper_handle.abort();
