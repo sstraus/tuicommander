@@ -471,6 +471,9 @@ pub(crate) fn delete_local_branch(state: State<'_, Arc<AppState>>, repo_path: St
 pub(crate) fn get_worktree_paths(repo_path: String) -> Result<HashMap<String, String>, String> {
     let base_repo = PathBuf::from(&repo_path);
 
+    // Prune stale worktree entries (directories that no longer exist on disk)
+    let _ = git_cmd(&base_repo).args(["worktree", "prune"]).run();
+
     let out = git_cmd(&base_repo)
         .args(["worktree", "list", "--porcelain"])
         .run()
@@ -485,7 +488,10 @@ pub(crate) fn get_worktree_paths(repo_path: String) -> Result<HashMap<String, St
         } else if line.starts_with("branch refs/heads/") {
             let branch = line.trim_start_matches("branch refs/heads/").to_string();
             if let Some(ref path) = current_path {
-                result.insert(branch, path.clone());
+                // Skip entries whose directory no longer exists (double safety after prune)
+                if Path::new(path).exists() {
+                    result.insert(branch, path.clone());
+                }
             }
         }
     }
