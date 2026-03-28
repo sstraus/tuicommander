@@ -161,7 +161,13 @@ fn is_valid_fqdn(name: &str) -> bool {
 pub(crate) async fn provision_cert(fqdn: &str) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
     #[cfg(unix)]
     {
-        provision_cert_unix(fqdn).await
+        // Try Unix socket first (Linux with tailscaled); fall back to CLI (macOS App Store).
+        let socket_path = std::path::Path::new("/var/run/tailscale/tailscaled.sock");
+        if socket_path.exists() {
+            provision_cert_unix(fqdn).await
+        } else {
+            provision_cert_cli(fqdn).await
+        }
     }
     #[cfg(windows)]
     {
@@ -206,8 +212,7 @@ async fn provision_cert_unix(fqdn: &str) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
     Ok((cert_pem, key_pem))
 }
 
-/// Provision cert via `tailscale cert` CLI (cross-platform fallback).
-#[cfg(windows)]
+/// Provision cert via `tailscale cert` CLI (used on macOS App Store and Windows).
 async fn provision_cert_cli(fqdn: &str) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
     let binary = find_binary().ok_or_else(|| anyhow::anyhow!("Tailscale binary not found"))?;
 
