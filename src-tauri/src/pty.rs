@@ -222,6 +222,11 @@ pub(crate) struct SilenceState {
     /// Set by `suppress_user_input()` so the echo of user-typed text doesn't
     /// re-enable silence-based question detection.
     pub(crate) suppress_echo_until: Option<std::time::Instant>,
+    /// When the last chunk of ANY kind (real or chrome-only) was processed.
+    /// Used by the backup idle timer to distinguish "no output at all" (reader
+    /// blocked on read()) from "only chrome-only ticks arriving". The backup
+    /// timer should only fire when truly no chunks arrive.
+    pub(crate) last_chunk_at: std::time::Instant,
     /// When the last StatusLine (spinner) event was seen. If recent,
     /// silence-based question detection is suppressed — spinner means the agent is working.
     pub(crate) last_status_line_at: Option<std::time::Instant>,
@@ -249,6 +254,7 @@ impl SilenceState {
             last_output_at: std::time::Instant::now(),
             pending_question_line: None,
             question_already_emitted: false,
+            last_chunk_at: std::time::Instant::now(),
             last_resize_at: None,
             suppress_echo_until: None,
             last_status_line_at: None,
@@ -307,6 +313,10 @@ impl SilenceState {
     ///   output — they must not reset the silence timer or the spinner timestamp,
     ///   or questions asked by Ink agents will never be detected.
     pub(crate) fn on_chunk(&mut self, regex_found_question: bool, last_question_line: Option<String>, has_status_line: bool, status_line_only: bool) {
+        // Always track that a chunk arrived — used by the backup idle timer
+        // to distinguish "reader blocked on read()" from "chrome ticks arriving".
+        self.last_chunk_at = std::time::Instant::now();
+
         if !status_line_only {
             self.last_output_at = std::time::Instant::now();
         }
@@ -379,6 +389,14 @@ impl SilenceState {
         self.last_status_line_at
             .map(|t| t.elapsed() < SILENCE_QUESTION_THRESHOLD)
             .unwrap_or(false)
+    }
+
+    /// Returns true if any chunk (real or chrome-only) was received recently.
+    /// The backup idle timer uses this to avoid false idle transitions when the
+    /// reader thread IS processing chunks (even chrome-only mode-line ticks).
+    /// The 2s threshold matches the frontend debounce hold (BUSY_HOLD_MS).
+    pub(crate) fn has_recent_chunks(&self) -> bool {
+        self.last_chunk_at.elapsed() < std::time::Duration::from_secs(2)
     }
 
     /// Called by the timer thread. Returns the question text if the silence
@@ -522,7 +540,12 @@ fn spawn_silence_timer(
 
             // Backup idle check: when no chunks arrive at all (agent truly silent),
             // the reader thread never gets a chance to emit idle. The timer catches this.
-            if let Some(atom) = state.shell_states.get(&session_id)
+            // Guard: skip if the reader thread is actively processing chunks (even
+            // chrome-only ticks) — it already handles idle transitions correctly via
+            // the `!has_status_line` guard in process_chunk.
+            let reader_active = silence.lock().has_recent_chunks();
+            if !reader_active
+                && let Some(atom) = state.shell_states.get(&session_id)
                 && atom.load(std::sync::atomic::Ordering::Acquire) == SHELL_BUSY
                 && should_transition_idle(&state, &session_id)
                 && try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE)
@@ -3624,6 +3647,61 @@ mod tests {
         assert!(try_shell_transition(&state, sid, SHELL_IDLE, SHELL_BUSY),
             "should transition idle → busy on real output");
         assert_eq!(state.shell_states.get(sid).unwrap().load(Ordering::Relaxed), SHELL_BUSY);
+    }
+
+    // --- Backup idle guard: has_recent_chunks ---
+
+    #[test]
+    fn test_has_recent_chunks_true_after_chrome_only_chunk() {
+        let mut s = SilenceState::new();
+        // Simulate a chrome-only chunk (status_line_only=true means on_chunk won't update last_output_at)
+        s.on_chunk(false, None, true, true);
+        assert!(s.has_recent_chunks(),
+            "has_recent_chunks should be true right after a chrome-only chunk");
+    }
+
+    #[test]
+    fn test_has_recent_chunks_true_after_real_chunk() {
+        let mut s = SilenceState::new();
+        s.on_chunk(false, None, false, false);
+        assert!(s.has_recent_chunks(),
+            "has_recent_chunks should be true right after a real output chunk");
+    }
+
+    #[test]
+    fn test_has_recent_chunks_false_when_no_chunks_for_2s() {
+        let mut s = SilenceState::new();
+        s.on_chunk(false, None, true, true);
+        // Backdate to 3 seconds ago
+        s.last_chunk_at = std::time::Instant::now() - std::time::Duration::from_secs(3);
+        assert!(!s.has_recent_chunks(),
+            "has_recent_chunks should be false when last chunk was 3s ago");
+    }
+
+    #[test]
+    fn test_backup_idle_blocked_when_chunks_arriving() {
+        use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
+        let state = crate::state::tests_support::make_test_app_state();
+        let sid = "test-session";
+        state.shell_states.insert(sid.to_string(), AtomicU8::new(SHELL_BUSY));
+        state.session_states.insert(sid.to_string(), crate::state::SessionState::default());
+
+        // last_output_ms is 600ms ago (stale — would normally trigger idle)
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap().as_millis() as u64;
+        state.last_output_ms.insert(sid.to_string(), AtomicU64::new(now - 600));
+
+        // But SilenceState has recent chunks (chrome-only timer ticks)
+        let mut silence = SilenceState::new();
+        silence.on_chunk(false, None, true, true); // chrome-only chunk just arrived
+
+        // should_transition_idle says yes (based on last_output_ms alone)
+        assert!(should_transition_idle(&state, sid),
+            "should_transition_idle sees stale last_output_ms");
+        // But has_recent_chunks blocks the backup timer
+        assert!(silence.has_recent_chunks(),
+            "backup idle must be blocked because chunks are arriving");
     }
 
     // --- ChunkProcessor tests ---

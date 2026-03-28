@@ -21,6 +21,7 @@ Rust-side per-session state:
 | Field | Location | Purpose |
 |-------|----------|---------|
 | `SilenceState.last_output_at` | `pty.rs` | Timestamp of last **real** output (not mode-line ticks) |
+| `SilenceState.last_chunk_at` | `pty.rs` | Timestamp of last chunk of **any** kind (real or chrome-only). Used by backup idle timer to detect reader thread activity. |
 | `SilenceState.last_status_line_at` | `pty.rs` | Timestamp of last spinner/status-line |
 | `SilenceState.pending_question_line` | `pty.rs` | Candidate `?`-ending line for silence detection |
 | `SilenceState.output_chunks_after_question` | `pty.rs` | Staleness counter: real-output chunks since last `?` candidate |
@@ -131,6 +132,10 @@ A **backup timer** (the existing silence timer, 1s interval) also checks:
 Silence timer (every 1s)
          │
          ▼
+    reader thread active?  ─── YES ──► skip
+    (last_chunk_at < 2s)       (reader handles idle via !has_status_line guard)
+         │ NO
+         ▼
     shell_state == busy?  ─── NO ──► skip
          │ YES
          ▼
@@ -144,7 +149,10 @@ Silence timer (every 1s)
     shell_state = idle
 ```
 
-This catches the case where NO chunks arrive at all (agent truly silent).
+This catches the case where NO chunks arrive at all (agent truly silent — reader
+thread blocked on `read()`). When chrome-only chunks are arriving (mode-line timer
+ticks), the reader thread is active and handles idle transitions correctly via its
+own `!has_status_line` guard.
 
 ### Session end
 
@@ -485,13 +493,13 @@ Two layers: **Rust detection** → **Frontend notification**.
 
 ### SilenceState update rules
 
-| Chunk type | last_output_at | last_status_line_at | staleness counter | pending_question_line |
-|-----------|----------------|--------------------|--------------------|----------------------|
-| Real output, no '?' | Reset to now | — | +1 (if pending exists) | Cleared if >10 |
-| Real output with '?' | Reset to now | — | Reset to 0 | Set to new line |
-| Real output + status-line | Reset to now | Reset to now | (per above rules) | (per above rules) |
-| Mode-line tick only | **Not reset** | **Not reset** | **Not incremented** | **Not affected** |
-| Regex question fired | Reset to now | — | Reset to 0 | Cleared (handled) |
+| Chunk type | last_chunk_at | last_output_at | last_status_line_at | staleness counter | pending_question_line |
+|-----------|--------------|----------------|--------------------|--------------------|----------------------|
+| Real output, no '?' | Reset to now | Reset to now | — | +1 (if pending exists) | Cleared if >10 |
+| Real output with '?' | Reset to now | Reset to now | — | Reset to 0 | Set to new line |
+| Real output + status-line | Reset to now | Reset to now | Reset to now | (per above rules) | (per above rules) |
+| Mode-line tick only | **Reset to now** | **Not reset** | **Not reset** | **Not incremented** | **Not affected** |
+| Regex question fired | Reset to now | Reset to now | — | Reset to 0 | Cleared (handled) |
 
 ### Frontend: event handler + notification
 
@@ -528,6 +536,7 @@ pty-parsed: Question { prompt_text, confident }
 | Debounce hold | 2s | `terminals.ts` | debouncedBusy hold after idle |
 | Silence question threshold | 10s | `pty.rs` | Silence before '?' line → question |
 | Silence check interval | 1s | `pty.rs` | Timer thread wake frequency |
+| Backup idle chunk threshold | 2s | `pty.rs` | Skip backup idle if any chunk arrived within this window |
 | Stale question chunks | 10 | `pty.rs` | Real-output chunks before discarding '?' candidate |
 | Resize grace | 1s | `pty.rs` | Suppress all events after resize |
 | Echo suppress window | 500ms | `pty.rs` | Ignore PTY echo of user-typed '?' lines |
