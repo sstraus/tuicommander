@@ -171,6 +171,8 @@ pub(crate) fn create_worktree_internal(
     // Append base_ref as start-point when creating a new branch
     if config.create_branch
         && let Some(start_point) = base_ref {
+            // Auto-fetch if the base ref is a remote tracking branch
+            fetch_if_remote(&config.base_repo, start_point)?;
             args.push(start_point.to_string());
         }
 
@@ -188,6 +190,13 @@ pub(crate) fn create_worktree_internal(
             });
         }
         Err(e) => return Err(format!("Git worktree failed: {e}")),
+    }
+
+    // Persist the base ref in git config for "Update from base" support
+    if let Some(ref branch) = config.branch {
+        if let Some(start_point) = base_ref {
+            let _ = set_branch_base(&config.base_repo, branch, start_point);
+        }
     }
 
     Ok(WorktreeInfo {
@@ -654,6 +663,45 @@ pub(crate) fn get_remote_default_branch(repo_path: &str) -> Result<String, Strin
 
     // Last resort: return "main"
     Ok("main".to_string())
+}
+
+/// Fetch a remote ref if the ref name looks like a remote tracking branch (e.g. "origin/main").
+/// Local refs are a no-op. Returns Ok(()) on success or if the ref is local.
+pub(crate) fn fetch_if_remote(repo_path: &str, ref_name: &str) -> Result<(), String> {
+    // Remote refs contain a "/" and start with a remote name (e.g. "origin/branch")
+    if let Some(slash_pos) = ref_name.find('/') {
+        let remote = &ref_name[..slash_pos];
+        let branch = &ref_name[slash_pos + 1..];
+        if !remote.is_empty() && !branch.is_empty() {
+            git_cmd(Path::new(repo_path))
+                .args(["fetch", remote, branch])
+                .run()
+                .map_err(|e| format!("Failed to fetch {ref_name}: {e}"))?;
+        }
+    }
+    Ok(())
+}
+
+/// Persist the base ref for a branch in git config.
+/// Stored as `branch.<name>.tuicommander-base` in `.git/config`.
+pub(crate) fn set_branch_base(repo_path: &str, branch_name: &str, base_ref: &str) -> Result<(), String> {
+    let key = format!("branch.{branch_name}.tuicommander-base");
+    git_cmd(Path::new(repo_path))
+        .args(["config", &key, base_ref])
+        .run()
+        .map_err(|e| format!("Failed to set branch base: {e}"))?;
+    Ok(())
+}
+
+/// Read the stored base ref for a branch from git config.
+/// Returns None if not set.
+pub(crate) fn get_branch_base(repo_path: &str, branch_name: &str) -> Option<String> {
+    let key = format!("branch.{branch_name}.tuicommander-base");
+    git_cmd(Path::new(repo_path))
+        .args(["config", &key])
+        .run_silent()
+        .map(|out| out.stdout.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 /// A base ref option with metadata for grouped dropdown display.
@@ -1751,6 +1799,76 @@ branch refs/heads/feat
         // None script — should proceed normally
         let result = archive_worktree(repo.path(), "archive-noscript-test", None);
         assert!(result.is_ok(), "archive without script should succeed: {:?}", result);
+    }
+
+    #[test]
+    fn test_set_and_get_branch_base() {
+        let repo = setup_test_repo();
+        let path = repo.path().to_string_lossy().to_string();
+
+        // Initially no base set
+        let base = get_branch_base(&path, "main");
+        assert!(base.is_none(), "expected no base initially, got: {:?}", base);
+
+        // Set a base
+        set_branch_base(&path, "main", "develop").unwrap();
+        let base = get_branch_base(&path, "main");
+        assert_eq!(base, Some("develop".to_string()));
+
+        // Overwrite
+        set_branch_base(&path, "main", "origin/main").unwrap();
+        let base = get_branch_base(&path, "main");
+        assert_eq!(base, Some("origin/main".to_string()));
+    }
+
+    #[test]
+    fn test_fetch_remote_ref_for_local_is_noop() {
+        let repo = setup_test_repo();
+        let path = repo.path().to_string_lossy().to_string();
+
+        // A local ref like "main" should not trigger a fetch (no-op)
+        let result = fetch_if_remote(&path, "main");
+        assert!(result.is_ok(), "local ref should not fail: {:?}", result);
+    }
+
+    /// Get the current branch name in a test repo (could be main or master)
+    fn current_branch(repo: &TempDir) -> String {
+        let out = git_cmd(repo.path())
+            .args(["branch", "--show-current"])
+            .run()
+            .expect("Failed to get current branch");
+        out.stdout.trim().to_string()
+    }
+
+    #[test]
+    fn test_create_branch_persists_base_ref() {
+        let repo = setup_test_repo();
+        let path = repo.path().to_string_lossy().to_string();
+        let default_branch = current_branch(&repo);
+
+        // Create branch with a start_point
+        crate::git::create_branch_impl(&path, "feature-x", Some(&default_branch), false).unwrap();
+
+        // Base ref should be persisted
+        let base = get_branch_base(&path, "feature-x");
+        assert_eq!(base, Some(default_branch));
+    }
+
+    #[test]
+    fn test_create_worktree_persists_base_ref() {
+        let repo = setup_test_repo();
+        let default_branch = current_branch(&repo);
+        let worktrees_dir = repo.path().join("worktrees");
+        let config = WorktreeConfig {
+            task_name: "persist-base-test".to_string(),
+            base_repo: repo.path().to_string_lossy().to_string(),
+            branch: Some("persist-base-test".to_string()),
+            create_branch: true,
+        };
+        create_worktree_internal(&worktrees_dir, &config, Some(&default_branch)).unwrap();
+
+        let base = get_branch_base(&repo.path().to_string_lossy(), "persist-base-test");
+        assert_eq!(base, Some(default_branch));
     }
 
     #[test]

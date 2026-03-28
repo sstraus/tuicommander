@@ -235,6 +235,11 @@ pub(crate) fn create_branch_impl(path: &str, name: &str, start_point: Option<&st
 
     validate_branch_name(name)?;
 
+    // Auto-fetch if the start point is a remote tracking branch
+    if let Some(sp) = start_point {
+        crate::worktree::fetch_if_remote(path, sp)?;
+    }
+
     // Build `git branch <name> [<start_point>]`
     let mut args = vec!["branch", name];
     if let Some(sp) = start_point {
@@ -251,6 +256,11 @@ pub(crate) fn create_branch_impl(path: &str, name: &str, start_point: Option<&st
             }
         }
         Err(e) => return Err(e.to_string()),
+    }
+
+    // Persist the base ref in git config for "Update from base" support
+    if let Some(sp) = start_point {
+        let _ = crate::worktree::set_branch_base(path, name, sp);
     }
 
     if checkout {
