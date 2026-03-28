@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
+import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { TerminalSearch } from "./TerminalSearch";
 import { isTauri, subscribePty, type Unsubscribe } from "../../transport";
 import { handleOpenUrl } from "../../utils/openUrl";
@@ -626,6 +627,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       theme: currentTheme(),
       cursorBlink: true,
       allowProposedApi: true,
+      rescaleOverlappingGlyphs: true,
       macOptionIsMeta: false, // Right Option keeps macOS composition (π, ∑, @…)
       // Override xterm's default OSC 8 link handler — the built-in one calls
       // window.confirm("WARNING: potentially dangerous") + window.open(), which
@@ -926,8 +928,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // and render it correctly from the start (see preloadFont comment above).
     preloadFont(settingsStore.state.font).then(() => doFit());
 
+    // Unicode 11 width tables — fixes width estimation for emoji, box-drawing,
+    // and progress bar characters (█▓▒░) that cause progressive rendering corruption.
+    const unicode11 = new Unicode11Addon();
+    terminal.loadAddon(unicode11);
+    terminal.unicode.activeVersion = "11";
+
     // Load WebGL renderer for 3-5x rendering performance over canvas.
-    // CanvasAddon fallback deferred to Story 158 (@xterm/addon-canvas beta has broken exports).
     // On context loss, DOM renderer remains as fallback.
     try {
       const webgl = new WebglAddon();
