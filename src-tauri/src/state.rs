@@ -867,6 +867,8 @@ pub struct AppState {
     /// Updated by `start_server` after successful bind.
     #[cfg(unix)]
     pub(crate) bound_socket_path: parking_lot::RwLock<std::path::PathBuf>,
+    /// Tailscale daemon state (detected at server startup)
+    pub(crate) tailscale_state: parking_lot::RwLock<crate::tailscale::TailscaleState>,
     /// Server start time for uptime calculation in health endpoint.
     pub(crate) server_start_time: std::time::Instant,
     /// Per-MCP-session broadcast channels for inter-agent messaging notifications.
@@ -1825,6 +1827,7 @@ pub(crate) mod tests_support {
             messaging_channels: DashMap::new(),
             #[cfg(unix)]
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
+            tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),
             server_start_time: std::time::Instant::now(),
         }
     }
@@ -2252,6 +2255,7 @@ mod tests {
             messaging_channels: DashMap::new(),
             #[cfg(unix)]
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
+            tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),
             server_start_time: std::time::Instant::now(),
         }
     }

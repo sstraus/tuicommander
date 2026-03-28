@@ -551,6 +551,12 @@ fn get_connect_url(state: State<'_, Arc<AppState>>, ip: String) -> String {
     build_connect_url(&ip, port, &token)
 }
 
+/// Get Tailscale daemon status for the frontend Settings panel.
+#[tauri::command]
+fn get_tailscale_status(state: State<'_, Arc<AppState>>) -> tailscale::TailscaleState {
+    state.tailscale_state.read().clone()
+}
+
 /// Get relay client status (enabled, connected, url, session_id).
 #[tauri::command]
 fn get_relay_status(state: State<'_, Arc<AppState>>) -> serde_json::Value {
@@ -627,6 +633,7 @@ pub fn run() {
         messaging_channels: DashMap::new(),
         #[cfg(unix)]
         bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
+        tailscale_state: parking_lot::RwLock::new(tailscale::TailscaleState::NotInstalled),
         server_start_time: std::time::Instant::now(),
     });
 
@@ -634,6 +641,45 @@ pub fn run() {
     state.mcp_upstream_registry.set_event_bus(state.event_bus.clone());
     // Wire the MCP tools_changed signal so upstream changes notify MCP bridge clients.
     state.mcp_upstream_registry.set_mcp_tools_tx(state.mcp_tools_changed.clone());
+
+    // Detect Tailscale and provision TLS cert if available
+    let tls_config = if config.remote_access_enabled {
+        let ts_state = tailscale::detect();
+        tracing::info!(source = "tailscale", ?ts_state, "Tailscale detection result");
+        *state.tailscale_state.write() = ts_state.clone();
+
+        match &ts_state {
+            tailscale::TailscaleState::Running { fqdn, https_enabled: true } => {
+                let fqdn = fqdn.clone();
+                // Provision cert in a blocking context (uses Unix socket / CLI)
+                let rt = tokio::runtime::Runtime::new()
+                    .expect("tokio runtime for TLS cert provisioning");
+                match rt.block_on(tailscale::provision_cert(&fqdn)) {
+                    Ok((cert_pem, key_pem)) => {
+                        match rt.block_on(
+                            axum_server::tls_rustls::RustlsConfig::from_pem(cert_pem, key_pem)
+                        ) {
+                            Ok(tls) => {
+                                tracing::info!(source = "tailscale", %fqdn, "TLS cert provisioned");
+                                Some(tls)
+                            }
+                            Err(e) => {
+                                tracing::error!(source = "tailscale", "Failed to load TLS config: {e}");
+                                None
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!(source = "tailscale", "Failed to provision cert: {e}");
+                        None
+                    }
+                }
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
 
     // Always start HTTP API server (Unix socket is always on; TCP only if remote access enabled)
     {
@@ -651,7 +697,7 @@ pub fn run() {
                 // Auto-connect saved upstream MCP servers on boot
                 crate::mcp_upstream_config::auto_connect_saved_upstreams(&boot_registry_state).await;
 
-                mcp_http::start_server(mcp_state, true, remote_enabled, None).await;
+                mcp_http::start_server(mcp_state, true, remote_enabled, tls_config).await;
             });
         });
     }
@@ -885,6 +931,7 @@ pub fn run() {
             get_mcp_status,
             get_connect_url,
             regenerate_session_token,
+            get_tailscale_status,
             get_relay_status,
             dictation::commands::get_dictation_status,
             dictation::commands::get_model_info,
