@@ -44,6 +44,7 @@ function createMockHandlers(): ShortcutHandlers {
     toggleBranchesTab: vi.fn(),
     toggleMcpPopup: vi.fn(),
     toggleSmartPrompts: vi.fn(),
+    togglePromptLibrary: vi.fn(),
   };
 }
 
@@ -175,8 +176,13 @@ describe("useKeyboardShortcuts", () => {
       expect(handlers.toggleMarkdownPanel).toHaveBeenCalled();
     });
 
-    it("Cmd+K toggles smart prompts", () => {
+    it("Cmd+K toggles prompt library", () => {
       fireKeydown("k", { metaKey: true });
+      expect(handlers.togglePromptLibrary).toHaveBeenCalled();
+    });
+
+    it("Cmd+Shift+K toggles smart prompts", () => {
+      fireKeydown("k", { metaKey: true, shiftKey: true });
       expect(handlers.toggleSmartPrompts).toHaveBeenCalled();
     });
 

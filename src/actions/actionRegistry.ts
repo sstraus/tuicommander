@@ -62,7 +62,8 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
   "quick-branch-switch": { label: "Quick branch switch", category: "Git" },
   "toggle-error-log": { label: "Error log", category: "Navigation" },
   "toggle-mcp-popup": { label: "MCP servers (per-repo)", category: "Panels" },
-  "toggle-smart-prompts": { label: "Smart Prompts Library", category: "Navigation" },
+  "toggle-smart-prompts": { label: "Smart Prompts", category: "Navigation" },
+  "prompt-library": { label: "Prompt Library", category: "Navigation" },
 };
 
 /**
@@ -109,6 +110,7 @@ export function getActionEntries(handlers: ShortcutHandlers): ActionEntry[] {
     "toggle-error-log": handlers.toggleErrorLog,
     "toggle-mcp-popup": handlers.toggleMcpPopup,
     "toggle-smart-prompts": handlers.toggleSmartPrompts,
+    "prompt-library": handlers.togglePromptLibrary,
   };
 
   for (const [actionId, meta] of Object.entries(ACTION_META)) {

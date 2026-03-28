@@ -16,6 +16,7 @@ import { TerminalArea } from "./components/TerminalArea";
 import { PanelOrchestrator } from "./components/PanelOrchestrator";
 import { editorTabsStore } from "./stores/editorTabs";
 import { PromptOverlay } from "./components/PromptOverlay";
+import { PromptDrawer } from "./components/PromptDrawer";
 import { SettingsPanel, type SettingsContext } from "./components/SettingsPanel";
 import { TaskQueuePanel } from "./components/TaskQueuePanel";
 import { ContextMenu, createContextMenu, type ContextMenuItem } from "./components/ContextMenu";
@@ -248,11 +249,15 @@ const App: Component = () => {
   // Auto-delete local branches when their PR is merged/closed
   useAutoDeleteBranch({ confirm: (opts) => dialogs.confirm(opts) });
 
-  // Offer to switch to newly created worktrees (from MCP)
+  // Offer to switch to newly created worktrees (from MCP) + activity notification
   useWorktreeSwitchPrompt({
     confirm: (opts) => dialogs.confirm(opts),
     handleBranchSelect: gitOps.handleBranchSelect,
   });
+
+  // Register built-in activity sections for git and worktree notifications
+  activityStore.registerSection({ id: "git-ops", label: "GIT", priority: 30, canDismissAll: true });
+  activityStore.registerSection({ id: "worktrees", label: "WORKTREES", priority: 40, canDismissAll: true });
 
   // Auto-heal CI failures by injecting logs into agent terminals
   useCiHeal();
@@ -773,9 +778,20 @@ const App: Component = () => {
         repositoriesStore.bumpRevision(repoPath);
         // Show meaningful output: prefer stderr (git progress goes there), fall back to stdout
         const output = (stderr.trim() || stdout.trim()).split("\n").pop()?.trim();
-        setStatusInfo(output ? `git ${op}: ${output}` : `git ${op} completed`);
+        const summary = output ? `git ${op}: ${output}` : `git ${op} completed`;
+        setStatusInfo(summary);
         appLogger.info("app", `[Notify] completion — git ${op} succeeded`);
         notificationsStore.playCompletion();
+        activityStore.addItem({
+          id: `git-${op}-${Date.now()}`,
+          pluginId: "core",
+          sectionId: "git-ops",
+          title: `git ${op}`,
+          subtitle: output || "completed",
+          icon: '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0zm3.78 5.97l-4.5 4.5a.75.75 0 0 1-1.06 0l-2-2a.75.75 0 1 1 1.06-1.06L6.75 8.88l3.97-3.97a.75.75 0 1 1 1.06 1.06z"/></svg>',
+          repoPath,
+          dismissible: true,
+        });
       } else if (NEEDS_TERMINAL_PATTERNS.some((p) => p.test(stderr))) {
         // Auth or interactive prompt needed — cancel background task, run in terminal
         tasksStore.cancel(taskId);
@@ -786,6 +802,16 @@ const App: Component = () => {
         setStatusInfo(`git ${op} failed: ${errMsg}`);
         appLogger.info("app", `[Notify] error — git ${op} failed: ${errMsg}`);
         notificationsStore.playError();
+        activityStore.addItem({
+          id: `git-${op}-${Date.now()}`,
+          pluginId: "core",
+          sectionId: "git-ops",
+          title: `git ${op} failed`,
+          subtitle: errMsg,
+          icon: '<svg viewBox="0 0 16 16" width="14" height="14" fill="#f85149"><path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0zm3.36 10.3a.75.75 0 0 1-1.06 1.06L8 9.06l-2.3 2.3a.75.75 0 0 1-1.06-1.06L6.94 8 4.64 5.7a.75.75 0 0 1 1.06-1.06L8 6.94l2.3-2.3a.75.75 0 0 1 1.06 1.06L9.06 8l2.3 2.3z"/></svg>',
+          repoPath,
+          dismissible: true,
+        });
       }
     } catch (err) {
       tasksStore.fail(taskId, String(err));
@@ -898,6 +924,7 @@ const App: Component = () => {
     isQuickSwitcherOpen: quickSwitcherVisible,
     toggleMarkdownPanel: uiStore.toggleMarkdownPanel,
     toggleSidebar: uiStore.toggleSidebar,
+    togglePromptLibrary: promptLibraryStore.toggleDrawer,
     toggleSettings: () => setSettingsPanelVisible((v) => !v),
     toggleTaskQueue: () => setTaskQueueVisible((v) => !v),
     toggleGitOpsPanel: uiStore.toggleGitPanel,
@@ -1148,6 +1175,7 @@ const App: Component = () => {
         case "prev-tab": terminalLifecycle.navigateTab("prev"); break;
 
         // Tools
+        case "prompt-library": promptLibraryStore.toggleDrawer(); break;
         case "run-command": gitOps.handleRunCommand(false, () => setRunCommandDialogVisible(true)); break;
         case "edit-run-command": gitOps.handleRunCommand(true, () => setRunCommandDialogVisible(true)); break;
         case "git-operations": uiStore.toggleGitPanel(); break;
@@ -1387,6 +1415,9 @@ const App: Component = () => {
 
       {/* Dictation streaming toast — shows partial transcription */}
       <DictationToast />
+
+      {/* Prompt library drawer */}
+      <PromptDrawer />
 
       {/* Command palette (Tauri only — many actions are Tauri-specific) */}
       <Show when={isTauri()}>
