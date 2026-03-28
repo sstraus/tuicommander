@@ -1121,7 +1121,7 @@ pub(crate) fn spawn_reader_thread(
     );
 
     std::thread::spawn(move || {
-        let mut buf = [0u8; 4096];
+        let mut buf = [0u8; 65536];
         let mut utf8_buf = Utf8ReadBuffer::new();
         let mut esc_buf = EscapeAwareBuffer::new();
         let session_cwd: Option<String> = state
@@ -1261,7 +1261,7 @@ pub(crate) fn spawn_headless_reader_thread(
     );
 
     std::thread::spawn(move || {
-        let mut buf = [0u8; 4096];
+        let mut buf = [0u8; 65536];
         let mut utf8_buf = Utf8ReadBuffer::new();
         let mut esc_buf = EscapeAwareBuffer::new();
         let session_cwd: Option<String> = state

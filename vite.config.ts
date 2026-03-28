@@ -65,6 +65,14 @@ export default defineConfig(async () => ({
         main: "index.html",
         mobile: "mobile.html",
       },
+      output: {
+        manualChunks: {
+          xterm: ["@xterm/xterm", "@xterm/addon-fit", "@xterm/addon-webgl", "@xterm/addon-unicode11", "@xterm/addon-clipboard", "@xterm/addon-image"],
+          codemirror: ["@codemirror/state", "@codemirror/view", "@codemirror/language", "@codemirror/language-data", "@codemirror/commands", "@codemirror/search", "@lezer/common", "@lezer/highlight"],
+          "diff-view": ["@git-diff-view/core", "@git-diff-view/solid"],
+          markdown: ["marked", "dompurify"],
+        },
+      },
     },
   },
 

@@ -1,9 +1,11 @@
 import {
   Component,
   Show,
+  Suspense,
   createEffect,
   createMemo,
   createSignal,
+  lazy,
   on,
   onCleanup,
   onMount,
@@ -17,7 +19,8 @@ import { PanelOrchestrator } from "./components/PanelOrchestrator";
 import { editorTabsStore } from "./stores/editorTabs";
 import { PromptOverlay } from "./components/PromptOverlay";
 import { PromptDrawer } from "./components/PromptDrawer";
-import { SettingsPanel, type SettingsContext } from "./components/SettingsPanel";
+import type { SettingsContext } from "./components/SettingsPanel";
+const SettingsPanel = lazy(() => import("./components/SettingsPanel").then(m => ({ default: m.SettingsPanel })));
 import { TaskQueuePanel } from "./components/TaskQueuePanel";
 import { ContextMenu, createContextMenu, type ContextMenuItem } from "./components/ContextMenu";
 import { RenameBranchDialog } from "./components/RenameBranchDialog";
@@ -28,10 +31,10 @@ import { PostMergeCleanupDialog, type StepId, type StepStatus, type CleanupStep 
 import { executeCleanup } from "./hooks/usePostMergeCleanup";
 import { getCompletionSuppression } from "./components/Terminal/completionDecision";
 import { RunCommandDialog } from "./components/RunCommandDialog";
-import { HelpPanel } from "./components/HelpPanel";
+const HelpPanel = lazy(() => import("./components/HelpPanel").then(m => ({ default: m.HelpPanel })));
 import { CommandPalette } from "./components/CommandPalette";
 import { BranchSwitcher } from "./components/BranchSwitcher/BranchSwitcher";
-import { ActivityDashboard } from "./components/ActivityDashboard";
+const ActivityDashboard = lazy(() => import("./components/ActivityDashboard").then(m => ({ default: m.ActivityDashboard })));
 import { WorktreeManager, type WorktreeActions } from "./components/WorktreeManager";
 import { ErrorLogPanel } from "./components/ErrorLogPanel";
 import { McpPopup } from "./components/McpPopup/McpPopup";
@@ -1441,7 +1444,9 @@ const App: Component = () => {
       />
 
       {/* Activity dashboard */}
-      <ActivityDashboard onSelect={terminalLifecycle.handleTerminalSelect} />
+      <Suspense>
+        <ActivityDashboard onSelect={terminalLifecycle.handleTerminalSelect} />
+      </Suspense>
 
       {/* Worktree manager */}
       <WorktreeManager actions={worktreeActions} />
@@ -1453,12 +1458,14 @@ const App: Component = () => {
       <ErrorLogPanel />
 
       {/* Settings panel */}
-      <SettingsPanel
-        visible={settingsPanelVisible()}
-        onClose={() => setSettingsPanelVisible(false)}
-        initialTab={settingsInitialTab()}
-        context={settingsContext()}
-      />
+      <Suspense>
+        <SettingsPanel
+          visible={settingsPanelVisible()}
+          onClose={() => setSettingsPanelVisible(false)}
+          initialTab={settingsInitialTab()}
+          context={settingsContext()}
+        />
+      </Suspense>
 
       {/* Task queue panel */}
       <TaskQueuePanel
@@ -1589,10 +1596,12 @@ const App: Component = () => {
       </Show>
 
       {/* Help panel (Story 053) */}
-      <HelpPanel
-        visible={helpPanelVisible()}
-        onClose={() => setHelpPanelVisible(false)}
-      />
+      <Suspense>
+        <HelpPanel
+          visible={helpPanelVisible()}
+          onClose={() => setHelpPanelVisible(false)}
+        />
+      </Suspense>
 
       {/* Quit confirmation dialog (Story 057) */}
       <Show when={quitDialogVisible()}>

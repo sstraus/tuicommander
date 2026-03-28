@@ -39,19 +39,34 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
   const [showPrDetailPopover, setShowPrDetailPopover] = createSignal(false);
   const [cwdCopied, setCwdCopied] = createSignal(false);
 
-  // Shared 1s tick driving both rate-limit countdown and PR merged grace period
+  // Conditional 1s tick — only runs when a merged PR or rate limit is active
   const [rlTick, setRlTick] = createSignal(0);
   const [prTick, setPrTick] = createSignal(0);
-  onMount(() => {
-    const sharedTimer = setInterval(() => {
+  let sharedTimerRef: ReturnType<typeof setInterval> | null = null;
+
+  const needsTicking = () =>
+    activePrData()?.state === "MERGED" || rateLimitStore.getRateLimitedCount() > 0;
+
+  const startTimer = () => {
+    if (sharedTimerRef) return;
+    sharedTimerRef = setInterval(() => {
       if (activePrData()?.state === "MERGED") setPrTick((t) => t + 1);
       if (rateLimitStore.getRateLimitedCount() > 0) {
         setRlTick((t) => t + 1);
         rateLimitStore.cleanupExpired();
       }
+      // Stop when no longer needed
+      if (!needsTicking() && sharedTimerRef) {
+        clearInterval(sharedTimerRef);
+        sharedTimerRef = null;
+      }
     }, 1000);
-    onCleanup(() => clearInterval(sharedTimer));
+  };
+
+  createEffect(() => {
+    if (needsTicking()) startTimer();
   });
+  onCleanup(() => { if (sharedTimerRef) clearInterval(sharedTimerRef); });
 
   const rateLimitWarning = createMemo(() => {
     rlTick(); // Subscribe to ticks for reactivity
