@@ -268,11 +268,20 @@ pub(crate) fn init_tracing(buffer: Arc<Mutex<LogRingBuffer>>) {
 
     let ring_layer = RingBufferLayer { buffer };
 
-    tracing_subscriber::registry()
+    let registry = tracing_subscriber::registry()
         .with(env_filter)
         .with(fmt_layer)
-        .with(ring_layer)
-        .init();
+        .with(ring_layer);
+
+    #[cfg(feature = "tokio-console")]
+    {
+        let console_layer = console_subscriber::spawn();
+        registry.with(console_layer).init();
+    }
+    #[cfg(not(feature = "tokio-console"))]
+    {
+        registry.init();
+    }
 }
 
 // ---------------------------------------------------------------------------

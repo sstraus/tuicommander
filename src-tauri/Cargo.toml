@@ -76,6 +76,11 @@ base64ct = { version = "1", features = ["alloc"] }
 anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+console-subscriber = { version = "0.4", optional = true }
+
+[features]
+default = []
+tokio-console = ["console-subscriber"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
 whisper-rs = { version = "0.15", features = ["metal"] }

@@ -1,3 +1,6 @@
+# Profiling results
+scripts/perf/results/
+
 # Logs
 logs
 *.log
@@ -38,7 +41,10 @@ CLAUDE.md
 .codanna
 .mdkb
 .fastembed_cache
-scripts
+scripts/*
+!scripts/dev-install.sh
+!scripts/perf/
+scripts/perf/results/
 competitor-analysis
 marketing
 issues-to-monitor.md
