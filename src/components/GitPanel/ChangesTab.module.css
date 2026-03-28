@@ -21,6 +21,7 @@
   width: 100%;
   min-height: 38px;
   max-height: 114px;
+  overflow-y: hidden;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -31,7 +32,7 @@
   resize: none;
   line-height: 1.6;
   box-sizing: border-box;
-  transition: border-color 0.15s ease;
+  transition: border-color 0.15s ease, height 0.1s ease;
 }
 
 .commitTextarea:focus {

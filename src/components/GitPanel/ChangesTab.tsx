@@ -347,13 +347,14 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
     }
   }
 
-  /** Auto-resize textarea to fit content */
+  /** Auto-resize textarea to fit content, scroll when exceeding max */
   function autoResize(el: HTMLTextAreaElement) {
     el.style.height = "auto";
-    // Clamp between 2 lines (~38px) and 6 lines (~114px) at font-sm (12px + line-height ~1.6)
     const minH = 38;
     const maxH = 114;
-    el.style.height = `${Math.max(minH, Math.min(el.scrollHeight, maxH))}px`;
+    const natural = el.scrollHeight;
+    el.style.height = `${Math.max(minH, Math.min(natural, maxH))}px`;
+    el.style.overflowY = natural > maxH ? "auto" : "hidden";
   }
 
   function handleConfirmDiscard() {
