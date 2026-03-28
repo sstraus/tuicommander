@@ -432,31 +432,19 @@
   line-height: 1.5;
 }
 
-.diff-line {
-  padding: 0 12px;
-  white-space: pre;
+/* @git-diff-view theme overrides — match TUICommander palette */
+.diff-tailwindcss-wrapper[data-theme="dark"] .diff-style-root {
+  --diff-border--: var(--border);
+  --diff-plain-content--: var(--bg-primary);
+  --diff-expand-content--: var(--bg-secondary);
+  --diff-empty-content--: var(--bg-secondary);
+  --diff-add-content--: rgba(158, 206, 106, 0.1);
+  --diff-del-content--: rgba(247, 118, 142, 0.1);
+  --diff-add-content-highlight--: rgba(158, 206, 106, 0.25);
+  --diff-del-content-highlight--: rgba(247, 118, 142, 0.25);
+  --diff-hunk-content--: var(--bg-highlight);
+  --diff-hunk-content-color--: var(--fg-muted);
 }
-
-.diff-line.addition {
-  background: rgba(158, 206, 106, 0.15);
-  color: var(--success);
-}
-
-.diff-line.deletion {
-  background: rgba(247, 118, 142, 0.15);
-  color: var(--error);
-}
-
-.diff-line.header {
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.diff-line.hunk {
-  color: var(--fg-muted);
-  background: var(--bg-highlight);
-}
-
 
 /* File Browser Panel */
 /* Code Editor Tab Content */
