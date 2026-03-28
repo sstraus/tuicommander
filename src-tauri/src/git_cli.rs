@@ -121,7 +121,13 @@ impl GitCmd {
         match self.run() {
             Ok(o) => Some(o),
             Err(GitError::SpawnFailed(e)) => {
-                tracing::error!(source = "git_cli", "Spawn failed in {}: {e}", cwd.display());
+                // Use warn for "No such file or directory" — stale worktree entries are expected.
+                // Reserve error for unexpected spawn failures (broken git installation).
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    tracing::warn!(source = "git_cli", "Spawn failed (dir missing): {}", cwd.display());
+                } else {
+                    tracing::error!(source = "git_cli", "Spawn failed in {}: {e}", cwd.display());
+                }
                 None
             }
             Err(GitError::NonZeroExit { .. }) => None,
