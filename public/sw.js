@@ -1,0 +1,33 @@
+// TUICommander — Push-only Service Worker
+// No fetch interception, no caching. Handles push notifications only.
+
+self.addEventListener("push", (event) => {
+  const data = event.data ? event.data.json() : {};
+  const title = data.title || "TUICommander";
+  const options = {
+    body: data.body || "",
+    icon: "/mobile-icon.svg",
+    badge: "/mobile-icon.svg",
+    data: { url: data.url || "/mobile" },
+    tag: "tuic-push",
+    renotify: true,
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = event.notification.data?.url || "/mobile";
+  event.waitUntil(
+    clients.matchAll({ type: "window" }).then((windowClients) => {
+      // Focus existing window if open
+      for (const client of windowClients) {
+        if (client.url.includes("/mobile") && "focus" in client) {
+          return client.focus();
+        }
+      }
+      // Otherwise open a new window
+      return clients.openWindow(url);
+    })
+  );
+});
