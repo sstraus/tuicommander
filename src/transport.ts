@@ -679,11 +679,37 @@ function isIdempotentRpc(command: string, args: Record<string, unknown>): boolea
 }
 
 /**
+ * Per-session write queue — serializes write_pty calls in browser mode to prevent
+ * letter reordering when typing fast. Parallel HTTP POSTs can arrive out of order;
+ * chaining them ensures each write completes before the next is sent.
+ */
+const _writeQueues = new Map<string, Promise<unknown>>();
+
+function queuedWrite<T>(sessionId: string, fn: () => Promise<T>): Promise<T> {
+  const prev = _writeQueues.get(sessionId) ?? Promise.resolve();
+  const next = prev.then(fn, fn); // Always chain, even on prior failure
+  _writeQueues.set(sessionId, next);
+  // Clean up when queue drains
+  next.then(() => {
+    if (_writeQueues.get(sessionId) === next) _writeQueues.delete(sessionId);
+  });
+  return next;
+}
+
+/**
  * RPC call — uses Tauri invoke() or HTTP fetch() based on environment.
  * Concurrent identical idempotent calls are coalesced into a single in-flight request.
+ * write_pty calls are serialized per-session in browser mode to prevent reordering.
  * Usage: `const result = await rpc<string>("create_pty", { config });`
  */
 export function rpc<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
+  // Serialize write_pty per session in browser mode to prevent letter reordering
+  if (command === "write_pty" && !isTauri()) {
+    const sessionId = (args.sessionId ?? args.id) as string;
+    if (sessionId) {
+      return queuedWrite(sessionId, () => rpcImpl<T>(command, args));
+    }
+  }
   if (isIdempotentRpc(command, args)) {
     const key = `${command}:${JSON.stringify(args)}`;
     const existing = _inflight.get(key) as Promise<T> | undefined;

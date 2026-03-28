@@ -300,6 +300,17 @@ html, body {
   background: var(--fg-muted);
 }
 
+/* Touch device: eliminate double-tap-to-activate caused by sticky :hover.
+ * touch-action: manipulation disables double-tap-to-zoom, removing the
+ * 300ms click delay that causes the browser to use first tap for :hover
+ * and second tap for click. Desktop behavior is unaffected. */
+@media (hover: none) {
+  *, *::before, *::after {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
 /* Focus styles — exclude status bar toggle buttons (mic, MD, Diff) */
 button:focus-visible:not(.toggle-btn):not(#mic-toggle) {
   outline: 2px solid var(--accent);

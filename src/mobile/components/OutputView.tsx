@@ -64,8 +64,11 @@ export function OutputView(props: OutputViewProps) {
     return 0;
   }
 
+  // Touch inertia guard: while the user is actively touching, don't auto-scroll
+  let touchActive = false;
+
   function scrollToBottom(force = false) {
-    if (!force && userScrolledUp) return;
+    if (!force && (userScrolledUp || touchActive)) return;
     requestAnimationFrame(() => {
       if (containerEl) {
         containerEl.scrollTop = containerEl.scrollHeight;
@@ -75,13 +78,16 @@ export function OutputView(props: OutputViewProps) {
 
   function handleScroll() {
     if (!containerEl) return;
-    // Consider "at bottom" when within 80px of the end
-    const atBottom = containerEl.scrollHeight - containerEl.scrollTop - containerEl.clientHeight < 80;
+    // Larger threshold for touch devices where inertia scroll is imprecise
+    const threshold = "ontouchstart" in window ? 200 : 80;
+    const atBottom = containerEl.scrollHeight - containerEl.scrollTop - containerEl.clientHeight < threshold;
     userScrolledUp = !atBottom;
   }
 
   onMount(async () => {
     containerEl?.addEventListener("scroll", handleScroll, { passive: true });
+    containerEl?.addEventListener("touchstart", () => { touchActive = true; }, { passive: true });
+    containerEl?.addEventListener("touchend", () => { touchActive = false; }, { passive: true });
     const offset = await fetchInitialOutput();
 
     try {
