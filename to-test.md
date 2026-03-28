@@ -3,16 +3,16 @@
 Features to test when TUICommander is more usable.
 
 ## Notification Bell Enhancements
-- [ ] Click bell with no notifications → shows "No notifications" (not empty 1px dropdown)
-- [ ] Run `git push` via toolbar → git result appears in bell dropdown under "GIT" section
+- [x] Click bell with no notifications → shows "No notifications" (not empty 1px dropdown)
+- [x] Run `git push` via toolbar → git result appears in bell dropdown under "GIT" section
 - [ ] Failed `git push` → shows error item with red icon
 - [ ] PR CI transitions from failed to all-passing → "CI Passed" notification appears
 - [ ] CI recovery when PR is also "ready" → only "Ready" shows (no duplicate ci_recovered)
-- [ ] Create worktree via MCP → "Worktree: branch-name" item appears under "WORKTREES"
-- [ ] Dismiss individual items and "Dismiss All" work for each section
+- [x] Create worktree via MCP → "Worktree: branch-name" item appears under "WORKTREES"
+- [x] Dismiss individual items and "Dismiss All" work for each section
 
 ## TCP Port Retry
-- [ ] Start two instances of TUIC → second instance binds to port+1 (check logs)
+- [x] Start two instances of TUIC → second instance binds to port+1 (check logs)
 - [ ] Start three instances → third binds to port+2
 - [ ] Start four → third fails with clear error message showing port range attempted
 
@@ -29,12 +29,12 @@ Features to test when TUICommander is more usable.
 - [ ] Question detection works in browser mode (awaiting input indicator)
 
 ## MCP Ctrl+C Forwarding (904-5deb — verified non-bug)
-- [ ] Create PTY via MCP `session create`, run `sleep 1000`, send `session input special_key=ctrl+c` → sleep exits
-- [ ] Same with nested shell: `sh -c 'sleep 1000'` → ctrl+c kills inner sleep
-- [ ] Verify via `session output` that process exited (not hanging)
+- [x] Create PTY via MCP `session create`, run `sleep 1000`, send `session input special_key=ctrl+c` → sleep exits
+- [x] Same with nested shell: `sh -c 'sleep 1000'` → ctrl+c kills inner sleep
+- [x] Verify via `session output` that process exited (not hanging)
 
 ## Multi-instance Socket Coexistence (907-e4e9)
-- [ ] Start TUIC-preview.app, then `tauri dev` → both instances run, each with its own socket
+- [x] Start TUIC-preview.app, then `tauri dev` → both instances run, each with its own socket
 - [ ] tuic-bridge connects to the correct instance (check `TUIC_SOCKET` override)
 - [ ] Kill one instance → other still works, bridge reconnects if needed
 - [ ] Stale `mcp-*.sock` files cleaned on startup
@@ -52,15 +52,15 @@ Features to test when TUICommander is more usable.
 - [ ] No purple unseen dot while agent is actively working (status line timer ticking)
 
 ## Plan Panel (515-660c / 516-41a5 / 517-74c2)
-- [ ] `Cmd+P` opens plan panel on right side
+- [x] `Cmd+P` opens plan panel on right side
 - [ ] Plan panel shows plans only for the active repository
 - [ ] Click plan item opens it as markdown tab (frontmatter stripped)
 - [ ] Switching repos changes visible plans in the panel
 - [ ] New plan detected by agent auto-opens as background tab (no focus steal)
 - [ ] Repeated detection of same plan does not open duplicate tabs
 - [ ] Panel visibility persists across app restart
-- [ ] Plan panel is mutually exclusive with Diff/Markdown/FileBrowser panels
-- [ ] Plan count badge shows correct number
+- [x] Plan panel is mutually exclusive with Diff/Markdown/FileBrowser panels
+- [x] Plan count badge shows correct number
 
 ## PR Detection (071-cc1f)
 - [ ] Run `gh pr view` in terminal - verify PR badge appears in sidebar
@@ -87,11 +87,11 @@ Features to test when TUICommander is more usable.
 - [ ] ESC closes dialog, Enter confirms
 
 ## Repository Context Menu (073-50dd)
-- [ ] Click ⋯ on repo header - menu appears
-- [ ] "Repo Settings" opens settings
+- [x] Click ⋯ on repo header - menu appears
+- [x] "Repo Settings" opens settings
 - [ ] "Remove Repository" shows confirmation
 - [ ] Confirm removal - all terminals close, repo removed
-- [ ] Click outside menu - menu closes
+- [x] Click outside menu - menu closes
 
 ## Repository State Persistence
 - [ ] Repos start expanded by default (not collapsed)
@@ -114,9 +114,9 @@ Features to test when TUICommander is more usable.
 - [ ] Graceful error when gh CLI not installed or not authenticated
 
 ### Adjective-Animal Worktree Names (063)
-- [ ] New worktrees get adjective-animal names
+- [x] New worktrees get adjective-animal names
 - [ ] Names are unique across worktrees
-- [ ] Name format is consistent (adjective-animal)
+- [x] Name format is consistent (adjective-animal)
 
 ### Single Window Enforcement (065)
 - [ ] Second app instance focuses existing window instead of opening new one
@@ -131,8 +131,8 @@ Features to test when TUICommander is more usable.
 ## Frontend (batch 047-070)
 
 ### Git Quick Actions in Sidebar (050)
-- [ ] Pull/Push/Fetch/Stash buttons visible in sidebar
-- [ ] Each button sends correct git command to active terminal
+- [x] Pull/Push/Fetch/Stash buttons visible in sidebar
+- [x] Each button sends correct git command to active terminal
 - [ ] Commands execute in shell (not just displayed)
 - [ ] Buttons disabled when no active terminal
 
@@ -142,10 +142,10 @@ Features to test when TUICommander is more usable.
 - [ ] Current branch highlighted
 
 ### Help Panel (053)
-- [ ] Cmd+? opens help panel
-- [ ] All shortcuts listed and searchable
-- [ ] Search filters shortcuts in real-time
-- [ ] ESC or Cmd+? closes help panel
+- [x] Cmd+? opens help panel
+- [x] All shortcuts listed and searchable
+- [x] Search filters shortcuts in real-time
+- [x] ESC or Cmd+? closes help panel
 
 ### Tab Drag & Drop (054)
 - [ ] Drag tab to reorder within tab bar
@@ -179,8 +179,8 @@ Features to test when TUICommander is more usable.
 - [ ] No excessive API calls visible in network
 
 ### Hotkey Hints (064)
-- [ ] Sidebar toggle shows ⌘[ hint
-- [ ] MD/Diff toggle buttons show ⌘M/⌘D hints
+- [x] Sidebar toggle shows ⌘[ hint
+- [x] MD/Diff toggle buttons show ⌘M/⌘D hints
 - [ ] New tab button shows hint
 - [ ] Hints visible but not intrusive
 
@@ -190,14 +190,14 @@ Features to test when TUICommander is more usable.
 - [ ] No empty gaps or orphaned sections
 
 ### Visual Density Improvements (070)
-- [ ] Sidebar items have compact padding
-- [ ] Tab bar tabs have reduced min-width
-- [ ] Overall UI feels tighter without losing readability
+- [x] Sidebar items have compact padding
+- [x] Tab bar tabs have reduced min-width
+- [x] Overall UI feels tighter without losing readability
 
 ## Voice Dictation (Stories 117-123)
 
 ### Model Management
-- [ ] Settings > Dictation tab visible
+- [x] Settings > Dictation tab visible
 - [ ] Download Model button works (downloads ~1.5GB large-v3-turbo)
 - [ ] Download progress bar updates in real-time
 - [ ] Model status shows "Ready" after download completes
@@ -230,7 +230,7 @@ Features to test when TUICommander is more usable.
 - [ ] Audio devices listed (shows system default)
 
 ## Native System Menu Bar (Stories 192 + 193)
-- [ ] Menu bar visible on macOS (top of screen), Windows/Linux (under title bar)
+- [x] Menu bar visible on macOS (top of screen), Windows/Linux (under title bar)
 - [ ] macOS: App menu has About, Services, Hide, Hide Others, Show All, Quit
 - [ ] File menu: New Tab, Close Tab, Reopen Closed Tab, Settings, (Quit on non-macOS)
 - [ ] Edit menu: Undo, Redo, Cut, Copy, Paste, Select All, Clear Terminal
@@ -240,7 +240,7 @@ Features to test when TUICommander is more usable.
 - [ ] Help menu: Help Panel, About TUICommander
 - [ ] Clicking menu items triggers correct action (same as keyboard shortcut)
 - [ ] Accelerator labels show correct modifier key per platform (Cmd on macOS, Ctrl on others)
-- [ ] No double-firing: pressing Cmd+T creates one tab, not two
+- [x] No double-firing: pressing Cmd+T creates one tab, not two
 - [ ] Predefined Edit items (Copy/Paste/Undo/Redo) work correctly with native focus
 - [ ] HelpPanel shows note about system menu bar
 
@@ -259,15 +259,15 @@ Features to test when TUICommander is more usable.
 - [ ] Delete group — repos move to ungrouped
 - [ ] Assign color preset to group (5 presets + clear)
 - [ ] Group appears as accordion section in sidebar
-- [ ] Click group header toggles collapse/expand
-- [ ] Group color dot visible when color set
+- [x] Click group header toggles collapse/expand
+- [x] Group color dot visible when color set
 - [ ] Drag repo within same group reorders
 - [ ] Drag repo onto group header assigns to group
 - [ ] Drag repo from group to ungrouped area removes from group
 - [ ] Drag repo between groups moves correctly
 - [ ] Drag group header to reorder groups
-- [ ] Right-click group header shows Rename/Color/Delete
-- [ ] Right-click repo shows "Move to Group" submenu
+- [x] Right-click group header shows Rename/Color/Delete
+- [x] Right-click repo shows "Move to Group" submenu
 - [ ] Quick switcher force-expands collapsed groups
 - [ ] Existing repos auto-migrate (all start ungrouped)
 - [ ] Color inheritance: repo color > group color > default
@@ -281,7 +281,7 @@ Features to test when TUICommander is more usable.
 - [ ] New session in same tab → OSC titles update immediately (no stale timestamp delay)
 
 ## Plugin System v2
-- [ ] Settings > Plugins tab shows installed plugins with built-in badge
+- [x] Settings > Plugins tab shows installed plugins with built-in badge
 - [ ] Toggle enable/disable on external plugin, restart, verify state persists
 - [ ] Click "Logs" on a plugin, verify log viewer opens with entries
 - [ ] Install a plugin from ZIP file via "Install from file..." button
@@ -342,13 +342,13 @@ Features to test when TUICommander is more usable.
 - [ ] Empty query shows no results (no crash)
 
 ## Branch Panel (855-e86b)
-- [ ] `Cmd+G` opens Git Panel on the Branches tab
-- [ ] Clicking the "GIT" vertical label in the sidebar opens on Branches tab
-- [ ] Branch list shows local and remote sections (collapsible)
-- [ ] Each branch row shows ahead/behind counts, relative date, merged badge
+- [x] `Cmd+G` opens Git Panel on the Branches tab
+- [x] Clicking the "GIT" vertical label in the sidebar opens on Branches tab
+- [x] Branch list shows local and remote sections (collapsible)
+- [x] Each branch row shows ahead/behind counts, relative date, merged badge
 - [ ] Stale branches (>30 days) are visually dimmed
 - [ ] Recent branches section is populated from reflog
-- [ ] Inline search/filter narrows the branch list in real time
+- [x] Inline search/filter narrows the branch list in real time
 - [ ] Prefix folding groups branches by `/` prefix (feature/, bugfix/, etc.)
 - [ ] Prefix folding toggle in panel header enables/disables grouping
 - [ ] Checkout via `Enter` or double-click switches branch
@@ -364,10 +364,10 @@ Features to test when TUICommander is more usable.
 - [ ] `P` key pushes branch; auto-sets upstream if missing
 - [ ] `p` key pulls current branch
 - [ ] `f` key fetches all remotes
-- [ ] Context menu (right-click) shows all branch actions
+- [x] Context menu (right-click) shows all branch actions
 - [ ] "Compare" context menu action shows diff --name-status
-- [ ] `Ctrl/Cmd+4` switches to Branches tab from within Git Panel
-- [ ] `Ctrl/Cmd+1/2/3` switches back to Changes/Log/Stashes tabs
+- [x] `Ctrl/Cmd+4` switches to Branches tab from within Git Panel
+- [x] `Ctrl/Cmd+1/2/3` switches back to Changes/Log/Stashes tabs
 
 ## PWA / Mobile Output View
 - [ ] Normal text wraps on narrow screens (no horizontal scroll)
@@ -378,7 +378,7 @@ Features to test when TUICommander is more usable.
 - [ ] Unicode emoji renders as text glyphs (font-variant-emoji: text)
 
 ## Smart Prompts Library (949-253b)
-- [ ] Cmd+K opens Smart Prompts Library drawer with search, categories, keyboard nav
+- [x] Cmd+K opens Smart Prompts Library drawer with search, categories, keyboard nav
 - [ ] Arrow keys navigate, Enter executes, Ctrl+N new, Ctrl+E edit, Ctrl+F favorite
 - [ ] New prompt editor has placement checkboxes, auto-execute, shortcut fields
 - [ ] Built-in prompts: name disabled, "Reset to Default" button, "built-in" badge, no delete
@@ -386,7 +386,7 @@ Features to test when TUICommander is more usable.
 - [ ] Variable dialog shows {varName} + description for unresolved variables
 - [ ] All 24 built-in prompts show descriptions in list
 - [ ] Settings panel no longer has "Smart Prompts" tab
-- [ ] Cmd+Shift+K opens SmartPromptsDropdown with status banner when disabled
+- [x] Cmd+Shift+K opens SmartPromptsDropdown with status banner when disabled
 - [ ] SmartButtonStrip in Changes tab always visible (grayed out without agent)
 - [ ] All icons in drawer are SVG (no emoji)
 
