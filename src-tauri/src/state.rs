@@ -869,6 +869,8 @@ pub struct AppState {
     pub(crate) bound_socket_path: parking_lot::RwLock<std::path::PathBuf>,
     /// Tailscale daemon state (detected at server startup)
     pub(crate) tailscale_state: parking_lot::RwLock<crate::tailscale::TailscaleState>,
+    /// Push notification subscription store
+    pub(crate) push_store: crate::push::PushStore,
     /// Server start time for uptime calculation in health endpoint.
     pub(crate) server_start_time: std::time::Instant,
     /// Per-MCP-session broadcast channels for inter-agent messaging notifications.
@@ -1828,6 +1830,7 @@ pub(crate) mod tests_support {
             #[cfg(unix)]
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
             tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),
+            push_store: crate::push::PushStore::load(&std::env::temp_dir()),
             server_start_time: std::time::Instant::now(),
         }
     }
@@ -2256,6 +2259,7 @@ mod tests {
             #[cfg(unix)]
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
             tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),
+            push_store: crate::push::PushStore::load(&std::env::temp_dir()),
             server_start_time: std::time::Instant::now(),
         }
     }

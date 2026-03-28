@@ -645,6 +645,7 @@ pub fn run() {
         #[cfg(unix)]
         bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
         tailscale_state: parking_lot::RwLock::new(tailscale::TailscaleState::NotInstalled),
+        push_store: push::PushStore::load(&config::config_dir()),
         server_start_time: std::time::Instant::now(),
     });
 

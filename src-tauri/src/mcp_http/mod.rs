@@ -214,6 +214,38 @@ async fn plugin_data_http(
     }
 }
 
+/// Return the VAPID public key so the frontend can call PushManager.subscribe().
+/// No auth required — the public key is not secret.
+async fn push_vapid_key(State(state): State<Arc<AppState>>) -> Response {
+    let config = state.config.read();
+    if !config.push_enabled || config.vapid_public_key.is_empty() {
+        return (StatusCode::NOT_FOUND, "Push not enabled").into_response();
+    }
+    Json(serde_json::json!({ "publicKey": config.vapid_public_key })).into_response()
+}
+
+/// Register a push subscription from a browser.
+async fn push_subscribe(
+    State(state): State<Arc<AppState>>,
+    Json(sub): Json<crate::push::PushSubscription>,
+) -> StatusCode {
+    state.push_store.upsert(sub);
+    StatusCode::CREATED
+}
+
+/// Unregister a push subscription.
+async fn push_unsubscribe(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> StatusCode {
+    if let Some(endpoint) = body.get("endpoint").and_then(|v| v.as_str()) {
+        if state.push_store.remove(endpoint) {
+            return StatusCode::OK;
+        }
+    }
+    StatusCode::NOT_FOUND
+}
+
 /// Middleware that injects a synthetic `ConnectInfo<SocketAddr>` for IPC
 /// connections (Unix socket / named pipe) which lack a TCP peer address.
 /// Always uses 127.0.0.1:0 since IPC is inherently local.
@@ -379,7 +411,10 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         // Plugin docs (for MCP bridge)
         .route("/plugins/docs", get(plugin_dev_guide_handler))
         // Plugin data (for external HTTP clients)
-        .route("/api/plugins/{plugin_id}/data/{*path}", get(plugin_data_http));
+        .route("/api/plugins/{plugin_id}/data/{*path}", get(plugin_data_http))
+        // Push notification API
+        .route("/api/push/vapid-key", get(push_vapid_key))
+        .route("/api/push/subscribe", post(push_subscribe).delete(push_unsubscribe));
 
     // MCP Streamable HTTP transport — only when MCP is enabled
     if mcp_enabled {
@@ -757,6 +792,7 @@ mod tests {
             #[cfg(unix)]
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
             tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),
+            push_store: crate::push::PushStore::load(&std::env::temp_dir()),
             server_start_time: std::time::Instant::now(),
         })
     }

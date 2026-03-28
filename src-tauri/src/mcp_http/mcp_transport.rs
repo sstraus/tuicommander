@@ -1783,6 +1783,7 @@ mod tests {
             #[cfg(unix)]
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
             tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),
+            push_store: crate::push::PushStore::load(&std::env::temp_dir()),
             server_start_time: std::time::Instant::now(),
         })
     }
