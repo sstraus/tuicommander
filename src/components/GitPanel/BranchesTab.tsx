@@ -7,6 +7,7 @@ import { ContextMenu, createContextMenu, type ContextMenuItem } from "../Context
 import { cx } from "../../utils";
 import { handleOpenUrl } from "../../utils/openUrl";
 import type { BranchDetail } from "./types";
+import type { BaseRefOption } from "../../hooks/useRepository";
 import s from "./BranchesTab.module.css";
 
 /** Convert a git remote URL (SSH or HTTPS) to a GitHub web URL, or null if not GitHub. */
@@ -128,6 +129,7 @@ interface DirtyCheckoutState {
 interface CreateBranchState {
   name: string;
   checkout: boolean;
+  startPoint: string | null;
 }
 
 export const BranchesTab: Component<BranchesTabProps> = (props) => {
@@ -157,7 +159,8 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 
   // Create-branch inline form
   const [creating, setCreating] = createSignal(false);
-  const [createState, setCreateState] = createSignal<CreateBranchState>({ name: "", checkout: true });
+  const [createState, setCreateState] = createSignal<CreateBranchState>({ name: "", checkout: true, startPoint: null });
+  const [createBaseRefs, setCreateBaseRefs] = createSignal<BaseRefOption[]>([]);
 
   // Dirty-worktree checkout dialog
   const [dirtyCheckout, setDirtyCheckout] = createSignal<DirtyCheckoutState | null>(null);
@@ -328,7 +331,13 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 
   function startCreate() {
     setCreating(true);
-    setCreateState({ name: "", checkout: true });
+    setCreateState({ name: "", checkout: true, startPoint: null });
+    // Fetch base ref options for the "from" dropdown
+    if (props.repoPath) {
+      invoke<BaseRefOption[]>("list_base_ref_options", { repoPath: props.repoPath })
+        .then(setCreateBaseRefs)
+        .catch(() => setCreateBaseRefs([]));
+    }
     // Focus input on next tick
     requestAnimationFrame(() => createInputRef?.focus());
   }
@@ -346,7 +355,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
       await invoke("create_branch", {
         path: props.repoPath,
         name,
-        startPoint: null,
+        startPoint: state.startPoint,
         checkout: state.checkout,
       });
       repositoriesStore.bumpRevision(props.repoPath);
@@ -358,7 +367,8 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 
   function cancelCreate() {
     setCreating(false);
-    setCreateState({ name: "", checkout: true });
+    setCreateState({ name: "", checkout: true, startPoint: null });
+    setCreateBaseRefs([]);
   }
 
   // --- Delete Branch ---
@@ -954,6 +964,27 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
             value={createState().name}
             onInput={(e) => setCreateState((p) => ({ ...p, name: e.currentTarget.value }))}
           />
+          <Show when={createBaseRefs().length > 0}>
+            <select
+              class={s.fromSelect}
+              value={createState().startPoint ?? ""}
+              onChange={(e) => setCreateState((p) => ({ ...p, startPoint: e.currentTarget.value || null }))}
+            >
+              <option value="">HEAD</option>
+              <optgroup label="Local">
+                <For each={createBaseRefs().filter(r => r.kind === "local")}>
+                  {(ref) => <option value={ref.name}>{ref.name}{ref.is_default ? " (default)" : ""}</option>}
+                </For>
+              </optgroup>
+              <Show when={createBaseRefs().some(r => r.kind === "remote")}>
+                <optgroup label="Remote">
+                  <For each={createBaseRefs().filter(r => r.kind === "remote")}>
+                    {(ref) => <option value={ref.name}>{ref.name}</option>}
+                  </For>
+                </optgroup>
+              </Show>
+            </select>
+          </Show>
           <label class={s.createCheckboxLabel}>
             <input
               type="checkbox"

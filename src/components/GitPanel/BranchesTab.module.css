@@ -208,6 +208,17 @@
   flex-shrink: 0;
 }
 
+.fromSelect {
+  background: var(--bg-tertiary);
+  color: var(--fg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-sm);
+  font-family: var(--font-ui);
+  padding: 2px 4px;
+  max-width: 140px;
+}
+
 .createCheckboxLabel {
   display: flex;
   align-items: center;
