@@ -96,6 +96,155 @@
   cursor: pointer;
 }
 
+/* Textarea + sparkle button row */
+.textareaRow {
+  display: flex;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.textareaRow .commitTextarea {
+  flex: 1;
+  min-width: 0;
+}
+
+.generateBtn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-top: 5px; /* align with textarea padding */
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.generateBtn:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.generateBtn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.generateBtnBusy {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Smart prompts split button */
+.smartSplit {
+  position: relative;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: visible;
+}
+
+.smartSplitMain {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: none;
+  border: none;
+  border-right: 1px solid var(--border);
+  color: var(--fg-secondary);
+  font-size: var(--font-xs);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, background 0.15s;
+}
+
+.smartSplitMain:hover:not(:disabled) {
+  color: var(--fg-primary);
+  background: var(--bg-highlight);
+}
+
+.smartSplitArrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  padding: 2px 0;
+  background: none;
+  border: none;
+  color: var(--fg-secondary);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.smartSplitArrow:hover {
+  color: var(--fg-primary);
+  background: var(--bg-highlight);
+}
+
+.smartSplitArrowOpen {
+  background: var(--bg-highlight);
+}
+
+.smartMenu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  min-width: 180px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-dropdown);
+  z-index: 100;
+  padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.smartMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  background: none;
+  border: none;
+  text-align: left;
+  font-size: var(--font-sm);
+  font-family: var(--font-ui);
+  color: var(--fg-primary);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.smartMenuItem:hover:not(:disabled) {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
+.smartMenuItemActive {
+  color: var(--accent);
+}
+
+.smartMenuItemDisabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.checkMark {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
 .commitError {
   color: var(--error);
   font-size: var(--font-xs);

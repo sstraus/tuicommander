@@ -2,9 +2,10 @@ import { Component, createEffect, createMemo, createSignal, For, Show, onCleanup
 import { invoke } from "../../invoke";
 import { repositoriesStore } from "../../stores/repositories";
 import { diffTabsStore, isDiffStatus } from "../../stores/diffTabs";
+import { promptLibraryStore, type SavedPrompt } from "../../stores/promptLibrary";
+import { useSmartPrompts } from "../../hooks/useSmartPrompts";
 import { appLogger } from "../../stores/appLogger";
 import { ConfirmDialog } from "../ConfirmDialog";
-import { SmartButtonStrip } from "../SmartButtonStrip/SmartButtonStrip";
 import { cx, globToRegex } from "../../utils";
 import type { CommitLogEntry, WorkingTreeStatus } from "./types";
 import s from "./ChangesTab.module.css";
@@ -53,6 +54,12 @@ const DiscardIcon = () => (
 const CheckIcon = () => (
   <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
     <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z" />
+  </svg>
+);
+
+const SparkleIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+    <path d="M8 0l1.5 4.5L14 6l-4.5 1.5L8 12 6.5 7.5 2 6l4.5-1.5L8 0zm4 9l.75 2.25L15 12l-2.25.75L12 15l-.75-2.25L9 12l2.25-.75L12 9z" />
   </svg>
 );
 
@@ -115,8 +122,38 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
   let savedDraftMsg = "";
   let successTimeout: ReturnType<typeof setTimeout> | undefined;
 
+  // Smart prompts menu
+  const { canExecute, executeSmartPrompt } = useSmartPrompts();
+  const [smartMenuOpen, setSmartMenuOpen] = createSignal(false);
+  const [generating, setGenerating] = createSignal(false);
+
+  const smartPrompts = createMemo(() =>
+    promptLibraryStore.getSmartByPlacement("git-changes"),
+  );
+
+  /** The most recently used smart prompt for this placement, or the first one */
+  const lastUsedPrompt = createMemo((): SavedPrompt | undefined => {
+    const all = smartPrompts();
+    if (all.length === 0) return undefined;
+    // Find the most recently used among git-changes prompts
+    const recent = promptLibraryStore.state.recentIds;
+    const allIds = new Set(all.map((p) => p.id));
+    for (const id of recent) {
+      if (allIds.has(id)) return all.find((p) => p.id === id);
+    }
+    return all[0]; // fallback to first
+  });
+
+  // Listen for generated commit messages from headless smart prompts
+  const handleCommitMsg = (e: Event) => {
+    const detail = (e as CustomEvent<string>).detail;
+    if (detail) setCommitMsg(detail.trim());
+  };
+  window.addEventListener("smart-prompt:commit-message", handleCommitMsg);
+
   onCleanup(() => {
     if (successTimeout) clearTimeout(successTimeout);
+    window.removeEventListener("smart-prompt:commit-message", handleCommitMsg);
   });
 
   // Fetch working tree status on mount and revision changes
@@ -238,6 +275,34 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
       section === "staged" ? "staged" : undefined,
       file.status === "?" || undefined,
     );
+  }
+
+  async function generateCommitMsg() {
+    const prompt = smartPrompts().find((p) => p.id === "smart-commit-msg");
+    if (!prompt) return;
+    setGenerating(true);
+    try {
+      await executeSmartPrompt(prompt);
+    } catch (err) {
+      appLogger.error("prompts", "Generate commit message failed", err);
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function handleSmartPromptClick(prompt: SavedPrompt) {
+    setSmartMenuOpen(false);
+    const check = canExecute(prompt);
+    if (!check.ok) return;
+    if (prompt.outputTarget === "commit-message") {
+      setGenerating(true);
+      try { await executeSmartPrompt(prompt); }
+      finally { setGenerating(false); }
+    } else {
+      executeSmartPrompt(prompt).catch((err) =>
+        appLogger.error("prompts", `Failed to execute "${prompt.name}"`, err),
+      );
+    }
   }
 
   async function doCommit() {
@@ -463,20 +528,32 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
       {/* Commit section */}
       <Show when={props.repoPath}>
         <div class={s.commitSection} onKeyDown={handleCommitKeyDown}>
-          <textarea
-            class={s.commitTextarea}
-            placeholder="Commit message..."
-            value={commitMsg()}
-            onInput={(e) => {
-              setCommitMsg(e.currentTarget.value);
-              autoResize(e.currentTarget);
-            }}
-            ref={(el) => {
-              // Set initial height after mount
-              requestAnimationFrame(() => autoResize(el));
-            }}
-            disabled={committing()}
-          />
+          <div class={s.textareaRow}>
+            <textarea
+              class={s.commitTextarea}
+              placeholder="Commit message..."
+              value={commitMsg()}
+              onInput={(e) => {
+                setCommitMsg(e.currentTarget.value);
+                autoResize(e.currentTarget);
+              }}
+              ref={(el) => {
+                // Set initial height after mount
+                requestAnimationFrame(() => autoResize(el));
+              }}
+              disabled={committing()}
+            />
+            <button
+              class={cx(s.generateBtn, generating() && s.generateBtnBusy)}
+              onClick={generateCommitMsg}
+              disabled={generating() || staged().length === 0}
+              title="Generate commit message"
+            >
+              <Show when={generating()} fallback={<SparkleIcon />}>
+                <span class={s.spinner} />
+              </Show>
+            </button>
+          </div>
           <div class={s.commitRow}>
             <button
               class={cx(s.commitBtn, committing() && s.commitBtnDisabled)}
@@ -499,6 +576,57 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
               />
               Amend
             </label>
+            {/* Smart prompts split button: last-used action + dropdown */}
+            <Show when={lastUsedPrompt()}>
+              <div class={s.smartSplit}>
+                <button
+                  class={cx(s.smartSplitMain, !canExecute(lastUsedPrompt()!).ok && s.smartMenuItemDisabled)}
+                  disabled={!canExecute(lastUsedPrompt()!).ok}
+                  onClick={() => handleSmartPromptClick(lastUsedPrompt()!)}
+                  title={lastUsedPrompt()!.description}
+                >
+                  <SparkleIcon /> {lastUsedPrompt()!.name}
+                </button>
+                <button
+                  class={cx(s.smartSplitArrow, smartMenuOpen() && s.smartSplitArrowOpen)}
+                  onClick={() => setSmartMenuOpen(!smartMenuOpen())}
+                  title="More actions"
+                >
+                  <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="2" fill="none" />
+                  </svg>
+                </button>
+                <Show when={smartMenuOpen()}>
+                  <div class={s.smartMenu} onClick={() => setSmartMenuOpen(false)}>
+                    <For each={smartPrompts()}>
+                      {(prompt) => {
+                        const check = () => canExecute(prompt);
+                        const isActive = () => prompt.id === lastUsedPrompt()?.id;
+                        return (
+                          <button
+                            class={cx(
+                              s.smartMenuItem,
+                              isActive() && s.smartMenuItemActive,
+                              !check().ok && s.smartMenuItemDisabled,
+                            )}
+                            disabled={!check().ok}
+                            title={!check().ok ? check().reason : prompt.description}
+                            onClick={(e) => { e.stopPropagation(); handleSmartPromptClick(prompt); }}
+                          >
+                            {prompt.name}
+                            <Show when={isActive()}>
+                              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" class={s.checkMark}>
+                                <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z" />
+                              </svg>
+                            </Show>
+                          </button>
+                        );
+                      }}
+                    </For>
+                  </div>
+                </Show>
+              </div>
+            </Show>
           </div>
           <Show when={commitError()}>
             <div class={s.commitError}>{commitError()}</div>
@@ -509,11 +637,6 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
             </div>
           </Show>
         </div>
-      </Show>
-
-      {/* Smart prompt buttons — always visible, grayed out if no agent */}
-      <Show when={props.repoPath}>
-        <SmartButtonStrip placement="git-changes" repoPath={props.repoPath!} />
       </Show>
 
       {/* Empty state */}

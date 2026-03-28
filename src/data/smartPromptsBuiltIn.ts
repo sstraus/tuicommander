@@ -95,12 +95,12 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
   builtin(
     "smart-commit-msg",
     "Generate Commit Message",
-    "Generate a conventional commit message from staged diff and copy to clipboard",
-    "clipboard",
+    "Generate a conventional commit message from staged diff",
+    "sparkle",
     ["git-changes"],
     "Generate a conventional commit message for these staged changes. Output ONLY the commit message, nothing else.\n\n{staged_diff}",
     ["git"],
-    { executionMode: "headless", outputTarget: "clipboard" },
+    { executionMode: "headless", outputTarget: "commit-message" },
   ),
 
   // ── Code Review ─────────────────────────────────────────────────
