@@ -12,6 +12,7 @@ import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
+import { extractHunks, buildPartialPatch } from "./diffPatch";
 import s from "./DiffTab.module.css";
 
 export interface DiffTabProps {
@@ -21,34 +22,6 @@ export interface DiffTabProps {
   scope?: string;
   untracked?: boolean;
   onClose?: () => void;
-}
-
-/** Extract individual hunks from a unified diff string.
- *  Each hunk includes the diff header (diff --git, ---, +++) and one @@ block. */
-function extractHunks(diff: string): string[] {
-  const lines = diff.split("\n");
-  // Collect the file header lines (everything before first @@)
-  let headerEnd = 0;
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].startsWith("@@")) { headerEnd = i; break; }
-  }
-  const fileHeader = lines.slice(0, headerEnd).join("\n");
-
-  // Split on @@ boundaries
-  const hunks: string[] = [];
-  let hunkStart = -1;
-  for (let i = headerEnd; i < lines.length; i++) {
-    if (lines[i].startsWith("@@")) {
-      if (hunkStart >= 0) {
-        hunks.push(fileHeader + "\n" + lines.slice(hunkStart, i).join("\n"));
-      }
-      hunkStart = i;
-    }
-  }
-  if (hunkStart >= 0) {
-    hunks.push(fileHeader + "\n" + lines.slice(hunkStart).join("\n"));
-  }
-  return hunks;
 }
 
 /** Check if this diff tab supports restore actions (working tree or staged, not commit/untracked) */
@@ -75,6 +48,19 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
   const [confirmVisible, setConfirmVisible] = createSignal(false);
   const [pendingHunkPatch, setPendingHunkPatch] = createSignal<string | null>(null);
   const [hoverHunkIdx, setHoverHunkIdx] = createSignal<number | null>(null);
+
+  // Line-level selection state
+  const [selectedLines, setSelectedLines] = createSignal<Set<number>>(new Set<number>());
+  const [selectedHunkIdx, setSelectedHunkIdx] = createSignal<number | null>(null);
+  let lastClickedLine = -1; // For shift-click range selection
+
+  // Clear selection when diff changes
+  createEffect(() => {
+    diff();
+    setSelectedLines(new Set<number>());
+    setSelectedHunkIdx(null);
+    lastClickedLine = -1;
+  });
 
   let contentRef: HTMLElement | undefined;
   let engine: DomSearchEngine | undefined;
@@ -210,6 +196,7 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
     } catch (err) {
       appLogger.error("git", "Failed to revert hunk", err);
     }
+    clearSelection();
     // The repo revision bump from git changes will trigger diff reload automatically
   }
 
@@ -219,9 +206,161 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
   }
 
   const isStaged = () => props.scope === "staged";
-  const confirmTitle = () => isStaged()
-    ? t("diffTab.unstageHunk", "Unstage this change?")
-    : t("diffTab.discardHunk", "Discard this change?");
+
+  // --- Line-level selection ---
+
+  /** Find which hunk and line index a DOM element belongs to */
+  function findLineInfo(el: HTMLElement): { hunkIdx: number; lineIdx: number; isChange: boolean } | null {
+    const row = el.closest("tr");
+    if (!row || !contentRef) return null;
+
+    // Check if this is an addition or deletion row (not context or hunk header)
+    const hasAdd = row.querySelector("[class*='diff-line-add']");
+    const hasDel = row.querySelector("[class*='diff-line-del']");
+    if (!hasAdd && !hasDel) return null;
+
+    // Find hunk index: count how many hunk headers precede this row
+    const allRows = Array.from(contentRef.querySelectorAll("tr"));
+    const rowIdx = allRows.indexOf(row);
+    if (rowIdx < 0) return null;
+
+    let hunkIdx = -1;
+    let lineIdx = -1;
+    let lineCount = 0;
+    for (let i = 0; i <= rowIdx; i++) {
+      const r = allRows[i];
+      if (r.querySelector("[class*='diff-line-hunk']")) {
+        hunkIdx++;
+        lineCount = 0;
+      } else if (i === rowIdx) {
+        lineIdx = lineCount;
+      } else {
+        lineCount++;
+      }
+    }
+
+    return hunkIdx >= 0 ? { hunkIdx, lineIdx, isChange: true } : null;
+  }
+
+  function handleLineClick(e: MouseEvent) {
+    if (!canRestore(props.scope, props.untracked)) return;
+    // Don't interfere with revert button clicks
+    if ((e.target as HTMLElement).closest(`.${s.revertBtn}`)) return;
+
+    const info = findLineInfo(e.target as HTMLElement);
+    if (!info) return;
+
+    // If clicking in a different hunk, reset selection
+    if (selectedHunkIdx() !== null && selectedHunkIdx() !== info.hunkIdx) {
+      setSelectedLines(new Set<number>());
+    }
+    setSelectedHunkIdx(info.hunkIdx);
+
+    const prev = selectedLines();
+    const next = new Set(prev);
+
+    if (e.shiftKey && lastClickedLine >= 0) {
+      // Shift+click: select range
+      const start = Math.min(lastClickedLine, info.lineIdx);
+      const end = Math.max(lastClickedLine, info.lineIdx);
+      // Get all change lines in the hunk to only select those in range
+      const hunks = extractHunks(diff());
+      if (info.hunkIdx < hunks.length) {
+        const hunkLines = hunks[info.hunkIdx].split("\n");
+        const bodyStart = hunkLines.findIndex((l) => l.startsWith("@@"));
+        if (bodyStart >= 0) {
+          const body = hunkLines.slice(bodyStart + 1);
+          for (let i = start; i <= end; i++) {
+            if (i < body.length && (body[i].startsWith("+") || body[i].startsWith("-"))) {
+              next.add(i);
+            }
+          }
+        }
+      }
+    } else {
+      // Toggle single line
+      if (next.has(info.lineIdx)) {
+        next.delete(info.lineIdx);
+      } else {
+        next.add(info.lineIdx);
+      }
+    }
+
+    lastClickedLine = info.lineIdx;
+    setSelectedLines(next);
+
+    // Apply visual selection to DOM rows
+    applyLineSelectionStyles();
+  }
+
+  /** Apply/remove CSS class on selected rows */
+  function applyLineSelectionStyles() {
+    if (!contentRef) return;
+    const allRows = contentRef.querySelectorAll("tr");
+    const sel = selectedLines();
+    const hIdx = selectedHunkIdx();
+    let currentHunk = -1;
+    let lineCount = 0;
+
+    allRows.forEach((row) => {
+      if (row.querySelector("[class*='diff-line-hunk']")) {
+        currentHunk++;
+        lineCount = 0;
+      } else {
+        if (currentHunk === hIdx && sel.has(lineCount)) {
+          row.classList.add(s.lineSelected);
+        } else {
+          row.classList.remove(s.lineSelected);
+        }
+        lineCount++;
+      }
+    });
+  }
+
+  // Re-apply styles when selection changes
+  createEffect(() => {
+    selectedLines();
+    selectedHunkIdx();
+    requestAnimationFrame(() => applyLineSelectionStyles());
+  });
+
+  function handleRestoreSelected() {
+    const hIdx = selectedHunkIdx();
+    if (hIdx === null) return;
+    const sel = selectedLines();
+    if (sel.size === 0) return;
+
+    const patch = buildPartialPatch(diff(), hIdx, sel);
+    if (!patch) return;
+
+    setPendingHunkPatch(patch);
+    setConfirmVisible(true);
+  }
+
+  function clearSelection() {
+    setSelectedLines(new Set<number>());
+    setSelectedHunkIdx(null);
+    lastClickedLine = -1;
+    if (contentRef) {
+      contentRef.querySelectorAll(`.${s.lineSelected}`).forEach((el) =>
+        el.classList.remove(s.lineSelected),
+      );
+    }
+  }
+
+  const selectedCount = () => selectedLines().size;
+
+  const confirmTitle = () => {
+    if (selectedCount() > 0) {
+      const count = selectedCount();
+      return isStaged()
+        ? `Unstage ${count} selected line${count > 1 ? "s" : ""}?`
+        : `Discard ${count} selected line${count > 1 ? "s" : ""}?`;
+    }
+    return isStaged()
+      ? t("diffTab.unstageHunk", "Unstage this change?")
+      : t("diffTab.discardHunk", "Discard this change?");
+  };
   const confirmMessage = () => isStaged()
     ? t("diffTab.unstageHunkMsg", "This will remove this hunk from the staging area. The changes will remain in your working directory.")
     : t("diffTab.discardHunkMsg", "This will permanently discard this change. This cannot be undone.");
@@ -269,9 +408,13 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
         onClick={(e) => {
           // Delegate click on revert buttons
           const btn = (e.target as HTMLElement).closest(`.${s.revertBtn}`);
-          if (!btn) return;
-          const idx = parseInt(btn.getAttribute("data-hunk-idx") || "-1", 10);
-          if (idx >= 0) handleRevertClick(idx);
+          if (btn) {
+            const idx = parseInt(btn.getAttribute("data-hunk-idx") || "-1", 10);
+            if (idx >= 0) handleRevertClick(idx);
+            return;
+          }
+          // Line-level selection
+          handleLineClick(e);
         }}
       >
         <DiffViewer
@@ -294,6 +437,17 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
             hoverIdx={hoverHunkIdx()}
             isStaged={isStaged()}
           />
+        </Show>
+        {/* Floating restore-selected button */}
+        <Show when={canRestore(props.scope, props.untracked) && selectedCount() > 0}>
+          <div class={s.restoreSelectedBar}>
+            <button class={s.restoreSelectedBtn} onClick={handleRestoreSelected}>
+              {isStaged() ? "Unstage" : "Discard"} {selectedCount()} line{selectedCount() > 1 ? "s" : ""}
+            </button>
+            <button class={s.clearSelectionBtn} onClick={clearSelection} title="Clear selection">
+              &times;
+            </button>
+          </div>
         </Show>
       </div>
       <ConfirmDialog
