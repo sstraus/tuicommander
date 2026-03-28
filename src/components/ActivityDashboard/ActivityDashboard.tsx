@@ -146,7 +146,7 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
 
   // Snapshot sort order every 10s so rows don't reshuffle on every store mutation.
   // New items/removals trigger an immediate snapshot via count change.
-  const [snapshot, setSnapshot] = createSignal<TerminalRow[]>(liveTerminals(), { equals: false });
+  const [snapshot, setSnapshot] = createSignal<TerminalRow[]>(liveTerminals());
   createEffect(() => {
     if (!isOpen()) return;
     const interval = setInterval(() => setSnapshot(liveTerminals()), 10_000);

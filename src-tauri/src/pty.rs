@@ -906,20 +906,20 @@ impl ChunkProcessor {
 
             let emit_event = resolved.as_ref().unwrap_or(event);
 
-            // Broadcast to SSE/WebSocket consumers
+            // Serialize once, reuse for both broadcast and Tauri IPC
             if let Ok(json) = serde_json::to_value(emit_event) {
+                // Tauri IPC for desktop mode (emit the pre-serialized Value)
+                if let Some(app) = app {
+                    let _ = app.emit(
+                        &format!("pty-parsed-{session_id}"),
+                        &json,
+                    );
+                }
+                // Broadcast to SSE/WebSocket consumers
                 let _ = state.event_bus.send(crate::state::AppEvent::PtyParsed {
                     session_id: session_id.to_string(),
                     parsed: json,
                 });
-            }
-
-            // Tauri IPC for desktop mode
-            if let Some(app) = app {
-                let _ = app.emit(
-                    &format!("pty-parsed-{session_id}"),
-                    emit_event,
-                );
             }
         }
 
