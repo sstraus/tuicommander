@@ -28,7 +28,6 @@ function createMockHandlers(): ShortcutHandlers {
     isQuickSwitcherOpen: vi.fn().mockReturnValue(false),
     toggleMarkdownPanel: vi.fn(),
     toggleSidebar: vi.fn(),
-    togglePromptLibrary: vi.fn(),
     toggleSettings: vi.fn(),
     toggleTaskQueue: vi.fn(),
     toggleGitOpsPanel: vi.fn(),
@@ -176,9 +175,9 @@ describe("useKeyboardShortcuts", () => {
       expect(handlers.toggleMarkdownPanel).toHaveBeenCalled();
     });
 
-    it("Cmd+K toggles prompt library", () => {
+    it("Cmd+K toggles smart prompts", () => {
       fireKeydown("k", { metaKey: true });
-      expect(handlers.togglePromptLibrary).toHaveBeenCalled();
+      expect(handlers.toggleSmartPrompts).toHaveBeenCalled();
     });
 
     it("Cmd+, toggles settings", () => {

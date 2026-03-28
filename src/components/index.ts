@@ -27,8 +27,6 @@ export type { MarkdownPanelProps } from "./MarkdownPanel";
 export { PromptOverlay } from "./PromptOverlay";
 export type { PromptOverlayProps } from "./PromptOverlay";
 
-export { PromptDrawer } from "./PromptDrawer";
-export type { PromptDrawerProps } from "./PromptDrawer";
 
 export { SettingsPanel } from "./SettingsPanel";
 export type { SettingsPanelProps } from "./SettingsPanel";

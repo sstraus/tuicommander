@@ -32,9 +32,6 @@ export interface SavedPrompt {
 /** Prompt library store state */
 interface PromptLibraryState {
   prompts: Record<string, SavedPrompt>;
-  drawerOpen: boolean;
-  searchQuery: string;
-  selectedCategory: PromptCategory | "all";
   recentIds: string[];
 }
 
@@ -67,9 +64,6 @@ function savePrompts(prompts: Record<string, SavedPrompt>): void {
 function createPromptLibraryStore() {
   const [state, setState] = createStore<PromptLibraryState>({
     prompts: {},
-    drawerOpen: false,
-    searchQuery: "",
-    selectedCategory: "all",
     recentIds: [],
   });
 
@@ -151,36 +145,6 @@ function createPromptLibraryStore() {
       }
     },
 
-    /** Open the drawer */
-    openDrawer(): void {
-      setState("drawerOpen", true);
-      setState("searchQuery", "");
-    },
-
-    /** Close the drawer */
-    closeDrawer(): void {
-      setState("drawerOpen", false);
-      setState("searchQuery", "");
-    },
-
-    /** Toggle drawer */
-    toggleDrawer(): void {
-      if (state.drawerOpen) {
-        actions.closeDrawer();
-      } else {
-        actions.openDrawer();
-      }
-    },
-
-    /** Set search query */
-    setSearchQuery(query: string): void {
-      setState("searchQuery", query);
-    },
-
-    /** Set selected category filter */
-    setSelectedCategory(category: PromptCategory | "all"): void {
-      setState("selectedCategory", category);
-    },
 
     /** Create a new prompt */
     createPrompt(data: Omit<SavedPrompt, "id" | "createdAt" | "updatedAt">): SavedPrompt {
@@ -246,41 +210,6 @@ function createPromptLibraryStore() {
       return Object.values(state.prompts);
     },
 
-    /** Get filtered prompts based on search and category */
-    getFilteredPrompts(): SavedPrompt[] {
-      let prompts = Object.values(state.prompts);
-
-      // Filter by category
-      if (state.selectedCategory !== "all") {
-        if (state.selectedCategory === "recent") {
-          prompts = state.recentIds
-            .map((id) => state.prompts[id])
-            .filter((p): p is SavedPrompt => p !== undefined);
-        } else if (state.selectedCategory === "favorite") {
-          prompts = prompts.filter((p) => p.isFavorite);
-        } else {
-          prompts = prompts.filter((p) => p.category === state.selectedCategory);
-        }
-      }
-
-      // Filter by search query
-      if (state.searchQuery.trim()) {
-        const query = state.searchQuery.toLowerCase();
-        prompts = prompts.filter(
-          (p) =>
-            p.name.toLowerCase().includes(query) ||
-            p.description?.toLowerCase().includes(query) ||
-            p.content.toLowerCase().includes(query)
-        );
-      }
-
-      // Sort by most recently used/updated
-      return [...prompts].sort((a, b) => {
-        const aTime = a.lastUsed || a.updatedAt;
-        const bTime = b.lastUsed || b.updatedAt;
-        return bTime - aTime;
-      });
-    },
 
     /** Get enabled smart prompts, sorted by category then name (memoized) */
     getSmartPrompts: (() => {

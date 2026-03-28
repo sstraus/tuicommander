@@ -61,7 +61,7 @@ function getShortcutSections(): ShortcutSection[] {
       { action: "toggle-markdown", keys: keyFor("toggle-markdown"), description: t("helpPanel.toggleMarkdownPanel", "Toggle markdown panel") },
       { action: "toggle-settings", keys: keyFor("toggle-settings"), description: t("helpPanel.openSettings", "Open settings") },
       { action: "toggle-task-queue", keys: keyFor("toggle-task-queue"), description: t("helpPanel.toggleTaskQueue", "Toggle task queue") },
-      { action: "toggle-prompt-library", keys: keyFor("toggle-prompt-library"), description: t("helpPanel.promptLibrary", "Prompt library") },
+      { action: "toggle-smart-prompts", keys: keyFor("toggle-smart-prompts"), description: "Prompts" },
       { action: "toggle-notes", keys: keyFor("toggle-notes"), description: t("helpPanel.toggleIdeasPanel", "Toggle ideas panel") },
       { action: "toggle-help", keys: keyFor("toggle-help"), description: t("helpPanel.toggleHelpPanel", "Toggle help panel") },
       { action: "command-palette", keys: keyFor("command-palette"), description: t("helpPanel.commandPalette", "Command palette") },

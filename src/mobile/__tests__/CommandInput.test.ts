@@ -12,16 +12,15 @@ const tsx = readFileSync(
   "utf-8",
 );
 
-describe("CommandInput agent live-sync guard", () => {
-  it("handleInput skips debouncedSync when agentType prop is set", () => {
-    // Agent sessions must NOT live-sync to PTY (Ctrl-U doesn't work in custom line editors).
-    // Verify the guard: debouncedSync is only called when agentType is falsy.
-    expect(tsx).toContain("if (!props.agentType)");
-    // The debouncedSync call must be inside the guard, not unconditional
+describe("CommandInput no live-sync to PTY", () => {
+  it("handleInput does NOT write to PTY (no debouncedSync)", () => {
+    // Mobile CommandInput must never live-sync to PTY — this caused echo duplication.
+    // Input is only written on explicit send().
+    expect(tsx).not.toContain("debouncedSync");
+    expect(tsx).not.toContain("syncToPty");
     const handleInputBlock = tsx.match(/function handleInput[\s\S]*?^  \}/m);
     expect(handleInputBlock, "handleInput function not found").toBeTruthy();
-    expect(handleInputBlock![0]).toContain("if (!props.agentType)");
-    expect(handleInputBlock![0]).toContain("debouncedSync(text)");
+    expect(handleInputBlock![0]).not.toContain("rpc(");
   });
 
   it("agentType prop is declared in CommandInputProps", () => {

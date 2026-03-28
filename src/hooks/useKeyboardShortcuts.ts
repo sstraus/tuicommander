@@ -41,7 +41,6 @@ export interface ShortcutHandlers {
   isQuickSwitcherOpen: () => boolean;
   toggleMarkdownPanel: () => void;
   toggleSidebar: () => void;
-  togglePromptLibrary: () => void;
   toggleSettings: () => void;
   toggleTaskQueue: () => void;
   toggleGitOpsPanel: () => void;
@@ -123,7 +122,6 @@ function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean
     case "toggle-notes": handlers.toggleNotesPanel(); return true;
     case "toggle-file-browser": handlers.toggleFileBrowserPanel(); return true;
     case "toggle-plan": handlers.togglePlanPanel(); return true;
-    case "toggle-prompt-library": handlers.togglePromptLibrary(); return true;
     case "toggle-settings": handlers.toggleSettings(); return true;
     case "toggle-task-queue": handlers.toggleTaskQueue(); return true;
     case "toggle-sidebar": handlers.toggleSidebar(); return true;

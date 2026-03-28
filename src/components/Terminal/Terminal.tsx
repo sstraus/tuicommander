@@ -159,6 +159,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
   let activityFlagged = false; // Avoids redundant activity store updates per data chunk
   let lastDataAtTimestamp = 0; // Throttle lastDataAt store updates to 1s
   let planFileNotified = false; // Play info sound at most once per agent cycle
+  // Hide terminal until first fit to prevent visible resize flicker (80x24 → actual)
+  const [fitted, setFitted] = createSignal(false);
 
   // Scroll position tracker — handles visibility, alternate buffer, and
   // re-entrancy without any DOM reads. See scrollTracker.ts for details.
@@ -185,6 +187,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       terminal.scrollToLine(action.line!);
     }
     viewportLock.update(scrollTracker.isAtBottom);
+    if (!fitted()) setFitted(true);
   };
 
   // Reset activity flag when this terminal becomes active (store clears activity)
@@ -1120,6 +1123,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
           resizeObserver.observe(containerRef);
         }
 
+        // Auto-focus: when this terminal just became visible because it was selected,
+        // focus it now that the DOM is ready (the synchronous focus() in handleTerminalSelect
+        // fires before this rAF, so it fails on a still-hidden element).
+        if (terminalsStore.state.activeId === props.id) {
+          terminal?.focus();
+        }
+
         // Safety re-fit: at first app launch the flex layout may not have stabilized
         // when safeFit runs (sidebar, toolbar, status bar still mounting). Schedule a
         // deferred fit+resize to catch the final container dimensions.
@@ -1270,7 +1280,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       <div
         ref={containerRef}
         class={s.content}
-        style={{ width: "100%", height: "100%" }}
+        style={{ width: "100%", height: "100%", opacity: fitted() ? 1 : 0 }}
       />
     </div>
   );

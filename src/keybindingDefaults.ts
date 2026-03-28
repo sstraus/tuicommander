@@ -23,7 +23,6 @@ export const ACTION_NAMES = [
   "toggle-markdown",
   "toggle-notes",
   "toggle-file-browser",
-  "toggle-prompt-library",
   "toggle-settings",
   "toggle-task-queue",
   "reopen-closed-tab",
@@ -79,7 +78,6 @@ export const DEFAULT_BINDINGS: Record<ActionName, string> = {
   "toggle-markdown": "Cmd+M",
   "toggle-notes": "Cmd+N",
   "toggle-file-browser": "Cmd+E",
-  "toggle-prompt-library": "Cmd+K",
   "toggle-settings": "Cmd+,",
   "toggle-task-queue": "Cmd+J",
   "reopen-closed-tab": "Cmd+Shift+T",
@@ -99,7 +97,7 @@ export const DEFAULT_BINDINGS: Record<ActionName, string> = {
   "toggle-file-browser-content-search": "Cmd+Shift+F",
   "toggle-branches-tab": "Cmd+G",
   "toggle-mcp-popup": "Cmd+Shift+M",
-  "toggle-smart-prompts": "Cmd+Shift+K",
+  "toggle-smart-prompts": "Cmd+K",
   // Numbered tabs
   ...Object.fromEntries(
     Array.from({ length: 9 }, (_, i) => [`switch-tab-${i + 1}`, `Cmd+${i + 1}`]),

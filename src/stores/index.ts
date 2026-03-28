@@ -15,7 +15,7 @@ export type { IdeType, FontType } from "./settings";
 export { rateLimitStore } from "./ratelimit";
 
 export { promptLibraryStore } from "./promptLibrary";
-export type { SavedPrompt, PromptCategory, PromptVariable } from "./promptLibrary";
+export type { SavedPrompt, PromptVariable } from "./promptLibrary";
 
 
 export { tasksStore } from "./tasks";

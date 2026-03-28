@@ -16,7 +16,6 @@ import { TerminalArea } from "./components/TerminalArea";
 import { PanelOrchestrator } from "./components/PanelOrchestrator";
 import { editorTabsStore } from "./stores/editorTabs";
 import { PromptOverlay } from "./components/PromptOverlay";
-import { PromptDrawer } from "./components/PromptDrawer";
 import { SettingsPanel, type SettingsContext } from "./components/SettingsPanel";
 import { TaskQueuePanel } from "./components/TaskQueuePanel";
 import { ContextMenu, createContextMenu, type ContextMenuItem } from "./components/ContextMenu";
@@ -899,7 +898,6 @@ const App: Component = () => {
     isQuickSwitcherOpen: quickSwitcherVisible,
     toggleMarkdownPanel: uiStore.toggleMarkdownPanel,
     toggleSidebar: uiStore.toggleSidebar,
-    togglePromptLibrary: promptLibraryStore.toggleDrawer,
     toggleSettings: () => setSettingsPanelVisible((v) => !v),
     toggleTaskQueue: () => setTaskQueueVisible((v) => !v),
     toggleGitOpsPanel: uiStore.toggleGitPanel,
@@ -1150,7 +1148,6 @@ const App: Component = () => {
         case "prev-tab": terminalLifecycle.navigateTab("prev"); break;
 
         // Tools
-        case "prompt-library": promptLibraryStore.toggleDrawer(); break;
         case "run-command": gitOps.handleRunCommand(false, () => setRunCommandDialogVisible(true)); break;
         case "edit-run-command": gitOps.handleRunCommand(true, () => setRunCommandDialogVisible(true)); break;
         case "git-operations": uiStore.toggleGitPanel(); break;
@@ -1390,9 +1387,6 @@ const App: Component = () => {
 
       {/* Dictation streaming toast — shows partial transcription */}
       <DictationToast />
-
-      {/* Prompt library drawer */}
-      <PromptDrawer />
 
       {/* Command palette (Tauri only — many actions are Tauri-specific) */}
       <Show when={isTauri()}>

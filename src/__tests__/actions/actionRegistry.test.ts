@@ -21,7 +21,6 @@ function createMockHandlers(): ShortcutHandlers {
     isQuickSwitcherOpen: vi.fn().mockReturnValue(false),
     toggleMarkdownPanel: vi.fn(),
     toggleSidebar: vi.fn(),
-    togglePromptLibrary: vi.fn(),
     toggleSettings: vi.fn(),
     toggleTaskQueue: vi.fn(),
     toggleGitOpsPanel: vi.fn(),

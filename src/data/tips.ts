@@ -50,9 +50,9 @@ export const TIPS: Tip[] = [
     shortcut: `${mod}+Shift+F`,
   },
   {
-    feature: "Prompt Library",
-    description: "Reusable prompt templates — paste them into any agent session.",
-    shortcut: `${mod}+L`,
+    feature: "Prompts",
+    description: "Press Cmd+K to open the Prompts dropdown — 24 built-in context-aware prompts for git, review, PR, and more.",
+    shortcut: `${mod}+K`,
   },
   {
     feature: "Pin Tab",
@@ -252,7 +252,7 @@ export const TIPS: Tip[] = [
   {
     feature: "Smart Prompts",
     description: "One-click AI automation for common git and code tasks — commit, review, create PRs, fix CI, and more.",
-    shortcut: `${mod}+Shift+K`,
+    shortcut: `${mod}+K`,
   },
   {
     feature: "Smart Prompts Toolbar",

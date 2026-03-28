@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createRoot } from "solid-js";
 
 const mockInvoke = vi.fn().mockResolvedValue(undefined);
@@ -11,6 +11,7 @@ describe("promptLibraryStore", () => {
   let store: typeof import("../../stores/promptLibrary").promptLibraryStore;
 
   beforeEach(async () => {
+    vi.useFakeTimers();
     vi.resetModules();
     mockInvoke.mockReset().mockResolvedValue(undefined);
     localStorage.clear();
@@ -20,6 +21,10 @@ describe("promptLibraryStore", () => {
     }));
 
     store = (await import("../../stores/promptLibrary")).promptLibraryStore;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   describe("createPrompt()", () => {
@@ -46,10 +51,11 @@ describe("promptLibraryStore", () => {
           category: "custom",
           isFavorite: false,
         });
+        vi.advanceTimersByTime(600); // flush debounced save
         expect(mockInvoke).toHaveBeenCalledWith("save_prompt_library", {
           config: expect.objectContaining({
             prompts: expect.arrayContaining([
-              expect.objectContaining({ label: "Test", text: "content" }),
+              expect.objectContaining({ label: "Test", text: expect.stringContaining('"content":"content"') }),
             ]),
           }),
         });
@@ -140,93 +146,6 @@ describe("promptLibraryStore", () => {
         });
         store.markAsUsed(prompt.id);
         expect(store.state.recentIds).toContain(prompt.id);
-        dispose();
-      });
-    });
-  });
-
-  describe("drawer management", () => {
-    it("openDrawer opens and clears search", () => {
-      createRoot((dispose) => {
-        store.setSearchQuery("old query");
-        store.openDrawer();
-        expect(store.state.drawerOpen).toBe(true);
-        expect(store.state.searchQuery).toBe("");
-        dispose();
-      });
-    });
-
-    it("closeDrawer closes and clears search", () => {
-      createRoot((dispose) => {
-        store.openDrawer();
-        store.setSearchQuery("test");
-        store.closeDrawer();
-        expect(store.state.drawerOpen).toBe(false);
-        expect(store.state.searchQuery).toBe("");
-        dispose();
-      });
-    });
-
-    it("toggleDrawer toggles", () => {
-      createRoot((dispose) => {
-        store.toggleDrawer();
-        expect(store.state.drawerOpen).toBe(true);
-        store.toggleDrawer();
-        expect(store.state.drawerOpen).toBe(false);
-        dispose();
-      });
-    });
-  });
-
-  describe("getFilteredPrompts()", () => {
-    it("returns all prompts when no filter", () => {
-      createRoot((dispose) => {
-        store.createPrompt({ name: "P1", content: "c1", category: "custom", isFavorite: false });
-        store.createPrompt({ name: "P2", content: "c2", category: "custom", isFavorite: false });
-        expect(store.getFilteredPrompts()).toHaveLength(2);
-        dispose();
-      });
-    });
-
-    it("filters by search query", () => {
-      createRoot((dispose) => {
-        store.createPrompt({ name: "Fix Bug", content: "fix", category: "custom", isFavorite: false });
-        store.createPrompt({ name: "Add Feature", content: "add", category: "custom", isFavorite: false });
-        store.setSearchQuery("bug");
-        expect(store.getFilteredPrompts()).toHaveLength(1);
-        expect(store.getFilteredPrompts()[0].name).toBe("Fix Bug");
-        dispose();
-      });
-    });
-
-    it("filters by favorite category", () => {
-      createRoot((dispose) => {
-        store.createPrompt({ name: "P1", content: "c1", category: "custom", isFavorite: true });
-        store.createPrompt({ name: "P2", content: "c2", category: "custom", isFavorite: false });
-        store.setSelectedCategory("favorite");
-        expect(store.getFilteredPrompts()).toHaveLength(1);
-        dispose();
-      });
-    });
-
-    it("filters by custom category", () => {
-      createRoot((dispose) => {
-        store.createPrompt({ name: "P1", content: "c1", category: "custom", isFavorite: false });
-        store.setSelectedCategory("custom");
-        expect(store.getFilteredPrompts()).toHaveLength(1);
-        dispose();
-      });
-    });
-
-    it("does not mutate store array when sorting", () => {
-      createRoot((dispose) => {
-        // Create prompts with different timestamps so sort would change order
-        store.createPrompt({ name: "Older", content: "c1", category: "custom", isFavorite: false });
-        store.createPrompt({ name: "Newer", content: "c2", category: "custom", isFavorite: false });
-        const before = store.getAllPrompts().map((p) => p.id);
-        store.getFilteredPrompts();
-        const after = store.getAllPrompts().map((p) => p.id);
-        expect(after).toEqual(before);
         dispose();
       });
     });

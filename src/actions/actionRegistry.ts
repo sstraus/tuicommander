@@ -42,7 +42,6 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
   "toggle-markdown": { label: "Toggle markdown panel", category: "Panels" },
   "toggle-settings": { label: "Open settings", category: "Panels" },
   "toggle-task-queue": { label: "Toggle task queue", category: "Panels" },
-  "toggle-prompt-library": { label: "Prompt library", category: "Panels" },
   "toggle-notes": { label: "Toggle ideas panel", category: "Panels" },
   "toggle-help": { label: "Toggle help panel", category: "Panels" },
   "toggle-file-browser": { label: "Toggle file browser", category: "Panels" },
@@ -63,7 +62,7 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
   "quick-branch-switch": { label: "Quick branch switch", category: "Git" },
   "toggle-error-log": { label: "Error log", category: "Navigation" },
   "toggle-mcp-popup": { label: "MCP servers (per-repo)", category: "Panels" },
-  "toggle-smart-prompts": { label: "Smart Prompts", category: "Navigation" },
+  "toggle-smart-prompts": { label: "Prompts", category: "Navigation" },
 };
 
 /**
@@ -94,7 +93,6 @@ export function getActionEntries(handlers: ShortcutHandlers): ActionEntry[] {
     "toggle-markdown": handlers.toggleMarkdownPanel,
     "toggle-settings": handlers.toggleSettings,
     "toggle-task-queue": handlers.toggleTaskQueue,
-    "toggle-prompt-library": handlers.togglePromptLibrary,
     "toggle-notes": handlers.toggleNotesPanel,
     "toggle-help": handlers.toggleHelpPanel,
     "toggle-file-browser": handlers.toggleFileBrowserPanel,
