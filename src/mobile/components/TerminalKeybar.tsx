@@ -8,6 +8,8 @@ interface TerminalKeybarProps {
   sessionId: string;
   agentType?: string | null;
   awaitingInput?: boolean;
+  /** True when the question was detected with high confidence (Ink menu footer) */
+  questionConfident?: boolean;
   onCommandWidgetOpen?: () => void;
 }
 
@@ -23,10 +25,30 @@ const STANDARD_KEYS: KeyDef[] = [
   { label: "\u21B5", seq: "\r" },
 ];
 
-const CONFIRM_KEYS: KeyDef[] = [
-  { label: "Yes", seq: "\r", confirm: true },   // Enter = accept highlighted option
-  { label: "No", seq: "\x1b", confirm: true },  // Esc = cancel/reject
-];
+/** Agents that use Ink/Bubble Tea menus where Enter=select, Escape=cancel */
+const INK_AGENTS = new Set(["claude", "codex", "opencode"]);
+
+/** Resolve confirm keys based on agent type and question confidence.
+ *  - Ink-based agents with confident (menu) detection: Enter/Escape
+ *  - Text-based agents or low-confidence questions: send y/n + Enter */
+function getConfirmKeys(agentType?: string | null, questionConfident?: boolean): KeyDef[] {
+  const isInkAgent = agentType ? INK_AGENTS.has(agentType) : false;
+
+  if (isInkAgent && questionConfident) {
+    // Ink multiselect: Enter selects highlighted, Escape cancels
+    return [
+      { label: "Yes", seq: "\r", confirm: true },
+      { label: "No", seq: "\x1b", confirm: true },
+    ];
+  }
+
+  // Text-based prompts (Aider Y/N, generic questions, non-confident detection):
+  // send the actual letter + Enter
+  return [
+    { label: "Yes", seq: "y\r", confirm: true },
+    { label: "No", seq: "n\r", confirm: true },
+  ];
+}
 
 export function TerminalKeybar(props: TerminalKeybarProps) {
   async function send(seq: string, autoEnter?: boolean) {
@@ -47,10 +69,12 @@ export function TerminalKeybar(props: TerminalKeybarProps) {
     }
   }
 
+  const confirmKeys = () => getConfirmKeys(props.agentType, props.questionConfident);
+
   return (
     <div class={styles.bar}>
       <Show when={props.awaitingInput}>
-        <For each={CONFIRM_KEYS}>{(k) => (
+        <For each={confirmKeys()}>{(k) => (
           <button
             class={`${styles.key} ${styles.confirm}`}
             onClick={() => send(k.seq, k.autoEnter)}

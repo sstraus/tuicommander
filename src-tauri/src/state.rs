@@ -109,6 +109,10 @@ pub(crate) struct SessionState {
     /// The question text, if awaiting input
     #[serde(skip_serializing_if = "Option::is_none")]
     pub question_text: Option<String>,
+    /// True when the question was detected with high confidence (Ink menu footer).
+    /// False for silence-based `?` heuristic detections.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub question_confident: bool,
     /// True when a rate-limit parsed event is active
     pub rate_limited: bool,
     /// Retry-after in ms from the rate-limit event
@@ -166,6 +170,7 @@ impl PartialEq for SessionState {
     fn eq(&self, other: &Self) -> bool {
         self.awaiting_input == other.awaiting_input
             && self.question_text == other.question_text
+            && self.question_confident == other.question_confident
             && self.rate_limited == other.rate_limited
             && self.retry_after_ms == other.retry_after_ms
             && self.usage_limit_pct == other.usage_limit_pct
@@ -1099,6 +1104,9 @@ impl AppState {
                                 s.question_text = parsed.get("prompt_text")
                                     .and_then(|t| t.as_str())
                                     .map(|t| t.to_string());
+                                s.question_confident = parsed.get("confident")
+                                    .and_then(|v| v.as_bool())
+                                    .unwrap_or(false);
 
                                 // Rate limit: skip if last push for this session was < 30s ago
                                 let should_push = !state.push_store.is_empty()
@@ -1113,6 +1121,7 @@ impl AppState {
                                 // User responded — agent will start working
                                 s.awaiting_input = false;
                                 s.question_text = None;
+                                s.question_confident = false;
                                 s.slash_menu_items = None;
                                 // Capture as last_prompt if >= 10 words
                                 if let Some(content) = parsed.get("content").and_then(|v| v.as_str())
@@ -1145,6 +1154,7 @@ impl AppState {
                                 // Agent is working — clear error/rate-limit/suggest/menu/question
                                 s.awaiting_input = false;
                                 s.question_text = None;
+                                s.question_confident = false;
                                 s.rate_limited = false;
                                 s.retry_after_ms = None;
                                 s.rate_limit_set_ms = 0;
@@ -1230,6 +1240,7 @@ impl AppState {
                 if let Some(mut entry) = state.session_states.get_mut(session_id) {
                     entry.awaiting_input = false;
                     entry.question_text = None;
+                    entry.question_confident = false;
                     entry.rate_limited = false;
                     entry.retry_after_ms = None;
                     entry.rate_limit_set_ms = 0;
@@ -2776,6 +2787,32 @@ mod tests {
         let s = apply(&state, &event);
         assert!(s.awaiting_input);
         assert_eq!(s.question_text.as_deref(), Some("Do you want to proceed?"));
+        assert!(!s.question_confident, "silence-based question should not be confident");
+    }
+
+    #[test]
+    fn test_session_state_confident_question_sets_flag() {
+        let state = fresh_state();
+        let event = make_parsed("question", serde_json::json!({
+            "prompt_text": "Enter to select",
+            "confident": true,
+        }));
+        let s = apply(&state, &event);
+        assert!(s.awaiting_input);
+        assert!(s.question_confident, "Ink menu question should be confident");
+    }
+
+    #[test]
+    fn test_session_state_user_input_clears_confident() {
+        let state = fresh_state();
+        let q = make_parsed("question", serde_json::json!({
+            "prompt_text": "Enter to select",
+            "confident": true,
+        }));
+        apply(&state, &q);
+        let event = make_parsed("user-input", serde_json::json!({ "content": "yes" }));
+        let s = apply(&state, &event);
+        assert!(!s.question_confident, "user-input should clear question_confident");
     }
 
     #[test]

@@ -235,6 +235,7 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
         sessionId={props.session.session_id}
         agentType={sessionState()?.agent_type as string | null | undefined}
         awaitingInput={sessionState()?.awaiting_input}
+        questionConfident={sessionState()?.question_confident}
         onCommandWidgetOpen={() => setCommandWidgetOpen(true)}
       />
       <CommandInput sessionId={props.session.session_id} prefillValue={inputPrefill()} ptyInputLine={ptyInputLine()} agentType={sessionState()?.agent_type as string | null | undefined} />

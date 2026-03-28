@@ -7,6 +7,7 @@ import { appLogger } from "../stores/appLogger";
 export interface SessionState {
   awaiting_input: boolean;
   question_text?: string;
+  question_confident?: boolean;
   rate_limited: boolean;
   retry_after_ms?: number;
   usage_limit_pct?: number;
