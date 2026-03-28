@@ -163,20 +163,26 @@ pub(crate) fn get_repo_info_impl(path: &str) -> RepoInfo {
 
 /// Get git repository info for a path (cached, 5s TTL)
 #[tauri::command]
-pub(crate) fn get_repo_info(state: State<'_, Arc<AppState>>, path: String) -> RepoInfo {
+pub(crate) async fn get_repo_info(state: State<'_, Arc<AppState>>, path: String) -> Result<RepoInfo, String> {
     if let Some(cached) = AppState::get_cached(&state.git_cache.repo_info, &path, GIT_CACHE_TTL) {
-        return cached;
+        return Ok(cached);
     }
 
-    let info = get_repo_info_impl(&path);
-    AppState::set_cached(&state.git_cache.repo_info, path, info.clone());
-    info
+    let state_arc = state.inner().clone();
+    let path_clone = path.clone();
+    let info = tokio::task::spawn_blocking(move || get_repo_info_impl(&path_clone))
+        .await
+        .map_err(|e| format!("spawn_blocking join error: {e}"))?;
+    AppState::set_cached(&state_arc.git_cache.repo_info, path, info.clone());
+    Ok(info)
 }
 
 /// Get the origin remote URL for a repository (returns None if not a git repo or no remote).
 #[tauri::command]
-pub(crate) fn get_remote_url(path: String) -> Option<String> {
-    read_remote_url(Path::new(&path))
+pub(crate) async fn get_remote_url(path: String) -> Result<Option<String>, String> {
+    tokio::task::spawn_blocking(move || read_remote_url(Path::new(&path)))
+        .await
+        .map_err(|e| format!("spawn_blocking join error: {e}"))
 }
 
 /// Validate that a branch name is a legal git branch name.
@@ -223,10 +229,15 @@ pub(crate) fn rename_branch_impl(path: &str, old_name: &str, new_name: &str) -> 
 
 /// Rename a git branch (Tauri command with cache invalidation)
 #[tauri::command]
-pub(crate) fn rename_branch(state: State<'_, Arc<AppState>>, path: String, old_name: String, new_name: String) -> Result<(), String> {
-    rename_branch_impl(&path, &old_name, &new_name)?;
-    state.invalidate_repo_caches(&path);
-    Ok(())
+pub(crate) async fn rename_branch(state: State<'_, Arc<AppState>>, path: String, old_name: String, new_name: String) -> Result<(), String> {
+    let state_arc = state.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        rename_branch_impl(&path, &old_name, &new_name)?;
+        state_arc.invalidate_repo_caches(&path);
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 /// Core logic for creating a git branch.
@@ -278,16 +289,23 @@ pub(crate) fn create_branch_impl(path: &str, name: &str, start_point: Option<&st
 
 /// Create a git branch (Tauri command with cache invalidation)
 #[tauri::command]
-pub(crate) fn create_branch(state: State<'_, Arc<AppState>>, path: String, name: String, start_point: Option<String>, checkout: bool) -> Result<(), String> {
-    create_branch_impl(&path, &name, start_point.as_deref(), checkout)?;
-    state.invalidate_repo_caches(&path);
-    Ok(())
+pub(crate) async fn create_branch(state: State<'_, Arc<AppState>>, path: String, name: String, start_point: Option<String>, checkout: bool) -> Result<(), String> {
+    let state_arc = state.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        create_branch_impl(&path, &name, start_point.as_deref(), checkout)?;
+        state_arc.invalidate_repo_caches(&path);
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 /// Read the stored base ref for a branch (Tauri command).
 #[tauri::command]
-pub(crate) fn get_branch_base(path: String, branch_name: String) -> Option<String> {
-    crate::worktree::get_branch_base(&path, &branch_name)
+pub(crate) async fn get_branch_base(path: String, branch_name: String) -> Result<Option<String>, String> {
+    tokio::task::spawn_blocking(move || crate::worktree::get_branch_base(&path, &branch_name))
+        .await
+        .map_err(|e| format!("spawn_blocking join error: {e}"))
 }
 
 /// Update a branch from its stored base ref (rebase or merge).
@@ -400,10 +418,15 @@ pub(crate) fn delete_branch_impl(path: &str, name: &str, force: bool) -> Result<
 
 /// Delete a git branch (Tauri command with cache invalidation)
 #[tauri::command]
-pub(crate) fn delete_branch(state: State<'_, Arc<AppState>>, path: String, name: String, force: bool) -> Result<DeleteBranchResult, String> {
-    let result = delete_branch_impl(&path, &name, force)?;
-    state.invalidate_repo_caches(&path);
-    Ok(result)
+pub(crate) async fn delete_branch(state: State<'_, Arc<AppState>>, path: String, name: String, force: bool) -> Result<DeleteBranchResult, String> {
+    let state_arc = state.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        let result = delete_branch_impl(&path, &name, force)?;
+        state_arc.invalidate_repo_caches(&path);
+        Ok(result)
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 /// A recent commit entry for the dropdown
@@ -416,32 +439,36 @@ pub(crate) struct RecentCommit {
 
 /// Get the N most recent commits
 #[tauri::command]
-pub(crate) fn get_recent_commits(path: String, count: Option<u32>) -> Result<Vec<RecentCommit>, String> {
-    let repo_path = PathBuf::from(&path);
-    let n = count.unwrap_or(5).min(20).to_string();
+pub(crate) async fn get_recent_commits(path: String, count: Option<u32>) -> Result<Vec<RecentCommit>, String> {
+    tokio::task::spawn_blocking(move || {
+        let repo_path = PathBuf::from(&path);
+        let n = count.unwrap_or(5).min(20).to_string();
 
-    let out = git_cmd(&repo_path)
-        .args(["log", "--format=%H%x00%h%x00%s", "-n", &n])
-        .run()
-        .map_err(|e| format!("git log failed: {e}"))?;
+        let out = git_cmd(&repo_path)
+            .args(["log", "--format=%H%x00%h%x00%s", "-n", &n])
+            .run()
+            .map_err(|e| format!("git log failed: {e}"))?;
 
-    let commits = out.stdout
-        .lines()
-        .filter_map(|line| {
-            let parts: Vec<&str> = line.splitn(3, '\0').collect();
-            if parts.len() == 3 {
-                Some(RecentCommit {
-                    hash: parts[0].to_string(),
-                    short_hash: parts[1].to_string(),
-                    subject: parts[2].to_string(),
-                })
-            } else {
-                None
-            }
-        })
-        .collect();
+        let commits = out.stdout
+            .lines()
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.splitn(3, '\0').collect();
+                if parts.len() == 3 {
+                    Some(RecentCommit {
+                        hash: parts[0].to_string(),
+                        short_hash: parts[1].to_string(),
+                        subject: parts[2].to_string(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
 
-    Ok(commits)
+        Ok(commits)
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 /// Build the base git diff args for the given scope.
@@ -459,27 +486,33 @@ fn diff_base_args(scope: &Option<String>) -> Result<Vec<String>, String> {
 
 /// Get git diff for a repository
 #[tauri::command]
-pub(crate) fn get_git_diff(path: String, scope: Option<String>) -> Result<String, String> {
-    let repo_path = PathBuf::from(&path);
+pub(crate) async fn get_git_diff(path: String, scope: Option<String>) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let repo_path = PathBuf::from(&path);
 
-    let mut args = diff_base_args(&scope)?;
-    args.push("--color=never".into());
+        let mut args = diff_base_args(&scope)?;
+        args.push("--color=never".into());
 
-    let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    let out = git_cmd(&repo_path)
-        .args(&args_str)
-        .run()
-        .map_err(|e| format!("git diff failed: {e}"))?;
+        let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        let out = git_cmd(&repo_path)
+            .args(&args_str)
+            .run()
+            .map_err(|e| format!("git diff failed: {e}"))?;
 
-    Ok(out.stdout)
+        Ok(out.stdout)
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 /// Get diff stats (additions/deletions) for a repository
 #[tauri::command]
-pub(crate) fn get_diff_stats(path: String, scope: Option<String>) -> DiffStats {
-    let repo_path = PathBuf::from(&path);
+/// Sync implementation of diff stats retrieval.
+pub(crate) fn get_diff_stats_impl(path: &str, scope: Option<&str>) -> DiffStats {
+    let repo_path = PathBuf::from(path);
+    let scope_owned = scope.map(|s| s.to_string());
 
-    let args = match diff_base_args(&scope) {
+    let args = match diff_base_args(&scope_owned) {
         Ok(a) => a,
         Err(_) => return DiffStats { additions: 0, deletions: 0 },
     };
@@ -488,7 +521,6 @@ pub(crate) fn get_diff_stats(path: String, scope: Option<String>) -> DiffStats {
 
     let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     if let Some(out) = git_cmd(&repo_path).args(&args_str).run_silent() {
-        // Parse: "1 file changed, 10 insertions(+), 5 deletions(-)"
         let mut additions = 0;
         let mut deletions = 0;
 
@@ -510,100 +542,111 @@ pub(crate) fn get_diff_stats(path: String, scope: Option<String>) -> DiffStats {
     DiffStats { additions: 0, deletions: 0 }
 }
 
+#[tauri::command]
+pub(crate) async fn get_diff_stats(path: String, scope: Option<String>) -> Result<DiffStats, String> {
+    tokio::task::spawn_blocking(move || get_diff_stats_impl(&path, scope.as_deref()))
+        .await
+        .map_err(|e| format!("spawn_blocking join error: {e}"))
+}
+
 /// Get list of changed files with status and stats
 #[tauri::command]
-pub(crate) fn get_changed_files(path: String, scope: Option<String>) -> Result<Vec<ChangedFile>, String> {
-    let repo_path = PathBuf::from(&path);
+pub(crate) async fn get_changed_files(path: String, scope: Option<String>) -> Result<Vec<ChangedFile>, String> {
+    tokio::task::spawn_blocking(move || {
+        let repo_path = PathBuf::from(&path);
 
-    // Get file status (M, A, D, R)
-    let mut status_args = diff_base_args(&scope)?;
-    status_args.push("--name-status".into());
+        // Get file status and per-file stats in a single git diff call
+        let mut args = diff_base_args(&scope)?;
+        args.push("--name-status".into());
+        args.push("--numstat".into());
 
-    let status_args_str: Vec<&str> = status_args.iter().map(|s| s.as_str()).collect();
-    let status_out = git_cmd(&repo_path)
-        .args(&status_args_str)
-        .run()
-        .map_err(|e| format!("git diff --name-status failed: {e}"))?;
+        // Note: git outputs numstat block first, then name-status block
+        // when both flags are combined. We parse both sections.
+        let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        let combined_out = git_cmd(&repo_path)
+            .args(&args_str)
+            .run()
+            .map_err(|e| format!("git diff failed: {e}"))?;
 
-    // Get per-file stats (additions/deletions)
-    let mut stats_args = diff_base_args(&scope)?;
-    stats_args.push("--numstat".into());
+        // Parse: numstat lines have 3+ tab/space-separated fields (digits digits path),
+        // name-status lines have a letter followed by path.
+        let mut stats_map: HashMap<String, (u32, u32)> = HashMap::new();
+        let mut status_map: HashMap<String, String> = HashMap::new();
 
-    let stats_args_str: Vec<&str> = stats_args.iter().map(|s| s.as_str()).collect();
-    let stats_out = git_cmd(&repo_path)
-        .args(&stats_args_str)
-        .run()
-        .map_err(|e| format!("git diff --numstat failed: {e}"))?;
-
-    // Parse status output into map: filepath -> status
-    let status_text = &status_out.stdout;
-    let mut status_map: HashMap<String, String> = HashMap::new();
-    for line in status_text.lines() {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 2 {
-            let status = parts[0].to_string();
-            let file_path = parts[1..].join(" "); // Handle filenames with spaces
-            status_map.insert(file_path, status);
-        }
-    }
-
-    // Parse stats output and combine with status
-    let stats_text = &stats_out.stdout;
-    let mut files = Vec::new();
-    for line in stats_text.lines() {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 3 {
-            let additions = parts[0].parse::<u32>().unwrap_or(0);
-            let deletions = parts[1].parse::<u32>().unwrap_or(0);
-            let file_path = parts[2..].join(" ");
-            let status = status_map.get(&file_path).cloned().unwrap_or_else(|| "M".to_string());
-            files.push(ChangedFile {
-                path: file_path,
-                status,
-                additions,
-                deletions,
-            });
-        }
-    }
-
-    // For working tree scope, also include untracked files
-    if scope.is_none() {
-        let untracked_out = git_cmd(&repo_path)
-            .args(["ls-files", "--others", "--exclude-standard"])
-            .run_silent();
-
-        if let Some(ref out) = untracked_out {
-            for line in out.stdout.lines() {
-                let file_path = line.trim();
-                if file_path.is_empty() {
+        for line in combined_out.stdout.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 3 {
+                // Try parsing as numstat (first two fields are numbers or '-')
+                if let (Ok(add), Ok(del)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
+                    let file_path = parts[2..].join(" ");
+                    stats_map.insert(file_path, (add, del));
                     continue;
                 }
-                // Count lines by streaming (avoids loading large files into memory).
-                // Stops on first UTF-8 error (binary file) and returns 0.
-                let full_path = repo_path.join(file_path);
-                let additions = File::open(&full_path)
-                    .map(|f| {
-                        let mut count = 0u32;
-                        for line in BufReader::new(f).lines() {
-                            match line {
-                                Ok(_) => count += 1,
-                                Err(_) => return 0, // binary / invalid UTF-8
-                            }
-                        }
-                        count
-                    })
-                    .unwrap_or(0);
-                files.push(ChangedFile {
-                    path: file_path.to_string(),
-                    status: "?".to_string(),
-                    additions,
-                    deletions: 0,
-                });
+                // Binary files show "-\t-\tpath" in numstat
+                if parts[0] == "-" && parts[1] == "-" {
+                    let file_path = parts[2..].join(" ");
+                    stats_map.insert(file_path, (0, 0));
+                    continue;
+                }
+            }
+            // Otherwise treat as name-status line
+            if parts.len() >= 2 {
+                let status = parts[0].to_string();
+                let file_path = parts[1..].join(" ");
+                status_map.insert(file_path, status);
             }
         }
-    }
 
-    Ok(files)
+        // Combine stats and status. Use stats_map as primary (has all diffed files).
+        let mut files: Vec<ChangedFile> = stats_map.into_iter().map(|(path, (additions, deletions))| {
+            let status = status_map.remove(&path).unwrap_or_else(|| "M".to_string());
+            ChangedFile { path, status, additions, deletions }
+        }).collect();
+
+        // Any remaining status_map entries (no stats) — shouldn't happen but handle gracefully
+        for (path, status) in status_map {
+            files.push(ChangedFile { path, status, additions: 0, deletions: 0 });
+        }
+
+        // For working tree scope, also include untracked files
+        if scope.is_none() {
+            let untracked_out = git_cmd(&repo_path)
+                .args(["ls-files", "--others", "--exclude-standard"])
+                .run_silent();
+
+            if let Some(ref out) = untracked_out {
+                for line in out.stdout.lines() {
+                    let file_path = line.trim();
+                    if file_path.is_empty() {
+                        continue;
+                    }
+                    let full_path = repo_path.join(file_path);
+                    let additions = File::open(&full_path)
+                        .map(|f| {
+                            let mut count = 0u32;
+                            for line in BufReader::new(f).lines() {
+                                match line {
+                                    Ok(_) => count += 1,
+                                    Err(_) => return 0,
+                                }
+                            }
+                            count
+                        })
+                        .unwrap_or(0);
+                    files.push(ChangedFile {
+                        path: file_path.to_string(),
+                        status: "?".to_string(),
+                        additions,
+                        deletions: 0,
+                    });
+                }
+            }
+        }
+
+        Ok(files)
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 /// Null device path — `/dev/null` on Unix, `NUL` on Windows
@@ -616,67 +659,69 @@ const NULL_DEVICE: &str = "NUL";
 /// When `untracked` is `Some(true)`, skip the `ls-files` probe and go directly
 /// to `--no-index` diff (the frontend already knows the file status).
 #[tauri::command]
-pub(crate) fn get_file_diff(path: String, file: String, scope: Option<String>, untracked: Option<bool>) -> Result<String, String> {
-    let repo_path = PathBuf::from(&path);
+pub(crate) async fn get_file_diff(path: String, file: String, scope: Option<String>, untracked: Option<bool>) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let repo_path = PathBuf::from(&path);
 
-    // For untracked files, use --no-index to generate a diff against the null device
-    if scope.is_none() {
-        let full_path = repo_path.join(&file);
+        // For untracked files, use --no-index to generate a diff against the null device
+        if scope.is_none() {
+            let full_path = repo_path.join(&file);
 
-        // Security: prevent path traversal (e.g. "../../etc/passwd")
-        let canonical_repo = repo_path.canonicalize()
-            .map_err(|e| format!("Failed to resolve repo path: {e}"))?;
-        let canonical_file = full_path.canonicalize()
-            .map_err(|e| format!("Failed to resolve file path: {e}"))?;
-        if !canonical_file.starts_with(&canonical_repo) {
-            return Err("Access denied: file is outside repository".to_string());
-        }
+            // Security: prevent path traversal (e.g. "../../etc/passwd")
+            let canonical_repo = repo_path.canonicalize()
+                .map_err(|e| format!("Failed to resolve repo path: {e}"))?;
+            let canonical_file = full_path.canonicalize()
+                .map_err(|e| format!("Failed to resolve file path: {e}"))?;
+            if !canonical_file.starts_with(&canonical_repo) {
+                return Err("Access denied: file is outside repository".to_string());
+            }
 
-        // If the frontend told us it's untracked, skip the subprocess probe.
-        let is_untracked = if untracked == Some(true) {
-            true
-        } else {
-            match git_cmd(&repo_path)
-                .args(["ls-files", "--error-unmatch", &file])
-                .run()
-            {
-                Ok(_) => false,
-                Err(crate::git_cli::GitError::NonZeroExit { .. }) => true,
-                Err(crate::git_cli::GitError::SpawnFailed(e)) => {
-                    return Err(format!("Failed to check file tracking status: {e}"));
+            // If the frontend told us it's untracked, skip the subprocess probe.
+            let is_untracked = if untracked == Some(true) {
+                true
+            } else {
+                match git_cmd(&repo_path)
+                    .args(["ls-files", "--error-unmatch", &file])
+                    .run()
+                {
+                    Ok(_) => false,
+                    Err(crate::git_cli::GitError::NonZeroExit { .. }) => true,
+                    Err(crate::git_cli::GitError::SpawnFailed(e)) => {
+                        return Err(format!("Failed to check file tracking status: {e}"));
+                    }
                 }
-            }
-        };
+            };
 
-        if is_untracked {
-            let full_path_str = full_path.to_string_lossy();
-            let raw = git_cmd(&repo_path)
-                .args(["diff", "--color=never", "--no-index", "--", NULL_DEVICE, &full_path_str])
-                .run_raw()
-                .map_err(|e| format!("Failed to diff untracked file: {e}"))?;
-            // --no-index exits with 1 when files differ (expected vs null device),
-            // but exit code > 1 indicates an actual error.
-            let code = raw.status.code().unwrap_or(-1);
-            if code > 1 {
-                let stderr = String::from_utf8_lossy(&raw.stderr);
-                return Err(format!("git diff --no-index failed (exit {code}): {stderr}"));
+            if is_untracked {
+                let full_path_str = full_path.to_string_lossy();
+                let raw = git_cmd(&repo_path)
+                    .args(["diff", "--color=never", "--no-index", "--", NULL_DEVICE, &full_path_str])
+                    .run_raw()
+                    .map_err(|e| format!("Failed to diff untracked file: {e}"))?;
+                let code = raw.status.code().unwrap_or(-1);
+                if code > 1 {
+                    let stderr = String::from_utf8_lossy(&raw.stderr);
+                    return Err(format!("git diff --no-index failed (exit {code}): {stderr}"));
+                }
+                return Ok(String::from_utf8_lossy(&raw.stdout).to_string());
             }
-            return Ok(String::from_utf8_lossy(&raw.stdout).to_string());
         }
-    }
 
-    let mut args = diff_base_args(&scope)?;
-    args.push("--color=never".into());
-    args.push("--".into());
-    args.push(file.clone());
-    let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        let mut args = diff_base_args(&scope)?;
+        args.push("--color=never".into());
+        args.push("--".into());
+        args.push(file.clone());
+        let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
 
-    let out = git_cmd(&repo_path)
-        .args(&args_str)
-        .run()
-        .map_err(|e| format!("git diff failed for file {file}: {e}"))?;
+        let out = git_cmd(&repo_path)
+            .args(&args_str)
+            .run()
+            .map_err(|e| format!("git diff failed for file {file}: {e}"))?;
 
-    Ok(out.stdout)
+        Ok(out.stdout)
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 /// Generate 2-character initials from a repository name
@@ -931,7 +976,7 @@ pub(crate) async fn get_repo_summary_impl(state: &AppState, repo_path: String) -
     let mut diff_handles = Vec::with_capacity(paths.len());
     for path in paths {
         diff_handles.push(tokio::task::spawn_blocking(move || {
-            let stats = get_diff_stats(path.clone(), None);
+            let stats = get_diff_stats_impl(&path, None);
             (path, stats)
         }));
     }
@@ -1019,7 +1064,7 @@ pub(crate) async fn get_repo_diff_stats_impl(_state: &AppState, repo_path: Strin
     let mut diff_handles = Vec::with_capacity(paths.len());
     for path in paths {
         diff_handles.push(tokio::task::spawn_blocking(move || {
-            let stats = get_diff_stats(path.clone(), None);
+            let stats = get_diff_stats_impl(&path, None);
             (path, stats)
         }));
     }
@@ -1055,34 +1100,38 @@ pub(crate) async fn get_repo_diff_stats(
 
 /// Get git branches for a repository (Story 052)
 #[tauri::command]
-pub(crate) fn get_git_branches(path: String) -> Result<Vec<serde_json::Value>, String> {
-    let repo_path = PathBuf::from(&path);
+pub(crate) async fn get_git_branches(path: String) -> Result<Vec<serde_json::Value>, String> {
+    tokio::task::spawn_blocking(move || {
+        let repo_path = PathBuf::from(&path);
 
-    let out = git_cmd(&repo_path)
-        .args(["branch", "-a", "--format=%(refname:short) %(HEAD)"])
-        .run()
-        .map_err(|e| format!("git branch failed: {e}"))?;
+        let out = git_cmd(&repo_path)
+            .args(["branch", "-a", "--format=%(refname:short) %(HEAD)"])
+            .run()
+            .map_err(|e| format!("git branch failed: {e}"))?;
 
-    let mut branches: Vec<serde_json::Value> = out.stdout
-        .lines()
-        .filter(|line| !line.is_empty())
-        .map(|line| {
-            let parts: Vec<&str> = line.splitn(2, ' ').collect();
-            let name = parts[0].trim().to_string();
-            let is_current = parts.get(1).is_some_and(|s| s.trim() == "*");
-            let is_remote = name.starts_with("origin/");
-            serde_json::json!({
-                "name": name,
-                "is_current": is_current,
-                "is_remote": is_remote,
-                "is_main": is_main_branch(&name),
+        let mut branches: Vec<serde_json::Value> = out.stdout
+            .lines()
+            .filter(|line| !line.is_empty())
+            .map(|line| {
+                let parts: Vec<&str> = line.splitn(2, ' ').collect();
+                let name = parts[0].trim().to_string();
+                let is_current = parts.get(1).is_some_and(|s| s.trim() == "*");
+                let is_remote = name.starts_with("origin/");
+                serde_json::json!({
+                    "name": name,
+                    "is_current": is_current,
+                    "is_remote": is_remote,
+                    "is_main": is_main_branch(&name),
+                })
             })
-        })
-        .collect();
+            .collect();
 
-    sort_branches(&mut branches);
+        sort_branches(&mut branches);
 
-    Ok(branches)
+        Ok(branches)
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 /// Rich per-branch information returned by `get_branches_detail`.
@@ -1292,8 +1341,10 @@ pub(crate) fn get_recent_branches_impl(path: &Path, limit: usize) -> Result<Vec<
 
 /// Get recently checked-out branch names for a repository (most recent first).
 #[tauri::command]
-pub(crate) fn get_recent_branches(path: String, limit: Option<usize>) -> Result<Vec<String>, String> {
-    get_recent_branches_impl(Path::new(&path), limit.unwrap_or(5))
+pub(crate) async fn get_recent_branches(path: String, limit: Option<usize>) -> Result<Vec<String>, String> {
+    tokio::task::spawn_blocking(move || get_recent_branches_impl(Path::new(&path), limit.unwrap_or(5)))
+        .await
+        .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 /// Rich context for the Git Operations Panel (single IPC round-trip).
@@ -1454,17 +1505,21 @@ pub(crate) fn get_git_panel_context_impl(path: &Path) -> GitPanelContext {
 
 /// Get rich git panel context in a single IPC call (cached, 5s TTL).
 #[tauri::command]
-pub(crate) fn get_git_panel_context(
+pub(crate) async fn get_git_panel_context(
     state: State<'_, Arc<AppState>>,
     path: String,
-) -> GitPanelContext {
+) -> Result<GitPanelContext, String> {
     if let Some(cached) = AppState::get_cached(&state.git_cache.git_panel_context, &path, GIT_CACHE_TTL) {
-        return cached;
+        return Ok(cached);
     }
 
-    let ctx = get_git_panel_context_impl(Path::new(&path));
-    AppState::set_cached(&state.git_cache.git_panel_context, path, ctx.clone());
-    ctx
+    let state_arc = state.inner().clone();
+    let path_clone = path.clone();
+    let ctx = tokio::task::spawn_blocking(move || get_git_panel_context_impl(Path::new(&path_clone)))
+        .await
+        .map_err(|e| format!("spawn_blocking join error: {e}"))?;
+    AppState::set_cached(&state_arc.git_cache.git_panel_context, path, ctx.clone());
+    Ok(ctx)
 }
 
 /// Result of a background git command execution
@@ -1813,47 +1868,59 @@ fn validate_paths_within_repo(repo_path: &Path, files: &[String]) -> Result<(), 
 
 /// Stage files (`git add -- <files>`).
 #[tauri::command]
-pub(crate) fn git_stage_files(path: String, files: Vec<String>) -> Result<(), String> {
-    let repo_path = PathBuf::from(&path);
-    validate_paths_within_repo(&repo_path, &files)?;
-    let mut args: Vec<String> = vec!["add".into(), "--".into()];
-    args.extend(files);
-    let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    git_cmd(&repo_path)
-        .args(&args_str)
-        .run()
-        .map_err(|e| format!("git add failed: {e}"))?;
-    Ok(())
+pub(crate) async fn git_stage_files(path: String, files: Vec<String>) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let repo_path = PathBuf::from(&path);
+        validate_paths_within_repo(&repo_path, &files)?;
+        let mut args: Vec<String> = vec!["add".into(), "--".into()];
+        args.extend(files);
+        let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        git_cmd(&repo_path)
+            .args(&args_str)
+            .run()
+            .map_err(|e| format!("git add failed: {e}"))?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 /// Unstage files (`git restore --staged -- <files>`).
 #[tauri::command]
-pub(crate) fn git_unstage_files(path: String, files: Vec<String>) -> Result<(), String> {
-    let repo_path = PathBuf::from(&path);
-    validate_paths_within_repo(&repo_path, &files)?;
-    let mut args: Vec<String> = vec!["restore".into(), "--staged".into(), "--".into()];
-    args.extend(files);
-    let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    git_cmd(&repo_path)
-        .args(&args_str)
-        .run()
-        .map_err(|e| format!("git restore --staged failed: {e}"))?;
-    Ok(())
+pub(crate) async fn git_unstage_files(path: String, files: Vec<String>) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let repo_path = PathBuf::from(&path);
+        validate_paths_within_repo(&repo_path, &files)?;
+        let mut args: Vec<String> = vec!["restore".into(), "--staged".into(), "--".into()];
+        args.extend(files);
+        let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        git_cmd(&repo_path)
+            .args(&args_str)
+            .run()
+            .map_err(|e| format!("git restore --staged failed: {e}"))?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 /// Discard working tree changes (`git restore -- <files>`). Destructive!
 #[tauri::command]
-pub(crate) fn git_discard_files(path: String, files: Vec<String>) -> Result<(), String> {
-    let repo_path = PathBuf::from(&path);
-    validate_paths_within_repo(&repo_path, &files)?;
-    let mut args: Vec<String> = vec!["restore".into(), "--".into()];
-    args.extend(files);
-    let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    git_cmd(&repo_path)
-        .args(&args_str)
-        .run()
-        .map_err(|e| format!("git restore failed: {e}"))?;
-    Ok(())
+pub(crate) async fn git_discard_files(path: String, files: Vec<String>) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let repo_path = PathBuf::from(&path);
+        validate_paths_within_repo(&repo_path, &files)?;
+        let mut args: Vec<String> = vec!["restore".into(), "--".into()];
+        args.extend(files);
+        let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        git_cmd(&repo_path)
+            .args(&args_str)
+            .run()
+            .map_err(|e| format!("git restore failed: {e}"))?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 // --- Hunk-level discard / unstage via reverse patch ---
@@ -1866,78 +1933,84 @@ pub(crate) fn git_discard_files(path: String, files: Vec<String>) -> Result<(), 
 /// The `patch` must be a valid unified diff (starting with `diff --git` or `---`).
 /// Pipe the patch via stdin to avoid temp files.
 #[tauri::command]
-pub(crate) fn git_apply_reverse_patch(path: String, patch: String, scope: Option<String>) -> Result<(), String> {
-    let repo_path = PathBuf::from(&path);
+pub(crate) async fn git_apply_reverse_patch(path: String, patch: String, scope: Option<String>) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let repo_path = PathBuf::from(&path);
 
-    // Validate patch is non-empty and looks like a unified diff
-    let trimmed = patch.trim();
-    if trimmed.is_empty() {
-        return Err("Patch is empty".to_string());
-    }
-    if !trimmed.starts_with("diff --git") && !trimmed.starts_with("---") {
-        return Err("Invalid patch: must start with 'diff --git' or '---'".to_string());
-    }
+        // Validate patch is non-empty and looks like a unified diff
+        let trimmed = patch.trim();
+        if trimmed.is_empty() {
+            return Err("Patch is empty".to_string());
+        }
+        if !trimmed.starts_with("diff --git") && !trimmed.starts_with("---") {
+            return Err("Invalid patch: must start with 'diff --git' or '---'".to_string());
+        }
 
-    let mut args = vec!["apply", "--reverse"];
-    match scope.as_deref() {
-        None => {}
-        Some("staged") => args.push("--cached"),
-        Some(other) => return Err(format!("Invalid scope: {:?}. Expected None or \"staged\"", other)),
-    }
+        let mut args = vec!["apply", "--reverse"];
+        match scope.as_deref() {
+            None => {}
+            Some("staged") => args.push("--cached"),
+            Some(other) => return Err(format!("Invalid scope: {:?}. Expected None or \"staged\"", other)),
+        }
 
-    use std::process::{Command, Stdio};
-    use std::io::Write;
+        use std::process::{Command, Stdio};
+        use std::io::Write;
 
-    let git_bin = crate::cli::resolve_cli("git");
-    let mut child = Command::new(&git_bin)
-        .current_dir(&repo_path)
-        .args(&args)
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to spawn git apply: {e}"))?;
+        let git_bin = crate::cli::resolve_cli("git");
+        let mut child = Command::new(&git_bin)
+            .current_dir(&repo_path)
+            .args(&args)
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Failed to spawn git apply: {e}"))?;
 
-    // Write patch to stdin
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(patch.as_bytes())
-            .map_err(|e| format!("Failed to write patch to stdin: {e}"))?;
-    }
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(patch.as_bytes())
+                .map_err(|e| format!("Failed to write patch to stdin: {e}"))?;
+        }
 
-    let output = child.wait_with_output()
-        .map_err(|e| format!("Failed to wait for git apply: {e}"))?;
+        let output = child.wait_with_output()
+            .map_err(|e| format!("Failed to wait for git apply: {e}"))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(format!("git apply --reverse failed: {stderr}"));
-    }
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(format!("git apply --reverse failed: {stderr}"));
+        }
 
-    Ok(())
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 // --- git commit ---
 
 /// Commit staged changes and return the new commit hash.
 #[tauri::command]
-pub(crate) fn git_commit(path: String, message: String, amend: Option<bool>) -> Result<String, String> {
-    let repo_path = PathBuf::from(&path);
-    let mut args: Vec<String> = vec!["commit".into(), "-m".into(), message];
-    if amend == Some(true) {
-        args.push("--amend".into());
-    }
-    let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    git_cmd(&repo_path)
-        .args(&args_str)
-        .run()
-        .map_err(|e| format!("git commit failed: {e}"))?;
+pub(crate) async fn git_commit(path: String, message: String, amend: Option<bool>) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let repo_path = PathBuf::from(&path);
+        let mut args: Vec<String> = vec!["commit".into(), "-m".into(), message];
+        if amend == Some(true) {
+            args.push("--amend".into());
+        }
+        let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        git_cmd(&repo_path)
+            .args(&args_str)
+            .run()
+            .map_err(|e| format!("git commit failed: {e}"))?;
 
-    // Read back the new commit hash
-    let hash_out = git_cmd(&repo_path)
-        .args(["rev-parse", "HEAD"])
-        .run()
-        .map_err(|e| format!("Failed to read commit hash: {e}"))?;
-    Ok(hash_out.stdout.trim().to_string())
+        let hash_out = git_cmd(&repo_path)
+            .args(["rev-parse", "HEAD"])
+            .run()
+            .map_err(|e| format!("Failed to read commit hash: {e}"))?;
+        Ok(hash_out.stdout.trim().to_string())
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 // --- Commit log, stash, file history, blame commands ---
@@ -2047,47 +2120,49 @@ pub(crate) struct StashEntry {
 
 /// List all stash entries.
 #[tauri::command]
-pub(crate) fn get_stash_list(path: String) -> Result<Vec<StashEntry>, String> {
-    let repo_path = PathBuf::from(&path);
+pub(crate) async fn get_stash_list(path: String) -> Result<Vec<StashEntry>, String> {
+    tokio::task::spawn_blocking(move || {
+        let repo_path = PathBuf::from(&path);
 
-    let out = git_cmd(&repo_path)
-        .args(["stash", "list", "--format=%gd%x00%s%x00%H"])
-        .run_silent();
+        let out = git_cmd(&repo_path)
+            .args(["stash", "list", "--format=%gd%x00%s%x00%H"])
+            .run_silent();
 
-    let Some(out) = out else {
-        // No stashes or not a git repo — return empty
-        return Ok(vec![]);
-    };
+        let Some(out) = out else {
+            return Ok(vec![]);
+        };
 
-    if out.stdout.trim().is_empty() {
-        return Ok(vec![]);
-    }
+        if out.stdout.trim().is_empty() {
+            return Ok(vec![]);
+        }
 
-    let entries = out
-        .stdout
-        .lines()
-        .filter_map(|line| {
-            let parts: Vec<&str> = line.splitn(3, '\0').collect();
-            if parts.len() != 3 {
-                return None;
-            }
-            let ref_name = parts[0].to_string();
-            // Parse index from "stash@{N}"
-            let index = ref_name
-                .strip_prefix("stash@{")
-                .and_then(|s| s.strip_suffix('}'))
-                .and_then(|s| s.parse::<u32>().ok())
-                .unwrap_or(0);
-            Some(StashEntry {
-                index,
-                ref_name,
-                message: parts[1].to_string(),
-                hash: parts[2].to_string(),
+        let entries = out
+            .stdout
+            .lines()
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.splitn(3, '\0').collect();
+                if parts.len() != 3 {
+                    return None;
+                }
+                let ref_name = parts[0].to_string();
+                let index = ref_name
+                    .strip_prefix("stash@{")
+                    .and_then(|s| s.strip_suffix('}'))
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .unwrap_or(0);
+                Some(StashEntry {
+                    index,
+                    ref_name,
+                    message: parts[1].to_string(),
+                    hash: parts[2].to_string(),
+                })
             })
-        })
-        .collect();
+            .collect();
 
-    Ok(entries)
+        Ok(entries)
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 /// Validate a stash ref format (e.g. "stash@{0}").
@@ -2105,50 +2180,66 @@ fn validate_stash_ref(stash_ref: &str) -> Result<(), String> {
 
 /// Apply a stash without removing it.
 #[tauri::command]
-pub(crate) fn git_stash_apply(path: String, stash_ref: String) -> Result<(), String> {
-    let repo_path = PathBuf::from(&path);
-    validate_stash_ref(&stash_ref)?;
-    git_cmd(&repo_path)
-        .args(["stash", "apply", &stash_ref])
-        .run()
-        .map_err(|e| format!("git stash apply failed: {e}"))?;
-    Ok(())
+pub(crate) async fn git_stash_apply(path: String, stash_ref: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let repo_path = PathBuf::from(&path);
+        validate_stash_ref(&stash_ref)?;
+        git_cmd(&repo_path)
+            .args(["stash", "apply", &stash_ref])
+            .run()
+            .map_err(|e| format!("git stash apply failed: {e}"))?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 /// Apply and remove a stash.
 #[tauri::command]
-pub(crate) fn git_stash_pop(path: String, stash_ref: String) -> Result<(), String> {
-    let repo_path = PathBuf::from(&path);
-    validate_stash_ref(&stash_ref)?;
-    git_cmd(&repo_path)
-        .args(["stash", "pop", &stash_ref])
-        .run()
-        .map_err(|e| format!("git stash pop failed: {e}"))?;
-    Ok(())
+pub(crate) async fn git_stash_pop(path: String, stash_ref: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let repo_path = PathBuf::from(&path);
+        validate_stash_ref(&stash_ref)?;
+        git_cmd(&repo_path)
+            .args(["stash", "pop", &stash_ref])
+            .run()
+            .map_err(|e| format!("git stash pop failed: {e}"))?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 /// Drop (delete) a stash.
 #[tauri::command]
-pub(crate) fn git_stash_drop(path: String, stash_ref: String) -> Result<(), String> {
-    let repo_path = PathBuf::from(&path);
-    validate_stash_ref(&stash_ref)?;
-    git_cmd(&repo_path)
-        .args(["stash", "drop", &stash_ref])
-        .run()
-        .map_err(|e| format!("git stash drop failed: {e}"))?;
-    Ok(())
+pub(crate) async fn git_stash_drop(path: String, stash_ref: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let repo_path = PathBuf::from(&path);
+        validate_stash_ref(&stash_ref)?;
+        git_cmd(&repo_path)
+            .args(["stash", "drop", &stash_ref])
+            .run()
+            .map_err(|e| format!("git stash drop failed: {e}"))?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 /// Show diff for a stash entry.
 #[tauri::command]
-pub(crate) fn git_stash_show(path: String, stash_ref: String) -> Result<String, String> {
-    let repo_path = PathBuf::from(&path);
-    validate_stash_ref(&stash_ref)?;
-    let out = git_cmd(&repo_path)
-        .args(["stash", "show", "-p", &stash_ref])
-        .run()
-        .map_err(|e| format!("git stash show failed: {e}"))?;
-    Ok(out.stdout)
+pub(crate) async fn git_stash_show(path: String, stash_ref: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let repo_path = PathBuf::from(&path);
+        validate_stash_ref(&stash_ref)?;
+        let out = git_cmd(&repo_path)
+            .args(["stash", "show", "-p", &stash_ref])
+            .run()
+            .map_err(|e| format!("git stash show failed: {e}"))?;
+        Ok(out.stdout)
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 /// Get commit log for a specific file, following renames.

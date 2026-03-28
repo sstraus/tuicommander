@@ -144,52 +144,55 @@ fn detect_base_branch(repo_path: &str) -> Option<String> {
 /// Runs independent git commands in parallel via rayon for lower latency.
 /// Best-effort: variables that fail to resolve are simply omitted from the map.
 #[tauri::command]
-pub(crate) fn resolve_context_variables(repo_path: String) -> HashMap<String, String> {
-    // Define all git variable resolvers as (key, args) pairs
-    let commands: Vec<(&str, Vec<&str>, bool)> = vec![
-        ("branch", vec!["rev-parse", "--abbrev-ref", "HEAD"], false),
-        ("diff", vec!["diff"], true),
-        ("staged_diff", vec!["diff", "--staged"], true),
-        ("changed_files", vec!["status", "--short"], false),
-        ("commit_log", vec!["log", "--oneline", "-20"], false),
-        ("last_commit", vec!["log", "-1", "--format=%H %s"], false),
-        ("conflict_files", vec!["diff", "--name-only", "--diff-filter=U"], false),
-        ("stash_list", vec!["stash", "list"], false),
-    ];
+pub(crate) async fn resolve_context_variables(repo_path: String) -> Result<HashMap<String, String>, String> {
+    tokio::task::spawn_blocking(move || -> HashMap<String, String> {
+        // Define all git variable resolvers as (key, args) pairs
+        let commands: Vec<(&str, Vec<&str>, bool)> = vec![
+            ("branch", vec!["rev-parse", "--abbrev-ref", "HEAD"], false),
+            ("diff", vec!["diff"], true),
+            ("staged_diff", vec!["diff", "--staged"], true),
+            ("changed_files", vec!["status", "--short"], false),
+            ("commit_log", vec!["log", "--oneline", "-20"], false),
+            ("last_commit", vec!["log", "-1", "--format=%H %s"], false),
+            ("conflict_files", vec!["diff", "--name-only", "--diff-filter=U"], false),
+            ("stash_list", vec!["stash", "list"], false),
+        ];
 
-    // Run all git commands in parallel using std threads
-    let results: Vec<(String, Option<String>)> = std::thread::scope(|s| {
-        let handles: Vec<_> = commands.into_iter().map(|(key, args, should_truncate)| {
-            let rp = &repo_path;
-            s.spawn(move || {
-                let val = git_output(rp, &args);
-                let val = if should_truncate { val.map(|v| truncate(v, MAX_VARIABLE_LEN)) } else { val };
-                (key.to_string(), val)
-            })
-        }).collect();
-        handles.into_iter().map(|h| h.join().unwrap()).collect()
-    });
+        // Run all git commands in parallel using std threads
+        let results: Vec<(String, Option<String>)> = std::thread::scope(|s| {
+            let handles: Vec<_> = commands.into_iter().map(|(key, args, should_truncate)| {
+                let rp = &repo_path;
+                s.spawn(move || {
+                    let val = git_output(rp, &args);
+                    let val = if should_truncate { val.map(|v| truncate(v, MAX_VARIABLE_LEN)) } else { val };
+                    (key.to_string(), val)
+                })
+            }).collect();
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
 
-    let mut vars = HashMap::new();
-    for (key, val) in results {
-        if let Some(v) = val {
-            vars.insert(key, v);
+        let mut vars = HashMap::new();
+        for (key, val) in results {
+            if let Some(v) = val {
+                vars.insert(key, v);
+            }
         }
-    }
 
-    // These depend on other results or are non-git
-    if let Some(v) = detect_base_branch(&repo_path) {
-        vars.insert("base_branch".to_string(), v);
-    }
-    if let Some(name) = std::path::Path::new(&repo_path)
-        .file_name()
-        .and_then(|n| n.to_str())
-    {
-        vars.insert("repo_name".to_string(), name.to_string());
-    }
-    vars.insert("repo_path".to_string(), repo_path);
+        if let Some(v) = detect_base_branch(&repo_path) {
+            vars.insert("base_branch".to_string(), v);
+        }
+        if let Some(name) = std::path::Path::new(&repo_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+        {
+            vars.insert("repo_name".to_string(), name.to_string());
+        }
+        vars.insert("repo_path".to_string(), repo_path);
 
-    vars
+        vars
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))
 }
 
 #[cfg(test)]

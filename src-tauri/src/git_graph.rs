@@ -215,22 +215,26 @@ fn assign_lanes(commits: &[RawCommit]) -> Vec<GraphNode> {
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub(crate) fn get_commit_graph(path: String, count: Option<u32>) -> Result<Vec<GraphNode>, String> {
-    let count = count.unwrap_or(200).min(1000);
-    let repo_path = Path::new(&path);
+pub(crate) async fn get_commit_graph(path: String, count: Option<u32>) -> Result<Vec<GraphNode>, String> {
+    tokio::task::spawn_blocking(move || {
+        let count = count.unwrap_or(200).min(1000);
+        let repo_path = Path::new(&path);
 
-    let output = git_cmd(repo_path)
-        .args([
-            "log",
-            "--topo-order",
-            &format!("-n{count}"),
-            "--pretty=format:%H%x00%P%x00%D",
-        ])
-        .run()
-        .map_err(|e| e.to_string())?;
+        let output = git_cmd(repo_path)
+            .args([
+                "log",
+                "--topo-order",
+                &format!("-n{count}"),
+                "--pretty=format:%H%x00%P%x00%D",
+            ])
+            .run()
+            .map_err(|e| e.to_string())?;
 
-    let commits = parse_git_log(&output.stdout);
-    Ok(assign_lanes(&commits))
+        let commits = parse_git_log(&output.stdout);
+        Ok(assign_lanes(&commits))
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 // ---------------------------------------------------------------------------
