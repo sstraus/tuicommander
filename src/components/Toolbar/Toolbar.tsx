@@ -23,6 +23,7 @@ const NOTIFICATION_LABELS: Record<PrNotificationType, { label: string; icon: str
   closed: { label: "Closed", icon: "\u2716", cls: s.notifClosed },
   blocked: { label: "Conflicts", icon: "\u26A0", cls: s.notifBlocked },
   ci_failed: { label: "CI Failed", icon: "\u2716", cls: s.notifCiFailed },
+  ci_recovered: { label: "CI Passed", icon: "\u2714", cls: s.notifReady },
   changes_requested: { label: "Changes Req.", icon: "\u270E", cls: s.notifChanges },
   ready: { label: "Ready", icon: "\u2713", cls: s.notifReady },
 };
@@ -411,6 +412,13 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                       );
                     }}
                   </For>
+                </Show>
+
+                {/* Empty state */}
+                <Show when={totalBadgeCount() === 0}>
+                  <div class={s.emptyState}>
+                    {t("toolbar.noNotifications", "No notifications")}
+                  </div>
                 </Show>
               </div>
             </Show>
