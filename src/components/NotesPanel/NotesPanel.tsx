@@ -50,7 +50,10 @@ function deriveDisplayName(repoPath: string | null): string | null {
 /** Build the text to send to terminal, appending image paths if present */
 function buildTerminalText(text: string, images: string[]): string {
   if (images.length === 0) return text;
-  return `${text}\n\nAttached images:\n${images.join("\n")}`;
+  // Format image paths inline so the agent can read them via its Read tool.
+  // Use space-separated references to avoid PTY newline issues (each \n = Enter).
+  const refs = images.map((p) => `[image: ${p}]`).join(" ");
+  return `${text} ${refs}`;
 }
 
 export const NotesPanel: Component<NotesPanelProps> = (props) => {
@@ -214,7 +217,7 @@ export const NotesPanel: Component<NotesPanelProps> = (props) => {
                           src={convertFileSrc(imgPath)}
                           alt="Note image"
                           loading="lazy"
-                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                          onError={(e) => { e.currentTarget.style.display = "none"; }}
                         />
                       )}
                     </For>
@@ -286,7 +289,7 @@ export const NotesPanel: Component<NotesPanelProps> = (props) => {
                     class={s.thumbnail}
                     src={convertFileSrc(imgPath)}
                     alt="Pending image"
-                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                    onError={(e) => { (e.currentTarget.closest(`.${s.pendingThumbWrap}`) as HTMLElement ?? e.currentTarget.parentElement)!.style.display = "none"; }}
                   />
                   <button
                     class={s.thumbnailRemove}

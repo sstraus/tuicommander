@@ -166,7 +166,12 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
     setMatchIndex(-1);
   };
 
-  const mode = (): DiffViewMode => uiStore.state.diffViewMode;
+  /** Force unified mode for one-sided diffs (new/deleted files) where split wastes half the screen */
+  const mode = (): DiffViewMode => {
+    const d = diff();
+    if (d && (d.includes("new file mode") || d.includes("deleted file mode"))) return "unified";
+    return uiStore.state.diffViewMode;
+  };
 
   // --- Hunk restore ---
 

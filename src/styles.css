@@ -446,6 +446,15 @@
   --diff-hunk-content-color--: var(--fg-muted);
 }
 
+/* Compact line number columns — library defaults are too wide (40px min + 10px padding each side) */
+.diff-tailwindcss-wrapper .diff-line-old-num,
+.diff-tailwindcss-wrapper .diff-line-new-num,
+.diff-tailwindcss-wrapper .diff-line-num {
+  min-width: 28px !important;
+  padding-left: 4px !important;
+  padding-right: 6px !important;
+}
+
 /* File Browser Panel */
 /* Code Editor Tab Content */
 /* Diff Tab Content Pane */
