@@ -62,7 +62,7 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
   "quick-branch-switch": { label: "Quick branch switch", category: "Git" },
   "toggle-error-log": { label: "Error log", category: "Navigation" },
   "toggle-mcp-popup": { label: "MCP servers (per-repo)", category: "Panels" },
-  "toggle-smart-prompts": { label: "Prompts", category: "Navigation" },
+  "toggle-smart-prompts": { label: "Smart Prompts Library", category: "Navigation" },
 };
 
 /**

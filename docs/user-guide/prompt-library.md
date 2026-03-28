@@ -1,6 +1,8 @@
-# Prompt Library
+# Smart Prompts Library
 
-Store and reuse command templates with optional variable substitution. Prompts are injected directly into the active terminal.
+The Smart Prompts Library stores and manages all your prompt templates — both the 24 built-in AI automation prompts and your custom templates. Prompts are injected directly into the active agent terminal or run headless for quick one-shot operations.
+
+> **Looking for one-click AI automation?** See [Smart Prompts](smart-prompts.md) for the full guide on built-in automation prompts, context variables, and headless execution.
 
 ## Opening the Drawer
 

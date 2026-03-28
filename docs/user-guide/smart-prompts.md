@@ -4,15 +4,15 @@ One-click AI automation for common git and code tasks. Smart Prompts inject cont
 
 ## What are Smart Prompts?
 
-Smart Prompts are pre-built prompt templates that automatically resolve git context (branch, diff, changed files, PR data) and deliver them to your AI agent. Instead of manually typing "review the changes on this branch," click a button and the right prompt — with the right context — is sent instantly.
+Smart Prompts are context-aware automation shortcuts that turn repetitive developer workflows into single-click actions. They automatically resolve git context (branch, diff, changed files, PR data) and deliver a well-crafted prompt to your AI agent — no manual typing, no copy-pasting, no context switching.
 
-TUICommander ships with 24 built-in prompts covering commit workflows, code review, PR management, CI fixes, and code investigation.
+TUICommander ships with **24 built-in prompts** covering commit workflows, code review, PR management, CI fixes, and code investigation. Each prompt includes a description explaining what it does, so you always know what will happen before clicking.
 
 ## How to Use
 
 ### Toolbar Dropdown
 
-Press **Cmd+Shift+K** (Ctrl+Shift+K on Windows/Linux) or click the lightning bolt icon in the toolbar. The dropdown shows all enabled prompts grouped by category with a search bar at the top.
+Press **Cmd+K** (Ctrl+K on Windows/Linux) or click the lightning bolt icon in the toolbar. The dropdown shows all enabled prompts grouped by category with a search bar at the top.
 
 ### Git Panel — Changes Tab
 
@@ -51,29 +51,64 @@ Open **Settings > Smart Prompts** to manage prompts:
 - **Create** your own smart prompts with the same placement options and variable system
 - **View** each prompt's placement (toolbar, git-changes, pr-popover, git-branches) and execution mode
 
+## Status Feedback
+
+When prompts cannot execute, the dropdown shows a **status banner** at the top explaining why:
+
+- **"No active terminal"** — open a terminal first
+- **"No AI agent detected"** — the active terminal has no agent running
+- **"Agent is busy"** — wait for the current operation to finish
+
+Items are visually dimmed but visible, so you can still browse what's available.
+
 ## Context Variables
 
-Prompts use `{variable_name}` syntax. Most variables are auto-resolved at execution time:
+Prompts use `{variable_name}` syntax. Most variables are auto-resolved at execution time — no manual input needed.
+
+### Git Context (from Rust backend)
 
 | Variable | Description |
 |----------|-------------|
 | `{branch}` | Current branch name |
 | `{base_branch}` | Default branch (main/master/develop) |
 | `{repo_name}` | Repository directory name |
-| `{diff}` | Working tree diff |
-| `{staged_diff}` | Staged changes diff |
+| `{repo_path}` | Full filesystem path to the repository root |
+| `{diff}` | Working tree diff (truncated to 50KB) |
+| `{staged_diff}` | Staged changes diff (truncated to 50KB) |
 | `{changed_files}` | Short status output |
 | `{commit_log}` | Last 20 commits |
 | `{last_commit}` | Last commit hash + message |
 | `{conflict_files}` | Files with merge conflicts |
 | `{stash_list}` | Stash entries |
+
+### GitHub/PR Context (from frontend stores)
+
+| Variable | Description |
+|----------|-------------|
 | `{pr_number}` | PR number for current branch |
 | `{pr_title}` | PR title |
-| `{pr_checks}` | CI check summary |
-| `{agent_type}` | Active agent type |
+| `{pr_url}` | GitHub pull request URL |
+| `{pr_state}` | PR state: OPEN, MERGED, or CLOSED |
+| `{pr_checks}` | CI check summary (e.g. "3 passed, 1 failed") |
+| `{merge_status}` | Merge status: MERGEABLE, CONFLICTING, or BEHIND |
+| `{review_decision}` | Review status: APPROVED, CHANGES_REQUESTED, or REVIEW_REQUIRED |
+
+### Agent/Terminal Context
+
+| Variable | Description |
+|----------|-------------|
+| `{agent_type}` | Active agent type (claude, aider, codex, etc.) |
 | `{cwd}` | Active terminal working directory |
 
-Variables not found in auto-resolution (e.g. `{issue_number}`) prompt the user for input before execution.
+### Manual Input Variables
+
+| Variable | Description |
+|----------|-------------|
+| `{issue_number}` | GitHub issue number to investigate |
+
+### Variable Input Dialog
+
+When a prompt contains variables that cannot be auto-resolved, a **Variable Input Dialog** appears before execution. Each field shows the variable name and a human-readable description, so you know exactly what to fill in. Pre-populated suggestions are shown where available.
 
 ## Execution Modes
 

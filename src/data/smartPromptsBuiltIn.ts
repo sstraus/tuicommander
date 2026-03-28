@@ -1,9 +1,40 @@
 import type { SavedPrompt, SmartPlacement } from "../stores/promptLibrary";
 
+/** Human-readable descriptions for all auto-resolvable context variables.
+ *  Used by VariableInputDialog and the dropdown tooltip. */
+export const VARIABLE_DESCRIPTIONS: Record<string, string> = {
+  // Git context (resolved by Rust backend)
+  branch: "Current git branch name",
+  base_branch: "Main/master/develop branch detected in the repo",
+  diff: "Unstaged changes (git diff)",
+  staged_diff: "Staged changes (git diff --staged)",
+  changed_files: "List of modified files (git status --short)",
+  commit_log: "Last 20 commits (one-line format)",
+  last_commit: "Latest commit hash and message",
+  conflict_files: "Files with unresolved merge conflicts",
+  stash_list: "Current git stash entries",
+  repo_name: "Repository directory name",
+  repo_path: "Full filesystem path to the repository root",
+  // GitHub/PR context (resolved from frontend stores)
+  pr_number: "Pull request number for the current branch",
+  pr_title: "Pull request title",
+  pr_url: "GitHub pull request URL",
+  pr_state: "PR state: OPEN, MERGED, or CLOSED",
+  pr_checks: "CI check summary (e.g. '3 passed, 1 failed')",
+  merge_status: "Merge status: MERGEABLE, CONFLICTING, or BEHIND",
+  review_decision: "Review status: APPROVED, CHANGES_REQUESTED, or REVIEW_REQUIRED",
+  // Agent/terminal context
+  agent_type: "Active agent type (claude, aider, codex, etc.)",
+  cwd: "Active terminal working directory",
+  // Manual-input variables
+  issue_number: "GitHub issue number to investigate",
+};
+
 /** Shared defaults for all built-in smart prompts */
 function builtin(
   id: string,
   name: string,
+  description: string,
   icon: string,
   placement: SmartPlacement[],
   content: string,
@@ -13,6 +44,7 @@ function builtin(
   return {
     id,
     name,
+    description,
     content,
     icon,
     placement,
@@ -20,7 +52,7 @@ function builtin(
     category: "custom",
     isFavorite: false,
     builtIn: true,
-    builtInVersion: 1,
+    builtInVersion: 2,
     autoExecute: true,
     requiresIdle: true,
     executionMode: "inject",
@@ -36,6 +68,7 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
   builtin(
     "smart-commit",
     "Smart Commit",
+    "Stage and commit with an auto-generated conventional message",
     "git-commit",
     ["toolbar", "git-changes"],
     "Look at the currently staged changes and create a commit with a good conventional commit message. If nothing is staged, stage the relevant changes first.",
@@ -44,6 +77,7 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
   builtin(
     "smart-commit-push",
     "Commit & Push",
+    "Stage, commit, and push to the remote tracking branch",
     "git-push",
     ["toolbar"],
     "Stage all changes, create a commit with a conventional commit message, and push to origin/{branch}.",
@@ -52,6 +86,7 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
   builtin(
     "smart-amend",
     "Amend Commit",
+    "Add staged changes to the last commit and update its message",
     "git-amend",
     ["git-changes"],
     "Amend the last commit with the currently staged changes. Update the commit message if the scope changed.",
@@ -60,6 +95,7 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
   builtin(
     "smart-commit-msg",
     "Generate Commit Message",
+    "Generate a conventional commit message from staged diff and copy to clipboard",
     "clipboard",
     ["git-changes"],
     "Generate a conventional commit message for these staged changes. Output ONLY the commit message, nothing else.\n\n{staged_diff}",
@@ -71,6 +107,7 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
   builtin(
     "smart-review",
     "Review Changes",
+    "Review all uncommitted changes for bugs, security, and quality issues",
     "magnifier",
     ["toolbar", "git-changes"],
     "Review the uncommitted changes in this repository for bugs, security issues, performance problems, and code quality. Be specific with file names and line numbers.\n\nChanged files:\n{changed_files}",
@@ -79,6 +116,7 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
   builtin(
     "smart-review-staged",
     "Review Staged",
+    "Review only staged changes before committing",
     "check-diff",
     ["git-changes"],
     "Review only the staged changes for bugs, security issues, and code quality:\n\n{staged_diff}",
@@ -87,6 +125,7 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
   builtin(
     "smart-review-pr",
     "Review PR",
+    "Full code review of the pull request on the current branch",
     "pr-review",
     ["pr-popover"],
     'Review PR #{pr_number} "{pr_title}". Checkout the branch if needed, review all changes, and provide detailed feedback on code quality, bugs, security, and improvements.',
@@ -95,6 +134,7 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
   builtin(
     "smart-review-comments",
     "Address Review Comments",
+    "Go through PR review comments and resolve each one",
     "chat",
     ["pr-popover"],
     "Check the review comments on PR #{pr_number} and address each one. For each comment, either make the requested change or explain why you disagree.",
@@ -105,6 +145,7 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
   builtin(
     "smart-create-pr",
     "Create PR",
+    "Create a GitHub pull request with auto-generated title and description",
     "pr-open",
     ["toolbar", "git-branches"],
     "Create a GitHub pull request for branch {branch} targeting {base_branch}. Generate a descriptive title and comprehensive description based on the commits:\n\n{commit_log}\n\nUse `gh pr create`.",
@@ -113,6 +154,7 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
   builtin(
     "smart-update-pr-desc",
     "Update PR Description",
+    "Rewrite the PR description to match the current state of changes",
     "edit",
     ["pr-popover"],
     "Update the description of PR #{pr_number} to accurately reflect the current state of changes. Use `gh pr edit`.",
@@ -121,6 +163,7 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
   builtin(
     "smart-pr-description",
     "Generate PR Description",
+    "Generate a PR title and description and copy to clipboard",
     "clipboard",
     ["pr-popover"],
     "Generate a pull request title and description for branch {branch} targeting {base_branch}. Format as:\n\nTitle: <title>\n\n<description body>\n\nBased on commits:\n{commit_log}",
@@ -132,6 +175,7 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
   builtin(
     "smart-resolve-conflicts",
     "Resolve Conflicts",
+    "Analyze and resolve merge conflicts in all affected files",
     "merge",
     ["toolbar", "pr-popover"],
     "Resolve the merge conflicts in this repository. The conflicting files are:\n{conflict_files}\n\nFor each file, analyze both sides of the conflict, choose the best resolution that preserves intent from both branches, and stage the resolved files.",
@@ -140,6 +184,7 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
   builtin(
     "smart-merge-main",
     "Merge Main Into Branch",
+    "Pull latest changes from the base branch and merge into the current branch",
     "git-merge",
     ["toolbar", "git-branches"],
     "Merge the latest {base_branch} into {branch}. If there are conflicts, resolve them thoughtfully — favor the feature branch intent while incorporating upstream changes. Stage and commit the merge.",
@@ -148,6 +193,7 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
   builtin(
     "smart-rebase-main",
     "Rebase on Main",
+    "Rebase the current branch onto the latest base branch",
     "git-rebase",
     ["git-branches"],
     "Rebase {branch} onto the latest {base_branch}. Resolve any conflicts that arise, then force-push if needed.",
@@ -158,6 +204,7 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
   builtin(
     "smart-fix-ci",
     "Fix CI Failures",
+    "Investigate and fix failing CI checks on the pull request",
     "ci-fix",
     ["pr-popover"],
     "PR #{pr_number} has failing CI checks: {pr_checks}\n\nInvestigate the failures, identify the root cause, and fix them. Run the failing tests locally to verify before pushing.",
@@ -166,6 +213,7 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
   builtin(
     "smart-fix-lint",
     "Fix Lint Issues",
+    "Run linter/formatter and fix all style violations without changing logic",
     "lint",
     ["toolbar"],
     "Run the linter/formatter for this project and fix all issues. Don't change logic — only fix formatting, style, and lint violations.",
@@ -174,6 +222,7 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
   builtin(
     "smart-write-tests",
     "Write Tests",
+    "Generate comprehensive tests for changed files with edge cases",
     "test",
     ["toolbar", "git-changes"],
     "Write comprehensive tests for the changes in this branch. Focus on:\n\nChanged files:\n{changed_files}\n\nCover happy paths, edge cases, and error conditions. Follow the existing test patterns in the project.",
@@ -182,6 +231,7 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
   builtin(
     "smart-run-tests",
     "Run & Fix Tests",
+    "Run the test suite and automatically fix any failures",
     "test-run",
     ["toolbar"],
     "Run the test suite. If any tests fail, investigate the root cause and fix them. Report what was wrong and what you fixed.",
@@ -192,6 +242,7 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
   builtin(
     "smart-investigate-issue",
     "Investigate Issue",
+    "Deep-dive into a GitHub issue: read, explore code, find root cause",
     "search",
     ["toolbar"],
     "Investigate GitHub issue #{issue_number}. Read the issue, understand the expected vs actual behavior, explore relevant code, identify the root cause, and propose a solution with specific file paths.",
@@ -200,6 +251,7 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
   builtin(
     "smart-what-changed",
     "What Changed?",
+    "Summarize all changes on this branch since it diverged from base",
     "history",
     ["toolbar"],
     "Summarize what changed on this branch since it diverged from {base_branch}. Show:\n- Overview of changes\n- Files modified and why\n- Any potential issues\n\nRecent commits:\n{commit_log}",
@@ -208,6 +260,7 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
   builtin(
     "smart-summarize-branch",
     "Summarize Branch",
+    "Quick summary of what this branch does based on its commits",
     "branch-info",
     ["toolbar", "git-branches"],
     "Summarize what branch {branch} does based on these commits:\n{commit_log}\n\nProvide a 2-3 sentence summary.",
@@ -217,6 +270,7 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
   builtin(
     "smart-explain-diff",
     "Explain Changes",
+    "Explain uncommitted changes in plain language",
     "explain",
     ["git-changes"],
     "Explain the current uncommitted changes in plain language. What do they do, and why might they have been made?\n\nChanged files:\n{changed_files}",
@@ -227,6 +281,7 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
   builtin(
     "smart-refactor",
     "Suggest Refactoring",
+    "Analyze recent changes and suggest refactoring opportunities",
     "refactor",
     ["toolbar"],
     "Analyze the recent changes and suggest refactoring opportunities. Focus on reducing duplication, improving naming, and simplifying complex logic.\n\nChanged files:\n{changed_files}",
@@ -235,6 +290,7 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
   builtin(
     "smart-security",
     "Security Audit",
+    "Check uncommitted changes for injection, credential exposure, and OWASP issues",
     "shield",
     ["toolbar"],
     "Perform a security review of the uncommitted changes. Check for:\n- Injection vulnerabilities (SQL, command, XSS)\n- Credential exposure\n- Unsafe deserialization\n- Missing input validation\n- Dependency vulnerabilities\n\n{changed_files}",

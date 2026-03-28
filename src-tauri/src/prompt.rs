@@ -189,6 +189,7 @@ pub(crate) fn resolve_context_variables(repo_path: String) -> HashMap<String, St
     {
         vars.insert("repo_name".to_string(), name.to_string());
     }
+    vars.insert("repo_path".to_string(), repo_path);
 
     vars
 }

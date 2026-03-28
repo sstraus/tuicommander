@@ -78,6 +78,21 @@
   color: var(--fg-muted);
 }
 
+.statusBanner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  font-size: var(--font-xs);
+  color: var(--warning, #e5a300);
+  background: rgba(229, 163, 0, 0.08);
+  border-bottom: 1px solid var(--border);
+}
+
+.statusIcon {
+  flex-shrink: 0;
+}
+
 .list {
   flex: 1;
   overflow-y: auto;

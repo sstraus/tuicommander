@@ -758,11 +758,13 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 
 ### 10.5 Smart Prompts
 
-AI automation layer with 24 built-in context-aware prompts. Prompts auto-resolve git context variables and execute via inject (PTY write) or headless (one-shot subprocess) mode.
+AI automation layer with 24 built-in context-aware prompts. Each prompt includes a description explaining what it does. Prompts auto-resolve git context variables and execute via inject (PTY write) or headless (one-shot subprocess) mode.
 
-- **Open**: `Cmd+Shift+K` or toolbar lightning bolt button
-- Dropdown with category grouping, search, and enable/disable toggles
-- Prompts are context-aware: variables like `{branch}`, `{diff}`, `{changed_files}` are resolved automatically at execution time
+- **Open**: `Cmd+K` or toolbar lightning bolt button
+- Dropdown with category grouping, search by name/description, and enable/disable toggles
+- Prompts are context-aware: 21 variables are auto-resolved from git, GitHub, and terminal state
+- **Status banner**: when prompts are disabled (no terminal, no agent, agent busy), a banner explains why
+- **Variable Input Dialog**: unresolved variables show a compact form with variable name + description before execution
 
 ### 10.6 Built-in Prompts by Category
 
@@ -785,6 +787,7 @@ Variables are resolved from the Rust backend (`resolve_context_variables`) and f
 | `{branch}` | git | Current branch name |
 | `{base_branch}` | git | Detected default branch (main/master/develop) |
 | `{repo_name}` | git | Repository directory name |
+| `{repo_path}` | git | Full filesystem path to the repository root |
 | `{diff}` | git | Full working tree diff (truncated) |
 | `{staged_diff}` | git | Staged changes diff (truncated) |
 | `{changed_files}` | git | Short status output |
