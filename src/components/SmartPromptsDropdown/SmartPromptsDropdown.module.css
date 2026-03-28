@@ -103,7 +103,7 @@
 }
 
 .item:hover {
-  background: var(--bg-tertiary);
+  background: var(--bg-highlight);
 }
 
 .itemDisabled {
