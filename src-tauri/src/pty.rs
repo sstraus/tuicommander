@@ -948,11 +948,15 @@ impl ChunkProcessor {
                     emit_shell_state(state, app, session_id, "busy");
                 }
             }
-        } else if let Some(atom) = state.shell_states.get(session_id)
+        } else if !has_status_line
+            && let Some(atom) = state.shell_states.get(session_id)
             && atom.load(std::sync::atomic::Ordering::Acquire) == SHELL_BUSY
             && should_transition_idle(state, session_id)
             && try_shell_transition(state, session_id, SHELL_BUSY, SHELL_IDLE)
         {
+            // Chrome-only chunk without a status line (e.g. separator repaint) —
+            // safe to transition idle. But when has_status_line is true the agent's
+            // timer is ticking, proving it's still alive — stay busy.
             emit_shell_state(state, app, session_id, "idle");
         }
 
