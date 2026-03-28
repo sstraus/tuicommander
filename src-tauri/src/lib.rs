@@ -37,6 +37,7 @@ pub(crate) mod registry;
 pub(crate) mod pty;
 pub(crate) mod relay_client;
 pub(crate) mod sleep_prevention;
+pub(crate) mod push;
 pub(crate) mod state;
 pub(crate) mod tailscale;
 mod updater;

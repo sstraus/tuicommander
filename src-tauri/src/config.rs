@@ -358,10 +358,26 @@ pub(crate) struct AppConfig {
     /// Session ID to join on the relay (shared with mobile client)
     #[serde(default)]
     pub(crate) relay_session_id: String,
+    /// Enable push notifications to mobile PWA clients
+    #[serde(default)]
+    pub(crate) push_enabled: bool,
+    /// VAPID private key (base64url-encoded ES256)
+    #[serde(default)]
+    pub(crate) vapid_private_key: String,
+    /// VAPID public key (base64url-encoded, derived from private)
+    #[serde(default)]
+    pub(crate) vapid_public_key: String,
+    /// VAPID subject (mailto: or https: URL identifying the app server)
+    #[serde(default = "default_vapid_subject")]
+    pub(crate) vapid_subject: String,
 }
 
 fn default_language() -> String {
     "en".to_string()
+}
+
+fn default_vapid_subject() -> String {
+    "mailto:noreply@tuicommander.com".to_string()
 }
 
 fn default_update_channel() -> String {
@@ -430,6 +446,10 @@ impl Default for AppConfig {
             relay_url: String::new(),
             relay_token: String::new(),
             relay_session_id: String::new(),
+            push_enabled: false,
+            vapid_private_key: String::new(),
+            vapid_public_key: String::new(),
+            vapid_subject: default_vapid_subject(),
         }
     }
 }
@@ -1135,6 +1155,10 @@ mod tests {
             relay_url: String::new(),
             relay_token: String::new(),
             relay_session_id: String::new(),
+            push_enabled: false,
+            vapid_private_key: String::new(),
+            vapid_public_key: String::new(),
+            vapid_subject: "mailto:test@example.com".to_string(),
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
         assert_eq!(loaded.shell.as_deref(), Some("/bin/zsh"));
