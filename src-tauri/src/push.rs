@@ -225,6 +225,89 @@ pub(crate) async fn send_push_to_all(
     }
 }
 
+/// Variant that takes pre-fetched subscriptions (avoids borrowing PushStore across await).
+pub(crate) async fn send_push_to_all_with_subs(
+    subs: Vec<PushSubscription>,
+    config: &crate::config::AppConfig,
+    title: &str,
+    body: &str,
+    url: &str,
+) {
+    use web_push_native::jwt_simple::algorithms::ES256KeyPair;
+    use web_push_native::p256;
+
+    if !config.push_enabled || config.vapid_private_key.is_empty() || subs.is_empty() {
+        return;
+    }
+
+    let payload = serde_json::json!({ "title": title, "body": body, "url": url });
+    let payload_bytes = payload.to_string().into_bytes();
+
+    let kp_bytes = match Base64UrlUnpadded::decode_vec(&config.vapid_private_key) {
+        Ok(b) => b,
+        Err(_) => return,
+    };
+    let vapid_kp = match ES256KeyPair::from_bytes(&kp_bytes) {
+        Ok(kp) => kp,
+        Err(_) => return,
+    };
+
+    let http_client = reqwest::Client::new();
+
+    for sub in &subs {
+        let p256dh_bytes = match Base64UrlUnpadded::decode_vec(&sub.p256dh) {
+            Ok(b) => b,
+            Err(_) => continue,
+        };
+        let auth_bytes = match Base64UrlUnpadded::decode_vec(&sub.auth) {
+            Ok(b) => b,
+            Err(_) => continue,
+        };
+        let endpoint: axum::http::Uri = match sub.endpoint.parse() {
+            Ok(u) => u,
+            Err(_) => continue,
+        };
+        let ua_public = match p256::PublicKey::from_sec1_bytes(&p256dh_bytes) {
+            Ok(pk) => pk,
+            Err(_) => continue,
+        };
+        if auth_bytes.len() != 16 { continue; }
+        let ua_auth: web_push_native::Auth = {
+            let mut arr = [0u8; 16];
+            arr.copy_from_slice(&auth_bytes);
+            arr.into()
+        };
+
+        let builder = web_push_native::WebPushBuilder::new(endpoint, ua_public, ua_auth)
+            .with_vapid(&vapid_kp, &config.vapid_subject);
+
+        if let Ok(request) = builder.build(payload_bytes.clone()) {
+            let (parts, body) = request.into_parts();
+            let uri = parts.uri.to_string();
+            let mut req_builder = http_client.post(&uri);
+            for (name, value) in &parts.headers {
+                if let Ok(v) = value.to_str() {
+                    req_builder = req_builder.header(name.as_str(), v);
+                }
+            }
+            match req_builder.body(body).send().await {
+                Ok(resp) if resp.status().as_u16() == 410 => {
+                    tracing::info!(source = "push", "Subscription 410 Gone");
+                }
+                Ok(resp) if resp.status().is_success() || resp.status().as_u16() == 201 => {
+                    tracing::debug!(source = "push", "Push sent");
+                }
+                Ok(resp) => {
+                    tracing::warn!(source = "push", status = resp.status().as_u16(), "Push failed");
+                }
+                Err(e) => {
+                    tracing::warn!(source = "push", "Push error: {e}");
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -155,6 +155,9 @@ pub(crate) struct SessionState {
     /// Slash command menu items (from slash-menu parsed events)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub slash_menu_items: Option<Vec<crate::output_parser::SlashMenuItem>>,
+    /// Epoch ms of last push notification sent for this session (rate limiting)
+    #[serde(skip)]
+    pub last_push_ms: Option<u64>,
 }
 
 /// PartialEq excludes last_activity_ms (telemetry, not logical state).
@@ -1092,6 +1095,37 @@ impl AppState {
                                 s.question_text = parsed.get("prompt_text")
                                     .and_then(|t| t.as_str())
                                     .map(|t| t.to_string());
+
+                                // Fire push notification (rate limited per session)
+                                if !state.push_store.is_empty() {
+                                    let session_name = state.sessions
+                                        .get(session_id)
+                                        .and_then(|s| {
+                                            let s = s.value().lock();
+                                            s.display_name.clone()
+                                        })
+                                        .unwrap_or_else(|| session_id.clone());
+                                    let config = state.config.read().clone();
+                                    let push_store_ref = &state.push_store;
+                                    // Rate limit: skip if last push for this session was < 30s ago
+                                    let should_push = s.last_push_ms.map_or(true, |t| now_ms.saturating_sub(t) >= 30_000);
+                                    if should_push {
+                                        s.last_push_ms = Some(now_ms);
+                                        let prompt = s.question_text.clone().unwrap_or_default();
+                                        let body = if prompt.is_empty() {
+                                            format!("{session_name}: awaiting input")
+                                        } else {
+                                            format!("{session_name}: {prompt}")
+                                        };
+                                        // send_push_to_all is async — spawn it
+                                        let subs = push_store_ref.list();
+                                        tokio::spawn(async move {
+                                            crate::push::send_push_to_all_with_subs(
+                                                subs, &config, "TUICommander", &body, "/mobile",
+                                            ).await;
+                                        });
+                                    }
+                                }
                             }
                             "user-input" => {
                                 // User responded — agent will start working
