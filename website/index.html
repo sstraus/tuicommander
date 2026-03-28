@@ -477,6 +477,48 @@
   </section>
 
   <!-- ============================================
+       FEATURE: SMART PROMPTS — AI AUTOMATION
+       ============================================ -->
+  <section class="feature" data-sal="slide-up">
+    <div class="container">
+      <div class="feature-inner reverse">
+        <div class="feature-content">
+          <svg class="feature-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M9.504.43a1.516 1.516 0 0 1 2.437 1.713L10.415 5.5h2.123c1.57 0 2.346 1.909 1.22 3.004l-7.34 7.142a1.249 1.249 0 0 1-1.847-.041 1.249 1.249 0 0 1-.137-1.363L5.96 10.5H3.462c-1.57 0-2.346-1.909-1.22-3.004L9.504.43z"/></svg>
+          <h3>Automate repetitive workflows</h3>
+          <p class="feature-solution">
+            24 built-in Smart Prompts turn common tasks into one-click operations. Context variables like branch, diff, and PR data are resolved automatically &mdash; just click and go.
+          </p>
+          <ul class="feature-points">
+            <li>Smart Commit, Review Changes, Create PR, Fix CI &mdash; all one click</li>
+            <li>21 context variables auto-resolved from git, GitHub, and terminal state</li>
+            <li>Inject mode (PTY write) or headless mode (one-shot subprocess)</li>
+            <li>Variable Input Dialog for any values that need manual input</li>
+            <li>Create your own prompts with the same variable system</li>
+          </ul>
+        </div>
+        <div class="feature-visual">
+          <div class="code-block">
+<span class="cmt">// One click does all this:</span>
+<span class="cmt">// 1. Resolves {branch}, {base_branch}, {commit_log}</span>
+<span class="cmt">// 2. Injects into agent terminal:</span>
+
+Create a GitHub pull request for branch
+<span class="str">feat/smart-prompts</span> targeting <span class="str">main</span>.
+Generate a descriptive title and description
+based on the commits:
+
+<span class="var">a1b2c3</span> feat: add variable dialog
+<span class="var">d4e5f6</span> feat: status banner
+<span class="var">g7h8i9</span> fix: palette naming
+
+Use <span class="str">`gh pr create`</span>.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
        FEATURE PAIR: KEYBINDINGS + MCP BRIDGE
        ============================================ -->
   <section class="feature-pair" data-sal="slide-up">
@@ -624,7 +666,7 @@
         <div class="terminal-item"><strong>N-way split panes</strong> — up to 6 panes, drag-resize, per-branch layout</div>
         <div class="terminal-item"><strong>13 bundled fonts</strong> — JetBrains Mono, Fira Code, and more</div>
         <div class="terminal-item"><strong>Claude usage dashboard</strong> — weekly limits, heatmaps</div>
-        <div class="terminal-item"><strong>Prompt library</strong> — saved templates with variable substitution</div>
+        <div class="terminal-item"><strong>Smart Prompts Library</strong> — 24 built-in AI automation prompts + custom templates with auto-resolved context variables</div>
         <div class="terminal-item"><strong>Custom keybindings</strong> — rebind shortcuts, chord support, conflict detection</div>
         <div class="terminal-item"><strong>Tab status dots</strong> — 6 visual states: idle, running, unseen, awaiting, error</div>
         <div class="terminal-item"><strong>Post-merge cleanup</strong> — one-click branch delete, worktree archive</div>
