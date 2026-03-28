@@ -118,11 +118,15 @@ pub(crate) fn parse_status_json(json_bytes: &[u8]) -> TailscaleState {
         _ => return TailscaleState::NotRunning,
     }
 
-    // Extract FQDN from Self.DNSName, strip trailing dot
+    // Extract FQDN from Self.DNSName, strip trailing dot, validate characters
     let fqdn = match status.self_node {
         Some(node) => strip_trailing_dot(&node.dns_name),
         None => return TailscaleState::NotRunning,
     };
+    if !is_valid_fqdn(&fqdn) {
+        tracing::warn!(source = "tailscale", %fqdn, "FQDN contains invalid characters, ignoring");
+        return TailscaleState::NotRunning;
+    }
 
     // Check if HTTPS certs are available
     let https_enabled = status
@@ -139,6 +143,13 @@ pub(crate) fn parse_status_json(json_bytes: &[u8]) -> TailscaleState {
 /// Strip trailing dot from DNS name (e.g. "host.ts.net." → "host.ts.net").
 fn strip_trailing_dot(name: &str) -> String {
     name.strip_suffix('.').unwrap_or(name).to_string()
+}
+
+/// Validate that a DNS name contains only safe characters (prevents CRLF injection in HTTP requests).
+fn is_valid_fqdn(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 253
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
 }
 
 /// Provision a TLS certificate from the Tailscale Local API.
@@ -415,6 +426,27 @@ mod tests {
                 https_enabled: false,
             }
         );
+    }
+
+    #[test]
+    fn fqdn_validation() {
+        assert!(is_valid_fqdn("host.ts.net"));
+        assert!(is_valid_fqdn("my-host.tail-abc.ts.net"));
+        assert!(!is_valid_fqdn("host\r\n.ts.net"));
+        assert!(!is_valid_fqdn("host ts.net"));
+        assert!(!is_valid_fqdn(""));
+    }
+
+    #[test]
+    fn parse_status_rejects_invalid_fqdn() {
+        let json = r#"{
+            "Version": "1.94.1",
+            "BackendState": "Running",
+            "Self": { "DNSName": "host\r\nevil.ts.net.", "HostName": "host", "OS": "linux", "Online": true, "TailscaleIPs": [] },
+            "CertDomains": ["host.ts.net"]
+        }"#;
+        let state = parse_status_json(json.as_bytes());
+        assert_eq!(state, TailscaleState::NotRunning);
     }
 
     #[cfg(unix)]

@@ -2,7 +2,14 @@
 // No fetch interception, no caching. Handles push notifications only.
 
 self.addEventListener("push", (event) => {
-  const data = event.data ? event.data.json() : {};
+  let data = {};
+  if (event.data) {
+    try {
+      data = event.data.json();
+    } catch {
+      // Malformed push payload — show generic notification
+    }
+  }
   const title = data.title || "TUICommander";
   const options = {
     body: data.body || "",

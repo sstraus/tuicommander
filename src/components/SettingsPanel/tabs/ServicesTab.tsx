@@ -88,12 +88,13 @@ export const ServicesTab: Component = () => {
   const [disabledNativeTools, setDisabledNativeTools] = createSignal<string[]>([]);
   const [upstreamStatus, setUpstreamStatus] = createSignal<UpstreamStatusEntry[]>([]);
 
-  // Tailscale state
-  const [tailscaleState, setTailscaleState] = createSignal<{
-    state: "NotInstalled" | "NotRunning" | "Running";
-    fqdn?: string;
-    https_enabled?: boolean;
-  } | null>(null);
+  // Tailscale state (mirrors Rust TailscaleState enum serialization)
+  type TailscaleStatus =
+    | { state: "NotInstalled" }
+    | { state: "NotRunning" }
+    | { state: "Running"; fqdn: string; https_enabled: boolean };
+
+  const [tailscaleState, setTailscaleState] = createSignal<TailscaleStatus | null>(null);
 
   // Relay state
   const [relayEnabled, setRelayEnabled] = createSignal(false);
@@ -183,8 +184,8 @@ export const ServicesTab: Component = () => {
 
     // Load Tailscale status
     try {
-      const ts = await rpc<{ state: string; fqdn?: string; https_enabled?: boolean }>("get_tailscale_status");
-      setTailscaleState(ts as any);
+      const ts = await rpc<TailscaleStatus>("get_tailscale_status");
+      setTailscaleState(ts);
     } catch { /* Tailscale detection not available */ }
   });
 
@@ -486,27 +487,30 @@ export const ServicesTab: Component = () => {
 
       {/* ── Tailscale TLS ── */}
       <Show when={tailscaleState()}>
-        <h3 style={{ "margin-top": "24px" }}>Tailscale HTTPS</h3>
-        <div class={s.group}>
-          <div class={s.row}>
-            <span class={s.label}>{t("services.label.tailscaleStatus", "Status")}</span>
-            <span class={s.value}>
-              {tailscaleState()?.state === "Running" && tailscaleState()?.https_enabled
-                ? `HTTPS active (${tailscaleState()?.fqdn})`
-                : tailscaleState()?.state === "Running"
-                  ? "Running (HTTPS not enabled)"
-                  : tailscaleState()?.state === "NotRunning"
-                    ? "Not running"
-                    : "Not installed"}
-            </span>
-          </div>
-          <Show when={tailscaleState()?.state === "Running" && !tailscaleState()?.https_enabled}>
-            <p class={s.hint}>
-              {t("services.hint.tailscaleEnableHttps",
-                "Enable HTTPS certificates in your Tailscale admin console to serve the PWA over HTTPS.")}
-            </p>
-          </Show>
-        </div>
+        {(() => {
+          const ts = tailscaleState()!;
+          const statusText = ts.state === "Running"
+            ? (ts.https_enabled ? `HTTPS active (${ts.fqdn})` : "Running (HTTPS not enabled)")
+            : ts.state === "NotRunning" ? "Not running" : "Not installed";
+          const showHint = ts.state === "Running" && !ts.https_enabled;
+          return (
+            <>
+              <h3 style={{ "margin-top": "24px" }}>Tailscale HTTPS</h3>
+              <div class={s.group}>
+                <div class={s.row}>
+                  <span class={s.label}>{t("services.label.tailscaleStatus", "Status")}</span>
+                  <span class={s.value}>{statusText}</span>
+                </div>
+                <Show when={showHint}>
+                  <p class={s.hint}>
+                    {t("services.hint.tailscaleEnableHttps",
+                      "Enable HTTPS certificates in your Tailscale admin console to serve the PWA over HTTPS.")}
+                  </p>
+                </Show>
+              </div>
+            </>
+          );
+        })()}
       </Show>
 
       {/* ── Cloud Relay ── */}

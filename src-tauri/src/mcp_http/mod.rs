@@ -228,9 +228,12 @@ async fn push_vapid_key(State(state): State<Arc<AppState>>) -> Response {
 async fn push_subscribe(
     State(state): State<Arc<AppState>>,
     Json(sub): Json<crate::push::PushSubscription>,
-) -> StatusCode {
+) -> Response {
+    if let Err(e) = crate::push::validate_push_endpoint(&sub.endpoint) {
+        return (StatusCode::BAD_REQUEST, e).into_response();
+    }
     state.push_store.upsert(sub);
-    StatusCode::CREATED
+    StatusCode::CREATED.into_response()
 }
 
 /// Unregister a push subscription.
@@ -601,7 +604,7 @@ pub async fn start_server(
     // --- TCP listener (only for remote access with auth) ---
     // Supports dual-protocol (HTTP+HTTPS on same port) when TLS cert is available.
     let tcp_handle = if remote_enabled {
-        let base_port = if config.remote_access_port == 0 { 0 } else { config.remote_access_port };
+        let base_port = config.remote_access_port;
         let host = if config.ipv6_enabled { "[::]" } else { "0.0.0.0" };
         const MAX_PORT_ATTEMPTS: u16 = 3;
 

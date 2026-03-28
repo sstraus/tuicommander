@@ -654,51 +654,14 @@ pub fn run() {
     // Wire the MCP tools_changed signal so upstream changes notify MCP bridge clients.
     state.mcp_upstream_registry.set_mcp_tools_tx(state.mcp_tools_changed.clone());
 
-    // Detect Tailscale and provision TLS cert if available
-    let tls_config = if config.remote_access_enabled {
-        let ts_state = tailscale::detect();
-        tracing::info!(source = "tailscale", ?ts_state, "Tailscale detection result");
-        *state.tailscale_state.write() = ts_state.clone();
-
-        match &ts_state {
-            tailscale::TailscaleState::Running { fqdn, https_enabled: true } => {
-                let fqdn = fqdn.clone();
-                // Provision cert in a blocking context (uses Unix socket / CLI)
-                let rt = tokio::runtime::Runtime::new()
-                    .expect("tokio runtime for TLS cert provisioning");
-                match rt.block_on(tailscale::provision_cert(&fqdn)) {
-                    Ok((cert_pem, key_pem)) => {
-                        match rt.block_on(
-                            axum_server::tls_rustls::RustlsConfig::from_pem(cert_pem, key_pem)
-                        ) {
-                            Ok(tls) => {
-                                tracing::info!(source = "tailscale", %fqdn, "TLS cert provisioned");
-                                Some(tls)
-                            }
-                            Err(e) => {
-                                tracing::error!(source = "tailscale", "Failed to load TLS config: {e}");
-                                None
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        tracing::error!(source = "tailscale", "Failed to provision cert: {e}");
-                        None
-                    }
-                }
-            }
-            _ => None,
-        }
-    } else {
-        None
-    };
-
     // Always start HTTP API server (Unix socket is always on; TCP only if remote access enabled)
+    // Tailscale detection + TLS provisioning happens inside the server thread (non-blocking to Tauri setup)
     {
         let remote_enabled = config.remote_access_enabled;
         let mcp_state = state.clone();
         let accumulator_state = state.clone();
         let boot_registry_state = state.clone();
+        let ts_state_ref = state.clone();
         std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new()
                 .expect("Failed to create tokio runtime for HTTP server");
@@ -708,6 +671,40 @@ pub fn run() {
 
                 // Auto-connect saved upstream MCP servers on boot
                 crate::mcp_upstream_config::auto_connect_saved_upstreams(&boot_registry_state).await;
+
+                // Detect Tailscale and provision TLS cert (async, doesn't block window render)
+                let tls_config = if remote_enabled {
+                    let ts_state = tokio::task::spawn_blocking(tailscale::detect).await
+                        .unwrap_or(tailscale::TailscaleState::NotInstalled);
+                    tracing::info!(source = "tailscale", ?ts_state, "Tailscale detection result");
+                    *ts_state_ref.tailscale_state.write() = ts_state.clone();
+
+                    match ts_state {
+                        tailscale::TailscaleState::Running { ref fqdn, https_enabled: true } => {
+                            match tailscale::provision_cert(fqdn).await {
+                                Ok((cert_pem, key_pem)) => {
+                                    match axum_server::tls_rustls::RustlsConfig::from_pem(cert_pem, key_pem).await {
+                                        Ok(tls) => {
+                                            tracing::info!(source = "tailscale", fqdn, "TLS cert provisioned");
+                                            Some(tls)
+                                        }
+                                        Err(e) => {
+                                            tracing::error!(source = "tailscale", "Failed to load TLS config: {e}");
+                                            None
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::error!(source = "tailscale", "Failed to provision cert: {e}");
+                                    None
+                                }
+                            }
+                        }
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
 
                 mcp_http::start_server(mcp_state, true, remote_enabled, tls_config).await;
             });

@@ -1085,6 +1085,10 @@ impl AppState {
             }
             AppEvent::PtyParsed { session_id, parsed } => {
                 let event_type = parsed.get("type").and_then(|t| t.as_str()).unwrap_or("");
+
+                // Collect push notification data outside the DashMap lock
+                let mut push_data: Option<(String, String)> = None;
+
                 state.session_states
                     .entry(session_id.clone())
                     .and_modify(|s| {
@@ -1096,35 +1100,13 @@ impl AppState {
                                     .and_then(|t| t.as_str())
                                     .map(|t| t.to_string());
 
-                                // Fire push notification (rate limited per session)
-                                if !state.push_store.is_empty() {
-                                    let session_name = state.sessions
-                                        .get(session_id)
-                                        .and_then(|s| {
-                                            let s = s.value().lock();
-                                            s.display_name.clone()
-                                        })
-                                        .unwrap_or_else(|| session_id.clone());
-                                    let config = state.config.read().clone();
-                                    let push_store_ref = &state.push_store;
-                                    // Rate limit: skip if last push for this session was < 30s ago
-                                    let should_push = s.last_push_ms.map_or(true, |t| now_ms.saturating_sub(t) >= 30_000);
-                                    if should_push {
-                                        s.last_push_ms = Some(now_ms);
-                                        let prompt = s.question_text.clone().unwrap_or_default();
-                                        let body = if prompt.is_empty() {
-                                            format!("{session_name}: awaiting input")
-                                        } else {
-                                            format!("{session_name}: {prompt}")
-                                        };
-                                        // send_push_to_all is async — spawn it
-                                        let subs = push_store_ref.list();
-                                        tokio::spawn(async move {
-                                            crate::push::send_push_to_all_with_subs(
-                                                subs, &config, "TUICommander", &body, "/mobile",
-                                            ).await;
-                                        });
-                                    }
+                                // Rate limit: skip if last push for this session was < 30s ago
+                                let should_push = !state.push_store.is_empty()
+                                    && s.last_push_ms.map_or(true, |t| now_ms.saturating_sub(t) >= 30_000);
+                                if should_push {
+                                    s.last_push_ms = Some(now_ms);
+                                    let prompt = s.question_text.clone().unwrap_or_default();
+                                    push_data = Some((session_id.clone(), prompt));
                                 }
                             }
                             "user-input" => {
@@ -1218,6 +1200,31 @@ impl AppState {
                         last_activity_ms: now_ms,
                         ..Default::default()
                     });
+
+                // Spawn push notification outside the DashMap lock
+                if let Some((sid, prompt)) = push_data {
+                    let session_name = state.sessions
+                        .get(&sid)
+                        .and_then(|s| s.value().lock().display_name.clone())
+                        .unwrap_or(sid);
+                    let body = if prompt.is_empty() {
+                        format!("{session_name}: awaiting input")
+                    } else {
+                        format!("{session_name}: {prompt}")
+                    };
+                    let config = state.config.read().clone();
+                    let subs = state.push_store.list();
+                    let http_client = state.http_client.clone();
+                    let push_state = Arc::clone(state);
+                    tokio::spawn(async move {
+                        let stale = crate::push::send_push_batch(
+                            subs, &config, &http_client, "TUICommander", &body, "/mobile",
+                        ).await;
+                        for endpoint in &stale {
+                            push_state.push_store.remove(endpoint);
+                        }
+                    });
+                }
             }
             AppEvent::PtyExit { session_id } => {
                 if let Some(mut entry) = state.session_states.get_mut(session_id) {

@@ -54,7 +54,9 @@ export function SettingsScreen(props: SettingsScreenProps) {
       const reg = await navigator.serviceWorker.ready;
       const sub = await reg.pushManager.getSubscription();
       if (sub) return "subscribed";
-    } catch { /* ignore */ }
+    } catch (e) {
+      appLogger.warn("push", "Failed to read push subscription state", e);
+    }
     return "default";
   }
 
@@ -68,16 +70,18 @@ export function SettingsScreen(props: SettingsScreenProps) {
         const reg = await navigator.serviceWorker.ready;
         const sub = await reg.pushManager.getSubscription();
         if (sub) {
-          await fetch("/api/push/subscribe", {
+          const resp = await fetch("/api/push/subscribe", {
             method: "DELETE",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ endpoint: sub.endpoint }),
           });
+          if (!resp.ok) throw new Error(`Server unsubscribe failed: ${resp.status}`);
           await sub.unsubscribe();
         }
         setPushState("default");
       } catch (e) {
         appLogger.error("push", "Unsubscribe failed", e);
+        setPushState(await detectPushState());
       } finally {
         setPushLoading(false);
       }
@@ -106,7 +110,13 @@ export function SettingsScreen(props: SettingsScreenProps) {
         setPushState("default");
         return;
       }
-      const { publicKey } = await keyResp.json();
+      const keyJson = await keyResp.json();
+      const publicKey = keyJson?.publicKey;
+      if (typeof publicKey !== "string" || publicKey.length === 0) {
+        appLogger.warn("push", "VAPID key response missing publicKey field", keyJson);
+        setPushState("default");
+        return;
+      }
 
       // Subscribe with VAPID key
       const sub = await reg.pushManager.subscribe({
@@ -115,11 +125,12 @@ export function SettingsScreen(props: SettingsScreenProps) {
       });
 
       // Send subscription to backend
-      await fetch("/api/push/subscribe", {
+      const postResp = await fetch("/api/push/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(sub.toJSON()),
       });
+      if (!postResp.ok) throw new Error(`Server subscribe failed: ${postResp.status}`);
 
       setPushState("subscribed");
     } catch (e) {

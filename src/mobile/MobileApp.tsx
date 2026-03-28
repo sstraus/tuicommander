@@ -13,7 +13,10 @@ import styles from "./MobileApp.module.css";
 // Register service worker for push notifications (only on HTTPS or localhost)
 if ("serviceWorker" in navigator &&
     (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
-  navigator.serviceWorker.register("/sw.js").catch(() => {});
+  navigator.serviceWorker.register("/sw.js").catch((err: unknown) => {
+    // Log but don't block — push will be unavailable
+    console.warn("[sw] Service worker registration failed:", err);
+  });
 }
 
 export default function MobileApp() {
