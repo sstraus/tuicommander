@@ -1,5 +1,6 @@
 import { rpc } from "../transport";
 import { appLogger } from "../stores/appLogger";
+import { sendCommand as sendCommandUtil } from "../utils/sendCommand";
 import type { PtyConfig, OrchestratorStats } from "../types";
 
 /** Worktree configuration */
@@ -62,9 +63,14 @@ export function usePty() {
     });
   }
 
-  /** Write data to a PTY session */
+  /** Write raw data to a PTY session */
   async function write(sessionId: string, data: string): Promise<void> {
     await rpc("write_pty", { sessionId, data });
+  }
+
+  /** Send a command to a PTY session with agent-aware Enter handling. */
+  async function sendCommand(sessionId: string, text: string, agentType?: string | null): Promise<void> {
+    await sendCommandUtil((data) => write(sessionId, data), text, agentType);
   }
 
   /** Resize a PTY session */
@@ -127,6 +133,7 @@ export function usePty() {
     createSession,
     createSessionWithWorktree,
     write,
+    sendCommand,
     resize,
     pause,
     resume,

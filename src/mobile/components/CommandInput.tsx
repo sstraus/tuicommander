@@ -2,6 +2,7 @@ import { createSignal, createEffect } from "solid-js";
 import { rpc } from "../../transport";
 import { appLogger } from "../../stores/appLogger";
 import { retryWrite } from "../utils/retryWrite";
+import { sendCommand } from "../../utils/sendCommand";
 import styles from "./CommandInput.module.css";
 
 interface CommandInputProps {
@@ -77,17 +78,11 @@ export function CommandInput(props: CommandInputProps) {
     setValue("");
     if (textareaEl) { textareaEl.value = ""; textareaEl.style.height = "auto"; }
     try {
-      if (props.agentType) {
-        // Ink-based agents in raw mode: split into two writes.
-        // Ctrl-U + text in one write, then \r separately — Ink treats \r
-        // as newline when combined with text in a single write.
-        await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: "\x15" + text }));
-        await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: "\r" }));
-      } else {
-        // Shell sessions (cooked mode): single atomic write.
-        // Ctrl-U is handled by kernel line discipline before the app sees it.
-        await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: "\x15" + text + "\r" }));
-      }
+      await sendCommand(
+        (data) => retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data })),
+        text,
+        props.agentType,
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       appLogger.error("network", `Failed to send command after retries: ${msg}`);

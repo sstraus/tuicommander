@@ -129,11 +129,13 @@ export function useSmartPrompts() {
     const active = terminalsStore.getActive();
     if (!active?.sessionId) return { ok: false, reason: "No active terminal" };
 
-    // Append newline to auto-execute (send as Enter keypress)
-    const data = prompt.autoExecute !== false ? content + "\n" : content;
-
     try {
-      await pty.write(active.sessionId, data);
+      if (prompt.autoExecute === false) {
+        // Just inject text, no Enter
+        await pty.write(active.sessionId, "\x15" + content);
+      } else {
+        await pty.sendCommand(active.sessionId, content, active.agentType);
+      }
       promptLibraryStore.markAsUsed(prompt.id);
       return { ok: true };
     } catch (err) {
