@@ -23,6 +23,7 @@ Features to test when TUICommander is more usable.
 - [ ] Terminal remount (tab switch) correctly syncs shell state from Rust
 - [ ] Completion notification fires after agent works ≥5s then goes idle (background tab)
 - [ ] No completion notification when terminal is awaiting input (question/error)
+- [ ] No purple unseen dot while agent is actively working (status line timer ticking)
 
 ## Plan Panel (515-660c / 516-41a5 / 517-74c2)
 - [ ] `Cmd+P` opens plan panel on right side
