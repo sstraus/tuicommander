@@ -26,7 +26,7 @@ export interface CreateWorktreeDialogProps {
   /** Generate a random branch name */
   onGenerateName?: () => Promise<string>;
   onClose: () => void;
-  onCreate: (options: WorktreeCreateOptions) => void;
+  onCreate: (options: WorktreeCreateOptions) => void | Promise<void>;
 }
 
 /** Sanitize a branch name for use as a directory name (replace slashes with dashes) */
@@ -105,6 +105,7 @@ export const CreateWorktreeDialog: Component<CreateWorktreeDialogProps> = (props
   const [branchName, setBranchName] = createSignal("");
   const [baseRef, setBaseRef] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
+  const [isCreating, setIsCreating] = createSignal(false);
   let inputRef: HTMLInputElement | undefined;
 
   /** Available base refs — first entry is the default */
@@ -171,9 +172,9 @@ export const CreateWorktreeDialog: Component<CreateWorktreeDialogProps> = (props
     onCleanup(() => document.removeEventListener("keydown", handleKeydown));
   });
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     const name = trimmedName();
-    if (!name) return;
+    if (!name || isCreating()) return;
 
     // Existing branch that already has a worktree — reject
     if (hasWorktree()) {
@@ -181,18 +182,25 @@ export const CreateWorktreeDialog: Component<CreateWorktreeDialogProps> = (props
       return;
     }
 
-    if (isExistingBranch()) {
-      // Check out existing branch into new worktree
-      props.onCreate({ branchName: name, createBranch: false, baseRef: baseRef() });
-    } else {
-      // New branch — validate name
-      const validationError = validateBranchName(name);
-      if (validationError) {
-        setError(validationError);
-        return;
-      }
-      props.onCreate({ branchName: name, createBranch: true, baseRef: baseRef() });
+    const options: WorktreeCreateOptions = isExistingBranch()
+      ? { branchName: name, createBranch: false, baseRef: baseRef() }
+      : (() => {
+          const validationError = validateBranchName(name);
+          if (validationError) { setError(validationError); return null!; }
+          return { branchName: name, createBranch: true, baseRef: baseRef() };
+        })();
+    if (!options) return;
+
+    setIsCreating(true);
+    setError(null);
+    try {
+      await props.onCreate(options);
+    } catch (err) {
+      setError(String(err));
+      setIsCreating(false);
+      return;
     }
+    setIsCreating(false);
   };
 
   const handleInputChange = (e: Event) => {
@@ -294,9 +302,9 @@ export const CreateWorktreeDialog: Component<CreateWorktreeDialogProps> = (props
             <button
               class={d.primaryBtn}
               onClick={handleCreate}
-              disabled={!trimmedName()}
+              disabled={!trimmedName() || isCreating()}
             >
-              {t("createWorktree.create", "Create")}
+              {isCreating() ? t("createWorktree.creating", "Creating...") : t("createWorktree.create", "Create")}
             </button>
           </div>
         </div>

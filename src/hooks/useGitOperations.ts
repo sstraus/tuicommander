@@ -863,7 +863,6 @@ export function useGitOperations(deps: GitOperationsDeps) {
     if (!dialogState) return;
 
     const { repoPath } = dialogState;
-    setWorktreeDialogState(null);
 
     if (creatingWorktreeRepos().has(repoPath)) return;
     setCreatingWorktreeRepos((prev) => new Set([...prev, repoPath]));
@@ -872,10 +871,14 @@ export function useGitOperations(deps: GitOperationsDeps) {
       deps.setStatusInfo(`Creating worktree ${options.branchName}...`);
       const result = await deps.repo.createWorktree(repoPath, options.branchName, options.createBranch, options.baseRef);
 
+      // Close dialog only on success
+      setWorktreeDialogState(null);
       await setupNewWorktree(repoPath, result, options.branchName);
     } catch (err) {
       appLogger.error("git", "Failed to create worktree", err);
       deps.setStatusInfo(`Failed to create worktree: ${err}`);
+      // Re-throw so the dialog can show the error and stay open
+      throw err;
     } finally {
       setCreatingWorktreeRepos((prev) => {
         const next = new Set(prev);

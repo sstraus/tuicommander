@@ -1184,7 +1184,10 @@ describe("useGitOperations", () => {
       mockRepo.createWorktree.mockRejectedValue(new Error("branch exists"));
 
       await gitOps.handleAddWorktree("/repo");
-      await gitOps.confirmCreateWorktree({ branchName: "bold-nexus-042", createBranch: true, baseRef: "main" });
+      // confirmCreateWorktree re-throws so the dialog can show the error
+      await expect(
+        gitOps.confirmCreateWorktree({ branchName: "bold-nexus-042", createBranch: true, baseRef: "main" }),
+      ).rejects.toThrow("branch exists");
 
       expect(mockSetStatusInfo).toHaveBeenCalledWith(expect.stringContaining("Failed to create worktree"));
     });
