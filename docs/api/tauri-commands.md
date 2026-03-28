@@ -366,6 +366,7 @@ Uses incremental parsing with a file-size-based cache (`claude-usage-cache.json`
 | `fetch_update_manifest` | `url` | `JSON` | Fetch update manifest via Rust HTTP (bypasses WebView CSP) |
 | `read_external_file` | `path` | `String` | Read file outside repo (standalone file open) |
 | `get_relay_status` | -- | `JSON` | Cloud relay connection status |
+| `get_tailscale_status` | -- | `TailscaleState` | Tailscale daemon status (NotInstalled/NotRunning/Running with fqdn, https_enabled) |
 
 ## App Logger (`app_logger.rs`)
 

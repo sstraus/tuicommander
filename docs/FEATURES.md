@@ -984,6 +984,16 @@ All data persisted to platform config directory via Rust:
 ### 14.8 macOS Dock Badge
 - Badge count for attention-requiring notifications (questions, errors)
 
+### 14.9 Tailscale HTTPS
+- Auto-detects Tailscale daemon and FQDN via `tailscale status --json` (cross-platform)
+- Provisions TLS certificates from Tailscale Local API (Unix socket on macOS/Linux, CLI on Windows)
+- HTTP+HTTPS dual-protocol on same port via `axum-server-dual-protocol`
+- Graceful fallback: HTTP-only when Tailscale unavailable or HTTPS not enabled
+- QR code uses `https://` scheme with Tailscale FQDN when TLS active
+- Background cert renewal every 24h with hot-reload via `RustlsConfig::reload_from_pem()`
+- Session cookie gets `Secure` flag on TLS connections
+- Settings panel shows Tailscale status with actionable guidance
+
 ---
 
 ## 15. Keyboard Shortcut Reference
@@ -1257,6 +1267,20 @@ Phone-optimized progressive web app for monitoring AI agents remotely. Separate 
 - Web app manifest (`mobile-manifest.json`) with standalone display mode
 - iOS Safari and Android Chrome Add to Home Screen support
 - `apple-mobile-web-app-capable` meta tags
+- PNG icons (192x192, 512x512) for PWA installability
+
+### 18.8.1 Push Notifications
+- Web Push from TUICommander directly to mobile PWA clients (no relay dependency)
+- VAPID ES256 key generation on first enable, persisted in config
+- Service worker (`sw.js`) handles push events and notification clicks
+- `PushManager.subscribe()` flow with user gesture (click handler) for iOS/Firefox
+- Push subscriptions stored in `push_subscriptions.json`, survive restarts
+- API endpoints: `POST/DELETE /api/push/subscribe`, `GET /api/push/vapid-key`
+- Triggers on agent `awaiting_input` state (question events)
+- Rate limited: max 1 push per session per 30 seconds
+- Stale subscriptions cleaned on HTTP 410 Gone
+- iOS standalone detection: shows "Add to Home Screen" guidance when not installed
+- HTTP detection: shows "Push requires HTTPS (enable Tailscale)" when not on HTTPS
 
 ### 18.9 Notification Sounds
 - Audio playback via Rust `rodio` crate (Tauri command `play_notification_sound`), replacing the previous Web Audio API approach

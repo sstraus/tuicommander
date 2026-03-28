@@ -968,6 +968,42 @@ Query parameters:
 - `repoPath` (required) -- base repository path
 - `deleteBranch` (optional, default `true`) -- when `true`, also deletes the local git branch
 
+## Push Notification Endpoints
+
+### Get VAPID Public Key
+
+```
+GET /api/push/vapid-key
+```
+
+Returns the VAPID public key for `PushManager.subscribe()`. No authentication required.
+
+**Response:** `{ "publicKey": "<base64url>" }`
+
+Returns 404 if push is not enabled.
+
+### Subscribe
+
+```
+POST /api/push/subscribe
+Content-Type: application/json
+
+{ "endpoint": "https://...", "keys": { "p256dh": "...", "auth": "..." } }
+```
+
+Register a push subscription. Idempotent (same endpoint updates keys).
+
+### Unsubscribe
+
+```
+DELETE /api/push/subscribe
+Content-Type: application/json
+
+{ "endpoint": "https://..." }
+```
+
+Remove a push subscription by endpoint.
+
 ## Tauri-Only Commands (No HTTP Route)
 
 The following commands are accessible only via the Tauri `invoke()` bridge in the desktop app. They have no HTTP endpoint.

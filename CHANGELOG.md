@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Tailscale HTTPS** — Auto-detects Tailscale daemon, provisions TLS certificates via Local API, serves HTTP+HTTPS on same port (dual-protocol). QR code uses `https://` with Tailscale FQDN when TLS active. Background cert renewal every 24h. Cross-platform (macOS, Linux, Windows)
+- **PWA Push Notifications** — Web Push from TUICommander directly to mobile PWA clients. VAPID key generation, push subscription management via `/api/push/*` endpoints, service worker with push/notificationclick handlers. Rate limited (1 per session per 30s). iOS standalone detection with guidance
 - **Smart Prompts** — AI automation layer with 24 built-in context-aware prompts
   - Toolbar dropdown (Cmd+Shift+K) with category grouping and search
   - SmartButtonStrip in Git Panel Changes tab and PR Detail Popover

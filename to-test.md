@@ -376,3 +376,32 @@ Features to test when TUICommander is more usable.
 - [ ] No page-level horizontal scroll when viewing plain text
 - [ ] Long lines without box-drawing characters wrap correctly
 - [ ] Unicode emoji renders as text glyphs (font-variant-emoji: text)
+
+## Smart Prompts Library (949-253b)
+- [ ] Cmd+K opens Smart Prompts Library drawer with search, categories, keyboard nav
+- [ ] Arrow keys navigate, Enter executes, Ctrl+N new, Ctrl+E edit, Ctrl+F favorite
+- [ ] New prompt editor has placement checkboxes, auto-execute, shortcut fields
+- [ ] Built-in prompts: name disabled, "Reset to Default" button, "built-in" badge, no delete
+- [ ] Enable/disable toggle (circle SVG icon) works per prompt
+- [ ] Variable dialog shows {varName} + description for unresolved variables
+- [ ] All 24 built-in prompts show descriptions in list
+- [ ] Settings panel no longer has "Smart Prompts" tab
+- [ ] Cmd+Shift+K opens SmartPromptsDropdown with status banner when disabled
+- [ ] SmartButtonStrip in Changes tab always visible (grayed out without agent)
+- [ ] All icons in drawer are SVG (no emoji)
+
+## Tailscale HTTPS
+- [ ] With Tailscale running + HTTPS enabled: app serves HTTPS on same port
+- [ ] QR code shows https:// URL with Tailscale FQDN
+- [ ] Without Tailscale: HTTP works as before (no TLS)
+- [ ] Settings > Services shows Tailscale status section
+- [ ] Cookie gets Secure flag when accessed over HTTPS
+
+## PWA Push Notifications
+- [ ] Mobile Settings shows "Push notifications" toggle
+- [ ] Enable push → browser prompts for permission → subscription stored
+- [ ] Agent question → phone receives push notification
+- [ ] Tap notification → PWA opens/focuses
+- [ ] Disable push → unsubscribes and removes server-side subscription
+- [ ] On HTTP (no HTTPS): shows "Push requires HTTPS" message
+- [ ] On iOS in browser (not home screen): shows "Add to Home Screen" message
