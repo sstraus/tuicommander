@@ -122,22 +122,6 @@ fn save_config(state: State<'_, Arc<AppState>>, config: config::AppConfig) -> Re
 
     let tools_changed = old.disabled_native_tools != config.disabled_native_tools;
 
-    // Auto-generate VAPID keys when push is first enabled
-    let mut config = config;
-    if config.push_enabled && config.vapid_private_key.is_empty() {
-        match push::generate_vapid_keys() {
-            Ok((private, public)) => {
-                tracing::info!(source = "push", "Generated VAPID key pair");
-                config.vapid_private_key = private;
-                config.vapid_public_key = public;
-            }
-            Err(e) => {
-                tracing::error!(source = "push", "Failed to generate VAPID keys: {e}");
-                config.push_enabled = false;
-            }
-        }
-    }
-
     config::save_app_config(config.clone())?;  // clone goes to disk
     *state.config.write() = config;             // move original into state
 
@@ -672,7 +656,22 @@ pub fn run() {
     // Default worktrees directory: <config_dir>/worktrees
     let worktrees_dir = config::config_dir().join("worktrees");
 
-    let config = config::load_app_config();
+    let mut config = config::load_app_config();
+
+    // Auto-generate VAPID keys on first run (needed before any client can subscribe to push)
+    if config.vapid_private_key.is_empty() {
+        match push::generate_vapid_keys() {
+            Ok((private, public)) => {
+                tracing::info!(source = "push", "Generated VAPID key pair");
+                config.vapid_private_key = private;
+                config.vapid_public_key = public;
+                let _ = config::save_app_config(config.clone());
+            }
+            Err(e) => {
+                tracing::error!(source = "push", "Failed to generate VAPID keys: {e}");
+            }
+        }
+    }
 
     let (github_token, github_token_source) = crate::github_auth::resolve_token_with_source();
     if github_token.is_none() {

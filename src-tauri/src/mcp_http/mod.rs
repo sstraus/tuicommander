@@ -296,8 +296,8 @@ async fn plugin_data_http(
 /// No auth required — the public key is not secret.
 async fn push_vapid_key(State(state): State<Arc<AppState>>) -> Response {
     let config = state.config.read();
-    if !config.push_enabled || config.vapid_public_key.is_empty() {
-        return (StatusCode::NOT_FOUND, "Push not enabled").into_response();
+    if config.vapid_public_key.is_empty() {
+        return (StatusCode::NOT_FOUND, "VAPID keys not generated — restart the app").into_response();
     }
     Json(serde_json::json!({ "publicKey": config.vapid_public_key })).into_response()
 }
@@ -311,6 +311,14 @@ async fn push_subscribe(
         return (StatusCode::BAD_REQUEST, e).into_response();
     }
     state.push_store.upsert(sub);
+    // Auto-enable push on first subscription
+    {
+        let mut config = state.config.write();
+        if !config.push_enabled {
+            config.push_enabled = true;
+            let _ = crate::config::save_app_config(config.clone());
+        }
+    }
     StatusCode::CREATED.into_response()
 }
 
