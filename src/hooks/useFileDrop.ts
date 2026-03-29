@@ -42,51 +42,95 @@ function resolveRepoPaths(absolutePath: string): [repoPath: string, filePath: st
 export function useFileDrop() {
   const [isDragging, setIsDragging] = createSignal(false);
 
-  if (!isTauri()) return { isDragging };
+  if (isTauri()) {
+    const setup = getCurrentWebview().onDragDropEvent((event) => {
+      const { type } = event.payload;
 
-  const setup = getCurrentWebview().onDragDropEvent((event) => {
-    const { type } = event.payload;
+      if (type === "enter" || type === "over") {
+        setIsDragging(true);
+      } else if (type === "leave") {
+        setIsDragging(false);
+      } else if (type === "drop") {
+        setIsDragging(false);
 
-    if (type === "enter" || type === "over") {
+        const paths = event.payload.paths;
+        if (!paths?.length) return;
+
+        // If the active terminal has a PTY session, write paths there
+        // so running processes (Claude Code, etc.) can reference them.
+        const active = terminalsStore.getActive();
+        if (active?.sessionId && terminalsStore.state.activeId) {
+          const joined = paths.join(" ");
+          rpc("write_pty", { sessionId: active.sessionId, data: joined }).catch((err) => {
+            appLogger.error("terminal", "Failed to write dropped file paths", err);
+          });
+          return;
+        }
+
+        // No active PTY — open files in the appropriate tab
+        for (const absolutePath of paths) {
+          const [repoPath, filePath] = resolveRepoPaths(absolutePath);
+          const fileType = classifyDroppedFile(absolutePath);
+
+          if (fileType === "markdown") {
+            mdTabsStore.add(repoPath, filePath);
+          } else {
+            editorTabsStore.add(repoPath, filePath);
+          }
+        }
+
+        appLogger.info("app", `Opened ${paths.length} file(s) via drag & drop`);
+      }
+    });
+
+    onCleanup(() => {
+      setup.then((unlisten) => unlisten());
+    });
+  } else {
+    // Browser mode: HTML5 drag & drop (filenames only, no full paths)
+    const onDragOver = (e: DragEvent) => {
+      e.preventDefault();
       setIsDragging(true);
-    } else if (type === "leave") {
-      setIsDragging(false);
-    } else if (type === "drop") {
+    };
+    const onDragLeave = () => setIsDragging(false);
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault();
       setIsDragging(false);
 
-      const paths = event.payload.paths;
-      if (!paths?.length) return;
+      const files = e.dataTransfer?.files;
+      if (!files?.length) return;
 
-      // If the active terminal has a PTY session, write paths there
-      // so running processes (Claude Code, etc.) can reference them.
+      // Write filenames to active PTY if one exists
       const active = terminalsStore.getActive();
       if (active?.sessionId && terminalsStore.state.activeId) {
-        const joined = paths.join(" ");
-        rpc("write_pty", { sessionId: active.sessionId, data: joined }).catch((err) => {
-          appLogger.error("terminal", "Failed to write dropped file paths", err);
+        const names = Array.from(files).map((f) => f.name).join(" ");
+        rpc("write_pty", { sessionId: active.sessionId, data: names }).catch((err) => {
+          appLogger.error("terminal", "Failed to write dropped filenames", err);
         });
         return;
       }
 
-      // No active PTY — open files in the appropriate tab
-      for (const absolutePath of paths) {
-        const [repoPath, filePath] = resolveRepoPaths(absolutePath);
-        const fileType = classifyDroppedFile(absolutePath);
-
+      // No active PTY — open files in tabs by reading content
+      for (const file of Array.from(files)) {
+        const fileType = classifyDroppedFile(file.name);
         if (fileType === "markdown") {
-          mdTabsStore.add(repoPath, filePath);
+          mdTabsStore.add("", file.name);
         } else {
-          editorTabsStore.add(repoPath, filePath);
+          editorTabsStore.add("", file.name);
         }
       }
+      appLogger.info("app", `Opened ${files.length} file(s) via drag & drop (browser)`);
+    };
 
-      appLogger.info("app", `Opened ${paths.length} file(s) via drag & drop`);
-    }
-  });
-
-  onCleanup(() => {
-    setup.then((unlisten) => unlisten());
-  });
+    document.addEventListener("dragover", onDragOver);
+    document.addEventListener("dragleave", onDragLeave);
+    document.addEventListener("drop", onDrop);
+    onCleanup(() => {
+      document.removeEventListener("dragover", onDragOver);
+      document.removeEventListener("dragleave", onDragLeave);
+      document.removeEventListener("drop", onDrop);
+    });
+  }
 
   return { isDragging };
 }
