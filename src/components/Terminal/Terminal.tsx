@@ -239,6 +239,38 @@ export const Terminal: Component<TerminalProps> = (props) => {
     document.fonts.load(`16px "${fontName}"`);
 
 
+  // rAF write coalescing: accumulate PTY chunks and flush once per animation
+  // frame instead of calling terminal.write() per event. Reduces xterm render
+  // passes from hundreds/sec to ~60/sec during burst output.
+  let pendingRafData = "";
+  let rafScheduled = false;
+  let writeRafHandle = 0;
+
+  const flushPendingWrite = () => {
+    rafScheduled = false;
+    if (!terminal || !pendingRafData) return;
+
+    const data = pendingRafData;
+    const byteLen = data.length;
+    pendingRafData = "";
+
+    viewportLock.writeStart();
+    try {
+      terminal.write(data, () => {
+        viewportLock.writeEnd();
+        pendingWriteBytes -= byteLen;
+        if (isPaused && pendingWriteBytes < LOW_WATERMARK && sessionId) {
+          isPaused = false;
+          pty.resume(sessionId).catch((err) => appLogger.warn("terminal", "PTY resume failed", { error: String(err) }));
+        }
+      });
+    } catch (e) {
+      viewportLock.writeEnd();
+      pendingWriteBytes -= byteLen;
+      appLogger.warn("terminal", "terminal.write() threw", { error: String(e), sessionId });
+    }
+  };
+
   /** Process a chunk of PTY output — write to terminal or buffer if not ready */
   const handlePtyData = (rawData: string) => {
     if (terminal) {
@@ -248,8 +280,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
         pluginRegistry.processRawOutput(rawData, sessionId);
       }
 
-      const byteLen = rawData.length;
-      pendingWriteBytes += byteLen;
+      pendingWriteBytes += rawData.length;
+      pendingRafData += rawData;
 
       // Pause reader if we've accumulated too much unprocessed data
       if (!isPaused && pendingWriteBytes > HIGH_WATERMARK && sessionId) {
@@ -257,20 +289,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
         pty.pause(sessionId).catch((err) => appLogger.warn("terminal", "PTY pause failed", { error: String(err) }));
       }
 
-      viewportLock.writeStart();
-      try {
-        terminal.write(rawData, () => {
-          viewportLock.writeEnd();
-          pendingWriteBytes -= byteLen;
-          if (isPaused && pendingWriteBytes < LOW_WATERMARK && sessionId) {
-            isPaused = false;
-            pty.resume(sessionId).catch((err) => appLogger.warn("terminal", "PTY resume failed", { error: String(err) }));
-          }
-        });
-      } catch (e) {
-        viewportLock.writeEnd();
-        pendingWriteBytes -= byteLen;
-        appLogger.warn("terminal", "terminal.write() threw", { error: String(e), sessionId });
+      // Schedule flush on next animation frame (coalesces multiple chunks)
+      if (!rafScheduled) {
+        rafScheduled = true;
+        writeRafHandle = requestAnimationFrame(flushPendingWrite);
       }
     } else {
       // Buffer output until terminal.open() is called
@@ -1217,6 +1239,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
     clearTimeout(resizeObserverTimer);
     clearTimeout(retryTimer);
     clearInterval(atlasRebuildTimer);
+    if (writeRafHandle) cancelAnimationFrame(writeRafHandle);
+    // Flush any pending write data before unmount
+    if (pendingRafData && terminal) flushPendingWrite();
     resizeObserver?.disconnect();
     unsubscribePty?.();
     unlistenParsed?.();
