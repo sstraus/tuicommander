@@ -129,24 +129,28 @@
 
 .promptExpanded {
   border-top: 1px solid var(--border);
-  padding: 12px;
+  padding: 16px;
   background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
 .editorSection {
-  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.editorSection:last-child {
-  margin-bottom: 0;
+.editorRow {
+  display: flex;
+  gap: 16px;
 }
 
 .editorLabel {
   font-size: var(--font-sm);
   font-weight: 600;
   color: var(--fg-secondary);
-  margin-bottom: 6px;
-  display: block;
 }
 
 .editorInput {
@@ -192,7 +196,7 @@
 .placementGrid {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px 14px;
 }
 
 .placementCheck {
@@ -204,10 +208,120 @@
   cursor: pointer;
 }
 
+.autoExecLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-sm);
+  color: var(--fg-secondary);
+  cursor: pointer;
+  padding: 6px 0;
+}
+
+.fieldHint {
+  font-size: var(--font-2xs);
+  color: var(--fg-muted);
+  margin: 0;
+}
+
+/* Variable dropdown */
+
+.varDropdownWrap {
+  position: relative;
+}
+
+.varDropdownBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg-secondary);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.varDropdownBtn:hover {
+  border-color: var(--accent);
+  color: var(--fg-primary);
+}
+
+.varChevron {
+  font-size: 8px;
+  transition: transform 0.15s;
+}
+
+.varChevronOpen {
+  transform: rotate(180deg);
+}
+
+.varDropdownList {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  margin-top: 2px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-popup);
+  z-index: 10;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.varGroupLabel {
+  padding: 4px 10px 2px;
+  font-size: var(--font-2xs);
+  font-weight: 700;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--bg-secondary);
+  position: sticky;
+  top: 0;
+}
+
+.varItem {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 4px 10px;
+  background: none;
+  border: none;
+  color: var(--fg-primary);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.varItem:hover {
+  background: var(--bg-highlight);
+}
+
+.varName {
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  color: var(--accent);
+  flex-shrink: 0;
+  min-width: 120px;
+}
+
+.varDesc {
+  color: var(--fg-muted);
+  font-size: var(--font-xs);
+}
+
+/* Actions row */
+
 .editorActions {
   display: flex;
   gap: 8px;
-  margin-top: 12px;
   padding-top: 10px;
   border-top: 1px solid var(--border);
 }

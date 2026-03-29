@@ -8,5 +8,4 @@ export { AgentsTab } from "./AgentsTab";
 export { GitHubTab } from "./GitHubTab";
 export { RepoWorktreeTab } from "./RepoWorktreeTab";
 export { RepoScriptsTab } from "./RepoScriptsTab";
-export { SmartPromptsTab } from "./SmartPromptsTab";
 export type { RepoTabProps } from "./RepoWorktreeTab";

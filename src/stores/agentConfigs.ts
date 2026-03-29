@@ -5,6 +5,8 @@ import { appLogger } from "./appLogger";
 
 interface AgentConfigsState {
   agents: Record<string, { run_configs: AgentRunConfig[]; auto_retry_on_error?: boolean; headless_template?: string }>;
+  /** Which agent CLI to use for headless prompt execution (user-chosen in Settings) */
+  headless_agent: AgentType | null;
   loaded: boolean;
 }
 
@@ -16,13 +18,17 @@ function clone<T>(obj: T): T {
 function createAgentConfigsStore() {
   const [state, setState] = createStore<AgentConfigsState>({
     agents: {},
+    headless_agent: null,
     loaded: false,
   });
 
   /** Save full config to Rust. Logs and rethrows on failure so callers can surface errors. */
   async function saveToDisk(): Promise<void> {
     try {
-      const full: AgentsConfig = { agents: clone(state.agents) };
+      const full: AgentsConfig = {
+        agents: clone(state.agents),
+        headless_agent: state.headless_agent ?? undefined,
+      };
       await invoke("save_agents_config", { config: full });
     } catch (err) {
       appLogger.error("config", "Failed to save agent config to disk", err);
@@ -37,6 +43,7 @@ function createAgentConfigsStore() {
         const config = await invoke<AgentsConfig>("load_agents_config");
         setState(produce((s) => {
           s.agents = config.agents ?? {};
+          s.headless_agent = config.headless_agent ?? null;
           s.loaded = true;
         }));
       } catch (err) {
@@ -131,6 +138,21 @@ function createAgentConfigsStore() {
     /** Get the headless command template for an agent (user override or built-in default) */
     getHeadlessTemplate(type: AgentType): string | undefined {
       return state.agents[type]?.headless_template ?? AGENTS[type]?.defaultHeadlessTemplate;
+    },
+
+    /** Get the globally configured headless agent */
+    getHeadlessAgent(): AgentType | null {
+      return state.headless_agent;
+    },
+
+    /** Set the globally configured headless agent */
+    async setHeadlessAgent(type: AgentType | null): Promise<void> {
+      setState("headless_agent", type);
+      try {
+        await saveToDisk();
+      } catch (err) {
+        // saveToDisk already logged the error
+      }
     },
 
     /** Set the headless command template for an agent */

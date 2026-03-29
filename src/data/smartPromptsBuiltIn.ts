@@ -98,7 +98,7 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
     "Generate a conventional commit message from current changes",
     "sparkle",
     ["git-changes"],
-    "Generate a conventional commit message for these changes. Output ONLY the commit message, nothing else.\n\nChanged files:\n{changed_files}\n\nDiff:\n{diff}",
+    "You are a commit message generator. Output ONLY the raw commit message text — no explanation, no markdown, no code fences, no commentary. Use conventional commits format (type(scope): description). If there is a staged diff, base the message on staged changes only; otherwise use the full diff.\n\nChanged files:\n{changed_files}\n\nStaged diff:\n{staged_diff}\n\nFull diff:\n{diff}",
     ["git"],
     { executionMode: "headless", outputTarget: "commit-message" },
   ),

@@ -32,7 +32,7 @@
 
 .header h3 {
   margin: 0;
-  font-size: var(--font-lg);
+  font-size: var(--font-base);
   font-weight: 600;
 }
 
@@ -58,12 +58,12 @@
 
 .search input {
   width: 100%;
-  padding: 8px 12px;
+  padding: 6px 10px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   color: var(--fg-primary);
-  font-size: var(--font-base);
+  font-size: var(--font-sm);
   outline: none;
 }
 
@@ -79,12 +79,12 @@
 }
 
 .categoryBtn {
-  padding: 4px 12px;
+  padding: 3px 10px;
   background: var(--bg-tertiary);
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   color: var(--fg-secondary);
-  font-size: var(--font-md);
+  font-size: var(--font-sm);
   cursor: pointer;
 }
 
@@ -123,7 +123,7 @@
 .promptItem {
   display: flex;
   align-items: center;
-  padding: 10px 16px;
+  padding: 6px 12px;
   cursor: pointer;
   border-left: 3px solid transparent;
 }
@@ -143,12 +143,12 @@
 }
 
 .itemName {
-  font-size: var(--font-base);
+  font-size: var(--font-sm);
   font-weight: 500;
   color: var(--fg-primary);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .favoriteStar {
@@ -164,9 +164,9 @@
 }
 
 .itemDescription {
-  font-size: var(--font-sm);
+  font-size: var(--font-xs);
   color: var(--fg-muted);
-  margin-top: 2px;
+  margin-top: 1px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -188,9 +188,9 @@
   border: none;
   color: var(--fg-secondary);
   cursor: pointer;
-  padding: 4px 6px;
-  border-radius: var(--radius-md);
-  font-size: var(--font-md);
+  padding: 3px 5px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-sm);
 }
 
 .itemActions button:hover {
@@ -207,17 +207,17 @@
 }
 
 .footer button {
-  padding: 6px 12px;
+  padding: 4px 10px;
   background: var(--accent);
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   color: var(--text-on-accent);
-  font-size: var(--font-md);
+  font-size: var(--font-sm);
   cursor: pointer;
 }
 
 .hint {
-  font-size: var(--font-sm);
+  font-size: var(--font-xs);
   color: var(--fg-muted);
 }
 
@@ -242,8 +242,9 @@
 }
 
 .variableDialog h4 {
-  margin: 0 0 16px;
-  font-size: var(--font-lg);
+  margin: 0 0 12px;
+  font-size: var(--font-base);
+  font-weight: 600;
 }
 
 .variableInput {
@@ -252,8 +253,8 @@
 
 .variableInput label {
   display: block;
-  font-size: var(--font-md);
-  color: var(--fg-muted);
+  font-size: var(--font-sm);
+  color: var(--fg-secondary);
   margin-bottom: 4px;
 }
 
@@ -275,11 +276,11 @@
 
 .variableActions button {
   flex: 1;
-  padding: 8px 12px;
+  padding: 6px 12px;
   border: none;
   border-radius: var(--radius-md);
   cursor: pointer;
-  font-size: var(--font-md);
+  font-size: var(--font-sm);
 }
 
 .variableActions button:first-child {
@@ -328,13 +329,15 @@
 
 .editorField label {
   display: block;
-  font-size: var(--font-md);
-  color: var(--fg-muted);
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--fg-secondary);
   margin-bottom: 4px;
 }
 
 .editorField input,
-.editorField textarea {
+.editorField textarea,
+.editorField select {
   width: 100%;
   padding: 8px 12px;
   background: var(--bg-tertiary);
@@ -343,6 +346,7 @@
   color: var(--fg-primary);
   font-size: var(--font-base);
   font-family: inherit;
+  box-sizing: border-box;
 }
 
 .editorField textarea {
@@ -358,11 +362,11 @@
 }
 
 .editorActions button {
-  padding: 8px 16px;
+  padding: 6px 14px;
   border: none;
   border-radius: var(--radius-md);
   cursor: pointer;
-  font-size: var(--font-md);
+  font-size: var(--font-sm);
 }
 
 .editorActions button:first-child {
@@ -406,10 +410,16 @@
 
 /* Toggle row for auto-execute */
 .toggleRow {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
   cursor: pointer;
+}
+
+.toggleRow input {
+  width: auto;
+  flex-shrink: 0;
+  margin: 0 2px 0 0;
 }
 
 .fieldHint {
@@ -440,6 +450,43 @@
   letter-spacing: 0.03em;
 }
 
+/* Tag badges on prompt rows */
+.itemBadges {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 2px;
+}
+
+.tagBadge {
+  font-size: var(--font-2xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  line-height: 1.6;
+}
+
+.tagBadge[data-type="inject"] {
+  background: rgba(88, 166, 255, 0.15);
+  color: var(--accent);
+}
+
+.tagBadge[data-type="headless"] {
+  background: rgba(192, 132, 252, 0.15);
+  color: #c084fc;
+}
+
+.tagBadge[data-type="placement"] {
+  background: var(--bg-tertiary);
+  color: var(--fg-muted);
+}
+
+.tagBadge[data-type="builtin"] {
+  background: var(--bg-tertiary);
+  color: var(--fg-muted);
+}
+
 /* Disabled items */
 .itemDisabled {
   opacity: 0.45;
@@ -452,6 +499,109 @@
 
 .toggleOff {
   opacity: 0.4;
+}
+
+/* Side-by-side fields (execution mode + auto-execute) */
+.editorFieldRow {
+  display: flex;
+  gap: 16px;
+}
+
+.editorFieldRow > .editorField {
+  flex: 1;
+}
+
+/* Variable insertion dropdown */
+.varDropdownWrap {
+  position: relative;
+  margin-top: 4px;
+}
+
+.varDropdownBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg-secondary);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.varDropdownBtn:hover {
+  border-color: var(--accent);
+  color: var(--fg-primary);
+}
+
+.varChevron {
+  font-size: 8px;
+  transition: transform 0.15s;
+}
+
+.varChevronOpen {
+  transform: rotate(180deg);
+}
+
+.varDropdownList {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  margin-top: 2px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-popup);
+  z-index: 10;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.varGroupLabel {
+  padding: 4px 10px 2px;
+  font-size: var(--font-2xs);
+  font-weight: 700;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--bg-secondary);
+  position: sticky;
+  top: 0;
+}
+
+.varItem {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 4px 10px;
+  background: none;
+  border: none;
+  color: var(--fg-primary);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.varItem:hover {
+  background: var(--bg-highlight);
+}
+
+.varItemName {
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  color: var(--accent);
+  flex-shrink: 0;
+  min-width: 120px;
+}
+
+.varItemDesc {
+  color: var(--fg-muted);
+  font-size: var(--font-xs);
 }
 
 /* Variable dialog enhancements */

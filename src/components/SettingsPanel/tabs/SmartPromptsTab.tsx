@@ -1,6 +1,9 @@
-import { Component, For, Show, createSignal, createMemo } from "solid-js";
+import { Component, For, Show, createSignal, createMemo, onMount } from "solid-js";
 import { promptLibraryStore, type SavedPrompt, type SmartPlacement } from "../../../stores/promptLibrary";
 import { SMART_PROMPTS_BUILTIN } from "../../../data/smartPromptsBuiltIn";
+import { agentConfigsStore } from "../../../stores/agentConfigs";
+import { useAgentDetection } from "../../../hooks/useAgentDetection";
+import { AGENTS, type AgentType } from "../../../agents";
 import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
 import { ConfirmDialog } from "../../ConfirmDialog";
 import { KeyComboCapture } from "../../shared/KeyComboCapture";
@@ -21,6 +24,35 @@ type Category = (typeof CATEGORIES)[number];
 
 /** Built-in defaults indexed by ID for quick lookup */
 const BUILTIN_BY_ID = new Map(SMART_PROMPTS_BUILTIN.map((p) => [p.id, p]));
+
+/** Context variables available for smart prompt templates */
+interface VarDef { name: string; description: string; group: string }
+
+const CONTEXT_VARIABLES: VarDef[] = [
+  // Git
+  { name: "branch", description: "Current branch name", group: "Git" },
+  { name: "base_branch", description: "Base branch (main/master/develop)", group: "Git" },
+  { name: "diff", description: "Full working tree diff", group: "Git" },
+  { name: "staged_diff", description: "Staged changes diff", group: "Git" },
+  { name: "changed_files", description: "git status --short", group: "Git" },
+  { name: "commit_log", description: "Last 20 commits (oneline)", group: "Git" },
+  { name: "last_commit", description: "Last commit hash + subject", group: "Git" },
+  { name: "conflict_files", description: "Files with merge conflicts", group: "Git" },
+  { name: "stash_list", description: "Stash entries", group: "Git" },
+  { name: "repo_name", description: "Repository directory name", group: "Git" },
+  { name: "repo_path", description: "Full repository path", group: "Git" },
+  // GitHub
+  { name: "pr_number", description: "PR number for current branch", group: "GitHub" },
+  { name: "pr_title", description: "PR title", group: "GitHub" },
+  { name: "pr_url", description: "PR URL", group: "GitHub" },
+  { name: "pr_state", description: "open / closed / merged", group: "GitHub" },
+  { name: "merge_status", description: "Mergeable status", group: "GitHub" },
+  { name: "review_decision", description: "Review decision", group: "GitHub" },
+  { name: "pr_checks", description: "CI check summary", group: "GitHub" },
+  // Terminal
+  { name: "agent_type", description: "Detected agent (claude, codex...)", group: "Terminal" },
+  { name: "cwd", description: "Terminal working directory", group: "Terminal" },
+];
 
 /** Derive the category from a prompt's tags */
 function promptCategory(prompt: SavedPrompt): Category | "other" {
@@ -60,6 +92,60 @@ function groupByCategory(prompts: SavedPrompt[]): Map<string, SavedPrompt[]> {
 // Sub-components
 // ---------------------------------------------------------------------------
 
+/** Variable insertion dropdown */
+const VariableDropdown: Component<{
+  onInsert: (varName: string) => void;
+}> = (props) => {
+  const [open, setOpen] = createSignal(false);
+
+  // Group variables
+  const groups = createMemo(() => {
+    const map = new Map<string, VarDef[]>();
+    for (const v of CONTEXT_VARIABLES) {
+      const list = map.get(v.group) ?? [];
+      list.push(v);
+      map.set(v.group, list);
+    }
+    return map;
+  });
+
+  return (
+    <div class={sp.varDropdownWrap}>
+      <button
+        class={sp.varDropdownBtn}
+        onClick={() => setOpen(!open())}
+        type="button"
+      >
+        Insert variable...
+        <span class={sp.varChevron} classList={{ [sp.varChevronOpen]: open() }}>&#9660;</span>
+      </button>
+      <Show when={open()}>
+        <div class={sp.varDropdownList}>
+          <For each={Array.from(groups().entries())}>
+            {([group, vars]) => (
+              <>
+                <div class={sp.varGroupLabel}>{group}</div>
+                <For each={vars}>
+                  {(v) => (
+                    <button
+                      class={sp.varItem}
+                      type="button"
+                      onClick={() => { props.onInsert(v.name); setOpen(false); }}
+                    >
+                      <span class={sp.varName}>{`{${v.name}}`}</span>
+                      <span class={sp.varDesc}>{v.description}</span>
+                    </button>
+                  )}
+                </For>
+              </>
+            )}
+          </For>
+        </div>
+      </Show>
+    </div>
+  );
+};
+
 /** Inline editor shown when a prompt row is expanded */
 const PromptEditor: Component<{
   prompt: SavedPrompt;
@@ -68,6 +154,7 @@ const PromptEditor: Component<{
   const isBuiltIn = () => !!props.prompt.builtIn;
   const builtInDefault = () => BUILTIN_BY_ID.get(props.prompt.id);
   const dialogs = useConfirmDialog();
+  let textareaRef: HTMLTextAreaElement | undefined;
 
   const handleContentChange = (content: string) => {
     promptLibraryStore.updatePrompt(props.prompt.id, { content });
@@ -77,6 +164,10 @@ const PromptEditor: Component<{
     if (!isBuiltIn()) {
       promptLibraryStore.updatePrompt(props.prompt.id, { name });
     }
+  };
+
+  const handleDescriptionChange = (description: string) => {
+    promptLibraryStore.updatePrompt(props.prompt.id, { description });
   };
 
   const handlePlacementToggle = (placement: SmartPlacement) => {
@@ -115,6 +206,24 @@ const PromptEditor: Component<{
     }
   };
 
+  const handleInsertVariable = (varName: string) => {
+    const el = textareaRef;
+    if (!el) return;
+    const insertion = `{${varName}}`;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const before = el.value.slice(0, start);
+    const after = el.value.slice(end);
+    const newContent = before + insertion + after;
+    handleContentChange(newContent);
+    // Restore cursor position after insertion
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + insertion.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
   const isOverridden = () => {
     const def = builtInDefault();
     return def ? promptLibraryStore.isOverridden(props.prompt.id, def.content) : false;
@@ -124,7 +233,7 @@ const PromptEditor: Component<{
     <div class={sp.promptExpanded}>
       {/* Name */}
       <div class={sp.editorSection}>
-        <label class={sp.editorLabel}>Name</label>
+        <label class={sp.editorLabel}>Name *</label>
         <input
           class={sp.editorInput}
           type="text"
@@ -134,14 +243,28 @@ const PromptEditor: Component<{
         />
       </div>
 
-      {/* Content */}
+      {/* Description */}
       <div class={sp.editorSection}>
-        <label class={sp.editorLabel}>Content</label>
+        <label class={sp.editorLabel}>Description</label>
+        <input
+          class={sp.editorInput}
+          type="text"
+          value={props.prompt.description ?? ""}
+          onInput={(e) => handleDescriptionChange(e.currentTarget.value)}
+          placeholder="Short description of what this prompt does"
+        />
+      </div>
+
+      {/* Content + Variable dropdown */}
+      <div class={sp.editorSection}>
+        <label class={sp.editorLabel}>Content *</label>
         <textarea
           class={sp.editorTextarea}
           value={props.prompt.content}
           onInput={(e) => handleContentChange(e.currentTarget.value)}
+          ref={textareaRef}
         />
+        <VariableDropdown onInsert={handleInsertVariable} />
       </div>
 
       {/* Placement */}
@@ -163,22 +286,67 @@ const PromptEditor: Component<{
         </div>
       </div>
 
-      {/* Auto-execute toggle */}
-      <div class={sp.editorSection}>
-        <div class={s.toggle}>
-          <input
-            type="checkbox"
-            checked={props.prompt.autoExecute ?? false}
-            onChange={handleAutoExecuteToggle}
-          />
-          <span>Auto-execute</span>
+      {/* Execution Mode + Auto-execute row */}
+      <div class={sp.editorRow}>
+        <div class={sp.editorSection} style={{ flex: "1" }}>
+          <label class={sp.editorLabel}>Execution Mode</label>
+          <select
+            class={sp.editorInput}
+            value={props.prompt.executionMode ?? "inject"}
+            onChange={(e) => {
+              const mode = e.currentTarget.value as "inject" | "headless";
+              const update: Partial<SavedPrompt> = { executionMode: mode };
+              if (mode === "inject") update.outputTarget = undefined;
+              promptLibraryStore.updatePrompt(props.prompt.id, update);
+            }}
+          >
+            <option value="inject">Inject into terminal</option>
+            <option value="headless">Headless (one-shot CLI)</option>
+          </select>
         </div>
-        <p class={s.hint}>Run immediately without confirmation when triggered</p>
+
+        <Show when={(props.prompt.executionMode ?? "inject") === "inject"}>
+          <div class={sp.editorSection} style={{ flex: "1" }}>
+            <label class={sp.editorLabel}>Auto-execute</label>
+            <label class={sp.autoExecLabel}>
+              <input
+                type="checkbox"
+                checked={props.prompt.autoExecute ?? false}
+                onChange={handleAutoExecuteToggle}
+              />
+              <span>Send immediately</span>
+            </label>
+            <p class={sp.fieldHint}>Uncheck to review before sending</p>
+          </div>
+        </Show>
       </div>
+
+      {/* Output Target (headless only) */}
+      <Show when={(props.prompt.executionMode ?? "inject") === "headless"}>
+        <div class={sp.editorSection}>
+          <label class={sp.editorLabel}>Output Target</label>
+          <select
+            class={sp.editorInput}
+            value={props.prompt.outputTarget ?? ""}
+            onChange={(e) => {
+              const val = e.currentTarget.value || undefined;
+              promptLibraryStore.updatePrompt(props.prompt.id, {
+                outputTarget: val as SavedPrompt["outputTarget"],
+              });
+            }}
+          >
+            <option value="">None (return in result)</option>
+            <option value="commit-message">Commit message</option>
+            <option value="clipboard">Clipboard</option>
+            <option value="toast">Notification</option>
+            <option value="panel">Panel</option>
+          </select>
+        </div>
+      </Show>
 
       {/* Shortcut */}
       <div class={sp.editorSection}>
-        <label class={sp.editorLabel}>Shortcut</label>
+        <label class={sp.editorLabel}>Keyboard Shortcut</label>
         <KeyComboCapture
           value={props.prompt.shortcut ?? ""}
           onChange={handleShortcutChange}
@@ -298,7 +466,19 @@ const CategoryGroup: Component<{ category: string; prompts: SavedPrompt[] }> = (
 // ---------------------------------------------------------------------------
 
 export const SmartPromptsTab: Component = () => {
+  const detection = useAgentDetection();
   const groups = createMemo(() => groupByCategory(getAllSmartPrompts()));
+
+  onMount(() => {
+    detection.detectAll();
+  });
+
+  /** Agents that have a headless template and are installed on this machine */
+  const headlessAgents = createMemo(() =>
+    detection.getAvailable()
+      .filter((a) => a.type !== "git" && AGENTS[a.type]?.defaultHeadlessTemplate)
+      .map((a) => a.type),
+  );
 
   // Ordered categories, with "other" at the end if present
   const orderedCategories = () => {
@@ -332,6 +512,26 @@ export const SmartPromptsTab: Component = () => {
         AI-powered actions that can be triggered from the toolbar, context menus, and command palette.
         Enable, disable, or customize the prompt content and placement for each action.
       </p>
+
+      <div class={s.group}>
+        <label>Headless Agent</label>
+        <select
+          value={agentConfigsStore.getHeadlessAgent() ?? ""}
+          onChange={(e) => {
+            const val = e.currentTarget.value;
+            agentConfigsStore.setHeadlessAgent(val ? val as AgentType : null);
+          }}
+        >
+          <option value="">— Not configured —</option>
+          <For each={headlessAgents()}>
+            {(type) => <option value={type}>{AGENTS[type]?.name ?? type}</option>}
+          </For>
+        </select>
+        <p class={s.hint}>
+          Agent CLI used for headless prompts (e.g. generate commit message) when no agent is running in the active terminal.
+          {detection.loading() ? " Detecting..." : ""}
+        </p>
+      </div>
 
       <div class={sp.promptList}>
         <For each={orderedCategories()}>

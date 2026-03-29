@@ -234,12 +234,14 @@
 
 .formInput {
   flex: 1;
+  width: 100%;
   padding: 4px 8px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--fg-primary);
   font-size: var(--font-sm);
+  box-sizing: border-box;
 }
 
 .formInput:focus {

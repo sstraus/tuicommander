@@ -50,7 +50,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     name: "Claude Code",
     binary: "claude",
     description: "Anthropic's Claude Code CLI",
-    defaultHeadlessTemplate: "claude --print --output-format text -p \"{prompt}\"",
+    defaultHeadlessTemplate: "claude --print --output-format text --no-session-persistence --system-prompt \"Output only the raw requested text. No explanations, no markdown fences, no commentary.\" -p \"{prompt}\"",
     resumeCommand: "claude --continue",
     sessionDiscovery: { resumeWithId: (id) => `claude --resume ${id}` },
     spawnArgs: (prompt, options = {}) => {
@@ -370,6 +370,8 @@ export interface AgentSettingsConfig {
 /** Full agents config (matches Rust AgentsConfig) */
 export interface AgentsConfig {
   agents: Record<string, AgentSettingsConfig>;
+  /** Which agent CLI to use for headless prompt execution when no agent is in the active terminal */
+  headless_agent?: AgentType;
 }
 
 /** Which agents support MCP configuration */

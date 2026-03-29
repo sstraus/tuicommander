@@ -75,6 +75,7 @@ web-push-native = "0.4"
 base64ct = { version = "1", features = ["alloc"] }
 anyhow = "1"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+genai = "0.6.0-beta.11"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 console-subscriber = { version = "0.4", optional = true }

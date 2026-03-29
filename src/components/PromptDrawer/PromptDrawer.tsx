@@ -268,9 +268,15 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
                         <div class={s.itemName}>
                           {prompt.isFavorite && <span class={s.favoriteStar}><svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25z" /></svg></span>}
                           {prompt.name}
-                          <Show when={prompt.builtIn}>
-                            <span class={s.badge}>built-in</span>
-                          </Show>
+                          <span class={s.itemBadges}>
+                            <span class={s.tagBadge} data-type={prompt.executionMode ?? "inject"}>{prompt.executionMode ?? "inject"}</span>
+                            <Show when={prompt.builtIn}>
+                              <span class={s.tagBadge} data-type="builtin">built-in</span>
+                            </Show>
+                            <For each={prompt.placement ?? []}>
+                              {(p) => <span class={s.tagBadge} data-type="placement">{p}</span>}
+                            </For>
+                          </span>
                           {prompt.shortcut && <span class={s.shortcut}>{prompt.shortcut}</span>}
                         </div>
                         <Show when={prompt.description}>
@@ -383,6 +389,7 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
                   placement: promptData.placement,
                   autoExecute: promptData.autoExecute,
                   executionMode: promptData.executionMode,
+                  outputTarget: promptData.outputTarget,
                   enabled: true,
                 });
               }
@@ -411,6 +418,85 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
   );
 };
 
+/** Context variables available for smart prompt templates */
+interface VarDef { name: string; description: string; group: string }
+
+const CONTEXT_VARIABLES: VarDef[] = [
+  { name: "branch", description: "Current branch name", group: "Git" },
+  { name: "base_branch", description: "Base branch (main/master/develop)", group: "Git" },
+  { name: "diff", description: "Full working tree diff", group: "Git" },
+  { name: "staged_diff", description: "Staged changes diff", group: "Git" },
+  { name: "changed_files", description: "git status --short", group: "Git" },
+  { name: "commit_log", description: "Last 20 commits (oneline)", group: "Git" },
+  { name: "last_commit", description: "Last commit hash + subject", group: "Git" },
+  { name: "conflict_files", description: "Files with merge conflicts", group: "Git" },
+  { name: "stash_list", description: "Stash entries", group: "Git" },
+  { name: "repo_name", description: "Repository directory name", group: "Git" },
+  { name: "repo_path", description: "Full repository path", group: "Git" },
+  { name: "pr_number", description: "PR number for current branch", group: "GitHub" },
+  { name: "pr_title", description: "PR title", group: "GitHub" },
+  { name: "pr_url", description: "PR URL", group: "GitHub" },
+  { name: "pr_state", description: "open / closed / merged", group: "GitHub" },
+  { name: "merge_status", description: "Mergeable status", group: "GitHub" },
+  { name: "review_decision", description: "Review decision", group: "GitHub" },
+  { name: "pr_checks", description: "CI check summary", group: "GitHub" },
+  { name: "agent_type", description: "Detected agent (claude, codex...)", group: "Terminal" },
+  { name: "cwd", description: "Terminal working directory", group: "Terminal" },
+];
+
+/** Variable insertion dropdown */
+const VariableDropdown: Component<{
+  onInsert: (varName: string) => void;
+}> = (props) => {
+  const [open, setOpen] = createSignal(false);
+
+  const groups = () => {
+    const map = new Map<string, VarDef[]>();
+    for (const v of CONTEXT_VARIABLES) {
+      const list = map.get(v.group) ?? [];
+      list.push(v);
+      map.set(v.group, list);
+    }
+    return map;
+  };
+
+  return (
+    <div class={s.varDropdownWrap}>
+      <button
+        class={s.varDropdownBtn}
+        onClick={() => setOpen(!open())}
+        type="button"
+      >
+        Insert variable...
+        <span class={s.varChevron} classList={{ [s.varChevronOpen]: open() }}>&#9660;</span>
+      </button>
+      <Show when={open()}>
+        <div class={s.varDropdownList}>
+          <For each={Array.from(groups().entries())}>
+            {([group, vars]) => (
+              <>
+                <div class={s.varGroupLabel}>{group}</div>
+                <For each={vars}>
+                  {(v) => (
+                    <button
+                      class={s.varItem}
+                      type="button"
+                      onClick={() => { props.onInsert(v.name); setOpen(false); }}
+                    >
+                      <span class={s.varItemName}>{`{${v.name}}`}</span>
+                      <span class={s.varItemDesc}>{v.description}</span>
+                    </button>
+                  )}
+                </For>
+              </>
+            )}
+          </For>
+        </div>
+      </Show>
+    </div>
+  );
+};
+
 /** Full-featured prompt editor dialog */
 interface PromptEditorProps {
   prompt: SavedPrompt | null;
@@ -421,6 +507,7 @@ interface PromptEditorProps {
 const PromptEditor: Component<PromptEditorProps> = (props) => {
   const isBuiltIn = () => !!props.prompt?.builtIn;
   const builtInDefault = () => props.prompt ? BUILTIN_BY_ID.get(props.prompt.id) : undefined;
+  let textareaRef: HTMLTextAreaElement | undefined;
 
   const [name, setName] = createSignal(props.prompt?.name || "");
   const [description, setDescription] = createSignal(props.prompt?.description || "");
@@ -428,6 +515,8 @@ const PromptEditor: Component<PromptEditorProps> = (props) => {
   const [shortcut, setShortcut] = createSignal(props.prompt?.shortcut || "");
   const [placement, setPlacement] = createSignal<SmartPlacement[]>(props.prompt?.placement ?? []);
   const [autoExecute, setAutoExecute] = createSignal(props.prompt?.autoExecute ?? false);
+  const [executionMode, setExecutionMode] = createSignal<"inject" | "headless">(props.prompt?.executionMode ?? "inject");
+  const [outputTarget, setOutputTarget] = createSignal<SavedPrompt["outputTarget"]>(props.prompt?.outputTarget);
   const [validationError, setValidationError] = createSignal<string | null>(null);
 
   const isOverridden = () => {
@@ -443,6 +532,8 @@ const PromptEditor: Component<PromptEditorProps> = (props) => {
       setDescription(def.description ?? "");
       setPlacement(def.placement ?? []);
       setAutoExecute(def.autoExecute ?? false);
+      setExecutionMode(def.executionMode ?? "inject");
+      setOutputTarget(def.outputTarget);
     }
   };
 
@@ -450,6 +541,22 @@ const PromptEditor: Component<PromptEditorProps> = (props) => {
     setPlacement((prev) =>
       prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p],
     );
+  };
+
+  const handleInsertVariable = (varName: string) => {
+    const el = textareaRef;
+    if (!el) return;
+    const insertion = `{${varName}}`;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const before = el.value.slice(0, start);
+    const after = el.value.slice(end);
+    setContent(before + insertion + after);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + insertion.length;
+      el.setSelectionRange(pos, pos);
+    });
   };
 
   const handleSave = () => {
@@ -466,6 +573,8 @@ const PromptEditor: Component<PromptEditorProps> = (props) => {
       shortcut: shortcut().trim() || undefined,
       placement: placement().length > 0 ? placement() : undefined,
       autoExecute: autoExecute(),
+      executionMode: executionMode(),
+      outputTarget: executionMode() === "headless" ? outputTarget() : undefined,
     });
   };
 
@@ -483,6 +592,7 @@ const PromptEditor: Component<PromptEditorProps> = (props) => {
           <p class={s.validationError}>{validationError()}</p>
         </Show>
 
+        {/* Name */}
         <div class={s.editorField}>
           <label>Name *</label>
           <input
@@ -495,6 +605,7 @@ const PromptEditor: Component<PromptEditorProps> = (props) => {
           />
         </div>
 
+        {/* Description */}
         <div class={s.editorField}>
           <label>Description</label>
           <input
@@ -505,16 +616,20 @@ const PromptEditor: Component<PromptEditorProps> = (props) => {
           />
         </div>
 
+        {/* Content + Variable dropdown */}
         <div class={s.editorField}>
-          <label>Content * (use {"{variable}"} for context variables)</label>
+          <label>Content *</label>
           <textarea
+            ref={textareaRef}
             value={content()}
             onInput={(e) => setContent(e.currentTarget.value)}
             placeholder="Enter your prompt text here..."
             rows={6}
           />
+          <VariableDropdown onInsert={handleInsertVariable} />
         </div>
 
+        {/* Placement */}
         <div class={s.editorField}>
           <label>Placement</label>
           <div class={s.placementGrid}>
@@ -533,18 +648,60 @@ const PromptEditor: Component<PromptEditorProps> = (props) => {
           </div>
         </div>
 
-        <div class={s.editorField}>
-          <label class={s.toggleRow}>
-            <input
-              type="checkbox"
-              checked={autoExecute()}
-              onChange={() => setAutoExecute(!autoExecute())}
-            />
-            <span>Auto-execute</span>
-          </label>
-          <span class={s.fieldHint}>Run immediately without confirmation when triggered</span>
+        {/* Execution Mode + Auto-execute */}
+        <div class={s.editorFieldRow}>
+          <div class={s.editorField}>
+            <label>Execution Mode</label>
+            <select
+              value={executionMode()}
+              onChange={(e) => {
+                const mode = e.currentTarget.value as "inject" | "headless";
+                setExecutionMode(mode);
+                if (mode === "inject") setOutputTarget(undefined);
+              }}
+            >
+              <option value="inject">Inject into terminal</option>
+              <option value="headless">Headless (one-shot CLI)</option>
+            </select>
+          </div>
+
+          <Show when={executionMode() === "inject"}>
+            <div class={s.editorField}>
+              <label>Auto-execute</label>
+              <label class={s.toggleRow}>
+                <input
+                  type="checkbox"
+                  checked={autoExecute()}
+                  onChange={() => setAutoExecute(!autoExecute())}
+                />
+                <span>Send immediately</span>
+              </label>
+              <span class={s.fieldHint}>Uncheck to review before sending</span>
+            </div>
+          </Show>
         </div>
 
+        {/* Output Target (headless only) */}
+        <Show when={executionMode() === "headless"}>
+          <div class={s.editorField}>
+            <label>Output Target</label>
+            <select
+              value={outputTarget() ?? ""}
+              onChange={(e) => {
+                const val = e.currentTarget.value || undefined;
+                setOutputTarget(val as SavedPrompt["outputTarget"]);
+              }}
+            >
+              <option value="">None (return in result)</option>
+              <option value="commit-message">Commit message</option>
+              <option value="clipboard">Clipboard</option>
+              <option value="toast">Notification</option>
+              <option value="panel">Panel</option>
+            </select>
+          </div>
+        </Show>
+
+        {/* Shortcut */}
         <div class={s.editorField}>
           <label>Keyboard Shortcut</label>
           <KeyComboCapture
@@ -554,6 +711,7 @@ const PromptEditor: Component<PromptEditorProps> = (props) => {
           />
         </div>
 
+        {/* Actions */}
         <div class={s.editorActions}>
           <Show when={isBuiltIn() && isOverridden()}>
             <button class={s.resetBtn} onClick={handleReset}>Reset to Default</button>

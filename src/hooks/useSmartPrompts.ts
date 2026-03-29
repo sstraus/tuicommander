@@ -24,16 +24,13 @@ export function useSmartPrompts() {
 
     if (prompt.executionMode === "headless") {
       if (!isTauri()) {
-        // In PWA mode, headless falls back to inject — check inject requirements
         return canExecuteInject(prompt);
       }
-      // If a headless template is configured, the prompt can run without an active agent
-      const active = terminalsStore.getActive();
-      const agentType = active?.agentType;
-      const template = agentType ? agentConfigsStore.getHeadlessTemplate(agentType) : undefined;
-      if (template) return { ok: true };
-      // No template — execution will fall back to inject, so check inject requirements
-      return canExecuteInject(prompt);
+      const agentType = agentConfigsStore.getHeadlessAgent();
+      if (!agentType) return { ok: false, reason: "No headless agent configured — set one in Settings → Agents" };
+      const template = agentConfigsStore.getHeadlessTemplate(agentType);
+      if (!template) return { ok: false, reason: `No headless template for ${agentType}` };
+      return { ok: true };
     }
 
     return canExecuteInject(prompt);
@@ -143,12 +140,10 @@ export function useSmartPrompts() {
   }
 
   async function executeHeadless(prompt: SavedPrompt, content: string): Promise<SmartPromptResult> {
-    const active = terminalsStore.getActive();
-    const agentType = active?.agentType;
+    const agentType = agentConfigsStore.getHeadlessAgent();
     const template = agentType ? agentConfigsStore.getHeadlessTemplate(agentType) : undefined;
     if (!template) {
-      // No template configured — fall back to inject
-      return executeInject(prompt, content);
+      return { ok: false, reason: "No headless agent configured — set one in Settings → Agents" };
     }
 
     // Pass prompt content via stdin to avoid shell injection.
@@ -156,6 +151,7 @@ export function useSmartPrompts() {
     // so the backend reads content from stdin instead of interpolating into sh -c.
     const commandLine = template.replace("{prompt}", "");
 
+    const active = terminalsStore.getActive();
     const repoPath = active?.cwd ?? repositoriesStore.getActive()?.path ?? "";
     try {
       const output = await invoke<string>("execute_headless_prompt", {

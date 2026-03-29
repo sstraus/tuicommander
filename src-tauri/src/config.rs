@@ -842,6 +842,10 @@ pub(crate) struct AgentSettings {
 pub(crate) struct AgentsConfig {
     #[serde(default)]
     pub(crate) agents: HashMap<String, AgentSettings>,
+    /// Which agent CLI to use for headless (one-shot) prompt execution when no
+    /// agent is running in the active terminal. Chosen by the user in Settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) headless_agent: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

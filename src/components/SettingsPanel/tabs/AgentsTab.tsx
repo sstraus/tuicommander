@@ -409,6 +409,26 @@ export const AgentsTab: Component = () => {
         <p class={s.hint}>Display actionable suggestions from agents after completing a task</p>
       </div>
 
+      <div class={s.group}>
+        <label>Headless Agent</label>
+        <select
+          value={agentConfigsStore.getHeadlessAgent() ?? ""}
+          onChange={(e) => {
+            const val = e.currentTarget.value;
+            agentConfigsStore.setHeadlessAgent(val ? val as AgentType : null);
+          }}
+        >
+          <option value="">— Not configured —</option>
+          <For each={AGENT_TYPES.filter((t) => detection.isAvailable(t) && AGENTS[t]?.defaultHeadlessTemplate)}>
+            {(type) => <option value={type}>{AGENTS[type]?.name ?? type}</option>}
+          </For>
+        </select>
+        <p class={s.hint}>
+          Agent CLI for headless prompts (e.g. generate commit message) when no agent is in the active terminal
+          {detection.loading() ? " — detecting..." : ""}
+        </p>
+      </div>
+
       <div class={a.agentList}>
         <For each={AGENT_TYPES}>
           {(type) => (
