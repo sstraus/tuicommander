@@ -193,4 +193,47 @@ describe("agentConfigsStore", () => {
       });
     });
   });
+
+  describe("headless agent", () => {
+    it("defaults to null", async () => {
+      await createRoot(async (dispose) => {
+        await hydrateWith({ agents: {} });
+        expect(store.getHeadlessAgent()).toBeNull();
+        dispose();
+      });
+    });
+
+    it("persists headless_agent from config", async () => {
+      await createRoot(async (dispose) => {
+        await hydrateWith({ agents: {}, headless_agent: "claude" });
+        expect(store.getHeadlessAgent()).toBe("claude");
+        dispose();
+      });
+    });
+
+    it("can be set to 'api' for External API mode", async () => {
+      await createRoot(async (dispose) => {
+        await hydrateWith({ agents: {} });
+        store.setHeadlessAgent("api");
+        expect(store.getHeadlessAgent()).toBe("api");
+        dispose();
+      });
+    });
+
+    it("saves when headless agent changes", async () => {
+      await createRoot(async (dispose) => {
+        await hydrateWith({ agents: {} });
+        mockInvoke.mockClear();
+        store.setHeadlessAgent("api");
+        // setHeadlessAgent triggers a save
+        expect(mockInvoke).toHaveBeenCalledWith(
+          "save_agents_config",
+          expect.objectContaining({
+            config: expect.objectContaining({ headless_agent: "api" }),
+          }),
+        );
+        dispose();
+      });
+    });
+  });
 });

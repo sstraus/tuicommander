@@ -2,7 +2,6 @@ import { Component, For, Show, createSignal, onMount } from "solid-js";
 import { AGENTS, AGENT_DISPLAY, MCP_SUPPORT, type AgentType, type AgentRunConfig } from "../../../agents";
 import { appLogger } from "../../../stores/appLogger";
 import { agentConfigsStore, llmApiStore } from "../../../stores/agentConfigs";
-import { promptLibraryStore } from "../../../stores/promptLibrary";
 import { useAgentDetection, type AgentAvailability } from "../../../hooks/useAgentDetection";
 import { invoke } from "../../../invoke";
 import { settingsStore } from "../../../stores/settings";
@@ -420,21 +419,24 @@ export const AgentsTab: Component = () => {
           }}
         >
           <option value="">— Not configured —</option>
-          <For each={AGENT_TYPES.filter((t) => detection.isAvailable(t) && AGENTS[t]?.defaultHeadlessTemplate)}>
+          <For each={AGENT_TYPES.filter((t) => t !== "api" && detection.isAvailable(t) && AGENTS[t]?.defaultHeadlessTemplate)}>
             {(type) => <option value={type}>{AGENTS[type]?.name ?? type}</option>}
           </For>
+          <option value="api">External API</option>
         </select>
         <p class={s.hint}>
-          Agent CLI for headless prompts (e.g. generate commit message) when no agent is in the active terminal
+          Agent CLI for headless prompts, or External API for direct LLM calls
           {detection.loading() ? " — detecting..." : ""}
         </p>
       </div>
 
-      {/* LLM API Configuration */}
-      <LlmApiSection />
+      {/* LLM API Configuration — visible only when headless agent is set to External API */}
+      <Show when={agentConfigsStore.getHeadlessAgent() === "api"}>
+        <LlmApiSection />
+      </Show>
 
       <div class={a.agentList}>
-        <For each={AGENT_TYPES}>
+        <For each={AGENT_TYPES.filter((t) => t !== "api")}>
           {(type) => (
             <AgentRow
               agentType={type}
@@ -520,13 +522,7 @@ const LlmApiSection: Component = () => {
     }
   };
 
-  const hasApiPrompts = () => {
-    const prompts = promptLibraryStore.getAllPrompts();
-    return prompts.some((p) => p.executionMode === "api");
-  };
-
   return (
-    <Show when={hasApiPrompts() || config().provider}>
       <div class={s.section} style={{ "border-top": "1px solid var(--border)", "padding-top": "20px", "margin-top": "20px" }}>
         <h3>LLM API</h3>
         <p class={s.hint} style={{ "margin-top": "-12px", "margin-bottom": "16px" }}>Direct LLM API for Smart Prompts in "API" execution mode</p>
@@ -618,6 +614,5 @@ const LlmApiSection: Component = () => {
           </Show>
         </div>
       </div>
-    </Show>
   );
 };

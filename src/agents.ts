@@ -1,8 +1,8 @@
 /** Supported agent types */
-export type AgentType = "claude" | "gemini" | "opencode" | "aider" | "codex" | "amp" | "cursor" | "warp" | "droid" | "git";
+export type AgentType = "claude" | "gemini" | "opencode" | "aider" | "codex" | "amp" | "cursor" | "warp" | "droid" | "git" | "api";
 
 /** Runtime array for validating backend strings against AgentType */
-export const AGENT_TYPES: readonly AgentType[] = ["claude", "gemini", "opencode", "aider", "codex", "amp", "cursor", "warp", "droid", "git"] as const;
+export const AGENT_TYPES: readonly AgentType[] = ["claude", "gemini", "opencode", "aider", "codex", "amp", "cursor", "warp", "droid", "git", "api"] as const;
 
 /** Session discovery config for agents that persist sessions as local files */
 export interface SessionDiscoveryConfig {
@@ -349,6 +349,23 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
       prompt: [],
     },
   },
+  api: {
+    type: "api",
+    name: "External API",
+    binary: "",
+    description: "Direct LLM API calls (no agent CLI needed)",
+    defaultHeadlessTemplate: "",
+    resumeCommand: null,
+    sessionDiscovery: null,
+    spawnArgs: () => [],
+    outputFormat: "text",
+    detectPatterns: {
+      rateLimit: [],
+      completion: [],
+      error: [],
+      prompt: [],
+    },
+  },
 };
 
 /** Run configuration for an agent (matches Rust AgentRunConfig) */
@@ -386,6 +403,7 @@ export const MCP_SUPPORT: Record<AgentType, boolean> = {
   warp: false,
   droid: false,
   git: false,
+  api: false,
 };
 
 /** Agent display info for UI */
@@ -400,5 +418,6 @@ export const AGENT_DISPLAY: Record<AgentType, { icon: string; color: string }> =
   warp: { icon: "W", color: "#01a4ff" },
   droid: { icon: "D", color: "#f97316" },
   git: { icon: "G", color: "#f05032" },
+  api: { icon: "⚡", color: "#06b6d4" },
 };
 

@@ -29,6 +29,7 @@ const AGENT_BINARIES: Record<AgentType, string> = {
   warp: "oz",
   droid: "droid",
   git: "git",
+  api: "",  // Not a binary — LLM API is always "available"
 };
 
 /** Agent detection hook */

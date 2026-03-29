@@ -29,6 +29,11 @@ export function useSmartPrompts() {
     if (prompt.executionMode === "headless") {
       const agentType = agentConfigsStore.getHeadlessAgent();
       if (!agentType) return { ok: false, reason: "No headless agent configured — set one in Settings → Agents" };
+      // When headless agent is "api", validate API config instead of CLI template
+      if (agentType === "api") {
+        if (!llmApiStore.isConfigured()) return { ok: false, reason: "LLM API not configured — set provider, model, and API key in Settings → Agents" };
+        return { ok: true };
+      }
       const template = agentConfigsStore.getHeadlessTemplate(agentType);
       if (!template) return { ok: false, reason: `No headless template for ${agentType}` };
       return { ok: true };
@@ -98,7 +103,11 @@ export function useSmartPrompts() {
       return check;
     }
 
-    const effectiveMode = prompt.executionMode ?? "inject";
+    // If prompt is headless but the configured headless agent is "api", upgrade to API mode
+    const rawMode = prompt.executionMode ?? "inject";
+    const effectiveMode = rawMode === "headless" && agentConfigsStore.getHeadlessAgent() === "api"
+      ? "api"
+      : rawMode;
 
     // Resolve variables
     const activeRepo = repositoriesStore.getActive();
