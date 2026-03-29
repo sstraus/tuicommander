@@ -1,7 +1,49 @@
+website/blog/performance.html
+  6454956346f1ce37 1-136
+website/blog/remote-mobile.html
+  6454956346f1ce37 1-131
+website/blog/dictation.html
+  6454956346f1ce37 1-105
+website/blog.html
+  6454956346f1ce37 1-150
+website/blog/smart-prompts.html
+  6454956346f1ce37 1-127
+website/style.css
+  6454956346f1ce37 777-934
+website/blog/terminal-power.html
+  6454956346f1ce37 1-133
+website/blog/integrated-viewers.html
+  6454956346f1ce37 1-119
+website/blog/index.json
+  6454956346f1ce37 4-39,42,46-91
+website/blog/agent-observability.html
+  6454956346f1ce37 1-121
+website/blog/claude-usage.html
+  6454956346f1ce37 1-108
+website/index.html
+  6454956346f1ce37 51
+website/blog/sidebar-workspace.html
+  6454956346f1ce37 1-109
+website/blog/plugin-system.html
+  6454956346f1ce37 1-118
 ---
 {
   "schema_version": "authorship/3.0.0",
   "git_ai_version": "1.1.22",
   "base_commit_sha": "305affb6957c9349d357461512f953aca0f3f02e",
-  "prompts": {}
+  "prompts": {
+    "6454956346f1ce37": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ab59fc80-7f72-44a3-b685-55b5b4e6bd70",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 686,
+      "total_deletions": 1,
+      "accepted_lines": 1599,
+      "overriden_lines": 0
+    }
+  }
 }
