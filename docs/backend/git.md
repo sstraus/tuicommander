@@ -4,6 +4,14 @@
 
 All git operations are performed by shelling out to the `git` CLI via the unified `git_cli` module. The `git_cli::git_cmd(path)` builder provides consistent error handling, binary resolution, and credential prompt suppression across all callsites.
 
+## Async Execution & Caching
+
+All Tauri git commands are `async` and run git subprocesses inside `tokio::task::spawn_blocking`. This prevents blocking Tokio worker threads during I/O-heavy operations like `git diff`, `git log`, or `git fetch`.
+
+Git data is cached with a 60s TTL. The `repo_watcher` (FSEvents on macOS, inotify on Linux) calls `invalidate_repo_caches()` on file system changes, so git data refreshes immediately instead of waiting for TTL expiry. The 60s TTL serves as a safety net for missed watcher events. Most IPC calls for git data hit the cache (~0.2ms) instead of spawning a git subprocess (~20-30ms).
+
+Internal callers that need synchronous access use `_impl` suffixes (e.g. `get_diff_stats_impl`) to avoid double `spawn_blocking` nesting.
+
 ## Subprocess Helper (`git_cli.rs`)
 
 Every git subprocess invocation goes through `git_cmd(cwd: &Path) -> GitCmd`. The builder provides three execution modes:
@@ -33,7 +41,7 @@ Every git subprocess invocation goes through `git_cmd(cwd: &Path) -> GitCmd`. Th
 |---------|-----------|-------------|
 | `get_git_diff` | `(path: String) -> String` | Full git diff (staged + unstaged) |
 | `get_diff_stats` | `(path: String) -> DiffStats` | Addition/deletion counts |
-| `get_changed_files` | `(path: String) -> Vec<ChangedFile>` | List changed files with per-file stats |
+| `get_changed_files` | `(path: String) -> Vec<ChangedFile>` | List changed files with per-file stats (single subprocess call) |
 | `get_file_diff` | `(path: String, file: String) -> String` | Diff for a single file |
 
 ### Repository Summary
@@ -51,6 +59,9 @@ The frontend uses `get_repo_structure` (Phase 1) and `get_repo_diff_stats` (Phas
 | Command | Signature | Description |
 |---------|-----------|-------------|
 | `rename_branch` | `(path, old_name, new_name) -> ()` | Rename a branch |
+| `update_from_base` | `(path, branch) -> String` | Fetch base ref (if remote) and rebase branch onto it |
+| `get_branch_base` | `(path, branch) -> Option<String>` | Read stored base ref from `git config branch.<name>.tuicommander-base` |
+| `git_apply_reverse_patch` | `(path, patch) -> ()` | Apply a reverse patch for hunk/line-level restore |
 
 ## Data Types
 

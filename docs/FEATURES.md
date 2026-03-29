@@ -1373,3 +1373,47 @@ TUICommander aggregates upstream MCP servers and exposes them through its own `/
 - Stdio: command must be non-empty
 - All errors collected (not just first) and returned to caller
 - Respects sound toggle from Settings screen
+
+## 20. Performance
+
+### 20.1 PTY Write Coalescing
+- Terminal writes accumulated per animation frame via `requestAnimationFrame` (~60 flushes/sec)
+- High-throughput agent output (hundreds of events/sec) batched into single `terminal.write()` calls
+- Reduces xterm.js render passes and WebGL texture uploads during burst output
+- Flow control (pause/resume at HIGH_WATERMARK) unchanged
+
+### 20.2 Async Git Commands
+- All ~25 Tauri git commands run inside `tokio::task::spawn_blocking`
+- Prevents git subprocess calls from blocking Tokio worker threads
+- `get_changed_files` merged from 2 sequential subprocesses to 1
+
+### 20.3 Watcher-Driven Git Cache
+- `repo_watcher` (FSEvents/inotify) invalidates git caches on file system changes
+- Cache hit ~0.2ms vs git subprocess ~20-30ms
+- 60s TTL as safety net for missed watcher events
+
+### 20.4 Process Name via Syscall
+- `proc_pidpath` (macOS) / `/proc/pid/comm` (Linux) replaces `ps` fork
+- Eliminates ~100 fork+exec/min with 5 terminals open
+
+### 20.5 MCP Concurrent Tool Calls
+- `HttpMcpClient` uses `RwLock` instead of `Mutex`
+- Tool calls use read lock (concurrent); only reconnect takes write lock
+
+### 20.6 Serialization
+- PTY parsed events serialized once with `serde_json::to_value`
+- Reused for both Tauri IPC emit and event bus broadcast (was serialized twice)
+
+### 20.7 Frontend Bundle Splitting
+- Vite `manualChunks`: xterm, codemirror, diff-view, markdown as separate chunks
+- SettingsPanel, ActivityDashboard, HelpPanel lazy-loaded with `lazy()` + `Suspense`
+- PTY read buffer increased from 4KB to 64KB for natural batching
+
+### 20.8 Conditional Timers
+- StatusBar 1s timer only active when merged PR countdown or rate limit is displayed
+- ActivityDashboard snapshot signal uses default equality check (no forced re-render every 10s)
+
+### 20.9 Profiling Infrastructure
+- Scripts in `scripts/perf/`: IPC latency, PTY throughput, CPU recording, Tokio console, memory snapshots
+- `tokio-console` feature flag for async task inspection
+- See `docs/guides/profiling.md`

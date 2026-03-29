@@ -25,12 +25,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Notification Bell Enhancements** — CI recovery ("CI Passed") notifications, background git operation results, worktree creation events. Empty state shows "No notifications" instead of 1px dropdown.
 - **TCP Port Retry** — MCP HTTP server tries up to 3 adjacent ports when the configured port is busy, with clear error message on failure.
+- **Base Branch Tracking** — Branches store a base ref in git config (`tuicommander-base`), showing ahead/behind relative to base in sidebar. "Update from base (rebase)" in context menu. Inline branch create form includes a base ref selector with grouped Local/Remote refs. Auto-fetches remote refs before creation
+- **Edit File Button** — Diff tab toolbar includes "Edit file" button to open the file in the default editor
+- **OSC 8 File Links** — Terminal `file://` URIs from OSC 8 hyperlinks now open in the system file opener
+- **Tailscale Recheck** — Settings > Services tab includes a "Recheck" button for Tailscale HTTPS status
+- **Profiling Infrastructure** — Scripts in `scripts/perf/` for IPC latency, PTY throughput, CPU recording, Tokio console, and memory snapshots. See `docs/guides/profiling.md`
+
+### Changed
+- **PTY write coalescing** — Terminal writes are accumulated per animation frame via `requestAnimationFrame` (~60/sec) instead of calling `terminal.write()` for every PTY event (hundreds/sec during burst output). Reduces xterm.js render passes and WebGL texture uploads
+- **Async git commands** — All ~25 git commands converted to async with `tokio::task::spawn_blocking`, preventing git subprocess calls from blocking Tokio worker threads. `get_changed_files` merged from 2 sequential subprocesses to 1
+- **Watcher-driven git cache** — `repo_watcher` invalidates git caches immediately on file system changes instead of relying on 5s TTL. TTL raised to 60s as safety net for missed watcher events. Most IPC calls hit cache (~0.2ms) instead of spawning git (~20-30ms)
+- **Process name via syscall** — `proc_pidpath` (macOS) / `/proc/pid/comm` (Linux) replaces `ps` fork for terminal process detection. Eliminates ~100 fork+exec/min with 5 terminals open
+- **MCP RwLock** — MCP upstream `HttpMcpClient` uses `RwLock` instead of `Mutex`. Tool calls use read lock (concurrent); only reconnect takes write lock
+- **Double serialization eliminated** — PTY parsed events serialized once with `serde_json::to_value`, reused for both Tauri IPC emit and event bus broadcast
+- **PTY read buffer** — Increased from 4KB to 64KB for natural batching of burst output, reducing IPC events during high-throughput agent output
+- **Bundle splitting** — Vite `manualChunks` splits xterm, codemirror, diff-view, markdown into separate chunks. Lazy-load SettingsPanel, ActivityDashboard, HelpPanel with `lazy()` + `Suspense`
+- **Conditional StatusBar timer** — 1s timer only runs when merged PR or rate limit is active, eliminating ~60 signal writes/min during normal operation
+- **ActivityDashboard reactivity** — Removed `{ equals: false }` from snapshot signal; SolidJS default equality check prevents unnecessary `<For>` diffs every 10s
+- **SmartButtonStrip** — Extracted as reusable split button component with dropdown, spinner, click-outside, error callbacks, last-used memory. Integrated in git-changes, git-branches, pr-popover
 
 ### Fixed
 - **Browser mode parsed events** — Structured events (suggest, status-line, rate-limit, question, progress, etc.) now work in browser/remote mode via WebSocket, not just Tauri desktop.
 - **Stale suggestion chips** — Follow-up suggestions no longer reappear from buffer re-scans during resize/tab-switch; requires agent idle state.
 - **Git spawn error diagnostics** — "Spawn failed" errors now include the working directory path in the log message for easier debugging.
 - **MCP upstream URL overflow** — Long URLs in the Services tab no longer push action buttons off-screen; URLs now truncate with ellipsis
+- **Stale worktree pruning** — `get_worktree_paths` now runs `git worktree prune` before listing and skips entries whose directory no longer exists on disk
+- **Commit textarea auto-expand** — Textarea grows with content using `scrollHeight`, switches to scrollable when exceeding max-height
+- **Agent polling race** — Fixed `useAgentPolling` early return that prevented interval creation when sessionId was set after terminal add. Added 3-poll debounce before clearing agent status
+- **False idle from silence timer** — Chrome-chunk arrivals no longer reset the silence timer, preventing false idle transitions during streaming output
+- **Tailscale cert fallback** — Falls back to CLI cert provisioning on macOS App Store builds where Local API is unavailable
+- **rustls CryptoProvider** — Explicitly install `ring` CryptoProvider at startup to prevent "no process-level CryptoProvider" panic
 
 ## [0.9.7] - 2026-03-26
 

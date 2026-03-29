@@ -67,14 +67,15 @@ spawn_reader_thread(reader, paused, session_id, app, state)
 
 **Processing pipeline per read:**
 
-1. Read raw bytes from PTY master (up to 8KB buffer)
+1. Read raw bytes from PTY master (up to 64KB buffer for natural burst batching)
 2. Strip Kitty keyboard protocol sequences (non-printable noise for consumers)
 3. Push through `Utf8ReadBuffer` — accumulates bytes until valid UTF-8 boundary, returns safe string
 4. Push through `EscapeAwareBuffer` — holds incomplete ANSI escape sequences (CSI, OSC, etc.)
 5. Feed into `VtLogBuffer` for VT100-aware log extraction (mobile/MCP consumers)
 6. Write to `OutputRingBuffer` (64KB circular buffer for MCP access)
-7. Broadcast to WebSocket clients (if any connected)
-8. Emit Tauri event `pty-output` with `{session_id, data}`
+7. Serialize parsed events once with `serde_json::to_value` — reused for both Tauri IPC and event bus (avoids double serialization)
+8. Broadcast to WebSocket clients (if any connected)
+9. Emit Tauri event `pty-output` with `{session_id, data}`
 
 **Pause behavior:** When `paused` flag is set (`AtomicBool`), the reader thread sleeps for 50ms instead of reading. This prevents output flooding during background operations.
 
@@ -83,6 +84,10 @@ spawn_reader_thread(reader, paused, session_id, app, state)
 2. Emits `pty-exit` event with exit code
 3. Removes session from `AppState.sessions`
 4. Updates metrics (decrement `active_sessions`)
+
+### Frontend Write Coalescing
+
+The frontend accumulates `pty-output` events and flushes them to `terminal.write()` once per animation frame via `requestAnimationFrame` (~60/sec). During high-throughput output (agent file writes, `find`, build logs), hundreds of events/sec are batched into a single xterm.js render pass, reducing WebGL texture uploads and layout recalculations. Flow control (pause/resume at HIGH_WATERMARK) and plugin dispatch remain per-chunk.
 
 ### Headless Reader Thread
 

@@ -397,6 +397,25 @@ Features to test when TUICommander is more usable.
 - [ ] Settings > Services shows Tailscale status section
 - [ ] Cookie gets Secure flag when accessed over HTTPS
 
+## Base Branch Tracking
+- [ ] Create branch with base ref selector → base stored in git config
+- [ ] Sidebar shows yellow ⇣N badge when branch is behind base
+- [ ] Badge tooltip shows base branch name
+- [ ] Right-click branch → "Update from base (rebase)" fetches and rebases
+- [ ] Remote base ref auto-fetched before branch creation
+
+## Performance
+- [ ] High-throughput output (e.g. `find /`) → terminal stays responsive (rAF coalescing)
+- [ ] Edit a file in repo → git panel updates immediately (watcher-driven cache, not 5s delay)
+- [ ] 5+ terminals open → no visible lag from process name polling (syscall, not ps fork)
+- [ ] Multiple concurrent MCP tool calls → no serialization bottleneck (RwLock)
+
+## Diff Tab Toolbar
+- [ ] "Edit file" button opens file in default editor
+
+## OSC 8 File Links
+- [ ] Terminal file:// URIs from hyperlinks open in system file opener
+
 ## PWA Push Notifications
 - [ ] Mobile Settings shows "Push notifications" toggle
 - [ ] Enable push → browser prompts for permission → subscription stored
