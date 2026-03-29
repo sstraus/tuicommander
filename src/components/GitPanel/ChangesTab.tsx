@@ -362,20 +362,20 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 
     if (unstagedPaths.length > 0) {
       const count = unstagedPaths.length;
-      items.push({ label: count > 1 ? `Stage ${count} files` : "Stage", action: () => {
-        if (!sel.has(key)) setSelectedKeys(new Set([key]));
+      items.push({ label: count > 1 ? `Stage ${count} files` : "Stage", shortcut: "Space", action: () => {
+        if (!sel.has(key)) setSelectedKeys(new Set<string>([key]));
         stageSelected();
       }});
     }
     if (stagedPaths.length > 0) {
       const count = stagedPaths.length;
-      items.push({ label: count > 1 ? `Unstage ${count} files` : "Unstage", action: () => {
-        if (!sel.has(key)) setSelectedKeys(new Set([key]));
+      items.push({ label: count > 1 ? `Unstage ${count} files` : "Unstage", shortcut: "Space", action: () => {
+        if (!sel.has(key)) setSelectedKeys(new Set<string>([key]));
         unstageSelected();
       }});
     }
     if (isDiffStatus(file.status)) {
-      items.push({ label: "View Diff", action: () => openDiff(file, section) });
+      items.push({ label: "View Diff", shortcut: "Enter", action: () => openDiff(file, section) });
     }
     if (unstagedPaths.length > 0) {
       const trackable = unstagedPaths.filter((k) => {
@@ -385,8 +385,8 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
       });
       if (trackable.length > 0) {
         items.push({ separator: true, label: "", action: () => {} });
-        items.push({ label: trackable.length > 1 ? `Discard ${trackable.length} files` : "Discard changes", action: () => {
-          if (!sel.has(key)) setSelectedKeys(new Set([key]));
+        items.push({ label: trackable.length > 1 ? `Discard ${trackable.length} files` : "Discard changes", shortcut: "⌫", action: () => {
+          if (!sel.has(key)) setSelectedKeys(new Set<string>([key]));
           if (trackable.length === 1) {
             setConfirmDiscard(unstaged().find((f) => f.path === trackable[0].slice("unstaged:".length)) ?? null);
           } else {

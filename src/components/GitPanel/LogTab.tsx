@@ -259,7 +259,7 @@ export const LogTab: Component<LogTabProps> = (props) => {
   }
 
   return (
-    <div class={s.container} onKeyDown={handleListKeyDown} tabIndex={-1}>
+    <div class={s.container} onKeyDown={handleListKeyDown} onContextMenu={(e) => e.preventDefault()} tabIndex={-1}>
       {/* Graph canvas overlays the scroll container from outside the scroll flow */}
       <Show when={!loading() && graphNodes().length > 0}>
         <CommitGraph

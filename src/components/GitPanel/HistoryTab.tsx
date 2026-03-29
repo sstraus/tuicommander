@@ -112,7 +112,7 @@ export const HistoryTab: Component<HistoryTabProps> = (props) => {
   );
 
   return (
-    <div class={s.container}>
+    <div class={s.container} onContextMenu={(e) => e.preventDefault()}>
       {/* File header */}
       <Show when={props.filePath}>
         <div class={s.fileHeader}>
