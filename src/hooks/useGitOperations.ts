@@ -564,6 +564,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
           ratios,
           activePaneIndex: 0,
         });
+      } else {
+        // No saved split — reset to single pane to prevent previous branch's split from persisting
+        terminalsStore.setLayout({ direction: "none", panes: restoredIds.length > 0 ? [restoredIds[0].id] : [], ratios: [], activePaneIndex: 0 });
       }
 
       // Second pass: verify resume commands in parallel (non-blocking)
@@ -583,10 +586,12 @@ export function useGitOperations(deps: GitOperationsDeps) {
       }
     } else if (!branch?.hadTerminals) {
       // First time selecting this branch — auto-spawn a terminal
+      terminalsStore.setLayout({ direction: "none", panes: [], ratios: [], activePaneIndex: 0 });
       await handleAddTerminalToBranch(repoPath, branchName);
     } else {
       // hadTerminals && no valid terminals → user closed them all, show empty state.
-      // Clear activeId so the previous branch's terminal doesn't bleed through.
+      // Clear layout and activeId so the previous branch's split doesn't bleed through.
+      terminalsStore.setLayout({ direction: "none", panes: [], ratios: [], activePaneIndex: 0 });
       terminalsStore.setActive(null);
     }
 

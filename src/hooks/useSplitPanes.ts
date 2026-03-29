@@ -30,6 +30,15 @@ export function useSplitPanes() {
     }
 
     terminalsStore.setActive(newId);
+
+    // Force re-fit ALL panes after CSS flex layout settles.
+    // Without this, the new pane's fit() runs before flex ratios take effect,
+    // resulting in wrong column counts (terminal shows ~5 cols instead of ~40).
+    setTimeout(() => {
+      for (const paneId of terminalsStore.state.layout.panes) {
+        terminalsStore.get(paneId)?.ref?.fit();
+      }
+    }, 150);
   };
 
   const resetLayout = () => {
