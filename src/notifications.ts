@@ -1,5 +1,6 @@
 import { appLogger } from "./stores/appLogger";
 import { invoke } from "./invoke";
+import { isTauri } from "./transport";
 
 /** Notification sound types */
 export type NotificationSound = "question" | "error" | "completion" | "warning" | "info";
@@ -55,10 +56,14 @@ export class NotificationManager {
     this.lastPlayTime.set(sound, now);
 
     try {
-      await invoke("play_notification_sound", {
-        sound,
-        volume: this.config.volume,
-      });
+      if (isTauri()) {
+        await invoke("play_notification_sound", {
+          sound,
+          volume: this.config.volume,
+        });
+      } else {
+        playWebAudioTone(sound, this.config.volume);
+      }
       this.consecutiveFailures = 0;
     } catch (err) {
       this.consecutiveFailures++;
@@ -100,6 +105,39 @@ export class NotificationManager {
   isAvailable(): boolean {
     return true;
   }
+}
+
+// Web Audio API fallback for browser mode — simple tones per sound type
+const TONE_FREQS: Record<NotificationSound, number[]> = {
+  question: [880, 1100],     // ascending two-tone
+  error: [440, 330],         // descending two-tone
+  completion: [660, 880],    // ascending two-tone
+  warning: [550, 440],       // descending two-tone
+  info: [660],               // single tone
+};
+
+let webAudioCtx: AudioContext | null = null;
+
+function playWebAudioTone(sound: NotificationSound, volume: number): void {
+  if (!webAudioCtx) {
+    webAudioCtx = new AudioContext();
+  }
+  const ctx = webAudioCtx;
+  if (ctx.state === "suspended") ctx.resume();
+
+  const freqs = TONE_FREQS[sound] ?? [660];
+  const gain = ctx.createGain();
+  gain.gain.value = volume * 0.3; // Gentle volume
+  gain.connect(ctx.destination);
+
+  freqs.forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.value = freq;
+    osc.connect(gain);
+    osc.start(ctx.currentTime + i * 0.15);
+    osc.stop(ctx.currentTime + i * 0.15 + 0.12);
+  });
 }
 
 /** Global notification manager instance */

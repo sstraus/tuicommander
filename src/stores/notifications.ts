@@ -145,11 +145,14 @@ function createNotificationsStore() {
     async incrementBadge(): Promise<void> {
       const newCount = state.badgeCount + 1;
       setState("badgeCount", newCount);
-      if (!isTauri()) return;
       try {
-        await getCurrentWindow().setBadgeCount(newCount);
+        if (isTauri()) {
+          await getCurrentWindow().setBadgeCount(newCount);
+        } else if ("setAppBadge" in navigator) {
+          await (navigator as Navigator & { setAppBadge: (n: number) => Promise<void> }).setAppBadge(newCount);
+        }
       } catch {
-        // setBadgeCount may not be supported on all platforms
+        // Badge API may not be supported on all platforms
       }
     },
 
@@ -157,11 +160,14 @@ function createNotificationsStore() {
     async clearBadge(): Promise<void> {
       if (state.badgeCount === 0) return;
       setState("badgeCount", 0);
-      if (!isTauri()) return;
       try {
-        await getCurrentWindow().setBadgeCount(0);
+        if (isTauri()) {
+          await getCurrentWindow().setBadgeCount(0);
+        } else if ("clearAppBadge" in navigator) {
+          await (navigator as Navigator & { clearAppBadge: () => Promise<void> }).clearAppBadge();
+        }
       } catch {
-        // setBadgeCount may not be supported on all platforms
+        // Badge API may not be supported on all platforms
       }
     },
 
