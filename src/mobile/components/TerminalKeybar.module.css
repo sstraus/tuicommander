@@ -47,6 +47,11 @@
   font-size: 16px;
 }
 
+.sending {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 .divider {
   width: 1px;
   align-self: stretch;

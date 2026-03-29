@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import { rpc } from "../../transport";
 import { appLogger } from "../../stores/appLogger";
 import { retryWrite } from "../utils/retryWrite";
@@ -51,13 +51,20 @@ function getConfirmKeys(agentType?: string | null, questionConfident?: boolean):
 }
 
 export function TerminalKeybar(props: TerminalKeybarProps) {
+  const [sending, setSending] = createSignal(false);
+
   async function send(seq: string, autoEnter?: boolean) {
     const data = autoEnter ? seq + "\r" : seq;
+    const label = seq.length <= 3 ? JSON.stringify(seq) : `${seq.length}b`;
+    appLogger.debug("terminal", `TerminalKeybar send: ${label} to ${props.sessionId}`);
+    setSending(true);
     try {
       await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       appLogger.error("network", `Key send failed after retries: ${msg}`);
+    } finally {
+      setSending(false);
     }
   }
 
@@ -77,6 +84,8 @@ export function TerminalKeybar(props: TerminalKeybarProps) {
         <For each={confirmKeys()}>{(k) => (
           <button
             class={`${styles.key} ${styles.confirm}`}
+            classList={{ [styles.sending]: sending() }}
+            disabled={sending()}
             onClick={() => send(k.seq, k.autoEnter)}
           >
             {k.label}
