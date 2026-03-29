@@ -124,6 +124,27 @@ fn truncate(s: String, max: usize) -> String {
 }
 
 /// Detect the base branch by checking which of main/master/develop exists locally.
+/// Parse owner and slug from a git remote URL.
+/// Handles SSH (git@github.com:owner/repo.git) and HTTPS (https://github.com/owner/repo.git).
+fn parse_remote_owner_slug(url: &str) -> Option<(String, String)> {
+    let path = if let Some(rest) = url.strip_prefix("git@") {
+        // git@github.com:owner/repo.git → owner/repo.git
+        rest.split_once(':').map(|(_, p)| p)?
+    } else {
+        // https://github.com/owner/repo.git → /owner/repo.git (after host)
+        let without_scheme = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://"))?;
+        // Skip the host: github.com/owner/repo.git
+        let after_host = without_scheme.find('/').map(|i| &without_scheme[i + 1..])?;
+        after_host
+    };
+    let path = path.trim_end_matches(".git").trim_end_matches('/');
+    let mut parts = path.splitn(2, '/');
+    let owner = parts.next()?.to_string();
+    let slug = parts.next()?.to_string();
+    if owner.is_empty() || slug.is_empty() { return None; }
+    Some((owner, slug))
+}
+
 fn detect_base_branch(repo_path: &str) -> Option<String> {
     let output = git_output(repo_path, &["branch", "--list", "main", "master", "develop"])?;
     // Each line is like "  main" or "* main"; pick first in priority order.
@@ -156,6 +177,8 @@ pub(crate) async fn resolve_context_variables(repo_path: String) -> Result<HashM
             ("last_commit", vec!["log", "-1", "--format=%H %s"], false),
             ("conflict_files", vec!["diff", "--name-only", "--diff-filter=U"], false),
             ("stash_list", vec!["stash", "list"], false),
+            ("remote_url", vec!["config", "--get", "remote.origin.url"], false),
+            ("current_user", vec!["config", "user.name"], false),
         ];
 
         // Run all git commands in parallel using std threads
@@ -187,7 +210,31 @@ pub(crate) async fn resolve_context_variables(repo_path: String) -> Result<HashM
         {
             vars.insert("repo_name".to_string(), name.to_string());
         }
-        vars.insert("repo_path".to_string(), repo_path);
+        vars.insert("repo_path".to_string(), repo_path.clone());
+
+        // Derive repo_owner and repo_slug from remote_url
+        if let Some(url) = vars.get("remote_url") {
+            if let Some((owner, slug)) = parse_remote_owner_slug(url) {
+                vars.insert("repo_owner".to_string(), owner);
+                vars.insert("repo_slug".to_string(), slug);
+            }
+        }
+
+        // Derive dirty_files_count from changed_files
+        if let Some(changed) = vars.get("changed_files") {
+            let count = changed.lines().filter(|l| !l.is_empty()).count();
+            vars.insert("dirty_files_count".to_string(), count.to_string());
+        }
+
+        // Branch status (ahead/behind remote)
+        if let Some(status) = git_output(&repo_path, &["rev-list", "--left-right", "--count", "@{upstream}...HEAD"]) {
+            let parts: Vec<&str> = status.split_whitespace().collect();
+            if parts.len() == 2 {
+                let behind = parts[0];
+                let ahead = parts[1];
+                vars.insert("branch_status".to_string(), format!("{ahead} ahead, {behind} behind"));
+            }
+        }
 
         vars
     })
@@ -325,9 +372,9 @@ mod tests {
 
     // --- resolve_context_variables tests ---
 
-    #[test]
-    fn resolve_context_variables_non_git_path() {
-        let vars = resolve_context_variables("/tmp".to_string());
+    #[tokio::test]
+    async fn resolve_context_variables_non_git_path() {
+        let vars = resolve_context_variables("/tmp".to_string()).await.unwrap();
         // Should return empty or near-empty map, no panic
         assert!(
             vars.get("branch").is_none() || !vars.get("branch").unwrap().is_empty()

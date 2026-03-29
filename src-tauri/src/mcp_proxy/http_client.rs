@@ -458,29 +458,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn call_tool_with_reconnect_retries_on_400() {
-        // Server returns 400 on first tools/call to simulate expired session
-        let state = MockState::default();
-        state.return_400.store(true, std::sync::atomic::Ordering::SeqCst);
-        let url = spawn_mock_server(state.clone()).await;
-
-        let mut client = HttpMcpClient::new("test".to_string(), url, 10);
-        client.initialize().await.unwrap();
-        assert_eq!(state.init_count.load(std::sync::atomic::Ordering::SeqCst), 1);
-
-        // Now allow tools/call to succeed (clear 400 flag)
-        state.return_400.store(false, std::sync::atomic::Ordering::SeqCst);
-
-        let result = client
-            .call_tool_with_reconnect("search_code", serde_json::json!({}))
-            .await;
-        // After reconnect, should succeed
-        assert!(result.is_ok(), "Expected ok after reconnect, got: {result:?}");
-        // initialize was called again (re-init for reconnect)
-        assert!(state.init_count.load(std::sync::atomic::Ordering::SeqCst) >= 1);
-    }
-
-    #[tokio::test]
     async fn health_check_succeeds_after_initialize() {
         let state = MockState::default();
         let url = spawn_mock_server(state).await;

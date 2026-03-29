@@ -33,6 +33,7 @@ pub(crate) mod plugin_http;
 pub(crate) mod plugins;
 pub(crate) mod prompt;
 pub(crate) mod smart_prompt;
+pub(crate) mod llm_api;
 pub(crate) mod registry;
 pub(crate) mod pty;
 pub(crate) mod relay_client;
@@ -120,6 +121,22 @@ fn save_config(state: State<'_, Arc<AppState>>, config: config::AppConfig) -> Re
         || old.ipv6_enabled != config.ipv6_enabled;
 
     let tools_changed = old.disabled_native_tools != config.disabled_native_tools;
+
+    // Auto-generate VAPID keys when push is first enabled
+    let mut config = config;
+    if config.push_enabled && config.vapid_private_key.is_empty() {
+        match push::generate_vapid_keys() {
+            Ok((private, public)) => {
+                tracing::info!(source = "push", "Generated VAPID key pair");
+                config.vapid_private_key = private;
+                config.vapid_public_key = public;
+            }
+            Err(e) => {
+                tracing::error!(source = "push", "Failed to generate VAPID keys: {e}");
+                config.push_enabled = false;
+            }
+        }
+    }
 
     config::save_app_config(config.clone())?;  // clone goes to disk
     *state.config.write() = config;             // move original into state
@@ -1039,6 +1056,13 @@ pub fn run() {
             prompt::process_prompt_content,
             prompt::resolve_context_variables,
             smart_prompt::execute_headless_prompt,
+            llm_api::load_llm_api_config,
+            llm_api::save_llm_api_config,
+            llm_api::has_llm_api_key,
+            llm_api::save_llm_api_key,
+            llm_api::delete_llm_api_key,
+            llm_api::execute_api_prompt,
+            llm_api::test_llm_api,
             head_watcher::start_head_watcher,
             head_watcher::stop_head_watcher,
             repo_watcher::start_repo_watcher,

@@ -2717,8 +2717,8 @@ mod tests {
         assert!(detect_default_branch(&tmp).is_none());
     }
 
-    #[test]
-    fn get_file_diff_rejects_path_traversal() {
+    #[tokio::test]
+    async fn get_file_diff_rejects_path_traversal() {
         // Use this repo's own path as a valid git repo
         let repo_path = std::env::current_dir().unwrap();
         let result = get_file_diff(
@@ -2726,7 +2726,7 @@ mod tests {
             "../../etc/passwd".to_string(),
             None,
             None,
-        );
+        ).await;
         let err = result.unwrap_err();
         assert!(
             err.contains("outside repository") || err.contains("Failed to resolve"),
@@ -2963,7 +2963,7 @@ mod tests {
     async fn stage_files_adds_to_index() {
         let (_dir, path) = setup_test_repo_with_commit();
         std::fs::write(path.join("new.txt"), "content").expect("write");
-        let result = git_stage_files(path.to_string_lossy().to_string(), vec!["new.txt".to_string()]);
+        let result = git_stage_files(path.to_string_lossy().to_string(), vec!["new.txt".to_string()]).await;
         assert!(result.is_ok());
         // Verify it's staged
         let status = get_working_tree_status(path.to_string_lossy().to_string()).await.unwrap();
@@ -2975,7 +2975,7 @@ mod tests {
         let (_dir, path) = setup_test_repo_with_commit();
         std::fs::write(path.join("staged.txt"), "content").expect("write");
         std::process::Command::new("git").current_dir(&path).args(["add", "staged.txt"]).output().expect("add");
-        let result = git_unstage_files(path.to_string_lossy().to_string(), vec!["staged.txt".to_string()]);
+        let result = git_unstage_files(path.to_string_lossy().to_string(), vec!["staged.txt".to_string()]).await;
         assert!(result.is_ok());
         // Verify it's no longer staged (should be untracked now)
         let status = get_working_tree_status(path.to_string_lossy().to_string()).await.unwrap();
@@ -2983,68 +2983,68 @@ mod tests {
         assert!(status.untracked.contains(&"staged.txt".to_string()), "staged.txt should be untracked");
     }
 
-    #[test]
-    fn discard_files_restores_working_tree() {
+    #[tokio::test]
+    async fn discard_files_restores_working_tree() {
         let (_dir, path) = setup_test_repo_with_commit();
         // Modify the initial file
         std::fs::write(path.join("initial.txt"), "modified").expect("write");
-        let result = git_discard_files(path.to_string_lossy().to_string(), vec!["initial.txt".to_string()]);
+        let result = git_discard_files(path.to_string_lossy().to_string(), vec!["initial.txt".to_string()]).await;
         assert!(result.is_ok());
         // Content should be restored
         let content = std::fs::read_to_string(path.join("initial.txt")).expect("read");
         assert_eq!(content, "hello");
     }
 
-    #[test]
-    fn stage_files_rejects_path_traversal() {
+    #[tokio::test]
+    async fn stage_files_rejects_path_traversal() {
         let (_dir, path) = setup_test_repo_with_commit();
-        let result = git_stage_files(path.to_string_lossy().to_string(), vec!["../../etc/passwd".to_string()]);
+        let result = git_stage_files(path.to_string_lossy().to_string(), vec!["../../etc/passwd".to_string()]).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("outside repository"));
     }
 
-    #[test]
-    fn unstage_files_rejects_path_traversal() {
+    #[tokio::test]
+    async fn unstage_files_rejects_path_traversal() {
         let (_dir, path) = setup_test_repo_with_commit();
-        let result = git_unstage_files(path.to_string_lossy().to_string(), vec!["../../etc/passwd".to_string()]);
+        let result = git_unstage_files(path.to_string_lossy().to_string(), vec!["../../etc/passwd".to_string()]).await;
         assert!(result.is_err());
     }
 
-    #[test]
-    fn discard_files_rejects_path_traversal() {
+    #[tokio::test]
+    async fn discard_files_rejects_path_traversal() {
         let (_dir, path) = setup_test_repo_with_commit();
-        let result = git_discard_files(path.to_string_lossy().to_string(), vec!["../../etc/passwd".to_string()]);
+        let result = git_discard_files(path.to_string_lossy().to_string(), vec!["../../etc/passwd".to_string()]).await;
         assert!(result.is_err());
     }
 
     // --- git_commit tests ---
 
-    #[test]
-    fn git_commit_creates_commit_and_returns_hash() {
+    #[tokio::test]
+    async fn git_commit_creates_commit_and_returns_hash() {
         let (_dir, path) = setup_test_repo_with_commit();
         std::fs::write(path.join("commit_test.txt"), "data").expect("write");
         std::process::Command::new("git").current_dir(&path).args(["add", "commit_test.txt"]).output().expect("add");
-        let result = git_commit(path.to_string_lossy().to_string(), "test commit".to_string(), None);
+        let result = git_commit(path.to_string_lossy().to_string(), "test commit".to_string(), None).await;
         assert!(result.is_ok());
         let hash = result.unwrap();
         assert_eq!(hash.len(), 40, "should return full 40-char SHA");
         assert!(hash.chars().all(|c| c.is_ascii_hexdigit()), "hash should be hex");
     }
 
-    #[test]
-    fn git_commit_amend_works() {
+    #[tokio::test]
+    async fn git_commit_amend_works() {
         let (_dir, path) = setup_test_repo_with_commit();
-        let result = git_commit(path.to_string_lossy().to_string(), "amended message".to_string(), Some(true));
+        let result = git_commit(path.to_string_lossy().to_string(), "amended message".to_string(), Some(true)).await;
         assert!(result.is_ok());
         // Verify the commit message changed
         let out = git_cmd(&path).args(["log", "--format=%s", "-1"]).run().unwrap();
         assert_eq!(out.stdout.trim(), "amended message");
     }
 
-    #[test]
-    fn git_commit_fails_with_nothing_staged() {
+    #[tokio::test]
+    async fn git_commit_fails_with_nothing_staged() {
         let (_dir, path) = setup_test_repo_with_commit();
-        let result = git_commit(path.to_string_lossy().to_string(), "empty commit".to_string(), None);
+        let result = git_commit(path.to_string_lossy().to_string(), "empty commit".to_string(), None).await;
         assert!(result.is_err(), "commit with nothing staged should fail");
     }
 
@@ -3219,17 +3219,17 @@ mod tests {
 
     // --- get_stash_list tests ---
 
-    #[test]
-    fn get_stash_list_real_repo_does_not_error() {
+    #[tokio::test]
+    async fn get_stash_list_real_repo_does_not_error() {
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-        let result = get_stash_list(repo.to_string_lossy().to_string());
+        let result = get_stash_list(repo.to_string_lossy().to_string()).await;
         // Should succeed regardless of whether there are stashes
         assert!(result.is_ok(), "get_stash_list should not error on a real repo");
     }
 
-    #[test]
-    fn get_stash_list_nonexistent_repo_returns_empty() {
-        let result = get_stash_list("/nonexistent/repo".to_string());
+    #[tokio::test]
+    async fn get_stash_list_nonexistent_repo_returns_empty() {
+        let result = get_stash_list("/nonexistent/repo".to_string()).await;
         // run_silent returns None for non-git dir, so we get empty vec
         assert_eq!(result.unwrap(), vec![]);
     }
@@ -3874,8 +3874,8 @@ filename test.txt
 
     // --- Tests for git_apply_reverse_patch ---
 
-    #[test]
-    fn apply_reverse_patch_reverts_working_tree_hunk() {
+    #[tokio::test]
+    async fn apply_reverse_patch_reverts_working_tree_hunk() {
         let (_dir, path) = setup_test_repo_with_commit();
         // Write a multi-line file and commit it
         std::fs::write(path.join("multi.txt"), "line1\nline2\nline3\n").expect("write");
@@ -3893,7 +3893,7 @@ filename test.txt
         assert!(!patch.is_empty(), "diff should produce output");
 
         // Apply the reverse patch to revert the hunk
-        let result = git_apply_reverse_patch(path.to_string_lossy().to_string(), patch, None);
+        let result = git_apply_reverse_patch(path.to_string_lossy().to_string(), patch, None).await;
         assert!(result.is_ok(), "reverse patch should succeed: {:?}", result.err());
 
         // Verify file is restored to committed state
@@ -3901,8 +3901,8 @@ filename test.txt
         assert_eq!(content, "line1\nline2\nline3\n");
     }
 
-    #[test]
-    fn apply_reverse_patch_unstages_cached_hunk() {
+    #[tokio::test]
+    async fn apply_reverse_patch_unstages_cached_hunk() {
         let (_dir, path) = setup_test_repo_with_commit();
         std::fs::write(path.join("staged.txt"), "original\n").expect("write");
         std::process::Command::new("git").current_dir(&path).args(["add", "staged.txt"]).output().expect("add");
@@ -3924,7 +3924,7 @@ filename test.txt
             path.to_string_lossy().to_string(),
             patch,
             Some("staged".to_string()),
-        );
+        ).await;
         assert!(result.is_ok(), "reverse patch --cached should succeed: {:?}", result.err());
 
         // Verify: staged diff should now be empty (unstaged)
@@ -3936,25 +3936,25 @@ filename test.txt
             "staged.txt should no longer be staged");
     }
 
-    #[test]
-    fn apply_reverse_patch_rejects_malformed_patch() {
+    #[tokio::test]
+    async fn apply_reverse_patch_rejects_malformed_patch() {
         let (_dir, path) = setup_test_repo_with_commit();
         let result = git_apply_reverse_patch(
             path.to_string_lossy().to_string(),
             "this is not a valid patch".to_string(),
             None,
-        );
+        ).await;
         assert!(result.is_err(), "malformed patch should be rejected");
     }
 
-    #[test]
-    fn apply_reverse_patch_rejects_empty_patch() {
+    #[tokio::test]
+    async fn apply_reverse_patch_rejects_empty_patch() {
         let (_dir, path) = setup_test_repo_with_commit();
         let result = git_apply_reverse_patch(
             path.to_string_lossy().to_string(),
             "".to_string(),
             None,
-        );
+        ).await;
         assert!(result.is_err(), "empty patch should be rejected");
     }
 }

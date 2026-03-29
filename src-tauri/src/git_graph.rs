@@ -504,8 +504,8 @@ mod tests {
     // Integration test with a real temp git repo
     // -----------------------------------------------------------------------
 
-    #[test]
-    fn test_end_to_end_with_real_repo() {
+    #[tokio::test]
+    async fn test_end_to_end_with_real_repo() {
         use std::process::Command;
 
         let dir = tempfile::tempdir().expect("tempdir");
@@ -558,7 +558,7 @@ mod tests {
         git(&["commit", "-m", "feat: third on main", "--no-verify"]);
 
         // Call the actual command (follows HEAD only, so feature branch is not visible)
-        let result = get_commit_graph(path.to_string_lossy().to_string(), Some(50));
+        let result = get_commit_graph(path.to_string_lossy().to_string(), Some(50)).await;
         assert!(result.is_ok(), "get_commit_graph failed: {result:?}");
 
         let nodes = result.unwrap();

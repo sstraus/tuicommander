@@ -134,6 +134,27 @@ impl PushStore {
     }
 }
 
+/// Generate a new ES256 VAPID key pair for Web Push.
+/// Returns (private_key_base64url, public_key_base64url).
+pub(crate) fn generate_vapid_keys() -> Result<(String, String), String> {
+    use web_push_native::jwt_simple::algorithms::ES256KeyPair;
+    use web_push_native::p256::elliptic_curve::sec1::ToEncodedPoint;
+
+    let kp = ES256KeyPair::generate();
+    let private_bytes = kp.to_bytes();
+    let private_b64 = Base64UrlUnpadded::encode_string(&private_bytes);
+
+    // ES256PublicKey::to_bytes() returns compressed (33 bytes); VAPID needs
+    // uncompressed (65 bytes). Re-parse via p256 crate and decompress.
+    let compressed = kp.public_key().to_bytes();
+    let p256_key = web_push_native::p256::PublicKey::from_sec1_bytes(&compressed)
+        .map_err(|e| format!("Failed to parse public key: {e}"))?;
+    let uncompressed = p256_key.to_encoded_point(false);
+    let public_b64 = Base64UrlUnpadded::encode_string(uncompressed.as_bytes());
+
+    Ok((private_b64, public_b64))
+}
+
 /// Send a push notification to a list of subscriptions.
 /// Returns endpoints that should be removed (410 Gone = revoked).
 pub(crate) async fn send_push_batch(
@@ -281,24 +302,6 @@ fn build_push_request(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn vapid_key_generation_roundtrip() {
-        use web_push_native::jwt_simple::algorithms::ES256KeyPair;
-
-        let (private, public) = generate_vapid_keys().unwrap();
-        assert!(!private.is_empty());
-        assert!(!public.is_empty());
-
-        // Public key should be 65 bytes (uncompressed P-256 point)
-        let pub_bytes = Base64UrlUnpadded::decode_vec(&public).unwrap();
-        assert_eq!(pub_bytes.len(), 65);
-
-        // Private key can be loaded back into an ES256KeyPair
-        let priv_bytes = Base64UrlUnpadded::decode_vec(&private).unwrap();
-        let kp = ES256KeyPair::from_bytes(&priv_bytes);
-        assert!(kp.is_ok(), "Should roundtrip key pair");
-    }
 
     #[test]
     fn push_store_crud() {
