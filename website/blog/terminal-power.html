@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>A terminal built for 8-hour sessions — TUICommander Blog</title>
+  <meta name="description" content="Split panes, detachable windows, find in content, tab pinning, and 50 concurrent sessions. We built a terminal for people who live in it." />
+
+  <meta property="og:title" content="A terminal built for 8-hour sessions — TUICommander" />
+  <meta property="og:description" content="Split panes, detachable windows, find in content, tab pinning, and 50 concurrent sessions." />
+  <meta property="og:type" content="article" />
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/style.css" />
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PCXPSMR9JZ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-PCXPSMR9JZ');
+  </script>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="/" class="nav-logo">
+        <img src="/logo.png" alt="TUICommander" width="28" height="28" />
+        <span>TUICommander</span>
+      </a>
+      <div class="nav-links">
+        <a href="/#features">Features</a>
+        <a href="/#how-it-works">How it works</a>
+        <a href="/blog.html" class="nav-active">Blog</a>
+        <a href="/#faq">FAQ</a>
+        <a href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary btn-sm" rel="noopener noreferrer">Download</a>
+      </div>
+    </div>
+  </nav>
+
+  <article class="blog-post">
+    <header class="blog-post-header">
+      <a href="/blog.html" class="blog-back">&larr; Blog</a>
+      <time>March 24, 2026</time>
+      <h1>A terminal built for 8-hour sessions</h1>
+      <p class="blog-post-summary">Split panes, detachable windows, persistent sessions, find in content, and up to 50 concurrent terminals. We built a terminal for people who live in it all day.</p>
+    </header>
+
+    <div class="blog-section">
+      <h2>The problem</h2>
+      <p>Most terminal emulators are built for running one thing at a time. Open a tab, run a command, close it. That's fine for quick tasks. But when you're orchestrating AI agents across multiple repos, you're staring at terminals for hours. You need to see two agents side by side. You need to find that error message from 500 lines ago. You need a terminal that survives accidental closes. You need one that doesn't become unusable after 20 tabs.</p>
+      <p>We use TUICommander ourselves every day, for full workdays. Every feature here was born from actual friction — things that annoyed us at hour 4 and were unbearable by hour 8.</p>
+    </div>
+
+    <figure class="blog-figure">
+      <img src="/public/blog/terminal-power/multi-agent-tabs.png" alt="TUICommander with two tabs running different AI agents — Claude Code and OpenAI Codex side by side with status dots and agent detection" />
+      <figcaption>Two agents in separate tabs — Claude Code running a task in tab 1, OpenAI Codex starting up in tab 2. Each tab shows the agent name, status dot, and keyboard shortcut. TUICommander detects the agent type automatically.</figcaption>
+    </figure>
+
+    <div class="blog-section">
+      <h2>Split panes: see two things at once</h2>
+      <p>Cmd+\ splits the current tab vertically — two terminals side by side. Cmd+Alt+\ splits horizontally — stacked. You can go up to 6 panes in the same direction, and resize them by dragging the divider. Alt+arrow keys move focus between panes.</p>
+      <p>The common use case: an agent running on the left, a shell on the right to check its work. Or two agents on the same repo, one implementing while the other reviews. Split layouts persist per branch — switch to a different branch and back, your layout is still there.</p>
+    </div>
+
+    <figure class="blog-figure">
+      <img src="/public/blog/terminal-power/split-pane.png" alt="TUICommander with a vertical split — Claude Code agent on the left talking through a plan, lazygit on the right showing file changes and diff" />
+      <figcaption>A vertical split in action — Claude Code working through a task on the left, lazygit showing the resulting changes on the right. Two views of the same work, no tab switching needed.</figcaption>
+    </figure>
+
+    <div class="blog-section">
+      <h2>Detach to window: the second monitor workflow</h2>
+      <p>Right-click any tab and select "Detach to Window". The terminal pops out into its own floating OS window that you can move to a second monitor. The PTY session stays alive — it's the same session, just displayed in a different window. Close the floating window and the tab returns to the main window automatically.</p>
+      <p>This is how you use TUICommander with a dual monitor setup: main window on screen 1 with the sidebar and git panel, detached agent terminals on screen 2 where you can watch them work full-screen.</p>
+    </div>
+
+    <figure class="blog-figure">
+      <img src="/public/blog/terminal-power/detached-window.png" alt="A lazygit terminal detached into its own floating OS window, showing file tree, diff, branches, and commits" />
+      <figcaption>A lazygit session detached to its own window — full-screen git management on a second monitor while the main TUICommander window stays focused on agent terminals.</figcaption>
+    </figure>
+
+    <div class="blog-section">
+      <h2>Sessions that survive everything</h2>
+      <p>Terminal sessions persist across app restarts. Close TUICommander, reopen it, and your sessions are still there — same shell, same state. Sessions are restored lazily when you click the branch, so startup stays fast even with dozens of saved sessions.</p>
+      <p>Agent sessions get special treatment. If an AI agent was running when you closed the app, you get a clickable banner: "Agent session was active — click to resume." Press Space or Enter to resume, any other key to dismiss. No accidental re-injection of commands into a fresh shell.</p>
+      <p>Even Vite HMR reloads (during development) don't kill sessions. The webview can reload without the Rust backend dropping your PTY connections.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Find across everything</h2>
+      <p>Cmd+F opens a search overlay, but it's context-aware. If you're in a terminal tab, it searches the terminal scrollback buffer with highlight decorations. In a markdown tab, it searches the rendered document. In a diff tab, it searches the diff content. Same shortcut, right behavior.</p>
+      <p>The search supports case sensitive, whole word, and regex modes. Navigate matches with Enter/Cmd+G (next) and Shift+Enter/Cmd+Shift+G (previous). A counter shows "N of M" so you know where you are in the results. When an agent produces 2000 lines of output and you need to find that one error, this is how you do it.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Tab management at scale</h2>
+      <p>With 5+ agents, tab management matters. Tabs can be reordered by drag-and-drop. Pinned tabs stay visible across all branches instead of being scoped to one branch's session. Cmd+Shift+T reopens the last closed tab (remembers up to 10). Middle-click to close. Cmd+1 through Cmd+9 for direct switching.</p>
+      <p>When tabs overflow the tab bar, scroll arrows appear — and right-clicking them shows a dropdown of all clipped tabs. The + button always stays visible regardless of scroll position, so you can always create a new tab.</p>
+      <p>Each tab has a colored status dot (idle, busy, done, question, error) and a type-specific color tint (red for diff, blue for editor, green for markdown, amber for remote sessions). At 15 tabs, you can still tell at a glance what's what.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Clickable paths and per-terminal zoom</h2>
+      <p>File paths in terminal output are auto-detected and become clickable links — validated against the filesystem before activation, so stale paths don't create dead links. Paths support <code>:line</code> and <code>:line:col</code> suffixes for precise navigation. Markdown files open in the viewer, everything else opens in your configured IDE.</p>
+      <p>Per-terminal zoom (Cmd+/- with Cmd+0 to reset) lets you bump up the font on the terminal you're currently reading without affecting others. Range is 8px to 32px, and the current zoom shows in the status bar.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>The details that add up</h2>
+      <p>Cmd+L clears the terminal display without killing processes. OSC 8 hyperlinks work (file:// URIs from agent output open in your system file handler). Progress bars via OSC 9;4 render natively. The terminal runs with truecolor support (TERM=xterm-256color, COLORTERM=truecolor) and outputs in UTF-8 by default.</p>
+      <p>None of these features are individually remarkable. But together they make the difference between a terminal you tolerate and one you actually enjoy spending 8 hours in. Every feature exists because we hit the limitation ourselves and decided it was worth solving.</p>
+    </div>
+  </article>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sstraus/tuicommander" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/sstraus/tuicommander/releases" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/FEATURES.md" rel="noopener noreferrer">Docs</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin API</a>
+      </div>
+      <p>MIT License &copy; 2026 Stefano Straus</p>
+      <p class="footer-tech">Built with Rust, Tauri v2, SolidJS, xterm.js</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

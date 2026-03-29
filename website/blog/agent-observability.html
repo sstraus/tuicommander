@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Knowing what your agents are doing without looking — TUICommander Blog</title>
+  <meta name="description" content="When you run multiple AI agents in parallel, you can't watch every terminal. We built status detection, sound notifications, and an activity dashboard so you don't have to." />
+
+  <meta property="og:title" content="Knowing what your agents are doing without looking — TUICommander" />
+  <meta property="og:description" content="Status detection, sound notifications, and an activity dashboard for parallel AI agents." />
+  <meta property="og:image" content="/public/blog/agent-observability/activity-dashboard.png" />
+  <meta property="og:type" content="article" />
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/style.css" />
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PCXPSMR9JZ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-PCXPSMR9JZ');
+  </script>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="/" class="nav-logo">
+        <img src="/logo.png" alt="TUICommander" width="28" height="28" />
+        <span>TUICommander</span>
+      </a>
+      <div class="nav-links">
+        <a href="/#features">Features</a>
+        <a href="/#how-it-works">How it works</a>
+        <a href="/blog.html" class="nav-active">Blog</a>
+        <a href="/#faq">FAQ</a>
+        <a href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary btn-sm" rel="noopener noreferrer">Download</a>
+      </div>
+    </div>
+  </nav>
+
+  <article class="blog-post">
+    <header class="blog-post-header">
+      <a href="/blog.html" class="blog-back">&larr; Blog</a>
+      <time>March 28, 2026</time>
+      <h1>Knowing what your agents are doing without looking</h1>
+      <p class="blog-post-summary">When you run 5 agents in parallel, you can't watch every terminal. We built status detection, sound notifications, and an activity dashboard so you don't have to.</p>
+    </header>
+
+    <div class="blog-section">
+      <h2>The problem</h2>
+      <p>The promise of AI coding agents is that they work in parallel while you focus on something else. The reality is that you end up tab-switching constantly. Is that agent still running? Did it finish? Is it stuck waiting for input? Did it hit a rate limit? You're spending your attention budget on monitoring instead of thinking.</p>
+      <p>This gets worse with scale. With 2 agents it's manageable. With 5 or 8 running across different repos, you lose track. An agent could be waiting for your input for minutes before you notice — wasted time for both of you.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Every tab tells you its state</h2>
+      <p>TUICommander parses the terminal output stream in real time to detect what each agent is doing. Every terminal tab shows a colored status dot that updates automatically:</p>
+      <p><strong>Grey (Idle)</strong> — no session or nothing running. <strong>Blue pulsing (Busy)</strong> — the agent is producing output, actively working. <strong>Green (Done)</strong> — command completed successfully. <strong>Purple (Unseen)</strong> — the agent finished while you were looking at a different tab. <strong>Orange pulsing (Question)</strong> — the agent needs your input. <strong>Red pulsing (Error)</strong> — API error or agent stuck.</p>
+      <p>This is the core of the observability system. You don't need to read the terminal output to know the state — the dot tells you. A quick scan of the tab bar shows you which agents are working, which are done, and which need you.</p>
+    </div>
+
+    <figure class="blog-figure">
+      <img src="/public/blog/agent-observability/tab-status-dots.png" alt="Tab bar showing three agent tabs with colored status dots: green (done), blue (busy), orange (question)" />
+      <figcaption>Three agents running — "Task Review" is done (green), "Stories" is busy (blue), "Answer user question" needs input (orange). You know the state of every agent without clicking a single tab.</figcaption>
+    </figure>
+
+    <figure class="blog-figure">
+      <img src="/public/blog/agent-observability/status-legend.png" alt="UI Legend showing terminal status dots (Idle, Busy, Done, Unseen, Question, Error) and tab type colors (Diff, Editor, Markdown, Panel, PTY)" />
+      <figcaption>The status system at a glance — six states for agent terminals, plus color-coded tab types so you can tell a diff viewer from a terminal from a markdown panel without reading the label.</figcaption>
+    </figure>
+
+    <div class="blog-section">
+      <h2>Sound notifications keep you in flow</h2>
+      <p>Visual indicators work when you're looking at TUICommander. But the whole point of running agents in parallel is that you might be doing something else — reading docs, reviewing code in another app, or just thinking. That's where sound notifications come in.</p>
+      <p>TUICommander plays distinct sounds for different events: a chime when an agent completes a task, a different tone when an agent asks a question, an alert for errors and rate limits. You learn the sounds quickly — after a day, you know the difference between "agent done, no rush" and "agent stuck, needs input now" without looking.</p>
+      <p>This changes how you work with parallel agents. Instead of polling tabs every 30 seconds, you stay focused on what you're doing and respond to agents when they actually need you. The notification bell in the top bar collects events you might have missed — CI passed, agent completed, worktree created — so nothing falls through the cracks.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>The Activity Dashboard</h2>
+      <p>When you need the full picture, the Activity Dashboard shows every terminal session in one view. Each row shows the session name (which TUICommander derives from what the agent is doing — "Check active stories", "Task Review" — not just "Terminal 1"), the repo it's working on, the agent type (Claude, Shell), its current status, and when it was last active.</p>
+      <p>Click any row and you switch to that terminal instantly. The dashboard is your air traffic control — you see all 8 sessions at once, spot the one that's been idle for 11 minutes (probably needs attention), and jump right in.</p>
+    </div>
+
+    <figure class="blog-figure">
+      <img src="/public/blog/agent-observability/activity-dashboard.png" alt="Activity Dashboard showing 8 terminal sessions across different repos with agent type, status, and last activity timestamps" />
+      <figcaption>8 terminals across 5 repos — "Task Review" is actively working on tuicommander, "Check active stories" just went idle on wiz-agents, three Claude Code sessions are idle across other projects. One click switches to any session.</figcaption>
+    </figure>
+
+    <div class="blog-section">
+      <h2>Intent recognition</h2>
+      <p>Notice that the dashboard doesn't just say "Terminal" or "Claude Code" — it shows what the agent is actually doing. "Check active stories", "Task Review", "spec-rewrite 2". TUICommander parses the agent's output to extract the task name, the current activity (Architecting, Wrangling, Manifesting), and follow-up suggestions.</p>
+      <p>This is the same parsing that powers the status dots: the output parser understands agent-specific UI patterns — status lines, progress indicators, question prompts, error messages — and translates them into structured events. The result is that you get a meaningful summary of each agent's state without reading raw terminal output.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>What this enables</h2>
+      <p>The combination of status dots, sound notifications, and the activity dashboard means you can run agents at scale without losing track. Launch 5 agents on different tasks, switch to reviewing a PR or reading documentation. A sound tells you when one finishes. A quick glance at the tab bar shows you the overall state. The dashboard gives you the details when you need them. Your attention goes where it matters instead of being scattered across terminal tabs.</p>
+    </div>
+  </article>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sstraus/tuicommander" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/sstraus/tuicommander/releases" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/FEATURES.md" rel="noopener noreferrer">Docs</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin API</a>
+      </div>
+      <p>MIT License &copy; 2026 Stefano Straus</p>
+      <p class="footer-tech">Built with Rust, Tauri v2, SolidJS, xterm.js</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

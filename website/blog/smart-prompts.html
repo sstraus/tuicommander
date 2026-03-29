@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Why we built Smart Prompts — TUICommander Blog</title>
+  <meta name="description" content="Every day we were copy-pasting the same instructions to AI agents. Smart Prompts turns repetitive prompts into one-click actions with automatic context." />
+
+  <meta property="og:title" content="Why we built Smart Prompts — TUICommander" />
+  <meta property="og:description" content="Every day we were copy-pasting the same instructions to AI agents. Smart Prompts turns repetitive prompts into one-click actions with automatic context." />
+  <meta property="og:image" content="/public/blog/smart-prompts/library.png" />
+  <meta property="og:type" content="article" />
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/style.css" />
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PCXPSMR9JZ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-PCXPSMR9JZ');
+  </script>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="/" class="nav-logo">
+        <img src="/logo.png" alt="TUICommander" width="28" height="28" />
+        <span>TUICommander</span>
+      </a>
+      <div class="nav-links">
+        <a href="/#features">Features</a>
+        <a href="/#how-it-works">How it works</a>
+        <a href="/blog.html" class="nav-active">Blog</a>
+        <a href="/#faq">FAQ</a>
+        <a href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary btn-sm" rel="noopener noreferrer">Download</a>
+      </div>
+    </div>
+  </nav>
+
+  <article class="blog-post">
+    <header class="blog-post-header">
+      <a href="/blog.html" class="blog-back">&larr; Blog</a>
+      <time>March 25, 2026</time>
+      <h1>Why we built Smart Prompts</h1>
+      <p class="blog-post-summary">We were copy-pasting the same instructions to AI agents every day. So we turned them into one-click actions that know your context.</p>
+    </header>
+
+    <div class="blog-section">
+      <h2>The problem</h2>
+      <p>If you work with AI coding agents in the terminal, you know the routine. You want the agent to commit your changes with a good message, so you type out the instructions. Again. You want it to review a PR, so you paste the same prompt you used yesterday — but first you need to look up the PR number, the branch name, and what files changed.</p>
+      <p>Every interaction required two things: remembering the right prompt, and manually gathering the context the agent needs to do its job. Branch name, diff stats, PR number, dirty file count — information that TUICommander already has, but the agent doesn't.</p>
+      <p>This wasn't a minor annoyance. It was a daily friction that added up. And when our community started asking for exactly this — a way to automate the repetitive parts of talking to agents — we knew it was time.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>What Smart Prompts are</h2>
+      <p>Smart Prompts is a library of reusable, context-aware instructions that you can fire with a single click or keyboard shortcut. TUICommander ships with 24 built-in prompts covering the most common workflows: committing, reviewing, explaining changes, creating PRs, addressing review comments, and more.</p>
+      <p>The key insight is that prompts shouldn't be static text. Each prompt is a template with variables like <code>{diff}</code>, <code>{branch}</code>, <code>{pr_number}</code>, and <code>{staged_diff}</code> — 31 context variables in total. When you trigger a prompt, TUICommander resolves every variable automatically from your current git state. The agent gets a complete, ready-to-execute instruction without you typing a single character of context.</p>
+    </div>
+
+    <figure class="blog-figure">
+      <img src="/public/blog/smart-prompts/library.png" alt="Smart Prompts Library showing the list of built-in prompts with tags for execution mode, placement, and category" />
+      <figcaption>The Smart Prompts Library (Cmd+K) — search, filter by category, and fire prompts with Enter. Each prompt shows its execution mode (inject or headless) and where it appears in the UI.</figcaption>
+    </figure>
+
+    <div class="blog-section">
+      <h2>Two execution modes</h2>
+      <p><strong>Inject mode</strong> writes the prompt directly into the active terminal session. The agent in that terminal picks it up as if you typed it. This is the most common mode — you're having a conversation with an agent and want to give it a specific instruction.</p>
+      <p><strong>Headless mode</strong> spins up a one-shot agent execution in the background. No terminal needed. This is useful for fire-and-forget tasks like generating a commit message from a staged diff — the result appears when it's done, without interrupting your workflow.</p>
+    </div>
+
+    <figure class="blog-figure">
+      <img src="/public/blog/smart-prompts/editor.png" alt="Smart Prompt editor showing the configuration for the Smart Commit prompt" />
+      <figcaption>Every prompt is fully customizable: edit the content, choose where it appears in the UI (toolbar, git changes panel, PR popover, branch context menu), set execution mode, and assign a keyboard shortcut.</figcaption>
+    </figure>
+
+    <div class="blog-section">
+      <h2>Git operations without leaving the flow</h2>
+      <p>The Git Changes panel integrates Smart Prompts directly where you work with files. Instead of switching to a terminal to ask an agent to commit, review, or explain changes, you click the dropdown right next to the Commit button. Smart Commit stages relevant files and creates a commit with a conventional message — one click, no typing. Review Changes scans your unstaged diff for bugs and security issues. Explain Changes gives you a plain-language summary of what changed.</p>
+      <p>This matters because git operations are the most repeated part of any development workflow. Before Smart Prompts, you'd either do them manually (write the commit message yourself, review the diff by eye) or spend time instructing an agent to do it. Now the instruction is pre-written, the context is pre-filled, and the action is one click away.</p>
+    </div>
+
+    <figure class="blog-figure">
+      <img src="/public/blog/smart-prompts/git-panel.png" alt="Git Changes panel with Smart Prompts dropdown showing commit, review, and explain actions" />
+      <figcaption>Smart Prompts integrated in the Git Changes panel — commit, review, explain, and write tests without leaving the file list.</figcaption>
+    </figure>
+
+    <div class="blog-section">
+      <h2>31 context variables, zero manual input</h2>
+      <p>Every prompt can reference variables that TUICommander resolves automatically. The git layer provides <code>{branch}</code>, <code>{diff}</code>, <code>{staged_diff}</code>, <code>{changed_files}</code>, <code>{commit_log}</code>, <code>{last_commit}</code>, <code>{conflict_files}</code>, <code>{stash_list}</code>, <code>{remote_url}</code>, <code>{current_user}</code>, <code>{base_branch}</code>, <code>{repo_name}</code>, <code>{branch_status}</code>, and <code>{dirty_files_count}</code>.</p>
+      <p>The GitHub layer adds PR-specific context: <code>{pr_number}</code>, <code>{pr_title}</code>, <code>{pr_url}</code>, <code>{pr_state}</code>, <code>{merge_status}</code>, <code>{review_decision}</code>, <code>{pr_checks}</code>, <code>{pr_author}</code>, <code>{pr_labels}</code>, <code>{pr_additions}</code>, and <code>{pr_deletions}</code>. Terminal context includes <code>{agent_type}</code> and <code>{cwd}</code>.</p>
+      <p>This opens up use cases beyond simple commits. A "Review PR" prompt can include the full diff, the PR checks status, and the review decision — the agent gets everything it needs to give a meaningful review. A "Resolve Conflicts" prompt can list the conflicting files and the base branch so the agent knows what it's merging into. A custom "Deploy Check" prompt could include the branch status (ahead/behind remote) and dirty file count to warn before pushing.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>They show up where you need them</h2>
+      <p>Prompts aren't hidden in a menu. Based on their placement settings, they appear as buttons exactly where they're relevant: commit-related prompts show up in the Git Changes panel, PR prompts appear in the PR popover, branch prompts in the branch context menu. You can also access everything through the command palette or the dedicated Cmd+K drawer.</p>
+      <p>You can create your own prompts, customize the built-in ones, assign keyboard shortcuts, and choose whether a prompt auto-executes or pauses for you to review before sending.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>What's next</h2>
+      <p>We're working on expanding the headless execution mode with per-agent API configuration, so Smart Prompts can call different AI models depending on the task. A quick commit message doesn't need the same model as a full code review. We're also looking at chaining prompts — triggering a sequence of actions from a single click.</p>
+    </div>
+  </article>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sstraus/tuicommander" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/sstraus/tuicommander/releases" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/FEATURES.md" rel="noopener noreferrer">Docs</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin API</a>
+      </div>
+      <p>MIT License &copy; 2026 Stefano Straus</p>
+      <p class="footer-tech">Built with Rust, Tauri v2, SolidJS, xterm.js</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

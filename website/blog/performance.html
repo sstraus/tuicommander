@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>How we keep it fast with 10 repos and 8 terminals open — TUICommander Blog</title>
+  <meta name="description" content="Running a desktop app with 10 repos, 8 terminals, and constant git operations requires serious performance work. Here's what we did under the hood." />
+
+  <meta property="og:title" content="How we keep it fast with 10 repos and 8 terminals open — TUICommander" />
+  <meta property="og:description" content="Async git, PTY write coalescing, watcher-driven caches, and bundle splitting — the performance work behind TUICommander." />
+  <meta property="og:type" content="article" />
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/style.css" />
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PCXPSMR9JZ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-PCXPSMR9JZ');
+  </script>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="/" class="nav-logo">
+        <img src="/logo.png" alt="TUICommander" width="28" height="28" />
+        <span>TUICommander</span>
+      </a>
+      <div class="nav-links">
+        <a href="/#features">Features</a>
+        <a href="/#how-it-works">How it works</a>
+        <a href="/blog.html" class="nav-active">Blog</a>
+        <a href="/#faq">FAQ</a>
+        <a href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary btn-sm" rel="noopener noreferrer">Download</a>
+      </div>
+    </div>
+  </nav>
+
+  <article class="blog-post">
+    <header class="blog-post-header">
+      <a href="/blog.html" class="blog-back">&larr; Blog</a>
+      <time>March 22, 2026</time>
+      <h1>How we keep it fast with 10 repos and 8 terminals open</h1>
+      <p class="blog-post-summary">A desktop app that manages 10 repos, 8 terminals, and constant git operations can't afford to be slow. Here's the performance work we did under the hood.</p>
+    </header>
+
+    <div class="blog-section">
+      <h2>The challenge</h2>
+      <p>TUICommander isn't a simple terminal emulator. At any given moment it might be tracking 10 repositories with file watchers, running 8 PTY sessions with real-time output parsing, polling GitHub for PR status, maintaining MCP connections to upstream servers, and rendering a WebGL-accelerated terminal — all in a desktop app built on Tauri.</p>
+      <p>When we first started scaling to multiple repos and agents, things got sluggish. Branch switching would hang for seconds. Terminal output would stutter during burst output from agents. The sidebar would freeze while git commands ran. We had to rethink how every layer of the stack handles concurrency and I/O.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Async git: stop blocking the event loop</h2>
+      <p>The single biggest improvement came from converting all git operations to async. TUICommander runs about 25 different git commands — status, diff, log, branch list, remote info, stash list, and more. Originally these ran synchronously, which meant a slow <code>git diff</code> on a large repo would block Tokio worker threads and freeze the entire UI.</p>
+      <p>Now every git command runs via <code>tokio::task::spawn_blocking</code>, keeping the async runtime free for IPC events and UI updates. We also merged sequential subprocess calls where possible — <code>get_changed_files</code> used to spawn 2 git processes in sequence, now it's 1. The result: git operations never block the UI, even on repos with thousands of changed files.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Watcher-driven cache: git results in 0.2ms</h2>
+      <p>Most git information doesn't change between keystrokes. But the old approach was polling with a 5-second TTL — every IPC call would check if the cache was stale, and if so, spawn a git subprocess (~20-30ms). With 10 repos polling independently, that's a lot of unnecessary git processes.</p>
+      <p>The new approach is event-driven. A file system watcher (<code>repo_watcher</code>) monitors each repo and invalidates the cache immediately when files change. The TTL was raised to 60 seconds as a safety net for missed watcher events. In practice, most IPC calls now hit cache and return in ~0.2ms instead of spawning git. The difference is dramatic — the sidebar and git panel feel instant because they usually are.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>PTY write coalescing: 60 renders/sec, not 600</h2>
+      <p>AI agents produce output in bursts — hundreds of write events per second during streaming. The naive approach calls <code>terminal.write()</code> for every PTY event, which triggers a xterm.js render pass and WebGL texture upload each time. At 600 events/sec, the terminal becomes a bottleneck.</p>
+      <p>We switched to write coalescing via <code>requestAnimationFrame</code>. PTY data accumulates in a buffer and gets flushed once per animation frame (~60/sec). The terminal renders the same content but with dramatically fewer render passes and texture uploads. The visual result is identical — smoother, actually — but CPU and GPU usage during burst output dropped significantly.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Process detection without fork-bombing</h2>
+      <p>TUICommander detects which process is running in each terminal (to show the agent name in the tab). The old approach used <code>ps</code> — literally forking a new process to check each terminal. With 5 terminals polling every few seconds, that's ~100 fork+exec operations per minute, each spawning a shell to parse process tables.</p>
+      <p>Now we use direct syscalls: <code>proc_pidpath</code> on macOS, <code>/proc/pid/comm</code> on Linux. Zero forks, zero subprocess overhead. The process name comes from the kernel in microseconds instead of milliseconds.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Concurrency done right</h2>
+      <p>Several smaller optimizations compound. The MCP upstream client switched from <code>Mutex</code> to <code>RwLock</code> — tool calls (the common case) now take a read lock and run concurrently, with only reconnects requiring a write lock. PTY parsed events eliminated double serialization — <code>serde_json::to_value</code> runs once and the result is reused for both Tauri IPC and the event bus. The PTY read buffer increased from 4KB to 64KB for natural batching of burst output.</p>
+      <p>The StatusBar timer (which updates rate limit and PR merge countdowns) only runs when there's something to count down. During normal operation, this eliminates ~60 unnecessary signal writes per minute. The ActivityDashboard removed <code>{ equals: false }</code> from its snapshot signal, letting SolidJS's default equality check skip unnecessary re-renders of the session list every 10 seconds.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Frontend: load only what you need</h2>
+      <p>On the frontend side, Vite's <code>manualChunks</code> splits the bundle into separate chunks: xterm, CodeMirror, diff-view, and markdown each load independently. Heavy panels like Settings, ActivityDashboard, and Help are lazy-loaded with SolidJS <code>lazy()</code> and <code>Suspense</code> — they don't add to initial load time unless you open them.</p>
+      <p>The branch select operation — which used to cause multi-second freezes after hours of use — was optimized in three places: <code>getDiffStats</code> runs fire-and-forget instead of blocking, terminal adoption uses a pre-computed Set for O(N) instead of O(N×M), and saved terminal resume commands run in parallel with <code>Promise.all</code> instead of sequential awaits.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>GPU-accelerated rendering</h2>
+      <p>The terminal renderer uses xterm.js with WebGL acceleration. On macOS, Tauri's WKWebView composites through Metal — terminal glyphs are rendered as GPU textures, not CPU-painted bitmaps. This matters when you have 6 split panes all receiving burst output simultaneously. The GPU handles the rendering pipeline while the CPU stays free for git operations and PTY I/O.</p>
+      <p>When WebGL isn't available (some Linux configurations, remote browser sessions), the renderer falls back gracefully to a canvas-based mode. Performance is lower but still usable — the app adapts instead of crashing. Tab switches trigger <code>clearTextureAtlas</code> followed by a full refresh to prevent gradual recomposition artifacts that would otherwise accumulate over long sessions.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Cross-platform without compromise</h2>
+      <p>TUICommander runs on macOS, Windows, and Linux — and each platform has its own performance characteristics. Process detection uses <code>libproc</code> on macOS and <code>CreateToolhelp32Snapshot</code> on Windows — both native APIs, no shell forks. Shell escaping adapts to <code>cmd.exe</code> on Windows. IDE detection probes <code>.app</code> bundles on macOS, registry entries on Windows, and PATH on Linux.</p>
+      <p>Local MCP connections use Unix domain sockets on macOS/Linux and named pipes (<code>\\.\pipe\tuicommander-mcp</code>) on Windows — both faster than TCP for local IPC. TCP ports are reserved for remote access only, avoiding unnecessary network stack overhead for local operations.</p>
+      <p>Credentials are stored in the OS keyring — macOS Keychain, Windows Credential Manager, Linux Secret Service — instead of plaintext files. Tailscale TLS certificate provisioning uses the Local API (Unix socket) on macOS/Linux and falls back to CLI on Windows. Every platform-specific path was chosen for the lowest overhead available on that OS.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Remote access: keeping it fast over the network</h2>
+      <p>When you access TUICommander remotely (via Tailscale or direct connection), performance over the network becomes critical. Terminal output streams through WebSocket with a structured event format — parsed events (status changes, suggestions, questions) are extracted server-side so the client doesn't need to re-parse raw terminal output. This reduces bandwidth and client-side CPU.</p>
+      <p>The Activity Dashboard throttles its snapshot to every 10 seconds, preventing constant re-renders and WebSocket messages when multiple agents are active. New items and removals trigger immediate refreshes, but steady-state updates batch efficiently. The PTY read buffer at 64KB means burst output is sent in fewer, larger WebSocket frames instead of hundreds of tiny ones.</p>
+      <p>For the mobile PWA specifically, the VT100-extracted clean line format strips escape codes server-side, sending only the visible text. The log view uses a 500-line rolling buffer — enough to see what's happening without sending the entire scrollback over a cellular connection.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>The result</h2>
+      <p>TUICommander today runs comfortably with 10+ repos and 8+ terminals open for full workdays. Branch switching is near-instant. Terminal output stays smooth during agent bursts. The sidebar and git panel respond within a frame. And it stays that way after 8 hours of continuous use — no progressive degradation, no memory creep, no accumulating event listeners.</p>
+      <p>Performance isn't a feature you ship once. It's a constraint you maintain every day. Every new feature gets measured against the baseline: does the sidebar still respond in one frame? Does branch switching still feel instant? If not, we optimize before we merge.</p>
+    </div>
+  </article>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sstraus/tuicommander" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/sstraus/tuicommander/releases" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/FEATURES.md" rel="noopener noreferrer">Docs</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin API</a>
+      </div>
+      <p>MIT License &copy; 2026 Stefano Straus</p>
+      <p class="footer-tech">Built with Rust, Tauri v2, SolidJS, xterm.js</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Extend TUICommander with plugins — TUICommander Blog</title>
+  <meta name="description" content="Every workflow is different. We built a plugin system so you can extend TUICommander with custom panels, context menu actions, and MCP integrations — without forking the app." />
+
+  <meta property="og:title" content="Extend TUICommander with plugins" />
+  <meta property="og:description" content="A plugin system for custom panels, context menu actions, terminal output parsing, and MCP integrations." />
+  <meta property="og:image" content="/public/blog/plugin-system/plugins-panel.png" />
+  <meta property="og:type" content="article" />
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/style.css" />
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PCXPSMR9JZ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-PCXPSMR9JZ');
+  </script>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="/" class="nav-logo">
+        <img src="/logo.png" alt="TUICommander" width="28" height="28" />
+        <span>TUICommander</span>
+      </a>
+      <div class="nav-links">
+        <a href="/#features">Features</a>
+        <a href="/#how-it-works">How it works</a>
+        <a href="/blog.html" class="nav-active">Blog</a>
+        <a href="/#faq">FAQ</a>
+        <a href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary btn-sm" rel="noopener noreferrer">Download</a>
+      </div>
+    </div>
+  </nav>
+
+  <article class="blog-post">
+    <header class="blog-post-header">
+      <a href="/blog.html" class="blog-back">&larr; Blog</a>
+      <time>March 20, 2026</time>
+      <h1>Extend TUICommander with plugins</h1>
+      <p class="blog-post-summary">Every workflow is different. We built a plugin system so you can add custom panels, context menu actions, and MCP integrations — without forking the app.</p>
+    </header>
+
+    <div class="blog-section">
+      <h2>The problem</h2>
+      <p>No two development workflows are the same. One team tracks stories in Jira, another uses file-based task lists. One developer wants a repo dashboard in the sidebar, another wants Telegram notifications when agents finish. Building all of this into the core app would make it bloated and opinionated. Not building it means users hit a wall when their workflow doesn't match ours.</p>
+      <p>We needed a way for TUICommander to be extended by anyone — including ourselves — without modifying the core codebase. The plugin system is that escape hatch.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>What plugins can do</h2>
+      <p>Plugins are JavaScript bundles that run in a sandboxed environment with access to a structured PluginHost API. The capability system is explicit — each plugin declares what it needs in its <code>plugin.json</code> manifest, and TUICommander grants only those permissions. A plugin that only reads terminal output can't access files. A plugin that renders markdown panels can't write to the terminal.</p>
+      <p>The capabilities fall into tiers. Terminal output watching lets plugins parse agent output for patterns — the Claude Status plugin, for example, watches for rate limit events and tracks usage. File access capabilities (<code>invoke:read_file</code>, <code>invoke:list_markdown_files</code>) let plugins read project files. UI capabilities let plugins render markdown content in the Activity Center, add items to context menus, and register sidebar panels. MCP capabilities let plugins act as bridges to external tools and services.</p>
+    </div>
+
+    <figure class="blog-figure">
+      <img src="/public/blog/plugin-system/plugins-panel.png" alt="Plugins settings panel showing installed plugins: plan (built-in), Wiz Reviews, Claude Status, Repo Dashboard, Wiz Stories, and Hello World — each with version, description, capabilities, and enable/disable toggle" />
+      <figcaption>The Plugins panel in Settings — installed plugins with their capabilities listed. Each plugin can be enabled/disabled individually, has its own logs, and can be uninstalled. The Browse tab lets you discover new plugins.</figcaption>
+    </figure>
+
+    <div class="blog-section">
+      <h2>Real plugins, real use cases</h2>
+      <p><strong>Claude Status</strong> watches Claude Code terminals for rate limit and usage data, aggregating it into the Usage Dashboard. It's agent-scoped — only activates for Claude terminals, ignoring everything else.</p>
+      <p><strong>Wiz Reviews</strong> monitors code review output and links review markdown files in the Activity Center, so you can open review results with one click instead of hunting for the generated file.</p>
+      <p><strong>Wiz Stories</strong> tracks the story lifecycle — creation, status changes, worklogs — and surfaces them as navigable items in the Activity Center with links to the story content.</p>
+      <p><strong>Repo Dashboard</strong> renders a multi-repo status view using read-only host methods and adds entries to context menus for quick access.</p>
+      <p>Each of these started as a custom need. Instead of hardcoding them into TUICommander, we built them as plugins — proving the API works for real use cases and keeping the core app focused.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Sidebar panels and context menus</h2>
+      <p>Plugins can register collapsible panel sections in the sidebar below the branch list. Panels display structured data — items with icon, label, subtitle, badge, and context menu — scoped per repo. This is how the plan plugin shows active plans right in the sidebar without cluttering the core UI.</p>
+      <p>Context menu integration goes beyond terminals. Plugins can register actions in branch, repo, and tab context menus using <code>registerContextMenuAction()</code> with typed context. Right-clicking a branch can show plugin-provided actions alongside built-in ones like "Open in GitHub" and "Open PR". The command palette also picks up plugin actions, so everything is searchable.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>MCP: connecting to external tools</h2>
+      <p>TUICommander acts as an MCP (Model Context Protocol) server, exposing workspace state to AI agents. But it also connects to upstream MCP servers — and plugins can leverage this. Each repo can define which MCP servers are relevant via an allowlist, with a 3-layer scoping system: per-repo settings override <code>.tuic.json</code> project config, which overrides defaults.</p>
+      <p>The Cmd+Shift+M popup lets you toggle MCP servers per repo with live status, transport badges, and tool counts. This means plugins that connect to external services (CI systems, project management tools, documentation platforms) can be scoped precisely — the Jira plugin activates for work repos, the internal dashboard plugin only for the monorepo.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Building a plugin</h2>
+      <p>A plugin is a directory with a <code>plugin.json</code> manifest and a JavaScript entry point. The manifest declares the plugin's name, version, description, capabilities, and entry file. The JavaScript code receives a <code>PluginHost</code> object with methods matching the declared capabilities.</p>
+      <p>The Hello World plugin in the screenshot is exactly what it sounds like — a minimal example that detects "hello" in terminal output and adds an activity item. It exists to show that a useful plugin can be 20 lines of code. The Documentation link in the top corner of the Plugins panel takes you to the full API reference.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>What's next</h2>
+      <p>We're building out the Browse tab into a plugin marketplace where the community can share and discover plugins. The plugin API continues to grow with each release — recent additions include sidebar panels and multi-target context menus. The goal is for TUICommander's core to stay lean while the plugin ecosystem handles the long tail of workflow-specific needs.</p>
+    </div>
+  </article>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sstraus/tuicommander" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/sstraus/tuicommander/releases" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/FEATURES.md" rel="noopener noreferrer">Docs</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin API</a>
+      </div>
+      <p>MIT License &copy; 2026 Stefano Straus</p>
+      <p class="footer-tech">Built with Rust, Tauri v2, SolidJS, xterm.js</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Read, diff, and edit without leaving the terminal — TUICommander Blog</title>
+  <meta name="description" content="AI agents reference files constantly. Instead of alt-tabbing to an editor every time, we built markdown, code, and diff viewers right into the terminal workspace." />
+
+  <meta property="og:title" content="Read, diff, and edit without leaving the terminal — TUICommander" />
+  <meta property="og:description" content="Markdown viewer, code editor, and side-by-side diff — all integrated as tabs next to your terminal sessions." />
+  <meta property="og:image" content="/public/blog/integrated-viewers/diff-viewer.png" />
+  <meta property="og:type" content="article" />
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/style.css" />
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PCXPSMR9JZ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-PCXPSMR9JZ');
+  </script>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="/" class="nav-logo">
+        <img src="/logo.png" alt="TUICommander" width="28" height="28" />
+        <span>TUICommander</span>
+      </a>
+      <div class="nav-links">
+        <a href="/#features">Features</a>
+        <a href="/#how-it-works">How it works</a>
+        <a href="/blog.html" class="nav-active">Blog</a>
+        <a href="/#faq">FAQ</a>
+        <a href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary btn-sm" rel="noopener noreferrer">Download</a>
+      </div>
+    </div>
+  </nav>
+
+  <article class="blog-post">
+    <header class="blog-post-header">
+      <a href="/blog.html" class="blog-back">&larr; Blog</a>
+      <time>March 29, 2026</time>
+      <h1>Read, diff, and edit without leaving the terminal</h1>
+      <p class="blog-post-summary">AI agents reference files constantly. Instead of alt-tabbing to an editor every time, we built markdown, code, and diff viewers right into the terminal workspace.</p>
+    </header>
+
+    <div class="blog-section">
+      <h2>The problem</h2>
+      <p>Working with AI coding agents means constantly looking at files. The agent changes a file and you want to see the diff. It references a markdown doc and you want to read it. It edits code and you want to check what it wrote. Every time, you alt-tab to VS Code or a browser, find the file, look at it, switch back.</p>
+      <p>This context switching kills your flow. You're not just losing seconds — you're losing the mental thread of what the agent is doing. By the time you've checked the file and come back, you've lost track of where the conversation was heading.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Markdown viewer with file browser</h2>
+      <p>When an agent outputs a file path ending in <code>.md</code> or <code>.mdx</code>, clicking it opens the file in a rendered markdown tab — right next to your terminal. Full rendering with headers, code blocks, lists, links, inline code. The tab gets a green tint so you can distinguish it from terminal tabs at a glance.</p>
+      <p>The right panel shows a markdown file browser with all markdown files in your repo, organized by directory. A filter field supports wildcards. Status dots indicate which files are modified, staged, or new — so you can see what the agent changed without running git status. Click any file to open it, click Edit to switch to the code editor for that file.</p>
+    </div>
+
+    <figure class="blog-figure">
+      <img src="/public/blog/integrated-viewers/markdown-viewer.png" alt="TUICommander markdown viewer showing CHANGELOG.md rendered with a file browser panel listing 1309 markdown files" />
+      <figcaption>The CHANGELOG rendered as a markdown tab, with the file browser showing all 1309 markdown files in the repo. Status dots mark modified and new files. Click any file to open it.</figcaption>
+    </figure>
+
+    <div class="blog-section">
+      <h2>Code editor with project tree</h2>
+      <p>For code files, TUICommander opens a syntax-highlighted editor tab powered by CodeMirror. Line numbers, proper indentation, language-aware highlighting. The right panel becomes a full file browser — the entire project tree with folders, search, and the same modification status dots.</p>
+      <p>This isn't meant to replace your IDE for heavy editing. It's for the quick checks and small fixes that happen constantly during agent work: verifying what the agent wrote, making a one-line correction, checking a configuration file. The tab is blue-tinted so you can tell it apart from terminals and markdown viewers.</p>
+    </div>
+
+    <figure class="blog-figure">
+      <img src="/public/blog/integrated-viewers/code-editor.png" alt="TUICommander code editor showing a JavaScript service worker file with syntax highlighting and a full project file tree" />
+      <figcaption>A service worker file open in the code editor with the project tree on the right. 51 files with modification status visible. The blue tab tint distinguishes editor tabs from terminal sessions.</figcaption>
+    </figure>
+
+    <div class="blog-section">
+      <h2>Side-by-side diff viewer</h2>
+      <p>The diff viewer is where you spend the most time during agent work. Click any changed file in the Git Changes panel and it opens in a split diff tab — old version on the left, new on the right, with word-level highlighting showing exactly what changed. You can toggle between split and unified view.</p>
+      <p>But viewing diffs is only half the story. You can act on them: click individual lines to select them, shift-click for ranges, and use the floating action bar to restore specific hunks or lines. This is surgical undo — if the agent changed 50 lines but got 3 wrong, you revert just those 3 without touching the rest. The tab is red-tinted, the Git Panel on the right shows the full change list with per-file addition/deletion counts, and the Smart Commit button is right there for when you're ready to commit.</p>
+    </div>
+
+    <figure class="blog-figure">
+      <img src="/public/blog/integrated-viewers/diff-viewer.png" alt="TUICommander side-by-side diff viewer showing a version bump in plugin.json, with the Git Changes panel listing 11 modified files" />
+      <figcaption>A side-by-side diff of plugin.json showing a version bump from 4.7.0 to 5.0.0. The Git Panel lists 11 unstaged changes with per-file stats. Smart Commit is one click away.</figcaption>
+    </figure>
+
+    <div class="blog-section">
+      <h2>Everything is a tab</h2>
+      <p>The key design decision was making viewers first-class tabs, not modal popups or side panels. A markdown file, a code editor, a diff view — they sit in the tab bar alongside your terminal sessions. You switch between them with Cmd+1 through Cmd+9, the same way you switch between terminals. Each tab type has its own color accent (green for markdown, blue for editor, red for diff, purple for panels, amber for remote sessions) so the tab bar becomes a visual map of your workspace.</p>
+      <p>This means you can have an agent running in tab 1, the diff it's producing in tab 2, and the markdown spec it's working from in tab 3. All visible, all one keyboard shortcut away, no app switching.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Clickable file paths tie it together</h2>
+      <p>The viewers aren't just for manually opening files. TUICommander auto-detects file paths in terminal output — when an agent prints a path, it becomes a clickable link. Markdown files open in the viewer, code files open in the editor (or your configured IDE), diffs open in the diff tab. The agent's output becomes a navigation surface. It says "I modified src/hooks/useSmartPrompts.ts:52" and you click to see exactly what it did.</p>
+    </div>
+  </article>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sstraus/tuicommander" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/sstraus/tuicommander/releases" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/FEATURES.md" rel="noopener noreferrer">Docs</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin API</a>
+      </div>
+      <p>MIT License &copy; 2026 Stefano Straus</p>
+      <p class="footer-tech">Built with Rust, Tauri v2, SolidJS, xterm.js</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

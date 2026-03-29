@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>From the couch to 5G: how we built remote access — TUICommander Blog</title>
+  <meta name="description" content="We wanted to monitor AI agents away from the desk. After trying session logs, remote proxies, and SSH, we built native mobile access with Tailscale and PWA." />
+
+  <meta property="og:title" content="From the couch to 5G: how we built remote access — TUICommander" />
+  <meta property="og:description" content="We wanted to monitor AI agents away from the desk. After trying session logs, remote proxies, and SSH, we built native mobile access with Tailscale and PWA." />
+  <meta property="og:image" content="/public/blog/remote-mobile/pwa-sessions.png" />
+  <meta property="og:type" content="article" />
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/style.css" />
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PCXPSMR9JZ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-PCXPSMR9JZ');
+  </script>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="/" class="nav-logo">
+        <img src="/logo.png" alt="TUICommander" width="28" height="28" />
+        <span>TUICommander</span>
+      </a>
+      <div class="nav-links">
+        <a href="/#features">Features</a>
+        <a href="/#how-it-works">How it works</a>
+        <a href="/blog.html" class="nav-active">Blog</a>
+        <a href="/#faq">FAQ</a>
+        <a href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary btn-sm" rel="noopener noreferrer">Download</a>
+      </div>
+    </div>
+  </nav>
+
+  <article class="blog-post">
+    <header class="blog-post-header">
+      <a href="/blog.html" class="blog-back">&larr; Blog</a>
+      <time>March 26, 2026</time>
+      <h1>From the couch to 5G: how we built remote access</h1>
+      <p class="blog-post-summary">We wanted to check on AI agents without sitting at the desk. After trying session logs, remote proxies, and SSH, we ended up building a full mobile experience.</p>
+    </header>
+
+    <div class="blog-section">
+      <h2>The problem</h2>
+      <p>When you run AI coding agents on long tasks, you want to know what's happening. Is it stuck? Does it need input? Did it finish? But you don't always want to be sitting at your computer to find out.</p>
+      <p>We tried the obvious solutions first. Tools that parse session logs and give you a read-only view — but they couldn't send commands back, which made them useless with our skill framework that needs interactive access. SSH from a phone is technically possible but painful. VNC gives you the full desktop but it's slow and clunky on mobile.</p>
+      <p>What we actually wanted was simple: see our terminals, interact with agents, and get notified when something needs attention — from anywhere, on any device.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>It started on the couch</h2>
+      <p>The first version wasn't about mobile at all. We wanted to work from the couch instead of the home office. An iPad with a real terminal session connected to TUICommander, with the same repo list, the same agent status, the same ability to send commands.</p>
+      <p>So we built a web interface — not a stripped-down dashboard, but a full remote session that mirrors the desktop experience. WebSocket-based PTY connections, real terminal rendering with xterm.js, repo switching, activity notifications. The same app, in a browser.</p>
+    </div>
+
+    <figure class="blog-figure">
+      <img src="/public/blog/remote-mobile/desktop-remote.png" alt="TUICommander running in a browser via Tailscale remote access, showing the full interface with sidebar, terminal, and git panel" />
+      <figcaption>The full TUICommander interface running in a browser over Tailscale — same sidebar, same terminal, same git panel. This is a remote session to the desktop app.</figcaption>
+    </figure>
+
+    <div class="blog-section">
+      <h2>Then we needed to leave the house</h2>
+      <p>The couch version worked over the local network. But then you want to check from a coffee shop, or while commuting, or from a different office. The first approach was a remote proxy — port forwarding with authentication. It worked, but it required configuration, exposed ports, and felt fragile.</p>
+      <p>Then we integrated Tailscale. TUICommander auto-detects the Tailscale daemon, provisions TLS certificates via the Local API, and serves the web interface over HTTPS on your private Tailscale network. No port forwarding, no firewall rules, no configuration. The settings page shows a QR code — scan it from your phone, and you're connected.</p>
+    </div>
+
+    <figure class="blog-figure">
+      <img src="/public/blog/remote-mobile/settings.png" alt="TUICommander Settings showing Remote Access configuration with Tailscale integration, QR code, and HTTPS URL" />
+      <figcaption>Remote Access settings — enable the toggle, pick the Tailscale network interface, and scan the QR code. HTTPS is automatic, authentication is token-based with configurable expiry.</figcaption>
+    </figure>
+
+    <div class="blog-section">
+      <h2>The PWA: a real terminal in your pocket</h2>
+      <p>Once Tailscale made the connection trivial, we built a PWA (Progressive Web App) optimized for mobile. Not a monitoring dashboard — a real interactive terminal. You can see all your repos and active sessions, tap into any terminal, type commands, and interact with agents just like on the desktop.</p>
+      <p>The mobile UI has a toolbar with the keys you need most: <code>/</code>, <code>Ctrl+C</code>, <code>Ctrl+D</code>, <code>Tab</code>, <code>Esc</code>, arrow keys. There's a command input at the bottom for longer text. Sessions, Activity, and Settings tabs give you the full picture.</p>
+    </div>
+
+    <figure class="blog-figure">
+      <img src="/public/blog/remote-mobile/pwa-activity.png" alt="TUICommander PWA showing 6 active sessions with agent status detection, task names, and an awaiting-input notification banner" />
+      <figcaption>6 agents running across different repos. TUICommander recognizes what each agent is doing — "Check Active Stories", "Task Review" — and flags the one that needs input with a yellow banner. One glance tells you what's happening and what needs your attention.</figcaption>
+    </figure>
+
+    <figure class="blog-figure">
+      <img src="/public/blog/remote-mobile/pwa-terminal.png" alt="TUICommander PWA terminal view showing an agent analyzing branch status and asking for next steps" />
+      <figcaption>A live terminal session on mobile — the agent analyzed the branch state, found diverged commits, and is asking what to do. You can respond right from your phone with the shortcut bar or the command input.</figcaption>
+    </figure>
+
+    <div class="blog-section">
+      <h2>Push notifications close the loop</h2>
+      <p>The final piece was notifications. Web Push from TUICommander directly to your mobile PWA — when an agent finishes a task, hits an error, or asks a question, you get a push notification. Tap it, and you're in the terminal session ready to respond.</p>
+      <p>Notifications are rate-limited (one per session per 30 seconds) to avoid spam during burst output. They work on both Android and iOS standalone mode, with guidance for iOS users who need to add the PWA to their home screen first.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>The stack</h2>
+      <p>The remote access system is built on a few layers that work together. The Rust backend runs an HTTP server (with automatic TCP port retry if the configured port is busy) that serves both the web interface and a WebSocket endpoint for real-time PTY data. Tailscale integration provisions TLS certificates automatically — the app checks for the Tailscale daemon, calls the Local API for certs, and falls back to CLI provisioning on macOS App Store builds. Certificates renew in the background every 24 hours.</p>
+      <p>Authentication uses session tokens with configurable expiry (the QR code and URL both embed the token). The web UI is a PWA with a service worker that handles push notifications and offline caching. Everything runs locally — no cloud relay, no third-party service in the data path.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>What's next</h2>
+      <p>We're working on an Activity feed for the mobile UI that surfaces parsed agent events — suggestions, progress, completion — so you can get the gist of what's happening without reading full terminal output. We're also exploring push notification actions, so you can respond to an agent's question directly from the notification without opening the app.</p>
+    </div>
+  </article>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sstraus/tuicommander" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/sstraus/tuicommander/releases" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/FEATURES.md" rel="noopener noreferrer">Docs</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin API</a>
+      </div>
+      <p>MIT License &copy; 2026 Stefano Straus</p>
+      <p class="footer-tech">Built with Rust, Tauri v2, SolidJS, xterm.js</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

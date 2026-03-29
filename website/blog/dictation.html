@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Talking to your AI agents instead of typing — TUICommander Blog</title>
+  <meta name="description" content="We added local voice dictation powered by Whisper so you can talk to AI coding agents hands-free. No cloud, no latency, GPU-accelerated on Mac." />
+
+  <meta property="og:title" content="Talking to your AI agents instead of typing — TUICommander" />
+  <meta property="og:description" content="Local voice dictation with Whisper — talk to AI agents hands-free, no cloud required." />
+  <meta property="og:image" content="/public/blog/dictation/settings.png" />
+  <meta property="og:type" content="article" />
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/style.css" />
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PCXPSMR9JZ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-PCXPSMR9JZ');
+  </script>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="/" class="nav-logo">
+        <img src="/logo.png" alt="TUICommander" width="28" height="28" />
+        <span>TUICommander</span>
+      </a>
+      <div class="nav-links">
+        <a href="/#features">Features</a>
+        <a href="/#how-it-works">How it works</a>
+        <a href="/blog.html" class="nav-active">Blog</a>
+        <a href="/#faq">FAQ</a>
+        <a href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary btn-sm" rel="noopener noreferrer">Download</a>
+      </div>
+    </div>
+  </nav>
+
+  <article class="blog-post">
+    <header class="blog-post-header">
+      <a href="/blog.html" class="blog-back">&larr; Blog</a>
+      <time>March 21, 2026</time>
+      <h1>Talking to your AI agents instead of typing</h1>
+      <p class="blog-post-summary">Hold a key, speak your instruction, release. The text appears in the terminal. No cloud service, no API key, no latency — Whisper runs locally on your machine.</p>
+    </header>
+
+    <div class="blog-section">
+      <h2>The problem</h2>
+      <p>AI coding agents are conversational — you give instructions in natural language and they execute. But typing those instructions can be slow, especially when you're explaining complex requirements or walking through a multi-step task. Sometimes you know exactly what you want but your typing speed is the bottleneck.</p>
+      <p>Cloud-based dictation services add latency and require sending your audio (potentially containing sensitive project details) to external servers. For a tool that runs locally and handles proprietary code, that's a non-starter. We needed voice input that was as private and fast as the rest of TUICommander.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Local Whisper inference</h2>
+      <p>TUICommander integrates OpenAI's Whisper model directly via <code>whisper-rs</code> — the inference runs entirely on your machine. On macOS, it's GPU-accelerated through Metal, making transcription near-instant even with larger models. On Linux and Windows, it runs on CPU, which is slower but still practical with the smaller models.</p>
+      <p>You choose the model that fits your hardware. The range goes from Whisper Small (~488 MB, fast, good enough for short commands) to Whisper Large V3 Turbo (~1.5 GB, excellent accuracy for longer dictation). Models download once and stay on disk — no recurring network calls.</p>
+    </div>
+
+    <figure class="blog-figure">
+      <img src="/public/blog/dictation/settings.png" alt="Dictation Settings showing model selection with Whisper Large V3 Turbo active, configurable hotkey, and long-press threshold" />
+      <figcaption>Dictation settings — choose your Whisper model, set a hotkey (default F5, configurable to any key), and adjust the long-press threshold to avoid accidental triggers.</figcaption>
+    </figure>
+
+    <div class="blog-section">
+      <h2>Push-to-talk with streaming</h2>
+      <p>The interaction is simple: hold your hotkey, speak, release. Short presses pass through as normal input so the key isn't wasted. A configurable long-press threshold (default 200ms) prevents accidental triggers.</p>
+      <p>While you're speaking, TUICommander shows real-time partial transcription in a floating toast above the status bar. It uses adaptive sliding windows — the first partial appears within ~1.5 seconds, then subsequent windows grow to 3 seconds for better quality. A voice activity detection (VAD) energy gate skips silence windows to prevent hallucination, and 200ms audio overlap between windows carries context for continuity.</p>
+      <p>The transcribed text goes wherever makes sense: if a text input has focus (a textarea, input field, or contenteditable element), it inserts there. If no text input is focused, it writes directly to the active terminal PTY. The focus target is captured at key-press time, not release time, so you always know where the text will land.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>How we use it</h2>
+      <p>The most common use case is giving complex instructions to an agent. Instead of typing a paragraph describing what you want refactored and how, you hold the key and explain it naturally. The agent gets a longer, more detailed instruction than you would have bothered to type — which means better results.</p>
+      <p>It's also useful for commit messages ("commit these changes with a message about fixing the branch selection performance"), quick responses to agent questions, and describing multi-step plans. Anything where natural speech is faster than structured typing.</p>
+      <p>The mic button in the status bar provides a visual alternative to the hotkey — hold to record, release to transcribe. It's the same mechanism, just accessible with a mouse click for when you're not near the keyboard.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>What's next</h2>
+      <p>We're exploring voice commands beyond dictation — recognizing intent from speech to trigger Smart Prompts directly. "Review this PR" could fire the Review PR prompt without typing. The building blocks are there: Whisper for transcription, Smart Prompts for actions, and the context variables to fill in the gaps.</p>
+    </div>
+  </article>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sstraus/tuicommander" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/sstraus/tuicommander/releases" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/FEATURES.md" rel="noopener noreferrer">Docs</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin API</a>
+      </div>
+      <p>MIT License &copy; 2026 Stefano Straus</p>
+      <p class="footer-tech">Built with Rust, Tauri v2, SolidJS, xterm.js</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

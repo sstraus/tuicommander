@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tracking your AI usage before the rate limit hits — TUICommander Blog</title>
+  <meta name="description" content="Running multiple AI agents burns through rate limits fast. We built a usage dashboard so you can see where you stand before you get throttled." />
+
+  <meta property="og:title" content="Tracking your AI usage before the rate limit hits — TUICommander" />
+  <meta property="og:description" content="A usage dashboard for AI coding agents with rate limits, token tracking, and session history." />
+  <meta property="og:image" content="/public/blog/claude-usage/dashboard.png" />
+  <meta property="og:type" content="article" />
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/style.css" />
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PCXPSMR9JZ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-PCXPSMR9JZ');
+  </script>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="/" class="nav-logo">
+        <img src="/logo.png" alt="TUICommander" width="28" height="28" />
+        <span>TUICommander</span>
+      </a>
+      <div class="nav-links">
+        <a href="/#features">Features</a>
+        <a href="/#how-it-works">How it works</a>
+        <a href="/blog.html" class="nav-active">Blog</a>
+        <a href="/#faq">FAQ</a>
+        <a href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary btn-sm" rel="noopener noreferrer">Download</a>
+      </div>
+    </div>
+  </nav>
+
+  <article class="blog-post">
+    <header class="blog-post-header">
+      <a href="/blog.html" class="blog-back">&larr; Blog</a>
+      <time>March 23, 2026</time>
+      <h1>Tracking your AI usage before the rate limit hits</h1>
+      <p class="blog-post-summary">Running multiple AI agents burns through rate limits fast. We built a usage dashboard so you can see exactly where you stand — and plan your work accordingly.</p>
+    </header>
+
+    <div class="blog-section">
+      <h2>The problem</h2>
+      <p>AI coding agents are powerful, but they come with limits. Claude has a 5-hour rolling window and a 7-day window. When you're running one agent, you can roughly guess how much capacity you have left. When you're running 5 agents across different repos, you have no idea — until you suddenly hit the wall and everything stops.</p>
+      <p>Getting rate-limited in the middle of a complex task is worse than not starting. The agent loses context, your momentum breaks, and you're left waiting for a reset timer that feels like it never ends. We needed visibility into usage before it became a problem.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>The usage dashboard</h2>
+      <p>TUICommander parses rate limit information from agent output in real time and aggregates it into a dedicated Claude Usage Dashboard. At the top, you see your current position against each limit — 5-hour window, 7-day window, and per-model limits — with progress bars and reset timers. One glance tells you how much runway you have.</p>
+      <p>Below that, a 7-day usage chart shows your token consumption over time, split into input and output tokens. You can see your usage patterns: which days were heavy, when you hit peaks, and how the rolling windows are tracking. The project filter lets you break this down per repo if you want to see which project is burning the most capacity.</p>
+    </div>
+
+    <figure class="blog-figure">
+      <img src="/public/blog/claude-usage/dashboard.png" alt="Claude Usage Dashboard showing rate limit progress bars, a 7-day token usage chart, and session insights including 149 sessions, 61.4K messages, and 7.7M total tokens" />
+      <figcaption>The Claude Usage Dashboard — 5-hour limit at 28%, 7-day at 45%, with a token usage chart showing the last week. 149 sessions, 61.4K messages, 7.7M tokens across 235 active hours. The activity heatmap at the bottom shows usage intensity over 52 weeks.</figcaption>
+    </figure>
+
+    <div class="blog-section">
+      <h2>Insights that help you plan</h2>
+      <p>The insights panel breaks down your usage into actionable numbers. Total sessions, messages (split by user vs assistant), input and output tokens, cache created and cache read, tokens per hour averaged across your active hours. These aren't vanity metrics — they help you understand your consumption pattern.</p>
+      <p>Cache metrics are particularly useful. A high cache read ratio means your agent is efficiently reusing context. Cache created vs cache read tells you whether your conversations are getting the benefit of prompt caching or constantly rebuilding context from scratch. This directly affects how fast you burn through your rate limits.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>The status bar keeps you informed</h2>
+      <p>You don't need to open the dashboard constantly. The status bar at the bottom of TUICommander shows a compact usage indicator: "5h: 28% · 7d: 45%". It's always visible, always current. When you're approaching a limit, you know it before launching another expensive agent task.</p>
+      <p>This changes how you schedule work. If you're at 80% on the 5-hour window, maybe you do the code review yourself instead of asking an agent. If you're at 10% on the 7-day window, you can confidently run multiple agents in parallel without worrying about hitting the ceiling.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>52-week activity heatmap</h2>
+      <p>At the bottom of the dashboard, a GitHub-style activity heatmap shows your usage intensity over the past year. Darker green squares mean heavier usage days. It's a quick visual answer to "am I using this tool more or less than I used to?" and a satisfying way to see the value you're getting from AI-assisted development over time.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>What's next</h2>
+      <p>We're working on usage-aware scheduling — letting TUICommander automatically balance agent workload across rate limit windows. If you queue up 3 tasks and the 5-hour window is nearly full, it could run the quick one now and defer the heavy ones until after the reset. Smart resource management for AI-first development.</p>
+    </div>
+  </article>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sstraus/tuicommander" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/sstraus/tuicommander/releases" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/FEATURES.md" rel="noopener noreferrer">Docs</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin API</a>
+      </div>
+      <p>MIT License &copy; 2026 Stefano Straus</p>
+      <p class="footer-tech">Built with Rust, Tauri v2, SolidJS, xterm.js</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

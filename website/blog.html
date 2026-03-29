@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Blog — TUICommander</title>
+  <meta name="description" content="Deep-dives into TUICommander features: why we built them, the problems they solve, and how they work." />
+
+  <meta property="og:title" content="Blog — TUICommander" />
+  <meta property="og:description" content="Deep-dives into TUICommander features." />
+  <meta property="og:image" content="/og.png" />
+  <meta property="og:type" content="website" />
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/style.css" />
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PCXPSMR9JZ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-PCXPSMR9JZ');
+  </script>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="/" class="nav-logo">
+        <img src="/logo.png" alt="TUICommander" width="28" height="28" />
+        <span>TUICommander</span>
+      </a>
+      <div class="nav-links">
+        <a href="/#features">Features</a>
+        <a href="/#how-it-works">How it works</a>
+        <a href="/blog.html" class="nav-active">Blog</a>
+        <a href="/#faq">FAQ</a>
+        <a href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary btn-sm" rel="noopener noreferrer">Download</a>
+      </div>
+    </div>
+  </nav>
+
+  <section class="blog-index">
+    <div class="container">
+      <h1>Blog</h1>
+      <p class="blog-index-subtitle">Deep-dives into why we build what we build.</p>
+
+      <div class="blog-list">
+        <a href="/blog/integrated-viewers.html" class="blog-card">
+          <div class="blog-card-meta">
+            <time>March 29, 2026</time>
+            <span class="blog-card-badge">Draft</span>
+          </div>
+          <h3>Read, diff, and edit without leaving the terminal</h3>
+          <p>AI agents reference files constantly. Instead of alt-tabbing to an editor every time, we built markdown, code, and diff viewers right into the terminal workspace.</p>
+        </a>
+        <a href="/blog/agent-observability.html" class="blog-card">
+          <div class="blog-card-meta">
+            <time>March 28, 2026</time>
+            <span class="blog-card-badge">Draft</span>
+          </div>
+          <h3>Knowing what your agents are doing without looking</h3>
+          <p>When you run 5 agents in parallel, you can't watch every terminal. We built status detection, sound notifications, and an activity dashboard so you don't have to.</p>
+        </a>
+        <a href="/blog/sidebar-workspace.html" class="blog-card">
+          <div class="blog-card-meta">
+            <time>March 27, 2026</time>
+            <span class="blog-card-badge">Draft</span>
+          </div>
+          <h3>One sidebar, all your repos</h3>
+          <p>When you work across 10+ repositories every day, you need a single place to see branches, worktrees, PRs, and diff stats — without switching tools.</p>
+        </a>
+        <a href="/blog/remote-mobile.html" class="blog-card">
+          <div class="blog-card-meta">
+            <time>March 26, 2026</time>
+            <span class="blog-card-badge">Draft</span>
+          </div>
+          <h3>From the couch to 5G: how we built remote access</h3>
+          <p>We wanted to check on AI agents without sitting at the desk. After trying session logs, remote proxies, and SSH, we ended up building a full mobile experience.</p>
+        </a>
+        <a href="/blog/smart-prompts.html" class="blog-card">
+          <div class="blog-card-meta">
+            <time>March 25, 2026</time>
+            <span class="blog-card-badge">Draft</span>
+          </div>
+          <h3>Why we built Smart Prompts</h3>
+          <p>We were copy-pasting the same instructions to AI agents every day. So we turned them into one-click actions that know your context.</p>
+        </a>
+        <a href="/blog/terminal-power.html" class="blog-card">
+          <div class="blog-card-meta">
+            <time>March 24, 2026</time>
+            <span class="blog-card-badge">Draft</span>
+          </div>
+          <h3>A terminal built for 8-hour sessions</h3>
+          <p>Split panes, detachable windows, persistent sessions, find in content, and up to 50 concurrent terminals. We built a terminal for people who live in it all day.</p>
+        </a>
+        <a href="/blog/claude-usage.html" class="blog-card">
+          <div class="blog-card-meta">
+            <time>March 23, 2026</time>
+            <span class="blog-card-badge">Draft</span>
+          </div>
+          <h3>Tracking your AI usage before the rate limit hits</h3>
+          <p>Running multiple AI agents burns through rate limits fast. We built a usage dashboard so you can see exactly where you stand — and plan your work accordingly.</p>
+        </a>
+        <a href="/blog/performance.html" class="blog-card">
+          <div class="blog-card-meta">
+            <time>March 22, 2026</time>
+            <span class="blog-card-badge">Draft</span>
+          </div>
+          <h3>How we keep it fast with 10 repos and 8 terminals open</h3>
+          <p>A desktop app that manages 10 repos, 8 terminals, and constant git operations can't afford to be slow. Here's the performance work we did under the hood.</p>
+        </a>
+        <a href="/blog/dictation.html" class="blog-card">
+          <div class="blog-card-meta">
+            <time>March 21, 2026</time>
+            <span class="blog-card-badge">Draft</span>
+          </div>
+          <h3>Talking to your AI agents instead of typing</h3>
+          <p>Hold a key, speak your instruction, release. The text appears in the terminal. No cloud service, no API key, no latency — Whisper runs locally on your machine.</p>
+        </a>
+        <a href="/blog/plugin-system.html" class="blog-card">
+          <div class="blog-card-meta">
+            <time>March 20, 2026</time>
+            <span class="blog-card-badge">Draft</span>
+          </div>
+          <h3>Extend TUICommander with plugins</h3>
+          <p>Every workflow is different. We built a plugin system so you can extend TUICommander with custom panels, context menu actions, and MCP integrations.</p>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sstraus/tuicommander" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/sstraus/tuicommander/releases" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/FEATURES.md" rel="noopener noreferrer">Docs</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin API</a>
+      </div>
+      <p>MIT License &copy; 2026 Stefano Straus</p>
+      <p class="footer-tech">Built with Rust, Tauri v2, SolidJS, xterm.js</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

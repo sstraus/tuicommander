@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>One sidebar, all your repos — TUICommander Blog</title>
+  <meta name="description" content="Managing multiple repos means juggling branches, worktrees, PRs, and diff stats across projects. We built a sidebar that puts everything in one place." />
+
+  <meta property="og:title" content="One sidebar, all your repos — TUICommander" />
+  <meta property="og:description" content="Managing multiple repos means juggling branches, worktrees, PRs, and diff stats across projects. We built a sidebar that puts everything in one place." />
+  <meta property="og:image" content="/public/blog/sidebar-workspace/sidebar-pr.png" />
+  <meta property="og:type" content="article" />
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/style.css" />
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PCXPSMR9JZ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-PCXPSMR9JZ');
+  </script>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="/" class="nav-logo">
+        <img src="/logo.png" alt="TUICommander" width="28" height="28" />
+        <span>TUICommander</span>
+      </a>
+      <div class="nav-links">
+        <a href="/#features">Features</a>
+        <a href="/#how-it-works">How it works</a>
+        <a href="/blog.html" class="nav-active">Blog</a>
+        <a href="/#faq">FAQ</a>
+        <a href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary btn-sm" rel="noopener noreferrer">Download</a>
+      </div>
+    </div>
+  </nav>
+
+  <article class="blog-post">
+    <header class="blog-post-header">
+      <a href="/blog.html" class="blog-back">&larr; Blog</a>
+      <time>March 27, 2026</time>
+      <h1>One sidebar, all your repos</h1>
+      <p class="blog-post-summary">When you work across 10+ repositories every day, you need a single place to see branches, worktrees, PRs, and diff stats — without switching tools.</p>
+    </header>
+
+    <div class="blog-section">
+      <h2>The problem</h2>
+      <p>Most developer tools assume you work on one repo at a time. Your terminal is in one directory. Your git GUI shows one project. When you want to check the PR status on a different repo, you switch context — open GitHub, find the repo, find the PR, remember what you were doing before.</p>
+      <p>If you're running AI agents across multiple projects (which is what TUICommander is built for), this context switching multiplies. You have agents working on different branches across different repos, each with their own PRs, their own diff stats, their own worktrees. Keeping track of all of it in your head doesn't scale.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>A workspace, not a file browser</h2>
+      <p>The TUICommander sidebar isn't a file tree. It's a workspace view — every repo you've added is listed with its branches, worktrees, and live status. At a glance you see which branch is active, how many lines changed (the green and red badges), how many open PRs a repo has, and whether agents are running.</p>
+      <p>Repos are grouped visually. Each one is a collapsible section showing its branches. Worktree branches get a distinct icon so you can tell them apart from regular checkouts. Clicking a branch switches your terminal context to that repo and branch instantly — terminals are scoped per branch, so your session state follows.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>PR management without leaving the terminal</h2>
+      <p>This is where it gets practical. Every repo with open PRs shows a PR count badge. Click it, and you get a PR panel listing all open pull requests with their status: draft, review requested, blocked, CI results. Select a PR and you see the full detail — author, commit count, additions/deletions, CI checks, review state.</p>
+      <p>But the panel isn't just for reading. You can act directly: Checkout the PR branch. Create a worktree for it (isolated copy, no need to stash your current work). Approve it. View the diff. Trigger a Smart Prompt to review the code. Open it on GitHub. All from the same panel, without opening a browser or running git commands manually.</p>
+    </div>
+
+    <figure class="blog-figure">
+      <img src="/public/blog/sidebar-workspace/sidebar-pr.png" alt="TUICommander sidebar showing multiple repos with branches, worktrees, diff stats, and a PR detail panel with checkout, worktree, approve, and review actions" />
+      <figcaption>The sidebar lists 12 repos with their branches and diff stats. The PR panel on the right shows PR #174 — blocked, review required, 4 CI checks passed. One click to checkout, create a worktree, approve, view diff, or trigger an AI review.</figcaption>
+    </figure>
+
+    <div class="blog-section">
+      <h2>Branch operations at your fingertips</h2>
+      <p>Right-clicking a branch opens a context menu with everything you'd normally do through git commands: create a new branch, delete, rename, push, pull, rebase from base branch, open in GitHub, open the PR if one exists. The "Update from base (rebase)" action knows which branch is your base because TUICommander tracks base refs — no need to remember if you branched from main, develop, or a release branch.</p>
+      <p>Creating a new branch shows an inline form right in the sidebar with a base ref selector. You pick your base from grouped Local/Remote refs (it auto-fetches remote refs before showing the list), name your branch, and it's created. No terminal commands, no typos.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Worktrees as first-class citizens</h2>
+      <p>Git worktrees let you have multiple branches checked out simultaneously in separate directories. TUICommander makes them a core workflow: create a worktree from any branch (including PR branches), and it gets its own isolated copy of the repo. Your agents can work on different branches in parallel without stepping on each other.</p>
+      <p>In the sidebar, worktree branches are visually distinct — they show a fork icon instead of the regular branch icon. The bottom toolbar gives you Pull, Push, Fetch, and Stash for the active repo. And the "Add Repository" button at the bottom lets you grow your workspace as your projects evolve.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>What this enables</h2>
+      <p>The sidebar turns TUICommander from a terminal multiplexer into a development control center. You sit down, scan 12 repos in 3 seconds: which branches have uncommitted changes, which PRs need review, which agents are still running. Then you act — checkout, review, merge, create worktrees — without leaving the app. The terminal stays focused on what terminals do best: running agents and commands. The sidebar handles the rest.</p>
+    </div>
+  </article>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sstraus/tuicommander" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/sstraus/tuicommander/releases" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/FEATURES.md" rel="noopener noreferrer">Docs</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin API</a>
+      </div>
+      <p>MIT License &copy; 2026 Stefano Straus</p>
+      <p class="footer-tech">Built with Rust, Tauri v2, SolidJS, xterm.js</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>
