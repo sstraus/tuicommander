@@ -92,6 +92,15 @@ pub(super) async fn execute_api_prompt_http(
     }
 }
 
+pub(super) async fn verify_agent_session_http(
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let agent_type = body.get("agentType").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let session_id = body.get("sessionId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let cwd = body.get("cwd").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    Json(crate::agent_session::verify_agent_session(agent_type, session_id, cwd))
+}
+
 pub(super) async fn spawn_agent_session(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,

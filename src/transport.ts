@@ -549,6 +549,13 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
   },
 
   // --- Agents ---
+  verify_agent_session: {
+    map: (args) => ({
+      method: "POST",
+      path: "/agents/verify-session",
+      body: { agentType: args.agentType, sessionId: args.sessionId, cwd: args.cwd },
+    }),
+  },
   detect_agents: { map: () => ({ method: "GET", path: "/agents" }) },
   detect_agent_binary: {
     map: (_args, p) => ({ method: "GET", path: `/agents/detect?binary=${p("binary")}` }),
