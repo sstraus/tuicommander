@@ -2,6 +2,7 @@ import { Component, For, Show, createSignal, onMount } from "solid-js";
 import { AGENTS, AGENT_DISPLAY, MCP_SUPPORT, type AgentType, type AgentRunConfig } from "../../../agents";
 import { appLogger } from "../../../stores/appLogger";
 import { agentConfigsStore, llmApiStore } from "../../../stores/agentConfigs";
+import { promptLibraryStore } from "../../../stores/promptLibrary";
 import { useAgentDetection, type AgentAvailability } from "../../../hooks/useAgentDetection";
 import { invoke } from "../../../invoke";
 import { settingsStore } from "../../../stores/settings";
@@ -519,102 +520,104 @@ const LlmApiSection: Component = () => {
     }
   };
 
+  const hasApiPrompts = () => {
+    const prompts = promptLibraryStore.getAllPrompts();
+    return prompts.some((p) => p.executionMode === "api");
+  };
+
   return (
-    <div class={a.section}>
-      <h4 class={a.sectionTitle}>LLM API</h4>
-      <p class={s.hint}>Direct LLM API for Smart Prompts in "API" execution mode. No terminal or agent CLI required.</p>
+    <Show when={hasApiPrompts() || config().provider}>
+      <div class={s.section} style={{ "border-top": "1px solid var(--border)", "padding-top": "20px", "margin-top": "20px" }}>
+        <h3>LLM API</h3>
+        <p class={s.hint} style={{ "margin-top": "-12px", "margin-bottom": "16px" }}>Direct LLM API for Smart Prompts in "API" execution mode</p>
 
-      <div class={a.fieldGroup}>
-        <label class={s.label}>Provider</label>
-        <select
-          class={s.select}
-          value={config().provider}
-          onChange={(e) => handleProviderChange(e.currentTarget.value)}
-        >
-          <option value="">— Select provider —</option>
-          <For each={LLM_PROVIDERS}>
-            {(p) => <option value={p.value}>{p.label}</option>}
-          </For>
-        </select>
-      </div>
+        <div class={s.group}>
+          <label>Provider</label>
+          <select
+            value={config().provider}
+            onChange={(e) => handleProviderChange(e.currentTarget.value)}
+          >
+            <option value="">— Select provider —</option>
+            <For each={LLM_PROVIDERS}>
+              {(p) => <option value={p.value}>{p.label}</option>}
+            </For>
+          </select>
+        </div>
 
-      <div class={a.fieldGroup}>
-        <label class={s.label}>Model</label>
-        <input
-          type="text"
-          class={s.input}
-          value={config().model}
-          placeholder={providerInfo()?.placeholder ?? "model-name"}
-          onInput={(e) => handleModelChange(e.currentTarget.value)}
-        />
-      </div>
-
-      <Show when={needsUrl()}>
-        <div class={a.fieldGroup}>
-          <label class={s.label}>Base URL</label>
+        <div class={s.group}>
+          <label>Model</label>
           <input
             type="text"
-            class={s.input}
-            value={config().base_url ?? ""}
-            placeholder="https://..."
-            onInput={(e) => handleBaseUrlChange(e.currentTarget.value)}
+            value={config().model}
+            placeholder={providerInfo()?.placeholder ?? "model-name"}
+            onInput={(e) => handleModelChange(e.currentTarget.value)}
           />
         </div>
-      </Show>
 
-      <div class={a.fieldGroup}>
-        <label class={s.label}>API Key</label>
-        <Show
-          when={!llmApiStore.state.hasKey}
-          fallback={
-            <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
-              <span style={{ color: "var(--success)", "font-size": "var(--font-sm)" }}>Key stored in keyring</span>
+        <Show when={needsUrl()}>
+          <div class={s.group}>
+            <label>Base URL</label>
+            <input
+              type="text"
+              value={config().base_url ?? ""}
+              placeholder="https://..."
+              onInput={(e) => handleBaseUrlChange(e.currentTarget.value)}
+            />
+          </div>
+        </Show>
+
+        <div class={s.group}>
+          <label>API Key</label>
+          <Show
+            when={!llmApiStore.state.hasKey}
+            fallback={
+              <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
+                <span style={{ color: "var(--success)", "font-size": "var(--font-sm)", "flex-shrink": "0" }}>Stored</span>
+                <input
+                  type="text"
+                  style={{ flex: "1" }}
+                  value={apiKey()}
+                  placeholder="Enter new key to replace"
+                  onInput={(e) => setApiKey(e.currentTarget.value)}
+                />
+                <Show when={apiKey().trim()}>
+                  <button class={a.actionBtn} onClick={handleSaveKey}>Save</button>
+                </Show>
+              </div>
+            }
+          >
+            <div style={{ display: "flex", gap: "8px" }}>
               <input
-                type="password"
-                class={s.input}
+                type="text"
                 style={{ flex: "1" }}
                 value={apiKey()}
-                placeholder="Enter new key to replace"
+                placeholder="Paste your API key"
                 onInput={(e) => setApiKey(e.currentTarget.value)}
               />
               <Show when={apiKey().trim()}>
-                <button class={s.btn} onClick={handleSaveKey}>Save</button>
+                <button class={a.actionBtn} onClick={handleSaveKey}>Save</button>
               </Show>
             </div>
-          }
-        >
-          <div style={{ display: "flex", gap: "8px" }}>
-            <input
-              type="password"
-              class={s.input}
-              style={{ flex: "1" }}
-              value={apiKey()}
-              placeholder="Paste your API key"
-              onInput={(e) => setApiKey(e.currentTarget.value)}
-            />
-            <Show when={apiKey().trim()}>
-              <button class={s.btn} onClick={handleSaveKey}>Save</button>
-            </Show>
-          </div>
-        </Show>
-      </div>
+          </Show>
+        </div>
 
-      <div style={{ display: "flex", "align-items": "center", gap: "8px", "margin-top": "8px" }}>
-        <button
-          class={s.btn}
-          disabled={testing() || !config().provider || !config().model || !llmApiStore.state.hasKey}
-          onClick={handleTest}
-        >
-          {testing() ? "Testing..." : "Test Connection"}
-        </button>
-        <Show when={testResult()}>
-          {(result) => (
-            <span style={{ color: result().ok ? "var(--success)" : "var(--error)", "font-size": "var(--font-sm)" }}>
-              {result().msg.slice(0, 120)}
-            </span>
-          )}
-        </Show>
+        <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
+          <button
+            class={a.actionBtn}
+            disabled={testing() || !config().provider || !config().model || !llmApiStore.state.hasKey}
+            onClick={handleTest}
+          >
+            {testing() ? "Testing..." : "Test Connection"}
+          </button>
+          <Show when={testResult()}>
+            {(result) => (
+              <span style={{ color: result().ok ? "var(--success)" : "var(--error)", "font-size": "var(--font-sm)" }}>
+                {result().msg.slice(0, 120)}
+              </span>
+            )}
+          </Show>
+        </div>
       </div>
-    </div>
+    </Show>
   );
 };
