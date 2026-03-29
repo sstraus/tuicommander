@@ -154,7 +154,7 @@ pub(crate) fn is_tailscale_ip(ip_str: &str) -> bool {
         }
         IpAddr::V6(v6) => {
             let s = v6.segments();
-            s[0] == 0xfd7a && s[1] == 0x115c && (s[2] & 0xffff) == 0xa1e0
+            s[0] == 0xfd7a && s[1] == 0x115c && s[2] == 0xa1e0
         }
     }
 }

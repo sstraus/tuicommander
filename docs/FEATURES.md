@@ -1292,8 +1292,10 @@ Phone-optimized progressive web app for monitoring AI agents remotely. Separate 
 - Service worker (`sw.js`) handles push events and notification clicks
 - `PushManager.subscribe()` flow with user gesture (click handler) for iOS/Firefox
 - Push subscriptions stored in `push_subscriptions.json`, survive restarts
-- API endpoints: `POST/DELETE /api/push/subscribe`, `GET /api/push/vapid-key`
-- Triggers on agent `awaiting_input` state (question events)
+- API endpoints: `POST/DELETE /api/push/subscribe`, `GET /api/push/vapid-key`, `POST /api/push/heartbeat`
+- Triggers: agent `awaiting_input` (question, orange dot) and `PtyExit` (session completed, purple/unseen dot)
+- Deep link: notification click navigates to `/mobile/session/<id>`, opening the specific session detail
+- Mobile/desktop push target switch: PWA heartbeat activates mobile push; desktop window focus deactivates it — prevents duplicate alerts when working at the desktop
 - Rate limited: max 1 push per session per 30 seconds
 - Stale subscriptions cleaned on HTTP 410 Gone
 - iOS standalone detection: shows "Add to Home Screen" guidance when not installed

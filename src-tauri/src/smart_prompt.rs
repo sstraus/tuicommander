@@ -33,12 +33,12 @@ pub(crate) async fn execute_headless_prompt(
         .map_err(|e| format!("Failed to spawn process: {e}"))?;
 
     // Pipe prompt content via stdin to avoid shell injection
-    if let Some(content) = stdin_content {
-        if let Some(mut stdin) = child.stdin.take() {
-            use tokio::io::AsyncWriteExt;
-            let _ = stdin.write_all(content.as_bytes()).await;
-            drop(stdin); // Close stdin so the process can proceed
-        }
+    if let Some(content) = stdin_content
+        && let Some(mut stdin) = child.stdin.take()
+    {
+        use tokio::io::AsyncWriteExt;
+        let _ = stdin.write_all(content.as_bytes()).await;
+        drop(stdin); // Close stdin so the process can proceed
     }
 
     match timeout(duration, child.wait_with_output()).await {

@@ -134,8 +134,7 @@ fn parse_remote_owner_slug(url: &str) -> Option<(String, String)> {
         // https://github.com/owner/repo.git → /owner/repo.git (after host)
         let without_scheme = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://"))?;
         // Skip the host: github.com/owner/repo.git
-        let after_host = without_scheme.find('/').map(|i| &without_scheme[i + 1..])?;
-        after_host
+        without_scheme.find('/').map(|i| &without_scheme[i + 1..])?
     };
     let path = path.trim_end_matches(".git").trim_end_matches('/');
     let mut parts = path.splitn(2, '/');
@@ -213,11 +212,11 @@ pub(crate) async fn resolve_context_variables(repo_path: String) -> Result<HashM
         vars.insert("repo_path".to_string(), repo_path.clone());
 
         // Derive repo_owner and repo_slug from remote_url
-        if let Some(url) = vars.get("remote_url") {
-            if let Some((owner, slug)) = parse_remote_owner_slug(url) {
-                vars.insert("repo_owner".to_string(), owner);
-                vars.insert("repo_slug".to_string(), slug);
-            }
+        if let Some(url) = vars.get("remote_url")
+            && let Some((owner, slug)) = parse_remote_owner_slug(url)
+        {
+            vars.insert("repo_owner".to_string(), owner);
+            vars.insert("repo_slug".to_string(), slug);
         }
 
         // Derive dirty_files_count from changed_files

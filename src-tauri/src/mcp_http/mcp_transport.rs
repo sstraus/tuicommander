@@ -1209,8 +1209,8 @@ fn handle_debug(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::
             let buf = state.log_buffer.lock();
             let all = buf.get_entries(0);
             let filtered: Vec<_> = all.into_iter()
-                .filter(|e| level_filter.map_or(true, |l| e.level == l))
-                .filter(|e| source_filter.map_or(true, |s| e.source == s))
+                .filter(|e| level_filter.is_none_or(|l| e.level == l))
+                .filter(|e| source_filter.is_none_or(|s| e.source == s))
                 .collect();
             let start = filtered.len().saturating_sub(limit);
             serde_json::json!(filtered[start..])
@@ -1888,6 +1888,7 @@ mod tests {
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
             tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),
             push_store: crate::push::PushStore::load(&std::env::temp_dir()),
+            mobile_push_active: std::sync::atomic::AtomicBool::new(false),
             server_start_time: std::time::Instant::now(),
         })
     }

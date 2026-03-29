@@ -148,7 +148,7 @@ async fn push_subscribe(
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
 
-    match db::insert_push_sub(conn, &hash, &body.endpoint, &body.p256dh, &body.auth).await {
+    match db::insert_push_sub(conn, &hash, &body.endpoint, &body.keys.p256dh, &body.keys.auth).await {
         Ok(()) => StatusCode::CREATED.into_response(),
         Err(e) => {
             tracing::error!(error = %e, "failed to store push subscription");

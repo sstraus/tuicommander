@@ -44,12 +44,11 @@ pub(crate) fn find_binary() -> Option<PathBuf> {
     if let Ok(output) = std::process::Command::new(if cfg!(windows) { "where" } else { "which" })
         .arg("tailscale")
         .output()
+        && output.status.success()
     {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() {
-                return Some(PathBuf::from(path));
-            }
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !path.is_empty() {
+            return Some(PathBuf::from(path));
         }
     }
 
@@ -302,10 +301,10 @@ fn extract_http_body(response: &[u8]) -> anyhow::Result<Vec<u8>> {
     let headers = String::from_utf8_lossy(&response[..pos]);
 
     // Check for non-200 status
-    if let Some(status_line) = headers.lines().next() {
-        if !status_line.contains("200") {
-            anyhow::bail!("Tailscale Local API error: {status_line}");
-        }
+    if let Some(status_line) = headers.lines().next()
+        && !status_line.contains("200")
+    {
+        anyhow::bail!("Tailscale Local API error: {status_line}");
     }
 
     Ok(response[pos + 4..].to_vec())

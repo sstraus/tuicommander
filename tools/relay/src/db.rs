@@ -228,8 +228,10 @@ pub async fn list_push_subs(
                 .query_map(rusqlite::params![hash], |row| {
                     Ok(crate::types::PushSubscription {
                         endpoint: row.get(0)?,
-                        p256dh: row.get(1)?,
-                        auth: row.get(2)?,
+                        keys: crate::types::PushSubscriptionKeys {
+                            p256dh: row.get(1)?,
+                            auth: row.get(2)?,
+                        },
                     })
                 })?
                 .collect::<std::result::Result<Vec<_>, _>>()?;

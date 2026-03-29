@@ -27,9 +27,10 @@ self.addEventListener("notificationclick", (event) => {
   const url = event.notification.data?.url || "/mobile";
   event.waitUntil(
     clients.matchAll({ type: "window" }).then((windowClients) => {
-      // Focus existing window if open
+      // Focus existing window and navigate to the deep link
       for (const client of windowClients) {
         if (client.url.includes("/mobile") && "focus" in client) {
+          client.navigate(url);
           return client.focus();
         }
       }

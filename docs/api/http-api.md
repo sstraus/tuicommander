@@ -991,7 +991,17 @@ Content-Type: application/json
 { "endpoint": "https://...", "keys": { "p256dh": "...", "auth": "..." } }
 ```
 
-Register a push subscription. Idempotent (same endpoint updates keys).
+Register a push subscription. Idempotent (same endpoint updates keys). Also activates mobile push target (see Heartbeat).
+
+### Heartbeat
+
+```
+POST /api/push/heartbeat
+```
+
+Activates mobile push target. Called by the PWA on open and on `visibilitychange` (e.g. unlock phone). When active, push notifications are sent for question and completion events. The flag is cleared when the desktop window gains focus, preventing duplicate alerts.
+
+**Response:** `204 No Content`
 
 ### Unsubscribe
 

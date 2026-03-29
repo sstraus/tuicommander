@@ -117,8 +117,8 @@ async fn push_sub_insert_and_list() {
     let subs = tuic_relay::db::list_push_subs(&conn, token_hash).await.unwrap();
     assert_eq!(subs.len(), 1);
     assert_eq!(subs[0].endpoint, "https://fcm.googleapis.com/fcm/send/abc123");
-    assert_eq!(subs[0].p256dh, "BPk1cGB...");
-    assert_eq!(subs[0].auth, "authsecret1");
+    assert_eq!(subs[0].keys.p256dh, "BPk1cGB...");
+    assert_eq!(subs[0].keys.auth, "authsecret1");
 }
 
 #[tokio::test]
@@ -139,8 +139,8 @@ async fn push_sub_upsert_replaces_keys() {
 
     let subs = tuic_relay::db::list_push_subs(&conn, token_hash).await.unwrap();
     assert_eq!(subs.len(), 1);
-    assert_eq!(subs[0].p256dh, "new_p256dh");
-    assert_eq!(subs[0].auth, "new_auth");
+    assert_eq!(subs[0].keys.p256dh, "new_p256dh");
+    assert_eq!(subs[0].keys.auth, "new_auth");
 }
 
 #[tokio::test]
@@ -212,8 +212,7 @@ async fn push_subscribe_requires_auth() {
         .post(format!("http://{addr}/push/subscribe"))
         .json(&serde_json::json!({
             "endpoint": "https://push.example.com/sub",
-            "p256dh": "key",
-            "auth": "secret"
+            "keys": { "p256dh": "key", "auth": "secret" }
         }))
         .send()
         .await
@@ -233,8 +232,7 @@ async fn push_subscribe_and_unsubscribe() {
         .header("Authorization", format!("Bearer {token}"))
         .json(&serde_json::json!({
             "endpoint": "https://fcm.googleapis.com/fcm/send/test123",
-            "p256dh": "BPk1cGBIaSg",
-            "auth": "authsecret"
+            "keys": { "p256dh": "BPk1cGBIaSg", "auth": "authsecret" }
         }))
         .send()
         .await

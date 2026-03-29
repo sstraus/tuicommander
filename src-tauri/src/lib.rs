@@ -541,10 +541,10 @@ fn get_connect_url(state: State<'_, Arc<AppState>>, ip: String) -> String {
 
     // If TLS is active and the IP is a Tailscale address, use https + FQDN
     let ts = state.tailscale_state.read().clone();
-    if let tailscale::TailscaleState::Running { ref fqdn, https_enabled: true } = ts {
-        if crate::mcp_http::auth::is_tailscale_ip(&ip) {
-            return build_connect_url("https", fqdn, port, &token);
-        }
+    if let tailscale::TailscaleState::Running { ref fqdn, https_enabled: true } = ts
+        && crate::mcp_http::auth::is_tailscale_ip(&ip)
+    {
+        return build_connect_url("https", fqdn, port, &token);
     }
 
     build_connect_url("http", &ip, port, &token)
@@ -665,7 +665,9 @@ pub fn run() {
                 tracing::info!(source = "push", "Generated VAPID key pair");
                 config.vapid_private_key = private;
                 config.vapid_public_key = public;
-                let _ = config::save_app_config(config.clone());
+                if let Err(e) = config::save_app_config(config.clone()) {
+                    tracing::error!(source = "push", "Failed to persist VAPID keys: {e}");
+                }
             }
             Err(e) => {
                 tracing::error!(source = "push", "Failed to generate VAPID keys: {e}");
@@ -723,6 +725,7 @@ pub fn run() {
         bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
         tailscale_state: parking_lot::RwLock::new(tailscale::TailscaleState::NotInstalled),
         push_store: push::PushStore::load(&config::config_dir()),
+        mobile_push_active: std::sync::atomic::AtomicBool::new(false),
         server_start_time: std::time::Instant::now(),
     });
 
@@ -864,6 +867,16 @@ pub fn run() {
             // Store AppHandle so HTTP handlers can emit Tauri events
             let app_state: &Arc<AppState> = app.state::<Arc<AppState>>().inner();
             *app_state.app_handle.write() = Some(app.handle().clone());
+
+            // Deactivate mobile push when desktop window gains focus
+            if let Some(window) = app.get_webview_window("main") {
+                let push_flag = Arc::clone(app_state);
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::Focused(true) = event {
+                        push_flag.mobile_push_active.store(false, std::sync::atomic::Ordering::Relaxed);
+                    }
+                });
+            }
 
             // Install Fn/Globe key monitor for push-to-talk dictation
             dictation::fn_key_monitor::install(app.handle().clone());

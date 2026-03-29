@@ -178,10 +178,10 @@ pub(crate) async fn execute_api_prompt(
     let client = build_client(&config, &api_key);
 
     let mut chat_req = ChatRequest::default();
-    if let Some(sys) = &system_prompt {
-        if !sys.is_empty() {
-            chat_req = chat_req.with_system(sys.as_str());
-        }
+    if let Some(sys) = &system_prompt
+        && !sys.is_empty()
+    {
+        chat_req = chat_req.with_system(sys.as_str());
     }
     chat_req = chat_req.append_message(ChatMessage::user(content));
 
@@ -190,7 +190,7 @@ pub(crate) async fn execute_api_prompt(
     let result = tokio::time::timeout(duration, client.exec_chat(&config.model, chat_req, None))
         .await
         .map_err(|_| format!("Timed out after {}s", duration.as_secs()))?
-        .map_err(|e| map_genai_error(e))?;
+        .map_err(map_genai_error)?;
 
     result
         .first_text()

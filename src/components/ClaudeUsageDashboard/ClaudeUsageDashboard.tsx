@@ -1,5 +1,6 @@
 import { Component, createSignal, createEffect, createMemo, For, Show, onCleanup, onMount } from "solid-js";
 import { invoke } from "../../invoke";
+import { appLogger } from "../../stores/appLogger";
 import s from "./ClaudeUsageDashboard.module.css";
 
 // ---------------------------------------------------------------------------
@@ -359,7 +360,8 @@ const UsageChart: Component<{ timeline: TimelinePoint[]; days: number }> = (prop
         {/* Hover crosshair + tooltip */}
         <Show when={hoverIdx() != null}>
           {(() => {
-            const idx = hoverIdx()!;
+            const idx = hoverIdx();
+            if (idx == null) return null;
             const pt = chartData().points[idx];
             if (!pt) return null;
             const total = pt.raw.input_tokens + pt.raw.output_tokens;
@@ -440,8 +442,8 @@ export const ClaudeUsageDashboard: Component = () => {
     try {
       const data = await invoke<TimelinePoint[]>("get_claude_usage_timeline", { scope: scopeValue, days: 7 });
       setTimeline(data);
-    } catch {
-      // Non-critical
+    } catch (err) {
+      appLogger.warn("app", "Failed to fetch timeline", err);
     }
   };
 
@@ -450,27 +452,31 @@ export const ClaudeUsageDashboard: Component = () => {
     try {
       const list = await invoke<ProjectEntry[]>("get_claude_project_list");
       setProjects(list);
-    } catch {
-      // Non-critical — dropdown just won't have project options
+    } catch (err) {
+      appLogger.warn("app", "Failed to fetch project list", err);
     }
   };
 
   // Fetch API usage and project list once on mount (not scope-dependent).
   onMount(() => {
-    Promise.all([fetchApi(), fetchProjects()]);
+    void Promise.all([fetchApi(), fetchProjects()]);
   });
+
+  // Sequential by design: fetchStats writes the JSONL cache that fetchTimeline reads.
+  const refreshStatsAndTimeline = async (scopeValue: string) => {
+    await fetchStats(scopeValue);
+    await fetchTimeline(scopeValue);
+  };
 
   // Re-fetch stats and timeline whenever scope changes.
   createEffect(() => {
     const currentScope = scope();
     setLoading(true);
-    Promise.all([fetchStats(currentScope), fetchTimeline(currentScope)]).finally(() =>
-      setLoading(false),
-    );
+    void refreshStatsAndTimeline(currentScope).finally(() => setLoading(false));
   });
 
-  // Auto-refresh API + timeline every 5 minutes (Rust caches for 5 min)
-  const timer = setInterval(() => { fetchApi(); fetchTimeline(scope()); }, 5 * 60 * 1000);
+  // Auto-refresh every 5 minutes
+  const timer = setInterval(() => { void fetchApi(); void refreshStatsAndTimeline(scope()); }, 5 * 60 * 1000);
   onCleanup(() => clearInterval(timer));
 
   // Computed data for rate limit cards

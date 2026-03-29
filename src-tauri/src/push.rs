@@ -16,14 +16,20 @@ const ALLOWED_PUSH_HOSTS: &[&str] = &[
     ".web.push.apple.com",
 ];
 
-/// A push subscription from a browser's PushManager.subscribe().
+/// Browser PushSubscription keys (nested under "keys" in the JSON).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub(crate) struct PushSubscription {
-    pub endpoint: String,
+pub(crate) struct PushSubscriptionKeys {
     /// Base64url-encoded P-256 public key from the browser
     pub p256dh: String,
     /// Base64url-encoded authentication secret from the browser
     pub auth: String,
+}
+
+/// A push subscription from a browser's PushManager.subscribe().
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub(crate) struct PushSubscription {
+    pub endpoint: String,
+    pub keys: PushSubscriptionKeys,
     #[serde(default = "chrono::Utc::now")]
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
@@ -84,8 +90,8 @@ impl PushStore {
         let snapshot = {
             let mut subs = self.subs.write();
             if let Some(existing) = subs.iter_mut().find(|s| s.endpoint == sub.endpoint) {
-                existing.p256dh = sub.p256dh;
-                existing.auth = sub.auth;
+                existing.keys.p256dh = sub.keys.p256dh;
+                existing.keys.auth = sub.keys.auth;
             } else {
                 subs.push(sub);
             }
@@ -249,14 +255,14 @@ fn build_push_request(
 ) -> Option<(String, axum::http::Request<Vec<u8>>)> {
     use web_push_native::p256;
 
-    let p256dh_bytes = match Base64UrlUnpadded::decode_vec(&sub.p256dh) {
+    let p256dh_bytes = match Base64UrlUnpadded::decode_vec(&sub.keys.p256dh) {
         Ok(b) => b,
         Err(e) => {
             tracing::warn!(source = "push", endpoint = %sub.endpoint, "Invalid p256dh encoding: {e}");
             return None;
         }
     };
-    let auth_bytes = match Base64UrlUnpadded::decode_vec(&sub.auth) {
+    let auth_bytes = match Base64UrlUnpadded::decode_vec(&sub.keys.auth) {
         Ok(b) => b,
         Err(e) => {
             tracing::warn!(source = "push", endpoint = %sub.endpoint, "Invalid auth encoding: {e}");
@@ -311,8 +317,7 @@ mod tests {
 
         let sub = PushSubscription {
             endpoint: "https://fcm.googleapis.com/fcm/send/test".to_string(),
-            p256dh: "test-key".to_string(),
-            auth: "test-auth".to_string(),
+            keys: PushSubscriptionKeys { p256dh: "test-key".to_string(), auth: "test-auth".to_string() },
             created_at: chrono::Utc::now(),
         };
         store.upsert(sub.clone());
@@ -320,10 +325,10 @@ mod tests {
 
         // Upsert same endpoint updates instead of duplicating
         let mut sub2 = sub.clone();
-        sub2.p256dh = "updated-key".to_string();
+        sub2.keys.p256dh = "updated-key".to_string();
         store.upsert(sub2);
         assert_eq!(store.list().len(), 1);
-        assert_eq!(store.list()[0].p256dh, "updated-key");
+        assert_eq!(store.list()[0].keys.p256dh, "updated-key");
 
         // Remove
         assert!(store.remove(&sub.endpoint));
@@ -338,8 +343,7 @@ mod tests {
             let store = PushStore::load(dir.path());
             store.upsert(PushSubscription {
                 endpoint: "https://example.com/push".to_string(),
-                p256dh: "key".to_string(),
-                auth: "auth".to_string(),
+                keys: PushSubscriptionKeys { p256dh: "key".to_string(), auth: "auth".to_string() },
                 created_at: chrono::Utc::now(),
             });
         }

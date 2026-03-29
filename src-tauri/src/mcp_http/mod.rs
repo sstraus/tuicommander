@@ -295,14 +295,19 @@ async fn plugin_data_http(
 /// Return the VAPID public key so the frontend can call PushManager.subscribe().
 /// No auth required — the public key is not secret.
 async fn push_vapid_key(State(state): State<Arc<AppState>>) -> Response {
-    let config = state.config.read();
-    if config.vapid_public_key.is_empty() {
-        return (StatusCode::NOT_FOUND, "VAPID keys not generated — restart the app").into_response();
-    }
-    Json(serde_json::json!({ "publicKey": config.vapid_public_key })).into_response()
+    let public_key = {
+        let config = state.config.read();
+        if config.vapid_public_key.is_empty() {
+            return (StatusCode::NOT_FOUND, "VAPID keys not generated — restart the app").into_response();
+        }
+        config.vapid_public_key.clone()
+    };
+    Json(serde_json::json!({ "publicKey": public_key })).into_response()
 }
 
 /// Register a push subscription from a browser.
+/// No loopback restriction — push subscriptions come from remote mobile devices.
+/// The endpoint URL is validated against a known push service allowlist.
 async fn push_subscribe(
     State(state): State<Arc<AppState>>,
     Json(sub): Json<crate::push::PushSubscription>,
@@ -311,12 +316,22 @@ async fn push_subscribe(
         return (StatusCode::BAD_REQUEST, e).into_response();
     }
     state.push_store.upsert(sub);
-    // Auto-enable push on first subscription
-    {
+    // Mobile just subscribed — activate mobile push target
+    state.mobile_push_active.store(true, std::sync::atomic::Ordering::Relaxed);
+    // Auto-enable push on first subscription — mutate + drop lock before disk I/O
+    let needs_save = {
         let mut config = state.config.write();
         if !config.push_enabled {
             config.push_enabled = true;
-            let _ = crate::config::save_app_config(config.clone());
+            true
+        } else {
+            false
+        }
+    };
+    if needs_save {
+        let snapshot = state.config.read().clone();
+        if let Err(e) = crate::config::save_app_config(snapshot) {
+            tracing::error!(source = "push", "Failed to persist push_enabled=true: {e}");
         }
     }
     StatusCode::CREATED.into_response()
@@ -327,12 +342,19 @@ async fn push_unsubscribe(
     State(state): State<Arc<AppState>>,
     Json(body): Json<serde_json::Value>,
 ) -> StatusCode {
-    if let Some(endpoint) = body.get("endpoint").and_then(|v| v.as_str()) {
-        if state.push_store.remove(endpoint) {
-            return StatusCode::OK;
-        }
+    if let Some(endpoint) = body.get("endpoint").and_then(|v| v.as_str())
+        && state.push_store.remove(endpoint)
+    {
+        return StatusCode::OK;
     }
     StatusCode::NOT_FOUND
+}
+
+/// Mobile PWA heartbeat — activates mobile push target.
+/// Called on app open and whenever the page becomes visible (unlock phone, switch tab).
+async fn push_heartbeat(State(state): State<Arc<AppState>>) -> StatusCode {
+    state.mobile_push_active.store(true, std::sync::atomic::Ordering::Relaxed);
+    StatusCode::NO_CONTENT
 }
 
 /// Send a test push notification to all registered subscribers.
@@ -343,9 +365,6 @@ async fn push_test(State(state): State<Arc<AppState>>, body: Option<Json<serde_j
         return (StatusCode::NOT_FOUND, "No push subscriptions registered").into_response();
     }
     let config = state.config.read().clone();
-    if !config.push_enabled {
-        return (StatusCode::BAD_REQUEST, "Push not enabled in config").into_response();
-    }
     let title = body.as_ref().and_then(|b| b.get("title")).and_then(|v| v.as_str()).unwrap_or("TUICommander Test");
     let msg = body.as_ref().and_then(|b| b.get("body")).and_then(|v| v.as_str()).unwrap_or("Test push notification");
     let stale = crate::push::send_push_batch(
@@ -534,6 +553,7 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         // Push notification API
         .route("/api/push/vapid-key", get(push_vapid_key))
         .route("/api/push/subscribe", post(push_subscribe).delete(push_unsubscribe))
+        .route("/api/push/heartbeat", post(push_heartbeat))
         .route("/api/push/test", post(push_test));
 
     // MCP Streamable HTTP transport — only when MCP is enabled
@@ -913,6 +933,7 @@ mod tests {
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
             tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),
             push_store: crate::push::PushStore::load(&std::env::temp_dir()),
+            mobile_push_active: std::sync::atomic::AtomicBool::new(false),
             server_start_time: std::time::Instant::now(),
         })
     }
@@ -1392,7 +1413,7 @@ mod tests {
         let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let tools = json["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 10);
+        assert_eq!(tools.len(), 11);
 
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"session"));
@@ -1410,7 +1431,7 @@ mod tests {
     fn test_mcp_tool_definitions_count() {
         let tools = mcp_transport::test_mcp_tool_definitions();
         let arr = tools.as_array().unwrap();
-        assert_eq!(arr.len(), 10);
+        assert_eq!(arr.len(), 11);
     }
 
     #[test]
@@ -2332,8 +2353,8 @@ mod tests {
         let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         let tools = json["result"]["tools"].as_array().unwrap();
-        // No upstream → exactly 9 native tools
-        assert_eq!(tools.len(), 10);
+        // No upstream → native tools only
+        assert_eq!(tools.len(), 11);
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"session"));
         assert!(names.contains(&"github"));

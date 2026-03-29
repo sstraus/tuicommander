@@ -47,11 +47,11 @@ fn parse_subscription(
         .endpoint
         .parse()
         .context("invalid push endpoint URL")?;
-    let p256dh_bytes = Base64UrlUnpadded::decode_vec(&sub.p256dh)
+    let p256dh_bytes = Base64UrlUnpadded::decode_vec(&sub.keys.p256dh)
         .context("invalid p256dh base64url")?;
     let ua_public = p256::PublicKey::from_sec1_bytes(&p256dh_bytes)
         .map_err(|e| anyhow::anyhow!("invalid p256dh public key: {e}"))?;
-    let auth_bytes = Base64UrlUnpadded::decode_vec(&sub.auth)
+    let auth_bytes = Base64UrlUnpadded::decode_vec(&sub.keys.auth)
         .context("invalid auth base64url")?;
     let ua_auth = Auth::clone_from_slice(&auth_bytes);
     Ok((endpoint, ua_public, ua_auth))
@@ -131,8 +131,7 @@ mod tests {
 
         PushSubscription {
             endpoint: "https://fcm.googleapis.com/fcm/send/fake-id".to_string(),
-            p256dh,
-            auth,
+            keys: crate::types::PushSubscriptionKeys { p256dh, auth },
         }
     }
 
@@ -172,8 +171,10 @@ mod tests {
         let config = VapidConfig::new(&b64, "mailto:test@example.com").unwrap();
         let sub = PushSubscription {
             endpoint: "https://push.example.com/sub".to_string(),
-            p256dh: "invalid!!!".to_string(),
-            auth: "also-invalid".to_string(),
+            keys: crate::types::PushSubscriptionKeys {
+                p256dh: "invalid!!!".to_string(),
+                auth: "also-invalid".to_string(),
+            },
         };
 
         let result = build_push_request(&config, &sub, b"test");

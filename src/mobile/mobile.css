@@ -74,9 +74,7 @@ html, body {
   font-family: var(--font-ui);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* Mobile: allow text selection (desktop global.css blocks it) */
-  -webkit-user-select: text;
-  user-select: text;
+  /* user-select: none applied via * selector — re-enable on content elements as needed */
   /* Prevent iOS rubber-band on the body */
   overscroll-behavior: none;
 }

@@ -43,7 +43,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
     // iOS requires standalone mode (Add to Home Screen)
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
     const isStandalone = window.matchMedia("(display-mode: standalone)").matches
-      || (navigator as any).standalone === true;
+      || ("standalone" in navigator && (navigator as unknown as { standalone: boolean }).standalone === true);
     if (isIOS && !isStandalone) {
       return "requires-install";
     }

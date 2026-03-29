@@ -17,12 +17,18 @@ pub enum RelayMessage {
     },
 }
 
-/// Browser push subscription info sent by the mobile PWA.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PushSubscription {
-    pub endpoint: String,
+/// The `keys` object inside a browser PushSubscription.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PushSubscriptionKeys {
     pub p256dh: String,
     pub auth: String,
+}
+
+/// Browser push subscription from PushManager.subscribe().toJSON().
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PushSubscription {
+    pub endpoint: String,
+    pub keys: PushSubscriptionKeys,
 }
 
 /// Peer connection state as seen by the relay.

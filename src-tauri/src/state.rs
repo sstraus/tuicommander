@@ -881,6 +881,11 @@ pub struct AppState {
     pub(crate) tailscale_state: parking_lot::RwLock<crate::tailscale::TailscaleState>,
     /// Push notification subscription store
     pub(crate) push_store: crate::push::PushStore,
+    /// When true, push notifications are sent to mobile.
+    /// Set to true when the mobile PWA polls; set to false when the desktop
+    /// window receives focus. This prevents duplicate alerts when the user
+    /// is actively working on the desktop.
+    pub(crate) mobile_push_active: std::sync::atomic::AtomicBool,
     /// Server start time for uptime calculation in health endpoint.
     pub(crate) server_start_time: std::time::Instant,
     /// Per-MCP-session broadcast channels for inter-agent messaging notifications.
@@ -1072,6 +1077,24 @@ impl AppState {
         });
     }
 
+    /// Send a push notification to all mobile subscribers.
+    fn send_mobile_push(state: &Arc<AppState>, session_id: &str, body: &str) {
+        let url = format!("/mobile/session/{session_id}");
+        let config = state.config.read().clone();
+        let subs = state.push_store.list();
+        let http_client = state.http_client.clone();
+        let push_state = Arc::clone(state);
+        let body = body.to_owned();
+        tokio::spawn(async move {
+            let stale = crate::push::send_push_batch(
+                subs, &config, &http_client, "TUICommander", &body, &url,
+            ).await;
+            for endpoint in &stale {
+                push_state.push_store.remove(endpoint);
+            }
+        });
+    }
+
     /// Apply a single event to the session state accumulator.
     fn apply_event_to_session_state(state: &Arc<AppState>, event: &AppEvent) {
         let now_ms = std::time::SystemTime::now()
@@ -1112,7 +1135,7 @@ impl AppState {
 
                                 // Rate limit: skip if last push for this session was < 30s ago
                                 let should_push = !state.push_store.is_empty()
-                                    && s.last_push_ms.map_or(true, |t| now_ms.saturating_sub(t) >= 30_000);
+                                    && s.last_push_ms.is_none_or(|t| now_ms.saturating_sub(t) >= 30_000);
                                 if should_push {
                                     s.last_push_ms = Some(now_ms);
                                     let prompt = s.question_text.clone().unwrap_or_default();
@@ -1214,28 +1237,19 @@ impl AppState {
                     });
 
                 // Spawn push notification outside the DashMap lock
-                if let Some((sid, prompt)) = push_data {
+                if let Some((sid, prompt)) = push_data
+                    && state.mobile_push_active.load(std::sync::atomic::Ordering::Relaxed)
+                {
                     let session_name = state.sessions
                         .get(&sid)
                         .and_then(|s| s.value().lock().display_name.clone())
-                        .unwrap_or(sid);
+                        .unwrap_or_else(|| sid.clone());
                     let body = if prompt.is_empty() {
                         format!("{session_name}: awaiting input")
                     } else {
                         format!("{session_name}: {prompt}")
                     };
-                    let config = state.config.read().clone();
-                    let subs = state.push_store.list();
-                    let http_client = state.http_client.clone();
-                    let push_state = Arc::clone(state);
-                    tokio::spawn(async move {
-                        let stale = crate::push::send_push_batch(
-                            subs, &config, &http_client, "TUICommander", &body, "/mobile",
-                        ).await;
-                        for endpoint in &stale {
-                            push_state.push_store.remove(endpoint);
-                        }
-                    });
+                    Self::send_mobile_push(state, &sid, &body);
                 }
             }
             AppEvent::PtyExit { session_id } => {
@@ -1248,6 +1262,14 @@ impl AppState {
                     entry.rate_limit_set_ms = 0;
                     entry.active_sub_tasks = 0;
                     entry.last_activity_ms = now_ms;
+                }
+                // Push "session completed" to mobile (unseen)
+                if state.mobile_push_active.load(std::sync::atomic::Ordering::Relaxed) {
+                    let session_name = state.sessions
+                        .get(session_id)
+                        .and_then(|s| s.value().lock().display_name.clone())
+                        .unwrap_or_else(|| session_id.clone());
+                    Self::send_mobile_push(state, session_id, &format!("{session_name}: completed"));
                 }
             }
             // Global events don't affect per-session state
@@ -1885,6 +1907,7 @@ pub(crate) mod tests_support {
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
             tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),
             push_store: crate::push::PushStore::load(&std::env::temp_dir()),
+            mobile_push_active: std::sync::atomic::AtomicBool::new(false),
             server_start_time: std::time::Instant::now(),
         }
     }
@@ -2314,6 +2337,7 @@ mod tests {
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
             tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),
             push_store: crate::push::PushStore::load(&std::env::temp_dir()),
+            mobile_push_active: std::sync::atomic::AtomicBool::new(false),
             server_start_time: std::time::Instant::now(),
         }
     }

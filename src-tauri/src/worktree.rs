@@ -193,10 +193,10 @@ pub(crate) fn create_worktree_internal(
     }
 
     // Persist the base ref in git config for "Update from base" support
-    if let Some(ref branch) = config.branch {
-        if let Some(start_point) = base_ref {
-            let _ = set_branch_base(&config.base_repo, branch, start_point);
-        }
+    if let Some(ref branch) = config.branch
+        && let Some(start_point) = base_ref
+    {
+        let _ = set_branch_base(&config.base_repo, branch, start_point);
     }
 
     Ok(WorktreeInfo {
