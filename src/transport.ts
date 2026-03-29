@@ -100,12 +100,20 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
   get_relay_status: { browserUnsupported: true },
   // --- Browser-unsupported: Update channel check (hardcoded GitHub URLs) ---
   check_update_channel: { browserUnsupported: true },
-  // --- Browser-unsupported: MCP upstream (uses OS keyring) ---
-  load_mcp_upstreams: { browserUnsupported: true },
-  save_mcp_upstreams: { browserUnsupported: true },
-  reconnect_mcp_upstream: { browserUnsupported: true },
-  save_mcp_upstream_credential: { browserUnsupported: true },
-  delete_mcp_upstream_credential: { browserUnsupported: true },
+  // --- MCP upstream config (proxied through server for keyring access) ---
+  load_mcp_upstreams: { map: () => ({ method: "GET", path: "/mcp/upstreams" }) },
+  save_mcp_upstreams: {
+    map: (args) => ({ method: "PUT", path: "/mcp/upstreams", body: args.config }),
+  },
+  reconnect_mcp_upstream: {
+    map: (args) => ({ method: "POST", path: "/mcp/upstreams/reconnect", body: { name: args.name } }),
+  },
+  save_mcp_upstream_credential: {
+    map: (args) => ({ method: "POST", path: "/mcp/upstreams/credential", body: { name: args.name, token: args.token } }),
+  },
+  delete_mcp_upstream_credential: {
+    map: (args) => ({ method: "DELETE", path: "/mcp/upstreams/credential", body: { name: args.name } }),
+  },
 
   // --- Session lifecycle ---
   create_pty: {

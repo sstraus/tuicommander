@@ -188,6 +188,84 @@ async fn plugin_dev_guide_handler() -> Json<serde_json::Value> {
     Json(serde_json::json!({"content": plugin_docs::PLUGIN_DOCS}))
 }
 
+/// GET /mcp/upstreams — load upstream MCP server config.
+async fn load_mcp_upstreams_http() -> impl IntoResponse {
+    Json(crate::mcp_upstream_config::load_mcp_upstreams())
+}
+
+/// PUT /mcp/upstreams — save upstream MCP server config (validates, hot-reloads).
+async fn save_mcp_upstreams_http(
+    State(state): State<Arc<AppState>>,
+    Json(config): Json<crate::mcp_upstream_config::UpstreamMcpConfig>,
+) -> Response {
+    let self_port = state.config.read().remote_access_port;
+    let errors = crate::mcp_upstream_config::validate_upstream_config(&config, self_port);
+    if !errors.is_empty() {
+        let msgs: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
+        return (StatusCode::BAD_REQUEST, msgs.join("; ")).into_response();
+    }
+    let old_config: crate::mcp_upstream_config::UpstreamMcpConfig =
+        crate::config::load_json_config(crate::mcp_upstream_config::UPSTREAMS_FILE);
+    if let Err(e) = crate::config::save_json_config(crate::mcp_upstream_config::UPSTREAMS_FILE, &config) {
+        return (StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
+    }
+    state.mcp_upstream_registry.apply_config_diff(&old_config, &config, self_port).await;
+    StatusCode::OK.into_response()
+}
+
+/// POST /mcp/upstreams/reconnect — reconnect a single upstream by name.
+async fn reconnect_mcp_upstream_http(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> Response {
+    let name = match body.get("name").and_then(|v| v.as_str()) {
+        Some(n) => n.to_string(),
+        None => return (StatusCode::BAD_REQUEST, "missing 'name'").into_response(),
+    };
+    let config: crate::mcp_upstream_config::UpstreamMcpConfig =
+        crate::config::load_json_config(crate::mcp_upstream_config::UPSTREAMS_FILE);
+    let self_port = state.config.read().remote_access_port;
+    let server = match config.servers.into_iter().find(|s| s.name == name) {
+        Some(s) => s,
+        None => return (StatusCode::NOT_FOUND, format!("Upstream '{name}' not found")).into_response(),
+    };
+    let registry = &state.mcp_upstream_registry;
+    registry.emit_status_change(&name, "connecting");
+    let _ = registry.disconnect_upstream(&name);
+    match registry.connect_upstream(server, Some(self_port)).await {
+        Ok(()) => StatusCode::OK.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    }
+}
+
+/// POST /mcp/upstreams/credential — save an upstream credential to OS keyring.
+async fn save_mcp_upstream_credential_http(Json(body): Json<serde_json::Value>) -> Response {
+    let name = match body.get("name").and_then(|v| v.as_str()) {
+        Some(n) => n.to_string(),
+        None => return (StatusCode::BAD_REQUEST, "missing 'name'").into_response(),
+    };
+    let token = match body.get("token").and_then(|v| v.as_str()) {
+        Some(t) => t.to_string(),
+        None => return (StatusCode::BAD_REQUEST, "missing 'token'").into_response(),
+    };
+    match crate::mcp_upstream_credentials::save_mcp_upstream_credential(name, token) {
+        Ok(()) => StatusCode::OK.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    }
+}
+
+/// DELETE /mcp/upstreams/credential — delete an upstream credential from OS keyring.
+async fn delete_mcp_upstream_credential_http(Json(body): Json<serde_json::Value>) -> Response {
+    let name = match body.get("name").and_then(|v| v.as_str()) {
+        Some(n) => n.to_string(),
+        None => return (StatusCode::BAD_REQUEST, "missing 'name'").into_response(),
+    };
+    match crate::mcp_upstream_credentials::delete_mcp_upstream_credential(name) {
+        Ok(()) => StatusCode::OK.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    }
+}
+
 /// GET /mcp/upstream-status — returns status + metrics for all upstream MCP servers.
 async fn upstream_status_handler(
     State(state): State<Arc<AppState>>,
@@ -437,6 +515,9 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         // MCP status + instructions
         .route("/mcp/status", get(config_routes::get_mcp_status_http))
         .route("/mcp/upstream-status", get(upstream_status_handler))
+        .route("/mcp/upstreams", get(load_mcp_upstreams_http).put(save_mcp_upstreams_http))
+        .route("/mcp/upstreams/reconnect", post(reconnect_mcp_upstream_http))
+        .route("/mcp/upstreams/credential", post(save_mcp_upstream_credential_http).delete(delete_mcp_upstream_credential_http))
         .route("/mcp/instructions", get(mcp_transport::mcp_instructions_http))
         // Plugin docs (for MCP bridge)
         .route("/plugins/docs", get(plugin_dev_guide_handler))

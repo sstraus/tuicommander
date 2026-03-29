@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use crate::config::{load_json_config, save_json_config};
 
-const UPSTREAMS_FILE: &str = "mcp-upstreams.json";
+pub(crate) const UPSTREAMS_FILE: &str = "mcp-upstreams.json";
 
 /// Top-level wrapper for the upstream config file.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
