@@ -7,6 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **MCP Debug Tool** — Dev-only `debug` MCP tool with `agent_detection`, `logs`, and `sessions` actions for diagnosing PTY and agent detection issues
+- **Smart Prompt Variables** — 12 new context variables: `remote_url`, `current_user`, `repo_owner`, `repo_slug`, `dirty_files_count`, `branch_status`, `pr_author`, `pr_labels`, `pr_additions`, `pr_deletions` (31 total)
+- **Variable Insertion Dropdown** — Smart prompt editor includes a dropdown below the content textarea with all available variables grouped by Git/GitHub/Terminal, with descriptions; click inserts `{variable}` at cursor position
+- **Prompt Editor Tags** — Prompt rows in Cmd+K drawer show inline badges for execution mode (inject/headless), built-in status, and placement tags
+- **Dev Debug Console** — `window.__debug` exposed in dev mode with all SolidJS stores + Tauri `invoke`/`listen` for browser console debugging
+
+### Fixed
+- **Agent Detection** — Claude Code installs its binary as a version number (`~/.local/share/claude/versions/2.1.87`); `process_name_from_pid` now scans parent directory names when the basename doesn't match a known agent
+- **HMR Session Loss** — Vite HMR reloads no longer close PTY sessions; `beforeunload` in Tauri mode skips session cleanup so `list_active_sessions` can re-adopt surviving sessions
+- **Git Panel Label** — "Changes" section renamed to "Changes (unstaged)" for clarity
+
+### Changed
+- **Smart Prompts Management** — Settings tab removed; all management consolidated in the Cmd+K drawer (edit, enable/disable, create, delete)
+- **Prompt Drawer UI** — Compact font sizing aligned with command palette conventions; editor dialog layout improved with side-by-side execution mode + auto-execute fields
 - **Tailscale HTTPS** — Auto-detects Tailscale daemon, provisions TLS certificates via Local API, serves HTTP+HTTPS on same port (dual-protocol). QR code uses `https://` with Tailscale FQDN when TLS active. Background cert renewal every 24h. Cross-platform (macOS, Linux, Windows)
 - **PWA Push Notifications** — Web Push from TUICommander directly to mobile PWA clients. VAPID key generation, push subscription management via `/api/push/*` endpoints, service worker with push/notificationclick handlers. Rate limited (1 per session per 30s). iOS standalone detection with guidance
 - **Smart Prompts** — AI automation layer with 24 built-in context-aware prompts
@@ -23,6 +37,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Side-by-Side Diff Viewer** — Split and unified view modes with `@git-diff-view/solid`, word-level highlighting, and synchronized scrolling. Toggle persisted in ui-prefs.
 - **Hunk & Line-Level Restore** — Revert individual hunks or selected lines in working tree and staged diffs via `git apply --reverse`. Click lines to select, shift-click for ranges, floating action bar with line count.
 
+- **Smart Prompts API Mode** — New "API (LLM direct)" execution mode calls LLM providers directly via HTTP API (genai crate), no terminal or agent CLI needed. Global provider/model/API key config in Settings > Agents. Per-prompt system prompt. Supports OpenAI, Anthropic, Gemini, OpenRouter, Ollama, and any OpenAI-compatible endpoint. API key stored in OS keyring
 - **Notification Bell Enhancements** — CI recovery ("CI Passed") notifications, background git operation results, worktree creation events. Empty state shows "No notifications" instead of 1px dropdown.
 - **TCP Port Retry** — MCP HTTP server tries up to 3 adjacent ports when the configured port is busy, with clear error message on failure.
 - **Base Branch Tracking** — Branches store a base ref in git config (`tuicommander-base`), showing ahead/behind relative to base in sidebar. "Update from base (rebase)" in context menu. Inline branch create form includes a base ref selector with grouped Local/Remote refs. Auto-fetches remote refs before creation

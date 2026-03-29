@@ -459,6 +459,7 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - Brand SVG logos for each agent (fallback to capital letter)
 - Agent badge in status bar showing active agent
 - Binary detection: Rust probes well-known directories via `resolve_cli()` for reliable PATH resolution in desktop-launched apps
+- Foreground process detection: `tcgetpgrp()` on the PTY master fd, then `proc_pidpath()` to get the binary name. Handles versioned binary paths (e.g. Claude Code installs as `~/.local/share/claude/versions/2.1.87`) by scanning parent directory names when the basename is not a known agent
 
 ### 6.3 Rate Limit Detection
 - Provider-specific regex patterns detect rate limit messages
@@ -767,13 +768,17 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 
 ### 10.5 Smart Prompts
 
-AI automation layer with 24 built-in context-aware prompts. Each prompt includes a description explaining what it does. Prompts auto-resolve git context variables and execute via inject (PTY write) or headless (one-shot subprocess) mode.
+AI automation layer with 24 built-in context-aware prompts. Each prompt includes a description explaining what it does. Prompts auto-resolve git context variables and execute via inject (PTY write), headless (one-shot subprocess), or API (direct LLM call) mode.
 
 - **Open**: `Cmd+K` or toolbar lightning bolt button
-- Dropdown with category grouping, search by name/description, and enable/disable toggles
-- Prompts are context-aware: 21 variables are auto-resolved from git, GitHub, and terminal state
-- **Status banner**: when prompts are disabled (no terminal, no agent, agent busy), a banner explains why
+- Drawer with category filtering (All/Custom/Recent/Favorites), search by name/description, and enable/disable toggles
+- Prompt rows show inline badges: execution mode (inject/headless/api), built-in, placement tags
+- Prompts are context-aware: 31 variables auto-resolved from git, GitHub, and terminal state
 - **Variable Input Dialog**: unresolved variables show a compact form with variable name + description before execution
+- **Edit Prompt dialog**: full editor with name, description, content textarea, variable insertion dropdown (grouped by Git/GitHub/Terminal with descriptions), placement checkboxes, execution mode + auto-execute side-by-side, keyboard shortcut capture
+- **Auto-execute**: when enabled, inject-mode prompts send Enter immediately via agent-aware `sendCommand`; when disabled, text is pasted without Enter so the user can review before sending
+- **API execution mode**: calls LLM providers directly via HTTP API (genai crate) without terminal or agent CLI. Per-prompt system prompt field. Output routed via the same outputTarget options (clipboard, commit-message, toast, panel). Tauri-only (PWA shows "requires desktop app")
+- **LLM API config** (Settings > Agents): global provider/model/API key for all API-mode prompts. Supports OpenAI, Anthropic, Gemini, OpenRouter, Ollama, and any OpenAI-compatible endpoint via custom base URL. API key stored in OS keyring. Test button validates connection
 
 ### 10.6 Built-in Prompts by Category
 
@@ -797,17 +802,27 @@ Variables are resolved from the Rust backend (`resolve_context_variables`) and f
 | `{base_branch}` | git | Detected default branch (main/master/develop) |
 | `{repo_name}` | git | Repository directory name |
 | `{repo_path}` | git | Full filesystem path to the repository root |
-| `{diff}` | git | Full working tree diff (truncated) |
-| `{staged_diff}` | git | Staged changes diff (truncated) |
+| `{repo_owner}` | git | GitHub owner parsed from remote URL |
+| `{repo_slug}` | git | Repository name parsed from remote URL |
+| `{diff}` | git | Full working tree diff (truncated to 50KB) |
+| `{staged_diff}` | git | Staged changes diff (truncated to 50KB) |
 | `{changed_files}` | git | Short status output |
+| `{dirty_files_count}` | git | Number of modified files (derived from changed_files) |
 | `{commit_log}` | git | Last 20 commits (oneline) |
 | `{last_commit}` | git | Last commit hash + message |
 | `{conflict_files}` | git | Files with merge conflicts |
 | `{stash_list}` | git | Stash entries |
+| `{branch_status}` | git | Ahead/behind remote tracking branch |
+| `{remote_url}` | git | Remote origin URL |
+| `{current_user}` | git | Git config user.name |
 | `{pr_number}` | GitHub store | PR number for current branch |
 | `{pr_title}` | GitHub store | PR title |
 | `{pr_url}` | GitHub store | PR URL |
 | `{pr_state}` | GitHub store | PR state (OPEN, MERGED, CLOSED) |
+| `{pr_author}` | GitHub store | PR author username |
+| `{pr_labels}` | GitHub store | PR labels (comma-separated) |
+| `{pr_additions}` | GitHub store | Lines added in PR |
+| `{pr_deletions}` | GitHub store | Lines deleted in PR |
 | `{pr_checks}` | GitHub store | CI check summary (passed/failed/pending) |
 | `{merge_status}` | GitHub store | PR mergeable status |
 | `{review_decision}` | GitHub store | PR review decision |
@@ -830,12 +845,14 @@ Variables are resolved from the Rust backend (`resolve_context_variables`) and f
 | **Command Palette** | All prompts with `Smart:` prefix | `Cmd+Shift+P` then type "Smart" |
 | **Branch context menu** | Prompts with `git-branches` placement | Right-click branch in Branches tab |
 
-### 10.10 Settings — Smart Prompts Tab
+### 10.10 Smart Prompts Management (Cmd+K Drawer)
 
-- Enable/disable individual prompts
-- Edit prompt content (built-in prompts show a reset-to-default button)
-- View placement and execution mode per prompt
-- Create custom smart prompts with the same placement and variable system
+- All prompt management consolidated in the Cmd+K drawer (Settings tab removed)
+- Enable/disable individual prompts via toggle button on each row
+- Edit prompt: opens modal with name, description, content, variable dropdown, placement, execution mode, auto-execute, keyboard shortcut
+- Variable insertion dropdown below content textarea: grouped by Git/GitHub/Terminal, click to insert `{variable}` at cursor
+- Create custom smart prompts with `+ New Prompt` button
+- Built-in prompts show a "Reset to Default" button when content is overridden
 
 ### 10.11 Headless Template Configuration
 

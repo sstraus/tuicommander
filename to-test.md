@@ -2,6 +2,22 @@
 
 Features to test when TUICommander is more usable.
 
+## Agent Detection Fix
+- [ ] Launch Claude Code in a TUICommander terminal → agent detected within 3 seconds (status bar shows agent badge)
+- [ ] Smart Commit and other inject-mode prompts become enabled when agent is detected
+- [ ] After HMR reload (save a .tsx file), terminal session survives and agent is still detected
+
+## Smart Prompts Drawer (Cmd+K)
+- [ ] Open Cmd+K → drawer shows compact prompt list with badges (inject/headless, built-in, placement)
+- [ ] Click Edit on a prompt → modal shows variable dropdown under Content textarea
+- [ ] Click a variable in dropdown → inserts `{variable}` at cursor in textarea
+- [ ] Execution Mode and Auto-execute appear side by side
+- [ ] Auto-execute ON → prompt sends Enter automatically after injection
+- [ ] Auto-execute OFF → prompt text pasted without Enter, user can edit before sending
+
+## Git Panel
+- [ ] Unstaged section shows "Changes (unstaged)" label
+
 ## Notification Bell Enhancements
 - [x] Click bell with no notifications → shows "No notifications" (not empty 1px dropdown)
 - [x] Run `git push` via toolbar → git result appears in bell dropdown under "GIT" section
@@ -415,6 +431,18 @@ Features to test when TUICommander is more usable.
 
 ## OSC 8 File Links
 - [ ] Terminal file:// URIs from hyperlinks open in system file opener
+
+## Smart Prompts API Mode
+- [ ] Settings > Agents: LLM API section visible when API-mode prompt exists
+- [ ] Select provider (OpenAI/Anthropic/etc.) → model placeholder updates
+- [ ] Enter API key → shows "Stored" indicator after save
+- [ ] OpenRouter/Ollama/Custom → Base URL field appears with default
+- [ ] Test Connection → returns model response or error message
+- [ ] Create prompt with "API (LLM direct)" mode → system prompt textarea appears
+- [ ] Execute API-mode prompt → LLM responds, output routed to target (clipboard/commit-msg/toast)
+- [ ] No API key configured → canExecute returns error with Settings link
+- [ ] PWA/browser → API mode shows "requires desktop app" message
+- [ ] Wrong API key → toast shows "Authentication failed" with Settings hint
 
 ## PWA Push Notifications
 - [ ] Mobile Settings shows "Push notifications" toggle
