@@ -1,7 +1,7 @@
 # TUICommander Specification
 
 **Version:** 0.9.7
-**Last Updated:** 2026-03-23
+**Last Updated:** 2026-03-29
 
 ## Overview
 
@@ -24,7 +24,11 @@ TUICommander is a multi-agent terminal orchestrator designed to manage multiple 
 | Frontend | SolidJS | Reactive UI with fine-grained reactivity |
 | Terminal | xterm.js | Terminal emulation with WebGL-accelerated rendering |
 | Backend | Rust + Tauri | Native PTY management, file system access |
-| Build | Vite | Fast HMR development, optimized production builds |
+| Build | Vite | Fast HMR development, optimized production builds (bundle splitting via manualChunks) |
+
+### Backend Execution Model
+
+All Tauri commands that perform I/O (git subprocesses, network, bcrypt) are `async` and run inside `tokio::task::spawn_blocking` to avoid blocking Tokio worker threads. Git data is cached with a 60s TTL, invalidated immediately by `repo_watcher` on file system changes. PTY output is serialized once and reused for both Tauri IPC and event bus broadcast. Frontend coalesces PTY writes via `requestAnimationFrame` (~60 flushes/sec) to reduce xterm.js render passes during burst output.
 
 ### Why SolidJS?
 
