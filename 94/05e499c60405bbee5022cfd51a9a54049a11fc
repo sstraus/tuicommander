@@ -1,0 +1,23 @@
+src-tauri/Entitlements.plist
+  6a6c5a10ed3717e2 1-8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.20",
+  "base_commit_sha": "9405e499c60405bbee5022cfd51a9a54049a11fc",
+  "prompts": {
+    "6a6c5a10ed3717e2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "43b66974-88a2-447a-b516-af7ce93f92cd",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Roberto Serafin <roberto.serafin@lansweeper.com>",
+      "messages": [],
+      "total_additions": 8,
+      "total_deletions": 0,
+      "accepted_lines": 8,
+      "overriden_lines": 0
+    }
+  }
+}

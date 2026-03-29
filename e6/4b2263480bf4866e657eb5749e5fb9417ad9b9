@@ -1,0 +1,27 @@
+src/mobile/__tests__/sortSessionsBySidebar.test.ts
+  559cfe430be443ce 1-136
+src/mobile/MobileApp.tsx
+  559cfe430be443ce 11-12,18-26
+src/mobile/utils/sortSessionsBySidebar.ts
+  559cfe430be443ce 1-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.15",
+  "base_commit_sha": "e64b2263480bf4866e657eb5749e5fb9417ad9b9",
+  "prompts": {
+    "559cfe430be443ce": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a52cbcf6-f270-4b9e-8355-d9bf72417ddd",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Roberto Serafin <roberto.serafin@lansweeper.com>",
+      "messages": [],
+      "total_additions": 282,
+      "total_deletions": 1,
+      "accepted_lines": 282,
+      "overriden_lines": 0
+    }
+  }
+}
