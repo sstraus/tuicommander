@@ -2,10 +2,11 @@ import { Component, createEffect, createMemo, createSignal, For, Show, onCleanup
 import { invoke } from "../../invoke";
 import { repositoriesStore } from "../../stores/repositories";
 import { diffTabsStore, isDiffStatus } from "../../stores/diffTabs";
-import { promptLibraryStore, type SavedPrompt } from "../../stores/promptLibrary";
+import { promptLibraryStore } from "../../stores/promptLibrary";
 import { useSmartPrompts } from "../../hooks/useSmartPrompts";
 import { appLogger } from "../../stores/appLogger";
 import { ConfirmDialog } from "../ConfirmDialog";
+import { ContextMenu, createContextMenu, type ContextMenuItem } from "../ContextMenu";
 import { SmartButtonStrip } from "../SmartButtonStrip/SmartButtonStrip";
 import { cx, globToRegex } from "../../utils";
 import type { CommitLogEntry, WorkingTreeStatus } from "./types";
@@ -92,6 +93,11 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
   const [confirmDiscardAll, setConfirmDiscardAll] = createSignal(false);
   const [focusedIndex, setFocusedIndex] = createSignal(-1);
   const [filterQuery, setFilterQuery] = createSignal("");
+  // Multi-select: tracks selected file paths with their section
+  const [selectedKeys, setSelectedKeys] = createSignal<Set<string>>(new Set());
+  let lastClickedIndex = -1; // anchor for shift-click range select
+  const ctxMenu = createContextMenu();
+  const [ctxMenuItems, setCtxMenuItems] = createSignal<ContextMenuItem[]>([]);
   /** Repo key for store operations (revision tracking). May differ from repoPath in worktrees. */
   const storeKey = () => props.storeRepoPath || props.repoPath;
 
@@ -122,6 +128,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
   // Stores the user-typed message when switching to amend mode
   let savedDraftMsg = "";
   let successTimeout: ReturnType<typeof setTimeout> | undefined;
+  let commitTextareaRef: HTMLTextAreaElement | undefined;
 
   const { canExecute: canExecPrompt, executeSmartPrompt } = useSmartPrompts();
   const [generating, setGenerating] = createSignal(false);
@@ -129,7 +136,12 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
   // Listen for generated commit messages from headless smart prompts
   const handleCommitMsg = (e: Event) => {
     const detail = (e as CustomEvent<string>).detail;
-    if (detail) setCommitMsg(detail.trim());
+    if (detail) {
+      setCommitMsg(detail.trim());
+      requestAnimationFrame(() => {
+        if (commitTextareaRef) autoResize(commitTextareaRef);
+      });
+    }
   };
   window.addEventListener("smart-prompt:commit-message", handleCommitMsg);
 
@@ -259,6 +271,147 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
     );
   }
 
+  // --- Multi-select helpers ---
+
+  /** Unique key for a file entry (section:path) to distinguish staged vs unstaged */
+  const makeKey = (section: "staged" | "unstaged", path: string) => `${section}:${path}`;
+
+  function handleFileClick(e: MouseEvent, flatIndex: number, section: "staged" | "unstaged", file: FileEntry) {
+    const key = makeKey(section, file.path);
+    const files = visibleFiles();
+
+    if (e.shiftKey && lastClickedIndex >= 0) {
+      // Range select: from lastClickedIndex to flatIndex
+      const start = Math.min(lastClickedIndex, flatIndex);
+      const end = Math.max(lastClickedIndex, flatIndex);
+      const next = new Set(selectedKeys());
+      for (let i = start; i <= end; i++) {
+        if (i < files.length) next.add(makeKey(files[i].section, files[i].file.path));
+      }
+      setSelectedKeys(next);
+    } else if (e.metaKey || e.ctrlKey) {
+      // Toggle select
+      const next = new Set(selectedKeys());
+      if (next.has(key)) next.delete(key); else next.add(key);
+      setSelectedKeys(next);
+      lastClickedIndex = flatIndex;
+    } else {
+      // Single select
+      setSelectedKeys(new Set([key]));
+      lastClickedIndex = flatIndex;
+    }
+    setFocusedIndex(flatIndex);
+  }
+
+  /** Get selected files for a given section */
+  function getSelectedInSection(section: "staged" | "unstaged"): string[] {
+    const prefix = `${section}:`;
+    return [...selectedKeys()].filter((k) => k.startsWith(prefix)).map((k) => k.slice(prefix.length));
+  }
+
+  async function stageSelected() {
+    if (!props.repoPath) return;
+    const files = getSelectedInSection("unstaged");
+    if (files.length === 0) return;
+    try {
+      await invoke("git_stage_files", { path: props.repoPath, files });
+      setSelectedKeys(new Set<string>());
+      repositoriesStore.bumpRevision(storeKey()!);
+    } catch (err) {
+      appLogger.error("git", "Failed to stage selected files", err);
+    }
+  }
+
+  async function unstageSelected() {
+    if (!props.repoPath) return;
+    const files = getSelectedInSection("staged");
+    if (files.length === 0) return;
+    try {
+      await invoke("git_unstage_files", { path: props.repoPath, files });
+      setSelectedKeys(new Set<string>());
+      repositoriesStore.bumpRevision(storeKey()!);
+    } catch (err) {
+      appLogger.error("git", "Failed to unstage selected files", err);
+    }
+  }
+
+  async function discardSelected() {
+    if (!props.repoPath) return;
+    const files = getSelectedInSection("unstaged").filter((p) => {
+      const entry = unstaged().find((f) => f.path === p);
+      return entry && entry.status !== "?"; // Only discard tracked files
+    });
+    if (files.length === 0) return;
+    try {
+      await invoke("git_discard_files", { path: props.repoPath, files });
+      setSelectedKeys(new Set<string>());
+      repositoriesStore.bumpRevision(storeKey()!);
+    } catch (err) {
+      appLogger.error("git", "Failed to discard selected files", err);
+    }
+  }
+
+  function buildContextMenuItems(section: "staged" | "unstaged", file: FileEntry): ContextMenuItem[] {
+    const sel = selectedKeys();
+    const key = makeKey(section, file.path);
+    // If right-clicked file is not in selection, select only it
+    const effectiveSelection = sel.has(key) ? sel : new Set([key]);
+    const stagedPaths = [...effectiveSelection].filter((k) => k.startsWith("staged:"));
+    const unstagedPaths = [...effectiveSelection].filter((k) => k.startsWith("unstaged:"));
+    const items: ContextMenuItem[] = [];
+
+    if (unstagedPaths.length > 0) {
+      const count = unstagedPaths.length;
+      items.push({ label: count > 1 ? `Stage ${count} files` : "Stage", action: () => {
+        if (!sel.has(key)) setSelectedKeys(new Set([key]));
+        stageSelected();
+      }});
+    }
+    if (stagedPaths.length > 0) {
+      const count = stagedPaths.length;
+      items.push({ label: count > 1 ? `Unstage ${count} files` : "Unstage", action: () => {
+        if (!sel.has(key)) setSelectedKeys(new Set([key]));
+        unstageSelected();
+      }});
+    }
+    if (isDiffStatus(file.status)) {
+      items.push({ label: "View Diff", action: () => openDiff(file, section) });
+    }
+    if (unstagedPaths.length > 0) {
+      const trackable = unstagedPaths.filter((k) => {
+        const p = k.slice("unstaged:".length);
+        const entry = unstaged().find((f) => f.path === p);
+        return entry && entry.status !== "?";
+      });
+      if (trackable.length > 0) {
+        items.push({ separator: true, label: "", action: () => {} });
+        items.push({ label: trackable.length > 1 ? `Discard ${trackable.length} files` : "Discard changes", action: () => {
+          if (!sel.has(key)) setSelectedKeys(new Set([key]));
+          if (trackable.length === 1) {
+            setConfirmDiscard(unstaged().find((f) => f.path === trackable[0].slice("unstaged:".length)) ?? null);
+          } else {
+            discardSelected();
+          }
+        }});
+      }
+    }
+    return items;
+  }
+
+  function handleContextMenu(e: MouseEvent, flatIndex: number, section: "staged" | "unstaged", file: FileEntry) {
+    e.preventDefault();
+    e.stopPropagation();
+    // If the right-clicked file is not selected, select only it
+    const key = makeKey(section, file.path);
+    if (!selectedKeys().has(key)) {
+      setSelectedKeys(new Set([key]));
+      lastClickedIndex = flatIndex;
+    }
+    setFocusedIndex(flatIndex);
+    setCtxMenuItems(buildContextMenuItems(section, file));
+    ctxMenu.open(e);
+  }
+
   async function generateCommitMsg() {
     const prompt = promptLibraryStore.getSmartByPlacement("git-changes")
       .find((p) => p.id === "smart-commit-msg");
@@ -351,7 +504,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
   function autoResize(el: HTMLTextAreaElement) {
     el.style.height = "auto";
     const minH = 38;
-    const maxH = 114;
+    const maxH = 200;
     const natural = el.scrollHeight;
     el.style.height = `${Math.max(minH, Math.min(natural, maxH))}px`;
     el.style.overflowY = natural > maxH ? "auto" : "hidden";
@@ -428,12 +581,21 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 
   function renderFileEntry(file: FileEntry, section: "staged" | "unstaged", flatIndex: number) {
     const { dir, base } = splitPath(file.path);
+    const key = makeKey(section, file.path);
     return (
       <div
-        class={cx(s.fileEntry, focusedIndex() === flatIndex && s.fileFocused)}
+        class={cx(s.fileEntry, focusedIndex() === flatIndex && s.fileFocused, selectedKeys().has(key) && s.fileSelected)}
         title={file.path}
         data-focused={focusedIndex() === flatIndex ? "" : undefined}
-        onClick={() => { setFocusedIndex(flatIndex); openDiff(file, section); props.onFileSelect?.(file.path); }}
+        onClick={(e) => {
+          handleFileClick(e, flatIndex, section, file);
+          // Open diff on plain click (no modifier)
+          if (!e.shiftKey && !e.metaKey && !e.ctrlKey) {
+            openDiff(file, section);
+            props.onFileSelect?.(file.path);
+          }
+        }}
+        onContextMenu={(e) => handleContextMenu(e, flatIndex, section, file)}
       >
         <span class={cx(s.statusBadge, statusClass(file.status))}>{file.status}</span>
         <span class={s.filePath}>
@@ -514,7 +676,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
                 autoResize(e.currentTarget);
               }}
               ref={(el) => {
-                // Set initial height after mount
+                commitTextareaRef = el;
                 requestAnimationFrame(() => autoResize(el));
               }}
               disabled={committing()}
@@ -522,7 +684,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
             <button
               class={cx(s.generateBtn, generating() && s.generateBtnBusy)}
               onClick={generateCommitMsg}
-              disabled={generating() || staged().length === 0}
+              disabled={generating() || (staged().length === 0 && unstaged().length === 0)}
               title="Generate commit message"
             >
               <Show when={generating()} fallback={<SparkleIcon />}>
@@ -622,7 +784,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
       <Show when={filteredUnstaged().length > 0}>
         <div class={s.sectionHeader} onClick={() => setUnstagedExpanded((v) => !v)}>
           <span class={cx(s.chevron, !unstagedExpanded() && s.chevronCollapsed)}>&#x25BC;</span>
-          <span class={s.sectionLabel}>Changes</span>
+          <span class={s.sectionLabel}>Changes (unstaged)</span>
           <span class={s.sectionCount}>
             {filterQuery() ? `${filteredUnstaged().length}/${unstaged().length}` : unstaged().length}
           </span>
@@ -650,6 +812,15 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
           </For>
         </Show>
       </Show>
+
+      {/* Context menu */}
+      <ContextMenu
+        items={ctxMenuItems()}
+        visible={ctxMenu.visible()}
+        x={ctxMenu.position().x}
+        y={ctxMenu.position().y}
+        onClose={ctxMenu.close}
+      />
 
       {/* Discard single file confirmation */}
       <ConfirmDialog

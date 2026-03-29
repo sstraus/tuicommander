@@ -312,6 +312,14 @@
   outline-offset: -2px;
 }
 
+.fileSelected {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.fileSelected.fileFocused {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
 .fileFocused .actions {
   opacity: 1;
 }
