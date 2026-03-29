@@ -25,6 +25,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
   const [serverUrl, setServerUrl] = createSignal("");
   const [pushState, setPushState] = createSignal<PushState>("unsupported");
   const [pushLoading, setPushLoading] = createSignal(false);
+  const [pushError, setPushError] = createSignal<string | null>(null);
 
   onMount(async () => {
     setServerUrl(window.location.origin);
@@ -91,11 +92,13 @@ export function SettingsScreen(props: SettingsScreenProps) {
     // Subscribe
     try {
       setPushLoading(true);
+      setPushError(null);
 
       // Request permission (MUST be in click handler for iOS/Firefox)
       const perm = await Notification.requestPermission();
       if (perm !== "granted") {
         setPushState(perm === "denied" ? "denied" : "default");
+        if (perm !== "denied") setPushError("Permission not granted");
         return;
       }
 
@@ -106,14 +109,14 @@ export function SettingsScreen(props: SettingsScreenProps) {
       // Fetch VAPID public key from server
       const keyResp = await fetch("/api/push/vapid-key");
       if (!keyResp.ok) {
-        appLogger.warn("push", "VAPID key not available — push not enabled on server");
+        setPushError(`VAPID key fetch failed (${keyResp.status}) — push not configured on server`);
         setPushState("default");
         return;
       }
       const keyJson = await keyResp.json();
       const publicKey = keyJson?.publicKey;
       if (typeof publicKey !== "string" || publicKey.length === 0) {
-        appLogger.warn("push", "VAPID key response missing publicKey field", keyJson);
+        setPushError("Server returned empty VAPID key");
         setPushState("default");
         return;
       }
@@ -132,9 +135,12 @@ export function SettingsScreen(props: SettingsScreenProps) {
       });
       if (!postResp.ok) throw new Error(`Server subscribe failed: ${postResp.status}`);
 
+      setPushError(null);
       setPushState("subscribed");
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
       appLogger.error("push", "Subscribe failed", e);
+      setPushError(msg);
       setPushState(await detectPushState());
     } finally {
       setPushLoading(false);
@@ -201,6 +207,11 @@ export function SettingsScreen(props: SettingsScreenProps) {
         <Show when={pushState() === "requires-install"}>
           <div class={styles.hint}>
             Tap Share, then "Add to Home Screen" to enable push notifications
+          </div>
+        </Show>
+        <Show when={pushError()}>
+          <div class={styles.hint} style={{ color: "var(--error)" }}>
+            {pushError()}
           </div>
         </Show>
         <div class={styles.row}>
