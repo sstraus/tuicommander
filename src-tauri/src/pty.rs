@@ -3746,7 +3746,7 @@ mod tests {
 
     #[test]
     fn test_backup_idle_blocked_when_chunks_arriving() {
-        use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
+        use std::sync::atomic::{AtomicU8, AtomicU64};
         let state = crate::state::tests_support::make_test_app_state();
         let sid = "test-session";
         state.shell_states.insert(sid.to_string(), AtomicU8::new(SHELL_BUSY));

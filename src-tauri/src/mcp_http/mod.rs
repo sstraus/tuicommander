@@ -249,6 +249,29 @@ async fn push_unsubscribe(
     StatusCode::NOT_FOUND
 }
 
+/// Send a test push notification to all registered subscribers.
+/// Useful for debugging from console: `curl -X POST http://localhost:PORT/api/push/test`
+async fn push_test(State(state): State<Arc<AppState>>, body: Option<Json<serde_json::Value>>) -> Response {
+    let subs = state.push_store.list();
+    if subs.is_empty() {
+        return (StatusCode::NOT_FOUND, "No push subscriptions registered").into_response();
+    }
+    let config = state.config.read().clone();
+    if !config.push_enabled {
+        return (StatusCode::BAD_REQUEST, "Push not enabled in config").into_response();
+    }
+    let title = body.as_ref().and_then(|b| b.get("title")).and_then(|v| v.as_str()).unwrap_or("TUICommander Test");
+    let msg = body.as_ref().and_then(|b| b.get("body")).and_then(|v| v.as_str()).unwrap_or("Test push notification");
+    let stale = crate::push::send_push_batch(
+        subs.clone(), &config, &state.http_client, title, msg, "/mobile",
+    ).await;
+    for endpoint in &stale {
+        state.push_store.remove(endpoint);
+    }
+    let sent = subs.len() - stale.len();
+    Json(serde_json::json!({ "sent": sent, "stale_removed": stale.len() })).into_response()
+}
+
 /// Middleware that injects a synthetic `ConnectInfo<SocketAddr>` for IPC
 /// connections (Unix socket / named pipe) which lack a TCP peer address.
 /// Always uses 127.0.0.1:0 since IPC is inherently local.
@@ -417,7 +440,8 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/api/plugins/{plugin_id}/data/{*path}", get(plugin_data_http))
         // Push notification API
         .route("/api/push/vapid-key", get(push_vapid_key))
-        .route("/api/push/subscribe", post(push_subscribe).delete(push_unsubscribe));
+        .route("/api/push/subscribe", post(push_subscribe).delete(push_unsubscribe))
+        .route("/api/push/test", post(push_test));
 
     // MCP Streamable HTTP transport — only when MCP is enabled
     if mcp_enabled {

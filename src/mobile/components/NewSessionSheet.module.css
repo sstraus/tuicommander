@@ -15,7 +15,7 @@
   -webkit-backdrop-filter: blur(12px) saturate(1.6);
   border-top: 1px solid var(--border);
   border-radius: 12px 12px 0 0;
-  padding: 8px 0 max(8px, env(safe-area-inset-bottom));
+  padding: 8px 0 calc(56px + max(8px, env(safe-area-inset-bottom)));
 }
 
 .title {

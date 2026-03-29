@@ -8,6 +8,7 @@ import { SettingsScreen } from "./screens/SettingsScreen";
 import { QuestionBanner } from "./components/QuestionBanner";
 import { useSessions } from "./useSessions";
 import { useMobileNotifications } from "./useMobileNotifications";
+import { appLogger } from "../stores/appLogger";
 import styles from "./MobileApp.module.css";
 
 // Register service worker for push notifications (only on HTTPS or localhost)
@@ -15,7 +16,7 @@ if ("serviceWorker" in navigator &&
     (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) {
   navigator.serviceWorker.register("/sw.js").catch((err: unknown) => {
     // Log but don't block — push will be unavailable
-    console.warn("[sw] Service worker registration failed:", err);
+    appLogger.warn("sw", "Service worker registration failed", err);
   });
 }
 
