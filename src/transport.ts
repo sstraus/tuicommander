@@ -556,7 +556,6 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 
   // --- Agents ---
   verify_agent_session: {
-    browserUnsupported: true,
     map: (args) => ({
       method: "POST",
       path: "/agents/verify-session",

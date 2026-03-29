@@ -482,7 +482,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
       const wtPath = selectedBranch.worktreePath;
       deps.repo.getDiffStats(wtPath).then((stats) => {
         repositoriesStore.updateBranchStats(repoPath, branchName, stats.additions, stats.deletions);
-      }).catch(() => {});
+      }).catch((err) => appLogger.debug("git", `getDiffStats failed for ${branchName}`, err));
     }
     let branch = repositoriesStore.get(repoPath)?.branches[branchName];
 
@@ -858,7 +858,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
     try {
       const stats = await deps.repo.getDiffStats(result.path);
       repositoriesStore.updateBranchStats(repoPath, result.branch, stats.additions, stats.deletions);
-    } catch { /* ignore */ }
+    } catch (err) { appLogger.debug("git", `getDiffStats failed for ${result.branch}`, err); }
 
     deps.setStatusInfo(`Created worktree ${displayName}`);
   };
@@ -967,7 +967,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
           try {
             const status = await invoke<{ stdout: string }>("run_git_command", { path: repoPath, args: ["status", "--porcelain"] });
             hasDirtyFiles = status.stdout.trim().length > 0;
-          } catch { /* assume clean */ }
+          } catch (err) { appLogger.warn("git", `Could not check dirty status for ${repoPath}, assuming clean`, err); }
           setMergePendingCtx({ repoPath, branchName, baseBranch: targetBranch, hasDirtyFiles });
           return;
         }
@@ -1009,7 +1009,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
       try {
         const status = await invoke<{ stdout: string }>("run_git_command", { path: repoPath, args: ["status", "--porcelain"] });
         hasDirtyFiles = status.stdout.trim().length > 0;
-      } catch { /* assume clean */ }
+      } catch (err) { appLogger.warn("git", `Could not check dirty status for ${repoPath}, assuming clean`, err); }
       setMergePendingCtx({ repoPath, branchName, baseBranch: targetBranch, hasDirtyFiles });
       // Branch stays in sidebar until the user decides via cleanup dialog
       return;

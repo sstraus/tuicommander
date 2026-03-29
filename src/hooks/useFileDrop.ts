@@ -84,13 +84,13 @@ export function useFileDrop() {
     });
 
     onCleanup(() => {
-      setup.then((unlisten) => unlisten());
+      setup.then((unlisten) => unlisten()).catch(() => {});
     });
   } else {
     // Browser mode: HTML5 drag & drop (filenames only, no full paths)
     const onDragOver = (e: DragEvent) => {
       e.preventDefault();
-      setIsDragging(true);
+      if (!isDragging()) setIsDragging(true);
     };
     const onDragLeave = () => setIsDragging(false);
     const onDrop = (e: DragEvent) => {

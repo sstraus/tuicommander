@@ -70,7 +70,10 @@ pub(super) async fn resolve_context_variables_http(
 pub(super) async fn execute_headless_prompt_http(
     Json(body): Json<serde_json::Value>,
 ) -> Response {
-    let command_line = body.get("commandLine").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let command_line = match body.get("commandLine").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+        Some(c) => c.to_string(),
+        None => return (StatusCode::BAD_REQUEST, "missing required field 'commandLine'").into_response(),
+    };
     let stdin_content = body.get("stdinContent").and_then(|v| v.as_str()).map(String::from);
     let timeout_ms = body.get("timeoutMs").and_then(|v| v.as_u64()).unwrap_or(300_000);
     let repo_path = body.get("repoPath").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -84,7 +87,10 @@ pub(super) async fn execute_api_prompt_http(
     Json(body): Json<serde_json::Value>,
 ) -> Response {
     let system_prompt = body.get("systemPrompt").and_then(|v| v.as_str()).map(String::from);
-    let content = body.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let content = match body.get("content").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+        Some(c) => c.to_string(),
+        None => return (StatusCode::BAD_REQUEST, "missing required field 'content'").into_response(),
+    };
     let timeout_ms = body.get("timeoutMs").and_then(|v| v.as_u64()).unwrap_or(60_000);
     match crate::llm_api::execute_api_prompt(system_prompt, content, timeout_ms).await {
         Ok(output) => Json(output).into_response(),

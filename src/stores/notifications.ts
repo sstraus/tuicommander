@@ -151,8 +151,8 @@ function createNotificationsStore() {
         } else if ("setAppBadge" in navigator) {
           await (navigator as Navigator & { setAppBadge: (n: number) => Promise<void> }).setAppBadge(newCount);
         }
-      } catch {
-        // Badge API may not be supported on all platforms
+      } catch (err) {
+        appLogger.debug("app", "Badge API unavailable or failed", err);
       }
     },
 
@@ -166,8 +166,8 @@ function createNotificationsStore() {
         } else if ("clearAppBadge" in navigator) {
           await (navigator as Navigator & { clearAppBadge: () => Promise<void> }).clearAppBadge();
         }
-      } catch {
-        // Badge API may not be supported on all platforms
+      } catch (err) {
+        appLogger.debug("app", "Badge API unavailable or failed", err);
       }
     },
 
