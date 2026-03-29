@@ -1,6 +1,6 @@
 import { createMemo, createSignal } from "solid-js";
 import { terminalsStore } from "../stores/terminals";
-import { repositoriesStore } from "../stores/repositories";
+import { repositoriesStore, currentBranchKey } from "../stores/repositories";
 import { diffTabsStore } from "../stores/diffTabs";
 import { mdTabsStore } from "../stores/mdTabs";
 import { editorTabsStore } from "../stores/editorTabs";
@@ -66,9 +66,10 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
     return id;
   };
 
-  /** After closing a non-terminal tab, select a sibling or fall back to the last terminal */
-  const selectAfterNonTerminalClose = (store: { getIds: () => string[]; setActive: (id: string | null) => void }, closedId: string) => {
-    const remaining = store.getIds().filter((i) => i !== closedId);
+  /** After closing a non-terminal tab, select a sibling on the same branch or fall back to the last terminal */
+  const selectAfterNonTerminalClose = (store: { getIds: () => string[]; getVisibleIds: (key: string | null) => string[]; setActive: (id: string | null) => void }, closedId: string) => {
+    const branchKey = currentBranchKey() ?? null;
+    const remaining = store.getVisibleIds(branchKey).filter((i) => i !== closedId);
     if (remaining.length > 0) {
       handleTerminalSelect(remaining[remaining.length - 1]);
     } else {
