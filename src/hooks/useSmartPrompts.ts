@@ -5,7 +5,6 @@ import { repositoriesStore } from "../stores/repositories";
 import { agentConfigsStore, llmApiStore } from "../stores/agentConfigs";
 import { usePty } from "./usePty";
 import { invoke } from "../invoke";
-import { isTauri } from "../transport";
 import { appLogger } from "../stores/appLogger";
 
 export interface SmartPromptResult {
@@ -23,15 +22,11 @@ export function useSmartPrompts() {
     if (prompt.enabled === false) return { ok: false, reason: "Prompt is disabled" };
 
     if (prompt.executionMode === "api") {
-      if (!isTauri()) return { ok: false, reason: "API mode requires the desktop app" };
       if (!llmApiStore.isConfigured()) return { ok: false, reason: "LLM API not configured — set provider, model, and API key in Settings → Agents" };
       return { ok: true };
     }
 
     if (prompt.executionMode === "headless") {
-      if (!isTauri()) {
-        return canExecuteInject(prompt);
-      }
       const agentType = agentConfigsStore.getHeadlessAgent();
       if (!agentType) return { ok: false, reason: "No headless agent configured — set one in Settings → Agents" };
       const template = agentConfigsStore.getHeadlessTemplate(agentType);
@@ -103,12 +98,7 @@ export function useSmartPrompts() {
       return check;
     }
 
-    // API mode is Tauri-only (key in OS keyring). Headless falls back to inject in PWA.
-    const effectiveMode = prompt.executionMode === "api" && !isTauri()
-      ? "inject"
-      : prompt.executionMode === "headless" && !isTauri()
-        ? "inject"
-        : (prompt.executionMode ?? "inject");
+    const effectiveMode = prompt.executionMode ?? "inject";
 
     // Resolve variables
     const activeRepo = repositoriesStore.getActive();

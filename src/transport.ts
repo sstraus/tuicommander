@@ -517,6 +517,37 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
     }),
   },
 
+  resolve_context_variables: {
+    map: (args) => ({
+      method: "POST",
+      path: "/prompt/resolve-variables",
+      body: { repoPath: args.repoPath },
+    }),
+  },
+  execute_headless_prompt: {
+    map: (args) => ({
+      method: "POST",
+      path: "/prompt/execute-headless",
+      body: {
+        commandLine: args.commandLine,
+        stdinContent: args.stdinContent,
+        timeoutMs: args.timeoutMs,
+        repoPath: args.repoPath,
+      },
+    }),
+  },
+  execute_api_prompt: {
+    map: (args) => ({
+      method: "POST",
+      path: "/prompt/execute-api",
+      body: {
+        systemPrompt: args.systemPrompt,
+        content: args.content,
+        timeoutMs: args.timeoutMs,
+      },
+    }),
+  },
+
   // --- Agents ---
   detect_agents: { map: () => ({ method: "GET", path: "/agents" }) },
   detect_agent_binary: {

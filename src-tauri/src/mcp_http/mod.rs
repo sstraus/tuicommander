@@ -386,6 +386,9 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         // Prompt processing
         .route("/prompt/process", post(agent_routes::process_prompt_http))
         .route("/prompt/extract-variables", post(agent_routes::extract_prompt_variables_http))
+        .route("/prompt/resolve-variables", post(agent_routes::resolve_context_variables_http))
+        .route("/prompt/execute-headless", post(agent_routes::execute_headless_prompt_http))
+        .route("/prompt/execute-api", post(agent_routes::execute_api_prompt_http))
         // Agents
         .route("/agents", get(agent_routes::detect_agents))
         .route("/agents/detect", get(agent_routes::detect_agent_binary_http))

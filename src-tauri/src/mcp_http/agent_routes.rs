@@ -57,6 +57,41 @@ pub(super) async fn extract_prompt_variables_http(
     Json(crate::prompt::extract_prompt_variables(body.content))
 }
 
+pub(super) async fn resolve_context_variables_http(
+    Json(body): Json<serde_json::Value>,
+) -> Response {
+    let repo_path = body.get("repoPath").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    match crate::prompt::resolve_context_variables(repo_path).await {
+        Ok(vars) => Json(vars).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    }
+}
+
+pub(super) async fn execute_headless_prompt_http(
+    Json(body): Json<serde_json::Value>,
+) -> Response {
+    let command_line = body.get("commandLine").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let stdin_content = body.get("stdinContent").and_then(|v| v.as_str()).map(String::from);
+    let timeout_ms = body.get("timeoutMs").and_then(|v| v.as_u64()).unwrap_or(300_000);
+    let repo_path = body.get("repoPath").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    match crate::smart_prompt::execute_headless_prompt(command_line, stdin_content, timeout_ms, repo_path).await {
+        Ok(output) => Json(output).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    }
+}
+
+pub(super) async fn execute_api_prompt_http(
+    Json(body): Json<serde_json::Value>,
+) -> Response {
+    let system_prompt = body.get("systemPrompt").and_then(|v| v.as_str()).map(String::from);
+    let content = body.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let timeout_ms = body.get("timeoutMs").and_then(|v| v.as_u64()).unwrap_or(60_000);
+    match crate::llm_api::execute_api_prompt(system_prompt, content, timeout_ms).await {
+        Ok(output) => Json(output).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    }
+}
+
 pub(super) async fn spawn_agent_session(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
