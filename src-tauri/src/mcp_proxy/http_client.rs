@@ -190,25 +190,6 @@ impl HttpMcpClient {
             .unwrap_or(resp_value))
     }
 
-    /// Call a tool, re-initializing once on session expiry (400) or connection error.
-    pub(crate) async fn call_tool_with_reconnect(
-        &mut self,
-        tool_name: &str,
-        args: Value,
-    ) -> Result<Value, String> {
-        match self.call_tool(tool_name, args.clone()).await {
-            Ok(result) => Ok(result),
-            Err(e) if e.contains("400") || e.contains("connection") || e.contains("session") => {
-                // Re-initialize and retry once
-                self.initialize().await.map_err(|ie| {
-                    format!("Upstream '{}' reconnect failed: {ie} (original: {e})", self.name)
-                })?;
-                self.call_tool(tool_name, args).await
-            }
-            Err(e) => Err(e),
-        }
-    }
-
     /// Ping the upstream via tools/list and return refreshed tool definitions.
     pub(crate) async fn health_check(&self) -> Result<Vec<UpstreamToolDef>, String> {
         let auth_token = read_upstream_credential(&self.name)?;

@@ -134,23 +134,6 @@ impl PushStore {
     }
 }
 
-/// Generate a VAPID ES256 key pair using jwt_simple (same lib web-push-native uses).
-/// Returns (private_key_base64url, public_key_base64url).
-pub(crate) fn generate_vapid_keys() -> anyhow::Result<(String, String)> {
-    use web_push_native::jwt_simple::algorithms::{
-        ECDSAP256KeyPairLike, ECDSAP256PublicKeyLike, ES256KeyPair,
-    };
-
-    let kp = ES256KeyPair::generate();
-    let private_b64 = Base64UrlUnpadded::encode_string(&kp.to_bytes());
-    // Uncompressed P-256 public key (65 bytes)
-    let public_b64 = Base64UrlUnpadded::encode_string(
-        &kp.public_key().public_key().to_bytes_uncompressed(),
-    );
-
-    Ok((private_b64, public_b64))
-}
-
 /// Send a push notification to a list of subscriptions.
 /// Returns endpoints that should be removed (410 Gone = revoked).
 pub(crate) async fn send_push_batch(
@@ -162,7 +145,6 @@ pub(crate) async fn send_push_batch(
     url: &str,
 ) -> Vec<String> {
     use web_push_native::jwt_simple::algorithms::ES256KeyPair;
-    use web_push_native::p256;
 
     let mut stale_endpoints: Vec<String> = Vec::new();
 

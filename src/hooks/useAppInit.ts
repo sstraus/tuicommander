@@ -127,18 +127,12 @@ export async function initApp(deps: AppInitDeps) {
       repositoriesStore.snapshotTerminals(snapshots);
     }
 
-    // 2. Close PTY sessions
-    if (isTauri()) {
-      // Tauri owns all sessions — close them all
-      for (const id of terminalsStore.getIds()) {
-        const t = terminalsStore.get(id);
-        if (t?.sessionId) {
-          deps.pty.close(t.sessionId).catch((err) =>
-            appLogger.warn("app", `Failed to close PTY session ${t.sessionId} on unload`, err),
-          );
-        }
-      }
-    } else {
+    // 2. Close PTY sessions — but NOT in Tauri mode during webview reloads
+    // (Vite HMR, manual reload). The Rust backend survives the reload and
+    // list_active_sessions will re-adopt the surviving sessions on re-init.
+    // In Tauri, real quit is handled by the close-requested handler which
+    // calls app.exit() — beforeunload during quit is a no-op for PTY cleanup.
+    if (!isTauri()) {
       // Browser only closes sessions it created — leave Tauri-created ones alive
       for (const sid of browserCreatedSessions) {
         deps.pty.close(sid).catch(() => {});
