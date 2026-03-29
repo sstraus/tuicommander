@@ -1982,7 +1982,7 @@ mod normalize_path_tests {
 
 /// the chain: shell → agent CLI (e.g. claude.exe).
 #[cfg(windows)]
-fn deepest_descendant_pid(root_pid: u32) -> Option<u32> {
+pub(crate) fn deepest_descendant_pid(root_pid: u32) -> Option<u32> {
     use windows_sys::Win32::System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, Process32First, Process32Next,
         PROCESSENTRY32, TH32CS_SNAPPROCESS,
