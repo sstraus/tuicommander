@@ -2,6 +2,7 @@ import { Component, For, Show, createSignal, onMount } from "solid-js";
 import { AGENTS, AGENT_DISPLAY, MCP_SUPPORT, type AgentType, type AgentRunConfig } from "../../../agents";
 import { appLogger } from "../../../stores/appLogger";
 import { agentConfigsStore, llmApiStore } from "../../../stores/agentConfigs";
+import { promptLibraryStore } from "../../../stores/promptLibrary";
 import { useAgentDetection, type AgentAvailability } from "../../../hooks/useAgentDetection";
 import { invoke } from "../../../invoke";
 import { settingsStore } from "../../../stores/settings";
@@ -519,7 +520,13 @@ const LlmApiSection: Component = () => {
     }
   };
 
+  const hasApiPrompts = () => {
+    const prompts = promptLibraryStore.getAllPrompts();
+    return prompts.some((p) => p.executionMode === "api");
+  };
+
   return (
+    <Show when={hasApiPrompts() || config().provider}>
       <div class={s.section} style={{ "border-top": "1px solid var(--border)", "padding-top": "20px", "margin-top": "20px" }}>
         <h3>LLM API</h3>
         <p class={s.hint} style={{ "margin-top": "-12px", "margin-bottom": "16px" }}>Direct LLM API for Smart Prompts in "API" execution mode</p>
@@ -611,5 +618,6 @@ const LlmApiSection: Component = () => {
           </Show>
         </div>
       </div>
+    </Show>
   );
 };
