@@ -35,17 +35,27 @@ const CONTEXT_VARIABLES: VarDef[] = [
   { name: "diff", description: "Full working tree diff", group: "Git" },
   { name: "staged_diff", description: "Staged changes diff", group: "Git" },
   { name: "changed_files", description: "git status --short", group: "Git" },
+  { name: "dirty_files_count", description: "Number of modified files", group: "Git" },
   { name: "commit_log", description: "Last 20 commits (oneline)", group: "Git" },
   { name: "last_commit", description: "Last commit hash + subject", group: "Git" },
   { name: "conflict_files", description: "Files with merge conflicts", group: "Git" },
   { name: "stash_list", description: "Stash entries", group: "Git" },
+  { name: "branch_status", description: "Ahead/behind remote tracking", group: "Git" },
+  { name: "remote_url", description: "Remote origin URL", group: "Git" },
+  { name: "current_user", description: "Git user.name", group: "Git" },
   { name: "repo_name", description: "Repository directory name", group: "Git" },
   { name: "repo_path", description: "Full repository path", group: "Git" },
+  { name: "repo_owner", description: "GitHub owner from remote URL", group: "Git" },
+  { name: "repo_slug", description: "Repository name from remote URL", group: "Git" },
   // GitHub
   { name: "pr_number", description: "PR number for current branch", group: "GitHub" },
   { name: "pr_title", description: "PR title", group: "GitHub" },
   { name: "pr_url", description: "PR URL", group: "GitHub" },
   { name: "pr_state", description: "open / closed / merged", group: "GitHub" },
+  { name: "pr_author", description: "PR author username", group: "GitHub" },
+  { name: "pr_labels", description: "PR labels (comma-separated)", group: "GitHub" },
+  { name: "pr_additions", description: "Lines added in PR", group: "GitHub" },
+  { name: "pr_deletions", description: "Lines deleted in PR", group: "GitHub" },
   { name: "merge_status", description: "Mergeable status", group: "GitHub" },
   { name: "review_decision", description: "Review decision", group: "GitHub" },
   { name: "pr_checks", description: "CI check summary", group: "GitHub" },
@@ -294,14 +304,15 @@ const PromptEditor: Component<{
             class={sp.editorInput}
             value={props.prompt.executionMode ?? "inject"}
             onChange={(e) => {
-              const mode = e.currentTarget.value as "inject" | "headless";
+              const mode = e.currentTarget.value as "inject" | "headless" | "api";
               const update: Partial<SavedPrompt> = { executionMode: mode };
-              if (mode === "inject") update.outputTarget = undefined;
+              if (mode === "inject") { update.outputTarget = undefined; update.systemPrompt = undefined; }
               promptLibraryStore.updatePrompt(props.prompt.id, update);
             }}
           >
             <option value="inject">Inject into terminal</option>
             <option value="headless">Headless (one-shot CLI)</option>
+            <option value="api">API (LLM direct)</option>
           </select>
         </div>
 
@@ -321,8 +332,8 @@ const PromptEditor: Component<{
         </Show>
       </div>
 
-      {/* Output Target (headless only) */}
-      <Show when={(props.prompt.executionMode ?? "inject") === "headless"}>
+      {/* Output Target (headless and api modes) */}
+      <Show when={(props.prompt.executionMode ?? "inject") !== "inject"}>
         <div class={sp.editorSection}>
           <label class={sp.editorLabel}>Output Target</label>
           <select
@@ -341,6 +352,25 @@ const PromptEditor: Component<{
             <option value="toast">Notification</option>
             <option value="panel">Panel</option>
           </select>
+        </div>
+      </Show>
+
+      {/* System Prompt (api mode only) */}
+      <Show when={props.prompt.executionMode === "api"}>
+        <div class={sp.editorSection}>
+          <label class={sp.editorLabel}>System Prompt</label>
+          <textarea
+            class={sp.editorTextarea}
+            rows={3}
+            value={props.prompt.systemPrompt ?? ""}
+            placeholder="Instructions for the LLM (e.g. 'You are a Git expert. Output only the requested content.')"
+            onInput={(e) => {
+              promptLibraryStore.updatePrompt(props.prompt.id, {
+                systemPrompt: e.currentTarget.value || undefined,
+              });
+            }}
+          />
+          <p class={sp.fieldHint}>Sent as the system message to the LLM provider</p>
         </div>
       </Show>
 

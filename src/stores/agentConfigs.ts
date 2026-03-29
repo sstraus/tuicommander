@@ -192,3 +192,69 @@ function createAgentConfigsStore() {
 }
 
 export const agentConfigsStore = createAgentConfigsStore();
+
+// ---------------------------------------------------------------------------
+// LLM API config (global, for Smart Prompts "api" execution mode)
+// ---------------------------------------------------------------------------
+
+export interface LlmApiConfig {
+  provider: string;
+  model: string;
+  base_url?: string;
+}
+
+interface LlmApiState {
+  config: LlmApiConfig;
+  hasKey: boolean;
+  loaded: boolean;
+}
+
+function createLlmApiStore() {
+  const [state, setState] = createStore<LlmApiState>({
+    config: { provider: "", model: "" },
+    hasKey: false,
+    loaded: false,
+  });
+
+  const actions = {
+    async hydrate(): Promise<void> {
+      try {
+        const [config, hasKey] = await Promise.all([
+          invoke<LlmApiConfig>("load_llm_api_config"),
+          invoke<boolean>("has_llm_api_key"),
+        ]);
+        setState({ config: config ?? { provider: "", model: "" }, hasKey, loaded: true });
+      } catch (err) {
+        appLogger.error("config", "Failed to hydrate LLM API config", err);
+        setState("loaded", true);
+      }
+    },
+
+    isConfigured(): boolean {
+      return state.config.provider !== "" && state.config.model !== "" && state.hasKey;
+    },
+
+    async saveConfig(config: LlmApiConfig): Promise<void> {
+      await invoke("save_llm_api_config", { config });
+      setState("config", config);
+    },
+
+    async saveKey(key: string): Promise<void> {
+      await invoke("save_llm_api_key", { key });
+      setState("hasKey", true);
+    },
+
+    async deleteKey(): Promise<void> {
+      await invoke("delete_llm_api_key");
+      setState("hasKey", false);
+    },
+
+    async testConnection(): Promise<string> {
+      return invoke<string>("test_llm_api");
+    },
+  };
+
+  return { state, ...actions };
+}
+
+export const llmApiStore = createLlmApiStore();

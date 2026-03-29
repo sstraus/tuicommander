@@ -1,7 +1,7 @@
 import { Component, For, Show, createSignal, onMount } from "solid-js";
 import { AGENTS, AGENT_DISPLAY, MCP_SUPPORT, type AgentType, type AgentRunConfig } from "../../../agents";
 import { appLogger } from "../../../stores/appLogger";
-import { agentConfigsStore } from "../../../stores/agentConfigs";
+import { agentConfigsStore, llmApiStore } from "../../../stores/agentConfigs";
 import { useAgentDetection, type AgentAvailability } from "../../../hooks/useAgentDetection";
 import { invoke } from "../../../invoke";
 import { settingsStore } from "../../../stores/settings";
@@ -429,6 +429,9 @@ export const AgentsTab: Component = () => {
         </p>
       </div>
 
+      {/* LLM API Configuration */}
+      <LlmApiSection />
+
       <div class={a.agentList}>
         <For each={AGENT_TYPES}>
           {(type) => (
@@ -439,6 +442,178 @@ export const AgentsTab: Component = () => {
             />
           )}
         </For>
+      </div>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// LLM API Section
+// ---------------------------------------------------------------------------
+
+interface LlmProvider {
+  value: string;
+  label: string;
+  placeholder: string;
+  needsUrl?: boolean;
+  defaultUrl?: string;
+}
+
+const LLM_PROVIDERS: LlmProvider[] = [
+  { value: "openai", label: "OpenAI", placeholder: "gpt-4o-mini" },
+  { value: "anthropic", label: "Anthropic", placeholder: "claude-sonnet-4-5-20241022" },
+  { value: "gemini", label: "Google Gemini", placeholder: "gemini-2.0-flash" },
+  { value: "openrouter", label: "OpenRouter", placeholder: "openai/gpt-4o-mini", needsUrl: true, defaultUrl: "https://openrouter.ai/api/v1/" },
+  { value: "ollama", label: "Ollama (local)", placeholder: "llama3.2", needsUrl: true, defaultUrl: "http://localhost:11434/v1/" },
+  { value: "custom", label: "Custom (OpenAI-compatible)", placeholder: "model-name", needsUrl: true },
+];
+
+const LlmApiSection: Component = () => {
+  const [apiKey, setApiKey] = createSignal("");
+  const [testResult, setTestResult] = createSignal<{ ok: boolean; msg: string } | null>(null);
+  const [testing, setTesting] = createSignal(false);
+
+  onMount(() => { llmApiStore.hydrate(); });
+
+  const config = () => llmApiStore.state.config;
+  const providerInfo = () => LLM_PROVIDERS.find((p) => p.value === config().provider);
+  const needsUrl = () => providerInfo()?.needsUrl ?? false;
+
+  const handleProviderChange = (provider: string) => {
+    const info = LLM_PROVIDERS.find((p) => p.value === provider);
+    const base_url = info?.needsUrl ? (info.defaultUrl ?? "") : undefined;
+    llmApiStore.saveConfig({ provider, model: config().model, base_url });
+  };
+
+  const handleModelChange = (model: string) => {
+    llmApiStore.saveConfig({ ...config(), model });
+  };
+
+  const handleBaseUrlChange = (base_url: string) => {
+    llmApiStore.saveConfig({ ...config(), base_url: base_url || undefined });
+  };
+
+  const handleSaveKey = async () => {
+    const key = apiKey().trim();
+    if (!key) return;
+    try {
+      await llmApiStore.saveKey(key);
+      setApiKey("");
+      setTestResult(null);
+      appLogger.info("config", "LLM API key saved to keyring");
+    } catch (err) {
+      appLogger.error("config", "Failed to save API key", err);
+    }
+  };
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const msg = await llmApiStore.testConnection();
+      setTestResult({ ok: true, msg });
+    } catch (err) {
+      setTestResult({ ok: false, msg: String(err) });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <div class={a.section}>
+      <h4 class={a.sectionTitle}>LLM API</h4>
+      <p class={s.hint}>Direct LLM API for Smart Prompts in "API" execution mode. No terminal or agent CLI required.</p>
+
+      <div class={a.fieldGroup}>
+        <label class={s.label}>Provider</label>
+        <select
+          class={s.select}
+          value={config().provider}
+          onChange={(e) => handleProviderChange(e.currentTarget.value)}
+        >
+          <option value="">— Select provider —</option>
+          <For each={LLM_PROVIDERS}>
+            {(p) => <option value={p.value}>{p.label}</option>}
+          </For>
+        </select>
+      </div>
+
+      <div class={a.fieldGroup}>
+        <label class={s.label}>Model</label>
+        <input
+          type="text"
+          class={s.input}
+          value={config().model}
+          placeholder={providerInfo()?.placeholder ?? "model-name"}
+          onInput={(e) => handleModelChange(e.currentTarget.value)}
+        />
+      </div>
+
+      <Show when={needsUrl()}>
+        <div class={a.fieldGroup}>
+          <label class={s.label}>Base URL</label>
+          <input
+            type="text"
+            class={s.input}
+            value={config().base_url ?? ""}
+            placeholder="https://..."
+            onInput={(e) => handleBaseUrlChange(e.currentTarget.value)}
+          />
+        </div>
+      </Show>
+
+      <div class={a.fieldGroup}>
+        <label class={s.label}>API Key</label>
+        <Show
+          when={!llmApiStore.state.hasKey}
+          fallback={
+            <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
+              <span style={{ color: "var(--success)", "font-size": "var(--font-sm)" }}>Key stored in keyring</span>
+              <input
+                type="password"
+                class={s.input}
+                style={{ flex: "1" }}
+                value={apiKey()}
+                placeholder="Enter new key to replace"
+                onInput={(e) => setApiKey(e.currentTarget.value)}
+              />
+              <Show when={apiKey().trim()}>
+                <button class={s.btn} onClick={handleSaveKey}>Save</button>
+              </Show>
+            </div>
+          }
+        >
+          <div style={{ display: "flex", gap: "8px" }}>
+            <input
+              type="password"
+              class={s.input}
+              style={{ flex: "1" }}
+              value={apiKey()}
+              placeholder="Paste your API key"
+              onInput={(e) => setApiKey(e.currentTarget.value)}
+            />
+            <Show when={apiKey().trim()}>
+              <button class={s.btn} onClick={handleSaveKey}>Save</button>
+            </Show>
+          </div>
+        </Show>
+      </div>
+
+      <div style={{ display: "flex", "align-items": "center", gap: "8px", "margin-top": "8px" }}>
+        <button
+          class={s.btn}
+          disabled={testing() || !config().provider || !config().model || !llmApiStore.state.hasKey}
+          onClick={handleTest}
+        >
+          {testing() ? "Testing..." : "Test Connection"}
+        </button>
+        <Show when={testResult()}>
+          {(result) => (
+            <span style={{ color: result().ok ? "var(--success)" : "var(--error)", "font-size": "var(--font-sm)" }}>
+              {result().msg.slice(0, 120)}
+            </span>
+          )}
+        </Show>
       </div>
     </div>
   );

@@ -34,7 +34,8 @@ export type AppLogSource =
   | "mcp"
   | "prompts"
   | "push"
-  | "tailscale";
+  | "tailscale"
+  | "sw";
 
 export interface AppLogEntry {
   id: number;

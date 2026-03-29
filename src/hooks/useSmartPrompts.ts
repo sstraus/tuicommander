@@ -2,7 +2,7 @@ import { promptLibraryStore, type SavedPrompt } from "../stores/promptLibrary";
 import { terminalsStore } from "../stores/terminals";
 import { githubStore } from "../stores/github";
 import { repositoriesStore } from "../stores/repositories";
-import { agentConfigsStore } from "../stores/agentConfigs";
+import { agentConfigsStore, llmApiStore } from "../stores/agentConfigs";
 import { usePty } from "./usePty";
 import { invoke } from "../invoke";
 import { isTauri } from "../transport";
@@ -21,6 +21,12 @@ export function useSmartPrompts() {
   /** Check if a smart prompt can be executed right now */
   function canExecute(prompt: SavedPrompt): { ok: boolean; reason?: string } {
     if (prompt.enabled === false) return { ok: false, reason: "Prompt is disabled" };
+
+    if (prompt.executionMode === "api") {
+      if (!isTauri()) return { ok: false, reason: "API mode requires the desktop app" };
+      if (!llmApiStore.isConfigured()) return { ok: false, reason: "LLM API not configured — set provider, model, and API key in Settings → Agents" };
+      return { ok: true };
+    }
 
     if (prompt.executionMode === "headless") {
       if (!isTauri()) {
@@ -67,6 +73,10 @@ export function useSmartPrompts() {
         if (pr.checks) {
           vars["pr_checks"] = `${pr.checks.passed} passed, ${pr.checks.failed} failed, ${pr.checks.pending} pending`;
         }
+        if (pr.author) vars["pr_author"] = pr.author;
+        if (pr.labels?.length) vars["pr_labels"] = pr.labels.map((l) => l.name).join(", ");
+        if (pr.additions != null) vars["pr_additions"] = String(pr.additions);
+        if (pr.deletions != null) vars["pr_deletions"] = String(pr.deletions);
       }
     }
 
@@ -93,10 +103,12 @@ export function useSmartPrompts() {
       return check;
     }
 
-    // Headless falls back to inject in PWA mode
-    const effectiveMode = prompt.executionMode === "headless" && !isTauri()
+    // API mode is Tauri-only (key in OS keyring). Headless falls back to inject in PWA.
+    const effectiveMode = prompt.executionMode === "api" && !isTauri()
       ? "inject"
-      : (prompt.executionMode ?? "inject");
+      : prompt.executionMode === "headless" && !isTauri()
+        ? "inject"
+        : (prompt.executionMode ?? "inject");
 
     // Resolve variables
     const activeRepo = repositoriesStore.getActive();
@@ -114,6 +126,9 @@ export function useSmartPrompts() {
     // Substitute variables into content
     const processed = await promptLibraryStore.processContent(prompt, allVars);
 
+    if (effectiveMode === "api") {
+      return executeApi(prompt, processed);
+    }
     if (effectiveMode === "headless") {
       return executeHeadless(prompt, processed);
     }
@@ -168,6 +183,22 @@ export function useSmartPrompts() {
       return { ok: true, output };
     } catch (err) {
       appLogger.error("prompts", `Headless execution failed for "${prompt.name}"`, err);
+      return { ok: false, reason: String(err) };
+    }
+  }
+
+  async function executeApi(prompt: SavedPrompt, content: string): Promise<SmartPromptResult> {
+    try {
+      const output = await invoke<string>("execute_api_prompt", {
+        systemPrompt: prompt.systemPrompt || null,
+        content,
+        timeoutMs: 60000,
+      });
+      promptLibraryStore.markAsUsed(prompt.id);
+      routeHeadlessOutput(prompt, output);
+      return { ok: true, output };
+    } catch (err) {
+      appLogger.error("prompts", `API execution failed for "${prompt.name}"`, err);
       return { ok: false, reason: String(err) };
     }
   }

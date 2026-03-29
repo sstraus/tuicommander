@@ -422,24 +422,37 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
 interface VarDef { name: string; description: string; group: string }
 
 const CONTEXT_VARIABLES: VarDef[] = [
+  // Git
   { name: "branch", description: "Current branch name", group: "Git" },
   { name: "base_branch", description: "Base branch (main/master/develop)", group: "Git" },
   { name: "diff", description: "Full working tree diff", group: "Git" },
   { name: "staged_diff", description: "Staged changes diff", group: "Git" },
   { name: "changed_files", description: "git status --short", group: "Git" },
+  { name: "dirty_files_count", description: "Number of modified files", group: "Git" },
   { name: "commit_log", description: "Last 20 commits (oneline)", group: "Git" },
   { name: "last_commit", description: "Last commit hash + subject", group: "Git" },
   { name: "conflict_files", description: "Files with merge conflicts", group: "Git" },
   { name: "stash_list", description: "Stash entries", group: "Git" },
+  { name: "branch_status", description: "Ahead/behind remote tracking", group: "Git" },
+  { name: "remote_url", description: "Remote origin URL", group: "Git" },
+  { name: "current_user", description: "Git user.name", group: "Git" },
   { name: "repo_name", description: "Repository directory name", group: "Git" },
   { name: "repo_path", description: "Full repository path", group: "Git" },
+  { name: "repo_owner", description: "GitHub owner from remote URL", group: "Git" },
+  { name: "repo_slug", description: "Repository name from remote URL", group: "Git" },
+  // GitHub
   { name: "pr_number", description: "PR number for current branch", group: "GitHub" },
   { name: "pr_title", description: "PR title", group: "GitHub" },
   { name: "pr_url", description: "PR URL", group: "GitHub" },
   { name: "pr_state", description: "open / closed / merged", group: "GitHub" },
+  { name: "pr_author", description: "PR author username", group: "GitHub" },
+  { name: "pr_labels", description: "PR labels (comma-separated)", group: "GitHub" },
+  { name: "pr_additions", description: "Lines added in PR", group: "GitHub" },
+  { name: "pr_deletions", description: "Lines deleted in PR", group: "GitHub" },
   { name: "merge_status", description: "Mergeable status", group: "GitHub" },
   { name: "review_decision", description: "Review decision", group: "GitHub" },
   { name: "pr_checks", description: "CI check summary", group: "GitHub" },
+  // Terminal
   { name: "agent_type", description: "Detected agent (claude, codex...)", group: "Terminal" },
   { name: "cwd", description: "Terminal working directory", group: "Terminal" },
 ];
@@ -515,8 +528,9 @@ const PromptEditor: Component<PromptEditorProps> = (props) => {
   const [shortcut, setShortcut] = createSignal(props.prompt?.shortcut || "");
   const [placement, setPlacement] = createSignal<SmartPlacement[]>(props.prompt?.placement ?? []);
   const [autoExecute, setAutoExecute] = createSignal(props.prompt?.autoExecute ?? false);
-  const [executionMode, setExecutionMode] = createSignal<"inject" | "headless">(props.prompt?.executionMode ?? "inject");
+  const [executionMode, setExecutionMode] = createSignal<"inject" | "headless" | "api">(props.prompt?.executionMode ?? "inject");
   const [outputTarget, setOutputTarget] = createSignal<SavedPrompt["outputTarget"]>(props.prompt?.outputTarget);
+  const [systemPrompt, setSystemPrompt] = createSignal(props.prompt?.systemPrompt ?? "");
   const [validationError, setValidationError] = createSignal<string | null>(null);
 
   const isOverridden = () => {
@@ -534,6 +548,7 @@ const PromptEditor: Component<PromptEditorProps> = (props) => {
       setAutoExecute(def.autoExecute ?? false);
       setExecutionMode(def.executionMode ?? "inject");
       setOutputTarget(def.outputTarget);
+      setSystemPrompt(def.systemPrompt ?? "");
     }
   };
 
@@ -574,7 +589,8 @@ const PromptEditor: Component<PromptEditorProps> = (props) => {
       placement: placement().length > 0 ? placement() : undefined,
       autoExecute: autoExecute(),
       executionMode: executionMode(),
-      outputTarget: executionMode() === "headless" ? outputTarget() : undefined,
+      outputTarget: executionMode() !== "inject" ? outputTarget() : undefined,
+      systemPrompt: executionMode() === "api" ? (systemPrompt().trim() || undefined) : undefined,
     });
   };
 
@@ -655,13 +671,14 @@ const PromptEditor: Component<PromptEditorProps> = (props) => {
             <select
               value={executionMode()}
               onChange={(e) => {
-                const mode = e.currentTarget.value as "inject" | "headless";
+                const mode = e.currentTarget.value as "inject" | "headless" | "api";
                 setExecutionMode(mode);
-                if (mode === "inject") setOutputTarget(undefined);
+                if (mode === "inject") { setOutputTarget(undefined); setSystemPrompt(""); }
               }}
             >
               <option value="inject">Inject into terminal</option>
               <option value="headless">Headless (one-shot CLI)</option>
+              <option value="api">API (LLM direct)</option>
             </select>
           </div>
 
@@ -681,8 +698,8 @@ const PromptEditor: Component<PromptEditorProps> = (props) => {
           </Show>
         </div>
 
-        {/* Output Target (headless only) */}
-        <Show when={executionMode() === "headless"}>
+        {/* Output Target (headless and api modes) */}
+        <Show when={executionMode() !== "inject"}>
           <div class={s.editorField}>
             <label>Output Target</label>
             <select
@@ -698,6 +715,20 @@ const PromptEditor: Component<PromptEditorProps> = (props) => {
               <option value="toast">Notification</option>
               <option value="panel">Panel</option>
             </select>
+          </div>
+        </Show>
+
+        {/* System Prompt (api mode only) */}
+        <Show when={executionMode() === "api"}>
+          <div class={s.editorField}>
+            <label>System Prompt</label>
+            <textarea
+              rows={3}
+              value={systemPrompt()}
+              placeholder="Instructions for the LLM (e.g. 'You are a Git expert.')"
+              onInput={(e) => setSystemPrompt(e.currentTarget.value)}
+            />
+            <span class={s.fieldHint}>Sent as the system message to the LLM</span>
           </div>
         </Show>
 
