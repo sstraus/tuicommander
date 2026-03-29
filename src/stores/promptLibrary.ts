@@ -7,6 +7,9 @@ import { SMART_PROMPTS_BUILTIN } from "../data/smartPromptsBuiltIn";
 /** Prompt category */
 export type PromptCategory = "custom" | "recent" | "favorite";
 
+/** Where a smart prompt can appear in the UI */
+export type SmartPlacement = "toolbar" | "git-changes" | "git-branches" | "pr-popover" | "tab-context" | "command-palette";
+
 /** Prompt variable for template substitution */
 export interface PromptVariable {
   name: string;
