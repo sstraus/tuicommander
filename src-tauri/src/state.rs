@@ -188,8 +188,10 @@ impl PartialEq for SessionState {
 }
 
 
-/// TTL for git operations (local disk): 5 seconds
-pub(crate) const GIT_CACHE_TTL: Duration = Duration::from_secs(5);
+/// TTL for git operations (local disk): 60s fallback.
+/// Primary invalidation is event-driven via repo_watcher FSEvents.
+/// This TTL is a safety net for cases where the watcher misses an event.
+pub(crate) const GIT_CACHE_TTL: Duration = Duration::from_secs(60);
 
 /// TTL for GitHub operations (network): 30 seconds
 pub(crate) const GITHUB_CACHE_TTL: Duration = Duration::from_secs(30);

@@ -117,6 +117,9 @@ pub(crate) fn start_watching(
                 }
             }
 
+            // Invalidate backend git caches so the next IPC call fetches fresh data
+            state_cb.invalidate_repo_caches(&repo_path_owned);
+
             // Broadcast to SSE/WebSocket consumers
             let _ = event_bus.send(AppEvent::RepoChanged {
                 repo_path: repo_path_owned.clone(),
