@@ -151,6 +151,7 @@ const WORKSPACE_ACTIONS: &str = "list, active";
 const NOTIFY_ACTIONS: &str = "toast, confirm";
 const KNOWLEDGE_ACTIONS: &str = "search, code_graph, status, setup";
 const MESSAGING_ACTIONS: &str = "register, list_peers, send, inbox";
+const DEBUG_ACTIONS: &str = "agent_detection, logs, sessions, invoke_js";
 
 /// MCP tool definitions — 5 meta-commands mirroring tui_mcp_bridge
 fn native_tool_definitions() -> serde_json::Value {
@@ -264,6 +265,17 @@ fn native_tool_definitions() -> serde_json::Value {
             "name": "plugin_dev_guide",
             "description": "Returns comprehensive plugin authoring reference: manifest format, PluginHost API (all 4 tiers), structured event types, and working examples. Call before writing any plugin code.",
             "inputSchema": { "type": "object", "properties": {}, "required": [] }
+        },
+        {
+            "name": "debug",
+            "description": "Dev-only diagnostics for debugging TUICommander internals.\n\nActions (pass as 'action' parameter):\n- agent_detection: Returns agent detection pipeline diagnostics for a session (raw_fd, pgid, process_name, classified). Requires session_id or omit for all sessions.\n- logs: Returns recent app log entries. Optional: level, source, limit.\n- sessions: Returns all active PTY sessions with process info.",
+            "inputSchema": { "type": "object", "properties": {
+                "action": { "type": "string", "description": "One of: agent_detection, logs, sessions" },
+                "session_id": { "type": "string", "description": "PTY session UUID (action=agent_detection, optional — omit for all)" },
+                "level": { "type": "string", "description": "Log level filter: debug, info, warn, error (action=logs)" },
+                "source": { "type": "string", "description": "Log source filter (action=logs)" },
+                "limit": { "type": "integer", "description": "Max entries (action=logs, default 50)" }
+            }, "required": ["action"] }
         }
     ]);
 
@@ -372,6 +384,7 @@ async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &st
         "agent" => handle_agent(state, addr, args),
         "messaging" => handle_messaging(state, args, mcp_session_id),
         "config" => handle_config(state, addr, args),
+        "debug" => handle_debug(state, args),
         "workspace" => handle_workspace(state, args),
         "notify" => handle_notify(state, addr, args),
         "knowledge" => handle_knowledge(state, args).await,
@@ -1135,6 +1148,97 @@ fn handle_config(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Val
         }
         other => serde_json::json!({"error": format!(
             "Unknown action '{}' for tool 'config'. Available: {}", other, CONFIG_ACTIONS
+        )}),
+    }
+}
+
+fn handle_debug(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
+    let action = match require_action(args, "debug", DEBUG_ACTIONS) {
+        Ok(a) => a,
+        Err(e) => return e,
+    };
+    match action {
+        "agent_detection" => {
+            let session_ids: Vec<String> = if let Some(sid) = args["session_id"].as_str() {
+                vec![sid.to_string()]
+            } else {
+                state.sessions.iter().map(|e| e.key().clone()).collect()
+            };
+            let results: Vec<serde_json::Value> = session_ids.iter().map(|sid| {
+                let entry = match state.sessions.get(sid) {
+                    Some(e) => e,
+                    None => return serde_json::json!({ "error": "session not found", "session_id": sid }),
+                };
+                let session = entry.value().lock();
+                #[cfg(not(windows))]
+                {
+                    let raw_fd = session.master.as_raw_fd();
+                    let pgid = session.master.process_group_leader();
+                    let name = pgid.and_then(|p| crate::pty::process_name_from_pid(p as u32));
+                    let classified = name.as_deref().and_then(crate::pty::classify_agent);
+                    serde_json::json!({
+                        "session_id": sid,
+                        "master_raw_fd": raw_fd,
+                        "process_group_leader": pgid,
+                        "process_name": name,
+                        "classified_agent": classified,
+                        "child_pid": session._child.process_id(),
+                    })
+                }
+                #[cfg(windows)]
+                {
+                    let child_pid = session._child.process_id();
+                    let leaf = child_pid.and_then(crate::pty::deepest_descendant_pid);
+                    let name = leaf.and_then(crate::pty::process_name_from_pid);
+                    let classified = name.as_deref().and_then(crate::pty::classify_agent);
+                    serde_json::json!({
+                        "session_id": sid,
+                        "child_pid": child_pid,
+                        "leaf_pid": leaf,
+                        "process_name": name,
+                        "classified_agent": classified,
+                    })
+                }
+            }).collect();
+            serde_json::json!(results)
+        }
+        "logs" => {
+            let level_filter = args["level"].as_str();
+            let source_filter = args["source"].as_str();
+            let limit = args["limit"].as_u64().unwrap_or(50) as usize;
+            let buf = state.log_buffer.lock();
+            let all = buf.get_entries(0);
+            let filtered: Vec<_> = all.into_iter()
+                .filter(|e| level_filter.map_or(true, |l| e.level == l))
+                .filter(|e| source_filter.map_or(true, |s| e.source == s))
+                .collect();
+            let start = filtered.len().saturating_sub(limit);
+            serde_json::json!(filtered[start..])
+        }
+        "sessions" => {
+            let sessions: Vec<serde_json::Value> = state.sessions.iter().map(|entry| {
+                let sid = entry.key().clone();
+                let session = entry.value().lock();
+                #[cfg(not(windows))]
+                let pgid = session.master.process_group_leader();
+                #[cfg(windows)]
+                let pgid = session._child.process_id();
+                #[cfg(not(windows))]
+                let process_name = pgid.and_then(|p| crate::pty::process_name_from_pid(p as u32));
+                #[cfg(windows)]
+                let process_name = pgid.and_then(crate::pty::process_name_from_pid);
+                serde_json::json!({
+                    "session_id": sid,
+                    "cwd": session.cwd,
+                    "child_pid": session._child.process_id(),
+                    "foreground_pgid": pgid,
+                    "foreground_process": process_name,
+                })
+            }).collect();
+            serde_json::json!(sessions)
+        }
+        other => serde_json::json!({"error": format!(
+            "Unknown action '{}' for tool 'debug'. Available: {}", other, DEBUG_ACTIONS
         )}),
     }
 }

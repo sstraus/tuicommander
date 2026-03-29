@@ -1857,7 +1857,21 @@ pub(crate) fn process_name_from_pid(pid: u32) -> Option<String> {
     }
     let path = std::str::from_utf8(&buf[..ret as usize]).ok()?;
     // Extract just the binary name from the full path
-    path.rsplit('/').next().map(|s| s.to_string())
+    let basename = path.rsplit('/').next().unwrap_or(path);
+
+    // Some agents install versioned binaries where the filename is a version number
+    // (e.g. claude: ~/.local/share/claude/versions/2.1.87). When the basename
+    // doesn't look like a program name, check the path for known agent directories.
+    if classify_agent(basename).is_some() {
+        return Some(basename.to_string());
+    }
+    // Fall back: match parent directory names against known agents
+    for segment in path.rsplit('/').skip(1) {
+        if classify_agent(segment).is_some() {
+            return Some(segment.to_string());
+        }
+    }
+    Some(basename.to_string())
 }
 
 #[cfg(target_os = "linux")]
@@ -2052,6 +2066,50 @@ pub(crate) fn get_session_foreground_process(
         let leaf = deepest_descendant_pid(child_pid)?;
         let name = process_name_from_pid(leaf)?;
         classify_agent(&name).map(|s| s.to_string())
+    }
+}
+
+/// Debug: diagnose agent detection for a PTY session.
+/// Returns each step of the detection pipeline so failures can be pinpointed.
+#[tauri::command]
+pub(crate) fn debug_agent_detection(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+) -> serde_json::Value {
+    let entry = match state.sessions.get(&session_id) {
+        Some(e) => e,
+        None => return serde_json::json!({ "error": "session not found", "session_id": session_id }),
+    };
+    let session = entry.value().lock();
+
+    #[cfg(not(windows))]
+    {
+        let raw_fd = session.master.as_raw_fd();
+        let pgid = session.master.process_group_leader();
+        let name = pgid.and_then(|p| process_name_from_pid(p as u32));
+        let classified = name.as_deref().and_then(classify_agent);
+        serde_json::json!({
+            "session_id": session_id,
+            "master_raw_fd": raw_fd,
+            "process_group_leader": pgid,
+            "process_name": name,
+            "classified_agent": classified,
+            "child_pid": session._child.process_id(),
+        })
+    }
+    #[cfg(windows)]
+    {
+        let child_pid = session._child.process_id();
+        let leaf = child_pid.and_then(deepest_descendant_pid);
+        let name = leaf.and_then(process_name_from_pid);
+        let classified = name.as_deref().and_then(classify_agent);
+        serde_json::json!({
+            "session_id": session_id,
+            "child_pid": child_pid,
+            "leaf_pid": leaf,
+            "process_name": name,
+            "classified_agent": classified,
+        })
     }
 }
 

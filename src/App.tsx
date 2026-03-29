@@ -117,6 +117,40 @@ const App: Component = () => {
   };
   if (import.meta.env.DEV) {
     (window as any).__tuic_setStatusInfo = setStatusInfo;
+    (window as any).__debug = {
+      // Stores
+      terminals: terminalsStore,
+      repositories: repositoriesStore,
+      settings: settingsStore,
+      github: githubStore,
+      prompts: promptLibraryStore,
+      agentConfigs: agentConfigsStore,
+      plugins: pluginStore,
+      ui: uiStore,
+      notifications: notificationsStore,
+      activity: activityStore,
+      activityDashboard: activityDashboardStore,
+      repoSettings: repoSettingsStore,
+      repoDefaults: repoDefaultsStore,
+      diffTabs: diffTabsStore,
+      mdTabs: mdTabsStore,
+      editorTabs: editorTabsStore,
+      notes: notesStore,
+      keybindings: keybindingsStore,
+      prNotifications: prNotificationsStore,
+      updater: updaterStore,
+      tasks: tasksStore,
+      dictation: dictationStore,
+      userActivity: userActivityStore,
+      contextMenuActions: contextMenuActionsStore,
+      worktreeManager: worktreeManagerStore,
+      errorLog: errorLogStore,
+      logger: appLogger,
+      // Tauri bridge
+      invoke,
+      listen,
+      isTauri,
+    };
   }
   const [settingsPanelVisible, setSettingsPanelVisible] = createSignal(false);
   const [settingsInitialTab, setSettingsInitialTab] = createSignal<string | undefined>(undefined);
