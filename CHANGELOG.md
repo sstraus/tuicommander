@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Variable Insertion Dropdown** — Smart prompt editor includes a dropdown below the content textarea with all available variables grouped by Git/GitHub/Terminal, with descriptions; click inserts `{variable}` at cursor position
 - **Prompt Editor Tags** — Prompt rows in Cmd+K drawer show inline badges for execution mode (inject/headless), built-in status, and placement tags
 - **Dev Debug Console** — `window.__debug` exposed in dev mode with all SolidJS stores + Tauri `invoke`/`listen` for browser console debugging
+- **File Browser Tree View** — Toggle between flat list and tree view in the file browser panel. Tree view shows a collapsible hierarchy with lazy-loaded subdirectories on first expand
+- **Diff Scroll View** — All-files continuous scroll view showing every changed file (staged + unstaged) with collapsible sections, per-file stats, and clickable filenames. Toggle via toolbar or `Cmd+Shift+G`
+- **Command Palette File Search** — Type `!` in the command palette (`Cmd+P`) to search files by name, `?` to search file contents with highlighted matches. Results open in editor tabs
+- **Update Progress Dialog** — Modal progress bar during update downloads with percentage and status text
 
 ### Fixed
 - **Agent Detection** — Claude Code installs its binary as a version number (`~/.local/share/claude/versions/2.1.87`); `process_name_from_pid` now scans parent directory names when the basename doesn't match a known agent

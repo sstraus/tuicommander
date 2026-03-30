@@ -41,6 +41,17 @@ The panel header shows a legend for git status colors:
 
 File and directory names inherit these colors based on their git status. Gitignored entries are shown in a dimmed style.
 
+### View Modes
+
+The file browser supports two view modes, toggled via toolbar buttons:
+
+| Mode | Description |
+|------|-------------|
+| **List** (default) | Flat directory listing with breadcrumb navigation and `..` parent entry |
+| **Tree** | Collapsible hierarchy with lazy-loaded subdirectories. Expand folders by clicking the chevron |
+
+Switching to tree mode resets to the repository root regardless of the current flat-mode subdirectory. When a search query is active, the view always shows flat results.
+
 ### Filename Search
 
 Type in the search box to search recursively across the entire repository by filename. Supports `*` and `**` glob wildcards (e.g., `*.ts`, `src/**/*.test.ts`). Results appear with their full path. Clear the query with the `×` button or by emptying the input.

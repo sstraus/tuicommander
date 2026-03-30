@@ -199,6 +199,7 @@ Replaced by the Git Panel's Changes tab (section 3.8). `Cmd+Shift+D` now opens t
 - Context menu (right-click): Copy (`Cmd+C`), Cut (`Cmd+X`), Paste (`Cmd+V`), Rename, Delete, Add to .gitignore
 - Keyboard shortcuts work when panel is focused (copy/cut/paste)
 - Sort dropdown: Name (alphabetical, directories first) or Date (newest first, directories first)
+- **View modes**: flat list (default) and tree view — toggle via toolbar buttons. Tree view shows a collapsible hierarchy with lazy-loaded subdirectories on expand. Switching to tree resets to repo root. Search always uses flat results
 - Click file to open in code editor tab
 
 #### 3.4.1 Content Search (`Cmd+Shift+F`)
@@ -605,7 +606,8 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - Working tree diff and per-commit diff via Git Panel Changes tab
 - Per-file diff counts (additions/deletions) shown inline in Changes tab
 - Click a file row to view its diff
-- **Side-by-side (split) and unified (inline) view modes** — toggle in toolbar, preference persisted
+- **Side-by-side (split), unified (inline), and scroll (all files) view modes** — toggle in toolbar, preference persisted
+- **Scroll mode (all-files diff)** — shows every changed file (staged + unstaged) in a continuous scrollable view with collapsible file sections, per-file addition/deletion stats, sticky header with totals, and clickable filenames that open in the editor. Reactively reloads on git operations via revision tracking
 - **Auto-unified for new/deleted files** — split view is forced to unified when the diff is one-sided
 - **Word-level diff highlighting** via `@git-diff-view/solid` with virtualized rendering
 - **Hunk-level restore** — hover a hunk header to reveal a revert button (discard for working tree, unstage for staged)

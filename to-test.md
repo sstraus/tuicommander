@@ -2,6 +2,30 @@
 
 Features to test when TUICommander is more usable.
 
+## File Browser Tree View
+- [ ] Toggle flat/tree with toolbar buttons — buttons render on same row as filter
+- [ ] Tree: click folder chevron → expands on first click, loads children lazily
+- [ ] Tree: expand nested folders → correct indentation, file sizes shown
+- [ ] Tree: switch to tree while in a subfolder → tree starts from repo root
+- [ ] Tree: search query active → falls back to flat results
+- [ ] Flat: breadcrumb navigation still works, ".." entry appears in subdirs
+
+## Diff Scroll View
+- [ ] Open diff tab → toolbar shows split/unified/scroll buttons
+- [ ] Click scroll mode → all changed files shown in continuous scroll
+- [ ] Each file section: collapsible via chevron, shows +/- stats
+- [ ] Click filename in scroll view → opens file in editor tab
+- [ ] Sticky header shows total files/additions/deletions
+- [ ] Stage/unstage a file → scroll view updates reactively
+
+## Command Palette File Search
+- [ ] Cmd+P → palette opens, footer shows ! files and ? content hints
+- [ ] Type `!readme` → filename results appear, Enter opens in editor
+- [ ] Type `?import` → content results with highlighted matches and line numbers
+- [ ] Enter on content result → opens file at matched line
+- [ ] Delete prefix → returns to command mode
+- [ ] Footer hints visible in all modes (command, filename, content)
+
 ## Agent Detection Fix
 - [ ] Launch Claude Code in a TUICommander terminal → agent detected within 3 seconds (status bar shows agent badge)
 - [ ] Smart Commit and other inject-mode prompts become enabled when agent is detected

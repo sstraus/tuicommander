@@ -29,6 +29,7 @@ App.tsx (central orchestrator)
 │   │   ├── CommitGraph       # Visual commit graph with lane assignments
 │   │   └── SyncRow           # Push/pull/fetch action bar
 │   ├── DiffTab/              # Individual file diff tab (with Cmd+F search)
+│   │   └── BranchDiffScrollView  # All-files scroll view (scroll mode)
 │   ├── PrDiffTab/            # PR diff viewer tab
 │   ├── CodeEditorPanel/      # CodeMirror 6 code editor tab
 │   ├── MarkdownPanel/        # Markdown file browser
@@ -36,6 +37,7 @@ App.tsx (central orchestrator)
 │   ├── MarkdownTab/          # Individual markdown file tab
 │   ├── NotesPanel/           # Ideas/notes panel with edit, send, delete
 │   ├── FileBrowserPanel/     # File tree browser with content search
+│   │   └── TreeNode          # Recursive tree node (lazy-loaded)
 │   ├── PlanPanel/            # Plan file browser (repo-scoped, from activity store)
 │   ├── PluginPanel/          # Plugin HTML panel (sandboxed iframe)
 │   ├── ClaudeUsageDashboard/ # Claude API usage dashboard (SolidJS)
