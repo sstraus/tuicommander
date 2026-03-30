@@ -224,7 +224,7 @@ Features:
 | Cmd+Shift+[ | Previous tab |
 | Cmd+Shift+] | Next tab |
 | Cmd+Shift+T | Reopen closed tab |
-| Cmd+Shift+P | Command palette |
+| Cmd+P | Command palette |
 | Cmd+Shift+A | Activity dashboard |
 | Cmd+, | Settings |
 
@@ -290,7 +290,7 @@ All stores persist to localStorage:
 - [x] CodeMirror code editor
 - [x] Find in terminal (`Cmd+F`)
 - [x] Configurable keybindings system
-- [x] Command palette (`Cmd+Shift+P`)
+- [x] Command palette (`Cmd+P`)
 - [x] Activity dashboard (`Cmd+Shift+A`)
 - [x] Park repos feature
 - [x] Plugin system (see FEATURES.md section 17)

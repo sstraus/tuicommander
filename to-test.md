@@ -68,7 +68,7 @@ Features to test when TUICommander is more usable.
 - [ ] No purple unseen dot while agent is actively working (status line timer ticking)
 
 ## Plan Panel (515-660c / 516-41a5 / 517-74c2)
-- [x] `Cmd+P` opens plan panel on right side
+- [x] `Cmd+Shift+P` opens plan panel on right side
 - [ ] Plan panel shows plans only for the active repository
 - [ ] Click plan item opens it as markdown tab (frontmatter stripped)
 - [ ] Switching repos changes visible plans in the panel

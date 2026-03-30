@@ -164,7 +164,7 @@ Queue operations, track progress, cancel running tasks. The task queue manages b
 <details>
 <summary><strong>Productivity</strong> — Palette, keybindings, prompts, IDE launchers</summary>
 
-- Command palette (`Cmd+Shift+P`): fuzzy search across all actions with recency ranking
+- Command palette (`Cmd+P`): fuzzy search across all actions with recency ranking
 - Configurable keybindings: remap any shortcut in Settings
 - Prompt library (`Cmd+K`): saved prompts with `{{variable}}` substitution (`{{diff}}`, `{{branch}}`, `{{cwd}}`, custom)
 - IDE launchers: open in VS Code, Cursor, Zed, or any detected editor with one click

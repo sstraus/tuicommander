@@ -245,7 +245,7 @@ Native SolidJS component (not a plugin) showing Claude API usage data. Displayed
 | Markdown Panel | `Cmd+M` | `uiStore.toggleMarkdownPanel()` |
 | Notes/Ideas Panel | `Cmd+N` | `uiStore.toggleNotesPanel()` |
 | File Browser | `Cmd+E` | `uiStore.toggleFileBrowserPanel()` |
-| Plan Panel | `Cmd+P` | `uiStore.togglePlanPanel()` |
+| Plan Panel | `Cmd+Shift+P` | `uiStore.togglePlanPanel()` |
 | Settings | `Cmd+,` | Local state in App.tsx |
 | Help | `Cmd+?` | Local state in App.tsx |
 | Prompt Library | `Cmd+K` | `promptLibraryStore.toggleDrawer()` |

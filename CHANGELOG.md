@@ -299,7 +299,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **MCP workspace tool** — New `workspace` MCP tool with `list` (all open repos with groups, worktrees, branch, dirty status) and `active` (currently focused repo) actions
 - **MCP notify tool** — New `notify` MCP tool with `toast` (temporary notification with info/warn/error level) and `confirm` (blocking confirmation dialog, localhost-only) actions
 - **Plugin context menu actions** — Plugins can register custom actions in the terminal right-click "Actions" submenu via `host.registerTerminalAction()`. Actions receive a context snapshot (sessionId, repoPath) captured at right-click time, support dynamic `disabled` callbacks, and auto-cleanup on plugin unload. Requires new `ui:context-menu` capability
-- **Plan Panel** (`Cmd+P`) — New right-side panel showing plan files for the active repository. Plans are detected from agent output via structured events, filtered by active repo, and auto-open as background tabs on first detection. Frontmatter is stripped from rendered content. Panel visibility and width persist across restarts
+- **Plan Panel** (`Cmd+Shift+P`) — New right-side panel showing plan files for the active repository. Plans are detected from agent output via structured events, filtered by active repo, and auto-open as background tabs on first detection. Frontmatter is stripped from rendered content. Panel visibility and width persist across restarts
 - **Agent Teams it2 shim** — Bash shim at `~/.tuicommander/bin/it2` emulates iTerm2 CLI for Claude Code Agent Teams. Supports `session split`, `run`, `close`, and `list`. PTY env injection sets `ITERM_SESSION_ID`, `TERM_PROGRAM`, and prepends shim to `PATH`. Enable via Settings > General > Agent Teams
 - **Suggest follow-up actions** — Agents can propose follow-up actions via `[[suggest: ...]]` tokens. Desktop shows a floating chip bar (SuggestOverlay) with 30s auto-dismiss; mobile shows horizontal scrollable pills above CommandInput. Configurable in Settings > Agents
 - **Mobile companion UI redesign** — Hero metrics header with active/awaiting counts, elevated session cards with rich sub-rows (intent, task, progress, usage), error and rate-limit info bars with live countdown, suggest follow-up chips, frosted glass bottom tabs, connection status in settings, 16px input font to prevent iOS auto-zoom
@@ -498,7 +498,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Other Added
 
-- **Command Palette** (`Cmd+Shift+P`) — Fuzzy search across all app actions with recent-first ordering
+- **Command Palette** (`Cmd+P`) — Fuzzy search across all app actions with recent-first ordering
 - **Activity Dashboard** (`Cmd+Shift+A`) — Real-time view of all terminal sessions and agent status
 - **Park Repos** — Right-click any repo to park it; sidebar footer button shows parked repos with badge count
 - **Repository groups context menu** — Right-click any repo to "Move to Group" with "New Group..." option
