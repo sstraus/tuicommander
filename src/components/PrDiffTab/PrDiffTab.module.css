@@ -92,6 +92,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: pointer;
+}
+
+.filePath:hover {
+  text-decoration: underline;
+  color: var(--accent);
 }
 
 .fileStats {

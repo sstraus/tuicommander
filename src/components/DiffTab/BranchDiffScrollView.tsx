@@ -1,8 +1,11 @@
 import { Component, createEffect, createSignal, For, Show } from "solid-js";
 import { DiffViewer, parseDiffFiles, type DiffFileSection } from "../ui/DiffViewer";
+import { editorTabsStore } from "../../stores/editorTabs";
+import { mdTabsStore } from "../../stores/mdTabs";
 import { uiStore, type DiffViewMode } from "../../stores/ui";
 import { repositoriesStore } from "../../stores/repositories";
 import { useRepository } from "../../hooks/useRepository";
+import { classifyDroppedFile } from "../../hooks/useFileDrop";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
 import s from "../PrDiffTab/PrDiffTab.module.css";
@@ -12,19 +15,29 @@ function sectionToRawDiff(section: DiffFileSection): string {
   return section.lines.map((l) => l.content).join("\n");
 }
 
-const FileSection: Component<{ file: DiffFileSection; baseMode: DiffViewMode }> = (props) => {
+const FileSection: Component<{ file: DiffFileSection; baseMode: DiffViewMode; repoPath: string }> = (props) => {
   const [collapsed, setCollapsed] = createSignal(false);
+
+  const openFile = () => {
+    if (classifyDroppedFile(props.file.path) === "markdown") {
+      mdTabsStore.add(props.repoPath, props.file.path);
+    } else {
+      editorTabsStore.add(props.repoPath, props.file.path);
+    }
+  };
 
   return (
     <div class={s.fileSection}>
-      <div class={s.fileHeader} onClick={() => setCollapsed(!collapsed())}>
+      <div class={s.fileHeader}>
         <svg
           class={cx(s.chevron, collapsed() && s.chevronCollapsed)}
           width="12" height="12" viewBox="0 0 16 16" fill="currentColor"
+          onClick={(e) => { e.stopPropagation(); setCollapsed(!collapsed()); }}
+          style={{ cursor: "pointer" }}
         >
           <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
         </svg>
-        <span class={s.filePath}>{props.file.path}</span>
+        <span class={s.filePath} onClick={openFile} style={{ cursor: "pointer" }}>{props.file.path}</span>
         <span class={s.fileStats}>
           <Show when={props.file.additions > 0}>
             <span class={s.statAdd}>+{props.file.additions}</span>
@@ -148,7 +161,7 @@ export const BranchDiffScrollView: Component<BranchDiffScrollViewProps> = (props
       </Show>
       <Show when={!loading() && !error() && files().length > 0}>
         <For each={files()}>
-          {(file) => <FileSection file={file} baseMode={baseMode()} />}
+          {(file) => <FileSection file={file} baseMode={baseMode()} repoPath={props.repoPath} />}
         </For>
       </Show>
     </div>
