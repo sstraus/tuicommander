@@ -5,6 +5,7 @@ import { ContextMenu, createContextMenu } from "../ContextMenu";
 import { useRepository } from "../../hooks/useRepository";
 import { repositoriesStore } from "../../stores/repositories";
 import { editorTabsStore } from "../../stores/editorTabs";
+import { diffTabsStore } from "../../stores/diffTabs";
 import { invoke } from "../../invoke";
 import { mdTabsStore, type MdTabData, type FileTab } from "../../stores/mdTabs";
 import { markdownProviderRegistry } from "../../plugins/markdownProviderRegistry";
@@ -290,6 +291,20 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
             </svg>
             {" "}{t("markdownTab.editBtn", "Edit")}
           </button>
+          <Show when={(props.tab as FileTab).repoPath}>
+            <button
+              class={e.btn}
+              onClick={() => { const ft = props.tab as FileTab; diffTabsStore.add(ft.repoPath, ft.filePath, "M"); }}
+              title={t("markdownTab.viewDiff", "View diff")}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M2 3h5v1H2zm0 3h5v1H2zm0 3h4v1H2zm7-6h5v1H9zm0 3h5v1H9zm0 3h4v1H9zM7.5 1v14M.5 0v16" fill="none" stroke="currentColor" stroke-width="1" opacity="0.5" />
+                <path d="M4 12l-2 2 2 2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                <path d="M12 12l2 2-2 2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+              </svg>
+              {" "}{t("markdownTab.diffBtn", "Diff")}
+            </button>
+          </Show>
         </Show>
       </div>
 

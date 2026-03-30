@@ -2,6 +2,8 @@ import { Component, For, Show, createEffect, createMemo, createSignal, onCleanup
 import { commandPaletteStore } from "../../stores/commandPalette";
 import { repositoriesStore } from "../../stores/repositories";
 import { editorTabsStore } from "../../stores/editorTabs";
+import { mdTabsStore } from "../../stores/mdTabs";
+import { classifyDroppedFile } from "../../hooks/useFileDrop";
 import type { ActionEntry } from "../../actions/actionRegistry";
 import type { ContentMatch, DirEntry } from "../../types/fs";
 import s from "./CommandPalette.module.css";
@@ -129,15 +131,24 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
     action.execute();
   };
 
+  /** Open file in the appropriate tab based on extension */
+  const openFile = (repoPath: string, filePath: string, line?: number) => {
+    if (classifyDroppedFile(filePath) === "markdown") {
+      mdTabsStore.add(repoPath, filePath);
+    } else {
+      editorTabsStore.add(repoPath, filePath, line);
+    }
+  };
+
   const openFileEntry = (entry: DirEntry) => {
     const repoPath = repositoriesStore.state.activeRepoPath ?? "";
-    editorTabsStore.add(repoPath, entry.path);
+    openFile(repoPath, entry.path);
     commandPaletteStore.close();
   };
 
   const openContentMatch = (match: ContentMatch) => {
     const repoPath = repositoriesStore.state.activeRepoPath ?? "";
-    editorTabsStore.add(repoPath, match.path, match.line_number);
+    openFile(repoPath, match.path, match.line_number);
     commandPaletteStore.close();
   };
 
