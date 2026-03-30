@@ -50,6 +50,9 @@ interface UIStoreState {
   // Diff viewer mode (persisted)
   diffViewMode: DiffViewMode;
 
+  // File browser view mode (persisted)
+  fileBrowserViewMode: "flat" | "tree";
+
   // Active dropdown (mutually exclusive)
   activeDropdown: "ide" | "font" | "agent" | null;
 
@@ -79,6 +82,7 @@ function createUIStore() {
     gitPanelWidth: GIT_PANEL_DEFAULT_WIDTH,
     settingsNavWidth: SETTINGS_NAV_DEFAULT_WIDTH,
     diffViewMode: "split" as DiffViewMode,
+    fileBrowserViewMode: "flat" as "flat" | "tree",
     activeDropdown: null,
     isLoading: false,
     loadingMessage: "",
@@ -101,6 +105,7 @@ function createUIStore() {
         git_panel_width: state.gitPanelWidth,
         settings_nav_width: state.settingsNavWidth,
         diff_view_mode: state.diffViewMode,
+        file_browser_view_mode: state.fileBrowserViewMode,
       },
     }).catch((err) => appLogger.debug("store", "Failed to save UI prefs", err));
   }
@@ -159,6 +164,7 @@ function createUIStore() {
           git_panel_width?: number;
           settings_nav_width?: number;
           diff_view_mode?: string;
+          file_browser_view_mode?: string;
         }>("load_ui_prefs");
         if (loaded) {
           if (loaded.sidebar_visible !== undefined) {
@@ -200,6 +206,9 @@ function createUIStore() {
           if (loaded.diff_view_mode === "split" || loaded.diff_view_mode === "unified" || loaded.diff_view_mode === "scroll") {
             setState("diffViewMode", loaded.diff_view_mode);
           }
+          if (loaded.file_browser_view_mode === "flat" || loaded.file_browser_view_mode === "tree") {
+            setState("fileBrowserViewMode", loaded.file_browser_view_mode);
+          }
         }
       } catch (err) {
         appLogger.debug("store", "Failed to hydrate UI prefs", err);
@@ -209,6 +218,12 @@ function createUIStore() {
     // Diff view mode
     setDiffViewMode(mode: DiffViewMode): void {
       setState("diffViewMode", mode);
+      saveUIPrefs();
+    },
+
+    // File browser view mode
+    setFileBrowserViewMode(mode: "flat" | "tree"): void {
+      setState("fileBrowserViewMode", mode);
       saveUIPrefs();
     },
 

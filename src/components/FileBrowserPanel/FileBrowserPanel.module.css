@@ -169,6 +169,54 @@
   color: var(--fg-muted);
 }
 
+/* Tree view */
+.treeChevron {
+  flex-shrink: 0;
+  color: var(--fg-muted);
+  transition: transform 0.15s ease;
+}
+
+.treeChevronExpanded {
+  transform: rotate(90deg);
+}
+
+.treeLeafSpacer {
+  display: inline-block;
+  width: 10px;
+  flex-shrink: 0;
+}
+
+.treeLoading {
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  padding: 4px 8px;
+}
+
+.viewModeBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 18px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: color 0.1s, background 0.1s;
+}
+
+.viewModeBtn:hover {
+  color: var(--fg-secondary);
+  background: var(--bg-highlight);
+}
+
+.viewModeBtnActive {
+  color: var(--accent);
+  background: var(--bg-highlight);
+  border-color: var(--accent);
+}
+
 /* Enhanced search bar */
 .searchBar {
   display: flex;

@@ -10,6 +10,8 @@ import { Dropdown } from "../ui/Dropdown";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { PromptDialog } from "../PromptDialog";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
+import { TreeNode } from "./TreeNode";
+import { uiStore } from "../../stores/ui";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
 import type { DirEntry, ContentMatch } from "../../types/fs";
@@ -122,6 +124,27 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   const [sortBy, setSortBy] = createSignal<SortMode>("name");
   const [sortDropdownOpen, setSortDropdownOpen] = createSignal(false);
 
+  // Tree view state
+  const viewMode = () => uiStore.state.fileBrowserViewMode;
+  const [expandedDirs, setExpandedDirs] = createSignal<Set<string>>(new Set());
+  const [treeCache, setTreeCache] = createSignal<Map<string, DirEntry[]>>(new Map());
+
+  const toggleExpand = (path: string) => {
+    setExpandedDirs((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) { next.delete(path); } else { next.add(path); }
+      return next;
+    });
+  };
+
+  const onChildrenLoaded = (path: string, children: DirEntry[]) => {
+    setTreeCache((prev) => {
+      const next = new Map(prev);
+      next.set(path, children);
+      return next;
+    });
+  };
+
   // Directory watcher revision — bumped when dir-changed event arrives
   const [dirRevision, setDirRevision] = createSignal(0);
 
@@ -215,6 +238,8 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     const unlisten = listen<{ dir_path: string }>("dir-changed", (event) => {
       if (event.payload.dir_path === absPath) {
         setDirRevision((n) => n + 1);
+        // Invalidate tree cache on fs changes
+        setTreeCache(new Map());
       }
     });
 
@@ -723,6 +748,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 
       {/* Toolbar: breadcrumb + sort */}
       <div class={s.toolbar}>
+        <Show when={viewMode() === "flat"}>
         <div class={s.breadcrumb}>
           <span class={s.breadcrumbSegment} onClick={() => handleBreadcrumbClick(-1)}>
             /
@@ -740,6 +766,28 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
               </>
             )}
           </For>
+        </div>
+        </Show>
+        <div class={s.sortControl}>
+          {/* Flat/tree toggle */}
+          <button
+            class={cx(s.viewModeBtn, viewMode() === "flat" && s.viewModeBtnActive)}
+            onClick={() => uiStore.setFileBrowserViewMode("flat")}
+            title="List view"
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M2 3h12v1H2zm0 3h12v1H2zm0 3h12v1H2zm0 3h12v1H2z" />
+            </svg>
+          </button>
+          <button
+            class={cx(s.viewModeBtn, viewMode() === "tree" && s.viewModeBtnActive)}
+            onClick={() => uiStore.setFileBrowserViewMode("tree")}
+            title="Tree view"
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M2 2h3v1H2zm4 2h5v1H6zm4 2h4v1h-4zM6 8h5v1H6zM2 10h3v1H2zm4 2h5v1H6z" />
+            </svg>
+          </button>
         </div>
         <div class={s.sortControl}>
           <button
@@ -835,59 +883,91 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 
         {/* Filename mode: directory listing or filename search results */}
         <Show when={searchMode() === "filename"}>
-          <Show when={!loading() && !searching() && !error() && filteredEntries().length === 0}>
-            <div class={s.empty}>
-              {!root()
-                ? t("fileBrowser.noRepo", "No repository selected")
-                : searchQuery()
-                ? t("fileBrowser.noMatches", "No matches")
-                : t("fileBrowser.emptyDir", "Empty directory")}
-            </div>
+          {/* Tree view (only when no active search query) */}
+          <Show when={viewMode() === "tree" && !searchQuery().trim()}>
+            <Show when={!loading() && !error() && filteredEntries().length === 0}>
+              <div class={s.empty}>
+                {!root()
+                  ? t("fileBrowser.noRepo", "No repository selected")
+                  : t("fileBrowser.emptyDir", "Empty directory")}
+              </div>
+            </Show>
+            <Show when={!loading() && !error() && filteredEntries().length > 0}>
+              <For each={filteredEntries()}>
+                {(entry) => (
+                  <TreeNode
+                    entry={entry}
+                    depth={0}
+                    repoPath={root() ?? ""}
+                    fsRoot={root() ?? ""}
+                    expandedDirs={expandedDirs()}
+                    onToggleExpand={toggleExpand}
+                    onFileOpen={props.onFileOpen}
+                    onContextMenu={handleContextMenu}
+                    childrenCache={treeCache()}
+                    onChildrenLoaded={onChildrenLoaded}
+                  />
+                )}
+              </For>
+            </Show>
           </Show>
 
-          <Show when={!loading() && !searching() && !error() && filteredEntries().length > 0}>
-            {/* Go up entry when in a subdirectory and not searching */}
-            <Show when={!searchQuery().trim() && currentSubdir() !== "." && currentSubdir() !== ""}>
-              <div class={cx(s.entry, s.entryParent)} onClick={navigateUp}>
-                <span class={s.entryIcon}>
-                  <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M8 2L2 8l6 6V10h6V6H8V2z" />
-                  </svg>
-                </span>
-                <span class={s.entryName}>..</span>
+          {/* Flat list view (default, or when searching) */}
+          <Show when={viewMode() === "flat" || searchQuery().trim()}>
+            <Show when={!loading() && !searching() && !error() && filteredEntries().length === 0}>
+              <div class={s.empty}>
+                {!root()
+                  ? t("fileBrowser.noRepo", "No repository selected")
+                  : searchQuery()
+                  ? t("fileBrowser.noMatches", "No matches")
+                  : t("fileBrowser.emptyDir", "Empty directory")}
               </div>
             </Show>
 
-            <For each={filteredEntries()}>
-              {(entry, index) => {
-                const isSearch = !!searchQuery().trim();
-                return (
-                  <div
-                    class={cx(
-                      s.entry,
-                      entry.is_dir && s.entryDir,
-                      selectedIndex() === index() && s.entrySelected,
-                      entry.is_ignored && s.entryIgnored,
-                      clipboard()?.mode === "cut" && clipboard()?.entry.path === entry.path && s.entryCut,
-                    )}
-                    onClick={() => {
-                      setSelectedIndex(index());
-                      handleEntryClick(entry);
-                    }}
-                    onContextMenu={(e) => handleContextMenu(e, entry)}
-                  >
-                    <span class={s.entryIcon}>{entry.is_dir ? "\u{1F4C1}" : "\u{1F4C4}"}</span>
-                    <span class={s.entryName} title={entry.path}>{isSearch ? entry.path : entry.name}</span>
-                    <Show when={entry.git_status}>
-                      <span class={cx(g.dot, getStatusClass(entry.git_status))} title={entry.git_status} />
-                    </Show>
-                    <Show when={!entry.is_dir && entry.size > 0}>
-                      <span class={s.entrySize}>{formatSize(entry.size)}</span>
-                    </Show>
-                  </div>
-                );
-              }}
-            </For>
+            <Show when={!loading() && !searching() && !error() && filteredEntries().length > 0}>
+              {/* Go up entry when in a subdirectory and not searching */}
+              <Show when={!searchQuery().trim() && currentSubdir() !== "." && currentSubdir() !== ""}>
+                <div class={cx(s.entry, s.entryParent)} onClick={navigateUp}>
+                  <span class={s.entryIcon}>
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                      <path d="M8 2L2 8l6 6V10h6V6H8V2z" />
+                    </svg>
+                  </span>
+                  <span class={s.entryName}>..</span>
+                </div>
+              </Show>
+
+              <For each={filteredEntries()}>
+                {(entry, index) => {
+                  const isSearch = !!searchQuery().trim();
+                  return (
+                    <div
+                      class={cx(
+                        s.entry,
+                        entry.is_dir && s.entryDir,
+                        selectedIndex() === index() && s.entrySelected,
+                        entry.is_ignored && s.entryIgnored,
+                        clipboard()?.mode === "cut" && clipboard()?.entry.path === entry.path && s.entryCut,
+                      )}
+                      onClick={() => {
+                        setSelectedIndex(index());
+                        handleEntryClick(entry);
+                      }}
+                      onContextMenu={(e) => handleContextMenu(e, entry)}
+                    >
+                      <span class={s.entryIcon}>{entry.is_dir ? "\u{1F4C1}" : "\u{1F4C4}"}</span>
+                      <span class={s.entryName} title={entry.path}>{isSearch ? entry.path : entry.name}</span>
+                      <Show when={entry.git_status}>
+                        <span class={cx(g.dot, getStatusClass(entry.git_status))} title={entry.git_status} />
+                      </Show>
+                      <Show when={!entry.is_dir && entry.size > 0}>
+                        <span class={s.entrySize}>{formatSize(entry.size)}</span>
+                      </Show>
+                    </div>
+                  );
+                }}
+              </For>
+            </Show>
           </Show>
         </Show>
       </div>
