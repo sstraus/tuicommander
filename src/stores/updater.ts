@@ -6,9 +6,13 @@ import { isTauri, rpc } from "../transport";
 import { settingsStore } from "./settings";
 import { appLogger } from "./appLogger";
 
-/** Compare two semver strings. Returns true if remote > current. */
+/** Compare two semver strings. Returns true if remote > current.
+ *  Strips prerelease suffixes (e.g. "1.0.0-nightly.1" → "1.0.0") so that
+ *  a prerelease tagged with the same base version is NOT considered newer. */
 function isNewerVersion(remote: string, current: string): boolean {
-  const parse = (v: string) => v.replace(/^v/, "").split(".").map(Number);
+  // Strip leading "v" and prerelease/build suffixes (everything after first "-" or "+")
+  const parse = (v: string) =>
+    v.replace(/^v/, "").replace(/[-+].*$/, "").split(".").map(Number);
   const r = parse(remote);
   const c = parse(current);
   for (let i = 0; i < Math.max(r.length, c.length); i++) {
@@ -46,6 +50,16 @@ interface UpdaterState {
 /** Sentinel to distinguish "check() timed out" from "no update available". */
 const TIMEOUT_SENTINEL = Symbol("timeout");
 
+/** Run Tauri's built-in stable update check with a 10-second timeout. */
+function checkStableWithTimeout(): Promise<Update | null | typeof TIMEOUT_SENTINEL> {
+  return Promise.race([
+    check(),
+    new Promise<typeof TIMEOUT_SENTINEL>((resolve) =>
+      setTimeout(() => resolve(TIMEOUT_SENTINEL), 10_000),
+    ),
+  ]);
+}
+
 function createUpdaterStore() {
   const [state, setState] = createStore<UpdaterState>({
     available: false,
@@ -72,12 +86,7 @@ function createUpdaterStore() {
       try {
         if (channel === "stable") {
           // Stable: use Tauri's built-in updater (supports downloadAndInstall)
-          const update = await Promise.race([
-            check(),
-            new Promise<typeof TIMEOUT_SENTINEL>((resolve) =>
-              setTimeout(() => resolve(TIMEOUT_SENTINEL), 10_000),
-            ),
-          ]);
+          const update = await checkStableWithTimeout();
           if (update === TIMEOUT_SENTINEL) {
             pendingUpdate = null;
             setState({ available: false, version: null, body: null, downloadUrl: null, error: "Update check timed out" });
@@ -101,28 +110,60 @@ function createUpdaterStore() {
             setState({ available: false, version: null, body: null, downloadUrl: null });
           }
         } else {
-          // Beta/Nightly: Rust owns URL mapping, fetch, parsing, and error classification
-          pendingUpdate = null;
-          const result = await rpc<UpdateChannelResult>(
-            "check_update_channel",
-            { channel },
-          );
-          if (result.not_found) {
-            appLogger.debug("app", `No ${channel} release found`);
-            setState({ noRelease: true });
-          } else if (result.available && result.version) {
-            const currentVersion = await getVersion();
-            if (!isNewerVersion(result.version, currentVersion)) {
-              appLogger.debug("app", `Ignoring ${channel} update ${result.version} — not newer than ${currentVersion}`);
-              setState({ available: false, version: null, body: null, downloadUrl: null });
-            } else {
-              setState({
-                available: true,
-                version: result.version,
-                body: result.notes ?? null,
-                downloadUrl: result.release_page ?? null,
-              });
+          // Nightly: check BOTH stable (via Tauri built-in) and nightly (via Rust)
+          // in parallel. Prefer stable if available — it supports in-app downloadAndInstall.
+          const currentVersion = await getVersion();
+
+          const [stableSettled, nightlySettled] = await Promise.allSettled([
+            checkStableWithTimeout(),
+            rpc<UpdateChannelResult>("check_update_channel", { channel }),
+          ]);
+
+          // Extract results, logging individual failures
+          let stableUpdate: Update | null = null;
+          if (stableSettled.status === "fulfilled") {
+            const maybe = stableSettled.value;
+            if (maybe && maybe !== TIMEOUT_SENTINEL && isNewerVersion(maybe.version, currentVersion)) {
+              stableUpdate = maybe;
             }
+          } else {
+            appLogger.debug("app", "Stable check from nightly channel failed (non-fatal)", stableSettled.reason);
+          }
+
+          let nightlyResult: UpdateChannelResult | null = null;
+          if (nightlySettled.status === "fulfilled") {
+            nightlyResult = nightlySettled.value;
+          } else {
+            appLogger.debug("app", "Nightly check failed (non-fatal)", nightlySettled.reason);
+          }
+
+          // Both failed → surface error to user
+          if (stableSettled.status === "rejected" && nightlySettled.status === "rejected") {
+            const raw = nightlySettled.reason instanceof Error ? nightlySettled.reason.message : String(nightlySettled.reason);
+            appLogger.warn("app", "All update sources failed", raw);
+            setState({ error: raw, available: false, version: null, body: null, downloadUrl: null });
+          } else if (stableUpdate) {
+            // Prefer stable (in-app install) over nightly (browser download)
+            pendingUpdate = stableUpdate;
+            setState({
+              available: true,
+              version: stableUpdate.version,
+              body: stableUpdate.body ?? null,
+              downloadUrl: null,
+              noRelease: false,
+            });
+          } else if (nightlyResult?.available && nightlyResult.version && isNewerVersion(nightlyResult.version, currentVersion)) {
+            pendingUpdate = null;
+            setState({
+              available: true,
+              version: nightlyResult.version,
+              body: nightlyResult.notes ?? null,
+              downloadUrl: nightlyResult.release_page ?? null,
+              noRelease: false,
+            });
+          } else if (nightlyResult?.not_found) {
+            appLogger.debug("app", `No ${channel} release found`);
+            setState({ noRelease: true, available: false, version: null, body: null, downloadUrl: null });
           } else {
             setState({ available: false, version: null, body: null, downloadUrl: null });
           }

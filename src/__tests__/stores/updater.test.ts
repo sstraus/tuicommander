@@ -164,12 +164,38 @@ describe("updaterStore", () => {
   });
 
   describe("checkForUpdate() — nightly channel", () => {
-    it("calls check_update_channel and sets downloadUrl from result", async () => {
+    it("prefers stable release over nightly when both available", async () => {
       mockSettingsState.updateChannel = "nightly";
+      // Stable: check() returns an update
+      const fakeStableUpdate = { version: "1.0.0", body: "Stable release", downloadAndInstall: vi.fn() };
+      mockCheck.mockResolvedValue(fakeStableUpdate);
+      // Nightly: also available
       mockRpc.mockResolvedValue({
-        available: true,
-        version: "2.0.0-nightly.1",
-        notes: "Nightly release",
+        available: true, version: "1.0.1-nightly.1", notes: "Nightly",
+        release_page: "https://github.com/sstraus/tuicommander/releases/tag/nightly",
+        not_found: false,
+      });
+
+      await createRoot(async (dispose) => {
+        await store.checkForUpdate();
+        // Should prefer stable (has downloadAndInstall support)
+        expect(store.state.available).toBe(true);
+        expect(store.state.version).toBe("1.0.0");
+        expect(store.state.body).toBe("Stable release");
+        expect(store.state.downloadUrl).toBeNull();
+        expect(mockCheck).toHaveBeenCalled();
+        expect(mockRpc).toHaveBeenCalledWith("check_update_channel", { channel: "nightly" });
+        dispose();
+      });
+    });
+
+    it("falls back to nightly when no stable update available", async () => {
+      mockSettingsState.updateChannel = "nightly";
+      // Stable: no update
+      mockCheck.mockResolvedValue(null);
+      // Nightly: available
+      mockRpc.mockResolvedValue({
+        available: true, version: "2.0.0-nightly.1", notes: "Nightly release",
         release_page: "https://github.com/sstraus/tuicommander/releases/tag/nightly",
         not_found: false,
       });
@@ -180,18 +206,33 @@ describe("updaterStore", () => {
         expect(store.state.version).toBe("2.0.0-nightly.1");
         expect(store.state.body).toBe("Nightly release");
         expect(store.state.downloadUrl).toBe("https://github.com/sstraus/tuicommander/releases/tag/nightly");
-        expect(mockCheck).not.toHaveBeenCalled();
-        expect(mockRpc).toHaveBeenCalledWith("check_update_channel", { channel: "nightly" });
         dispose();
       });
     });
 
-    it("sets noRelease when result has not_found=true", async () => {
+    it("shows stable even when nightly check fails", async () => {
       mockSettingsState.updateChannel = "nightly";
+      // Stable: available
+      const fakeStableUpdate = { version: "1.0.0", body: "Stable", downloadAndInstall: vi.fn() };
+      mockCheck.mockResolvedValue(fakeStableUpdate);
+      // Nightly: network error
+      mockRpc.mockRejectedValue(new Error("Network error"));
+
+      await createRoot(async (dispose) => {
+        await store.checkForUpdate();
+        expect(store.state.available).toBe(true);
+        expect(store.state.version).toBe("1.0.0");
+        expect(store.state.downloadUrl).toBeNull();
+        expect(store.state.error).toBeNull();
+        dispose();
+      });
+    });
+
+    it("sets noRelease when nightly not_found and no stable update", async () => {
+      mockSettingsState.updateChannel = "nightly";
+      mockCheck.mockResolvedValue(null);
       mockRpc.mockResolvedValue({
-        available: false,
-        version: null,
-        notes: null,
+        available: false, version: null, notes: null,
         release_page: "https://github.com/sstraus/tuicommander/releases/tag/nightly",
         not_found: true,
       });
@@ -205,24 +246,11 @@ describe("updaterStore", () => {
       });
     });
 
-    it("sets error on network failure", async () => {
+    it("sets available=false when neither source has updates", async () => {
       mockSettingsState.updateChannel = "nightly";
-      mockRpc.mockRejectedValue(new Error("Network error: connection refused"));
-
-      await createRoot(async (dispose) => {
-        await store.checkForUpdate();
-        expect(store.state.error).toBe("Network error: connection refused");
-        expect(store.state.noRelease).toBe(false);
-        dispose();
-      });
-    });
-
-    it("sets available=false when result has no version", async () => {
-      mockSettingsState.updateChannel = "nightly";
+      mockCheck.mockResolvedValue(null);
       mockRpc.mockResolvedValue({
-        available: false,
-        version: null,
-        notes: null,
+        available: false, version: null, notes: null,
         release_page: "https://github.com/sstraus/tuicommander/releases/tag/nightly",
         not_found: false,
       });
@@ -235,26 +263,55 @@ describe("updaterStore", () => {
       });
     });
 
-    it("clears noRelease on retry", async () => {
+    it("handles stable check timeout gracefully and falls back to nightly", async () => {
       mockSettingsState.updateChannel = "nightly";
-      // First call: not_found
-      mockRpc.mockResolvedValueOnce({
-        available: false, version: null, notes: null,
-        release_page: "https://example.com", not_found: true,
+      // Stable: times out
+      mockCheck.mockReturnValue(new Promise(() => {}));
+      // Nightly: available
+      mockRpc.mockResolvedValue({
+        available: true, version: "2.0.0-nightly.1", notes: "Nightly",
+        release_page: "https://github.com/sstraus/tuicommander/releases/tag/nightly",
+        not_found: false,
+      });
+
+      await createRoot(async (dispose) => {
+        const checkPromise = store.checkForUpdate();
+        await vi.advanceTimersByTimeAsync(10_000);
+        await checkPromise;
+        expect(store.state.available).toBe(true);
+        expect(store.state.version).toBe("2.0.0-nightly.1");
+        expect(store.state.downloadUrl).toBe("https://github.com/sstraus/tuicommander/releases/tag/nightly");
+        dispose();
+      });
+    });
+
+    it("sets error when both stable and nightly checks fail", async () => {
+      mockSettingsState.updateChannel = "nightly";
+      mockCheck.mockRejectedValue(new Error("Stable network error"));
+      mockRpc.mockRejectedValue(new Error("Nightly RPC error"));
+
+      await createRoot(async (dispose) => {
+        await store.checkForUpdate();
+        expect(store.state.available).toBe(false);
+        expect(store.state.error).toBe("Nightly RPC error");
+        expect(store.state.checking).toBe(false);
+        dispose();
+      });
+    });
+
+    it("treats prerelease as NOT newer than same base version", async () => {
+      mockSettingsState.updateChannel = "nightly";
+      mockCheck.mockResolvedValue(null);
+      // Nightly version has same base as current (0.0.1 from mock getVersion)
+      mockRpc.mockResolvedValue({
+        available: true, version: "0.0.1-nightly.5", notes: "Nightly",
+        release_page: "https://example.com", not_found: false,
       });
 
       await createRoot(async (dispose) => {
         await store.checkForUpdate();
-        expect(store.state.noRelease).toBe(true);
-
-        // Second call: available
-        mockRpc.mockResolvedValueOnce({
-          available: true, version: "1.0.0", notes: "hi",
-          release_page: "https://example.com", not_found: false,
-        });
-        await store.checkForUpdate();
-        expect(store.state.noRelease).toBe(false);
-        expect(store.state.available).toBe(true);
+        // 0.0.1-nightly.5 strips to 0.0.1 which is NOT newer than 0.0.1
+        expect(store.state.available).toBe(false);
         dispose();
       });
     });
@@ -299,8 +356,11 @@ describe("updaterStore", () => {
       });
     });
 
-    it("opens browser for non-stable channel updates", async () => {
+    it("opens browser for nightly-only updates (no stable available)", async () => {
       mockSettingsState.updateChannel = "nightly";
+      // No stable update
+      mockCheck.mockResolvedValue(null);
+      // Nightly available
       mockRpc.mockResolvedValue({
         available: true, version: "2.0.0-nightly.1", notes: "Nightly",
         release_page: "https://github.com/sstraus/tuicommander/releases/tag/nightly",

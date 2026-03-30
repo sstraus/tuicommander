@@ -27,6 +27,7 @@ import { RenameBranchDialog } from "./components/RenameBranchDialog";
 import { CreateWorktreeDialog } from "./components/CreateWorktreeDialog";
 import { PromptDialog } from "./components/PromptDialog";
 import { ConfirmDialog } from "./components/ConfirmDialog";
+import { UpdateProgressDialog } from "./components/UpdateProgressDialog";
 import { PostMergeCleanupDialog, type StepId, type StepStatus, type CleanupStep } from "./components/PostMergeCleanupDialog/PostMergeCleanupDialog";
 import { executeCleanup } from "./hooks/usePostMergeCleanup";
 import { getCompletionSuppression } from "./components/Terminal/completionDecision";
@@ -1598,6 +1599,9 @@ const App: Component = () => {
         onClose={dialogs.handleClose}
         onConfirm={dialogs.handleConfirm}
       />
+
+      {/* Update download progress dialog */}
+      <UpdateProgressDialog />
 
       {/* Post-merge worktree cleanup — shown when afterMerge=ask */}
       <Show when={gitOps.mergePendingCtx() !== null}>

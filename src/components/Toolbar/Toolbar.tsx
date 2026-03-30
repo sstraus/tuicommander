@@ -311,11 +311,13 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                     </span>
                     <div class={s.notifDetails}>
                       <span class={s.notifPr}>
+                        {`v${updaterStore.state.version} ${t("toolbar.available", "available")}`}
+                      </span>
+                      <span class={s.notifBranch}>
                         {updaterStore.state.downloading
                           ? `${t("statusBar.updating", "Updating")} ${updaterStore.state.progress}%`
-                          : `v${updaterStore.state.version} ${t("toolbar.available", "available")}`}
+                          : t("toolbar.clickToUpdate", "Click to update")}
                       </span>
-                      <span class={s.notifBranch}>{t("toolbar.clickToUpdate", "Click to update")}</span>
                     </div>
                   </div>
                 </Show>
