@@ -36,6 +36,19 @@ Hovering over a row highlights it (same as keyboard selection). Clicking a row e
 
 The palette is auto-populated from `actionRegistry.ts`. Every action registered there — with its label, category, and keybinding — appears in the palette automatically. No manual configuration is needed, and plugin-contributed actions appear alongside built-in ones.
 
+### Content Search Mode (`!` prefix)
+
+Type `!` as the first character to switch to file content search mode. The query after `!` searches across all files in the active repository.
+
+- Minimum 3 characters after `!` to start searching
+- Results show as a flat list: `file:line` with highlighted match text
+- Press `Enter` or click to open the file in an editor tab at the matched line
+- Delete the `!` to return to command mode
+- Search runs with a 500ms debounce to avoid excessive backend calls
+- The footer shows a `!` hint when in command mode as a reminder
+
+If no repository is selected, content search shows "No repository selected".
+
 ---
 
 ## Activity Dashboard

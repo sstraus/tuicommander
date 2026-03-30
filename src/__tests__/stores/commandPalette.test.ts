@@ -65,4 +65,47 @@ describe("commandPaletteStore", () => {
     }
     expect(commandPaletteStore.state.recentActions.length).toBeLessThanOrEqual(10);
   });
+
+  describe("content search mode", () => {
+    it("mode() returns 'content' when query starts with !", () => {
+      commandPaletteStore.setQuery("!search");
+      expect(commandPaletteStore.mode()).toBe("content");
+    });
+
+    it("mode() returns 'command' for normal queries", () => {
+      commandPaletteStore.setQuery("zoom");
+      expect(commandPaletteStore.mode()).toBe("command");
+    });
+
+    it("mode() returns 'command' for empty query", () => {
+      commandPaletteStore.setQuery("");
+      expect(commandPaletteStore.mode()).toBe("command");
+    });
+
+    it("contentQuery() strips ! prefix", () => {
+      commandPaletteStore.setQuery("!findme");
+      expect(commandPaletteStore.contentQuery()).toBe("findme");
+    });
+
+    it("contentQuery() returns empty for non-content queries", () => {
+      commandPaletteStore.setQuery("zoom");
+      expect(commandPaletteStore.contentQuery()).toBe("");
+    });
+
+    it("close() resets content state", () => {
+      commandPaletteStore.open();
+      commandPaletteStore.setQuery("!test");
+      commandPaletteStore.close();
+      expect(commandPaletteStore.state.contentResults).toEqual([]);
+      expect(commandPaletteStore.state.contentSearching).toBe(false);
+      expect(commandPaletteStore.state.contentError).toBeNull();
+    });
+
+    it("switching from ! to non-! clears content state", () => {
+      commandPaletteStore.setQuery("!test");
+      commandPaletteStore.setQuery("test");
+      expect(commandPaletteStore.state.contentResults).toEqual([]);
+      expect(commandPaletteStore.state.contentSearching).toBe(false);
+    });
+  });
 });

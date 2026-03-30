@@ -1,6 +1,9 @@
 import { Component, For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { commandPaletteStore } from "../../stores/commandPalette";
+import { repositoriesStore } from "../../stores/repositories";
+import { editorTabsStore } from "../../stores/editorTabs";
 import type { ActionEntry } from "../../actions/actionRegistry";
+import type { ContentMatch } from "../../types/fs";
 import s from "./CommandPalette.module.css";
 
 export interface CommandPaletteProps {
@@ -13,9 +16,12 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
   let listRef: HTMLDivElement | undefined;
 
   const isOpen = () => commandPaletteStore.state.isOpen;
+  const mode = () => commandPaletteStore.mode();
+  const contentQuery = () => commandPaletteStore.contentQuery();
 
   /** Filter and sort actions: recent first, then alphabetical. Substring match on label + category. */
   const filteredActions = createMemo(() => {
+    if (mode() === "content") return [];
     const query = commandPaletteStore.state.query.toLowerCase();
     const recent = commandPaletteStore.state.recentActions;
     let actions = props.actions;
@@ -37,10 +43,22 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
     });
   });
 
+  /** Item count for the current mode (actions or content results) */
+  const itemCount = () =>
+    mode() === "content"
+      ? commandPaletteStore.state.contentResults.length
+      : filteredActions().length;
+
   // Reset selection when query changes
   createEffect(() => {
     commandPaletteStore.state.query;
     setSelectedIndex(0);
+  });
+
+  // Also reset when content results change
+  createEffect(() => {
+    commandPaletteStore.state.contentResults.length;
+    if (mode() === "content") setSelectedIndex(0);
   });
 
   // Focus input when opened
@@ -63,13 +81,13 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
     if (!isOpen()) return;
 
     const handleKeydown = (e: KeyboardEvent) => {
-      const items = filteredActions();
+      const count = itemCount();
 
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();
           e.stopPropagation();
-          setSelectedIndex((i) => Math.min(i + 1, items.length - 1));
+          setSelectedIndex((i) => Math.min(i + 1, count - 1));
           break;
         case "ArrowUp":
           e.preventDefault();
@@ -79,8 +97,12 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
         case "Enter":
           e.preventDefault();
           e.stopPropagation();
-          if (items[selectedIndex()]) {
-            executeAction(items[selectedIndex()]);
+          if (mode() === "content") {
+            const match = commandPaletteStore.state.contentResults[selectedIndex()];
+            if (match) openContentMatch(match);
+          } else {
+            const action = filteredActions()[selectedIndex()];
+            if (action) executeAction(action);
           }
           break;
         case "Escape":
@@ -101,6 +123,30 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
     action.execute();
   };
 
+  const openContentMatch = (match: ContentMatch) => {
+    const repoPath = repositoriesStore.state.activeRepoPath ?? "";
+    editorTabsStore.add(repoPath, match.path, match.line_number);
+    commandPaletteStore.close();
+  };
+
+  /** Render a content match line with the matched text highlighted */
+  const renderMatchLine = (match: ContentMatch) => {
+    const text = match.line_text;
+    const before = text.slice(0, match.match_start);
+    const highlighted = text.slice(match.match_start, match.match_end);
+    const after = text.slice(match.match_end);
+    return (
+      <span class={s.matchLine}>
+        {before}<mark class={s.matchHighlight}>{highlighted}</mark>{after}
+      </span>
+    );
+  };
+
+  const placeholder = () =>
+    mode() === "content" ? "Search file contents... (min 3 chars)" : "Type a command...";
+
+  const hasActiveRepo = () => !!repositoriesStore.state.activeRepoPath;
+
   return (
     <Show when={isOpen()}>
       <div class={s.overlay} onClick={() => commandPaletteStore.close()}>
@@ -109,38 +155,74 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
             <input
               ref={inputRef}
               type="text"
-              placeholder="Type a command..."
+              placeholder={placeholder()}
               value={commandPaletteStore.state.query}
               onInput={(e) => commandPaletteStore.setQuery(e.currentTarget.value)}
             />
           </div>
 
           <div class={s.list} ref={listRef}>
-            <Show when={filteredActions().length === 0}>
-              <div class={s.empty}>No matching commands</div>
+            {/* Content search mode */}
+            <Show when={mode() === "content"}>
+              <Show when={!hasActiveRepo()}>
+                <div class={s.empty}>No repository selected</div>
+              </Show>
+              <Show when={hasActiveRepo() && contentQuery().length < 3}>
+                <div class={s.empty}>Type at least 3 characters after !</div>
+              </Show>
+              <Show when={hasActiveRepo() && contentQuery().length >= 3 && commandPaletteStore.state.contentSearching && commandPaletteStore.state.contentResults.length === 0}>
+                <div class={s.empty}>Searching...</div>
+              </Show>
+              <Show when={hasActiveRepo() && contentQuery().length >= 3 && !commandPaletteStore.state.contentSearching && commandPaletteStore.state.contentResults.length === 0 && !commandPaletteStore.state.contentError}>
+                <div class={s.empty}>No results</div>
+              </Show>
+              <Show when={commandPaletteStore.state.contentError}>
+                <div class={s.empty}>Error: {commandPaletteStore.state.contentError}</div>
+              </Show>
+              <For each={commandPaletteStore.state.contentResults}>
+                {(match, idx) => (
+                  <div
+                    class={`${s.item} ${s.contentItem} ${idx() === selectedIndex() ? s.selected : ""}`}
+                    onClick={() => openContentMatch(match)}
+                    onMouseEnter={() => setSelectedIndex(idx())}
+                  >
+                    <span class={s.contentPath}>{match.path}:{match.line_number}</span>
+                    {renderMatchLine(match)}
+                  </div>
+                )}
+              </For>
             </Show>
 
-            <For each={filteredActions()}>
-              {(action, idx) => (
-                <div
-                  class={`${s.item} ${idx() === selectedIndex() ? s.selected : ""}`}
-                  onClick={() => executeAction(action)}
-                  onMouseEnter={() => setSelectedIndex(idx())}
-                >
-                  <span class={s.itemLabel}>{action.label}</span>
-                  <span class={s.category}>{action.category}</span>
-                  <Show when={action.keybinding}>
-                    <kbd class={s.keybinding}>{action.keybinding}</kbd>
-                  </Show>
-                </div>
-              )}
-            </For>
+            {/* Command mode */}
+            <Show when={mode() === "command"}>
+              <Show when={filteredActions().length === 0}>
+                <div class={s.empty}>No matching commands</div>
+              </Show>
+              <For each={filteredActions()}>
+                {(action, idx) => (
+                  <div
+                    class={`${s.item} ${idx() === selectedIndex() ? s.selected : ""}`}
+                    onClick={() => executeAction(action)}
+                    onMouseEnter={() => setSelectedIndex(idx())}
+                  >
+                    <span class={s.itemLabel}>{action.label}</span>
+                    <span class={s.category}>{action.category}</span>
+                    <Show when={action.keybinding}>
+                      <kbd class={s.keybinding}>{action.keybinding}</kbd>
+                    </Show>
+                  </div>
+                )}
+              </For>
+            </Show>
           </div>
 
           <div class={s.footer}>
             <span class={s.footerHint}><kbd>↑↓</kbd> navigate</span>
-            <span class={s.footerHint}><kbd>↵</kbd> execute</span>
+            <span class={s.footerHint}><kbd>↵</kbd> {mode() === "content" ? "open" : "execute"}</span>
             <span class={s.footerHint}><kbd>esc</kbd> close</span>
+            <Show when={mode() === "command"}>
+              <span class={s.footerHint}><kbd>!</kbd> search files</span>
+            </Show>
           </div>
         </div>
       </div>

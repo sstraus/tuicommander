@@ -15,6 +15,11 @@ export const TIPS: Tip[] = [
     shortcut: `${mod}+P`,
   },
   {
+    feature: "Search File Contents",
+    description: "Type ! in the command palette to search file contents across the repo. Results show file:line with highlighted matches.",
+    shortcut: `${mod}+P then !`,
+  },
+  {
     feature: "Activity Dashboard",
     description: "See all agent sessions, CPU usage, and errors in one panel.",
     shortcut: `${mod}+K`,
