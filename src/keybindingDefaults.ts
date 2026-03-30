@@ -44,6 +44,7 @@ export const ACTION_NAMES = [
   "toggle-mcp-popup",
   "toggle-smart-prompts",
   "prompt-library",
+  "toggle-diff-scroll",
   // Numbered tabs and branches
   ...Array.from({ length: 9 }, (_, i) => `switch-tab-${i + 1}`),
   ...Array.from({ length: 9 }, (_, i) => `switch-branch-${i + 1}`),
@@ -100,6 +101,7 @@ export const DEFAULT_BINDINGS: Record<ActionName, string> = {
   "toggle-mcp-popup": "Cmd+Shift+M",
   "toggle-smart-prompts": "Cmd+Shift+K",
   "prompt-library": "Cmd+K",
+  "toggle-diff-scroll": "Cmd+Shift+G",
   // Numbered tabs
   ...Object.fromEntries(
     Array.from({ length: 9 }, (_, i) => [`switch-tab-${i + 1}`, `Cmd+${i + 1}`]),

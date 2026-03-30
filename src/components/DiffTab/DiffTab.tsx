@@ -8,6 +8,7 @@ import { DomSearchEngine } from "../shared/DomSearchEngine";
 import type { SearchOptions } from "../shared/DomSearchEngine";
 import { SearchBar } from "../shared/SearchBar";
 import { ConfirmDialog } from "../ConfirmDialog";
+import { BranchDiffScrollView } from "./BranchDiffScrollView";
 import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
 import { t } from "../../i18n";
@@ -388,6 +389,15 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
             <path d="M1 2h14v12H1V2zm1 1v10h12V3H2z" />
           </svg>
         </button>
+        <button
+          class={cx(s.modeBtn, mode() === "scroll" && s.modeBtnActive)}
+          onClick={() => uiStore.setDiffViewMode("scroll")}
+          title={t("diffScroll.scrollView", "All files")}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M2 2h12v1H2zm0 3h12v1H2zm0 3h10v1H2zm0 3h8v1H2z" />
+          </svg>
+        </button>
         <div style={{ "margin-left": "auto" }}>
           <button
             class={s.modeBtn}
@@ -409,6 +419,14 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
         matchIndex={matchIndex()}
         matchCount={matchCount()}
       />
+      {/* Scroll mode: show all-files view instead of single-file diff */}
+      <Show when={mode() === "scroll"}>
+        <BranchDiffScrollView
+          repoPath={props.repoPath}
+          contentRef={(el) => { contentRef = el; }}
+        />
+      </Show>
+      <Show when={mode() !== "scroll"}>
       <div
         class={s.diffWrapper}
         onMouseOver={(e) => {
@@ -471,6 +489,7 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
         onConfirm={confirmRevert}
         onClose={cancelRevert}
       />
+      </Show>
     </div>
   );
 };

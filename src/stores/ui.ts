@@ -20,7 +20,7 @@ const SETTINGS_NAV_DEFAULT_WIDTH = 180;
 export type GitPanelTab = "changes" | "log" | "stashes" | "branches";
 
 /** Diff viewer display mode */
-export type DiffViewMode = "split" | "unified";
+export type DiffViewMode = "split" | "unified" | "scroll";
 
 /** UI store state */
 interface UIStoreState {
@@ -197,7 +197,7 @@ function createUIStore() {
           if (loaded.settings_nav_width !== undefined) {
             setState("settingsNavWidth", loaded.settings_nav_width);
           }
-          if (loaded.diff_view_mode === "split" || loaded.diff_view_mode === "unified") {
+          if (loaded.diff_view_mode === "split" || loaded.diff_view_mode === "unified" || loaded.diff_view_mode === "scroll") {
             setState("diffViewMode", loaded.diff_view_mode);
           }
         }

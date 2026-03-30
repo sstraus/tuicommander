@@ -996,6 +996,14 @@ const App: Component = () => {
     toggleBranchesTab: () => uiStore.toggleGitPanelOnTab("branches"),
     toggleMcpPopup: () => mcpPopupStore.toggle(),
     toggleSmartPrompts: () => smartPromptsDropdownStore.toggle(),
+    toggleDiffScroll: () => {
+      // Open a diff tab in scroll mode for the active repo
+      const repoPath = repositoriesStore.state.activeRepoPath;
+      if (!repoPath) return;
+      uiStore.setDiffViewMode("scroll");
+      // Open a diff tab for the repo root (shows all changes)
+      diffTabsStore.add(repoPath, "", "M");
+    },
   };
 
   // Worktree manager action callbacks

@@ -59,6 +59,7 @@ export interface ShortcutHandlers {
   toggleMcpPopup: () => void;
   toggleSmartPrompts: () => void;
   togglePromptLibrary: () => void;
+  toggleDiffScroll: () => void;
 }
 
 /** Keys that are modifiers only — not real shortcut targets */
@@ -139,6 +140,7 @@ function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean
     case "toggle-mcp-popup": handlers.toggleMcpPopup(); return true;
     case "toggle-smart-prompts": handlers.toggleSmartPrompts(); return true;
     case "prompt-library": handlers.togglePromptLibrary(); return true;
+    case "toggle-diff-scroll": handlers.toggleDiffScroll(); return true;
 
     // Tab navigation
     case "prev-tab": handlers.navigateTab("prev"); return true;

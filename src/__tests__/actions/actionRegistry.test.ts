@@ -38,6 +38,7 @@ function createMockHandlers(): ShortcutHandlers {
     toggleMcpPopup: vi.fn(),
     toggleSmartPrompts: vi.fn(),
     togglePromptLibrary: vi.fn(),
+    toggleDiffScroll: vi.fn(),
   };
 }
 
