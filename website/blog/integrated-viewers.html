@@ -90,6 +90,23 @@
     </figure>
 
     <div class="blog-section">
+      <h2>All-files diff scroll view</h2>
+      <p>When an agent makes changes across multiple files, clicking through them one by one is tedious. The Diff Scroll view shows every changed file in a single continuous scroll — staged and unstaged changes combined. Each file section is collapsible, with addition/deletion counts and a clickable filename that opens the file in the editor. A sticky header tracks the total: files changed, lines added, lines removed.</p>
+      <p>You can toggle between split (side-by-side), unified (inline), and scroll (all files) modes from the toolbar. The scroll view reloads reactively on every git operation — stage a file and the view updates immediately. Click any filename to jump to the editor for a quick fix, then come back to review the rest.</p>
+    </div>
+
+    <figure class="blog-figure">
+      <img src="/public/blog/integrated-viewers/diff-scroll.png" alt="TUICommander Diff Scroll view showing all changed files in a continuous scrollable list with collapsible sections, addition/deletion counts, and mode toggle buttons" />
+      <figcaption>The Diff Scroll view shows 2 changed files with +30/-1 in a single scrollable page. Each file section is collapsible, the sticky header shows totals, and the toolbar toggles between split, unified, and scroll modes.</figcaption>
+    </figure>
+
+    <div class="blog-section">
+      <h2>Find files and content from the command palette</h2>
+      <p>The command palette (<code>Cmd+P</code>) now doubles as a file finder. Type <code>!</code> to search files by name — results appear instantly as you type, showing the full path. Type <code>?</code> to search inside file contents — matches show the file path, line number, and the matched text with highlighting. Press Enter to open the file in the editor (content matches jump to the exact line).</p>
+      <p>This means you never need to leave the keyboard to find a file. The palette transitions seamlessly between command mode (actions and shortcuts), filename mode, and content search — just change the prefix character.</p>
+    </div>
+
+    <div class="blog-section">
       <h2>Everything is a tab</h2>
       <p>The key design decision was making viewers first-class tabs, not modal popups or side panels. A markdown file, a code editor, a diff view — they sit in the tab bar alongside your terminal sessions. You switch between them with Cmd+1 through Cmd+9, the same way you switch between terminals. Each tab type has its own color accent (green for markdown, blue for editor, red for diff, purple for panels, amber for remote sessions) so the tab bar becomes a visual map of your workspace.</p>
       <p>This means you can have an agent running in tab 1, the diff it's producing in tab 2, and the markdown spec it's working from in tab 3. All visible, all one keyboard shortcut away, no app switching.</p>

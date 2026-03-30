@@ -277,10 +277,8 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
             <span class={s.footerHint}><kbd>↑↓</kbd> navigate</span>
             <span class={s.footerHint}><kbd>↵</kbd> {mode() === "command" ? "execute" : "open"}</span>
             <span class={s.footerHint}><kbd>esc</kbd> close</span>
-            <Show when={mode() === "command"}>
-              <span class={s.footerHint}><kbd>!</kbd> files</span>
-              <span class={s.footerHint}><kbd>?</kbd> content</span>
-            </Show>
+            <span class={s.footerHint}><kbd>!</kbd> files</span>
+            <span class={s.footerHint}><kbd>?</kbd> content</span>
           </div>
         </div>
       </div>
