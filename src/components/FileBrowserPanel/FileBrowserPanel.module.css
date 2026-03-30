@@ -73,8 +73,12 @@
 
 /* Sort control (inline with breadcrumb) */
 .sortControl {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   position: relative;
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 .sortTrigger {
