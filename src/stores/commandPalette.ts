@@ -9,6 +9,7 @@ const MAX_RECENT = 10;
 const SEARCH_DEBOUNCE_MS = 300;
 const CONTENT_SEARCH_MIN_CHARS = 3;
 const FILENAME_SEARCH_MIN_CHARS = 1;
+const MAX_CONTENT_RESULTS = 200;
 
 export type PaletteMode = "command" | "filename" | "content";
 
@@ -85,7 +86,7 @@ function createCommandPaletteStore() {
   }
 
   /** Fire a content search with streaming results */
-  function triggerContentSearch(searchQuery: string): void {
+  async function triggerContentSearch(searchQuery: string): Promise<void> {
     const repoPath = repositoriesStore.state.activeRepoPath;
     if (!repoPath || searchQuery.length < CONTENT_SEARCH_MIN_CHARS) return;
 
@@ -93,19 +94,31 @@ function createCommandPaletteStore() {
     setState({ contentResults: [], contentSearching: true, contentError: null });
 
     // Subscribe to streaming results BEFORE invoking search
-    listen<ContentSearchBatch>("content-search-batch", (event) => {
-      if (cancelled) return;
-      const batch = event.payload;
-      setState("contentResults", (prev) => [...prev, ...batch.matches]);
-      if (batch.is_final) {
-        setState("contentSearching", false);
-      }
-    }).then((fn) => { unlistenBatch = fn; });
+    try {
+      unlistenBatch = await listen<ContentSearchBatch>("content-search-batch", (event) => {
+        if (cancelled) return;
+        const batch = event.payload;
+        setState("contentResults", (prev) => {
+          if (prev.length >= MAX_CONTENT_RESULTS) return prev;
+          const combined = [...prev, ...batch.matches];
+          return combined.slice(0, MAX_CONTENT_RESULTS);
+        });
+        if (batch.is_final) {
+          setState("contentSearching", false);
+        }
+      });
 
-    listen<string>("content-search-error", (event) => {
-      if (cancelled) return;
-      setState({ contentError: event.payload, contentSearching: false });
-    }).then((fn) => { unlistenError = fn; });
+      unlistenError = await listen<string>("content-search-error", (event) => {
+        if (cancelled) return;
+        setState({ contentError: event.payload, contentSearching: false });
+      });
+    } catch (err) {
+      appLogger.error("app", "Failed to subscribe to content search events", err);
+      setState({ contentError: "Search setup failed", contentSearching: false });
+      return;
+    }
+
+    if (cancelled) return;
 
     invoke("search_content", {
       repoPath,
@@ -198,8 +211,8 @@ function createCommandPaletteStore() {
       setState("recentActions", updated);
       try {
         localStorage.setItem(RECENT_ACTIONS_KEY, JSON.stringify(updated));
-      } catch {
-        // localStorage full — ignore
+      } catch (err) {
+        appLogger.warn("app", "Failed to persist recent actions to localStorage", err);
       }
     },
   };

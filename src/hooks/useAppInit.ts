@@ -143,8 +143,9 @@ export async function initApp(deps: AppInitDeps) {
   // Hydrate all stores from Rust backend
   try {
     await deps.stores.hydrate();
-  } catch {
-    deps.setStatusInfo("Warning: 1 store(s) failed to load");
+  } catch (err) {
+    appLogger.error("app", "Store hydration failed", err);
+    deps.setStatusInfo("Warning: store(s) failed to load");
   }
 
   // Load .tuic.json local configs for all repos (fire-and-forget, non-blocking)

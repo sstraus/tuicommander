@@ -11,6 +11,7 @@ import { ConfirmDialog } from "../ConfirmDialog";
 import { PromptDialog } from "../PromptDialog";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 import { TreeNode } from "./TreeNode";
+import { getStatusClass, formatSize } from "./fileUtils";
 import { uiStore } from "../../stores/ui";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
@@ -28,24 +29,6 @@ export interface FileBrowserPanelProps {
   onClose: () => void;
   onFileOpen: (repoPath: string, filePath: string, line?: number) => void;
 }
-
-/** Format file size for display */
-function formatSize(bytes: number): string {
-  if (bytes === 0) return "";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-/** Git status badge CSS class */
-const getStatusClass = (status: string): string => {
-  switch (status) {
-    case "modified": return g.modified;
-    case "staged": return g.staged;
-    case "untracked": return g.untracked;
-    default: return "";
-  }
-};
 
 /** SVG icons for content search toggle buttons (same as SearchBar) */
 const CaseSensitiveIcon = () => (
@@ -238,8 +221,12 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     const unlisten = listen<{ dir_path: string }>("dir-changed", (event) => {
       if (event.payload.dir_path === absPath) {
         setDirRevision((n) => n + 1);
-        // Invalidate tree cache on fs changes
-        setTreeCache(new Map());
+        // Invalidate only the changed directory in tree cache
+        setTreeCache((prev) => {
+          const next = new Map(prev);
+          next.delete(event.payload.dir_path);
+          return next;
+        });
       }
     });
 

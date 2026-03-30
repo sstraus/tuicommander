@@ -1,4 +1,4 @@
-import { Component, createEffect, createSignal, For, Show } from "solid-js";
+import { Component, createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { DiffViewer, parseDiffFiles, type DiffFileSection } from "../ui/DiffViewer";
 import { editorTabsStore } from "../../stores/editorTabs";
 import { mdTabsStore } from "../../stores/mdTabs";
@@ -97,9 +97,9 @@ export const BranchDiffScrollView: Component<BranchDiffScrollViewProps> = (props
     });
   });
 
-  const files = () => parseDiffFiles(diff()).filter((f) => f.additions > 0 || f.deletions > 0);
-  const totalAdd = () => files().reduce((sum, f) => sum + f.additions, 0);
-  const totalDel = () => files().reduce((sum, f) => sum + f.deletions, 0);
+  const files = createMemo(() => parseDiffFiles(diff()).filter((f) => f.additions > 0 || f.deletions > 0));
+  const totalAdd = createMemo(() => files().reduce((sum, f) => sum + f.additions, 0));
+  const totalDel = createMemo(() => files().reduce((sum, f) => sum + f.deletions, 0));
 
   // In scroll mode, each DiffViewer uses unified or split (not "scroll" which DiffViewer doesn't understand)
   const baseMode = (): DiffViewMode => {

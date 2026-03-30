@@ -23,7 +23,7 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
 
   /** Filter and sort actions: recent first, then alphabetical. Substring match on label + category. */
   const filteredActions = createMemo(() => {
-    if (mode() === "content") return [];
+    if (mode() !== "command") return [];
     const query = commandPaletteStore.state.query.toLowerCase();
     const recent = commandPaletteStore.state.recentActions;
     let actions = props.actions;
@@ -225,7 +225,7 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
                 <div class={s.empty}>No repository selected</div>
               </Show>
               <Show when={hasActiveRepo() && searchQuery().length < 3}>
-                <div class={s.empty}>Type at least 3 characters after !</div>
+                <div class={s.empty}>Type at least 3 characters after ?</div>
               </Show>
               <Show when={hasActiveRepo() && searchQuery().length >= 3 && commandPaletteStore.state.contentSearching && commandPaletteStore.state.contentResults.length === 0}>
                 <div class={s.empty}>Searching...</div>

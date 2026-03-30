@@ -1,26 +1,11 @@
 import { Component, createSignal, For, Show } from "solid-js";
 import { useFileBrowser } from "../../hooks/useFileBrowser";
+import { appLogger } from "../../stores/appLogger";
 import { cx } from "../../utils";
 import type { DirEntry } from "../../types/fs";
+import { getStatusClass, formatSize } from "./fileUtils";
 import g from "../shared/git-status.module.css";
 import s from "./FileBrowserPanel.module.css";
-
-/** Map git_status to CSS class (reuse from panel) */
-function getStatusClass(status: string): string {
-  switch (status) {
-    case "modified": return g.modified;
-    case "staged": return g.staged;
-    case "untracked": return g.untracked;
-    default: return "";
-  }
-}
-
-/** Format file size */
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 export interface TreeNodeProps {
   entry: DirEntry;
@@ -52,7 +37,10 @@ export const TreeNode: Component<TreeNodeProps> = (props) => {
         fb.listDirectory(props.fsRoot, props.entry.path).then((entries) => {
           props.onChildrenLoaded(props.entry.path, entries);
           setLoading(false);
-        }).catch(() => setLoading(false));
+        }).catch((err) => {
+          appLogger.error("app", "Failed to list directory", { path: props.entry.path, error: err });
+          setLoading(false);
+        });
       }
     } else {
       props.onFileOpen(props.repoPath, props.entry.path);
