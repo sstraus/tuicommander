@@ -69,8 +69,14 @@ export const BranchDiffScrollView: Component<BranchDiffScrollViewProps> = (props
 
     setLoading(true);
     setError(null);
-    repo.getDiff(repoPath).then((d) => {
-      setDiff(d);
+    // Fetch both unstaged and staged diffs, concatenate for a full picture
+    Promise.all([
+      repo.getDiff(repoPath),
+      repo.getDiff(repoPath, "staged"),
+    ]).then(([unstaged, staged]) => {
+      // Concatenate: staged first, then unstaged (avoids duplicate files
+      // since git diff and git diff --cached don't overlap)
+      setDiff([staged, unstaged].filter(Boolean).join("\n"));
       setLoading(false);
     }).catch((err) => {
       setError(String(err));
