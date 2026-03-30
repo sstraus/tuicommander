@@ -79,6 +79,17 @@
     </figure>
 
     <div class="blog-section">
+      <h2>File browser with tree view</h2>
+      <p>The file browser panel now supports two view modes: flat list and tree. The flat list works like before — navigate directories, breadcrumb path, click to open. The tree view shows a collapsible hierarchy with lazy-loaded subdirectories. Click a folder chevron to expand it — children are fetched on demand, so even large repos stay responsive. File sizes, git status dots, and context menus work the same in both modes.</p>
+      <p>Toggle between list and tree with the toolbar buttons at the top right. When you're searching (typing in the search bar), the view automatically switches to flat results regardless of your mode preference — tree view returns when you clear the search.</p>
+    </div>
+
+    <figure class="blog-figure">
+      <img src="/public/blog/integrated-viewers/file-browser-tree.png" alt="TUICommander file browser in tree view mode showing a collapsible directory hierarchy with .claude folder expanded, nested journal/entries subfolder, and file sizes" />
+      <figcaption>The file browser in tree view — folders expand lazily on click. The .claude directory shows nested journal entries with file sizes. Toggle between list and tree views with the toolbar buttons.</figcaption>
+    </figure>
+
+    <div class="blog-section">
       <h2>Side-by-side diff viewer</h2>
       <p>The diff viewer is where you spend the most time during agent work. Click any changed file in the Git Changes panel and it opens in a split diff tab — old version on the left, new on the right, with word-level highlighting showing exactly what changed. You can toggle between split and unified view.</p>
       <p>But viewing diffs is only half the story. You can act on them: click individual lines to select them, shift-click for ranges, and use the floating action bar to restore specific hunks or lines. This is surgical undo — if the agent changed 50 lines but got 3 wrong, you revert just those 3 without touching the rest. The tab is red-tinted, the Git Panel on the right shows the full change list with per-file addition/deletion counts, and the Smart Commit button is right there for when you're ready to commit.</p>
