@@ -59,7 +59,10 @@
         "role": "Viewer",
         "mimeType": "text/markdown"
       }
-    ]
+    ],
+    "macOS": {
+      "entitlements": "./Entitlements.plist"
+    }
   },
   "plugins": {
     "deep-link": {
