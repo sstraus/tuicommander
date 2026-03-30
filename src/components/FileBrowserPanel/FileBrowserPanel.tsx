@@ -768,7 +768,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
           </button>
           <button
             class={cx(s.viewModeBtn, viewMode() === "tree" && s.viewModeBtnActive)}
-            onClick={() => uiStore.setFileBrowserViewMode("tree")}
+            onClick={() => { uiStore.setFileBrowserViewMode("tree"); setCurrentSubdir("."); }}
             title="Tree view"
           >
             <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
