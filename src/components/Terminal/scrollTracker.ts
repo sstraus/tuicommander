@@ -185,7 +185,11 @@ export class ViewportLock {
       return;
     }
     const buf = this.getBufferFn();
-    this.anchorLine = buf.viewportY;
+    // Never anchor to line 0 when scrollback exists — renderer rebuilds
+    // (fontSize re-assign, clearTextureAtlas) can report viewportY=0 transiently.
+    if (buf.viewportY > 0 || buf.baseY === 0) {
+      this.anchorLine = buf.viewportY;
+    }
 
     const onScroll = () => {
       if (!this.getBufferFn) return;
@@ -197,8 +201,12 @@ export class ViewportLock {
           this.scrollToLineFn(this.anchorLine);
         }
       } else {
-        // User-initiated scroll — update anchor
-        this.anchorLine = buf.viewportY;
+        // User-initiated scroll — update anchor.
+        // Discard viewportY=0 when scrollback exists: renderer rebuilds
+        // (fontSize re-assign) fire scroll events with a transient 0 value.
+        if (buf.viewportY > 0 || buf.baseY === 0) {
+          this.anchorLine = buf.viewportY;
+        }
         // If user scrolled to bottom, unlock
         if (buf.viewportY >= buf.baseY) {
           this.update(true);
