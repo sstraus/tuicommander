@@ -67,8 +67,13 @@ describe("commandPaletteStore", () => {
   });
 
   describe("content search mode", () => {
-    it("mode() returns 'content' when query starts with !", () => {
+    it("mode() returns 'filename' when query starts with !", () => {
       commandPaletteStore.setQuery("!search");
+      expect(commandPaletteStore.mode()).toBe("filename");
+    });
+
+    it("mode() returns 'content' when query starts with ?", () => {
+      commandPaletteStore.setQuery("?search");
       expect(commandPaletteStore.mode()).toBe("content");
     });
 
@@ -82,30 +87,51 @@ describe("commandPaletteStore", () => {
       expect(commandPaletteStore.mode()).toBe("command");
     });
 
-    it("contentQuery() strips ! prefix", () => {
+    it("searchQuery() strips ! prefix", () => {
       commandPaletteStore.setQuery("!findme");
-      expect(commandPaletteStore.contentQuery()).toBe("findme");
+      expect(commandPaletteStore.searchQuery()).toBe("findme");
     });
 
-    it("contentQuery() returns empty for non-content queries", () => {
+    it("searchQuery() strips ? prefix", () => {
+      commandPaletteStore.setQuery("?findme");
+      expect(commandPaletteStore.searchQuery()).toBe("findme");
+    });
+
+    it("searchQuery() trims leading space after prefix", () => {
+      commandPaletteStore.setQuery("! readme");
+      expect(commandPaletteStore.searchQuery()).toBe("readme");
+      commandPaletteStore.setQuery("?  foo");
+      expect(commandPaletteStore.searchQuery()).toBe("foo");
+    });
+
+    it("searchQuery() returns empty for command queries", () => {
       commandPaletteStore.setQuery("zoom");
-      expect(commandPaletteStore.contentQuery()).toBe("");
+      expect(commandPaletteStore.searchQuery()).toBe("");
     });
 
-    it("close() resets content state", () => {
+    it("close() resets search state", () => {
       commandPaletteStore.open();
-      commandPaletteStore.setQuery("!test");
+      commandPaletteStore.setQuery("?test");
       commandPaletteStore.close();
       expect(commandPaletteStore.state.contentResults).toEqual([]);
       expect(commandPaletteStore.state.contentSearching).toBe(false);
       expect(commandPaletteStore.state.contentError).toBeNull();
+      expect(commandPaletteStore.state.filenameResults).toEqual([]);
+      expect(commandPaletteStore.state.filenameSearching).toBe(false);
     });
 
-    it("switching from ! to non-! clears content state", () => {
-      commandPaletteStore.setQuery("!test");
+    it("switching from ? to command clears content state", () => {
+      commandPaletteStore.setQuery("?test");
       commandPaletteStore.setQuery("test");
       expect(commandPaletteStore.state.contentResults).toEqual([]);
       expect(commandPaletteStore.state.contentSearching).toBe(false);
+    });
+
+    it("switching from ! to command clears filename state", () => {
+      commandPaletteStore.setQuery("!test");
+      commandPaletteStore.setQuery("test");
+      expect(commandPaletteStore.state.filenameResults).toEqual([]);
+      expect(commandPaletteStore.state.filenameSearching).toBe(false);
     });
   });
 });

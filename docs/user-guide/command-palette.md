@@ -36,18 +36,24 @@ Hovering over a row highlights it (same as keyboard selection). Clicking a row e
 
 The palette is auto-populated from `actionRegistry.ts`. Every action registered there — with its label, category, and keybinding — appears in the palette automatically. No manual configuration is needed, and plugin-contributed actions appear alongside built-in ones.
 
-### Content Search Mode (`!` prefix)
+### File Search Modes
 
-Type `!` as the first character to switch to file content search mode. The query after `!` searches across all files in the active repository.
+The command palette supports two search prefixes for quick file access:
 
-- Minimum 3 characters after `!` to start searching
-- Results show as a flat list: `file:line` with highlighted match text
-- Press `Enter` or click to open the file in an editor tab at the matched line
-- Delete the `!` to return to command mode
-- Search runs with a 500ms debounce to avoid excessive backend calls
-- The footer shows a `!` hint when in command mode as a reminder
+| Prefix | Mode | Description |
+|--------|------|-------------|
+| `!` | Filename search | Search files by name (min 1 char) |
+| `?` | Content search | Search inside file contents (min 3 chars) |
 
-If no repository is selected, content search shows "No repository selected".
+- Leading spaces after the prefix are ignored (`! readme` = `!readme`)
+- Results show as a flat list with file path
+- Content matches include line number and highlighted match text
+- Press `Enter` or click to open the file in an editor tab
+- Delete the prefix to return to command mode
+- Search runs with a 300ms debounce
+- Footer shows `!` and `?` hints when in command mode
+
+If no repository is selected, both modes show "No repository selected".
 
 ---
 

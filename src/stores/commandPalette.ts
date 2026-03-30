@@ -1,23 +1,28 @@
 import { createStore } from "solid-js/store";
-import type { ContentMatch, ContentSearchBatch } from "../types/fs";
+import type { ContentMatch, ContentSearchBatch, DirEntry } from "../types/fs";
 import { invoke, listen } from "../invoke";
 import { repositoriesStore } from "./repositories";
 import { appLogger } from "./appLogger";
 
 const RECENT_ACTIONS_KEY = "tui-commander-recent-actions";
 const MAX_RECENT = 10;
-const CONTENT_SEARCH_DEBOUNCE_MS = 500;
+const SEARCH_DEBOUNCE_MS = 300;
 const CONTENT_SEARCH_MIN_CHARS = 3;
+const FILENAME_SEARCH_MIN_CHARS = 1;
 
-export type PaletteMode = "command" | "content";
+export type PaletteMode = "command" | "filename" | "content";
 
 interface CommandPaletteState {
   isOpen: boolean;
   query: string;
   recentActions: string[];
+  /** Content search results (? prefix) */
   contentResults: ContentMatch[];
   contentSearching: boolean;
   contentError: string | null;
+  /** Filename search results (! prefix) */
+  filenameResults: DirEntry[];
+  filenameSearching: boolean;
 }
 
 function loadRecentActions(): string[] {
@@ -39,20 +44,44 @@ function createCommandPaletteStore() {
     contentResults: [],
     contentSearching: false,
     contentError: null,
+    filenameResults: [],
+    filenameSearching: false,
   });
 
-  // Content search lifecycle state
+  // Search lifecycle state
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let cancelled = false;
   let unlistenBatch: (() => void) | null = null;
   let unlistenError: (() => void) | null = null;
 
-  function cleanupContentSearch(): void {
+  function cleanupSearch(): void {
     cancelled = true;
     if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
     unlistenBatch?.(); unlistenBatch = null;
     unlistenError?.(); unlistenError = null;
-    setState({ contentResults: [], contentSearching: false, contentError: null });
+    setState({ contentResults: [], contentSearching: false, contentError: null, filenameResults: [], filenameSearching: false });
+  }
+
+  /** Fire a filename search (non-streaming, single invoke) */
+  function triggerFilenameSearch(searchQuery: string): void {
+    const repoPath = repositoriesStore.state.activeRepoPath;
+    if (!repoPath || searchQuery.length < FILENAME_SEARCH_MIN_CHARS) return;
+
+    cancelled = false;
+    setState({ filenameResults: [], filenameSearching: true });
+
+    invoke<DirEntry[]>("search_files", { repoPath, query: searchQuery, limit: 50 })
+      .then((results) => {
+        if (!cancelled) {
+          setState({ filenameResults: results, filenameSearching: false });
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          appLogger.error("app", "Filename search failed", err);
+          setState({ filenameSearching: false });
+        }
+      });
   }
 
   /** Fire a content search with streaming results */
@@ -95,24 +124,27 @@ function createCommandPaletteStore() {
   return {
     state,
 
-    /** Derived mode based on query prefix */
+    /** Derived mode based on query prefix: ! = filename, ? = content */
     mode(): PaletteMode {
-      return state.query.startsWith("!") ? "content" : "command";
+      if (state.query.startsWith("!")) return "filename";
+      if (state.query.startsWith("?")) return "content";
+      return "command";
     },
 
-    /** The effective search query (strips `!` prefix in content mode) */
-    contentQuery(): string {
-      return state.query.startsWith("!") ? state.query.slice(1) : "";
+    /** The effective search query (strips prefix character and leading space) */
+    searchQuery(): string {
+      if (state.query.startsWith("!") || state.query.startsWith("?")) return state.query.slice(1).trimStart();
+      return "";
     },
 
     open(): void {
-      cleanupContentSearch();
+      cleanupSearch();
       setState("isOpen", true);
       setState("query", "");
     },
 
     close(): void {
-      cleanupContentSearch();
+      cleanupSearch();
       setState("isOpen", false);
       setState("query", "");
     },
@@ -126,14 +158,27 @@ function createCommandPaletteStore() {
     },
 
     setQuery(query: string): void {
-      const wasContent = state.query.startsWith("!");
-      const isContent = query.startsWith("!");
+      const prevMode = this.mode();
       setState("query", query);
+      const newMode = this.mode();
 
-      // Mode changed or query changed in content mode → manage search lifecycle
-      if (isContent) {
-        const searchQuery = query.slice(1);
-        // Cancel previous debounce/search
+      // Mode changed → cleanup previous search
+      if (prevMode !== newMode && prevMode !== "command") {
+        cleanupSearch();
+      }
+
+      if (newMode === "filename") {
+        const searchQuery = query.slice(1).trimStart();
+        if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
+        cancelled = true;
+
+        if (searchQuery.length >= FILENAME_SEARCH_MIN_CHARS) {
+          debounceTimer = setTimeout(() => triggerFilenameSearch(searchQuery), SEARCH_DEBOUNCE_MS);
+        } else {
+          setState({ filenameResults: [], filenameSearching: false });
+        }
+      } else if (newMode === "content") {
+        const searchQuery = query.slice(1).trimStart();
         if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
         cancelled = true;
         unlistenBatch?.(); unlistenBatch = null;
@@ -141,13 +186,10 @@ function createCommandPaletteStore() {
 
         if (searchQuery.length >= CONTENT_SEARCH_MIN_CHARS) {
           setState("contentSearching", false);
-          debounceTimer = setTimeout(() => triggerContentSearch(searchQuery), CONTENT_SEARCH_DEBOUNCE_MS);
+          debounceTimer = setTimeout(() => triggerContentSearch(searchQuery), SEARCH_DEBOUNCE_MS);
         } else {
           setState({ contentResults: [], contentSearching: false, contentError: null });
         }
-      } else if (wasContent && !isContent) {
-        // Switched back to command mode — cleanup
-        cleanupContentSearch();
       }
     },
 

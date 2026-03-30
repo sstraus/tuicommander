@@ -313,7 +313,7 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
 - Recency-weighted ranking: recently used actions surface first
 - Each row shows action label, category badge, and keybinding hint
 - Keyboard-navigable: `↑/↓` to move, `Enter` to execute, `Esc` to close
-- **Content search mode**: type `!` prefix to search file contents across the active repo. Results show file:line with highlighted matches. Enter opens editor tab at matched line
+- **File search modes**: type `!` prefix to search files by name, `?` prefix to search file contents. Results open in editor tab (content matches jump to the matched line). Leading spaces after prefix are ignored
 - Powered by `actionRegistry.ts` (`ACTION_META` map)
 
 ### 3.12 Activity Dashboard (`Cmd+Shift+A`)

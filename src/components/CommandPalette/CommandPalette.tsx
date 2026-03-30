@@ -3,7 +3,7 @@ import { commandPaletteStore } from "../../stores/commandPalette";
 import { repositoriesStore } from "../../stores/repositories";
 import { editorTabsStore } from "../../stores/editorTabs";
 import type { ActionEntry } from "../../actions/actionRegistry";
-import type { ContentMatch } from "../../types/fs";
+import type { ContentMatch, DirEntry } from "../../types/fs";
 import s from "./CommandPalette.module.css";
 
 export interface CommandPaletteProps {
@@ -17,7 +17,7 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
 
   const isOpen = () => commandPaletteStore.state.isOpen;
   const mode = () => commandPaletteStore.mode();
-  const contentQuery = () => commandPaletteStore.contentQuery();
+  const searchQuery = () => commandPaletteStore.searchQuery();
 
   /** Filter and sort actions: recent first, then alphabetical. Substring match on label + category. */
   const filteredActions = createMemo(() => {
@@ -43,11 +43,14 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
     });
   });
 
-  /** Item count for the current mode (actions or content results) */
-  const itemCount = () =>
-    mode() === "content"
-      ? commandPaletteStore.state.contentResults.length
-      : filteredActions().length;
+  /** Item count for the current mode */
+  const itemCount = () => {
+    switch (mode()) {
+      case "filename": return commandPaletteStore.state.filenameResults.length;
+      case "content": return commandPaletteStore.state.contentResults.length;
+      default: return filteredActions().length;
+    }
+  };
 
   // Reset selection when query changes
   createEffect(() => {
@@ -97,7 +100,10 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
         case "Enter":
           e.preventDefault();
           e.stopPropagation();
-          if (mode() === "content") {
+          if (mode() === "filename") {
+            const entry = commandPaletteStore.state.filenameResults[selectedIndex()];
+            if (entry) openFileEntry(entry);
+          } else if (mode() === "content") {
             const match = commandPaletteStore.state.contentResults[selectedIndex()];
             if (match) openContentMatch(match);
           } else {
@@ -123,6 +129,12 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
     action.execute();
   };
 
+  const openFileEntry = (entry: DirEntry) => {
+    const repoPath = repositoriesStore.state.activeRepoPath ?? "";
+    editorTabsStore.add(repoPath, entry.path);
+    commandPaletteStore.close();
+  };
+
   const openContentMatch = (match: ContentMatch) => {
     const repoPath = repositoriesStore.state.activeRepoPath ?? "";
     editorTabsStore.add(repoPath, match.path, match.line_number);
@@ -142,8 +154,13 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
     );
   };
 
-  const placeholder = () =>
-    mode() === "content" ? "Search file contents... (min 3 chars)" : "Type a command...";
+  const placeholder = () => {
+    switch (mode()) {
+      case "filename": return "Search files by name...";
+      case "content": return "Search file contents... (min 3 chars)";
+      default: return "Type a command...";
+    }
+  };
 
   const hasActiveRepo = () => !!repositoriesStore.state.activeRepoPath;
 
@@ -162,18 +179,47 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
           </div>
 
           <div class={s.list} ref={listRef}>
-            {/* Content search mode */}
+            {/* Filename search mode (! prefix) */}
+            <Show when={mode() === "filename"}>
+              <Show when={!hasActiveRepo()}>
+                <div class={s.empty}>No repository selected</div>
+              </Show>
+              <Show when={hasActiveRepo() && searchQuery().length < 1}>
+                <div class={s.empty}>Type a filename to search</div>
+              </Show>
+              <Show when={hasActiveRepo() && searchQuery().length >= 1 && commandPaletteStore.state.filenameSearching && commandPaletteStore.state.filenameResults.length === 0}>
+                <div class={s.empty}>Searching...</div>
+              </Show>
+              <Show when={hasActiveRepo() && searchQuery().length >= 1 && !commandPaletteStore.state.filenameSearching && commandPaletteStore.state.filenameResults.length === 0}>
+                <div class={s.empty}>No files found</div>
+              </Show>
+              <For each={commandPaletteStore.state.filenameResults}>
+                {(entry, idx) => (
+                  <div
+                    class={`${s.item} ${idx() === selectedIndex() ? s.selected : ""}`}
+                    onClick={() => openFileEntry(entry)}
+                    onMouseEnter={() => setSelectedIndex(idx())}
+                  >
+                    <span class={s.entryIcon}>{entry.is_dir ? "\u{1F4C1}" : "\u{1F4C4}"}</span>
+                    <span class={s.itemLabel}>{entry.name}</span>
+                    <span class={s.contentPath}>{entry.path}</span>
+                  </div>
+                )}
+              </For>
+            </Show>
+
+            {/* Content search mode (? prefix) */}
             <Show when={mode() === "content"}>
               <Show when={!hasActiveRepo()}>
                 <div class={s.empty}>No repository selected</div>
               </Show>
-              <Show when={hasActiveRepo() && contentQuery().length < 3}>
+              <Show when={hasActiveRepo() && searchQuery().length < 3}>
                 <div class={s.empty}>Type at least 3 characters after !</div>
               </Show>
-              <Show when={hasActiveRepo() && contentQuery().length >= 3 && commandPaletteStore.state.contentSearching && commandPaletteStore.state.contentResults.length === 0}>
+              <Show when={hasActiveRepo() && searchQuery().length >= 3 && commandPaletteStore.state.contentSearching && commandPaletteStore.state.contentResults.length === 0}>
                 <div class={s.empty}>Searching...</div>
               </Show>
-              <Show when={hasActiveRepo() && contentQuery().length >= 3 && !commandPaletteStore.state.contentSearching && commandPaletteStore.state.contentResults.length === 0 && !commandPaletteStore.state.contentError}>
+              <Show when={hasActiveRepo() && searchQuery().length >= 3 && !commandPaletteStore.state.contentSearching && commandPaletteStore.state.contentResults.length === 0 && !commandPaletteStore.state.contentError}>
                 <div class={s.empty}>No results</div>
               </Show>
               <Show when={commandPaletteStore.state.contentError}>
@@ -218,10 +264,11 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
 
           <div class={s.footer}>
             <span class={s.footerHint}><kbd>↑↓</kbd> navigate</span>
-            <span class={s.footerHint}><kbd>↵</kbd> {mode() === "content" ? "open" : "execute"}</span>
+            <span class={s.footerHint}><kbd>↵</kbd> {mode() === "command" ? "execute" : "open"}</span>
             <span class={s.footerHint}><kbd>esc</kbd> close</span>
             <Show when={mode() === "command"}>
-              <span class={s.footerHint}><kbd>!</kbd> search files</span>
+              <span class={s.footerHint}><kbd>!</kbd> files</span>
+              <span class={s.footerHint}><kbd>?</kbd> content</span>
             </Show>
           </div>
         </div>

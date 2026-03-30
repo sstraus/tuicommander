@@ -140,6 +140,11 @@
   max-width: 100%;
 }
 
+.entryIcon {
+  font-size: var(--font-sm);
+  flex-shrink: 0;
+}
+
 .matchHighlight {
   background: rgba(255, 200, 50, 0.25);
   color: var(--fg-primary);
