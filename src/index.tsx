@@ -87,8 +87,8 @@ if (!import.meta.env.DEV) {
 }
 
 // Prevent the webview from navigating to dropped files (causes white screen).
-// Tauri's native drag-drop (dragDropEnabled: true) handles file drops — these
-// handlers are a safety net for non-file drops (text, URLs) and edge cases.
+// File drops are handled by useFileDrop scoped to #terminal-panes — these
+// global handlers are a safety net for drops outside that area.
 document.addEventListener("dragover", (e) => {
   e.preventDefault();
 });
