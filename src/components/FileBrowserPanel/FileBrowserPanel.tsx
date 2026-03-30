@@ -775,8 +775,6 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
               <path d="M2 2h3v1H2zm4 2h5v1H6zm4 2h4v1h-4zM6 8h5v1H6zM2 10h3v1H2zm4 2h5v1H6z" />
             </svg>
           </button>
-        </div>
-        <div class={s.sortControl}>
           <button
             class={s.sortTrigger}
             onClick={() => setSortDropdownOpen((v) => !v)}

@@ -30,9 +30,10 @@ export const TreeNode: Component<TreeNodeProps> = (props) => {
 
   const handleClick = () => {
     if (props.entry.is_dir) {
+      const wasExpanded = isExpanded();
       props.onToggleExpand(props.entry.path);
-      // Lazy-load children on first expand
-      if (!props.childrenCache.has(props.entry.path) && !isExpanded()) {
+      // Lazy-load children on first expand (check state BEFORE toggle)
+      if (!wasExpanded && !props.childrenCache.has(props.entry.path)) {
         setLoading(true);
         fb.listDirectory(props.fsRoot, props.entry.path).then((entries) => {
           props.onChildrenLoaded(props.entry.path, entries);
