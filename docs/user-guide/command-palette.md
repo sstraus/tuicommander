@@ -2,11 +2,11 @@
 
 ## Command Palette
 
-Open with `Cmd+Shift+P` (macOS) / `Ctrl+Shift+P` (Windows/Linux). The command palette gives you fast keyboard access to every registered action in the app.
+Open with `Cmd+P` (macOS) / `Ctrl+P` (Windows/Linux). The command palette gives you fast keyboard access to every registered action in the app.
 
 ### How It Works
 
-1. Press `Cmd+Shift+P` — the palette opens with a search input focused
+1. Press `Cmd+P` — the palette opens with a search input focused
 2. Type to filter actions by name or category (substring match, case-insensitive)
 3. Navigate with `↑` / `↓` arrow keys
 4. Press `Enter` to execute the selected action

@@ -24,7 +24,7 @@ Click a PR badge in the sidebar to open the popover. The SmartButtonStrip shows 
 
 ### Command Palette
 
-Open with **Cmd+Shift+P** and type "Smart" to see all smart prompts prefixed with "Smart:".
+Open with **Cmd+P** and type "Smart" to see all smart prompts prefixed with "Smart:".
 
 ### Branch Context Menu
 

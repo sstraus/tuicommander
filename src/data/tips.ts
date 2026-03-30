@@ -12,7 +12,7 @@ export const TIPS: Tip[] = [
   {
     feature: "Command Palette",
     description: "Search and run any action by name — shortcuts, settings, panels, everything.",
-    shortcut: `${mod}+Shift+P`,
+    shortcut: `${mod}+P`,
   },
   {
     feature: "Activity Dashboard",

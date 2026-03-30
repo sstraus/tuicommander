@@ -308,7 +308,7 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
 - Task management with status tracking (pending, running, completed, failed, cancelled)
 - Drag-and-drop task reordering
 
-### 3.11 Command Palette (`Cmd+Shift+P`)
+### 3.11 Command Palette (`Cmd+P`)
 - Fuzzy-search across all app actions by name
 - Recency-weighted ranking: recently used actions surface first
 - Each row shows action label, category badge, and keybinding hint
@@ -341,7 +341,7 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
 - Ring buffer of 1000 entries (oldest dropped when full), Rust-backed — warn/error entries survive webview reloads via `push_log`/`get_logs` Tauri commands
 - Also accessible via Command Palette: "Error log"
 
-### 3.14 Plan Panel (`Cmd+P`)
+### 3.14 Plan Panel (`Cmd+Shift+P`)
 - Lists active plan files for the current repository from the activity store
 - Plans are detected via structured `plan-file` events from the output parser
 - Click a plan to open it as a virtual markdown tab (frontmatter auto-stripped)
@@ -842,7 +842,7 @@ Variables are resolved from the Rust backend (`resolve_context_variables`) and f
 | **Toolbar dropdown** | All enabled prompts with `toolbar` placement | `Cmd+Shift+K` or lightning bolt button |
 | **Git Panel — Changes tab** | SmartButtonStrip with `git-changes` placement | Inline buttons above changed files |
 | **PR Detail Popover** | SmartButtonStrip with `pr-popover` placement | Inline buttons in PR detail view |
-| **Command Palette** | All prompts with `Smart:` prefix | `Cmd+Shift+P` then type "Smart" |
+| **Command Palette** | All prompts with `Smart:` prefix | `Cmd+P` then type "Smart" |
 | **Branch context menu** | Prompts with `git-branches` placement | Right-click branch in Branches tab |
 
 ### 10.10 Smart Prompts Management (Cmd+K Drawer)
@@ -1052,7 +1052,8 @@ All data persisted to platform config directory via Rust:
 | `Cmd+M` | Toggle markdown panel |
 | `Cmd+N` | Toggle Ideas panel |
 | `Cmd+E` | Toggle file browser |
-| `Cmd+P` | Toggle plan panel |
+| `Cmd+P` | Command palette |
+| `Cmd+Shift+P` | Toggle plan panel |
 | `Cmd+,` | Open settings |
 | `Cmd+?` | Toggle help panel |
 | `Cmd+K` | Prompt library |
