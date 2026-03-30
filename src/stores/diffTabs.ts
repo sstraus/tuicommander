@@ -47,7 +47,7 @@ function createDiffTabsStore() {
       }
 
       const id = base._nextId("diff");
-      const fileName = filePath.split("/").pop() || filePath;
+      const fileName = filePath ? (filePath.split("/").pop() || filePath) : "Diff Scroll";
       return base._addTab({ id, repoPath, filePath, fileName, status, scope, untracked, branchKey: currentBranchKey() });
     },
 

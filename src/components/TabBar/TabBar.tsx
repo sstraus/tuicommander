@@ -535,9 +535,14 @@ export const TabBar: Component<TabBarProps> = (props) => {
                 title={diffTab()?.filePath}
               >
                 <span class={s.tabIcon}>
-                  <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-                    <path fill-rule="evenodd" d="M3 1a1 1 0 00-1 1v12a1 1 0 001 1h10a1 1 0 001-1V5.5L9.5 1H3zm6.5 1.5v2.5H12L9.5 2.5zM8 6a.5.5 0 01.5.5v1h1a.5.5 0 010 1h-1v1a.5.5 0 01-1 0v-1h-1a.5.5 0 010-1h1v-1A.5.5 0 018 6zm-3 5a.5.5 0 000 1h5a.5.5 0 000-1H5z"/>
-                  </svg>
+                  {diffTab()?.filePath
+                    ? <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                        <path fill-rule="evenodd" d="M3 1a1 1 0 00-1 1v12a1 1 0 001 1h10a1 1 0 001-1V5.5L9.5 1H3zm6.5 1.5v2.5H12L9.5 2.5zM8 6a.5.5 0 01.5.5v1h1a.5.5 0 010 1h-1v1a.5.5 0 01-1 0v-1h-1a.5.5 0 010-1h1v-1A.5.5 0 018 6zm-3 5a.5.5 0 000 1h5a.5.5 0 000-1H5z"/>
+                      </svg>
+                    : <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M2 2h12v1H2zm0 3h12v1H2zm0 3h10v1H2zm0 3h8v1H2z" />
+                      </svg>
+                  }
                 </span>
                 <Show when={diffTab()?.pinned}><span class={s.pinIcon}><svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M4.146.854a.5.5 0 1 1 .708-.708l4 4a.5.5 0 0 1-.708.708L7.5 4.208V6.5a.5.5 0 0 1-.146.354L5 9.207l1.146 1.147a.5.5 0 0 1-.353.853H2.5a.5.5 0 0 1-.354-.853L3.293 9.207 1 6.914a.5.5 0 0 1 0-.707L4.146.854z" transform="rotate(45 8 8)"/></svg></span></Show>
                 <span class={s.tabName}>{diffTab()?.fileName}{diffTab()?.scope ? ` (${diffTab()?.scope?.slice(0, 7)})` : ""}</span>
