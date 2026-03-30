@@ -84,7 +84,7 @@ export const BranchDiffScrollView: Component<BranchDiffScrollViewProps> = (props
     });
   });
 
-  const files = () => parseDiffFiles(diff());
+  const files = () => parseDiffFiles(diff()).filter((f) => f.additions > 0 || f.deletions > 0);
   const totalAdd = () => files().reduce((sum, f) => sum + f.additions, 0);
   const totalDel = () => files().reduce((sum, f) => sum + f.deletions, 0);
 
