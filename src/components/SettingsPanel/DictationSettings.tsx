@@ -217,6 +217,19 @@ export const DictationSettings: Component = () => {
         </p>
       </div>
 
+      {/* Auto-send */}
+      <div class={s.group}>
+        <label>{t("dictation.autoSendLabel", "Auto-send")}</label>
+        <div class={s.toggle}>
+          <input
+            type="checkbox"
+            checked={dictationStore.state.autoSend}
+            onChange={(e) => dictationStore.setAutoSend(e.currentTarget.checked)}
+          />
+          <span>{t("dictation.autoSendHint", "Automatically press Enter after inserting transcribed text")}</span>
+        </div>
+      </div>
+
       {/* Language */}
       <div class={s.group}>
         <label>{t("dictation.languageLabel", "Language")}</label>

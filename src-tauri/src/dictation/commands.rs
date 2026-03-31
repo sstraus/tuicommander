@@ -444,6 +444,9 @@ pub struct DictationConfig {
     /// A short press (below this duration) passes through as normal input.
     #[serde(default = "default_long_press_ms")]
     pub long_press_ms: u32,
+    /// Automatically send (press Enter) after injecting transcribed text.
+    #[serde(default)]
+    pub auto_send: bool,
 }
 
 fn default_model() -> String {
@@ -463,6 +466,7 @@ impl Default for DictationConfig {
             model: default_model(),
             device: None,
             long_press_ms: default_long_press_ms(),
+            auto_send: false,
         }
     }
 }

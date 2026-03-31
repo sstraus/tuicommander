@@ -10,6 +10,7 @@ interface DictationConfig {
   model: string;
   device: string | null;
   long_press_ms: number;
+  auto_send: boolean;
 }
 
 /** Model info from Rust backend */
@@ -88,6 +89,7 @@ interface DictationStoreState {
   corrections: Record<string, string>;
   devices: AudioDevice[];
   longPressMs: number;
+  autoSend: boolean;
   capturingHotkey: boolean;
   partialText: string;
 }
@@ -111,6 +113,7 @@ function createDictationStore() {
     corrections: {},
     devices: [],
     longPressMs: 400,
+    autoSend: false,
     capturingHotkey: false,
     partialText: "",
   });
@@ -137,6 +140,7 @@ function createDictationStore() {
           selectedModel: config.model ?? "large-v3-turbo",
           selectedDevice: config.device ?? null,
           longPressMs: config.long_press_ms ?? 400,
+          autoSend: config.auto_send ?? false,
         });
       } catch (err) {
         appLogger.error("dictation", "Failed to get dictation config", err);
@@ -152,6 +156,7 @@ function createDictationStore() {
         model: partial.model ?? state.selectedModel,
         device: partial.device !== undefined ? partial.device : state.selectedDevice,
         long_press_ms: partial.long_press_ms ?? state.longPressMs,
+        auto_send: partial.auto_send ?? state.autoSend,
       };
       try {
         await invoke("set_dictation_config", { config });
@@ -163,6 +168,7 @@ function createDictationStore() {
         if (partial.model !== undefined) storeUpdate.selectedModel = partial.model;
         if (partial.device !== undefined) storeUpdate.selectedDevice = partial.device;
         if (partial.long_press_ms !== undefined) storeUpdate.longPressMs = partial.long_press_ms;
+        if (partial.auto_send !== undefined) storeUpdate.autoSend = partial.auto_send;
         setState(storeUpdate);
       } catch (err) {
         appLogger.error("dictation", "Failed to save dictation config", err);
@@ -183,6 +189,10 @@ function createDictationStore() {
 
     setLongPressMs(value: number): void {
       actions.saveConfig({ long_press_ms: value });
+    },
+
+    setAutoSend(value: boolean): void {
+      actions.saveConfig({ auto_send: value });
     },
 
     setLanguage(value: string): void {

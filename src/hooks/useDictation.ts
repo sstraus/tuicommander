@@ -1,4 +1,5 @@
 import { terminalsStore } from "../stores/terminals";
+import { dictationStore } from "../stores/dictation";
 import { appLogger } from "../stores/appLogger";
 /** Transcription result from the Rust backend */
 interface TranscribeResponse {
@@ -122,6 +123,8 @@ export function useDictation(deps: DictationDeps) {
     // terminal fallback below instead.
     const isXtermTextarea = el instanceof HTMLTextAreaElement && el.closest(".xterm");
 
+    const autoSend = dictationStore.state.autoSend;
+
     if (!isXtermTextarea && el && (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement)) {
       const start = el.selectionStart ?? el.value.length;
       const end = el.selectionEnd ?? start;
@@ -130,11 +133,17 @@ export function useDictation(deps: DictationDeps) {
       el.value = before + text + after;
       el.selectionStart = el.selectionEnd = start + text.length;
       el.dispatchEvent(new Event("input", { bubbles: true }));
+      if (autoSend) {
+        el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
+      }
       deps.setStatusInfo("Ready");
       return;
     }
     if (el && el.getAttribute("contenteditable") === "true") {
       document.execCommand("insertText", false, text);
+      if (autoSend) {
+        el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
+      }
       deps.setStatusInfo("Ready");
       return;
     }
@@ -142,7 +151,8 @@ export function useDictation(deps: DictationDeps) {
     const active = terminalsStore.getActive();
     if (active?.sessionId) {
       try {
-        await deps.pty.write(active.sessionId, text);
+        const payload = autoSend ? text + "\r" : text;
+        await deps.pty.write(active.sessionId, payload);
         deps.setStatusInfo("Ready");
         requestAnimationFrame(() => active.ref?.focus());
       } catch (err) {
