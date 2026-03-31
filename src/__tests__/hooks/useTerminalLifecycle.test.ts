@@ -228,10 +228,28 @@ describe("useTerminalLifecycle", () => {
         cwd: null,
         awaitingInput: null,
       });
+      // Simulate shell startup complete, then user launches htop
+      terminalsStore.update(id, { shellState: "idle" });
       terminalsStore.update(id, { shellState: "busy" });
 
       await lifecycle.closeTerminal(id);
       expect(mockDialogs.confirmCloseTerminal).toHaveBeenCalledWith("htop session");
+    });
+
+    it("skips confirmation when shell is busy from startup (.zshrc loading)", async () => {
+      const id = terminalsStore.add({
+        sessionId: "sess-1",
+        fontSize: 14,
+        name: "New Shell",
+        cwd: null,
+        awaitingInput: null,
+      });
+      // Shell goes busy during startup — never reached idle
+      terminalsStore.update(id, { shellState: "busy" });
+
+      await lifecycle.closeTerminal(id);
+      expect(mockDialogs.confirmCloseTerminal).not.toHaveBeenCalled();
+      expect(terminalsStore.get(id)).toBeUndefined();
     });
 
     it("skips confirmation for plain shell", async () => {

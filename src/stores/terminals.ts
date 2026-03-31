@@ -126,6 +126,9 @@ function createTerminalsStore() {
   const busyDurationMap = new Map<string, number>();
   const cooldownTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const busyToIdleCallbacks: Array<(id: string, durationMs: number) => void> = [];
+  // Tracks which terminals have completed their initial shell startup (reached idle at least once).
+  // Used to distinguish "busy from .zshrc startup" from "busy from a user-launched process".
+  const reachedIdleSet = new Set<string>();
 
   /** Handle shellState transition for debounced busy tracking */
   function handleShellStateChange(id: string, prev: ShellState, next: ShellState): void {
@@ -153,7 +156,12 @@ function createTerminalsStore() {
         setState("terminals", id, "awaitingInput", null);
         setState("terminals", id, "awaitingInputConfident", false);
       }
+    } else if (next === "idle" && prev !== "busy") {
+      // Direct null→idle (e.g. Rust sync on tab switch) — mark startup complete
+      reachedIdleSet.add(id);
     } else if (next !== "busy" && prev === "busy") {
+      // First idle marks shell startup as complete
+      if (next === "idle") reachedIdleSet.add(id);
       // Leaving busy: freeze duration, start cooldown
       const since = busySinceMap.get(id);
       const duration = since != null ? Date.now() - since : 0;
@@ -173,6 +181,7 @@ function createTerminalsStore() {
     const timer = cooldownTimers.get(id);
     if (timer != null) clearTimeout(timer);
     cooldownTimers.delete(id);
+    reachedIdleSet.delete(id);
     setState(produce((s) => { delete s.debouncedBusy[id]; }));
     busySinceMap.delete(id);
     busyDurationMap.delete(id);
@@ -345,6 +354,12 @@ function createTerminalsStore() {
     /** Debounced busy: true while shellState is "busy" and for 2s after it transitions to idle */
     isBusy(id: string): boolean {
       return state.debouncedBusy[id] ?? false;
+    },
+
+    /** True if the shell has completed its initial startup (reached idle at least once).
+     *  Used to distinguish "busy from .zshrc startup" from "busy from a user-launched process". */
+    hasReachedIdle(id: string): boolean {
+      return reachedIdleSet.has(id);
     },
 
     /** True if any terminal has a debounced busy state */
