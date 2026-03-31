@@ -109,9 +109,9 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
     const terminal = terminalsStore.get(id);
     if (!terminal) return;
 
-    // Confirm when something is running: either an agent (claude, aider, etc.)
-    // or the shell is actively busy with a user-launched process (htop, npm run dev, etc.).
-    // Plain idle shells and shells still in startup (.zshrc loading) close immediately.
+    // Confirm when something is running: either a detected agent (claude, aider, etc.)
+    // or the shell is actively busy with a user-launched process (htop, npm run dev).
+    // Shells still in startup (.zshrc loading) are "busy" but have no user process — skip.
     const startupBusy = terminal.shellState === "busy" && !terminalsStore.hasReachedIdle(id);
     const hasRunningProcess = terminal.agentType !== null || (terminal.shellState === "busy" && !startupBusy);
     if (!skipConfirm && terminal.sessionId && settingsStore.state.confirmBeforeClosingTab && hasRunningProcess) {

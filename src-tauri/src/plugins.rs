@@ -105,6 +105,7 @@ const KNOWN_CAPABILITIES: &[&str] = &[
     "git:read",
     "ui:context-menu",
     "ui:sidebar",
+    "ui:file-icons",
 ];
 
 /// Validate a parsed manifest for required fields and sanity.

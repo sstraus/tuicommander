@@ -35,7 +35,8 @@ export type AppLogSource =
   | "prompts"
   | "push"
   | "tailscale"
-  | "sw";
+  | "sw"
+  | "files";
 
 export interface AppLogEntry {
   id: number;
