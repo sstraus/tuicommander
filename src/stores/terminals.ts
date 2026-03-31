@@ -1,6 +1,7 @@
 import { batch } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import type { AgentType } from "../agents";
+import type { TerminalMatch } from "../types";
 import { appLogger } from "./appLogger";
 import { rpc } from "../transport";
 
@@ -75,6 +76,10 @@ export interface TerminalRef {
   getSessionId: () => string | null;
   openSearch: () => void;
   closeSearch: () => void;
+  /** Search the terminal buffer for a query string (case-insensitive) */
+  searchBuffer: (query: string) => TerminalMatch[];
+  /** Scroll to an absolute buffer line index (centered in viewport) */
+  scrollToLine: (lineIndex: number) => void;
 }
 
 /** Combined terminal state */

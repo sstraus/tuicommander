@@ -23,6 +23,7 @@ import { agentConfigsStore } from "../../stores/agentConfigs";
 import { parseOsc7Url } from "../../utils/osc7";
 import { kittySequenceForKey } from "./kittyKeyboard";
 import { getAwaitingInputSound } from "./awaitingInputSound";
+import { searchTerminalBuffer } from "../../utils/terminalSearch";
 import { ScrollTracker, ViewportLock } from "./scrollTracker";
 import s from "./Terminal.module.css";
 
@@ -1258,6 +1259,22 @@ export const Terminal: Component<TerminalProps> = (props) => {
     getSessionId: () => sessionId,
     openSearch: () => setSearchVisible(true),
     closeSearch: () => setSearchVisible(false),
+    searchBuffer: (query: string) => {
+      if (!terminal) return [];
+      const buf = terminal.buffer.active;
+      const lines: string[] = [];
+      for (let i = 0; i < buf.length; i++) {
+        lines.push(buf.getLine(i)?.translateToString(true) ?? "");
+      }
+      const name = terminalsStore.get(props.id)?.name ?? props.id;
+      return searchTerminalBuffer(lines, query, props.id, name);
+    },
+    scrollToLine: (lineIndex: number) => {
+      if (!terminal) return;
+      const viewportY = terminal.buffer.active.viewportY;
+      const delta = lineIndex - viewportY - Math.floor(terminal.rows / 2);
+      terminal.scrollLines(delta);
+    },
   };
 
   onMount(() => {
