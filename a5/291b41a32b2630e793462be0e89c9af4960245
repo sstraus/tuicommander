@@ -1,0 +1,23 @@
+src/components/SettingsPanel/tabs/KeyboardShortcutsTab.tsx
+  45a77c6848473860 213-214,217-218,223-225
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.22",
+  "base_commit_sha": "a5291b41a32b2630e793462be0e89c9af4960245",
+  "prompts": {
+    "45a77c6848473860": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d186dc09-3d32-4db0-a1d5-1eeb427382f3",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 7,
+      "total_deletions": 4,
+      "accepted_lines": 7,
+      "overriden_lines": 0
+    }
+  }
+}
