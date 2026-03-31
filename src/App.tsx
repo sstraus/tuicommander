@@ -290,7 +290,7 @@ const App: Component = () => {
     if (paths.length === 0) return;
     markTccAlertShown();
     const repos = paths.map((p) => p.split("/").pop() ?? p).join(", ");
-    dialogs.confirm({
+    void dialogs.confirm({
       title: "Permission denied",
       message: `macOS blocked access to: ${repos}\n\nRepositories inside ~/Documents, ~/Desktop, or ~/Downloads require Full Disk Access.\n\nTo fix: System Settings → Privacy & Security → Full Disk Access → add TUICommander.\n\nAlternatively, move your repositories to a non-protected folder (e.g. ~/Repositories).`,
       okLabel: "Got it",

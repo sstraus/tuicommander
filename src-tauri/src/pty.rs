@@ -2077,23 +2077,26 @@ pub(crate) fn has_foreground_process(
     state: State<'_, Arc<AppState>>,
     session_id: String,
 ) -> Option<String> {
-    const SHELLS: &[&str] = &["zsh", "bash", "fish", "sh", "dash", "ksh", "csh", "tcsh", "nushell", "nu",
-                               "powershell", "pwsh", "cmd"];
+    const SHELLS: &[&str] = &[
+        "zsh", "bash", "fish", "sh", "dash", "ksh", "csh", "tcsh",
+        "nushell", "nu", "powershell", "pwsh", "cmd",
+    ];
     let entry = state.sessions.get(&session_id)?;
-    let session = entry.value().lock();
+    // Extract pid under lock, then drop before the blocking syscall
     #[cfg(not(windows))]
-    {
+    let pid = {
+        let session = entry.value().lock();
         let pgid = session.master.process_group_leader()?;
-        let name = process_name_from_pid(pgid as u32)?;
-        if SHELLS.contains(&name.as_str()) { None } else { Some(name) }
-    }
+        u32::try_from(pgid).ok()?
+    };
     #[cfg(windows)]
-    {
+    let pid = {
+        let session = entry.value().lock();
         let child_pid = session._child.process_id()?;
-        let leaf = deepest_descendant_pid(child_pid)?;
-        let name = process_name_from_pid(leaf)?;
-        if SHELLS.contains(&name.as_str()) { None } else { Some(name) }
-    }
+        deepest_descendant_pid(child_pid)?
+    };
+    let name = process_name_from_pid(pid)?;
+    if SHELLS.contains(&name.as_str()) { None } else { Some(name) }
 }
 
 /// Debug: diagnose agent detection for a PTY session.

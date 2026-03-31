@@ -215,7 +215,9 @@ class PlanPlugin implements TuiPlugin {
       this.rescanAndOpenNew(repoPath);
     }).then((unlisten) => {
       this.unlistenDirChanged = unlisten;
-    }).catch(() => {});
+    }).catch((err) => {
+      appLogger.warn("plugin", "[plan] Failed to register dir-changed listener", err);
+    });
   }
 
   /** Re-scan plans/ and auto-open any new plans as background tabs. */
@@ -233,7 +235,9 @@ class PlanPlugin implements TuiPlugin {
           }
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        appLogger.warn("plugin", "[plan] rescan after dir-changed failed", err);
+      });
   }
 
   /** Add or update a plan entry, then enrich with file metadata. */
@@ -282,7 +286,9 @@ class PlanPlugin implements TuiPlugin {
     for (const markerPath of candidates) {
       try {
         const raw = await invoke<string>("read_external_file", { path: markerPath });
-        const marker = JSON.parse(raw) as { path?: string };
+        const parsed: unknown = JSON.parse(raw);
+        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) continue;
+        const marker = parsed as { path?: string };
         if (!marker.path) continue;
 
         const planPath = marker.path.startsWith("/")
@@ -315,8 +321,8 @@ class PlanPlugin implements TuiPlugin {
         entry.status = meta.status ?? null;
         entry.effort = meta.effort ?? null;
       })
-      .catch(() => {
-        // File read failed — keep fallback title
+      .catch((err) => {
+        appLogger.warn("plugin", `[plan] Failed to enrich plan metadata: ${absolutePath}`, err);
       });
   }
 
