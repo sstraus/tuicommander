@@ -1,6 +1,9 @@
 # Profiling results
 scripts/perf/results/
 
+# Generated plugin data (rebuild with extract script)
+plugins/tuic-vscode-icons/icon-data.js
+
 # Logs
 logs
 *.log
