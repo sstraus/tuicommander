@@ -1,5 +1,8 @@
 import { createTabManager, type BaseTab } from "./tabManager";
 import { currentBranchKey } from "./repositories";
+import { terminalsStore } from "./terminals";
+import { mdTabsStore } from "./mdTabs";
+import { editorTabsStore } from "./editorTabs";
 
 export type DiffStatus = "M" | "A" | "D" | "R" | "?";
 
@@ -36,19 +39,27 @@ function createDiffTabsStore() {
     getCount: base.getCount,
     setPinned: base.setPinned,
 
-    /** Add a new diff tab (or return existing if same file+scope already open) */
+    /** Add a new diff tab (or return existing if same file+scope already open).
+     *  Deactivates terminal/md/editor tabs so the diff pane becomes visible. */
     add(repoPath: string, filePath: string, status: DiffStatus, scope?: string, untracked?: boolean): string {
       const existing = Object.values(base.state.tabs).find(
         (tab) => tab.repoPath === repoPath && tab.filePath === filePath && tab.scope === scope,
       );
       if (existing) {
         base.setActive(existing.id);
+        terminalsStore.setActive(null);
+        mdTabsStore.setActive(null);
+        editorTabsStore.setActive(null);
         return existing.id;
       }
 
       const id = base._nextId("diff");
       const fileName = filePath ? (filePath.split("/").pop() || filePath) : "Diff Scroll";
-      return base._addTab({ id, repoPath, filePath, fileName, status, scope, untracked, branchKey: currentBranchKey() });
+      const tabId = base._addTab({ id, repoPath, filePath, fileName, status, scope, untracked, branchKey: currentBranchKey() });
+      terminalsStore.setActive(null);
+      mdTabsStore.setActive(null);
+      editorTabsStore.setActive(null);
+      return tabId;
     },
 
     /** Register an imperative handle for a tab (e.g. openSearch) */
