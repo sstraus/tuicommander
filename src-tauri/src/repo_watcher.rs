@@ -1,11 +1,13 @@
 use ignore::gitignore::Gitignore;
 use notify::RecursiveMode;
 use notify_debouncer_full::new_debouncer;
+use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
+use tokio::task::AbortHandle;
 
 use crate::state::AppEvent;
 use crate::AppState;
@@ -81,6 +83,74 @@ pub(crate) fn classify_path(
 
     // Path outside repo root entirely — shouldn't happen, treat as noise
     EventCategory::Noise
+}
+
+/// Per-category debounce delays. The fs-level debouncer runs at HEAD's rate
+/// (the fastest), and CategoryEmitter applies these app-level delays so
+/// slower categories don't over-fire.
+const HEAD_DEBOUNCE: Duration = Duration::from_millis(200);
+const GIT_STATE_DEBOUNCE: Duration = Duration::from_millis(500);
+const WORKING_TREE_DEBOUNCE: Duration = Duration::from_millis(1500);
+
+impl EventCategory {
+    /// The debounce delay for this category.
+    fn delay(&self) -> Duration {
+        match self {
+            Self::Head => HEAD_DEBOUNCE,
+            Self::GitState => GIT_STATE_DEBOUNCE,
+            Self::WorkingTree => WORKING_TREE_DEBOUNCE,
+            Self::Noise => Duration::ZERO,
+        }
+    }
+}
+
+/// Per-category trailing debounce emitter.
+///
+/// When an event arrives for a category, any pending timer for that category
+/// is cancelled and a new delayed emit is spawned. The event fires N ms
+/// after the *last* event in the burst.
+pub(crate) struct CategoryEmitter {
+    head: Mutex<Option<AbortHandle>>,
+    git_state: Mutex<Option<AbortHandle>>,
+    working_tree: Mutex<Option<AbortHandle>>,
+}
+
+impl CategoryEmitter {
+    pub(crate) fn new() -> Self {
+        Self {
+            head: Mutex::new(None),
+            git_state: Mutex::new(None),
+            working_tree: Mutex::new(None),
+        }
+    }
+
+    /// Schedule a delayed emit for the given category. If a pending emit
+    /// exists for the same category, it is cancelled first (trailing debounce).
+    pub(crate) fn trigger<F>(
+        &self,
+        category: &EventCategory,
+        rt: &tokio::runtime::Handle,
+        emit_fn: F,
+    ) where
+        F: FnOnce() + Send + 'static,
+    {
+        let slot = match category {
+            EventCategory::Head => &self.head,
+            EventCategory::GitState => &self.git_state,
+            EventCategory::WorkingTree => &self.working_tree,
+            EventCategory::Noise => return,
+        };
+        let delay = category.delay();
+        let mut guard = slot.lock();
+        if let Some(handle) = guard.take() {
+            handle.abort();
+        }
+        let join_handle = rt.spawn(async move {
+            tokio::time::sleep(delay).await;
+            emit_fn();
+        });
+        *guard = Some(join_handle.abort_handle());
+    }
 }
 
 /// Debounce interval — longer than HEAD watcher because git writes multiple
@@ -487,5 +557,102 @@ mod tests {
         let json = serde_json::to_string(&payload).expect("should serialize");
         assert!(json.contains("repo_path"));
         assert!(json.contains("/home/user/my-repo"));
+    }
+
+    // --- CategoryEmitter tests ---
+
+    #[test]
+    fn test_category_delays() {
+        assert_eq!(EventCategory::Head.delay(), Duration::from_millis(200));
+        assert_eq!(EventCategory::GitState.delay(), Duration::from_millis(500));
+        assert_eq!(EventCategory::WorkingTree.delay(), Duration::from_millis(1500));
+        assert_eq!(EventCategory::Noise.delay(), Duration::ZERO);
+    }
+
+    #[tokio::test]
+    async fn test_emitter_fires_after_delay() {
+        let emitter = CategoryEmitter::new();
+        let counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter_clone = Arc::clone(&counter);
+        let rt = tokio::runtime::Handle::current();
+
+        emitter.trigger(&EventCategory::Head, &rt, move || {
+            counter_clone.fetch_add(1, Ordering::Relaxed);
+        });
+
+        // Should not have fired yet
+        assert_eq!(counter.load(Ordering::Relaxed), 0);
+
+        // Wait for debounce + margin
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(counter.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn test_emitter_trailing_debounce_resets_timer() {
+        let emitter = CategoryEmitter::new();
+        let counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let rt = tokio::runtime::Handle::current();
+
+        // Trigger Head twice in quick succession — only the second should fire
+        let c1 = Arc::clone(&counter);
+        emitter.trigger(&EventCategory::Head, &rt, move || {
+            c1.fetch_add(1, Ordering::Relaxed);
+        });
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let c2 = Arc::clone(&counter);
+        emitter.trigger(&EventCategory::Head, &rt, move || {
+            c2.fetch_add(10, Ordering::Relaxed);
+        });
+
+        // Wait for second debounce to complete
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        // Only the second trigger should have fired (value 10, not 1 or 11)
+        assert_eq!(counter.load(Ordering::Relaxed), 10);
+    }
+
+    #[tokio::test]
+    async fn test_emitter_noise_is_ignored() {
+        let emitter = CategoryEmitter::new();
+        let counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter_clone = Arc::clone(&counter);
+        let rt = tokio::runtime::Handle::current();
+
+        emitter.trigger(&EventCategory::Noise, &rt, move || {
+            counter_clone.fetch_add(1, Ordering::Relaxed);
+        });
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(counter.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn test_emitter_independent_categories() {
+        let emitter = CategoryEmitter::new();
+        let head_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let git_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let rt = tokio::runtime::Handle::current();
+
+        let hc = Arc::clone(&head_count);
+        emitter.trigger(&EventCategory::Head, &rt, move || {
+            hc.fetch_add(1, Ordering::Relaxed);
+        });
+
+        let gc = Arc::clone(&git_count);
+        emitter.trigger(&EventCategory::GitState, &rt, move || {
+            gc.fetch_add(1, Ordering::Relaxed);
+        });
+
+        // After 300ms, Head should have fired but GitState shouldn't yet
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(head_count.load(Ordering::Relaxed), 1);
+        assert_eq!(git_count.load(Ordering::Relaxed), 0);
+
+        // After 600ms total, GitState should also have fired
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(git_count.load(Ordering::Relaxed), 1);
     }
 }
