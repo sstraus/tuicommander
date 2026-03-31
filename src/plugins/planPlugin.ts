@@ -1,4 +1,4 @@
-import { invoke } from "../invoke";
+import { invoke, listen } from "../invoke";
 import { mdTabsStore } from "../stores/mdTabs";
 import { appLogger } from "../stores/appLogger";
 import { stripFrontmatter, extractPlanMetadata } from "../utils/frontmatter";
@@ -135,6 +135,8 @@ class PlanPlugin implements TuiPlugin {
   readonly id = PLUGIN_ID;
   private plans = new Map<string, PlanEntry>();
   private repoPath: string | null = null;
+  private unlistenDirChanged: (() => void) | null = null;
+  private watchedPlansDir: string | null = null;
 
   onload(host: PluginHost): void {
     this.plans.clear();
@@ -193,7 +195,44 @@ class PlanPlugin implements TuiPlugin {
     const activeRepo = host.getActiveRepoPath();
     if (activeRepo) {
       this.scanPlansDirectory(activeRepo);
+      this.watchPlansDir(activeRepo);
     }
+  }
+
+  /** Start a file system watcher on <repo>/plans/ so new plans are detected immediately. */
+  private watchPlansDir(repoPath: string): void {
+    const plansDir = `${repoPath.replace(/\/$/, "")}/plans`;
+    this.watchedPlansDir = plansDir;
+
+    invoke("start_dir_watcher", { path: plansDir }).catch(() => {
+      // plans/ directory may not exist — that's fine
+    });
+
+    listen<{ dir_path: string }>("dir-changed", (event) => {
+      if (event.payload.dir_path !== this.watchedPlansDir) return;
+      appLogger.info("plugin", "[plan] dir-changed detected, re-scanning plans/");
+      this.rescanAndOpenNew(repoPath);
+    }).then((unlisten) => {
+      this.unlistenDirChanged = unlisten;
+    }).catch(() => {});
+  }
+
+  /** Re-scan plans/ and auto-open any new plans as background tabs. */
+  private rescanAndOpenNew(repoPath: string): void {
+    const root = repoPath.replace(/\/$/, "");
+    invoke<DirEntry[]>("list_directory", { repoPath, subdir: "plans" })
+      .then((entries) => {
+        const mdFiles = entries.filter((e) => !e.is_dir && e.name.endsWith(".md"));
+        for (const entry of mdFiles) {
+          const absolutePath = `${root}/${entry.path}`;
+          if (!this.plans.has(absolutePath)) {
+            this.addPlan(absolutePath);
+            mdTabsStore.addVirtualBackground(displayName(absolutePath), contentUri(absolutePath), repoPath);
+            appLogger.info("plugin", `[plan] new plan detected via watcher: ${absolutePath}`);
+          }
+        }
+      })
+      .catch(() => {});
   }
 
   /** Add or update a plan entry, then enrich with file metadata. */
@@ -288,6 +327,12 @@ class PlanPlugin implements TuiPlugin {
   onunload(): void {
     this.plans.clear();
     this.repoPath = null;
+    this.unlistenDirChanged?.();
+    this.unlistenDirChanged = null;
+    if (this.watchedPlansDir) {
+      invoke("stop_dir_watcher", { path: this.watchedPlansDir }).catch(() => {});
+      this.watchedPlansDir = null;
+    }
   }
 }
 
