@@ -1103,6 +1103,29 @@ const App: Component = () => {
       execute: () => splitPanes.resetLayout(),
     });
 
+    // Search mode shortcuts — open palette with pre-filled prefix
+    entries.push({
+      id: "search-terminals",
+      label: "Search Terminals",
+      category: "Search",
+      keybinding: "",
+      execute: () => commandPaletteStore.openWithQuery("~ "),
+    });
+    entries.push({
+      id: "search-files",
+      label: "Search Files",
+      category: "Search",
+      keybinding: "",
+      execute: () => commandPaletteStore.openWithQuery("! "),
+    });
+    entries.push({
+      id: "search-file-contents",
+      label: "Search in File Contents",
+      category: "Search",
+      keybinding: "",
+      execute: () => commandPaletteStore.openWithQuery("? "),
+    });
+
     // Dynamic: one entry per non-built-in plugin for enable/disable toggle
     for (const plugin of pluginStore.state.plugins) {
       if (plugin.builtIn) continue;

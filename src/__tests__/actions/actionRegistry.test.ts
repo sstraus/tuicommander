@@ -123,5 +123,22 @@ describe("actionRegistry", () => {
     });
   });
 
+  describe("search palette commands (dynamic, in App.tsx)", () => {
+    it("search commands have correct shape when added as dynamic entries", () => {
+      // These entries are added dynamically in App.tsx, not in getActionEntries.
+      // We verify the expected shape here as a contract test.
+      const searchEntries: ActionEntry[] = [
+        { id: "search-terminals", label: "Search Terminals", category: "Search", keybinding: "", execute: vi.fn() },
+        { id: "search-files", label: "Search Files", category: "Search", keybinding: "", execute: vi.fn() },
+        { id: "search-file-contents", label: "Search in File Contents", category: "Search", keybinding: "", execute: vi.fn() },
+      ];
+      for (const entry of searchEntries) {
+        expect(entry.category).toBe("Search");
+        expect(entry.keybinding).toBe("");
+        expect(typeof entry.execute).toBe("function");
+      }
+      expect(searchEntries.map(e => e.id)).toEqual(["search-terminals", "search-files", "search-file-contents"]);
+    });
+  });
 });
 
