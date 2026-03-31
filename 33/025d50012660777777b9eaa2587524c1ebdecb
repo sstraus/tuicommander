@@ -1,0 +1,27 @@
+docs/FEATURES.md
+  77ef481e1745226a 873
+docs/user-guide/terminals.md
+  77ef481e1745226a 25
+CHANGELOG.md
+  77ef481e1745226a 21-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.22",
+  "base_commit_sha": "33025d50012660777777b9eaa2587524c1ebdecb",
+  "prompts": {
+    "77ef481e1745226a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7c8bbb2a-0fd3-459f-aeac-e6f690eaafb0",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 4,
+      "total_deletions": 2,
+      "accepted_lines": 4,
+      "overriden_lines": 0
+    }
+  }
+}
