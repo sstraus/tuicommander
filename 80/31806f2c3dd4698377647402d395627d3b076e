@@ -1,0 +1,38 @@
+src/__tests__/hooks/useTerminalLifecycle.test.ts
+  77ef481e1745226a 209,217,223-237,248
+src/hooks/useTerminalLifecycle.ts
+  77ef481e1745226a 112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.22",
+  "base_commit_sha": "8031806f2c3dd4698377647402d395627d3b076e",
+  "prompts": {
+    "45a77c6848473860": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d186dc09-3d32-4db0-a1d5-1eeb427382f3",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 150,
+      "total_deletions": 15,
+      "accepted_lines": 135,
+      "overriden_lines": 0
+    },
+    "77ef481e1745226a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7c8bbb2a-0fd3-459f-aeac-e6f690eaafb0",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 19,
+      "total_deletions": 2,
+      "accepted_lines": 19,
+      "overriden_lines": 0
+    }
+  }
+}
