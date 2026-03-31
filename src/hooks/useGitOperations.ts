@@ -471,10 +471,15 @@ export function useGitOperations(deps: GitOperationsDeps) {
       }
     }
 
-    setCurrentRepoPath(repoPath);
-    repositoriesStore.setActive(repoPath);
-    repositoriesStore.setActiveBranch(repoPath, branchName);
-    setCurrentBranch(branchName);
+    // Batch all reactive updates so downstream effects (file browser, etc.)
+    // see a consistent snapshot — prevents stale intermediate states where
+    // repoPath updated but fsRoot still points to the old worktree.
+    batch(() => {
+      setCurrentRepoPath(repoPath);
+      repositoriesStore.setActive(repoPath);
+      repositoriesStore.setActiveBranch(repoPath, branchName);
+      setCurrentBranch(branchName);
+    });
 
     // Fire-and-forget: diff stats are cosmetic, don't block branch switch
     const selectedBranch = repositoriesStore.get(repoPath)?.branches[branchName];

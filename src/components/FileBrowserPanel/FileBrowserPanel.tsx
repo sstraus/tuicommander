@@ -134,6 +134,8 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 
   // Track repoPath changes to reset subdir synchronously before fetching
   let lastRepoPath: string | null = null;
+  // Generation counter: incremented on every effect run so stale async fetches are discarded
+  let fetchGeneration = 0;
 
   // Load entries when visible, repo changes, subdir changes, or repo content changes
   createEffect(() => {
@@ -143,6 +145,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     }
 
     const fsRoot = root()!;
+    const gen = ++fetchGeneration;
 
     // Reset subdir when root changes (merged from separate effect to avoid double fetch)
     if (fsRoot !== lastRepoPath) {
@@ -172,6 +175,8 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     (async () => {
       try {
         const result = await fb.listDirectory(fsRoot, subdir);
+        // Discard stale results: a newer effect run has already started a fresh fetch
+        if (gen !== fetchGeneration) return;
         // Skip re-render when entries are identical: same count and every entry
         // matches on the fields that drive visible state (path, git badge, mtime,
         // ignored flag). New object instances from Rust would otherwise cause a
@@ -195,10 +200,11 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
           }
         }
       } catch (err) {
+        if (gen !== fetchGeneration) return;
         setError(String(err));
         setEntries([]);
       } finally {
-        setLoading(false);
+        if (gen === fetchGeneration) setLoading(false);
       }
     })();
   });

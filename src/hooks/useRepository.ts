@@ -119,7 +119,7 @@ export function useRepository() {
     try {
       return await invoke<string>("read_file", { path, file });
     } catch (err) {
-      appLogger.error("git", "Failed to read file", err);
+      appLogger.error("git", "Failed to read file", { path, file, error: String(err) });
       return "";
     }
   }
