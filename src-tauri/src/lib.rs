@@ -840,7 +840,8 @@ pub fn run() {
         .manage(crate::fs::ContentSearchCancel(std::sync::Mutex::new(None)))
         .manage(dictation::DictationState::new())
         .manage(sleep_prevention::SleepBlocker::new())
-        .plugin(tauri_plugin_deep_link::init());
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_clipboard_manager::init());
 
     // Single-instance lock only in release builds — allows tauri dev to run
     // alongside the installed TUIC-preview.app (they share the same identifier).
