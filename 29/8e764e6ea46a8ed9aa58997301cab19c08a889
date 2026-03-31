@@ -1,0 +1,23 @@
+src/stores/settings.ts
+  45a77c6848473860 35,235,259,300,582-594
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.22",
+  "base_commit_sha": "298e764e6ea46a8ed9aa58997301cab19c08a889",
+  "prompts": {
+    "45a77c6848473860": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d186dc09-3d32-4db0-a1d5-1eeb427382f3",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 17,
+      "total_deletions": 0,
+      "accepted_lines": 17,
+      "overriden_lines": 0
+    }
+  }
+}
