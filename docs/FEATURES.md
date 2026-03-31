@@ -870,7 +870,7 @@ Variables are resolved from the Rust backend (`resolve_context_variables`) and f
 
 ### 11.1 General
 - Language, Default IDE, Shell
-- Confirmations: quit, close tab
+- Confirmations: quit, close tab (only when a process is running — agents or busy shell; idle shells close immediately)
 - Power management: prevent sleep when busy
 - Updates: auto-check, check now
 - Git integration: auto-show PR popover

@@ -18,6 +18,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Update Progress Dialog** — Modal progress bar during update downloads with percentage and status text
 
 ### Fixed
+- **Terminal Close Confirmation** — Idle shells now close immediately without confirmation dialog; confirmation only appears when a process is running (agents like Claude Code, or busy shells like htop/npm)
+- **Clipboard Paste** — Restored `tauri-plugin-clipboard-manager` so Cmd+V paste works in terminals (WebView requires explicit capability for `navigator.clipboard.readText()`)
 - **Agent Detection** — Claude Code installs its binary as a version number (`~/.local/share/claude/versions/2.1.87`); `process_name_from_pid` now scans parent directory names when the basename doesn't match a known agent
 - **HMR Session Loss** — Vite HMR reloads no longer close PTY sessions; `beforeunload` in Tauri mode skips session cleanup so `list_active_sessions` can re-adopt surviving sessions
 - **Git Panel Label** — "Changes" section renamed to "Changes (unstaged)" for clarity
