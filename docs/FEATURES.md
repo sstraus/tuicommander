@@ -3,7 +3,7 @@
 > Canonical feature inventory. Update this file when adding, changing, or removing features.
 > See [AGENTS.md](../AGENTS.md) for the maintenance requirement.
 
-**Version:** 0.9.7 | **Last verified:** 2026-03-26
+**Version:** 0.9.8 | **Last verified:** 2026-03-31
 
 ---
 
@@ -109,6 +109,13 @@
 - Visual overlay with dashed border appears during drag hover
 - Global `dragover`/`drop` `preventDefault` prevents the Tauri webview from treating drops as browser navigation (which would replace the UI with a white screen)
 - macOS file association: `.md`/`.mdx` files registered with TUICommander — double-click in Finder opens them directly
+
+### 1.14 Cross-Terminal Search
+- Type `~` in the command palette (`Cmd+P`) to search text across all open terminal buffers
+- Results show terminal name, line number, and highlighted match text
+- Selecting a result switches to the correct terminal tab/pane and scrolls to the matched line (centered in viewport)
+- Minimum 3 characters after prefix
+- Also accessible via the explicit "Search Terminals" command in the palette
 
 ---
 
@@ -346,11 +353,12 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
 
 ### 3.14 Plan Panel (`Cmd+Shift+P`)
 - Lists active plan files for the current repository from the activity store
-- Plans are detected via structured `plan-file` events from the output parser
+- Plans are detected via structured `plan-file` events from the output parser and via `plans/` directory watcher
 - Click a plan to open it as a virtual markdown tab (frontmatter auto-stripped)
 - Plan count badge in the header
 - Repo-scoped: only shows plans belonging to the active repository
-- Auto-open: new plans are opened as background tabs on first detection (no focus change)
+- Auto-open: restores the active plan from `.claude/active-plan.json` on startup; new plans opened as background tabs on first detection (no focus change)
+- Directory watcher: monitors `plans/` directory for new plan files created externally
 - Mutually exclusive with Markdown, Diff, and File Browser panels
 - Panel width and visibility persist across restarts via `UIPrefsConfig`
 
@@ -598,9 +606,13 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - Errors logged to appLogger, never blocking
 - Master-tick architecture: single 1-minute timer checks all repos
 
-### 7.4 HEAD File Watcher
-- Watches `.git/HEAD` for branch changes via file system events
-- Triggers UI refresh without polling
+### 7.4 Unified Repo Watcher
+- Single watcher per repository monitoring the entire working tree recursively (replaces separate HEAD/index watchers)
+- Uses `notify-debouncer-full` (FSEvents on macOS, inotify on Linux) with per-category trailing debounce
+- Event categories: `Git` (HEAD, refs, index, MERGE_HEAD), `WorkTree` (source files), `Config` (app config changes)
+- Each category has its own debounce window — git metadata changes propagate faster than file edits
+- Respects `.gitignore` rules — ignored paths do not trigger refreshes
+- **Gitignore hot-reload:** editing `.gitignore` rebuilds the ignore filter without restarting the watcher
 - When a terminal runs `git checkout -b new-branch` in the main working directory (not a worktree), the sidebar renames the existing branch entry in-place (preserving all terminal state) instead of creating a duplicate
 
 ### 7.5 Diff
@@ -1183,7 +1195,7 @@ All data persisted to platform config directory via Rust:
 - Built-in plugins (TypeScript, compiled with app) and external plugins (JS, loaded at runtime)
 - Hot-reload: file changes in plugin directories trigger automatic re-import
 - Per-plugin error logging with ring buffer (500 entries)
-- Capability-gated access: `pty:write`, `ui:markdown`, `ui:sound`, `ui:panel`, `ui:ticker`, `ui:context-menu`, `ui:sidebar`, `net:http`, `credentials:read`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`, `fs:write`, `fs:rename`, `exec:cli`, `git:read`
+- Capability-gated access: `pty:write`, `ui:markdown`, `ui:sound`, `ui:panel`, `ui:ticker`, `ui:context-menu`, `ui:sidebar`, `ui:file-icons`, `net:http`, `credentials:read`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`, `fs:write`, `fs:rename`, `exec:cli`, `git:read`
 - CLI execution API: sandboxed execution of whitelisted CLI binaries (`mdkb`) with timeout and size limits
 - Filesystem API: sandboxed read, write, rename, list, tail-read, and watch operations restricted to `$HOME`
 - HTTP API: outbound requests scoped to manifest-declared URL patterns (SSRF prevention)
@@ -1413,7 +1425,9 @@ TUICommander aggregates upstream MCP servers and exposes them through its own `/
 - `get_changed_files` merged from 2 sequential subprocesses to 1
 
 ### 20.3 Watcher-Driven Git Cache
-- `repo_watcher` (FSEvents/inotify) invalidates git caches on file system changes
+- Unified `repo_watcher` (FSEvents/inotify) monitors entire working tree with per-category debounce
+- CategoryEmitter routes events to Git, WorkTree, or Config handlers with trailing debounce
+- `.gitignore`-aware filtering prevents unnecessary cache invalidations
 - Cache hit ~0.2ms vs git subprocess ~20-30ms
 - 60s TTL as safety net for missed watcher events
 

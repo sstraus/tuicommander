@@ -120,35 +120,6 @@ export const BranchDiffScrollView: Component<BranchDiffScrollViewProps> = (props
           {" "}
           <span class={s.statDel}>-{totalDel()}</span>
         </span>
-        <div class={s.modeToggle}>
-          <button
-            class={cx(s.modeBtn, uiStore.state.diffViewMode === "split" && s.modeBtnActive)}
-            onClick={() => uiStore.setDiffViewMode("split")}
-            title={t("diffTab.splitView", "Side-by-side")}
-          >
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M1 2h6v12H1V2zm8 0h6v12H9V2zM2 3v10h4V3H2zm8 0v10h4V3h-4z" />
-            </svg>
-          </button>
-          <button
-            class={cx(s.modeBtn, uiStore.state.diffViewMode === "unified" && s.modeBtnActive)}
-            onClick={() => uiStore.setDiffViewMode("unified")}
-            title={t("diffTab.unifiedView", "Inline")}
-          >
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M1 2h14v12H1V2zm1 1v10h12V3H2z" />
-            </svg>
-          </button>
-          <button
-            class={cx(s.modeBtn, uiStore.state.diffViewMode === "scroll" && s.modeBtnActive)}
-            onClick={() => uiStore.setDiffViewMode("scroll")}
-            title={t("diffScroll.scrollView", "All files")}
-          >
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M2 2h12v1H2zm0 3h12v1H2zm0 3h10v1H2zm0 3h8v1H2z" />
-            </svg>
-          </button>
-        </div>
       </div>
       <Show when={loading()}>
         <div class={s.emptyState}>{t("diffTab.loading", "Loading diff...")}</div>
