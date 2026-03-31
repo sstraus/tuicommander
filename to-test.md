@@ -2,6 +2,14 @@
 
 Features to test when TUICommander is more usable.
 
+## Unified Repo Watcher
+- [ ] Edit a file from external terminal → ChangesTab updates within ~2s
+- [ ] `git add` from terminal → ChangesTab updates within ~1s
+- [ ] `git commit` from terminal → HistoryTab updates within ~1s
+- [ ] `git checkout other-branch` → branch switches within ~0.5s
+- [ ] Edit a gitignored file (e.g. in node_modules/) → no refresh triggered
+- [ ] Modify `.gitignore` → new rules take effect without restart
+
 ## Global Hotkey Toggle
 - [ ] Settings > Keyboard Shortcuts > Global Hotkey section visible (desktop only)
 - [ ] Click "Click to set hotkey" → capture mode activates

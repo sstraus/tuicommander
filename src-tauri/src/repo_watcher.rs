@@ -54,14 +54,14 @@ pub(crate) fn classify_path(
         }
 
         // Sentinel files directly under .git/
-        if let Some(name) = rel.file_name().and_then(|n| n.to_str()) {
-            if matches!(
+        if let Some(name) = rel.file_name().and_then(|n| n.to_str())
+            && matches!(
                 name,
                 "index" | "MERGE_HEAD" | "REBASE_HEAD" | "CHERRY_PICK_HEAD" | "REVERT_HEAD"
-            ) && rel.parent().is_some_and(|p| p == Path::new(""))
-            {
-                return EventCategory::GitState;
-            }
+            )
+            && rel.parent().is_some_and(|p| p == Path::new(""))
+        {
+            return EventCategory::GitState;
         }
 
         // Everything else under .git/ is noise (objects, config, hooks, logs, etc.)
