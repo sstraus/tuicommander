@@ -1,0 +1,36 @@
+src/plugins/planPlugin.ts
+  45a77c6848473860 212-213,224,227-228,232-264
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.22",
+  "base_commit_sha": "ee86d0c92f7062bf6bbce43b2d9607b3b593e5e0",
+  "prompts": {
+    "45a77c6848473860": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d186dc09-3d32-4db0-a1d5-1eeb427382f3",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 51,
+      "total_deletions": 12,
+      "accepted_lines": 40,
+      "overriden_lines": 0
+    },
+    "77ef481e1745226a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7c8bbb2a-0fd3-459f-aeac-e6f690eaafb0",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 42,
+      "total_deletions": 8,
+      "accepted_lines": 42,
+      "overriden_lines": 0
+    }
+  }
+}
