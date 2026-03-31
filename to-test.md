@@ -2,6 +2,17 @@
 
 Features to test when TUICommander is more usable.
 
+## Cross-Terminal Search (Command Palette)
+- [ ] Open palette, type `~error` → shows matches from terminal buffers with terminal name + line
+- [ ] Select a result → switches to the correct terminal tab and scrolls to the matched line (centered)
+- [ ] Type `~` with < 3 chars → shows "Type at least 3 characters after ~"
+- [ ] Type `~nonexistent` → shows "No results"
+- [ ] Close all terminals, type `~test` → shows "No terminals open"
+- [ ] Type "Search Terminals" in palette → command appears; selecting it pre-fills `~ `
+- [ ] "Search Files" command pre-fills `! `, "Search in File Contents" pre-fills `? `
+- [ ] Footer shows `~ terminals` hint alongside `! files` and `? content`
+- [ ] Split pane: search result in non-active pane → activates the correct pane
+
 ## Unified Repo Watcher
 - [ ] Edit a file from external terminal → ChangesTab updates within ~2s
 - [ ] `git add` from terminal → ChangesTab updates within ~1s
