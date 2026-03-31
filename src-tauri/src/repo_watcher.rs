@@ -6,8 +6,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::task::AbortHandle;
-
 use crate::state::AppEvent;
 use crate::AppState;
 
@@ -109,9 +107,9 @@ impl EventCategory {
 /// is cancelled and a new delayed emit is spawned. The event fires N ms
 /// after the *last* event in the burst.
 pub(crate) struct CategoryEmitter {
-    head: Mutex<Option<AbortHandle>>,
-    git_state: Mutex<Option<AbortHandle>>,
-    working_tree: Mutex<Option<AbortHandle>>,
+    head: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
+    git_state: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
+    working_tree: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
 }
 
 impl CategoryEmitter {
@@ -128,7 +126,6 @@ impl CategoryEmitter {
     pub(crate) fn trigger<F>(
         &self,
         category: &EventCategory,
-        rt: &tokio::runtime::Handle,
         emit_fn: F,
     ) where
         F: FnOnce() + Send + 'static,
@@ -144,11 +141,11 @@ impl CategoryEmitter {
         if let Some(handle) = guard.take() {
             handle.abort();
         }
-        let join_handle = rt.spawn(async move {
+        let join_handle = tauri::async_runtime::spawn(async move {
             tokio::time::sleep(delay).await;
             emit_fn();
         });
-        *guard = Some(join_handle.abort_handle());
+        *guard = Some(join_handle);
     }
 }
 
@@ -207,8 +204,6 @@ pub(crate) fn start_watching(
     let event_bus = state.event_bus.clone();
     let state_cb = Arc::clone(state);
     let emitter = Arc::new(CategoryEmitter::new());
-    let rt = tokio::runtime::Handle::try_current()
-        .map_err(|_| "start_watching requires a Tokio runtime on the calling thread".to_string())?;
 
     let repo_for_cb = repo.clone();
     let git_dir_for_cb = git_dir.clone();
@@ -265,7 +260,7 @@ pub(crate) fn start_watching(
                 let repo = repo_for_cb.clone();
                 let bus = event_bus.clone();
                 let h = handle.clone();
-                emitter.trigger(&EventCategory::Head, &rt, move || {
+                emitter.trigger(&EventCategory::Head, move || {
                     if let Some(branch) = crate::git::read_branch_from_head(&repo) {
                         let _ = bus.send(AppEvent::HeadChanged {
                             repo_path: repo_path.clone(),
@@ -286,7 +281,7 @@ pub(crate) fn start_watching(
                 let bus = event_bus.clone();
                 let h = handle.clone();
                 let st = Arc::clone(&state_cb);
-                emitter.trigger(&EventCategory::GitState, &rt, move || {
+                emitter.trigger(&EventCategory::GitState, move || {
                     st.invalidate_repo_caches(&repo_path);
                     let _ = bus.send(AppEvent::RepoChanged {
                         repo_path: repo_path.clone(),
@@ -308,7 +303,7 @@ pub(crate) fn start_watching(
                 let bus = event_bus.clone();
                 let h = handle.clone();
                 let st = Arc::clone(&state_cb);
-                emitter.trigger(&EventCategory::WorkingTree, &rt, move || {
+                emitter.trigger(&EventCategory::WorkingTree, move || {
                     st.invalidate_repo_caches(&repo_path);
                     let _ = bus.send(AppEvent::RepoChanged {
                         repo_path: repo_path.clone(),
