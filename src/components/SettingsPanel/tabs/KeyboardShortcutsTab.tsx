@@ -2,9 +2,13 @@ import { Component, For, Show, createSignal, createMemo } from "solid-js";
 import { getModifierSymbol, isMacOS } from "../../../platform";
 import { t } from "../../../i18n";
 import { keybindingsStore } from "../../../stores/keybindings";
+import { settingsStore } from "../../../stores/settings";
 import { normalizeCombo, type ActionName } from "../../../keybindingDefaults";
 import { comboToDisplay } from "../../../utils/hotkey";
 import { keyEventToCombo } from "../../../utils/keyRecorder";
+import { isTauri } from "../../../transport";
+import { KeyComboCapture } from "../../shared/KeyComboCapture";
+import { appLogger } from "../../../stores/appLogger";
 import s from "../Settings.module.css";
 
 interface ShortcutEntry {
@@ -203,9 +207,97 @@ export const KeyboardShortcutsTab: Component = () => {
     cancelEditing();
   }
 
+  // --- Global Hotkey helpers ---
+  const [globalHotkeyError, setGlobalHotkeyError] = createSignal<string | null>(null);
+
+  /** Convert DOM-style combo (Cmd+X) to Tauri format (CommandOrControl+X) */
+  function comboToTauri(combo: string): string {
+    return combo
+      .replace(/\bCmd\b/g, "CommandOrControl")
+      .replace(/\bCtrl\b/g, "CommandOrControl");
+  }
+
+  /** Convert Tauri format back to display format */
+  function tauriToDisplay(combo: string): string {
+    return combo.replace(/\bCommandOrControl\b/g, isMacOS() ? "Cmd" : "Ctrl");
+  }
+
+  async function handleGlobalHotkeyChange(combo: string) {
+    setGlobalHotkeyError(null);
+    try {
+      await settingsStore.setGlobalHotkey(comboToTauri(combo));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setGlobalHotkeyError(msg);
+      appLogger.error("config", "Failed to register", err);
+    }
+  }
+
+  async function clearGlobalHotkey() {
+    setGlobalHotkeyError(null);
+    try {
+      await settingsStore.setGlobalHotkey(null);
+    } catch (err) {
+      appLogger.error("config", "Failed to clear", err);
+    }
+  }
+
+  /** Temporarily unregister global hotkey while capturing to avoid conflict */
+  async function handleGlobalCapturingChange(capturing: boolean) {
+    const current = settingsStore.state.globalHotkey;
+    if (!current) return;
+    try {
+      if (capturing) {
+        // Temporarily unregister so the OS doesn't intercept the keypress
+        await settingsStore.setGlobalHotkey(null);
+      }
+      // On capture end, the new combo is set via handleGlobalHotkeyChange
+    } catch {
+      // Best effort — if unregister fails, capture still works
+    }
+  }
+
   return (
     <div class={s.section}>
       <h3>{t("settings.keyboardShortcuts", "Keyboard Shortcuts")}</h3>
+
+      <Show when={isTauri()}>
+        <div class={s.group}>
+          <label>{t("settings.globalHotkey", "Global Hotkey (Toggle Window)")}</label>
+          <p class={s.hint} style={{ "margin-bottom": "8px" }}>
+            {t("settings.globalHotkeyHint", "Set an OS-level shortcut to show/hide TUICommander from any application.")}
+          </p>
+          <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
+            <KeyComboCapture
+              value={settingsStore.state.globalHotkey ? tauriToDisplay(settingsStore.state.globalHotkey) : ""}
+              onChange={handleGlobalHotkeyChange}
+              placeholder={t("settings.globalHotkeyPlaceholder", "Click to set hotkey")}
+              onCapturingChange={handleGlobalCapturingChange}
+            />
+            <Show when={settingsStore.state.globalHotkey}>
+              <button
+                onClick={clearGlobalHotkey}
+                style={{
+                  background: "none",
+                  border: "1px solid var(--border)",
+                  "border-radius": "var(--radius-md)",
+                  padding: "4px 8px",
+                  color: "var(--fg-secondary)",
+                  cursor: "pointer",
+                  "font-size": "var(--font-sm)",
+                }}
+              >
+                {t("settings.clear", "Clear")}
+              </button>
+            </Show>
+          </div>
+          <Show when={globalHotkeyError()}>
+            <p style={{ color: "var(--error)", "font-size": "var(--font-sm)", "margin-top": "4px" }}>
+              {globalHotkeyError()}
+            </p>
+          </Show>
+        </div>
+      </Show>
 
       <div class={s.group}>
         <input
