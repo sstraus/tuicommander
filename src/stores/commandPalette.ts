@@ -1,5 +1,6 @@
 import { createStore } from "solid-js/store";
 import type { ContentMatch, ContentSearchBatch, DirEntry } from "../types/fs";
+import type { TerminalMatch } from "../types";
 import { invoke, listen } from "../invoke";
 import { repositoriesStore } from "./repositories";
 import { appLogger } from "./appLogger";
@@ -9,9 +10,11 @@ const MAX_RECENT = 10;
 const SEARCH_DEBOUNCE_MS = 300;
 const CONTENT_SEARCH_MIN_CHARS = 3;
 const FILENAME_SEARCH_MIN_CHARS = 1;
+const TERMINAL_SEARCH_MIN_CHARS = 3;
 const MAX_CONTENT_RESULTS = 200;
+const MAX_TERMINAL_RESULTS = 200;
 
-export type PaletteMode = "command" | "filename" | "content";
+export type PaletteMode = "command" | "filename" | "content" | "terminal";
 
 interface CommandPaletteState {
   isOpen: boolean;
@@ -24,6 +27,9 @@ interface CommandPaletteState {
   /** Filename search results (! prefix) */
   filenameResults: DirEntry[];
   filenameSearching: boolean;
+  /** Terminal buffer search results (~ prefix) */
+  terminalResults: TerminalMatch[];
+  terminalSearching: boolean;
 }
 
 function loadRecentActions(): string[] {
@@ -47,6 +53,8 @@ function createCommandPaletteStore() {
     contentError: null,
     filenameResults: [],
     filenameSearching: false,
+    terminalResults: [],
+    terminalSearching: false,
   });
 
   // Search lifecycle state
@@ -60,7 +68,7 @@ function createCommandPaletteStore() {
     if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
     unlistenBatch?.(); unlistenBatch = null;
     unlistenError?.(); unlistenError = null;
-    setState({ contentResults: [], contentSearching: false, contentError: null, filenameResults: [], filenameSearching: false });
+    setState({ contentResults: [], contentSearching: false, contentError: null, filenameResults: [], filenameSearching: false, terminalResults: [], terminalSearching: false });
   }
 
   /** Fire a filename search (non-streaming, single invoke) */
@@ -134,19 +142,51 @@ function createCommandPaletteStore() {
     });
   }
 
+  /** Search across all attached terminal buffers */
+  function triggerTerminalSearch(searchQuery: string): void {
+    // Lazy import to avoid circular dependency
+    const { terminalsStore } = require("./terminals");
+
+    cancelled = false;
+    setState({ terminalResults: [], terminalSearching: true });
+
+    const allResults: TerminalMatch[] = [];
+    const terminals = terminalsStore.state.terminals as Record<string, { id: string; ref?: { searchBuffer?: (q: string) => TerminalMatch[] } }>;
+    const detached = terminalsStore.state.detachedWindows as Record<string, string>;
+
+    for (const id of Object.keys(terminals)) {
+      if (cancelled) break;
+      // Skip detached terminals
+      if (detached[id]) continue;
+      const ref = terminals[id]?.ref;
+      if (!ref?.searchBuffer) continue;
+      const matches = ref.searchBuffer(searchQuery);
+      allResults.push(...matches);
+      if (allResults.length >= MAX_TERMINAL_RESULTS) break;
+    }
+
+    if (!cancelled) {
+      setState({
+        terminalResults: allResults.slice(0, MAX_TERMINAL_RESULTS),
+        terminalSearching: false,
+      });
+    }
+  }
+
   return {
     state,
 
-    /** Derived mode based on query prefix: ! = filename, ? = content */
+    /** Derived mode based on query prefix: ! = filename, ? = content, ~ = terminal */
     mode(): PaletteMode {
       if (state.query.startsWith("!")) return "filename";
       if (state.query.startsWith("?")) return "content";
+      if (state.query.startsWith("~")) return "terminal";
       return "command";
     },
 
     /** The effective search query (strips prefix character and leading space) */
     searchQuery(): string {
-      if (state.query.startsWith("!") || state.query.startsWith("?")) return state.query.slice(1).trimStart();
+      if (state.query.startsWith("!") || state.query.startsWith("?") || state.query.startsWith("~")) return state.query.slice(1).trimStart();
       return "";
     },
 
@@ -203,7 +243,25 @@ function createCommandPaletteStore() {
         } else {
           setState({ contentResults: [], contentSearching: false, contentError: null });
         }
+      } else if (newMode === "terminal") {
+        const searchQuery = query.slice(1).trimStart();
+        if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
+        cancelled = true;
+
+        if (searchQuery.length >= TERMINAL_SEARCH_MIN_CHARS) {
+          debounceTimer = setTimeout(() => triggerTerminalSearch(searchQuery), SEARCH_DEBOUNCE_MS);
+        } else {
+          setState({ terminalResults: [], terminalSearching: false });
+        }
       }
+    },
+
+    /** Open palette with a pre-filled query (e.g. "~ " for terminal search mode) */
+    openWithQuery(query: string): void {
+      cleanupSearch();
+      setState({ isOpen: true, query });
+      // Re-run setQuery to trigger mode-specific search logic
+      this.setQuery(query);
     },
 
     recordUsage(actionId: string): void {

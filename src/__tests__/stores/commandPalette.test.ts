@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import "../mocks/tauri";
 import { commandPaletteStore } from "../../stores/commandPalette";
+import type { TerminalMatch } from "../../types";
 
 describe("commandPaletteStore", () => {
   beforeEach(() => {
@@ -132,6 +133,71 @@ describe("commandPaletteStore", () => {
       commandPaletteStore.setQuery("test");
       expect(commandPaletteStore.state.filenameResults).toEqual([]);
       expect(commandPaletteStore.state.filenameSearching).toBe(false);
+    });
+  });
+
+  describe("terminal search mode (~)", () => {
+    it("mode() returns 'terminal' when query starts with ~", () => {
+      commandPaletteStore.setQuery("~error");
+      expect(commandPaletteStore.mode()).toBe("terminal");
+    });
+
+    it("searchQuery() strips ~ prefix and trims", () => {
+      commandPaletteStore.setQuery("~error");
+      expect(commandPaletteStore.searchQuery()).toBe("error");
+      commandPaletteStore.setQuery("~  spaced");
+      expect(commandPaletteStore.searchQuery()).toBe("spaced");
+    });
+
+    it("close() resets terminal search state", () => {
+      commandPaletteStore.open();
+      commandPaletteStore.setQuery("~test");
+      commandPaletteStore.close();
+      expect(commandPaletteStore.state.terminalResults).toEqual([]);
+      expect(commandPaletteStore.state.terminalSearching).toBe(false);
+    });
+
+    it("switching from ~ to command clears terminal state", () => {
+      commandPaletteStore.setQuery("~test");
+      commandPaletteStore.setQuery("test");
+      expect(commandPaletteStore.state.terminalResults).toEqual([]);
+      expect(commandPaletteStore.state.terminalSearching).toBe(false);
+    });
+
+    it("TerminalMatch type is importable and well-shaped", () => {
+      const match: TerminalMatch = {
+        terminalId: "term-1",
+        terminalName: "Shell",
+        lineIndex: 42,
+        lineText: "error: something failed",
+        matchStart: 0,
+        matchEnd: 5,
+      };
+      expect(match.terminalId).toBe("term-1");
+      expect(match.matchEnd).toBe(5);
+    });
+  });
+
+  describe("openWithQuery()", () => {
+    it("opens palette with pre-filled query", () => {
+      commandPaletteStore.openWithQuery("~ ");
+      expect(commandPaletteStore.state.isOpen).toBe(true);
+      expect(commandPaletteStore.state.query).toBe("~ ");
+    });
+
+    it("sets terminal mode when opened with ~", () => {
+      commandPaletteStore.openWithQuery("~ ");
+      expect(commandPaletteStore.mode()).toBe("terminal");
+    });
+
+    it("sets filename mode when opened with !", () => {
+      commandPaletteStore.openWithQuery("! ");
+      expect(commandPaletteStore.mode()).toBe("filename");
+    });
+
+    it("sets content mode when opened with ?", () => {
+      commandPaletteStore.openWithQuery("? ");
+      expect(commandPaletteStore.mode()).toBe("content");
     });
   });
 });

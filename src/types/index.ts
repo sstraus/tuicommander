@@ -142,6 +142,16 @@ export interface BranchPrStatus {
   rebase_merge_allowed: boolean;
 }
 
+/** A single match from cross-terminal buffer search */
+export interface TerminalMatch {
+  terminalId: string;
+  terminalName: string;
+  lineIndex: number;       // absolute buffer line index (for scrollToLine)
+  lineText: string;        // full line text (translateToString)
+  matchStart: number;      // column offset of match start
+  matchEnd: number;        // column offset of match end
+}
+
 /** Agent statistics */
 export interface AgentStats {
   toolUses: number;
