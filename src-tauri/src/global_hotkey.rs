@@ -97,8 +97,10 @@ pub async fn set_global_hotkey(
 
     // Unregister current hotkey (if any)
     let current = state.config.read().global_hotkey.clone();
-    if let Some(ref old) = current {
-        let _ = unregister(&app, old);
+    if let Some(ref old) = current
+        && let Err(e) = unregister(&app, old)
+    {
+        tracing::warn!(source = "global-hotkey", "Failed to unregister old hotkey '{}': {}", old, e);
     }
 
     // Register new hotkey (if provided)
@@ -110,8 +112,8 @@ pub async fn set_global_hotkey(
     {
         let mut config = state.config.read().clone();
         config.global_hotkey = combo;
-        crate::config::save_app_config(config.clone()).map_err(|e| e.to_string())?;
-        *state.config.write() = config;
+        *state.config.write() = config.clone();
+        crate::config::save_app_config(config).map_err(|e| e.to_string())?;
     }
 
     Ok(())
