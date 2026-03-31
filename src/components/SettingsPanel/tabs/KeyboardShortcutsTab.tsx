@@ -210,16 +210,19 @@ export const KeyboardShortcutsTab: Component = () => {
   // --- Global Hotkey helpers ---
   const [globalHotkeyError, setGlobalHotkeyError] = createSignal<string | null>(null);
 
-  /** Convert DOM-style combo (Cmd+X) to Tauri format (CommandOrControl+X) */
+  /** Convert DOM-style combo (Cmd+X, Ctrl+X) to Tauri Shortcut::from_str format.
+   *  Keeps Cmd and Ctrl distinct — no CommandOrControl merging. */
   function comboToTauri(combo: string): string {
     return combo
-      .replace(/\bCmd\b/g, "CommandOrControl")
-      .replace(/\bCtrl\b/g, "CommandOrControl");
+      .replace(/\bCmd\b/g, "Super")
+      .replace(/\bCtrl\b/g, "Control");
   }
 
   /** Convert Tauri format back to display format */
   function tauriToDisplay(combo: string): string {
-    return combo.replace(/\bCommandOrControl\b/g, isMacOS() ? "Cmd" : "Ctrl");
+    return combo
+      .replace(/\bSuper\b/g, "Cmd")
+      .replace(/\bControl\b/g, "Ctrl");
   }
 
   async function handleGlobalHotkeyChange(combo: string) {
