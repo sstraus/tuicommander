@@ -62,7 +62,7 @@ pub fn unregister(app: &tauri::AppHandle, combo: &str) -> Result<()> {
 /// Toggle the main window:
 /// - Not visible / minimized → unminimize + show + focus
 /// - Visible but not focused → focus
-/// - Visible and focused → minimize
+/// - Visible and focused → hide (instant, no dock animation)
 fn handle_toggle(app: &tauri::AppHandle, _shortcut: &Shortcut) -> Result<()> {
     let window = app
         .get_webview_window("main")
@@ -79,7 +79,7 @@ fn handle_toggle(app: &tauri::AppHandle, _shortcut: &Shortcut) -> Result<()> {
     } else if !focused {
         let _ = window.set_focus();
     } else {
-        let _ = window.minimize();
+        let _ = window.hide();
     }
 
     Ok(())
