@@ -32,6 +32,7 @@ interface RustAppConfig {
   disabled_agents: string[];
   intent_tab_title: boolean;
   suggest_followups: boolean;
+  global_hotkey: string | null;
 }
 
 // Default values
@@ -231,6 +232,7 @@ interface SettingsStoreState {
   disabledAgents: string[];
   intentTabTitle: boolean;
   suggestFollowups: boolean;
+  globalHotkey: string | null;
 }
 
 /** Create the settings store */
@@ -254,6 +256,7 @@ function createSettingsStore() {
     disabledAgents: [],
     intentTabTitle: true,
     suggestFollowups: true,
+    globalHotkey: null,
   });
 
   const actions = {
@@ -294,6 +297,7 @@ function createSettingsStore() {
         setState("disabledAgents", config.disabled_agents ?? []);
         setState("intentTabTitle", config.intent_tab_title ?? true);
         setState("suggestFollowups", config.suggest_followups ?? true);
+        setState("globalHotkey", config.global_hotkey ?? null);
       } catch (err) {
         appLogger.error("config", "Failed to hydrate settings", err);
       }
@@ -572,6 +576,19 @@ function createSettingsStore() {
       } catch (err) {
         appLogger.error("config", "Failed to persist suggestFollowups", err);
         setState("suggestFollowups", prevValue);
+      }
+    },
+
+    /** Set global OS-level hotkey (or clear with null) */
+    async setGlobalHotkey(combo: string | null): Promise<void> {
+      const prevValue = state.globalHotkey;
+      setState("globalHotkey", combo);
+      try {
+        await invoke("set_global_hotkey", { combo });
+      } catch (err) {
+        appLogger.error("config", "Failed to set global hotkey", err);
+        setState("globalHotkey", prevValue);
+        throw err;
       }
     },
 
