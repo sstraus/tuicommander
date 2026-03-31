@@ -1,5 +1,5 @@
 use notify::RecursiveMode;
-use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
+use notify_debouncer_full::new_debouncer;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -54,21 +54,17 @@ pub(crate) fn start_watching(
 
     let mut debouncer = new_debouncer(
         Duration::from_millis(DEBOUNCE_MS),
-        move |events: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
+        None,
+        move |events: Result<Vec<notify_debouncer_full::DebouncedEvent>, Vec<notify::Error>>| {
             let events = match events {
                 Ok(e) => e,
-                Err(e) => {
-                    tracing::error!(source = "head_watcher", "Head watcher error: {e:?}");
+                Err(errs) => {
+                    tracing::error!(source = "head_watcher", "Head watcher error: {errs:?}");
                     return;
                 }
             };
 
-            // Only care about data-change events (content writes)
-            let dominated = events
-                .iter()
-                .any(|e| matches!(e.kind, DebouncedEventKind::Any));
-
-            if !dominated {
+            if events.is_empty() {
                 return;
             }
 
@@ -95,7 +91,6 @@ pub(crate) fn start_watching(
 
     // Watch the HEAD file itself (not recursive — it's a single file)
     debouncer
-        .watcher()
         .watch(head_path.as_path(), RecursiveMode::NonRecursive)
         .map_err(|e| format!("Failed to watch HEAD: {e}"))?;
 

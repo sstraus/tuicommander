@@ -1,5 +1,5 @@
 use dashmap::DashMap;
-use notify_debouncer_mini::Debouncer;
+use notify_debouncer_full::Debouncer;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -788,11 +788,11 @@ pub struct AppState {
     /// TTL caches for git and GitHub query results
     pub(crate) git_cache: GitCacheState,
     /// File watchers for .git/HEAD per repo (keyed by repo path)
-    pub(crate) head_watchers: DashMap<String, Debouncer<notify::RecommendedWatcher>>,
+    pub(crate) head_watchers: DashMap<String, Debouncer<notify::RecommendedWatcher, notify_debouncer_full::RecommendedCache>>,
     /// File watchers for .git/ directory per repo (keyed by repo path)
-    pub(crate) repo_watchers: DashMap<String, Debouncer<notify::RecommendedWatcher>>,
+    pub(crate) repo_watchers: DashMap<String, Debouncer<notify::RecommendedWatcher, notify_debouncer_full::RecommendedCache>>,
     /// File watchers for directory contents (keyed by absolute dir path)
-    pub(crate) dir_watchers: DashMap<String, Debouncer<notify::RecommendedWatcher>>,
+    pub(crate) dir_watchers: DashMap<String, Debouncer<notify::RecommendedWatcher, notify_debouncer_full::RecommendedCache>>,
     /// Shared async HTTP client for GitHub API requests.
     pub(crate) http_client: reqwest::Client,
     /// GitHub API token — updated on fallback when a 401 triggers candidate rotation

@@ -1,5 +1,5 @@
 use notify::RecursiveMode;
-use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
+use notify_debouncer_full::new_debouncer;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -82,20 +82,21 @@ pub(crate) fn start_watching(
 
     let mut debouncer = new_debouncer(
         Duration::from_millis(DEBOUNCE_MS),
-        move |events: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
+        None,
+        move |events: Result<Vec<notify_debouncer_full::DebouncedEvent>, Vec<notify::Error>>| {
             let events = match events {
                 Ok(evts) => evts,
-                Err(e) => {
+                Err(errs) => {
                     if let Some(ref handle) = handle {
-                        crate::app_logger::log_via_handle(handle, "warn", "app", &format!("[repo_watcher] watcher error for {repo_path_owned}: {e}"));
+                        crate::app_logger::log_via_handle(handle, "warn", "app", &format!("[repo_watcher] watcher error for {repo_path_owned}: {errs:?}"));
                     }
                     return;
                 }
             };
 
-            // Only care about data-change events with relevant paths
+            // Only care about events with relevant paths
             let dominated = events.iter().any(|e| {
-                matches!(e.kind, DebouncedEventKind::Any) && is_relevant_git_path(&e.path)
+                e.event.paths.iter().any(|p| is_relevant_git_path(p))
             });
 
             if !dominated {
@@ -111,7 +112,7 @@ pub(crate) fn start_watching(
                 let wt_dir = git_dir_cb.join("worktrees");
                 if wt_dir.is_dir()
                     && let Some(mut debouncer_ref) = state_cb.repo_watchers.get_mut(&repo_path_owned)
-                    && debouncer_ref.watcher().watch(wt_dir.as_path(), RecursiveMode::NonRecursive).is_ok()
+                    && debouncer_ref.watch(wt_dir.as_path(), RecursiveMode::NonRecursive).is_ok()
                 {
                     worktrees_watched_cb.store(true, Ordering::Relaxed);
                 }
@@ -142,14 +143,12 @@ pub(crate) fn start_watching(
     // This avoids receiving hundreds of noise events from .git/objects/ during
     // fetch/gc operations that would all be filtered out anyway.
     debouncer
-        .watcher()
         .watch(git_dir.as_path(), RecursiveMode::NonRecursive)
         .map_err(|e| format!("Failed to watch .git/: {e}"))?;
 
     let refs_dir = git_dir.join("refs");
     if refs_dir.is_dir() {
         debouncer
-            .watcher()
             .watch(refs_dir.as_path(), RecursiveMode::Recursive)
             .map_err(|e| format!("Failed to watch .git/refs/: {e}"))?;
     }
@@ -160,7 +159,6 @@ pub(crate) fn start_watching(
     let worktrees_dir = git_dir.join("worktrees");
     if worktrees_dir.is_dir() {
         debouncer
-            .watcher()
             .watch(worktrees_dir.as_path(), RecursiveMode::NonRecursive)
             .map_err(|e| format!("Failed to watch .git/worktrees/: {e}"))?;
     }

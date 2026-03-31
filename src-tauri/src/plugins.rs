@@ -773,12 +773,18 @@ pub fn start_plugin_watcher(app_handle: &AppHandle) {
 
     let handle = app_handle.clone();
     std::thread::spawn(move || {
-        use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
+        use notify_debouncer_full::new_debouncer;
         use std::time::Duration;
 
         let (tx, rx) = std::sync::mpsc::channel();
 
-        let mut debouncer = match new_debouncer(Duration::from_millis(500), tx) {
+        let mut debouncer = match new_debouncer(
+            Duration::from_millis(500),
+            None,
+            move |events: Result<Vec<notify_debouncer_full::DebouncedEvent>, Vec<notify::Error>>| {
+                let _ = tx.send(events);
+            },
+        ) {
             Ok(d) => d,
             Err(e) => {
                 crate::app_logger::log_via_handle(&handle, "error", "plugin", &format!("[plugins] Failed to create watcher: {e}"));
@@ -787,7 +793,6 @@ pub fn start_plugin_watcher(app_handle: &AppHandle) {
         };
 
         if let Err(e) = debouncer
-            .watcher()
             .watch(&dir, notify::RecursiveMode::Recursive)
         {
             crate::app_logger::log_via_handle(&handle, "error", "plugin", &format!("[plugins] Failed to watch plugins dir: {e}"));
@@ -802,9 +807,9 @@ pub fn start_plugin_watcher(app_handle: &AppHandle) {
                     // Determine which plugin IDs changed
                     let mut changed_ids: Vec<String> = Vec::new();
                     for event in &events {
-                        if event.kind == DebouncedEventKind::Any {
+                        for path in &event.event.paths {
                             // Extract plugin ID from path: plugins_dir / <id> / ...
-                            if let Ok(relative) = event.path.strip_prefix(&dir)
+                            if let Ok(relative) = path.strip_prefix(&dir)
                                 && let Some(first) = relative.components().next()
                             {
                                 let id = first.as_os_str().to_string_lossy().to_string();

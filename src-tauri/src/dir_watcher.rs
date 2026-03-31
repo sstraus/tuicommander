@@ -1,5 +1,5 @@
 use notify::RecursiveMode;
-use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
+use notify_debouncer_full::new_debouncer;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -38,28 +38,24 @@ pub(crate) fn start_watching(
 
     let mut debouncer = new_debouncer(
         Duration::from_millis(DEBOUNCE_MS),
-        move |events: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
+        None,
+        move |events: Result<Vec<notify_debouncer_full::DebouncedEvent>, Vec<notify::Error>>| {
             let events = match events {
                 Ok(evts) => evts,
-                Err(e) => {
+                Err(errs) => {
                     if let Some(ref handle) = handle {
                         crate::app_logger::log_via_handle(
                             handle,
                             "warn",
                             "app",
-                            &format!("[dir_watcher] watcher error for {dir_path_owned}: {e}"),
+                            &format!("[dir_watcher] watcher error for {dir_path_owned}: {errs:?}"),
                         );
                     }
                     return;
                 }
             };
 
-            // Any data-change event is relevant (no path filtering needed)
-            let dominated = events
-                .iter()
-                .any(|e| matches!(e.kind, DebouncedEventKind::Any));
-
-            if !dominated {
+            if events.is_empty() {
                 return;
             }
 
@@ -81,7 +77,6 @@ pub(crate) fn start_watching(
     .map_err(|e| format!("Failed to create dir watcher: {e}"))?;
 
     debouncer
-        .watcher()
         .watch(path.as_path(), RecursiveMode::NonRecursive)
         .map_err(|e| format!("Failed to watch directory: {e}"))?;
 
