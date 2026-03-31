@@ -1,0 +1,25 @@
+src/App.tsx
+  45a77c6848473860 75,287-301
+src/hooks/useRepository.ts
+  45a77c6848473860 1,6-27,248,263,323
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.22",
+  "base_commit_sha": "5fbdaa9f8badcc3fab71bcdccd5f777286e1cf49",
+  "prompts": {
+    "45a77c6848473860": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d186dc09-3d32-4db0-a1d5-1eeb427382f3",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus <stefano@straus.it>",
+      "messages": [],
+      "total_additions": 43,
+      "total_deletions": 1,
+      "accepted_lines": 43,
+      "overriden_lines": 0
+    }
+  }
+}
