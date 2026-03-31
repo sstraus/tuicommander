@@ -154,10 +154,15 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
     setMatchIndex(-1);
   };
 
-  /** Force unified mode for one-sided diffs (new/deleted files) where split wastes half the screen */
-  const mode = (): DiffViewMode => {
+  /** One-sided diffs (new/deleted files) only support unified view */
+  const isOneSided = (): boolean => {
     const d = diff();
-    if (d && (d.includes("new file mode") || d.includes("deleted file mode"))) return "unified";
+    return !!d && (d.includes("new file mode") || d.includes("deleted file mode"));
+  };
+
+  /** Force unified mode for one-sided diffs where split wastes half the screen */
+  const mode = (): DiffViewMode => {
+    if (isOneSided()) return "unified";
     return uiStore.state.diffViewMode;
   };
 
@@ -375,6 +380,7 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
           class={cx(s.modeBtn, mode() === "split" && s.modeBtnActive)}
           onClick={() => uiStore.setDiffViewMode("split")}
           title={t("diffTab.splitView", "Side-by-side")}
+          disabled={isOneSided()}
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
             <path d="M1 2h6v12H1V2zm8 0h6v12H9V2zM2 3v10h4V3H2zm8 0v10h4V3h-4z" />
@@ -393,6 +399,7 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
           class={cx(s.modeBtn, mode() === "scroll" && s.modeBtnActive)}
           onClick={() => uiStore.setDiffViewMode("scroll")}
           title={t("diffScroll.scrollView", "All files")}
+          disabled={isOneSided()}
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
             <path d="M2 2h12v1H2zm0 3h12v1H2zm0 3h10v1H2zm0 3h8v1H2z" />

@@ -46,6 +46,12 @@
   background: var(--bg-highlight);
 }
 
+.modeBtn:disabled {
+  opacity: 0.3;
+  cursor: default;
+  pointer-events: none;
+}
+
 .modeBtnActive {
   color: var(--accent);
   background: var(--bg-highlight);

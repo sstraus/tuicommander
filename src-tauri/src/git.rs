@@ -2367,6 +2367,15 @@ pub(crate) async fn get_file_blame(
         let repo_path = PathBuf::from(&path);
         validate_paths_within_repo(&repo_path, std::slice::from_ref(&file))?;
 
+        // Check if file is tracked before running blame — gives a clear error
+        // instead of the cryptic "fatal: no such path ... in HEAD" from git.
+        let tracked = git_cmd(&repo_path)
+            .args(["ls-files", "--error-unmatch", &file])
+            .run();
+        if tracked.is_err() {
+            return Err(format!("File is not tracked by git — blame unavailable: {file}"));
+        }
+
         let out = git_cmd(&repo_path)
             .args(["blame", "--porcelain", &file])
             .run()
@@ -3531,6 +3540,25 @@ filename test.txt
             "nonexistent-file-xyz.txt".to_string(),
         ).await;
         assert!(result.is_err(), "blame on nonexistent file should fail");
+    }
+
+    #[tokio::test]
+    async fn get_file_blame_untracked_file_returns_friendly_error() {
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        // Use a file that exists on disk but is not tracked by git
+        // (stories/ is gitignored, but we can use any untracked file)
+        let tmp = repo.join("_blame_test_untracked.tmp");
+        std::fs::write(&tmp, "hello").unwrap();
+        let result = get_file_blame(
+            repo.to_string_lossy().to_string(),
+            "_blame_test_untracked.tmp".to_string(),
+        ).await;
+        std::fs::remove_file(&tmp).ok();
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("not tracked by git"),
+            "expected user-friendly untracked message, got: {err}"
+        );
     }
 
     #[tokio::test]
