@@ -171,21 +171,22 @@ class PlanPlugin implements TuiPlugin {
       const absolutePath = rawPath.startsWith("/") ? rawPath
         : cwd ? `${cwd.replace(/\/$/, "")}/${rawPath}` : rawPath;
 
-      const activeRepo = host.getActiveRepoPath();
-      appLogger.info("plugin", `[plan] event: raw="${rawPath}" abs="${absolutePath}" cwd="${cwd}" activeRepo="${activeRepo}"`);
-      if (activeRepo !== null) {
-        if (!cwd || !cwd.startsWith(activeRepo)) {
-          appLogger.warn("plugin", `[plan] SKIPPED: cwd="${cwd}" not in activeRepo="${activeRepo}"`);
-          return;
-        }
+      const ownerRepo = host.getActiveRepoPath();
+
+      appLogger.info("plugin", `[plan] event: raw="${rawPath}" abs="${absolutePath}" cwd="${cwd}" ownerRepo="${ownerRepo}"`);
+
+      // Skip plans with unresolved relative paths (no cwd, not absolute)
+      if (!absolutePath.startsWith("/")) {
+        appLogger.warn("plugin", `[plan] SKIPPED: cannot resolve relative path "${rawPath}" (cwd=${cwd})`);
+        return;
       }
 
       const isNew = !this.plans.has(absolutePath);
       this.addPlan(absolutePath);
-      appLogger.info("plugin", `[plan] isNew=${isNew} activeRepo=${activeRepo} plans.size=${this.plans.size}`);
+      appLogger.info("plugin", `[plan] isNew=${isNew} ownerRepo=${ownerRepo} plans.size=${this.plans.size}`);
 
-      if (isNew && activeRepo) {
-        const tabId = mdTabsStore.addVirtualBackground(displayName(absolutePath), contentUri(absolutePath), activeRepo);
+      if (isNew && ownerRepo) {
+        const tabId = mdTabsStore.addVirtualBackground(displayName(absolutePath), contentUri(absolutePath), ownerRepo);
         appLogger.info("plugin", `[plan] addVirtualBackground result: tabId=${tabId}`);
       }
     });
