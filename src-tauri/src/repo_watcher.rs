@@ -107,14 +107,16 @@ impl EventCategory {
 /// is cancelled and a new delayed emit is spawned. The event fires N ms
 /// after the *last* event in the burst.
 pub(crate) struct CategoryEmitter {
-    head: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
-    git_state: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
-    working_tree: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
+    rt: tokio::runtime::Handle,
+    head: Mutex<Option<tokio::task::AbortHandle>>,
+    git_state: Mutex<Option<tokio::task::AbortHandle>>,
+    working_tree: Mutex<Option<tokio::task::AbortHandle>>,
 }
 
 impl CategoryEmitter {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(rt: tokio::runtime::Handle) -> Self {
         Self {
+            rt,
             head: Mutex::new(None),
             git_state: Mutex::new(None),
             working_tree: Mutex::new(None),
@@ -141,11 +143,11 @@ impl CategoryEmitter {
         if let Some(handle) = guard.take() {
             handle.abort();
         }
-        let join_handle = tauri::async_runtime::spawn(async move {
+        let join_handle = self.rt.spawn(async move {
             tokio::time::sleep(delay).await;
             emit_fn();
         });
-        *guard = Some(join_handle);
+        *guard = Some(join_handle.abort_handle());
     }
 }
 
@@ -203,7 +205,9 @@ pub(crate) fn start_watching(
     let handle = app_handle.cloned();
     let event_bus = state.event_bus.clone();
     let state_cb = Arc::clone(state);
-    let emitter = Arc::new(CategoryEmitter::new());
+    let emitter = Arc::new(CategoryEmitter::new(
+        tauri::async_runtime::handle().inner().clone(),
+    ));
 
     let repo_for_cb = repo.clone();
     let git_dir_for_cb = git_dir.clone();
@@ -529,12 +533,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_emitter_fires_after_delay() {
-        let emitter = CategoryEmitter::new();
+        let emitter = CategoryEmitter::new(tokio::runtime::Handle::current());
         let counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let counter_clone = Arc::clone(&counter);
-        let rt = tokio::runtime::Handle::current();
 
-        emitter.trigger(&EventCategory::Head, &rt, move || {
+        emitter.trigger(&EventCategory::Head, move || {
             counter_clone.fetch_add(1, Ordering::Relaxed);
         });
 
@@ -548,20 +551,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_emitter_trailing_debounce_resets_timer() {
-        let emitter = CategoryEmitter::new();
+        let emitter = CategoryEmitter::new(tokio::runtime::Handle::current());
         let counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let rt = tokio::runtime::Handle::current();
 
         // Trigger Head twice in quick succession — only the second should fire
         let c1 = Arc::clone(&counter);
-        emitter.trigger(&EventCategory::Head, &rt, move || {
+        emitter.trigger(&EventCategory::Head, move || {
             c1.fetch_add(1, Ordering::Relaxed);
         });
 
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         let c2 = Arc::clone(&counter);
-        emitter.trigger(&EventCategory::Head, &rt, move || {
+        emitter.trigger(&EventCategory::Head, move || {
             c2.fetch_add(10, Ordering::Relaxed);
         });
 
@@ -574,12 +576,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_emitter_noise_is_ignored() {
-        let emitter = CategoryEmitter::new();
+        let emitter = CategoryEmitter::new(tokio::runtime::Handle::current());
         let counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let counter_clone = Arc::clone(&counter);
-        let rt = tokio::runtime::Handle::current();
 
-        emitter.trigger(&EventCategory::Noise, &rt, move || {
+        emitter.trigger(&EventCategory::Noise, move || {
             counter_clone.fetch_add(1, Ordering::Relaxed);
         });
 
@@ -589,18 +590,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_emitter_independent_categories() {
-        let emitter = CategoryEmitter::new();
+        let emitter = CategoryEmitter::new(tokio::runtime::Handle::current());
         let head_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let git_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let rt = tokio::runtime::Handle::current();
 
         let hc = Arc::clone(&head_count);
-        emitter.trigger(&EventCategory::Head, &rt, move || {
+        emitter.trigger(&EventCategory::Head, move || {
             hc.fetch_add(1, Ordering::Relaxed);
         });
 
         let gc = Arc::clone(&git_count);
-        emitter.trigger(&EventCategory::GitState, &rt, move || {
+        emitter.trigger(&EventCategory::GitState, move || {
             gc.fetch_add(1, Ordering::Relaxed);
         });
 

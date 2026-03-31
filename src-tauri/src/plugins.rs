@@ -21,25 +21,45 @@ use tauri::{AppHandle, Emitter};
 
 /// Check that a plugin has a required capability, using the provided map.
 /// This is the testable core — does not depend on AppState.
+/// Built-in plugins and their allowed capabilities.
+/// Hardcoded in Rust to maintain the security model — the frontend cannot
+/// self-register arbitrary capabilities for built-in plugins.
+const BUILTIN_PLUGIN_CAPABILITIES: &[(&str, &[&str])] = &[
+    ("plan", &["fs:read"]),
+];
+
 fn check_plugin_capability_inner(
     loaded_plugins: &dashmap::DashMap<String, Vec<String>>,
     plugin_id: &str,
     capability: &str,
 ) -> Result<(), String> {
-    match loaded_plugins.get(plugin_id) {
-        Some(caps) => {
-            if caps.iter().any(|c| c == capability) {
+    // Check dynamically registered (user) plugins first
+    if let Some(caps) = loaded_plugins.get(plugin_id) {
+        return if caps.iter().any(|c| c == capability) {
+            Ok(())
+        } else {
+            Err(format!(
+                "Plugin \"{plugin_id}\" requires capability \"{capability}\" but did not declare it"
+            ))
+        };
+    }
+
+    // Check hardcoded built-in plugins
+    for &(id, caps) in BUILTIN_PLUGIN_CAPABILITIES {
+        if id == plugin_id {
+            return if caps.contains(&capability) {
                 Ok(())
             } else {
                 Err(format!(
-                    "Plugin \"{plugin_id}\" requires capability \"{capability}\" but did not declare it"
+                    "Built-in plugin \"{plugin_id}\" does not have capability \"{capability}\""
                 ))
-            }
+            };
         }
-        None => Err(format!(
-            "Plugin \"{plugin_id}\" is not registered — cannot verify capabilities"
-        )),
     }
+
+    Err(format!(
+        "Plugin \"{plugin_id}\" is not registered — cannot verify capabilities"
+    ))
 }
 
 /// Check that a loaded plugin has the required capability.
@@ -1140,5 +1160,19 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.contains("nonexistent"), "Error should mention unknown plugin ID");
+    }
+
+    #[test]
+    fn check_capability_allows_builtin_plugin() {
+        let plugins = dashmap::DashMap::new();
+        assert!(check_plugin_capability_inner(&plugins, "plan", "fs:read").is_ok());
+    }
+
+    #[test]
+    fn check_capability_rejects_builtin_undeclared_capability() {
+        let plugins = dashmap::DashMap::new();
+        let result = check_plugin_capability_inner(&plugins, "plan", "exec:cli");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Built-in plugin"));
     }
 }
