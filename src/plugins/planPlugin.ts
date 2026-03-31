@@ -209,7 +209,8 @@ class PlanPlugin implements TuiPlugin {
     this.enrichPlan(absolutePath);
   }
 
-  /** Scan a repo's plans/ directory and add discovered plan files. */
+  /** Scan a repo's plans/ directory and add discovered plan files.
+   *  Also checks for an active plan marker and auto-opens it as a background tab. */
   scanPlansDirectory(repoPath: string): void {
     this.repoPath = repoPath;
     invoke<DirEntry[]>("list_directory", { repoPath, subdir: "plans" })
@@ -220,9 +221,47 @@ class PlanPlugin implements TuiPlugin {
           this.addPlan(absolutePath);
         }
       })
+      .then(() => this.openActivePlan(repoPath))
       .catch(() => {
         // plans/ directory may not exist — that's fine
+        // Still try to open active plan even if plans/ doesn't exist
+        this.openActivePlan(repoPath);
       });
+  }
+
+  /** Read .claude/active-plan.json and auto-open the active plan as a background tab.
+   *  The marker file can be in <repo>/.claude/ or <repo>/src-tauri/.claude/ (Claude Code
+   *  CWD varies). */
+  private async openActivePlan(repoPath: string): Promise<void> {
+    const root = repoPath.replace(/\/$/, "");
+    const candidates = [
+      `${root}/.claude/active-plan.json`,
+      `${root}/src-tauri/.claude/active-plan.json`,
+    ];
+
+    for (const markerPath of candidates) {
+      try {
+        const raw = await invoke<string>("read_external_file", { path: markerPath });
+        const marker = JSON.parse(raw) as { path?: string };
+        if (!marker.path) continue;
+
+        const planPath = marker.path.startsWith("/")
+          ? marker.path
+          : `${root}/${marker.path}`;
+
+        if (!this.plans.has(planPath)) {
+          this.addPlan(planPath);
+        }
+        // addVirtualBackground deduplicates internally — safe to call unconditionally
+        const tabId = mdTabsStore.addVirtualBackground(displayName(planPath), contentUri(planPath), repoPath);
+        if (tabId) {
+          appLogger.info("plugin", `[plan] auto-opened active plan: ${planPath}`);
+        }
+        return; // Found and processed — stop searching candidates
+      } catch {
+        // Marker file not found at this path — try next candidate
+      }
+    }
   }
 
   /** Read a plan file and update the entry with extracted metadata. */
