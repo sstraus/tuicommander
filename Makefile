@@ -71,6 +71,7 @@ sign:
 	fi; \
 	echo "Signing with: $$SIGN_ID"; \
 	codesign --force --deep --sign "$$SIGN_ID" \
+		--entitlements src-tauri/Entitlements.plist \
 		--identifier "$(BUNDLE_ID)" \
 		--options runtime \
 		"$(APP_BUNDLE)"; \
