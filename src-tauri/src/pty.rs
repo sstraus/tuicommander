@@ -573,7 +573,7 @@ fn spawn_silence_timer(
                 .and_then(|vt| {
                     let rows = vt.lock().screen_rows();
                     let line = extract_last_chat_line(&rows)?;
-                    tracing::debug!(
+                    tracing::trace!(
                         session_id = %session_id,
                         last_chat_line = %line,
                         ends_with_q = line.ends_with('?'),
@@ -613,7 +613,7 @@ fn spawn_silence_timer(
                         text.clone()
                     }
                     None => {
-                        tracing::debug!(
+                        tracing::trace!(
                             session_id = %session_id,
                             "silence_timer: silent but no question candidate"
                         );
