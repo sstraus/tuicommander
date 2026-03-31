@@ -1,3 +1,4 @@
+use ignore::gitignore::Gitignore;
 use notify::RecursiveMode;
 use notify_debouncer_full::new_debouncer;
 use std::path::{Path, PathBuf};
@@ -8,6 +9,79 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::state::AppEvent;
 use crate::AppState;
+
+/// Classification of a filesystem event path for per-category debounce.
+#[derive(Debug, PartialEq)]
+pub(crate) enum EventCategory {
+    /// `.git/HEAD` — branch switches, 200ms debounce
+    Head,
+    /// `.git/index`, `.git/refs/`, sentinel files — 500ms debounce
+    GitState,
+    /// Non-.git, non-gitignored files — 1500ms debounce
+    WorkingTree,
+    /// `.git/objects`, `.git/config`, gitignored files — skip entirely
+    Noise,
+}
+
+/// Classify a filesystem event path into an `EventCategory`.
+///
+/// Pure function: no I/O, no side effects. The `gitignore` matcher is used
+/// to filter out ignored working-tree files.
+pub(crate) fn classify_path(
+    path: &Path,
+    repo_root: &Path,
+    git_dir: &Path,
+    gitignore: &Gitignore,
+) -> EventCategory {
+    // Check if the path is inside .git/
+    if let Ok(rel) = path.strip_prefix(git_dir) {
+        let rel_str = rel.to_string_lossy();
+
+        // .git/HEAD (exactly, not .git/logs/HEAD or similar)
+        if rel_str == "HEAD" {
+            return EventCategory::Head;
+        }
+
+        // .git/refs/** — branch/tag changes
+        if rel_str.starts_with("refs") {
+            return EventCategory::GitState;
+        }
+
+        // .git/worktrees/** — external worktree add/remove
+        if rel_str.starts_with("worktrees") {
+            return EventCategory::GitState;
+        }
+
+        // Sentinel files directly under .git/
+        if let Some(name) = rel.file_name().and_then(|n| n.to_str()) {
+            if matches!(
+                name,
+                "index" | "MERGE_HEAD" | "REBASE_HEAD" | "CHERRY_PICK_HEAD" | "REVERT_HEAD"
+            ) && rel.parent().is_some_and(|p| p == Path::new(""))
+            {
+                return EventCategory::GitState;
+            }
+        }
+
+        // Everything else under .git/ is noise (objects, config, hooks, logs, etc.)
+        return EventCategory::Noise;
+    }
+
+    // Path is outside .git/ — check gitignore
+    if let Ok(rel) = path.strip_prefix(repo_root) {
+        let is_dir = path.is_dir();
+        if gitignore
+            .matched_path_or_any_parents(rel, is_dir)
+            .is_ignore()
+        {
+            return EventCategory::Noise;
+        }
+        return EventCategory::WorkingTree;
+    }
+
+    // Path outside repo root entirely — shouldn't happen, treat as noise
+    EventCategory::Noise
+}
 
 /// Debounce interval — longer than HEAD watcher because git writes multiple
 /// files per operation (e.g. commit updates index, refs, and logs).
@@ -191,6 +265,161 @@ pub(crate) fn stop_repo_watcher(repo_path: String, app_handle: AppHandle) {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    /// Build an empty Gitignore matcher (matches nothing).
+    fn empty_gitignore() -> Gitignore {
+        let gi = Gitignore::empty();
+        gi
+    }
+
+    /// Build a Gitignore matcher from pattern strings.
+    fn gitignore_from_patterns(repo_root: &Path, patterns: &[&str]) -> Gitignore {
+        let mut builder = ignore::gitignore::GitignoreBuilder::new(repo_root);
+        for pat in patterns {
+            builder.add_line(None, pat).unwrap();
+        }
+        builder.build().unwrap()
+    }
+
+    #[test]
+    fn test_classify_head() {
+        let root = Path::new("/repo");
+        let git = Path::new("/repo/.git");
+        let gi = empty_gitignore();
+
+        assert_eq!(
+            classify_path(Path::new("/repo/.git/HEAD"), root, git, &gi),
+            EventCategory::Head
+        );
+    }
+
+    #[test]
+    fn test_classify_git_state() {
+        let root = Path::new("/repo");
+        let git = Path::new("/repo/.git");
+        let gi = empty_gitignore();
+
+        // index
+        assert_eq!(
+            classify_path(Path::new("/repo/.git/index"), root, git, &gi),
+            EventCategory::GitState
+        );
+        // refs
+        assert_eq!(
+            classify_path(Path::new("/repo/.git/refs/heads/main"), root, git, &gi),
+            EventCategory::GitState
+        );
+        assert_eq!(
+            classify_path(Path::new("/repo/.git/refs/tags/v1.0"), root, git, &gi),
+            EventCategory::GitState
+        );
+        // sentinel files
+        assert_eq!(
+            classify_path(Path::new("/repo/.git/MERGE_HEAD"), root, git, &gi),
+            EventCategory::GitState
+        );
+        assert_eq!(
+            classify_path(Path::new("/repo/.git/REBASE_HEAD"), root, git, &gi),
+            EventCategory::GitState
+        );
+        assert_eq!(
+            classify_path(Path::new("/repo/.git/CHERRY_PICK_HEAD"), root, git, &gi),
+            EventCategory::GitState
+        );
+        assert_eq!(
+            classify_path(Path::new("/repo/.git/REVERT_HEAD"), root, git, &gi),
+            EventCategory::GitState
+        );
+        // worktrees
+        assert_eq!(
+            classify_path(Path::new("/repo/.git/worktrees/my-wt"), root, git, &gi),
+            EventCategory::GitState
+        );
+    }
+
+    #[test]
+    fn test_classify_working_tree() {
+        let root = Path::new("/repo");
+        let git = Path::new("/repo/.git");
+        let gi = empty_gitignore();
+
+        assert_eq!(
+            classify_path(Path::new("/repo/src/main.rs"), root, git, &gi),
+            EventCategory::WorkingTree
+        );
+        assert_eq!(
+            classify_path(Path::new("/repo/README.md"), root, git, &gi),
+            EventCategory::WorkingTree
+        );
+    }
+
+    #[test]
+    fn test_classify_noise_git_internals() {
+        let root = Path::new("/repo");
+        let git = Path::new("/repo/.git");
+        let gi = empty_gitignore();
+
+        assert_eq!(
+            classify_path(Path::new("/repo/.git/objects/ab/cdef"), root, git, &gi),
+            EventCategory::Noise
+        );
+        assert_eq!(
+            classify_path(Path::new("/repo/.git/config"), root, git, &gi),
+            EventCategory::Noise
+        );
+        assert_eq!(
+            classify_path(Path::new("/repo/.git/hooks/pre-commit"), root, git, &gi),
+            EventCategory::Noise
+        );
+        assert_eq!(
+            classify_path(Path::new("/repo/.git/logs/HEAD"), root, git, &gi),
+            EventCategory::Noise
+        );
+        assert_eq!(
+            classify_path(Path::new("/repo/.git/description"), root, git, &gi),
+            EventCategory::Noise
+        );
+        assert_eq!(
+            classify_path(Path::new("/repo/.git/info/exclude"), root, git, &gi),
+            EventCategory::Noise
+        );
+    }
+
+    #[test]
+    fn test_classify_noise_gitignored() {
+        let root = Path::new("/repo");
+        let git = Path::new("/repo/.git");
+        let gi = gitignore_from_patterns(root, &["node_modules/", "*.log"]);
+
+        assert_eq!(
+            classify_path(Path::new("/repo/node_modules/foo/bar.js"), root, git, &gi),
+            EventCategory::Noise
+        );
+        assert_eq!(
+            classify_path(Path::new("/repo/debug.log"), root, git, &gi),
+            EventCategory::Noise
+        );
+    }
+
+    #[test]
+    fn test_classify_sentinel_only_at_git_root() {
+        let root = Path::new("/repo");
+        let git = Path::new("/repo/.git");
+        let gi = empty_gitignore();
+
+        // .git/index → GitState
+        assert_eq!(
+            classify_path(Path::new("/repo/.git/index"), root, git, &gi),
+            EventCategory::GitState
+        );
+        // .git/some_subdir/index → Noise (not directly under .git/)
+        assert_eq!(
+            classify_path(Path::new("/repo/.git/some_subdir/index"), root, git, &gi),
+            EventCategory::Noise
+        );
+    }
+
+    // --- Legacy tests kept for is_relevant_git_path (still used by current watcher) ---
 
     #[test]
     fn test_relevant_git_paths() {
