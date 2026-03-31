@@ -198,12 +198,15 @@ describe("useAgentPolling", () => {
     });
 
     it("clears agentSessionId on agent→null transition and allows re-discovery", async () => {
+      // NULL_THRESHOLD is 3: need 3 consecutive null polls before clearing
       mockInvoke
         .mockResolvedValueOnce("claude")       // poll 1: claude detected
         .mockResolvedValueOnce("uuid-1")       // discover: uuid-1
         .mockResolvedValueOnce("claude")       // poll 2: still claude
-        .mockResolvedValueOnce(null)           // poll 3: agent exited
-        .mockResolvedValueOnce("claude")       // poll 4: claude re-launched
+        .mockResolvedValueOnce(null)           // poll 3: null streak 1
+        .mockResolvedValueOnce(null)           // poll 4: null streak 2
+        .mockResolvedValueOnce(null)           // poll 5: null streak 3 → cleared
+        .mockResolvedValueOnce("claude")       // poll 6: claude re-launched
         .mockResolvedValueOnce("uuid-2");      // re-discover: uuid-2
 
       await createRoot(async (dispose) => {
@@ -216,11 +219,13 @@ describe("useAgentPolling", () => {
         await tick(3000); // poll 2: still claude (discovery already done)
         expect(store.get(id)?.agentSessionId).toBe("uuid-1");
 
-        await tick(3000); // poll 3: exited → agentSessionId cleared
+        await tick(3000); // poll 3: null streak 1 — still holding agentType
+        await tick(3000); // poll 4: null streak 2 — still holding
+        await tick(3000); // poll 5: null streak 3 → agentType cleared
         expect(store.get(id)?.agentType).toBeNull();
         expect(store.get(id)?.agentSessionId).toBeNull();
 
-        await tick(3000); // poll 4: re-launched → re-discovery
+        await tick(3000); // poll 6: re-launched → re-discovery
         expect(store.get(id)?.agentType).toBe("claude");
         expect(store.get(id)?.agentSessionId).toBe("uuid-2");
 

@@ -181,6 +181,12 @@ class PlanPlugin implements TuiPlugin {
         return;
       }
 
+      // If an active repo is set, only accept plans from sessions within that repo
+      if (ownerRepo && cwd && !cwd.startsWith(ownerRepo)) {
+        appLogger.info("plugin", `[plan] SKIPPED: session cwd "${cwd}" outside active repo "${ownerRepo}"`);
+        return;
+      }
+
       const isNew = !this.plans.has(absolutePath);
       this.addPlan(absolutePath);
       appLogger.info("plugin", `[plan] isNew=${isNew} ownerRepo=${ownerRepo} plans.size=${this.plans.size}`);

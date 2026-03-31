@@ -3,7 +3,7 @@ import "../mocks/tauri";
 import { listen } from "@tauri-apps/api/event";
 import { terminalsStore } from "../../stores/terminals";
 import { repositoriesStore } from "../../stores/repositories";
-import { initApp, type AppInitDeps } from "../../hooks/useAppInit";
+import { initApp, browserCreatedSessions, type AppInitDeps } from "../../hooks/useAppInit";
 
 function resetStores() {
   for (const id of terminalsStore.getIds()) {
@@ -323,7 +323,7 @@ describe("initApp", () => {
     expect(deps.setQuitDialogVisible).not.toHaveBeenCalled();
   });
 
-  it("beforeunload closes all PTY sessions", async () => {
+  it("beforeunload closes browser-created PTY sessions", async () => {
     const closeSpy = vi.fn().mockResolvedValue(undefined);
     const deps = createMockDeps({
       pty: {
@@ -336,9 +336,18 @@ describe("initApp", () => {
 
     await initApp(deps);
 
-    // Terminals should be re-adopted — trigger beforeunload
+    // Register sess-1 as browser-created (beforeunload only closes these)
+    browserCreatedSessions.add("sess-1");
+
+    // Temporarily disable Tauri flag — beforeunload only closes in browser mode
+    const saved = (globalThis as Record<string, unknown>).__TAURI_INTERNALS__;
+    delete (globalThis as Record<string, unknown>).__TAURI_INTERNALS__;
+
     window.dispatchEvent(new Event("beforeunload"));
     expect(closeSpy).toHaveBeenCalledWith("sess-1");
+
+    (globalThis as Record<string, unknown>).__TAURI_INTERNALS__ = saved;
+    browserCreatedSessions.delete("sess-1");
   });
 
   it("removes splash screen after hydration", async () => {
