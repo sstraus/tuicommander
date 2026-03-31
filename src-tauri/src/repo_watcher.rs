@@ -200,7 +200,7 @@ pub(crate) fn start_watching(
     let repo = PathBuf::from(repo_path);
     let git_dir = crate::git::resolve_git_dir(&repo)
         .ok_or_else(|| format!("Cannot find .git for {repo_path}"))?;
-    let gitignore = build_gitignore(&repo);
+    let gitignore = Arc::new(parking_lot::RwLock::new(build_gitignore(&repo)));
 
     let repo_path_owned = repo_path.to_string();
     let handle = app_handle.cloned();
@@ -211,6 +211,7 @@ pub(crate) fn start_watching(
 
     let repo_for_cb = repo.clone();
     let git_dir_for_cb = git_dir.clone();
+    let gitignore_cb = Arc::clone(&gitignore);
 
     let mut debouncer = new_debouncer(
         Duration::from_millis(BASE_DEBOUNCE_MS),
@@ -226,14 +227,26 @@ pub(crate) fn start_watching(
                 }
             };
 
+            // Check if .gitignore itself changed — rebuild matcher if so
+            let gitignore_changed = events.iter().any(|e| {
+                e.event.paths.iter().any(|p| {
+                    p.file_name()
+                        .is_some_and(|n| n == ".gitignore")
+                })
+            });
+            if gitignore_changed {
+                *gitignore_cb.write() = build_gitignore(&repo_for_cb);
+            }
+
             // Classify all event paths and collect which categories fired
+            let gi = gitignore_cb.read();
             let mut has_head = false;
             let mut has_git_state = false;
             let mut has_working_tree = false;
 
             for event in &events {
                 for path in &event.event.paths {
-                    match classify_path(path, &repo_for_cb, &git_dir_for_cb, &gitignore) {
+                    match classify_path(path, &repo_for_cb, &git_dir_for_cb, &gi) {
                         EventCategory::Head => has_head = true,
                         EventCategory::GitState => has_git_state = true,
                         EventCategory::WorkingTree => has_working_tree = true,
@@ -241,6 +254,7 @@ pub(crate) fn start_watching(
                     }
                 }
             }
+            drop(gi);
 
             // Trigger per-category delayed emits
             if has_head {
