@@ -1167,6 +1167,7 @@ mod tests {
             vapid_private_key: String::new(),
             vapid_public_key: String::new(),
             vapid_subject: "mailto:test@example.com".to_string(),
+            global_hotkey: Some("CommandOrControl+Shift+T".to_string()),
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
         assert_eq!(loaded.shell.as_deref(), Some("/bin/zsh"));

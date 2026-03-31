@@ -184,7 +184,7 @@ function createPluginRegistry() {
       },
 
       registerFileIconProvider(provider: FileIconProvider): Disposable {
-        requireCapability("ui:file-icons");
+        requireCapability(pluginId, capabilities, "ui:file-icons");
         return track(fileIconRegistry.register(provider));
       },
 
