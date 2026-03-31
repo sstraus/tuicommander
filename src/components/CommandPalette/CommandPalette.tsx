@@ -1,12 +1,14 @@
 import { Component, For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { commandPaletteStore } from "../../stores/commandPalette";
 import { repositoriesStore } from "../../stores/repositories";
+import { terminalsStore } from "../../stores/terminals";
 import { editorTabsStore } from "../../stores/editorTabs";
 import { mdTabsStore } from "../../stores/mdTabs";
 import { classifyDroppedFile } from "../../hooks/useFileDrop";
 import { FileIcon } from "../FileBrowserPanel/FileIcon";
 import type { ActionEntry } from "../../actions/actionRegistry";
 import type { ContentMatch, DirEntry } from "../../types/fs";
+import type { TerminalMatch } from "../../types";
 import s from "./CommandPalette.module.css";
 
 export interface CommandPaletteProps {
@@ -51,6 +53,7 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
     switch (mode()) {
       case "filename": return commandPaletteStore.state.filenameResults.length;
       case "content": return commandPaletteStore.state.contentResults.length;
+      case "terminal": return commandPaletteStore.state.terminalResults.length;
       default: return filteredActions().length;
     }
   };
@@ -61,10 +64,14 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
     setSelectedIndex(0);
   });
 
-  // Also reset when content results change
+  // Also reset when content/terminal results change
   createEffect(() => {
     commandPaletteStore.state.contentResults.length;
     if (mode() === "content") setSelectedIndex(0);
+  });
+  createEffect(() => {
+    commandPaletteStore.state.terminalResults.length;
+    if (mode() === "terminal") setSelectedIndex(0);
   });
 
   // Focus input when opened
@@ -80,50 +87,6 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
     if (!listRef) return;
     const item = listRef.children[idx] as HTMLElement | undefined;
     item?.scrollIntoView({ block: "nearest" });
-  });
-
-  // Keyboard navigation
-  createEffect(() => {
-    if (!isOpen()) return;
-
-    const handleKeydown = (e: KeyboardEvent) => {
-      const count = itemCount();
-
-      switch (e.key) {
-        case "ArrowDown":
-          e.preventDefault();
-          e.stopPropagation();
-          setSelectedIndex((i) => Math.min(i + 1, count - 1));
-          break;
-        case "ArrowUp":
-          e.preventDefault();
-          e.stopPropagation();
-          setSelectedIndex((i) => Math.max(i - 1, 0));
-          break;
-        case "Enter":
-          e.preventDefault();
-          e.stopPropagation();
-          if (mode() === "filename") {
-            const entry = commandPaletteStore.state.filenameResults[selectedIndex()];
-            if (entry) openFileEntry(entry);
-          } else if (mode() === "content") {
-            const match = commandPaletteStore.state.contentResults[selectedIndex()];
-            if (match) openContentMatch(match);
-          } else {
-            const action = filteredActions()[selectedIndex()];
-            if (action) executeAction(action);
-          }
-          break;
-        case "Escape":
-          e.preventDefault();
-          e.stopPropagation();
-          commandPaletteStore.close();
-          break;
-      }
-    };
-
-    document.addEventListener("keydown", handleKeydown, true);
-    onCleanup(() => document.removeEventListener("keydown", handleKeydown, true));
   });
 
   const executeAction = (action: ActionEntry) => {
@@ -153,12 +116,79 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
     commandPaletteStore.close();
   };
 
-  /** Render a content match line with the matched text highlighted */
-  const renderMatchLine = (match: ContentMatch) => {
-    const text = match.line_text;
-    const before = text.slice(0, match.match_start);
-    const highlighted = text.slice(match.match_start, match.match_end);
-    const after = text.slice(match.match_end);
+  /** Navigate to a terminal match: switch tab/pane, scroll to line, focus */
+  const navigateToTerminalMatch = (match: TerminalMatch) => {
+    const { terminalId, lineIndex } = match;
+    terminalsStore.setActive(terminalId);
+    // Activate the correct pane in split layout
+    const paneIdx = terminalsStore.state.layout.panes.indexOf(terminalId);
+    if (paneIdx >= 0) {
+      terminalsStore.setActivePaneIndex(paneIdx);
+    }
+    commandPaletteStore.close();
+    // Scroll after a tick to ensure terminal is mounted/focused
+    requestAnimationFrame(() => {
+      const term = terminalsStore.state.terminals[terminalId];
+      term?.ref?.scrollToLine(lineIndex);
+      term?.ref?.focus();
+    });
+  };
+
+  // Keyboard navigation
+  createEffect(() => {
+    if (!isOpen()) return;
+
+    const handleKeydown = (e: KeyboardEvent) => {
+      const count = itemCount();
+
+      switch (e.key) {
+        case "ArrowDown":
+          e.preventDefault();
+          e.stopPropagation();
+          setSelectedIndex((i) => Math.min(i + 1, count - 1));
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          e.stopPropagation();
+          setSelectedIndex((i) => Math.max(i - 1, 0));
+          break;
+        case "Enter":
+          e.preventDefault();
+          e.stopPropagation();
+          if (mode() === "filename") {
+            const entry = commandPaletteStore.state.filenameResults[selectedIndex()];
+            if (entry) openFileEntry(entry);
+          } else if (mode() === "content") {
+            const match = commandPaletteStore.state.contentResults[selectedIndex()];
+            if (match) openContentMatch(match);
+          } else if (mode() === "terminal") {
+            const match = commandPaletteStore.state.terminalResults[selectedIndex()];
+            if (match) navigateToTerminalMatch(match);
+          } else {
+            const action = filteredActions()[selectedIndex()];
+            if (action) executeAction(action);
+          }
+          break;
+        case "Escape":
+          e.preventDefault();
+          e.stopPropagation();
+          commandPaletteStore.close();
+          break;
+      }
+    };
+
+    document.addEventListener("keydown", handleKeydown, true);
+    onCleanup(() => document.removeEventListener("keydown", handleKeydown, true));
+  });
+
+  /** Render a match line with the matched text highlighted */
+  const renderMatchLine = (match: { line_text?: string; lineText?: string; match_start?: number; matchStart?: number; match_end?: number; matchEnd?: number }) => {
+    const text = match.line_text ?? match.lineText ?? "";
+    const start = match.match_start ?? match.matchStart ?? 0;
+    const end = match.match_end ?? match.matchEnd ?? 0;
+    const before = text.slice(0, start);
+    const highlighted = text.slice(start, end);
+    const after = text.slice(end);
     return (
       <span class={s.matchLine}>
         {before}<mark class={s.matchHighlight}>{highlighted}</mark>{after}
@@ -170,6 +200,7 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
     switch (mode()) {
       case "filename": return "Search files by name...";
       case "content": return "Search file contents... (min 3 chars)";
+      case "terminal": return "Search terminal output... (min 3 chars)";
       default: return "Type a command...";
     }
   };
@@ -251,6 +282,34 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
               </For>
             </Show>
 
+            {/* Terminal buffer search mode (~ prefix) */}
+            <Show when={mode() === "terminal"}>
+              <Show when={Object.keys(terminalsStore.state.terminals).length === 0}>
+                <div class={s.empty}>No terminals open</div>
+              </Show>
+              <Show when={Object.keys(terminalsStore.state.terminals).length > 0 && searchQuery().length < 3}>
+                <div class={s.empty}>Type at least 3 characters after ~</div>
+              </Show>
+              <Show when={Object.keys(terminalsStore.state.terminals).length > 0 && searchQuery().length >= 3 && commandPaletteStore.state.terminalSearching && commandPaletteStore.state.terminalResults.length === 0}>
+                <div class={s.empty}>Searching...</div>
+              </Show>
+              <Show when={Object.keys(terminalsStore.state.terminals).length > 0 && searchQuery().length >= 3 && !commandPaletteStore.state.terminalSearching && commandPaletteStore.state.terminalResults.length === 0}>
+                <div class={s.empty}>No results</div>
+              </Show>
+              <For each={commandPaletteStore.state.terminalResults}>
+                {(match, idx) => (
+                  <div
+                    class={`${s.item} ${s.contentItem} ${idx() === selectedIndex() ? s.selected : ""}`}
+                    onClick={() => navigateToTerminalMatch(match)}
+                    onMouseEnter={() => setSelectedIndex(idx())}
+                  >
+                    <span class={s.contentPath}>{match.terminalName} :{match.lineIndex}</span>
+                    {renderMatchLine(match)}
+                  </div>
+                )}
+              </For>
+            </Show>
+
             {/* Command mode */}
             <Show when={mode() === "command"}>
               <Show when={filteredActions().length === 0}>
@@ -280,6 +339,7 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
             <span class={s.footerHint}><kbd>esc</kbd> close</span>
             <span class={s.footerHint}><kbd>!</kbd> files</span>
             <span class={s.footerHint}><kbd>?</kbd> content</span>
+            <span class={s.footerHint}><kbd>~</kbd> terminals</span>
           </div>
         </div>
       </div>
