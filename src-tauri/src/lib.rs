@@ -940,6 +940,7 @@ pub fn run() {
             pty::update_session_cwd,
             pty::set_session_name,
             pty::get_session_foreground_process,
+            pty::has_foreground_process,
             pty::debug_agent_detection,
             load_config,
             save_config,

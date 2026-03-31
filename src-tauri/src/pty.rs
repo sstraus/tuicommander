@@ -2069,6 +2069,33 @@ pub(crate) fn get_session_foreground_process(
     }
 }
 
+/// Check if a PTY session has a non-shell foreground process running.
+/// Returns the process name (e.g. "htop", "node", "claude") or None if
+/// the foreground is the shell itself (zsh, bash, fish, etc.).
+#[tauri::command]
+pub(crate) fn has_foreground_process(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+) -> Option<String> {
+    const SHELLS: &[&str] = &["zsh", "bash", "fish", "sh", "dash", "ksh", "csh", "tcsh", "nushell", "nu",
+                               "powershell", "pwsh", "cmd"];
+    let entry = state.sessions.get(&session_id)?;
+    let session = entry.value().lock();
+    #[cfg(not(windows))]
+    {
+        let pgid = session.master.process_group_leader()?;
+        let name = process_name_from_pid(pgid as u32)?;
+        if SHELLS.contains(&name.as_str()) { None } else { Some(name) }
+    }
+    #[cfg(windows)]
+    {
+        let child_pid = session._child.process_id()?;
+        let leaf = deepest_descendant_pid(child_pid)?;
+        let name = process_name_from_pid(leaf)?;
+        if SHELLS.contains(&name.as_str()) { None } else { Some(name) }
+    }
+}
+
 /// Debug: diagnose agent detection for a PTY session.
 /// Returns each step of the detection pipeline so failures can be pinpointed.
 #[tauri::command]

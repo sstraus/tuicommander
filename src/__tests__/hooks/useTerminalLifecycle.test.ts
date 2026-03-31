@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import "../mocks/tauri";
+import { mockInvoke } from "../mocks/tauri";
 import { terminalsStore } from "../../stores/terminals";
 import { repositoriesStore } from "../../stores/repositories";
 import { diffTabsStore } from "../../stores/diffTabs";
@@ -50,6 +50,8 @@ describe("useTerminalLifecycle", () => {
     mockPty.close.mockReset().mockResolvedValue(undefined);
     mockDialogs.confirmCloseTerminal.mockReset().mockResolvedValue(true);
     mockSetStatusInfo.mockReset();
+    // Default: no foreground process (plain shell)
+    mockInvoke.mockReset().mockResolvedValue(null);
 
     lifecycle = useTerminalLifecycle({
       pty: mockPty,
@@ -206,7 +208,8 @@ describe("useTerminalLifecycle", () => {
       expect(mockPty.close).toHaveBeenCalledWith("sess-1");
     });
 
-    it("shows confirmation when agent is running", async () => {
+    it("shows confirmation when foreground process is running", async () => {
+      mockInvoke.mockResolvedValue("claude");
       const id = terminalsStore.add({
         sessionId: "sess-1",
         fontSize: 14,
@@ -214,13 +217,14 @@ describe("useTerminalLifecycle", () => {
         cwd: null,
         awaitingInput: null,
       });
-      terminalsStore.update(id, { agentType: "claude" });
 
       await lifecycle.closeTerminal(id);
+      expect(mockInvoke).toHaveBeenCalledWith("has_foreground_process", { sessionId: "sess-1" });
       expect(mockDialogs.confirmCloseTerminal).toHaveBeenCalledWith("Test Terminal");
     });
 
-    it("shows confirmation when shell is busy (e.g. htop)", async () => {
+    it("shows confirmation for non-agent processes (e.g. htop)", async () => {
+      mockInvoke.mockResolvedValue("htop");
       const id = terminalsStore.add({
         sessionId: "sess-1",
         fontSize: 14,
@@ -228,31 +232,13 @@ describe("useTerminalLifecycle", () => {
         cwd: null,
         awaitingInput: null,
       });
-      // Simulate shell startup complete, then user launches htop
-      terminalsStore.update(id, { shellState: "idle" });
-      terminalsStore.update(id, { shellState: "busy" });
 
       await lifecycle.closeTerminal(id);
       expect(mockDialogs.confirmCloseTerminal).toHaveBeenCalledWith("htop session");
     });
 
-    it("skips confirmation when shell is busy from startup (.zshrc loading)", async () => {
-      const id = terminalsStore.add({
-        sessionId: "sess-1",
-        fontSize: 14,
-        name: "New Shell",
-        cwd: null,
-        awaitingInput: null,
-      });
-      // Shell goes busy during startup — never reached idle
-      terminalsStore.update(id, { shellState: "busy" });
-
-      await lifecycle.closeTerminal(id);
-      expect(mockDialogs.confirmCloseTerminal).not.toHaveBeenCalled();
-      expect(terminalsStore.get(id)).toBeUndefined();
-    });
-
-    it("skips confirmation for plain shell", async () => {
+    it("skips confirmation for plain shell (no foreground process)", async () => {
+      mockInvoke.mockResolvedValue(null);
       const id = terminalsStore.add({
         sessionId: "sess-1",
         fontSize: 14,
@@ -266,7 +252,23 @@ describe("useTerminalLifecycle", () => {
       expect(terminalsStore.get(id)).toBeUndefined();
     });
 
+    it("skips confirmation when backend call fails", async () => {
+      mockInvoke.mockRejectedValue(new Error("session gone"));
+      const id = terminalsStore.add({
+        sessionId: "sess-1",
+        fontSize: 14,
+        name: "Gone",
+        cwd: null,
+        awaitingInput: null,
+      });
+
+      await lifecycle.closeTerminal(id);
+      expect(mockDialogs.confirmCloseTerminal).not.toHaveBeenCalled();
+      expect(terminalsStore.get(id)).toBeUndefined();
+    });
+
     it("does not close when user cancels confirmation", async () => {
+      mockInvoke.mockResolvedValue("claude");
       mockDialogs.confirmCloseTerminal.mockResolvedValue(false);
 
       const id = terminalsStore.add({
@@ -276,7 +278,6 @@ describe("useTerminalLifecycle", () => {
         cwd: null,
         awaitingInput: null,
       });
-      terminalsStore.update(id, { agentType: "claude" });
 
       await lifecycle.closeTerminal(id);
       expect(terminalsStore.get(id)).toBeDefined();

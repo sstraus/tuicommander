@@ -7,6 +7,7 @@ import { editorTabsStore } from "../stores/editorTabs";
 import { settingsStore } from "../stores/settings";
 import { appLogger } from "../stores/appLogger";
 import { filterValidTerminals } from "../utils/terminalFilter";
+import { invoke } from "../invoke";
 
 const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 32;
@@ -109,14 +110,19 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
     const terminal = terminalsStore.get(id);
     if (!terminal) return;
 
-    // Confirm when something is running: either a detected agent (claude, aider, etc.)
-    // or the shell is actively busy with a user-launched process (htop, npm run dev).
-    // Shells still in startup (.zshrc loading) are "busy" but have no user process — skip.
-    const startupBusy = terminal.shellState === "busy" && !terminalsStore.hasReachedIdle(id);
-    const hasRunningProcess = terminal.agentType !== null || (terminal.shellState === "busy" && !startupBusy);
-    if (!skipConfirm && terminal.sessionId && settingsStore.state.confirmBeforeClosingTab && hasRunningProcess) {
-      const confirmed = await deps.dialogs.confirmCloseTerminal(terminal.name);
-      if (!confirmed) return;
+    // Confirm only when a non-shell process is running (claude, htop, node, etc.).
+    // Plain idle shells close immediately. We ask the backend for the foreground
+    // process name — if it's a shell (zsh/bash/fish), it returns null.
+    if (!skipConfirm && terminal.sessionId && settingsStore.state.confirmBeforeClosingTab) {
+      try {
+        const fg = await invoke<string | null>("has_foreground_process", { sessionId: terminal.sessionId });
+        if (fg) {
+          const confirmed = await deps.dialogs.confirmCloseTerminal(terminal.name);
+          if (!confirmed) return;
+        }
+      } catch {
+        // Backend call failed (session already gone) — close without confirmation
+      }
     }
 
     setClosedTabs((prev) => [...prev.slice(-9), { name: terminal.name, fontSize: terminal.fontSize, cwd: terminal.cwd }]);
