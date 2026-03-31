@@ -5,7 +5,7 @@ import { keybindingsStore } from "../../../stores/keybindings";
 import { settingsStore } from "../../../stores/settings";
 import { normalizeCombo, type ActionName } from "../../../keybindingDefaults";
 import { comboToDisplay } from "../../../utils/hotkey";
-import { keyEventToCombo } from "../../../utils/keyRecorder";
+import { keyEventToCombo, validateGlobalHotkeyCombo } from "../../../utils/keyRecorder";
 import { isTauri } from "../../../transport";
 import { KeyComboCapture } from "../../shared/KeyComboCapture";
 import { appLogger } from "../../../stores/appLogger";
@@ -228,7 +228,8 @@ export const KeyboardShortcutsTab: Component = () => {
   async function handleGlobalHotkeyChange(combo: string) {
     setGlobalHotkeyError(null);
     try {
-      await settingsStore.setGlobalHotkey(comboToTauri(combo));
+      const validated = validateGlobalHotkeyCombo(combo);
+      await settingsStore.setGlobalHotkey(comboToTauri(validated));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setGlobalHotkeyError(msg);
@@ -255,8 +256,8 @@ export const KeyboardShortcutsTab: Component = () => {
         await settingsStore.setGlobalHotkey(null);
       }
       // On capture end, the new combo is set via handleGlobalHotkeyChange
-    } catch {
-      // Best effort — if unregister fails, capture still works
+    } catch (err) {
+      appLogger.warn("config", "Failed to temporarily unregister global hotkey during capture", err);
     }
   }
 

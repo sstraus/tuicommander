@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { keyEventToCombo } from "../../utils/keyRecorder";
+import { keyEventToCombo, validateGlobalHotkeyCombo } from "../../utils/keyRecorder";
 
 // Mock platform detection — default to macOS
 vi.mock("../../platform", () => ({
@@ -73,6 +73,55 @@ describe("keyEventToCombo (macOS)", () => {
     expect(keyEventToCombo(makeKeyEvent({
       key: "1", code: "Digit1", metaKey: true, ctrlKey: true,
     }))).toBe("Cmd+Ctrl+1");
+  });
+});
+
+describe("validateGlobalHotkeyCombo", () => {
+  it("accepts letter keys", () => {
+    expect(validateGlobalHotkeyCombo("Cmd+Shift+T")).toBe("Cmd+Shift+T");
+  });
+
+  it("accepts digit keys", () => {
+    expect(validateGlobalHotkeyCombo("Cmd+1")).toBe("Cmd+1");
+  });
+
+  it("accepts function keys", () => {
+    expect(validateGlobalHotkeyCombo("F5")).toBe("F5");
+    expect(validateGlobalHotkeyCombo("Cmd+F12")).toBe("Cmd+F12");
+    expect(validateGlobalHotkeyCombo("F24")).toBe("F24");
+  });
+
+  it("accepts named keys", () => {
+    expect(validateGlobalHotkeyCombo("Cmd+Space")).toBe("Cmd+Space");
+    expect(validateGlobalHotkeyCombo("Cmd+Enter")).toBe("Cmd+Enter");
+    expect(validateGlobalHotkeyCombo("Cmd+Backspace")).toBe("Cmd+Backspace");
+  });
+
+  it("maps punctuation characters to global-hotkey names", () => {
+    expect(validateGlobalHotkeyCombo("Cmd+,")).toBe("Cmd+Comma");
+    expect(validateGlobalHotkeyCombo("Cmd+.")).toBe("Cmd+Period");
+    expect(validateGlobalHotkeyCombo("Cmd+/")).toBe("Cmd+Slash");
+    expect(validateGlobalHotkeyCombo("Cmd+;")).toBe("Cmd+Semicolon");
+    expect(validateGlobalHotkeyCombo("Cmd+'")).toBe("Cmd+Quote");
+    expect(validateGlobalHotkeyCombo("Cmd+[")).toBe("Cmd+BracketLeft");
+    expect(validateGlobalHotkeyCombo("Cmd+]")).toBe("Cmd+BracketRight");
+    expect(validateGlobalHotkeyCombo("Cmd+\\")).toBe("Cmd+Backslash");
+    expect(validateGlobalHotkeyCombo("Cmd+`")).toBe("Cmd+Backquote");
+    expect(validateGlobalHotkeyCombo("Cmd+-")).toBe("Cmd+Minus");
+    expect(validateGlobalHotkeyCombo("Cmd+=")).toBe("Cmd+Equal");
+  });
+
+  it("rejects unsupported keys like <", () => {
+    expect(() => validateGlobalHotkeyCombo("Cmd+<")).toThrow('The key "<" is not supported');
+  });
+
+  it("rejects other unsupported characters", () => {
+    expect(() => validateGlobalHotkeyCombo("Cmd+>")).toThrow('The key ">" is not supported');
+    expect(() => validateGlobalHotkeyCombo("Cmd+@")).toThrow('The key "@" is not supported');
+  });
+
+  it("rejects modifier-only combos", () => {
+    expect(() => validateGlobalHotkeyCombo("Cmd+Shift")).toThrow("No key specified");
   });
 });
 

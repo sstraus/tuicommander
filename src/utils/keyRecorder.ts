@@ -32,6 +32,81 @@ const KEY_MAP: Record<string, string> = {
   "Escape": "Escape",
 };
 
+/**
+ * Keys recognized by the `global-hotkey` crate's `Shortcut::from_str` parser.
+ * Single-char punctuation maps to the name the parser expects.
+ * Letters (A-Z), digits (0-9), and function keys (F1-F24) are always valid.
+ */
+const GLOBAL_HOTKEY_KEYS = new Set([
+  // Named keys
+  "Backspace", "Tab", "Enter", "Space", "Escape",
+  "Delete", "End", "Home", "Insert", "PageDown", "PageUp",
+  "PrintScreen", "ScrollLock", "CapsLock", "Pause",
+  "Up", "Down", "Left", "Right",
+  "NumLock",
+  // Named numpad keys
+  "NumpadAdd", "NumpadDecimal", "NumpadDivide", "NumpadEnter",
+  "NumpadEqual", "NumpadMultiply", "NumpadSubtract",
+  // Fn (captured separately via native event, not KeyboardEvent)
+  "Fn",
+]);
+
+/** Punctuation characters → global-hotkey parser name */
+const CHAR_TO_GLOBAL_HOTKEY: Record<string, string> = {
+  "`": "Backquote", "\\": "Backslash",
+  "[": "BracketLeft", "]": "BracketRight",
+  ",": "Comma", "=": "Equal", "-": "Minus",
+  ".": "Period", "'": "Quote", ";": "Semicolon", "/": "Slash",
+};
+
+/**
+ * Validate and normalize a key combo for `global-hotkey` `Shortcut::from_str`.
+ * Returns the normalized combo string if valid, or throws with a user-friendly
+ * message listing the unsupported key.
+ */
+export function validateGlobalHotkeyCombo(combo: string): string {
+  const parts = combo.split("+");
+  const modifiers: string[] = [];
+  let key = "";
+
+  for (const p of parts) {
+    if (["Cmd", "Ctrl", "Alt", "Shift"].includes(p)) {
+      modifiers.push(p);
+    } else {
+      key = p;
+    }
+  }
+
+  if (!key) throw new Error("No key specified (modifiers only)");
+
+  // Letters and digits are always valid
+  if (/^[A-Z]$/i.test(key) || /^[0-9]$/.test(key)) {
+    return combo;
+  }
+  // Function keys F1-F24
+  if (/^F([1-9]|1[0-9]|2[0-4])$/.test(key)) {
+    return combo;
+  }
+  // Numpad digits Numpad0-Numpad9
+  if (/^Numpad[0-9]$/.test(key)) {
+    return combo;
+  }
+  // Named keys
+  if (GLOBAL_HOTKEY_KEYS.has(key)) {
+    return combo;
+  }
+  // Punctuation character → named key
+  const mapped = CHAR_TO_GLOBAL_HOTKEY[key];
+  if (mapped) {
+    return [...modifiers, mapped].join("+");
+  }
+
+  throw new Error(
+    `The key "${key}" is not supported for global hotkeys. ` +
+    `Supported: letters, digits, F1–F24, and common punctuation (, . / ; ' [ ] \\ \` - =).`
+  );
+}
+
 export function keyEventToCombo(e: KeyboardEvent): string | null {
   // Ignore modifier-only presses
   if (MODIFIER_CODES.has(e.code)) return null;
