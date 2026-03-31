@@ -127,6 +127,27 @@ export interface MarkdownProvider {
 }
 
 // ---------------------------------------------------------------------------
+// File icon providers
+// ---------------------------------------------------------------------------
+
+/**
+ * Provides SVG icons for files and folders based on name/extension.
+ * Registered via PluginHost.registerFileIconProvider().
+ *
+ * The provider is queried for every file entry in the browser, command palette,
+ * and tab bar. Return an inline SVG string or null for default icon.
+ */
+export interface FileIconProvider {
+  /**
+   * Resolve an inline SVG string for a file or folder entry.
+   * @param name - The entry's filename (e.g. "index.ts", ".gitignore", "src")
+   * @param isDir - Whether the entry is a directory
+   * @returns Inline SVG string, or null to use the default icon
+   */
+  resolveFileIcon(name: string, isDir: boolean): string | null;
+}
+
+// ---------------------------------------------------------------------------
 // Read-only snapshot types (Tier 2 — always available)
 // ---------------------------------------------------------------------------
 
@@ -277,7 +298,8 @@ export type PluginCapability =
   | "exec:cli"
   | "git:read"
   | "ui:context-menu"
-  | "ui:sidebar";
+  | "ui:sidebar"
+  | "ui:file-icons";
 
 /** Valid sound names for playNotificationSound — single source of truth */
 export const NOTIFICATION_SOUNDS = ["question", "error", "completion", "warning", "info"] as const;
@@ -396,6 +418,9 @@ export interface PluginHost {
 
   /** Register a markdown content provider for a URI scheme */
   registerMarkdownProvider(scheme: string, provider: MarkdownProvider): Disposable;
+
+  /** Register a file icon provider. Requires "ui:file-icons" capability. Last registered provider wins. */
+  registerFileIconProvider(provider: FileIconProvider): Disposable;
 
   /** Add an activity item to the store */
   addItem(item: Omit<ActivityItem, "createdAt">): void;

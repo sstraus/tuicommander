@@ -12,6 +12,7 @@ import { PromptDialog } from "../PromptDialog";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 import { TreeNode } from "./TreeNode";
 import { getStatusClass, formatSize } from "./fileUtils";
+import { FileIcon } from "./FileIcon";
 import { uiStore } from "../../stores/ui";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
@@ -940,7 +941,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
                       }}
                       onContextMenu={(e) => handleContextMenu(e, entry)}
                     >
-                      <span class={s.entryIcon}>{entry.is_dir ? "\u{1F4C1}" : "\u{1F4C4}"}</span>
+                      <FileIcon name={entry.name} isDir={entry.is_dir} class={s.entryIcon} />
                       <span class={s.entryName} title={entry.path}>{isSearch ? entry.path : entry.name}</span>
                       <Show when={entry.git_status}>
                         <span class={cx(g.dot, getStatusClass(entry.git_status))} title={entry.git_status} />

@@ -4,6 +4,7 @@ import { repositoriesStore } from "../../stores/repositories";
 import { editorTabsStore } from "../../stores/editorTabs";
 import { mdTabsStore } from "../../stores/mdTabs";
 import { classifyDroppedFile } from "../../hooks/useFileDrop";
+import { FileIcon } from "../FileBrowserPanel/FileIcon";
 import type { ActionEntry } from "../../actions/actionRegistry";
 import type { ContentMatch, DirEntry } from "../../types/fs";
 import s from "./CommandPalette.module.css";
@@ -211,7 +212,7 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
                     onClick={() => openFileEntry(entry)}
                     onMouseEnter={() => setSelectedIndex(idx())}
                   >
-                    <span class={s.entryIcon}>{entry.is_dir ? "\u{1F4C1}" : "\u{1F4C4}"}</span>
+                    <FileIcon name={entry.name} isDir={entry.is_dir} class={s.entryIcon} />
                     <span class={s.itemLabel}>{entry.name}</span>
                     <span class={s.contentPath}>{entry.path}</span>
                   </div>

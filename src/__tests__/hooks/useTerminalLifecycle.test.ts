@@ -206,7 +206,7 @@ describe("useTerminalLifecycle", () => {
       expect(mockPty.close).toHaveBeenCalledWith("sess-1");
     });
 
-    it("shows confirmation for busy terminal session", async () => {
+    it("shows confirmation when agent is running", async () => {
       const id = terminalsStore.add({
         sessionId: "sess-1",
         fontSize: 14,
@@ -214,21 +214,34 @@ describe("useTerminalLifecycle", () => {
         cwd: null,
         awaitingInput: null,
       });
-      terminalsStore.update(id, { shellState: "busy" });
+      terminalsStore.update(id, { agentType: "claude" });
 
       await lifecycle.closeTerminal(id);
       expect(mockDialogs.confirmCloseTerminal).toHaveBeenCalledWith("Test Terminal");
     });
 
-    it("skips confirmation for idle terminal", async () => {
+    it("shows confirmation when shell is busy (e.g. htop)", async () => {
       const id = terminalsStore.add({
         sessionId: "sess-1",
         fontSize: 14,
-        name: "Idle Term",
+        name: "htop session",
         cwd: null,
         awaitingInput: null,
       });
-      terminalsStore.update(id, { shellState: "idle" });
+      terminalsStore.update(id, { shellState: "busy" });
+
+      await lifecycle.closeTerminal(id);
+      expect(mockDialogs.confirmCloseTerminal).toHaveBeenCalledWith("htop session");
+    });
+
+    it("skips confirmation for plain shell", async () => {
+      const id = terminalsStore.add({
+        sessionId: "sess-1",
+        fontSize: 14,
+        name: "Idle Shell",
+        cwd: null,
+        awaitingInput: null,
+      });
 
       await lifecycle.closeTerminal(id);
       expect(mockDialogs.confirmCloseTerminal).not.toHaveBeenCalled();
@@ -245,7 +258,7 @@ describe("useTerminalLifecycle", () => {
         cwd: null,
         awaitingInput: null,
       });
-      terminalsStore.update(id, { shellState: "busy" });
+      terminalsStore.update(id, { agentType: "claude" });
 
       await lifecycle.closeTerminal(id);
       expect(terminalsStore.get(id)).toBeDefined();

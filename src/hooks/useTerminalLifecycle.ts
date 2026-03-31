@@ -109,7 +109,11 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
     const terminal = terminalsStore.get(id);
     if (!terminal) return;
 
-    if (!skipConfirm && terminal.sessionId && settingsStore.state.confirmBeforeClosingTab && terminal.shellState === "busy") {
+    // Confirm when something is running: either an agent (claude, aider, etc.)
+    // or the shell is actively busy (htop, npm run dev, etc.).
+    // Plain idle shells close immediately without confirmation.
+    const hasRunningProcess = terminal.agentType !== null || terminal.shellState === "busy";
+    if (!skipConfirm && terminal.sessionId && settingsStore.state.confirmBeforeClosingTab && hasRunningProcess) {
       const confirmed = await deps.dialogs.confirmCloseTerminal(terminal.name);
       if (!confirmed) return;
     }

@@ -12,6 +12,7 @@ import { sidebarPluginStore } from "../stores/sidebarPluginStore";
 
 import { pluginStore } from "../stores/pluginStore";
 import { markdownProviderRegistry } from "./markdownProviderRegistry";
+import { fileIconRegistry } from "./fileIconRegistry";
 import { invoke, listen } from "../invoke";
 import { LineBuffer } from "../utils/lineBuffer";
 import { stripAnsi } from "../utils/stripAnsi";
@@ -22,6 +23,7 @@ import {
 } from "./types";
 import type {
   Disposable,
+  FileIconProvider,
   FsChangeEvent,
   HttpFetchOptions,
   HttpResponse,
@@ -179,6 +181,11 @@ function createPluginRegistry() {
 
       registerMarkdownProvider(scheme: string, provider: MarkdownProvider): Disposable {
         return track(markdownProviderRegistry.register(scheme, provider));
+      },
+
+      registerFileIconProvider(provider: FileIconProvider): Disposable {
+        requireCapability("ui:file-icons");
+        return track(fileIconRegistry.register(provider));
       },
 
       addItem(item) {

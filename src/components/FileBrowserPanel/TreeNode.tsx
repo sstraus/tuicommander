@@ -4,6 +4,7 @@ import { appLogger } from "../../stores/appLogger";
 import { cx } from "../../utils";
 import type { DirEntry } from "../../types/fs";
 import { getStatusClass, formatSize } from "./fileUtils";
+import { FileIcon } from "./FileIcon";
 import g from "../shared/git-status.module.css";
 import s from "./FileBrowserPanel.module.css";
 
@@ -67,7 +68,7 @@ export const TreeNode: Component<TreeNodeProps> = (props) => {
         <Show when={!props.entry.is_dir}>
           <span class={s.treeLeafSpacer} />
         </Show>
-        <span class={s.entryIcon}>{props.entry.is_dir ? "\u{1F4C1}" : "\u{1F4C4}"}</span>
+        <FileIcon name={props.entry.name} isDir={props.entry.is_dir} class={s.entryIcon} />
         <span class={s.entryName}>{props.entry.name}</span>
         <Show when={props.entry.git_status}>
           <span class={cx(g.dot, getStatusClass(props.entry.git_status))} title={props.entry.git_status} />

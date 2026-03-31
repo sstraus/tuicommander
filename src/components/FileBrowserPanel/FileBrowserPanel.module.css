@@ -149,9 +149,16 @@
 
 .entryIcon {
   flex-shrink: 0;
-  width: 18px;
-  text-align: center;
-  font-size: var(--font-sm);
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.entryIcon :global(svg) {
+  width: 16px;
+  height: 16px;
 }
 
 .entryName {
