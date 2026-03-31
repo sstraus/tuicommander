@@ -154,10 +154,14 @@ export class ViewportLock {
   }
 
   /** Engage or disengage based on scroll position.
-   *  At bottom → unlock (xterm native). Scrolled up → lock. */
+   *  At bottom → unlock (xterm native). Scrolled up → lock.
+   *  Refuses to disengage during a write — xterm auto-scrolls to bottom
+   *  during writes, which would falsely report "at bottom" and drop the lock. */
   update(isAtBottom: boolean): void {
     const shouldLock = !isAtBottom;
     if (shouldLock === this.locked) return;
+    // Don't disengage mid-write: xterm auto-scroll during write is not user intent
+    if (!shouldLock && this.writeInProgress) return;
     this.locked = shouldLock;
 
     if (shouldLock) {

@@ -307,6 +307,27 @@ describe("ViewportLock", () => {
       lock.dispose();
     });
 
+    it("does NOT disengage when update(true) is called during a write", () => {
+      const { lock, viewport, scrollToLineCalls, setBuffer } = createLockHarness();
+      setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
+      lock.update(false); // locked at line 50
+
+      // Simulate: write starts, xterm auto-scrolls to bottom,
+      // terminal.onScroll fires update(true) during the write
+      lock.writeStart();
+      lock.update(true); // this MUST NOT disengage — we're mid-write
+
+      expect(lock.isLocked).toBe(true); // still locked!
+
+      // DOM scroll fires during write — should restore anchor
+      setBuffer({ viewportY: 110, baseY: 110, type: "normal" });
+      viewport.dispatchEvent(new Event("scroll"));
+      expect(scrollToLineCalls).toEqual([50]); // restored to anchor
+
+      lock.writeEnd();
+      lock.dispose();
+    });
+
     it("no listeners active when unlocked (at bottom)", () => {
       const { lock, viewport, scrollToLineCalls } = createLockHarness();
       // Never locked — fire scroll events
