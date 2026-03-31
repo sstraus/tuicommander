@@ -206,7 +206,7 @@ describe("useTerminalLifecycle", () => {
       expect(mockPty.close).toHaveBeenCalledWith("sess-1");
     });
 
-    it("shows confirmation for active terminal session", async () => {
+    it("shows confirmation for busy terminal session", async () => {
       const id = terminalsStore.add({
         sessionId: "sess-1",
         fontSize: 14,
@@ -214,9 +214,25 @@ describe("useTerminalLifecycle", () => {
         cwd: null,
         awaitingInput: null,
       });
+      terminalsStore.update(id, { shellState: "busy" });
 
       await lifecycle.closeTerminal(id);
       expect(mockDialogs.confirmCloseTerminal).toHaveBeenCalledWith("Test Terminal");
+    });
+
+    it("skips confirmation for idle terminal", async () => {
+      const id = terminalsStore.add({
+        sessionId: "sess-1",
+        fontSize: 14,
+        name: "Idle Term",
+        cwd: null,
+        awaitingInput: null,
+      });
+      terminalsStore.update(id, { shellState: "idle" });
+
+      await lifecycle.closeTerminal(id);
+      expect(mockDialogs.confirmCloseTerminal).not.toHaveBeenCalled();
+      expect(terminalsStore.get(id)).toBeUndefined();
     });
 
     it("does not close when user cancels confirmation", async () => {
@@ -229,6 +245,7 @@ describe("useTerminalLifecycle", () => {
         cwd: null,
         awaitingInput: null,
       });
+      terminalsStore.update(id, { shellState: "busy" });
 
       await lifecycle.closeTerminal(id);
       expect(terminalsStore.get(id)).toBeDefined();
