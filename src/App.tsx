@@ -72,7 +72,7 @@ import { userActivityStore } from "./stores/userActivity";
 import { contextMenuActionsStore } from "./stores/contextMenuActionsStore";
 import { initPlugins } from "./plugins";
 import { usePty } from "./hooks/usePty";
-import { useRepository } from "./hooks/useRepository";
+import { useRepository, tccDeniedPaths, markTccAlertShown } from "./hooks/useRepository";
 import { useKeyboardRedirect } from "./hooks/useKeyboardRedirect";
 import { useConfirmDialog } from "./hooks/useConfirmDialog";
 import { useTerminalLifecycle } from "./hooks/useTerminalLifecycle";
@@ -283,6 +283,21 @@ const App: Component = () => {
   // Agent detection for context menu
   const agentDetection = useAgentDetection();
   const smartPrompts = useSmartPrompts();
+
+  // Show a one-time dialog when macOS TCC denies access to repo directories
+  createEffect(() => {
+    const paths = tccDeniedPaths();
+    if (paths.length === 0) return;
+    markTccAlertShown();
+    const repos = paths.map((p) => p.split("/").pop() ?? p).join(", ");
+    dialogs.confirm({
+      title: "Permission denied",
+      message: `macOS blocked access to: ${repos}\n\nRepositories inside ~/Documents, ~/Desktop, or ~/Downloads require Full Disk Access.\n\nTo fix: System Settings → Privacy & Security → Full Disk Access → add TUICommander.\n\nAlternatively, move your repositories to a non-protected folder (e.g. ~/Repositories).`,
+      okLabel: "Got it",
+      cancelLabel: "Dismiss",
+      kind: "error",
+    });
+  });
 
   // Auto-delete local branches when their PR is merged/closed
   useAutoDeleteBranch({ confirm: (opts) => dialogs.confirm(opts) });

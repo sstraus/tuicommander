@@ -1,6 +1,30 @@
+import { createSignal } from "solid-js";
 import { invoke } from "../invoke";
 import { appLogger } from "../stores/appLogger";
 import type { RepoInfo } from "../types";
+
+// ---------------------------------------------------------------------------
+// TCC (macOS permission) error detection — global, shown once per session
+// ---------------------------------------------------------------------------
+
+const [tccDeniedPaths, setTccDeniedPaths] = createSignal<string[]>([]);
+let tccAlertShown = false;
+
+/** Paths that triggered an "Operation not permitted" TCC error. */
+export { tccDeniedPaths };
+
+/** Mark the TCC alert as shown so it doesn't repeat. */
+export function markTccAlertShown(): void {
+  tccAlertShown = true;
+}
+
+/** Check if an error is a macOS TCC permission denial and track it. */
+function checkTccError(err: unknown, repoPath: string): void {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (msg.includes("Operation not permitted") && !tccAlertShown) {
+    setTccDeniedPaths((prev) => prev.includes(repoPath) ? prev : [...prev, repoPath]);
+  }
+}
 
 /** Changed file information for diff browser */
 export interface ChangedFile {
@@ -221,6 +245,7 @@ export function useRepository() {
     try {
       return await invoke("get_repo_structure", { repoPath });
     } catch (err) {
+      checkTccError(err, repoPath);
       appLogger.warn("git", `Failed to get repo structure for ${repoPath}`, err);
       return { worktree_paths: {}, merged_branches: [] };
     }
@@ -235,6 +260,7 @@ export function useRepository() {
     try {
       return await invoke("get_repo_diff_stats", { repoPath });
     } catch (err) {
+      checkTccError(err, repoPath);
       appLogger.warn("git", `Failed to get repo diff stats for ${repoPath}`, err);
       return { diff_stats: {}, last_commit_ts: {} };
     }
@@ -294,6 +320,7 @@ export function useRepository() {
     try {
       return await invoke<string[]>("list_local_branches", { repoPath });
     } catch (err) {
+      checkTccError(err, repoPath);
       appLogger.error("git", "Failed to list local branches", err);
       return [];
     }
