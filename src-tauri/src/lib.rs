@@ -13,6 +13,7 @@ pub(crate) mod fs;
 mod input_line_buffer;
 pub(crate) mod git;
 pub(crate) mod git_cli;
+mod global_hotkey;
 pub(crate) mod git_graph;
 pub(crate) mod github;
 pub(crate) mod github_auth;
@@ -879,6 +880,13 @@ pub fn run() {
                 });
             }
 
+            // Install global hotkey plugin (registers handler, no shortcuts yet)
+            if let Err(e) = global_hotkey::init(app.handle()) {
+                tracing::warn!(source = "global-hotkey", "Failed to init plugin: {e}");
+            } else {
+                global_hotkey::restore_from_config(app.handle());
+            }
+
             // Install Fn/Globe key monitor for push-to-talk dictation
             dictation::fn_key_monitor::install(app.handle().clone());
 
@@ -1028,6 +1036,8 @@ pub fn run() {
             dictation::commands::set_dictation_config,
             dictation::commands::check_microphone_permission,
             dictation::commands::open_microphone_settings,
+            global_hotkey::set_global_hotkey,
+            global_hotkey::get_global_hotkey,
             config::load_app_config,
             config::save_app_config,
             config::load_notification_config,
