@@ -304,8 +304,12 @@ class PlanPlugin implements TuiPlugin {
           appLogger.info("plugin", `[plan] auto-opened active plan: ${planPath}`);
         }
         return; // Found and processed — stop searching candidates
-      } catch {
-        // Marker file not found at this path — try next candidate
+      } catch (err) {
+        // "not found" is expected when marker doesn't exist at this candidate path
+        const msg = String(err);
+        if (!msg.includes("not found") && !msg.includes("No such file")) {
+          appLogger.warn("plugin", `[plan] Unexpected error reading marker ${markerPath}`, err);
+        }
       }
     }
   }

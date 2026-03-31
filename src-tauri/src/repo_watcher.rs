@@ -207,7 +207,8 @@ pub(crate) fn start_watching(
     let event_bus = state.event_bus.clone();
     let state_cb = Arc::clone(state);
     let emitter = Arc::new(CategoryEmitter::new());
-    let rt = tokio::runtime::Handle::current();
+    let rt = tokio::runtime::Handle::try_current()
+        .map_err(|_| "start_watching requires a Tokio runtime on the calling thread".to_string())?;
 
     let repo_for_cb = repo.clone();
     let git_dir_for_cb = git_dir.clone();
@@ -222,6 +223,8 @@ pub(crate) fn start_watching(
                 Err(errs) => {
                     if let Some(ref handle) = handle {
                         crate::app_logger::log_via_handle(handle, "warn", "app", &format!("[repo_watcher] error for {repo_path_owned}: {errs:?}"));
+                    } else {
+                        tracing::warn!(source = "repo_watcher", path = %repo_path_owned, "Watcher errors: {errs:?}");
                     }
                     return;
                 }
@@ -297,7 +300,10 @@ pub(crate) fn start_watching(
                 });
             }
 
-            if has_working_tree {
+            // Only emit WorkingTree if GitState didn't already fire in this batch.
+            // A git operation (commit, stage) already triggers RepoChanged via GitState
+            // at 500ms — emitting again at 1500ms would double-fire githubStore.pollRepo.
+            if has_working_tree && !has_git_state {
                 let repo_path = repo_path_owned.clone();
                 let bus = event_bus.clone();
                 let h = handle.clone();

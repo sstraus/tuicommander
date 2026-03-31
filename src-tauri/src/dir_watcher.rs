@@ -50,6 +50,8 @@ pub(crate) fn start_watching(
                             "app",
                             &format!("[dir_watcher] watcher error for {dir_path_owned}: {errs:?}"),
                         );
+                    } else {
+                        tracing::warn!(source = "dir_watcher", path = %dir_path_owned, "Watcher errors: {errs:?}");
                     }
                     return;
                 }
