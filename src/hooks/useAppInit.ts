@@ -160,13 +160,10 @@ export async function initApp(deps: AppInitDeps) {
   // state (e.g. "Add Repository" button) before persisted repos have loaded.
   document.getElementById("splash")?.remove();
 
-  // Start HEAD and repo file watchers for all known repos
+  // Start unified repo watchers for all known repos (covers HEAD, git state, working tree)
   for (const repoPath of repositoriesStore.getPaths()) {
     // Skip non-git directories — no .git/ to watch
     if (repositoriesStore.get(repoPath)?.isGitRepo === false) continue;
-    invoke("start_head_watcher", { repoPath }).catch((err) =>
-      appLogger.warn("app", `HeadWatcher failed to start for ${repoPath}`, err),
-    );
     invoke("start_repo_watcher", { repoPath }).catch((err) =>
       appLogger.warn("app", `RepoWatcher failed to start for ${repoPath}`, err),
     );

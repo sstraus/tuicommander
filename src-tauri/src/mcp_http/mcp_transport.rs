@@ -1852,7 +1852,6 @@ mod tests {
             ws_clients: dashmap::DashMap::new(),
             config: parking_lot::RwLock::new(crate::config::AppConfig::default()),
             git_cache: crate::state::GitCacheState::new(),
-            head_watchers: dashmap::DashMap::new(),
             repo_watchers: dashmap::DashMap::new(),
             dir_watchers: dashmap::DashMap::new(),
             http_client: reqwest::Client::new(),

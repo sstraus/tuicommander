@@ -453,7 +453,6 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/repo/diff-stats/batch", get(git_routes::repo_diff_stats_batch))
         .route("/repo/prs/batch", post(github_routes::repo_all_pr_statuses))
         // Watchers (for browser/mobile clients)
-        .route("/watchers/head", post(watcher_routes::start_head_watcher_http).delete(watcher_routes::stop_head_watcher_http))
         .route("/watchers/repo", post(watcher_routes::start_repo_watcher_http).delete(watcher_routes::stop_repo_watcher_http))
         .route("/watchers/dir", post(watcher_routes::start_dir_watcher_http).delete(watcher_routes::stop_dir_watcher_http))
         // Config
@@ -897,7 +896,6 @@ mod tests {
             ws_clients: DashMap::new(),
             config: parking_lot::RwLock::new(crate::config::AppConfig::default()),
             git_cache: crate::state::GitCacheState::new(),
-            head_watchers: DashMap::new(),
             repo_watchers: DashMap::new(),
             dir_watchers: DashMap::new(),
             http_client: reqwest::Client::new(),

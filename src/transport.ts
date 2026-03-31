@@ -569,12 +569,6 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
   detect_installed_ides: { map: () => ({ method: "GET", path: "/agents/ides" }) },
 
   // --- Watchers ---
-  start_head_watcher: {
-    map: (_args, p) => ({ method: "POST", path: `/watchers/head?path=${p("repoPath")}` }),
-  },
-  stop_head_watcher: {
-    map: (_args, p) => ({ method: "DELETE", path: `/watchers/head?path=${p("repoPath")}` }),
-  },
   start_repo_watcher: {
     map: (_args, p) => ({ method: "POST", path: `/watchers/repo?path=${p("repoPath")}` }),
   },

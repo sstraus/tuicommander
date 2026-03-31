@@ -787,9 +787,8 @@ pub struct AppState {
     pub(crate) config: parking_lot::RwLock<crate::config::AppConfig>,
     /// TTL caches for git and GitHub query results
     pub(crate) git_cache: GitCacheState,
-    /// File watchers for .git/HEAD per repo (keyed by repo path)
-    pub(crate) head_watchers: DashMap<String, Debouncer<notify::RecommendedWatcher, notify_debouncer_full::RecommendedCache>>,
-    /// File watchers for .git/ directory per repo (keyed by repo path)
+    /// Unified file watchers per repo — one recursive watcher covering
+    /// .git/ and working tree, with per-category debounce (keyed by repo path)
     pub(crate) repo_watchers: DashMap<String, Debouncer<notify::RecommendedWatcher, notify_debouncer_full::RecommendedCache>>,
     /// File watchers for directory contents (keyed by absolute dir path)
     pub(crate) dir_watchers: DashMap<String, Debouncer<notify::RecommendedWatcher, notify_debouncer_full::RecommendedCache>>,
@@ -1871,7 +1870,6 @@ pub(crate) mod tests_support {
             ws_clients: dashmap::DashMap::new(),
             config: parking_lot::RwLock::new(crate::config::AppConfig::default()),
             git_cache: GitCacheState::new(),
-            head_watchers: dashmap::DashMap::new(),
             repo_watchers: dashmap::DashMap::new(),
             dir_watchers: dashmap::DashMap::new(),
             http_client: reqwest::Client::new(),
@@ -2301,7 +2299,6 @@ mod tests {
             ws_clients: dashmap::DashMap::new(),
             config: parking_lot::RwLock::new(crate::config::AppConfig::default()),
             git_cache: GitCacheState::new(),
-            head_watchers: dashmap::DashMap::new(),
             repo_watchers: dashmap::DashMap::new(),
             dir_watchers: dashmap::DashMap::new(),
             http_client: reqwest::Client::new(),

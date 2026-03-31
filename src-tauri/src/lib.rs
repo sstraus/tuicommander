@@ -17,7 +17,6 @@ mod global_hotkey;
 pub(crate) mod git_graph;
 pub(crate) mod github;
 pub(crate) mod github_auth;
-pub(crate) mod head_watcher;
 pub(crate) mod repo_watcher;
 pub(crate) mod dir_watcher;
 pub(crate) mod mcp_http;
@@ -690,7 +689,6 @@ pub fn run() {
         ws_clients: DashMap::new(),
         config: parking_lot::RwLock::new(config.clone()),
         git_cache: crate::state::GitCacheState::new(),
-        head_watchers: DashMap::new(),
         repo_watchers: DashMap::new(),
         dir_watchers: DashMap::new(),
         http_client: reqwest::Client::new(),
@@ -898,9 +896,6 @@ pub fn run() {
             if let Some(repos) = repos_json.get("repos").and_then(|r| r.as_object()) {
                 let handle = app.handle().clone();
                 for repo_path in repos.keys() {
-                    if let Err(e) = head_watcher::start_watching(repo_path, Some(&handle), app_state) {
-                        app_logger::log_via_state(app_state, "warn", "app", &format!("[HeadWatcher] Failed to watch {repo_path}: {e}"));
-                    }
                     if let Err(e) = repo_watcher::start_watching(repo_path, Some(&handle), app_state) {
                         app_logger::log_via_state(app_state, "warn", "app", &format!("[RepoWatcher] Failed to watch {repo_path}: {e}"));
                     }
@@ -1087,8 +1082,6 @@ pub fn run() {
             llm_api::delete_llm_api_key,
             llm_api::execute_api_prompt,
             llm_api::test_llm_api,
-            head_watcher::start_head_watcher,
-            head_watcher::stop_head_watcher,
             repo_watcher::start_repo_watcher,
             repo_watcher::stop_repo_watcher,
             dir_watcher::start_dir_watcher,
