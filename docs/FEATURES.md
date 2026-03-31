@@ -915,6 +915,7 @@ Variables are resolved from the Rust backend (`resolve_context_variables`) and f
 - "Reset all to defaults" button at the bottom
 - Custom bindings stored in `keybindings.json` in the platform config directory
 - Auto-populated from `actionRegistry.ts` (`ACTION_META` map) — new actions appear automatically
+- **Global Hotkey:** configurable OS-level shortcut to toggle window visibility from any application (show/hide/focus). Set in the "Global Hotkey" section at the top of the Keyboard Shortcuts tab. No default — user must configure. Uses `tauri-plugin-global-shortcut` (no Accessibility permission required on macOS). Hidden in browser/PWA mode.
 
 ### 11.7 Agents
 - See **6.9 Agent Configuration** for full details

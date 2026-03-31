@@ -2,6 +2,17 @@
 
 Features to test when TUICommander is more usable.
 
+## Global Hotkey Toggle
+- [ ] Settings > Keyboard Shortcuts > Global Hotkey section visible (desktop only)
+- [ ] Click "Click to set hotkey" → capture mode activates
+- [ ] Press a key combo → registers and shows in the field
+- [ ] Switch to another app → press hotkey → TUICommander appears focused
+- [ ] Press hotkey again while focused → TUICommander minimizes
+- [ ] Press hotkey while visible but unfocused → TUICommander gains focus
+- [ ] Clear button removes the hotkey
+- [ ] Hotkey persists across app restart
+- [ ] Browser mode: Global Hotkey section is hidden
+
 ## File Browser Tree View
 - [ ] Toggle flat/tree with toolbar buttons — buttons render on same row as filter
 - [ ] Tree: click folder chevron → expands on first click, loads children lazily
