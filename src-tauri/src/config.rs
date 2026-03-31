@@ -370,6 +370,9 @@ pub(crate) struct AppConfig {
     /// VAPID subject (mailto: or https: URL identifying the app server)
     #[serde(default = "default_vapid_subject")]
     pub(crate) vapid_subject: String,
+    /// Global OS-level hotkey combo to toggle window visibility (e.g. "CommandOrControl+Shift+T")
+    #[serde(default)]
+    pub(crate) global_hotkey: Option<String>,
 }
 
 fn default_language() -> String {
@@ -450,6 +453,7 @@ impl Default for AppConfig {
             vapid_private_key: String::new(),
             vapid_public_key: String::new(),
             vapid_subject: default_vapid_subject(),
+            global_hotkey: None,
         }
     }
 }
