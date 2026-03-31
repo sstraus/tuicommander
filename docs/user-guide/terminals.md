@@ -22,7 +22,7 @@ Terminals are **never unmounted** from the DOM. When you switch branches or tabs
 
 ### Closing Terminals
 
-- **Cmd+W** — Close active tab (confirmation only when a process is running — e.g. Claude Code, htop, npm; idle shells close immediately)
+- **Cmd+W** — Close active tab (confirmation only when a user-launched process is running — e.g. Claude Code, htop, npm; idle shells and shells still loading .zshrc close immediately)
 - **Middle-click** on tab — Close tab
 - **Right-click → Close Tab** — Context menu
 - **Right-click → Close Other Tabs** — Close all except this one
