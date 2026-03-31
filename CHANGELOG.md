@@ -16,8 +16,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Diff Scroll View** — All-files continuous scroll view showing every changed file (staged + unstaged) with collapsible sections, per-file stats, and clickable filenames. Toggle via toolbar or `Cmd+Shift+G`
 - **Command Palette File Search** — Type `!` in the command palette (`Cmd+P`) to search files by name, `?` to search file contents with highlighted matches. Results open in editor tabs
 - **Update Progress Dialog** — Modal progress bar during update downloads with percentage and status text
+- **Cross-Terminal Search** — Type `~` in the command palette to search text across all open terminal buffers. Results show terminal name, line number, and highlighted match. Selecting a result navigates to the terminal and scrolls to the matched line
+- **Search Mode Commands** — Explicit "Search Terminals", "Search Files", and "Search in File Contents" commands in the palette make prefix modes discoverable
+- **Global Hotkey Validation** — Frontend validates key combos before sending to Tauri, showing clear error messages for unsupported keys (e.g. `<` on ISO keyboards) instead of cryptic parser errors
 
 ### Fixed
+- **Terminal Scroll Lock** — Fixed viewport jumping away from scroll position when output arrives while scrolled up. Root cause: xterm's auto-scroll during writes falsely disengaged the ViewportLock
 - **Terminal Close Confirmation** — Shells in startup (.zshrc/.zprofile loading) no longer trigger close confirmation; only shells that have completed initialization and are running a user process (agents, htop, npm) prompt for confirmation
 - **File Browser Repo Switch** — File browser now updates instantly when switching between repositories via sidebar; previously showed stale files from the old repo due to unbatched reactive updates and an async race condition
 - **Clipboard Paste** — Restored `tauri-plugin-clipboard-manager` so Cmd+V paste works in terminals (WebView requires explicit capability for `navigator.clipboard.readText()`)

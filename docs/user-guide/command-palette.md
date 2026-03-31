@@ -36,24 +36,40 @@ Hovering over a row highlights it (same as keyboard selection). Clicking a row e
 
 The palette is auto-populated from `actionRegistry.ts`. Every action registered there — with its label, category, and keybinding — appears in the palette automatically. No manual configuration is needed, and plugin-contributed actions appear alongside built-in ones.
 
-### File Search Modes
+### Search Modes
 
-The command palette supports two search prefixes for quick file access:
+The command palette supports three search prefixes:
 
 | Prefix | Mode | Description |
 |--------|------|-------------|
 | `!` | Filename search | Search files by name (min 1 char) |
 | `?` | Content search | Search inside file contents (min 3 chars) |
+| `~` | Terminal search | Search across all open terminal buffers (min 3 chars) |
 
-- Leading spaces after the prefix are ignored (`! readme` = `!readme`)
-- Results show as a flat list with file path
+- Leading spaces after the prefix are ignored (`~ error` = `~error`)
+- File results show as a flat list with file path
 - Content matches include line number and highlighted match text
-- Press `Enter` or click to open the file in an editor tab
+- Terminal matches include terminal name, line number, and highlighted match text
+- Press `Enter` or click to open the file in an editor tab, or navigate to the terminal match
+- Terminal match navigation switches to the correct tab/pane and scrolls to the matched line
 - Delete the prefix to return to command mode
 - Search runs with a 300ms debounce
-- Footer shows `!` and `?` hints when in command mode
+- Footer shows `!`, `?`, and `~` hints when in command mode
 
-If no repository is selected, both modes show "No repository selected".
+If no repository is selected, file/content modes show "No repository selected".
+If no terminals are open, terminal mode shows "No terminals open".
+
+### Discoverable Search Commands
+
+You can also access search modes via explicit commands in the palette:
+
+| Command | Action |
+|---------|--------|
+| Search Terminals | Opens palette with `~ ` prefix |
+| Search Files | Opens palette with `! ` prefix |
+| Search in File Contents | Opens palette with `? ` prefix |
+
+These appear as regular commands in the palette — type "Search" to find them.
 
 ---
 
