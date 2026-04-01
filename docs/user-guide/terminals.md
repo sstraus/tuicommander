@@ -136,6 +136,17 @@ Search within terminal output with `Cmd+F`:
 
 Uses `@xterm/addon-search` for native integration with the terminal buffer.
 
+## Cross-Terminal Search
+
+Search text across all open terminal buffers from the command palette:
+
+1. Press `Cmd+P` and type `~` followed by your search query (e.g. `~error`)
+2. Results show terminal name, line number, and highlighted match text
+3. Press `Enter` or click a result to switch to that terminal and scroll to the matched line (centered in viewport)
+4. Minimum 3 characters after the `~` prefix
+
+Also accessible via the "Search Terminals" command in the palette.
+
 ## Copy & Paste
 
 - **Copy:** Select text in the terminal, then `Cmd+C`

@@ -19,6 +19,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Cross-Terminal Search** — Type `~` in the command palette to search text across all open terminal buffers. Results show terminal name, line number, and highlighted match. Selecting a result navigates to the terminal and scrolls to the matched line
 - **Search Mode Commands** — Explicit "Search Terminals", "Search Files", and "Search in File Contents" commands in the palette make prefix modes discoverable
 - **Global Hotkey Validation** — Frontend validates key combos before sending to Tauri, showing clear error messages for unsupported keys (e.g. `<` on ISO keyboards) instead of cryptic parser errors
+- **Global Hotkey** — Configurable OS-level shortcut to toggle window visibility from any app. Set in Settings > Keyboard Shortcuts. Toggle cycles: hidden → show+focus, unfocused → focus, focused → hide. Uses `tauri-plugin-global-shortcut`; hidden in browser/PWA mode
+- **Unified Repo Watcher** — Single recursive watcher per repository with per-category debounce (Git/WorkTree/Config), replacing separate HEAD and index watchers. Uses `notify-debouncer-full` with `.gitignore`-aware filtering
+- **Gitignore Hot-Reload** — Editing `.gitignore` rebuilds the watcher's ignore filter without restart
+- **File Icon Provider** — New `ui:file-icons` plugin capability; `tuic-vscode-icons` plugin provides VS Code-style file icons in the file browser tree view
+- **Plan Auto-Open** — Restores active plan from `.claude/active-plan.json` on startup; `plans/` directory watcher detects new plan files created externally
+- **macOS TCC Access Dialog** — Shows a guided dialog when macOS denies access to a repository directory, pointing the user to Full Disk Access settings
 
 ### Fixed
 - **Terminal Scroll Lock** — Fixed viewport jumping away from scroll position when output arrives while scrolled up. Root cause: xterm's auto-scroll during writes falsely disengaged the ViewportLock
@@ -28,8 +34,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Agent Detection** — Claude Code installs its binary as a version number (`~/.local/share/claude/versions/2.1.87`); `process_name_from_pid` now scans parent directory names when the basename doesn't match a known agent
 - **HMR Session Loss** — Vite HMR reloads no longer close PTY sessions; `beforeunload` in Tauri mode skips session cleanup so `list_active_sessions` can re-adopt surviving sessions
 - **Git Panel Label** — "Changes" section renamed to "Changes (unstaged)" for clarity
+- **Diff Tab Focus** — Opening a diff tab now deactivates terminal, markdown, and editor tabs to prevent keyboard conflicts
+- **Plan File Events** — Plan-file events with absolute paths now recognized regardless of CWD
 
 ### Changed
+- **Watcher Backend** — Upgraded from `notify-debouncer-mini` to `notify-debouncer-full`; deleted legacy `head_watcher` module
 - **Smart Prompts Management** — Settings tab removed; all management consolidated in the Cmd+K drawer (edit, enable/disable, create, delete)
 - **Prompt Drawer UI** — Compact font sizing aligned with command palette conventions; editor dialog layout improved with side-by-side execution mode + auto-execute fields
 - **Tailscale HTTPS** — Auto-detects Tailscale daemon, provisions TLS certificates via Local API, serves HTTP+HTTPS on same port (dual-protocol). QR code uses `https://` with Tailscale FQDN when TLS active. Background cert renewal every 24h. Cross-platform (macOS, Linux, Windows)

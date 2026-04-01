@@ -925,6 +925,7 @@ Capabilities gate access to Tier 3 and Tier 4 methods. Declare them in `manifest
 | `git:read` | `host.getGitBranches()`, `host.getRecentCommits()`, `host.getGitDiff()` | Read-only access to git repository state |
 | `ui:context-menu` | `host.registerTerminalAction()` | Can add actions to the terminal right-click "Actions" submenu |
 | `ui:sidebar` | `host.registerSidebarPanel()` | Can register collapsible panel sections in the sidebar |
+| `ui:file-icons` | `host.registerFileIconProvider()` | Can provide file/folder icons for the file browser (e.g. VS Code icon themes) |
 
 Tier 1, Tier 2, and plugin data commands are always available without capabilities.
 

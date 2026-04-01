@@ -151,6 +151,7 @@ pub(crate) fn git_cmd(cwd: &Path) -> GitCmd {
     let mut cmd = Command::new(resolve_cli("git"));
     cmd.current_dir(cwd);
     cmd.env("GIT_TERMINAL_PROMPT", "0");
+    cmd.arg("--no-optional-locks");
     crate::cli::apply_no_window(&mut cmd);
     GitCmd { cmd, cwd: cwd.to_path_buf() }
 }

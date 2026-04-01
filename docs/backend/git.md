@@ -8,7 +8,7 @@ All git operations are performed by shelling out to the `git` CLI via the unifie
 
 All Tauri git commands are `async` and run git subprocesses inside `tokio::task::spawn_blocking`. This prevents blocking Tokio worker threads during I/O-heavy operations like `git diff`, `git log`, or `git fetch`.
 
-Git data is cached with a 60s TTL. The `repo_watcher` (FSEvents on macOS, inotify on Linux) calls `invalidate_repo_caches()` on file system changes, so git data refreshes immediately instead of waiting for TTL expiry. The 60s TTL serves as a safety net for missed watcher events. Most IPC calls for git data hit the cache (~0.2ms) instead of spawning a git subprocess (~20-30ms).
+Git data is cached with a 60s TTL. The unified `repo_watcher` (FSEvents on macOS, inotify on Linux) monitors the entire working tree recursively with per-category debounce (Git/WorkTree/Config) and calls `invalidate_repo_caches()` on file system changes, so git data refreshes immediately instead of waiting for TTL expiry. The watcher respects `.gitignore` rules and hot-reloads them when `.gitignore` is modified. The 60s TTL serves as a safety net for missed watcher events. Most IPC calls for git data hit the cache (~0.2ms) instead of spawning a git subprocess (~20-30ms).
 
 Internal callers that need synchronous access use `_impl` suffixes (e.g. `get_diff_stats_impl`) to avoid double `spawn_blocking` nesting.
 

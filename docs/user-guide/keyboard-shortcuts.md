@@ -32,6 +32,18 @@ The file is a JSON array of override objects. Only include shortcuts you want to
 
 See the action table below for all available action names.
 
+## Global Hotkey
+
+A configurable OS-level shortcut to toggle TUICommander's visibility from any application.
+
+- **Configure:** Settings > Keyboard Shortcuts > Global Hotkey (top of the tab)
+- **No default** — you must set it yourself (e.g., `Ctrl+Space`, `Cmd+\``)
+- **Toggle behavior:** hidden/minimized → show+focus, visible but unfocused → focus, focused → instant hide
+- `Cmd` and `Ctrl` are treated as distinct modifiers
+- Uses `tauri-plugin-global-shortcut` (no Accessibility permission required on macOS)
+- Not available in browser/PWA mode
+- Persists across app restarts
+
 ## Terminal Operations
 
 | Shortcut | Action |

@@ -126,6 +126,7 @@
 - Click repo header to expand/collapse branch list
 - Click again to toggle icon-only mode (shows initials)
 - `⋯` button: Repo Settings, Switch Branch (via context menu on main worktree), Create Worktree, Move to Group, Park Repository, Remove
+- **macOS TCC access dialog:** when the OS denies access to a repository directory (e.g. Desktop, Documents), a dialog explains the issue and guides the user to grant Full Disk Access in System Settings
 
 ### 2.2 Repository Groups
 - Named, colored groups for organizing repositories
