@@ -51,10 +51,11 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
     if (sharedTimerRef) return;
     sharedTimerRef = setInterval(() => {
       if (activePrData()?.state === "MERGED") setPrTick((t) => t + 1);
-      if (rateLimitStore.getRateLimitedCount() > 0) {
-        setRlTick((t) => t + 1);
-        rateLimitStore.cleanupExpired();
-      }
+      // Always tick + cleanup so the memo re-evaluates when rate limits expire.
+      // Without this, the last tick before expiry freezes the memo on stale data
+      // because SolidJS reactivity doesn't track Date.now() inside isStillRateLimited.
+      setRlTick((t) => t + 1);
+      rateLimitStore.cleanupExpired();
       // Stop when no longer needed
       if (!needsTicking() && sharedTimerRef) {
         clearInterval(sharedTimerRef);
