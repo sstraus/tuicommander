@@ -59,7 +59,7 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
       sessionId: null,
       fontSize: deps.getDefaultFontSize(),
       name: `Terminal ${count + 1}`,
-      cwd: activeTerminal?.cwd ?? null,
+      cwd: activeTerminal?.cwd ?? repositoriesStore.state.activeRepoPath ?? null,
       awaitingInput: null,
     });
 
