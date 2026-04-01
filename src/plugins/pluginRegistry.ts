@@ -724,9 +724,10 @@ function createPluginRegistry() {
     }
   }
 
-  /** Clean up the LineBuffer for a closed PTY session. */
+  /** Clean up the LineBuffer for a closed PTY session and notify plugins. */
   function removeSession(sessionId: string): void {
     lineBuffers.delete(sessionId);
+    dispatchStructuredEvent("session-closed", {}, sessionId);
   }
 
   /** Notify all state change listeners of a terminal/branch state change */

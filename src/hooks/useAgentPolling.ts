@@ -3,6 +3,7 @@ import { invoke } from "../invoke";
 import { terminalsStore } from "../stores/terminals";
 import { appLogger } from "../stores/appLogger";
 import { type AgentType, AGENT_TYPES, AGENTS } from "../agents";
+import { pluginRegistry } from "../plugins/pluginRegistry";
 
 /** Polling interval for foreground process detection (ms) */
 const POLL_INTERVAL_MS = 3000;
@@ -98,8 +99,15 @@ export function useAgentPolling(): void {
           appLogger.debug("app", `[AgentPoll] ${termId} agentType "${prevAgentType}" → "${agentType}"`);
           terminalsStore.update(termId, { agentType });
 
+          const sessId = current.sessionId;
+          if (prevAgentType === null && agentType !== null && sessId) {
+            pluginRegistry.notifyStateChange({ type: "agent-started", sessionId: sessId, terminalId: termId });
+          }
           // agent→null: clear session ID so re-discovery fires on next launch
           if (prevAgentType !== null && agentType === null) {
+            if (sessId) {
+              pluginRegistry.notifyStateChange({ type: "agent-stopped", sessionId: sessId, terminalId: termId });
+            }
             terminalsStore.update(termId, { agentSessionId: null });
             discoveryAttempted.delete(termId);
             nullStreak.delete(termId);
