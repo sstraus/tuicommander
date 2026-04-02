@@ -123,11 +123,6 @@ export function usePty() {
     return await rpc<ActiveSessionInfo[]>("list_active_sessions");
   }
 
-  /** Enable/disable VT100 diff rendering for a session (prevents scroll jumping) */
-  async function setDiffRender(sessionId: string, enabled: boolean, rows: number, cols: number): Promise<void> {
-    await rpc("set_diff_render", { sessionId, enabled, rows, cols });
-  }
-
   return {
     canSpawn,
     createSession,
@@ -144,6 +139,5 @@ export function usePty() {
     listWorktrees,
     getWorktreesDir,
     listActiveSessions,
-    setDiffRender,
   };
 }

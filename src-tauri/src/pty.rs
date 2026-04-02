@@ -1090,9 +1090,84 @@ pub(crate) fn cleanup_session(session_id: &str, state: &AppState) {
     state.input_buffers.remove(session_id);
     state.silence_states.remove(session_id);
     state.shell_states.remove(session_id);
-    state.diff_renderers.remove(session_id);
     state.last_output_ms.remove(session_id);
     state.last_prompts.remove(session_id);
+    state.terminal_rows.remove(session_id);
+}
+
+/// Return the byte length of a UTF-8 character given its leading byte.
+#[inline]
+fn utf8_char_width(lead: u8) -> usize {
+    match lead {
+        0..=0x7F => 1,
+        0xC0..=0xDF => 2,
+        0xE0..=0xEF => 3,
+        0xF0..=0xF7 => 4,
+        _ => 1, // continuation byte — shouldn't be a lead, advance 1
+    }
+}
+
+/// Clamp cursor-up ANSI sequences (ESC[nA) so `n` never exceeds the viewport height.
+///
+/// Ink-based TUI agents (Claude Code, Codex) emit ESC[nA where n equals the previous
+/// render height — potentially hundreds of lines. Terminals follow the cursor above the
+/// visible viewport, causing a scroll jump to top. Clamping n to the viewport rows keeps
+/// the cursor within the visible area without affecting rendering.
+///
+/// Also clamps ESC[nF (Cursor Previous Line) which has the same jump-to-top effect.
+fn clamp_cursor_up(data: &str, max_rows: u16) -> String {
+    use std::fmt::Write;
+
+    let max = max_rows as usize;
+    let bytes = data.as_bytes();
+    let len = bytes.len();
+    let mut result = String::with_capacity(len);
+    let mut i = 0;
+
+    while i < len {
+        if bytes[i] == 0x1b && i + 1 < len && bytes[i + 1] == b'[' {
+            // Parse ESC[ parameters
+            let seq_start = i;
+            i += 2; // skip ESC[
+            let num_start = i;
+            while i < len && bytes[i].is_ascii_digit() {
+                i += 1;
+            }
+            if i < len && (bytes[i] == b'A' || bytes[i] == b'F') {
+                // ESC[nA (Cursor Up) or ESC[nF (Cursor Previous Line)
+                let n: usize = if num_start == i {
+                    1 // ESC[A with no number means 1
+                } else {
+                    std::str::from_utf8(&bytes[num_start..i])
+                        .unwrap_or("1")
+                        .parse()
+                        .unwrap_or(1)
+                };
+                let clamped = n.min(max);
+                let cmd = bytes[i] as char;
+                i += 1; // skip A/F
+                let _ = write!(result, "\x1b[{clamped}{cmd}");
+            } else {
+                // Not a cursor-up sequence — emit as-is
+                let end = if i < len { i + 1 } else { i };
+                result.push_str(&data[seq_start..end]);
+                i = end;
+            }
+        } else {
+            // Decode UTF-8 character properly (bytes[i] as char would re-encode
+            // high bytes as Latin-1 codepoints, corrupting multi-byte characters).
+            let ch_len = utf8_char_width(bytes[i]);
+            if i + ch_len <= len {
+                // SAFETY: input `data` is a valid &str, so byte boundaries are valid UTF-8
+                result.push_str(&data[i..i + ch_len]);
+            } else {
+                // Incomplete UTF-8 at end — emit raw byte (shouldn't happen with valid &str)
+                result.push(bytes[i] as char);
+            }
+            i += ch_len.min(len - i).max(1);
+        }
+    }
+    result
 }
 
 /// Spawn a reader thread that reads from a PTY, emits Tauri events, and writes to the ring buffer.
@@ -1148,31 +1223,17 @@ pub(crate) fn spawn_reader_thread(
                         // Colorize intent / conceal suggest tokens, buffering incomplete
                         // tokens across streaming chunks to prevent cosmetic flash.
                         if let Some(xterm_data) = processor.transform_xterm(processed) {
-                            // If a diff renderer is active for this session, process through
-                            // it to emit minimal screen diffs instead of raw escape sequences.
-                            let emit_data = if let Some(renderer) = state.diff_renderers.get(&session_id) {
-                                let output = renderer.lock().process(xterm_data.as_bytes());
-                                if output.use_raw_passthrough {
-                                    // Alt buffer — forward raw data
-                                    xterm_data
-                                } else {
-                                    // Concatenate scrollback lines + screen patch
-                                    let mut buf = Vec::new();
-                                    for line in &output.scrollback_lines {
-                                        buf.extend_from_slice(line);
-                                    }
-                                    buf.extend_from_slice(&output.screen_patch);
-                                    // SAFETY: vt100 contents_diff/formatted produce valid UTF-8 ANSI
-                                    String::from_utf8(buf).unwrap_or(xterm_data)
-                                }
-                            } else {
-                                xterm_data
-                            };
+                            // Clamp cursor-up sequences to viewport height to prevent
+                            // scroll-jump-to-top caused by Ink TUI redraws (CC #33367).
+                            let rows = state.terminal_rows.get(&session_id)
+                                .map(|r| r.load(Ordering::Relaxed))
+                                .unwrap_or(24);
+                            let clamped_data = clamp_cursor_up(&xterm_data, rows);
                             let _ = app.emit(
                                 &format!("pty-output-{session_id}"),
                                 PtyOutput {
                                     session_id: session_id.clone(),
-                                    data: emit_data,
+                                    data: clamped_data,
                                 },
                             );
                         }
@@ -1371,6 +1432,11 @@ pub(crate) async fn create_pty(
             cmd.env("TUIC_SESSION", tuic_session);
         }
 
+        // Inject env flags (feature flags configured in Settings → Agents)
+        for (key, value) in &config.env {
+            cmd.env(key, value);
+        }
+
         match pair.slave.spawn_command(cmd) {
             Ok(child) => {
                 pair_and_child = Some((pair, child));
@@ -1424,6 +1490,7 @@ pub(crate) async fn create_pty(
         Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
     );
     state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
+    state.terminal_rows.insert(session_id.clone(), std::sync::atomic::AtomicU16::new(rows));
 
     spawn_reader_thread(
         reader,
@@ -1445,7 +1512,7 @@ pub(crate) async fn create_pty_with_worktree(
     worktree_config: WorktreeConfig,
 ) -> Result<WorktreeResult, String> {
     let pty_rows = pty_config.rows.max(24);
-    let pty_cols = pty_config.cols.max(80);
+    let _pty_cols = pty_config.cols.max(80);
     // Create the worktree first
     let worktrees_dir = crate::worktree::resolve_worktree_dir_for_repo(
         std::path::Path::new(&worktree_config.base_repo),
@@ -1476,6 +1543,11 @@ pub(crate) async fn create_pty_with_worktree(
 
         let mut cmd = build_shell_command(&shell);
         cmd.cwd(&worktree_path);
+
+        // Inject env flags (feature flags configured in Settings → Agents)
+        for (key, value) in &pty_config.env {
+            cmd.env(key, value);
+        }
 
         let child = pair
             .slave
@@ -1535,11 +1607,8 @@ pub(crate) async fn create_pty_with_worktree(
         session_id.clone(),
         Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
     );
-    state.diff_renderers.insert(
-        session_id.clone(),
-        Mutex::new(crate::diff_renderer::DiffRenderer::new(pty_rows, pty_cols)),
-    );
     state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
+    state.terminal_rows.insert(session_id.clone(), std::sync::atomic::AtomicU16::new(pty_rows));
 
     spawn_reader_thread(
         reader,
@@ -1692,26 +1761,6 @@ pub(crate) fn get_shell_state(
 }
 
 /// Enable or disable VT100 diff rendering for a PTY session.
-/// When enabled, raw PTY output is processed through a vt100::Parser and only
-/// minimal screen diffs are emitted to the frontend, preventing scroll jumping
-/// from ESC[2J/ESC[3J sequences.
-#[tauri::command]
-pub(crate) fn set_diff_render(
-    state: State<'_, Arc<AppState>>,
-    session_id: String,
-    enabled: bool,
-    rows: u16,
-    cols: u16,
-) -> Result<(), String> {
-    if enabled {
-        let renderer = crate::diff_renderer::DiffRenderer::new(rows.max(24), cols.max(80));
-        state.diff_renderers.insert(session_id, parking_lot::Mutex::new(renderer));
-    } else {
-        state.diff_renderers.remove(&session_id);
-    }
-    Ok(())
-}
-
 /// Resize a PTY session
 #[tauri::command]
 pub(crate) fn resize_pty(
@@ -1740,9 +1789,9 @@ pub(crate) fn resize_pty(
     if let Some(vt_log) = state.vt_log_buffers.get(&session_id) {
         vt_log.lock().resize(rows, cols);
     }
-    // Resize diff renderer if active (clears prev_screen → forces full repaint).
-    if let Some(renderer) = state.diff_renderers.get(&session_id) {
-        renderer.lock().resize(rows, cols);
+    // Update terminal rows for cursor-up clamping in the reader thread.
+    if let Some(r) = state.terminal_rows.get(&session_id) {
+        r.store(rows, Ordering::Relaxed);
     }
     // Mark resize in silence state so the reader thread suppresses re-parsed events
     // from the shell's prompt redraw triggered by SIGWINCH.
@@ -4007,5 +4056,72 @@ mod tests {
         assert_eq!(flushed, Some("[[intent: incomplete".to_string()));
         // After flush, pending should be empty
         assert!(cp.flush_pending_xterm().is_none());
+    }
+
+    // --- clamp_cursor_up tests ---
+
+    #[test]
+    fn clamp_cursor_up_no_sequences() {
+        assert_eq!(clamp_cursor_up("hello world", 24), "hello world");
+    }
+
+    #[test]
+    fn clamp_cursor_up_small_n_unchanged() {
+        // ESC[5A with viewport=24 → unchanged
+        assert_eq!(clamp_cursor_up("\x1b[5A", 24), "\x1b[5A");
+    }
+
+    #[test]
+    fn clamp_cursor_up_large_n_clamped() {
+        // ESC[500A with viewport=24 → ESC[24A
+        assert_eq!(clamp_cursor_up("\x1b[500A", 24), "\x1b[24A");
+    }
+
+    #[test]
+    fn clamp_cursor_up_bare_a() {
+        // ESC[A (no number, means 1) → ESC[1A
+        assert_eq!(clamp_cursor_up("\x1b[A", 24), "\x1b[1A");
+    }
+
+    #[test]
+    fn clamp_cursor_up_f_sequence() {
+        // ESC[300F (Cursor Previous Line) clamped to viewport
+        assert_eq!(clamp_cursor_up("\x1b[300F", 30), "\x1b[30F");
+    }
+
+    #[test]
+    fn clamp_cursor_up_preserves_other_sequences() {
+        // ESC[10B (cursor down), ESC[2J (clear screen) — left untouched
+        let input = "\x1b[10B\x1b[2J\x1b[100Ahello";
+        let result = clamp_cursor_up(input, 24);
+        assert_eq!(result, "\x1b[10B\x1b[2J\x1b[24Ahello");
+    }
+
+    #[test]
+    fn clamp_cursor_up_multiple_sequences() {
+        let input = "before\x1b[200Amiddle\x1b[5Aend";
+        let result = clamp_cursor_up(input, 30);
+        assert_eq!(result, "before\x1b[30Amiddle\x1b[5Aend");
+    }
+
+    #[test]
+    fn clamp_cursor_up_exact_viewport() {
+        // n == viewport rows → unchanged
+        assert_eq!(clamp_cursor_up("\x1b[24A", 24), "\x1b[24A");
+    }
+
+    #[test]
+    fn clamp_cursor_up_preserves_utf8_multibyte() {
+        // Box-drawing characters (3-byte UTF-8) and emoji (4-byte UTF-8)
+        let input = "├── hello 🦀 ─── end";
+        assert_eq!(clamp_cursor_up(input, 24), input);
+    }
+
+    #[test]
+    fn clamp_cursor_up_utf8_with_sequences() {
+        // Mix of UTF-8 text + ANSI cursor-up sequences
+        let input = "├──\x1b[100A🦀──";
+        let result = clamp_cursor_up(input, 10);
+        assert_eq!(result, "├──\x1b[10A🦀──");
     }
 }
