@@ -235,7 +235,7 @@ interface SettingsStoreState {
   intentTabTitle: boolean;
   suggestFollowups: boolean;
   copyOnSelect: boolean;
-  bellStyle: string;
+  bellStyle: "none" | "visual" | "sound" | "both";
   globalHotkey: string | null;
 }
 
@@ -303,7 +303,7 @@ function createSettingsStore() {
         setState("disabledAgents", config.disabled_agents ?? []);
         setState("intentTabTitle", config.intent_tab_title ?? true);
         setState("copyOnSelect", config.copy_on_select ?? true);
-        setState("bellStyle", config.bell_style || "visual");
+        setState("bellStyle", (config.bell_style || "visual") as SettingsStoreState["bellStyle"]);
         setState("suggestFollowups", config.suggest_followups ?? true);
         setState("globalHotkey", config.global_hotkey ?? null);
       } catch (err) {

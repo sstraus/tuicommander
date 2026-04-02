@@ -1118,7 +1118,6 @@ fn detect_anomalous_sequences(data: &str) -> Vec<&'static str> {
 
     while i < len {
         if bytes[i] == 0x1b && i + 1 < len && bytes[i + 1] == b'[' {
-            let seq_start = i;
             i += 2; // skip ESC[
 
             // Check for ESC[? private mode sequences (alt screen)

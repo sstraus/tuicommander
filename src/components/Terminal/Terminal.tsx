@@ -823,21 +823,39 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // Copy on select: auto-copy selection to clipboard when enabled
     terminal.onSelectionChange(() => {
       if (!settingsStore.state.copyOnSelect) return;
-      const sel = terminal!.getSelection();
+      const t = terminal;
+      if (!t) return;
+      const sel = t.getSelection();
       if (sel) {
         navigator.clipboard.writeText(sel).catch((err) => {
-          appLogger.debug("terminal", "Copy-on-select failed", err);
+          appLogger.warn("terminal", "Copy-on-select clipboard write failed", err);
         });
       }
     });
 
-    // Visual bell: flash the terminal container on BEL character
+    // Bell handler: flash and/or beep on BEL character
     terminal.onBell(() => {
       const style = settingsStore.state.bellStyle;
       if (style === "none") return;
       if (style === "visual" || style === "both") {
         containerRef?.classList.add("bell-flash");
         setTimeout(() => containerRef?.classList.remove("bell-flash"), 150);
+      }
+      if (style === "sound" || style === "both") {
+        try {
+          const ctx = new AudioContext();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.frequency.value = 880;
+          gain.gain.setValueAtTime(0.3, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+          osc.start(ctx.currentTime);
+          osc.stop(ctx.currentTime + 0.1);
+        } catch (err) {
+          appLogger.warn("terminal", "Bell audio playback failed", err);
+        }
       }
     });
 
