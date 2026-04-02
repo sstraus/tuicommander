@@ -793,62 +793,78 @@ pub fn start_plugin_watcher(app_handle: &AppHandle) {
 
     let handle = app_handle.clone();
     std::thread::spawn(move || {
-        use notify_debouncer_full::new_debouncer;
+        use notify::{Watcher, RecursiveMode};
         use std::time::Duration;
 
         let (tx, rx) = std::sync::mpsc::channel();
 
-        let mut debouncer = match new_debouncer(
-            Duration::from_millis(500),
-            None,
-            move |events: Result<Vec<notify_debouncer_full::DebouncedEvent>, Vec<notify::Error>>| {
-                let _ = tx.send(events);
+        let mut watcher = match notify::recommended_watcher(
+            move |result: Result<notify::Event, notify::Error>| {
+                let _ = tx.send(result);
             },
         ) {
-            Ok(d) => d,
+            Ok(w) => w,
             Err(e) => {
                 crate::app_logger::log_via_handle(&handle, "error", "plugin", &format!("[plugins] Failed to create watcher: {e}"));
                 return;
             }
         };
 
-        if let Err(e) = debouncer
-            .watch(&dir, notify::RecursiveMode::Recursive)
-        {
+        if let Err(e) = watcher.watch(&dir, RecursiveMode::Recursive) {
             crate::app_logger::log_via_handle(&handle, "error", "plugin", &format!("[plugins] Failed to watch plugins dir: {e}"));
             return;
         }
 
         crate::app_logger::log_via_handle(&handle, "info", "plugin", &format!("[plugins] Watching {dir:?} for changes"));
 
+        // Simple debounce: collect events for 500ms of quiet, then emit
+        let debounce = Duration::from_millis(500);
+        let mut changed_ids: Vec<String> = Vec::new();
+
         loop {
-            match rx.recv() {
-                Ok(Ok(events)) => {
-                    // Determine which plugin IDs changed
-                    let mut changed_ids: Vec<String> = Vec::new();
-                    for event in &events {
-                        for path in &event.event.paths {
-                            // Extract plugin ID from path: plugins_dir / <id> / ...
-                            if let Ok(relative) = path.strip_prefix(&dir)
-                                && let Some(first) = relative.components().next()
-                            {
-                                let id = first.as_os_str().to_string_lossy().to_string();
-                                if !id.starts_with('.') && !changed_ids.contains(&id) {
-                                    changed_ids.push(id);
-                                }
+            // Wait for first event or channel close
+            let event = match rx.recv() {
+                Ok(Ok(e)) => e,
+                Ok(Err(err)) => {
+                    crate::app_logger::log_via_handle(&handle, "warn", "plugin", &format!("[plugins] Watcher error: {err}"));
+                    continue;
+                }
+                Err(_) => break,
+            };
+
+            // Process this event
+            for path in &event.paths {
+                if let Ok(relative) = path.strip_prefix(&dir)
+                    && let Some(first) = relative.components().next()
+                {
+                    let id = first.as_os_str().to_string_lossy().to_string();
+                    if !id.starts_with('.') && !changed_ids.contains(&id) {
+                        changed_ids.push(id);
+                    }
+                }
+            }
+
+            // Drain any additional events within the debounce window
+            while let Ok(result) = rx.recv_timeout(debounce) {
+                if let Ok(event) = result {
+                    for path in &event.paths {
+                        if let Ok(relative) = path.strip_prefix(&dir)
+                            && let Some(first) = relative.components().next()
+                        {
+                            let id = first.as_os_str().to_string_lossy().to_string();
+                            if !id.starts_with('.') && !changed_ids.contains(&id) {
+                                changed_ids.push(id);
                             }
                         }
                     }
+                }
+            }
 
-                    if !changed_ids.is_empty() {
-                        crate::app_logger::log_via_handle(&handle, "info", "plugin", &format!("[plugins] Change detected in: {changed_ids:?}"));
-                        let _ = handle.emit("plugin-changed", changed_ids);
-                    }
-                }
-                Ok(Err(errs)) => {
-                    crate::app_logger::log_via_handle(&handle, "warn", "plugin", &format!("[plugins] Watcher errors: {errs:?}"));
-                }
-                Err(_) => break, // Channel closed
+            // Debounce window expired — emit
+            if !changed_ids.is_empty() {
+                crate::app_logger::log_via_handle(&handle, "info", "plugin", &format!("[plugins] Change detected in: {changed_ids:?}"));
+                let _ = handle.emit("plugin-changed", changed_ids.clone());
+                changed_ids.clear();
             }
         }
     });

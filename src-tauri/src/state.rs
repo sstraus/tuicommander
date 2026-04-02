@@ -1,12 +1,11 @@
 use dashmap::DashMap;
-use notify_debouncer_full::Debouncer;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, AtomicUsize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::AppHandle;
@@ -787,11 +786,12 @@ pub struct AppState {
     pub(crate) config: parking_lot::RwLock<crate::config::AppConfig>,
     /// TTL caches for git and GitHub query results
     pub(crate) git_cache: GitCacheState,
-    /// Unified file watchers per repo — one recursive watcher covering
-    /// .git/ and working tree, with per-category debounce (keyed by repo path)
-    pub(crate) repo_watchers: DashMap<String, Debouncer<notify::RecommendedWatcher, notify_debouncer_full::RecommendedCache>>,
+    /// Raw file watchers per repo — one recursive watcher covering
+    /// .git/ and working tree, with per-category debounce (keyed by repo path).
+    /// Uses raw notify::RecommendedWatcher (no debouncer-full walkdir overhead).
+    pub(crate) repo_watchers: DashMap<String, crate::repo_watcher::WatchHandle>,
     /// File watchers for directory contents (keyed by absolute dir path)
-    pub(crate) dir_watchers: DashMap<String, Debouncer<notify::RecommendedWatcher, notify_debouncer_full::RecommendedCache>>,
+    pub(crate) dir_watchers: DashMap<String, crate::repo_watcher::WatchHandle>,
     /// Shared async HTTP client for GitHub API requests.
     pub(crate) http_client: reqwest::Client,
     /// GitHub API token — updated on fallback when a 401 triggers candidate rotation
@@ -814,10 +814,6 @@ pub struct AppState {
     /// Per-session VT100 log buffers for clean mobile/REST output (session_id → buffer).
     /// Separate DashMap to avoid writer contention on PtySession.
     pub(crate) vt_log_buffers: DashMap<String, Mutex<VtLogBuffer>>,
-    /// Per-session VT100 diff renderers for scroll-jump-free xterm output.
-    /// When present for a session, raw PTY data is processed through vt100::Parser
-    /// and only minimal screen diffs are emitted to the frontend.
-    pub(crate) diff_renderers: DashMap<String, Mutex<crate::diff_renderer::DiffRenderer>>,
     /// Per-session kitty keyboard protocol state (session_id → state).
     /// Separate DashMap (not inside PtySession) to avoid writer contention.
     pub(crate) kitty_states: DashMap<String, Mutex<KittyKeyboardState>>,
@@ -861,6 +857,9 @@ pub struct AppState {
     /// The single source of truth for busy/idle — the frontend consumes events,
     /// it does not derive this state from raw PTY output timing.
     pub(crate) shell_states: DashMap<String, std::sync::atomic::AtomicU8>,
+    /// Per-session terminal viewport rows. Updated by resize_pty, read by the
+    /// reader thread to clamp cursor-up (ESC[nA) sequences to viewport height.
+    pub(crate) terminal_rows: DashMap<String, AtomicU16>,
     /// Loaded plugin capabilities: plugin_id → list of capability strings.
     /// Populated by the frontend via `register_loaded_plugin` on plugin load.
     /// Used by Rust plugin commands to enforce capability checks server-side.
@@ -1330,6 +1329,9 @@ pub(crate) struct PtyConfig {
     /// Pre-generated stable session UUID — injected as `TUIC_SESSION` env var.
     /// Persists across app restarts so agents can resume the same session.
     pub(crate) tuic_session: Option<String>,
+    /// Extra environment variables injected into the PTY process (e.g. agent feature flags).
+    #[serde(default)]
+    pub(crate) env: HashMap<String, String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -1881,7 +1883,6 @@ pub(crate) mod tests_support {
             app_handle: parking_lot::RwLock::new(None),
             plugin_watchers: dashmap::DashMap::new(),
             vt_log_buffers: dashmap::DashMap::new(),
-            diff_renderers: dashmap::DashMap::new(),
             kitty_states: dashmap::DashMap::new(),
             input_buffers: dashmap::DashMap::new(),
             last_prompts: dashmap::DashMap::new(),
@@ -1896,6 +1897,7 @@ pub(crate) mod tests_support {
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
             shell_states: DashMap::new(),
+            terminal_rows: DashMap::new(),
             loaded_plugins: DashMap::new(),
             relay: RelayState::new(),
             peer_agents: DashMap::new(),
@@ -2310,7 +2312,6 @@ mod tests {
             app_handle: parking_lot::RwLock::new(None),
             plugin_watchers: dashmap::DashMap::new(),
             vt_log_buffers: dashmap::DashMap::new(),
-            diff_renderers: dashmap::DashMap::new(),
             kitty_states: dashmap::DashMap::new(),
             input_buffers: dashmap::DashMap::new(),
             last_prompts: dashmap::DashMap::new(),
@@ -2325,6 +2326,7 @@ mod tests {
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
             shell_states: DashMap::new(),
+            terminal_rows: DashMap::new(),
             loaded_plugins: DashMap::new(),
             relay: RelayState::new(),
             peer_agents: DashMap::new(),

@@ -6,7 +6,6 @@ pub(crate) mod chrome;
 pub(crate) mod claude_usage;
 pub(crate) mod cli;
 pub(crate) mod config;
-pub(crate) mod diff_renderer;
 mod dictation;
 pub(crate) mod error_classification;
 pub(crate) mod fs;
@@ -700,7 +699,6 @@ pub fn run() {
         app_handle: parking_lot::RwLock::new(None),
         plugin_watchers: DashMap::new(),
         vt_log_buffers: DashMap::new(),
-        diff_renderers: DashMap::new(),
         kitty_states: DashMap::new(),
         input_buffers: DashMap::new(),
         last_prompts: DashMap::new(),
@@ -715,6 +713,7 @@ pub fn run() {
         slash_mode: DashMap::new(),
         last_output_ms: DashMap::new(),
         shell_states: DashMap::new(),
+        terminal_rows: DashMap::new(),
         loaded_plugins: DashMap::new(),
         relay: crate::state::RelayState::new(),
         peer_agents: DashMap::new(),
@@ -891,7 +890,9 @@ pub fn run() {
             // Start plugin directory watcher for hot-reload
             plugins::start_plugin_watcher(app.handle());
 
-            // Auto-start HEAD and repo watchers for known repositories
+            // Auto-start repo watchers for known repositories.
+            // Uses raw notify::RecommendedWatcher — registration is instant on
+            // macOS (FSEvents) and Windows (ReadDirectoryChangesW), no walkdir scan.
             let repos_json = config::load_repositories();
             if let Some(repos) = repos_json.get("repos").and_then(|r| r.as_object()) {
                 let handle = app.handle().clone();
@@ -910,7 +911,6 @@ pub fn run() {
             pty::list_worktrees,
             pty::write_pty,
             pty::resize_pty,
-            pty::set_diff_render,
             pty::pause_pty,
             pty::resume_pty,
             pty::get_kitty_flags,

@@ -1,6 +1,5 @@
 use ignore::gitignore::Gitignore;
-use notify::RecursiveMode;
-use notify_debouncer_full::new_debouncer;
+use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -82,9 +81,8 @@ pub(crate) fn classify_path(
     EventCategory::Noise
 }
 
-/// Per-category debounce delays. The fs-level debouncer runs at HEAD's rate
-/// (the fastest), and CategoryEmitter applies these app-level delays so
-/// slower categories don't over-fire.
+/// Per-category debounce delays. CategoryEmitter applies these app-level
+/// delays so slower categories don't over-fire.
 const HEAD_DEBOUNCE: Duration = Duration::from_millis(200);
 const GIT_STATE_DEBOUNCE: Duration = Duration::from_millis(500);
 const WORKING_TREE_DEBOUNCE: Duration = Duration::from_millis(1500);
@@ -151,10 +149,6 @@ impl CategoryEmitter {
     }
 }
 
-/// Base debounce for the fs-level debouncer — set to HEAD's rate (fastest).
-/// Per-category app-level debounce is handled by `CategoryEmitter`.
-const BASE_DEBOUNCE_MS: u64 = 200;
-
 /// Payload emitted when a repo's `.git/` directory changes in a meaningful way.
 #[derive(Clone, serde::Serialize)]
 pub(crate) struct RepoChangedPayload {
@@ -181,11 +175,21 @@ fn build_gitignore(repo_root: &Path) -> Gitignore {
     }
 }
 
-/// Start a unified watcher for a repository. Watches the repo root recursively
-/// with a single debouncer, classifies events into Head/GitState/WorkingTree/Noise,
-/// and applies per-category trailing debounce via `CategoryEmitter`.
+/// Thread-safe wrapper for `RecommendedWatcher`.
 ///
-/// Replaces the previous separate head_watcher + repo_watcher pair.
+/// `RecommendedWatcher` is `Send` but not `Sync`. Wrapping in `Mutex`
+/// provides `Sync` so it can live in DashMap. The mutex is only locked
+/// during `watch()`/`unwatch()` calls (not on the event hot path).
+pub(crate) struct WatchHandle(#[allow(dead_code)] pub(crate) Mutex<RecommendedWatcher>);
+
+/// Start a watcher for a repository using raw `notify::RecommendedWatcher`.
+///
+/// On macOS/Windows, FSEvents/ReadDirectoryChangesW handle recursive watching
+/// at the OS level with near-zero cost. Events are classified via `classify_path`
+/// and fed to `CategoryEmitter` for per-category trailing debounce.
+///
+/// Unlike the previous `notify-debouncer-full` approach, this does NOT perform
+/// a synchronous walkdir+stat scan at registration time.
 pub(crate) fn start_watching(
     repo_path: &str,
     app_handle: Option<&AppHandle>,
@@ -213,28 +217,26 @@ pub(crate) fn start_watching(
     let git_dir_for_cb = git_dir.clone();
     let gitignore_cb = Arc::clone(&gitignore);
 
-    let mut debouncer = new_debouncer(
-        Duration::from_millis(BASE_DEBOUNCE_MS),
-        None,
-        move |events: Result<Vec<notify_debouncer_full::DebouncedEvent>, Vec<notify::Error>>| {
-            let events = match events {
-                Ok(evts) => evts,
-                Err(errs) => {
+    // Raw notify watcher — no debouncer-full, no walkdir scan.
+    // Each OS event is classified and fed to CategoryEmitter which
+    // handles per-category trailing debounce.
+    let mut watcher = notify::recommended_watcher(
+        move |result: Result<notify::Event, notify::Error>| {
+            let event = match result {
+                Ok(e) => e,
+                Err(err) => {
                     if let Some(ref handle) = handle {
-                        crate::app_logger::log_via_handle(handle, "warn", "app", &format!("[repo_watcher] error for {repo_path_owned}: {errs:?}"));
+                        crate::app_logger::log_via_handle(handle, "warn", "app", &format!("[repo_watcher] error for {repo_path_owned}: {err}"));
                     } else {
-                        tracing::warn!(source = "repo_watcher", path = %repo_path_owned, "Watcher errors: {errs:?}");
+                        tracing::warn!(source = "repo_watcher", path = %repo_path_owned, "Watcher error: {err}");
                     }
                     return;
                 }
             };
 
             // Check if .gitignore itself changed — rebuild matcher if so
-            let gitignore_changed = events.iter().any(|e| {
-                e.event.paths.iter().any(|p| {
-                    p.file_name()
-                        .is_some_and(|n| n == ".gitignore")
-                })
+            let gitignore_changed = event.paths.iter().any(|p| {
+                p.file_name().is_some_and(|n| n == ".gitignore")
             });
             if gitignore_changed {
                 *gitignore_cb.write() = build_gitignore(&repo_for_cb);
@@ -246,14 +248,12 @@ pub(crate) fn start_watching(
             let mut has_git_state = false;
             let mut has_working_tree = false;
 
-            for event in &events {
-                for path in &event.event.paths {
-                    match classify_path(path, &repo_for_cb, &git_dir_for_cb, &gi) {
-                        EventCategory::Head => has_head = true,
-                        EventCategory::GitState => has_git_state = true,
-                        EventCategory::WorkingTree => has_working_tree = true,
-                        EventCategory::Noise => {}
-                    }
+            for path in &event.paths {
+                match classify_path(path, &repo_for_cb, &git_dir_for_cb, &gi) {
+                    EventCategory::Head => has_head = true,
+                    EventCategory::GitState => has_git_state = true,
+                    EventCategory::WorkingTree => has_working_tree = true,
+                    EventCategory::Noise => {}
                 }
             }
             drop(gi);
@@ -299,7 +299,7 @@ pub(crate) fn start_watching(
                 });
             }
 
-            // Only emit WorkingTree if GitState didn't already fire in this batch.
+            // Only emit WorkingTree if GitState didn't already fire in this event.
             // A git operation (commit, stage) already triggers RepoChanged via GitState
             // at 500ms — emitting again at 1500ms would double-fire githubStore.pollRepo.
             if has_working_tree && !has_git_state {
@@ -324,18 +324,20 @@ pub(crate) fn start_watching(
     )
     .map_err(|e| format!("Failed to create repo watcher: {e}"))?;
 
-    // Watch repo root recursively — single watcher covers .git/ and working tree
-    debouncer
+    // Watch repo root recursively. On macOS (FSEvents) and Windows
+    // (ReadDirectoryChangesW) this is a single OS-level registration
+    // with near-zero cost — no directory traversal.
+    watcher
         .watch(repo.as_path(), RecursiveMode::Recursive)
         .map_err(|e| format!("Failed to watch repo: {e}"))?;
 
-    state.repo_watchers.insert(repo_path.to_string(), debouncer);
+    state.repo_watchers.insert(repo_path.to_string(), WatchHandle(Mutex::new(watcher)));
     Ok(())
 }
 
 /// Stop watching a repository.
 pub(crate) fn stop_watching(repo_path: &str, state: &Arc<AppState>) {
-    // Dropping the Debouncer stops the watcher automatically
+    // Dropping the WatchHandle stops the watcher automatically
     state.repo_watchers.remove(repo_path);
 }
 

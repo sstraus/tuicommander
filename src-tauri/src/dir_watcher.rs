@@ -1,5 +1,5 @@
-use notify::RecursiveMode;
-use notify_debouncer_full::new_debouncer;
+use notify::{RecursiveMode, Watcher};
+use parking_lot::Mutex;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -7,6 +7,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::state::AppEvent;
 use crate::AppState;
+use crate::repo_watcher::WatchHandle;
 
 /// Debounce interval for directory content changes.
 const DEBOUNCE_MS: u64 = 500;
@@ -35,60 +36,64 @@ pub(crate) fn start_watching(
     let dir_path_owned = dir_path.to_string();
     let handle = app_handle.cloned();
     let event_bus = state.event_bus.clone();
+    let rt = tauri::async_runtime::handle().inner().clone();
+    let pending: Arc<Mutex<Option<tokio::task::AbortHandle>>> = Arc::new(Mutex::new(None));
 
-    let mut debouncer = new_debouncer(
-        Duration::from_millis(DEBOUNCE_MS),
-        None,
-        move |events: Result<Vec<notify_debouncer_full::DebouncedEvent>, Vec<notify::Error>>| {
-            let events = match events {
-                Ok(evts) => evts,
-                Err(errs) => {
+    let mut watcher = notify::recommended_watcher(
+        move |result: Result<notify::Event, notify::Error>| {
+            let _event = match result {
+                Ok(e) => e,
+                Err(err) => {
                     if let Some(ref handle) = handle {
                         crate::app_logger::log_via_handle(
                             handle,
                             "warn",
                             "app",
-                            &format!("[dir_watcher] watcher error for {dir_path_owned}: {errs:?}"),
+                            &format!("[dir_watcher] watcher error for {dir_path_owned}: {err}"),
                         );
                     } else {
-                        tracing::warn!(source = "dir_watcher", path = %dir_path_owned, "Watcher errors: {errs:?}");
+                        tracing::warn!(source = "dir_watcher", path = %dir_path_owned, "Watcher error: {err}");
                     }
                     return;
                 }
             };
 
-            if events.is_empty() {
-                return;
+            // Trailing debounce: cancel previous timer, start new one
+            let dir_path = dir_path_owned.clone();
+            let bus = event_bus.clone();
+            let h = handle.clone();
+            let mut guard = pending.lock();
+            if let Some(prev) = guard.take() {
+                prev.abort();
             }
-
-            // Broadcast to SSE/WebSocket consumers
-            let _ = event_bus.send(AppEvent::DirChanged {
-                dir_path: dir_path_owned.clone(),
+            let join = rt.spawn(async move {
+                tokio::time::sleep(Duration::from_millis(DEBOUNCE_MS)).await;
+                let _ = bus.send(AppEvent::DirChanged {
+                    dir_path: dir_path.clone(),
+                });
+                if let Some(ref handle) = h {
+                    let _ = handle.emit(
+                        "dir-changed",
+                        DirChangedPayload { dir_path },
+                    );
+                }
             });
-            // Tauri IPC for desktop
-            if let Some(ref handle) = handle {
-                let _ = handle.emit(
-                    "dir-changed",
-                    DirChangedPayload {
-                        dir_path: dir_path_owned.clone(),
-                    },
-                );
-            }
+            *guard = Some(join.abort_handle());
         },
     )
     .map_err(|e| format!("Failed to create dir watcher: {e}"))?;
 
-    debouncer
+    watcher
         .watch(path.as_path(), RecursiveMode::NonRecursive)
         .map_err(|e| format!("Failed to watch directory: {e}"))?;
 
-    state.dir_watchers.insert(dir_path.to_string(), debouncer);
+    state.dir_watchers.insert(dir_path.to_string(), WatchHandle(Mutex::new(watcher)));
     Ok(())
 }
 
 /// Stop watching a directory.
 pub(crate) fn stop_watching(dir_path: &str, state: &Arc<AppState>) {
-    // Dropping the Debouncer stops the watcher automatically
+    // Dropping the WatchHandle stops the watcher automatically
     state.dir_watchers.remove(dir_path);
 }
 
@@ -112,7 +117,6 @@ mod tests {
     use tempfile::TempDir;
 
     fn make_test_state() -> Arc<AppState> {
-        // Reuse the minimal AppState construction pattern
         Arc::new(crate::state::tests_support::make_test_app_state())
     }
 

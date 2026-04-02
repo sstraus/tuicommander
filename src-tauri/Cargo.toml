@@ -3,7 +3,7 @@ members = [".", "crates/tuic-bridge"]
 
 [package]
 name = "tuicommander"
-version = "0.9.8"
+version = "0.9.9"
 description = "TUICommander - Native platform for AI coding agents"
 authors = ["Stefano Straus <github.com/sstraus>"]
 edition = "2024"
@@ -49,7 +49,6 @@ tower-http = { version = "0.6.8", features = ["cors"] }
 rand = "0.10"
 libc = "0.2"
 notify = "8"
-notify-debouncer-full = "0.7"
 gh-token = "0.1"
 keepawake = "0.6"
 tauri-plugin-updater = "2"
