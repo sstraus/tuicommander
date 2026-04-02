@@ -450,7 +450,7 @@ describe("useTerminalLifecycle", () => {
       const mockClear = vi.fn();
       const id = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
       terminalsStore.setActive(id);
-      terminalsStore.update(id, { ref: { clear: mockClear, fit: vi.fn(), write: vi.fn(), writeln: vi.fn(), input: vi.fn(), focus: vi.fn(), getSessionId: vi.fn(), openSearch: vi.fn(), closeSearch: vi.fn(), searchBuffer: vi.fn(() => []), scrollToLine: vi.fn() } });
+      terminalsStore.update(id, { ref: { clear: mockClear, fit: vi.fn(), write: vi.fn(), writeln: vi.fn(), input: vi.fn(), focus: vi.fn(), getSessionId: vi.fn(), openSearch: vi.fn(), closeSearch: vi.fn(), searchBuffer: vi.fn(() => []), scrollToLine: vi.fn(), scrollToTop: vi.fn(), scrollToBottom: vi.fn(), scrollPages: vi.fn() } });
 
       lifecycle.clearTerminal();
       expect(mockClear).toHaveBeenCalled();
@@ -611,7 +611,7 @@ describe("useTerminalLifecycle", () => {
       const id = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
       terminalsStore.setActive(id);
       terminalsStore.update(id, {
-        ref: { write: mockWrite, clear: vi.fn(), fit: vi.fn(), writeln: vi.fn(), input: vi.fn(), focus: vi.fn(), getSessionId: vi.fn(), openSearch: vi.fn(), closeSearch: vi.fn(), searchBuffer: vi.fn(() => []), scrollToLine: vi.fn() },
+        ref: { write: mockWrite, clear: vi.fn(), fit: vi.fn(), writeln: vi.fn(), input: vi.fn(), focus: vi.fn(), getSessionId: vi.fn(), openSearch: vi.fn(), closeSearch: vi.fn(), searchBuffer: vi.fn(() => []), scrollToLine: vi.fn(), scrollToTop: vi.fn(), scrollToBottom: vi.fn(), scrollPages: vi.fn() },
       });
 
       await lifecycle.pasteToTerminal();

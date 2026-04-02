@@ -37,6 +37,11 @@ function createMockHandlers(): ShortcutHandlers {
     toggleBranchesTab: vi.fn(),
     toggleMcpPopup: vi.fn(),
     clearScrollback: vi.fn(),
+    scrollToTop: vi.fn(),
+    scrollToBottom: vi.fn(),
+    scrollPageUp: vi.fn(),
+    scrollPageDown: vi.fn(),
+    toggleZoomPane: vi.fn(),
     togglePromptLibrary: vi.fn(),
     toggleDiffScroll: vi.fn(),
   };

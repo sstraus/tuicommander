@@ -628,7 +628,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
       lineHeight: 1.2,
       theme: currentTheme(),
       cursorBlink: true,
-      bellStyle: (settingsStore.state.bellStyle || "visual") as "none" | "sound" | "visual" | "both",
       allowProposedApi: true,
       rescaleOverlappingGlyphs: true,
       macOptionIsMeta: false, // Right Option keeps macOS composition (π, ∑, @…)
@@ -824,9 +823,21 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // Copy on select: auto-copy selection to clipboard when enabled
     terminal.onSelectionChange(() => {
       if (!settingsStore.state.copyOnSelect) return;
-      const selection = terminal.getSelection();
-      if (selection) {
-        navigator.clipboard.writeText(selection).catch(() => {});
+      const sel = terminal!.getSelection();
+      if (sel) {
+        navigator.clipboard.writeText(sel).catch((err) => {
+          appLogger.debug("terminal", "Copy-on-select failed", err);
+        });
+      }
+    });
+
+    // Visual bell: flash the terminal container on BEL character
+    terminal.onBell(() => {
+      const style = settingsStore.state.bellStyle;
+      if (style === "none") return;
+      if (style === "visual" || style === "both") {
+        containerRef?.classList.add("bell-flash");
+        setTimeout(() => containerRef?.classList.remove("bell-flash"), 150);
       }
     });
 

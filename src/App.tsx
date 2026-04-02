@@ -43,7 +43,7 @@ import { DictationToast } from "./components/DictationToast/DictationToast";
 import { commandPaletteStore } from "./stores/commandPalette";
 import { branchSwitcherStore } from "./stores/branchSwitcher";
 import { mcpPopupStore } from "./stores/mcpPopup";
-import { smartPromptsDropdownStore } from "./stores/smartPromptsDropdown";
+// smartPromptsDropdownStore import removed — smart prompts merged into prompt library (Cmd+Shift+K)
 import { activityDashboardStore } from "./stores/activityDashboard";
 import { worktreeManagerStore } from "./stores/worktreeManager";
 import { errorLogStore } from "./stores/errorLog";

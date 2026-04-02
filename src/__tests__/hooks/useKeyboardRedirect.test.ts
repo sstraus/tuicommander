@@ -52,6 +52,9 @@ describe("useKeyboardRedirect", () => {
         closeSearch: vi.fn(),
         searchBuffer: vi.fn(() => []),
         scrollToLine: vi.fn(),
+        scrollToTop: vi.fn(),
+        scrollToBottom: vi.fn(),
+        scrollPages: vi.fn(),
       },
     });
   });
