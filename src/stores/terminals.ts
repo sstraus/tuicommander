@@ -80,6 +80,9 @@ export interface TerminalRef {
   searchBuffer: (query: string) => TerminalMatch[];
   /** Scroll to an absolute buffer line index (centered in viewport) */
   scrollToLine: (lineIndex: number) => void;
+  scrollToTop: () => void;
+  scrollToBottom: () => void;
+  scrollPages: (pages: number) => void;
 }
 
 /** Combined terminal state */

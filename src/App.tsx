@@ -970,6 +970,12 @@ const App: Component = () => {
     reopenClosedTab: terminalLifecycle.reopenClosedTab,
     navigateTab: terminalLifecycle.navigateTab,
     clearTerminal: terminalLifecycle.clearTerminal,
+    clearScrollback: terminalLifecycle.clearScrollback,
+    scrollToTop: terminalLifecycle.scrollToTop,
+    scrollToBottom: terminalLifecycle.scrollToBottom,
+    scrollPageUp: terminalLifecycle.scrollPageUp,
+    scrollPageDown: terminalLifecycle.scrollPageDown,
+    toggleZoomPane: splitPanes.toggleZoomPane,
     terminalIds: terminalLifecycle.terminalIds,
     handleTerminalSelect: terminalLifecycle.handleTerminalSelect,
     handleSplit: splitPanes.handleSplit,
@@ -1010,7 +1016,6 @@ const App: Component = () => {
     toggleErrorLog: () => errorLogStore.toggle(),
     toggleBranchesTab: () => uiStore.toggleGitPanelOnTab("branches"),
     toggleMcpPopup: () => mcpPopupStore.toggle(),
-    toggleSmartPrompts: () => smartPromptsDropdownStore.toggle(),
     toggleDiffScroll: () => {
       // Open a diff tab in scroll mode for the active repo
       const repoPath = repositoriesStore.state.activeRepoPath;

@@ -63,7 +63,12 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
   "quick-branch-switch": { label: "Quick branch switch", category: "Git" },
   "toggle-error-log": { label: "Error log", category: "Navigation" },
   "toggle-mcp-popup": { label: "MCP servers (per-repo)", category: "Panels" },
-  "toggle-smart-prompts": { label: "Smart Prompts", category: "Navigation" },
+  "clear-scrollback": { label: "Clear scrollback", category: "Terminal" },
+  "scroll-to-top": { label: "Scroll to top", category: "Terminal" },
+  "scroll-to-bottom": { label: "Scroll to bottom", category: "Terminal" },
+  "scroll-page-up": { label: "Scroll page up", category: "Terminal" },
+  "scroll-page-down": { label: "Scroll page down", category: "Terminal" },
+  "zoom-pane": { label: "Maximize/restore pane", category: "Split Panes" },
   "prompt-library": { label: "Prompt Library", category: "Navigation" },
 };
 
@@ -111,7 +116,12 @@ export function getActionEntries(handlers: ShortcutHandlers): ActionEntry[] {
     "quick-branch-switch": handlers.toggleBranchSwitcher,
     "toggle-error-log": handlers.toggleErrorLog,
     "toggle-mcp-popup": handlers.toggleMcpPopup,
-    "toggle-smart-prompts": handlers.toggleSmartPrompts,
+    "clear-scrollback": handlers.clearScrollback,
+    "scroll-to-top": handlers.scrollToTop,
+    "scroll-to-bottom": handlers.scrollToBottom,
+    "scroll-page-up": handlers.scrollPageUp,
+    "scroll-page-down": handlers.scrollPageDown,
+    "zoom-pane": handlers.toggleZoomPane,
     "prompt-library": handlers.togglePromptLibrary,
   };
 

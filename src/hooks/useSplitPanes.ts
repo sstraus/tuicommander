@@ -1,9 +1,13 @@
-import { terminalsStore } from "../stores/terminals";
+import { createSignal } from "solid-js";
+import { terminalsStore, type TabLayout } from "../stores/terminals";
 import { repositoriesStore } from "../stores/repositories";
 import { settingsStore } from "../stores/settings";
 
 /** Split pane management */
 export function useSplitPanes() {
+  const [zoomed, setZoomed] = createSignal(false);
+  const [savedLayout, setSavedLayout] = createSignal<TabLayout | null>(null);
+
   const handleSplit = (direction: "vertical" | "horizontal") => {
     const activeId = terminalsStore.state.activeId;
     if (!activeId) return;
@@ -50,8 +54,44 @@ export function useSplitPanes() {
     });
   };
 
+  const toggleZoomPane = () => {
+    if (zoomed()) {
+      // Restore saved layout
+      const layout = savedLayout();
+      if (layout) {
+        terminalsStore.setLayout(layout);
+        setSavedLayout(null);
+        // Re-fit all panes after layout restore
+        setTimeout(() => {
+          for (const paneId of layout.panes) {
+            terminalsStore.get(paneId)?.ref?.fit();
+          }
+        }, 150);
+      }
+      setZoomed(false);
+    } else {
+      const layout = terminalsStore.state.layout;
+      if (layout.direction === "none" || layout.panes.length <= 1) return;
+      // Save current layout and zoom to active pane
+      setSavedLayout({ ...layout, panes: [...layout.panes], ratios: [...layout.ratios] });
+      const activePane = layout.panes[layout.activePaneIndex] ?? layout.panes[0];
+      terminalsStore.setLayout({
+        direction: "none",
+        panes: [activePane],
+        ratios: [],
+        activePaneIndex: 0,
+      });
+      setZoomed(true);
+      setTimeout(() => {
+        terminalsStore.get(activePane)?.ref?.fit();
+      }, 150);
+    }
+  };
+
   return {
     handleSplit,
     resetLayout,
+    toggleZoomPane,
+    zoomed,
   };
 }

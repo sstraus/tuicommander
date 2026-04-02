@@ -32,6 +32,8 @@ interface RustAppConfig {
   disabled_agents: string[];
   intent_tab_title: boolean;
   suggest_followups: boolean;
+  copy_on_select: boolean;
+  bell_style: string;
   global_hotkey: string | null;
 }
 
@@ -232,6 +234,8 @@ interface SettingsStoreState {
   disabledAgents: string[];
   intentTabTitle: boolean;
   suggestFollowups: boolean;
+  copyOnSelect: boolean;
+  bellStyle: string;
   globalHotkey: string | null;
 }
 
@@ -256,6 +260,8 @@ function createSettingsStore() {
     disabledAgents: [],
     intentTabTitle: true,
     suggestFollowups: true,
+    copyOnSelect: true,
+    bellStyle: "visual",
     globalHotkey: null,
   });
 
@@ -296,6 +302,8 @@ function createSettingsStore() {
         setState("updateChannel", channel === "nightly" ? channel : "stable");
         setState("disabledAgents", config.disabled_agents ?? []);
         setState("intentTabTitle", config.intent_tab_title ?? true);
+        setState("copyOnSelect", config.copy_on_select ?? true);
+        setState("bellStyle", config.bell_style || "visual");
         setState("suggestFollowups", config.suggest_followups ?? true);
         setState("globalHotkey", config.global_hotkey ?? null);
       } catch (err) {
@@ -576,6 +584,20 @@ function createSettingsStore() {
       } catch (err) {
         appLogger.error("config", "Failed to persist suggestFollowups", err);
         setState("suggestFollowups", prevValue);
+      }
+    },
+
+    /** Set copy-on-select preference */
+    async setCopyOnSelect(enabled: boolean): Promise<void> {
+      const prevValue = state.copyOnSelect;
+      setState("copyOnSelect", enabled);
+      try {
+        const config = await invoke<RustAppConfig>("load_config");
+        config.copy_on_select = enabled;
+        await invoke("save_config", { config });
+      } catch (err) {
+        appLogger.error("config", "Failed to persist copyOnSelect", err);
+        setState("copyOnSelect", prevValue);
       }
     },
 

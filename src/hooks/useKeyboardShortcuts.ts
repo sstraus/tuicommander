@@ -57,7 +57,12 @@ export interface ShortcutHandlers {
   toggleErrorLog: () => void;
   toggleBranchesTab: () => void;
   toggleMcpPopup: () => void;
-  toggleSmartPrompts: () => void;
+  clearScrollback: () => void;
+  scrollToTop: () => void;
+  scrollToBottom: () => void;
+  scrollPageUp: () => void;
+  scrollPageDown: () => void;
+  toggleZoomPane: () => void;
   togglePromptLibrary: () => void;
   toggleDiffScroll: () => void;
 }
@@ -138,7 +143,12 @@ function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean
     case "toggle-error-log": handlers.toggleErrorLog(); return true;
     case "toggle-branches-tab": handlers.toggleBranchesTab(); return true;
     case "toggle-mcp-popup": handlers.toggleMcpPopup(); return true;
-    case "toggle-smart-prompts": handlers.toggleSmartPrompts(); return true;
+    case "clear-scrollback": handlers.clearScrollback(); return true;
+    case "scroll-to-top": handlers.scrollToTop(); return true;
+    case "scroll-to-bottom": handlers.scrollToBottom(); return true;
+    case "scroll-page-up": handlers.scrollPageUp(); return true;
+    case "scroll-page-down": handlers.scrollPageDown(); return true;
+    case "zoom-pane": handlers.toggleZoomPane(); return true;
     case "prompt-library": handlers.togglePromptLibrary(); return true;
     case "toggle-diff-scroll": handlers.toggleDiffScroll(); return true;
 

@@ -56,8 +56,8 @@ export const TIPS: Tip[] = [
   },
   {
     feature: "Prompts",
-    description: "Press Cmd+K to open the Prompts dropdown — 24 built-in context-aware prompts for git, review, PR, and more.",
-    shortcut: `${mod}+K`,
+    description: "Press Cmd+Shift+K to open the Prompts dropdown — 24 built-in context-aware prompts for git, review, PR, and more.",
+    shortcut: `${mod}+Shift+K`,
   },
   {
     feature: "Pin Tab",

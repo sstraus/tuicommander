@@ -17,7 +17,7 @@ Research date: 2026-02-22
 | Cmd+Shift+D | Toggle git diff panel |
 | Cmd+E | Toggle file browser |
 | Cmd+J | Toggle task queue |
-| Cmd+K | Prompt library |
+| Cmd+K | Clear scrollback |
 | Cmd+M | Toggle markdown panel |
 | Cmd+N | Toggle ideas panel |
 | Cmd+R | Run saved command |

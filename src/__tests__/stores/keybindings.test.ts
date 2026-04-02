@@ -25,7 +25,7 @@ describe("keybindingDefaults", () => {
         "toggle-markdown",
         "toggle-notes",
         "toggle-file-browser",
-        "toggle-smart-prompts",
+        "clear-scrollback",
         "toggle-settings",
         "toggle-task-queue",
         "reopen-closed-tab",

@@ -370,6 +370,12 @@ pub(crate) struct AppConfig {
     /// VAPID subject (mailto: or https: URL identifying the app server)
     #[serde(default = "default_vapid_subject")]
     pub(crate) vapid_subject: String,
+    /// Auto-copy terminal selection to clipboard
+    #[serde(default = "default_true")]
+    pub(crate) copy_on_select: bool,
+    /// Terminal bell style: "none", "visual", "sound", or "both"
+    #[serde(default = "default_bell_style")]
+    pub(crate) bell_style: String,
     /// Global OS-level hotkey combo to toggle window visibility (e.g. "CommandOrControl+Shift+T")
     #[serde(default)]
     pub(crate) global_hotkey: Option<String>,
@@ -389,6 +395,10 @@ fn default_update_channel() -> String {
 
 fn default_session_token_duration_secs() -> u64 {
     86400
+}
+
+fn default_bell_style() -> String {
+    "visual".to_string()
 }
 
 fn default_mcp_port() -> u16 {
@@ -453,6 +463,8 @@ impl Default for AppConfig {
             vapid_private_key: String::new(),
             vapid_public_key: String::new(),
             vapid_subject: default_vapid_subject(),
+            copy_on_select: true,
+            bell_style: default_bell_style(),
             global_hotkey: None,
         }
     }

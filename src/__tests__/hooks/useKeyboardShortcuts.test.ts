@@ -43,7 +43,7 @@ function createMockHandlers(): ShortcutHandlers {
     toggleErrorLog: vi.fn(),
     toggleBranchesTab: vi.fn(),
     toggleMcpPopup: vi.fn(),
-    toggleSmartPrompts: vi.fn(),
+    clearScrollback: vi.fn(),
     togglePromptLibrary: vi.fn(),
     toggleDiffScroll: vi.fn(),
   };
@@ -177,14 +177,14 @@ describe("useKeyboardShortcuts", () => {
       expect(handlers.toggleMarkdownPanel).toHaveBeenCalled();
     });
 
-    it("Cmd+K toggles prompt library", () => {
+    it("Cmd+K clears scrollback", () => {
       fireKeydown("k", { metaKey: true });
-      expect(handlers.togglePromptLibrary).toHaveBeenCalled();
+      expect(handlers.clearScrollback).toHaveBeenCalled();
     });
 
-    it("Cmd+Shift+K toggles smart prompts", () => {
+    it("Cmd+Shift+K toggles prompt library", () => {
       fireKeydown("k", { metaKey: true, shiftKey: true });
-      expect(handlers.toggleSmartPrompts).toHaveBeenCalled();
+      expect(handlers.togglePromptLibrary).toHaveBeenCalled();
     });
 
     it("Cmd+, toggles settings", () => {

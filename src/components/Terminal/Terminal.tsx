@@ -628,6 +628,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       lineHeight: 1.2,
       theme: currentTheme(),
       cursorBlink: true,
+      bellStyle: (settingsStore.state.bellStyle || "visual") as "none" | "sound" | "visual" | "both",
       allowProposedApi: true,
       rescaleOverlappingGlyphs: true,
       macOptionIsMeta: false, // Right Option keeps macOS composition (π, ∑, @…)
@@ -819,6 +820,15 @@ export const Terminal: Component<TerminalProps> = (props) => {
       if (event.button !== 0) return; // only activate on left-click
       handleOpenUrl(uri);
     }));
+
+    // Copy on select: auto-copy selection to clipboard when enabled
+    terminal.onSelectionChange(() => {
+      if (!settingsStore.state.copyOnSelect) return;
+      const selection = terminal.getSelection();
+      if (selection) {
+        navigator.clipboard.writeText(selection).catch(() => {});
+      }
+    });
 
     const search = new SearchAddon();
     terminal.loadAddon(search);
@@ -1275,6 +1285,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
       const delta = lineIndex - viewportY - Math.floor(terminal.rows / 2);
       terminal.scrollLines(delta);
     },
+    scrollToTop: () => terminal?.scrollToTop(),
+    scrollToBottom: () => terminal?.scrollToBottom(),
+    scrollPages: (pages: number) => terminal?.scrollPages(pages),
   };
 
   onMount(() => {

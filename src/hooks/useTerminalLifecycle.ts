@@ -289,6 +289,18 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
     }
   };
 
+  const clearScrollback = () => {
+    const active = terminalsStore.getActive();
+    if (active?.ref) {
+      active.ref.clear();
+    }
+  };
+
+  const scrollToTop = () => terminalsStore.getActive()?.ref?.scrollToTop();
+  const scrollToBottom = () => terminalsStore.getActive()?.ref?.scrollToBottom();
+  const scrollPageUp = () => terminalsStore.getActive()?.ref?.scrollPages(-1);
+  const scrollPageDown = () => terminalsStore.getActive()?.ref?.scrollPages(1);
+
   const copyFromTerminal = async () => {
     try {
       const selection = window.getSelection()?.toString();
@@ -383,6 +395,11 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
     reopenClosedTab,
     navigateTab,
     clearTerminal,
+    clearScrollback,
+    scrollToTop,
+    scrollToBottom,
+    scrollPageUp,
+    scrollPageDown,
     copyFromTerminal,
     pasteToTerminal,
     handleTerminalFocus,
