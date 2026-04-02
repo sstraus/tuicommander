@@ -1107,6 +1107,75 @@ fn utf8_char_width(lead: u8) -> usize {
     }
 }
 
+/// Detect anomalous ANSI sequences that may cause scroll-jump-to-top or viewport resets.
+/// Returns a list of human-readable labels for each detected sequence.
+/// These are logged as warnings for diagnostic purposes — data is never modified.
+fn detect_anomalous_sequences(data: &str) -> Vec<&'static str> {
+    let bytes = data.as_bytes();
+    let len = bytes.len();
+    let mut found = Vec::new();
+    let mut i = 0;
+
+    while i < len {
+        if bytes[i] == 0x1b && i + 1 < len && bytes[i + 1] == b'[' {
+            let seq_start = i;
+            i += 2; // skip ESC[
+
+            // Check for ESC[? private mode sequences (alt screen)
+            if i < len && bytes[i] == b'?' {
+                i += 1;
+                let num_start = i;
+                while i < len && bytes[i].is_ascii_digit() {
+                    i += 1;
+                }
+                if i < len {
+                    let num_str = std::str::from_utf8(&bytes[num_start..i]).unwrap_or("");
+                    match (num_str, bytes[i]) {
+                        ("1049", b'h') => found.push("ESC[?1049h (Alt Screen Enter)"),
+                        ("1049", b'l') => found.push("ESC[?1049l (Alt Screen Exit)"),
+                        _ => {}
+                    }
+                    i += 1;
+                }
+                continue;
+            }
+
+            // Parse numeric params: n or n;m
+            let num_start = i;
+            while i < len && (bytes[i].is_ascii_digit() || bytes[i] == b';') {
+                i += 1;
+            }
+            if i < len {
+                let params = std::str::from_utf8(&bytes[num_start..i]).unwrap_or("");
+                match bytes[i] {
+                    b'J' => {
+                        match params {
+                            "2" => found.push("ESC[2J (Clear Screen)"),
+                            "3" => found.push("ESC[3J (Clear Scrollback)"),
+                            _ => {}
+                        }
+                    }
+                    b'H' => {
+                        // ESC[H or ESC[1;1H = Cursor Home
+                        if params.is_empty() {
+                            found.push("ESC[H (Cursor Home)");
+                        } else if params == "1;1" {
+                            found.push("ESC[1;1H (Cursor Home)");
+                        }
+                        // Other ESC[n;mH = regular cursor position, not anomalous
+                    }
+                    _ => {}
+                }
+                i += 1;
+            }
+        } else {
+            i += 1;
+        }
+    }
+
+    found
+}
+
 /// Clamp cursor-up ANSI sequences (ESC[nA) so `n` never exceeds the viewport height.
 ///
 /// Ink-based TUI agents (Claude Code, Codex) emit ESC[nA where n equals the previous
@@ -1229,6 +1298,13 @@ pub(crate) fn spawn_reader_thread(
                                 .map(|r| r.load(Ordering::Relaxed))
                                 .unwrap_or(24);
                             let clamped_data = clamp_cursor_up(&xterm_data, rows);
+
+                            // Detect anomalous ANSI sequences for scroll-jump diagnostics
+                            let anomalies = detect_anomalous_sequences(&clamped_data);
+                            for label in &anomalies {
+                                tracing::warn!(source = "terminal", session_id = %session_id, "Anomalous ANSI sequence: {label}");
+                            }
+
                             let _ = app.emit(
                                 &format!("pty-output-{session_id}"),
                                 PtyOutput {
@@ -4056,6 +4132,67 @@ mod tests {
         assert_eq!(flushed, Some("[[intent: incomplete".to_string()));
         // After flush, pending should be empty
         assert!(cp.flush_pending_xterm().is_none());
+    }
+
+    // --- log_anomalous_sequences tests ---
+
+    #[test]
+    fn log_anomalous_detects_clear_screen() {
+        let found = detect_anomalous_sequences("\x1b[2J");
+        assert_eq!(found, vec!["ESC[2J (Clear Screen)"]);
+    }
+
+    #[test]
+    fn log_anomalous_detects_cursor_home() {
+        let found = detect_anomalous_sequences("\x1b[H");
+        assert_eq!(found, vec!["ESC[H (Cursor Home)"]);
+    }
+
+    #[test]
+    fn log_anomalous_detects_cursor_home_explicit() {
+        let found = detect_anomalous_sequences("\x1b[1;1H");
+        assert_eq!(found, vec!["ESC[1;1H (Cursor Home)"]);
+    }
+
+    #[test]
+    fn log_anomalous_detects_clear_scrollback() {
+        let found = detect_anomalous_sequences("\x1b[3J");
+        assert_eq!(found, vec!["ESC[3J (Clear Scrollback)"]);
+    }
+
+    #[test]
+    fn log_anomalous_detects_alt_screen_enter() {
+        let found = detect_anomalous_sequences("\x1b[?1049h");
+        assert_eq!(found, vec!["ESC[?1049h (Alt Screen Enter)"]);
+    }
+
+    #[test]
+    fn log_anomalous_detects_alt_screen_exit() {
+        let found = detect_anomalous_sequences("\x1b[?1049l");
+        assert_eq!(found, vec!["ESC[?1049l (Alt Screen Exit)"]);
+    }
+
+    #[test]
+    fn log_anomalous_multiple_in_one_chunk() {
+        let found = detect_anomalous_sequences("hello\x1b[2J\x1b[Hworld\x1b[3J");
+        assert_eq!(found, vec![
+            "ESC[2J (Clear Screen)",
+            "ESC[H (Cursor Home)",
+            "ESC[3J (Clear Scrollback)",
+        ]);
+    }
+
+    #[test]
+    fn log_anomalous_ignores_normal_sequences() {
+        let found = detect_anomalous_sequences("\x1b[5A\x1b[10B\x1b[32mhello\x1b[0m");
+        assert!(found.is_empty());
+    }
+
+    #[test]
+    fn log_anomalous_ignores_cursor_position_not_home() {
+        // ESC[5;10H is a regular cursor position, not anomalous
+        let found = detect_anomalous_sequences("\x1b[5;10H");
+        assert!(found.is_empty());
     }
 
     // --- clamp_cursor_up tests ---
