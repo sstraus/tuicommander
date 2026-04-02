@@ -1,0 +1,25 @@
+src/plugins/planPlugin.ts
+  b5d4c62b75d9072e 8,99,102
+src/stores/ui.ts
+  b5d4c62b75d9072e 107
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.4",
+  "base_commit_sha": "123f7a2c2c5b4a8b2585c9c7116c6a81fe158c5d",
+  "prompts": {
+    "b5d4c62b75d9072e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "091587ec-7df4-452f-8936-69ec007e405c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 5,
+      "total_deletions": 149,
+      "accepted_lines": 4,
+      "overriden_lines": 0
+    }
+  }
+}
