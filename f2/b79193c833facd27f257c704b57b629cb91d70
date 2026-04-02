@@ -1,0 +1,23 @@
+docs/user-guide/agent-teams.md
+  e9a1fd7d815e7111 90-181
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.4",
+  "base_commit_sha": "f2b79193c833facd27f257c704b57b629cb91d70",
+  "prompts": {
+    "e9a1fd7d815e7111": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "75dd9d6f-faea-4cf9-9a81-6284af69080f",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 92,
+      "overriden_lines": 0
+    }
+  }
+}
