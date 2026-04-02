@@ -11,11 +11,12 @@ import { isTauri } from "../../../transport";
 import { isPluginDisabled, setPluginEnabled } from "../../../plugins/pluginLoader";
 import { setClaudeUsageEnabled } from "../../../plugins";
 import { AgentIcon } from "../../ui/AgentIcon";
+import { CC_ENV_FLAGS, ENV_FLAG_CATEGORIES, CATEGORY_ORDER, type EnvFlagDef, type EnvFlagCategory } from "../../../data/ccEnvFlags";
 import s from "../Settings.module.css";
 import a from "./AgentsTab.module.css";
 
-// All agent types in display order
-const AGENT_TYPES: AgentType[] = ["claude", "cursor", "gemini", "amp", "codex", "aider", "opencode", "warp", "droid"];
+// All agent types — sorted dynamically by availability then name
+const ALL_AGENT_TYPES: AgentType[] = ["claude", "cursor", "gemini", "amp", "codex", "aider", "opencode", "warp", "droid"];
 
 interface McpStatus {
   supported: boolean;
@@ -120,6 +121,114 @@ const RunConfigRow: Component<{
           Delete
         </button>
       </div>
+    </div>
+  );
+};
+
+/** Environment flags panel — categorized toggles/inputs for CC env vars */
+const EnvFlagsSection: Component<{ agentType: AgentType }> = (props) => {
+  const [expanded, setExpanded] = createSignal(false);
+  const flags = () => agentConfigsStore.getEnvFlags(props.agentType);
+
+  const flagsByCategory = () => {
+    const grouped: Partial<Record<EnvFlagCategory, EnvFlagDef[]>> = {};
+    for (const flag of CC_ENV_FLAGS) {
+      if (!grouped[flag.category]) grouped[flag.category] = [];
+      grouped[flag.category]!.push(flag);
+    }
+    return grouped;
+  };
+
+  const isFlagEnabled = (key: string): boolean => key in flags();
+
+  const getFlagValue = (key: string): string => flags()[key] ?? "";
+
+  const handleBoolToggle = (flag: EnvFlagDef) => {
+    if (isFlagEnabled(flag.key)) {
+      agentConfigsStore.setEnvFlag(props.agentType, flag.key, undefined);
+    } else {
+      agentConfigsStore.setEnvFlag(props.agentType, flag.key, flag.type === "boolean_inverted" ? "false" : "1");
+    }
+  };
+
+  const handleValueChange = (key: string, value: string) => {
+    if (value) {
+      agentConfigsStore.setEnvFlag(props.agentType, key, value);
+    } else {
+      agentConfigsStore.setEnvFlag(props.agentType, key, undefined);
+    }
+  };
+
+  const activeCount = () => Object.keys(flags()).length;
+
+  return (
+    <div class={a.expandedSection}>
+      <div
+        class={a.expandedLabel}
+        style={{ cursor: "pointer", display: "flex", "align-items": "center", gap: "6px" }}
+        onClick={() => setExpanded(!expanded())}
+      >
+        <span class={a.expandIcon} classList={{ [a.expanded]: expanded() }}>&#9654;</span>
+        Environment Flags
+        <Show when={activeCount() > 0}>
+          <span class={a.badge} data-type="available">{activeCount()}</span>
+        </Show>
+      </div>
+      <p class={s.hint}>Feature flags injected into new terminal sessions</p>
+
+      <Show when={expanded()}>
+        <div class={a.envFlagsGrid}>
+          <For each={CATEGORY_ORDER}>
+            {(cat) => {
+              const catFlags = () => flagsByCategory()[cat];
+              return (
+                <Show when={catFlags()?.length}>
+                  <div class={a.envFlagCategory}>
+                    <div class={a.envCategoryLabel}>{ENV_FLAG_CATEGORIES[cat]}</div>
+                    <For each={catFlags()}>
+                      {(flag) => (
+                        <div class={a.envFlagRow}>
+                          <Show when={flag.type === "boolean" || flag.type === "boolean_inverted"}>
+                            <input
+                              type="checkbox"
+                              class={a.envFlagToggle}
+                              checked={isFlagEnabled(flag.key)}
+                              onChange={() => handleBoolToggle(flag)}
+                            />
+                          </Show>
+                          <Show when={flag.type === "enum"}>
+                            <select
+                              class={a.envFlagSelect}
+                              value={getFlagValue(flag.key)}
+                              onChange={(e) => handleValueChange(flag.key, e.currentTarget.value)}
+                            >
+                              <option value="">off</option>
+                              <For each={flag.options ?? []}>
+                                {(opt) => <option value={opt}>{opt}</option>}
+                              </For>
+                            </select>
+                          </Show>
+                          <Show when={flag.type === "number"}>
+                            <input
+                              type="number"
+                              class={a.envFlagInput}
+                              value={getFlagValue(flag.key)}
+                              placeholder={flag.defaultValue ?? ""}
+                              onInput={(e) => handleValueChange(flag.key, e.currentTarget.value)}
+                            />
+                          </Show>
+                          <span class={a.envFlagKey}>{flag.key}</span>
+                          <span class={a.envFlagDesc} title={flag.description}>{flag.description}</span>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+              );
+            }}
+          </For>
+        </div>
+      </Show>
     </div>
   );
 };
@@ -356,8 +465,9 @@ const AgentRow: Component<{
             </div>
           </div>
 
-          {/* Claude-specific: Usage Dashboard toggle */}
+          {/* Claude-specific: Env flags and Usage Dashboard */}
           <Show when={props.agentType === "claude"}>
+            <EnvFlagsSection agentType={props.agentType} />
             <ClaudeUsageToggle />
           </Show>
         </div>
@@ -377,6 +487,16 @@ export const AgentsTab: Component = () => {
     detection.detectAll();
     agentConfigsStore.hydrate();
   });
+
+  /** Agents sorted: available first, then not-found — each group alphabetically by display name */
+  const sortedAgents = () => {
+    const types = ALL_AGENT_TYPES.filter((t) => t !== "api");
+    const byName = (a: AgentType, b: AgentType) =>
+      AGENTS[a].name.localeCompare(AGENTS[b].name);
+    const available = types.filter((t) => detection.isAvailable(t)).sort(byName);
+    const unavailable = types.filter((t) => !detection.isAvailable(t)).sort(byName);
+    return [...available, ...unavailable];
+  };
 
   return (
     <div class={s.section}>
@@ -419,7 +539,7 @@ export const AgentsTab: Component = () => {
           }}
         >
           <option value="">— Not configured —</option>
-          <For each={AGENT_TYPES.filter((t) => t !== "api" && detection.isAvailable(t) && AGENTS[t]?.defaultHeadlessTemplate)}>
+          <For each={ALL_AGENT_TYPES.filter((t) => t !== "api" && detection.isAvailable(t) && AGENTS[t]?.defaultHeadlessTemplate)}>
             {(type) => <option value={type}>{AGENTS[type]?.name ?? type}</option>}
           </For>
           <option value="api">External API</option>
@@ -436,7 +556,7 @@ export const AgentsTab: Component = () => {
       </Show>
 
       <div class={a.agentList}>
-        <For each={AGENT_TYPES.filter((t) => t !== "api")}>
+        <For each={sortedAgents()}>
           {(type) => (
             <AgentRow
               agentType={type}

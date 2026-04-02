@@ -840,6 +840,9 @@ pub(crate) struct AgentSettings {
     /// Placeholders like `{prompt}` are replaced before invocation.
     #[serde(default)]
     pub(crate) headless_template: Option<String>,
+    /// Environment feature flags — key→value pairs injected into every spawn of this agent.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub(crate) env_flags: HashMap<String, String>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Default)]
@@ -1535,6 +1538,7 @@ mod tests {
                 ],
                 auto_retry_on_error: false,
                 headless_template: None,
+                env_flags: HashMap::new(),
             },
         );
         let loaded: AgentsConfig = round_trip_in_dir(dir.path(), "agents.json", &agents);

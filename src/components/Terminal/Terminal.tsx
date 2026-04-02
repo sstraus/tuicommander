@@ -587,6 +587,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
           shell: settingsStore.state.shell ?? null,
           cwd: props.cwd || null,
           tuic_session: termData?.tuicSession ?? null,
+          env: agentConfigsStore.getEnvFlags("claude"),
         });
         if (sessionId) {
           // Track browser-created sessions so beforeunload only closes our own
@@ -1049,7 +1050,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
         resizeTimer = setTimeout(async () => {
           if (sessionId) {
             try {
-    
               await pty.resize(sessionId, rows, cols);
             } catch (err) {
               appLogger.error("terminal", "Failed to resize PTY", err);

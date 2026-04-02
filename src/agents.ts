@@ -50,7 +50,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     name: "Claude Code",
     binary: "claude",
     description: "Anthropic's Claude Code CLI",
-    defaultHeadlessTemplate: "claude --print --output-format text --no-session-persistence --system-prompt \"Output only the raw requested text. No explanations, no markdown fences, no commentary.\" -p \"{prompt}\"",
+    defaultHeadlessTemplate: "claude --bare --print --output-format text --no-session-persistence --system-prompt \"Output only the raw requested text. No explanations, no markdown fences, no commentary.\" -p \"{prompt}\"",
     resumeCommand: "claude --continue",
     sessionDiscovery: { resumeWithId: (id) => `claude --resume ${id}` },
     spawnArgs: (prompt, options = {}) => {
@@ -382,6 +382,8 @@ export interface AgentSettingsConfig {
   run_configs: AgentRunConfig[];
   auto_retry_on_error?: boolean;
   headless_template?: string;
+  /** Environment feature flags — key→value pairs injected into every spawn of this agent */
+  env_flags?: Record<string, string>;
 }
 
 /** Full agents config (matches Rust AgentsConfig) */

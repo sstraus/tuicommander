@@ -4,7 +4,7 @@ import { AGENTS, type AgentType, type AgentRunConfig, type AgentsConfig } from "
 import { appLogger } from "./appLogger";
 
 interface AgentConfigsState {
-  agents: Record<string, { run_configs: AgentRunConfig[]; auto_retry_on_error?: boolean; headless_template?: string }>;
+  agents: Record<string, { run_configs: AgentRunConfig[]; auto_retry_on_error?: boolean; headless_template?: string; env_flags?: Record<string, string> }>;
   /** Which agent CLI to use for headless prompt execution (user-chosen in Settings) */
   headless_agent: AgentType | null;
   loaded: boolean;
@@ -178,6 +178,33 @@ function createAgentConfigsStore() {
         const configs = s.agents[type].run_configs;
         for (let i = 0; i < configs.length; i++) {
           configs[i].is_default = i === index;
+        }
+      }));
+      try {
+        await saveToDisk();
+      } catch (err) {
+        // saveToDisk already logged the error
+      }
+    },
+
+    /** Get all env flags for an agent */
+    getEnvFlags(type: AgentType): Record<string, string> {
+      return state.agents[type]?.env_flags ?? {};
+    },
+
+    /** Set a single env flag (key→value). Removes the flag if value is undefined. */
+    async setEnvFlag(type: AgentType, key: string, value: string | undefined): Promise<void> {
+      setState(produce((s) => {
+        if (!s.agents[type]) {
+          s.agents[type] = { run_configs: [] };
+        }
+        if (!s.agents[type].env_flags) {
+          s.agents[type].env_flags = {};
+        }
+        if (value === undefined) {
+          delete s.agents[type].env_flags![key];
+        } else {
+          s.agents[type].env_flags![key] = value;
         }
       }));
       try {

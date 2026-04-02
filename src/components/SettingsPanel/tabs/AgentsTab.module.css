@@ -330,3 +330,92 @@
   color: var(--fg-primary);
   cursor: pointer;
 }
+
+/* Env flags panel */
+
+.envFlagsGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.envFlagCategory {
+  margin-bottom: 8px;
+}
+
+.envFlagCategory:last-child {
+  margin-bottom: 0;
+}
+
+.envCategoryLabel {
+  font-size: var(--font-2xs);
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+  padding: 0 2px;
+}
+
+.envFlagRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 4px;
+  border-radius: var(--radius-sm);
+}
+
+.envFlagRow:hover {
+  background: var(--bg-highlight);
+}
+
+.envFlagToggle {
+  flex-shrink: 0;
+}
+
+.envFlagKey {
+  font-family: var(--font-mono);
+  font-size: var(--font-2xs);
+  color: var(--fg-secondary);
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.envFlagDesc {
+  flex: 1;
+  font-size: var(--font-2xs);
+  color: var(--fg-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.envFlagSelect {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg-primary);
+  font-size: var(--font-2xs);
+  font-family: var(--font-mono);
+  padding: 1px 4px;
+  flex-shrink: 0;
+}
+
+.envFlagInput {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg-primary);
+  font-size: var(--font-2xs);
+  font-family: var(--font-mono);
+  padding: 1px 4px;
+  width: 80px;
+  flex-shrink: 0;
+}
+
+.envFlagInput:focus,
+.envFlagSelect:focus {
+  outline: none;
+  border-color: var(--accent);
+}

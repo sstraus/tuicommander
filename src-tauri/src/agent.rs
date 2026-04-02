@@ -590,6 +590,11 @@ pub(crate) async fn spawn_agent(
         cmd.cwd(cwd);
     }
 
+    // Inject env flags (feature flags configured in Settings → Agents)
+    for (key, value) in &pty_config.env {
+        cmd.env(key, value);
+    }
+
     let child = pair
         .slave
         .spawn_command(cmd)
