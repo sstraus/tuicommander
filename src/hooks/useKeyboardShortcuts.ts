@@ -71,22 +71,44 @@ export interface ShortcutHandlers {
 const modifierKeys = new Set(["control", "meta", "alt", "shift"]);
 
 /**
+ * Shift changes the character produced by a key (e.g. Shift+[ → {).
+ * Map shifted characters back to their unshifted base so combos match
+ * the binding definitions which use the unshifted key name.
+ */
+const SHIFTED_KEY_MAP: Record<string, string> = {
+  "{": "[", "}": "]", "+": "=", "~": "`", "!": "1", "@": "2",
+  "#": "3", "$": "4", "%": "5", "^": "6", "&": "7", "*": "8",
+  "(": "9", ")": "0", "_": "-", "|": "\\", ":": ";", "\"": "'",
+  "<": ",", ">": ".", "?": "/",
+};
+
+/**
  * Convert a KeyboardEvent into a normalized combo string that matches our keybinding format.
  * "Cmd" maps to the platform primary modifier: metaKey on macOS, ctrlKey on Windows/Linux.
- * On macOS bare Ctrl+key must NOT match "Cmd+key" shortcuts — those are terminal
+ * "Ctrl" is the literal Control key on macOS (separate from Cmd).
+ * On macOS bare Ctrl+letter must NOT match "Cmd+key" shortcuts — those are terminal
  * control codes (Ctrl+A = SOH, Ctrl+E = ENQ, etc.) that must reach the PTY.
+ * Ctrl+non-letter (e.g. Ctrl+Tab) is safe and gets the "ctrl" modifier.
  */
 export function eventToCombo(e: KeyboardEvent): string {
   const parts: string[] = [];
-  const primaryMod = isMacOS() ? e.metaKey : e.ctrlKey;
+  const mac = isMacOS();
+  const primaryMod = mac ? e.metaKey : e.ctrlKey;
   if (primaryMod) parts.push("cmd");
+  // On macOS, expose Ctrl as a separate "ctrl" modifier (for Ctrl+Tab etc.)
+  if (mac && e.ctrlKey && !e.metaKey) parts.push("ctrl");
   if (e.altKey) parts.push("alt");
   if (e.shiftKey) parts.push("shift");
 
   // For modifier-only keydowns (e.g. pressing Shift alone), key would be "Shift"
   // — skip those since they're not real shortcuts
-  const key = e.key.toLowerCase();
+  let key = e.key.toLowerCase();
   if (modifierKeys.has(key)) return "";
+
+  // Un-shift the key so combos match binding definitions
+  if (e.shiftKey && SHIFTED_KEY_MAP[key]) {
+    key = SHIFTED_KEY_MAP[key];
+  }
 
   parts.sort();
   parts.push(key);
@@ -220,6 +242,15 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): () => void {
           return;
         }
       }
+    }
+
+    // Ctrl+Tab / Ctrl+Shift+Tab — universal tab switching (not in keybinding system
+    // because "ctrl" modifier is macOS-only and would conflict on Win/Linux where
+    // Ctrl is the primary modifier mapped to "cmd")
+    if (e.ctrlKey && !e.metaKey && !e.altKey && e.key === "Tab") {
+      handlers.navigateTab(e.shiftKey ? "prev" : "next");
+      e.preventDefault();
+      return;
     }
 
     // Convert event to normalized combo and look up action

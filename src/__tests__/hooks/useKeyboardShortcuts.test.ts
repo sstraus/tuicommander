@@ -136,14 +136,26 @@ describe("useKeyboardShortcuts", () => {
   });
 
   describe("tab navigation", () => {
-    it("Cmd+Shift+[ navigates to previous tab", () => {
-      fireKeydown("[", { metaKey: true, shiftKey: true });
+    it("Cmd+Shift+[ navigates to previous tab (real key: {)", () => {
+      // Real browser sends key="{" when Shift+[ is pressed
+      fireKeydown("{", { metaKey: true, shiftKey: true });
       expect(handlers.navigateTab).toHaveBeenCalledWith("prev");
     });
 
-    it("Cmd+Shift+] navigates to next tab", () => {
-      fireKeydown("]", { metaKey: true, shiftKey: true });
+    it("Cmd+Shift+] navigates to next tab (real key: })", () => {
+      // Real browser sends key="}" when Shift+] is pressed
+      fireKeydown("}", { metaKey: true, shiftKey: true });
       expect(handlers.navigateTab).toHaveBeenCalledWith("next");
+    });
+
+    it("Ctrl+Tab navigates to next tab", () => {
+      fireKeydown("Tab", { ctrlKey: true });
+      expect(handlers.navigateTab).toHaveBeenCalledWith("next");
+    });
+
+    it("Ctrl+Shift+Tab navigates to previous tab", () => {
+      fireKeydown("Tab", { ctrlKey: true, shiftKey: true });
+      expect(handlers.navigateTab).toHaveBeenCalledWith("prev");
     });
 
     it("Cmd+1 selects first terminal", () => {
