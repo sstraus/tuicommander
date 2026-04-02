@@ -77,6 +77,10 @@ spawn_reader_thread(reader, paused, session_id, app, state)
 8. Broadcast to WebSocket clients (if any connected)
 9. Emit Tauri event `pty-output` with `{session_id, data}`
 
+**Cursor-up clamping** — The `clamp_cursor_up()` function limits `ESC[nA` (cursor up) and `ESC[nF` (cursor previous line) sequences to prevent them from moving the cursor beyond the visible viewport. This replaced the previous DiffRenderer approach for simpler escape sequence handling.
+
+**ANSI anomaly detection** — The `detect_anomalous_sequences()` function scans PTY output for unusual escape sequences (screen clears, cursor home, alt-screen toggles, scrollback clears) and logs them at warn level. This is a diagnostic tool for investigating scroll-jump issues.
+
 **Pause behavior:** When `paused` flag is set (`AtomicBool`), the reader thread sleeps for 50ms instead of reading. This prevents output flooding during background operations.
 
 **Exit detection:** When the read returns 0 bytes or an error, the thread:

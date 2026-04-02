@@ -18,15 +18,17 @@ Open settings with `Cmd+,`. Settings are organized into tabs.
 
 ## Appearance Tab
 
-| Setting | Description |
-|---------|-------------|
-| **Terminal theme** | Color theme with preview swatches |
-| **Terminal font** | 13 bundled monospace fonts (JetBrains Mono default): Fira Code, Hack, Cascadia Code, Source Code Pro, IBM Plex Mono, Inconsolata, Ubuntu Mono, Anonymous Pro, Roboto Mono, Space Mono, Monaspace Neon, Geist Mono |
-| **Default font size** | 8–32px slider. Applies to new terminals; existing terminals keep their zoom level. |
-| **Split tab mode** | Separate or unified tab appearance |
-| **Max tab name length** | 10–60 slider |
-| **Repository groups** | Create, rename, delete, and color-code groups |
-| **Reset panel sizes** | Restore sidebar and panel widths to defaults |
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| **Terminal theme** | — | — | Color theme with preview swatches |
+| **Terminal font** | — | JetBrains Mono | 13 bundled monospace fonts: Fira Code, Hack, Cascadia Code, Source Code Pro, IBM Plex Mono, Inconsolata, Ubuntu Mono, Anonymous Pro, Roboto Mono, Space Mono, Monaspace Neon, Geist Mono |
+| **Default font size** | — | — | 8–32px slider. Applies to new terminals; existing terminals keep their zoom level. |
+| **Split tab mode** | — | — | Separate or unified tab appearance |
+| **Max tab name length** | — | — | 10–60 slider |
+| **Repository groups** | — | — | Create, rename, delete, and color-code groups |
+| **Reset panel sizes** | — | — | Restore sidebar and panel widths to defaults |
+| **Copy on Select** | `boolean` | `true` | Auto-copy terminal selection to clipboard |
+| **Bell Style** | `none/visual/sound/both` | `visual` | Terminal bell behavior |
 
 ## Agents Tab
 

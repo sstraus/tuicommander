@@ -23,6 +23,8 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `get_kitty_flags` | `session_id` | `u32` | Get Kitty keyboard protocol flags for session |
 | `get_last_prompt` | `session_id` | `Option<String>` | Get last user-typed prompt from input line buffer |
 | `get_shell_state` | `session_id` | `Option<String>` | Get current shell state ("busy", "idle", or null) |
+| `has_foreground_process` | `session_id: String` | `bool` | Checks if a non-shell foreground process is running |
+| `debug_agent_detection` | `session_id: String` | `AgentDiagnostics` | Returns diagnostic breakdown of agent detection pipeline |
 | `set_session_name` | `session_id, name` | `()` | Set custom display name for a session |
 
 ## Git Operations (`git.rs`)
@@ -367,6 +369,13 @@ Uses incremental parsing with a file-size-based cache (`claude-usage-cache.json`
 | `read_external_file` | `path` | `String` | Read file outside repo (standalone file open) |
 | `get_relay_status` | -- | `JSON` | Cloud relay connection status |
 | `get_tailscale_status` | -- | `TailscaleState` | Tailscale daemon status (NotInstalled/NotRunning/Running with fqdn, https_enabled) |
+
+## Global Hotkey
+
+| Command | Args | Returns | Description |
+|---------|------|---------|-------------|
+| `set_global_hotkey` | `combo: Option<String>` | `()` | Set or clear the OS-level global hotkey |
+| `get_global_hotkey` | — | `Option<String>` | Get the currently configured global hotkey |
 
 ## App Logger (`app_logger.rs`)
 

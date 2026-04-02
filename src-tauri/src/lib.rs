@@ -13,6 +13,7 @@ mod input_line_buffer;
 pub(crate) mod git;
 pub(crate) mod git_cli;
 mod global_hotkey;
+mod tab_shortcut;
 pub(crate) mod git_graph;
 pub(crate) mod github;
 pub(crate) mod github_auth;
@@ -886,6 +887,9 @@ pub fn run() {
 
             // Install Fn/Globe key monitor for push-to-talk dictation
             dictation::fn_key_monitor::install(app.handle().clone());
+
+            // Install Ctrl+Tab monitor (macOS swallows it before JS/WKWebView)
+            tab_shortcut::install(app.handle().clone());
 
             // Start plugin directory watcher for hot-reload
             plugins::start_plugin_watcher(app.handle());

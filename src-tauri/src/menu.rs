@@ -121,7 +121,7 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
         .item(&item!(
             "prompt-library",
             "Prompt Library",
-            "CmdOrCtrl+K"
+            "CmdOrCtrl+Shift+K"
         ))
         .item(&item!(
             "run-command",
@@ -136,13 +136,18 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
         .separator()
         .item(&item!(
             "git-operations",
-            "Git Operations",
-            "CmdOrCtrl+Shift+G"
+            "Git Panel",
+            "CmdOrCtrl+Shift+D"
         ))
         .item(&item!(
             "branches",
             "Branches",
             "CmdOrCtrl+G"
+        ))
+        .item(&item!(
+            "diff-scroll",
+            "Diff Scroll",
+            "CmdOrCtrl+Shift+G"
         ))
         .separator()
         .item(&item!("task-queue", "Task Queue", "CmdOrCtrl+J"))

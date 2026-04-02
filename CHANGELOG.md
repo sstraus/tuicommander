@@ -4,6 +4,35 @@ All notable changes to TUICommander will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.9.9] - 2026-04-02
+
+### Added
+- **Copy on select** — Auto-copy terminal selection to clipboard (enabled by default in Settings > Appearance)
+- **Terminal bell styles** — Configurable bell: none, visual (screen flash), sound (via notification system), or both
+- **Scroll shortcuts** — Cmd+Home (top), Cmd+End (bottom), Shift+PageUp, Shift+PageDown
+- **Zoom pane** — Cmd+Shift+Enter maximizes/restores the active split pane
+- **Ctrl+Tab / Ctrl+Shift+Tab** — Native tab switching via macOS NSEvent monitor (bypasses WKWebView interception)
+- **Dictation auto-send** — Option to automatically press Enter after transcription completes
+- **Environment flags UI** — Per-agent environment variable injection from Settings > Agents
+- **--bare flag** — CLI option for minimal startup
+- **ANSI anomaly logging** — Diagnostic logging for unusual terminal escape sequences (scroll-jump investigation)
+
+### Changed
+- **Watcher v3** — Replaced `notify-debouncer-full` with raw `RecommendedWatcher` and manual per-category debounce
+- **PTY rendering** — Replaced DiffRenderer with cursor-up clamping for simpler escape sequence handling
+- **Bell implementation** — Moved from xterm.js built-in `bellStyle` option to manual `onBell` handler with notification system integration
+- **Prompt library shortcut** — Menu accelerator corrected from Cmd+K to Cmd+Shift+K (Cmd+K is clear scrollback)
+- **Git panel shortcut** — Menu accelerator corrected from Cmd+Shift+G to Cmd+Shift+D (Cmd+Shift+G is diff scroll)
+- **Tab switching** — Removed Cmd+Shift+[/] defaults (unreliable on non-US keyboards), Ctrl+Tab is now primary
+
+### Fixed
+- **Rate limit warning** stuck in status bar after expiry
+- **Terminal CWD** falls back to active repo path when PTY reports no working directory
+- **Agent events** — Plugin system now emits `agent-started` / `agent-stopped` events correctly
+- **Copy-on-select** feedback — Shows "Copied to clipboard" in status bar
+- **Keyboard shortcuts help** — Added 12 missing shortcuts to the help panel
+- **Documentation** — Corrected Cmd+K → Cmd+Shift+K references across 6 doc files, updated tab switching docs
+
 ## [Unreleased]
 
 ### Added

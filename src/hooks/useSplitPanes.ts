@@ -3,6 +3,16 @@ import { terminalsStore, type TabLayout } from "../stores/terminals";
 import { repositoriesStore } from "../stores/repositories";
 import { settingsStore } from "../stores/settings";
 
+/** Re-fit panes after CSS flex layout settles (~150ms).
+ *  Without this delay, fit() measures pre-layout dimensions → wrong column counts. */
+function refitPanes(paneIds: string[] = terminalsStore.state.layout.panes) {
+  setTimeout(() => {
+    for (const paneId of paneIds) {
+      terminalsStore.get(paneId)?.ref?.fit();
+    }
+  }, 150);
+}
+
 /** Split pane management */
 export function useSplitPanes() {
   const [zoomed, setZoomed] = createSignal(false);
@@ -34,15 +44,7 @@ export function useSplitPanes() {
     }
 
     terminalsStore.setActive(newId);
-
-    // Force re-fit ALL panes after CSS flex layout settles.
-    // Without this, the new pane's fit() runs before flex ratios take effect,
-    // resulting in wrong column counts (terminal shows ~5 cols instead of ~40).
-    setTimeout(() => {
-      for (const paneId of terminalsStore.state.layout.panes) {
-        terminalsStore.get(paneId)?.ref?.fit();
-      }
-    }, 150);
+    refitPanes();
   };
 
   const resetLayout = () => {
@@ -56,17 +58,22 @@ export function useSplitPanes() {
 
   const toggleZoomPane = () => {
     if (zoomed()) {
-      // Restore saved layout
+      // Restore saved layout, filtering out panes that were closed while zoomed
       const layout = savedLayout();
       if (layout) {
-        terminalsStore.setLayout(layout);
+        const validPanes = layout.panes.filter(id => terminalsStore.get(id) !== undefined);
+        if (validPanes.length === 0) {
+          // All saved panes were closed — stay single-pane
+          setSavedLayout(null);
+          setZoomed(false);
+          return;
+        }
+        const restoredLayout = validPanes.length < layout.panes.length
+          ? { ...layout, panes: validPanes, ratios: layout.ratios.slice(0, validPanes.length - 1), activePaneIndex: 0 }
+          : layout;
+        terminalsStore.setLayout(restoredLayout);
         setSavedLayout(null);
-        // Re-fit all panes after layout restore
-        setTimeout(() => {
-          for (const paneId of layout.panes) {
-            terminalsStore.get(paneId)?.ref?.fit();
-          }
-        }, 150);
+        refitPanes(restoredLayout.panes);
       }
       setZoomed(false);
     } else {
@@ -82,9 +89,7 @@ export function useSplitPanes() {
         activePaneIndex: 0,
       });
       setZoomed(true);
-      setTimeout(() => {
-        terminalsStore.get(activePane)?.ref?.fit();
-      }, 150);
+      refitPanes([activePane]);
     }
   };
 

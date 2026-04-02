@@ -65,7 +65,16 @@ Sidebar branch icons also show purple when they contain unseen terminals.
 
 ### Tab Shortcuts
 
-Hover a tab to see its shortcut badge: "Terminal N (Cmd+N)". Use `Cmd+1` through `Cmd+9` to jump directly.
+Hover a tab to see its shortcut badge: "Terminal N (Cmd+N)". Use `Cmd+1` through `Cmd+9` to jump directly. `Ctrl+Tab` / `Ctrl+Shift+Tab` — Next / previous tab.
+
+### Scroll Shortcuts
+
+| Shortcut | Action |
+|---|---|
+| `Cmd+Home` | Scroll to top |
+| `Cmd+End` | Scroll to bottom |
+| `Shift+PageUp` | Scroll one page up |
+| `Shift+PageDown` | Scroll one page down |
 
 ## Zoom
 
@@ -99,6 +108,10 @@ The new pane opens a fresh terminal in the same working directory. Maximum 2 pan
 ### Resizing Split Panes
 
 Drag the divider between the two panes to adjust the split ratio. Both terminals re-fit automatically when you release.
+
+### Maximizing a Split Pane
+
+- **Cmd+Shift+Enter** — Maximize / restore active pane (zoom pane). Expands the focused pane to fill the full terminal area; press again to restore the split.
 
 ### Closing Split Panes
 
@@ -152,9 +165,21 @@ Also accessible via the "Search Terminals" command in the palette.
 - **Copy:** Select text in the terminal, then `Cmd+C`
 - **Paste:** `Cmd+V` writes clipboard content to the active terminal
 
+### Copy on Select
+
+When enabled (Settings > Appearance), selecting text in the terminal automatically copies it to the clipboard. A brief confirmation appears in the status bar. This is enabled by default.
+
 ## Clear Terminal
 
 `Cmd+L` clears the terminal display. Running processes are unaffected.
+
+## Terminal Bell
+
+The bell behavior when receiving BEL character (\x07) is configurable in Settings > Appearance:
+- **none** — silent
+- **visual** — brief screen flash
+- **sound** — plays notification sound
+- **both** — flash and sound
 
 ## Clickable File Paths
 

@@ -12,7 +12,7 @@ TUICommander ships with **24 built-in prompts** covering commit workflows, code 
 
 ### Toolbar Dropdown
 
-Press **Cmd+K** (Ctrl+K on Windows/Linux) or click the lightning bolt icon in the toolbar. The dropdown shows all enabled prompts grouped by category with a search bar at the top.
+Press **Cmd+Shift+K** (Ctrl+Shift+K on Windows/Linux) or click the lightning bolt icon in the toolbar. The dropdown shows all enabled prompts grouped by category with a search bar at the top.
 
 ### Git Panel — Changes Tab
 

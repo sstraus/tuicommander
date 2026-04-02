@@ -6,7 +6,7 @@ The Smart Prompts Library stores and manages all your prompt templates — both 
 
 ## Opening the Drawer
 
-- **Cmd+K** — Toggle the prompt library drawer
+- **Cmd+Shift+K** — Toggle the prompt library drawer
 - **Toolbar button** — Prompt library icon in the main toolbar
 
 ## Browsing and Searching
@@ -36,7 +36,7 @@ Use the category tabs to narrow the list:
 
 ## Creating a Prompt
 
-1. Open the drawer (`Cmd+K`) and click **+ New Prompt**, or press `Ctrl+N`/`Cmd+N`
+1. Open the drawer (`Cmd+Shift+K`) and click **+ New Prompt**, or press `Ctrl+N`/`Cmd+N`
 2. Fill in the fields:
    - **Name** (required) — shown in the list
    - **Description** — optional subtitle, also searchable

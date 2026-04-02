@@ -43,7 +43,19 @@ pub fn save_json_config<T: Serialize>(filename: &str, config: &T) -> Result<(), 
 | `remote_access_password_hash` | `String` | `""` | Bcrypt password hash |
 | `confirm_before_quit` | `bool` | `true` | Show quit confirmation |
 | `confirm_before_closing_tab` | `bool` | `true` | Show tab close confirmation |
+| `copy_on_select` | `bool` | `true` | Auto-copy terminal selection to clipboard |
+| `bell_style` | `String` | `"visual"` | Terminal bell: "none", "visual", "sound", "both" |
+| `disabled_agents` | `Vec<String>` | `[]` | Agent IDs hidden from the Add menu |
+| `global_hotkey` | `Option<String>` | `null` | OS-level window toggle hotkey combo |
+| `intent_tab_title` | `bool` | `true` | Show agent intent as tab title |
+| `ipv6_enabled` | `bool` | `false` | IPv6 dual-stack binding |
+| `language` | `String` | `"en"` | UI language code |
 | `max_tab_name_length` | `u32` | `20` | Max tab name display length |
+| `prevent_sleep_when_busy` | `bool` | `false` | Prevent macOS sleep when terminal is busy |
+| `push_enabled` | `bool` | `false` | Enable push notifications to PWA clients |
+| `relay_enabled` | `bool` | `false` | Cloud relay for mobile access |
+| `suggest_followups` | `bool` | `true` | Show [[suggest:]] follow-up actions |
+| `update_channel` | `String` | `"stable"` | Update channel: "stable" or "nightly" |
 
 **Commands:** `load_app_config()`, `save_app_config(config)`
 
@@ -184,6 +196,7 @@ struct AgentsConfig {
 | `hotkey` | `String` | `"CommandOrControl+Shift+D"` | Push-to-talk hotkey |
 | `language` | `String` | `"en"` | Transcription language |
 | `model` | `String` | `"large-v3-turbo"` | Whisper model name |
+| `auto_send` | `bool` | `false` | Auto-submit after transcription |
 
 **Commands:** `get_dictation_config()`, `set_dictation_config(config)`
 

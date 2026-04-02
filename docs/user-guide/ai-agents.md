@@ -151,6 +151,12 @@ When agents are actively working, TUICommander can keep your machine awake:
 - Uses the `keepawake` system integration
 - Automatically releases when all agents are idle
 
+## Environment Flags
+
+Per-agent environment variables can be injected into every new terminal session. Configure in Settings > Agents > expand an agent > Environment Flags.
+
+This is useful for enabling feature flags (e.g., `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) without manually running `export` commands. Flags are organized by category with toggle, enum, and number types.
+
 ## Tips
 
 - **Multiple agents on the same repo** — Use split panes (`Cmd+\`) to run two agents side by side on the same branch

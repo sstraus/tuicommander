@@ -820,17 +820,24 @@ export const Terminal: Component<TerminalProps> = (props) => {
       handleOpenUrl(uri);
     }));
 
-    // Copy on select: auto-copy selection to clipboard when enabled
+    // Copy on select: auto-copy selection to clipboard when enabled.
+    // Debounced to avoid IPC flood during drag-selection.
+    let copyOnSelectTimer: ReturnType<typeof setTimeout> | undefined;
     terminal.onSelectionChange(() => {
       if (!settingsStore.state.copyOnSelect) return;
-      const t = terminal;
-      if (!t) return;
-      const sel = t.getSelection();
-      if (sel) {
-        navigator.clipboard.writeText(sel).catch((err) => {
-          appLogger.warn("terminal", "Copy-on-select clipboard write failed", err);
-        });
-      }
+      clearTimeout(copyOnSelectTimer);
+      copyOnSelectTimer = setTimeout(() => {
+        const sel = terminal?.getSelection();
+        if (sel) {
+          const setStatus = (window as unknown as Record<string, unknown>).__tuic_setStatusInfo as ((msg: string) => void) | undefined;
+          navigator.clipboard.writeText(sel).then(() => {
+            setStatus?.("Copied to clipboard");
+          }).catch((err) => {
+            appLogger.warn("terminal", "Copy-on-select clipboard write failed", err);
+            setStatus?.("Copy failed — clipboard unavailable");
+          });
+        }
+      }, 50);
     });
 
     // Bell handler: flash and/or beep on BEL character
@@ -842,20 +849,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
         setTimeout(() => containerRef?.classList.remove("bell-flash"), 150);
       }
       if (style === "sound" || style === "both") {
-        try {
-          const ctx = new AudioContext();
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.frequency.value = 880;
-          gain.gain.setValueAtTime(0.3, ctx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
-          osc.start(ctx.currentTime);
-          osc.stop(ctx.currentTime + 0.1);
-        } catch (err) {
+        notificationsStore.play("info").catch((err) => {
           appLogger.warn("terminal", "Bell audio playback failed", err);
-        }
+        });
       }
     });
 

@@ -1308,7 +1308,9 @@ const App: Component = () => {
   createEffect(() => {
     let unlisten: (() => void) | undefined;
     listen<string>("ctrl-tab", (event) => {
-      terminalLifecycle.navigateTab(event.payload as "prev" | "next");
+      const dir = event.payload;
+      if (dir !== "prev" && dir !== "next") return;
+      terminalLifecycle.navigateTab(dir);
     }).then((fn) => { unlisten = fn; }).catch((err) => appLogger.error("app", "Failed to register ctrl-tab listener", err));
     onCleanup(() => unlisten?.());
   });

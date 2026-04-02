@@ -12,10 +12,8 @@ Consolidated reference for all terminal behaviors, keyboard shortcuts, and confi
 | Cmd+W | Close tab/pane | Closes active split pane, or tab if no split |
 | Cmd+Shift+T | Reopen closed tab | Restores last 10 closed tabs |
 | Cmd+1–9 | Switch to tab N | First 9 tabs only |
-| Cmd+Shift+[ | Previous tab | |
-| Cmd+Shift+] | Next tab | |
-| Ctrl+Tab | Next tab | Alternative |
-| Ctrl+Shift+Tab | Previous tab | Alternative |
+| Ctrl+Tab | Next tab | NSEvent monitor on macOS |
+| Ctrl+Shift+Tab | Previous tab | NSEvent monitor on macOS |
 
 ### Terminal Content
 

@@ -74,3 +74,7 @@ Select which microphone to use from the dropdown in dictation settings. Lists al
 Change the push-to-talk hotkey in Settings → Services → Dictation. The hotkey is registered globally via Tauri's global-shortcut plugin.
 
 Default: `F5`
+
+### Auto-Send
+
+Enable 'Auto-send' in Settings > Services > Dictation to automatically press Enter after the transcribed text is inserted into the terminal. Useful when dictating commands.

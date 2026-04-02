@@ -250,7 +250,7 @@ Native SolidJS component (not a plugin) showing Claude API usage data. Displayed
 | Plan Panel | `Cmd+Shift+P` | `uiStore.togglePlanPanel()` |
 | Settings | `Cmd+,` | Local state in App.tsx |
 | Help | `Cmd+?` | Local state in App.tsx |
-| Prompt Library | `Cmd+K` | `promptLibraryStore.toggleDrawer()` |
+| Prompt Library | `Cmd+Shift+K` | `promptLibraryStore.toggleDrawer()` |
 | Task Queue | — | Local state in App.tsx |
 | Command Palette | `Cmd+P` | `commandPaletteStore.toggle()` |
 | Activity Dashboard | — | `activityDashboardStore.toggle()` |

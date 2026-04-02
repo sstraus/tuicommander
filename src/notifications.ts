@@ -138,6 +138,7 @@ function playWebAudioTone(sound: NotificationSound, volume: number): void {
     osc.connect(gain);
     osc.start(ctx.currentTime + i * 0.15);
     osc.stop(ctx.currentTime + i * 0.15 + 0.12);
+    osc.onended = () => osc.disconnect();
   });
 }
 

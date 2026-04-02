@@ -61,14 +61,18 @@ A configurable OS-level shortcut to toggle TUICommander's visibility from any ap
 | `Escape` | Close search overlay |
 | `Cmd+C` | Copy selection |
 | `Cmd+V` | Paste to terminal |
+| `Cmd+Home` | Scroll to top |
+| `Cmd+End` | Scroll to bottom |
+| `Shift+PageUp` | Scroll page up |
+| `Shift+PageDown` | Scroll page down |
 
 ## Tab Navigation
 
 | Shortcut | Action |
 |----------|--------|
 | `Cmd+1` through `Cmd+9` | Switch to tab by number |
-| `Cmd+Shift+]` | Next tab |
-| `Cmd+Shift+[` | Previous tab |
+| `Ctrl+Tab` | Next tab |
+| `Ctrl+Shift+Tab` | Previous tab |
 
 ## Zoom
 
@@ -89,6 +93,7 @@ Font size range: 8px to 32px, step 2px per action.
 | `Alt+←` / `Alt+→` | Navigate panes (vertical split) |
 | `Alt+↑` / `Alt+↓` | Navigate panes (horizontal split) |
 | `Cmd+W` | Close active pane (collapses to single) |
+| `Cmd+Shift+Enter` | Maximize / restore active pane |
 
 ## Panels
 
@@ -101,7 +106,8 @@ Font size range: 8px to 32px, step 2px per action.
 | `Cmd+E` | Toggle file browser |
 | `Cmd+,` | Open settings |
 | `Cmd+?` | Toggle help panel |
-| `Cmd+K` | Prompt library |
+| `Cmd+Shift+K` | Prompt library |
+| `Cmd+K` | Clear scrollback |
 | `Cmd+Shift+W` | Worktree Manager |
 | `Cmd+J` | Task queue |
 | `Cmd+Shift+P` | Toggle plan panel |
@@ -226,14 +232,14 @@ Hold to record, release to transcribe and inject text into active terminal.
 | `edit-command` | `Cmd+Shift+R` | Edit and run command |
 | `split-vertical` | `Cmd+\` | Split vertically |
 | `split-horizontal` | `Cmd+Alt+\` | Split horizontally |
-| `prev-tab` | `Cmd+Shift+[` | Previous tab |
-| `next-tab` | `Cmd+Shift+]` | Next tab |
+| `prev-tab` | `Ctrl+Shift+Tab` | Previous tab |
+| `next-tab` | `Ctrl+Tab` | Next tab |
 | `switch-tab-1..9` | `Cmd+1..9` | Switch to tab N |
 | `toggle-sidebar` | `Cmd+[` | Toggle sidebar |
 | `toggle-markdown` | `Cmd+M` | Toggle markdown panel |
 | `toggle-notes` | `Cmd+N` | Toggle ideas panel |
 | `toggle-file-browser` | `Cmd+E` | Toggle file browser |
-| `toggle-prompt-library` | `Cmd+K` | Prompt library |
+| `prompt-library` | `Cmd+Shift+K` | Prompt library |
 | `toggle-settings` | `Cmd+,` | Open settings |
 | `toggle-task-queue` | `Cmd+J` | Task queue |
 | `toggle-help` | `Cmd+?` | Toggle help panel |
@@ -248,3 +254,10 @@ Hold to record, release to transcribe and inject text into active terminal.
 | `toggle-mcp-popup` | `Cmd+Shift+M` | MCP servers popup (per-repo) |
 | `toggle-plan` | `Cmd+Shift+P` | Toggle plan panel |
 | `switch-branch-1..9` | `Cmd+Ctrl+1..9` | Switch to branch N |
+| `scroll-to-top` | `Cmd+Home` | Scroll to top |
+| `scroll-to-bottom` | `Cmd+End` | Scroll to bottom |
+| `scroll-page-up` | `Shift+PageUp` | Scroll page up |
+| `scroll-page-down` | `Shift+PageDown` | Scroll page down |
+| `zoom-pane` | `Cmd+Shift+Enter` | Maximize/restore pane |
+| `toggle-file-browser-content-search` | `Cmd+Shift+F` | File content search |
+| `toggle-diff-scroll` | `Cmd+Shift+G` | Diff scroll view |

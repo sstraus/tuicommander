@@ -23,7 +23,7 @@
 - Create: `Cmd+T`, `+` button (click = new tab, right-click = split options)
 - Close: `Cmd+W`, middle-click, context menu
 - Reopen last closed: `Cmd+Shift+T` (remembers last 10 closed tabs)
-- Switch: `Cmd+1` through `Cmd+9`, `Cmd+Shift+[` / `Cmd+Shift+]`
+- Switch: `Cmd+1` through `Cmd+9`, `Ctrl+Tab` / `Ctrl+Shift+Tab`
 - Rename: double-click tab name (inline editing)
 - Reorder: drag-and-drop with visual drop indicators
 - Tab status dot (left of name): grey=idle, blue-pulse=busy, green=done, purple=unseen (completed while not viewed), orange-pulse=question (needs input), red-pulse=error
@@ -57,6 +57,7 @@
 ### 1.5 Copy & Paste
 - Copy selection: `Cmd+C`
 - Paste to terminal: `Cmd+V`
+- **Copy on Select** — When enabled (Settings > Appearance), selecting text in the terminal automatically copies it to the clipboard. A brief 'Copied to clipboard' confirmation appears in the status bar.
 
 ### 1.6 Clear Terminal
 - `Cmd+L` — clears display, running processes unaffected
@@ -116,6 +117,9 @@
 - Selecting a result switches to the correct terminal tab/pane and scrolls to the matched line (centered in viewport)
 - Minimum 3 characters after prefix
 - Also accessible via the explicit "Search Terminals" command in the palette
+
+### 1.15 Terminal Bell
+- **Terminal Bell** — Configurable bell behavior when the terminal receives a BEL character (`\x07`). Four modes: `none` (silent), `visual` (screen flash animation), `sound` (plays the Info notification sound), `both` (flash + sound). Configure in Settings > Appearance.
 
 ---
 
@@ -538,6 +542,7 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - **Edit agent config:** Opens agent's own configuration file in the user's preferred IDE
 - **Context menu integration:** Right-click terminal > Agents submenu with per-agent run configurations
 - **Busy detection:** Agents submenu disabled when a process is already running in the active terminal
+- **Environment Flags** — Per-agent environment variables injected into every new terminal session. Configure in Settings > Agents > expand an agent > Environment Flags. Useful for setting feature flags like `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` without manual export.
 
 ### 6.10 Agent Teams
 - **Purpose:** Enables Claude Code's Agent Teams feature to use TUIC tabs instead of tmux panes
@@ -609,7 +614,7 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 
 ### 7.4 Unified Repo Watcher
 - Single watcher per repository monitoring the entire working tree recursively (replaces separate HEAD/index watchers)
-- Uses `notify-debouncer-full` (FSEvents on macOS, inotify on Linux) with per-category trailing debounce
+- Uses raw `notify::RecommendedWatcher` with manual per-category trailing debounce
 - Event categories: `Git` (HEAD, refs, index, MERGE_HEAD), `WorkTree` (source files), `Config` (app config changes)
 - Each category has its own debounce window — git metadata changes propagate faster than file edits
 - Respects `.gitignore` rules — ignored paths do not trigger refreshes
@@ -757,6 +762,7 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - Enable/disable, hotkey, language (auto-detect or explicit), model download
 - Audio device selection
 - Text correction dictionary (e.g., "new line" → `\n`)
+- **Auto-send** — Enable in Settings > Services > Dictation to automatically submit (press Enter) after transcription completes.
 
 ---
 
@@ -862,9 +868,9 @@ Variables are resolved from the Rust backend (`resolve_context_variables`) and f
 | **Command Palette** | All prompts with `Smart:` prefix | `Cmd+P` then type "Smart" |
 | **Branch context menu** | Prompts with `git-branches` placement | Right-click branch in Branches tab |
 
-### 10.10 Smart Prompts Management (Cmd+K Drawer)
+### 10.10 Smart Prompts Management (Cmd+Shift+K Drawer)
 
-- All prompt management consolidated in the Cmd+K drawer (Settings tab removed)
+- All prompt management consolidated in the Cmd+Shift+K drawer (Settings tab removed)
 - Enable/disable individual prompts via toggle button on each row
 - Edit prompt: opens modal with name, description, content, variable dropdown, placement, execution mode, auto-execute, keyboard shortcut
 - Variable insertion dropdown below content textarea: grouped by Git/GitHub/Terminal, click to insert `{variable}` at cursor
@@ -1040,10 +1046,14 @@ All data persisted to platform config directory via Rust:
 | `Cmd+W` | Close tab / close active split pane |
 | `Cmd+Shift+T` | Reopen last closed tab |
 | `Cmd+1`–`Cmd+9` | Switch to tab by number |
-| `Cmd+Shift+[` / `]` | Previous / next tab |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous tab |
 | `Cmd+L` | Clear terminal |
 | `Cmd+C` | Copy selection |
 | `Cmd+V` | Paste to terminal |
+| `Cmd+Home` | Scroll to top |
+| `Cmd+End` | Scroll to bottom |
+| `Shift+PageUp` | Scroll one page up |
+| `Shift+PageDown` | Scroll one page down |
 | `Cmd+R` | Run saved command |
 | `Cmd+Shift+R` | Edit and run command |
 
@@ -1061,6 +1071,7 @@ All data persisted to platform config directory via Rust:
 | `Cmd+Alt+\` | Split horizontally |
 | `Alt+←/→` | Navigate vertical panes |
 | `Alt+↑/↓` | Navigate horizontal panes |
+| `Cmd+Shift+Enter` | Maximize / restore active pane |
 
 ### Panels
 | Shortcut | Action |
@@ -1074,7 +1085,7 @@ All data persisted to platform config directory via Rust:
 | `Cmd+Shift+P` | Toggle plan panel |
 | `Cmd+,` | Open settings |
 | `Cmd+?` | Toggle help panel |
-| `Cmd+K` | Prompt library |
+| `Cmd+Shift+K` | Prompt library |
 | `Cmd+J` | Task queue |
 | `Cmd+Shift+E` | Error log |
 | `Cmd+Shift+W` | Worktree manager |

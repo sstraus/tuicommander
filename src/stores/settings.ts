@@ -601,6 +601,20 @@ function createSettingsStore() {
       }
     },
 
+    /** Set terminal bell style */
+    async setBellStyle(style: SettingsStoreState["bellStyle"]): Promise<void> {
+      const prevValue = state.bellStyle;
+      setState("bellStyle", style);
+      try {
+        const config = await invoke<RustAppConfig>("load_config");
+        config.bell_style = style;
+        await invoke("save_config", { config });
+      } catch (err) {
+        appLogger.error("config", "Failed to persist bellStyle", err);
+        setState("bellStyle", prevValue);
+      }
+    },
+
     /** Set global OS-level hotkey (or clear with null) */
     async setGlobalHotkey(combo: string | null): Promise<void> {
       const prevValue = state.globalHotkey;

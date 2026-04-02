@@ -69,6 +69,7 @@ describe("keybindingDefaults", () => {
       // Find duplicates for a better error message
       const seen = new Map<string, string[]>();
       for (const [action, combo] of Object.entries(DEFAULT_BINDINGS)) {
+        if (!combo) continue; // unbound actions don't count
         const normalized = normalizeCombo(combo);
         if (!seen.has(normalized)) seen.set(normalized, []);
         seen.get(normalized)!.push(action);

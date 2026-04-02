@@ -1136,36 +1136,36 @@ fn detect_anomalous_sequences(data: &str) -> Vec<&'static str> {
                     }
                     i += 1;
                 }
-                continue;
-            }
-
-            // Parse numeric params: n or n;m
-            let num_start = i;
-            while i < len && (bytes[i].is_ascii_digit() || bytes[i] == b';') {
-                i += 1;
-            }
-            if i < len {
-                let params = std::str::from_utf8(&bytes[num_start..i]).unwrap_or("");
-                match bytes[i] {
-                    b'J' => {
-                        match params {
-                            "2" => found.push("ESC[2J (Clear Screen)"),
-                            "3" => found.push("ESC[3J (Clear Scrollback)"),
-                            _ => {}
-                        }
-                    }
-                    b'H' => {
-                        // ESC[H or ESC[1;1H = Cursor Home
-                        if params.is_empty() {
-                            found.push("ESC[H (Cursor Home)");
-                        } else if params == "1;1" {
-                            found.push("ESC[1;1H (Cursor Home)");
-                        }
-                        // Other ESC[n;mH = regular cursor position, not anomalous
-                    }
-                    _ => {}
+                // No continue — let the outer while loop re-evaluate i < len
+            } else {
+                // Parse numeric params: n or n;m
+                let num_start = i;
+                while i < len && (bytes[i].is_ascii_digit() || bytes[i] == b';') {
+                    i += 1;
                 }
-                i += 1;
+                if i < len {
+                    let params = std::str::from_utf8(&bytes[num_start..i]).unwrap_or("");
+                    match bytes[i] {
+                        b'J' => {
+                            match params {
+                                "2" => found.push("ESC[2J (Clear Screen)"),
+                                "3" => found.push("ESC[3J (Clear Scrollback)"),
+                                _ => {}
+                            }
+                        }
+                        b'H' => {
+                            // ESC[H or ESC[1;1H = Cursor Home
+                            if params.is_empty() {
+                                found.push("ESC[H (Cursor Home)");
+                            } else if params == "1;1" {
+                                found.push("ESC[1;1H (Cursor Home)");
+                            }
+                            // Other ESC[n;mH = regular cursor position, not anomalous
+                        }
+                        _ => {}
+                    }
+                    i += 1;
+                }
             }
         } else {
             i += 1;
@@ -1298,10 +1298,13 @@ pub(crate) fn spawn_reader_thread(
                                 .unwrap_or(24);
                             let clamped_data = clamp_cursor_up(&xterm_data, rows);
 
-                            // Detect anomalous ANSI sequences for scroll-jump diagnostics
-                            let anomalies = detect_anomalous_sequences(&clamped_data);
-                            for label in &anomalies {
-                                tracing::warn!(source = "terminal", session_id = %session_id, "Anomalous ANSI sequence: {label}");
+                            // Detect anomalous ANSI sequences for scroll-jump diagnostics.
+                            // Guard: skip scan + Vec alloc when no ESC byte is present.
+                            if clamped_data.as_bytes().contains(&0x1b) {
+                                let anomalies = detect_anomalous_sequences(&clamped_data);
+                                for label in &anomalies {
+                                    tracing::warn!(source = "terminal", session_id = %session_id, "Anomalous ANSI sequence: {label}");
+                                }
                             }
 
                             let _ = app.emit(

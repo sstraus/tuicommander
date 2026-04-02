@@ -42,7 +42,8 @@ describe("KeyboardShortcutsTab", () => {
     const labels = container.querySelectorAll("label");
     const labelTexts = Array.from(labels).map((l) => l.textContent);
     expect(labelTexts).toContain("Zoom");
-    expect(labelTexts).not.toContain("Terminal");
+    // Terminal section also visible because "Toggle zoom pane" matches "zoom"
+    expect(labelTexts).not.toContain("Git");
   });
 
   it("shows empty message when no shortcuts match", async () => {
