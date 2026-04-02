@@ -37,6 +37,10 @@ Panels with repo-dependent data MUST use `repositoriesStore.getRevision(repoPath
 
 All business logic in Rust. Frontend only renders and handles interaction — no data reshaping, computation, or process orchestration.
 
+## PTY Command Injection
+
+NEVER write text + `\r` directly to a PTY. Always use `sendCommand()` from `src/utils/sendCommand.ts` — it handles agent-specific Enter semantics (Ink raw mode needs split writes). This applies to dictation, command palette, suggested actions, and any other feature that sends input to a terminal.
+
 ## Logging
 
 Use `appLogger` from `src/stores/appLogger.ts` — never `console.log/warn/error`. Check app logs via `GET http://localhost:9877/logs` (supports `?level=`, `?source=`, `?limit=` filters) before asking Boss for logs.

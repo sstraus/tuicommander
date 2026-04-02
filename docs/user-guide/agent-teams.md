@@ -87,6 +87,98 @@ Agent Teams is an experimental Claude Code feature. Current limitations:
 **Too many permission prompts:**
 - Pre-approve common operations in Claude Code's permission settings before spawning teammates
 
+## Inter-Agent Messaging
+
+TUICommander includes a built-in messaging system that lets agents in different terminal tabs communicate directly. This works alongside (and independently from) Claude Code's native Agent Teams messaging.
+
+### How It Works
+
+Every PTY session gets a stable `TUIC_SESSION` UUID injected as an environment variable. Agents use this as their identity to register, discover peers, and exchange messages through TUICommander's MCP `messaging` tool.
+
+When both sender and recipient are connected via SSE (the default for Claude Code agents), messages are **pushed in real-time** as MCP channel notifications (`notifications/claude/channel`). They also land in a buffered inbox as a fallback.
+
+### What Gets Injected Automatically
+
+TUICommander injects these into every Claude Code PTY session — no manual configuration needed:
+
+| Variable / Flag | Value | Purpose |
+|---|---|---|
+| `TUIC_SESSION` | Stable UUID per tab | Agent identity for messaging |
+| `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` | `1` | Unlocks TeamCreate/TaskCreate/SendMessage |
+| `--dangerously-load-development-channels server:tuicommander` | *(CLI flag, agent spawn only)* | Enables real-time channel push from TUICommander |
+
+### Messaging Flow
+
+1. **Register** — The agent reads its `$TUIC_SESSION` and registers as a peer:
+   ```
+   messaging action=register tuic_session="$TUIC_SESSION" name="worker-1" project="/path/to/repo"
+   ```
+
+2. **Discover peers** — Find other agents connected to TUICommander:
+   ```
+   messaging action=list_peers
+   messaging action=list_peers project="/path/to/repo"   # filter by repo
+   ```
+
+3. **Send a message** — Address by the recipient's `tuic_session` UUID:
+   ```
+   messaging action=send to="<recipient-tuic-session>" message="PR review done, 3 issues found"
+   ```
+
+4. **Check inbox** — Read buffered messages (useful if channel push was missed):
+   ```
+   messaging action=inbox
+   messaging action=inbox limit=10 since=1712000000000
+   ```
+
+### Channel Push vs Inbox
+
+| Delivery | When | Latency | Requires |
+|----------|------|---------|----------|
+| **Channel push** | Recipient has active SSE stream | Real-time | `--dangerously-load-development-channels server:tuicommander` on the recipient's CC process |
+| **Inbox buffer** | Always | Poll-based | Registration only |
+
+Messages are always buffered in the inbox regardless of whether channel push succeeds. The inbox holds up to 128 messages per agent (FIFO eviction). Individual messages are capped at 64 KB.
+
+### Using Messaging from a Standalone Claude Code Session
+
+If you run Claude Code outside TUICommander but still want to use TUIC messaging, you need to:
+
+1. **Set `TUIC_SESSION`** — export a stable UUID:
+   ```bash
+   export TUIC_SESSION=$(uuidgen)
+   ```
+
+2. **Connect to TUIC's MCP server** — add to your `.mcp.json`:
+   ```json
+   {
+     "mcpServers": {
+       "tuicommander": {
+         "url": "http://localhost:17463/mcp"
+       }
+     }
+   }
+   ```
+
+3. **Enable channel push** *(optional, for real-time delivery)*:
+   ```bash
+   claude --dangerously-load-development-channels server:tuicommander
+   ```
+
+4. **Register on first turn** — the agent must call `messaging action=register` with its `$TUIC_SESSION` before sending or receiving.
+
+### Messaging vs Claude Code Native SendMessage
+
+| Feature | TUIC Messaging | CC Native SendMessage |
+|---------|---------------|----------------------|
+| **Transport** | MCP tool call → server-side routing | File append + polling (`~/.claude/teams/`) |
+| **Real-time push** | Yes (MCP channel notifications) | No (polling only) |
+| **Cross-app** | Any MCP client can participate | Claude Code processes only |
+| **Discovery** | `list_peers` with project filter | Team config file |
+| **Persistence** | In-memory ring buffer (lost on TUIC restart) | Files on disk (survives restart) |
+
+Both systems work simultaneously. Claude Code agents spawned by TUICommander can use either or both.
+
 ## Deprecated: it2 Shim
 
 Earlier versions of TUICommander used an `it2` shell script shim that emulated iTerm2's CLI to intercept teammate creation. This approach is deprecated — teammate spawning now uses direct MCP tool calls (`agent spawn`). The shim at `~/.tuicommander/bin/it2` is no longer needed.

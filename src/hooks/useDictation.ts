@@ -1,5 +1,6 @@
 import { terminalsStore } from "../stores/terminals";
 import { dictationStore } from "../stores/dictation";
+import { sendCommand } from "../utils/sendCommand";
 import { appLogger } from "../stores/appLogger";
 /** Transcription result from the Rust backend */
 interface TranscribeResponse {
@@ -151,8 +152,12 @@ export function useDictation(deps: DictationDeps) {
     const active = terminalsStore.getActive();
     if (active?.sessionId) {
       try {
-        const payload = autoSend ? text + "\r" : text;
-        await deps.pty.write(active.sessionId, payload);
+        const writeFn = (data: string) => deps.pty.write(active.sessionId!, data);
+        if (autoSend) {
+          await sendCommand(writeFn, text, active.agentType);
+        } else {
+          await writeFn(text);
+        }
         deps.setStatusInfo("Ready");
         requestAnimationFrame(() => active.ref?.focus());
       } catch (err) {
