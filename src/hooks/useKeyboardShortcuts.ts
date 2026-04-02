@@ -48,7 +48,6 @@ export interface ShortcutHandlers {
   toggleHelpPanel: () => void;
   toggleNotesPanel: () => void;
   toggleFileBrowserPanel: () => void;
-  togglePlanPanel: () => void;
   findInTerminal: () => void;
   toggleCommandPalette: () => void;
   toggleActivityDashboard: () => void;
@@ -151,7 +150,6 @@ function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean
     case "toggle-markdown": handlers.toggleMarkdownPanel(); return true;
     case "toggle-notes": handlers.toggleNotesPanel(); return true;
     case "toggle-file-browser": handlers.toggleFileBrowserPanel(); return true;
-    case "toggle-plan": handlers.togglePlanPanel(); return true;
     case "toggle-settings": handlers.toggleSettings(); return true;
     case "toggle-task-queue": handlers.toggleTaskQueue(); return true;
     case "toggle-sidebar": handlers.toggleSidebar(); return true;
@@ -203,6 +201,17 @@ function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean
 /** Register keyboard shortcuts. Returns cleanup function. */
 export function useKeyboardShortcuts(handlers: ShortcutHandlers): () => void {
   const handleKeydown = (e: KeyboardEvent) => {
+    // Ctrl+Tab / Ctrl+Shift+Tab — must run BEFORE dedup guard because the native
+    // menu accelerator also fires for this combo; we still need preventDefault
+    // here to stop the Tab keypress from reaching the terminal.
+    // Ctrl+Tab on macOS is handled by a native NSEvent monitor (tab_shortcut.rs)
+    // that emits "ctrl-tab" Tauri events. On Win/Linux, JS sees the keydown:
+    if (e.ctrlKey && !e.metaKey && !e.altKey && e.key === "Tab") {
+      e.preventDefault();
+      handlers.navigateTab(e.shiftKey ? "prev" : "next");
+      return;
+    }
+
     // Skip if a native menu accelerator already handled this shortcut (dedup guard)
     if (Date.now() - lastMenuActionTime < 200) return;
 
@@ -242,15 +251,6 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): () => void {
           return;
         }
       }
-    }
-
-    // Ctrl+Tab / Ctrl+Shift+Tab — universal tab switching (not in keybinding system
-    // because "ctrl" modifier is macOS-only and would conflict on Win/Linux where
-    // Ctrl is the primary modifier mapped to "cmd")
-    if (e.ctrlKey && !e.metaKey && !e.altKey && e.key === "Tab") {
-      handlers.navigateTab(e.shiftKey ? "prev" : "next");
-      e.preventDefault();
-      return;
     }
 
     // Convert event to normalized combo and look up action

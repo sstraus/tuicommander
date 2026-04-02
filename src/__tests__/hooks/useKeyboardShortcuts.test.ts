@@ -34,7 +34,6 @@ function createMockHandlers(): ShortcutHandlers {
     toggleHelpPanel: vi.fn(),
     toggleNotesPanel: vi.fn(),
     toggleFileBrowserPanel: vi.fn(),
-    togglePlanPanel: vi.fn(),
     findInTerminal: vi.fn(),
     toggleCommandPalette: vi.fn(),
     toggleActivityDashboard: vi.fn(),
@@ -136,18 +135,6 @@ describe("useKeyboardShortcuts", () => {
   });
 
   describe("tab navigation", () => {
-    it("Cmd+Shift+[ navigates to previous tab (real key: {)", () => {
-      // Real browser sends key="{" when Shift+[ is pressed
-      fireKeydown("{", { metaKey: true, shiftKey: true });
-      expect(handlers.navigateTab).toHaveBeenCalledWith("prev");
-    });
-
-    it("Cmd+Shift+] navigates to next tab (real key: })", () => {
-      // Real browser sends key="}" when Shift+] is pressed
-      fireKeydown("}", { metaKey: true, shiftKey: true });
-      expect(handlers.navigateTab).toHaveBeenCalledWith("next");
-    });
-
     it("Ctrl+Tab navigates to next tab", () => {
       fireKeydown("Tab", { ctrlKey: true });
       expect(handlers.navigateTab).toHaveBeenCalledWith("next");

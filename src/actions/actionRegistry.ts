@@ -46,8 +46,6 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
   "toggle-help": { label: "Toggle help panel", category: "Panels" },
   "toggle-file-browser": { label: "Toggle file browser", category: "Panels" },
   "toggle-file-browser-content-search": { label: "Search file contents", category: "File Browser" },
-  "toggle-plan": { label: "Toggle plan panel", category: "Panels" },
-
   "toggle-diff-scroll": { label: "Branch diff scroll view", category: "Git" },
   "toggle-git-ops": { label: "Git panel", category: "Git" },
   "toggle-branches-tab": { label: "Branches tab", category: "Git" },
@@ -103,7 +101,6 @@ export function getActionEntries(handlers: ShortcutHandlers): ActionEntry[] {
     "toggle-notes": handlers.toggleNotesPanel,
     "toggle-help": handlers.toggleHelpPanel,
     "toggle-file-browser": handlers.toggleFileBrowserPanel,
-    "toggle-plan": handlers.togglePlanPanel,
     "toggle-git-ops": handlers.toggleGitOpsPanel,
     "toggle-diff-scroll": handlers.toggleDiffScroll,
     "toggle-branches-tab": handlers.toggleBranchesTab,

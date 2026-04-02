@@ -990,7 +990,6 @@ const App: Component = () => {
     toggleHelpPanel: () => setHelpPanelVisible((v) => !v),
     toggleNotesPanel: uiStore.toggleNotesPanel,
     toggleFileBrowserPanel: uiStore.toggleFileBrowserPanel,
-    togglePlanPanel: uiStore.togglePlanPanel,
     findInTerminal: () => {
       // Context-aware: open search in whichever tab type is active
       const diffActiveId = diffTabsStore.state.activeId;
@@ -1268,6 +1267,14 @@ const App: Component = () => {
         case "run-command": gitOps.handleRunCommand(false, () => setRunCommandDialogVisible(true)); break;
         case "edit-run-command": gitOps.handleRunCommand(true, () => setRunCommandDialogVisible(true)); break;
         case "git-operations": uiStore.toggleGitPanel(); break;
+        case "diff-scroll": {
+          const repoPath = repositoriesStore.state.activeRepoPath;
+          if (repoPath) {
+            uiStore.setDiffViewMode("scroll");
+            diffTabsStore.add(repoPath, "", "M");
+          }
+          break;
+        }
         case "branches": uiStore.toggleGitPanelOnTab("branches"); break;
         case "task-queue": setTaskQueueVisible((v) => !v); break;
 
@@ -1293,6 +1300,16 @@ const App: Component = () => {
       }
     }).then((fn) => { unlisten = fn; }).catch((err) => appLogger.error("app", "Failed to register menu-action listener", err));
 
+    onCleanup(() => unlisten?.());
+  });
+
+  // Ctrl+Tab / Ctrl+Shift+Tab — intercepted at Cocoa NSEvent level on macOS
+  // because WKWebView swallows these before JS keydown fires.
+  createEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<string>("ctrl-tab", (event) => {
+      terminalLifecycle.navigateTab(event.payload as "prev" | "next");
+    }).then((fn) => { unlisten = fn; }).catch((err) => appLogger.error("app", "Failed to register ctrl-tab listener", err));
     onCleanup(() => unlisten?.());
   });
 

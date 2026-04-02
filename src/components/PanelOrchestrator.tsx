@@ -2,7 +2,6 @@ import { Component } from "solid-js";
 import { FileBrowserPanel } from "./FileBrowserPanel";
 import { MarkdownPanel } from "./MarkdownPanel";
 import { NotesPanel } from "./NotesPanel";
-import { PlanPanel } from "./PlanPanel/PlanPanel";
 import { GitPanel } from "./GitPanel/GitPanel";
 import { uiStore } from "../stores/ui";
 import { terminalsStore } from "../stores/terminals";
@@ -43,13 +42,6 @@ export const PanelOrchestrator: Component<PanelOrchestratorProps> = (props) => {
             requestAnimationFrame(() => active.ref?.focus());
           }
         }}
-      />
-
-      <PlanPanel
-        visible={uiStore.state.planPanelVisible}
-        repoPath={props.repoPath}
-        fsRoot={props.fsRoot}
-        onClose={() => uiStore.togglePlanPanel()}
       />
 
       <GitPanel
