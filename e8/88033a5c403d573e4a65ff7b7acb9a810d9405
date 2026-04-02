@@ -1,0 +1,23 @@
+src/data/ccEnvFlags.ts
+  e9a1fd7d815e7111 368-379,432-438
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.4",
+  "base_commit_sha": "e888033a5c403d573e4a65ff7b7acb9a810d9405",
+  "prompts": {
+    "e9a1fd7d815e7111": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "75dd9d6f-faea-4cf9-9a81-6284af69080f",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 111,
+      "overriden_lines": 0
+    }
+  }
+}
