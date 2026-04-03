@@ -209,17 +209,40 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
   // Edge-detection for notification sounds: play once per awaitingInput transition.
   // Event handlers set state idempotently; this effect handles the one-shot sound.
+  // Low-confidence questions are debounced to avoid phantom notifications when the
+  // user is already typing (awaitingInput set then cleared within milliseconds).
   let prevAwaitingInput: AwaitingInputType = null;
+  let questionDebounceTimer = 0;
   createEffect(() => {
-    const current = terminalsStore.get(props.id)?.awaitingInput ?? null;
+    const term = terminalsStore.get(props.id);
+    const current = term?.awaitingInput ?? null;
+    const confident = term?.awaitingInputConfident ?? false;
     const sound = getAwaitingInputSound(prevAwaitingInput, current);
     prevAwaitingInput = current;
+
+    // Clear any pending debounced question notification on state change
+    if (questionDebounceTimer) {
+      clearTimeout(questionDebounceTimer);
+      questionDebounceTimer = 0;
+    }
+
     if (sound === "error") {
       appLogger.info("terminal", `[Notify] ${props.id} error — awaitingInput transition`);
       notificationsStore.playError();
     } else if (sound === "question") {
-      appLogger.info("terminal", `[Notify] ${props.id} question — awaitingInput transition`);
-      notificationsStore.playQuestion();
+      if (confident) {
+        appLogger.info("terminal", `[Notify] ${props.id} question — awaitingInput transition`);
+        notificationsStore.playQuestion();
+      } else {
+        // Debounce low-confidence questions: if cleared within 500ms, skip notification
+        questionDebounceTimer = setTimeout(() => {
+          questionDebounceTimer = 0;
+          if (terminalsStore.get(props.id)?.awaitingInput === "question") {
+            appLogger.info("terminal", `[Notify] ${props.id} question — awaitingInput transition (debounced)`);
+            notificationsStore.playQuestion();
+          }
+        }, 500) as unknown as number;
+      }
     }
   });
 
@@ -1048,11 +1071,20 @@ export const Terminal: Component<TerminalProps> = (props) => {
         requestAnimationFrame(() => {
           if (!containerRef || containerRef.offsetWidth <= 0 || containerRef.offsetHeight <= 0) return;
           doFit();
+
+          // If safeFit exhausted retries and deferred to us, run onReady now
+          // that the container has real dimensions.
+          if (pendingOnReady) {
+            const cb = pendingOnReady;
+            pendingOnReady = null;
+            cb();
+          }
+
           // Cancel any pending stale onResize debounce — we're about to send
           // the authoritative dimensions ourselves.
           clearTimeout(resizeTimer);
           if (sessionId && terminal && terminal.rows > 0 && terminal.cols > 0) {
-  
+
             pty.resize(sessionId, terminal.rows, terminal.cols).catch((err) => {
               appLogger.error("terminal", "ResizeObserver resize failed", err);
             });
@@ -1099,9 +1131,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
     });
   };
 
+  // Deferred onReady callback: when safeFit exhausts retries, the ResizeObserver
+  // picks up the fit + onReady when the container finally gets real dimensions.
+  let pendingOnReady: (() => void) | null = null;
+
   /** Fit terminal only when container has valid dimensions, retrying if needed.
-   *  If all retries are exhausted, proceed anyway so the PTY still initializes
-   *  (Rust backend clamps rows/cols to sane minimums). */
+   *  If all retries are exhausted, defer to the ResizeObserver rather than
+   *  proceeding with zero dimensions. */
   const safeFit = (onReady?: () => void, retries = 10) => {
     const tryFit = (remaining: number) => {
       requestAnimationFrame(() => {
@@ -1111,8 +1147,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
         } else if (remaining > 0) {
           tryFit(remaining - 1);
         } else {
-          appLogger.debug("terminal", "Container has zero dimensions after retries, proceeding with defaults");
-          onReady?.();
+          appLogger.debug("terminal", "Container has zero dimensions after retries — deferring to ResizeObserver");
+          pendingOnReady = onReady ?? null;
         }
       });
     };

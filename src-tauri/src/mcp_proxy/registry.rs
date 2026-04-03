@@ -690,13 +690,14 @@ async fn run_health_checks(registry: &UpstreamRegistry) {
 
     for entry_ref in registry.entries.iter() {
         let status = entry_ref.status.read().clone();
-        // Probe Ready upstreams and CircuitOpen with expired backoff
-        // Probe Ready upstreams, CircuitOpen with expired backoff, and stuck Connecting
+        // Probe Ready upstreams, CircuitOpen with expired backoff, stuck Connecting,
+        // and Failed entries (allows recovery after sleep/wake or transient outages)
         let should_probe = match status {
             UpstreamStatus::Ready => true,
             UpstreamStatus::CircuitOpen => !entry_ref.cb.is_open(),
             UpstreamStatus::Connecting => true,
-            _ => false,
+            UpstreamStatus::Failed => true,
+            UpstreamStatus::Disabled => false,
         };
         if !should_probe {
             continue;
@@ -736,7 +737,10 @@ async fn run_health_checks(registry: &UpstreamRegistry) {
                 Err(_) => {
                     let exhausted = entry.cb.record_failure();
                     let new_status = if exhausted {
-                        tracing::error!(source = "mcp_registry", %name, "Health check failed permanently");
+                        // Only log on first transition to Failed, not on repeated probe failures
+                        if status != UpstreamStatus::Failed {
+                            tracing::error!(source = "mcp_registry", %name, "Health check failed permanently");
+                        }
                         UpstreamStatus::Failed
                     } else {
                         tracing::warn!(source = "mcp_registry", %name, "Health check failed — circuit opening");

@@ -2622,13 +2622,14 @@ mod tests {
     }
 
     #[test]
-    fn test_cooldown_cleared_by_clear_all() {
+    fn test_cooldown_survives_clear_all() {
         let cache = crate::state::GitCacheState::new();
         cache.github_repo_cooldown.insert(
             "owner/repo".to_string(),
             Instant::now() + std::time::Duration::from_secs(3600),
         );
         cache.clear_all();
-        assert!(cache.github_repo_cooldown.is_empty());
+        // Cooldowns must survive cache invalidation — only explicit user actions clear them
+        assert!(!cache.github_repo_cooldown.is_empty());
     }
 }

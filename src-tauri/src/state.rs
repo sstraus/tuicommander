@@ -936,6 +936,10 @@ impl GitCacheState {
     }
 
     /// Invalidate all caches.
+    /// Note: `github_repo_cooldown` is intentionally NOT cleared here — cooldowns
+    /// must survive cache invalidation to prevent repeated queries for repos that
+    /// don't exist on GitHub.  Only explicit user actions (OAuth login, full reset)
+    /// should clear cooldowns.
     pub(crate) fn clear_all(&self) {
         self.repo_info.clear();
         self.merged_branches.clear();
@@ -943,7 +947,6 @@ impl GitCacheState {
         self.github_status.clear();
         self.git_status.clear();
         self.git_panel_context.clear();
-        self.github_repo_cooldown.clear();
     }
 
     /// Invalidate caches for a specific repo path.
