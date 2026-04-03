@@ -354,10 +354,23 @@ These methods require declaring capabilities in `manifest.json`. Calling without
 
 #### host.writePty(sessionId, data) -> Promise<void>
 
-Sends input to a terminal session. **Requires `"pty:write"` capability.**
+Sends raw bytes to a terminal session. **Requires `"pty:write"` capability.**
+
+> **Prefer `sendAgentInput()` for user input.** `writePty` sends raw data — it does not handle Enter key semantics for Ink-based agents. Use it only when you need exact byte control.
 
 ```typescript
-await host.writePty(sessionId, "y\n");
+await host.writePty(sessionId, "\x03"); // Send Ctrl-C
+```
+
+#### host.sendAgentInput(sessionId, text) -> Promise<void>
+
+Sends user input to an agent session with correct Enter handling. **Requires `"pty:write"` capability.**
+
+Ink-based agents (Claude Code, Codex, etc.) run in raw mode and need Ctrl-U + text in one write, then `\r` in a separate write. Shell sessions receive everything in a single write. This method handles both cases automatically based on the detected agent type.
+
+```typescript
+await host.sendAgentInput(sessionId, "y");       // confirm a prompt
+await host.sendAgentInput(sessionId, "explain this code"); // send a message
 ```
 
 #### host.openMarkdownPanel(title, contentUri) -> void
@@ -714,7 +727,7 @@ const d = host.registerTerminalAction({
   id: "restart-agent",
   label: "Restart Agent",
   action: (ctx) => {
-    if (ctx.sessionId) host.writePty(ctx.sessionId, "exit\n");
+    if (ctx.sessionId) host.sendAgentInput(ctx.sessionId, "exit");
   },
   disabled: (ctx) => !ctx.sessionId,
 });
@@ -907,7 +920,7 @@ Capabilities gate access to Tier 3 and Tier 4 methods. Declare them in `manifest
 
 | Capability | Unlocks | Risk |
 |------------|---------|------|
-| `pty:write` | `host.writePty()` | Can send arbitrary input to terminals |
+| `pty:write` | `host.writePty()`, `host.sendAgentInput()` | Can send input to terminals |
 | `ui:markdown` | `host.openMarkdownPanel()`, `host.openMarkdownFile()` | Can open panels and files in the UI |
 | `ui:sound` | `host.playNotificationSound(sound?)` | Can play sounds (question, error, completion, warning, info) |
 | `ui:panel` | `host.openPanel()` | Can render arbitrary HTML in sandboxed iframe |
@@ -1171,13 +1184,13 @@ it("detects deployment from PTY output", () => {
 ### Testing capability gating
 
 ```typescript
-it("external plugin without pty:write throws on writePty", async () => {
+it("external plugin without pty:write throws on sendAgentInput", async () => {
   let host;
   pluginRegistry.register(
     { id: "ext", onload: (h) => { host = h; }, onunload: () => {} },
     [], // no capabilities
   );
-  await expect(host.writePty("s1", "data")).rejects.toThrow(PluginCapabilityError);
+  await expect(host.sendAgentInput("s1", "hello")).rejects.toThrow(PluginCapabilityError);
 });
 ```
 

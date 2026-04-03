@@ -2,7 +2,7 @@
  * Auto Confirm Plugin — PTY write (Tier 3)
  *
  * Watches for [y/N] prompts and auto-responds with "y\n".
- * Demonstrates: registerOutputWatcher, writePty().
+ * Demonstrates: registerOutputWatcher, sendAgentInput().
  * Capabilities: pty:write
  *
  * WARNING: Use with caution! This auto-confirms every [y/N] prompt.
@@ -30,9 +30,9 @@ export default {
       pattern: /\[y\/N\]|\[Y\/n\]|\(y\/n\)/i,
       onMatch(match, sessionId) {
         confirmCount++;
-        // Send "y" followed by Enter
-        host.writePty(sessionId, "y\n").catch((err) => {
-          host.log("error", "writePty failed", String(err));
+        // Send "y" with agent-aware Enter handling
+        host.sendAgentInput(sessionId, "y").catch((err) => {
+          host.log("error", "sendAgentInput failed", String(err));
         });
 
         host.addItem({

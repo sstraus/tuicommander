@@ -57,7 +57,7 @@ Plugins interact with the app through a **PluginHost API** organized in 4 capabi
 |------|--------|----------|
 | **1** | Always available | Watch terminal output, add Activity Center items, provide markdown content |
 | **2** | Always available | Read repository list, active branch, terminal sessions (read-only) |
-| **3** | Requires capability | Write to terminals (`pty:write`), open markdown panels (`ui:markdown`), play sounds (`ui:sound`), read/list/watch files (`fs:read`, `fs:list`, `fs:watch`) |
+| **3** | Requires capability | Send input to terminals (`pty:write` — raw `writePty` or agent-aware `sendAgentInput`), open markdown panels (`ui:markdown`), play sounds (`ui:sound`), read/list/watch files (`fs:read`, `fs:list`, `fs:watch`) |
 | **4** | Requires capability | Invoke whitelisted Tauri commands (`invoke:read_file`, `invoke:list_markdown_files`) |
 
 Capabilities are declared in the plugin's `manifest.json`. A plugin without `pty:write` cannot send input to your terminals.

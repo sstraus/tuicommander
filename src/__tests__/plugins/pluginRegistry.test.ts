@@ -599,6 +599,30 @@ describe("PluginHost — Tier 3 capability gating", () => {
     await expect(host!.writePty("s1", "data")).resolves.toBeUndefined();
   });
 
+  it("built-in plugins can call sendAgentInput without error", async () => {
+    let host: PluginHost | null = null;
+    pluginRegistry.register(makePlugin("builtin", (h) => { host = h; }));
+    await expect(host!.sendAgentInput("s1", "hello")).resolves.toBeUndefined();
+  });
+
+  it("external plugin without pty:write throws PluginCapabilityError on sendAgentInput", async () => {
+    let host: PluginHost | null = null;
+    await pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      [], // no capabilities
+    );
+    await expect(host!.sendAgentInput("s1", "hello")).rejects.toThrow(PluginCapabilityError);
+  });
+
+  it("external plugin with pty:write can call sendAgentInput", async () => {
+    let host: PluginHost | null = null;
+    await pluginRegistry.register(
+      makePlugin("ext", (h) => { host = h; }),
+      ["pty:write"],
+    );
+    await expect(host!.sendAgentInput("s1", "hello")).resolves.toBeUndefined();
+  });
+
   it("external plugin without ui:markdown throws on openMarkdownPanel", async () => {
     let host: PluginHost | null = null;
     await pluginRegistry.register(

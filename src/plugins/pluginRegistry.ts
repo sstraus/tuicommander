@@ -16,6 +16,7 @@ import { fileIconRegistry } from "./fileIconRegistry";
 import { invoke, listen } from "../invoke";
 import { LineBuffer } from "../utils/lineBuffer";
 import { stripAnsi } from "../utils/stripAnsi";
+import { sendCommand } from "../utils/sendCommand";
 import {
   INVOKE_WHITELIST,
   NOTIFICATION_SOUNDS,
@@ -354,6 +355,16 @@ function createPluginRegistry() {
       async writePty(sessionId: string, data: string): Promise<void> {
         requireCapability(pluginId, capabilities, "pty:write");
         await invoke("write_pty", { sessionId, data });
+      },
+
+      async sendAgentInput(sessionId: string, text: string): Promise<void> {
+        requireCapability(pluginId, capabilities, "pty:write");
+        const agentType = terminalsStore.getAgentTypeForSession(sessionId);
+        await sendCommand(
+          (data) => invoke("write_pty", { sessionId, data }),
+          text,
+          agentType,
+        );
       },
 
       openMarkdownPanel(title: string, contentUri: string): void {

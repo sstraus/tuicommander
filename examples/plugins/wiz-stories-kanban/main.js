@@ -650,7 +650,7 @@ async function applyToClaude() {
   ].join("\n");
 
   try {
-    await hostRef.writePty(sessionId, message + "\n");
+    await hostRef.sendAgentInput(sessionId, message);
     pendingChanges = [];
     if (panelHandle) {
       panelHandle.send({ type: "toast", level: "success", message: "Sent to terminal" });

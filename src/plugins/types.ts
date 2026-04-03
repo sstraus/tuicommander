@@ -513,8 +513,17 @@ export interface PluginHost {
    */
   registerSidebarPanel(options: import("../stores/sidebarPluginStore").SidebarPanelOptions): import("../stores/sidebarPluginStore").SidebarPanelHandle;
 
-  /** Send input to a terminal session. Requires "pty:write" capability. */
+  /** Send raw bytes to a terminal session. Requires "pty:write" capability. */
   writePty(sessionId: string, data: string): Promise<void>;
+
+  /**
+   * Send user input to an agent session with correct Enter handling.
+   * Uses Ctrl-U + text, then \r in a separate write for Ink-based agents
+   * (Claude Code, Codex, etc.) that swallow \r when bundled with text.
+   * Falls back to a single write for shell sessions.
+   * Requires "pty:write" capability.
+   */
+  sendAgentInput(sessionId: string, text: string): Promise<void>;
 
   /** Open a virtual markdown tab and show the panel. Requires "ui:markdown" capability. */
   openMarkdownPanel(title: string, contentUri: string): void;

@@ -184,6 +184,7 @@ host.getGitDiff(repoPath, scope?)       // unified diff string (scope: "staged" 
 | Method | Capability |
 |--------|------------|
 | `await host.writePty(sessionId: string, data: string): Promise<void>` | `pty:write` |
+| `await host.sendAgentInput(sessionId: string, text: string): Promise<void>` | `pty:write` |
 | `host.openMarkdownPanel(title: string, contentUri: string): void` | `ui:markdown` |
 | `host.openMarkdownFile(absolutePath: string): void` | `ui:markdown` |
 | `await host.playNotificationSound(sound?: "question" \| "error" \| "completion" \| "warning" \| "info"): Promise<void>` | `ui:sound` |
@@ -401,7 +402,7 @@ export default {
     host.registerOutputWatcher({
       pattern: /\[y\/N\]|\[Y\/n\]|\(y\/n\)/i,
       onMatch(match, sessionId) {
-        host.writePty(sessionId, "y\n").catch(err => console.error("[auto-confirm]", err));
+        host.sendAgentInput(sessionId, "y").catch(err => console.error("[auto-confirm]", err));
         host.addItem({
           id: `confirm:${Date.now()}`,
           pluginId: PLUGIN_ID, sectionId: "confirms",
