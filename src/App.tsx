@@ -567,7 +567,7 @@ const App: Component = () => {
 
   const buildAgentMenuItems = (): ContextMenuItem[] => {
     const available = agentDetection.getAvailable()
-      .filter((a) => a.type !== "git");
+      .filter((a) => a.type !== "git" && a.type !== "api");
     if (available.length === 0) return [];
 
     return available.map((agent) => {
