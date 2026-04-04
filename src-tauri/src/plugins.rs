@@ -103,7 +103,29 @@ pub struct PluginManifest {
     /// Empty means the plugin is universal and active for all terminals.
     #[serde(default, rename = "agentTypes")]
     pub agent_types: Vec<String>,
+    /// CLI binaries this plugin is allowed to execute via exec:cli.
+    /// Each entry is a plain binary name (e.g. "rtk", "mdkb").
+    #[serde(default)]
+    pub binaries: Vec<String>,
 }
+
+/// Binary names that are never permitted in plugin manifests, regardless of declaration.
+/// Blocks shell interpreters, scripting runtimes, and destructive system tools that would
+/// grant a plugin arbitrary code execution via the `args` array in `exec:cli`.
+const BLOCKED_BINARIES: &[&str] = &[
+    // Shell interpreters
+    "bash", "sh", "zsh", "fish", "ksh", "dash", "csh", "tcsh",
+    // Scripting runtimes
+    "python", "python3", "ruby", "perl", "node", "deno", "bun",
+    // Network tools
+    "curl", "wget", "nc", "netcat", "socat",
+    // Destructive filesystem tools
+    "rm", "mv", "cp", "chmod", "chown", "dd",
+    // Privilege escalation
+    "sudo", "su", "doas",
+    // Build / package tools (can run arbitrary scripts)
+    "make", "cargo", "npm", "yarn", "pnpm", "pip", "go",
+];
 
 /// Known capability strings. Anything outside this set is rejected.
 const KNOWN_CAPABILITIES: &[&str] = &[
@@ -160,6 +182,25 @@ fn validate_manifest(manifest: &PluginManifest, dir_name: &str) -> Result<(), St
         if !KNOWN_CAPABILITIES.contains(&cap.as_str()) {
             return Err(format!("unknown capability: \"{cap}\""));
         }
+    }
+    // Validate declared binaries
+    for binary in &manifest.binaries {
+        if binary.contains('/') || binary.contains('\\') || binary.contains("..") {
+            return Err(format!("binary name \"{binary}\" must not contain path separators"));
+        }
+        if binary.is_empty() {
+            return Err("binary name must not be empty".into());
+        }
+        if BLOCKED_BINARIES.contains(&binary.as_str()) {
+            return Err(format!(
+                "binary \"{binary}\" is blocked — shell interpreters, scripting runtimes, \
+                 and destructive system tools are not permitted"
+            ));
+        }
+    }
+    // binaries requires exec:cli capability
+    if !manifest.binaries.is_empty() && !manifest.capabilities.contains(&"exec:cli".to_string()) {
+        return Err("manifest declares binaries but lacks exec:cli capability".into());
     }
     Ok(())
 }
@@ -949,6 +990,7 @@ mod tests {
             capabilities: vec![],
             allowed_urls: vec![],
             agent_types: vec![],
+            binaries: vec![],
         }
     }
 
@@ -1017,6 +1059,66 @@ mod tests {
         let mut m = valid_manifest("test");
         m.capabilities = vec!["pty:write".into(), "ui:markdown".into(), "ui:sound".into()];
         assert!(validate_manifest(&m, "test").is_ok());
+    }
+
+    // -- Binary validation --
+
+    #[test]
+    fn validate_rejects_blocked_binary_bash() {
+        let mut m = valid_manifest("test");
+        m.capabilities = vec!["exec:cli".into()];
+        m.binaries = vec!["bash".into()];
+        let err = validate_manifest(&m, "test").unwrap_err();
+        assert!(err.contains("blocked"), "should reject bash: {err}");
+    }
+
+    #[test]
+    fn validate_rejects_blocked_binary_python3() {
+        let mut m = valid_manifest("test");
+        m.capabilities = vec!["exec:cli".into()];
+        m.binaries = vec!["python3".into()];
+        assert!(validate_manifest(&m, "test").is_err());
+    }
+
+    #[test]
+    fn validate_rejects_blocked_binary_curl() {
+        let mut m = valid_manifest("test");
+        m.capabilities = vec!["exec:cli".into()];
+        m.binaries = vec!["curl".into()];
+        assert!(validate_manifest(&m, "test").is_err());
+    }
+
+    #[test]
+    fn validate_rejects_binary_with_path_separator() {
+        let mut m = valid_manifest("test");
+        m.capabilities = vec!["exec:cli".into()];
+        m.binaries = vec!["../../bin/bash".into()];
+        let err = validate_manifest(&m, "test").unwrap_err();
+        assert!(err.contains("path separator"), "should reject path traversal: {err}");
+    }
+
+    #[test]
+    fn validate_rejects_empty_binary_name() {
+        let mut m = valid_manifest("test");
+        m.capabilities = vec!["exec:cli".into()];
+        m.binaries = vec!["".into()];
+        assert!(validate_manifest(&m, "test").is_err());
+    }
+
+    #[test]
+    fn validate_accepts_legitimate_binary() {
+        let mut m = valid_manifest("test");
+        m.capabilities = vec!["exec:cli".into()];
+        m.binaries = vec!["mdkb".into(), "rtk".into()];
+        assert!(validate_manifest(&m, "test").is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_binaries_without_exec_cli_capability() {
+        let mut m = valid_manifest("test");
+        m.binaries = vec!["mdkb".into()];
+        let err = validate_manifest(&m, "test").unwrap_err();
+        assert!(err.contains("exec:cli"), "should require exec:cli: {err}");
     }
 
     // -- list_user_plugins with temp dir --

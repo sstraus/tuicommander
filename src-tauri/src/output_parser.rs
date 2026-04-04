@@ -231,7 +231,8 @@ impl OutputParser {
         }
 
         // Intent declaration: `intent: text` or `[intent: text]` / `[[intent: text]]`
-        if let Some(evt) = parse_intent(&clean) {
+        // Test-only parse assumes agent context (agent_active=true)
+        if let Some(evt) = parse_intent(&clean, true) {
             events.push(evt);
         }
 
@@ -241,7 +242,7 @@ impl OutputParser {
         }
 
         // Suggest follow-up actions: [suggest: A | B | C] or [[suggest: ...]]
-        if let Some(evt) = parse_suggest(&clean) {
+        if let Some(evt) = parse_suggest(&clean, true) {
             events.push(evt);
         }
 
@@ -257,7 +258,7 @@ impl OutputParser {
     ///
     /// OSC 9;4 progress events are NOT emitted here: those sequences are consumed
     /// by the vt100 crate and invisible in clean rows; they remain on the raw stream.
-    pub fn parse_clean_lines(&mut self, rows: &[crate::state::ChangedRow]) -> Vec<ParsedEvent> {
+    pub fn parse_clean_lines(&mut self, rows: &[crate::state::ChangedRow], agent_active: bool) -> Vec<ParsedEvent> {
         let mut events = Vec::new();
         // Join rows into a single string so multi-line parsers (rate_limit, etc.) work.
         // Individual row texts are already clean — no ANSI stripping required.
@@ -313,14 +314,20 @@ impl OutputParser {
             events.push(evt);
         }
 
-        // Intent, action, and suggest
-        if let Some(evt) = parse_intent(&joined) {
+        // Intent, action, and suggest.
+        // Plain-prefix tokens (`intent:`, `action:`, `suggest:` at column 0) are
+        // only parsed when an agent is detected — this prevents false positives from
+        // regular CLI tools that might output text starting with these keywords.
+        // Bracket syntax (`[[intent: ...]]`) is always parsed (agent-specific by design).
+        if let Some(evt) = parse_intent(&joined, agent_active) {
             events.push(evt);
         }
-        if let Some(evt) = parse_action(&joined) {
-            events.push(evt);
+        if agent_active {
+            if let Some(evt) = parse_action(&joined) {
+                events.push(evt);
+            }
         }
-        if let Some(evt) = parse_suggest(&joined) {
+        if let Some(evt) = parse_suggest(&joined, agent_active) {
             if let ParsedEvent::Suggest { ref items } = evt {
                 if self.last_suggest_items.as_ref() != Some(items) {
                     self.last_suggest_items = Some(items.clone());
@@ -361,9 +368,7 @@ impl OutputParser {
                     .map(|nl| &text[nl + 1..])
                     .unwrap_or(text);
                 let match_line = match_line.lines().next().unwrap_or(match_line);
-                if line_is_source_code(match_line)
-                    || line_is_diff_or_code_context(match_line)
-                {
+                if line_is_code_or_diff(match_line) {
                     continue;
                 }
 
@@ -404,9 +409,7 @@ impl OutputParser {
                     .map(|nl| &text[nl + 1..])
                     .unwrap_or(text);
                 let match_line = match_line.lines().next().unwrap_or(match_line);
-                if line_is_source_code(match_line)
-                    || line_is_diff_or_code_context(match_line)
-                {
+                if line_is_code_or_diff(match_line) {
                     continue;
                 }
                 // Dedup: suppress re-emission when the same error text is still
@@ -428,6 +431,12 @@ impl OutputParser {
 }
 
 /// Returns true if a line looks like source code, documentation, or agent commentary
+/// Combined guard: returns true if a line looks like source code, diff output,
+/// or documentation context — not a real agent output line.
+fn line_is_code_or_diff(line: &str) -> bool {
+    line_is_source_code(line) || line_is_diff_or_code_context(line)
+}
+
 /// rather than a real API error. This prevents false-positive rate-limit detection when
 /// agents read/discuss source files that contain error-code strings.
 fn line_is_source_code(line: &str) -> bool {
@@ -1098,7 +1107,7 @@ pub fn conceal_suggest(raw: &str) -> String {
 /// Detect agent-declared intent tokens in two formats:
 /// - **Plain prefix** (preferred): `intent: <text>` or `intent: <text> (<title>)` at column 0
 /// - **Bracket syntax** (backward compat): `[intent: <text>]`, `[[intent: <text>]]`, `⟦intent: <text>⟧`
-fn parse_intent(clean: &str) -> Option<ParsedEvent> {
+fn parse_intent(clean: &str, agent_active: bool) -> Option<ParsedEvent> {
     // Fast path: must contain "intent:"
     if !clean.contains("intent:") {
         return None;
@@ -1125,12 +1134,14 @@ fn parse_intent(clean: &str) -> Option<ParsedEvent> {
     let mut raw_match: Option<String> = None;
 
     for (i, line) in lines.iter().enumerate() {
-        // Pass 1: plain prefix at column 0 (new format, preferred)
-        if let Some(caps) = INTENT_PLAIN_RE.captures(line) {
-            raw_match = Some(caps[1].trim().to_string());
-            break;
+        // Pass 1: plain prefix at column 0 (only when agent detected)
+        if agent_active {
+            if let Some(caps) = INTENT_PLAIN_RE.captures(line) {
+                raw_match = Some(caps[1].trim().to_string());
+                break;
+            }
         }
-        // Pass 2: bracket syntax on a single line (backward compat)
+        // Pass 2: bracket syntax on a single line (always, agent-specific by design)
         if let Some(caps) = INTENT_RE.captures(line) {
             raw_match = Some(caps[1].trim().to_string());
             break;
@@ -1208,7 +1219,7 @@ fn parse_action(clean: &str) -> Option<ParsedEvent> {
 /// - **Plain prefix** (preferred): `suggest: A | B | C` at column 0
 /// - **Bracket syntax** (backward compat): `[suggest: A | B | C]`, `[[suggest: ...]]`, `⟦suggest: ...⟧`
 /// Pipe-separated items. At least one non-empty item required.
-fn parse_suggest(clean: &str) -> Option<ParsedEvent> {
+fn parse_suggest(clean: &str, agent_active: bool) -> Option<ParsedEvent> {
     if !clean.contains("suggest:") {
         return None;
     }
@@ -1220,10 +1231,13 @@ fn parse_suggest(clean: &str) -> Option<ParsedEvent> {
         static ref SUGGEST_RE: regex::Regex =
             regex::Regex::new(r"(?m)^\s*(?:\[\[?|\x{27E6})suggest:\s*([^\]\x{27E7}]+?)\s*(?:\]?\]|\x{27E7})\s*$").unwrap();
     }
-    // Try plain prefix first, then bracket syntax
-    let raw = SUGGEST_PLAIN_RE.captures(clean)
-        .or_else(|| SUGGEST_RE.captures(clean))
-        .map(|caps| caps[1].trim().to_string());
+    // Plain prefix only when agent detected; bracket syntax always
+    let raw = if agent_active {
+        SUGGEST_PLAIN_RE.captures(clean)
+            .or_else(|| SUGGEST_RE.captures(clean))
+    } else {
+        SUGGEST_RE.captures(clean)
+    }.map(|caps| caps[1].trim().to_string());
 
     raw.and_then(|raw| {
         let items: Vec<String> = raw
@@ -3149,7 +3163,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
             .filter(|(_, r)| !r.trim_end().is_empty())
             .map(|(i, r)| crate::state::ChangedRow { row_index: i, text: r.trim_end().to_string() })
             .collect();
-        let events = parser.parse_clean_lines(&rows);
+        let events = parser.parse_clean_lines(&rows, true);
         assert_eq!(
             get_intent(&events),
             Some("Fixing cursor handling".to_string()),
@@ -3175,7 +3189,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
             .filter(|(_, r)| !r.trim_end().is_empty())
             .map(|(i, r)| crate::state::ChangedRow { row_index: i, text: r.trim_end().to_string() })
             .collect();
-        let events = parser.parse_clean_lines(&rows);
+        let events = parser.parse_clean_lines(&rows, true);
         assert_eq!(
             get_intent(&events),
             Some("Running tests".to_string()),
@@ -3297,6 +3311,77 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         let events = parser.parse("some output\r\nsuggest: Option A | Option B\r\nmore output");
         let items = get_suggest(&events).expect("should parse in multiline");
         assert_eq!(items, vec!["Option A", "Option B"]);
+    }
+
+    // --- Agent-gating tests for parse_intent / parse_action / parse_suggest ---
+    // Plain-prefix tokens must only be parsed when agent_active=true.
+    // Bracket syntax must always be parsed regardless of agent_active.
+
+    #[test]
+    fn test_plain_prefix_intent_not_parsed_without_agent() {
+        // Directly call parse_intent with agent_active=false
+        assert!(parse_intent("intent: reading the config file", false).is_none(),
+            "plain-prefix intent should not parse when agent_active=false");
+    }
+
+    #[test]
+    fn test_bracket_intent_parsed_without_agent() {
+        // Bracket syntax should always parse regardless of agent_active
+        assert!(parse_intent("[[intent: reading config(Config)]]", false).is_some(),
+            "bracket intent should parse even when agent_active=false");
+    }
+
+    #[test]
+    fn test_plain_prefix_intent_parsed_with_agent() {
+        assert!(parse_intent("intent: reading the config file", true).is_some(),
+            "plain-prefix intent should parse when agent_active=true");
+    }
+
+    #[test]
+    fn test_plain_prefix_suggest_not_parsed_without_agent() {
+        assert!(parse_suggest("suggest: Run tests | Check logs", false).is_none(),
+            "plain-prefix suggest should not parse when agent_active=false");
+    }
+
+    #[test]
+    fn test_bracket_suggest_parsed_without_agent() {
+        assert!(parse_suggest("[[suggest: Run tests | Check logs]]", false).is_some(),
+            "bracket suggest should parse even when agent_active=false");
+    }
+
+    #[test]
+    fn test_plain_prefix_suggest_parsed_with_agent() {
+        assert!(parse_suggest("suggest: Run tests | Check logs", true).is_some(),
+            "plain-prefix suggest should parse when agent_active=true");
+    }
+
+    #[test]
+    fn test_parse_clean_lines_plain_prefix_gated() {
+        use crate::state::ChangedRow;
+        let mut parser = OutputParser::new();
+        let rows = vec![ChangedRow { row_index: 0, text: "suggest: A | B | C".into() }];
+
+        // Without agent: plain-prefix suggest should NOT be parsed
+        let events = parser.parse_clean_lines(&rows, false);
+        assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Suggest { .. })),
+            "plain-prefix suggest should be gated when agent_active=false");
+
+        // With agent: should be parsed
+        let events = parser.parse_clean_lines(&rows, true);
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Suggest { .. })),
+            "plain-prefix suggest should parse when agent_active=true");
+    }
+
+    #[test]
+    fn test_parse_clean_lines_bracket_always_parsed() {
+        use crate::state::ChangedRow;
+        let mut parser = OutputParser::new();
+        let rows = vec![ChangedRow { row_index: 0, text: "[[suggest: A | B | C]]".into() }];
+
+        // Without agent: bracket syntax should still be parsed
+        let events = parser.parse_clean_lines(&rows, false);
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Suggest { .. })),
+            "bracket suggest should parse even when agent_active=false");
     }
 
     // --- conceal_suggest tests ---
@@ -3464,7 +3549,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     fn test_parse_clean_lines_status_line() {
         let mut parser = OutputParser::new();
         let rows = vec![row(0, "* Reading files...")];
-        let events = parser.parse_clean_lines(&rows);
+        let events = parser.parse_clean_lines(&rows, true);
         assert!(
             events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. })),
             "expected StatusLine, got: {:?}", events
@@ -3475,7 +3560,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     fn test_parse_clean_lines_intent_with_title() {
         let mut parser = OutputParser::new();
         let rows = vec![row(0, "[[intent: Implementing feature(My title)]]")];
-        let events = parser.parse_clean_lines(&rows);
+        let events = parser.parse_clean_lines(&rows, true);
         assert!(
             events.iter().any(|e| matches!(e, ParsedEvent::Intent { title: Some(_), .. })),
             "expected Intent with title, got: {:?}", events
@@ -3486,7 +3571,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     fn test_parse_clean_lines_suggest() {
         let mut parser = OutputParser::new();
         let rows = vec![row(0, "[[suggest: Run tests | Review diff | Deploy]]")];
-        let events = parser.parse_clean_lines(&rows);
+        let events = parser.parse_clean_lines(&rows, true);
         assert!(
             events.iter().any(|e| matches!(e, ParsedEvent::Suggest { items } if items.len() == 3)),
             "expected Suggest with 3 items, got: {:?}", events
@@ -3497,7 +3582,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     fn test_parse_clean_lines_no_instant_question() {
         let mut parser = OutputParser::new();
         let rows = vec![row(0, "Would you like to proceed?")];
-        let events = parser.parse_clean_lines(&rows);
+        let events = parser.parse_clean_lines(&rows, true);
         assert!(
             !events.iter().any(|e| matches!(e, ParsedEvent::Question { .. })),
             "no instant question detection — silence-based only"
@@ -3508,7 +3593,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     fn test_parse_clean_lines_usage_limit() {
         let mut parser = OutputParser::new();
         let rows = vec![row(0, "You've used 78% of your weekly limit")];
-        let events = parser.parse_clean_lines(&rows);
+        let events = parser.parse_clean_lines(&rows, true);
         assert!(
             events.iter().any(|e| matches!(e, ParsedEvent::UsageLimit { .. })),
             "expected UsageLimit, got: {:?}", events
@@ -3521,7 +3606,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         // After vt100 rendering, CUF codes become spaces.
         let mut parser = OutputParser::new();
         let rows = vec![row(0, "\u{25CF} [[intent: Implementing feature(My title)]]")];
-        let events = parser.parse_clean_lines(&rows);
+        let events = parser.parse_clean_lines(&rows, true);
         assert!(
             events.iter().any(|e| matches!(e, ParsedEvent::Intent { title: Some(t), .. } if t == "My title")),
             "expected Intent with title='My title', got: {:?}", events
@@ -3533,7 +3618,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         // CUF codes rendered as multiple spaces between words
         let mut parser = OutputParser::new();
         let rows = vec![row(0, "\u{25CF}  [[intent: Project  onboarding  and  understanding(Prime session)]]")];
-        let events = parser.parse_clean_lines(&rows);
+        let events = parser.parse_clean_lines(&rows, true);
         assert!(
             events.iter().any(|e| matches!(e, ParsedEvent::Intent { title: Some(t), .. } if t == "Prime session")),
             "expected Intent with title='Prime session', got: {:?}", events
@@ -3546,7 +3631,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         // parse_intent must collapse them so agentIntent text is clean.
         let mut parser = OutputParser::new();
         let rows = vec![row(0, "[[intent: Project   onboarding   and   understanding]]")];
-        let events = parser.parse_clean_lines(&rows);
+        let events = parser.parse_clean_lines(&rows, true);
         let text = events.iter().find_map(|e| match e {
             ParsedEvent::Intent { text, .. } => Some(text.clone()),
             _ => None,
@@ -3569,7 +3654,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
             row(0, "⏺ [[intent: Implementing a very long feature description that wraps"),
             row(1, "across terminal rows(Long Feature)]]"),
         ];
-        let events = parser.parse_clean_lines(&rows);
+        let events = parser.parse_clean_lines(&rows, true);
         let intent = events.iter().find_map(|e| match e {
             ParsedEvent::Intent { text, title, .. } => Some((text.clone(), title.clone())),
             _ => None,
@@ -3595,7 +3680,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
             row(1, "1Ffx all 34 documentation)gaps"),
             row(2, "other stuff]]"),
         ];
-        let events = parser.parse_clean_lines(&rows);
+        let events = parser.parse_clean_lines(&rows, true);
         let intent = events.iter().find_map(|e| match e {
             ParsedEvent::Intent { text, .. } => Some(text.clone()),
             _ => None,
@@ -3614,7 +3699,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     fn test_parse_clean_lines_rate_limit() {
         let mut parser = OutputParser::new();
         let rows = vec![row(0, "Error: rate_limit_error - please try again")];
-        let events = parser.parse_clean_lines(&rows);
+        let events = parser.parse_clean_lines(&rows, true);
         assert!(
             events.iter().any(|e| matches!(e, ParsedEvent::RateLimit { .. })),
             "expected RateLimit, got: {:?}", events
@@ -3625,7 +3710,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     fn test_parse_clean_lines_plan_file() {
         let mut parser = OutputParser::new();
         let rows = vec![row(0, "Reading plans/vt100-clean-parsing.md")];
-        let events = parser.parse_clean_lines(&rows);
+        let events = parser.parse_clean_lines(&rows, true);
         assert!(
             events.iter().any(|e| matches!(e, ParsedEvent::PlanFile { .. })),
             "expected PlanFile, got: {:?}", events
@@ -3637,7 +3722,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         let mut parser = OutputParser::new();
         // Backticks around the path should be stripped by parse_clean_lines
         let rows = vec![row(0, "Piano scritto in `plans/document-organizer.md`.")];
-        let events = parser.parse_clean_lines(&rows);
+        let events = parser.parse_clean_lines(&rows, true);
         let path = events.iter().find_map(|e| match e {
             ParsedEvent::PlanFile { path } => Some(path.clone()),
             _ => None,
@@ -3650,7 +3735,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     fn test_parse_clean_lines_pr_url() {
         let mut parser = OutputParser::new();
         let rows = vec![row(0, "Pull request: https://github.com/owner/repo/pull/42")];
-        let events = parser.parse_clean_lines(&rows);
+        let events = parser.parse_clean_lines(&rows, true);
         assert!(
             events.iter().any(|e| matches!(e, ParsedEvent::PrUrl { .. })),
             "expected PrUrl, got: {:?}", events
@@ -3664,7 +3749,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
             row(0, "[[intent: Working on feature(Test)]]"),
             row(1, "* Reading files..."),
         ];
-        let events = parser.parse_clean_lines(&rows);
+        let events = parser.parse_clean_lines(&rows, true);
         let has_intent = events.iter().any(|e| matches!(e, ParsedEvent::Intent { .. }));
         let has_status = events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. }));
         assert!(has_intent, "expected Intent event, got: {:?}", events);

@@ -845,7 +845,10 @@ impl ChunkProcessor {
         if let Some(evt) = crate::output_parser::parse_osc94(data) {
             events.push(evt);
         }
-        events.extend(self.parser.parse_clean_lines(&changed_rows));
+        let agent_active_for_parse = state.session_states.get(session_id)
+            .map(|s| s.agent_type.is_some())
+            .unwrap_or(false);
+        events.extend(self.parser.parse_clean_lines(&changed_rows, agent_active_for_parse));
 
         // Slash menu detection
         if state.slash_mode.get(session_id)
@@ -3441,7 +3444,7 @@ mod tests {
         let mut parser = OutputParser::new();
 
         let changed = vt_log.process(b"* Reading files...");
-        let events = parser.parse_clean_lines(&changed);
+        let events = parser.parse_clean_lines(&changed, true);
         assert!(
             events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. })),
             "expected StatusLine from normal screen, got: {:?}", events
@@ -3461,7 +3464,7 @@ mod tests {
         // Enter alternate screen (smcup: ESC[?1049h)
         vt_log.process(b"\x1b[?1049h");
         let changed = vt_log.process(b"[[intent: Doing work(Test)]]");
-        let events = parser.parse_clean_lines(&changed);
+        let events = parser.parse_clean_lines(&changed, true);
         assert!(
             events.iter().any(|e| matches!(e, ParsedEvent::Intent { .. })),
             "expected Intent from alternate screen, got: {:?}", events
@@ -3573,7 +3576,7 @@ mod tests {
         let mut parser = OutputParser::new();
 
         let changed = vt_log.process(b"[[intent: Testing headless reader]]");
-        let events = parser.parse_clean_lines(&changed);
+        let events = parser.parse_clean_lines(&changed, true);
 
         assert!(
             events.iter().any(|e| matches!(e, ParsedEvent::Intent { .. })),
@@ -3592,7 +3595,7 @@ mod tests {
 
         vt_log.process(b"\x1b[?1049h"); // enter alternate screen
         let changed = vt_log.process(b"* Reading files...");
-        let events = parser.parse_clean_lines(&changed);
+        let events = parser.parse_clean_lines(&changed, true);
 
         assert!(
             events.iter().any(|e| matches!(e, ParsedEvent::StatusLine { .. })),
@@ -3652,7 +3655,7 @@ mod tests {
         let changed = vt_log.process(
             b"\x1b[1F\x1b[2K[[intent: Fix all 34 documentation gaps(Fixing gaps)]]"
         );
-        let events = parser.parse_clean_lines(&changed);
+        let events = parser.parse_clean_lines(&changed, true);
         let intent = events.iter().find_map(|e| match e {
             ParsedEvent::Intent { text, title, .. } => Some((text.clone(), title.clone())),
             _ => None,
@@ -3741,7 +3744,7 @@ mod tests {
             b"\x1b[1F\x1b[2K\x1b[38;2;128;128;128m\xe2\x97\x8f\x1b[0m \x1b[1m[[intent: Fix all 34 documentation gaps(Fixing gaps)]]\x1b[0m"
         );
 
-        let events = parser.parse_clean_lines(&changed);
+        let events = parser.parse_clean_lines(&changed, true);
         let intent = events.iter().find_map(|e| match e {
             ParsedEvent::Intent { text, title, .. } => Some((text.clone(), title.clone())),
             _ => None,
