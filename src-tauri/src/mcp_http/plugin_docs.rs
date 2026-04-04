@@ -24,7 +24,8 @@ Hot reload: editing any file in the plugin directory triggers automatic unload +
   "author": "Optional",
   "capabilities": [],
   "allowedUrls": ["https://api.example.com/*"],
-  "agentTypes": ["claude"]
+  "agentTypes": ["claude"],
+  "binaries": ["mdkb"]
 }
 ```
 
@@ -35,6 +36,7 @@ Constraints:
 - `capabilities`: subset of `pty:write`, `ui:markdown`, `ui:sound`, `ui:panel`, `ui:ticker`, `ui:context-menu`, `ui:sidebar`, `ui:file-icons`, `net:http`, `credentials:read`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`, `fs:write`, `fs:rename`, `exec:cli`, `git:read`
 - `allowedUrls`: URL patterns for `net:http` (supports `*` wildcard for path prefix matching)
 - `agentTypes`: optional array of agent type strings. When set, output watchers and structured event handlers only fire for terminals running a matching agent. Omit or use `[]` for universal plugins. Valid values: `claude`, `gemini`, `opencode`, `aider`, `codex`, `amp`, `cursor`, `warp`, `droid`, `git`.
+- `binaries`: optional array of CLI binary names this plugin may execute via `exec:cli` (e.g. `["rtk", "mdkb"]`). The on-disk manifest is the source of truth — binaries not declared here are rejected.
 - Module default export must have `id`, `onload(host)`, `onunload()`
 
 ## Complete main.js Template
@@ -245,9 +247,9 @@ FsChangeEvent: `{ type: "create" | "modify" | "delete", path: string }`
 
 ### CLI Execution (exec:cli)
 
-`await host.execCli(binary: string, args: string[], cwd?: string): Promise<string>` — execute whitelisted CLI binary, return stdout.
+`await host.execCli(binary: string, args: string[], cwd?: string): Promise<string>` — execute a CLI binary declared in the plugin's manifest `binaries` field, return stdout.
 
-Allowed binaries: `mdkb`. Working directory must be absolute and within `$HOME`. 30s timeout, 5 MB stdout limit.
+Only binaries listed in `manifest.json` `binaries` array are allowed. Working directory must be absolute and within `$HOME`. 30s timeout, 5 MB stdout limit.
 
 ```javascript
 const raw = await host.execCli("mdkb", ["--format", "json", "status"], repoPath);

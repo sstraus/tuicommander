@@ -46,6 +46,8 @@ export interface PluginManifest {
   allowedUrls?: string[];
   /** Agent types this plugin targets (e.g. ["claude"]). Empty/omitted = universal. */
   agentTypes?: string[];
+  /** CLI binaries this plugin may execute via exec:cli (e.g. ["rtk", "mdkb"]). */
+  binaries?: string[];
 }
 
 // ---------------------------------------------------------------------------

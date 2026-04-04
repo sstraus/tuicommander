@@ -1,9 +1,9 @@
 //! CLI execution API for plugins.
 //!
-//! Provides a sandboxed way for plugins to run whitelisted CLI binaries
-//! and capture their stdout as JSON. Only binaries in the allowlist can
-//! be executed. The command always enforces `--format json` to ensure
-//! machine-parseable output.
+//! Provides a sandboxed way for plugins to run CLI binaries declared in
+//! their manifest's `binaries` field. The on-disk manifest is the source
+//! of truth — the frontend cannot grant binary access that the manifest
+//! doesn't declare.
 
 use std::collections::VecDeque;
 use std::process::Command;
@@ -24,9 +24,6 @@ const MAX_STDERR_BYTES: usize = 256;
 
 /// Maximum exec:cli calls per plugin per minute.
 const RATE_LIMIT_PER_MINUTE: usize = 60;
-
-/// Binaries that plugins are allowed to execute.
-const ALLOWED_BINARIES: &[&str] = &["mdkb"];
 
 // ---------------------------------------------------------------------------
 // Rate limiting
@@ -153,10 +150,10 @@ fn validate_cwd(cwd: &str) -> Result<std::path::PathBuf, String> {
 // Tauri command
 // ---------------------------------------------------------------------------
 
-/// Execute a whitelisted CLI binary and return its stdout.
+/// Execute a CLI binary declared in the plugin's manifest `binaries` field.
 ///
 /// Security constraints:
-/// - Only binaries in ALLOWED_BINARIES can be executed
+/// - Only binaries listed in the on-disk manifest can be executed
 /// - Working directory must be within $HOME
 /// - 30-second timeout
 /// - 5 MB stdout limit
@@ -170,7 +167,15 @@ pub async fn plugin_exec_cli(
     state: tauri::State<'_, std::sync::Arc<crate::AppState>>,
 ) -> Result<String, String> {
     crate::plugins::check_plugin_capability(&state, &plugin_id, "exec:cli")?;
-    plugin_exec_cli_inner(binary, args, cwd, plugin_id).await
+
+    // Read allowed binaries from the on-disk manifest (source of truth)
+    let manifests = crate::plugins::list_user_plugins();
+    let manifest = manifests
+        .iter()
+        .find(|m| m.id == plugin_id)
+        .ok_or_else(|| format!("Plugin \"{plugin_id}\" is not installed"))?;
+
+    plugin_exec_cli_inner(binary, args, cwd, plugin_id, &manifest.binaries).await
 }
 
 /// Core exec logic, separated from the Tauri command wrapper for testability.
@@ -179,15 +184,16 @@ async fn plugin_exec_cli_inner(
     args: Vec<String>,
     cwd: Option<String>,
     plugin_id: String,
+    allowed_binaries: &[String],
 ) -> Result<String, String> {
     // Rate limit per plugin
     check_rate_limit(&plugin_id)?;
 
-    // Validate binary is in the allowlist
-    if !ALLOWED_BINARIES.contains(&binary.as_str()) {
+    // Validate binary is declared in the plugin's manifest
+    if !allowed_binaries.iter().any(|b| b == &binary) {
         return Err(format!(
-            "Binary \"{binary}\" is not in the plugin exec allowlist. Allowed: {}",
-            ALLOWED_BINARIES.join(", ")
+            "Binary \"{binary}\" is not declared in plugin \"{plugin_id}\" manifest binaries. Declared: {}",
+            if allowed_binaries.is_empty() { "(none)".to_string() } else { allowed_binaries.join(", ") }
         ));
     }
 
@@ -348,27 +354,46 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn exec_rejects_unlisted_binary() {
+    async fn exec_rejects_undeclared_binary() {
+        let allowed = vec!["mdkb".to_string()];
         let result = plugin_exec_cli_inner(
             "curl".to_string(),
             vec![],
             None,
             "test-plugin".to_string(),
+            &allowed,
         )
         .await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("not in the plugin exec allowlist"));
+        assert!(result.unwrap_err().contains("not declared in plugin"));
+    }
+
+    #[tokio::test]
+    async fn exec_rejects_when_no_binaries_declared() {
+        let allowed: Vec<String> = vec![];
+        let result = plugin_exec_cli_inner(
+            "mdkb".to_string(),
+            vec![],
+            None,
+            "test-plugin".to_string(),
+            &allowed,
+        )
+        .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("(none)"));
     }
 
     #[tokio::test]
     async fn exec_rejects_nonexistent_binary() {
         let result = resolve_binary("mdkb");
         if result.is_none() {
+            let allowed = vec!["mdkb".to_string()];
             let r = plugin_exec_cli_inner(
                 "mdkb".to_string(),
                 vec![],
                 None,
                 "test-plugin".to_string(),
+                &allowed,
             )
             .await;
             assert!(r.is_err());

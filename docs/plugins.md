@@ -120,6 +120,7 @@ File: `~/.config/tuicommander/plugins/{id}/manifest.json`
 | `capabilities` | string[] | no | Tier 3/4 capabilities needed (defaults to `[]`) |
 | `allowedUrls` | string[] | no | URL patterns allowed for `net:http` (e.g. `["https://api.example.com/*"]`) |
 | `agentTypes` | string[] | no | Agent types this plugin targets (e.g. `["claude"]`). Omit or `[]` for universal plugins. |
+| `binaries` | string[] | no | CLI binaries this plugin may execute via `exec:cli` (e.g. `["rtk", "mdkb"]`) |
 
 ### Validation Rules
 
@@ -858,9 +859,14 @@ const lines = tail.split("\n").filter(Boolean);
 
 #### host.execCli(binary, args, cwd?) -> Promise<string>
 
-Execute a whitelisted CLI binary and return its stdout. **Requires `"exec:cli"` capability.**
+Execute a CLI binary declared in the plugin's manifest and return its stdout. **Requires `"exec:cli"` capability.**
 
-Only binaries in the server-side allowlist can be executed. Currently allowed: `mdkb`.
+Only binaries listed in the manifest's `binaries` field can be executed. The on-disk manifest is the source of truth — the frontend cannot grant access to undeclared binaries.
+
+```json
+// manifest.json
+{ "capabilities": ["exec:cli"], "binaries": ["mdkb"] }
+```
 
 ```typescript
 const raw = await host.execCli("mdkb", ["--format", "json", "status"], "/Users/me/project");
@@ -869,7 +875,7 @@ console.log(status.index.documents); // 1486
 ```
 
 **Security and limits:**
-- Only whitelisted binaries can be executed (command injection is not possible)
+- Only binaries declared in the plugin's `binaries` manifest field can be executed
 - Working directory must be absolute and within `$HOME`
 - 30-second timeout
 - 5 MB stdout limit
@@ -934,7 +940,7 @@ Capabilities gate access to Tier 3 and Tier 4 methods. Declare them in `manifest
 | `fs:watch` | `host.watchPath()` | Can watch filesystem paths within `$HOME` for changes |
 | `fs:write` | `host.writeFile()` | Can write files within `$HOME` (10 MB limit) |
 | `fs:rename` | `host.renamePath()` | Can rename/move files within `$HOME` |
-| `exec:cli` | `host.execCli()` | Can execute whitelisted CLI binaries (see below) |
+| `exec:cli` | `host.execCli()` | Can execute CLI binaries declared in manifest `binaries` field |
 | `git:read` | `host.getGitBranches()`, `host.getRecentCommits()`, `host.getGitDiff()` | Read-only access to git repository state |
 | `ui:context-menu` | `host.registerTerminalAction()` | Can add actions to the terminal right-click "Actions" submenu |
 | `ui:sidebar` | `host.registerSidebarPanel()` | Can register collapsible panel sections in the sidebar |
@@ -1332,6 +1338,7 @@ Available from the [plugin registry](https://github.com/sstraus/tuicommander-plu
 | Plugin | Tier | Capabilities | Description |
 |--------|------|-------------|-------------|
 | `mdkb-dashboard` | 2+3 | `exec:cli`, `fs:read`, `ui:panel`, `ui:ticker` | mdkb knowledge base dashboard |
+| `rtk-dashboard` | 3 | `exec:cli`, `ui:panel`, `ui:context-menu` | RTK token savings dashboard (`binaries: ["rtk"]`) |
 
 ## Troubleshooting
 
@@ -1340,6 +1347,7 @@ Available from the [plugin registry](https://github.com/sstraus/tuicommander-plu
 | Plugin not loading | `manifest.json` missing or malformed | Check console for validation errors |
 | `requires app version X.Y.Z` | `minAppVersion` too high | Lower `minAppVersion` or update app |
 | `not in the invoke whitelist` | Calling non-whitelisted Tauri command | Only use commands listed in the whitelist table |
+| `not declared in plugin ... manifest binaries` | Binary not in manifest `binaries` field | Add the binary name to the `binaries` array in `manifest.json` |
 | `requires capability "X"` | Missing capability in manifest | Add the capability to `manifest.json` `capabilities` array |
 | Module not found | `main` field doesn't match filename | Ensure `"main": "main.js"` matches your actual file |
 | Changes not reflecting | Hot reload cache | Save the file again, or restart the app |
