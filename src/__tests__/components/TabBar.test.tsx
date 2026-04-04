@@ -721,15 +721,11 @@ describe("TabBar", () => {
   });
 
   describe("new tab menu", () => {
-    it("disables opposite-direction split when already split", () => {
-      const id1 = addTerminal({ name: "T1" });
-      const id2 = addTerminal({ name: "T2" });
-      terminalsStore.setLayout({
-        direction: "vertical",
-        panes: [id1, id2],
-        ratios: [0.5, 0.5],
-        activePaneIndex: 0,
-      });
+    it("disables split when no active terminal", () => {
+      // Clear all terminals so there's no activeId
+      for (const id of terminalsStore.getIds()) {
+        terminalsStore.remove(id);
+      }
 
       const { container } = render(() => (
         <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
@@ -742,21 +738,18 @@ describe("TabBar", () => {
       const menus = container.querySelectorAll(".menu");
       const menu = menus[menus.length - 1];
       const items = Array.from(menu.querySelectorAll(".item"));
-      // With vertical split: "Split Vertically" should be enabled, "Split Horizontally" disabled
       const splitV = items.find(i => i.textContent?.includes("Split Vertically"));
       const splitH = items.find(i => i.textContent?.includes("Split Horizontally"));
       expect(splitV).toBeDefined();
       expect(splitH).toBeDefined();
-      expect(splitV!.classList.contains("disabled")).toBe(false);
+      expect(splitV!.classList.contains("disabled")).toBe(true);
       expect(splitH!.classList.contains("disabled")).toBe(true);
-
-      // Reset layout for other tests
-      terminalsStore.setLayout({ direction: "none", panes: [], ratios: [], activePaneIndex: 0 });
     });
 
     it("calls onSplitVertical when Split Vertically is clicked", () => {
       const handleSplit = vi.fn();
-      addTerminal({ name: "T1" });
+      const id = addTerminal({ name: "T1" });
+      terminalsStore.setActive(id);
 
       const { container } = render(() => (
         <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} onSplitVertical={handleSplit} />

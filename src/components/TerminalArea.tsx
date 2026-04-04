@@ -7,6 +7,7 @@ import { PluginPanel } from "./PluginPanel";
 import { HtmlPreviewTab } from "./HtmlPreviewTab";
 import { ClaudeUsageDashboard } from "./ClaudeUsageDashboard";
 import { CodeEditorTab } from "./CodeEditorPanel";
+import { PaneNodeView } from "./PaneTree/PaneTree";
 import SuggestOverlay from "./SuggestOverlay/SuggestOverlay";
 import { rpc } from "../transport";
 import noTuiOpenImg from "../assets/no-tui-open.png";
@@ -18,6 +19,7 @@ import { repoSettingsStore } from "../stores/repoSettings";
 import { diffTabsStore } from "../stores/diffTabs";
 import { mdTabsStore } from "../stores/mdTabs";
 import { editorTabsStore } from "../stores/editorTabs";
+import { paneLayoutStore } from "../stores/paneLayout";
 import { useFileDrop } from "../hooks/useFileDrop";
 
 
@@ -51,207 +53,159 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
     <div id="terminal-container">
       <div
         id="terminal-panes"
-        ref={attachTo}
         classList={{
-          "split-vertical": terminalsStore.state.layout.direction === "vertical",
-          "split-horizontal": terminalsStore.state.layout.direction === "horizontal",
+          "split-vertical": !paneLayoutStore.isSplit() && terminalsStore.state.layout.direction === "vertical",
+          "split-horizontal": !paneLayoutStore.isSplit() && terminalsStore.state.layout.direction === "horizontal",
         }}
+        ref={attachTo}
         onContextMenu={props.onContextMenu}
       >
-        {/* Empty state when no tabs are open */}
-        <Show when={!terminalsStore.state.activeId && !diffTabsStore.state.activeId && !mdTabsStore.state.activeId && !editorTabsStore.state.activeId}>
+        {/* Empty state when no tabs are open and no split active */}
+        <Show when={!paneLayoutStore.isSplit() && !terminalsStore.state.activeId && !diffTabsStore.state.activeId && !mdTabsStore.state.activeId && !editorTabsStore.state.activeId}>
           <div class="empty-terminal-state">
             <img src={noTuiOpenImg} alt="No TUI Open" class="empty-terminal-icon" />
             <TipOfTheDay />
           </div>
         </Show>
 
-        {/* Terminal panes */}
-        <For each={terminalsStore.getIds()}>
-          {(id) => {
-            const terminal = terminalsStore.get(id);
-            const isSplitPane = () => terminalsStore.state.layout.direction !== "none" && terminalsStore.state.layout.panes.includes(id);
-            const isActivePaneInSplit = () => {
-              const layout = terminalsStore.state.layout;
-              return layout.direction !== "none" && layout.panes[layout.activePaneIndex] === id;
-            };
-            const paneIndex = () => terminalsStore.state.layout.panes.indexOf(id);
-            const paneRatio = () => terminalsStore.state.layout.ratios[paneIndex()] ?? 0;
-
-            const isDetached = () => terminalsStore.isDetached(id);
-
-            const metaHotkeys = createMemo(() => {
-              const path = repositoriesStore.getRepoPathForTerminal(id);
-              if (!path) return undefined;
-              return repoSettingsStore.getEffective(path)?.terminalMetaHotkeys;
-            });
-
-            return (
-              <div
-                class="terminal-pane"
-                classList={{
-                  active: terminalsStore.state.activeId === id && !isDetached(),
-                  "split-pane": isSplitPane(),
-                  "split-pane-active": isActivePaneInSplit(),
-                  detached: isDetached(),
-                }}
-                style={isDetached() ? { display: "none" } : isSplitPane() ? {
-                  flex: `${paneRatio() * 100} 1 0%`,
-                  order: paneIndex() * 2,
-                } : undefined}
-              >
-                <Terminal
-                  id={id}
-                  cwd={terminal?.cwd || null}
-                  onFocus={props.onTerminalFocus}
-                  onSessionCreated={() => {}}
-                  onOpenFilePath={props.onOpenFilePath}
-                  metaHotkeys={metaHotkeys()}
-                  onCwdChange={props.onCwdChange}
-                />
-              </div>
-            );
-          }}
-        </For>
-
-        {/* Resize handles between split panes — one handle per adjacent pair */}
-        <For each={Array.from({ length: Math.max(0, terminalsStore.state.layout.panes.length - 1) }, (_, i) => i)}>
-          {(handleIndex) => (
-            <div
-              class="split-resize-handle"
-              classList={{
-                vertical: terminalsStore.state.layout.direction === "vertical",
-                horizontal: terminalsStore.state.layout.direction === "horizontal",
-              }}
-              style={{ order: handleIndex * 2 + 1 }}
-              onMouseDown={(startEvent) => {
-                startEvent.preventDefault();
-                const container = document.getElementById("terminal-panes");
-                if (!container) return;
-
-                const isVertical = terminalsStore.state.layout.direction === "vertical";
-                const rect = container.getBoundingClientRect();
-                const capturedIndex = handleIndex;
-
-                let rafPending = false;
-                const onMouseMove = (e: MouseEvent) => {
-                  if (rafPending) return;
-                  rafPending = true;
-                  requestAnimationFrame(() => {
-                    rafPending = false;
-                    const fraction = isVertical
-                      ? (e.clientX - rect.left) / rect.width
-                      : (e.clientY - rect.top) / rect.height;
-                    terminalsStore.setHandleRatio(capturedIndex, fraction);
-                  });
-                };
-
-                const onMouseUp = () => {
-                  document.removeEventListener("mousemove", onMouseMove);
-                  document.removeEventListener("mouseup", onMouseUp);
-                  document.body.style.cursor = "";
-                  document.body.style.userSelect = "";
-                  for (const paneId of terminalsStore.state.layout.panes) {
-                    terminalsStore.get(paneId)?.ref?.fit();
-                  }
-                };
-
-                document.body.style.cursor = isVertical ? "col-resize" : "row-resize";
-                document.body.style.userSelect = "none";
-                document.addEventListener("mousemove", onMouseMove);
-                document.addEventListener("mouseup", onMouseUp);
-              }}
+        {/* PaneTree renderer — active when split mode is on */}
+        <Show when={paneLayoutStore.isSplit() && paneLayoutStore.getRoot()}>
+          {(root) => (
+            <PaneNodeView
+              node={root()}
+              onCloseTab={props.onCloseTab}
+              onOpenFilePath={props.onOpenFilePath}
+              onTerminalFocus={props.onTerminalFocus}
+              onCwdChange={props.onCwdChange}
             />
           )}
-        </For>
+        </Show>
 
-        {/* Diff tabs */}
-        <For each={diffTabsStore.getIds()}>
-          {(id) => {
-            const diffTab = diffTabsStore.get(id);
-            return (
-              <div
-                class="terminal-pane diff-pane"
-                classList={{ active: diffTabsStore.state.activeId === id }}
-                onContextMenu={(e) => e.stopPropagation()}
-              >
-                {diffTab && (
-                  <DiffTab
-                    tabId={id}
-                    repoPath={diffTab.repoPath}
-                    filePath={diffTab.filePath}
-                    scope={diffTab.scope}
-                    untracked={diffTab.untracked}
-                    onClose={() => props.onCloseTab(id)}
-                  />
-                )}
-              </div>
-            );
-          }}
-        </For>
+        {/* Flat rendering — active when NOT in split mode */}
+        <Show when={!paneLayoutStore.isSplit()}>
+          {/* Terminal panes */}
+          <For each={terminalsStore.getIds()}>
+            {(id) => {
+              const terminal = terminalsStore.get(id);
+              const isDetached = () => terminalsStore.isDetached(id);
 
-        {/* Markdown tabs */}
-        <For each={mdTabsStore.getIds()}>
-          {(id) => {
-            const mdTab = mdTabsStore.get(id);
-            return (
-              <div
-                class="terminal-pane md-pane"
-                classList={{ active: mdTabsStore.state.activeId === id }}
-                onContextMenu={(e) => e.stopPropagation()}
-              >
-                {mdTab && mdTab.type === "claude-usage" ? (
-                  <ClaudeUsageDashboard />
-                ) : mdTab && mdTab.type === "plugin-panel" ? (
-                  <PluginPanel
-                    tab={mdTab}
-                    onClose={() => props.onCloseTab(id)}
-                  />
-                ) : mdTab && mdTab.type === "pr-diff" ? (
-                  <PrDiffTab
-                    prNumber={mdTab.prNumber}
-                    prTitle={mdTab.prTitle}
-                    diff={mdTab.diff}
-                  />
-                ) : mdTab && mdTab.type === "html-preview" ? (
-                  <HtmlPreviewTab
-                    tab={mdTab}
-                    onClose={() => props.onCloseTab(id)}
-                  />
-                ) : mdTab ? (
-                  <MarkdownTab
-                    tab={mdTab}
-                    onClose={() => props.onCloseTab(id)}
-                  />
-                ) : null}
-              </div>
-            );
-          }}
-        </For>
+              const metaHotkeys = createMemo(() => {
+                const path = repositoriesStore.getRepoPathForTerminal(id);
+                if (!path) return undefined;
+                return repoSettingsStore.getEffective(path)?.terminalMetaHotkeys;
+              });
 
-        {/* Editor tabs */}
-        <For each={editorTabsStore.getIds()}>
-          {(id) => {
-            const editTab = editorTabsStore.get(id);
-            return (
-              <div
-                class="terminal-pane edit-pane"
-                classList={{ active: editorTabsStore.state.activeId === id }}
-                onContextMenu={(e) => e.stopPropagation()}
-              >
-                {editTab && (
-                  <CodeEditorTab
+              return (
+                <div
+                  class="terminal-pane"
+                  classList={{
+                    active: terminalsStore.state.activeId === id && !isDetached(),
+                    detached: isDetached(),
+                  }}
+                  style={isDetached() ? { display: "none" } : undefined}
+                >
+                  <Terminal
                     id={id}
-                    repoPath={editTab.repoPath}
-                    filePath={editTab.filePath}
-                    initialLine={editTab.initialLine}
-                    onClose={() => props.onCloseTab(id)}
+                    cwd={terminal?.cwd || null}
+                    onFocus={props.onTerminalFocus}
+                    onSessionCreated={() => {}}
+                    onOpenFilePath={props.onOpenFilePath}
+                    metaHotkeys={metaHotkeys()}
+                    onCwdChange={props.onCwdChange}
                   />
-                )}
-              </div>
-            );
-          }}
-        </For>
+                </div>
+              );
+            }}
+          </For>
+
+          {/* Diff tabs */}
+          <For each={diffTabsStore.getIds()}>
+            {(id) => {
+              const diffTab = diffTabsStore.get(id);
+              return (
+                <div
+                  class="terminal-pane diff-pane"
+                  classList={{ active: diffTabsStore.state.activeId === id }}
+                  onContextMenu={(e) => e.stopPropagation()}
+                >
+                  {diffTab && (
+                    <DiffTab
+                      tabId={id}
+                      repoPath={diffTab.repoPath}
+                      filePath={diffTab.filePath}
+                      scope={diffTab.scope}
+                      untracked={diffTab.untracked}
+                      onClose={() => props.onCloseTab(id)}
+                    />
+                  )}
+                </div>
+              );
+            }}
+          </For>
+
+          {/* Markdown tabs */}
+          <For each={mdTabsStore.getIds()}>
+            {(id) => {
+              const mdTab = mdTabsStore.get(id);
+              return (
+                <div
+                  class="terminal-pane md-pane"
+                  classList={{ active: mdTabsStore.state.activeId === id }}
+                  onContextMenu={(e) => e.stopPropagation()}
+                >
+                  {mdTab && mdTab.type === "claude-usage" ? (
+                    <ClaudeUsageDashboard />
+                  ) : mdTab && mdTab.type === "plugin-panel" ? (
+                    <PluginPanel
+                      tab={mdTab}
+                      onClose={() => props.onCloseTab(id)}
+                    />
+                  ) : mdTab && mdTab.type === "pr-diff" ? (
+                    <PrDiffTab
+                      prNumber={mdTab.prNumber}
+                      prTitle={mdTab.prTitle}
+                      diff={mdTab.diff}
+                    />
+                  ) : mdTab && mdTab.type === "html-preview" ? (
+                    <HtmlPreviewTab
+                      tab={mdTab}
+                      onClose={() => props.onCloseTab(id)}
+                    />
+                  ) : mdTab ? (
+                    <MarkdownTab
+                      tab={mdTab}
+                      onClose={() => props.onCloseTab(id)}
+                    />
+                  ) : null}
+                </div>
+              );
+            }}
+          </For>
+
+          {/* Editor tabs */}
+          <For each={editorTabsStore.getIds()}>
+            {(id) => {
+              const editTab = editorTabsStore.get(id);
+              return (
+                <div
+                  class="terminal-pane edit-pane"
+                  classList={{ active: editorTabsStore.state.activeId === id }}
+                  onContextMenu={(e) => e.stopPropagation()}
+                >
+                  {editTab && (
+                    <CodeEditorTab
+                      id={id}
+                      repoPath={editTab.repoPath}
+                      filePath={editTab.filePath}
+                      initialLine={editTab.initialLine}
+                      onClose={() => props.onCloseTab(id)}
+                    />
+                  )}
+                </div>
+              );
+            }}
+          </For>
+        </Show>
 
         {/* Suggest follow-up actions overlay — inside #terminal-panes for correct centering.
              Timer lives in the overlay: 30s after becoming visible → auto-dismiss.

@@ -1,102 +1,108 @@
 import { createSignal } from "solid-js";
-import { terminalsStore, type TabLayout } from "../stores/terminals";
-import { repositoriesStore } from "../stores/repositories";
-import { settingsStore } from "../stores/settings";
+import { terminalsStore } from "../stores/terminals";
+import { paneLayoutStore, type PaneLayoutState } from "../stores/paneLayout";
 
-/** Re-fit panes after CSS flex layout settles (~150ms).
- *  Without this delay, fit() measures pre-layout dimensions → wrong column counts. */
-function refitPanes(paneIds: string[] = terminalsStore.state.layout.panes) {
+/** Re-fit terminals in all pane groups after CSS flex layout settles (~150ms). */
+function refitPaneTerminals() {
   setTimeout(() => {
-    for (const paneId of paneIds) {
-      terminalsStore.get(paneId)?.ref?.fit();
+    for (const groupId of paneLayoutStore.getAllGroupIds()) {
+      const group = paneLayoutStore.state.groups[groupId];
+      if (!group) continue;
+      for (const tab of group.tabs) {
+        if (tab.type === "terminal") {
+          terminalsStore.get(tab.id)?.ref?.fit();
+        }
+      }
     }
   }, 150);
 }
 
-/** Split pane management */
+/** Split pane management using recursive pane tree */
 export function useSplitPanes() {
   const [zoomed, setZoomed] = createSignal(false);
-  const [savedLayout, setSavedLayout] = createSignal<TabLayout | null>(null);
+  const [savedLayout, setSavedLayout] = createSignal<PaneLayoutState | null>(null);
 
   const handleSplit = (direction: "vertical" | "horizontal") => {
-    const activeId = terminalsStore.state.activeId;
-    if (!activeId) return;
+    if (!paneLayoutStore.isSplit()) {
+      // First split: bootstrap tree with current active terminal
+      const activeId = terminalsStore.state.activeId;
+      if (!activeId) return;
 
-    // If layout has no panes, initialize it with the current active terminal
-    if (terminalsStore.state.layout.panes.length === 0) {
-      terminalsStore.setLayout({
-        direction: "none",
-        panes: [activeId],
-        ratios: [],
-        activePaneIndex: 0,
-      });
+      const groupId = paneLayoutStore.createGroup();
+      paneLayoutStore.addTab(groupId, { id: activeId, type: "terminal" });
+      paneLayoutStore.setRoot({ type: "leaf", id: groupId });
+      paneLayoutStore.setActiveGroup(groupId);
+
+      // Split creates empty second group (no dummy terminal)
+      paneLayoutStore.split(groupId, direction);
+    } else {
+      // Already split: split the active group
+      const activeGroupId = paneLayoutStore.state.activeGroupId;
+      if (!activeGroupId) return;
+      paneLayoutStore.split(activeGroupId, direction);
     }
 
-    const newId = terminalsStore.splitPane(direction);
-    if (!newId) return;
-
-    // Track the new terminal in the branch (skip in unified mode to hide tab)
-    if (settingsStore.state.splitTabMode !== "unified") {
-      const activeRepo = repositoriesStore.getActive();
-      if (activeRepo?.activeBranch) {
-        repositoriesStore.addTerminalToBranch(activeRepo.path, activeRepo.activeBranch, newId);
-      }
-    }
-
-    terminalsStore.setActive(newId);
-    refitPanes();
+    refitPaneTerminals();
   };
 
   const resetLayout = () => {
-    terminalsStore.setLayout({
-      direction: "none",
-      panes: terminalsStore.state.layout.panes.slice(0, 1),
-      ratios: [],
-      activePaneIndex: 0,
-    });
+    paneLayoutStore.reset();
+    setZoomed(false);
+    setSavedLayout(null);
+  };
+
+  /** Close the active pane group. Terminals in the group are destroyed. */
+  const closeActivePane = () => {
+    const activeGroupId = paneLayoutStore.state.activeGroupId;
+    if (!activeGroupId) return;
+
+    // Close terminal sessions in this group
+    const group = paneLayoutStore.state.groups[activeGroupId];
+    if (group) {
+      for (const tab of group.tabs) {
+        if (tab.type === "terminal") {
+          terminalsStore.remove(tab.id);
+        }
+      }
+    }
+
+    paneLayoutStore.closePane(activeGroupId);
+
+    // Focus the terminal in the new active group (if any)
+    const newActiveGroup = paneLayoutStore.getActiveGroup();
+    if (newActiveGroup) {
+      const termTab = newActiveGroup.tabs.find(t => t.type === "terminal");
+      if (termTab) {
+        terminalsStore.setActive(termTab.id);
+        requestAnimationFrame(() => terminalsStore.get(termTab.id)?.ref?.focus());
+      }
+    }
+
+    refitPaneTerminals();
   };
 
   const toggleZoomPane = () => {
     if (zoomed()) {
-      // Restore saved layout, filtering out panes that were closed while zoomed
-      const layout = savedLayout();
-      if (layout) {
-        const validPanes = layout.panes.filter(id => terminalsStore.get(id) !== undefined);
-        if (validPanes.length === 0) {
-          // All saved panes were closed — stay single-pane
-          setSavedLayout(null);
-          setZoomed(false);
-          return;
-        }
-        const restoredLayout = validPanes.length < layout.panes.length
-          ? { ...layout, panes: validPanes, ratios: layout.ratios.slice(0, validPanes.length - 1), activePaneIndex: 0 }
-          : layout;
-        terminalsStore.setLayout(restoredLayout);
+      // Restore saved layout
+      const saved = savedLayout();
+      if (saved) {
+        paneLayoutStore.restore(saved);
         setSavedLayout(null);
-        refitPanes(restoredLayout.panes);
+        refitPaneTerminals();
       }
       setZoomed(false);
     } else {
-      const layout = terminalsStore.state.layout;
-      if (layout.direction === "none" || layout.panes.length <= 1) return;
-      // Save current layout and zoom to active pane
-      setSavedLayout({ ...layout, panes: [...layout.panes], ratios: [...layout.ratios] });
-      const activePane = layout.panes[layout.activePaneIndex] ?? layout.panes[0];
-      terminalsStore.setLayout({
-        direction: "none",
-        panes: [activePane],
-        ratios: [],
-        activePaneIndex: 0,
-      });
+      if (!paneLayoutStore.isSplit()) return;
+      const activeGroupId = paneLayoutStore.state.activeGroupId;
+      if (!activeGroupId) return;
+
+      // Save full state, then zoom to single leaf
+      setSavedLayout(paneLayoutStore.serialize());
+      paneLayoutStore.setRoot({ type: "leaf", id: activeGroupId });
       setZoomed(true);
-      refitPanes([activePane]);
+      refitPaneTerminals();
     }
   };
 
-  return {
-    handleSplit,
-    resetLayout,
-    toggleZoomPane,
-    zoomed,
-  };
+  return { handleSplit, resetLayout, closeActivePane, toggleZoomPane, zoomed };
 }

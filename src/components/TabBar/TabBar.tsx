@@ -1,5 +1,6 @@
 import { Component, For, Show, batch, createSignal, createEffect, onCleanup, onMount } from "solid-js";
-import { terminalsStore, MAX_SPLIT_PANES } from "../../stores/terminals";
+import { terminalsStore } from "../../stores/terminals";
+import { paneLayoutStore } from "../../stores/paneLayout";
 import { repositoriesStore } from "../../stores/repositories";
 import { diffTabsStore } from "../../stores/diffTabs";
 import { mdTabsStore } from "../../stores/mdTabs";
@@ -58,8 +59,8 @@ export const TabBar: Component<TabBarProps> = (props) => {
   const getNewTabMenuItems = (): ContextMenuItem[] => [
     { label: t("tabBar.newTab", "New Tab"), shortcut: `${mod}T`, action: () => props.onNewTab() },
     { label: "", separator: true, action: () => {} },
-    { label: t("tabBar.splitVertical", "Split Vertically"), shortcut: `${mod}\\`, action: () => props.onSplitVertical?.(), disabled: layout().direction === "horizontal" || layout().panes.length >= MAX_SPLIT_PANES },
-    { label: t("tabBar.splitHorizontal", "Split Horizontally"), shortcut: `${mod}Alt+\\`, action: () => props.onSplitHorizontal?.(), disabled: layout().direction === "vertical" || layout().panes.length >= MAX_SPLIT_PANES },
+    { label: t("tabBar.splitVertical", "Split Vertically"), shortcut: `${mod}\\`, action: () => props.onSplitVertical?.(), disabled: !paneLayoutStore.isSplit() && !terminalsStore.state.activeId },
+    { label: t("tabBar.splitHorizontal", "Split Horizontally"), shortcut: `${mod}Alt+\\`, action: () => props.onSplitHorizontal?.(), disabled: !paneLayoutStore.isSplit() && !terminalsStore.state.activeId },
   ];
 
   const openNewTabMenu = (e: MouseEvent) => {
