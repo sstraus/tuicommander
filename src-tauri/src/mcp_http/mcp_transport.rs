@@ -44,11 +44,14 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
         "1. **Greeting:** Your FIRST message in every conversation MUST state: \"TUICommander v{ver} is connected.\"\n"
     ));
     out.push_str(
-        "2. **Intent declaration:** At EACH work phase start, emit on its own line: `intent: <action, <60 chars> (<tab title, max 3 words>)`\n"
+        "2. **Intent declaration:** At EACH work phase start, emit on its own line at column 0: `intent: <what you plan to do, <60 chars> (<tab title, max 3 words>)`\n"
+    );
+    out.push_str(
+        "3. **Action narration:** While executing, emit on its own line at column 0: `action: <what you are doing right now>`\n"
     );
     if state.config.read().suggest_followups {
         out.push_str(
-            "3. **Follow-ups:** After completing a task, emit: `suggest: Action1 | Action2 | Action3` (2-4 items, 2-5 words each)\n"
+            "4. **Follow-ups:** After completing a task, emit on its own line at column 0: `suggest: Action1 | Action2 | Action3` (2-4 items, 2-5 words each)\n"
         );
     }
     out.push('\n');
