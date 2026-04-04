@@ -22,6 +22,9 @@ export function CommandInput(props: CommandInputProps) {
   let textareaEl: HTMLTextAreaElement | undefined;
   // When true, user is actively editing — don't overwrite with PTY input
   let userEditing = false;
+  // Timestamp of last send — suppresses PTY→textarea sync briefly after sending
+  // to prevent the just-sent text from echoing back into the input box.
+  let lastSendAt = 0;
 
   // React to external prefill (e.g. slash menu selection)
   createEffect(() => {
@@ -39,9 +42,11 @@ export function CommandInput(props: CommandInputProps) {
   });
 
   // PTY → textarea: last writer wins — only update when user is not editing
+  // and not within the post-send cooldown window.
   createEffect(() => {
     const il = props.ptyInputLine;
     if (userEditing) return;
+    if (Date.now() - lastSendAt < 1000) return;
     const text = il ?? "";
     setValue(text);
     if (textareaEl) {
@@ -75,6 +80,7 @@ export function CommandInput(props: CommandInputProps) {
     if (!text) return;
 
     userEditing = false;
+    lastSendAt = Date.now();
     setValue("");
     if (textareaEl) { textareaEl.value = ""; textareaEl.style.height = "auto"; }
     try {

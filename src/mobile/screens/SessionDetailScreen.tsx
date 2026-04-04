@@ -229,7 +229,7 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
         </Show>
       </div>
       <Show when={sessionState()?.suggested_actions?.length}>
-        <SuggestChips sessionId={props.session.session_id} items={sessionState()!.suggested_actions!} />
+        <SuggestChips sessionId={props.session.session_id} items={sessionState()!.suggested_actions!} agentType={sessionState()?.agent_type as string | null | undefined} />
       </Show>
       <TerminalKeybar
         sessionId={props.session.session_id}

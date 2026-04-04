@@ -9,14 +9,46 @@
 .sheet {
   width: 100%;
   max-height: 60vh;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
   background: rgba(37, 37, 38, 0.85);
   backdrop-filter: blur(12px) saturate(1.6);
   -webkit-backdrop-filter: blur(12px) saturate(1.6);
   border-top: 1px solid var(--border);
   border-radius: 12px 12px 0 0;
-  padding: 8px 0 max(8px, env(safe-area-inset-bottom));
+  padding: 0 0 max(8px, env(safe-area-inset-bottom));
+}
+
+.filterBar {
+  padding: 10px 12px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.filterInput {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--foreground);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-mono);
+  outline: none;
+  -webkit-appearance: none;
+}
+
+.filterInput::placeholder {
+  color: var(--foreground-muted);
+}
+
+.filterInput:focus {
+  border-color: var(--accent);
+}
+
+.list {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .item {
@@ -53,31 +85,4 @@
 .description {
   color: var(--foreground-muted);
   font-family: var(--font-ui);
-}
-
-.arrowBar {
-  display: flex;
-  justify-content: center;
-  gap: 24px;
-  padding: 8px 0 4px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.arrowBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 36px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--foreground);
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-  cursor: pointer;
-}
-
-.arrowBtn:active {
-  background: rgba(255, 255, 255, 0.15);
 }
