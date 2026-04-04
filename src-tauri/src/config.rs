@@ -340,10 +340,10 @@ pub(crate) struct AppConfig {
     /// Native MCP tool names disabled by the user (excluded from tools/list response)
     #[serde(default)]
     pub(crate) disabled_native_tools: Vec<String>,
-    /// Show agent intent as tab title (from [[intent: ...(title)]] tokens)
+    /// Show agent intent as tab title (from `intent: text (title)` tokens)
     #[serde(default = "default_true")]
     pub(crate) intent_tab_title: bool,
-    /// Show suggested follow-up actions from agents (from [[suggest: ...]] tokens)
+    /// Show suggested follow-up actions from agents (from `suggest: A | B | C` tokens)
     #[serde(default = "default_true")]
     pub(crate) suggest_followups: bool,
     /// Enable cloud relay for mobile access
