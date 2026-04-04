@@ -57,6 +57,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Plan Auto-Open** — Restores active plan from `.claude/active-plan.json` on startup; `plans/` directory watcher detects new plan files created externally
 - **macOS TCC Access Dialog** — Shows a guided dialog when macOS denies access to a repository directory, pointing the user to Full Disk Access settings
 
+### Changed
+- **Structured event tokens** — New plain-prefix format (`intent:`, `action:`, `suggest:`) replaces bracket syntax (`[[intent:...]]`). Both formats supported for backward compatibility. Plain-prefix parsing is agent-gated to prevent false positives from CLI output
+- **MCP system prompt** — Agents now receive `action:` token instruction alongside `intent:` and `suggest:`, all documenting column-0 requirement
+
 ### Fixed
 - **Terminal Scroll Lock** — Fixed viewport jumping away from scroll position when output arrives while scrolled up. Root cause: xterm's auto-scroll during writes falsely disengaged the ViewportLock
 - **Terminal Close Confirmation** — Shells in startup (.zshrc/.zprofile loading) no longer trigger close confirmation; only shells that have completed initialization and are running a user process (agents, htop, npm) prompt for confirmation
