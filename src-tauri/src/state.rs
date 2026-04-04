@@ -1414,13 +1414,19 @@ impl LogLine {
     /// appear in rendered log output (PWA/REST consumers).
     pub fn strip_structural_tokens(&mut self) {
         lazy_static::lazy_static! {
-            static ref STRUCTURAL_RE: regex::Regex = regex::Regex::new(
+            // Bracket syntax: [[intent: text]] or [intent: text] or ⟦intent: text⟧
+            static ref BRACKET_RE: regex::Regex = regex::Regex::new(
                 r"(?:\[\[?|\x{27E6})(?:intent|suggest):\s*[^\]\x{27E7}]*?\s*(?:\]?\]|\x{27E7})"
+            ).unwrap();
+            // Plain-prefix syntax: ^intent: text$ or ^action: text$ or ^suggest: text$
+            static ref PLAIN_PREFIX_RE: regex::Regex = regex::Regex::new(
+                r"(?m)^(?:intent|action|suggest):\s+.*$"
             ).unwrap();
         }
         for span in &mut self.spans {
-            if span.text.contains("intent:") || span.text.contains("suggest:") {
-                let replaced = STRUCTURAL_RE.replace_all(&span.text, "");
+            if span.text.contains("intent:") || span.text.contains("suggest:") || span.text.contains("action:") {
+                let replaced = BRACKET_RE.replace_all(&span.text, "");
+                let replaced = PLAIN_PREFIX_RE.replace_all(&replaced, "");
                 span.text = replaced.into_owned();
             }
         }
@@ -3785,6 +3791,50 @@ mod tests {
         };
         line.strip_structural_tokens();
         assert_eq!(line.spans[0].text, "normal output");
+    }
+
+    #[test]
+    fn test_strip_structural_tokens_plain_intent() {
+        let mut line = LogLine {
+            spans: vec![
+                LogSpan { text: "intent: reading the config file".into(), ..Default::default() },
+            ],
+        };
+        line.strip_structural_tokens();
+        assert!(line.spans.is_empty(), "plain-prefix intent should be stripped entirely");
+    }
+
+    #[test]
+    fn test_strip_structural_tokens_plain_action() {
+        let mut line = LogLine {
+            spans: vec![
+                LogSpan { text: "action: running pytest suite".into(), ..Default::default() },
+            ],
+        };
+        line.strip_structural_tokens();
+        assert!(line.spans.is_empty(), "plain-prefix action should be stripped entirely");
+    }
+
+    #[test]
+    fn test_strip_structural_tokens_plain_suggest() {
+        let mut line = LogLine {
+            spans: vec![
+                LogSpan { text: "suggest: Run tests | Check logs | Push".into(), ..Default::default() },
+            ],
+        };
+        line.strip_structural_tokens();
+        assert!(line.spans.is_empty(), "plain-prefix suggest should be stripped entirely");
+    }
+
+    #[test]
+    fn test_strip_structural_tokens_mid_line_not_stripped() {
+        let mut line = LogLine {
+            spans: vec![
+                LogSpan { text: "The intent: of this code is clear".into(), ..Default::default() },
+            ],
+        };
+        line.strip_structural_tokens();
+        assert_eq!(line.spans[0].text, "The intent: of this code is clear");
     }
 
     #[test]
