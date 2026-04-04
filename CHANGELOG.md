@@ -67,6 +67,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Git Panel Label** — "Changes" section renamed to "Changes (unstaged)" for clarity
 - **Diff Tab Focus** — Opening a diff tab now deactivates terminal, markdown, and editor tabs to prevent keyboard conflicts
 - **Plan File Events** — Plan-file events with absolute paths now recognized regardless of CWD
+- **iPad Touch Scroll** — Terminal output view now scrolls with touch gestures on iPad; `touch-action: pan-y` overrides the global `manipulation` that blocked iOS pan recognition
+- **Sidebar Double-Tap** — Repo and branch selection on iOS no longer requires two taps; `:hover` rules that caused iOS sticky hover wrapped in `@media (hover: hover)`
+- **Tab Double-Tap** — Same iOS sticky hover fix applied to tab bar (tab highlight, close button reveal, specialized tab types)
+- **Shell State Idle** — Status line ticks from Claude Code no longer block idle detection; idle fires after 3s of real output silence even with status line ticking
+- **Usage Exhausted** — New `ParsedEvent::UsageExhausted` detects "out of extra usage" messages with optional reset time
+- **Agent Detection Speed** — Event-driven detection on shell-state transitions (immediate on idle, 500ms debounce on busy) replaces 3s polling; ~30x fewer syscalls
+- **Agent Tracking Leak** — Module-level `discoveryAttempted` and `nullStreak` maps cleaned up when terminal is removed
+- **VtLogBuffer Cursor** — `total_lines()` is now a monotonic counter that doesn't decrease on eviction, fixing paginated reads for mobile/REST clients
 
 ### Changed
 - **Watcher Backend** — Upgraded from `notify-debouncer-mini` to `notify-debouncer-full`; deleted legacy `head_watcher` module

@@ -161,8 +161,9 @@ impl VtLogBuffer {
     fn screen_rows(&self) -> Vec<String>                    // Current VT100 screen content (for slash menu detection)
     fn screen_log_lines(&self) -> Vec<LogLine>              // Styled screen rows for mobile/REST (structural tokens stripped)
     fn trim_agent_chrome(&mut self, rows: &[ChangedRow]) -> Vec<ChangedRow> // Strip agent prompt/chrome from full-screen redraws
-    fn lines_since_owned(&self, offset: usize) -> (Vec<LogLine>, usize) // Incremental reads (structural tokens stripped)
-    fn total_lines(&self) -> usize                          // Total accumulated lines
+    fn lines_since_owned(&self, offset: usize, limit: usize) -> (Vec<LogLine>, usize) // Paginated reads (absolute offset, structural tokens stripped)
+    fn total_lines(&self) -> usize                          // Monotonic counter (never decreases on eviction)
+    fn oldest_offset(&self) -> usize                        // Absolute offset of oldest retained line
 }
 ```
 
@@ -182,6 +183,7 @@ struct ChangedRow {
 3. Lines that have scrolled off the top are emitted to the log (diff-based detection)
 4. **Alternate screen suppression:** When a TUI app activates alternate screen (`ESC[?1049h`), extraction is paused — no garbage from vim, htop, or Claude Code's TUI surfaces
 5. Bounded by `VT_LOG_BUFFER_CAPACITY` (10,000 lines); oldest lines are dropped when full
+6. **Monotonic cursor:** `total_lines()` returns a monotonically increasing count of all lines ever pushed (not the current buffer length). Clients use this as a stable cursor for paginated reads via `lines_since_owned(offset, limit)`. If a client's saved offset falls in the evicted range, it is clamped to `oldest_offset()`
 
 **Resize:** When the PTY is resized, `VtLogBuffer.resize()` is called to keep the parser in sync and clear the prev-row snapshot (avoids false scroll detection after resize).
 
