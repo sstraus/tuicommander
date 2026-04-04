@@ -25,13 +25,17 @@ describe("SuggestChips", () => {
     expect(buttons[2].textContent).toBe("Deploy");
   });
 
-  it("calls write_pty with item text + newline on click", async () => {
+  it("sends command via sendCommand (Ctrl-U+text then Enter) on click", async () => {
     const { container } = render(() => (
       <SuggestChips sessionId="s1" items={["Run tests"]} />
     ));
     const button = container.querySelector("button")!;
     await fireEvent.click(button);
-    expect(rpc).toHaveBeenCalledWith("write_pty", { sessionId: "s1", data: "Run tests\n" });
+    // Flush the second await in sendCommand (writeFn("\r"))
+    await new Promise((r) => setTimeout(r, 0));
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(rpc).toHaveBeenNthCalledWith(1, "write_pty", { sessionId: "s1", data: "\x15Run tests" });
+    expect(rpc).toHaveBeenNthCalledWith(2, "write_pty", { sessionId: "s1", data: "\r" });
   });
 
   it("renders nothing when items is empty", () => {

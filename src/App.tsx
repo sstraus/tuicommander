@@ -95,6 +95,7 @@ import { useCiHeal } from "./hooks/useCiHeal";
 import { useSmartPrompts } from "./hooks/useSmartPrompts";
 import { applyAppTheme, applyFontFamily } from "./themes";
 import { createLongPressHandlerFromHotkey } from "./hooks/useLongPressHotkey";
+import { sendCommand } from "./utils/sendCommand";
 import { applyPlatformClass, getModifierSymbol, isQuickSwitcherActive, isQuickSwitcherRelease } from "./platform";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -551,13 +552,13 @@ const App: Component = () => {
 
   // Build agent submenu items for the context menu
   /** Launch an agent in the active terminal, injecting --session-id when supported */
-  const launchAgentInActiveTerminal = (agentType: AgentType, cmd: string) => {
+  const launchAgentInActiveTerminal = async (agentType: AgentType, cmd: string) => {
     const active = terminalsStore.getActive();
-    if (!active?.ref) return;
+    if (!active?.ref || !active.sessionId) return;
     // Use the tab's stable tuicSession UUID as --session-id so resume works via TUIC_SESSION
     const agentSessionId = active.tuicSession ?? (agentType === "claude" ? crypto.randomUUID() : null);
     const finalCmd = buildAgentLaunchCommand(cmd, agentSessionId);
-    active.ref.write(`${finalCmd}\r`);
+    await sendCommand((data) => invoke("write_pty", { sessionId: active.sessionId, data }), finalCmd);
     terminalsStore.update(active.id, {
       name: AGENTS[agentType].name,
       nameIsCustom: true,

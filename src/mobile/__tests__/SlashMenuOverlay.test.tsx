@@ -19,13 +19,12 @@ const ITEMS: SlashMenuItem[] = [
 ];
 
 describe("SlashMenuOverlay", () => {
-  it("renders a button for each menu item plus arrow controls", () => {
+  it("renders a button for each menu item", () => {
     const { container } = render(() => (
       <SlashMenuOverlay sessionId="s1" items={ITEMS} onSelect={() => {}} onDismiss={() => {}} />
     ));
     const buttons = container.querySelectorAll("button");
-    // 3 items + 4 arrow buttons (page up, up, down, page down)
-    expect(buttons.length).toBe(7);
+    expect(buttons.length).toBe(3);
   });
 
   it("displays command and description text", () => {
@@ -74,12 +73,11 @@ describe("SlashMenuOverlay", () => {
     expect(onDismiss).not.toHaveBeenCalled();
   });
 
-  it("renders empty list with only arrow controls", () => {
+  it("renders empty list when no items", () => {
     const { container } = render(() => (
       <SlashMenuOverlay sessionId="s1" items={[]} onSelect={() => {}} onDismiss={() => {}} />
     ));
     const buttons = container.querySelectorAll("button");
-    // Only the 4 arrow buttons, no menu items
-    expect(buttons.length).toBe(4);
+    expect(buttons.length).toBe(0);
   });
 });
