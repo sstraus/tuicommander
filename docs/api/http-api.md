@@ -94,10 +94,13 @@ Returns recent output. Format controls what is returned:
 
 | Param | Default | Description |
 |-------|---------|-------------|
-| `limit` | (all) | `raw`/`text`: max bytes; `log`: max lines to return (newest N) |
+| `limit` | (all) | `raw`/`text`: max bytes; `log`: max lines to return |
+| `offset` | (tail) | `log` only: absolute start offset. When omitted, returns the newest `limit` lines (tail). When provided, returns lines starting from that offset |
 | `format` | (raw) | See table above |
 
 `format=log` reads from `VtLogBuffer` — a VT100-aware buffer that extracts only scrolled-off lines, suppressing alternate-screen TUI apps (vim, htop, claude). Ideal for mobile clients.
+
+`total_lines` in the response is a monotonically increasing counter — it never decreases when old lines are evicted from the buffer. Use it as a stable cursor for paginated reads. The `offset` parameter operates in the same coordinate space.
 
 ### Kitty Protocol Flags
 

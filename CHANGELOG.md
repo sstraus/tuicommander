@@ -36,6 +36,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **HTTP compression** — Gzip and Brotli compression for all HTTP responses >860 bytes via tower-http `CompressionLayer`. Auto-negotiated via `Accept-Encoding`
+- **PWA lazy loading** — Mobile terminal view loads only the last 100 lines initially, then lazy-loads older output on scroll-up with viewport anchoring
 - **MCP Debug Tool** — Dev-only `debug` MCP tool with `agent_detection`, `logs`, and `sessions` actions for diagnosing PTY and agent detection issues
 - **Smart Prompt Variables** — 12 new context variables: `remote_url`, `current_user`, `repo_owner`, `repo_slug`, `dirty_files_count`, `branch_status`, `pr_author`, `pr_labels`, `pr_additions`, `pr_deletions` (31 total)
 - **Variable Insertion Dropdown** — Smart prompt editor includes a dropdown below the content textarea with all available variables grouped by Git/GitHub/Terminal, with descriptions; click inserts `{variable}` at cursor position

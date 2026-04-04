@@ -218,6 +218,7 @@ When MCP-only (localhost):
 - **Default:** Localhost-only, no authentication, opt-in
 - **Remote access:** Configurable port, Basic Auth required
 - **CORS:** Enabled for all origins (browser mode support)
+- **Compression:** Gzip and Brotli via `CompressionLayer` (responses >860 bytes, auto-negotiated). SSE and WebSocket excluded by `DefaultPredicate`
 - **No TLS:** Intended for local network use; use SSH tunnel for remote
 
 ## Browser Mode Integration
