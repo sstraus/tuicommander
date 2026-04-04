@@ -1,10 +1,12 @@
-import { createSignal, createMemo, createEffect, onMount, onCleanup, For, Index, Show } from "solid-js";
+import { createSignal, createMemo, onMount, onCleanup, For, Index, Show } from "solid-js";
 import { subscribePty } from "../../transport";
 import { appLogger } from "../../stores/appLogger";
 import { type LogLine, normalizeLogLine, spanStyle, lineMatchesQuery, groupLineBlocks } from "../utils/logLine";
 import styles from "./OutputView.module.css";
 
 const MAX_LINES = 500;
+/** Lines fetched on initial HTTP load (tail). Older lines loaded on scroll-up. */
+const INITIAL_FETCH_LIMIT = 100;
 
 interface OutputViewProps {
   sessionId: string;
@@ -14,8 +16,6 @@ interface OutputViewProps {
   onInputLine?: (text: string | null) => void;
   /** When set, only lines matching this query (case-insensitive) are shown. */
   searchQuery?: string;
-  /** Receive raw screen row text whenever screen content updates. */
-  onScreenText?: (rows: string[]) => void;
 }
 
 export function OutputView(props: OutputViewProps) {
@@ -28,20 +28,10 @@ export function OutputView(props: OutputViewProps) {
   // return near the bottom.
   let userScrolledUp = false;
 
-  // Propagate raw screen text to parent for question context overlay
-  createEffect(() => {
-    if (!props.onScreenText) return;
-    const rows = screenRows();
-    const texts = rows.map((r) =>
-      typeof r === "string" ? r : (r.spans?.map((s: { text?: string }) => s.text ?? "").join("") ?? ""),
-    );
-    props.onScreenText(texts);
-  });
-
   /** Fetch initial log lines + screen rows via HTTP; returns the total_lines offset for WS catch-up. */
   async function fetchInitialOutput(): Promise<number> {
     try {
-      const resp = await fetch(`/sessions/${props.sessionId}/output?format=log`);
+      const resp = await fetch(`/sessions/${props.sessionId}/output?format=log&limit=${INITIAL_FETCH_LIMIT}`);
       if (resp.ok) {
         const json = await resp.json() as { lines: unknown[]; total_lines: number; screen?: string[] };
         if (json.lines && json.lines.length > 0) {
