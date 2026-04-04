@@ -41,7 +41,7 @@ type ParsedEvent =
   | { type: "plan-file"; path: string }
   | { type: "user-input"; content: string }
   | { type: "api-error"; pattern_name: string; matched_text: string; error_kind: string }
-  | { type: "intent"; text: string; title?: string }
+  | { type: "intent"; text: string; title?: string; kind?: "intent" | "action" }
   | { type: "suggest"; items: string[] }
   | { type: "active-subtasks"; count: number; task_type: string }
   | { type: "shell-state"; state: "busy" | "idle" };
@@ -467,7 +467,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
         }
         case "intent":
           retryCount = 0;
-          terminalsStore.setAgentIntent(props.id, parsed.text);
+          terminalsStore.setAgentIntent(props.id, parsed.text, parsed.kind ?? "intent");
           if (parsed.title && settingsStore.state.intentTabTitle) {
             terminalsStore.update(props.id, { name: parsed.title });
           }
