@@ -67,6 +67,20 @@ fn validate_repo_path(path: &str) -> Result<(), (StatusCode, Json<serde_json::Va
         .map_err(|msg| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": msg}))))
 }
 
+/// Wrap an `Ok(T)` / `Err(String)` into a JSON HTTP response.
+/// Ok → 200 with JSON body, Err → 500 with `{"error": msg}`.
+fn json_result<T: serde::Serialize>(result: Result<T, String>) -> Response {
+    match result {
+        Ok(val) => (StatusCode::OK, Json(serde_json::json!(val))).into_response(),
+        Err(e) => err_500(&e),
+    }
+}
+
+/// Shorthand for a 500 Internal Server Error with `{"error": msg}` body.
+fn err_500(msg: &str) -> Response {
+    (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": msg}))).into_response()
+}
+
 /// Default IPC endpoint path for local MCP bridge connections (Unix domain socket).
 #[cfg(unix)]
 pub(crate) fn socket_path() -> std::path::PathBuf {

@@ -66,6 +66,9 @@ export interface TerminalData {
   suggestDismissed: boolean; // true after user dismissed/selected — prevents re-show until next user-input
 }
 
+/** Fields auto-populated with defaults when creating a terminal — callers only provide the remaining fields. */
+type TerminalCreateData = Omit<TerminalData, "id" | "activity" | "unseen" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "pendingInitCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "intentKind" | "currentTask" | "activeSubTasks" | "isRemote" | "agentSessionId" | "tuicSession" | "suggestedActions" | "suggestDismissed" | "awaitingInputConfident"> & { tuicSession?: string | null } & { isRemote?: boolean };
+
 /** Terminal component ref interface */
 export interface TerminalRef {
   fit: () => void;
@@ -198,7 +201,7 @@ function createTerminalsStore() {
 
   const actions = {
     /** Add a new terminal */
-    add(data: Omit<TerminalData, "id" | "activity" | "unseen" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "pendingInitCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "intentKind" | "currentTask" | "activeSubTasks" | "isRemote" | "agentSessionId" | "tuicSession" | "suggestedActions" | "suggestDismissed" | "awaitingInputConfident"> & { tuicSession?: string | null } & { isRemote?: boolean }): string {
+    add(data: TerminalCreateData): string {
       const id = `term-${state.counter + 1}`;
       setState("counter", (c) => c + 1);
       setState("terminals", id, { id, activity: false, unseen: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, intentKind: null, currentTask: null, activeSubTasks: 0, isRemote: false, agentSessionId: null, tuicSession: null, suggestedActions: null, suggestDismissed: false, awaitingInputConfident: false, ...data });
@@ -207,7 +210,7 @@ function createTerminalsStore() {
     },
 
     /** Register a terminal with a specific ID (used by floating windows to reconnect to existing PTY sessions) */
-    register(id: string, data: Omit<TerminalData, "id" | "activity" | "unseen" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "pendingInitCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "intentKind" | "currentTask" | "activeSubTasks" | "isRemote" | "agentSessionId" | "tuicSession" | "suggestedActions" | "suggestDismissed" | "awaitingInputConfident"> & { tuicSession?: string | null } & { isRemote?: boolean }): void {
+    register(id: string, data: TerminalCreateData): void {
       setState("terminals", id, { id, activity: false, unseen: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, intentKind: null, currentTask: null, activeSubTasks: 0, isRemote: false, agentSessionId: null, tuicSession: null, suggestedActions: null, suggestDismissed: false, awaitingInputConfident: false, ...data });
       if (data.sessionId) sessionToTerminal.set(data.sessionId, id);
     },

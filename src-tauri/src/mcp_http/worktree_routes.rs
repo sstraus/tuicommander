@@ -6,7 +6,7 @@ use axum::Json;
 use std::sync::Arc;
 
 use super::types::*;
-use super::validate_repo_path;
+use super::{err_500, json_result, validate_repo_path};
 
 pub(super) async fn list_worktrees_http(
     State(state): State<Arc<AppState>>,
@@ -48,10 +48,7 @@ pub(super) async fn get_worktrees_dir_http(
 
 pub(super) async fn get_worktree_paths_http(Query(q): Query<PathQuery>) -> Response {
     if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
-    match crate::worktree::get_worktree_paths(q.path) {
-        Ok(paths) => (StatusCode::OK, Json(serde_json::json!(paths))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
-    }
+    json_result(crate::worktree::get_worktree_paths(q.path))
 }
 
 pub(super) async fn create_worktree_http(
@@ -94,7 +91,7 @@ pub(super) async fn remove_worktree_http(
     if let Err(e) = validate_repo_path(&q.repo_path) { return e.into_response(); }
     match crate::worktree::remove_worktree_by_branch(&q.repo_path, &branch, q.delete_branch.unwrap_or(true), None) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        Err(e) => err_500(&e),
     }
 }
 
@@ -104,10 +101,7 @@ pub(super) async fn detect_orphan_worktrees_http(Query(q): Query<OptionalRepoQue
         None => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "repoPath required"}))).into_response(),
     };
     if let Err(e) = validate_repo_path(&repo_path) { return e.into_response(); }
-    match crate::worktree::detect_orphan_worktrees(repo_path) {
-        Ok(paths) => (StatusCode::OK, Json(serde_json::json!(paths))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
-    }
+    json_result(crate::worktree::detect_orphan_worktrees(repo_path))
 }
 
 pub(super) async fn remove_orphan_worktree_http(
@@ -132,7 +126,7 @@ pub(super) async fn remove_orphan_worktree_http(
             state.invalidate_repo_caches(&body.repo_path);
             (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response()
         }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        Err(e) => err_500(&e),
     }
 }
 
@@ -144,10 +138,7 @@ pub(super) async fn generate_worktree_name_http(
 
 pub(super) async fn list_local_branches_http(Query(q): Query<PathQuery>) -> Response {
     if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
-    match crate::worktree::list_local_branches(q.path) {
-        Ok(branches) => (StatusCode::OK, Json(serde_json::json!(branches))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
-    }
+    json_result(crate::worktree::list_local_branches(q.path))
 }
 
 pub(super) async fn checkout_remote_branch_http(
@@ -165,9 +156,7 @@ pub(super) async fn checkout_remote_branch_http(
             state.invalidate_repo_caches(&body.repo_path);
             (StatusCode::OK, Json(serde_json::json!(null))).into_response()
         }
-        Err(e) => {
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))).into_response()
-        }
+        Err(e) => err_500(&e.to_string()),
     }
 }
 
@@ -178,7 +167,7 @@ pub(super) async fn merge_pr_via_github_http(
     if let Err(e) = validate_repo_path(&body.repo_path) { return e.into_response(); }
     match crate::github::merge_pr_github_impl(&body.repo_path, body.pr_number, &body.merge_method, &state).await {
         Ok(sha) => (StatusCode::OK, Json(serde_json::json!({"sha": sha}))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        Err(e) => err_500(&e),
     }
 }
 
@@ -201,6 +190,6 @@ pub(super) async fn finalize_merged_worktree_http(
             state.invalidate_repo_caches(&repo_path);
             (StatusCode::OK, Json(json)).into_response()
         }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        Err(e) => err_500(&e),
     }
 }
