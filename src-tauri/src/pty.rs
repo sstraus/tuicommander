@@ -702,7 +702,7 @@ impl ChunkProcessor {
     ///
     /// Returns `Some(data)` ready to emit, or `None` if the data was buffered
     /// (waiting for the closing `]]` in the next chunk).
-    fn transform_xterm(&mut self, data: String) -> Option<String> {
+    fn transform_xterm(&mut self, data: String, agent_active: bool) -> Option<String> {
         // Prepend any pending data from a previous incomplete token.
         let combined = if let Some(pending) = self.pending_xterm.take() {
             pending + &data
@@ -710,21 +710,23 @@ impl ChunkProcessor {
             data
         };
 
-        // Check for unclosed token openers.  We look for `[[intent:` or `[intent:`
-        // (or suggest) WITHOUT a matching `]]` or `]` after them.
-        if has_unclosed_token(&combined) {
+        // Check for unclosed token openers.  Bracket syntax is always checked;
+        // plain-prefix keywords only buffered when an agent is detected.
+        if has_unclosed_token(&combined, agent_active) {
             self.pending_xterm = Some(combined);
             return None;
         }
 
         // Full token present (or no token at all) — apply replacements.
-        // Colorize both bracket (`[intent:`) and plain-prefix (`intent:`, `action:`) tokens.
-        let result = if combined.contains("intent:") || combined.contains("action:") {
+        // Bracket format is always colorized/concealed.
+        // Plain-prefix format only when agent_active (prevents false positives).
+        let has_bracket = combined.contains("[intent:") || combined.contains("[suggest:");
+        let result = if has_bracket || (agent_active && (combined.contains("intent:") || combined.contains("action:"))) {
             colorize_intent(&combined)
         } else {
             combined
         };
-        let result = if result.contains("suggest:") {
+        let result = if has_bracket || (agent_active && result.contains("suggest:")) {
             conceal_suggest(&result)
         } else {
             result
@@ -1007,7 +1009,7 @@ impl ChunkProcessor {
 /// - **Bracket syntax**: `[intent:` or `[suggest:` without a closing `]` or `⟧`
 /// - **Plain prefix**: `intent:`, `action:`, or `suggest:` at line start without
 ///   a trailing newline (the token is single-line, so newline = complete)
-fn has_unclosed_token(data: &str) -> bool {
+fn has_unclosed_token(data: &str, agent_active: bool) -> bool {
     // Check bracket syntax: opening `[intent:` or `[suggest:` without closing `]`
     let last_intent = data.rfind("[intent:");
     let last_suggest = data.rfind("[suggest:");
@@ -1027,15 +1029,13 @@ fn has_unclosed_token(data: &str) -> bool {
     }
 
     // Check plain-prefix: keyword at line start without trailing newline.
-    // Only buffer if the keyword is near the end of the chunk (last line).
-    // Find the last newline — everything after it is the last (potentially incomplete) line.
-    let last_line = data.rsplit_once('\n').map_or(data, |(_, r)| r);
-    let trimmed = last_line.trim_start_matches(|c: char| c == '\r');
-    // Check if the last line starts with a plain-prefix keyword
-    // (this is the raw PTY stream so we check for the keyword without ANSI stripping)
-    if trimmed.starts_with("intent:") || trimmed.starts_with("action:") || trimmed.starts_with("suggest:") {
-        // Last line has a keyword but no newline after it — incomplete
-        return true;
+    // Only applies when an agent is detected (prevents false positives from CLI tools).
+    if agent_active {
+        let last_line = data.rsplit_once('\n').map_or(data, |(_, r)| r);
+        let trimmed = last_line.trim_start_matches(|c: char| c == '\r');
+        if trimmed.starts_with("intent:") || trimmed.starts_with("action:") || trimmed.starts_with("suggest:") {
+            return true;
+        }
     }
 
     false
@@ -1319,7 +1319,11 @@ pub(crate) fn spawn_reader_thread(
                     if let Some(processed) = processor.process_chunk(&data, &silence, &session_id, &state, Some(&app)) {
                         // Colorize intent / conceal suggest tokens, buffering incomplete
                         // tokens across streaming chunks to prevent cosmetic flash.
-                        if let Some(xterm_data) = processor.transform_xterm(processed) {
+                        // Plain-prefix format only processed when an agent is detected.
+                        let agent_active = state.session_states.get(&session_id)
+                            .map(|s| s.agent_type.is_some())
+                            .unwrap_or(false);
+                        if let Some(xterm_data) = processor.transform_xterm(processed, agent_active) {
                             // Clamp cursor-up sequences to viewport height to prevent
                             // scroll-jump-to-top caused by Ink TUI redraws (CC #33367).
                             let rows = state.terminal_rows.get(&session_id)
@@ -4142,54 +4146,54 @@ mod tests {
 
     #[test]
     fn test_has_unclosed_token_complete_intent() {
-        assert!(!has_unclosed_token("[[intent: Fix the bug(Fixing)]]"));
+        assert!(!has_unclosed_token("[[intent: Fix the bug(Fixing)]]", true));
     }
 
     #[test]
     fn test_has_unclosed_token_incomplete_intent() {
-        assert!(has_unclosed_token("[[intent: Fix the bug"));
+        assert!(has_unclosed_token("[[intent: Fix the bug", true));
     }
 
     #[test]
     fn test_has_unclosed_token_complete_suggest() {
-        assert!(!has_unclosed_token("[[suggest: A | B | C]]"));
+        assert!(!has_unclosed_token("[[suggest: A | B | C]]", true));
     }
 
     #[test]
     fn test_has_unclosed_token_incomplete_suggest() {
-        assert!(has_unclosed_token("[[suggest: A | B"));
+        assert!(has_unclosed_token("[[suggest: A | B", true));
     }
 
     #[test]
     fn test_has_unclosed_token_no_token() {
-        assert!(!has_unclosed_token("just regular output"));
+        assert!(!has_unclosed_token("just regular output", true));
     }
 
     #[test]
     fn test_has_unclosed_token_single_bracket() {
-        assert!(!has_unclosed_token("[intent: some text]"));
+        assert!(!has_unclosed_token("[intent: some text]", true));
     }
 
     #[test]
     fn test_has_unclosed_token_single_bracket_incomplete() {
-        assert!(has_unclosed_token("[intent: some text"));
+        assert!(has_unclosed_token("[intent: some text", true));
     }
 
     #[test]
     fn test_has_unclosed_token_unicode_close() {
-        assert!(!has_unclosed_token("\u{27E6}intent: text\u{27E7}"));
+        assert!(!has_unclosed_token("\u{27E6}intent: text\u{27E7}", true));
     }
 
     #[test]
     fn test_has_unclosed_token_text_before_token() {
         // Text before + incomplete token at end
-        assert!(has_unclosed_token("hello world\n[[intent: doing stuff"));
+        assert!(has_unclosed_token("hello world\n[[intent: doing stuff", true));
     }
 
     #[test]
     fn test_has_unclosed_token_complete_then_incomplete() {
         // First token complete, second incomplete — should detect unclosed
-        assert!(has_unclosed_token("[[intent: done]] then [[suggest: A | B"));
+        assert!(has_unclosed_token("[[intent: done]] then [[suggest: A | B", true));
     }
 
     // --- transform_xterm buffering tests ---
@@ -4197,7 +4201,7 @@ mod tests {
     #[test]
     fn test_transform_xterm_complete_token_passes_through() {
         let mut cp = ChunkProcessor::new(None);
-        let result = cp.transform_xterm("[[intent: Fix bug(Fix)]]".to_string());
+        let result = cp.transform_xterm("[[intent: Fix bug(Fix)]]".to_string(), true);
         assert!(result.is_some(), "complete token should pass through");
         assert!(result.unwrap().contains("intent:"), "should be colorized");
     }
@@ -4205,7 +4209,7 @@ mod tests {
     #[test]
     fn test_transform_xterm_incomplete_buffers() {
         let mut cp = ChunkProcessor::new(None);
-        let result = cp.transform_xterm("[[intent: Fix the".to_string());
+        let result = cp.transform_xterm("[[intent: Fix the".to_string(), true);
         assert!(result.is_none(), "incomplete token should be buffered");
     }
 
@@ -4213,10 +4217,10 @@ mod tests {
     fn test_transform_xterm_buffered_completes_on_next_chunk() {
         let mut cp = ChunkProcessor::new(None);
         // First chunk: incomplete
-        let r1 = cp.transform_xterm("[[intent: Fix the".to_string());
+        let r1 = cp.transform_xterm("[[intent: Fix the".to_string(), true);
         assert!(r1.is_none());
         // Second chunk: completes the token
-        let r2 = cp.transform_xterm(" bug(Fix)]]".to_string());
+        let r2 = cp.transform_xterm(" bug(Fix)]]".to_string(), true);
         assert!(r2.is_some(), "completed token should be emitted");
         let data = r2.unwrap();
         assert!(data.contains("intent:"), "should be colorized");
@@ -4226,14 +4230,14 @@ mod tests {
     #[test]
     fn test_transform_xterm_no_token_passes_through() {
         let mut cp = ChunkProcessor::new(None);
-        let result = cp.transform_xterm("just regular output".to_string());
+        let result = cp.transform_xterm("just regular output".to_string(), true);
         assert_eq!(result, Some("just regular output".to_string()));
     }
 
     #[test]
     fn test_transform_xterm_suggest_concealed() {
         let mut cp = ChunkProcessor::new(None);
-        let result = cp.transform_xterm("[[suggest: A | B | C]]".to_string());
+        let result = cp.transform_xterm("[[suggest: A | B | C]]".to_string(), true);
         assert!(result.is_some());
         let data = result.unwrap();
         // Should not contain the raw suggest text (concealed)
@@ -4243,9 +4247,9 @@ mod tests {
     #[test]
     fn test_transform_xterm_suggest_incomplete_buffers() {
         let mut cp = ChunkProcessor::new(None);
-        let r1 = cp.transform_xterm("[[suggest: A | B".to_string());
+        let r1 = cp.transform_xterm("[[suggest: A | B".to_string(), true);
         assert!(r1.is_none());
-        let r2 = cp.transform_xterm(" | C]]".to_string());
+        let r2 = cp.transform_xterm(" | C]]".to_string(), true);
         assert!(r2.is_some());
         assert!(!r2.unwrap().contains("suggest:"));
     }
@@ -4253,7 +4257,7 @@ mod tests {
     #[test]
     fn test_flush_pending_xterm() {
         let mut cp = ChunkProcessor::new(None);
-        cp.transform_xterm("[[intent: incomplete".to_string());
+        cp.transform_xterm("[[intent: incomplete".to_string(), true);
         let flushed = cp.flush_pending_xterm();
         assert_eq!(flushed, Some("[[intent: incomplete".to_string()));
         // After flush, pending should be empty
@@ -4264,40 +4268,40 @@ mod tests {
 
     #[test]
     fn test_has_unclosed_token_plain_prefix_intent_no_newline() {
-        // Plain prefix at end of chunk without newline — should buffer
-        assert!(has_unclosed_token("intent: reading the config"));
+        // Plain prefix at end of chunk without newline — should buffer (agent active)
+        assert!(has_unclosed_token("intent: reading the config", true));
     }
 
     #[test]
     fn test_has_unclosed_token_plain_prefix_intent_with_newline() {
         // Plain prefix with trailing newline — complete, should NOT buffer
-        assert!(!has_unclosed_token("intent: reading the config\n"));
+        assert!(!has_unclosed_token("intent: reading the config\n", true));
     }
 
     #[test]
     fn test_has_unclosed_token_plain_prefix_action() {
-        assert!(has_unclosed_token("action: running tests"));
-        assert!(!has_unclosed_token("action: running tests\n"));
+        assert!(has_unclosed_token("action: running tests", true));
+        assert!(!has_unclosed_token("action: running tests\n", true));
     }
 
     #[test]
     fn test_has_unclosed_token_plain_prefix_suggest() {
-        assert!(has_unclosed_token("suggest: A | B | C"));
-        assert!(!has_unclosed_token("suggest: A | B | C\n"));
+        assert!(has_unclosed_token("suggest: A | B | C", true));
+        assert!(!has_unclosed_token("suggest: A | B | C\n", true));
     }
 
     #[test]
     fn test_has_unclosed_token_plain_prefix_after_other_output() {
         // Other output followed by plain prefix on last line — should buffer
-        assert!(has_unclosed_token("some output\nintent: doing work"));
+        assert!(has_unclosed_token("some output\nintent: doing work", true));
         // Complete — newline after the token
-        assert!(!has_unclosed_token("some output\nintent: doing work\n"));
+        assert!(!has_unclosed_token("some output\nintent: doing work\n", true));
     }
 
     #[test]
     fn test_transform_xterm_plain_intent_colorized() {
         let mut cp = ChunkProcessor::new(None);
-        let result = cp.transform_xterm("intent: Fix the bug\n".to_string());
+        let result = cp.transform_xterm("intent: Fix the bug\n".to_string(), true);
         assert!(result.is_some(), "plain-prefix intent with newline should pass through");
         let data = result.unwrap();
         assert!(data.contains("\x1b[2;33m"), "should be colorized dim yellow");
@@ -4306,7 +4310,7 @@ mod tests {
     #[test]
     fn test_transform_xterm_plain_action_colorized() {
         let mut cp = ChunkProcessor::new(None);
-        let result = cp.transform_xterm("action: running tests\n".to_string());
+        let result = cp.transform_xterm("action: running tests\n".to_string(), true);
         assert!(result.is_some());
         let data = result.unwrap();
         assert!(data.contains("\x1b[2;33m"), "action should be colorized");
@@ -4315,7 +4319,7 @@ mod tests {
     #[test]
     fn test_transform_xterm_plain_suggest_concealed() {
         let mut cp = ChunkProcessor::new(None);
-        let result = cp.transform_xterm("suggest: A | B | C\n".to_string());
+        let result = cp.transform_xterm("suggest: A | B | C\n".to_string(), true);
         assert!(result.is_some());
         let data = result.unwrap();
         assert!(!data.contains("suggest:"), "plain-prefix suggest should be concealed");
@@ -4324,12 +4328,71 @@ mod tests {
     #[test]
     fn test_transform_xterm_plain_prefix_buffers_without_newline() {
         let mut cp = ChunkProcessor::new(None);
-        let r1 = cp.transform_xterm("intent: doing so".to_string());
+        let r1 = cp.transform_xterm("intent: doing so".to_string(), true);
         assert!(r1.is_none(), "plain-prefix without newline should buffer");
         // Next chunk completes
-        let r2 = cp.transform_xterm("mething\n".to_string());
+        let r2 = cp.transform_xterm("mething\n".to_string(), true);
         assert!(r2.is_some(), "completing chunk should emit");
         assert!(r2.unwrap().contains("\x1b[2;33m"), "should be colorized");
+    }
+
+    // --- Agent-gating tests ---
+
+    #[test]
+    fn test_has_unclosed_token_plain_prefix_no_agent_not_buffered() {
+        // Without agent, plain-prefix tokens should NOT be detected as unclosed
+        assert!(!has_unclosed_token("intent: reading config", false));
+        assert!(!has_unclosed_token("action: running tests", false));
+        assert!(!has_unclosed_token("suggest: A | B | C", false));
+    }
+
+    #[test]
+    fn test_has_unclosed_token_plain_prefix_with_agent_buffered() {
+        // With agent, plain-prefix without newline should still buffer
+        assert!(has_unclosed_token("intent: reading config", true));
+        assert!(has_unclosed_token("action: running tests", true));
+        assert!(has_unclosed_token("suggest: A | B | C", true));
+    }
+
+    #[test]
+    fn test_has_unclosed_token_bracket_always_works() {
+        // Bracket syntax should buffer regardless of agent flag
+        assert!(has_unclosed_token("[[intent: Fix the bug", false));
+        assert!(has_unclosed_token("[[intent: Fix the bug", true));
+    }
+
+    #[test]
+    fn test_transform_xterm_plain_prefix_no_agent_passes_raw() {
+        let mut cp = ChunkProcessor::new(None);
+        // Plain-prefix intent without agent — should pass through unmodified
+        let result = cp.transform_xterm("intent: Fix the bug\n".to_string(), false);
+        assert!(result.is_some());
+        assert!(!result.unwrap().contains("\x1b[2;33m"), "should NOT be colorized without agent");
+    }
+
+    #[test]
+    fn test_transform_xterm_plain_prefix_with_agent_colorized() {
+        let mut cp = ChunkProcessor::new(None);
+        let result = cp.transform_xterm("intent: Fix the bug\n".to_string(), true);
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("\x1b[2;33m"), "should be colorized with agent");
+    }
+
+    #[test]
+    fn test_transform_xterm_plain_suggest_no_agent_passes_raw() {
+        let mut cp = ChunkProcessor::new(None);
+        let result = cp.transform_xterm("suggest: A | B | C\n".to_string(), false);
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("suggest:"), "suggest should NOT be concealed without agent");
+    }
+
+    #[test]
+    fn test_transform_xterm_bracket_always_colorized() {
+        let mut cp = ChunkProcessor::new(None);
+        // Bracket format should be colorized regardless of agent flag
+        let result = cp.transform_xterm("[[intent: Fix bug(Fix)]]".to_string(), false);
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("intent:"), "bracket format should always be colorized");
     }
 
     // --- log_anomalous_sequences tests ---
