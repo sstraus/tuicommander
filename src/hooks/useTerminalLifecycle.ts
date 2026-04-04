@@ -7,6 +7,7 @@ import { editorTabsStore } from "../stores/editorTabs";
 import { settingsStore } from "../stores/settings";
 import { appLogger } from "../stores/appLogger";
 import { filterValidTerminals } from "../utils/terminalFilter";
+import { assignTabToActiveGroup } from "../utils/paneTabAssign";
 import { invoke } from "../invoke";
 
 const MIN_FONT_SIZE = 8;
@@ -74,6 +75,7 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
       awaitingInput: null,
     });
 
+    assignTabToActiveGroup(id, "terminal");
     terminalsStore.setActive(id);
     return id;
   };

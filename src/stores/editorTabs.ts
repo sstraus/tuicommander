@@ -11,7 +11,7 @@ export interface EditorTabData extends BaseTab {
 }
 
 function createEditorTabsStore() {
-  const base = createTabManager<EditorTabData>();
+  const base = createTabManager<EditorTabData>("editor");
 
   return {
     state: base.state,

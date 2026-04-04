@@ -24,7 +24,7 @@ export interface DiffTabData extends BaseTab {
 }
 
 function createDiffTabsStore() {
-  const base = createTabManager<DiffTabData>();
+  const base = createTabManager<DiffTabData>("diff");
   const handles = new Map<string, unknown>();
 
   return {

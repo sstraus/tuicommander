@@ -72,7 +72,7 @@ export type MdTabData = FileTab | VirtualTab | PluginPanelTab | ClaudeUsageTab |
 const handles = new Map<string, unknown>();
 
 function createMdTabsStore() {
-  const base = createTabManager<MdTabData>();
+  const base = createTabManager<MdTabData>("markdown");
 
   return {
     state: base.state,

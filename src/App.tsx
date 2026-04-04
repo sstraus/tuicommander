@@ -51,6 +51,7 @@ import { getActionEntries } from "./actions/actionRegistry";
 import { promptLibraryStore } from "./stores/promptLibrary";
 import { terminalsStore } from "./stores/terminals";
 import { paneLayoutStore } from "./stores/paneLayout";
+import { initPaneTabAssignment } from "./utils/paneTabAssign";
 import { repositoriesStore } from "./stores/repositories";
 import { pluginStore } from "./stores/pluginStore";
 import { mdTabsStore } from "./stores/mdTabs";
@@ -276,6 +277,9 @@ const App: Component = () => {
   });
 
   const splitPanes = useSplitPanes();
+
+  // Register pane tab auto-assignment hook (must be after store imports)
+  initPaneTabAssignment();
 
   // Poll active terminal for foreground agent detection
   useAgentPolling();
@@ -1019,7 +1023,6 @@ const App: Component = () => {
       const repoPath = repositoriesStore.state.activeRepoPath;
       if (!repoPath) return;
       uiStore.setDiffViewMode("scroll");
-      // Open a diff tab for the repo root (shows all changes)
       diffTabsStore.add(repoPath, "", "M");
     },
   };

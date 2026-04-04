@@ -214,7 +214,18 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): () => void {
     // that emits "ctrl-tab" Tauri events. On Win/Linux, JS sees the keydown:
     if (e.ctrlKey && !e.metaKey && !e.altKey && e.key === "Tab") {
       e.preventDefault();
-      handlers.navigateTab(e.shiftKey ? "prev" : "next");
+      if (paneLayoutStore.isSplit()) {
+        // Cycle tabs within active pane group only
+        const group = paneLayoutStore.getActiveGroup();
+        if (group && group.tabs.length > 1) {
+          const currentIdx = group.tabs.findIndex(t => t.id === group.activeTabId);
+          const delta = e.shiftKey ? -1 : 1;
+          const nextIdx = (currentIdx + delta + group.tabs.length) % group.tabs.length;
+          paneLayoutStore.setActiveTab(group.id, group.tabs[nextIdx].id);
+        }
+      } else {
+        handlers.navigateTab(e.shiftKey ? "prev" : "next");
+      }
       return;
     }
 

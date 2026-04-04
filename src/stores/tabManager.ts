@@ -32,7 +32,15 @@ export interface TabStoreState<T extends BaseTab> {
  *
  * Domain stores call this, then layer on their own add() / custom methods.
  */
-export function createTabManager<T extends BaseTab>() {
+/** Global hook called after any tab is added. Set by paneTabAssign to avoid circular deps. */
+export let onTabAdded: ((tabId: string, storeName: string) => void) | null = null;
+
+/** Register the global onTabAdded hook (called once during app init) */
+export function setOnTabAdded(hook: typeof onTabAdded): void {
+  onTabAdded = hook;
+}
+
+export function createTabManager<T extends BaseTab>(storeName: string = "unknown") {
   const [state, setState] = createStore<TabStoreState<T>>({
     tabs: {} as Record<string, T>,
     activeId: null,
@@ -49,6 +57,7 @@ export function createTabManager<T extends BaseTab>() {
     _addTab(tab: T): string {
       setState("tabs", tab.id, tab);
       setState("activeId", tab.id);
+      onTabAdded?.(tab.id, storeName);
       return tab.id;
     },
 

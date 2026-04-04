@@ -190,14 +190,35 @@ const PaneGroupView: Component<{
       classList={{ "pane-group-active": isActive() }}
       onClick={handleGroupClick}
     >
-      {/* Mini tab bar — auto-show only when 2+ tabs */}
+      {/* Mini tab bar — auto-show when 2+ tabs, always accept drops */}
       <Show when={showTabBar()}>
-        <div class="pane-tab-bar">
+        <div
+          class="pane-tab-bar"
+          onDragOver={(e) => { e.preventDefault(); e.dataTransfer!.dropEffect = "move"; }}
+          onDrop={(e) => {
+            e.preventDefault();
+            const data = e.dataTransfer?.getData("application/pane-tab");
+            if (!data) return;
+            const { tabId, fromGroupId } = JSON.parse(data);
+            if (fromGroupId !== props.groupId) {
+              paneLayoutStore.moveTab(fromGroupId, props.groupId, tabId);
+            }
+          }}
+        >
           <For each={group()?.tabs ?? []}>
             {(tab) => (
               <button
                 class="pane-tab"
                 classList={{ "pane-tab-active": tab.id === group()?.activeTabId }}
+                draggable={true}
+                onDragStart={(e) => {
+                  e.dataTransfer!.setData("application/pane-tab", JSON.stringify({
+                    tabId: tab.id,
+                    fromGroupId: props.groupId,
+                    type: tab.type,
+                  }));
+                  e.dataTransfer!.effectAllowed = "move";
+                }}
                 onClick={() => paneLayoutStore.setActiveTab(props.groupId, tab.id)}
                 title={tabTitle(tab)}
               >
@@ -218,8 +239,20 @@ const PaneGroupView: Component<{
         </div>
       </Show>
 
-      {/* Content area */}
-      <div class="pane-content">
+      {/* Content area — also a drop target for empty panes */}
+      <div
+        class="pane-content"
+        onDragOver={(e) => { e.preventDefault(); e.dataTransfer!.dropEffect = "move"; }}
+        onDrop={(e) => {
+          e.preventDefault();
+          const data = e.dataTransfer?.getData("application/pane-tab");
+          if (!data) return;
+          const { tabId, fromGroupId } = JSON.parse(data);
+          if (fromGroupId !== props.groupId) {
+            paneLayoutStore.moveTab(fromGroupId, props.groupId, tabId);
+          }
+        }}
+      >
         <Show when={activeTab()} fallback={<PanePlaceholder />}>
           {(tab) => (
             <PaneTabContent
