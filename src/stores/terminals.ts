@@ -55,14 +55,14 @@ export interface TerminalData {
   usageLimit: { percentage: number; limitType: string } | null; // Claude Code usage limit
   lastDataAt: number | null; // Timestamp of last PTY output
   lastPrompt: string | null; // Last relevant user prompt (>= 10 words), set by Rust
-  agentIntent: string | null; // LLM-declared intent via [[intent: ...]] token
+  agentIntent: string | null; // LLM-declared intent via intent:/action: token
   intentKind: "intent" | "action" | null; // Whether intent is planned or in-progress execution
   currentTask: string | null; // Current agent task from status-line parsing (e.g. "Reading files")
   activeSubTasks: number; // Count of running sub-agents/background tasks from ›› status line
   isRemote: boolean; // Created via HTTP/MCP (not locally by the UI)
   agentSessionId: string | null; // Agent session ID for session-specific resume (claude, gemini, codex)
   tuicSession: string | null; // Stable tab UUID — injected as TUIC_SESSION env var, persists across restarts
-  suggestedActions: string[] | null; // Follow-up suggestions from [[suggest: ...]] tokens
+  suggestedActions: string[] | null; // Follow-up suggestions from suggest: token
   suggestDismissed: boolean; // true after user dismissed/selected — prevents re-show until next user-input
 }
 
@@ -286,7 +286,7 @@ function createTerminalsStore() {
       setState("terminals", id, "suggestDismissed", true);
     },
 
-    /** Update agent-declared intent (via [[intent: ...]] or intent:/action: token) */
+    /** Update agent-declared intent (via intent:/action: token) */
     setAgentIntent(id: string, intent: string | null, kind: "intent" | "action" | null = null): void {
       setState("terminals", id, "agentIntent", intent);
       setState("terminals", id, "intentKind", kind);

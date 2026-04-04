@@ -335,7 +335,7 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
 - Each row shows: terminal name, project name badge (last segment of CWD), agent type, status, last activity time
 - Sub-rows (up to one shown per terminal, in priority order):
   - `currentTask` (gear icon) — current agent task from status-line parsing (e.g. "Reading files"). Suppressed for Claude Code (spinner verbs are decorative)
-  - `agentIntent` (crosshair icon) — LLM-declared intent via `[[intent: ...]]` token
+  - `agentIntent` (crosshair icon) — LLM-declared intent via `intent:` / `action:` token
   - `lastPrompt` (speech bubble icon) — last user prompt (>= 10 words). Shown only when no `agentIntent` is present
 - Status color codes: green=working, yellow=waiting, red=rate-limited, gray=idle
 - Rate limit indicators with countdown timers
@@ -522,9 +522,11 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
   - Cache persisted to disk as JSON for fast restarts
 
 ### 6.7 Intent Event Tracking
-- Agents declaring work phases via `[[intent: ...]]` tokens are detected and colorized dim yellow in terminal output
-- Embedded ANSI codes (SGR colors, bold, resets) from the agent's Ink renderer are stripped from the intent body so the dim-yellow color is uniform; CUF (cursor-forward) codes are converted to spaces
-- Structural tokens (`[[intent:...]]`, `[[suggest:...]]`) are stripped from log lines served to PWA/REST consumers via `LogLine::strip_structural_tokens()`
+- Agents declare work phases via `intent: text (Title)` or `action: text` tokens at column 0, colorized dim yellow in terminal output
+- `IntentKind` enum distinguishes planned intent vs. active execution
+- Plain-prefix colorization is agent-gated (only applied in sessions with a detected agent) to prevent false positives
+- Bracket syntax (`[[intent:...]]`, `[[suggest:...]]`) supported for backward compatibility
+- Structural tokens stripped from log lines served to PWA/REST consumers via `LogLine::strip_structural_tokens()`
 - Structured `Intent` events emitted for LLM-declared work phase tracking
 - Centralized debounced busy signal with completion notifications for accurate idle/active status
 
@@ -549,12 +551,12 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - **Approach:** Environment variable `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` injected into PTY sessions, which unlocks Claude Code's TeamCreate/TaskCreate/SendMessage tools. Agent spawning uses direct MCP tool calls (`agent spawn`) instead of the deprecated it2 shim
 - **Session lifecycle events:** MCP-spawned sessions emit `session-created` and `session-closed` events so they automatically appear as tabs and clean up on exit
 - **Settings toggle:** Settings > Agents > Agent Teams
-- **Suggest follow-ups:** Agents can propose follow-up actions via `[[suggest: ...]]` tokens, displayed as floating chip bar
+- **Suggest follow-ups:** Agents can propose follow-up actions via `suggest: A | B | C` tokens, displayed as floating chip bar
 - **Deprecated:** The it2 shim approach (iTerm2 CLI emulation) is commented out — superseded by direct MCP tool spawning
 
 ### 6.11 Suggest Follow-up Actions
-- **Protocol:** Agents emit `[[suggest: action1 | action2 | action3]]` tokens after completing a task
-- **Token concealment:** `[[suggest: ...]]` tokens are concealed in terminal output via SGR invisible sequences — the raw token never appears on screen
+- **Protocol:** Agents emit `suggest: action1 | action2 | action3` at column 0 after completing a task (bracket syntax `[[suggest:...]]` also supported)
+- **Token concealment:** Suggest tokens are concealed in terminal output via line erasure or space replacement — the raw token never appears on screen. Plain-prefix concealment is agent-gated
 - **Desktop:** Floating chip bar (SuggestOverlay) above terminal with larger buttons and keyboard shortcut badges (`1`–`9` to select, `Esc` to dismiss). Auto-dismiss after 30s, on typing, or on Esc
 - **Mobile:** Horizontal scrollable pill buttons above CommandInput in SessionDetailScreen
 - **Action:** Clicking a chip (or pressing its number key) sends the text to the PTY via `write_pty`

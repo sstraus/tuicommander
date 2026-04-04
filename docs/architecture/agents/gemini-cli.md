@@ -67,7 +67,7 @@ Tips for getting started:
 
 ### Working state (spinner)
 ```
-✦ [[intent: read package.json version(package.json)]]
+✦ intent: read package.json version (package.json)
   I will read the package.json file to find the project version.
  ⠴ Check tool-specific usage stats with /stats tools… (esc to cancel, 14s)
 ─────────────────────────────────────────────────────────────────────────────────
@@ -98,11 +98,11 @@ Tips for getting started:
 ### Agent response (completed)
 ```
 ✦ The version of this project is 0.9.5, as specified in the package.json file.
-  [[suggest: View CHANGELOG.md | Check README.md | List active sessions | Search codebase]]
+  suggest: View CHANGELOG.md | Check README.md | List active sessions | Search codebase
 ```
 
 - `✦` (U+2726, purple rgb 215,175,255) prefix for agent output
-- `[[suggest: ...]]` line follows response (TUICommander protocol)
+- `suggest:` line follows response (TUICommander protocol)
 - No token/cost report
 
 ### Out-of-workspace write rejection

@@ -18,7 +18,7 @@ App.tsx (central orchestrator)
 │   ├── TabBar/               # Terminal tabs with drag-to-reorder
 │   ├── Terminal/             # xterm.js wrapper (never unmounted)
 │   ├── TerminalArea/         # Terminal + split pane layout (up to 6 panes)
-│   ├── SuggestOverlay/       # [[suggest: ...]] follow-up action chips
+│   ├── SuggestOverlay/       # suggest: follow-up action chips
 │   ├── GitPanel/             # Git panel (6 tabs)
 │   │   ├── ChangesTab        # Staged/unstaged file list with stage/unstage/discard
 │   │   ├── LogTab            # Commit log with expandable diffs

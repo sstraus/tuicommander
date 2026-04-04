@@ -54,7 +54,7 @@ pub fn save_json_config<T: Serialize>(filename: &str, config: &T) -> Result<(), 
 | `prevent_sleep_when_busy` | `bool` | `false` | Prevent macOS sleep when terminal is busy |
 | `push_enabled` | `bool` | `false` | Enable push notifications to PWA clients |
 | `relay_enabled` | `bool` | `false` | Cloud relay for mobile access |
-| `suggest_followups` | `bool` | `true` | Show [[suggest:]] follow-up actions |
+| `suggest_followups` | `bool` | `true` | Show `suggest:` follow-up actions |
 | `update_channel` | `String` | `"stable"` | Update channel: "stable" or "nightly" |
 
 **Commands:** `load_app_config()`, `save_app_config(config)`
