@@ -115,9 +115,12 @@ impl CircuitBreaker {
             if s.retry_count > CB_MAX_RETRIES {
                 return true; // caller should transition to Failed
             }
-            let excess = s.failure_count.saturating_sub(CB_THRESHOLD) as f64;
-            let delay_ms = (CB_BASE_MS * 2_f64.powf(excess)).min(CB_MAX_MS);
+            // Backoff based on retry_count (circuit re-opens), not cumulative failures.
+            // Reset failure_count so the next half-open window gets CB_THRESHOLD
+            // fresh attempts before re-opening.
+            let delay_ms = (CB_BASE_MS * 2_f64.powf(s.retry_count.saturating_sub(1) as f64)).min(CB_MAX_MS);
             s.open_until = Some(Instant::now() + Duration::from_millis(delay_ms as u64));
+            s.failure_count = 0;
         }
         false
     }
@@ -296,8 +299,12 @@ impl UpstreamRegistry {
 
         let entry = Arc::clone(entry.value());
 
+        // Block calls while backoff is active or upstream permanently failed
         if entry.cb.is_open() {
-            return Err(format!("Circuit open for upstream '{upstream_name}'"));
+            return Err(format!("Circuit open for upstream '{upstream_name}' (backoff active, will retry)"));
+        }
+        if *entry.status.read() == UpstreamStatus::Failed {
+            return Err(format!("Upstream '{upstream_name}' has failed — restart the server or reconnect"));
         }
 
         entry.metrics.call_count.fetch_add(1, Ordering::Relaxed);
@@ -1013,21 +1020,31 @@ mod tests {
     #[test]
     fn cb_exhausts_after_max_retries() {
         let cb = CircuitBreaker::new();
-        // First CB_THRESHOLD failures open the circuit; retry_count starts at 1.
+        // Each "cycle" = CB_THRESHOLD failures to open the circuit (retry_count += 1).
+        // After opening, failure_count resets to 0, so the next cycle needs
+        // CB_THRESHOLD fresh failures. Exhaustion fires when retry_count > CB_MAX_RETRIES.
+        for cycle in 1..=(CB_MAX_RETRIES + 1) {
+            // Clear backoff so we can record new failures
+            cb.state.lock().open_until = None;
+            for j in 0..CB_THRESHOLD {
+                let exhausted = cb.record_failure();
+                let should_exhaust = cycle > CB_MAX_RETRIES && j == CB_THRESHOLD - 1;
+                assert_eq!(exhausted, should_exhaust, "cycle {cycle}, failure {j}");
+            }
+        }
+    }
+
+    #[test]
+    fn cb_resets_failure_count_on_open() {
+        let cb = CircuitBreaker::new();
+        // Accumulate CB_THRESHOLD failures to open the circuit
         for _ in 0..CB_THRESHOLD {
-            let exhausted = cb.record_failure();
-            assert!(!exhausted);
+            cb.record_failure();
         }
-        // Each additional failure increments retry_count. Exhaustion fires when
-        // retry_count exceeds CB_MAX_RETRIES (i.e., on the (CB_MAX_RETRIES)th extra failure).
-        for i in 1..=CB_MAX_RETRIES {
-            let exhausted = cb.record_failure();
-            // retry_count after this call = i (started at 1 from the threshold batch above,
-            // but the threshold batch already pushed it to 1, 2, 3 — see record_failure logic).
-            // Exhaustion fires when retry_count > CB_MAX_RETRIES.
-            let should_exhaust = i >= CB_MAX_RETRIES;
-            assert_eq!(exhausted, should_exhaust, "extra failure #{i} (total #{})", CB_THRESHOLD + i);
-        }
+        assert!(cb.is_open());
+        // failure_count should be reset so the next half-open window
+        // gets CB_THRESHOLD fresh attempts before re-opening
+        assert_eq!(cb.state.lock().failure_count, 0);
     }
 
     // -----------------------------------------------------------------------
