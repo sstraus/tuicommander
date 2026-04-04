@@ -148,6 +148,56 @@ describe("useTerminalLifecycle", () => {
       lifecycle.zoomIn();
       expect(terminalsStore.get(id)!.fontSize).toBe(32);
     });
+
+    it("zoomInAll increases font size for all terminals", () => {
+      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      const id2 = terminalsStore.add({ sessionId: null, fontSize: 18, name: "T2", cwd: null, awaitingInput: null });
+      terminalsStore.setActive(id1);
+
+      lifecycle.zoomInAll();
+      expect(terminalsStore.get(id1)!.fontSize).toBe(16);
+      expect(terminalsStore.get(id2)!.fontSize).toBe(20);
+    });
+
+    it("zoomOutAll decreases font size for all terminals", () => {
+      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      const id2 = terminalsStore.add({ sessionId: null, fontSize: 18, name: "T2", cwd: null, awaitingInput: null });
+      terminalsStore.setActive(id1);
+
+      lifecycle.zoomOutAll();
+      expect(terminalsStore.get(id1)!.fontSize).toBe(12);
+      expect(terminalsStore.get(id2)!.fontSize).toBe(16);
+    });
+
+    it("zoomResetAll resets font size for all terminals", () => {
+      const id1 = terminalsStore.add({ sessionId: null, fontSize: 20, name: "T1", cwd: null, awaitingInput: null });
+      const id2 = terminalsStore.add({ sessionId: null, fontSize: 10, name: "T2", cwd: null, awaitingInput: null });
+      terminalsStore.setActive(id1);
+
+      lifecycle.zoomResetAll();
+      expect(terminalsStore.get(id1)!.fontSize).toBe(14);
+      expect(terminalsStore.get(id2)!.fontSize).toBe(14);
+    });
+
+    it("zoomOutAll clamps to min font size", () => {
+      const id1 = terminalsStore.add({ sessionId: null, fontSize: 8, name: "T1", cwd: null, awaitingInput: null });
+      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+      terminalsStore.setActive(id1);
+
+      lifecycle.zoomOutAll();
+      expect(terminalsStore.get(id1)!.fontSize).toBe(8);
+      expect(terminalsStore.get(id2)!.fontSize).toBe(12);
+    });
+
+    it("zoomInAll clamps to max font size", () => {
+      const id1 = terminalsStore.add({ sessionId: null, fontSize: 32, name: "T1", cwd: null, awaitingInput: null });
+      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+      terminalsStore.setActive(id1);
+
+      lifecycle.zoomInAll();
+      expect(terminalsStore.get(id1)!.fontSize).toBe(32);
+      expect(terminalsStore.get(id2)!.fontSize).toBe(16);
+    });
   });
 
   describe("createNewTerminal", () => {

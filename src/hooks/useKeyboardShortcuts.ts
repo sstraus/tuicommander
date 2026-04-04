@@ -1,4 +1,5 @@
 import { terminalsStore } from "../stores/terminals";
+import { paneLayoutStore } from "../stores/paneLayout";
 import { isQuickSwitcherActive, isMacOS } from "../platform";
 import { lastMenuActionTime } from "../menuDedup";
 import { keybindingsStore } from "../stores/keybindings";
@@ -29,6 +30,9 @@ export interface ShortcutHandlers {
   zoomIn: () => void;
   zoomOut: () => void;
   zoomReset: () => void;
+  zoomInAll: () => void;
+  zoomOutAll: () => void;
+  zoomResetAll: () => void;
   createNewTerminal: () => void;
   closeTerminal: (id: string, skipConfirm?: boolean) => void;
   reopenClosedTab: () => void;
@@ -62,6 +66,7 @@ export interface ShortcutHandlers {
   scrollPageUp: () => void;
   scrollPageDown: () => void;
   toggleZoomPane: () => void;
+  closeActivePane?: () => void;
   togglePromptLibrary: () => void;
   toggleDiffScroll: () => void;
 }
@@ -121,14 +126,15 @@ function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean
     case "zoom-in": handlers.zoomIn(); return true;
     case "zoom-out": handlers.zoomOut(); return true;
     case "zoom-reset": handlers.zoomReset(); return true;
+    case "zoom-in-all": handlers.zoomInAll(); return true;
+    case "zoom-out-all": handlers.zoomOutAll(); return true;
+    case "zoom-reset-all": handlers.zoomResetAll(); return true;
 
     // Terminal management
     case "new-terminal": handlers.createNewTerminal(); return true;
     case "close-terminal": {
-      const layout = terminalsStore.state.layout;
-      if (layout.direction !== "none" && layout.panes.length > 1) {
-        const closingId = layout.panes[layout.activePaneIndex];
-        if (closingId) handlers.closeTerminal(closingId, true);
+      if (paneLayoutStore.isSplit()) {
+        handlers.closeActivePane?.();
       } else {
         const activeId = terminalsStore.state.activeId;
         if (activeId) handlers.closeTerminal(activeId);
@@ -231,24 +237,46 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): () => void {
     const activeTag = (e.target as HTMLElement)?.tagName;
     const inInputField = activeTag === "INPUT" || activeTag === "TEXTAREA" || activeTag === "SELECT";
     if (e.altKey && !(e.metaKey || e.ctrlKey) && !e.shiftKey && !inInputField) {
-      const layout = terminalsStore.state.layout;
-      if (layout.direction !== "none" && layout.panes.length > 1) {
-        let delta = 0;
-        if (layout.direction === "vertical" && e.key === "ArrowRight") delta = 1;
-        else if (layout.direction === "vertical" && e.key === "ArrowLeft") delta = -1;
-        else if (layout.direction === "horizontal" && e.key === "ArrowDown") delta = 1;
-        else if (layout.direction === "horizontal" && e.key === "ArrowUp") delta = -1;
-
-        if (delta !== 0) {
+      if (paneLayoutStore.isSplit()) {
+        // Tree-based spatial navigation
+        const arrowMap: Record<string, "left" | "right" | "up" | "down"> = {
+          ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down",
+        };
+        const dir = arrowMap[e.key];
+        if (dir) {
           e.preventDefault();
-          const newIndex = Math.max(0, Math.min(layout.activePaneIndex + delta, layout.panes.length - 1));
-          terminalsStore.setActivePaneIndex(newIndex);
-          const targetId = layout.panes[newIndex];
-          if (targetId) {
-            terminalsStore.setActive(targetId);
-            requestAnimationFrame(() => terminalsStore.get(targetId)?.ref?.focus());
+          const targetGroupId = paneLayoutStore.navigatePane(dir);
+          if (targetGroupId) {
+            const group = paneLayoutStore.state.groups[targetGroupId];
+            const termTab = group?.tabs.find(t => t.type === "terminal");
+            if (termTab) {
+              terminalsStore.setActive(termTab.id);
+              requestAnimationFrame(() => terminalsStore.get(termTab.id)?.ref?.focus());
+            }
           }
           return;
+        }
+      } else {
+        // Legacy flat navigation (for old layout model, kept for backward compat)
+        const layout = terminalsStore.state.layout;
+        if (layout.direction !== "none" && layout.panes.length > 1) {
+          let delta = 0;
+          if (layout.direction === "vertical" && e.key === "ArrowRight") delta = 1;
+          else if (layout.direction === "vertical" && e.key === "ArrowLeft") delta = -1;
+          else if (layout.direction === "horizontal" && e.key === "ArrowDown") delta = 1;
+          else if (layout.direction === "horizontal" && e.key === "ArrowUp") delta = -1;
+
+          if (delta !== 0) {
+            e.preventDefault();
+            const newIndex = Math.max(0, Math.min(layout.activePaneIndex + delta, layout.panes.length - 1));
+            terminalsStore.setActivePaneIndex(newIndex);
+            const targetId = layout.panes[newIndex];
+            if (targetId) {
+              terminalsStore.setActive(targetId);
+              requestAnimationFrame(() => terminalsStore.get(targetId)?.ref?.focus());
+            }
+            return;
+          }
         }
       }
     }

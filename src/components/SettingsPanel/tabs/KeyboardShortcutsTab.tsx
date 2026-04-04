@@ -62,6 +62,9 @@ function getShortcutSections(): ShortcutSection[] {
       { action: "zoom-in", keys: keyFor("zoom-in"), description: t("helpPanel.zoomIn", "Zoom in") },
       { action: "zoom-out", keys: keyFor("zoom-out"), description: t("helpPanel.zoomOut", "Zoom out") },
       { action: "zoom-reset", keys: keyFor("zoom-reset"), description: t("helpPanel.resetZoom", "Reset zoom") },
+      { action: "zoom-in-all", keys: keyFor("zoom-in-all"), description: t("helpPanel.zoomInAll", "Zoom in all terminals") },
+      { action: "zoom-out-all", keys: keyFor("zoom-out-all"), description: t("helpPanel.zoomOutAll", "Zoom out all terminals") },
+      { action: "zoom-reset-all", keys: keyFor("zoom-reset-all"), description: t("helpPanel.resetZoomAll", "Reset zoom all terminals") },
     ],
   },
   {

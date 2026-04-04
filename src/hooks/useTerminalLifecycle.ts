@@ -46,6 +46,17 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
   const zoomOut = () => setZoom(activeFontSize() - FONT_STEP);
   const zoomReset = () => setZoom(deps.getDefaultFontSize());
 
+  const setZoomAll = (getFontSize: (current: number) => number) => {
+    for (const id of terminalsStore.getIds()) {
+      const current = terminalsStore.state.terminals[id]?.fontSize ?? deps.getDefaultFontSize();
+      const clamped = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, getFontSize(current)));
+      terminalsStore.setFontSize(id, clamped);
+    }
+  };
+  const zoomInAll = () => setZoomAll((cur) => cur + FONT_STEP);
+  const zoomOutAll = () => setZoomAll((cur) => cur - FONT_STEP);
+  const zoomResetAll = () => setZoomAll(() => deps.getDefaultFontSize());
+
   const createNewTerminal = async () => {
     const canSpawn = await deps.pty.canSpawn();
     if (!canSpawn) {
@@ -388,6 +399,9 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
     zoomIn,
     zoomOut,
     zoomReset,
+    zoomInAll,
+    zoomOutAll,
+    zoomResetAll,
     createNewTerminal,
     closeTerminal,
     closeOtherTabs,

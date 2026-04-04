@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import "../mocks/tauri";
 import { terminalsStore } from "../../stores/terminals";
+import { paneLayoutStore, resetGroupCounter } from "../../stores/paneLayout";
 import { useKeyboardShortcuts, type ShortcutHandlers } from "../../hooks/useKeyboardShortcuts";
 
 function resetStores() {
@@ -8,6 +9,8 @@ function resetStores() {
     terminalsStore.remove(id);
   }
   terminalsStore.setLayout({ direction: "none", panes: [], ratios: [], activePaneIndex: 0 });
+  paneLayoutStore.reset();
+  resetGroupCounter();
 }
 
 function createMockHandlers(): ShortcutHandlers {
@@ -15,6 +18,9 @@ function createMockHandlers(): ShortcutHandlers {
     zoomIn: vi.fn(),
     zoomOut: vi.fn(),
     zoomReset: vi.fn(),
+    zoomInAll: vi.fn(),
+    zoomOutAll: vi.fn(),
+    zoomResetAll: vi.fn(),
     createNewTerminal: vi.fn(),
     closeTerminal: vi.fn(),
     reopenClosedTab: vi.fn(),
@@ -48,6 +54,7 @@ function createMockHandlers(): ShortcutHandlers {
     scrollPageUp: vi.fn(),
     scrollPageDown: vi.fn(),
     toggleZoomPane: vi.fn(),
+    closeActivePane: vi.fn(),
     togglePromptLibrary: vi.fn(),
     toggleDiffScroll: vi.fn(),
   };
@@ -248,38 +255,21 @@ describe("useKeyboardShortcuts", () => {
   });
 
   describe("Cmd+W in split mode", () => {
-    it("closes active pane in 2-pane split", () => {
+    it("calls closeActivePane when pane tree is split", () => {
       const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
-      terminalsStore.setLayout({
-        direction: "vertical",
-        panes: [id1, id2],
-        ratios: [0.5, 0.5],
-        activePaneIndex: 0,
-      });
       terminalsStore.setActive(id1);
 
-      fireKeydown("w", { metaKey: true });
-
-      expect(handlers.closeTerminal).toHaveBeenCalledWith(id1, true);
-    });
-
-    it("closes active pane in 3-pane split", () => {
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
-      const id3 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T3", cwd: null, awaitingInput: null });
-      const r = 1 / 3;
-      terminalsStore.setLayout({
-        direction: "vertical",
-        panes: [id1, id2, id3],
-        ratios: [r, r, r],
-        activePaneIndex: 1,
-      });
-      terminalsStore.setActive(id2);
+      // Set up pane tree split
+      const g1 = paneLayoutStore.createGroup();
+      paneLayoutStore.addTab(g1, { id: id1, type: "terminal" });
+      paneLayoutStore.setRoot({ type: "leaf", id: g1 });
+      paneLayoutStore.setActiveGroup(g1);
+      paneLayoutStore.split(g1, "vertical");
 
       fireKeydown("w", { metaKey: true });
 
-      expect(handlers.closeTerminal).toHaveBeenCalledWith(id2, true);
+      expect(handlers.closeActivePane).toHaveBeenCalledOnce();
+      expect(handlers.closeTerminal).not.toHaveBeenCalled();
     });
 
     it("closes non-split active terminal", () => {
@@ -295,6 +285,7 @@ describe("useKeyboardShortcuts", () => {
       fireKeydown("w", { metaKey: true });
 
       expect(handlers.closeTerminal).not.toHaveBeenCalled();
+      expect(handlers.closeActivePane).not.toHaveBeenCalled();
     });
   });
 

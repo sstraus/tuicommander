@@ -78,9 +78,12 @@ A configurable OS-level shortcut to toggle TUICommander's visibility from any ap
 
 | Shortcut | Action |
 |----------|--------|
-| `Cmd+=` (or `Cmd++`) | Zoom in (increase font size) |
-| `Cmd+-` | Zoom out (decrease font size) |
-| `Cmd+0` | Reset zoom to default |
+| `Cmd+=` (or `Cmd++`) | Zoom in (active terminal) |
+| `Cmd+-` | Zoom out (active terminal) |
+| `Cmd+0` | Reset zoom to default (active terminal) |
+| `Cmd+Shift+=` (or `Cmd+Shift++`) | Zoom in all terminals |
+| `Cmd+Shift+-` | Zoom out all terminals |
+| `Cmd+Shift+0` | Reset zoom all terminals |
 
 Font size range: 8px to 32px, step 2px per action.
 
@@ -224,6 +227,9 @@ Hold to record, release to transcribe and inject text into active terminal.
 | `zoom-in` | `Cmd+=` | Zoom in |
 | `zoom-out` | `Cmd+-` | Zoom out |
 | `zoom-reset` | `Cmd+0` | Reset zoom |
+| `zoom-in-all` | `Cmd+Shift+=` | Zoom in all terminals |
+| `zoom-out-all` | `Cmd+Shift+-` | Zoom out all terminals |
+| `zoom-reset-all` | `Cmd+Shift+0` | Reset zoom all terminals |
 | `new-terminal` | `Cmd+T` | New terminal tab |
 | `close-terminal` | `Cmd+W` | Close terminal/pane |
 | `reopen-closed-tab` | `Cmd+Shift+T` | Reopen closed tab |

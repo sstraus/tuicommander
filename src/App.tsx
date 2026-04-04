@@ -49,7 +49,8 @@ import { errorLogStore } from "./stores/errorLog";
 import { appLogger } from "./stores/appLogger";
 import { getActionEntries } from "./actions/actionRegistry";
 import { promptLibraryStore } from "./stores/promptLibrary";
-import { terminalsStore, MAX_SPLIT_PANES } from "./stores/terminals";
+import { terminalsStore } from "./stores/terminals";
+import { paneLayoutStore } from "./stores/paneLayout";
 import { repositoriesStore } from "./stores/repositories";
 import { pluginStore } from "./stores/pluginStore";
 import { mdTabsStore } from "./stores/mdTabs";
@@ -658,15 +659,10 @@ const App: Component = () => {
   };
 
   // Context menu items
-  /** Disable vertical split when horizontal is active or at max panes */
-  const splitVerticalDisabled = () => {
-    const layout = terminalsStore.state.layout;
-    return (layout.direction === "horizontal") || (layout.panes.length >= MAX_SPLIT_PANES);
-  };
-  /** Disable horizontal split when vertical is active or at max panes */
-  const splitHorizontalDisabled = () => {
-    const layout = terminalsStore.state.layout;
-    return (layout.direction === "vertical") || (layout.panes.length >= MAX_SPLIT_PANES);
+  /** Disable split when no active terminal (and not yet split), or at max tree depth */
+  const splitDisabled = () => {
+    if (!paneLayoutStore.isSplit() && !terminalsStore.state.activeId) return true;
+    return false;
   };
 
   /** Check if the active terminal has a running agent (disables agent submenu) */
@@ -686,10 +682,10 @@ const App: Component = () => {
     }] : []),
     { label: "Copy", shortcut: `${getModifierSymbol()}C`, action: terminalLifecycle.copyFromTerminal, separator: agentDetection.getAvailable().length > 0 },
     { label: "Paste", shortcut: `${getModifierSymbol()}V`, action: terminalLifecycle.pasteToTerminal },
-    { label: "Split Right", shortcut: `${getModifierSymbol()}\\`, action: () => splitPanes.handleSplit("vertical"), disabled: splitVerticalDisabled() },
-    { label: "Split Left", action: () => splitPanes.handleSplit("vertical"), disabled: splitVerticalDisabled() },
-    { label: "Split Down", shortcut: `${getModifierSymbol()}${"\u2325"}\\`, action: () => splitPanes.handleSplit("horizontal"), disabled: splitHorizontalDisabled() },
-    { label: "Split Up", action: () => splitPanes.handleSplit("horizontal"), disabled: splitHorizontalDisabled(), separator: true },
+    { label: "Split Right", shortcut: `${getModifierSymbol()}\\`, action: () => splitPanes.handleSplit("vertical"), disabled: splitDisabled() },
+    { label: "Split Left", action: () => splitPanes.handleSplit("vertical"), disabled: splitDisabled() },
+    { label: "Split Down", shortcut: `${getModifierSymbol()}${"\u2325"}\\`, action: () => splitPanes.handleSplit("horizontal"), disabled: splitDisabled() },
+    { label: "Split Up", action: () => splitPanes.handleSplit("horizontal"), disabled: splitDisabled(), separator: true },
     { label: "Clear", shortcut: `${getModifierSymbol()}L`, action: terminalLifecycle.clearTerminal },
     {
       label: "Reset Terminal",
@@ -964,6 +960,9 @@ const App: Component = () => {
     zoomIn: terminalLifecycle.zoomIn,
     zoomOut: terminalLifecycle.zoomOut,
     zoomReset: terminalLifecycle.zoomReset,
+    zoomInAll: terminalLifecycle.zoomInAll,
+    zoomOutAll: terminalLifecycle.zoomOutAll,
+    zoomResetAll: terminalLifecycle.zoomResetAll,
     createNewTerminal: terminalLifecycle.createNewTerminal,
     closeTerminal: terminalLifecycle.closeTerminal,
     reopenClosedTab: terminalLifecycle.reopenClosedTab,
@@ -975,6 +974,7 @@ const App: Component = () => {
     scrollPageUp: terminalLifecycle.scrollPageUp,
     scrollPageDown: terminalLifecycle.scrollPageDown,
     toggleZoomPane: splitPanes.toggleZoomPane,
+    closeActivePane: splitPanes.closeActivePane,
     terminalIds: terminalLifecycle.terminalIds,
     handleTerminalSelect: terminalLifecycle.handleTerminalSelect,
     handleSplit: splitPanes.handleSplit,
@@ -1209,18 +1209,8 @@ const App: Component = () => {
         // File
         case "new-tab": terminalLifecycle.createNewTerminal(); break;
         case "close-tab": {
-          const layout = terminalsStore.state.layout;
-          if (layout.direction !== "none" && layout.panes.length > 1) {
-            const closingIndex = layout.activePaneIndex;
-            const closingId = layout.panes[closingIndex];
-            terminalsStore.closeSplitPane(closingIndex);
-            if (closingId) terminalLifecycle.closeTerminal(closingId, true);
-            const newLayout = terminalsStore.state.layout;
-            const survivorId = newLayout.panes[Math.min(closingIndex, newLayout.panes.length - 1)] ?? newLayout.panes[0];
-            if (survivorId) {
-              terminalsStore.setActive(survivorId);
-              requestAnimationFrame(() => terminalsStore.get(survivorId)?.ref?.focus());
-            }
+          if (paneLayoutStore.isSplit()) {
+            splitPanes.closeActivePane();
           } else {
             const activeId = terminalsStore.state.activeId;
             if (activeId) terminalLifecycle.closeTerminal(activeId);
@@ -1253,6 +1243,9 @@ const App: Component = () => {
         case "zoom-in": terminalLifecycle.zoomIn(); break;
         case "zoom-out": terminalLifecycle.zoomOut(); break;
         case "zoom-reset": terminalLifecycle.zoomReset(); break;
+        case "zoom-in-all": terminalLifecycle.zoomInAll(); break;
+        case "zoom-out-all": terminalLifecycle.zoomOutAll(); break;
+        case "zoom-reset-all": terminalLifecycle.zoomResetAll(); break;
         case "diff-panel": uiStore.toggleGitPanel(); break;
         case "markdown-panel": uiStore.toggleMarkdownPanel(); break;
         case "notes-panel": uiStore.toggleNotesPanel(); break;
