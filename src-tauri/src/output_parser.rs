@@ -1191,18 +1191,28 @@ fn parse_action(clean: &str) -> Option<ParsedEvent> {
     })
 }
 
-/// Detect suggested follow-up actions: `[suggest: A | B | C]`, `[[suggest: ...]]`,
-/// or `⟦suggest: ...⟧`. Pipe-separated items. At least one non-empty item required.
+/// Detect suggested follow-up actions in two formats:
+/// - **Plain prefix** (preferred): `suggest: A | B | C` at column 0
+/// - **Bracket syntax** (backward compat): `[suggest: A | B | C]`, `[[suggest: ...]]`, `⟦suggest: ...⟧`
+/// Pipe-separated items. At least one non-empty item required.
 fn parse_suggest(clean: &str) -> Option<ParsedEvent> {
     if !clean.contains("suggest:") {
         return None;
     }
     lazy_static::lazy_static! {
+        // Plain prefix: `suggest:` at start of line, captures body to end of line
+        static ref SUGGEST_PLAIN_RE: regex::Regex =
+            regex::Regex::new(r"(?m)^suggest:\s+(.+)$").unwrap();
+        // Bracket syntax (backward compat)
         static ref SUGGEST_RE: regex::Regex =
             regex::Regex::new(r"(?m)^\s*(?:\[\[?|\x{27E6})suggest:\s*([^\]\x{27E7}]+?)\s*(?:\]?\]|\x{27E7})\s*$").unwrap();
     }
-    SUGGEST_RE.captures(clean).and_then(|caps| {
-        let raw = caps[1].trim();
+    // Try plain prefix first, then bracket syntax
+    let raw = SUGGEST_PLAIN_RE.captures(clean)
+        .or_else(|| SUGGEST_RE.captures(clean))
+        .map(|caps| caps[1].trim().to_string());
+
+    raw.and_then(|raw| {
         let items: Vec<String> = raw
             .split('|')
             .map(|s| s.trim().to_string())
@@ -3177,6 +3187,52 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     fn test_suggest_no_ansi_garbage() {
         let mut parser = OutputParser::new();
         assert!(get_suggest(&parser.parse("]garbage[[suggest: A | B]]")).is_none());
+    }
+
+    // --- Plain-prefix suggest tests ---
+
+    #[test]
+    fn test_suggest_plain_prefix_basic() {
+        let mut parser = OutputParser::new();
+        let events = parser.parse("suggest: Run tests | Check logs | Push changes");
+        let items = get_suggest(&events).expect("should parse plain-prefix suggest");
+        assert_eq!(items, vec!["Run tests", "Check logs", "Push changes"]);
+    }
+
+    #[test]
+    fn test_suggest_plain_prefix_single_item() {
+        let mut parser = OutputParser::new();
+        let events = parser.parse("suggest: Single option");
+        let items = get_suggest(&events).expect("should parse single item");
+        assert_eq!(items, vec!["Single option"]);
+    }
+
+    #[test]
+    fn test_suggest_plain_prefix_indented_no_match() {
+        let mut parser = OutputParser::new();
+        assert!(get_suggest(&parser.parse("  suggest: A | B")).is_none());
+    }
+
+    #[test]
+    fn test_suggest_plain_prefix_midline_no_match() {
+        let mut parser = OutputParser::new();
+        assert!(get_suggest(&parser.parse("I suggest: we should refactor")).is_none());
+    }
+
+    #[test]
+    fn test_suggest_plain_prefix_trims_whitespace() {
+        let mut parser = OutputParser::new();
+        let events = parser.parse("suggest:   Fix test  |  Refactor  |  Add docs  ");
+        let items = get_suggest(&events).expect("should parse");
+        assert_eq!(items, vec!["Fix test", "Refactor", "Add docs"]);
+    }
+
+    #[test]
+    fn test_suggest_plain_prefix_in_multiline() {
+        let mut parser = OutputParser::new();
+        let events = parser.parse("some output\r\nsuggest: Option A | Option B\r\nmore output");
+        let items = get_suggest(&events).expect("should parse in multiline");
+        assert_eq!(items, vec!["Option A", "Option B"]);
     }
 
     // --- conceal_suggest tests ---
