@@ -3634,7 +3634,7 @@ mod tests {
         );
         let events = parser.parse_clean_lines(&changed);
         let intent = events.iter().find_map(|e| match e {
-            ParsedEvent::Intent { text, title } => Some((text.clone(), title.clone())),
+            ParsedEvent::Intent { text, title, .. } => Some((text.clone(), title.clone())),
             _ => None,
         });
         assert!(intent.is_some(),
@@ -3723,7 +3723,7 @@ mod tests {
 
         let events = parser.parse_clean_lines(&changed);
         let intent = events.iter().find_map(|e| match e {
-            ParsedEvent::Intent { text, title } => Some((text.clone(), title.clone())),
+            ParsedEvent::Intent { text, title, .. } => Some((text.clone(), title.clone())),
             _ => None,
         });
 

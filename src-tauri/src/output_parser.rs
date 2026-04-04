@@ -1,5 +1,15 @@
 use serde::Serialize;
 
+/// Whether an intent event represents a planned action or an in-progress execution.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum IntentKind {
+    /// Agent declares what it plans to do next
+    Intent,
+    /// Agent declares what it is currently executing
+    Action,
+}
+
 /// Structured events parsed from PTY output
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type")]
@@ -67,13 +77,16 @@ pub enum ParsedEvent {
         error_kind: String, // "server", "auth", "unknown"
     },
     /// Agent-declared intent: what the LLM is currently working on.
-    /// Emitted via `[intent: <text>]` or `[intent: <text>(tab title)]` token in agent output.
+    /// Emitted via `intent: <text>` (plain prefix), `[intent: <text>]` or
+    /// `[intent: <text>(tab title)]` (bracket syntax, backward compat).
     #[serde(rename = "intent")]
     Intent {
         text: String,
         /// Optional short title (max ~3 words) for use as tab name
         #[serde(skip_serializing_if = "Option::is_none")]
         title: Option<String>,
+        /// Whether this is a planned intent or an active execution
+        kind: IntentKind,
     },
     /// Suggested follow-up actions for the user to choose from.
     /// Emitted via `[[suggest: A | B | C]]` token in agent output.
@@ -1061,43 +1074,47 @@ pub fn conceal_suggest(raw: &str) -> String {
     replaced.into_owned()
 }
 
-/// Detect agent-declared intent tokens: `[intent: <text>]`, `[[intent: <text>]]`,
-/// or `⟦intent: <text>⟧`. Agents are instructed (via MCP) to emit this token when
-/// starting a new action, so the activity board can show what the agent is currently doing.
+/// Detect agent-declared intent tokens in two formats:
+/// - **Plain prefix** (preferred): `intent: <text>` or `intent: <text> (<title>)` at column 0
+/// - **Bracket syntax** (backward compat): `[intent: <text>]`, `[[intent: <text>]]`, `⟦intent: <text>⟧`
 fn parse_intent(clean: &str) -> Option<ParsedEvent> {
     // Fast path: must contain "intent:"
     if !clean.contains("intent:") {
         return None;
     }
     lazy_static::lazy_static! {
-        // Single-line regex: no DOTALL, matches intent tokens on one line.
+        // Plain prefix: `intent:` at start of line (column 0), captures body to end of line
+        static ref INTENT_PLAIN_RE: regex::Regex =
+            regex::Regex::new(r"(?m)^intent:\s+(.+)$").unwrap();
+        // Bracket syntax (backward compat): `[intent: text]`, `[[intent: text]]`, `⟦intent: text⟧`
         static ref INTENT_RE: regex::Regex =
             regex::Regex::new(r"(?:^|\s)(?:\[\[?|\x{27E6})intent:\s*(.+?)\s*(?:\]?\]|\x{27E7})").unwrap();
-        // Opener regex: detects the start of an intent token without requiring
-        // the closing bracket (for wrapped tokens spanning two rows).
+        // Opener regex: detects the start of a bracket intent token without closing bracket
         static ref INTENT_OPEN_RE: regex::Regex =
             regex::Regex::new(r"(?:^|\s)(?:\[\[?|\x{27E6})intent:\s*(.+)$").unwrap();
-        // Closer regex: detects the closing bracket at the end of a line.
+        // Closer regex: detects the closing bracket at the end of a line
         static ref INTENT_CLOSE_RE: regex::Regex =
             regex::Regex::new(r"^(.+?)\s*(?:\]?\]|\x{27E7})").unwrap();
-        // Separate regex to split out the optional (title) suffix from the captured text.
+        // Separate regex to split out the optional (title) suffix from the captured text
         static ref TITLE_RE: regex::Regex =
             regex::Regex::new(r"^(.*?)\(([^)]+)\)\s*$").unwrap();
     }
 
-    // Strategy: try each line individually first (most intents fit on one row).
-    // If a line has [[intent: but no closing ]], check the NEXT line for the close.
-    // Never match across more than 2 adjacent lines — prevents cross-row garbage.
     let lines: Vec<&str> = clean.lines().collect();
     let mut raw_match: Option<String> = None;
 
     for (i, line) in lines.iter().enumerate() {
-        // Pass 1: complete token on a single line
+        // Pass 1: plain prefix at column 0 (new format, preferred)
+        if let Some(caps) = INTENT_PLAIN_RE.captures(line) {
+            raw_match = Some(caps[1].trim().to_string());
+            break;
+        }
+        // Pass 2: bracket syntax on a single line (backward compat)
         if let Some(caps) = INTENT_RE.captures(line) {
             raw_match = Some(caps[1].trim().to_string());
             break;
         }
-        // Pass 2: opener on this line, closer on the next line
+        // Pass 3: bracket opener on this line, closer on the next line
         if let Some(open_caps) = INTENT_OPEN_RE.captures(line)
             && let Some(next_line) = lines.get(i + 1)
             && let Some(close_caps) = INTENT_CLOSE_RE.captures(next_line)
@@ -1108,6 +1125,16 @@ fn parse_intent(clean: &str) -> Option<ParsedEvent> {
         }
     }
 
+    build_intent_event(raw_match, &TITLE_RE, IntentKind::Intent)
+}
+
+/// Shared logic for building an Intent event from a raw match string.
+/// Used by both `parse_intent` and `parse_action`.
+fn build_intent_event(
+    raw_match: Option<String>,
+    title_re: &regex::Regex,
+    kind: IntentKind,
+) -> Option<ParsedEvent> {
     raw_match.and_then(|raw| {
         let raw = raw.trim();
         // Filter out meaningless intents: ellipsis, bare punctuation, template placeholders
@@ -1115,7 +1142,7 @@ fn parse_intent(clean: &str) -> Option<ParsedEvent> {
             return None;
         }
         // Try to extract optional (title) from the end
-        let (text, title) = if let Some(tc) = TITLE_RE.captures(raw) {
+        let (text, title) = if let Some(tc) = title_re.captures(raw) {
             let body = tc[1].trim();
             let t = tc[2].trim();
             if body.is_empty() {
@@ -1131,7 +1158,7 @@ fn parse_intent(clean: &str) -> Option<ParsedEvent> {
         // multiple spaces when it renders the VT100 screen buffer to text.
         let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
         let title = title.map(|t| t.split_whitespace().collect::<Vec<_>>().join(" "));
-        Some(ParsedEvent::Intent { text, title })
+        Some(ParsedEvent::Intent { text, title, kind })
     })
 }
 
@@ -2632,6 +2659,88 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         assert!(get_intent(&parser.parse("[intent: ab]")).is_none());
     }
 
+    // --- Plain-prefix intent tests ---
+
+    fn get_intent_kind(events: &[ParsedEvent]) -> Option<IntentKind> {
+        events.iter().find_map(|e| match e {
+            ParsedEvent::Intent { kind, .. } => Some(kind.clone()),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn test_intent_plain_prefix_basic() {
+        let mut parser = OutputParser::new();
+        let events = parser.parse("intent: reading the config file");
+        assert_eq!(get_intent(&events), Some("reading the config file".to_string()));
+        assert_eq!(get_intent_kind(&events), Some(IntentKind::Intent));
+    }
+
+    #[test]
+    fn test_intent_plain_prefix_with_title() {
+        let mut parser = OutputParser::new();
+        let events = parser.parse("intent: analyzing code (Analysis)");
+        assert_eq!(get_intent(&events), Some("analyzing code".to_string()));
+        assert_eq!(get_intent_title(&events), Some("Analysis".to_string()));
+        assert_eq!(get_intent_kind(&events), Some(IntentKind::Intent));
+    }
+
+    #[test]
+    fn test_intent_plain_prefix_indented_no_match() {
+        let mut parser = OutputParser::new();
+        // Indented intent: should NOT match (not column 0)
+        assert!(get_intent(&parser.parse("  intent: indented")).is_none());
+    }
+
+    #[test]
+    fn test_intent_plain_prefix_midline_no_match() {
+        let mut parser = OutputParser::new();
+        // Mid-line intent: should NOT match
+        assert!(get_intent(&parser.parse("The intent: of this code is clear")).is_none());
+    }
+
+    #[test]
+    fn test_intent_plain_prefix_in_multiline() {
+        // Use \r\n to simulate real PTY output (LF without CR leaves cursor at same column)
+        let mut parser = OutputParser::new();
+        let events = parser.parse("some output\r\nintent: debugging login flow\r\nmore output");
+        assert_eq!(get_intent(&events), Some("debugging login flow".to_string()));
+    }
+
+    #[test]
+    fn test_intent_plain_prefix_too_short_filtered() {
+        let mut parser = OutputParser::new();
+        assert!(get_intent(&parser.parse("intent: ab")).is_none());
+    }
+
+    #[test]
+    fn test_intent_plain_prefix_ellipsis_filtered() {
+        let mut parser = OutputParser::new();
+        assert!(get_intent(&parser.parse("intent: ...")).is_none());
+    }
+
+    #[test]
+    fn test_intent_plain_prefix_no_space_after_colon_no_match() {
+        let mut parser = OutputParser::new();
+        // Requires space after colon per `^intent:\s+`
+        assert!(get_intent(&parser.parse("intent:nospace")).is_none());
+    }
+
+    #[test]
+    fn test_intent_bracket_still_emits_intent_kind() {
+        let mut parser = OutputParser::new();
+        let events = parser.parse("[intent: bracket format]");
+        assert_eq!(get_intent(&events), Some("bracket format".to_string()));
+        assert_eq!(get_intent_kind(&events), Some(IntentKind::Intent));
+    }
+
+    #[test]
+    fn test_action_not_matched_by_parse_intent() {
+        let mut parser = OutputParser::new();
+        // action: should NOT be matched by parse_intent
+        assert!(get_intent(&parser.parse("action: executing git pull")).is_none());
+    }
+
     #[test]
     fn test_colorize_intent_single_brackets() {
         let raw = "Some output\n[intent: Refactoring auth]\nMore output";
@@ -3244,7 +3353,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         ];
         let events = parser.parse_clean_lines(&rows);
         let intent = events.iter().find_map(|e| match e {
-            ParsedEvent::Intent { text, title } => Some((text.clone(), title.clone())),
+            ParsedEvent::Intent { text, title, .. } => Some((text.clone(), title.clone())),
             _ => None,
         });
         assert!(intent.is_some(), "intent must be detected even when token wraps; got: {:?}", events);
