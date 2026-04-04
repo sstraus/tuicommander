@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createRoot } from "solid-js";
+import { testInScope, testInScopeAsync } from "../helpers/store";
 
 // Mocks must be defined before module import
 const mockCheck = vi.fn();
@@ -53,13 +53,12 @@ describe("updaterStore", () => {
 
   describe("initial state", () => {
     it("defaults to not available, not checking", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         expect(store.state.available).toBe(false);
         expect(store.state.checking).toBe(false);
         expect(store.state.downloading).toBe(false);
         expect(store.state.error).toBeNull();
         expect(store.state.downloadUrl).toBeNull();
-        dispose();
       });
     });
   });
@@ -69,13 +68,12 @@ describe("updaterStore", () => {
       let resolveCheck!: (v: null) => void;
       mockCheck.mockReturnValue(new Promise((r) => { resolveCheck = () => r(null); }));
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         const checkPromise = store.checkForUpdate();
         expect(store.state.checking).toBe(true);
         resolveCheck(null);
         await checkPromise;
         expect(store.state.checking).toBe(false);
-        dispose();
       });
     });
 
@@ -83,24 +81,22 @@ describe("updaterStore", () => {
       const fakeUpdate = { version: "1.2.3", body: "fixes", downloadAndInstall: vi.fn() };
       mockCheck.mockResolvedValue(fakeUpdate);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.checkForUpdate();
         expect(store.state.available).toBe(true);
         expect(store.state.version).toBe("1.2.3");
         expect(store.state.body).toBe("fixes");
         expect(store.state.downloadUrl).toBeNull();
-        dispose();
       });
     });
 
     it("sets available=false when no update", async () => {
       mockCheck.mockResolvedValue(null);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.checkForUpdate();
         expect(store.state.available).toBe(false);
         expect(store.state.version).toBeNull();
-        dispose();
       });
     });
 
@@ -108,57 +104,52 @@ describe("updaterStore", () => {
       // check() never resolves
       mockCheck.mockReturnValue(new Promise(() => {}));
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         const checkPromise = store.checkForUpdate();
         await vi.advanceTimersByTimeAsync(10_000);
         await checkPromise;
         expect(store.state.available).toBe(false);
         expect(store.state.checking).toBe(false);
         expect(store.state.error).toBe("Update check timed out");
-        dispose();
       });
     });
 
     it("sets noRelease (not error) for 404/fetch errors", async () => {
       mockCheck.mockRejectedValue(new Error("fetch error: 404 not found"));
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.checkForUpdate();
         expect(store.state.noRelease).toBe(true);
         expect(store.state.error).toBeNull();
-        dispose();
       });
     });
 
     it("sets noRelease (not error) for Safari 'Load failed'", async () => {
       mockCheck.mockRejectedValue(new TypeError("Load failed"));
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.checkForUpdate();
         expect(store.state.noRelease).toBe(true);
         expect(store.state.error).toBeNull();
-        dispose();
       });
     });
 
     it("passes through unrecognized errors", async () => {
       mockCheck.mockRejectedValue(new Error("some unexpected error"));
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.checkForUpdate();
         expect(store.state.error).toBe("some unexpected error");
-        dispose();
       });
     });
 
     it("is a no-op when already checking", async () => {
       mockCheck.mockReturnValue(new Promise(() => {})); // never resolves
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         store.checkForUpdate(); // starts check
         await store.checkForUpdate(); // should no-op
         expect(mockCheck).toHaveBeenCalledTimes(1);
-        dispose();
       });
     });
   });
@@ -176,7 +167,7 @@ describe("updaterStore", () => {
         not_found: false,
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.checkForUpdate();
         // Should prefer stable (has downloadAndInstall support)
         expect(store.state.available).toBe(true);
@@ -185,7 +176,6 @@ describe("updaterStore", () => {
         expect(store.state.downloadUrl).toBeNull();
         expect(mockCheck).toHaveBeenCalled();
         expect(mockRpc).toHaveBeenCalledWith("check_update_channel", { channel: "nightly" });
-        dispose();
       });
     });
 
@@ -200,13 +190,12 @@ describe("updaterStore", () => {
         not_found: false,
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.checkForUpdate();
         expect(store.state.available).toBe(true);
         expect(store.state.version).toBe("2.0.0-nightly.1");
         expect(store.state.body).toBe("Nightly release");
         expect(store.state.downloadUrl).toBe("https://github.com/sstraus/tuicommander/releases/tag/nightly");
-        dispose();
       });
     });
 
@@ -218,13 +207,12 @@ describe("updaterStore", () => {
       // Nightly: network error
       mockRpc.mockRejectedValue(new Error("Network error"));
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.checkForUpdate();
         expect(store.state.available).toBe(true);
         expect(store.state.version).toBe("1.0.0");
         expect(store.state.downloadUrl).toBeNull();
         expect(store.state.error).toBeNull();
-        dispose();
       });
     });
 
@@ -237,12 +225,11 @@ describe("updaterStore", () => {
         not_found: true,
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.checkForUpdate();
         expect(store.state.noRelease).toBe(true);
         expect(store.state.error).toBeNull();
         expect(store.state.available).toBe(false);
-        dispose();
       });
     });
 
@@ -255,11 +242,10 @@ describe("updaterStore", () => {
         not_found: false,
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.checkForUpdate();
         expect(store.state.available).toBe(false);
         expect(store.state.version).toBeNull();
-        dispose();
       });
     });
 
@@ -274,14 +260,13 @@ describe("updaterStore", () => {
         not_found: false,
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         const checkPromise = store.checkForUpdate();
         await vi.advanceTimersByTimeAsync(10_000);
         await checkPromise;
         expect(store.state.available).toBe(true);
         expect(store.state.version).toBe("2.0.0-nightly.1");
         expect(store.state.downloadUrl).toBe("https://github.com/sstraus/tuicommander/releases/tag/nightly");
-        dispose();
       });
     });
 
@@ -290,12 +275,11 @@ describe("updaterStore", () => {
       mockCheck.mockRejectedValue(new Error("Stable network error"));
       mockRpc.mockRejectedValue(new Error("Nightly RPC error"));
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.checkForUpdate();
         expect(store.state.available).toBe(false);
         expect(store.state.error).toBe("Nightly RPC error");
         expect(store.state.checking).toBe(false);
-        dispose();
       });
     });
 
@@ -308,21 +292,19 @@ describe("updaterStore", () => {
         release_page: "https://example.com", not_found: false,
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.checkForUpdate();
         // 0.0.1-nightly.5 strips to 0.0.1 which is NOT newer than 0.0.1
         expect(store.state.available).toBe(false);
-        dispose();
       });
     });
   });
 
   describe("downloadAndInstall()", () => {
     it("is a no-op when no pending update", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.downloadAndInstall();
         expect(store.state.downloading).toBe(false);
-        dispose();
       });
     });
 
@@ -338,7 +320,7 @@ describe("updaterStore", () => {
       };
       mockCheck.mockResolvedValue(fakeUpdate);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.checkForUpdate();
         const installPromise = store.downloadAndInstall();
 
@@ -352,7 +334,6 @@ describe("updaterStore", () => {
 
         await installPromise;
         expect(mockRelaunch).toHaveBeenCalled();
-        dispose();
       });
     });
 
@@ -369,14 +350,13 @@ describe("updaterStore", () => {
       const mockOpen = vi.fn();
       Object.defineProperty(window, "open", { value: mockOpen, writable: true });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.checkForUpdate();
         await store.downloadAndInstall();
         expect(mockOpen).toHaveBeenCalledWith(
           "https://github.com/sstraus/tuicommander/releases/tag/nightly",
           "_blank",
         );
-        dispose();
       });
     });
 
@@ -388,12 +368,11 @@ describe("updaterStore", () => {
       };
       mockCheck.mockResolvedValue(fakeUpdate);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.checkForUpdate();
         await store.downloadAndInstall();
         expect(store.state.error).toBe("disk full");
         expect(store.state.downloading).toBe(false);
-        dispose();
       });
     });
   });
@@ -406,7 +385,7 @@ describe("updaterStore", () => {
         release_page: "https://example.com", not_found: true,
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.checkForUpdate();
         expect(store.state.noRelease).toBe(true);
         store.dismiss();
@@ -416,7 +395,6 @@ describe("updaterStore", () => {
         expect(store.state.error).toBeNull();
         expect(store.state.noRelease).toBe(false);
         expect(store.state.downloadUrl).toBeNull();
-        dispose();
       });
     });
 
@@ -424,12 +402,11 @@ describe("updaterStore", () => {
       const fakeUpdate = { version: "1.0.0", body: null, downloadAndInstall: vi.fn() };
       mockCheck.mockResolvedValue(fakeUpdate);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.checkForUpdate();
         store.dismiss();
         await store.downloadAndInstall();
         expect(fakeUpdate.downloadAndInstall).not.toHaveBeenCalled();
-        dispose();
       });
     });
   });

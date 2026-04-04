@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createRoot } from "solid-js";
+import { testInScopeAsync } from "./helpers/store";
 
 // Mock invoke to handle the prompt template commands
 const mockInvoke = vi.fn();
@@ -91,7 +91,7 @@ describe("promptLibrary pure functions", () => {
 
   describe("processContent()", () => {
     it("substitutes variables", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         const prompt = store.createPrompt({
           name: "test",
           content: "Hello {name}!",
@@ -100,12 +100,11 @@ describe("promptLibrary pure functions", () => {
         });
         const result = await store.processContent(prompt, { name: "World" });
         expect(result).toBe("Hello World!");
-        dispose();
       });
     });
 
     it("substitutes multiple variables", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         const prompt = store.createPrompt({
           name: "test",
           content: "Hello {first} {last}!",
@@ -114,12 +113,11 @@ describe("promptLibrary pure functions", () => {
         });
         const result = await store.processContent(prompt, { first: "John", last: "Doe" });
         expect(result).toBe("Hello John Doe!");
-        dispose();
       });
     });
 
     it("replaces all occurrences of same variable", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         const prompt = store.createPrompt({
           name: "test",
           content: "{x} + {x} = 2{x}",
@@ -128,12 +126,11 @@ describe("promptLibrary pure functions", () => {
         });
         const result = await store.processContent(prompt, { x: "5" });
         expect(result).toBe("5 + 5 = 25");
-        dispose();
       });
     });
 
     it("leaves unmatched variables as-is", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         const prompt = store.createPrompt({
           name: "test",
           content: "Hello {name}, {unknown}!",
@@ -142,12 +139,11 @@ describe("promptLibrary pure functions", () => {
         });
         const result = await store.processContent(prompt, { name: "World" });
         expect(result).toBe("Hello World, {unknown}!");
-        dispose();
       });
     });
 
     it("handles no variables in content", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         const prompt = store.createPrompt({
           name: "test",
           content: "No variables here",
@@ -156,7 +152,6 @@ describe("promptLibrary pure functions", () => {
         });
         const result = await store.processContent(prompt, {});
         expect(result).toBe("No variables here");
-        dispose();
       });
     });
   });

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createRoot } from "solid-js";
+import { testInScope } from "../helpers/store";
 
 // Mocks must be declared before any module import
 const mockGetPrStatus = vi.fn();
@@ -75,52 +75,47 @@ describe("activePrStatus / mergedPrGrace", () => {
   }
 
   it("returns null when no PR exists", () => {
-    createRoot((dispose) => {
+    testInScope(() => {
       mockGetPrStatus.mockReturnValue(null);
       expect(activePrStatus("/repo", "feature/x")).toBeNull();
-      dispose();
     });
   });
 
   it("returns null for CLOSED PR", () => {
-    createRoot((dispose) => {
+    testInScope(() => {
       mockGetPrStatus.mockReturnValue(makePr("CLOSED"));
       expect(activePrStatus("/repo", "feature/x")).toBeNull();
-      dispose();
     });
   });
 
   it("returns null for closed PR regardless of case", () => {
-    createRoot((dispose) => {
+    testInScope(() => {
       mockGetPrStatus.mockReturnValue(makePr("closed"));
       expect(activePrStatus("/repo", "feature/x")).toBeNull();
-      dispose();
     });
   });
 
   it("returns OPEN PR as-is", () => {
-    createRoot((dispose) => {
+    testInScope(() => {
       const pr = makePr("OPEN");
       mockGetPrStatus.mockReturnValue(pr);
       const result = activePrStatus("/repo", "feature/x");
       expect(result).toBe(pr);
-      dispose();
     });
   });
 
   it("returns MERGED PR while within grace period", () => {
-    createRoot((dispose) => {
+    testInScope(() => {
       const pr = makePr("MERGED");
       mockGetPrStatus.mockReturnValue(pr);
       // No activity, accumulator stays at 0 — well within grace period
       const result = activePrStatus("/repo", "feature/x");
       expect(result).toBe(pr);
-      dispose();
     });
   });
 
   it("accumulates active time and hides MERGED PR after 5 minutes of activity", () => {
-    createRoot((dispose) => {
+    testInScope(() => {
       const pr = makePr("MERGED");
       mockGetPrStatus.mockReturnValue(pr);
       const now = Date.now();
@@ -143,12 +138,11 @@ describe("activePrStatus / mergedPrGrace", () => {
       // After 62 * 5000ms = 310000ms > MERGED_GRACE_MS, the PR must be hidden
       expect(activePrStatus("/repo", "feature/x")).toBeNull();
 
-      dispose();
     });
   });
 
   it("does not accumulate time when user is inactive", () => {
-    createRoot((dispose) => {
+    testInScope(() => {
       const pr = makePr("MERGED");
       mockGetPrStatus.mockReturnValue(pr);
       const now = Date.now();
@@ -166,12 +160,11 @@ describe("activePrStatus / mergedPrGrace", () => {
       // PR must still be visible because no active time was accumulated
       expect(result).toBe(pr);
 
-      dispose();
     });
   });
 
   it("caps elapsed per tick at 60s to avoid large jumps", () => {
-    createRoot((dispose) => {
+    testInScope(() => {
       const pr = makePr("MERGED");
       mockGetPrStatus.mockReturnValue(pr);
       const now = Date.now();
@@ -191,12 +184,11 @@ describe("activePrStatus / mergedPrGrace", () => {
       // So the PR should still be visible
       expect(activePrStatus("/repo", "feature/x")).toBe(pr);
 
-      dispose();
     });
   });
 
   it("stays hidden once the grace period is consumed", () => {
-    createRoot((dispose) => {
+    testInScope(() => {
       const pr = makePr("MERGED");
       mockGetPrStatus.mockReturnValue(pr);
       const now = Date.now();
@@ -220,12 +212,11 @@ describe("activePrStatus / mergedPrGrace", () => {
       mockLastActivityAt.mockReturnValue(0);
       expect(activePrStatus("/repo", "feature/x")).toBeNull();
 
-      dispose();
     });
   });
 
   it("_resetMergedActivityAccum clears all accumulated state", () => {
-    createRoot((dispose) => {
+    testInScope(() => {
       const pr = makePr("MERGED");
       mockGetPrStatus.mockReturnValue(pr);
       const now = Date.now();
@@ -249,7 +240,6 @@ describe("activePrStatus / mergedPrGrace", () => {
       mockLastActivityAt.mockReturnValue(0);
       expect(activePrStatus("/repo", "feature/x")).toBe(pr);
 
-      dispose();
     });
   });
 });

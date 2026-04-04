@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createRoot } from "solid-js";
+import { testInScope, testInScopeAsync } from "../helpers/store";
 
 const mockInvoke = vi.fn().mockResolvedValue(undefined);
 const mockSetBadgeCount = vi.fn().mockResolvedValue(undefined);
@@ -107,84 +107,77 @@ describe("notificationsStore", () => {
 
   describe("defaults", () => {
     it("has correct defaults", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         expect(store.state.config.enabled).toBe(true);
         expect(store.state.config.volume).toBe(0.5);
         expect(store.state.config.sounds.question).toBe(true);
         expect(store.state.config.sounds.error).toBe(true);
         expect(store.state.config.sounds.completion).toBe(true);
         expect(store.state.config.sounds.warning).toBe(true);
-        dispose();
       });
     });
   });
 
   describe("setEnabled()", () => {
     it("enables/disables notifications", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.setEnabled(false);
         expect(store.state.config.enabled).toBe(false);
         expect(store.isEnabled()).toBe(false);
-        dispose();
       });
     });
 
     it("persists via Tauri invoke", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.setEnabled(false);
         expect(mockInvoke).toHaveBeenCalledWith(
           "save_notification_config",
           expect.objectContaining({ config: expect.objectContaining({ enabled: false }) }),
         );
-        dispose();
       });
     });
   });
 
   describe("setVolume()", () => {
     it("sets volume", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.setVolume(0.8);
         expect(store.state.config.volume).toBe(0.8);
-        dispose();
       });
     });
 
     it("clamps volume to valid range", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.setVolume(2);
         expect(store.state.config.volume).toBe(1);
         store.setVolume(-0.5);
         expect(store.state.config.volume).toBe(0);
-        dispose();
       });
     });
   });
 
   describe("setSoundEnabled()", () => {
     it("enables/disables specific sound", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.setSoundEnabled("question", false);
         expect(store.state.config.sounds.question).toBe(false);
-        dispose();
       });
     });
   });
 
   describe("isEnabled()", () => {
     it("returns enabled state", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         expect(store.isEnabled()).toBe(true);
         store.setEnabled(false);
         expect(store.isEnabled()).toBe(false);
-        dispose();
       });
     });
   });
 
   describe("isSoundEnabled()", () => {
     it("checks both global and per-sound enabled", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         expect(store.isSoundEnabled("question")).toBe(true);
 
         store.setSoundEnabled("question", false);
@@ -193,14 +186,13 @@ describe("notificationsStore", () => {
         store.setSoundEnabled("question", true);
         store.setEnabled(false);
         expect(store.isSoundEnabled("question")).toBe(false);
-        dispose();
       });
     });
   });
 
   describe("reset()", () => {
     it("resets to defaults", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.setEnabled(false);
         store.setVolume(0.1);
         store.setSoundEnabled("question", false);
@@ -208,7 +200,6 @@ describe("notificationsStore", () => {
         expect(store.state.config.enabled).toBe(true);
         expect(store.state.config.volume).toBe(0.5);
         expect(store.state.config.sounds.question).toBe(true);
-        dispose();
       });
     });
   });
@@ -226,12 +217,11 @@ describe("notificationsStore", () => {
         return Promise.resolve(undefined);
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.hydrate();
         expect(store.state.config.enabled).toBe(false);
         expect(store.state.config.volume).toBe(0.3);
         expect(store.state.config.sounds.question).toBe(false);
-        dispose();
       });
     });
 
@@ -253,7 +243,7 @@ describe("notificationsStore", () => {
         return Promise.resolve(undefined);
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.hydrate();
         // Should have saved legacy data to Tauri
         expect(mockInvoke).toHaveBeenCalledWith(
@@ -262,7 +252,6 @@ describe("notificationsStore", () => {
         );
         // Should have removed legacy key
         expect(localStorage.getItem("tui-commander-notifications")).toBeNull();
-        dispose();
       });
     });
 
@@ -280,11 +269,10 @@ describe("notificationsStore", () => {
         return Promise.resolve(undefined);
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.hydrate();
         // Should have removed corrupt data
         expect(localStorage.getItem("tui-commander-notifications")).toBeNull();
-        dispose();
       });
     });
 
@@ -292,11 +280,10 @@ describe("notificationsStore", () => {
       mockInvoke.mockRejectedValue(new Error("invoke failed"));
       const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.hydrate();
         expect(store.state.config.enabled).toBe(true);
         expect(store.state.config.volume).toBe(0.5);
-        dispose();
       });
 
       debugSpy.mockRestore();
@@ -362,14 +349,13 @@ describe("notificationsStore", () => {
 
   describe("badge count", () => {
     it("defaults badgeCount to 0", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         expect(store.state.badgeCount).toBe(0);
-        dispose();
       });
     });
 
     it("incrementBadge increments count and calls setBadgeCount", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.incrementBadge();
         expect(store.state.badgeCount).toBe(1);
         expect(mockSetBadgeCount).toHaveBeenCalledWith(1);
@@ -377,12 +363,11 @@ describe("notificationsStore", () => {
         await store.incrementBadge();
         expect(store.state.badgeCount).toBe(2);
         expect(mockSetBadgeCount).toHaveBeenCalledWith(2);
-        dispose();
       });
     });
 
     it("clearBadge resets count and calls setBadgeCount(0)", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.incrementBadge();
         await store.incrementBadge();
         expect(store.state.badgeCount).toBe(2);
@@ -390,22 +375,20 @@ describe("notificationsStore", () => {
         await store.clearBadge();
         expect(store.state.badgeCount).toBe(0);
         expect(mockSetBadgeCount).toHaveBeenCalledWith(0);
-        dispose();
       });
     });
 
     it("clearBadge is a no-op when count is already 0", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.clearBadge();
         expect(mockSetBadgeCount).not.toHaveBeenCalled();
-        dispose();
       });
     });
   });
 
   describe("testSound()", () => {
     it("temporarily enables everything, plays, then restores state", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         // Disable notifications and question sound
         store.setEnabled(false);
         store.setSoundEnabled("question", false);
@@ -423,18 +406,16 @@ describe("notificationsStore", () => {
 
         expect(mockManager.play).toHaveBeenCalledWith("question");
 
-        dispose();
       });
     });
 
     it("restores original enabled state when it was already enabled", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.testSound("question");
 
         expect(mockManager.setEnabled).toHaveBeenCalledWith(true);
         expect(mockManager.play).toHaveBeenCalledWith("question");
 
-        dispose();
       });
     });
   });

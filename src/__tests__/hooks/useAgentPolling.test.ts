@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createRoot } from "solid-js";
 import "../mocks/tauri";
 import { mockInvoke } from "../mocks/tauri";
-import { makeTerminal } from "../helpers/store";
+import { makeTerminal, testInScopeAsync } from "../helpers/store";
 
 /** Helper: advance timers and flush all pending microtasks */
 async function tick(ms: number) {
@@ -28,8 +27,8 @@ describe("useAgentPolling", () => {
   it("polls the active terminal's foreground process", async () => {
     mockInvoke.mockResolvedValue("claude");
 
-    await createRoot(async (dispose) => {
-      const id = store.add({ sessionId: "sess-1", fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+    await testInScopeAsync(async () => {
+      const id = store.add(makeTerminal({ name: "T1", sessionId: "sess-1" }));
       store.setActive(id);
 
       const { useAgentPolling } = await import("../../hooks/useAgentPolling");
@@ -44,12 +43,11 @@ describe("useAgentPolling", () => {
       });
       expect(store.get(id)?.agentType).toBe("claude");
 
-      dispose();
     });
   });
 
   it("does not poll when no active terminal", async () => {
-    await createRoot(async (dispose) => {
+    await testInScopeAsync(async () => {
       const { useAgentPolling } = await import("../../hooks/useAgentPolling");
       useAgentPolling();
 
@@ -60,12 +58,11 @@ describe("useAgentPolling", () => {
         expect.anything(),
       );
 
-      dispose();
     });
   });
 
   it("does not poll when active terminal has no session", async () => {
-    await createRoot(async (dispose) => {
+    await testInScopeAsync(async () => {
       const id = store.add(makeTerminal({ name: "T1" }));
       store.setActive(id);
 
@@ -79,15 +76,14 @@ describe("useAgentPolling", () => {
         expect.anything(),
       );
 
-      dispose();
     });
   });
 
   it("sets agentType to null when result is null", async () => {
     mockInvoke.mockResolvedValue(null);
 
-    await createRoot(async (dispose) => {
-      const id = store.add({ sessionId: "sess-1", fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+    await testInScopeAsync(async () => {
+      const id = store.add(makeTerminal({ name: "T1", sessionId: "sess-1" }));
       store.setActive(id);
 
       const { useAgentPolling } = await import("../../hooks/useAgentPolling");
@@ -98,15 +94,14 @@ describe("useAgentPolling", () => {
 
       expect(store.get(id)?.agentType).toBeNull();
 
-      dispose();
     });
   });
 
   it("handles invoke errors gracefully", async () => {
     mockInvoke.mockRejectedValue(new Error("Session not found"));
 
-    await createRoot(async (dispose) => {
-      const id = store.add({ sessionId: "sess-1", fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+    await testInScopeAsync(async () => {
+      const id = store.add(makeTerminal({ name: "T1", sessionId: "sess-1" }));
       store.setActive(id);
 
       const { useAgentPolling } = await import("../../hooks/useAgentPolling");
@@ -119,7 +114,6 @@ describe("useAgentPolling", () => {
       // agentType should remain null (default)
       expect(store.get(id)?.agentType).toBeNull();
 
-      dispose();
     });
   });
 
@@ -131,8 +125,8 @@ describe("useAgentPolling", () => {
         .mockResolvedValueOnce("claude")         // get_session_foreground_process → claude
         .mockResolvedValueOnce("found-uuid");    // discover_agent_session → uuid
 
-      await createRoot(async (dispose) => {
-        const id = store.add({ sessionId: "sess-1", fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      await testInScopeAsync(async () => {
+        const id = store.add(makeTerminal({ name: "T1", sessionId: "sess-1" }));
 
         const { useAgentPolling } = await import("../../hooks/useAgentPolling");
         useAgentPolling();
@@ -147,7 +141,6 @@ describe("useAgentPolling", () => {
         }));
         expect(store.get(id)?.agentSessionId).toBe("found-uuid");
 
-        dispose();
       });
     });
 
@@ -158,8 +151,8 @@ describe("useAgentPolling", () => {
         .mockResolvedValueOnce("claude")       // poll 2: still claude
         .mockResolvedValueOnce("claude");      // poll 3: still claude
 
-      await createRoot(async (dispose) => {
-        store.add({ sessionId: "sess-1", fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      await testInScopeAsync(async () => {
+        store.add(makeTerminal({ name: "T1", sessionId: "sess-1" }));
 
         const { useAgentPolling } = await import("../../hooks/useAgentPolling");
         useAgentPolling();
@@ -173,15 +166,14 @@ describe("useAgentPolling", () => {
         );
         expect(discoveryCalls).toHaveLength(1);
 
-        dispose();
       });
     });
 
     it("skips discovery for agents without sessionDiscovery config (e.g. aider)", async () => {
       mockInvoke.mockResolvedValue("aider");
 
-      await createRoot(async (dispose) => {
-        const id = store.add({ sessionId: "sess-1", fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      await testInScopeAsync(async () => {
+        const id = store.add(makeTerminal({ name: "T1", sessionId: "sess-1" }));
 
         const { useAgentPolling } = await import("../../hooks/useAgentPolling");
         useAgentPolling();
@@ -194,7 +186,6 @@ describe("useAgentPolling", () => {
         );
         expect(discoveryCalls).toHaveLength(0);
 
-        dispose();
       });
     });
 
@@ -210,8 +201,8 @@ describe("useAgentPolling", () => {
         .mockResolvedValueOnce("claude")       // poll 6: claude re-launched
         .mockResolvedValueOnce("uuid-2");      // re-discover: uuid-2
 
-      await createRoot(async (dispose) => {
-        const id = store.add({ sessionId: "sess-1", fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      await testInScopeAsync(async () => {
+        const id = store.add(makeTerminal({ name: "T1", sessionId: "sess-1" }));
 
         const { useAgentPolling } = await import("../../hooks/useAgentPolling");
         useAgentPolling();
@@ -230,7 +221,6 @@ describe("useAgentPolling", () => {
         expect(store.get(id)?.agentType).toBe("claude");
         expect(store.get(id)?.agentSessionId).toBe("uuid-2");
 
-        dispose();
       });
     });
 
@@ -242,8 +232,8 @@ describe("useAgentPolling", () => {
         .mockResolvedValueOnce("claude")     // term-2: get_session_foreground_process
         .mockResolvedValueOnce("uuid-b");    // term-2: discover_agent_session
 
-      await createRoot(async (dispose) => {
-        const id1 = store.add({ sessionId: "sess-1", fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      await testInScopeAsync(async () => {
+        const id1 = store.add(makeTerminal({ name: "T1", sessionId: "sess-1" }));
         const id2 = store.add({ sessionId: "sess-2", fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
 
         const { useAgentPolling } = await import("../../hooks/useAgentPolling");
@@ -264,7 +254,6 @@ describe("useAgentPolling", () => {
         expect(store.get(id1)?.agentSessionId).toBe("uuid-a");
         expect(store.get(id2)?.agentSessionId).toBe("uuid-b");
 
-        dispose();
       });
     });
   });

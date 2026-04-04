@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createRoot } from "solid-js";
+import { testInScope } from "../helpers/store";
 
 const mockInvoke = vi.fn().mockResolvedValue(undefined);
 
@@ -23,13 +23,12 @@ describe("repoDefaultsStore", () => {
 
   describe("initial state", () => {
     it("has sensible default values", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         expect(store.state.baseBranch).toBe("automatic");
         expect(store.state.copyIgnoredFiles).toBe(false);
         expect(store.state.copyUntrackedFiles).toBe(false);
         expect(store.state.setupScript).toBe("");
         expect(store.state.runScript).toBe("");
-        dispose();
       });
     });
   });
@@ -46,13 +45,12 @@ describe("repoDefaultsStore", () => {
 
       await store.hydrate();
 
-      createRoot((dispose) => {
+      testInScope(() => {
         expect(store.state.baseBranch).toBe("main");
         expect(store.state.copyIgnoredFiles).toBe(true);
         expect(store.state.copyUntrackedFiles).toBe(true);
         expect(store.state.setupScript).toBe("npm install");
         expect(store.state.runScript).toBe("npm run dev");
-        dispose();
       });
     });
 
@@ -60,10 +58,9 @@ describe("repoDefaultsStore", () => {
       mockInvoke.mockResolvedValueOnce(null);
       await store.hydrate();
 
-      createRoot((dispose) => {
+      testInScope(() => {
         expect(store.state.baseBranch).toBe("automatic");
         expect(store.state.copyIgnoredFiles).toBe(false);
-        dispose();
       });
     });
 
@@ -71,69 +68,63 @@ describe("repoDefaultsStore", () => {
       mockInvoke.mockRejectedValueOnce(new Error("backend error"));
       await store.hydrate();
 
-      createRoot((dispose) => {
+      testInScope(() => {
         expect(store.state.baseBranch).toBe("automatic");
-        dispose();
       });
     });
   });
 
   describe("setters", () => {
     it("setBaseBranch updates state and persists", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.setBaseBranch("main");
         expect(store.state.baseBranch).toBe("main");
         expect(mockInvoke).toHaveBeenCalledWith("save_repo_defaults", expect.objectContaining({
           config: expect.objectContaining({ base_branch: "main" }),
         }));
-        dispose();
       });
     });
 
     it("setCopyIgnoredFiles updates state and persists", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.setCopyIgnoredFiles(true);
         expect(store.state.copyIgnoredFiles).toBe(true);
         expect(mockInvoke).toHaveBeenCalledWith("save_repo_defaults", expect.any(Object));
-        dispose();
       });
     });
 
     it("setCopyUntrackedFiles updates state and persists", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.setCopyUntrackedFiles(true);
         expect(store.state.copyUntrackedFiles).toBe(true);
         expect(mockInvoke).toHaveBeenCalledWith("save_repo_defaults", expect.objectContaining({
           config: expect.objectContaining({ copy_untracked_files: true }),
         }));
-        dispose();
       });
     });
 
     it("setSetupScript updates state and persists", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.setSetupScript("npm install");
         expect(store.state.setupScript).toBe("npm install");
         expect(mockInvoke).toHaveBeenCalledWith("save_repo_defaults", expect.objectContaining({
           config: expect.objectContaining({ setup_script: "npm install" }),
         }));
-        dispose();
       });
     });
 
     it("setRunScript updates state and persists", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.setRunScript("npm run dev");
         expect(store.state.runScript).toBe("npm run dev");
         expect(mockInvoke).toHaveBeenCalledWith("save_repo_defaults", expect.objectContaining({
           config: expect.objectContaining({ run_script: "npm run dev" }),
         }));
-        dispose();
       });
     });
 
     it("save includes full config with all fields", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.setBaseBranch("develop");
         expect(mockInvoke).toHaveBeenCalledWith("save_repo_defaults", {
           config: {
@@ -154,7 +145,6 @@ describe("repoDefaultsStore", () => {
             auto_delete_on_pr_close: "off",
           },
         });
-        dispose();
       });
     });
   });

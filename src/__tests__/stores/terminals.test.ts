@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createRoot } from "solid-js";
-import { makeTerminal } from "../helpers/store";
+import { makeTerminal, testInScope } from "../helpers/store";
 
 describe("terminalsStore", () => {
   let store: typeof import("../../stores/terminals").terminalsStore;
@@ -13,142 +12,129 @@ describe("terminalsStore", () => {
 
   describe("add()", () => {
     it("creates a terminal with generated ID", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal());
         expect(id).toBe("term-1");
         expect(store.get(id)).toBeDefined();
         expect(store.get(id)!.name).toBe("Test");
         expect(store.get(id)!.activity).toBe(false);
         expect(store.get(id)!.progress).toBeNull();
-        dispose();
       });
     });
 
     it("increments counter for each terminal", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id1 = store.add(makeTerminal({ name: "T1" }));
         const id2 = store.add(makeTerminal({ name: "T2" }));
         expect(id1).toBe("term-1");
         expect(id2).toBe("term-2");
-        dispose();
       });
     });
   });
 
   describe("remove()", () => {
     it("removes a terminal", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal());
         store.remove(id);
         expect(store.get(id)).toBeUndefined();
-        dispose();
       });
     });
 
     it("sets activeId to null when active terminal is removed (caller handles replacement)", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id1 = store.add(makeTerminal({ name: "T1" }));
         store.add(makeTerminal({ name: "T2" }));
         store.setActive(id1);
         store.remove(id1);
         expect(store.state.activeId).toBeNull();
-        dispose();
       });
     });
 
     it("sets activeId to null when last terminal is removed", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal());
         store.setActive(id);
         store.remove(id);
         expect(store.state.activeId).toBeNull();
-        dispose();
       });
     });
   });
 
   describe("setActive()", () => {
     it("sets the active terminal", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal());
         store.setActive(id);
         expect(store.state.activeId).toBe(id);
-        dispose();
       });
     });
 
     it("clears activity indicator when setting active", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal());
         store.update(id, { activity: true });
         store.setActive(id);
         expect(store.get(id)!.activity).toBe(false);
-        dispose();
       });
     });
 
     it("accepts null", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.setActive(null);
         expect(store.state.activeId).toBeNull();
-        dispose();
       });
     });
   });
 
   describe("getActive()", () => {
     it("returns the active terminal", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal());
         store.setActive(id);
         expect(store.getActive()?.id).toBe(id);
-        dispose();
       });
     });
 
     it("returns undefined when no active", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         expect(store.getActive()).toBeUndefined();
-        dispose();
       });
     });
   });
 
   describe("update()", () => {
     it("updates terminal properties", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal());
         store.update(id, { name: "Updated", fontSize: 16 });
         expect(store.get(id)!.name).toBe("Updated");
         expect(store.get(id)!.fontSize).toBe(16);
-        dispose();
       });
     });
   });
 
   describe("setSessionId()", () => {
     it("updates session ID", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal());
         store.setSessionId(id, "sess-1");
         expect(store.get(id)!.sessionId).toBe("sess-1");
-        dispose();
       });
     });
   });
 
   describe("setFontSize()", () => {
     it("updates font size", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal());
         store.setFontSize(id, 18);
         expect(store.get(id)!.fontSize).toBe(18);
-        dispose();
       });
     });
 
     it("fontSize is accessible via direct store path", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal());
 
         // Verify direct store path access works (used in Terminal.tsx for SolidJS reactivity)
@@ -163,50 +149,45 @@ describe("terminalsStore", () => {
         // Verify it returns undefined for non-existent terminal
         expect(store.state.terminals["nonexistent"]?.fontSize).toBeUndefined();
 
-        dispose();
       });
     });
   });
 
   describe("awaiting input", () => {
     it("sets awaiting input type", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal());
         store.setAwaitingInput(id, "question");
         expect(store.get(id)!.awaitingInput).toBe("question");
-        dispose();
       });
     });
 
     it("clears awaiting input", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal({ awaitingInput: "question" }));
         store.clearAwaitingInput(id);
         expect(store.get(id)!.awaitingInput).toBeNull();
-        dispose();
       });
     });
 
     it("hasAwaitingInput returns true when any terminal is awaiting", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.add(makeTerminal({ name: "T1" }));
         const id2 = store.add(makeTerminal({ name: "T2" }));
         store.setAwaitingInput(id2, "error");
         expect(store.hasAwaitingInput()).toBe(true);
-        dispose();
       });
     });
 
     it("hasAwaitingInput returns false when none awaiting", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.add(makeTerminal({ name: "T1" }));
         expect(store.hasAwaitingInput()).toBe(false);
-        dispose();
       });
     });
 
     it("shellState update does not clear awaitingInput (PTY output must not erase question state)", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal());
         store.setAwaitingInput(id, "question");
         // Simulate PTY output: shellState goes busy
@@ -216,157 +197,141 @@ describe("terminalsStore", () => {
         // And going back to idle also must not clear it
         store.update(id, { shellState: "idle" });
         expect(store.get(id)!.awaitingInput).toBe("question");
-        dispose();
       });
     });
 
     it("getAwaitingInputIds returns correct IDs", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id1 = store.add(makeTerminal({ name: "T1" }));
         const id2 = store.add(makeTerminal({ name: "T2" }));
         store.setAwaitingInput(id2, "error");
         const ids = store.getAwaitingInputIds();
         expect(ids).toContain(id2);
         expect(ids).not.toContain(id1);
-        dispose();
       });
     });
   });
 
   describe("getIds()", () => {
     it("returns all terminal IDs", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.add(makeTerminal({ name: "T1" }));
         store.add(makeTerminal({ name: "T2" }));
         expect(store.getIds()).toHaveLength(2);
-        dispose();
       });
     });
   });
 
   describe("sessionToTerminal reverse map", () => {
     it("getTerminalForSession returns terminal ID when session is assigned", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal({ name: "T1", sessionId: "sess-abc" }));
         expect(store.getTerminalForSession("sess-abc")).toBe(id);
-        dispose();
       });
     });
 
     it("getTerminalForSession returns null for unknown session", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.add(makeTerminal({ name: "T1", sessionId: "sess-abc" }));
         expect(store.getTerminalForSession("not-a-session")).toBeNull();
-        dispose();
       });
     });
 
     it("getTerminalForSession returns null for terminal with null sessionId", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.add(makeTerminal({ name: "T1" }));
         expect(store.getTerminalForSession("sess-xyz")).toBeNull();
-        dispose();
       });
     });
 
     it("map is updated when setSessionId is called", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal({ name: "T1" }));
         expect(store.getTerminalForSession("sess-new")).toBeNull();
         store.setSessionId(id, "sess-new");
         expect(store.getTerminalForSession("sess-new")).toBe(id);
-        dispose();
       });
     });
 
     it("map is updated when setSessionId reassigns to a new session", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal({ name: "T1", sessionId: "sess-old" }));
         store.setSessionId(id, "sess-new");
         expect(store.getTerminalForSession("sess-old")).toBeNull();
         expect(store.getTerminalForSession("sess-new")).toBe(id);
-        dispose();
       });
     });
 
     it("map entry is removed when terminal is removed", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal({ name: "T1", sessionId: "sess-abc" }));
         expect(store.getTerminalForSession("sess-abc")).toBe(id);
         store.remove(id);
         expect(store.getTerminalForSession("sess-abc")).toBeNull();
-        dispose();
       });
     });
 
     it("getAgentTypeForSession uses reverse map for O(1) lookup", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal({ name: "T1", sessionId: "sess-agent" }));
         store.update(id, { agentType: "claude" });
         expect(store.getAgentTypeForSession("sess-agent")).toBe("claude");
-        dispose();
       });
     });
 
     it("getAgentTypeForSession returns null for unknown session", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.add(makeTerminal({ name: "T1", sessionId: "sess-agent" }));
         expect(store.getAgentTypeForSession("unknown-sess")).toBeNull();
-        dispose();
       });
     });
   });
 
   describe("agentType", () => {
     it("initializes agentType as null", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal());
         expect(store.get(id)!.agentType).toBeNull();
-        dispose();
       });
     });
 
     it("can be updated to a known agent", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal());
         store.update(id, { agentType: "claude" });
         expect(store.get(id)!.agentType).toBe("claude");
-        dispose();
       });
     });
 
     it("can be cleared back to null", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal());
         store.update(id, { agentType: "gemini" });
         store.update(id, { agentType: null });
         expect(store.get(id)!.agentType).toBeNull();
-        dispose();
       });
     });
   });
 
   describe("unseen", () => {
     it("initializes unseen as false", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal());
         expect(store.get(id)!.unseen).toBe(false);
-        dispose();
       });
     });
 
     it("clears unseen when setting active", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal());
         store.update(id, { unseen: true });
         store.setActive(id);
         expect(store.get(id)!.unseen).toBe(false);
-        dispose();
       });
     });
 
     it("setAwaitingInput does NOT set unseen (question dot is sufficient)", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id1 = store.add(makeTerminal({ name: "T1" }));
         const id2 = store.add(makeTerminal({ name: "T2" }));
         store.setActive(id1);
@@ -374,40 +339,36 @@ describe("terminalsStore", () => {
         // (the orange/red dot already communicates "needs attention")
         store.setAwaitingInput(id2, "question");
         expect(store.get(id2)!.unseen).toBe(false);
-        dispose();
       });
     });
   });
 
   describe("shellState", () => {
     it("initializes shellState as null", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal());
         expect(store.get(id)!.shellState).toBeNull();
-        dispose();
       });
     });
 
     it("can be updated to busy", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal());
         store.update(id, { shellState: "busy" });
         expect(store.get(id)!.shellState).toBe("busy");
-        dispose();
       });
     });
 
     it("can be updated to idle", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal());
         store.update(id, { shellState: "idle" });
         expect(store.get(id)!.shellState).toBe("idle");
-        dispose();
       });
     });
 
     it("clears awaitingInput on idle→busy transition", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal());
         store.update(id, { shellState: "idle" });
         store.setAwaitingInput(id, "question");
@@ -415,39 +376,35 @@ describe("terminalsStore", () => {
         // Agent resumes output → idle→busy transition should clear stale question
         store.update(id, { shellState: "busy" });
         expect(store.get(id)!.awaitingInput).toBeNull();
-        dispose();
       });
     });
 
     it("does not clear awaitingInput on null→busy transition", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal());
         store.setAwaitingInput(id, "question");
         // Initial busy (from null) should NOT clear — agent hasn't been idle yet
         store.update(id, { shellState: "busy" });
         expect(store.get(id)!.awaitingInput).toBe("question");
-        dispose();
       });
     });
 
     it("preserves shellState on setActive", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.add(makeTerminal());
         store.update(id, { shellState: "idle" });
         store.setActive(id);
         expect(store.get(id)!.shellState).toBe("idle");
-        dispose();
       });
     });
   });
 
   describe("getCount()", () => {
     it("returns terminal count", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         expect(store.getCount()).toBe(0);
         store.add(makeTerminal({ name: "T1" }));
         expect(store.getCount()).toBe(1);
-        dispose();
       });
     });
   });
@@ -455,19 +412,18 @@ describe("terminalsStore", () => {
   describe("TabLayout", () => {
     describe("default layout", () => {
       it("initializes with direction none and empty panes", () => {
-        createRoot((dispose) => {
+        testInScope(() => {
           expect(store.state.layout.direction).toBe("none");
           expect(store.state.layout.panes).toEqual([]);
           expect(store.state.layout.ratios).toEqual([]);
           expect(store.state.layout.activePaneIndex).toBe(0);
-          dispose();
         });
       });
     });
 
     describe("splitPane()", () => {
       it("splits a single pane vertically", () => {
-        createRoot((dispose) => {
+        testInScope(() => {
           const id1 = store.add(makeTerminal({ name: "T1", cwd: "/tmp" }));
           store.setActive(id1);
           store.setLayout({ direction: "none", panes: [id1], ratios: [], activePaneIndex: 0 });
@@ -481,12 +437,11 @@ describe("terminalsStore", () => {
           expect(store.state.layout.panes[1]).toBe(newId);
           expect(store.state.layout.ratios).toEqual([0.5, 0.5]);
           expect(store.state.layout.activePaneIndex).toBe(1);
-          dispose();
         });
       });
 
       it("splits a single pane horizontally", () => {
-        createRoot((dispose) => {
+        testInScope(() => {
           const id1 = store.add(makeTerminal({ name: "T1" }));
           store.setLayout({ direction: "none", panes: [id1], ratios: [], activePaneIndex: 0 });
 
@@ -496,12 +451,11 @@ describe("terminalsStore", () => {
           expect(store.state.layout.panes).toHaveLength(2);
           expect(store.state.layout.panes[1]).toBe(newId);
           expect(store.state.layout.ratios).toEqual([0.5, 0.5]);
-          dispose();
         });
       });
 
       it("adds 3rd pane when same direction active", () => {
-        createRoot((dispose) => {
+        testInScope(() => {
           const id1 = store.add(makeTerminal({ name: "T1" }));
           store.setLayout({ direction: "none", panes: [id1], ratios: [], activePaneIndex: 0 });
 
@@ -518,12 +472,11 @@ describe("terminalsStore", () => {
           expect(store.state.layout.ratios[1]).toBeCloseTo(r);
           expect(store.state.layout.ratios[2]).toBeCloseTo(r);
           expect(store.state.layout.ratios.reduce((a, b) => a + b, 0)).toBeCloseTo(1.0);
-          dispose();
         });
       });
 
       it("returns null when opposite direction requested", () => {
-        createRoot((dispose) => {
+        testInScope(() => {
           const id1 = store.add(makeTerminal({ name: "T1" }));
           store.setLayout({ direction: "none", panes: [id1], ratios: [], activePaneIndex: 0 });
           store.splitPane("vertical");
@@ -531,12 +484,11 @@ describe("terminalsStore", () => {
           const result = store.splitPane("horizontal");
           expect(result).toBeNull();
           expect(store.state.layout.panes).toHaveLength(2);
-          dispose();
         });
       });
 
       it("returns null at MAX_SPLIT_PANES (6)", () => {
-        createRoot((dispose) => {
+        testInScope(() => {
           const id1 = store.add(makeTerminal({ name: "T1" }));
           store.setLayout({ direction: "none", panes: [id1], ratios: [], activePaneIndex: 0 });
 
@@ -551,20 +503,18 @@ describe("terminalsStore", () => {
           const result = store.splitPane("vertical");
           expect(result).toBeNull();
           expect(store.state.layout.panes).toHaveLength(6);
-          dispose();
         });
       });
 
       it("returns null if no panes in layout", () => {
-        createRoot((dispose) => {
+        testInScope(() => {
           const result = store.splitPane("vertical");
           expect(result).toBeNull();
-          dispose();
         });
       });
 
       it("inherits cwd from the source pane", () => {
-        createRoot((dispose) => {
+        testInScope(() => {
           const id1 = store.add(makeTerminal({ name: "T1", cwd: "/projects/foo" }));
           store.setLayout({ direction: "none", panes: [id1], ratios: [], activePaneIndex: 0 });
 
@@ -572,14 +522,13 @@ describe("terminalsStore", () => {
 
           expect(newId).toBeDefined();
           expect(store.get(newId!)!.cwd).toBe("/projects/foo");
-          dispose();
         });
       });
     });
 
     describe("closeSplitPane()", () => {
       it("collapses split to single pane when closing pane 1", () => {
-        createRoot((dispose) => {
+        testInScope(() => {
           const id1 = store.add(makeTerminal({ name: "T1" }));
           const id2 = store.add(makeTerminal({ name: "T2" }));
           store.setLayout({ direction: "vertical", panes: [id1, id2], ratios: [0.5, 0.5], activePaneIndex: 1 });
@@ -590,12 +539,11 @@ describe("terminalsStore", () => {
           expect(store.state.layout.panes).toEqual([id1]);
           expect(store.state.layout.ratios).toEqual([]);
           expect(store.state.layout.activePaneIndex).toBe(0);
-          dispose();
         });
       });
 
       it("collapses split to single pane when closing pane 0", () => {
-        createRoot((dispose) => {
+        testInScope(() => {
           const id1 = store.add(makeTerminal({ name: "T1" }));
           const id2 = store.add(makeTerminal({ name: "T2" }));
           store.setLayout({ direction: "horizontal", panes: [id1, id2], ratios: [0.5, 0.5], activePaneIndex: 0 });
@@ -606,12 +554,11 @@ describe("terminalsStore", () => {
           expect(store.state.layout.panes).toEqual([id2]);
           expect(store.state.layout.ratios).toEqual([]);
           expect(store.state.layout.activePaneIndex).toBe(0);
-          dispose();
         });
       });
 
       it("closes middle pane of 3, redistributes ratios proportionally", () => {
-        createRoot((dispose) => {
+        testInScope(() => {
           const id1 = store.add(makeTerminal({ name: "T1" }));
           const id2 = store.add(makeTerminal({ name: "T2" }));
           const id3 = store.add(makeTerminal({ name: "T3" }));
@@ -626,12 +573,11 @@ describe("terminalsStore", () => {
           expect(store.state.layout.ratios.reduce((a, b) => a + b, 0)).toBeCloseTo(1.0);
           // activePaneIndex should be clamped
           expect(store.state.layout.activePaneIndex).toBe(1);
-          dispose();
         });
       });
 
       it("decrements activePaneIndex when a pane before the active one is closed", () => {
-        createRoot((dispose) => {
+        testInScope(() => {
           // 4 panes [A,B,C,D], activePaneIndex: 2 (C), close pane 0 (A)
           // Result: [B,C,D], activePaneIndex should be 1 (still pointing at C)
           const idA = store.add(makeTerminal({ name: "A" }));
@@ -645,12 +591,11 @@ describe("terminalsStore", () => {
           expect(store.state.layout.panes).toEqual([idB, idC, idD]);
           expect(store.state.layout.activePaneIndex).toBe(1); // still points at C
           expect(store.state.layout.ratios.reduce((a, b) => a + b, 0)).toBeCloseTo(1.0);
-          dispose();
         });
       });
 
       it("closes last pane of 3, activePaneIndex decrements", () => {
-        createRoot((dispose) => {
+        testInScope(() => {
           // 3 panes, activePaneIndex: 2, close index 2
           // Result: 2 panes, activePaneIndex should be 1
           const id1 = store.add(makeTerminal({ name: "T1" }));
@@ -663,12 +608,11 @@ describe("terminalsStore", () => {
           expect(store.state.layout.panes).toEqual([id1, id2]);
           expect(store.state.layout.activePaneIndex).toBe(1);
           expect(store.state.layout.ratios.reduce((a, b) => a + b, 0)).toBeCloseTo(1.0);
-          dispose();
         });
       });
 
       it("does nothing if not split", () => {
-        createRoot((dispose) => {
+        testInScope(() => {
           const id1 = store.add(makeTerminal({ name: "T1" }));
           store.setLayout({ direction: "none", panes: [id1], ratios: [], activePaneIndex: 0 });
 
@@ -676,14 +620,13 @@ describe("terminalsStore", () => {
 
           expect(store.state.layout.direction).toBe("none");
           expect(store.state.layout.panes).toEqual([id1]);
-          dispose();
         });
       });
     });
 
     describe("setHandleRatio()", () => {
       it("adjusts boundary between two adjacent panes", () => {
-        createRoot((dispose) => {
+        testInScope(() => {
           const id1 = store.add(makeTerminal({ name: "T1" }));
           const id2 = store.add(makeTerminal({ name: "T2" }));
           store.setLayout({ direction: "vertical", panes: [id1, id2], ratios: [0.5, 0.5], activePaneIndex: 0 });
@@ -692,12 +635,11 @@ describe("terminalsStore", () => {
           expect(store.state.layout.ratios[0]).toBeCloseTo(0.7);
           expect(store.state.layout.ratios[1]).toBeCloseTo(0.3);
           expect(store.state.layout.ratios.reduce((a, b) => a + b, 0)).toBeCloseTo(1.0);
-          dispose();
         });
       });
 
       it("enforces minimum pane fraction", () => {
-        createRoot((dispose) => {
+        testInScope(() => {
           const id1 = store.add(makeTerminal({ name: "T1" }));
           const id2 = store.add(makeTerminal({ name: "T2" }));
           store.setLayout({ direction: "vertical", panes: [id1, id2], ratios: [0.5, 0.5], activePaneIndex: 0 });
@@ -706,26 +648,24 @@ describe("terminalsStore", () => {
           store.setHandleRatio(0, 0.99);
           expect(store.state.layout.ratios[1]).toBeGreaterThanOrEqual(0.05);
           expect(store.state.layout.ratios.reduce((a, b) => a + b, 0)).toBeCloseTo(1.0);
-          dispose();
         });
       });
     });
 
     describe("setActivePaneIndex()", () => {
       it("sets the active pane index", () => {
-        createRoot((dispose) => {
+        testInScope(() => {
           const id1 = store.add(makeTerminal({ name: "T1" }));
           const id2 = store.add(makeTerminal({ name: "T2" }));
           store.setLayout({ direction: "vertical", panes: [id1, id2], ratios: [0.5, 0.5], activePaneIndex: 0 });
 
           store.setActivePaneIndex(1);
           expect(store.state.layout.activePaneIndex).toBe(1);
-          dispose();
         });
       });
 
       it("sets back to 0", () => {
-        createRoot((dispose) => {
+        testInScope(() => {
           const id1 = store.add(makeTerminal({ name: "T1" }));
           const id2 = store.add(makeTerminal({ name: "T2" }));
           store.setLayout({ direction: "vertical", panes: [id1, id2], ratios: [0.5, 0.5], activePaneIndex: 0 });
@@ -733,12 +673,11 @@ describe("terminalsStore", () => {
           store.setActivePaneIndex(1);
           store.setActivePaneIndex(0);
           expect(store.state.layout.activePaneIndex).toBe(0);
-          dispose();
         });
       });
 
       it("accepts any valid index", () => {
-        createRoot((dispose) => {
+        testInScope(() => {
           const id1 = store.add(makeTerminal({ name: "T1" }));
           const id2 = store.add(makeTerminal({ name: "T2" }));
           const id3 = store.add(makeTerminal({ name: "T3" }));
@@ -750,14 +689,13 @@ describe("terminalsStore", () => {
           // Clamps to valid range
           store.setActivePaneIndex(10);
           expect(store.state.layout.activePaneIndex).toBe(2);
-          dispose();
         });
       });
     });
 
     describe("setLayout()", () => {
       it("sets the complete layout", () => {
-        createRoot((dispose) => {
+        testInScope(() => {
           const id1 = store.add(makeTerminal({ name: "T1" }));
           const id2 = store.add(makeTerminal({ name: "T2" }));
 
@@ -772,7 +710,6 @@ describe("terminalsStore", () => {
           expect(store.state.layout.panes).toEqual([id1, id2]);
           expect(store.state.layout.ratios).toEqual([0.6, 0.4]);
           expect(store.state.layout.activePaneIndex).toBe(1);
-          dispose();
         });
       });
     });

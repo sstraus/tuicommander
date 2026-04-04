@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createRoot } from "solid-js";
 import type { AgentRunConfig, AgentsConfig } from "../../agents";
 
 const { mockInvoke } = vi.hoisted(() => {
@@ -13,6 +12,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 // Import the store once (it's a singleton)
 import { agentConfigsStore as store } from "../../stores/agentConfigs";
+import { testInScopeAsync } from "../helpers/store";
 
 const configWithClaude = (): AgentsConfig => ({
   agents: {
@@ -38,21 +38,19 @@ describe("agentConfigsStore", () => {
 
   describe("hydrate()", () => {
     it("loads agent configs from Rust backend", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await hydrateWith(configWithClaude());
         expect(store.state.loaded).toBe(true);
         expect(store.getRunConfigs("claude")).toHaveLength(2);
         expect(store.getRunConfigs("claude")[0].name).toBe("Default");
-        dispose();
       });
     });
 
     it("handles empty config gracefully", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await hydrateWith({ agents: {} });
         expect(store.state.loaded).toBe(true);
         expect(store.getRunConfigs("claude")).toHaveLength(0);
-        dispose();
       });
     });
 
@@ -60,24 +58,22 @@ describe("agentConfigsStore", () => {
       mockInvoke.mockRejectedValueOnce(new Error("load failed"));
       const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.hydrate();
         expect(store.state.loaded).toBe(true);
         expect(errSpy).toHaveBeenCalled();
         errSpy.mockRestore();
-        dispose();
       });
     });
   });
 
   describe("getDefaultConfig()", () => {
     it("returns the config marked as default", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await hydrateWith(configWithClaude());
         const def = store.getDefaultConfig("claude");
         expect(def?.name).toBe("Default");
         expect(def?.is_default).toBe(true);
-        dispose();
       });
     });
 
@@ -93,27 +89,25 @@ describe("agentConfigsStore", () => {
         },
       };
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await hydrateWith(noDefault);
         const def = store.getDefaultConfig("claude");
         expect(def?.name).toBe("A");
-        dispose();
       });
     });
 
     it("returns undefined for agent with no configs", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await hydrateWith({ agents: {} });
         const def = store.getDefaultConfig("aider");
         expect(def).toBeUndefined();
-        dispose();
       });
     });
   });
 
   describe("addRunConfig()", () => {
     it("adds a config and saves", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await hydrateWith({ agents: {} });
         const newConfig: AgentRunConfig = {
           name: "Test",
@@ -128,14 +122,13 @@ describe("agentConfigsStore", () => {
         // First config should be auto-set as default
         expect(configs[0].is_default).toBe(true);
         expect(configs[0].name).toBe("Test");
-        dispose();
       });
     });
   });
 
   describe("updateRunConfig()", () => {
     it("updates a config at index", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await hydrateWith(configWithClaude());
         const updated: AgentRunConfig = {
           name: "Updated",
@@ -147,12 +140,11 @@ describe("agentConfigsStore", () => {
         await store.updateRunConfig("claude", 0, updated);
         expect(store.getRunConfigs("claude")[0].name).toBe("Updated");
         expect(store.getRunConfigs("claude")[0].args).toEqual(["--verbose"]);
-        dispose();
       });
     });
 
     it("ignores out-of-bounds index", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await hydrateWith(configWithClaude());
         expect(store.getRunConfigs("claude")[0].name).toBe("Default");
 
@@ -162,66 +154,60 @@ describe("agentConfigsStore", () => {
         await store.updateRunConfig("claude", 99, updated);
         expect(store.getRunConfigs("claude")[0].name).toBe("Default");
         expect(store.getRunConfigs("claude")).toHaveLength(2);
-        dispose();
       });
     });
   });
 
   describe("removeRunConfig()", () => {
     it("removes a config and reassigns default", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await hydrateWith(configWithClaude());
         await store.removeRunConfig("claude", 0);
         const configs = store.getRunConfigs("claude");
         expect(configs).toHaveLength(1);
         expect(configs[0].name).toBe("Print");
         expect(configs[0].is_default).toBe(true);
-        dispose();
       });
     });
   });
 
   describe("setDefaultConfig()", () => {
     it("sets a specific config as default", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await hydrateWith(configWithClaude());
         await store.setDefaultConfig("claude", 1);
         const configs = store.getRunConfigs("claude");
         expect(configs[0].is_default).toBe(false);
         expect(configs[1].is_default).toBe(true);
-        dispose();
       });
     });
   });
 
   describe("headless agent", () => {
     it("defaults to null", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await hydrateWith({ agents: {} });
         expect(store.getHeadlessAgent()).toBeNull();
-        dispose();
       });
     });
 
     it("persists headless_agent from config", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await hydrateWith({ agents: {}, headless_agent: "claude" });
         expect(store.getHeadlessAgent()).toBe("claude");
-        dispose();
       });
     });
 
     it("can be set to 'api' for External API mode", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await hydrateWith({ agents: {} });
         store.setHeadlessAgent("api");
         expect(store.getHeadlessAgent()).toBe("api");
-        dispose();
       });
     });
 
     it("saves when headless agent changes", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await hydrateWith({ agents: {} });
         mockInvoke.mockClear();
         store.setHeadlessAgent("api");
@@ -232,7 +218,6 @@ describe("agentConfigsStore", () => {
             config: expect.objectContaining({ headless_agent: "api" }),
           }),
         );
-        dispose();
       });
     });
   });

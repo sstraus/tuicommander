@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { createRoot } from "solid-js";
 import {
   splitLeaf,
   removeLeaf,
@@ -17,6 +16,7 @@ import {
   type PaneBranch,
   type PaneLeaf,
 } from "../../stores/paneLayout";
+import { testInScope } from "../helpers/store";
 
 describe("paneLayout tree utilities", () => {
   describe("nodeDepth", () => {
@@ -411,30 +411,28 @@ describe("paneLayoutStore", () => {
 
   describe("createGroup", () => {
     it("creates an empty group with unique ID", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id = store.createGroup();
         expect(id).toBe("g1");
         expect(store.state.groups[id]).toBeDefined();
         expect(store.state.groups[id].tabs).toEqual([]);
         expect(store.state.groups[id].activeTabId).toBeNull();
-        dispose();
       });
     });
 
     it("increments IDs", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const id1 = store.createGroup();
         const id2 = store.createGroup();
         expect(id1).toBe("g1");
         expect(id2).toBe("g2");
-        dispose();
       });
     });
   });
 
   describe("split", () => {
     it("creates initial tree from null root", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const g1 = store.createGroup();
         store.setRoot({ type: "leaf", id: g1 });
         store.setActiveGroup(g1);
@@ -446,23 +444,21 @@ describe("paneLayoutStore", () => {
         expect(root.direction).toBe("vertical");
         expect(root.children).toHaveLength(2);
         expect(store.state.activeGroupId).toBe(newId);
-        dispose();
       });
     });
 
     it("splits from null root (first split ever)", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const g1 = store.createGroup();
 
         const newId = store.split(g1, "horizontal");
         expect(newId).not.toBeNull();
         expect(store.getRoot()?.type).toBe("branch");
-        dispose();
       });
     });
 
     it("rejects split beyond max depth", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const g1 = store.createGroup();
         store.setRoot({ type: "leaf", id: g1 });
         store.setActiveGroup(g1);
@@ -474,14 +470,13 @@ describe("paneLayoutStore", () => {
         // Split g3 should fail (depth 3 = MAX_SPLIT_DEPTH)
         const g4 = store.split(g3, "vertical");
         expect(g4).toBeNull();
-        dispose();
       });
     });
   });
 
   describe("closePane", () => {
     it("removes a leaf and flattens", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const g1 = store.createGroup();
         store.setRoot({ type: "leaf", id: g1 });
         const g2 = store.split(g1, "vertical")!;
@@ -490,12 +485,11 @@ describe("paneLayoutStore", () => {
         expect(store.getRoot()?.type).toBe("leaf");
         expect((store.getRoot() as PaneLeaf).id).toBe(g1);
         expect(store.state.groups[g2]).toBeUndefined();
-        dispose();
       });
     });
 
     it("switches active group when closing active pane", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const g1 = store.createGroup();
         store.setRoot({ type: "leaf", id: g1 });
         const g2 = store.split(g1, "vertical")!;
@@ -503,36 +497,33 @@ describe("paneLayoutStore", () => {
 
         store.closePane(g2);
         expect(store.state.activeGroupId).toBe(g1);
-        dispose();
       });
     });
   });
 
   describe("addTab / removeTab / moveTab", () => {
     it("adds a tab to group", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const g1 = store.createGroup();
         store.addTab(g1, { id: "term-1", type: "terminal" });
 
         expect(store.state.groups[g1].tabs).toHaveLength(1);
         expect(store.state.groups[g1].activeTabId).toBe("term-1");
-        dispose();
       });
     });
 
     it("does not duplicate existing tab", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const g1 = store.createGroup();
         store.addTab(g1, { id: "term-1", type: "terminal" });
         store.addTab(g1, { id: "term-1", type: "terminal" });
 
         expect(store.state.groups[g1].tabs).toHaveLength(1);
-        dispose();
       });
     });
 
     it("removes tab and updates active", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const g1 = store.createGroup();
         store.addTab(g1, { id: "term-1", type: "terminal" });
         store.addTab(g1, { id: "md-1", type: "markdown" });
@@ -540,12 +531,11 @@ describe("paneLayoutStore", () => {
         store.removeTab(g1, "md-1");
         expect(store.state.groups[g1].tabs).toHaveLength(1);
         expect(store.state.groups[g1].activeTabId).toBe("term-1");
-        dispose();
       });
     });
 
     it("moves tab between groups", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const g1 = store.createGroup();
         const g2 = store.createGroup();
         store.addTab(g1, { id: "term-1", type: "terminal" });
@@ -555,14 +545,13 @@ describe("paneLayoutStore", () => {
         expect(store.state.groups[g1].tabs).toHaveLength(1);
         expect(store.state.groups[g2].tabs).toHaveLength(1);
         expect(store.state.groups[g2].activeTabId).toBe("md-1");
-        dispose();
       });
     });
   });
 
   describe("navigatePane", () => {
     it("navigates between panes", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const g1 = store.createGroup();
         store.setRoot({ type: "leaf", id: g1 });
         store.setActiveGroup(g1);
@@ -572,12 +561,11 @@ describe("paneLayoutStore", () => {
         const target = store.navigatePane("right");
         expect(target).toBe(g2);
         expect(store.state.activeGroupId).toBe(g2);
-        dispose();
       });
     });
 
     it("returns null at boundary", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const g1 = store.createGroup();
         store.setRoot({ type: "leaf", id: g1 });
         store.setActiveGroup(g1);
@@ -587,14 +575,13 @@ describe("paneLayoutStore", () => {
         const target = store.navigatePane("left");
         expect(target).toBeNull();
         expect(store.state.activeGroupId).toBe(g1);
-        dispose();
       });
     });
   });
 
   describe("serialize / restore", () => {
     it("round-trips the layout", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const g1 = store.createGroup();
         store.setRoot({ type: "leaf", id: g1 });
         store.setActiveGroup(g1);
@@ -611,7 +598,6 @@ describe("paneLayoutStore", () => {
         expect(store.state.groups[g1].tabs).toHaveLength(1);
         expect(store.state.groups[g2].tabs).toHaveLength(1);
         expect(store.state.activeGroupId).toBe(g2);
-        dispose();
       });
     });
   });

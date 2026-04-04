@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createRoot } from "solid-js";
+import { testInScope, testInScopeAsync } from "../helpers/store";
 
 const mockInvoke = vi.fn().mockResolvedValue(undefined);
 
@@ -24,24 +24,22 @@ describe("settingsStore", () => {
 
   describe("defaults", () => {
     it("has correct default values", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         expect(store.state.ide).toBe("vscode");
         expect(store.state.font).toBe("JetBrains Mono");
         expect(store.state.defaultFontSize).toBe(13);
         expect(store.state.confirmBeforeQuit).toBe(true);
         expect(store.state.confirmBeforeClosingTab).toBe(true);
         expect(store.state.splitTabMode).toBe("separate");
-        dispose();
       });
     });
   });
 
   describe("setIde()", () => {
     it("updates IDE preference in state", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.setIde("cursor");
         expect(store.state.ide).toBe("cursor");
-        dispose();
       });
     });
 
@@ -49,12 +47,11 @@ describe("settingsStore", () => {
       mockInvoke.mockRejectedValueOnce(new Error("fail"));
       const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.setIde("cursor");
         expect(store.state.ide).toBe("vscode");
         expect(errSpy).toHaveBeenCalled();
         errSpy.mockRestore();
-        dispose();
       });
     });
 
@@ -71,23 +68,21 @@ describe("settingsStore", () => {
       });
       mockInvoke.mockResolvedValueOnce(undefined);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.setIde("cursor");
         expect(mockInvoke).toHaveBeenCalledWith("load_config");
         expect(mockInvoke).toHaveBeenCalledWith("save_config", {
           config: expect.objectContaining({ ide: "cursor" }),
         });
-        dispose();
       });
     });
   });
 
   describe("setFont()", () => {
     it("updates font in store state", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.setFont("Fira Code");
         expect(store.state.font).toBe("Fira Code");
-        dispose();
       });
     });
 
@@ -95,12 +90,11 @@ describe("settingsStore", () => {
       mockInvoke.mockRejectedValueOnce(new Error("fail"));
       const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.setFont("Fira Code");
         expect(store.state.font).toBe("JetBrains Mono");
         expect(errSpy).toHaveBeenCalled();
         errSpy.mockRestore();
-        dispose();
       });
     });
 
@@ -117,35 +111,32 @@ describe("settingsStore", () => {
       });
       mockInvoke.mockResolvedValueOnce(undefined);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.setFont("Fira Code");
         expect(mockInvoke).toHaveBeenCalledWith("load_config");
         expect(mockInvoke).toHaveBeenCalledWith("save_config", {
           config: expect.objectContaining({ font_family: "Fira Code" }),
         });
-        dispose();
       });
     });
   });
 
   describe("getFontFamily()", () => {
     it("returns CSS font family string", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const family = store.getFontFamily();
         expect(family).toContain("JetBrains");
         expect(family).toContain("monospace");
-        dispose();
       });
     });
   });
 
   describe("getIdeName()", () => {
     it("returns display name for IDE", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         expect(store.getIdeName()).toBe("VS Code");
         store.setIde("zed");
         expect(store.getIdeName()).toBe("Zed");
-        dispose();
       });
     });
   });
@@ -163,11 +154,10 @@ describe("settingsStore", () => {
         default_font_size: 12,
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.loadFontFromConfig();
         expect(store.state.font).toBe("Hack");
         expect(mockInvoke).toHaveBeenCalledWith("load_config");
-        dispose();
       });
     });
 
@@ -183,20 +173,18 @@ describe("settingsStore", () => {
         default_font_size: 12,
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.loadFontFromConfig();
         expect(store.state.font).toBe("JetBrains Mono");
-        dispose();
       });
     });
 
     it("keeps default on invoke failure", async () => {
       mockInvoke.mockRejectedValueOnce(new Error("no backend"));
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.loadFontFromConfig();
         expect(store.state.font).toBe("JetBrains Mono");
-        dispose();
       });
     });
   });
@@ -214,12 +202,11 @@ describe("settingsStore", () => {
         default_font_size: 16,
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.hydrate();
         expect(store.state.font).toBe("Hack");
         expect(store.state.ide).toBe("zed");
         expect(store.state.defaultFontSize).toBe(16);
-        dispose();
       });
     });
 
@@ -237,10 +224,9 @@ describe("settingsStore", () => {
         ide: "cursor", default_font_size: 12,
       }); // load_config after migration
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.hydrate();
         expect(localStorage.getItem("tui-commander-default-ide")).toBeNull();
-        dispose();
       });
     });
 
@@ -251,36 +237,33 @@ describe("settingsStore", () => {
         ide: "invalid-ide", default_font_size: 12,
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.hydrate();
         expect(store.state.font).toBe("JetBrains Mono");
         expect(store.state.ide).toBe("vscode");
-        dispose();
       });
     });
 
     it("keeps defaults on invoke failure", async () => {
       mockInvoke.mockRejectedValueOnce(new Error("no backend"));
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.hydrate();
         expect(store.state.font).toBe("JetBrains Mono");
         expect(store.state.ide).toBe("vscode");
-        dispose();
       });
     });
   });
 
   describe("setDefaultFontSize()", () => {
     it("clamps font size to valid range", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.setDefaultFontSize(5);
         expect(store.state.defaultFontSize).toBe(8);
         store.setDefaultFontSize(50);
         expect(store.state.defaultFontSize).toBe(32);
         store.setDefaultFontSize(16);
         expect(store.state.defaultFontSize).toBe(16);
-        dispose();
       });
     });
   });
@@ -294,13 +277,12 @@ describe("settingsStore", () => {
       });
       mockInvoke.mockResolvedValueOnce(undefined);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.setShell("/bin/zsh");
         expect(store.state.shell).toBe("/bin/zsh");
         expect(mockInvoke).toHaveBeenCalledWith("save_config", {
           config: expect.objectContaining({ shell: "/bin/zsh" }),
         });
-        dispose();
       });
     });
 
@@ -312,10 +294,9 @@ describe("settingsStore", () => {
       });
       mockInvoke.mockResolvedValueOnce(undefined);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.setShell("  ");
         expect(store.state.shell).toBeNull();
-        dispose();
       });
     });
 
@@ -323,12 +304,11 @@ describe("settingsStore", () => {
       mockInvoke.mockRejectedValueOnce(new Error("fail"));
       const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.setShell("/bin/fish");
         expect(store.state.shell).toBeNull();
         expect(errSpy).toHaveBeenCalled();
         errSpy.mockRestore();
-        dispose();
       });
     });
   });
@@ -342,13 +322,12 @@ describe("settingsStore", () => {
       });
       mockInvoke.mockResolvedValueOnce(undefined);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.setTheme("dracula");
         expect(store.state.theme).toBe("dracula");
         expect(mockInvoke).toHaveBeenCalledWith("save_config", {
           config: expect.objectContaining({ theme: "dracula" }),
         });
-        dispose();
       });
     });
 
@@ -356,12 +335,11 @@ describe("settingsStore", () => {
       mockInvoke.mockRejectedValueOnce(new Error("fail"));
       const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.setTheme("nord");
         expect(store.state.theme).toBe("commander");
         expect(errSpy).toHaveBeenCalled();
         errSpy.mockRestore();
-        dispose();
       });
     });
   });
@@ -375,13 +353,12 @@ describe("settingsStore", () => {
       });
       mockInvoke.mockResolvedValueOnce(undefined);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.setSplitTabMode("unified");
         expect(store.state.splitTabMode).toBe("unified");
         expect(mockInvoke).toHaveBeenCalledWith("save_config", {
           config: expect.objectContaining({ split_tab_mode: "unified" }),
         });
-        dispose();
       });
     });
 
@@ -389,12 +366,11 @@ describe("settingsStore", () => {
       mockInvoke.mockRejectedValueOnce(new Error("fail"));
       const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.setSplitTabMode("unified");
         expect(store.state.splitTabMode).toBe("separate");
         expect(errSpy).toHaveBeenCalled();
         errSpy.mockRestore();
-        dispose();
       });
     });
   });
@@ -404,12 +380,11 @@ describe("settingsStore", () => {
       mockInvoke.mockRejectedValueOnce(new Error("fail"));
       const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.setConfirmBeforeQuit(false);
         expect(store.state.confirmBeforeQuit).toBe(true);
         expect(errSpy).toHaveBeenCalled();
         errSpy.mockRestore();
-        dispose();
       });
     });
   });
@@ -419,21 +394,19 @@ describe("settingsStore", () => {
       mockInvoke.mockRejectedValueOnce(new Error("fail"));
       const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.setConfirmBeforeClosingTab(false);
         expect(store.state.confirmBeforeClosingTab).toBe(true);
         expect(errSpy).toHaveBeenCalled();
         errSpy.mockRestore();
-        dispose();
       });
     });
   });
 
   describe("autoShowPrPopover", () => {
     it("defaults to true", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         expect(store.state.autoShowPrPopover).toBe(true);
-        dispose();
       });
     });
 
@@ -445,13 +418,12 @@ describe("settingsStore", () => {
       });
       mockInvoke.mockResolvedValueOnce(undefined);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.setAutoShowPrPopover(false);
         expect(store.state.autoShowPrPopover).toBe(false);
         expect(mockInvoke).toHaveBeenCalledWith("save_config", {
           config: expect.objectContaining({ auto_show_pr_popover: false }),
         });
-        dispose();
       });
     });
 
@@ -459,12 +431,11 @@ describe("settingsStore", () => {
       mockInvoke.mockRejectedValueOnce(new Error("fail"));
       const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.setAutoShowPrPopover(false);
         expect(store.state.autoShowPrPopover).toBe(true);
         expect(errSpy).toHaveBeenCalled();
         errSpy.mockRestore();
-        dispose();
       });
     });
 
@@ -476,10 +447,9 @@ describe("settingsStore", () => {
       });
       mockInvoke.mockResolvedValueOnce({ primary_agent: "claude" });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.hydrate();
         expect(store.state.autoShowPrPopover).toBe(false);
-        dispose();
       });
     });
   });

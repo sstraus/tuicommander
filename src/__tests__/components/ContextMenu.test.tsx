@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent } from "@solidjs/testing-library";
-import { createRoot } from "solid-js";
 import { ContextMenu, createContextMenu } from "../../components/ContextMenu/ContextMenu";
 import type { ContextMenuItem } from "../../components/ContextMenu/ContextMenu";
+import { testInScope } from "../helpers/store";
 
 const sampleItems: ContextMenuItem[] = [
   { label: "Copy", shortcut: "\u2318C", action: vi.fn() },
@@ -308,17 +308,16 @@ describe("ContextMenu submenus", () => {
 
 describe("createContextMenu", () => {
   it("initializes with visible=false", () => {
-    createRoot((dispose) => {
+    testInScope(() => {
       const menu = createContextMenu();
       expect(menu.visible()).toBe(false);
       expect(menu.position().x).toBe(0);
       expect(menu.position().y).toBe(0);
-      dispose();
     });
   });
 
   it("open sets visible and position from mouse event", () => {
-    createRoot((dispose) => {
+    testInScope(() => {
       const menu = createContextMenu();
       const mockEvent = {
         preventDefault: vi.fn(),
@@ -332,24 +331,22 @@ describe("createContextMenu", () => {
       expect(menu.position().x).toBe(300);
       expect(menu.position().y).toBe(400);
       expect(mockEvent.preventDefault).toHaveBeenCalled();
-      dispose();
     });
   });
 
   it("openAt sets visible and position from coordinates", () => {
-    createRoot((dispose) => {
+    testInScope(() => {
       const menu = createContextMenu();
       menu.openAt(250, 350);
 
       expect(menu.visible()).toBe(true);
       expect(menu.position().x).toBe(250);
       expect(menu.position().y).toBe(350);
-      dispose();
     });
   });
 
   it("close sets visible to false", () => {
-    createRoot((dispose) => {
+    testInScope(() => {
       const menu = createContextMenu();
       const mockEvent = {
         preventDefault: vi.fn(),
@@ -362,7 +359,6 @@ describe("createContextMenu", () => {
 
       menu.close();
       expect(menu.visible()).toBe(false);
-      dispose();
     });
   });
 });

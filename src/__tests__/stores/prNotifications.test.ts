@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createRoot } from "solid-js";
 import { prNotificationsStore } from "../../stores/prNotifications";
 import type { PrNotificationType } from "../../stores/prNotifications";
+import { testInScope } from "../helpers/store";
 
 function makeNotification(overrides: Partial<{
   repoPath: string;
@@ -32,7 +32,7 @@ describe("prNotificationsStore", () => {
 
   describe("add()", () => {
     it("adds a notification with id, dismissed=false, focusedTimeMs=0", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         prNotificationsStore.add(makeNotification());
         const active = prNotificationsStore.getActive();
         expect(active).toHaveLength(1);
@@ -40,21 +40,19 @@ describe("prNotificationsStore", () => {
         expect(active[0].dismissed).toBe(false);
         expect(active[0].focusedTimeMs).toBe(0);
         expect(active[0].createdAt).toBeGreaterThan(0);
-        dispose();
       });
     });
 
     it("ignores duplicate active notification (same repo+pr+type)", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         prNotificationsStore.add(makeNotification());
         prNotificationsStore.add(makeNotification({ title: "Updated title" }));
         expect(prNotificationsStore.getActive()).toHaveLength(1);
-        dispose();
       });
     });
 
     it("replaces a dismissed notification with same id", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         prNotificationsStore.add(makeNotification());
         prNotificationsStore.dismiss("/repo/path:42:ready");
         expect(prNotificationsStore.getActive()).toHaveLength(0);
@@ -64,32 +62,29 @@ describe("prNotificationsStore", () => {
         expect(active).toHaveLength(1);
         expect(active[0].dismissed).toBe(false);
         expect(active[0].title).toBe("Re-triggered");
-        dispose();
       });
     });
 
     it("allows different notification types for same PR", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         prNotificationsStore.add(makeNotification({ type: "ready" }));
         prNotificationsStore.add(makeNotification({ type: "ci_failed" }));
         expect(prNotificationsStore.getActive()).toHaveLength(2);
-        dispose();
       });
     });
 
     it("allows same type for different PRs", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         prNotificationsStore.add(makeNotification({ prNumber: 1 }));
         prNotificationsStore.add(makeNotification({ prNumber: 2 }));
         expect(prNotificationsStore.getActive()).toHaveLength(2);
-        dispose();
       });
     });
   });
 
   describe("dismiss()", () => {
     it("marks a single notification as dismissed", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         prNotificationsStore.add(makeNotification({ prNumber: 1 }));
         prNotificationsStore.add(makeNotification({ prNumber: 2 }));
 
@@ -97,12 +92,11 @@ describe("prNotificationsStore", () => {
         const active = prNotificationsStore.getActive();
         expect(active).toHaveLength(1);
         expect(active[0].id).toBe("/repo/path:2:ready");
-        dispose();
       });
     });
 
     it("does not affect other notifications", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         prNotificationsStore.add(makeNotification({ prNumber: 1 }));
         prNotificationsStore.add(makeNotification({ prNumber: 2 }));
         prNotificationsStore.add(makeNotification({ prNumber: 3 }));
@@ -111,43 +105,39 @@ describe("prNotificationsStore", () => {
         const active = prNotificationsStore.getActive();
         expect(active).toHaveLength(2);
         expect(active.map((n) => n.id)).not.toContain("/repo/path:2:ready");
-        dispose();
       });
     });
 
     it("is a no-op for unknown id", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         prNotificationsStore.add(makeNotification());
         prNotificationsStore.dismiss("unknown:id");
         expect(prNotificationsStore.getActive()).toHaveLength(1);
-        dispose();
       });
     });
   });
 
   describe("dismissAll()", () => {
     it("marks all active notifications as dismissed", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         prNotificationsStore.add(makeNotification({ prNumber: 1 }));
         prNotificationsStore.add(makeNotification({ prNumber: 2 }));
         prNotificationsStore.add(makeNotification({ prNumber: 3 }));
 
         prNotificationsStore.dismissAll();
         expect(prNotificationsStore.getActive()).toHaveLength(0);
-        dispose();
       });
     });
 
     it("is a no-op when no active notifications", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         prNotificationsStore.dismissAll();
         expect(prNotificationsStore.getActive()).toHaveLength(0);
-        dispose();
       });
     });
 
     it("does not remove already-dismissed notifications from internal list", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         prNotificationsStore.add(makeNotification({ prNumber: 1 }));
         prNotificationsStore.dismiss("/repo/path:1:ready");
         prNotificationsStore.add(makeNotification({ prNumber: 2 }));
@@ -156,14 +146,13 @@ describe("prNotificationsStore", () => {
         expect(prNotificationsStore.getActive()).toHaveLength(0);
         // Total state still has 2 entries (both dismissed)
         expect(prNotificationsStore.state.notifications).toHaveLength(2);
-        dispose();
       });
     });
   });
 
   describe("getActive()", () => {
     it("returns only non-dismissed notifications", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         prNotificationsStore.add(makeNotification({ prNumber: 1 }));
         prNotificationsStore.add(makeNotification({ prNumber: 2 }));
         prNotificationsStore.dismiss("/repo/path:1:ready");
@@ -171,23 +160,20 @@ describe("prNotificationsStore", () => {
         const active = prNotificationsStore.getActive();
         expect(active).toHaveLength(1);
         expect(active[0].id).toBe("/repo/path:2:ready");
-        dispose();
       });
     });
 
     it("returns empty array when all are dismissed", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         prNotificationsStore.add(makeNotification());
         prNotificationsStore.dismissAll();
         expect(prNotificationsStore.getActive()).toHaveLength(0);
-        dispose();
       });
     });
 
     it("returns empty array when store is empty", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         expect(prNotificationsStore.getActive()).toHaveLength(0);
-        dispose();
       });
     });
   });
@@ -203,7 +189,7 @@ describe("prNotificationsStore", () => {
     });
 
     it("increments focusedTimeMs each second when document is focused", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         vi.spyOn(document, "hasFocus").mockReturnValue(true);
         prNotificationsStore.add(makeNotification());
         prNotificationsStore.startFocusTimer();
@@ -211,12 +197,11 @@ describe("prNotificationsStore", () => {
         vi.advanceTimersByTime(3000);
         const active = prNotificationsStore.getActive();
         expect(active[0].focusedTimeMs).toBe(3000);
-        dispose();
       });
     });
 
     it("does not increment when document is not focused", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         vi.spyOn(document, "hasFocus").mockReturnValue(false);
         prNotificationsStore.add(makeNotification());
         prNotificationsStore.startFocusTimer();
@@ -224,12 +209,11 @@ describe("prNotificationsStore", () => {
         vi.advanceTimersByTime(5000);
         const active = prNotificationsStore.getActive();
         expect(active[0].focusedTimeMs).toBe(0);
-        dispose();
       });
     });
 
     it("auto-dismisses notifications after 5 minutes of focus time", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         vi.spyOn(document, "hasFocus").mockReturnValue(true);
         prNotificationsStore.add(makeNotification());
         prNotificationsStore.startFocusTimer();
@@ -237,12 +221,11 @@ describe("prNotificationsStore", () => {
         // Advance 5 minutes (300 ticks)
         vi.advanceTimersByTime(5 * 60 * 1000);
         expect(prNotificationsStore.getActive()).toHaveLength(0);
-        dispose();
       });
     });
 
     it("does not start a second timer if already running", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         vi.spyOn(document, "hasFocus").mockReturnValue(true);
         prNotificationsStore.add(makeNotification());
         prNotificationsStore.startFocusTimer();
@@ -251,12 +234,11 @@ describe("prNotificationsStore", () => {
         vi.advanceTimersByTime(1000);
         // If two timers ran, focusedTimeMs would be 2000; one timer gives 1000
         expect(prNotificationsStore.getActive()[0].focusedTimeMs).toBe(1000);
-        dispose();
       });
     });
 
     it("only auto-dismisses notifications that reached the threshold", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         vi.spyOn(document, "hasFocus").mockReturnValue(true);
         prNotificationsStore.add(makeNotification({ prNumber: 1 }));
         prNotificationsStore.startFocusTimer();
@@ -273,14 +255,13 @@ describe("prNotificationsStore", () => {
         const active = prNotificationsStore.getActive();
         expect(active).toHaveLength(1);
         expect(active[0].id).toBe("/repo/path:2:ready");
-        dispose();
       });
     });
   });
 
   describe("clearAll()", () => {
     it("removes all notifications including dismissed ones", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         prNotificationsStore.add(makeNotification({ prNumber: 1 }));
         prNotificationsStore.add(makeNotification({ prNumber: 2 }));
         prNotificationsStore.dismiss("/repo/path:1:ready");
@@ -288,7 +269,6 @@ describe("prNotificationsStore", () => {
         prNotificationsStore.clearAll();
         expect(prNotificationsStore.state.notifications).toHaveLength(0);
         expect(prNotificationsStore.getActive()).toHaveLength(0);
-        dispose();
       });
     });
   });

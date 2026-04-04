@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createRoot } from "solid-js";
 import "../mocks/tauri";
 import { mockInvoke } from "../mocks/tauri";
 import type { BranchPrStatus } from "../../types";
+import { testInScope, testInScopeAsync } from "../helpers/store";
 
 describe("githubStore", () => {
   let store: typeof import("../../stores/github").githubStore;
@@ -66,28 +66,26 @@ describe("githubStore", () => {
 
   describe("initialization", () => {
     it("starts with empty repos state", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         expect(store.state.repos).toEqual({});
-        dispose();
       });
     });
   });
 
   describe("updateRepoData()", () => {
     it("sets branch PR data for a repo", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const prData = [makePrStatus()];
         store.updateRepoData("/repo1", prData);
 
         expect(store.state.repos["/repo1"]).toBeDefined();
         expect(store.state.repos["/repo1"].branches["feature/x"]).toBeDefined();
         expect(store.state.repos["/repo1"].branches["feature/x"].number).toBe(42);
-        dispose();
       });
     });
 
     it("handles multiple branches in one repo", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const prData = [
           makePrStatus({ branch: "feature/x", number: 42 }),
           makePrStatus({ branch: "fix/y", number: 43 }),
@@ -97,12 +95,11 @@ describe("githubStore", () => {
         expect(Object.keys(store.state.repos["/repo1"].branches)).toHaveLength(2);
         expect(store.state.repos["/repo1"].branches["feature/x"].number).toBe(42);
         expect(store.state.repos["/repo1"].branches["fix/y"].number).toBe(43);
-        dispose();
       });
     });
 
     it("removes stale branches no longer in poll results", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         // First update adds two branches
         store.updateRepoData("/repo1", [
           makePrStatus({ branch: "feature/x" }),
@@ -117,55 +114,50 @@ describe("githubStore", () => {
         ]);
         expect(store.state.repos["/repo1"].branches["feature/x"]).toBeDefined();
         expect(store.state.repos["/repo1"].branches["feature/y"]).toBeUndefined();
-        dispose();
       });
     });
 
     it("updates lastPolled timestamp", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const before = Date.now();
         store.updateRepoData("/repo1", [makePrStatus()]);
         const after = Date.now();
 
         expect(store.state.repos["/repo1"].lastPolled).toBeGreaterThanOrEqual(before);
         expect(store.state.repos["/repo1"].lastPolled).toBeLessThanOrEqual(after);
-        dispose();
       });
     });
   });
 
   describe("getCheckSummary()", () => {
     it("returns check summary for known branch", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.updateRepoData("/repo1", [
           makePrStatus({ checks: { passed: 3, failed: 1, pending: 2, total: 6 } }),
         ]);
 
         const summary = store.getCheckSummary("/repo1", "feature/x");
         expect(summary).toEqual({ passed: 3, failed: 1, pending: 2, total: 6 });
-        dispose();
       });
     });
 
     it("returns null for unknown repo", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         expect(store.getCheckSummary("/unknown", "feature/x")).toBeNull();
-        dispose();
       });
     });
 
     it("returns null for unknown branch", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.updateRepoData("/repo1", [makePrStatus()]);
         expect(store.getCheckSummary("/repo1", "nonexistent")).toBeNull();
-        dispose();
       });
     });
   });
 
   describe("getPrStatus()", () => {
     it("returns PR status for known branch", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.updateRepoData("/repo1", [makePrStatus()]);
 
         const pr = store.getPrStatus("/repo1", "feature/x");
@@ -174,42 +166,38 @@ describe("githubStore", () => {
         expect(pr!.title).toBe("Add feature");
         expect(pr!.state).toBe("OPEN");
         expect(pr!.url).toBe("https://github.com/org/repo/pull/42");
-        dispose();
       });
     });
 
     it("returns null for unknown branches", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         expect(store.getPrStatus("/unknown", "feature/x")).toBeNull();
-        dispose();
       });
     });
   });
 
   describe("getCheckDetails()", () => {
     it("returns check details for known branch", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.updateRepoData("/repo1", [makePrStatus()]);
 
         const details = store.getCheckDetails("/repo1", "feature/x");
         expect(details).toHaveLength(2);
         expect(details[0].context).toBe("build");
         expect(details[1].context).toBe("test");
-        dispose();
       });
     });
 
     it("returns empty array for unknown branch", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         expect(store.getCheckDetails("/unknown", "feature/x")).toEqual([]);
-        dispose();
       });
     });
   });
 
   describe("getBranchPrData()", () => {
     it("returns full BranchPrStatus for known branch", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const pr = makePrStatus();
         store.updateRepoData("/repo1", [pr]);
 
@@ -219,14 +207,12 @@ describe("githubStore", () => {
         expect(data!.commits).toBe(3);
         expect(data!.additions).toBe(10);
         expect(data!.deletions).toBe(5);
-        dispose();
       });
     });
 
     it("returns null for unknown branch", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         expect(store.getBranchPrData("/repo1", "no-branch")).toBeNull();
-        dispose();
       });
     });
   });
@@ -254,38 +240,35 @@ describe("githubStore", () => {
     }
 
     it("emits 'merged' when OPEN → MERGED", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         transition({ state: "OPEN" }, { state: "MERGED" });
         const active = notifStore.getActive();
         expect(active).toHaveLength(1);
         expect(active[0].type).toBe("merged");
         expect(active[0].prNumber).toBe(42);
-        dispose();
       });
     });
 
     it("emits 'merged' when CLOSED → MERGED", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         transition({ state: "CLOSED" }, { state: "MERGED" });
         const active = notifStore.getActive();
         expect(active).toHaveLength(1);
         expect(active[0].type).toBe("merged");
-        dispose();
       });
     });
 
     it("emits 'closed' when OPEN → CLOSED", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         transition({ state: "OPEN" }, { state: "CLOSED" });
         const active = notifStore.getActive();
         expect(active).toHaveLength(1);
         expect(active[0].type).toBe("closed");
-        dispose();
       });
     });
 
     it("emits 'blocked' when mergeable becomes CONFLICTING on open PR", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         transition(
           { state: "OPEN", mergeable: "MERGEABLE" },
           { state: "OPEN", mergeable: "CONFLICTING" },
@@ -293,12 +276,11 @@ describe("githubStore", () => {
         const active = notifStore.getActive();
         expect(active).toHaveLength(1);
         expect(active[0].type).toBe("blocked");
-        dispose();
       });
     });
 
     it("emits 'ci_failed' when failed checks go from 0 to >0 on open PR", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         transition(
           { state: "OPEN", checks: { passed: 2, failed: 0, pending: 0, total: 2 } },
           { state: "OPEN", checks: { passed: 1, failed: 1, pending: 0, total: 2 } },
@@ -306,12 +288,11 @@ describe("githubStore", () => {
         const active = notifStore.getActive();
         expect(active).toHaveLength(1);
         expect(active[0].type).toBe("ci_failed");
-        dispose();
       });
     });
 
     it("emits 'changes_requested' when review_decision becomes CHANGES_REQUESTED", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         transition(
           { state: "OPEN", review_decision: "" },
           { state: "OPEN", review_decision: "CHANGES_REQUESTED" },
@@ -319,12 +300,11 @@ describe("githubStore", () => {
         const active = notifStore.getActive();
         expect(active).toHaveLength(1);
         expect(active[0].type).toBe("changes_requested");
-        dispose();
       });
     });
 
     it("emits 'ready' when PR becomes mergeable+approved+no-failures", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         // Old: mergeable but not approved, so not 'ready'
         transition(
           {
@@ -343,12 +323,11 @@ describe("githubStore", () => {
         const active = notifStore.getActive();
         expect(active).toHaveLength(1);
         expect(active[0].type).toBe("ready");
-        dispose();
       });
     });
 
     it("emits 'ready' when PR goes from conflicting to mergeable+approved", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         transition(
           {
             state: "OPEN",
@@ -366,12 +345,11 @@ describe("githubStore", () => {
         const active = notifStore.getActive();
         expect(active).toHaveLength(1);
         expect(active[0].type).toBe("ready");
-        dispose();
       });
     });
 
     it("emits 'ready' when CI failures are resolved and PR is otherwise ready", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         transition(
           {
             state: "OPEN",
@@ -389,51 +367,46 @@ describe("githubStore", () => {
         const active = notifStore.getActive();
         expect(active).toHaveLength(1);
         expect(active[0].type).toBe("ready");
-        dispose();
       });
     });
 
     it("does not emit when state is unchanged", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         transition({ state: "OPEN" }, { state: "OPEN" });
         expect(notifStore.getActive()).toHaveLength(0);
-        dispose();
       });
     });
 
     it("does not emit on first update (no prior data)", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         // Only one updateRepoData call — no prior data, no transitions
         store.updateRepoData("/repo1", [makePrStatus({ state: "MERGED" })]);
         expect(notifStore.getActive()).toHaveLength(0);
-        dispose();
       });
     });
 
     it("does not emit 'blocked' when already CONFLICTING", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         transition(
           { state: "OPEN", mergeable: "CONFLICTING" },
           { state: "OPEN", mergeable: "CONFLICTING" },
         );
         expect(notifStore.getActive()).toHaveLength(0);
-        dispose();
       });
     });
 
     it("does not emit 'ci_failed' when already had failures", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         transition(
           { state: "OPEN", checks: { passed: 1, failed: 1, pending: 0, total: 2 } },
           { state: "OPEN", checks: { passed: 0, failed: 2, pending: 0, total: 2 } },
         );
         expect(notifStore.getActive()).toHaveLength(0);
-        dispose();
       });
     });
 
     it("does not emit 'blocked' or other OPEN transitions for closed PRs", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         transition(
           { state: "OPEN", mergeable: "MERGEABLE" },
           { state: "CLOSED", mergeable: "CONFLICTING" },
@@ -442,12 +415,11 @@ describe("githubStore", () => {
         const active = notifStore.getActive();
         expect(active).toHaveLength(1);
         expect(active[0].type).toBe("closed");
-        dispose();
       });
     });
 
     it("includes correct branch and title in notification", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         transition(
           { state: "OPEN", branch: "my/feature", title: "My Feature PR" },
           { state: "MERGED", branch: "my/feature", title: "My Feature PR" },
@@ -456,34 +428,31 @@ describe("githubStore", () => {
         expect(active[0].branch).toBe("my/feature");
         expect(active[0].title).toBe("My Feature PR");
         expect(active[0].repoPath).toBe("/repo1");
-        dispose();
       });
     });
 
     it("fires prTerminal callback on merged transition", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const cb = vi.fn();
         store.setOnPrTerminal(cb);
         transition({ state: "OPEN" }, { state: "MERGED" });
         expect(cb).toHaveBeenCalledWith("/repo1", "feature/x", 42, "merged");
         store.setOnPrTerminal(null);
-        dispose();
       });
     });
 
     it("fires prTerminal callback on closed transition", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const cb = vi.fn();
         store.setOnPrTerminal(cb);
         transition({ state: "OPEN" }, { state: "CLOSED" });
         expect(cb).toHaveBeenCalledWith("/repo1", "feature/x", 42, "closed");
         store.setOnPrTerminal(null);
-        dispose();
       });
     });
 
     it("does NOT fire prTerminal callback on non-terminal transitions", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const cb = vi.fn();
         store.setOnPrTerminal(cb);
         transition(
@@ -492,7 +461,6 @@ describe("githubStore", () => {
         );
         expect(cb).not.toHaveBeenCalled();
         store.setOnPrTerminal(null);
-        dispose();
       });
     });
   });
@@ -513,7 +481,7 @@ describe("githubStore", () => {
         return Promise.resolve(null);
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         store.startPolling();
 
         // Flush the initial poll microtask
@@ -524,7 +492,6 @@ describe("githubStore", () => {
           includeMerged: true,
         });
         store.stopPolling();
-        dispose();
       });
     });
 
@@ -545,7 +512,7 @@ describe("githubStore", () => {
       }));
       store = (await import("../../stores/github")).githubStore;
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         store.startPolling();
         await vi.advanceTimersByTimeAsync(0);
 
@@ -554,7 +521,6 @@ describe("githubStore", () => {
           includeMerged: true,
         });
         store.stopPolling();
-        dispose();
       });
     });
 
@@ -565,7 +531,7 @@ describe("githubStore", () => {
         return Promise.resolve(null);
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         store.startPolling();
         await vi.advanceTimersByTimeAsync(0); // startup poll
 
@@ -582,7 +548,6 @@ describe("githubStore", () => {
         expect(subsequentCall?.[1]).toMatchObject({ includeMerged: false });
 
         store.stopPolling();
-        dispose();
       });
     });
 
@@ -594,7 +559,7 @@ describe("githubStore", () => {
         return Promise.resolve(null);
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         store.startPolling();
         await vi.advanceTimersByTimeAsync(0);
 
@@ -608,7 +573,6 @@ describe("githubStore", () => {
         );
         warnSpy.mockRestore();
         store.stopPolling();
-        dispose();
       });
     });
 
@@ -619,7 +583,7 @@ describe("githubStore", () => {
         return Promise.resolve(null);
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         store.startPolling();
         await vi.advanceTimersByTimeAsync(0);
 
@@ -630,7 +594,6 @@ describe("githubStore", () => {
         await vi.advanceTimersByTimeAsync(60000);
 
         expect(mockInvoke.mock.calls.length).toBe(callCount);
-        dispose();
       });
     });
 
@@ -641,7 +604,7 @@ describe("githubStore", () => {
         return Promise.resolve(null);
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         store.startPolling();
         await vi.advanceTimersByTimeAsync(0);
 
@@ -657,7 +620,6 @@ describe("githubStore", () => {
 
         store.stopPolling();
         Object.defineProperty(document, "hidden", { value: false, writable: true, configurable: true });
-        dispose();
       });
     });
 
@@ -668,7 +630,7 @@ describe("githubStore", () => {
         return Promise.resolve(null);
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         store.startPolling();
         await vi.advanceTimersByTimeAsync(0);
 
@@ -688,7 +650,6 @@ describe("githubStore", () => {
         expect(mockInvoke.mock.calls.length).toBeGreaterThan(callsWhileHidden);
 
         store.stopPolling();
-        dispose();
       });
     });
 
@@ -696,7 +657,7 @@ describe("githubStore", () => {
       mockGetPaths.mockReturnValue([]);
       mockInvoke.mockResolvedValue(null);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         store.startPolling();
         await vi.advanceTimersByTimeAsync(0);
 
@@ -704,7 +665,6 @@ describe("githubStore", () => {
         expect(mockInvoke).not.toHaveBeenCalled();
 
         store.stopPolling();
-        dispose();
       });
     });
 
@@ -716,7 +676,7 @@ describe("githubStore", () => {
         return Promise.resolve(null);
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         store.startPolling();
         await vi.advanceTimersByTimeAsync(0);
 
@@ -727,7 +687,6 @@ describe("githubStore", () => {
         expect(data!.state).toBe("OPEN");
 
         store.stopPolling();
-        dispose();
       });
     });
 
@@ -740,7 +699,7 @@ describe("githubStore", () => {
       });
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         store.startPolling();
 
         const batchCallCount = () =>
@@ -763,7 +722,6 @@ describe("githubStore", () => {
 
         warnSpy.mockRestore();
         store.stopPolling();
-        dispose();
       });
     });
 
@@ -775,7 +733,7 @@ describe("githubStore", () => {
         return Promise.resolve(null);
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         store.startPolling();
         await vi.advanceTimersByTimeAsync(0);
 
@@ -786,7 +744,6 @@ describe("githubStore", () => {
         expect(saved["/repo1"].branches["feat/x"]).toBeDefined();
 
         store.stopPolling();
-        dispose();
       });
     });
 
@@ -810,7 +767,7 @@ describe("githubStore", () => {
       notifStore = (await import("../../stores/prNotifications")).prNotificationsStore;
       notifStore.clearAll();
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         store.startPolling();
         await vi.advanceTimersByTimeAsync(0);
 
@@ -821,14 +778,13 @@ describe("githubStore", () => {
         expect(active[0].branch).toBe("feat/y");
 
         store.stopPolling();
-        dispose();
       });
     });
   });
 
   describe("getRemoteOnlyPrs()", () => {
     it("returns open PRs whose branch is not in the provided local branches set", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.updateRepoData("/repo1", [
           makePrStatus({ branch: "local-branch", state: "OPEN" }),
           makePrStatus({ branch: "remote-only-a", state: "OPEN", number: 1 }),
@@ -839,12 +795,11 @@ describe("githubStore", () => {
 
         expect(result).toHaveLength(2);
         expect(result.map((p) => p.branch)).toEqual(expect.arrayContaining(["remote-only-a", "remote-only-b"]));
-        dispose();
       });
     });
 
     it("excludes merged and closed PRs", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.updateRepoData("/repo1", [
           makePrStatus({ branch: "merged-remote", state: "MERGED", number: 1 }),
           makePrStatus({ branch: "closed-remote", state: "CLOSED", number: 2 }),
@@ -855,12 +810,11 @@ describe("githubStore", () => {
 
         expect(result).toHaveLength(1);
         expect(result[0].branch).toBe("open-remote");
-        dispose();
       });
     });
 
     it("returns empty array when all PRs have local branches", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.updateRepoData("/repo1", [
           makePrStatus({ branch: "branch-a", state: "OPEN" }),
           makePrStatus({ branch: "branch-b", state: "OPEN", number: 2 }),
@@ -869,15 +823,13 @@ describe("githubStore", () => {
         const result = store.getRemoteOnlyPrs("/repo1", new Set(["branch-a", "branch-b"]));
 
         expect(result).toHaveLength(0);
-        dispose();
       });
     });
 
     it("returns empty array for unknown repo", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const result = store.getRemoteOnlyPrs("/unknown-repo", new Set([]));
         expect(result).toHaveLength(0);
-        dispose();
       });
     });
   });

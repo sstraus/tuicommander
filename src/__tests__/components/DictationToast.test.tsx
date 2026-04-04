@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render } from "@solidjs/testing-library";
-import { createRoot } from "solid-js";
 
 // Must import mocks before store/component
 import { mockInvoke } from "../mocks/tauri";
+import { testInScopeAsync } from "../helpers/store";
 
 describe("DictationToast", () => {
   let DictationToast: typeof import("../../components/DictationToast/DictationToast").DictationToast;
@@ -28,7 +28,7 @@ describe("DictationToast", () => {
     // Mock start_dictation to succeed
     mockInvoke.mockResolvedValueOnce(undefined);
 
-    await createRoot(async (dispose) => {
+    await testInScopeAsync(async () => {
       const { container } = render(() => <DictationToast />);
 
       // Start recording (sets recording=true in store)
@@ -38,14 +38,13 @@ describe("DictationToast", () => {
       // Toast should still be hidden (no partial text yet)
       expect(container.querySelector(".toast")).toBeNull();
 
-      dispose();
     });
   });
 
   it("hides toast after recording stops", async () => {
     mockInvoke.mockResolvedValueOnce(undefined); // start_dictation
 
-    await createRoot(async (dispose) => {
+    await testInScopeAsync(async () => {
       render(() => <DictationToast />);
 
       await dictationStore.startRecording();
@@ -57,7 +56,6 @@ describe("DictationToast", () => {
 
       expect(dictationStore.state.recording).toBe(false);
       expect(dictationStore.state.partialText).toBe("");
-      dispose();
     });
   });
 });

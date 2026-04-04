@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mockInvoke } from "../mocks/tauri";
-import { createRoot } from "solid-js";
+import { testInScope, testInScopeAsync } from "../helpers/store";
 
 describe("dictationStore", () => {
   let store: typeof import("../../stores/dictation").dictationStore;
@@ -14,7 +14,7 @@ describe("dictationStore", () => {
 
   describe("defaults", () => {
     it("has correct default state", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         expect(store.state.enabled).toBe(false);
         expect(store.state.hotkey).toBe("F5");
         expect(store.state.language).toBe("auto");
@@ -27,7 +27,6 @@ describe("dictationStore", () => {
         expect(store.state.loading).toBe(false);
         expect(store.state.downloading).toBe(false);
         expect(store.state.downloadPercent).toBe(0);
-        dispose();
       });
     });
   });
@@ -42,7 +41,7 @@ describe("dictationStore", () => {
         device: "USB Microphone",
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.refreshConfig();
         expect(mockInvoke).toHaveBeenCalledWith("get_dictation_config");
         expect(store.state.enabled).toBe(true);
@@ -50,7 +49,6 @@ describe("dictationStore", () => {
         expect(store.state.language).toBe("en");
         expect(store.state.selectedModel).toBe("small");
         expect(store.state.selectedDevice).toBe("USB Microphone");
-        dispose();
       });
     });
 
@@ -61,10 +59,9 @@ describe("dictationStore", () => {
         language: "auto",
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.refreshConfig();
         expect(store.state.selectedModel).toBe("large-v3-turbo");
-        dispose();
       });
     });
 
@@ -76,10 +73,9 @@ describe("dictationStore", () => {
         model: "large-v3-turbo",
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.refreshConfig();
         expect(store.state.selectedDevice).toBeNull();
-        dispose();
       });
     });
   });
@@ -92,11 +88,10 @@ describe("dictationStore", () => {
       ];
       mockInvoke.mockResolvedValueOnce(mockModels);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.refreshModels();
         expect(mockInvoke).toHaveBeenCalledWith("get_model_info");
         expect(store.state.models).toEqual(mockModels);
-        dispose();
       });
     });
 
@@ -104,12 +99,11 @@ describe("dictationStore", () => {
       mockInvoke.mockRejectedValueOnce(new Error("backend down"));
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.refreshModels();
         expect(store.state.models).toEqual([]);
         expect(consoleSpy).toHaveBeenCalled();
         consoleSpy.mockRestore();
-        dispose();
       });
     });
   });
@@ -119,14 +113,13 @@ describe("dictationStore", () => {
       // First call: get_dictation_config returns current config
       mockInvoke.mockResolvedValueOnce(undefined); // set_dictation_config
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.setModel("small");
         expect(store.state.selectedModel).toBe("small");
         // saveConfig is called with model included
         expect(mockInvoke).toHaveBeenCalledWith("set_dictation_config", {
           config: expect.objectContaining({ model: "small" }),
         });
-        dispose();
       });
     });
   });
@@ -141,12 +134,11 @@ describe("dictationStore", () => {
       // Second call: get_model_info (from refreshModels)
       mockInvoke.mockResolvedValueOnce(mockModels);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.deleteModel("small");
         expect(mockInvoke).toHaveBeenCalledWith("delete_whisper_model", { modelName: "small" });
         expect(mockInvoke).toHaveBeenCalledWith("get_model_info");
         expect(store.state.models).toEqual(mockModels);
-        dispose();
       });
     });
 
@@ -154,11 +146,10 @@ describe("dictationStore", () => {
       mockInvoke.mockRejectedValueOnce(new Error("file locked"));
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.deleteModel("small");
         expect(consoleSpy).toHaveBeenCalled();
         consoleSpy.mockRestore();
-        dispose();
       });
     });
   });
@@ -176,11 +167,10 @@ describe("dictationStore", () => {
         })
         .mockResolvedValueOnce([]); // get_model_info (from refreshModels)
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.downloadModel("small");
         expect(mockInvoke).toHaveBeenCalledWith("download_whisper_model", { modelName: "small" });
         expect(store.state.downloading).toBe(false);
-        dispose();
       });
     });
 
@@ -196,10 +186,9 @@ describe("dictationStore", () => {
         })
         .mockResolvedValueOnce([]);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.downloadModel();
         expect(mockInvoke).toHaveBeenCalledWith("download_whisper_model", { modelName: "large-v3-turbo" });
-        dispose();
       });
     });
 
@@ -208,7 +197,7 @@ describe("dictationStore", () => {
       const downloadPromise = new Promise<string>((r) => { resolveDownload = r; });
       mockInvoke.mockReturnValueOnce(downloadPromise);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         const downloadTask = store.downloadModel("small");
         // downloading should be true while in progress
         expect(store.state.downloading).toBe(true);
@@ -227,7 +216,6 @@ describe("dictationStore", () => {
         await downloadTask;
 
         expect(store.state.downloading).toBe(false);
-        dispose();
       });
     });
   });
@@ -238,7 +226,7 @@ describe("dictationStore", () => {
       const startPromise = new Promise<void>((r) => { resolveStart = r; });
       mockInvoke.mockReturnValueOnce(startPromise);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         const task = store.startRecording();
         expect(store.state.loading).toBe(true);
         expect(store.state.recording).toBe(false);
@@ -248,7 +236,6 @@ describe("dictationStore", () => {
 
         expect(store.state.loading).toBe(false);
         expect(store.state.recording).toBe(true);
-        dispose();
       });
     });
 
@@ -256,12 +243,11 @@ describe("dictationStore", () => {
       mockInvoke.mockRejectedValueOnce(new Error("mic busy"));
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await expect(store.startRecording()).rejects.toThrow("mic busy");
         expect(store.state.loading).toBe(false);
         expect(store.state.recording).toBe(false);
         consoleSpy.mockRestore();
-        dispose();
       });
     });
   });
@@ -270,7 +256,7 @@ describe("dictationStore", () => {
     it("includes model and device in config when saving", async () => {
       mockInvoke.mockResolvedValueOnce(undefined);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.saveConfig({ language: "en" });
         expect(mockInvoke).toHaveBeenCalledWith("set_dictation_config", {
           config: expect.objectContaining({
@@ -279,7 +265,6 @@ describe("dictationStore", () => {
             device: null,
           }),
         });
-        dispose();
       });
     });
 
@@ -287,11 +272,10 @@ describe("dictationStore", () => {
       mockInvoke.mockRejectedValueOnce(new Error("disk full"));
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.saveConfig({ enabled: true });
         expect(consoleSpy).toHaveBeenCalledWith("[dictation]", expect.stringContaining("Failed to save"), expect.anything());
         consoleSpy.mockRestore();
-        dispose();
       });
     });
   });
@@ -301,12 +285,11 @@ describe("dictationStore", () => {
       mockInvoke.mockRejectedValueOnce(new Error("backend down"));
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.refreshConfig();
         expect(store.state.enabled).toBe(false); // unchanged
         expect(consoleSpy).toHaveBeenCalled();
         consoleSpy.mockRestore();
-        dispose();
       });
     });
   });
@@ -319,7 +302,7 @@ describe("dictationStore", () => {
         duration_s: 2.5,
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         const result = await store.stopRecording();
         expect(result).toEqual({
           text: "Hello world",
@@ -330,7 +313,6 @@ describe("dictationStore", () => {
         expect(store.state.processing).toBe(false);
         expect(store.state.partialText).toBe("");
         expect(mockInvoke).toHaveBeenCalledWith("stop_dictation_and_transcribe");
-        dispose();
       });
     });
 
@@ -338,13 +320,12 @@ describe("dictationStore", () => {
       mockInvoke.mockRejectedValueOnce(new Error("transcription failed"));
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         const result = await store.stopRecording();
         expect(result).toBeNull();
         expect(store.state.recording).toBe(false);
         expect(store.state.processing).toBe(false);
         consoleSpy.mockRestore();
-        dispose();
       });
     });
   });
@@ -353,11 +334,10 @@ describe("dictationStore", () => {
     it("returns injected text on success", async () => {
       mockInvoke.mockResolvedValueOnce("corrected text");
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         const result = await store.injectText("raw text");
         expect(result).toBe("corrected text");
         expect(mockInvoke).toHaveBeenCalledWith("inject_text", { text: "raw text" });
-        dispose();
       });
     });
 
@@ -365,11 +345,10 @@ describe("dictationStore", () => {
       mockInvoke.mockRejectedValueOnce(new Error("inject failed"));
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         const result = await store.injectText("raw text");
         expect(result).toBeNull();
         consoleSpy.mockRestore();
-        dispose();
       });
     });
   });
@@ -384,13 +363,12 @@ describe("dictationStore", () => {
         processing: false,
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.refreshStatus();
         expect(store.state.modelStatus).toBe("ready");
         expect(store.state.modelName).toBe("large-v3-turbo");
         expect(store.state.modelSizeMb).toBe(1620);
         expect(store.state.recording).toBe(true);
-        dispose();
       });
     });
 
@@ -398,11 +376,10 @@ describe("dictationStore", () => {
       mockInvoke.mockRejectedValueOnce(new Error("failed"));
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.refreshStatus();
         expect(store.state.modelStatus).toBe("not_downloaded"); // unchanged
         consoleSpy.mockRestore();
-        dispose();
       });
     });
   });
@@ -411,10 +388,9 @@ describe("dictationStore", () => {
     it("loads correction map from backend", async () => {
       mockInvoke.mockResolvedValueOnce({ hello: "hi", teh: "the" });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.refreshCorrections();
         expect(store.state.corrections).toEqual({ hello: "hi", teh: "the" });
-        dispose();
       });
     });
 
@@ -422,11 +398,10 @@ describe("dictationStore", () => {
       mockInvoke.mockRejectedValueOnce(new Error("failed"));
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.refreshCorrections();
         expect(store.state.corrections).toEqual({}); // unchanged
         consoleSpy.mockRestore();
-        dispose();
       });
     });
   });
@@ -435,11 +410,10 @@ describe("dictationStore", () => {
     it("saves corrections to backend", async () => {
       mockInvoke.mockResolvedValueOnce(undefined);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.saveCorrections({ foo: "bar" });
         expect(mockInvoke).toHaveBeenCalledWith("set_correction_map", { map: { foo: "bar" } });
         expect(store.state.corrections).toEqual({ foo: "bar" });
-        dispose();
       });
     });
 
@@ -447,11 +421,10 @@ describe("dictationStore", () => {
       mockInvoke.mockRejectedValueOnce(new Error("failed"));
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.saveCorrections({ foo: "bar" });
         expect(store.state.corrections).toEqual({}); // unchanged
         consoleSpy.mockRestore();
-        dispose();
       });
     });
   });
@@ -461,10 +434,9 @@ describe("dictationStore", () => {
       const devices = [{ name: "Default", is_default: true }];
       mockInvoke.mockResolvedValueOnce(devices);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.refreshDevices();
         expect(store.state.devices).toEqual(devices);
-        dispose();
       });
     });
 
@@ -472,11 +444,10 @@ describe("dictationStore", () => {
       mockInvoke.mockRejectedValueOnce(new Error("failed"));
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.refreshDevices();
         expect(store.state.devices).toEqual([]); // unchanged
         consoleSpy.mockRestore();
-        dispose();
       });
     });
   });
@@ -485,12 +456,11 @@ describe("dictationStore", () => {
     it("saves config with enabled flag", async () => {
       mockInvoke.mockResolvedValueOnce(undefined);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         store.setEnabled(true);
         expect(mockInvoke).toHaveBeenCalledWith("set_dictation_config",
           expect.objectContaining({ config: expect.objectContaining({ enabled: true }) }),
         );
-        dispose();
       });
     });
   });
@@ -499,24 +469,22 @@ describe("dictationStore", () => {
     it("saves config with new hotkey", async () => {
       mockInvoke.mockResolvedValueOnce(undefined);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         store.setHotkey("F8");
         expect(mockInvoke).toHaveBeenCalledWith("set_dictation_config",
           expect.objectContaining({ config: expect.objectContaining({ hotkey: "F8" }) }),
         );
-        dispose();
       });
     });
   });
 
   describe("setCapturingHotkey()", () => {
     it("sets capturing state", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.setCapturingHotkey(true);
         expect(store.state.capturingHotkey).toBe(true);
         store.setCapturingHotkey(false);
         expect(store.state.capturingHotkey).toBe(false);
-        dispose();
       });
     });
   });
@@ -525,12 +493,11 @@ describe("dictationStore", () => {
     it("saves config with new language", async () => {
       mockInvoke.mockResolvedValueOnce(undefined);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         store.setLanguage("fr");
         expect(mockInvoke).toHaveBeenCalledWith("set_dictation_config",
           expect.objectContaining({ config: expect.objectContaining({ language: "fr" }) }),
         );
-        dispose();
       });
     });
   });
@@ -539,24 +506,22 @@ describe("dictationStore", () => {
     it("saves config with specific device", async () => {
       mockInvoke.mockResolvedValueOnce(undefined);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         store.setDevice("USB Microphone");
         expect(mockInvoke).toHaveBeenCalledWith("set_dictation_config",
           expect.objectContaining({ config: expect.objectContaining({ device: "USB Microphone" }) }),
         );
-        dispose();
       });
     });
 
     it("saves null device to use system default", async () => {
       mockInvoke.mockResolvedValueOnce(undefined);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         store.setDevice(null);
         expect(mockInvoke).toHaveBeenCalledWith("set_dictation_config",
           expect.objectContaining({ config: expect.objectContaining({ device: null }) }),
         );
-        dispose();
       });
     });
   });
@@ -566,11 +531,10 @@ describe("dictationStore", () => {
       mockInvoke.mockRejectedValueOnce(new Error("download failed"));
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.downloadModel("small");
         expect(store.state.downloading).toBe(false);
         consoleSpy.mockRestore();
-        dispose();
       });
     });
   });

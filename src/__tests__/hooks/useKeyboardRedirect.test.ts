@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { createRoot } from "solid-js";
 import "../mocks/tauri";
 
 // Use vi.hoisted so these are available when the mock factory runs (vi.mock is hoisted)
@@ -15,7 +14,9 @@ vi.mock("../../stores/terminals", () => ({
   },
 }));
 
+import { createRoot } from "solid-js";
 import { useKeyboardRedirect } from "../../hooks/useKeyboardRedirect";
+import { testInScopeAsync } from "../helpers/store";
 
 /** Dispatch a keydown event on document */
 function dispatchKeydown(key: string, opts: Partial<KeyboardEvent> = {}): void {
@@ -68,7 +69,7 @@ describe("useKeyboardRedirect", () => {
 
   describe("printable character redirect", () => {
     it("redirects a printable character to the active terminal", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         useKeyboardRedirect();
         await flushEffects();
 
@@ -77,12 +78,11 @@ describe("useKeyboardRedirect", () => {
         expect(mockWrite).toHaveBeenCalledWith("a");
         expect(mockFocus).toHaveBeenCalled();
 
-        dispose();
       });
     });
 
     it("redirects uppercase letters", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         useKeyboardRedirect();
         await flushEffects();
 
@@ -90,12 +90,11 @@ describe("useKeyboardRedirect", () => {
 
         expect(mockWrite).toHaveBeenCalledWith("Z");
 
-        dispose();
       });
     });
 
     it("redirects space character", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         useKeyboardRedirect();
         await flushEffects();
 
@@ -103,14 +102,13 @@ describe("useKeyboardRedirect", () => {
 
         expect(mockWrite).toHaveBeenCalledWith(" ");
 
-        dispose();
       });
     });
   });
 
   describe("special keys", () => {
     it("redirects Backspace as DEL character", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         useKeyboardRedirect();
         await flushEffects();
 
@@ -118,12 +116,11 @@ describe("useKeyboardRedirect", () => {
 
         expect(mockWrite).toHaveBeenCalledWith("\x7f");
 
-        dispose();
       });
     });
 
     it("redirects Delete as escape sequence", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         useKeyboardRedirect();
         await flushEffects();
 
@@ -131,14 +128,13 @@ describe("useKeyboardRedirect", () => {
 
         expect(mockWrite).toHaveBeenCalledWith("\x1b[3~");
 
-        dispose();
       });
     });
   });
 
   describe("excluded keys", () => {
     it("does not redirect Tab", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         useKeyboardRedirect();
         await flushEffects();
 
@@ -146,12 +142,11 @@ describe("useKeyboardRedirect", () => {
 
         expect(mockWrite).not.toHaveBeenCalled();
 
-        dispose();
       });
     });
 
     it("does not redirect Escape", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         useKeyboardRedirect();
         await flushEffects();
 
@@ -159,12 +154,11 @@ describe("useKeyboardRedirect", () => {
 
         expect(mockWrite).not.toHaveBeenCalled();
 
-        dispose();
       });
     });
 
     it("does not redirect arrow keys", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         useKeyboardRedirect();
         await flushEffects();
 
@@ -175,12 +169,11 @@ describe("useKeyboardRedirect", () => {
 
         expect(mockWrite).not.toHaveBeenCalled();
 
-        dispose();
       });
     });
 
     it("does not redirect function keys", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         useKeyboardRedirect();
         await flushEffects();
 
@@ -189,12 +182,11 @@ describe("useKeyboardRedirect", () => {
 
         expect(mockWrite).not.toHaveBeenCalled();
 
-        dispose();
       });
     });
 
     it("does not redirect Enter", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         useKeyboardRedirect();
         await flushEffects();
 
@@ -202,14 +194,13 @@ describe("useKeyboardRedirect", () => {
 
         expect(mockWrite).not.toHaveBeenCalled();
 
-        dispose();
       });
     });
   });
 
   describe("modifier keys", () => {
     it("does not redirect when Ctrl is held", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         useKeyboardRedirect();
         await flushEffects();
 
@@ -217,12 +208,11 @@ describe("useKeyboardRedirect", () => {
 
         expect(mockWrite).not.toHaveBeenCalled();
 
-        dispose();
       });
     });
 
     it("does not redirect when Meta/Cmd is held", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         useKeyboardRedirect();
         await flushEffects();
 
@@ -230,12 +220,11 @@ describe("useKeyboardRedirect", () => {
 
         expect(mockWrite).not.toHaveBeenCalled();
 
-        dispose();
       });
     });
 
     it("does not redirect when Alt is held", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         useKeyboardRedirect();
         await flushEffects();
 
@@ -243,14 +232,13 @@ describe("useKeyboardRedirect", () => {
 
         expect(mockWrite).not.toHaveBeenCalled();
 
-        dispose();
       });
     });
   });
 
   describe("focus context", () => {
     it("does not redirect when focus is on an input element", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         useKeyboardRedirect();
         await flushEffects();
 
@@ -263,12 +251,11 @@ describe("useKeyboardRedirect", () => {
         expect(mockWrite).not.toHaveBeenCalled();
 
         document.body.removeChild(input);
-        dispose();
       });
     });
 
     it("does not redirect when focus is on a textarea", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         useKeyboardRedirect();
         await flushEffects();
 
@@ -281,12 +268,11 @@ describe("useKeyboardRedirect", () => {
         expect(mockWrite).not.toHaveBeenCalled();
 
         document.body.removeChild(textarea);
-        dispose();
       });
     });
 
     it("does not redirect when focus is on a select element", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         useKeyboardRedirect();
         await flushEffects();
 
@@ -299,12 +285,11 @@ describe("useKeyboardRedirect", () => {
         expect(mockWrite).not.toHaveBeenCalled();
 
         document.body.removeChild(select);
-        dispose();
       });
     });
 
     it("does not redirect when focus is inside a terminal pane", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         useKeyboardRedirect();
         await flushEffects();
 
@@ -321,12 +306,11 @@ describe("useKeyboardRedirect", () => {
         expect(mockWrite).not.toHaveBeenCalled();
 
         document.body.removeChild(terminalPane);
-        dispose();
       });
     });
 
     it("does not redirect when focus is inside an xterm element", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         useKeyboardRedirect();
         await flushEffects();
 
@@ -343,14 +327,13 @@ describe("useKeyboardRedirect", () => {
         expect(mockWrite).not.toHaveBeenCalled();
 
         document.body.removeChild(xterm);
-        dispose();
       });
     });
   });
 
   describe("no active terminal", () => {
     it("does not write when there is no active terminal", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         mockGetActive.mockReturnValue(undefined);
         useKeyboardRedirect();
         await flushEffects();
@@ -359,12 +342,11 @@ describe("useKeyboardRedirect", () => {
 
         expect(mockWrite).not.toHaveBeenCalled();
 
-        dispose();
       });
     });
 
     it("does not write when active terminal has no ref", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         mockGetActive.mockReturnValue({ id: "term-1", ref: undefined });
         useKeyboardRedirect();
         await flushEffects();
@@ -373,14 +355,13 @@ describe("useKeyboardRedirect", () => {
 
         expect(mockWrite).not.toHaveBeenCalled();
 
-        dispose();
       });
     });
   });
 
   describe("autoFocus parameter", () => {
     it("does not focus terminal when autoFocus is false", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         useKeyboardRedirect(false);
         await flushEffects();
 
@@ -389,7 +370,6 @@ describe("useKeyboardRedirect", () => {
         expect(mockWrite).toHaveBeenCalledWith("a");
         expect(mockFocus).not.toHaveBeenCalled();
 
-        dispose();
       });
     });
   });

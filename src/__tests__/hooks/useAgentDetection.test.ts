@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { createRoot } from "solid-js";
 import "../mocks/tauri";
 import { mockInvoke } from "../mocks/tauri";
 import { useAgentDetection } from "../../hooks/useAgentDetection";
+import { testInScope, testInScopeAsync } from "../helpers/store";
 
 describe("useAgentDetection", () => {
   beforeEach(() => {
@@ -21,7 +21,7 @@ describe("useAgentDetection", () => {
 
   describe("detectAll()", () => {
     it("detects all agents via single batch call", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         mockInvoke.mockResolvedValueOnce(
           batchResponse({ claude: "/bin/claude", opencode: "/bin/opencode", codex: "/bin/codex" }),
         );
@@ -42,14 +42,13 @@ describe("useAgentDetection", () => {
         expect(map.get("aider")?.available).toBe(false);
         expect(map.get("codex")?.available).toBe(true);
 
-        dispose();
       });
     });
   });
 
   describe("detectVersion()", () => {
     it("fetches version for an available agent", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         // First call: batch detection
         mockInvoke.mockResolvedValueOnce(batchResponse({ claude: "/bin/claude" }));
         // Second call: single detect_agent_binary for version
@@ -65,12 +64,11 @@ describe("useAgentDetection", () => {
         expect(getDetection("claude")?.version).toBe("1.2.3");
         expect(mockInvoke).toHaveBeenCalledWith("detect_agent_binary", { binary: "claude" });
 
-        dispose();
       });
     });
 
     it("skips version fetch for unavailable agents", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         mockInvoke.mockResolvedValueOnce(batchResponse());
 
         const { detectAll, detectVersion } = useAgentDetection();
@@ -80,14 +78,13 @@ describe("useAgentDetection", () => {
         // Only the batch call, no individual detect
         expect(mockInvoke).toHaveBeenCalledTimes(1);
 
-        dispose();
       });
     });
   });
 
   describe("getDetection()", () => {
     it("returns detection for a known type after detectAll", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         mockInvoke.mockResolvedValueOnce(batchResponse({ claude: "/bin/claude" }));
 
         const { detectAll, getDetection } = useAgentDetection();
@@ -98,22 +95,20 @@ describe("useAgentDetection", () => {
         expect(detection!.available).toBe(true);
         expect(detection!.path).toBe("/bin/claude");
 
-        dispose();
       });
     });
 
     it("returns undefined for unknown type before detection", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const { getDetection } = useAgentDetection();
         expect(getDetection("claude")).toBeUndefined();
-        dispose();
       });
     });
   });
 
   describe("isAvailable()", () => {
     it("returns true when agent is detected as available", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         mockInvoke.mockResolvedValueOnce(batchResponse({ claude: "/bin/claude" }));
 
         const { detectAll, isAvailable } = useAgentDetection();
@@ -121,12 +116,11 @@ describe("useAgentDetection", () => {
 
         expect(isAvailable("claude")).toBe(true);
 
-        dispose();
       });
     });
 
     it("returns false when agent is not available", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         mockInvoke.mockResolvedValueOnce(batchResponse());
 
         const { detectAll, isAvailable } = useAgentDetection();
@@ -134,22 +128,20 @@ describe("useAgentDetection", () => {
 
         expect(isAvailable("claude")).toBe(false);
 
-        dispose();
       });
     });
 
     it("returns false when no detection has been run", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const { isAvailable } = useAgentDetection();
         expect(isAvailable("claude")).toBe(false);
-        dispose();
       });
     });
   });
 
   describe("getAvailable()", () => {
     it("returns only available agents", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         mockInvoke.mockResolvedValueOnce(
           batchResponse({ claude: "/bin/claude", opencode: "/bin/opencode" }),
         );
@@ -162,12 +154,11 @@ describe("useAgentDetection", () => {
         expect(available.map((a) => a.type)).toContain("claude");
         expect(available.map((a) => a.type)).toContain("opencode");
 
-        dispose();
       });
     });
 
     it("returns empty array when no agents available", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         mockInvoke.mockResolvedValueOnce(batchResponse());
 
         const { detectAll, getAvailable } = useAgentDetection();
@@ -175,22 +166,20 @@ describe("useAgentDetection", () => {
 
         expect(getAvailable()).toHaveLength(0);
 
-        dispose();
       });
     });
   });
 
   describe("loading()", () => {
     it("is false initially", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const { loading } = useAgentDetection();
         expect(loading()).toBe(false);
-        dispose();
       });
     });
 
     it("is false after detectAll completes", async () => {
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         mockInvoke.mockResolvedValueOnce(batchResponse());
 
         const { detectAll, loading } = useAgentDetection();
@@ -198,7 +187,6 @@ describe("useAgentDetection", () => {
 
         expect(loading()).toBe(false);
 
-        dispose();
       });
     });
   });

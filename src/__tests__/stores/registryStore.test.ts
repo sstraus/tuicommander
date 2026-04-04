@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createRoot } from "solid-js";
+import { testInScope, testInScopeAsync } from "../helpers/store";
 
 const mockInvoke = vi.fn().mockResolvedValue([]);
 
@@ -45,9 +45,8 @@ describe("registryStore", () => {
 
   describe("hasUpdate()", () => {
     it("returns null when plugin is not in the registry", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         expect(store.hasUpdate("unknown-plugin", "1.0.0")).toBeNull();
-        dispose();
       });
     });
 
@@ -55,12 +54,11 @@ describe("registryStore", () => {
       const entry = makeEntry({ id: "my-plugin", latestVersion: "2.0.0" });
       mockInvoke.mockResolvedValueOnce([entry]);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.fetch();
         const result = store.hasUpdate("my-plugin", "1.0.0");
         expect(result).not.toBeNull();
         expect(result!.latestVersion).toBe("2.0.0");
-        dispose();
       });
     });
 
@@ -68,11 +66,10 @@ describe("registryStore", () => {
       const entry = makeEntry({ id: "my-plugin", latestVersion: "1.0.0" });
       mockInvoke.mockResolvedValueOnce([entry]);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.fetch();
         const result = store.hasUpdate("my-plugin", "1.0.0");
         expect(result).toBeNull();
-        dispose();
       });
     });
 
@@ -80,11 +77,10 @@ describe("registryStore", () => {
       const entry = makeEntry({ id: "my-plugin", latestVersion: "1.1.0" });
       mockInvoke.mockResolvedValueOnce([entry]);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.fetch();
         const result = store.hasUpdate("my-plugin", "1.0.0");
         expect(result).not.toBeNull();
-        dispose();
       });
     });
   });
@@ -94,11 +90,10 @@ describe("registryStore", () => {
       const entries = [makeEntry()];
       mockInvoke.mockResolvedValueOnce(entries);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.fetch();
         expect(mockInvoke).toHaveBeenCalledWith("fetch_plugin_registry");
         expect(store.state.entries).toHaveLength(1);
-        dispose();
       });
     });
 
@@ -106,14 +101,13 @@ describe("registryStore", () => {
       const entries = [makeEntry()];
       mockInvoke.mockResolvedValueOnce(entries);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.fetch();
         mockInvoke.mockClear();
 
         // Second call within the TTL window should not invoke again
         await store.fetch();
         expect(mockInvoke).not.toHaveBeenCalled();
-        dispose();
       });
     });
 
@@ -121,7 +115,7 @@ describe("registryStore", () => {
       const entries = [makeEntry()];
       mockInvoke.mockResolvedValue(entries);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.fetch();
         mockInvoke.mockClear();
 
@@ -130,7 +124,6 @@ describe("registryStore", () => {
 
         await store.fetch();
         expect(mockInvoke).toHaveBeenCalledWith("fetch_plugin_registry");
-        dispose();
       });
     });
 
@@ -139,7 +132,7 @@ describe("registryStore", () => {
       let resolve!: (v: unknown) => void;
       mockInvoke.mockReturnValueOnce(new Promise((r) => { resolve = r; }));
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         const fetchPromise = store.fetch();
 
         // At this point the promise is pending — loading should be true
@@ -150,18 +143,16 @@ describe("registryStore", () => {
 
         expect(seenLoading).toBe(true);
         expect(store.state.loading).toBe(false);
-        dispose();
       });
     });
 
     it("sets error state on fetch failure", async () => {
       mockInvoke.mockRejectedValueOnce(new Error("network error"));
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.fetch();
         expect(store.state.error).toContain("network error");
         expect(store.state.loading).toBe(false);
-        dispose();
       });
     });
   });
@@ -171,7 +162,7 @@ describe("registryStore", () => {
       let resolve!: (v: unknown) => void;
       mockInvoke.mockReturnValueOnce(new Promise((r) => { resolve = r; }));
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         const p1 = store.fetch();
         const p2 = store.fetch(); // concurrent call while first is loading
 
@@ -180,7 +171,6 @@ describe("registryStore", () => {
 
         // Only one backend call should have been made
         expect(mockInvoke).toHaveBeenCalledTimes(1);
-        dispose();
       });
     });
   });
@@ -190,13 +180,12 @@ describe("registryStore", () => {
       const entries = [makeEntry()];
       mockInvoke.mockResolvedValue(entries);
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.fetch(); // warm cache
         mockInvoke.mockClear();
 
         await store.refresh(); // should bypass TTL
         expect(mockInvoke).toHaveBeenCalledWith("fetch_plugin_registry");
-        dispose();
       });
     });
   });

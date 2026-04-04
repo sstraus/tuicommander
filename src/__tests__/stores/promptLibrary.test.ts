@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createRoot } from "solid-js";
+import { testInScope, testInScopeAsync } from "../helpers/store";
 
 const mockInvoke = vi.fn().mockResolvedValue(undefined);
 
@@ -29,7 +29,7 @@ describe("promptLibraryStore", () => {
 
   describe("createPrompt()", () => {
     it("creates a prompt with generated ID", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const prompt = store.createPrompt({
           name: "Test Prompt",
           content: "Hello {name}!",
@@ -39,12 +39,11 @@ describe("promptLibraryStore", () => {
         expect(prompt.id).toBeTruthy();
         expect(prompt.name).toBe("Test Prompt");
         expect(prompt.createdAt).toBeGreaterThan(0);
-        dispose();
       });
     });
 
     it("persists via invoke", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.createPrompt({
           name: "Test",
           content: "content",
@@ -59,14 +58,13 @@ describe("promptLibraryStore", () => {
             ]),
           }),
         });
-        dispose();
       });
     });
   });
 
   describe("updatePrompt()", () => {
     it("updates existing prompt", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const prompt = store.createPrompt({
           name: "Old Name",
           content: "content",
@@ -75,21 +73,19 @@ describe("promptLibraryStore", () => {
         });
         store.updatePrompt(prompt.id, { name: "New Name" });
         expect(store.getPrompt(prompt.id)?.name).toBe("New Name");
-        dispose();
       });
     });
 
     it("ignores updates for non-existent prompts", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.updatePrompt("nonexistent", { name: "Updated" }); // Should not throw
-        dispose();
       });
     });
   });
 
   describe("deletePrompt()", () => {
     it("deletes a prompt", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const prompt = store.createPrompt({
           name: "Test",
           content: "content",
@@ -98,14 +94,13 @@ describe("promptLibraryStore", () => {
         });
         store.deletePrompt(prompt.id);
         expect(store.getPrompt(prompt.id)).toBeUndefined();
-        dispose();
       });
     });
   });
 
   describe("toggleFavorite()", () => {
     it("toggles favorite status", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const prompt = store.createPrompt({
           name: "Test",
           content: "content",
@@ -116,14 +111,13 @@ describe("promptLibraryStore", () => {
         expect(store.getPrompt(prompt.id)?.isFavorite).toBe(true);
         store.toggleFavorite(prompt.id);
         expect(store.getPrompt(prompt.id)?.isFavorite).toBe(false);
-        dispose();
       });
     });
   });
 
   describe("markAsUsed()", () => {
     it("updates lastUsed timestamp", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const prompt = store.createPrompt({
           name: "Test",
           content: "content",
@@ -132,12 +126,11 @@ describe("promptLibraryStore", () => {
         });
         store.markAsUsed(prompt.id);
         expect(store.getPrompt(prompt.id)?.lastUsed).toBeGreaterThan(0);
-        dispose();
       });
     });
 
     it("adds to recent list", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         const prompt = store.createPrompt({
           name: "Test",
           content: "content",
@@ -146,18 +139,16 @@ describe("promptLibraryStore", () => {
         });
         store.markAsUsed(prompt.id);
         expect(store.state.recentIds).toContain(prompt.id);
-        dispose();
       });
     });
   });
 
   describe("getAllPrompts()", () => {
     it("returns all prompts as array", () => {
-      createRoot((dispose) => {
+      testInScope(() => {
         store.createPrompt({ name: "P1", content: "c1", category: "custom", isFavorite: false });
         store.createPrompt({ name: "P2", content: "c2", category: "custom", isFavorite: false });
         expect(store.getAllPrompts()).toHaveLength(2);
-        dispose();
       });
     });
   });
@@ -170,12 +161,11 @@ describe("promptLibraryStore", () => {
         ],
       });
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.hydrate();
         expect(store.getPrompt("p1")?.name).toBe("Test");
         expect(store.getPrompt("p1")?.content).toBe("content");
         expect(mockInvoke).toHaveBeenCalledWith("load_prompt_library");
-        dispose();
       });
     });
 
@@ -187,10 +177,9 @@ describe("promptLibraryStore", () => {
       mockInvoke.mockResolvedValueOnce(undefined); // save_prompt_library migration
       mockInvoke.mockResolvedValueOnce({ prompts: [] }); // load_prompt_library
 
-      await createRoot(async (dispose) => {
+      await testInScopeAsync(async () => {
         await store.hydrate();
         expect(localStorage.getItem("tui-commander-prompt-library")).toBeNull();
-        dispose();
       });
     });
   });
