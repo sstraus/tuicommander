@@ -506,3 +506,11 @@ Features to test when TUICommander is more usable.
 - [ ] Disable push → unsubscribes and removes server-side subscription
 - [ ] On HTTP (no HTTPS): shows "Push requires HTTPS" message
 - [ ] On iOS in browser (not home screen): shows "Add to Home Screen" message
+
+## Keepalive + Agent Detection Fix
+- [ ] Launch Claude Code, wait at prompt >5min idle → keepalive fires (check Activity Center stats)
+- [ ] Trigger "out of extra usage" → plugin shows "Rate limited" ticker, keepalives stop
+- [ ] Resume manually (type in terminal) → rate limit cleared, keepalives resume
+- [ ] Agent detection responds within ~1s of launch (not 3s)
+- [ ] Run git/npm inside Claude Code → no agent type flicker in tab bar
+- [ ] Status line ticking at idle prompt → shell-state transitions to idle within 3-4s
