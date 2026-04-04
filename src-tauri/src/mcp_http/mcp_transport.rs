@@ -491,7 +491,7 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
                 let buf = vt_log.lock();
                 let total = buf.total_lines();
                 let offset = total.saturating_sub(limit);
-                let (log_lines, _) = buf.lines_since_owned(offset);
+                let (log_lines, _) = buf.lines_since_owned(offset, limit);
                 let screen: Vec<String> = buf.screen_rows()
                     .into_iter()
                     .filter(|r| !r.is_empty())

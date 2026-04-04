@@ -39,24 +39,26 @@ export function OutputView(props: OutputViewProps) {
   async function fetchInitialOutput(): Promise<number> {
     try {
       const resp = await fetch(`/sessions/${props.sessionId}/output?format=log&limit=${INITIAL_FETCH_LIMIT}`);
-      if (resp.ok) {
-        const json = await resp.json() as { lines: unknown[]; total_lines: number; screen?: string[] };
-        if (json.lines && json.lines.length > 0) {
-          setLogLines(json.lines.slice(-MAX_LINES).map(normalizeLogLine));
-        }
-        if (json.screen && json.screen.length > 0) {
-          setScreenRows((json.screen as unknown[]).map(normalizeLogLine));
-        }
-        // Sync initial input_line from HTTP response
-        if (props.onInputLine) {
-          const il = (json as Record<string, unknown>).input_line;
-          props.onInputLine(typeof il === "string" ? il : null);
-        }
-        const total = json.total_lines ?? 0;
-        oldestLoadedOffset = Math.max(0, total - (json.lines?.length ?? 0));
-        scrollToBottom(true);
-        return total;
+      if (!resp.ok) {
+        appLogger.warn("terminal", "fetchInitialOutput non-ok response, will rely on WS", { status: resp.status });
+        return 0;
       }
+      const json = await resp.json() as { lines: unknown[]; total_lines: number; screen?: string[] };
+      if (json.lines && json.lines.length > 0) {
+        setLogLines(json.lines.map(normalizeLogLine));
+      }
+      if (json.screen && json.screen.length > 0) {
+        setScreenRows((json.screen as unknown[]).map(normalizeLogLine));
+      }
+      // Sync initial input_line from HTTP response
+      if (props.onInputLine) {
+        const il = (json as Record<string, unknown>).input_line;
+        props.onInputLine(typeof il === "string" ? il : null);
+      }
+      const total = json.total_lines ?? 0;
+      oldestLoadedOffset = Math.max(0, total - (json.lines?.length ?? 0));
+      scrollToBottom(true);
+      return total;
     } catch (err) {
       appLogger.warn("terminal", "fetchInitialOutput failed, will rely on WS catch-up", { error: err });
     }
@@ -73,22 +75,24 @@ export function OutputView(props: OutputViewProps) {
       const resp = await fetch(
         `/sessions/${props.sessionId}/output?format=log&offset=${fetchOffset}&limit=${fetchLimit}`,
       );
-      if (!resp.ok) return;
+      if (!resp.ok) {
+        appLogger.warn("terminal", "fetchOlderLines HTTP error", { status: resp.status });
+        oldestLoadedOffset = 0; // prevent retry storm
+        return;
+      }
       const json = await resp.json() as { lines: unknown[] };
       if (!json.lines || json.lines.length === 0) {
         oldestLoadedOffset = 0;
         return;
       }
       const older = json.lines.map(normalizeLogLine);
-      // Anchor viewport: save scroll position before prepend
+      // Anchor viewport: save height before prepend, offset scrollTop by delta after
       const prevHeight = containerEl?.scrollHeight ?? 0;
-      const prevTop = containerEl?.scrollTop ?? 0;
       setLogLines((prev) => [...older, ...prev].slice(-MAX_LINES));
       oldestLoadedOffset = fetchOffset;
-      // Restore scroll position after DOM update
       requestAnimationFrame(() => {
         if (containerEl) {
-          containerEl.scrollTop = prevTop + (containerEl.scrollHeight - prevHeight);
+          containerEl.scrollTop += containerEl.scrollHeight - prevHeight;
         }
       });
     } catch (err) {
@@ -100,6 +104,8 @@ export function OutputView(props: OutputViewProps) {
 
   // Touch inertia guard: while the user is actively touching, don't auto-scroll
   let touchActive = false;
+  const handleTouchStart = () => { touchActive = true; };
+  const handleTouchEnd = () => { touchActive = false; };
 
   function scrollToBottom(force = false) {
     if (!force && (userScrolledUp || touchActive)) return;
@@ -124,8 +130,8 @@ export function OutputView(props: OutputViewProps) {
 
   onMount(async () => {
     containerEl?.addEventListener("scroll", handleScroll, { passive: true });
-    containerEl?.addEventListener("touchstart", () => { touchActive = true; }, { passive: true });
-    containerEl?.addEventListener("touchend", () => { touchActive = false; }, { passive: true });
+    containerEl?.addEventListener("touchstart", handleTouchStart, { passive: true });
+    containerEl?.addEventListener("touchend", handleTouchEnd, { passive: true });
     const offset = await fetchInitialOutput();
 
     try {
@@ -164,6 +170,8 @@ export function OutputView(props: OutputViewProps) {
   onCleanup(() => {
     unsubscribe?.();
     containerEl?.removeEventListener("scroll", handleScroll);
+    containerEl?.removeEventListener("touchstart", handleTouchStart);
+    containerEl?.removeEventListener("touchend", handleTouchEnd);
   });
 
   const allLines = createMemo(() => [...logLines(), ...screenRows()]);

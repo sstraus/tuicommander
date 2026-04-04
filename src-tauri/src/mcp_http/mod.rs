@@ -571,6 +571,8 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/{*path}", get(static_files::serve_static))
         .with_state(state.clone())
         .layer(cors)
+        // DefaultPredicate auto-excludes SSE (text/event-stream) and WebSocket upgrades.
+        // Do NOT replace with a bare SizeAbove — it would break streaming endpoints.
         .layer(CompressionLayer::new()
             .compress_when(DefaultPredicate::new().and(SizeAbove::new(860))));
 

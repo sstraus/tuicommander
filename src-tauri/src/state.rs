@@ -1708,14 +1708,14 @@ impl VtLogBuffer {
         &self.log
     }
 
-    /// Returns log lines starting at `offset` (0-indexed from oldest retained line).
-    /// Also returns the new offset (= total lines so far) for incremental reads.
-    pub fn lines_since_owned(&self, offset: usize) -> (Vec<LogLine>, usize) {
+    /// Returns log lines starting at `offset` (0-indexed from oldest retained line),
+    /// up to `limit` lines. Also returns the new offset for incremental reads.
+    pub fn lines_since_owned(&self, offset: usize, limit: usize) -> (Vec<LogLine>, usize) {
         let total = self.log.len();
         if offset >= total {
             return (Vec::new(), total);
         }
-        let mut slice: Vec<LogLine> = self.log.iter().skip(offset).cloned().collect();
+        let mut slice: Vec<LogLine> = self.log.iter().skip(offset).take(limit).cloned().collect();
         for line in &mut slice {
             line.strip_structural_tokens();
         }
@@ -3082,11 +3082,11 @@ mod tests {
         let total = buf.total_lines();
         assert!(total > 0, "should have some finalized lines");
         // First fetch: all lines
-        let (batch1, off1) = buf.lines_since_owned(0);
+        let (batch1, off1) = buf.lines_since_owned(0, usize::MAX);
         assert_eq!(batch1.len(), total);
         assert_eq!(off1, total);
         // Second fetch: nothing new
-        let (batch2, off2) = buf.lines_since_owned(off1);
+        let (batch2, off2) = buf.lines_since_owned(off1, usize::MAX);
         assert!(batch2.is_empty());
         assert_eq!(off2, total);
     }
@@ -3104,7 +3104,7 @@ mod tests {
         assert!(buf.lines().len() <= 10, "should be capped at 10");
         let total = buf.total_lines();
         // Fetch all — should return only the retained lines
-        let (batch, off) = buf.lines_since_owned(0);
+        let (batch, off) = buf.lines_since_owned(0, usize::MAX);
         assert_eq!(batch.len(), buf.lines().len());
         assert_eq!(off, total);
         // The retained lines should be the newest ones
@@ -3112,7 +3112,7 @@ mod tests {
             assert!(line.text().starts_with("rot-"), "unexpected line: {:?}", line.text());
         }
         // Fetch with an offset past the end — empty
-        let (empty, off2) = buf.lines_since_owned(off);
+        let (empty, off2) = buf.lines_since_owned(off, usize::MAX);
         assert!(empty.is_empty());
         assert_eq!(off2, off);
     }

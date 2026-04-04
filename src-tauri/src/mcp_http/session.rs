@@ -171,8 +171,7 @@ pub(super) async fn get_output(
             Some(o) => o.min(total),
             None => total.saturating_sub(limit),
         };
-        let (mut lines, _) = buf.lines_since_owned(offset);
-        lines.truncate(limit);
+        let (lines, _) = buf.lines_since_owned(offset, limit);
         let trim = trim_screen_chrome(buf.screen_rows());
         // Get styled screen rows, trimmed to same cutoff
         let styled = buf.screen_log_lines();
@@ -199,7 +198,7 @@ pub(super) async fn get_output(
         let limit = query.limit.unwrap_or(usize::MAX);
         let total = buf.total_lines();
         let offset = total.saturating_sub(limit);
-        let (log_lines, _) = buf.lines_since_owned(offset);
+        let (log_lines, _) = buf.lines_since_owned(offset, limit);
         // Append current visible screen rows (non-empty) after the log
         let screen: Vec<String> = buf.screen_rows()
             .into_iter()
@@ -713,7 +712,7 @@ async fn handle_ws_log_session(
                 let buf = vt_log.lock();
                 let total = buf.total_lines();
                 let frame = if total > skip_offset {
-                    let (lines, _) = buf.lines_since_owned(skip_offset);
+                    let (lines, _) = buf.lines_since_owned(skip_offset, usize::MAX);
                     if !lines.is_empty() {
                         Some(serde_json::json!({"type": "log", "lines": lines, "offset": skip_offset}).to_string())
                     } else {
@@ -813,7 +812,7 @@ async fn handle_ws_log_session(
                 };
                 let (lines, new_offset, screen_lines, input_line) = {
                     let buf = vt_log.lock();
-                    let (l, o) = buf.lines_since_owned(offset);
+                    let (l, o) = buf.lines_since_owned(offset, usize::MAX);
                     let trim = trim_screen_chrome(buf.screen_rows());
                     let styled = buf.screen_log_lines();
                     let trimmed_styled: Vec<_> = styled.into_iter().take(trim.cutoff).collect();
