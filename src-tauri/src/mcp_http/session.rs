@@ -167,8 +167,12 @@ pub(super) async fn get_output(
         let buf = vt_log.lock();
         let limit = query.limit.unwrap_or(usize::MAX);
         let total = buf.total_lines();
-        let offset = total.saturating_sub(limit);
-        let (lines, _) = buf.lines_since_owned(offset);
+        let offset = match query.offset {
+            Some(o) => o.min(total),
+            None => total.saturating_sub(limit),
+        };
+        let (mut lines, _) = buf.lines_since_owned(offset);
+        lines.truncate(limit);
         let trim = trim_screen_chrome(buf.screen_rows());
         // Get styled screen rows, trimmed to same cutoff
         let styled = buf.screen_log_lines();
