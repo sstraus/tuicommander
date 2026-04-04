@@ -493,12 +493,16 @@ export const Terminal: Component<TerminalProps> = (props) => {
               );
             }
             // Idle: detect agent immediately (foreground process is stable)
-            detectAgentForTerminal(props.id).catch(() => {});
+            detectAgentForTerminal(props.id).catch((err) =>
+              appLogger.warn("terminal", "[AgentDetect] unexpected error", { error: String(err), termId: props.id }),
+            );
           } else {
             // Busy: detect agent after 500ms debounce (agent needs time to start)
             clearTimeout(agentDetectTimer);
             agentDetectTimer = setTimeout(() => {
-              detectAgentForTerminal(props.id).catch(() => {});
+              detectAgentForTerminal(props.id).catch((err) =>
+              appLogger.warn("terminal", "[AgentDetect] unexpected error", { error: String(err), termId: props.id }),
+            );
             }, 500);
           }
           break;

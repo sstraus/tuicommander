@@ -3134,6 +3134,24 @@ mod tests {
         assert_eq!(off2, off);
     }
 
+    #[test]
+    fn test_vt_log_lines_since_owned_evicted_offset_clamped() {
+        let mut buf = VtLogBuffer::new(24, 80, 10);
+        for i in 0..40 {
+            buf.process(format!("rot-{i}\r\n").as_bytes());
+        }
+        let oldest = buf.oldest_offset();
+        assert!(oldest > 0, "some lines must have been evicted");
+        // Request from an offset in the evicted range — should clamp to oldest
+        let evicted_offset = oldest.saturating_sub(5);
+        let (batch, off) = buf.lines_since_owned(evicted_offset, usize::MAX);
+        assert_eq!(batch.len(), buf.lines().len());
+        assert_eq!(off, buf.total_lines());
+        for line in &batch {
+            assert!(line.text().starts_with("rot-"), "unexpected line: {:?}", line.text());
+        }
+    }
+
     /// Feed data in small incremental chunks (simulating real PTY reads that
     /// may split mid-line) and verify lines are still extracted.
     ///

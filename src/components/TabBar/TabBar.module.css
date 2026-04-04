@@ -194,8 +194,10 @@
   }
 }
 
-.tabClose:hover {
-  color: var(--fg-default);
+@media (hover: hover) {
+  .tabClose:hover {
+    color: var(--fg-default);
+  }
 }
 
 .newBtn {
