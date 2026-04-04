@@ -981,54 +981,59 @@ fn parse_plan_file(clean: &str) -> Option<ParsedEvent> {
     None
 }
 
-/// Colorize intent tokens dim yellow: `[[intent: text(title)]]` → `\e[2;33mintent: text\e[0m`.
+/// Colorize intent/action tokens dim yellow.
+/// Handles both bracket syntax (`[[intent: text(title)]]`) and plain prefix (`intent: text (Title)`).
 /// Operates on raw PTY text via replace_all — only the matched token span is replaced,
 /// preserving surrounding cursor movements (CUU/CUD) that position the text on screen.
 /// ANSI codes within the body are stripped so our dim-yellow SGR is not interrupted
 /// by embedded resets or color changes from the agent's Ink renderer.
-/// Brackets and the optional `(title)` suffix are stripped.
+/// Brackets and the optional `(title)` suffix are stripped from display.
 pub fn colorize_intent(raw: &str) -> String {
     lazy_static::lazy_static! {
-        static ref INTENT_REPLACE_RE: regex::Regex = {
-            // Any CSI sequence that may appear between structural elements
+        // Bracket syntax: `[intent: text(title)]` or `[[intent: text(title)]]` or `⟦intent: text(title)⟧`
+        static ref INTENT_BRACKET_RE: regex::Regex = {
             let c = r"(?:\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e])*";
-            // Use [ \t] (horizontal whitespace) instead of \s to avoid matching
-            // \r or \n — Ink emits \r\x1b[1B (CR + cursor-down) between lines,
-            // and \s*{C} would consume that sequence, eating the line break.
             regex::Regex::new(&format!(
                 r"(?:\[\[?|\x{{27E6}}){C}intent:[ \t]*(.+?)(?:[ \t]*\([^)\r\n]*\))?[ \t]*{C}(?:\]?\]|\x{{27E7}})",
                 C = c
             )).unwrap()
         };
-        // CUF (cursor forward) sequences end with 'C' — used by Ink as inter-word
-        // spacing. Convert to spaces so words don't merge after stripping.
+        // Plain prefix: `intent: text (Title)` or `action: text` at start of line
+        static ref INTENT_PLAIN_RE: regex::Regex =
+            regex::Regex::new(r"(?m)^(intent|action):[ \t]+(.+?)(?:[ \t]+\([^)\r\n]*\))?[ \t]*$").unwrap();
+        // CUF (cursor forward) sequences — used by Ink as inter-word spacing
         static ref CUF_RE: regex::Regex =
             regex::Regex::new(r"\x1b\[(\d*)C").unwrap();
-        // All CSI sequences: SGR (color), CUU/CUD/CUB (cursor movement), ED/EL
-        // (erase), and any other CSI.  Ink scatters cursor-movement sequences
-        // (CUU \x1b[A, CUD \x1b[B, CPL \x1b[F …) inside the intent body during
-        // re-renders.  If we only stripped SGR, these movements would survive into
-        // the replacement text and xterm.js would position characters on wrong rows,
-        // producing the "scattered letters" layout corruption.
+        // All CSI sequences for stripping
         static ref CSI_RE: regex::Regex =
             regex::Regex::new(r"\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]").unwrap();
     }
-    INTENT_REPLACE_RE.replace_all(raw, |caps: &regex::Captures| {
-        let body_raw = &caps[1];
-        // Convert CUF (cursor forward) to equivalent spaces first,
-        // before the blanket CSI strip removes them entirely.
+
+    // Helper: clean body text from ANSI codes and format as dim yellow
+    let colorize_body = |keyword: &str, body_raw: &str| -> String {
         let body = CUF_RE.replace_all(body_raw, |cuf: &regex::Captures| {
             let n: usize = cuf.get(1)
                 .and_then(|m| m.as_str().parse().ok())
                 .unwrap_or(1);
             " ".repeat(n)
         });
-        // Strip ALL CSI sequences (SGR, cursor movements, erase, etc.)
-        // so our dim-yellow is uninterrupted and no stray cursor commands leak.
         let body_clean = CSI_RE.replace_all(&body, "");
         let body_trimmed = body_clean.trim();
-        format!("\x1b[2;33mintent: {}\x1b[0m", body_trimmed)
-    }).into_owned()
+        format!("\x1b[2;33m{}: {}\x1b[0m", keyword, body_trimmed)
+    };
+
+    // Apply bracket syntax first (more specific, avoids double-matching)
+    let result = INTENT_BRACKET_RE.replace_all(raw, |caps: &regex::Captures| {
+        colorize_body("intent", &caps[1])
+    });
+
+    // Then apply plain prefix
+    let result = INTENT_PLAIN_RE.replace_all(&result, |caps: &regex::Captures| {
+        let keyword = &caps[1]; // "intent" or "action"
+        colorize_body(keyword, &caps[2])
+    });
+
+    result.into_owned()
 }
 
 /// Hide `[[suggest: ...]]` tokens from the xterm stream by wrapping them in SGR
@@ -1044,42 +1049,50 @@ pub fn colorize_intent(raw: &str) -> String {
 /// partial ANSI codes mid-token.
 pub fn conceal_suggest(raw: &str) -> String {
     lazy_static::lazy_static! {
-        static ref SUGGEST_CONCEAL_RE: regex::Regex = {
+        // Bracket syntax: `[suggest: ...]`, `[[suggest: ...]]`, `⟦suggest: ...⟧`
+        static ref SUGGEST_BRACKET_RE: regex::Regex = {
             let c = r"(?:\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e])*";
             regex::Regex::new(&format!(
                 r"(?:\[\[?|\x{{27E6}}){C}suggest:\s*[^\]\x{{27E7}}]+?\s*{C}(?:\]?\]|\x{{27E7}})",
                 C = c
             )).unwrap()
         };
+        // Plain prefix: `suggest: ...` at start of line
+        static ref SUGGEST_PLAIN_RE: regex::Regex =
+            regex::Regex::new(r"(?m)^suggest:[ \t]+.+$").unwrap();
         static ref ANSI_RE: regex::Regex =
             regex::Regex::new(r"\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]").unwrap();
     }
-    // Check if the token is the only visible content on its line — if so, erase the
-    // whole line instead of leaving a blank row.  We look at the text between the
-    // preceding newline (or start) and the following newline (or end).
-    let replaced = SUGGEST_CONCEAL_RE.replace_all(raw, |caps: &regex::Captures| {
-        let m = caps.get(0).unwrap();
-        let before = &raw[..m.start()];
-        let after = &raw[m.end()..];
 
-        // Text on the same line before the token (after last \n)
+    // Shared concealment logic: erase line if token is alone, else replace with spaces
+    let conceal = |raw_ref: &str, m_start: usize, m_end: usize, matched: &str| -> String {
+        let before = &raw_ref[..m_start];
+        let after = &raw_ref[m_end..];
         let line_prefix = before.rsplit_once('\n').map_or(before, |(_, r)| r);
-        // Text on the same line after the token (before next \n)
         let line_suffix = after.split_once('\n').map_or(after, |(l, _)| l);
-
         let prefix_visible = ANSI_RE.replace_all(line_prefix, "");
         let suffix_visible = ANSI_RE.replace_all(line_suffix, "");
-
         if prefix_visible.trim().is_empty() && suffix_visible.trim().is_empty() {
-            // Token is alone on the line — erase line + cursor up to remove the blank row
             "\x1b[2K\x1b[A".to_string()
         } else {
-            // Token shares a line with other content — replace with spaces
-            let visible_len = ANSI_RE.replace_all(&caps[0], "").chars().count();
+            let visible_len = ANSI_RE.replace_all(matched, "").chars().count();
             " ".repeat(visible_len)
         }
+    };
+
+    // Apply bracket concealment first
+    let result = SUGGEST_BRACKET_RE.replace_all(raw, |caps: &regex::Captures| {
+        let m = caps.get(0).unwrap();
+        conceal(raw, m.start(), m.end(), &caps[0])
     });
-    replaced.into_owned()
+
+    // Then apply plain-prefix concealment
+    let result_owned = result.into_owned();
+    let result2 = SUGGEST_PLAIN_RE.replace_all(&result_owned, |caps: &regex::Captures| {
+        let m = caps.get(0).unwrap();
+        conceal(&result_owned, m.start(), m.end(), &caps[0])
+    });
+    result2.into_owned()
 }
 
 /// Detect agent-declared intent tokens in two formats:
@@ -2867,6 +2880,57 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     fn test_colorize_intent_no_match_unchanged() {
         let raw = "Normal terminal output with no intent";
         assert_eq!(colorize_intent(raw), raw);
+    }
+
+    // --- Plain-prefix colorize/conceal tests ---
+
+    #[test]
+    fn test_colorize_intent_plain_prefix() {
+        let raw = "intent: reading the config file";
+        let colored = colorize_intent(raw);
+        assert_eq!(colored, "\x1b[2;33mintent: reading the config file\x1b[0m");
+    }
+
+    #[test]
+    fn test_colorize_intent_plain_prefix_with_title() {
+        let raw = "intent: analyzing code (Analysis)";
+        let colored = colorize_intent(raw);
+        assert_eq!(colored, "\x1b[2;33mintent: analyzing code\x1b[0m");
+    }
+
+    #[test]
+    fn test_colorize_action_plain_prefix() {
+        let raw = "action: running pytest suite";
+        let colored = colorize_intent(raw);
+        assert_eq!(colored, "\x1b[2;33maction: running pytest suite\x1b[0m");
+    }
+
+    #[test]
+    fn test_colorize_plain_prefix_in_multiline() {
+        let raw = "some output\nintent: debugging login\nmore output";
+        let colored = colorize_intent(raw);
+        assert_eq!(colored, "some output\n\x1b[2;33mintent: debugging login\x1b[0m\nmore output");
+    }
+
+    #[test]
+    fn test_colorize_plain_prefix_indented_no_change() {
+        let raw = "  intent: indented should not match";
+        assert_eq!(colorize_intent(raw), raw);
+    }
+
+    #[test]
+    fn test_conceal_suggest_plain_prefix() {
+        let raw = "suggest: Run tests | Check logs | Push changes";
+        let out = conceal_suggest(raw);
+        assert!(!out.contains("suggest:"), "plain-prefix suggest should be concealed");
+        assert_eq!(out, "\x1b[2K\x1b[A", "alone on line → erase line");
+    }
+
+    #[test]
+    fn test_conceal_suggest_plain_prefix_in_multiline() {
+        let raw = "some output\nsuggest: A | B | C\nmore output";
+        let out = conceal_suggest(raw);
+        assert!(!out.contains("suggest:"), "plain-prefix suggest should be concealed in multiline");
     }
 
     // ---- False positive regression tests ----
