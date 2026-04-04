@@ -476,6 +476,16 @@ function createPaneLayoutStore() {
       return tree ? allLeafIds(tree) : [];
     },
 
+    /** Find which group contains a given tab ID, or null if not found */
+    getGroupForTab(tabId: string): string | null {
+      treeRevision(); // subscribe
+      for (const groupId of (tree ? allLeafIds(tree) : [])) {
+        const group = state.groups[groupId];
+        if (group?.tabs.some(t => t.id === tabId)) return groupId;
+      }
+      return null;
+    },
+
     /** Serialize layout for persistence (JSON-safe, no proxies involved) */
     serialize(): PaneLayoutState {
       // tree is plain JS, groups need to be cloned from SolidJS store

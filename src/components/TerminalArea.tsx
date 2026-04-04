@@ -53,10 +53,6 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
     <div id="terminal-container">
       <div
         id="terminal-panes"
-        classList={{
-          "split-vertical": !paneLayoutStore.isSplit() && terminalsStore.state.layout.direction === "vertical",
-          "split-horizontal": !paneLayoutStore.isSplit() && terminalsStore.state.layout.direction === "horizontal",
-        }}
         ref={attachTo}
         onContextMenu={props.onContextMenu}
       >

@@ -71,14 +71,8 @@ function collectTerminalSnapshots(): Map<string, Map<string, SavedTerminal[]>> {
         const branchMap = snapshots.get(repoPath);
         if (branchMap) branchMap.set(branchName, saved);
 
-        // Persist split layout if the current layout panes belong to this branch
-        const layout = terminalsStore.state.layout;
-        if (layout.direction !== "none" && layout.panes.length > 1 &&
-          layout.panes.every((pid) => branch.terminals.includes(pid))) {
-          repositoriesStore.setBranch(repoPath, branchName, { layout: { ...layout } });
-        } else {
-          repositoriesStore.setBranch(repoPath, branchName, { layout: undefined });
-        }
+        // Layout persistence is handled by paneLayoutStore (Story #1054)
+        repositoriesStore.setBranch(repoPath, branchName, { layout: undefined });
       }
     }
   }

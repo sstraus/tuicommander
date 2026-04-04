@@ -8,6 +8,7 @@ import { settingsStore } from "../stores/settings";
 import { appLogger } from "../stores/appLogger";
 import { filterValidTerminals } from "../utils/terminalFilter";
 import { assignTabToActiveGroup } from "../utils/paneTabAssign";
+import { paneLayoutStore } from "../stores/paneLayout";
 import { invoke } from "../invoke";
 
 const MIN_FONT_SIZE = 8;
@@ -148,15 +149,20 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
       }
     }
 
-    // Collapse split layout if closing a pane that belongs to a split
-    const layout = terminalsStore.state.layout;
-    const splitIndex = layout.direction !== "none" ? layout.panes.indexOf(id) : -1;
+    // Remove terminal tab from its pane group (if any)
     let survivorId: string | null = null;
-    if (splitIndex !== -1 && layout.panes.length > 1) {
-      terminalsStore.closeSplitPane(splitIndex);
-      // After closing, the survivor is the new active pane (or first pane if collapsed)
-      const newLayout = terminalsStore.state.layout;
-      survivorId = newLayout.panes[Math.min(splitIndex, newLayout.panes.length - 1)] ?? newLayout.panes[0] ?? null;
+    const containingGroup = paneLayoutStore.getGroupForTab(id);
+    if (containingGroup) {
+      paneLayoutStore.removeTab(containingGroup, id);
+      // If group is now empty, close the pane
+      const updated = paneLayoutStore.state.groups[containingGroup];
+      if (!updated || updated.tabs.length === 0) {
+        paneLayoutStore.closePane(containingGroup);
+      }
+      // Find survivor terminal in the active group
+      const activeGroup = paneLayoutStore.getActiveGroup();
+      const termTab = activeGroup?.tabs.find(t => t.type === "terminal");
+      if (termTab) survivorId = termTab.id;
     }
 
     const activeRepo = repositoriesStore.getActive();
@@ -351,22 +357,43 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
     terminalsStore.setActive(id);
   };
 
+  /** Activate or adopt a tab into a pane group when split is on */
+  const activateInPaneGroup = (id: string, type: "terminal" | "markdown" | "diff" | "editor") => {
+    if (!paneLayoutStore.isSplit()) return;
+    const groupId = paneLayoutStore.getGroupForTab(id);
+    if (groupId) {
+      paneLayoutStore.setActiveGroup(groupId);
+      paneLayoutStore.setActiveTab(groupId, id);
+    } else {
+      // Orphan tab — adopt into active group
+      const activeGroupId = paneLayoutStore.state.activeGroupId;
+      if (activeGroupId) {
+        paneLayoutStore.addTab(activeGroupId, { id, type });
+      } else {
+        appLogger.warn("app", "activateInPaneGroup: no active group to adopt orphan tab", { id, type });
+      }
+    }
+  };
+
   const handleTerminalSelect = (id: string) => {
     if (id.startsWith("diff-")) {
       diffTabsStore.setActive(id);
       mdTabsStore.setActive(null);
       editorTabsStore.setActive(null);
       terminalsStore.setActive(null);
+      activateInPaneGroup(id, "diff");
     } else if (id.startsWith("md-")) {
       mdTabsStore.setActive(id);
       diffTabsStore.setActive(null);
       editorTabsStore.setActive(null);
       terminalsStore.setActive(null);
+      activateInPaneGroup(id, "markdown");
     } else if (id.startsWith("edit-")) {
       editorTabsStore.setActive(id);
       diffTabsStore.setActive(null);
       mdTabsStore.setActive(null);
       terminalsStore.setActive(null);
+      activateInPaneGroup(id, "editor");
     } else {
       // Switch repo/branch context if the terminal belongs to a different one
       const repoPath = repositoriesStore.getRepoPathForTerminal(id);
@@ -391,6 +418,7 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
       diffTabsStore.setActive(null);
       mdTabsStore.setActive(null);
       editorTabsStore.setActive(null);
+      activateInPaneGroup(id, "terminal");
       const terminal = terminalsStore.get(id);
       terminal?.ref?.focus();
     }

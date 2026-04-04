@@ -24,7 +24,7 @@ export function useSplitPanes() {
 
   const handleSplit = (direction: "vertical" | "horizontal") => {
     if (!paneLayoutStore.isSplit()) {
-      // First split: bootstrap tree with current active terminal
+      // First split: only the active terminal in group 1, group 2 empty
       const activeId = terminalsStore.state.activeId;
       if (!activeId) return;
 
@@ -33,7 +33,6 @@ export function useSplitPanes() {
       paneLayoutStore.setRoot({ type: "leaf", id: groupId });
       paneLayoutStore.setActiveGroup(groupId);
 
-      // Split creates empty second group (no dummy terminal)
       paneLayoutStore.split(groupId, direction);
     } else {
       // Already split: split the active group

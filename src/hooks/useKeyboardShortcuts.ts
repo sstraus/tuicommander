@@ -249,7 +249,6 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): () => void {
     const inInputField = activeTag === "INPUT" || activeTag === "TEXTAREA" || activeTag === "SELECT";
     if (e.altKey && !(e.metaKey || e.ctrlKey) && !e.shiftKey && !inInputField) {
       if (paneLayoutStore.isSplit()) {
-        // Tree-based spatial navigation
         const arrowMap: Record<string, "left" | "right" | "up" | "down"> = {
           ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down",
         };
@@ -266,28 +265,6 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): () => void {
             }
           }
           return;
-        }
-      } else {
-        // Legacy flat navigation (for old layout model, kept for backward compat)
-        const layout = terminalsStore.state.layout;
-        if (layout.direction !== "none" && layout.panes.length > 1) {
-          let delta = 0;
-          if (layout.direction === "vertical" && e.key === "ArrowRight") delta = 1;
-          else if (layout.direction === "vertical" && e.key === "ArrowLeft") delta = -1;
-          else if (layout.direction === "horizontal" && e.key === "ArrowDown") delta = 1;
-          else if (layout.direction === "horizontal" && e.key === "ArrowUp") delta = -1;
-
-          if (delta !== 0) {
-            e.preventDefault();
-            const newIndex = Math.max(0, Math.min(layout.activePaneIndex + delta, layout.panes.length - 1));
-            terminalsStore.setActivePaneIndex(newIndex);
-            const targetId = layout.panes[newIndex];
-            if (targetId) {
-              terminalsStore.setActive(targetId);
-              requestAnimationFrame(() => terminalsStore.get(targetId)?.ref?.focus());
-            }
-            return;
-          }
         }
       }
     }

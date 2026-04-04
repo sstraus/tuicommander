@@ -28,7 +28,6 @@ import { terminalsStore } from "../../stores/terminals";
 import { repositoriesStore } from "../../stores/repositories";
 import { diffTabsStore } from "../../stores/diffTabs";
 import { mdTabsStore } from "../../stores/mdTabs";
-import { settingsStore } from "../../stores/settings";
 
 describe("TabBar", () => {
   beforeEach(() => {
@@ -769,112 +768,22 @@ describe("TabBar", () => {
     });
   });
 
-  describe("unified split tab mode", () => {
-    it("hides non-primary pane tabs in unified mode (2 panes)", () => {
+  describe("tab close", () => {
+    it("close button removes the terminal", () => {
       const id1 = addTerminal({ name: "T1" });
-      const id2 = addTerminal({ name: "T2" });
-      terminalsStore.setLayout({
-        direction: "vertical",
-        panes: [id1, id2],
-        ratios: [0.5, 0.5],
-        activePaneIndex: 0,
-      });
-      settingsStore.setSplitTabMode("unified");
-
-      const { container } = render(() => (
-        <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
-      ));
-      const tabs = container.querySelectorAll(".tab");
-      expect(tabs.length).toBe(1);
-      expect(tabs[0].querySelector(".tabName")!.textContent).toContain("T1 | T2");
-
-      settingsStore.setSplitTabMode("separate");
-      terminalsStore.setLayout({ direction: "none", panes: [], ratios: [], activePaneIndex: 0 });
-    });
-
-    it("hides non-primary pane tabs in unified mode (3 panes)", () => {
-      const id1 = addTerminal({ name: "T1" });
-      const id2 = addTerminal({ name: "T2" });
-      const id3 = addTerminal({ name: "T3" });
-      const r = 1 / 3;
-      terminalsStore.setLayout({
-        direction: "vertical",
-        panes: [id1, id2, id3],
-        ratios: [r, r, r],
-        activePaneIndex: 0,
-      });
-      settingsStore.setSplitTabMode("unified");
-
-      const { container } = render(() => (
-        <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
-      ));
-      const tabs = container.querySelectorAll(".tab");
-      expect(tabs.length).toBe(1);
-      expect(tabs[0].querySelector(".tabName")!.textContent).toContain("T1 | T2 | T3");
-
-      settingsStore.setSplitTabMode("separate");
-      terminalsStore.setLayout({ direction: "none", panes: [], ratios: [], activePaneIndex: 0 });
-    });
-
-    it("close button on unified tab closes all pane terminals", () => {
-      const id1 = addTerminal({ name: "T1" });
-      const id2 = addTerminal({ name: "T2" });
-      const id3 = addTerminal({ name: "T3" });
-      const r = 1 / 3;
-      terminalsStore.setLayout({
-        direction: "vertical",
-        panes: [id1, id2, id3],
-        ratios: [r, r, r],
-        activePaneIndex: 0,
-      });
-      settingsStore.setSplitTabMode("unified");
+      addTerminal({ name: "T2" });
+      terminalsStore.setActive(id1);
 
       const handleClose = vi.fn();
+
       const { container } = render(() => (
         <TabBar onTabSelect={() => {}} onTabClose={handleClose} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
       ));
+
       const closeBtn = container.querySelector(".tabClose")!;
       fireEvent.click(closeBtn);
-      // Should close all 3 terminals
-      expect(handleClose).toHaveBeenCalledWith(id3);
-      expect(handleClose).toHaveBeenCalledWith(id2);
+
       expect(handleClose).toHaveBeenCalledWith(id1);
-
-      settingsStore.setSplitTabMode("separate");
-      terminalsStore.setLayout({ direction: "none", panes: [], ratios: [], activePaneIndex: 0 });
-    });
-
-    it("unified close leaves clean layout state after all terminals closed", () => {
-      const id1 = addTerminal({ name: "T1" });
-      const id2 = addTerminal({ name: "T2" });
-      terminalsStore.setLayout({
-        direction: "vertical",
-        panes: [id1, id2],
-        ratios: [0.5, 0.5],
-        activePaneIndex: 0,
-      });
-      settingsStore.setSplitTabMode("unified");
-
-      const handleClose = (id: string) => {
-        terminalsStore.remove(id);
-        const layout = terminalsStore.state.layout;
-        const splitIndex = layout.direction !== "none" ? layout.panes.indexOf(id) : -1;
-        if (splitIndex !== -1 && layout.panes.length > 1) {
-          terminalsStore.closeSplitPane(splitIndex);
-        }
-      };
-
-      const { container } = render(() => (
-        <TabBar onTabSelect={() => {}} onTabClose={handleClose} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
-      ));
-
-      const closeBtn = container.querySelector(".tabClose")!;
-      fireEvent.click(closeBtn);
-
-      expect(terminalsStore.state.layout.direction).toBe("none");
-
-      settingsStore.setSplitTabMode("separate");
-      terminalsStore.setLayout({ direction: "none", panes: [], ratios: [], activePaneIndex: 0 });
     });
   });
 

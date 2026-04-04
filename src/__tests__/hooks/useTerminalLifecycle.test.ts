@@ -6,6 +6,7 @@ import { diffTabsStore } from "../../stores/diffTabs";
 import { mdTabsStore } from "../../stores/mdTabs";
 import { editorTabsStore } from "../../stores/editorTabs";
 import { useTerminalLifecycle } from "../../hooks/useTerminalLifecycle";
+import { paneLayoutStore, resetGroupCounter } from "../../stores/paneLayout";
 
 // Reset store state between tests by removing all terminals
 function resetStores() {
@@ -25,6 +26,8 @@ function resetStores() {
     repositoriesStore.remove(path);
   }
   terminalsStore.setLayout({ direction: "none", panes: [], ratios: [], activePaneIndex: 0 });
+  paneLayoutStore.reset();
+  resetGroupCounter();
 }
 
 /** Flush pending requestAnimationFrame callbacks (used by closeTerminal to defer focus) */
@@ -847,103 +850,79 @@ describe("useTerminalLifecycle", () => {
     });
   });
 
-  describe("closeTerminal (split layout collapse)", () => {
-    it("collapses split layout when closing a split pane via tab close", async () => {
-      // Set up two terminals in a split layout
+  describe("closeTerminal (pane tree collapse)", () => {
+    it("removes tab from pane group and collapses when group empties", async () => {
       const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
       const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
-      terminalsStore.setLayout({
-        direction: "vertical",
-        panes: [id1, id2],
+      const g1 = paneLayoutStore.createGroup();
+      paneLayoutStore.addTab(g1, { id: id1, type: "terminal" });
+      const g2 = paneLayoutStore.createGroup();
+      paneLayoutStore.addTab(g2, { id: id2, type: "terminal" });
+      paneLayoutStore.setRoot({
+        type: "branch", direction: "vertical",
+        children: [{ type: "leaf", id: g1 }, { type: "leaf", id: g2 }],
         ratios: [0.5, 0.5],
-        activePaneIndex: 0,
       });
+      paneLayoutStore.setActiveGroup(g1);
       terminalsStore.setActive(id1);
 
-      // Close the first pane (simulates tab X button)
       await lifecycle.closeTerminal(id1, true);
       await flushRAF();
 
-      // Split should be collapsed, survivor should be active
-      expect(terminalsStore.state.layout.direction).toBe("none");
-      expect(terminalsStore.state.layout.panes).toEqual([id2]);
+      // g1 should be removed, g2 should be the only leaf (collapsed to single)
+      expect(paneLayoutStore.state.groups[g1]).toBeUndefined();
+      expect(paneLayoutStore.state.activeGroupId).toBe(g2);
       expect(terminalsStore.state.activeId).toBe(id2);
     });
 
-    it("collapses split layout when closing the second split pane", async () => {
+    it("removes tab but keeps group if other tabs remain", async () => {
       const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
       const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
-      terminalsStore.setLayout({
-        direction: "horizontal",
-        panes: [id1, id2],
-        ratios: [0.5, 0.5],
-        activePaneIndex: 1,
-      });
-      terminalsStore.setActive(id2);
-
-      await lifecycle.closeTerminal(id2, true);
-      await flushRAF();
-
-      expect(terminalsStore.state.layout.direction).toBe("none");
-      expect(terminalsStore.state.layout.panes).toEqual([id1]);
-      expect(terminalsStore.state.activeId).toBe(id1);
-    });
-
-    it("does not affect layout when closing a non-split terminal", async () => {
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-      // No split layout
+      const g1 = paneLayoutStore.createGroup();
+      paneLayoutStore.addTab(g1, { id: id1, type: "terminal" });
+      paneLayoutStore.addTab(g1, { id: id2, type: "terminal" });
+      paneLayoutStore.setRoot({ type: "leaf", id: g1 });
+      paneLayoutStore.setActiveGroup(g1);
+      terminalsStore.setActive(id1);
 
       await lifecycle.closeTerminal(id1, true);
 
-      expect(terminalsStore.state.layout.direction).toBe("none");
+      // Group should still exist with id2
+      expect(paneLayoutStore.state.groups[g1]).toBeDefined();
+      expect(paneLayoutStore.state.groups[g1].tabs).toHaveLength(1);
+      expect(paneLayoutStore.state.groups[g1].tabs[0].id).toBe(id2);
     });
 
-    it("does not collapse split when closing terminal not in panes", async () => {
+    it("does not affect pane tree when closing a non-split terminal", async () => {
+      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+
+      await lifecycle.closeTerminal(id1, true);
+
+      // No pane tree should be set up
+      expect(paneLayoutStore.isSplit()).toBe(false);
+    });
+
+    it("does not affect pane tree when closing terminal not in any group", async () => {
       const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
       const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
       const id3 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T3", cwd: null, awaitingInput: null });
-      terminalsStore.setLayout({
-        direction: "vertical",
-        panes: [id1, id2],
+      const g1 = paneLayoutStore.createGroup();
+      paneLayoutStore.addTab(g1, { id: id1, type: "terminal" });
+      const g2 = paneLayoutStore.createGroup();
+      paneLayoutStore.addTab(g2, { id: id2, type: "terminal" });
+      paneLayoutStore.setRoot({
+        type: "branch", direction: "vertical",
+        children: [{ type: "leaf", id: g1 }, { type: "leaf", id: g2 }],
         ratios: [0.5, 0.5],
-        activePaneIndex: 0,
       });
+      paneLayoutStore.setActiveGroup(g1);
       terminalsStore.setActive(id3);
 
       await lifecycle.closeTerminal(id3, true);
 
-      expect(terminalsStore.state.layout.direction).toBe("vertical");
-      expect(terminalsStore.state.layout.panes).toEqual([id1, id2]);
-    });
-
-    it("handles closing terminal when panes array is empty", async () => {
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-      terminalsStore.setLayout({
-        direction: "none",
-        panes: [],
-        ratios: [],
-        activePaneIndex: 0,
-      });
-
-      await lifecycle.closeTerminal(id1, true);
-
-      expect(terminalsStore.state.layout.direction).toBe("none");
-      expect(terminalsStore.state.layout.panes).toEqual([]);
-    });
-
-    it("handles closing terminal when layout is already none", async () => {
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-      terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
-      terminalsStore.setLayout({
-        direction: "none",
-        panes: [id1],
-        ratios: [],
-        activePaneIndex: 0,
-      });
-
-      await lifecycle.closeTerminal(id1, true);
-
-      expect(terminalsStore.state.layout.direction).toBe("none");
+      // Split should remain unchanged
+      expect(paneLayoutStore.isSplit()).toBe(true);
+      expect(paneLayoutStore.getAllGroupIds()).toHaveLength(2);
     });
   });
 

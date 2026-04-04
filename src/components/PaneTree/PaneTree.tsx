@@ -1,5 +1,5 @@
 import { Component, For, Show, Switch, Match, createMemo } from "solid-js";
-import { paneLayoutStore, type PaneNode, type PaneBranch, type PaneLeaf, type PaneTab, MIN_PANE_RATIO } from "../../stores/paneLayout";
+import { paneLayoutStore, type PaneNode, type PaneBranch, type PaneLeaf, type PaneTab, type PaneTabType, MIN_PANE_RATIO } from "../../stores/paneLayout";
 import { Terminal } from "../Terminal";
 import { DiffTab } from "../DiffTab";
 import { PrDiffTab } from "../PrDiffTab";
@@ -14,6 +14,7 @@ import { mdTabsStore } from "../../stores/mdTabs";
 import { editorTabsStore } from "../../stores/editorTabs";
 import { repositoriesStore } from "../../stores/repositories";
 import { repoSettingsStore } from "../../stores/repoSettings";
+import { appLogger } from "../../stores/appLogger";
 import "./PaneTree.css";
 
 // ---- PaneNodeView: recursive tree renderer ----
@@ -170,11 +171,6 @@ const PaneGroupView: Component<{
 }> = (props) => {
   const group = () => paneLayoutStore.state.groups[props.groupId];
   const isActive = () => paneLayoutStore.state.activeGroupId === props.groupId;
-  const activeTab = () => {
-    const g = group();
-    if (!g || !g.activeTabId) return null;
-    return g.tabs.find(t => t.id === g.activeTabId) ?? null;
-  };
   const showTabBar = () => {
     const g = group();
     return g && g.tabs.length > 1;
@@ -182,6 +178,28 @@ const PaneGroupView: Component<{
 
   const handleGroupClick = () => {
     paneLayoutStore.setActiveGroup(props.groupId);
+  };
+
+  /** Handle drop of a pane-tab onto this group (from mini bar, main TabBar, or content area) */
+  const handlePaneDrop = (e: DragEvent) => {
+    e.preventDefault();
+    const data = e.dataTransfer?.getData("application/pane-tab");
+    if (!data) return;
+    let parsed: { tabId: string; fromGroupId: string | null; type: PaneTabType };
+    try {
+      parsed = JSON.parse(data);
+    } catch {
+      appLogger.warn("app", "handlePaneDrop: invalid pane-tab drag payload");
+      return;
+    }
+    const { tabId, fromGroupId, type } = parsed;
+    if (fromGroupId === props.groupId) return; // drop onto own group — no-op
+    if (fromGroupId) {
+      paneLayoutStore.moveTab(fromGroupId, props.groupId, tabId);
+    } else {
+      // Orphan tab dragged from main TabBar — adopt into this group
+      paneLayoutStore.addTab(props.groupId, { id: tabId, type: type ?? "terminal" });
+    }
   };
 
   return (
@@ -195,20 +213,12 @@ const PaneGroupView: Component<{
         <div
           class="pane-tab-bar"
           onDragOver={(e) => { e.preventDefault(); e.dataTransfer!.dropEffect = "move"; }}
-          onDrop={(e) => {
-            e.preventDefault();
-            const data = e.dataTransfer?.getData("application/pane-tab");
-            if (!data) return;
-            const { tabId, fromGroupId } = JSON.parse(data);
-            if (fromGroupId !== props.groupId) {
-              paneLayoutStore.moveTab(fromGroupId, props.groupId, tabId);
-            }
-          }}
+          onDrop={handlePaneDrop}
         >
           <For each={group()?.tabs ?? []}>
             {(tab) => (
               <button
-                class="pane-tab"
+                class={`pane-tab ${tabColorClass(tab)}`}
                 classList={{ "pane-tab-active": tab.id === group()?.activeTabId }}
                 draggable={true}
                 onDragStart={(e) => {
@@ -239,30 +249,31 @@ const PaneGroupView: Component<{
         </div>
       </Show>
 
-      {/* Content area — also a drop target for empty panes */}
+      {/* Content area — also a drop target for empty panes.
+           Mount ALL tabs but only display the active one — terminals have
+           imperative state (xterm/WebGL) that must persist across tab switches. */}
       <div
         class="pane-content"
         onDragOver={(e) => { e.preventDefault(); e.dataTransfer!.dropEffect = "move"; }}
-        onDrop={(e) => {
-          e.preventDefault();
-          const data = e.dataTransfer?.getData("application/pane-tab");
-          if (!data) return;
-          const { tabId, fromGroupId } = JSON.parse(data);
-          if (fromGroupId !== props.groupId) {
-            paneLayoutStore.moveTab(fromGroupId, props.groupId, tabId);
-          }
-        }}
+        onDrop={handlePaneDrop}
       >
-        <Show when={activeTab()} fallback={<PanePlaceholder />}>
-          {(tab) => (
-            <PaneTabContent
-              tab={tab()}
-              onCloseTab={props.onCloseTab}
-              onOpenFilePath={props.onOpenFilePath}
-              onTerminalFocus={props.onTerminalFocus}
-              onCwdChange={props.onCwdChange}
-            />
-          )}
+        <Show when={(group()?.tabs.length ?? 0) > 0} fallback={<PanePlaceholder />}>
+          <For each={group()?.tabs ?? []}>
+            {(tab) => (
+              <div
+                class="pane-tab-content"
+                classList={{ "pane-tab-content-active": tab.id === group()?.activeTabId }}
+              >
+                <PaneTabContent
+                  tab={tab}
+                  onCloseTab={props.onCloseTab}
+                  onOpenFilePath={props.onOpenFilePath}
+                  onTerminalFocus={props.onTerminalFocus}
+                  onCwdChange={props.onCwdChange}
+                />
+              </div>
+            )}
+          </For>
         </Show>
       </div>
     </div>
@@ -397,6 +408,22 @@ const EditorPane: Component<{ tabId: string; onClose: (id: string) => void }> = 
 };
 
 // ---- Helpers ----
+
+/** CSS class suffix for tab-type coloring in mini tab bar */
+function tabColorClass(tab: PaneTab): string {
+  switch (tab.type) {
+    case "terminal": return "";
+    case "diff": return "pane-tab-diff";
+    case "editor": return "pane-tab-edit";
+    case "markdown": {
+      const m = mdTabsStore.get(tab.id);
+      if (!m) return "pane-tab-panel";
+      if (m.type === "file") return "pane-tab-md";
+      if (m.type === "pr-diff") return "pane-tab-diff";
+      return "pane-tab-panel";
+    }
+  }
+}
 
 function tabTitle(tab: PaneTab): string {
   switch (tab.type) {

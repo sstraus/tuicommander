@@ -2,6 +2,7 @@ import { Component, For, Show, createEffect, createMemo, createSignal, onCleanup
 import { commandPaletteStore } from "../../stores/commandPalette";
 import { repositoriesStore } from "../../stores/repositories";
 import { terminalsStore } from "../../stores/terminals";
+import { paneLayoutStore } from "../../stores/paneLayout";
 import { editorTabsStore } from "../../stores/editorTabs";
 import { mdTabsStore } from "../../stores/mdTabs";
 import { classifyDroppedFile } from "../../hooks/useFileDrop";
@@ -120,11 +121,9 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
   const navigateToTerminalMatch = (match: TerminalMatch) => {
     const { terminalId, lineIndex } = match;
     terminalsStore.setActive(terminalId);
-    // Activate the correct pane in split layout
-    const paneIdx = terminalsStore.state.layout.panes.indexOf(terminalId);
-    if (paneIdx >= 0) {
-      terminalsStore.setActivePaneIndex(paneIdx);
-    }
+    // Activate the pane group containing this terminal
+    const groupId = paneLayoutStore.getGroupForTab(terminalId);
+    if (groupId) paneLayoutStore.setActiveGroup(groupId);
     commandPaletteStore.close();
     // Scroll after a tick to ensure terminal is mounted/focused
     requestAnimationFrame(() => {

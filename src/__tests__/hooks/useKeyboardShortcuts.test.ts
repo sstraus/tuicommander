@@ -290,97 +290,63 @@ describe("useKeyboardShortcuts", () => {
   });
 
   describe("split pane navigation", () => {
-    it("Alt+ArrowRight navigates panes in vertical split", () => {
+    /** Helper: create a vertical split with two terminal groups */
+    function setupVerticalSplit() {
       const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
       const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
-      terminalsStore.setLayout({
-        direction: "vertical",
-        panes: [id1, id2],
+      const g1 = paneLayoutStore.createGroup();
+      paneLayoutStore.addTab(g1, { id: id1, type: "terminal" });
+      const g2 = paneLayoutStore.createGroup();
+      paneLayoutStore.addTab(g2, { id: id2, type: "terminal" });
+      paneLayoutStore.setRoot({
+        type: "branch", direction: "vertical",
+        children: [{ type: "leaf", id: g1 }, { type: "leaf", id: g2 }],
         ratios: [0.5, 0.5],
-        activePaneIndex: 0,
       });
+      paneLayoutStore.setActiveGroup(g1);
+      terminalsStore.setActive(id1);
+      return { id1, id2, g1, g2 };
+    }
 
+    it("Alt+ArrowRight navigates panes in vertical split", () => {
+      const { g2 } = setupVerticalSplit();
       fireKeydown("ArrowRight", { altKey: true });
-
-      expect(terminalsStore.state.layout.activePaneIndex).toBe(1);
-      expect(terminalsStore.state.activeId).toBe(id2);
+      expect(paneLayoutStore.state.activeGroupId).toBe(g2);
     });
 
     it("Alt+ArrowLeft navigates panes in vertical split", () => {
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
-      terminalsStore.setLayout({
-        direction: "vertical",
-        panes: [id1, id2],
-        ratios: [0.5, 0.5],
-        activePaneIndex: 1,
-      });
-
+      const { g1, g2, id2 } = setupVerticalSplit();
+      paneLayoutStore.setActiveGroup(g2);
+      terminalsStore.setActive(id2);
       fireKeydown("ArrowLeft", { altKey: true });
-
-      expect(terminalsStore.state.layout.activePaneIndex).toBe(0);
-      expect(terminalsStore.state.activeId).toBe(id1);
+      expect(paneLayoutStore.state.activeGroupId).toBe(g1);
     });
 
     it("Alt+ArrowDown navigates panes in horizontal split", () => {
       const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
       const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
-      terminalsStore.setLayout({
-        direction: "horizontal",
-        panes: [id1, id2],
+      const g1 = paneLayoutStore.createGroup();
+      paneLayoutStore.addTab(g1, { id: id1, type: "terminal" });
+      const g2 = paneLayoutStore.createGroup();
+      paneLayoutStore.addTab(g2, { id: id2, type: "terminal" });
+      paneLayoutStore.setRoot({
+        type: "branch", direction: "horizontal",
+        children: [{ type: "leaf", id: g1 }, { type: "leaf", id: g2 }],
         ratios: [0.5, 0.5],
-        activePaneIndex: 0,
       });
+      paneLayoutStore.setActiveGroup(g1);
+      terminalsStore.setActive(id1);
 
       fireKeydown("ArrowDown", { altKey: true });
-
-      expect(terminalsStore.state.layout.activePaneIndex).toBe(1);
+      expect(paneLayoutStore.state.activeGroupId).toBe(g2);
     });
 
-    it("Alt+ArrowRight with 3 panes: 0 -> 1 -> 2 -> 2 (clamp)", () => {
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
-      const id3 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T3", cwd: null, awaitingInput: null });
-      const r = 1 / 3;
-      terminalsStore.setLayout({
-        direction: "vertical",
-        panes: [id1, id2, id3],
-        ratios: [r, r, r],
-        activePaneIndex: 0,
-      });
-
+    it("Alt+ArrowRight at rightmost pane stays put", () => {
+      const { g2, id2 } = setupVerticalSplit();
+      paneLayoutStore.setActiveGroup(g2);
+      terminalsStore.setActive(id2);
       fireKeydown("ArrowRight", { altKey: true });
-      expect(terminalsStore.state.layout.activePaneIndex).toBe(1);
-
-      fireKeydown("ArrowRight", { altKey: true });
-      expect(terminalsStore.state.layout.activePaneIndex).toBe(2);
-
-      // At last pane, should clamp
-      fireKeydown("ArrowRight", { altKey: true });
-      expect(terminalsStore.state.layout.activePaneIndex).toBe(2);
-    });
-
-    it("Alt+ArrowLeft with 3 panes: 2 -> 1 -> 0 -> 0 (clamp)", () => {
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
-      const id3 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T3", cwd: null, awaitingInput: null });
-      const r = 1 / 3;
-      terminalsStore.setLayout({
-        direction: "vertical",
-        panes: [id1, id2, id3],
-        ratios: [r, r, r],
-        activePaneIndex: 2,
-      });
-
-      fireKeydown("ArrowLeft", { altKey: true });
-      expect(terminalsStore.state.layout.activePaneIndex).toBe(1);
-
-      fireKeydown("ArrowLeft", { altKey: true });
-      expect(terminalsStore.state.layout.activePaneIndex).toBe(0);
-
-      // At first pane, should clamp
-      fireKeydown("ArrowLeft", { altKey: true });
-      expect(terminalsStore.state.layout.activePaneIndex).toBe(0);
+      expect(paneLayoutStore.state.activeGroupId).toBe(g2);
     });
 
     it("ignores Alt+Arrow when not in split mode", () => {

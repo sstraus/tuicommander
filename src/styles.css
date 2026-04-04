@@ -180,15 +180,6 @@
   display: block;
 }
 
-/* When an overlay tab (markdown, diff, editor) is active during split mode,
-   hide the split panes and resize handle so they don't bleed through */
-#terminal-panes:has(.md-pane.active, .diff-pane.active, .edit-pane.active) > .split-pane {
-  display: none;
-}
-#terminal-panes:has(.md-pane.active, .diff-pane.active, .edit-pane.active) > .split-resize-handle {
-  display: none;
-}
-
 /* Split pane overrides — both panes visible with flex sizing */
 .terminal-pane.split-pane {
   position: relative;

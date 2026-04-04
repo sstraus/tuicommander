@@ -1,11 +1,11 @@
-import { Component, For, Show, batch, createSignal, createEffect, onCleanup, onMount } from "solid-js";
+import { Component, For, Show, batch, createSignal, createEffect, createMemo, onCleanup, onMount } from "solid-js";
 import { terminalsStore } from "../../stores/terminals";
 import { paneLayoutStore } from "../../stores/paneLayout";
+import { computeLeafRects } from "../../utils/paneTreeGeometry";
 import { repositoriesStore } from "../../stores/repositories";
 import { diffTabsStore } from "../../stores/diffTabs";
 import { mdTabsStore } from "../../stores/mdTabs";
 import { editorTabsStore } from "../../stores/editorTabs";
-import { settingsStore } from "../../stores/settings";
 import { makeBranchKey } from "../../stores/tabManager";
 import { getModifierSymbol, shortenHomePath } from "../../platform";
 import { appLogger } from "../../stores/appLogger";
@@ -15,6 +15,49 @@ import { cx } from "../../utils";
 import { contextMenuActionsStore } from "../../stores/contextMenuActionsStore";
 import type { ContextMenuItem } from "../ContextMenu/ContextMenu";
 import s from "./TabBar.module.css";
+
+import type { LeafRect } from "../../utils/paneTreeGeometry";
+
+/** Mini-map SVG showing pane layout with one pane highlighted */
+const PanePositionIcon: Component<{ tabId: string; rects: LeafRect[] }> = (props) => {
+  const groupId = () => paneLayoutStore.getGroupForTab(props.tabId);
+
+  const W = 14;
+  const H = 10;
+  const PAD = 0.5;
+  const GAP = 0.8;
+
+  return (
+    <Show when={paneLayoutStore.isSplit() && groupId()}>
+      <svg
+        width={W}
+        height={H}
+        viewBox={`0 0 ${W} ${H}`}
+        class={s.panePositionIcon}
+        fill="none"
+      >
+        <For each={props.rects}>
+          {(rect) => {
+            const active = () => rect.groupId === groupId();
+            return (
+              <rect
+                x={rect.x * (W - GAP) + PAD}
+                y={rect.y * (H - GAP) + PAD}
+                width={rect.w * (W - GAP) - GAP}
+                height={rect.h * (H - GAP) - GAP}
+                rx="1"
+                fill={active() ? "currentColor" : "none"}
+                stroke="currentColor"
+                stroke-width="0.7"
+                opacity={active() ? 0.9 : 0.35}
+              />
+            );
+          }}
+        </For>
+      </svg>
+    </Show>
+  );
+};
 
 /** Map awaiting input type to module class */
 const AWAITING_CLASSES: Record<string, string> = {
@@ -52,8 +95,12 @@ export const TabBar: Component<TabBarProps> = (props) => {
 
   // Context menu for overflow tabs (right-click on scroll arrows)
   const overflowMenu = createContextMenu();
-  const layout = () => terminalsStore.state.layout;
-  const isUnifiedMode = () => settingsStore.state.splitTabMode === "unified" && layout().direction !== "none";
+
+  // Shared memo for pane position mini-map (avoids N redundant tree walks)
+  const paneRects = createMemo(() => {
+    const root = paneLayoutStore.getRoot();
+    return root ? computeLeafRects(root) : [];
+  });
   const mod = getModifierSymbol();
 
   const getNewTabMenuItems = (): ContextMenuItem[] => [
@@ -208,10 +255,19 @@ export const TabBar: Component<TabBarProps> = (props) => {
     }
   });
 
-  const handleDragStart = (e: DragEvent, id: string) => {
+  const handleDragStart = (e: DragEvent, id: string, tabType: "terminal" | "markdown" | "diff" | "editor" = "terminal") => {
     if (!e.dataTransfer) return;
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", id);
+    // Also set pane-tab format so PaneTree drop targets accept this drag
+    if (paneLayoutStore.isSplit()) {
+      const fromGroupId = paneLayoutStore.getGroupForTab(id);
+      e.dataTransfer.setData("application/pane-tab", JSON.stringify({
+        tabId: id,
+        fromGroupId: fromGroupId ?? null,
+        type: tabType,
+      }));
+    }
     // Use the tab element itself as drag image to suppress macOS green plus icon
     try {
       const el = e.currentTarget as HTMLElement;
@@ -405,39 +461,18 @@ export const TabBar: Component<TabBarProps> = (props) => {
           const isRemote = () => terminal()?.isRemote;
           const isEditing = () => editingId() === id;
 
-          // Unified split tab mode: hide non-primary pane tabs, show combined name on first
-          const isNonPrimaryPane = () => isUnifiedMode() && layout().panes.indexOf(id) > 0;
-          const isFirstSplitPane = () => isUnifiedMode() && layout().panes[0] === id;
-          const unifiedName = () => {
-            if (!isFirstSplitPane()) return terminal()?.name;
-            const paneNames = layout().panes.map(pid => terminalsStore.get(pid)?.name ?? "");
-            return paneNames.join(" | ");
-          };
-
-          // In unified mode, highlight the first tab when any pane is active
-          const isActiveInUnified = () => isFirstSplitPane() && layout().panes.includes(terminalsStore.state.activeId || "");
-
-          // Close this tab, and in unified mode close ALL pane terminals
           const handleCloseTab = (e: Event) => {
             e.preventDefault();
             e.stopPropagation();
-            if (isFirstSplitPane()) {
-              // Snapshot pane IDs before any mutation — layout() is reactive
-              // and subsequent onTabClose calls may see mutated state
-              const paneIds = [...layout().panes];
-              for (let i = paneIds.length - 1; i > 0; i--) {
-                props.onTabClose(paneIds[i]);
-              }
-            }
             props.onTabClose(id);
           };
 
           return (
-            <Show when={terminal() && !isNonPrimaryPane()}>
+            <Show when={terminal()}>
               <div
                 class={cx(
                   s.tab,
-                  (isActive() || isActiveInUnified()) && s.active,
+                  isActive() && s.active,
                   awaitingInput() && s.awaitingInput,
                   awaitingInput() && AWAITING_CLASSES[awaitingInput()!],
                   // Suppress busy/idle indicators when awaiting input —
@@ -470,7 +505,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
                 <span class={s.tabIcon}>●</span>
                 <Show when={isEditing()} fallback={
                   <span class={s.tabName}>
-                    {isFirstSplitPane() ? unifiedName() : terminal()?.name}
+                    {terminal()?.name}
                     {progress() !== null && progress() !== undefined && (
                       <span class={s.progressLabel}>{progress()}%</span>
                     )}
@@ -501,6 +536,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
                 {progress() !== null && progress() !== undefined && (
                   <div class={s.progress} style={{ width: `${progress()}%` }} />
                 )}
+                <PanePositionIcon tabId={id} rects={paneRects()} />
                 <Show when={props.quickSwitcherActive && index() < 9}>
                   <span class={s.shortcutBadge}>{getModifierSymbol()}{index() + 1}</span>
                 </Show>
@@ -534,6 +570,8 @@ export const TabBar: Component<TabBarProps> = (props) => {
                 onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); diffTabsStore.remove(id); props.onTabClose(id); } }}
                 onContextMenu={(e) => openTabContextMenu(e, id)}
                 title={diffTab()?.filePath}
+                draggable={true}
+                onDragStart={(e) => handleDragStart(e, id, "diff")}
               >
                 <span class={s.tabIcon}>
                   {diffTab()?.filePath
@@ -547,6 +585,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
                 </span>
                 <Show when={diffTab()?.pinned}><span class={s.pinIcon}><svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M4.146.854a.5.5 0 1 1 .708-.708l4 4a.5.5 0 0 1-.708.708L7.5 4.208V6.5a.5.5 0 0 1-.146.354L5 9.207l1.146 1.147a.5.5 0 0 1-.353.853H2.5a.5.5 0 0 1-.354-.853L3.293 9.207 1 6.914a.5.5 0 0 1 0-.707L4.146.854z" transform="rotate(45 8 8)"/></svg></span></Show>
                 <span class={s.tabName}>{diffTab()?.fileName}{diffTab()?.scope ? ` (${diffTab()?.scope?.slice(0, 7)})` : ""}</span>
+                <PanePositionIcon tabId={id} rects={paneRects()} />
                 <button
                   class={s.tabClose}
                   title={t("tabBar.close", "Close")}
@@ -581,6 +620,8 @@ export const TabBar: Component<TabBarProps> = (props) => {
                 onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); mdTabsStore.remove(id); props.onTabClose(id); } }}
                 onContextMenu={(e) => openTabContextMenu(e, id)}
                 title={(() => { const tab = mdTab(); return tab?.type === "file" ? tab.filePath : tab?.type === "pr-diff" ? `PR #${tab.prNumber}: ${tab.prTitle}` : tab?.title; })()}
+                draggable={true}
+                onDragStart={(e) => handleDragStart(e, id, "markdown")}
               >
                 <span class={s.tabIcon}>
                   {mdTab()?.type === "pr-diff" ? (
@@ -595,6 +636,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
                 </span>
                 <Show when={mdTab()?.pinned}><span class={s.pinIcon}><svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M4.146.854a.5.5 0 1 1 .708-.708l4 4a.5.5 0 0 1-.708.708L7.5 4.208V6.5a.5.5 0 0 1-.146.354L5 9.207l1.146 1.147a.5.5 0 0 1-.353.853H2.5a.5.5 0 0 1-.354-.853L3.293 9.207 1 6.914a.5.5 0 0 1 0-.707L4.146.854z" transform="rotate(45 8 8)"/></svg></span></Show>
                 <span class={s.tabName}>{(() => { const tab = mdTab(); return tab?.type === "file" ? tab.fileName : tab?.title; })()}</span>
+                <PanePositionIcon tabId={id} rects={paneRects()} />
                 <button
                   class={s.tabClose}
                   title={t("tabBar.close", "Close")}
@@ -629,6 +671,8 @@ export const TabBar: Component<TabBarProps> = (props) => {
                 onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); editorTabsStore.remove(id); props.onTabClose(id); } }}
                 onContextMenu={(e) => openTabContextMenu(e, id)}
                 title={editTab()?.filePath}
+                draggable={true}
+                onDragStart={(e) => handleDragStart(e, id, "editor")}
               >
                 <span class={s.tabIcon}>
                   {editTab()?.isDirty
@@ -638,6 +682,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
                 </span>
                 <Show when={editTab()?.pinned}><span class={s.pinIcon}><svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M4.146.854a.5.5 0 1 1 .708-.708l4 4a.5.5 0 0 1-.708.708L7.5 4.208V6.5a.5.5 0 0 1-.146.354L5 9.207l1.146 1.147a.5.5 0 0 1-.353.853H2.5a.5.5 0 0 1-.354-.853L3.293 9.207 1 6.914a.5.5 0 0 1 0-.707L4.146.854z" transform="rotate(45 8 8)"/></svg></span></Show>
                 <span class={s.tabName}>{editTab()?.fileName}</span>
+                <PanePositionIcon tabId={id} rects={paneRects()} />
                 <button
                   class={s.tabClose}
                   title={t("tabBar.close", "Close")}
