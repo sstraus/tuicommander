@@ -630,6 +630,17 @@ export const Terminal: Component<TerminalProps> = (props) => {
     }
   };
 
+  /** Force a full WebGL atlas rebuild by toggling fontSize.
+   *  xterm's OptionsService has an equality check that skips onOptionChange
+   *  when the value hasn't changed, so same-value assignment is a no-op.
+   *  Toggle by +1 then restore — both fire synchronously before the next paint. */
+  const forceAtlasRebuild = () => {
+    if (!terminal) return;
+    const size = terminal.options.fontSize ?? settingsStore.state.defaultFontSize;
+    terminal.options.fontSize = size + 1;
+    terminal.options.fontSize = size;
+  };
+
   let terminalOpened = false;
   let resizeObserver: ResizeObserver | undefined;
 
@@ -1180,10 +1191,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
         openTerminal();
         // Rebuild WebGL renderer on actual hidden→visible transition.
         // clearTextureAtlas() alone is insufficient — it clears cached glyphs
-        // but doesn't fix structural corruption in the atlas packer. Re-assigning
+        // but doesn't fix structural corruption in the atlas packer. Toggling
         // fontSize forces a full renderer rebuild (same mechanism as zoom).
         if (wasActuallyHidden && terminal) {
-          terminal.options.fontSize = terminal.options.fontSize;
+          forceAtlasRebuild();
           wasHidden = false;
         }
 
@@ -1191,7 +1202,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
         clearInterval(atlasRebuildTimer);
         atlasRebuildTimer = setInterval(() => {
           if (terminal && isVisible()) {
-            terminal.options.fontSize = terminal.options.fontSize;
+            forceAtlasRebuild();
           }
         }, ATLAS_REBUILD_INTERVAL_MS);
         // Only fit if the terminal was actually hidden or never fitted.
