@@ -718,7 +718,8 @@ impl ChunkProcessor {
         }
 
         // Full token present (or no token at all) — apply replacements.
-        let result = if combined.contains("[intent:") {
+        // Colorize both bracket (`[intent:`) and plain-prefix (`intent:`, `action:`) tokens.
+        let result = if combined.contains("intent:") || combined.contains("action:") {
             colorize_intent(&combined)
         } else {
             combined
@@ -1000,12 +1001,14 @@ impl ChunkProcessor {
     }
 }
 
-/// Check if `data` contains an opening `[[intent:` or `[[suggest:` (or single-bracket
-/// variants) without the corresponding closing bracket(s).  Used to detect tokens
-/// that were split across streaming chunks so we can buffer them.
+/// Check if `data` contains an incomplete structured token that should be buffered.
+///
+/// Two kinds of tokens:
+/// - **Bracket syntax**: `[intent:` or `[suggest:` without a closing `]` or `⟧`
+/// - **Plain prefix**: `intent:`, `action:`, or `suggest:` at line start without
+///   a trailing newline (the token is single-line, so newline = complete)
 fn has_unclosed_token(data: &str) -> bool {
-    // Find the LAST opener position for intent or suggest.
-    // We only care about the last one — earlier complete tokens are fine.
+    // Check bracket syntax: opening `[intent:` or `[suggest:` without closing `]`
     let last_intent = data.rfind("[intent:");
     let last_suggest = data.rfind("[suggest:");
     let opener_pos = match (last_intent, last_suggest) {
@@ -1014,15 +1017,28 @@ fn has_unclosed_token(data: &str) -> bool {
         (None, Some(b)) => Some(b),
         (None, None) => None,
     };
-    let Some(pos) = opener_pos else { return false };
-    // Check if there's a closing `]` after the opener.
-    // The token ends with `]]` or `]` or `⟧` (U+27E7).
-    let after = &data[pos..];
-    // Skip past the "intent:" or "suggest:" keyword to avoid matching the opener bracket
-    let keyword_end = after.find(':').map(|i| i + 1).unwrap_or(0);
-    let body = &after[keyword_end..];
-    // Must contain at least one `]` to be considered closed
-    !body.contains(']') && !body.contains('\u{27E7}')
+    if let Some(pos) = opener_pos {
+        let after = &data[pos..];
+        let keyword_end = after.find(':').map(|i| i + 1).unwrap_or(0);
+        let body = &after[keyword_end..];
+        if !body.contains(']') && !body.contains('\u{27E7}') {
+            return true;
+        }
+    }
+
+    // Check plain-prefix: keyword at line start without trailing newline.
+    // Only buffer if the keyword is near the end of the chunk (last line).
+    // Find the last newline — everything after it is the last (potentially incomplete) line.
+    let last_line = data.rsplit_once('\n').map_or(data, |(_, r)| r);
+    let trimmed = last_line.trim_start_matches(|c: char| c == '\r');
+    // Check if the last line starts with a plain-prefix keyword
+    // (this is the raw PTY stream so we check for the keyword without ANSI stripping)
+    if trimmed.starts_with("intent:") || trimmed.starts_with("action:") || trimmed.starts_with("suggest:") {
+        // Last line has a keyword but no newline after it — incomplete
+        return true;
+    }
+
+    false
 }
 
 /// Process kitty keyboard actions (push/pop/query) shared by both reader threads.
@@ -4242,6 +4258,78 @@ mod tests {
         assert_eq!(flushed, Some("[[intent: incomplete".to_string()));
         // After flush, pending should be empty
         assert!(cp.flush_pending_xterm().is_none());
+    }
+
+    // --- Plain-prefix buffering tests ---
+
+    #[test]
+    fn test_has_unclosed_token_plain_prefix_intent_no_newline() {
+        // Plain prefix at end of chunk without newline — should buffer
+        assert!(has_unclosed_token("intent: reading the config"));
+    }
+
+    #[test]
+    fn test_has_unclosed_token_plain_prefix_intent_with_newline() {
+        // Plain prefix with trailing newline — complete, should NOT buffer
+        assert!(!has_unclosed_token("intent: reading the config\n"));
+    }
+
+    #[test]
+    fn test_has_unclosed_token_plain_prefix_action() {
+        assert!(has_unclosed_token("action: running tests"));
+        assert!(!has_unclosed_token("action: running tests\n"));
+    }
+
+    #[test]
+    fn test_has_unclosed_token_plain_prefix_suggest() {
+        assert!(has_unclosed_token("suggest: A | B | C"));
+        assert!(!has_unclosed_token("suggest: A | B | C\n"));
+    }
+
+    #[test]
+    fn test_has_unclosed_token_plain_prefix_after_other_output() {
+        // Other output followed by plain prefix on last line — should buffer
+        assert!(has_unclosed_token("some output\nintent: doing work"));
+        // Complete — newline after the token
+        assert!(!has_unclosed_token("some output\nintent: doing work\n"));
+    }
+
+    #[test]
+    fn test_transform_xterm_plain_intent_colorized() {
+        let mut cp = ChunkProcessor::new(None);
+        let result = cp.transform_xterm("intent: Fix the bug\n".to_string());
+        assert!(result.is_some(), "plain-prefix intent with newline should pass through");
+        let data = result.unwrap();
+        assert!(data.contains("\x1b[2;33m"), "should be colorized dim yellow");
+    }
+
+    #[test]
+    fn test_transform_xterm_plain_action_colorized() {
+        let mut cp = ChunkProcessor::new(None);
+        let result = cp.transform_xterm("action: running tests\n".to_string());
+        assert!(result.is_some());
+        let data = result.unwrap();
+        assert!(data.contains("\x1b[2;33m"), "action should be colorized");
+    }
+
+    #[test]
+    fn test_transform_xterm_plain_suggest_concealed() {
+        let mut cp = ChunkProcessor::new(None);
+        let result = cp.transform_xterm("suggest: A | B | C\n".to_string());
+        assert!(result.is_some());
+        let data = result.unwrap();
+        assert!(!data.contains("suggest:"), "plain-prefix suggest should be concealed");
+    }
+
+    #[test]
+    fn test_transform_xterm_plain_prefix_buffers_without_newline() {
+        let mut cp = ChunkProcessor::new(None);
+        let r1 = cp.transform_xterm("intent: doing so".to_string());
+        assert!(r1.is_none(), "plain-prefix without newline should buffer");
+        // Next chunk completes
+        let r2 = cp.transform_xterm("mething\n".to_string());
+        assert!(r2.is_some(), "completing chunk should emit");
+        assert!(r2.unwrap().contains("\x1b[2;33m"), "should be colorized");
     }
 
     // --- log_anomalous_sequences tests ---
