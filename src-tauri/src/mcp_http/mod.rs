@@ -21,6 +21,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post, put};
 use axum::{extract::{Path as AxumPath, State}, Json, Router};
 use std::sync::Arc;
+use tower_http::compression::CompressionLayer;
+use tower_http::compression::predicate::{DefaultPredicate, Predicate, SizeAbove};
 use tower_http::cors::CorsLayer;
 
 /// Maximum terminal dimension (rows or cols). Prevents resource abuse from
@@ -568,7 +570,9 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/", get(static_files::serve_index))
         .route("/{*path}", get(static_files::serve_static))
         .with_state(state.clone())
-        .layer(cors);
+        .layer(cors)
+        .layer(CompressionLayer::new()
+            .compress_when(DefaultPredicate::new().and(SizeAbove::new(860))));
 
     if remote_auth {
         routes.layer(axum::middleware::from_fn_with_state(state, auth::basic_auth_middleware))

@@ -3,7 +3,7 @@ members = [".", "crates/tuic-bridge"]
 
 [package]
 name = "tuicommander"
-version = "0.9.9"
+version = "1.0.0"
 description = "TUICommander - Native platform for AI coding agents"
 authors = ["Stefano Straus <github.com/sstraus>"]
 edition = "2024"
@@ -45,7 +45,7 @@ bcrypt = "0.19"
 base64 = "0.22"
 include_dir = { version = "0.7.4", features = ["glob"] }
 mime_guess = "2.0.5"
-tower-http = { version = "0.6.8", features = ["cors"] }
+tower-http = { version = "0.6.8", features = ["cors", "compression-gzip", "compression-br"] }
 rand = "0.10"
 libc = "0.2"
 notify = "8"
