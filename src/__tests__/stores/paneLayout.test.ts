@@ -11,7 +11,6 @@ import {
   leafDepthFromRoot,
   normalizeRatios,
   setHandleRatio,
-  resetGroupCounter,
   MAX_SPLIT_DEPTH,
   MIN_PANE_RATIO,
   type PaneNode,
