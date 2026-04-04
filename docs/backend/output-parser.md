@@ -155,6 +155,54 @@ Detected via `[[suggest: A | B | C]]`, `[suggest: ...]`, or `⟦suggest: ...⟧`
 
 The `conceal_suggest()` function replaces the raw token in the terminal stream with SGR invisible sequences so it never appears on screen.
 
+### UsageLimit
+
+Claude Code usage limit percentage:
+
+```rust
+ParsedEvent::UsageLimit {
+    percentage: u8,      // 0-100
+    limit_type: String,  // "weekly" or "session"
+}
+```
+
+Detected via regex matching `"You've used X% of your weekly/session limit"`. Supports both ASCII and Unicode smart-quote apostrophes (`'` and `\u{2019}`).
+
+### UsageExhausted
+
+Claude Code usage fully exhausted (no remaining quota):
+
+```rust
+ParsedEvent::UsageExhausted {
+    reset_time: Option<String>,  // Raw text, e.g. "8pm (Europe/Madrid)"
+}
+```
+
+Detected via `"out of (extra) usage"` pattern. The optional `reset_time` is extracted from `"· resets <text>"` suffix. The raw string is passed to plugins for scheduling; no timezone parsing is done in Rust.
+
+### ActiveSubtasks
+
+Agent sub-task indicator from `›› task · N local agents` mode-line:
+
+```rust
+ParsedEvent::ActiveSubtasks {
+    count: u32,       // Number of active sub-tasks (0 = all finished)
+    task_type: String, // "local agents", "bash", "background tasks", etc.
+}
+```
+
+### ShellState
+
+Shell activity state derived from PTY output timing:
+
+```rust
+ParsedEvent::ShellState {
+    state: String, // "busy" | "idle"
+}
+```
+
+Emitted by the reader thread on real-output→busy and idle transitions. The frontend consumes this instead of deriving busy/idle from raw PTY data. See `docs/backend/pty.md` for idle detection details.
+
 ### SlashMenu
 
 Slash command menu detected from VT100 screen rows:

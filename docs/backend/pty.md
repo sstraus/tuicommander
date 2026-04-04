@@ -220,6 +220,19 @@ The reader thread tracks output silence to detect unanswered agent prompts. When
 
 **Single threshold:** All silence-based questions use a uniform 10-second timeout regardless of whether new output has arrived since the question was detected.
 
+## Shell State (Busy/Idle) Detection
+
+The reader thread tracks output timing to emit `ShellState` events (`busy`/`idle`). Rust is the single source of truth — the frontend does not derive busy/idle from raw PTY data.
+
+**Transitions:**
+- **→ busy:** Any non-chrome-only chunk transitions to busy via atomic CAS (`try_shell_transition`)
+- **→ idle (process_chunk):** Chrome-only chunks without a status line, or chrome-only chunks where real output has been silent for `STATUS_LINE_IDLE_THRESHOLD` (3s), transition to idle if `should_transition_idle` passes (real output > 500ms ago, no active sub-tasks)
+- **→ idle (backup timer):** A 1s timer catches the case where no chunks arrive at all (reader blocked on `read()`). Uses `has_recent_chunks()` (checks `last_output_at`, not `last_chunk_at`) to avoid firing when the reader is actively processing status-line-only ticks
+
+**Status line ticks:** Claude Code's status line updates every ~1s while an agent is thinking. These are chrome-only chunks with `has_status_line=true`. Previously, the `!has_status_line` guard prevented idle transition entirely while ticks were arriving. Now, idle fires after 3s of real output silence even with status line ticks continuing. This enables the keepalive plugin to detect true idle state.
+
+**Agent detection:** `detectAgentForTerminal()` fires on shell-state transitions (immediate on idle, 500ms debounce on busy). A 30s fallback poll catches cold starts. This replaces the previous 3s polling interval, reducing syscalls ~30x.
+
 ## Amber Tab Styling
 
 Sessions created via HTTP/MCP (remote sessions) are flagged with `isRemote`. The tab bar applies an amber gradient background and amber bottom border (`rgba(251, 191, 36, ...)`) to visually distinguish remote-created sessions from locally spawned ones.
