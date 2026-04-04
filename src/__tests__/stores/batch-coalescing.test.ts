@@ -11,6 +11,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createRoot, createEffect } from "solid-js";
+import { makeTerminal } from "../helpers/store";
 
 const mockInvoke = vi.fn().mockResolvedValue(undefined);
 vi.mock("@tauri-apps/api/core", () => ({
@@ -45,7 +46,7 @@ describe("terminalsStore.update() — batch() when shellState changes", () => {
 
     createRoot((d) => {
       dispose = d;
-      id = store.add({ sessionId: null, fontSize: 14, name: "T", cwd: null, awaitingInput: null });
+      id = store.add(makeTerminal({ name: "T" }));
 
       createEffect(() => {
         // Track both state paths changed by update() with shellState:
@@ -79,7 +80,7 @@ describe("terminalsStore.update() — batch() when shellState changes", () => {
 
     createRoot((d) => {
       dispose = d;
-      id = store.add({ sessionId: null, fontSize: 14, name: "T", cwd: null, awaitingInput: null });
+      id = store.add(makeTerminal({ name: "T" }));
 
       createEffect(() => {
         void store.state.debouncedBusy[id];

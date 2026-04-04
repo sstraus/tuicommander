@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import "../mocks/tauri";
 import { listen } from "@tauri-apps/api/event";
+import { makeTerminal } from "../helpers/store";
 import { terminalsStore } from "../../stores/terminals";
 import { repositoriesStore } from "../../stores/repositories";
 import { initApp, browserCreatedSessions, type AppInitDeps } from "../../hooks/useAppInit";
@@ -386,7 +387,7 @@ describe("initApp", () => {
 
   it("clears stale terminals from previous session", async () => {
     // Pre-populate stale terminals
-    terminalsStore.add({ sessionId: null, fontSize: 14, name: "stale", cwd: "/old", awaitingInput: null });
+    terminalsStore.add(makeTerminal({ name: "stale", cwd: "/old" }));
     expect(terminalsStore.getCount()).toBe(1);
 
     const deps = createMockDeps();

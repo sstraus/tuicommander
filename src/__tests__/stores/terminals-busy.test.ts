@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createRoot } from "solid-js";
+import { makeTerminal } from "../helpers/store";
 
 describe("terminalsStore debounced busy signal", () => {
   let store: typeof import("../../stores/terminals").terminalsStore;
@@ -16,7 +17,7 @@ describe("terminalsStore debounced busy signal", () => {
   });
 
   const addTerminal = (name = "T") =>
-    store.add({ sessionId: null, fontSize: 14, name, cwd: null, awaitingInput: null });
+    store.add(makeTerminal({ name }));
 
   describe("isBusy()", () => {
     it("returns false for terminal that was never busy", () => {

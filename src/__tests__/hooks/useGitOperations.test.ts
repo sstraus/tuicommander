@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import "../mocks/tauri";
 import { open } from "@tauri-apps/plugin-dialog";
+import { makeTerminal } from "../helpers/store";
 import { terminalsStore } from "../../stores/terminals";
 import { repositoriesStore } from "../../stores/repositories";
 import { repoSettingsStore } from "../../stores/repoSettings";
@@ -248,8 +249,8 @@ describe("useGitOperations", () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
 
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: "/repo", awaitingInput: null });
-      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: "/repo", awaitingInput: null });
+      const id1 = terminalsStore.add(makeTerminal({ name: "T1", cwd: "/repo" }));
+      const id2 = terminalsStore.add(makeTerminal({ name: "T2", cwd: "/repo" }));
       repositoriesStore.addTerminalToBranch("/repo", "main", id1);
       repositoriesStore.addTerminalToBranch("/repo", "main", id2);
 
@@ -270,13 +271,13 @@ describe("useGitOperations", () => {
       repositoriesStore.setBranch("/repo", "feature", { worktreePath: "/repo/wt/feature" });
 
       // Branch main: 2 terminals
-      const m1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "M1", cwd: "/repo", awaitingInput: null });
-      const m2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "M2", cwd: "/repo", awaitingInput: null });
+      const m1 = terminalsStore.add(makeTerminal({ name: "M1", cwd: "/repo" }));
+      const m2 = terminalsStore.add(makeTerminal({ name: "M2", cwd: "/repo" }));
       repositoriesStore.addTerminalToBranch("/repo", "main", m1);
       repositoriesStore.addTerminalToBranch("/repo", "main", m2);
 
       // Branch feature: 1 terminal
-      const f1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "F1", cwd: "/repo/wt/feature", awaitingInput: null });
+      const f1 = terminalsStore.add(makeTerminal({ name: "F1", cwd: "/repo/wt/feature" }));
       repositoriesStore.addTerminalToBranch("/repo", "feature", f1);
 
       // Activate main, select tab m2
@@ -471,7 +472,7 @@ describe("useGitOperations", () => {
       repositoriesStore.setActiveBranch("/repo", "main"); // stale — HEAD actually moved to feature/acme
 
       // Active terminal is in the feature/acme worktree directory
-      const existingTid = terminalsStore.add({ sessionId: "s1", fontSize: 14, name: "T1", cwd: "/repo/.worktrees/acme", awaitingInput: null });
+      const existingTid = terminalsStore.add(makeTerminal({ name: "T1", sessionId: "s1", cwd: "/repo/.worktrees/acme" }));
       repositoriesStore.addTerminalToBranch("/repo", "feature/acme", existingTid);
       terminalsStore.setActive(existingTid);
 
@@ -493,7 +494,7 @@ describe("useGitOperations", () => {
       repositoriesStore.setActiveBranch("/repo", "old-branch"); // stale
 
       // Active terminal is at repo root (HEAD moved to new-branch externally)
-      const existingTid = terminalsStore.add({ sessionId: "s2", fontSize: 14, name: "T1", cwd: "/repo", awaitingInput: null });
+      const existingTid = terminalsStore.add(makeTerminal({ name: "T1", sessionId: "s2", cwd: "/repo" }));
       repositoriesStore.addTerminalToBranch("/repo", "new-branch", existingTid);
       terminalsStore.setActive(existingTid);
 
@@ -555,7 +556,7 @@ describe("useGitOperations", () => {
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo", isMain: true });
       repositoriesStore.setBranch("/repo", "feature/x", { worktreePath: "/repo/.wt/x" });
       repositoriesStore.addTerminalToBranch("/repo", "feature/x", "term-99");
-      terminalsStore.register("term-99", { sessionId: null, fontSize: 14, name: "T-99", cwd: "/repo/.wt/x", awaitingInput: null });
+      terminalsStore.register("term-99", makeTerminal({ name: "T-99", cwd: "/repo/.wt/x" }));
       mockRepo.mergeAndArchiveWorktree.mockRejectedValueOnce(new Error("Merge failed (conflicts?)"));
 
       await gitOps.handleMergeAndArchive("/repo", "feature/x", "main", "archive");
@@ -770,7 +771,7 @@ describe("useGitOperations", () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
       repositoriesStore.setActiveBranch("/repo", "main");
-      const tid = terminalsStore.add({ sessionId: "s1", fontSize: 14, name: "T1", cwd: "/repo", awaitingInput: null });
+      const tid = terminalsStore.add(makeTerminal({ name: "T1", sessionId: "s1", cwd: "/repo" }));
       repositoriesStore.addTerminalToBranch("/repo", "main", tid);
 
       mockSummary({
@@ -848,7 +849,7 @@ describe("useGitOperations", () => {
       repositoriesStore.setActiveBranch("/repo", "main");
 
       // Add a live terminal on the worktree branch
-      const tid = terminalsStore.add({ sessionId: "wt-sess", fontSize: 14, name: "WT", cwd: "/repo/.worktrees/agent-abc", awaitingInput: null });
+      const tid = terminalsStore.add(makeTerminal({ name: "WT", sessionId: "wt-sess", cwd: "/repo/.worktrees/agent-abc" }));
       repositoriesStore.addTerminalToBranch("/repo", "worktree-agent-abc", tid);
 
       // Backend reports worktree is gone (only main remains)
@@ -972,7 +973,7 @@ describe("useGitOperations", () => {
     it("closes branch terminals before removing", async () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "feature", { worktreePath: "/repo/wt" });
-      const id = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      const id = terminalsStore.add(makeTerminal({ name: "T1" }));
       repositoriesStore.addTerminalToBranch("/repo", "feature", id);
 
       await gitOps.handleRemoveBranch("/repo", "feature");
@@ -995,8 +996,8 @@ describe("useGitOperations", () => {
     it("closes all branch terminals", async () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+      const id1 = terminalsStore.add(makeTerminal({ name: "T1" }));
+      const id2 = terminalsStore.add(makeTerminal({ name: "T2" }));
       repositoriesStore.addTerminalToBranch("/repo", "main", id1);
       repositoriesStore.addTerminalToBranch("/repo", "main", id2);
       gitOps.setCurrentRepoPath("/repo");
@@ -1594,7 +1595,7 @@ describe("useGitOperations", () => {
 
     it("closes orphan terminals when adding repo", async () => {
       // Create an orphan terminal (not tracked by any branch)
-      const orphanId = terminalsStore.add({ sessionId: null, fontSize: 14, name: "orphan", cwd: null, awaitingInput: null });
+      const orphanId = terminalsStore.add(makeTerminal({ name: "orphan" }));
 
       vi.mocked(open).mockResolvedValue("/new-repo");
       mockRepo.getInfo.mockResolvedValue({

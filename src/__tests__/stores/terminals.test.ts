@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createRoot } from "solid-js";
+import { makeTerminal } from "../helpers/store";
 
 describe("terminalsStore", () => {
   let store: typeof import("../../stores/terminals").terminalsStore;
@@ -13,7 +14,7 @@ describe("terminalsStore", () => {
   describe("add()", () => {
     it("creates a terminal with generated ID", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal());
         expect(id).toBe("term-1");
         expect(store.get(id)).toBeDefined();
         expect(store.get(id)!.name).toBe("Test");
@@ -25,8 +26,8 @@ describe("terminalsStore", () => {
 
     it("increments counter for each terminal", () => {
       createRoot((dispose) => {
-        const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-        const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+        const id1 = store.add(makeTerminal({ name: "T1" }));
+        const id2 = store.add(makeTerminal({ name: "T2" }));
         expect(id1).toBe("term-1");
         expect(id2).toBe("term-2");
         dispose();
@@ -37,7 +38,7 @@ describe("terminalsStore", () => {
   describe("remove()", () => {
     it("removes a terminal", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal());
         store.remove(id);
         expect(store.get(id)).toBeUndefined();
         dispose();
@@ -46,8 +47,8 @@ describe("terminalsStore", () => {
 
     it("sets activeId to null when active terminal is removed (caller handles replacement)", () => {
       createRoot((dispose) => {
-        const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-        store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+        const id1 = store.add(makeTerminal({ name: "T1" }));
+        store.add(makeTerminal({ name: "T2" }));
         store.setActive(id1);
         store.remove(id1);
         expect(store.state.activeId).toBeNull();
@@ -57,7 +58,7 @@ describe("terminalsStore", () => {
 
     it("sets activeId to null when last terminal is removed", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal());
         store.setActive(id);
         store.remove(id);
         expect(store.state.activeId).toBeNull();
@@ -69,7 +70,7 @@ describe("terminalsStore", () => {
   describe("setActive()", () => {
     it("sets the active terminal", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal());
         store.setActive(id);
         expect(store.state.activeId).toBe(id);
         dispose();
@@ -78,7 +79,7 @@ describe("terminalsStore", () => {
 
     it("clears activity indicator when setting active", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal());
         store.update(id, { activity: true });
         store.setActive(id);
         expect(store.get(id)!.activity).toBe(false);
@@ -98,7 +99,7 @@ describe("terminalsStore", () => {
   describe("getActive()", () => {
     it("returns the active terminal", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal());
         store.setActive(id);
         expect(store.getActive()?.id).toBe(id);
         dispose();
@@ -116,7 +117,7 @@ describe("terminalsStore", () => {
   describe("update()", () => {
     it("updates terminal properties", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal());
         store.update(id, { name: "Updated", fontSize: 16 });
         expect(store.get(id)!.name).toBe("Updated");
         expect(store.get(id)!.fontSize).toBe(16);
@@ -128,7 +129,7 @@ describe("terminalsStore", () => {
   describe("setSessionId()", () => {
     it("updates session ID", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal());
         store.setSessionId(id, "sess-1");
         expect(store.get(id)!.sessionId).toBe("sess-1");
         dispose();
@@ -139,7 +140,7 @@ describe("terminalsStore", () => {
   describe("setFontSize()", () => {
     it("updates font size", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal());
         store.setFontSize(id, 18);
         expect(store.get(id)!.fontSize).toBe(18);
         dispose();
@@ -148,7 +149,7 @@ describe("terminalsStore", () => {
 
     it("fontSize is accessible via direct store path", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal());
 
         // Verify direct store path access works (used in Terminal.tsx for SolidJS reactivity)
         expect(store.state.terminals[id]?.fontSize).toBe(14);
@@ -170,7 +171,7 @@ describe("terminalsStore", () => {
   describe("awaiting input", () => {
     it("sets awaiting input type", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal());
         store.setAwaitingInput(id, "question");
         expect(store.get(id)!.awaitingInput).toBe("question");
         dispose();
@@ -179,7 +180,7 @@ describe("terminalsStore", () => {
 
     it("clears awaiting input", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: "question" });
+        const id = store.add(makeTerminal({ awaitingInput: "question" }));
         store.clearAwaitingInput(id);
         expect(store.get(id)!.awaitingInput).toBeNull();
         dispose();
@@ -188,8 +189,8 @@ describe("terminalsStore", () => {
 
     it("hasAwaitingInput returns true when any terminal is awaiting", () => {
       createRoot((dispose) => {
-        store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-        const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+        store.add(makeTerminal({ name: "T1" }));
+        const id2 = store.add(makeTerminal({ name: "T2" }));
         store.setAwaitingInput(id2, "error");
         expect(store.hasAwaitingInput()).toBe(true);
         dispose();
@@ -198,7 +199,7 @@ describe("terminalsStore", () => {
 
     it("hasAwaitingInput returns false when none awaiting", () => {
       createRoot((dispose) => {
-        store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+        store.add(makeTerminal({ name: "T1" }));
         expect(store.hasAwaitingInput()).toBe(false);
         dispose();
       });
@@ -206,7 +207,7 @@ describe("terminalsStore", () => {
 
     it("shellState update does not clear awaitingInput (PTY output must not erase question state)", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal());
         store.setAwaitingInput(id, "question");
         // Simulate PTY output: shellState goes busy
         store.update(id, { shellState: "busy" });
@@ -221,8 +222,8 @@ describe("terminalsStore", () => {
 
     it("getAwaitingInputIds returns correct IDs", () => {
       createRoot((dispose) => {
-        const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-        const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+        const id1 = store.add(makeTerminal({ name: "T1" }));
+        const id2 = store.add(makeTerminal({ name: "T2" }));
         store.setAwaitingInput(id2, "error");
         const ids = store.getAwaitingInputIds();
         expect(ids).toContain(id2);
@@ -235,8 +236,8 @@ describe("terminalsStore", () => {
   describe("getIds()", () => {
     it("returns all terminal IDs", () => {
       createRoot((dispose) => {
-        store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-        store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+        store.add(makeTerminal({ name: "T1" }));
+        store.add(makeTerminal({ name: "T2" }));
         expect(store.getIds()).toHaveLength(2);
         dispose();
       });
@@ -246,7 +247,7 @@ describe("terminalsStore", () => {
   describe("sessionToTerminal reverse map", () => {
     it("getTerminalForSession returns terminal ID when session is assigned", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: "sess-abc", fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal({ name: "T1", sessionId: "sess-abc" }));
         expect(store.getTerminalForSession("sess-abc")).toBe(id);
         dispose();
       });
@@ -254,7 +255,7 @@ describe("terminalsStore", () => {
 
     it("getTerminalForSession returns null for unknown session", () => {
       createRoot((dispose) => {
-        store.add({ sessionId: "sess-abc", fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+        store.add(makeTerminal({ name: "T1", sessionId: "sess-abc" }));
         expect(store.getTerminalForSession("not-a-session")).toBeNull();
         dispose();
       });
@@ -262,7 +263,7 @@ describe("terminalsStore", () => {
 
     it("getTerminalForSession returns null for terminal with null sessionId", () => {
       createRoot((dispose) => {
-        store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+        store.add(makeTerminal({ name: "T1" }));
         expect(store.getTerminalForSession("sess-xyz")).toBeNull();
         dispose();
       });
@@ -270,7 +271,7 @@ describe("terminalsStore", () => {
 
     it("map is updated when setSessionId is called", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal({ name: "T1" }));
         expect(store.getTerminalForSession("sess-new")).toBeNull();
         store.setSessionId(id, "sess-new");
         expect(store.getTerminalForSession("sess-new")).toBe(id);
@@ -280,7 +281,7 @@ describe("terminalsStore", () => {
 
     it("map is updated when setSessionId reassigns to a new session", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: "sess-old", fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal({ name: "T1", sessionId: "sess-old" }));
         store.setSessionId(id, "sess-new");
         expect(store.getTerminalForSession("sess-old")).toBeNull();
         expect(store.getTerminalForSession("sess-new")).toBe(id);
@@ -290,7 +291,7 @@ describe("terminalsStore", () => {
 
     it("map entry is removed when terminal is removed", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: "sess-abc", fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal({ name: "T1", sessionId: "sess-abc" }));
         expect(store.getTerminalForSession("sess-abc")).toBe(id);
         store.remove(id);
         expect(store.getTerminalForSession("sess-abc")).toBeNull();
@@ -300,7 +301,7 @@ describe("terminalsStore", () => {
 
     it("getAgentTypeForSession uses reverse map for O(1) lookup", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: "sess-agent", fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal({ name: "T1", sessionId: "sess-agent" }));
         store.update(id, { agentType: "claude" });
         expect(store.getAgentTypeForSession("sess-agent")).toBe("claude");
         dispose();
@@ -309,7 +310,7 @@ describe("terminalsStore", () => {
 
     it("getAgentTypeForSession returns null for unknown session", () => {
       createRoot((dispose) => {
-        store.add({ sessionId: "sess-agent", fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+        store.add(makeTerminal({ name: "T1", sessionId: "sess-agent" }));
         expect(store.getAgentTypeForSession("unknown-sess")).toBeNull();
         dispose();
       });
@@ -319,7 +320,7 @@ describe("terminalsStore", () => {
   describe("agentType", () => {
     it("initializes agentType as null", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal());
         expect(store.get(id)!.agentType).toBeNull();
         dispose();
       });
@@ -327,7 +328,7 @@ describe("terminalsStore", () => {
 
     it("can be updated to a known agent", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal());
         store.update(id, { agentType: "claude" });
         expect(store.get(id)!.agentType).toBe("claude");
         dispose();
@@ -336,7 +337,7 @@ describe("terminalsStore", () => {
 
     it("can be cleared back to null", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal());
         store.update(id, { agentType: "gemini" });
         store.update(id, { agentType: null });
         expect(store.get(id)!.agentType).toBeNull();
@@ -348,7 +349,7 @@ describe("terminalsStore", () => {
   describe("unseen", () => {
     it("initializes unseen as false", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal());
         expect(store.get(id)!.unseen).toBe(false);
         dispose();
       });
@@ -356,7 +357,7 @@ describe("terminalsStore", () => {
 
     it("clears unseen when setting active", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal());
         store.update(id, { unseen: true });
         store.setActive(id);
         expect(store.get(id)!.unseen).toBe(false);
@@ -366,8 +367,8 @@ describe("terminalsStore", () => {
 
     it("setAwaitingInput does NOT set unseen (question dot is sufficient)", () => {
       createRoot((dispose) => {
-        const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-        const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+        const id1 = store.add(makeTerminal({ name: "T1" }));
+        const id2 = store.add(makeTerminal({ name: "T2" }));
         store.setActive(id1);
         // Terminal id2 is not active — awaitingInput should NOT set unseen
         // (the orange/red dot already communicates "needs attention")
@@ -381,7 +382,7 @@ describe("terminalsStore", () => {
   describe("shellState", () => {
     it("initializes shellState as null", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal());
         expect(store.get(id)!.shellState).toBeNull();
         dispose();
       });
@@ -389,7 +390,7 @@ describe("terminalsStore", () => {
 
     it("can be updated to busy", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal());
         store.update(id, { shellState: "busy" });
         expect(store.get(id)!.shellState).toBe("busy");
         dispose();
@@ -398,7 +399,7 @@ describe("terminalsStore", () => {
 
     it("can be updated to idle", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal());
         store.update(id, { shellState: "idle" });
         expect(store.get(id)!.shellState).toBe("idle");
         dispose();
@@ -407,7 +408,7 @@ describe("terminalsStore", () => {
 
     it("clears awaitingInput on idle→busy transition", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal());
         store.update(id, { shellState: "idle" });
         store.setAwaitingInput(id, "question");
         expect(store.get(id)!.awaitingInput).toBe("question");
@@ -420,7 +421,7 @@ describe("terminalsStore", () => {
 
     it("does not clear awaitingInput on null→busy transition", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal());
         store.setAwaitingInput(id, "question");
         // Initial busy (from null) should NOT clear — agent hasn't been idle yet
         store.update(id, { shellState: "busy" });
@@ -431,7 +432,7 @@ describe("terminalsStore", () => {
 
     it("preserves shellState on setActive", () => {
       createRoot((dispose) => {
-        const id = store.add({ sessionId: null, fontSize: 14, name: "Test", cwd: null, awaitingInput: null });
+        const id = store.add(makeTerminal());
         store.update(id, { shellState: "idle" });
         store.setActive(id);
         expect(store.get(id)!.shellState).toBe("idle");
@@ -444,7 +445,7 @@ describe("terminalsStore", () => {
     it("returns terminal count", () => {
       createRoot((dispose) => {
         expect(store.getCount()).toBe(0);
-        store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+        store.add(makeTerminal({ name: "T1" }));
         expect(store.getCount()).toBe(1);
         dispose();
       });
@@ -467,7 +468,7 @@ describe("terminalsStore", () => {
     describe("splitPane()", () => {
       it("splits a single pane vertically", () => {
         createRoot((dispose) => {
-          const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: "/tmp", awaitingInput: null });
+          const id1 = store.add(makeTerminal({ name: "T1", cwd: "/tmp" }));
           store.setActive(id1);
           store.setLayout({ direction: "none", panes: [id1], ratios: [], activePaneIndex: 0 });
 
@@ -486,7 +487,7 @@ describe("terminalsStore", () => {
 
       it("splits a single pane horizontally", () => {
         createRoot((dispose) => {
-          const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+          const id1 = store.add(makeTerminal({ name: "T1" }));
           store.setLayout({ direction: "none", panes: [id1], ratios: [], activePaneIndex: 0 });
 
           const newId = store.splitPane("horizontal");
@@ -501,7 +502,7 @@ describe("terminalsStore", () => {
 
       it("adds 3rd pane when same direction active", () => {
         createRoot((dispose) => {
-          const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+          const id1 = store.add(makeTerminal({ name: "T1" }));
           store.setLayout({ direction: "none", panes: [id1], ratios: [], activePaneIndex: 0 });
 
           const id2 = store.splitPane("vertical");
@@ -523,7 +524,7 @@ describe("terminalsStore", () => {
 
       it("returns null when opposite direction requested", () => {
         createRoot((dispose) => {
-          const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+          const id1 = store.add(makeTerminal({ name: "T1" }));
           store.setLayout({ direction: "none", panes: [id1], ratios: [], activePaneIndex: 0 });
           store.splitPane("vertical");
 
@@ -536,7 +537,7 @@ describe("terminalsStore", () => {
 
       it("returns null at MAX_SPLIT_PANES (6)", () => {
         createRoot((dispose) => {
-          const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+          const id1 = store.add(makeTerminal({ name: "T1" }));
           store.setLayout({ direction: "none", panes: [id1], ratios: [], activePaneIndex: 0 });
 
           // Split up to max (6 panes = 1 original + 5 splits)
@@ -564,7 +565,7 @@ describe("terminalsStore", () => {
 
       it("inherits cwd from the source pane", () => {
         createRoot((dispose) => {
-          const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: "/projects/foo", awaitingInput: null });
+          const id1 = store.add(makeTerminal({ name: "T1", cwd: "/projects/foo" }));
           store.setLayout({ direction: "none", panes: [id1], ratios: [], activePaneIndex: 0 });
 
           const newId = store.splitPane("vertical");
@@ -579,8 +580,8 @@ describe("terminalsStore", () => {
     describe("closeSplitPane()", () => {
       it("collapses split to single pane when closing pane 1", () => {
         createRoot((dispose) => {
-          const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-          const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+          const id1 = store.add(makeTerminal({ name: "T1" }));
+          const id2 = store.add(makeTerminal({ name: "T2" }));
           store.setLayout({ direction: "vertical", panes: [id1, id2], ratios: [0.5, 0.5], activePaneIndex: 1 });
 
           store.closeSplitPane(1);
@@ -595,8 +596,8 @@ describe("terminalsStore", () => {
 
       it("collapses split to single pane when closing pane 0", () => {
         createRoot((dispose) => {
-          const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-          const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+          const id1 = store.add(makeTerminal({ name: "T1" }));
+          const id2 = store.add(makeTerminal({ name: "T2" }));
           store.setLayout({ direction: "horizontal", panes: [id1, id2], ratios: [0.5, 0.5], activePaneIndex: 0 });
 
           store.closeSplitPane(0);
@@ -611,9 +612,9 @@ describe("terminalsStore", () => {
 
       it("closes middle pane of 3, redistributes ratios proportionally", () => {
         createRoot((dispose) => {
-          const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-          const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
-          const id3 = store.add({ sessionId: null, fontSize: 14, name: "T3", cwd: null, awaitingInput: null });
+          const id1 = store.add(makeTerminal({ name: "T1" }));
+          const id2 = store.add(makeTerminal({ name: "T2" }));
+          const id3 = store.add(makeTerminal({ name: "T3" }));
           store.setLayout({ direction: "vertical", panes: [id1, id2, id3], ratios: [0.4, 0.2, 0.4], activePaneIndex: 1 });
 
           store.closeSplitPane(1);
@@ -633,10 +634,10 @@ describe("terminalsStore", () => {
         createRoot((dispose) => {
           // 4 panes [A,B,C,D], activePaneIndex: 2 (C), close pane 0 (A)
           // Result: [B,C,D], activePaneIndex should be 1 (still pointing at C)
-          const idA = store.add({ sessionId: null, fontSize: 14, name: "A", cwd: null, awaitingInput: null });
-          const idB = store.add({ sessionId: null, fontSize: 14, name: "B", cwd: null, awaitingInput: null });
-          const idC = store.add({ sessionId: null, fontSize: 14, name: "C", cwd: null, awaitingInput: null });
-          const idD = store.add({ sessionId: null, fontSize: 14, name: "D", cwd: null, awaitingInput: null });
+          const idA = store.add(makeTerminal({ name: "A" }));
+          const idB = store.add(makeTerminal({ name: "B" }));
+          const idC = store.add(makeTerminal({ name: "C" }));
+          const idD = store.add(makeTerminal({ name: "D" }));
           store.setLayout({ direction: "vertical", panes: [idA, idB, idC, idD], ratios: [0.25, 0.25, 0.25, 0.25], activePaneIndex: 2 });
 
           store.closeSplitPane(0);
@@ -652,9 +653,9 @@ describe("terminalsStore", () => {
         createRoot((dispose) => {
           // 3 panes, activePaneIndex: 2, close index 2
           // Result: 2 panes, activePaneIndex should be 1
-          const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-          const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
-          const id3 = store.add({ sessionId: null, fontSize: 14, name: "T3", cwd: null, awaitingInput: null });
+          const id1 = store.add(makeTerminal({ name: "T1" }));
+          const id2 = store.add(makeTerminal({ name: "T2" }));
+          const id3 = store.add(makeTerminal({ name: "T3" }));
           store.setLayout({ direction: "vertical", panes: [id1, id2, id3], ratios: [0.4, 0.3, 0.3], activePaneIndex: 2 });
 
           store.closeSplitPane(2);
@@ -668,7 +669,7 @@ describe("terminalsStore", () => {
 
       it("does nothing if not split", () => {
         createRoot((dispose) => {
-          const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+          const id1 = store.add(makeTerminal({ name: "T1" }));
           store.setLayout({ direction: "none", panes: [id1], ratios: [], activePaneIndex: 0 });
 
           store.closeSplitPane(1);
@@ -683,8 +684,8 @@ describe("terminalsStore", () => {
     describe("setHandleRatio()", () => {
       it("adjusts boundary between two adjacent panes", () => {
         createRoot((dispose) => {
-          const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-          const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+          const id1 = store.add(makeTerminal({ name: "T1" }));
+          const id2 = store.add(makeTerminal({ name: "T2" }));
           store.setLayout({ direction: "vertical", panes: [id1, id2], ratios: [0.5, 0.5], activePaneIndex: 0 });
 
           store.setHandleRatio(0, 0.7);
@@ -697,8 +698,8 @@ describe("terminalsStore", () => {
 
       it("enforces minimum pane fraction", () => {
         createRoot((dispose) => {
-          const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-          const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+          const id1 = store.add(makeTerminal({ name: "T1" }));
+          const id2 = store.add(makeTerminal({ name: "T2" }));
           store.setLayout({ direction: "vertical", panes: [id1, id2], ratios: [0.5, 0.5], activePaneIndex: 0 });
 
           // Try to push boundary to 0.99 — should be clamped so second pane >= MIN_PANE_FRACTION
@@ -713,8 +714,8 @@ describe("terminalsStore", () => {
     describe("setActivePaneIndex()", () => {
       it("sets the active pane index", () => {
         createRoot((dispose) => {
-          const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-          const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+          const id1 = store.add(makeTerminal({ name: "T1" }));
+          const id2 = store.add(makeTerminal({ name: "T2" }));
           store.setLayout({ direction: "vertical", panes: [id1, id2], ratios: [0.5, 0.5], activePaneIndex: 0 });
 
           store.setActivePaneIndex(1);
@@ -725,8 +726,8 @@ describe("terminalsStore", () => {
 
       it("sets back to 0", () => {
         createRoot((dispose) => {
-          const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-          const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+          const id1 = store.add(makeTerminal({ name: "T1" }));
+          const id2 = store.add(makeTerminal({ name: "T2" }));
           store.setLayout({ direction: "vertical", panes: [id1, id2], ratios: [0.5, 0.5], activePaneIndex: 0 });
 
           store.setActivePaneIndex(1);
@@ -738,9 +739,9 @@ describe("terminalsStore", () => {
 
       it("accepts any valid index", () => {
         createRoot((dispose) => {
-          const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-          const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
-          const id3 = store.add({ sessionId: null, fontSize: 14, name: "T3", cwd: null, awaitingInput: null });
+          const id1 = store.add(makeTerminal({ name: "T1" }));
+          const id2 = store.add(makeTerminal({ name: "T2" }));
+          const id3 = store.add(makeTerminal({ name: "T3" }));
           store.setLayout({ direction: "vertical", panes: [id1, id2, id3], ratios: [1/3, 1/3, 1/3], activePaneIndex: 0 });
 
           store.setActivePaneIndex(2);
@@ -757,8 +758,8 @@ describe("terminalsStore", () => {
     describe("setLayout()", () => {
       it("sets the complete layout", () => {
         createRoot((dispose) => {
-          const id1 = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-          const id2 = store.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+          const id1 = store.add(makeTerminal({ name: "T1" }));
+          const id2 = store.add(makeTerminal({ name: "T2" }));
 
           store.setLayout({
             direction: "vertical",

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createRoot } from "solid-js";
 import "../mocks/tauri";
 import { mockInvoke } from "../mocks/tauri";
+import { makeTerminal } from "../helpers/store";
 
 /** Helper: advance timers and flush all pending microtasks */
 async function tick(ms: number) {
@@ -65,7 +66,7 @@ describe("useAgentPolling", () => {
 
   it("does not poll when active terminal has no session", async () => {
     await createRoot(async (dispose) => {
-      const id = store.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      const id = store.add(makeTerminal({ name: "T1" }));
       store.setActive(id);
 
       const { useAgentPolling } = await import("../../hooks/useAgentPolling");

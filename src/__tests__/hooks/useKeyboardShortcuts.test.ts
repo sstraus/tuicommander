@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import "../mocks/tauri";
+import { makeTerminal } from "../helpers/store";
 import { terminalsStore } from "../../stores/terminals";
 import { paneLayoutStore, resetGroupCounter } from "../../stores/paneLayout";
 import { useKeyboardShortcuts, type ShortcutHandlers } from "../../hooks/useKeyboardShortcuts";
@@ -256,7 +257,7 @@ describe("useKeyboardShortcuts", () => {
 
   describe("Cmd+W in split mode", () => {
     it("calls closeActivePane when pane tree is split", () => {
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      const id1 = terminalsStore.add(makeTerminal({ name: "T1" }));
       terminalsStore.setActive(id1);
 
       // Set up pane tree split
@@ -273,7 +274,7 @@ describe("useKeyboardShortcuts", () => {
     });
 
     it("closes non-split active terminal", () => {
-      const id = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      const id = terminalsStore.add(makeTerminal({ name: "T1" }));
       terminalsStore.setActive(id);
 
       fireKeydown("w", { metaKey: true });
@@ -292,8 +293,8 @@ describe("useKeyboardShortcuts", () => {
   describe("split pane navigation", () => {
     /** Helper: create a vertical split with two terminal groups */
     function setupVerticalSplit() {
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+      const id1 = terminalsStore.add(makeTerminal({ name: "T1" }));
+      const id2 = terminalsStore.add(makeTerminal({ name: "T2" }));
       const g1 = paneLayoutStore.createGroup();
       paneLayoutStore.addTab(g1, { id: id1, type: "terminal" });
       const g2 = paneLayoutStore.createGroup();
@@ -323,8 +324,8 @@ describe("useKeyboardShortcuts", () => {
     });
 
     it("Alt+ArrowDown navigates panes in horizontal split", () => {
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+      const id1 = terminalsStore.add(makeTerminal({ name: "T1" }));
+      const id2 = terminalsStore.add(makeTerminal({ name: "T2" }));
       const g1 = paneLayoutStore.createGroup();
       paneLayoutStore.addTab(g1, { id: id1, type: "terminal" });
       const g2 = paneLayoutStore.createGroup();
@@ -350,7 +351,7 @@ describe("useKeyboardShortcuts", () => {
     });
 
     it("ignores Alt+Arrow when not in split mode", () => {
-      const id = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      const id = terminalsStore.add(makeTerminal({ name: "T1" }));
       terminalsStore.setActive(id);
 
       fireKeydown("ArrowRight", { altKey: true });

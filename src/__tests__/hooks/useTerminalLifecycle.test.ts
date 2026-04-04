@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { mockInvoke } from "../mocks/tauri";
+import { makeTerminal } from "../helpers/store";
 import { terminalsStore } from "../../stores/terminals";
 import { repositoriesStore } from "../../stores/repositories";
 import { diffTabsStore } from "../../stores/diffTabs";
@@ -153,8 +154,8 @@ describe("useTerminalLifecycle", () => {
     });
 
     it("zoomInAll increases font size for all terminals", () => {
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-      const id2 = terminalsStore.add({ sessionId: null, fontSize: 18, name: "T2", cwd: null, awaitingInput: null });
+      const id1 = terminalsStore.add(makeTerminal({ name: "T1" }));
+      const id2 = terminalsStore.add(makeTerminal({ name: "T2", fontSize: 18 }));
       terminalsStore.setActive(id1);
 
       lifecycle.zoomInAll();
@@ -163,8 +164,8 @@ describe("useTerminalLifecycle", () => {
     });
 
     it("zoomOutAll decreases font size for all terminals", () => {
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-      const id2 = terminalsStore.add({ sessionId: null, fontSize: 18, name: "T2", cwd: null, awaitingInput: null });
+      const id1 = terminalsStore.add(makeTerminal({ name: "T1" }));
+      const id2 = terminalsStore.add(makeTerminal({ name: "T2", fontSize: 18 }));
       terminalsStore.setActive(id1);
 
       lifecycle.zoomOutAll();
@@ -173,8 +174,8 @@ describe("useTerminalLifecycle", () => {
     });
 
     it("zoomResetAll resets font size for all terminals", () => {
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 20, name: "T1", cwd: null, awaitingInput: null });
-      const id2 = terminalsStore.add({ sessionId: null, fontSize: 10, name: "T2", cwd: null, awaitingInput: null });
+      const id1 = terminalsStore.add(makeTerminal({ name: "T1", fontSize: 20 }));
+      const id2 = terminalsStore.add(makeTerminal({ name: "T2", fontSize: 10 }));
       terminalsStore.setActive(id1);
 
       lifecycle.zoomResetAll();
@@ -183,8 +184,8 @@ describe("useTerminalLifecycle", () => {
     });
 
     it("zoomOutAll clamps to min font size", () => {
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 8, name: "T1", cwd: null, awaitingInput: null });
-      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+      const id1 = terminalsStore.add(makeTerminal({ name: "T1", fontSize: 8 }));
+      const id2 = terminalsStore.add(makeTerminal({ name: "T2" }));
       terminalsStore.setActive(id1);
 
       lifecycle.zoomOutAll();
@@ -193,8 +194,8 @@ describe("useTerminalLifecycle", () => {
     });
 
     it("zoomInAll clamps to max font size", () => {
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 32, name: "T1", cwd: null, awaitingInput: null });
-      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+      const id1 = terminalsStore.add(makeTerminal({ name: "T1", fontSize: 32 }));
+      const id2 = terminalsStore.add(makeTerminal({ name: "T2" }));
       terminalsStore.setActive(id1);
 
       lifecycle.zoomInAll();
@@ -388,7 +389,7 @@ describe("useTerminalLifecycle", () => {
     });
 
     it("restores terminal focus when closing last diff tab", async () => {
-      const termId = terminalsStore.add({ sessionId: "s1", fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      const termId = terminalsStore.add(makeTerminal({ name: "T1", sessionId: "s1" }));
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
       repositoriesStore.setActive("/repo");
@@ -407,7 +408,7 @@ describe("useTerminalLifecycle", () => {
     });
 
     it("restores terminal focus when closing last editor tab", async () => {
-      const termId = terminalsStore.add({ sessionId: "s1", fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      const termId = terminalsStore.add(makeTerminal({ name: "T1", sessionId: "s1" }));
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
       repositoriesStore.setActive("/repo");
@@ -471,8 +472,8 @@ describe("useTerminalLifecycle", () => {
       repositoriesStore.setActive("/repo");
       repositoriesStore.setActiveBranch("/repo", "main");
 
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+      const id1 = terminalsStore.add(makeTerminal({ name: "T1" }));
+      const id2 = terminalsStore.add(makeTerminal({ name: "T2" }));
       repositoriesStore.addTerminalToBranch("/repo", "main", id1);
       repositoriesStore.addTerminalToBranch("/repo", "main", id2);
       terminalsStore.setActive(id1);
@@ -487,8 +488,8 @@ describe("useTerminalLifecycle", () => {
       repositoriesStore.setActive("/repo");
       repositoriesStore.setActiveBranch("/repo", "main");
 
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+      const id1 = terminalsStore.add(makeTerminal({ name: "T1" }));
+      const id2 = terminalsStore.add(makeTerminal({ name: "T2" }));
       repositoriesStore.addTerminalToBranch("/repo", "main", id1);
       repositoriesStore.addTerminalToBranch("/repo", "main", id2);
       terminalsStore.setActive(id2);
@@ -501,7 +502,7 @@ describe("useTerminalLifecycle", () => {
   describe("clearTerminal", () => {
     it("calls clear on active terminal ref", () => {
       const mockClear = vi.fn();
-      const id = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      const id = terminalsStore.add(makeTerminal({ name: "T1" }));
       terminalsStore.setActive(id);
       terminalsStore.update(id, { ref: { clear: mockClear, fit: vi.fn(), write: vi.fn(), writeln: vi.fn(), input: vi.fn(), focus: vi.fn(), getSessionId: vi.fn(), openSearch: vi.fn(), closeSearch: vi.fn(), searchBuffer: vi.fn(() => []), scrollToLine: vi.fn(), scrollToTop: vi.fn(), scrollToBottom: vi.fn(), scrollPages: vi.fn() } });
 
@@ -512,7 +513,7 @@ describe("useTerminalLifecycle", () => {
 
   describe("handleTerminalSelect", () => {
     it("sets terminal as active and deactivates others", () => {
-      const id = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      const id = terminalsStore.add(makeTerminal({ name: "T1" }));
       diffTabsStore.add("/repo", "file.ts", "M");
       mdTabsStore.add("/repo", "README.md");
 
@@ -548,9 +549,9 @@ describe("useTerminalLifecycle", () => {
       repositoriesStore.setActive("/repo");
       repositoriesStore.setActiveBranch("/repo", "main");
 
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
-      const id3 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T3", cwd: null, awaitingInput: null });
+      const id1 = terminalsStore.add(makeTerminal({ name: "T1" }));
+      const id2 = terminalsStore.add(makeTerminal({ name: "T2" }));
+      const id3 = terminalsStore.add(makeTerminal({ name: "T3" }));
       repositoriesStore.addTerminalToBranch("/repo", "main", id1);
       repositoriesStore.addTerminalToBranch("/repo", "main", id2);
       repositoriesStore.addTerminalToBranch("/repo", "main", id3);
@@ -591,9 +592,9 @@ describe("useTerminalLifecycle", () => {
       repositoriesStore.setActive("/repo");
       repositoriesStore.setActiveBranch("/repo", "main");
 
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
-      const id3 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T3", cwd: null, awaitingInput: null });
+      const id1 = terminalsStore.add(makeTerminal({ name: "T1" }));
+      const id2 = terminalsStore.add(makeTerminal({ name: "T2" }));
+      const id3 = terminalsStore.add(makeTerminal({ name: "T3" }));
       repositoriesStore.addTerminalToBranch("/repo", "main", id1);
       repositoriesStore.addTerminalToBranch("/repo", "main", id2);
       repositoriesStore.addTerminalToBranch("/repo", "main", id3);
@@ -661,7 +662,7 @@ describe("useTerminalLifecycle", () => {
         configurable: true,
       });
 
-      const id = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      const id = terminalsStore.add(makeTerminal({ name: "T1" }));
       terminalsStore.setActive(id);
       terminalsStore.update(id, {
         ref: { write: mockWrite, clear: vi.fn(), fit: vi.fn(), writeln: vi.fn(), input: vi.fn(), focus: vi.fn(), getSessionId: vi.fn(), openSearch: vi.fn(), closeSearch: vi.fn(), searchBuffer: vi.fn(() => []), scrollToLine: vi.fn(), scrollToTop: vi.fn(), scrollToBottom: vi.fn(), scrollPages: vi.fn() },
@@ -675,7 +676,7 @@ describe("useTerminalLifecycle", () => {
 
   describe("handleTerminalFocus", () => {
     it("sets terminal as active", () => {
-      const id = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      const id = terminalsStore.add(makeTerminal({ name: "T1" }));
 
       lifecycle.handleTerminalFocus(id);
 
@@ -692,11 +693,11 @@ describe("useTerminalLifecycle", () => {
       repositoriesStore.add({ path: "/repo-b", displayName: "Repo B" });
       repositoriesStore.setBranch("/repo-b", "develop", { worktreePath: "/repo-b" });
 
-      const termA = terminalsStore.add({ sessionId: null, fontSize: 14, name: "A1", cwd: "/repo-a", awaitingInput: null });
+      const termA = terminalsStore.add(makeTerminal({ name: "A1", cwd: "/repo-a" }));
       repositoriesStore.addTerminalToBranch("/repo-a", "main", termA);
       terminalsStore.setActive(termA);
 
-      const termB = terminalsStore.add({ sessionId: null, fontSize: 14, name: "B1", cwd: "/repo-b", awaitingInput: null });
+      const termB = terminalsStore.add(makeTerminal({ name: "B1", cwd: "/repo-b" }));
       repositoriesStore.addTerminalToBranch("/repo-b", "develop", termB);
 
       // Attempt to focus the terminal from repo B while repo A is active
@@ -708,7 +709,7 @@ describe("useTerminalLifecycle", () => {
 
     it("allows focus when no active branch context exists", () => {
       // No repo/branch set up — guard skips (activeTerminals is empty)
-      const term = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      const term = terminalsStore.add(makeTerminal({ name: "T1" }));
 
       lifecycle.handleTerminalFocus(term);
 
@@ -722,11 +723,11 @@ describe("useTerminalLifecycle", () => {
       repositoriesStore.setActive("/repo");
       repositoriesStore.setActiveBranch("/repo", "main");
 
-      const termMain = terminalsStore.add({ sessionId: null, fontSize: 14, name: "Main", cwd: "/repo", awaitingInput: null });
+      const termMain = terminalsStore.add(makeTerminal({ name: "Main", cwd: "/repo" }));
       repositoriesStore.addTerminalToBranch("/repo", "main", termMain);
       terminalsStore.setActive(termMain);
 
-      const termFeature = terminalsStore.add({ sessionId: null, fontSize: 14, name: "Feature", cwd: "/repo-feat", awaitingInput: null });
+      const termFeature = terminalsStore.add(makeTerminal({ name: "Feature", cwd: "/repo-feat" }));
       repositoriesStore.addTerminalToBranch("/repo", "feature", termFeature);
 
       lifecycle.handleTerminalFocus(termFeature);
@@ -743,8 +744,8 @@ describe("useTerminalLifecycle", () => {
       repositoriesStore.setActive("/repo");
       repositoriesStore.setActiveBranch("/repo", "main");
 
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+      const id1 = terminalsStore.add(makeTerminal({ name: "T1" }));
+      const id2 = terminalsStore.add(makeTerminal({ name: "T2" }));
       repositoriesStore.addTerminalToBranch("/repo", "main", id1);
       repositoriesStore.addTerminalToBranch("/repo", "main", id2);
       terminalsStore.setActive(id1);
@@ -767,11 +768,11 @@ describe("useTerminalLifecycle", () => {
       repositoriesStore.add({ path: "/repo-b", displayName: "Repo B" });
       repositoriesStore.setBranch("/repo-b", "develop", { worktreePath: "/repo-b" });
 
-      const termA = terminalsStore.add({ sessionId: null, fontSize: 14, name: "A1", cwd: "/repo-a", awaitingInput: null });
+      const termA = terminalsStore.add(makeTerminal({ name: "A1", cwd: "/repo-a" }));
       repositoriesStore.addTerminalToBranch("/repo-a", "main", termA);
       terminalsStore.setActive(termA);
 
-      const termB = terminalsStore.add({ sessionId: null, fontSize: 14, name: "B1", cwd: "/repo-b", awaitingInput: null });
+      const termB = terminalsStore.add(makeTerminal({ name: "B1", cwd: "/repo-b" }));
       repositoriesStore.addTerminalToBranch("/repo-b", "develop", termB);
 
       // Close repo A's only terminal — should NOT fall back to repo B's terminal
@@ -788,11 +789,11 @@ describe("useTerminalLifecycle", () => {
       repositoriesStore.setActive("/repo");
       repositoriesStore.setActiveBranch("/repo", "main");
 
-      const termMain = terminalsStore.add({ sessionId: null, fontSize: 14, name: "Main", cwd: "/repo", awaitingInput: null });
+      const termMain = terminalsStore.add(makeTerminal({ name: "Main", cwd: "/repo" }));
       repositoriesStore.addTerminalToBranch("/repo", "main", termMain);
       terminalsStore.setActive(termMain);
 
-      const termFeature = terminalsStore.add({ sessionId: null, fontSize: 14, name: "Feature", cwd: "/repo-feat", awaitingInput: null });
+      const termFeature = terminalsStore.add(makeTerminal({ name: "Feature", cwd: "/repo-feat" }));
       repositoriesStore.addTerminalToBranch("/repo", "feature", termFeature);
 
       // Close the only terminal on main — should NOT fall back to feature branch's terminal
@@ -809,8 +810,8 @@ describe("useTerminalLifecycle", () => {
       repositoriesStore.setActive("/repo");
       repositoriesStore.setActiveBranch("/repo", "main");
 
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+      const id1 = terminalsStore.add(makeTerminal({ name: "T1" }));
+      const id2 = terminalsStore.add(makeTerminal({ name: "T2" }));
       repositoriesStore.addTerminalToBranch("/repo", "main", id1);
       repositoriesStore.addTerminalToBranch("/repo", "main", id2);
       terminalsStore.setActive(id2);
@@ -825,8 +826,8 @@ describe("useTerminalLifecycle", () => {
       repositoriesStore.setActive("/repo");
       repositoriesStore.setActiveBranch("/repo", "main");
 
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+      const id1 = terminalsStore.add(makeTerminal({ name: "T1" }));
+      const id2 = terminalsStore.add(makeTerminal({ name: "T2" }));
       repositoriesStore.addTerminalToBranch("/repo", "main", id1);
       repositoriesStore.addTerminalToBranch("/repo", "main", id2);
       terminalsStore.setActive(id1);
@@ -841,7 +842,7 @@ describe("useTerminalLifecycle", () => {
       repositoriesStore.setActive("/repo");
       repositoriesStore.setActiveBranch("/repo", "main");
 
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      const id1 = terminalsStore.add(makeTerminal({ name: "T1" }));
       repositoriesStore.addTerminalToBranch("/repo", "main", id1);
       terminalsStore.setActive(id1);
 
@@ -852,8 +853,8 @@ describe("useTerminalLifecycle", () => {
 
   describe("closeTerminal (pane tree collapse)", () => {
     it("removes tab from pane group and collapses when group empties", async () => {
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+      const id1 = terminalsStore.add(makeTerminal({ name: "T1" }));
+      const id2 = terminalsStore.add(makeTerminal({ name: "T2" }));
       const g1 = paneLayoutStore.createGroup();
       paneLayoutStore.addTab(g1, { id: id1, type: "terminal" });
       const g2 = paneLayoutStore.createGroup();
@@ -876,8 +877,8 @@ describe("useTerminalLifecycle", () => {
     });
 
     it("removes tab but keeps group if other tabs remain", async () => {
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+      const id1 = terminalsStore.add(makeTerminal({ name: "T1" }));
+      const id2 = terminalsStore.add(makeTerminal({ name: "T2" }));
       const g1 = paneLayoutStore.createGroup();
       paneLayoutStore.addTab(g1, { id: id1, type: "terminal" });
       paneLayoutStore.addTab(g1, { id: id2, type: "terminal" });
@@ -894,7 +895,7 @@ describe("useTerminalLifecycle", () => {
     });
 
     it("does not affect pane tree when closing a non-split terminal", async () => {
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      const id1 = terminalsStore.add(makeTerminal({ name: "T1" }));
 
       await lifecycle.closeTerminal(id1, true);
 
@@ -903,9 +904,9 @@ describe("useTerminalLifecycle", () => {
     });
 
     it("does not affect pane tree when closing terminal not in any group", async () => {
-      const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
-      const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
-      const id3 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T3", cwd: null, awaitingInput: null });
+      const id1 = terminalsStore.add(makeTerminal({ name: "T1" }));
+      const id2 = terminalsStore.add(makeTerminal({ name: "T2" }));
+      const id3 = terminalsStore.add(makeTerminal({ name: "T3" }));
       const g1 = paneLayoutStore.createGroup();
       paneLayoutStore.addTab(g1, { id: id1, type: "terminal" });
       const g2 = paneLayoutStore.createGroup();
@@ -929,7 +930,7 @@ describe("useTerminalLifecycle", () => {
   describe("reopenClosedTab (max sessions)", () => {
     it("shows status when max sessions reached during reopen", async () => {
       // Close a tab first
-      const id = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+      const id = terminalsStore.add(makeTerminal({ name: "T1" }));
       await lifecycle.closeTerminal(id, true);
 
       // Then hit max sessions
