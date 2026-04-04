@@ -34,8 +34,8 @@ describe("useAgentPolling", () => {
       const { useAgentPolling } = await import("../../hooks/useAgentPolling");
       useAgentPolling();
 
-      // Poll fires on first interval tick (3s), not immediately
-      await vi.advanceTimersByTimeAsync(3000);
+      // Poll fires on first interval tick (30s fallback), not immediately
+      await vi.advanceTimersByTimeAsync(30_000);
       await Promise.resolve(); // flush microtasks
 
       expect(mockInvoke).toHaveBeenCalledWith("get_session_foreground_process", {
@@ -52,7 +52,7 @@ describe("useAgentPolling", () => {
       const { useAgentPolling } = await import("../../hooks/useAgentPolling");
       useAgentPolling();
 
-      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(30_000);
 
       expect(mockInvoke).not.toHaveBeenCalledWith(
         "get_session_foreground_process",
@@ -71,7 +71,7 @@ describe("useAgentPolling", () => {
       const { useAgentPolling } = await import("../../hooks/useAgentPolling");
       useAgentPolling();
 
-      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(30_000);
 
       expect(mockInvoke).not.toHaveBeenCalledWith(
         "get_session_foreground_process",
@@ -92,7 +92,7 @@ describe("useAgentPolling", () => {
       const { useAgentPolling } = await import("../../hooks/useAgentPolling");
       useAgentPolling();
 
-      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(30_000);
       await Promise.resolve();
 
       expect(store.get(id)?.agentType).toBeNull();
@@ -112,7 +112,7 @@ describe("useAgentPolling", () => {
       useAgentPolling();
 
       // Should not throw
-      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(30_000);
       await Promise.resolve();
 
       // agentType should remain null (default)
@@ -136,10 +136,10 @@ describe("useAgentPolling", () => {
         const { useAgentPolling } = await import("../../hooks/useAgentPolling");
         useAgentPolling();
 
-        await tick(3000); // first poll: null
+        await tick(30_000); // first poll: null
         expect(store.get(id)?.agentType).toBeNull();
 
-        await tick(3000); // second poll: claude detected + discovery fires in same cycle
+        await tick(30_000); // second poll: claude detected + discovery fires in same cycle
         expect(store.get(id)?.agentType).toBe("claude");
         expect(mockInvoke).toHaveBeenCalledWith("discover_agent_session", expect.objectContaining({
           agentType: "claude",
@@ -163,9 +163,9 @@ describe("useAgentPolling", () => {
         const { useAgentPolling } = await import("../../hooks/useAgentPolling");
         useAgentPolling();
 
-        await tick(3000); // poll 1 + discovery
-        await tick(3000); // poll 2 (no discovery)
-        await tick(3000); // poll 3 (no discovery)
+        await tick(30_000); // poll 1 + discovery
+        await tick(30_000); // poll 2 (no discovery)
+        await tick(30_000); // poll 3 (no discovery)
 
         const discoveryCalls = mockInvoke.mock.calls.filter(
           ([cmd]) => cmd === "discover_agent_session",
@@ -185,7 +185,7 @@ describe("useAgentPolling", () => {
         const { useAgentPolling } = await import("../../hooks/useAgentPolling");
         useAgentPolling();
 
-        await tick(3000);
+        await tick(30_000);
         expect(store.get(id)?.agentType).toBe("aider");
 
         const discoveryCalls = mockInvoke.mock.calls.filter(
@@ -215,17 +215,17 @@ describe("useAgentPolling", () => {
         const { useAgentPolling } = await import("../../hooks/useAgentPolling");
         useAgentPolling();
 
-        await tick(3000); // poll 1: claude + discovery queued
-        await tick(3000); // poll 2: still claude (discovery already done)
+        await tick(30_000); // poll 1: claude + discovery queued
+        await tick(30_000); // poll 2: still claude (discovery already done)
         expect(store.get(id)?.agentSessionId).toBe("uuid-1");
 
-        await tick(3000); // poll 3: null streak 1 — still holding agentType
-        await tick(3000); // poll 4: null streak 2 — still holding
-        await tick(3000); // poll 5: null streak 3 → agentType cleared
+        await tick(30_000); // poll 3: null streak 1 — still holding agentType
+        await tick(30_000); // poll 4: null streak 2 — still holding
+        await tick(30_000); // poll 5: null streak 3 → agentType cleared
         expect(store.get(id)?.agentType).toBeNull();
         expect(store.get(id)?.agentSessionId).toBeNull();
 
-        await tick(3000); // poll 6: re-launched → re-discovery
+        await tick(30_000); // poll 6: re-launched → re-discovery
         expect(store.get(id)?.agentType).toBe("claude");
         expect(store.get(id)?.agentSessionId).toBe("uuid-2");
 
@@ -234,12 +234,12 @@ describe("useAgentPolling", () => {
     });
 
     it("passes claimed_ids from other terminals to avoid duplicate assignment", async () => {
-      // Two terminals, both running claude
+      // Two terminals, both running claude — processed sequentially
       mockInvoke
-        .mockResolvedValueOnce("claude")     // term-1 poll 1
-        .mockResolvedValueOnce("claude")     // term-2 poll 1
-        .mockResolvedValueOnce("uuid-a")     // term-1 discover
-        .mockResolvedValueOnce("uuid-b");    // term-2 discover
+        .mockResolvedValueOnce("claude")     // term-1: get_session_foreground_process
+        .mockResolvedValueOnce("uuid-a")     // term-1: discover_agent_session
+        .mockResolvedValueOnce("claude")     // term-2: get_session_foreground_process
+        .mockResolvedValueOnce("uuid-b");    // term-2: discover_agent_session
 
       await createRoot(async (dispose) => {
         const id1 = store.add({ sessionId: "sess-1", fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
@@ -248,20 +248,20 @@ describe("useAgentPolling", () => {
         const { useAgentPolling } = await import("../../hooks/useAgentPolling");
         useAgentPolling();
 
-        await tick(3000); // both polled + both discover
+        await tick(30_000); // both polled sequentially + both discover
 
         const discoveryCalls = mockInvoke.mock.calls.filter(
           ([cmd]) => cmd === "discover_agent_session",
         );
         expect(discoveryCalls).toHaveLength(2);
 
-        // Second call must include the first terminal's claimed UUID
-        const [, secondArgs] = discoveryCalls;
+        // Second discovery call must include the first terminal's claimed UUID
+        const secondArgs = discoveryCalls[1];
         expect(secondArgs[1]).toHaveProperty("claimedIds");
+        expect(secondArgs[1].claimedIds).toContain("uuid-a");
 
-        expect([store.get(id1)?.agentSessionId, store.get(id2)?.agentSessionId]).toEqual(
-          expect.arrayContaining(["uuid-a", "uuid-b"]),
-        );
+        expect(store.get(id1)?.agentSessionId).toBe("uuid-a");
+        expect(store.get(id2)?.agentSessionId).toBe("uuid-b");
 
         dispose();
       });

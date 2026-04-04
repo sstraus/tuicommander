@@ -26,6 +26,7 @@ import { kittySequenceForKey } from "./kittyKeyboard";
 import { getAwaitingInputSound } from "./awaitingInputSound";
 import { searchTerminalBuffer } from "../../utils/terminalSearch";
 import { ScrollTracker, ViewportLock } from "./scrollTracker";
+import { detectAgentForTerminal } from "../../hooks/useAgentPolling";
 import s from "./Terminal.module.css";
 
 
@@ -159,6 +160,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
   const RETRY_DELAYS = [5_000, 15_000, 30_000]; // exponential backoff
   let retryCount = 0;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let agentDetectTimer: ReturnType<typeof setTimeout> | undefined;
 
   // Resize debounce (150ms trailing edge)
   let resizeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -490,6 +492,14 @@ export const Terminal: Component<TerminalProps> = (props) => {
                 appLogger.error("terminal", "Failed to write init command", { error: String(e) }),
               );
             }
+            // Idle: detect agent immediately (foreground process is stable)
+            detectAgentForTerminal(props.id).catch(() => {});
+          } else {
+            // Busy: detect agent after 500ms debounce (agent needs time to start)
+            clearTimeout(agentDetectTimer);
+            agentDetectTimer = setTimeout(() => {
+              detectAgentForTerminal(props.id).catch(() => {});
+            }, 500);
           }
           break;
         }
@@ -1308,6 +1318,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     clearTimeout(resizeTimer);
     clearTimeout(resizeObserverTimer);
     clearTimeout(retryTimer);
+    clearTimeout(agentDetectTimer);
     clearInterval(atlasRebuildTimer);
     resizeObserver?.disconnect();
     unsubscribePty?.();
