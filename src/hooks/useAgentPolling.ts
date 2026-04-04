@@ -31,7 +31,12 @@ const nullStreak = new Map<string, number>();
  */
 export async function detectAgentForTerminal(termId: string): Promise<void> {
   const current = terminalsStore.get(termId);
-  if (!current?.sessionId) return;
+  if (!current?.sessionId) {
+    // Terminal gone — clean up module-level tracking state
+    discoveryAttempted.delete(termId);
+    nullStreak.delete(termId);
+    return;
+  }
 
   let agentType: AgentType | null;
   try {
