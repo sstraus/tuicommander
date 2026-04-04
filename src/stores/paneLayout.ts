@@ -369,7 +369,7 @@ function createPaneLayoutStore() {
       const newRoot = splitLeaf(tree, groupId, direction, newGroupId);
       if (!newRoot) {
         this.removeGroup(newGroupId);
-        appLogger.warn("paneLayout", `Split rejected: max depth ${MAX_SPLIT_DEPTH} reached`);
+        appLogger.warn("app", `Split rejected: max depth ${MAX_SPLIT_DEPTH} reached`);
         return null;
       }
 

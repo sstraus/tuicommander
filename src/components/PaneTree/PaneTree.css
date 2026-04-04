@@ -1,0 +1,169 @@
+/* ---- Pane Tree Layout ---- */
+
+.pane-branch {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pane-branch-vertical {
+  flex-direction: row;
+}
+
+.pane-branch-horizontal {
+  flex-direction: column;
+}
+
+.pane-slot {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ---- Resize Handles ---- */
+
+.pane-resize-handle {
+  flex: 0 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.pane-resize-vertical {
+  cursor: col-resize;
+  width: 8px;
+}
+
+.pane-resize-horizontal {
+  cursor: row-resize;
+  height: 8px;
+}
+
+.pane-resize-handle::after {
+  content: "";
+  background: var(--border);
+}
+
+.pane-resize-vertical::after {
+  width: 1px;
+  height: 100%;
+}
+
+.pane-resize-horizontal::after {
+  height: 1px;
+  width: 100%;
+}
+
+.pane-resize-handle:hover::after {
+  background: var(--accent);
+}
+
+/* ---- Pane Group (leaf container) ---- */
+
+.pane-group {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pane-group-active {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.pane-branch-horizontal > .pane-slot > .pane-group.pane-group-active {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.pane-content {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 8px;
+  position: relative;
+}
+
+/* ---- Mini Tab Bar (auto-show when 2+ tabs) ---- */
+
+.pane-tab-bar {
+  display: flex;
+  gap: 1px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  flex-shrink: 0;
+  height: 28px;
+  align-items: stretch;
+}
+
+.pane-tab-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.pane-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  min-width: 0;
+  max-width: 150px;
+}
+
+.pane-tab:hover {
+  background: var(--bg-hover);
+}
+
+.pane-tab-active {
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border-bottom: 2px solid var(--accent);
+}
+
+.pane-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pane-tab-close {
+  opacity: 0;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.pane-tab:hover .pane-tab-close {
+  opacity: 0.6;
+}
+
+.pane-tab-close:hover {
+  opacity: 1 !important;
+  background: var(--bg-hover);
+}
+
+/* ---- Empty Pane Placeholder ---- */
+
+.pane-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--text-secondary);
+  font-size: 13px;
+  opacity: 0.5;
+}
