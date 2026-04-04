@@ -223,7 +223,7 @@ async fn save_mcp_upstreams_http(
     let old_config: crate::mcp_upstream_config::UpstreamMcpConfig =
         crate::config::load_json_config(crate::mcp_upstream_config::UPSTREAMS_FILE);
     if let Err(e) = crate::config::save_json_config(crate::mcp_upstream_config::UPSTREAMS_FILE, &config) {
-        return (StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
+        return err_500(&e);
     }
     state.mcp_upstream_registry.apply_config_diff(&old_config, &config, self_port).await;
     StatusCode::OK.into_response()
@@ -250,7 +250,7 @@ async fn reconnect_mcp_upstream_http(
     let _ = registry.disconnect_upstream(&name);
     match registry.connect_upstream(server, Some(self_port)).await {
         Ok(()) => StatusCode::OK.into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+        Err(e) => err_500(&e),
     }
 }
 
@@ -266,7 +266,7 @@ async fn save_mcp_upstream_credential_http(Json(body): Json<serde_json::Value>) 
     };
     match crate::mcp_upstream_credentials::save_mcp_upstream_credential(name, token) {
         Ok(()) => StatusCode::OK.into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+        Err(e) => err_500(&e),
     }
 }
 
@@ -278,7 +278,7 @@ async fn delete_mcp_upstream_credential_http(Json(body): Json<serde_json::Value>
     };
     match crate::mcp_upstream_credentials::delete_mcp_upstream_credential(name) {
         Ok(()) => StatusCode::OK.into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+        Err(e) => err_500(&e),
     }
 }
 

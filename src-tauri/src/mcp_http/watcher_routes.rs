@@ -7,7 +7,7 @@ use axum::Json;
 
 use crate::AppState;
 use super::types::PathQuery;
-use super::validate_repo_path;
+use super::{err_500, validate_repo_path};
 
 /// Start a repo watcher for a repository via HTTP (browser-only mode).
 /// The unified watcher covers HEAD, git state, and working tree changes.
@@ -21,7 +21,7 @@ pub(super) async fn start_repo_watcher_http(
     let app_handle = state.app_handle.read().clone();
     match crate::repo_watcher::start_watching(&q.path, app_handle.as_ref(), &state) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        Err(e) => err_500(&e),
     }
 }
 
@@ -48,7 +48,7 @@ pub(super) async fn start_dir_watcher_http(
     let app_handle = state.app_handle.read().clone();
     match crate::dir_watcher::start_watching(&q.path, app_handle.as_ref(), &state) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        Err(e) => err_500(&e),
     }
 }
 
