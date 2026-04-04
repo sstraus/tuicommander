@@ -1562,6 +1562,9 @@ pub struct VtLogBuffer {
     /// Number of scrollback lines already read from the vt100 parser.
     /// Used to detect new scrollback lines after each `process()`.
     scrollback_read: usize,
+    /// Monotonically increasing count of all log lines ever pushed (not bounded
+    /// by capacity). Used as stable cursor for paginated reads.
+    total_pushed: usize,
 }
 
 /// Internal scrollback capacity for the vt100 parser. Must be large enough
@@ -1579,6 +1582,7 @@ impl VtLogBuffer {
             capacity,
             was_alternate: false,
             scrollback_read: 0,
+            total_pushed: 0,
         }
     }
 
@@ -1708,21 +1712,26 @@ impl VtLogBuffer {
         &self.log
     }
 
-    /// Returns log lines starting at `offset` (0-indexed from oldest retained line),
-    /// up to `limit` lines. Also returns the new offset for incremental reads.
+    /// Returns log lines starting at absolute `offset`, up to `limit` lines.
+    /// Offset is in the same coordinate space as `total_lines()` — monotonically
+    /// increasing, not relative to the current buffer contents.
+    /// Returns `(lines, new_offset)` where `new_offset = total_lines()`.
     pub fn lines_since_owned(&self, offset: usize, limit: usize) -> (Vec<LogLine>, usize) {
-        let total = self.log.len();
+        let oldest = self.oldest_offset();
+        let total = self.total_pushed;
         if offset >= total {
             return (Vec::new(), total);
         }
-        let mut slice: Vec<LogLine> = self.log.iter().skip(offset).take(limit).cloned().collect();
+        // Clamp to oldest retained line if the requested offset was evicted
+        let effective = offset.max(oldest);
+        let skip = effective - oldest;
+        let mut slice: Vec<LogLine> = self.log.iter().skip(skip).take(limit).cloned().collect();
         for line in &mut slice {
             line.strip_structural_tokens();
         }
         // Remove lines that became entirely empty after stripping
         slice.retain(|l| !l.spans.is_empty());
-        let new_offset = total;
-        (slice, new_offset)
+        (slice, total)
     }
 
     /// Current visible screen rows.
@@ -1815,10 +1824,17 @@ impl VtLogBuffer {
         None
     }
 
-    /// Total log lines ever finalized (monotonically increasing offset).
-    /// Callers can use this as a cursor for incremental reads.
+    /// Total log lines ever pushed (monotonically increasing).
+    /// Use as a stable cursor for paginated reads — does not decrease when
+    /// old lines are evicted from the bounded buffer.
     pub fn total_lines(&self) -> usize {
-        self.log.len()
+        self.total_pushed
+    }
+
+    /// Absolute offset of the oldest retained line. Lines before this have
+    /// been evicted by buffer rotation and are no longer available.
+    pub fn oldest_offset(&self) -> usize {
+        self.total_pushed - self.log.len()
     }
 
     // --- private helpers ---
@@ -1828,6 +1844,7 @@ impl VtLogBuffer {
             self.log.pop_front();
         }
         self.log.push_back(line);
+        self.total_pushed += 1;
     }
 
 }
