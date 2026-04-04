@@ -84,7 +84,7 @@ import { useSplitPanes } from "./hooks/useSplitPanes";
 import { useAgentPolling } from "./hooks/useAgentPolling";
 import { useAgentDetection } from "./hooks/useAgentDetection";
 import { agentConfigsStore, llmApiStore } from "./stores/agentConfigs";
-import { AGENTS } from "./agents";
+import { AGENTS, type AgentType } from "./agents";
 import { buildAgentLaunchCommand } from "./utils/agentSession";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { initApp } from "./hooks/useAppInit";
@@ -549,6 +549,54 @@ const App: Component = () => {
     if (isTauri()) getCurrentWindow().destroy();
   };
 
+  // Build agent submenu items for the context menu
+  /** Launch an agent in the active terminal, injecting --session-id when supported */
+  const launchAgentInActiveTerminal = (agentType: AgentType, cmd: string) => {
+    const active = terminalsStore.getActive();
+    if (!active?.ref) return;
+    // Use the tab's stable tuicSession UUID as --session-id so resume works via TUIC_SESSION
+    const agentSessionId = active.tuicSession ?? (agentType === "claude" ? crypto.randomUUID() : null);
+    const finalCmd = buildAgentLaunchCommand(cmd, agentSessionId);
+    active.ref.write(`${finalCmd}\r`);
+    terminalsStore.update(active.id, {
+      name: AGENTS[agentType].name,
+      nameIsCustom: true,
+      agentSessionId,
+    });
+  };
+
+  const buildAgentMenuItems = (): ContextMenuItem[] => {
+    const available = agentDetection.getAvailable()
+      .filter((a) => a.type !== "git");
+    if (available.length === 0) return [];
+
+    return available.map((agent) => {
+      const agentConfig = AGENTS[agent.type];
+      const runConfigs = agentConfigsStore.getRunConfigs(agent.type);
+
+      // Multiple run configs: submenu with each config
+      if (runConfigs.length > 1) {
+        return {
+          label: agentConfig.name,
+          action: () => {},
+          children: runConfigs.map((rc) => ({
+            label: rc.name + (rc.is_default ? " (Default)" : ""),
+            action: () => launchAgentInActiveTerminal(agent.type, [rc.command, ...rc.args].join(" ")),
+          })),
+        };
+      }
+
+      // 0-1 run configs: flat item, click launches directly
+      const cmd = runConfigs.length === 1
+        ? [runConfigs[0].command, ...runConfigs[0].args].join(" ")
+        : agentConfig.binary;
+      return {
+        label: agentConfig.name,
+        action: () => launchAgentInActiveTerminal(agent.type, cmd),
+      };
+    });
+  };
+
   // Build agent menu items for the sidebar branch context menu.
   // Creates a new terminal on the branch and writes the agent launch command.
   // Returns items ready to splice into the context menu:
@@ -621,8 +669,22 @@ const App: Component = () => {
     return false;
   };
 
+  /** Check if the active terminal has a running agent (disables agent submenu) */
+  const activeTerminalBusy = (): boolean => {
+    const activeId = terminalsStore.state.activeId;
+    if (!activeId) return true;
+    const term = terminalsStore.get(activeId);
+    return !!term?.agentType;
+  };
+
   const getContextMenuItems = (): ContextMenuItem[] => [
-    { label: "Copy", shortcut: `${getModifierSymbol()}C`, action: terminalLifecycle.copyFromTerminal },
+    ...(agentDetection.getAvailable().length > 0 ? [{
+      label: "Agents",
+      action: () => {},
+      disabled: activeTerminalBusy(),
+      children: buildAgentMenuItems(),
+    }] : []),
+    { label: "Copy", shortcut: `${getModifierSymbol()}C`, action: terminalLifecycle.copyFromTerminal, separator: agentDetection.getAvailable().length > 0 },
     { label: "Paste", shortcut: `${getModifierSymbol()}V`, action: terminalLifecycle.pasteToTerminal },
     { label: "Split Right", shortcut: `${getModifierSymbol()}\\`, action: () => splitPanes.handleSplit("vertical"), disabled: splitDisabled() },
     { label: "Split Left", action: () => splitPanes.handleSplit("vertical"), disabled: splitDisabled() },
