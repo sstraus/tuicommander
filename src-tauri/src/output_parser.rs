@@ -322,10 +322,10 @@ impl OutputParser {
         if let Some(evt) = parse_intent(&joined, agent_active) {
             events.push(evt);
         }
-        if agent_active {
-            if let Some(evt) = parse_action(&joined) {
-                events.push(evt);
-            }
+        if agent_active
+            && let Some(evt) = parse_action(&joined)
+        {
+            events.push(evt);
         }
         if let Some(evt) = parse_suggest(&joined, agent_active) {
             if let ParsedEvent::Suggest { ref items } = evt {
@@ -1135,11 +1135,11 @@ fn parse_intent(clean: &str, agent_active: bool) -> Option<ParsedEvent> {
 
     for (i, line) in lines.iter().enumerate() {
         // Pass 1: plain prefix at column 0 (only when agent detected)
-        if agent_active {
-            if let Some(caps) = INTENT_PLAIN_RE.captures(line) {
-                raw_match = Some(caps[1].trim().to_string());
-                break;
-            }
+        if agent_active
+            && let Some(caps) = INTENT_PLAIN_RE.captures(line)
+        {
+            raw_match = Some(caps[1].trim().to_string());
+            break;
         }
         // Pass 2: bracket syntax on a single line (always, agent-specific by design)
         if let Some(caps) = INTENT_RE.captures(line) {
@@ -1218,7 +1218,7 @@ fn parse_action(clean: &str) -> Option<ParsedEvent> {
 /// Detect suggested follow-up actions in two formats:
 /// - **Plain prefix** (preferred): `suggest: A | B | C` at column 0
 /// - **Bracket syntax** (backward compat): `[suggest: A | B | C]`, `[[suggest: ...]]`, `⟦suggest: ...⟧`
-/// Pipe-separated items. At least one non-empty item required.
+///   Pipe-separated items. At least one non-empty item required.
 fn parse_suggest(clean: &str, agent_active: bool) -> Option<ParsedEvent> {
     if !clean.contains("suggest:") {
         return None;

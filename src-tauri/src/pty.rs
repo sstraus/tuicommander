@@ -1035,7 +1035,7 @@ fn has_unclosed_token(data: &str, agent_active: bool) -> bool {
     // Only applies when an agent is detected (prevents false positives from CLI tools).
     if agent_active {
         let last_line = data.rsplit_once('\n').map_or(data, |(_, r)| r);
-        let trimmed = last_line.trim_start_matches(|c: char| c == '\r');
+        let trimmed = last_line.trim_start_matches('\r');
         if trimmed.starts_with("intent:") || trimmed.starts_with("action:") || trimmed.starts_with("suggest:") {
             return true;
         }
