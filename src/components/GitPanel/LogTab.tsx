@@ -68,9 +68,7 @@ export const LogTab: Component<LogTabProps> = (props) => {
 
   /** Fetch the initial commit page and graph data */
   async function fetchCommits(repoPath: string, isCancelled?: () => boolean) {
-    setLoading(true);
-    setCommits([]);
-    setGraphNodes([]);
+    if (commits().length === 0) setLoading(true);
     setExpandedHash(null);
     setChangedFiles({});
     setHasMore(true);

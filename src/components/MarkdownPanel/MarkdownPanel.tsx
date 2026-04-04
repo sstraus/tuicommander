@@ -62,7 +62,9 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
     return files().filter((f) => re.test(f.path));
   });
 
-  // Load markdown files when visible, repo changes, or repo content changes
+  // Load markdown files when visible, repo changes, or repo content changes.
+  // Uses stale-while-revalidate: only show loading spinner on initial load,
+  // keep previous file list visible during background refreshes to avoid flash.
   createEffect(() => {
     const visible = props.visible;
     const repoPath = props.repoPath;
@@ -74,7 +76,8 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
       return;
     }
 
-    setLoading(true);
+    const isInitialLoad = files().length === 0;
+    if (isInitialLoad) setLoading(true);
     setError(null);
 
     (async () => {

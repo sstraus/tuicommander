@@ -46,7 +46,7 @@ export const HtmlPreviewTab: Component<HtmlPreviewTabProps> = (props) => {
       return;
     }
 
-    setLoading(true);
+    if (!content()) setLoading(true);
     setError(null);
 
     (async () => {

@@ -95,7 +95,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
         return;
       }
 
-      setLoading(true);
+      if (!content()) setLoading(true);
       setError(null);
 
       (async () => {

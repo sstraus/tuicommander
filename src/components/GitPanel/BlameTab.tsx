@@ -51,7 +51,7 @@ export const BlameTab: Component<BlameTabProps> = (props) => {
     // Subscribe to revision for reactivity
     void repositoriesStore.getRevision(repoPath);
 
-    setLoading(true);
+    if (lines().length === 0) setLoading(true);
     setError(null);
     setHighlightedHash(null);
 

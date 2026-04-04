@@ -42,7 +42,7 @@ export const StashesTab: Component<StashesTabProps> = (props) => {
   const [confirmAction, setConfirmAction] = createSignal<(() => void) | null>(null);
 
   async function fetchStashes(repoPath: string) {
-    setLoading(true);
+    if (stashes().length === 0) setLoading(true);
     try {
       const result = await invoke<StashEntry[]>("get_stash_list", { path: repoPath });
       setStashes(result);

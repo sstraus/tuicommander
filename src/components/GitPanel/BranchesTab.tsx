@@ -176,7 +176,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
   let createInputRef: HTMLInputElement | undefined;
 
   async function fetchBranches(repoPath: string) {
-    setLoading(true);
+    if (branches().length === 0) setLoading(true);
     try {
       const [result, recent] = await Promise.all([
         invoke<BranchDetail[]>("get_branches_detail", { path: repoPath }),

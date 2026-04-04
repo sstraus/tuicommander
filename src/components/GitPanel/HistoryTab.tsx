@@ -22,8 +22,7 @@ export const HistoryTab: Component<HistoryTabProps> = (props) => {
 
   /** Fetch the initial commit page for the file */
   async function fetchHistory(repoPath: string, filePath: string, isCancelled?: () => boolean) {
-    setLoading(true);
-    setCommits([]);
+    if (commits().length === 0) setLoading(true);
     setHasMore(true);
     try {
       const result = await invoke<CommitLogEntry[]>("get_file_history", {

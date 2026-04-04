@@ -80,7 +80,7 @@ export const BranchDiffScrollView: Component<BranchDiffScrollViewProps> = (props
     // Track revision for reactivity
     void repositoriesStore.getRevision(repoPath);
 
-    setLoading(true);
+    if (!diff()) setLoading(true);
     setError(null);
     // Fetch both unstaged and staged diffs, concatenate for a full picture
     Promise.all([

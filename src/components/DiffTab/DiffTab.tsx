@@ -88,7 +88,7 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
       return;
     }
 
-    setLoading(true);
+    if (!diff()) setLoading(true);
     setError(null);
 
     (async () => {
