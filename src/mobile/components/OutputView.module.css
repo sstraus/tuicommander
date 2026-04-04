@@ -4,6 +4,7 @@
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   background: var(--bg-primary);
   padding: 8px 12px;
 }

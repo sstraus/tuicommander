@@ -184,9 +184,11 @@
   pointer-events: none;
 }
 
-.repoHeader:hover .repoActions {
-  opacity: 1;
-  pointer-events: auto;
+@media (hover: hover) {
+  .repoHeader:hover .repoActions {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 .repoChevron {
@@ -360,8 +362,10 @@
   min-height: 30px;
 }
 
-.branchItem:hover {
-  background: var(--bg-highlight);
+@media (hover: hover) {
+  .branchItem:hover {
+    background: var(--bg-highlight);
+  }
 }
 
 .branchItem.active {
@@ -545,10 +549,12 @@
   transition: max-width 0.15s ease, opacity 0.15s ease;
 }
 
-.branchItem:hover .branchActions {
-  max-width: 44px;
-  opacity: 1;
-  pointer-events: auto;
+@media (hover: hover) {
+  .branchItem:hover .branchActions {
+    max-width: 44px;
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 .branchAddBtn,
