@@ -514,3 +514,8 @@ Features to test when TUICommander is more usable.
 - [ ] Agent detection responds within ~1s of launch (not 3s)
 - [ ] Run git/npm inside Claude Code → no agent type flicker in tab bar
 - [ ] Status line ticking at idle prompt → shell-state transitions to idle within 3-4s
+
+## Mobile iPad Fixes
+- [ ] iPad: OutputView scrolls with touch drag (finger swipe up/down)
+- [ ] iPad: Sidebar repo/branch selection works on first tap (no double-tap needed)
+- [ ] iPad: Hover-revealed action buttons (⋯, +) not visible on touch devices
