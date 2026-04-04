@@ -230,8 +230,13 @@ impl OutputParser {
             events.push(evt);
         }
 
-        // Intent declaration: [intent: <text>] or [[intent: <text>]] or ⟦intent: <text>⟧
+        // Intent declaration: `intent: text` or `[intent: text]` / `[[intent: text]]`
         if let Some(evt) = parse_intent(&clean) {
+            events.push(evt);
+        }
+
+        // Action declaration: `action: text` (plain prefix only)
+        if let Some(evt) = parse_action(&clean) {
             events.push(evt);
         }
 
@@ -308,8 +313,11 @@ impl OutputParser {
             events.push(evt);
         }
 
-        // Intent and suggest
+        // Intent, action, and suggest
         if let Some(evt) = parse_intent(&joined) {
+            events.push(evt);
+        }
+        if let Some(evt) = parse_action(&joined) {
             events.push(evt);
         }
         if let Some(evt) = parse_suggest(&joined) {
@@ -1159,6 +1167,27 @@ fn build_intent_event(
         let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
         let title = title.map(|t| t.split_whitespace().collect::<Vec<_>>().join(" "));
         Some(ParsedEvent::Intent { text, title, kind })
+    })
+}
+
+/// Detect agent-declared action tokens: `action: <text>` at column 0 (plain prefix only).
+/// Unlike intent, action has no bracket syntax and no title extraction.
+fn parse_action(clean: &str) -> Option<ParsedEvent> {
+    if !clean.contains("action:") {
+        return None;
+    }
+    lazy_static::lazy_static! {
+        static ref ACTION_PLAIN_RE: regex::Regex =
+            regex::Regex::new(r"(?m)^action:\s+(.+)$").unwrap();
+    }
+
+    ACTION_PLAIN_RE.captures(clean).and_then(|caps| {
+        let raw = caps[1].trim();
+        if raw == "..." || raw == "<text>" || raw.len() < 4 {
+            return None;
+        }
+        let text = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+        Some(ParsedEvent::Intent { text, title: None, kind: IntentKind::Action })
     })
 }
 
@@ -2735,10 +2764,79 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     }
 
     #[test]
-    fn test_action_not_matched_by_parse_intent() {
+    fn test_action_not_matched_as_intent_kind() {
         let mut parser = OutputParser::new();
-        // action: should NOT be matched by parse_intent
-        assert!(get_intent(&parser.parse("action: executing git pull")).is_none());
+        // action: should produce kind=Action, never kind=Intent
+        let events = parser.parse("action: executing git pull");
+        let intent_kind_events: Vec<_> = events.iter().filter(|e| matches!(
+            e, ParsedEvent::Intent { kind: IntentKind::Intent, .. }
+        )).collect();
+        assert!(intent_kind_events.is_empty(), "action: must not produce IntentKind::Intent");
+        assert!(get_action(&events).is_some(), "action: must produce IntentKind::Action");
+    }
+
+    // --- Action event tests ---
+
+    fn get_action(events: &[ParsedEvent]) -> Option<String> {
+        events.iter().find_map(|e| match e {
+            ParsedEvent::Intent { text, kind: IntentKind::Action, .. } => Some(text.clone()),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn test_action_basic() {
+        let mut parser = OutputParser::new();
+        let events = parser.parse("action: running pytest suite");
+        assert_eq!(get_action(&events), Some("running pytest suite".to_string()));
+        assert_eq!(get_intent_kind(&events), Some(IntentKind::Action));
+    }
+
+    #[test]
+    fn test_action_short_text() {
+        let mut parser = OutputParser::new();
+        // "deploy" is 6 chars, > 4 minimum
+        let events = parser.parse("action: deploy");
+        assert_eq!(get_action(&events), Some("deploy".to_string()));
+    }
+
+    #[test]
+    fn test_action_too_short_filtered() {
+        let mut parser = OutputParser::new();
+        assert!(get_action(&parser.parse("action: ab")).is_none());
+    }
+
+    #[test]
+    fn test_action_empty_body_no_match() {
+        let mut parser = OutputParser::new();
+        assert!(get_action(&parser.parse("action:")).is_none());
+    }
+
+    #[test]
+    fn test_action_indented_no_match() {
+        let mut parser = OutputParser::new();
+        assert!(get_action(&parser.parse("  action: indented")).is_none());
+    }
+
+    #[test]
+    fn test_action_midline_no_match() {
+        let mut parser = OutputParser::new();
+        assert!(get_action(&parser.parse("The action: taken was wrong")).is_none());
+    }
+
+    #[test]
+    fn test_action_no_space_after_colon_no_match() {
+        let mut parser = OutputParser::new();
+        assert!(get_action(&parser.parse("action:nospace")).is_none());
+    }
+
+    #[test]
+    fn test_action_does_not_support_title() {
+        let mut parser = OutputParser::new();
+        // action: has no title syntax — parenthetical is part of the text
+        let events = parser.parse("action: executing git pull (Deploy)");
+        // The title RE would match but action explicitly doesn't extract titles
+        assert!(get_action(&events).is_some());
     }
 
     #[test]
