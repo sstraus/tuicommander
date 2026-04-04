@@ -7,6 +7,10 @@ import styles from "./OutputView.module.css";
 const MAX_LINES = 500;
 /** Lines fetched on initial HTTP load (tail). Older lines loaded on scroll-up. */
 const INITIAL_FETCH_LIMIT = 100;
+/** Lines fetched per scroll-up chunk. */
+const SCROLL_CHUNK_SIZE = 100;
+/** Scroll-up trigger threshold in pixels from top. */
+const SCROLL_UP_THRESHOLD = 300;
 
 interface OutputViewProps {
   sessionId: string;
@@ -22,11 +26,14 @@ export function OutputView(props: OutputViewProps) {
   const [logLines, setLogLines] = createSignal<LogLine[]>([]);
   const [screenRows, setScreenRows] = createSignal<LogLine[]>([]);
   const [subscribeError, setSubscribeError] = createSignal<string | null>(null);
+  const [loadingOlder, setLoadingOlder] = createSignal(false);
   let containerEl: HTMLDivElement | undefined;
   let unsubscribe: (() => void) | null = null;
   // When the user scrolls up manually, stop auto-scrolling until they
   // return near the bottom.
   let userScrolledUp = false;
+  // Tracks the oldest log offset we've loaded — 0 means full history is loaded.
+  let oldestLoadedOffset = 0;
 
   /** Fetch initial log lines + screen rows via HTTP; returns the total_lines offset for WS catch-up. */
   async function fetchInitialOutput(): Promise<number> {
@@ -45,13 +52,50 @@ export function OutputView(props: OutputViewProps) {
           const il = (json as Record<string, unknown>).input_line;
           props.onInputLine(typeof il === "string" ? il : null);
         }
+        const total = json.total_lines ?? 0;
+        oldestLoadedOffset = Math.max(0, total - (json.lines?.length ?? 0));
         scrollToBottom(true);
-        return json.total_lines ?? 0;
+        return total;
       }
     } catch (err) {
       appLogger.warn("terminal", "fetchInitialOutput failed, will rely on WS catch-up", { error: err });
     }
     return 0;
+  }
+
+  /** Fetch older lines when user scrolls near the top. Prepends and anchors viewport. */
+  async function fetchOlderLines() {
+    if (loadingOlder() || oldestLoadedOffset <= 0) return;
+    setLoadingOlder(true);
+    try {
+      const fetchOffset = Math.max(0, oldestLoadedOffset - SCROLL_CHUNK_SIZE);
+      const fetchLimit = oldestLoadedOffset - fetchOffset;
+      const resp = await fetch(
+        `/sessions/${props.sessionId}/output?format=log&offset=${fetchOffset}&limit=${fetchLimit}`,
+      );
+      if (!resp.ok) return;
+      const json = await resp.json() as { lines: unknown[] };
+      if (!json.lines || json.lines.length === 0) {
+        oldestLoadedOffset = 0;
+        return;
+      }
+      const older = json.lines.map(normalizeLogLine);
+      // Anchor viewport: save scroll position before prepend
+      const prevHeight = containerEl?.scrollHeight ?? 0;
+      const prevTop = containerEl?.scrollTop ?? 0;
+      setLogLines((prev) => [...older, ...prev].slice(-MAX_LINES));
+      oldestLoadedOffset = fetchOffset;
+      // Restore scroll position after DOM update
+      requestAnimationFrame(() => {
+        if (containerEl) {
+          containerEl.scrollTop = prevTop + (containerEl.scrollHeight - prevHeight);
+        }
+      });
+    } catch (err) {
+      appLogger.warn("terminal", "fetchOlderLines failed", { error: err });
+    } finally {
+      setLoadingOlder(false);
+    }
   }
 
   // Touch inertia guard: while the user is actively touching, don't auto-scroll
@@ -72,6 +116,10 @@ export function OutputView(props: OutputViewProps) {
     const threshold = "ontouchstart" in window ? 200 : 80;
     const atBottom = containerEl.scrollHeight - containerEl.scrollTop - containerEl.clientHeight < threshold;
     userScrolledUp = !atBottom;
+    // Lazy-load older lines when scrolling near the top
+    if (containerEl.scrollTop < SCROLL_UP_THRESHOLD && oldestLoadedOffset > 0) {
+      fetchOlderLines();
+    }
   }
 
   onMount(async () => {
@@ -134,6 +182,9 @@ export function OutputView(props: OutputViewProps) {
         {(errMsg) => (
           <div class={styles.error}>Failed to connect to terminal: {errMsg()}</div>
         )}
+      </Show>
+      <Show when={loadingOlder()}>
+        <div class={styles.loadingOlder}>Loading older output...</div>
       </Show>
       <pre class={styles.text}>
         <For each={lineBlocks()}>

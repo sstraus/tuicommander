@@ -30,6 +30,14 @@
   min-height: 1.5em;
 }
 
+.loadingOlder {
+  text-align: center;
+  padding: 8px;
+  color: var(--fg-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
 .error {
   padding: 12px;
   color: var(--status-error);
