@@ -466,6 +466,8 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/config/repo-settings/has-custom", get(config_routes::check_has_custom_settings_http))
         .route("/config/repo-defaults", get(config_routes::get_repo_defaults).put(config_routes::put_repo_defaults))
         .route("/config/repositories", get(config_routes::get_repositories).put(config_routes::put_repositories))
+        .route("/config/clear-caches", post(config_routes::clear_caches))
+        .route("/config/repo-local-config", get(config_routes::get_repo_local_config))
         .route("/config/prompt-library", get(config_routes::get_prompt_library).put(config_routes::put_prompt_library))
         // Logs
         .route("/logs", get(log_routes::get_logs).post(log_routes::push_log).delete(log_routes::clear_logs))

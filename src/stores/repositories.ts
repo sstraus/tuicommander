@@ -107,7 +107,7 @@ function saveReposImmediate(
       groups,
       groupOrder,
     },
-  }).catch((err) => appLogger.error("store", "Failed to save repos", err));
+  }).catch((err) => appLogger.debug("store", "Failed to save repos", err));
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;

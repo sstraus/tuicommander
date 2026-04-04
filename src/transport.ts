@@ -230,6 +230,14 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
     map: (args) => ({ method: "PUT", path: "/config/repositories", body: args.config }),
   },
 
+  // --- Config: caches ---
+  clear_caches: { map: () => ({ method: "POST", path: "/config/clear-caches" }) },
+
+  // --- Config: repo local config (.tuic.json) ---
+  load_repo_local_config: {
+    map: (_args, p) => ({ method: "GET", path: `/config/repo-local-config?path=${p("repoPath")}` }),
+  },
+
   // --- Config: prompt library ---
   load_prompt_library: { map: () => ({ method: "GET", path: "/config/prompt-library" }) },
   save_prompt_library: {
