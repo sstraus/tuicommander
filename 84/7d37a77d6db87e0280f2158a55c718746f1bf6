@@ -1,0 +1,23 @@
+src-tauri/src/output_parser.rs
+  814c97a118dbd557 943,946-953,957-958,965-967,2949-2970
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.5",
+  "base_commit_sha": "847d37a77d6db87e0280f2158a55c718746f1bf6",
+  "prompts": {
+    "814c97a118dbd557": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b2cd5692-712f-4293-aab1-abb1e1fea29a",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 37,
+      "total_deletions": 8,
+      "accepted_lines": 37,
+      "overriden_lines": 0
+    }
+  }
+}
