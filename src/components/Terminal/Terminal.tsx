@@ -13,6 +13,7 @@ import { usePty } from "../../hooks/usePty";
 import { settingsStore, FONT_FAMILIES } from "../../stores/settings";
 import { getTerminalTheme } from "../../themes";
 import { terminalsStore, type AwaitingInputType, isShellState } from "../../stores/terminals";
+import { paneLayoutStore } from "../../stores/paneLayout";
 import { rateLimitStore } from "../../stores/ratelimit";
 import { appLogger } from "../../stores/appLogger";
 import { notificationsStore } from "../../stores/notifications";
@@ -35,6 +36,7 @@ type ParsedEvent =
   | { type: "progress"; state: number; value: number }
   | { type: "question"; prompt_text: string; confident: boolean }
   | { type: "usage-limit"; percentage: number; limit_type: string }
+  | { type: "usage-exhausted"; reset_time: string | null }
   | { type: "plan-file"; path: string }
   | { type: "user-input"; content: string }
   | { type: "api-error"; pattern_name: string; matched_text: string; error_kind: string }
@@ -409,6 +411,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
               usageLimit: { percentage: parsed.percentage, limitType: parsed.limit_type },
             });
           }
+          break;
+        }
+        case "usage-exhausted": {
+          appLogger.warn("terminal", `[UsageExhausted] ${props.id} reset_time=${parsed.reset_time ?? "unknown"}`);
+          terminalsStore.setAwaitingInput(props.id, "error");
           break;
         }
         case "plan-file":
@@ -1166,11 +1173,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
     tryFit(retries);
   };
 
-  // Check if this terminal is visible (active, in a split layout pane, or always-visible)
+  // Check if this terminal is visible (active, in a pane tree group, or always-visible)
+  const isInPaneGroup = () =>
+    paneLayoutStore.isSplit() && paneLayoutStore.getGroupForTab(props.id) !== null;
   const isVisible = () =>
     props.alwaysVisible ||
     terminalsStore.state.activeId === props.id ||
-    terminalsStore.state.layout.panes.includes(props.id);
+    isInPaneGroup();
 
   // Track hidden→visible transitions to rebuild the WebGL glyph atlas only once
   // after the terminal was actually hidden (branch/tab switch), not on every
