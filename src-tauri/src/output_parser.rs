@@ -939,26 +939,32 @@ pub fn colorize_intent(raw: &str) -> String {
                 C = c
             )).unwrap()
         };
-        // SGR sequences end with 'm' — these set colors/attributes that would
-        // interrupt our dim-yellow wrapping.
-        static ref SGR_RE: regex::Regex =
-            regex::Regex::new(r"\x1b\[[\x30-\x3f]*m").unwrap();
         // CUF (cursor forward) sequences end with 'C' — used by Ink as inter-word
-        // spacing. Convert to spaces so words don't merge after SGR stripping.
+        // spacing. Convert to spaces so words don't merge after stripping.
         static ref CUF_RE: regex::Regex =
             regex::Regex::new(r"\x1b\[(\d*)C").unwrap();
+        // All CSI sequences: SGR (color), CUU/CUD/CUB (cursor movement), ED/EL
+        // (erase), and any other CSI.  Ink scatters cursor-movement sequences
+        // (CUU \x1b[A, CUD \x1b[B, CPL \x1b[F …) inside the intent body during
+        // re-renders.  If we only stripped SGR, these movements would survive into
+        // the replacement text and xterm.js would position characters on wrong rows,
+        // producing the "scattered letters" layout corruption.
+        static ref CSI_RE: regex::Regex =
+            regex::Regex::new(r"\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]").unwrap();
     }
     INTENT_REPLACE_RE.replace_all(raw, |caps: &regex::Captures| {
         let body_raw = &caps[1];
-        // Convert CUF (cursor forward) to equivalent spaces
+        // Convert CUF (cursor forward) to equivalent spaces first,
+        // before the blanket CSI strip removes them entirely.
         let body = CUF_RE.replace_all(body_raw, |cuf: &regex::Captures| {
             let n: usize = cuf.get(1)
                 .and_then(|m| m.as_str().parse().ok())
                 .unwrap_or(1);
             " ".repeat(n)
         });
-        // Strip SGR sequences so our dim-yellow is uninterrupted
-        let body_clean = SGR_RE.replace_all(&body, "");
+        // Strip ALL CSI sequences (SGR, cursor movements, erase, etc.)
+        // so our dim-yellow is uninterrupted and no stray cursor commands leak.
+        let body_clean = CSI_RE.replace_all(&body, "");
         let body_trimmed = body_clean.trim();
         format!("\x1b[2;33mintent: {}\x1b[0m", body_trimmed)
     }).into_owned()
@@ -2937,6 +2943,29 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
             "CUF should become spaces; got: {:?}", colored);
         assert!(!colored.contains("(Prime session)"), "title stripped");
         assert!(!colored.contains("[["), "brackets stripped");
+    }
+
+    #[test]
+    fn test_colorize_intent_cursor_up_in_body_stripped() {
+        // Ink re-renders can inject CUU (\x1b[A) or CUD (\x1b[B) inside the intent body.
+        // These MUST be stripped — otherwise xterm.js interprets them as cursor movements,
+        // scattering characters across adjacent rows ("l o p m" layout corruption).
+        let raw = "[[intent: refin\x1b[1Ae plan\x1b[1B for Option A implementation]]";
+        let colored = colorize_intent(raw);
+        assert!(colored.contains("refine plan for Option A implementation"),
+            "CUU/CUD should be stripped from body; got: {:?}", colored);
+        assert!(!colored.contains("\x1b[1A"), "CUU must not survive in output");
+        assert!(!colored.contains("\x1b[1B"), "CUD must not survive in output");
+    }
+
+    #[test]
+    fn test_colorize_intent_cpl_in_body_stripped() {
+        // CPL (\x1b[F) — cursor previous line — also emitted by Ink during redraws.
+        let raw = "[[intent: Fix\x1b[1F all gaps(Fixing)]]";
+        let colored = colorize_intent(raw);
+        assert!(colored.contains("Fix all gaps"),
+            "CPL should be stripped; got: {:?}", colored);
+        assert!(!colored.contains("\x1b[1F"), "CPL must not survive in output");
     }
 
     #[test]
