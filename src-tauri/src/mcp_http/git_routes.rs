@@ -4,14 +4,14 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 
 use super::types::*;
-use super::validate_repo_path;
+use super::{err_500, json_result, validate_repo_path};
 
 pub(super) async fn repo_info(Query(q): Query<PathQuery>) -> Response {
     if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
     let path = q.path;
     match tokio::task::spawn_blocking(move || crate::git::get_repo_info_impl(&path)).await {
         Ok(info) => Json(info).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {e}")).into_response(),
+        Err(e) => err_500(&format!("Task failed: {e}")),
     }
 }
 
@@ -20,7 +20,7 @@ pub(super) async fn repo_diff(Query(q): Query<PathQuery>) -> Response {
     let path = q.path;
     match crate::git::get_git_diff(path, None).await {
         Ok(diff) => (StatusCode::OK, Json(serde_json::json!({"diff": diff}))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        Err(e) => err_500(&e),
     }
 }
 
@@ -29,26 +29,20 @@ pub(super) async fn repo_diff_stats(Query(q): Query<PathQuery>) -> Response {
     let path = q.path;
     match crate::git::get_diff_stats(path, None).await {
         Ok(stats) => Json(stats).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        Err(e) => err_500(&e),
     }
 }
 
 pub(super) async fn repo_changed_files(Query(q): Query<PathQuery>) -> Response {
     if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
     let path = q.path;
-    match crate::git::get_changed_files(path, None).await {
-        Ok(files) => (StatusCode::OK, Json(serde_json::json!(files))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
-    }
+    json_result(crate::git::get_changed_files(path, None).await)
 }
 
 pub(super) async fn repo_branches(Query(q): Query<PathQuery>) -> Response {
     if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
     let path = q.path;
-    match crate::git::get_git_branches(path).await {
-        Ok(branches) => (StatusCode::OK, Json(serde_json::json!(branches))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
-    }
+    json_result(crate::git::get_git_branches(path).await)
 }
 
 pub(super) async fn get_file_diff_http(Query(q): Query<FileQuery>) -> Response {
@@ -57,10 +51,7 @@ pub(super) async fn get_file_diff_http(Query(q): Query<FileQuery>) -> Response {
     let file = q.file;
     let scope = q.scope;
     let untracked = q.untracked;
-    match crate::git::get_file_diff(path, file, scope, untracked).await {
-        Ok(diff) => (StatusCode::OK, Json(serde_json::json!(diff))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
-    }
+    json_result(crate::git::get_file_diff(path, file, scope, untracked).await)
 }
 
 pub(super) async fn list_markdown_files_http(Query(q): Query<PathQuery>) -> Response {
@@ -68,8 +59,8 @@ pub(super) async fn list_markdown_files_http(Query(q): Query<PathQuery>) -> Resp
     let path = q.path;
     match tokio::task::spawn_blocking(move || crate::list_markdown_files_impl(path)).await {
         Ok(Ok(files)) => (StatusCode::OK, Json(serde_json::json!(files))).into_response(),
-        Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {e}")).into_response(),
+        Ok(Err(e)) => err_500(&e),
+        Err(e) => err_500(&format!("Task failed: {e}")),
     }
 }
 
@@ -79,8 +70,8 @@ pub(super) async fn read_file_http(Query(q): Query<FileQuery>) -> Response {
     let file = q.file;
     match tokio::task::spawn_blocking(move || crate::read_file_impl(path, file)).await {
         Ok(Ok(content)) => (StatusCode::OK, Json(serde_json::json!(content))).into_response(),
-        Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {e}")).into_response(),
+        Ok(Err(e)) => err_500(&e),
+        Err(e) => err_500(&format!("Task failed: {e}")),
     }
 }
 
@@ -91,8 +82,8 @@ pub(super) async fn rename_branch_http(Json(body): Json<RenameBranchRequest>) ->
     let new_name = body.new_name;
     match tokio::task::spawn_blocking(move || crate::git::rename_branch_impl(&path, &old_name, &new_name)).await {
         Ok(Ok(())) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response(),
-        Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {e}")).into_response(),
+        Ok(Err(e)) => err_500(&e),
+        Err(e) => err_500(&format!("Task failed: {e}")),
     }
 }
 
@@ -108,10 +99,7 @@ pub(super) async fn get_recent_commits_http(Query(q): Query<RecentCommitsQuery>)
     if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
     let path = q.path;
     let count = q.count;
-    match crate::git::get_recent_commits(path, count).await {
-        Ok(commits) => (StatusCode::OK, Json(serde_json::json!(commits))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
-    }
+    json_result(crate::git::get_recent_commits(path, count).await)
 }
 
 pub(super) async fn repo_summary(
@@ -119,10 +107,7 @@ pub(super) async fn repo_summary(
     Query(q): Query<PathQuery>,
 ) -> Response {
     if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
-    match crate::git::get_repo_summary_impl(&state, q.path).await {
-        Ok(summary) => (StatusCode::OK, Json(serde_json::json!(summary))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
-    }
+    json_result(crate::git::get_repo_summary_impl(&state, q.path).await)
 }
 
 pub(super) async fn repo_structure(
@@ -130,10 +115,7 @@ pub(super) async fn repo_structure(
     Query(q): Query<PathQuery>,
 ) -> Response {
     if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
-    match crate::git::get_repo_structure_impl(&state, q.path).await {
-        Ok(structure) => (StatusCode::OK, Json(serde_json::json!(structure))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
-    }
+    json_result(crate::git::get_repo_structure_impl(&state, q.path).await)
 }
 
 pub(super) async fn repo_diff_stats_batch(
@@ -141,10 +123,7 @@ pub(super) async fn repo_diff_stats_batch(
     Query(q): Query<PathQuery>,
 ) -> Response {
     if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
-    match crate::git::get_repo_diff_stats_impl(&state, q.path).await {
-        Ok(stats) => (StatusCode::OK, Json(serde_json::json!(stats))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
-    }
+    json_result(crate::git::get_repo_diff_stats_impl(&state, q.path).await)
 }
 
 pub(super) async fn repo_merged_branches(
@@ -164,8 +143,8 @@ pub(super) async fn repo_merged_branches(
             crate::AppState::set_cached(&state_clone.git_cache.merged_branches, path, branches.clone());
             (StatusCode::OK, Json(serde_json::json!(branches))).into_response()
         }
-        Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {e}")).into_response(),
+        Ok(Err(e)) => err_500(&e),
+        Err(e) => err_500(&format!("Task failed: {e}")),
     }
 }
 
@@ -187,7 +166,7 @@ pub(super) async fn remote_url(Query(q): Query<PathQuery>) -> Response {
     match crate::git::get_remote_url(path).await {
         Ok(Some(url)) => Json(serde_json::json!({"url": url})).into_response(),
         Ok(None) => (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "No remote URL found"}))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        Err(e) => err_500(&e),
     }
 }
 
@@ -213,7 +192,7 @@ pub(super) async fn git_panel_context(
             crate::AppState::set_cached(&state_clone.git_cache.git_panel_context, path, ctx.clone());
             Json(ctx).into_response()
         }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {e}")).into_response(),
+        Err(e) => err_500(&format!("Task failed: {e}")),
     }
 }
 
@@ -270,8 +249,8 @@ pub(super) async fn run_git_command_http(
         }
     }).await {
         Ok(Ok(result)) => Json(result).into_response(),
-        Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Task failed: {e}")).into_response(),
+        Ok(Err(e)) => err_500(&e),
+        Err(e) => err_500(&format!("Task failed: {e}")),
     }
 }
 
@@ -279,7 +258,7 @@ pub(super) async fn working_tree_status(Query(q): Query<PathQuery>) -> Response 
     if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
     match crate::git::get_working_tree_status(q.path).await {
         Ok(status) => Json(status).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        Err(e) => err_500(&e),
     }
 }
 
@@ -289,7 +268,7 @@ pub(super) async fn stage_files_http(Json(body): Json<StageFilesRequest>) -> Res
     let files = body.files;
     match crate::git::git_stage_files(path, files).await {
         Ok(()) => Json(serde_json::json!({"ok": true})).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        Err(e) => err_500(&e),
     }
 }
 
@@ -299,7 +278,7 @@ pub(super) async fn unstage_files_http(Json(body): Json<StageFilesRequest>) -> R
     let files = body.files;
     match crate::git::git_unstage_files(path, files).await {
         Ok(()) => Json(serde_json::json!({"ok": true})).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        Err(e) => err_500(&e),
     }
 }
 
@@ -309,7 +288,7 @@ pub(super) async fn discard_files_http(Json(body): Json<StageFilesRequest>) -> R
     let files = body.files;
     match crate::git::git_discard_files(path, files).await {
         Ok(()) => Json(serde_json::json!({"ok": true})).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        Err(e) => err_500(&e),
     }
 }
 
@@ -320,7 +299,7 @@ pub(super) async fn apply_reverse_patch_http(Json(body): Json<ReversePatchReques
     let scope = body.scope;
     match crate::git::git_apply_reverse_patch(path, patch, scope).await {
         Ok(()) => Json(serde_json::json!({"ok": true})).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        Err(e) => err_500(&e),
     }
 }
 
@@ -331,7 +310,7 @@ pub(super) async fn git_commit_http(Json(body): Json<CommitRequest>) -> Response
     let amend = body.amend;
     match crate::git::git_commit(path, message, amend).await {
         Ok(hash) => Json(serde_json::json!(hash)).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        Err(e) => err_500(&e),
     }
 }
 
@@ -342,7 +321,7 @@ pub(super) async fn commit_log_http(Query(q): Query<CommitLogQuery>) -> Response
     let after = q.after;
     match crate::git::get_commit_log(path, count, after).await {
         Ok(entries) => Json(serde_json::json!(entries)).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        Err(e) => err_500(&e),
     }
 }
 
@@ -351,7 +330,7 @@ pub(super) async fn stash_list_http(Query(q): Query<PathQuery>) -> Response {
     let path = q.path;
     match crate::git::get_stash_list(path).await {
         Ok(entries) => Json(serde_json::json!(entries)).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        Err(e) => err_500(&e),
     }
 }
 
@@ -361,7 +340,7 @@ pub(super) async fn stash_apply_http(Json(body): Json<StashRefRequest>) -> Respo
     let stash_ref = body.stash_ref;
     match crate::git::git_stash_apply(path, stash_ref).await {
         Ok(()) => Json(serde_json::json!({"ok": true})).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        Err(e) => err_500(&e),
     }
 }
 
@@ -371,7 +350,7 @@ pub(super) async fn stash_pop_http(Json(body): Json<StashRefRequest>) -> Respons
     let stash_ref = body.stash_ref;
     match crate::git::git_stash_pop(path, stash_ref).await {
         Ok(()) => Json(serde_json::json!({"ok": true})).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        Err(e) => err_500(&e),
     }
 }
 
@@ -381,7 +360,7 @@ pub(super) async fn stash_drop_http(Json(body): Json<StashRefRequest>) -> Respon
     let stash_ref = body.stash_ref;
     match crate::git::git_stash_drop(path, stash_ref).await {
         Ok(()) => Json(serde_json::json!({"ok": true})).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        Err(e) => err_500(&e),
     }
 }
 
@@ -391,7 +370,7 @@ pub(super) async fn stash_show_http(Query(q): Query<StashRefRequest>) -> Respons
     let stash_ref = q.stash_ref;
     match crate::git::git_stash_show(path, stash_ref).await {
         Ok(diff) => Json(serde_json::json!(diff)).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        Err(e) => err_500(&e),
     }
 }
 
@@ -403,7 +382,7 @@ pub(super) async fn file_history_http(Query(q): Query<FilePathQuery>) -> Respons
     let after = q.after;
     match crate::git::get_file_history(path, file, count, after).await {
         Ok(entries) => Json(serde_json::json!(entries)).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        Err(e) => err_500(&e),
     }
 }
 
@@ -413,6 +392,6 @@ pub(super) async fn file_blame_http(Query(q): Query<FileBlameQuery>) -> Response
     let file = q.file;
     match crate::git::get_file_blame(path, file).await {
         Ok(lines) => Json(serde_json::json!(lines)).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response(),
+        Err(e) => err_500(&e),
     }
 }
