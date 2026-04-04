@@ -43,6 +43,12 @@ pub enum ParsedEvent {
         percentage: u8,
         limit_type: String, // "weekly" or "session"
     },
+    /// Claude Code usage exhausted: "You're out of (extra) usage · resets TIME (TZ)"
+    #[serde(rename = "usage-exhausted")]
+    UsageExhausted {
+        /// Raw reset time text (e.g. "8pm (Europe/Madrid)"), None if not present
+        reset_time: Option<String>,
+    },
     /// Plan file detected in terminal output (e.g. plans/foo.md, .claude/plans/bar.md)
     #[serde(rename = "plan-file")]
     PlanFile {
@@ -196,6 +202,11 @@ impl OutputParser {
             events.push(evt);
         }
 
+        // Usage exhaustion detection
+        if let Some(evt) = parse_usage_exhausted(&clean) {
+            events.push(evt);
+        }
+
         // Question/attention detection
         if let Some(evt) = parse_question(&clean) {
             events.push(evt);
@@ -266,6 +277,11 @@ impl OutputParser {
 
         // Usage limit
         if let Some(evt) = parse_usage_limit(&joined) {
+            events.push(evt);
+        }
+
+        // Usage exhaustion
+        if let Some(evt) = parse_usage_exhausted(&joined) {
             events.push(evt);
         }
 
@@ -777,6 +793,30 @@ fn parse_usage_limit(clean: &str) -> Option<ParsedEvent> {
                 percentage,
                 limit_type,
             });
+        }
+    }
+    None
+}
+
+/// Detect Claude Code usage exhaustion from pre-stripped text:
+/// "You're out of extra usage · resets 8pm (Europe/Madrid)"
+/// "You're out of usage · resets Feb 21 at 9am (US/Eastern)"
+fn parse_usage_exhausted(clean: &str) -> Option<ParsedEvent> {
+    // Fast path
+    if !clean.contains("out of") || !clean.contains("usage") {
+        return None;
+    }
+    lazy_static::lazy_static! {
+        static ref EXHAUSTED_RE: regex::Regex =
+            regex::Regex::new(r"(?i)out of (?:extra )?usage").unwrap();
+        static ref RESETS_RE: regex::Regex =
+            regex::Regex::new(r"(?:\u{00b7}|·)\s*resets\s+(.+)$").unwrap();
+    }
+    for line in clean.lines() {
+        if EXHAUSTED_RE.is_match(line) {
+            let reset_time = RESETS_RE.captures(line)
+                .map(|caps| caps[1].trim().to_string());
+            return Some(ParsedEvent::UsageExhausted { reset_time });
         }
     }
     None
@@ -1714,6 +1754,88 @@ mod tests {
         let mut parser = OutputParser::new();
         let events = parser.parse("You\u{2019}ve used 50% of your weekly limit");
         assert!(events.iter().any(|e| matches!(e, ParsedEvent::UsageLimit { percentage: 50, .. })));
+    }
+
+    // --- Usage exhaustion tests ---
+
+    #[test]
+    fn test_extra_usage_exhausted_with_time_and_tz() {
+        let mut parser = OutputParser::new();
+        let events = parser.parse("You're out of extra usage · resets 8pm (Europe/Madrid)");
+        match events.iter().find(|e| matches!(e, ParsedEvent::UsageExhausted { .. })) {
+            Some(ParsedEvent::UsageExhausted { reset_time }) => {
+                assert_eq!(reset_time.as_deref(), Some("8pm (Europe/Madrid)"));
+            }
+            _ => panic!("Expected UsageExhausted event, got: {:?}", events),
+        }
+    }
+
+    #[test]
+    fn test_extra_usage_exhausted_with_date_time_tz() {
+        let mut parser = OutputParser::new();
+        let events = parser.parse("You're out of extra usage · resets Feb 21 at 9am (Europe/Madrid)");
+        match events.iter().find(|e| matches!(e, ParsedEvent::UsageExhausted { .. })) {
+            Some(ParsedEvent::UsageExhausted { reset_time }) => {
+                assert_eq!(reset_time.as_deref(), Some("Feb 21 at 9am (Europe/Madrid)"));
+            }
+            _ => panic!("Expected UsageExhausted event, got: {:?}", events),
+        }
+    }
+
+    #[test]
+    fn test_extra_usage_exhausted_no_reset() {
+        let mut parser = OutputParser::new();
+        let events = parser.parse("You're out of extra usage");
+        match events.iter().find(|e| matches!(e, ParsedEvent::UsageExhausted { .. })) {
+            Some(ParsedEvent::UsageExhausted { reset_time }) => {
+                assert!(reset_time.is_none(), "expected no reset_time");
+            }
+            _ => panic!("Expected UsageExhausted event, got: {:?}", events),
+        }
+    }
+
+    #[test]
+    fn test_usage_limit_unchanged_with_reset_time() {
+        // Existing UsageLimit should still work and NOT produce UsageExhausted
+        let mut parser = OutputParser::new();
+        let events = parser.parse("You've used 78% of your weekly limit · resets Feb 21 at 9am (Europe/Madrid)");
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::UsageLimit { percentage: 78, .. })),
+            "should still produce UsageLimit");
+        assert!(!events.iter().any(|e| matches!(e, ParsedEvent::UsageExhausted { .. })),
+            "should NOT produce UsageExhausted for percentage-based limits");
+    }
+
+    #[test]
+    fn test_extra_usage_exhausted_unparseable_reset() {
+        let mut parser = OutputParser::new();
+        let events = parser.parse("You're out of extra usage · resets soon");
+        match events.iter().find(|e| matches!(e, ParsedEvent::UsageExhausted { .. })) {
+            Some(ParsedEvent::UsageExhausted { reset_time }) => {
+                assert_eq!(reset_time.as_deref(), Some("soon"));
+            }
+            _ => panic!("Expected UsageExhausted event, got: {:?}", events),
+        }
+    }
+
+    #[test]
+    fn test_extra_usage_exhausted_with_ansi() {
+        let mut parser = OutputParser::new();
+        let events = parser.parse("\x1b[33mYou're out of extra usage · resets 8pm (Europe/Madrid)\x1b[0m");
+        assert!(events.iter().any(|e| matches!(e, ParsedEvent::UsageExhausted { .. })),
+            "should parse through ANSI escapes");
+    }
+
+    #[test]
+    fn test_out_of_usage_without_extra() {
+        // "out of usage" (without "extra") should also be caught
+        let mut parser = OutputParser::new();
+        let events = parser.parse("You're out of usage · resets 3pm (US/Eastern)");
+        match events.iter().find(|e| matches!(e, ParsedEvent::UsageExhausted { .. })) {
+            Some(ParsedEvent::UsageExhausted { reset_time }) => {
+                assert_eq!(reset_time.as_deref(), Some("3pm (US/Eastern)"));
+            }
+            _ => panic!("Expected UsageExhausted event, got: {:?}", events),
+        }
     }
 
     // --- Ink SelectInput / broadened question detection tests ---
