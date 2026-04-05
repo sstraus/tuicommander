@@ -442,6 +442,135 @@ fn require_path(args: &serde_json::Value, action: &str) -> Result<String, serde_
         .ok_or_else(|| serde_json::json!({"error": format!("Action '{}' requires 'path' (absolute path to git repository)", action)}))
 }
 
+/// Build the full searchable tool corpus — native (filtered by
+/// `disabled_native_tools`) merged with upstream aggregated tools.
+///
+/// Unlike [`merged_tool_definitions`], this bypasses the `collapse_tools`
+/// branch: when collapsed, the client sees only the 3 meta-tools but the
+/// handlers still need the full list to search over and dispatch to.
+fn searchable_tool_definitions(state: &Arc<AppState>) -> Vec<serde_json::Value> {
+    let disabled = state.config.read().disabled_native_tools.clone();
+    let mut tools: Vec<serde_json::Value> = native_tool_definitions()
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|t| {
+            let name = t["name"].as_str().unwrap_or("");
+            !disabled.contains(&name.to_string())
+        })
+        .collect();
+    tools.extend(state.mcp_upstream_registry.aggregated_tools());
+    tools
+}
+
+/// Handle `search_tools` meta-tool — BM25 search over the full corpus.
+fn handle_search_tools(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
+    let query = match args["query"].as_str() {
+        Some(q) if !q.trim().is_empty() => q,
+        _ => return serde_json::json!({
+            "error": "search_tools requires non-empty 'query' (natural-language string describing what you want to do)"
+        }),
+    };
+    let limit = args["limit"].as_u64().unwrap_or(10).clamp(1, 100) as usize;
+
+    let tools = searchable_tool_definitions(state);
+    let index = crate::tool_search::ToolSearchIndex::build(&tools);
+    let results = index.search(query, limit);
+
+    let ranked: Vec<serde_json::Value> = results
+        .iter()
+        .map(|e| serde_json::json!({ "name": e.name, "summary": e.summary }))
+        .collect();
+    serde_json::json!({ "results": ranked, "count": ranked.len() })
+}
+
+/// Handle `get_tool_schema` meta-tool — exact-name lookup of a tool's full definition.
+fn handle_get_tool_schema(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
+    let tool_name = match args["tool_name"].as_str() {
+        Some(n) if !n.trim().is_empty() => n,
+        _ => return serde_json::json!({
+            "error": "get_tool_schema requires non-empty 'tool_name' (exact tool name from search_tools)"
+        }),
+    };
+
+    let tools = searchable_tool_definitions(state);
+    let index = crate::tool_search::ToolSearchIndex::build(&tools);
+
+    match index.get_schema(tool_name) {
+        Some(def) => def.clone(),
+        None => serde_json::json!({
+            "error": format!(
+                "Tool '{}' not found. Use search_tools to discover available tools.",
+                tool_name
+            )
+        }),
+    }
+}
+
+/// Handle `call_tool` meta-tool — dispatch a named tool call to either
+/// the native handler or the upstream proxy, preserving `addr` for
+/// localhost-only restrictions (config save, notify confirm).
+async fn handle_call_tool(
+    state: &Arc<AppState>,
+    addr: SocketAddr,
+    args: &serde_json::Value,
+    mcp_session_id: Option<&str>,
+) -> serde_json::Value {
+    let tool_name = match args["tool_name"].as_str() {
+        Some(n) if !n.trim().is_empty() => n.to_string(),
+        _ => return serde_json::json!({
+            "error": "call_tool requires non-empty 'tool_name' (exact tool name from search_tools or get_tool_schema)"
+        }),
+    };
+
+    // Block recursive meta-tool invocation — meta-tools are invoked directly,
+    // not routed through call_tool.
+    if META_TOOL_NAMES.contains(&tool_name.as_str()) {
+        return serde_json::json!({
+            "error": format!(
+                "call_tool cannot invoke meta-tool '{}'. Meta-tools (search_tools, get_tool_schema, call_tool) are invoked directly.",
+                tool_name
+            )
+        });
+    }
+
+    let tool_args = args.get("arguments").cloned().unwrap_or(serde_json::json!({}));
+
+    // Enforce disabled_native_tools up-front for native tools. Upstream allow/deny
+    // filters are enforced inside the proxy registry.
+    let is_upstream = tool_name.contains("__");
+    if !is_upstream {
+        let disabled = state.config.read().disabled_native_tools.clone();
+        if disabled.contains(&tool_name) {
+            return serde_json::json!({
+                "error": format!("Tool '{}' is disabled by configuration", tool_name)
+            });
+        }
+    }
+
+    if is_upstream {
+        match state
+            .mcp_upstream_registry
+            .proxy_tool_call(&tool_name, tool_args)
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => serde_json::json!({ "error": e }),
+        }
+    } else {
+        // Recursive async dispatch requires Box::pin. Meta names are blocked above.
+        Box::pin(handle_mcp_tool_call(
+            state,
+            addr,
+            &tool_name,
+            &tool_args,
+            mcp_session_id,
+        ))
+        .await
+    }
+}
+
 /// Handle an MCP tools/call request, executing against the app state directly (no HTTP round-trip)
 async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &str, args: &serde_json::Value, mcp_session_id: Option<&str>) -> serde_json::Value {
     // Resolve client identity at dispatch level — tool handlers get a plain bool
@@ -463,8 +592,11 @@ async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &st
         "plugin_dev_guide" => {
             serde_json::json!({"content": super::plugin_docs::PLUGIN_DOCS})
         }
+        "search_tools" => handle_search_tools(state, args),
+        "get_tool_schema" => handle_get_tool_schema(state, args),
+        "call_tool" => handle_call_tool(state, addr, args, mcp_session_id).await,
         _ => serde_json::json!({"error": format!(
-            "Unknown tool '{}'. Available: session, github, worktree, agent, messaging, config, workspace, notify, knowledge, plugin_dev_guide", name
+            "Unknown tool '{}'. Available: session, github, worktree, agent, messaging, config, workspace, notify, knowledge, plugin_dev_guide, search_tools, get_tool_schema, call_tool", name
         )}),
     }
 }
@@ -2299,5 +2431,282 @@ mod tests {
 
         let merged = merged_tool_definitions(&state);
         assert_eq!(tool_names(&merged).len(), 3);
+    }
+
+    // ── Meta-tool handler tests (story 1079) ───────────────────────────
+
+    fn loopback_addr() -> SocketAddr {
+        "127.0.0.1:12345".parse().unwrap()
+    }
+
+    fn non_loopback_addr() -> SocketAddr {
+        "192.168.1.42:12345".parse().unwrap()
+    }
+
+    // search_tools
+
+    #[test]
+    fn search_tools_requires_query() {
+        let state = test_state();
+        let r = handle_search_tools(&state, &serde_json::json!({}));
+        assert!(r["error"].as_str().unwrap().contains("query"));
+
+        let r = handle_search_tools(&state, &serde_json::json!({ "query": "" }));
+        assert!(r["error"].as_str().unwrap().contains("query"));
+
+        let r = handle_search_tools(&state, &serde_json::json!({ "query": "   " }));
+        assert!(r["error"].as_str().unwrap().contains("query"));
+    }
+
+    #[test]
+    fn search_tools_returns_ranked_results_for_session_query() {
+        let state = test_state();
+        let r = handle_search_tools(&state, &serde_json::json!({ "query": "terminal session management" }));
+        let results = r["results"].as_array().unwrap();
+        assert!(!results.is_empty(), "expected non-empty results");
+        assert_eq!(results[0]["name"], "session");
+        // summary is the first sentence of the description — must be populated.
+        assert!(results[0]["summary"].as_str().map(|s| !s.is_empty()).unwrap_or(false));
+    }
+
+    #[test]
+    fn search_tools_returns_ranked_results_for_github_query() {
+        let state = test_state();
+        let r = handle_search_tools(&state, &serde_json::json!({ "query": "github PR status" }));
+        let results = r["results"].as_array().unwrap();
+        assert_eq!(results[0]["name"], "github");
+    }
+
+    #[test]
+    fn search_tools_excludes_disabled_native_tools() {
+        let state = test_state();
+        state.config.write().disabled_native_tools = vec!["session".to_string()];
+
+        let r = handle_search_tools(&state, &serde_json::json!({ "query": "terminal session" }));
+        let results = r["results"].as_array().unwrap();
+        // "session" must not appear at all.
+        let has_session = results.iter().any(|v| v["name"] == "session");
+        assert!(!has_session, "disabled 'session' tool must be absent from search results");
+    }
+
+    #[test]
+    fn search_tools_nonsense_query_returns_empty() {
+        let state = test_state();
+        let r = handle_search_tools(&state, &serde_json::json!({ "query": "xyzzyplugh nonsense qqq" }));
+        let results = r["results"].as_array().unwrap();
+        assert_eq!(results.len(), 0);
+        assert_eq!(r["count"], 0);
+    }
+
+    #[test]
+    fn search_tools_respects_limit() {
+        let state = test_state();
+        let r = handle_search_tools(&state, &serde_json::json!({ "query": "action", "limit": 2 }));
+        let results = r["results"].as_array().unwrap();
+        assert!(results.len() <= 2);
+    }
+
+    // get_tool_schema
+
+    #[test]
+    fn get_tool_schema_requires_tool_name() {
+        let state = test_state();
+        let r = handle_get_tool_schema(&state, &serde_json::json!({}));
+        assert!(r["error"].as_str().unwrap().contains("tool_name"));
+    }
+
+    #[test]
+    fn get_tool_schema_returns_full_definition_for_native_tool() {
+        let state = test_state();
+        let r = handle_get_tool_schema(&state, &serde_json::json!({ "tool_name": "session" }));
+        assert_eq!(r["name"], "session");
+        assert!(r["description"].as_str().is_some());
+        assert!(r["inputSchema"].is_object());
+        assert_eq!(r["inputSchema"]["type"], "object");
+    }
+
+    #[test]
+    fn get_tool_schema_returns_error_for_unknown_tool() {
+        let state = test_state();
+        let r = handle_get_tool_schema(&state, &serde_json::json!({ "tool_name": "does_not_exist" }));
+        let err = r["error"].as_str().unwrap();
+        assert!(err.contains("not found"));
+        assert!(err.contains("search_tools"), "error should guide user to search_tools");
+    }
+
+    #[test]
+    fn get_tool_schema_excludes_disabled_native_tools() {
+        let state = test_state();
+        state.config.write().disabled_native_tools = vec!["debug".to_string()];
+        let r = handle_get_tool_schema(&state, &serde_json::json!({ "tool_name": "debug" }));
+        assert!(r["error"].as_str().is_some());
+    }
+
+    // call_tool
+
+    #[tokio::test]
+    async fn call_tool_requires_tool_name() {
+        let state = test_state();
+        let r = handle_call_tool(&state, loopback_addr(), &serde_json::json!({}), None).await;
+        assert!(r["error"].as_str().unwrap().contains("tool_name"));
+    }
+
+    #[tokio::test]
+    async fn call_tool_blocks_meta_tool_recursion() {
+        let state = test_state();
+        for meta in META_TOOL_NAMES {
+            let r = handle_call_tool(
+                &state,
+                loopback_addr(),
+                &serde_json::json!({ "tool_name": meta, "arguments": { "query": "x" } }),
+                None,
+            )
+            .await;
+            let err = r["error"].as_str().unwrap();
+            assert!(err.contains("cannot invoke meta-tool"), "meta '{meta}' should be blocked: {err}");
+        }
+    }
+
+    #[tokio::test]
+    async fn call_tool_rejects_disabled_native_tool() {
+        let state = test_state();
+        state.config.write().disabled_native_tools = vec!["workspace".to_string()];
+        let r = handle_call_tool(
+            &state,
+            loopback_addr(),
+            &serde_json::json!({ "tool_name": "workspace", "arguments": { "action": "active" } }),
+            None,
+        )
+        .await;
+        assert!(r["error"].as_str().unwrap().contains("disabled"));
+    }
+
+    #[tokio::test]
+    async fn call_tool_returns_unknown_tool_error_for_bogus_name() {
+        let state = test_state();
+        let r = handle_call_tool(
+            &state,
+            loopback_addr(),
+            &serde_json::json!({ "tool_name": "nonsense_xyz", "arguments": {} }),
+            None,
+        )
+        .await;
+        let err = r["error"].as_str().unwrap();
+        assert!(err.contains("Unknown tool"));
+    }
+
+    #[tokio::test]
+    async fn call_tool_dispatches_to_native_handler_propagating_args() {
+        // session with a missing action should surface handle_session's guidance
+        // error — this proves the args went through the dispatch layer.
+        let state = test_state();
+        let r = handle_call_tool(
+            &state,
+            loopback_addr(),
+            &serde_json::json!({ "tool_name": "session", "arguments": {} }),
+            None,
+        )
+        .await;
+        let err = r["error"].as_str().unwrap();
+        assert!(err.contains("action"), "expected handle_session's 'action' guidance error: {err}");
+    }
+
+    #[tokio::test]
+    async fn call_tool_propagates_addr_for_localhost_only_tools() {
+        // config save is restricted to loopback addresses. call_tool must propagate
+        // the caller's addr so the restriction still fires through the meta layer.
+        let state = test_state();
+        let r = handle_call_tool(
+            &state,
+            non_loopback_addr(),
+            &serde_json::json!({
+                "tool_name": "config",
+                "arguments": { "action": "save", "config": {} }
+            }),
+            None,
+        )
+        .await;
+        let err = r["error"].as_str().unwrap();
+        assert!(
+            err.contains("localhost"),
+            "non-loopback config save must be rejected via addr propagation: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn call_tool_missing_arguments_defaults_to_empty_object() {
+        // Omitting 'arguments' must not crash — handler receives {} and produces
+        // its own missing-action error.
+        let state = test_state();
+        let r = handle_call_tool(
+            &state,
+            loopback_addr(),
+            &serde_json::json!({ "tool_name": "session" }),
+            None,
+        )
+        .await;
+        assert!(r["error"].as_str().unwrap().contains("action"));
+    }
+
+    #[tokio::test]
+    async fn call_tool_routes_unknown_upstream_prefixed_name_through_proxy() {
+        // No upstreams are registered in tests — any tool_name with "__" falls
+        // through to proxy_tool_call, which errors out. We just verify that the
+        // error comes from the upstream path (not the native unknown-tool branch).
+        let state = test_state();
+        let r = handle_call_tool(
+            &state,
+            loopback_addr(),
+            &serde_json::json!({ "tool_name": "fake_upstream__some_tool", "arguments": {} }),
+            None,
+        )
+        .await;
+        let err = r["error"].as_str().unwrap();
+        // proxy_tool_call returns an error string — just assert it's an error and
+        // that the native unknown-tool message is NOT what we got.
+        assert!(!err.contains("Unknown tool"), "upstream-prefixed name must not hit native fallthrough: {err}");
+    }
+
+    // Route via the top-level dispatcher too, to cover the match-arm wiring.
+    #[tokio::test]
+    async fn handle_mcp_tool_call_routes_search_tools() {
+        let state = test_state();
+        let r = handle_mcp_tool_call(
+            &state,
+            loopback_addr(),
+            "search_tools",
+            &serde_json::json!({ "query": "terminal" }),
+            None,
+        )
+        .await;
+        assert!(r["results"].is_array());
+    }
+
+    #[tokio::test]
+    async fn handle_mcp_tool_call_routes_get_tool_schema() {
+        let state = test_state();
+        let r = handle_mcp_tool_call(
+            &state,
+            loopback_addr(),
+            "get_tool_schema",
+            &serde_json::json!({ "tool_name": "agent" }),
+            None,
+        )
+        .await;
+        assert_eq!(r["name"], "agent");
+    }
+
+    #[tokio::test]
+    async fn handle_mcp_tool_call_routes_call_tool() {
+        let state = test_state();
+        let r = handle_mcp_tool_call(
+            &state,
+            loopback_addr(),
+            "call_tool",
+            &serde_json::json!({ "tool_name": "session", "arguments": {} }),
+            None,
+        )
+        .await;
+        assert!(r["error"].as_str().unwrap().contains("action"));
     }
 }
