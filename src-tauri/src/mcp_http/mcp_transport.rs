@@ -2151,7 +2151,7 @@ mod tests {
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
             tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),
             push_store: crate::push::PushStore::load(&std::env::temp_dir()),
-            mobile_push_active: std::sync::atomic::AtomicBool::new(false),
+            desktop_window_focused: std::sync::atomic::AtomicBool::new(true),
             server_start_time: std::time::Instant::now(),
         });
         // Populate the cached tool search index so handlers that read from

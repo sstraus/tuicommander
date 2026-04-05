@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import { createEffect, createMemo, createSignal, Match, Show, Switch } from "solid-js";
 import { TopBar } from "./components/TopBar";
 import { BottomTabs, type TabId } from "./components/BottomTabs";
 import { SessionsScreen } from "./screens/SessionsScreen";
@@ -31,19 +31,6 @@ export default function MobileApp() {
   const [selectedSessionId, setSelectedSessionId] = createSignal<string | null>(sessionIdFromUrl());
   const { sessions, loading, refreshing, error, refresh, questionCount } = useSessions();
   useMobileNotifications(sessions);
-
-  // Signal the backend that the mobile PWA is active (enables push notifications).
-  // Fires on mount and whenever the page becomes visible again (e.g. unlock phone).
-  onMount(() => {
-    const sendHeartbeat = () => {
-      if (document.visibilityState === "visible") {
-        fetch("/api/push/heartbeat", { method: "POST" }).catch(() => {});
-      }
-    };
-    sendHeartbeat();
-    document.addEventListener("visibilitychange", sendHeartbeat);
-    onCleanup(() => document.removeEventListener("visibilitychange", sendHeartbeat));
-  });
 
   // Keep the last known session data so the detail screen stays mounted
   // and can show the "Session ended" overlay after a session closes.

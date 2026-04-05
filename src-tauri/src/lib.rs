@@ -740,7 +740,7 @@ pub fn run() {
         bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
         tailscale_state: parking_lot::RwLock::new(tailscale::TailscaleState::NotInstalled),
         push_store: push::PushStore::load(&config::config_dir()),
-        mobile_push_active: std::sync::atomic::AtomicBool::new(false),
+        desktop_window_focused: std::sync::atomic::AtomicBool::new(true),
         server_start_time: std::time::Instant::now(),
     });
 
@@ -887,12 +887,15 @@ pub fn run() {
             let app_state: &Arc<AppState> = app.state::<Arc<AppState>>().inner();
             *app_state.app_handle.write() = Some(app.handle().clone());
 
-            // Deactivate mobile push when desktop window gains focus
+            // Track desktop window focus so push notifications can be
+            // suppressed while the user is at their machine.
             if let Some(window) = app.get_webview_window("main") {
                 let push_flag = Arc::clone(app_state);
                 window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::Focused(true) = event {
-                        push_flag.mobile_push_active.store(false, std::sync::atomic::Ordering::Relaxed);
+                    if let tauri::WindowEvent::Focused(focused) = event {
+                        push_flag
+                            .desktop_window_focused
+                            .store(*focused, std::sync::atomic::Ordering::Relaxed);
                     }
                 });
             }

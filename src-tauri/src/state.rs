@@ -885,11 +885,11 @@ pub struct AppState {
     pub(crate) tailscale_state: parking_lot::RwLock<crate::tailscale::TailscaleState>,
     /// Push notification subscription store
     pub(crate) push_store: crate::push::PushStore,
-    /// When true, push notifications are sent to mobile.
-    /// Set to true when the mobile PWA polls; set to false when the desktop
-    /// window receives focus. This prevents duplicate alerts when the user
-    /// is actively working on the desktop.
-    pub(crate) mobile_push_active: std::sync::atomic::AtomicBool,
+    /// When true, the desktop window is currently focused and the user is at
+    /// their machine — suppress mobile push notifications to avoid duplicate
+    /// alerts. Set to true on focus and at startup; set to false on blur or
+    /// window minimize. Push notifications fire only when this is false.
+    pub(crate) desktop_window_focused: std::sync::atomic::AtomicBool,
     /// Server start time for uptime calculation in health endpoint.
     pub(crate) server_start_time: std::time::Instant,
     /// Per-MCP-session broadcast channels for inter-agent messaging notifications.
@@ -1245,7 +1245,7 @@ impl AppState {
 
                 // Spawn push notification outside the DashMap lock
                 if let Some((sid, prompt)) = push_data
-                    && state.mobile_push_active.load(std::sync::atomic::Ordering::Relaxed)
+                    && !state.desktop_window_focused.load(std::sync::atomic::Ordering::Relaxed)
                 {
                     let session_name = state.sessions
                         .get(&sid)
@@ -1271,7 +1271,7 @@ impl AppState {
                     entry.last_activity_ms = now_ms;
                 }
                 // Push "session completed" to mobile (unseen)
-                if state.mobile_push_active.load(std::sync::atomic::Ordering::Relaxed) {
+                if !state.desktop_window_focused.load(std::sync::atomic::Ordering::Relaxed) {
                     let session_name = state.sessions
                         .get(session_id)
                         .and_then(|s| s.value().lock().display_name.clone())
@@ -1935,7 +1935,7 @@ pub(crate) mod tests_support {
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
             tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),
             push_store: crate::push::PushStore::load(&std::env::temp_dir()),
-            mobile_push_active: std::sync::atomic::AtomicBool::new(false),
+            desktop_window_focused: std::sync::atomic::AtomicBool::new(true),
             server_start_time: std::time::Instant::now(),
         }
     }
@@ -2365,7 +2365,7 @@ mod tests {
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
             tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),
             push_store: crate::push::PushStore::load(&std::env::temp_dir()),
-            mobile_push_active: std::sync::atomic::AtomicBool::new(false),
+            desktop_window_focused: std::sync::atomic::AtomicBool::new(true),
             server_start_time: std::time::Instant::now(),
         }
     }

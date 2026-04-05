@@ -332,8 +332,6 @@ async fn push_subscribe(
         return (StatusCode::BAD_REQUEST, e).into_response();
     }
     state.push_store.upsert(sub);
-    // Mobile just subscribed — activate mobile push target
-    state.mobile_push_active.store(true, std::sync::atomic::Ordering::Relaxed);
     // Auto-enable push on first subscription — mutate + drop lock before disk I/O
     let needs_save = {
         let mut config = state.config.write();
@@ -364,13 +362,6 @@ async fn push_unsubscribe(
         return StatusCode::OK;
     }
     StatusCode::NOT_FOUND
-}
-
-/// Mobile PWA heartbeat — activates mobile push target.
-/// Called on app open and whenever the page becomes visible (unlock phone, switch tab).
-async fn push_heartbeat(State(state): State<Arc<AppState>>) -> StatusCode {
-    state.mobile_push_active.store(true, std::sync::atomic::Ordering::Relaxed);
-    StatusCode::NO_CONTENT
 }
 
 /// Send a test push notification to all registered subscribers.
@@ -570,7 +561,6 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         // Push notification API
         .route("/api/push/vapid-key", get(push_vapid_key))
         .route("/api/push/subscribe", post(push_subscribe).delete(push_unsubscribe))
-        .route("/api/push/heartbeat", post(push_heartbeat))
         .route("/api/push/test", post(push_test));
 
     // MCP Streamable HTTP transport — only when MCP is enabled
@@ -954,7 +944,7 @@ mod tests {
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
             tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),
             push_store: crate::push::PushStore::load(&std::env::temp_dir()),
-            mobile_push_active: std::sync::atomic::AtomicBool::new(false),
+            desktop_window_focused: std::sync::atomic::AtomicBool::new(true),
             server_start_time: std::time::Instant::now(),
         })
     }
