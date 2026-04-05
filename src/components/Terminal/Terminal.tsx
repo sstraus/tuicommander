@@ -1218,13 +1218,20 @@ export const Terminal: Component<TerminalProps> = (props) => {
     tryFit(retries);
   };
 
-  // Check if this terminal is visible (active, in a pane tree group, or always-visible)
-  const isInPaneGroup = () =>
-    paneLayoutStore.isSplit() && paneLayoutStore.getGroupForTab(props.id) !== null;
+  // Check if this terminal is visible. A terminal in a pane-tree group is only
+  // visible when it's the active tab of its group — otherwise every tab in the
+  // group runs xterm/ResizeObserver/ScrollTracker/PTY-subscribe concurrently,
+  // which multiplies background work by the number of tabs per pane.
+  const isActiveInPaneGroup = () => {
+    if (!paneLayoutStore.isSplit()) return false;
+    const groupId = paneLayoutStore.getGroupForTab(props.id);
+    if (!groupId) return false;
+    return paneLayoutStore.state.groups[groupId]?.activeTabId === props.id;
+  };
   const isVisible = () =>
     props.alwaysVisible ||
     terminalsStore.state.activeId === props.id ||
-    isInPaneGroup();
+    isActiveInPaneGroup();
 
   // Track hidden→visible transitions to rebuild the WebGL glyph atlas only once
   // after the terminal was actually hidden (branch/tab switch), not on every
