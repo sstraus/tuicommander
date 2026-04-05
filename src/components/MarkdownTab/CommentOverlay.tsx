@@ -7,7 +7,7 @@
  *   Mount once inside MarkdownTab. Pass `contentRef` (the rendered markdown
  *   container) and callbacks for save/delete that operate on the raw source.
  */
-import { Component, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { Component, createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import s from "./MarkdownTab.module.css";
 import {
@@ -71,11 +71,15 @@ export const CommentOverlay: Component<CommentOverlayProps> = (props) => {
       return;
     }
 
-    const rect = range.getBoundingClientRect();
-    // Position button just below the selection, centered.
+    // Use the last client rect so multi-line selections anchor the icon
+    // at the true end of the selection (not the bounding box corner).
+    const rects = range.getClientRects();
+    const rect = rects.length > 0 ? rects[rects.length - 1] : range.getBoundingClientRect();
+    // Position button immediately after the selection end, vertically centered on that line.
+    const BTN_SIZE = 28;
     setBtnPos({
-      x: rect.left + rect.width / 2 - 50,
-      y: rect.bottom + 6,
+      x: rect.right + 4,
+      y: rect.top + rect.height / 2 - BTN_SIZE / 2,
     });
   };
 
@@ -118,6 +122,11 @@ export const CommentOverlay: Component<CommentOverlayProps> = (props) => {
   };
 
   onMount(() => {
+    // Selection listener is scoped to the content element, not document,
+    // to avoid firing on every cursor move or keystroke in other parts
+    // of the app (terminals, input fields, etc.).
+    // `selectionchange` is still a document event, but we early-exit fast
+    // when the selection isn't inside our container.
     document.addEventListener("selectionchange", handleSelectionChange);
     props.contentRef.addEventListener("click", handleClick);
     onCleanup(() => {
@@ -191,14 +200,14 @@ export const CommentOverlay: Component<CommentOverlayProps> = (props) => {
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) handleSave();
   };
 
-  // Close popover when clicking outside
-  const handleOutsideClick = (e: MouseEvent) => {
+  // Outside-click listener is attached ONLY while the popover is open,
+  // so we don't tax every click in the app with an extra handler.
+  createEffect(() => {
     if (!popover()) return;
-    const target = e.target as HTMLElement;
-    if (!target.closest("[data-tweak-popover]")) closePopover();
-  };
-
-  onMount(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest("[data-tweak-popover]")) closePopover();
+    };
     document.addEventListener("mousedown", handleOutsideClick);
     onCleanup(() => document.removeEventListener("mousedown", handleOutsideClick));
   });

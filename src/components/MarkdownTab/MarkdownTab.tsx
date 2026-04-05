@@ -45,7 +45,8 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
   const contextMenu = createContextMenu();
   let wrapperRef: HTMLDivElement | undefined;
   let contentRef: HTMLDivElement | undefined;
-  let overlayContentRef: HTMLDivElement | undefined;
+  // Reactive signal so CommentOverlay mounts only after the rendered element exists.
+  const [overlayContentEl, setOverlayContentEl] = createSignal<HTMLDivElement | undefined>();
   let engine: DomSearchEngine | undefined;
   let lastSearchTerm = "";
   let lastSearchOpts: SearchOptions = { caseSensitive: false, regex: false, wholeWord: false };
@@ -376,7 +377,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
           content={content()}
           baseDir={baseDir()}
           onLinkClick={handleMdLink}
-          contentRef={(el) => { contentRef = el; overlayContentRef = el; }}
+          contentRef={(el) => { contentRef = el; setOverlayContentEl(el); }}
           emptyMessage={
             loading()
               ? t("markdownTab.loading", "Loading...")
@@ -387,12 +388,23 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
         />
       </div>
 
-      <Show when={props.tab.type === "file" && !!overlayContentRef}>
-        <CommentOverlay
-          contentRef={overlayContentRef!}
-          onSave={(c) => { void handleTweakSave(c); }}
-          onDelete={(id) => { void handleTweakDelete(id); }}
-        />
+      {/* Mount CommentOverlay ONLY for the active file tab — otherwise every
+          open markdown tab would attach its own selectionchange listener and
+          they'd all fire on every cursor move across the app. */}
+      <Show
+        when={
+          props.tab.type === "file" &&
+          mdTabsStore.state.activeId === props.tab.id &&
+          overlayContentEl()
+        }
+      >
+        {(el) => (
+          <CommentOverlay
+            contentRef={el()}
+            onSave={(c) => { void handleTweakSave(c); }}
+            onDelete={(id) => { void handleTweakDelete(id); }}
+          />
+        )}
       </Show>
 
       <ContextMenu
