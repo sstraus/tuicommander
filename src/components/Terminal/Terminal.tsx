@@ -141,12 +141,17 @@ export const Terminal: Component<TerminalProps> = (props) => {
   // Kitty keyboard protocol: current flags for this session (0 = disabled)
   let kittyFlags = 0;
 
-  // Periodic WebGL atlas rebuild to prevent progressive rendering corruption.
-  // The WebGL texture atlas packer can degrade over prolonged use with diverse
-  // Unicode characters (status bars, progress indicators, box-drawing).
-  // Re-assigning fontSize forces a full renderer rebuild without visible change.
-  const ATLAS_REBUILD_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-  let atlasRebuildTimer: ReturnType<typeof setInterval> | undefined;
+  // WebGL addon — retained so we can clear its atlas on demand and recreate
+  // it after context loss. The addon exposes events that let us react to
+  // actual atlas stress instead of rebuilding on a fixed timer.
+  let webglAddon: WebglAddon | undefined;
+  // Throttle counter for atlas cleanup triggered by onAddTextureAtlasCanvas.
+  // Pages are added when the packer runs out of room for new glyphs, so a
+  // burst of additions is a real signal of stress (e.g. large diverse output).
+  let atlasPagesSinceCleanup = 0;
+  let atlasLastCleanupMs = 0;
+  const ATLAS_CLEANUP_MIN_PAGES = 3;
+  const ATLAS_CLEANUP_MIN_INTERVAL_MS = 30_000;
 
   // Buffer for PTY output arriving before terminal.open()
   let outputBuffer: string[] = [];
@@ -651,15 +656,50 @@ export const Terminal: Component<TerminalProps> = (props) => {
     }
   };
 
-  /** Force a full WebGL atlas rebuild by toggling fontSize.
-   *  xterm's OptionsService has an equality check that skips onOptionChange
-   *  when the value hasn't changed, so same-value assignment is a no-op.
-   *  Toggle by +1 then restore — both fire synchronously before the next paint. */
-  const forceAtlasRebuild = () => {
-    if (!terminal) return;
-    const size = terminal.options.fontSize ?? settingsStore.state.defaultFontSize;
-    terminal.options.fontSize = size + 1;
-    terminal.options.fontSize = size;
+  /** Clear the WebGL texture atlas and trigger a redraw.
+   *  Official xterm addon API: clears cached glyphs and forces re-rasterization
+   *  of visible cells. Used to recover from atlas corruption (progressive
+   *  glyph garbling, Chromium/Nvidia post-sleep texture loss). */
+  const clearAtlas = () => {
+    webglAddon?.clearTextureAtlas();
+  };
+
+  /** Instantiate WebglAddon and wire its lifecycle events.
+   *  - onContextLoss: recreate the addon so WebGL rendering survives sleep/resume.
+   *    Without recreation the terminal silently falls back to the DOM renderer.
+   *  - onAddTextureAtlasCanvas: pages are added when the packer runs out of room
+   *    for new glyphs. Throttled cleanup prevents unbounded texture growth. */
+  const createWebglAddon = (): WebglAddon | undefined => {
+    if (!terminal) return undefined;
+    try {
+      const addon = new WebglAddon();
+      addon.onContextLoss(() => {
+        addon.dispose();
+        if (webglAddon === addon) webglAddon = undefined;
+        // Recreate on next microtask so dispose finishes first
+        queueMicrotask(() => {
+          if (terminal && !webglAddon) {
+            webglAddon = createWebglAddon();
+          }
+        });
+      });
+      addon.onAddTextureAtlasCanvas(() => {
+        atlasPagesSinceCleanup++;
+        const now = performance.now();
+        if (
+          atlasPagesSinceCleanup >= ATLAS_CLEANUP_MIN_PAGES &&
+          now - atlasLastCleanupMs > ATLAS_CLEANUP_MIN_INTERVAL_MS
+        ) {
+          addon.clearTextureAtlas();
+          atlasPagesSinceCleanup = 0;
+          atlasLastCleanupMs = now;
+        }
+      });
+      terminal.loadAddon(addon);
+      return addon;
+    } catch {
+      return undefined;
+    }
   };
 
   let terminalOpened = false;
@@ -1028,6 +1068,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
         type: terminal!.buffer.active.type,
       }),
     );
+    // Diagnostic logger for scroll-jump race condition investigation.
+    // Emits to appLogger so we can trace ViewportLock state transitions and
+    // detect the `suspectedRace` signature (user branch firing while locked
+    // and at-bottom, indicating a delayed DOM scroll event after writeEnd()).
+    viewportLock.setLogger((event, details) =>
+      appLogger.debug("terminal", `[scroll] ${event}`, { id: props.id, ...details }),
+    );
 
     // Preload the configured font so the canvas/WebGL renderer can measure
     // and render it correctly from the start (see preloadFont comment above).
@@ -1040,16 +1087,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
     terminal.unicode.activeVersion = "11";
 
     // Load WebGL renderer for 3-5x rendering performance over canvas.
-    // On context loss, DOM renderer remains as fallback.
-    try {
-      const webgl = new WebglAddon();
-      webgl.onContextLoss(() => {
-        webgl.dispose();
-      });
-      terminal.loadAddon(webgl);
-    } catch {
-      // DOM renderer as fallback
-    }
+    // DOM renderer remains as fallback if WebGL init fails.
+    webglAddon = createWebglAddon();
 
     // Update tab title from shell OSC 0/2 escape sequences (e.g. user@host:~/path)
     // OSC titles take priority over status-line parsing
@@ -1212,22 +1251,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
         const wasActuallyHidden = wasHidden;
         scrollTracker.setVisible(true);
         openTerminal();
-        // Rebuild WebGL renderer on actual hidden→visible transition.
-        // clearTextureAtlas() alone is insufficient — it clears cached glyphs
-        // but doesn't fix structural corruption in the atlas packer. Toggling
-        // fontSize forces a full renderer rebuild (same mechanism as zoom).
+        // Clear atlas on hidden→visible transition to recover from any
+        // corruption that may have occurred while the terminal was detached
+        // (e.g. layer re-composition, context loss without an event fire).
         if (wasActuallyHidden && terminal) {
-          forceAtlasRebuild();
+          clearAtlas();
           wasHidden = false;
         }
-
-        // Start periodic atlas rebuild timer for this visible terminal
-        clearInterval(atlasRebuildTimer);
-        atlasRebuildTimer = setInterval(() => {
-          if (terminal && isVisible()) {
-            forceAtlasRebuild();
-          }
-        }, ATLAS_REBUILD_INTERVAL_MS);
         // Only fit if the terminal was actually hidden or never fitted.
         // When the visibility effect re-triggers without a real hide (e.g.,
         // activeId flips null→id), skip the fit to avoid resetting scroll.
@@ -1278,7 +1308,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
       onCleanup(() => {
         if (rafHandle) cancelAnimationFrame(rafHandle);
-        clearInterval(atlasRebuildTimer);
         resizeObserver?.disconnect();
         // Only mark hidden if the terminal is actually becoming invisible.
         // SolidJS re-runs the effect (and its cleanup) when reactive deps
@@ -1323,7 +1352,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
     clearTimeout(resizeObserverTimer);
     clearTimeout(retryTimer);
     clearTimeout(agentDetectTimer);
-    clearInterval(atlasRebuildTimer);
     resizeObserver?.disconnect();
     unsubscribePty?.();
     unlistenParsed?.();
