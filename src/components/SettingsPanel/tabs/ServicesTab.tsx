@@ -32,6 +32,7 @@ interface AppConfig {
   ipv6_enabled: boolean;
   lan_auth_bypass: boolean;
   disabled_native_tools: string[];
+  collapse_tools: boolean;
   relay_enabled: boolean;
   relay_url: string;
   relay_token: string;
@@ -86,6 +87,7 @@ export const ServicesTab: Component = () => {
   const [urlCopied, setUrlCopied] = createSignal(false);
   const [regenerating, setRegenerating] = createSignal(false);
   const [disabledNativeTools, setDisabledNativeTools] = createSignal<string[]>([]);
+  const [collapseTools, setCollapseTools] = createSignal<boolean>(false);
   const [upstreamStatus, setUpstreamStatus] = createSignal<UpstreamStatusEntry[]>([]);
 
   // Tailscale state (mirrors Rust TailscaleState enum serialization)
@@ -167,6 +169,7 @@ export const ServicesTab: Component = () => {
       setIpv6Enabled(config.ipv6_enabled ?? false);
       setLanAuthBypass(config.lan_auth_bypass ?? false);
       setDisabledNativeTools(config.disabled_native_tools ?? []);
+      setCollapseTools(config.collapse_tools ?? false);
       setRelayEnabled(config.relay_enabled ?? false);
       setRelayUrl(config.relay_url || "wss://relay.tuicommander.com");
       setRelayToken(config.relay_token ?? "");
@@ -635,6 +638,32 @@ export const ServicesTab: Component = () => {
         <p class={s.hint}>
           Native tools exposed via MCP. Disable tools to restrict what AI agents can access.
         </p>
+      </div>
+
+      <div class={s.group} style={{ display: "flex", "align-items": "center", gap: "8px", padding: "4px 0" }}>
+        <div class={s.toggle} style={{ "margin-right": "4px" }}>
+          <input
+            type="checkbox"
+            checked={collapseTools()}
+            onChange={(e) => {
+              const enabled = e.currentTarget.checked;
+              setCollapseTools(enabled);
+              saveConfigField((c) => { (c as AppConfig & { collapse_tools: boolean }).collapse_tools = enabled; });
+            }}
+          />
+        </div>
+        <div style={{ display: "flex", "align-items": "center", gap: "6px" }}>
+          <span style={{ "font-weight": 500, "font-size": "13px" }}>Collapse tools (reduces AI context ~98%)</span>
+          <span
+            title="When enabled, MCP clients only see three meta-tools (search_tools, get_tool_schema, call_tool) and discover the full tool set on demand. Drastically reduces token usage for clients that don't need every tool upfront."
+            style={{
+              display: "inline-flex", "align-items": "center", "justify-content": "center",
+              width: "16px", height: "16px", "border-radius": "50%", "flex-shrink": 0,
+              background: "rgba(255,255,255,0.08)", color: "var(--fg-muted, #888)",
+              "font-size": "11px", "font-weight": 600, cursor: "help",
+            }}
+          >?</span>
+        </div>
       </div>
       <For each={NATIVE_TOOLS}>
         {(tool) => {
