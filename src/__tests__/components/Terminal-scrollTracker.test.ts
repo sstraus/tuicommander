@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { ScrollTracker, ViewportLock, type BufferSnapshot } from "../../components/Terminal/scrollTracker";
 
 /** Helper: create a normal-buffer snapshot */
@@ -324,6 +324,80 @@ describe("ViewportLock", () => {
       viewport.dispatchEvent(new Event("scroll"));
       expect(scrollToLineCalls).toEqual([50]); // restored to anchor
 
+      lock.writeEnd();
+      lock.dispose();
+    });
+
+    it("userScrollIntent() allows disengage during a write", () => {
+      const { lock, setBuffer } = createLockHarness();
+      setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
+      lock.update(false); // locked at line 50
+
+      // User presses a key while scrolled up — xterm will scrollToBottom.
+      // Simulate: write is currently in progress (PTY streaming) AND
+      // the key handler flagged user intent before onScroll fires update(true).
+      lock.writeStart();
+      lock.userScrollIntent();
+      lock.update(true);
+
+      expect(lock.isLocked).toBe(false); // unlocked despite write in progress
+      lock.writeEnd();
+      lock.dispose();
+    });
+
+    it("userScrollIntent expires after its TTL so later writes aren't treated as user", () => {
+      vi.useFakeTimers();
+      try {
+        const { lock, setBuffer } = createLockHarness();
+        setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
+        lock.update(false); // locked
+
+        lock.userScrollIntent();
+        lock.update(true); // intent still fresh — unlocks
+        expect(lock.isLocked).toBe(false);
+
+        // Re-lock, let the intent TTL expire
+        lock.update(false);
+        vi.advanceTimersByTime(500);
+
+        lock.writeStart();
+        lock.update(true); // no fresh intent → must stay locked
+        expect(lock.isLocked).toBe(true);
+        lock.writeEnd();
+        lock.dispose();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does NOT restore user wheel scroll during write (userIntent flag set)", () => {
+      const { lock, viewport, scrollToLineCalls, setBuffer } = createLockHarness();
+      setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
+      lock.update(false); // locked at line 50
+
+      // PTY streams heavily while user wheels further up. The wheel event
+      // fires on the viewport (flagging userIntent) before the native scroll.
+      lock.writeStart();
+      setBuffer({ viewportY: 30, baseY: 100, type: "normal" });
+      viewport.dispatchEvent(new Event("wheel"));
+      viewport.dispatchEvent(new Event("scroll"));
+
+      expect(scrollToLineCalls).toEqual([]); // user wheel respected, no rubber-band
+      lock.writeEnd();
+      lock.dispose();
+    });
+
+    it("still restores purely programmatic scroll during write (no gesture)", () => {
+      const { lock, viewport, scrollToLineCalls, setBuffer } = createLockHarness();
+      setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
+      lock.update(false); // locked at line 50
+
+      // xterm auto-scrolls to bottom during a write with no preceding user gesture
+      lock.writeStart();
+      setBuffer({ viewportY: 100, baseY: 100, type: "normal" });
+      viewport.dispatchEvent(new Event("scroll"));
+
+      expect(scrollToLineCalls).toEqual([50]); // restored to anchor
       lock.writeEnd();
       lock.dispose();
     });

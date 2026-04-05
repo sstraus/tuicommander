@@ -127,13 +127,21 @@ export class ScrollTracker {
  *  Used to trace scroll-jump bugs. Terminal.tsx wires this to appLogger. */
 export type ViewportLockLogger = (event: string, details: Record<string, unknown>) => void;
 
+/** How long a user gesture marks scroll events as user-driven. Must exceed
+ *  the browser's gesture→scroll latency and cover a drag's native scroll
+ *  events without letting xterm's programmatic writes sneak through. */
+const USER_INTENT_TTL_MS = 300;
+
 export class ViewportLock {
   private locked = false;
   private writeInProgress = false;
+  private userIntent = false;
+  private userIntentTimer: ReturnType<typeof setTimeout> | null = null;
   private anchorLine = 0;
   private scrollToLineFn: ((line: number) => void) | null = null;
   private getBufferFn: (() => BufferSnapshot) | null = null;
   private cleanupScroll: (() => void) | null = null;
+  private cleanupGestures: (() => void) | null = null;
   private viewport: HTMLElement | null = null;
   private logger: ViewportLockLogger | null = null;
 
@@ -151,6 +159,37 @@ export class ViewportLock {
     this.viewport = container.querySelector<HTMLElement>(".xterm-viewport");
     this.scrollToLineFn = scrollToLine;
     this.getBufferFn = getBuffer;
+    this.installGestureListeners();
+  }
+
+  /** Listen for user input gestures on the viewport so subsequent scroll
+   *  events can be classified as user-driven even while a terminal write
+   *  is in progress. Without this, the write-in-progress guard in engage()
+   *  treats every scroll as programmatic and rubber-bands the user back
+   *  to the anchor — making the scrollbar feel glued to the bottom during
+   *  steady PTY streaming. */
+  private installGestureListeners(): void {
+    if (!this.viewport) return;
+    const mark = () => this.markUserIntent();
+    const opts: AddEventListenerOptions = { passive: true, capture: true };
+    const events = ["wheel", "touchstart", "touchmove", "pointerdown", "keydown"] as const;
+    for (const ev of events) {
+      this.viewport.addEventListener(ev, mark, opts);
+    }
+    this.cleanupGestures = () => {
+      for (const ev of events) {
+        this.viewport?.removeEventListener(ev, mark, opts);
+      }
+    };
+  }
+
+  private markUserIntent(): void {
+    this.userIntent = true;
+    if (this.userIntentTimer) clearTimeout(this.userIntentTimer);
+    this.userIntentTimer = setTimeout(() => {
+      this.userIntent = false;
+      this.userIntentTimer = null;
+    }, USER_INTENT_TTL_MS);
   }
 
   /** Signal that a terminal.write() is about to start. */
@@ -163,15 +202,25 @@ export class ViewportLock {
     this.writeInProgress = false;
   }
 
+  /** Flag a user-driven scroll intent with the same TTL as the internal
+   *  gesture listeners. Kept for callers that detect user input via a
+   *  path other than the viewport listeners (e.g. terminal.onKey) so the
+   *  lock can disengage even while PTY output is streaming. */
+  userScrollIntent(): void {
+    this.markUserIntent();
+  }
+
   /** Engage or disengage based on scroll position.
    *  At bottom → unlock (xterm native). Scrolled up → lock.
    *  Refuses to disengage during a write — xterm auto-scrolls to bottom
-   *  during writes, which would falsely report "at bottom" and drop the lock. */
+   *  during writes, which would falsely report "at bottom" and drop the lock.
+   *  Exception: userScrollIntent() bypasses the guard for one call. */
   update(isAtBottom: boolean): void {
     const shouldLock = !isAtBottom;
     if (shouldLock === this.locked) return;
-    // Don't disengage mid-write: xterm auto-scroll during write is not user intent
-    if (!shouldLock && this.writeInProgress) {
+    // Don't disengage mid-write: xterm auto-scroll during write is not user intent,
+    // unless the caller explicitly flagged this as user-driven.
+    if (!shouldLock && this.writeInProgress && !this.userIntent) {
       this.logger?.("update-blocked-during-write", { isAtBottom, locked: this.locked });
       return;
     }
@@ -194,6 +243,13 @@ export class ViewportLock {
 
   dispose(): void {
     this.disengage();
+    this.cleanupGestures?.();
+    this.cleanupGestures = null;
+    if (this.userIntentTimer) {
+      clearTimeout(this.userIntentTimer);
+      this.userIntentTimer = null;
+    }
+    this.userIntent = false;
     this.scrollToLineFn = null;
     this.getBufferFn = null;
     this.viewport = null;
@@ -216,7 +272,14 @@ export class ViewportLock {
       if (!this.getBufferFn) return;
       const buf = this.getBufferFn();
 
-      if (this.writeInProgress) {
+      // A write may be in progress AND the user may be actively scrolling —
+      // wheel, trackpad, touch, drag, or key input. The gesture listeners
+      // flag userIntent with a short TTL so we can treat these scroll events
+      // as user-driven and avoid rubber-banding the viewport back to the
+      // anchor on every wheel tick during steady PTY streaming.
+      const isProgrammatic = this.writeInProgress && !this.userIntent;
+
+      if (isProgrammatic) {
         // Programmatic scroll from xterm write — restore anchor
         if (this.scrollToLineFn && buf.baseY >= this.anchorLine) {
           this.logger?.("dom-scroll-restore", {

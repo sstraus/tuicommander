@@ -42,6 +42,7 @@ describe("useTerminalLifecycle", () => {
 
   const mockDialogs = {
     confirmCloseTerminal: vi.fn().mockResolvedValue(true),
+    confirm: vi.fn().mockResolvedValue(true),
   };
 
   const mockSetStatusInfo = vi.fn();
@@ -53,6 +54,7 @@ describe("useTerminalLifecycle", () => {
     mockPty.canSpawn.mockReset().mockResolvedValue(true);
     mockPty.close.mockReset().mockResolvedValue(undefined);
     mockDialogs.confirmCloseTerminal.mockReset().mockResolvedValue(true);
+    mockDialogs.confirm.mockReset().mockResolvedValue(true);
     mockSetStatusInfo.mockReset();
     // Default: no foreground process (plain shell)
     mockInvoke.mockReset().mockResolvedValue(null);
@@ -423,6 +425,44 @@ describe("useTerminalLifecycle", () => {
       await lifecycle.closeTerminal(editId);
       expect(editorTabsStore.getIds().length).toBe(0);
       expect(terminalsStore.state.activeId).toBe(termId);
+    });
+
+    it("asks for confirmation when closing a dirty editor tab", async () => {
+      editorTabsStore.add("/repo/file.ts", "file.ts");
+      const editId = editorTabsStore.getIds()[0];
+      editorTabsStore.setDirty(editId, true);
+
+      mockDialogs.confirm.mockResolvedValueOnce(true);
+      await lifecycle.closeTerminal(editId);
+
+      expect(mockDialogs.confirm).toHaveBeenCalledTimes(1);
+      expect(mockDialogs.confirm.mock.calls[0][0]).toMatchObject({
+        title: "Unsaved changes",
+        kind: "warning",
+      });
+      expect(editorTabsStore.getIds().length).toBe(0);
+    });
+
+    it("keeps the dirty editor tab when the user cancels", async () => {
+      editorTabsStore.add("/repo/file.ts", "file.ts");
+      const editId = editorTabsStore.getIds()[0];
+      editorTabsStore.setDirty(editId, true);
+
+      mockDialogs.confirm.mockResolvedValueOnce(false);
+      await lifecycle.closeTerminal(editId);
+
+      expect(mockDialogs.confirm).toHaveBeenCalledTimes(1);
+      expect(editorTabsStore.getIds()).toContain(editId);
+    });
+
+    it("closes a clean editor tab without prompting", async () => {
+      editorTabsStore.add("/repo/file.ts", "file.ts");
+      const editId = editorTabsStore.getIds()[0];
+
+      await lifecycle.closeTerminal(editId);
+
+      expect(mockDialogs.confirm).not.toHaveBeenCalled();
+      expect(editorTabsStore.getIds().length).toBe(0);
     });
 
     it("selects sibling diff tab when closing one of multiple diff tabs", async () => {

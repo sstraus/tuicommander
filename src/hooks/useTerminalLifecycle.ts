@@ -23,6 +23,13 @@ export interface TerminalLifecycleDeps {
   };
   dialogs: {
     confirmCloseTerminal: (name: string) => Promise<boolean>;
+    confirm: (options: {
+      title: string;
+      message: string;
+      okLabel?: string;
+      cancelLabel?: string;
+      kind?: "info" | "warning" | "error";
+    }) => Promise<boolean>;
   };
   setStatusInfo: (msg: string) => void;
   getDefaultFontSize: () => number;
@@ -116,6 +123,17 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
     }
 
     if (id.startsWith("edit-")) {
+      const tab = editorTabsStore.get(id);
+      if (!skipConfirm && tab?.isDirty) {
+        const confirmed = await deps.dialogs.confirm({
+          title: "Unsaved changes",
+          message: `"${tab.fileName}" has unsaved changes.\nClose without saving?`,
+          okLabel: "Close without saving",
+          cancelLabel: "Cancel",
+          kind: "warning",
+        });
+        if (!confirmed) return;
+      }
       selectAfterNonTerminalClose(editorTabsStore, id);
       editorTabsStore.remove(id);
       return;

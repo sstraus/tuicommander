@@ -41,7 +41,7 @@ type ParsedEvent =
   | { type: "plan-file"; path: string }
   | { type: "user-input"; content: string }
   | { type: "api-error"; pattern_name: string; matched_text: string; error_kind: string }
-  | { type: "intent"; text: string; title?: string; kind?: "intent" | "action" }
+  | { type: "intent"; text: string; title?: string }
   | { type: "suggest"; items: string[] }
   | { type: "active-subtasks"; count: number; task_type: string }
   | { type: "shell-state"; state: "busy" | "idle" };
@@ -472,7 +472,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
         }
         case "intent":
           retryCount = 0;
-          terminalsStore.setAgentIntent(props.id, parsed.text, parsed.kind ?? "intent");
+          terminalsStore.setAgentIntent(props.id, parsed.text);
           if (parsed.title && settingsStore.state.intentTabTitle) {
             terminalsStore.update(props.id, { name: parsed.title });
           }
@@ -656,19 +656,40 @@ export const Terminal: Component<TerminalProps> = (props) => {
     }
   };
 
-  /** Clear the WebGL texture atlas and trigger a redraw.
-   *  Official xterm addon API: clears cached glyphs and forces re-rasterization
-   *  of visible cells. Used to recover from atlas corruption (progressive
-   *  glyph garbling, Chromium/Nvidia post-sleep texture loss). */
-  const clearAtlas = () => {
-    webglAddon?.clearTextureAtlas();
+  /** Fully rebuild the WebGL renderer by disposing the current addon and
+   *  instantiating a new one. Deferred via queueMicrotask so it is safe to
+   *  call from inside an addon callback (e.g. onAddTextureAtlasCanvas) —
+   *  the current event handler finishes before dispose runs.
+   *
+   *  clearTextureAtlas() alone only wipes the glyph cache; it does not
+   *  reset the atlas packer's internal layout or the underlying WebGL
+   *  textures, so structural corruption (post-sleep texture loss,
+   *  packer state drift after diverse-unicode bursts) survives a clear.
+   *  A full addon recreate rebuilds every renderer resource while leaving
+   *  the xterm core buffer, scroll position, and selection intact. */
+  const rebuildAtlas = () => {
+    if (!terminal || !webglAddon) return;
+    const old = webglAddon;
+    webglAddon = undefined;
+    queueMicrotask(() => {
+      try {
+        old.dispose();
+      } catch {
+        // Addon may already be disposed (e.g. context loss race) — ignore.
+      }
+      if (terminal && !webglAddon) {
+        webglAddon = createWebglAddon();
+      }
+    });
   };
 
   /** Instantiate WebglAddon and wire its lifecycle events.
    *  - onContextLoss: recreate the addon so WebGL rendering survives sleep/resume.
    *    Without recreation the terminal silently falls back to the DOM renderer.
    *  - onAddTextureAtlasCanvas: pages are added when the packer runs out of room
-   *    for new glyphs. Throttled cleanup prevents unbounded texture growth. */
+   *    for new glyphs. A burst of additions signals real atlas stress — we
+   *    respond with a full renderer rebuild (clearTextureAtlas alone does not
+   *    recover from structural packer corruption). */
   const createWebglAddon = (): WebglAddon | undefined => {
     if (!terminal) return undefined;
     try {
@@ -690,9 +711,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
           atlasPagesSinceCleanup >= ATLAS_CLEANUP_MIN_PAGES &&
           now - atlasLastCleanupMs > ATLAS_CLEANUP_MIN_INTERVAL_MS
         ) {
-          addon.clearTextureAtlas();
           atlasPagesSinceCleanup = 0;
           atlasLastCleanupMs = now;
+          rebuildAtlas();
         }
       });
       terminal.loadAddon(addon);
@@ -968,6 +989,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
         `(?=[\\s"'\`),;.!?:\\]}>]|$)`,                                // boundary (incl. sentence-ending punctuation)
         "g",
       );
+      // file:// URLs — capture group 1 is the absolute path (without the `file://` prefix).
+      // Accepts `file:///abs/path` (standard) and bare `file://abs/path`.
+      const fileUrlRegex = /\bfile:\/\/(\/[^\s"'`<>()[\]{}]+)/g;
 
       const onOpenFilePath = props.onOpenFilePath; // capture for closure
 
@@ -992,11 +1016,22 @@ export const Terminal: Component<TerminalProps> = (props) => {
             return;
           }
 
-          const matches: { text: string; index: number }[] = [];
+          // Matches store the full span to highlight (`text`) and the path to resolve
+          // via IPC (`candidate`). For plain paths these coincide; for `file://` URLs
+          // the span covers the whole URL while the candidate is the stripped path.
+          const matches: { text: string; candidate: string; index: number }[] = [];
           let match: RegExpExecArray | null;
           filePathRegex.lastIndex = 0;
           while ((match = filePathRegex.exec(lineText)) !== null) {
-            matches.push({ text: match[1], index: lineText.indexOf(match[1], match.index) });
+            const idx = lineText.indexOf(match[1], match.index);
+            matches.push({ text: match[1], candidate: match[1], index: idx });
+          }
+          // Also match `file://` URLs — the default WebLinksAddon only handles http(s)/ws/ftp,
+          // and the plain-path regex above won't match because `file://` supplies a `/` as the
+          // boundary char, which is not in its boundary class.
+          fileUrlRegex.lastIndex = 0;
+          while ((match = fileUrlRegex.exec(lineText)) !== null) {
+            matches.push({ text: match[0], candidate: match[1], index: match.index });
           }
           if (matches.length === 0) {
             cacheSet(cacheKey, undefined);
@@ -1014,7 +1049,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
               try {
                 const resolved = await invoke<{ absolute_path: string; is_directory: boolean } | null>(
                   "resolve_terminal_path",
-                  { cwd, candidate: m.text },
+                  { cwd, candidate: m.candidate },
                 );
                 return resolved ? { ...m, resolved } : null;
               } catch {
@@ -1029,7 +1064,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
               // Parse line:col from the candidate text
               let line: number | undefined;
               let col: number | undefined;
-              const lineColMatch = r.text.match(/:(\d+)(?::(\d+))?$/);
+              const lineColMatch = r.candidate.match(/:(\d+)(?::(\d+))?$/);
               if (lineColMatch) {
                 line = parseInt(lineColMatch[1], 10);
                 if (lineColMatch[2]) col = parseInt(lineColMatch[2], 10);
@@ -1122,6 +1157,16 @@ export const Terminal: Component<TerminalProps> = (props) => {
     terminal.onScroll(() => {
       scrollTracker.onScroll(terminal!.buffer.active);
       viewportLock.update(scrollTracker.isAtBottom);
+    });
+
+    // xterm's scrollOnUserInput snaps the viewport to bottom on any user
+    // keystroke. When ViewportLock is engaged and a write is in progress,
+    // the usual disengage path is blocked — flag this as user intent so
+    // the next update() can unlock through the guard.
+    terminal.onKey(() => {
+      if (!scrollTracker.isAtBottom) {
+        viewportLock.userScrollIntent();
+      }
     });
 
 
@@ -1250,11 +1295,14 @@ export const Terminal: Component<TerminalProps> = (props) => {
         const wasActuallyHidden = wasHidden;
         scrollTracker.setVisible(true);
         openTerminal();
-        // Clear atlas on hidden→visible transition to recover from any
-        // corruption that may have occurred while the terminal was detached
-        // (e.g. layer re-composition, context loss without an event fire).
+        // Rebuild the WebGL addon on hidden→visible transition to recover
+        // from any corruption that may have occurred while the terminal was
+        // detached (layer re-composition, GPU context drop without an event
+        // fire). A full renderer rebuild is required — clearTextureAtlas()
+        // only wipes the glyph cache and leaves structural packer state
+        // intact, so post-detach corruption survives a plain clear.
         if (wasActuallyHidden && terminal) {
-          clearAtlas();
+          rebuildAtlas();
           wasHidden = false;
         }
         // Only fit if the terminal was actually hidden or never fitted.
