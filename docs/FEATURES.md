@@ -65,7 +65,8 @@
 ### 1.7 Clickable File Paths
 - File paths in terminal output are auto-detected and become clickable links
 - Paths validated against filesystem before activation (Rust `resolve_terminal_path`)
-- `.md`/`.mdx` → opens in Markdown panel; all other code files → opens in configured IDE
+- `.md`/`.mdx` → opens in Markdown panel; `.html`/`.htm` → opens in internal HTML preview tab (with "Open in browser" button); all other code files → opens in the built-in code editor
+- `file://` URLs are recognized in addition to plain paths — the prefix is stripped and the path resolved like any other
 - Supports `:line` and `:line:col` suffixes for precise navigation
 - Recognized extensions: rs, ts, tsx, js, jsx, py, go, java, kt, swift, c, cpp, cs, rb, php, lua, zig, css, scss, html, vue, svelte, json, yaml, toml, sql, graphql, tf, sh, dockerfile, and more
 
@@ -234,7 +235,7 @@ Replaced by the Git Panel's Changes tab (section 3.8). `Cmd+Shift+D` now opens t
 - Disk conflict detection: banner with "Reload" (discard local) or "Keep mine" options
 - Auto-reloads silently when file changes on disk and editor is clean
 
-### 3.6 Ideas Panel (`Cmd+N`)
+### 3.6 Ideas Panel (`Cmd+Alt+N`)
 - Quick notes / idea capture with send-to-terminal
 - `Enter` submits idea, `Shift+Enter` inserts newline
 - Per-idea actions: Edit (copies back to input), Send to Terminal (sends + return), Delete
@@ -335,7 +336,7 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
 - Each row shows: terminal name, project name badge (last segment of CWD), agent type, status, last activity time
 - Sub-rows (up to one shown per terminal, in priority order):
   - `currentTask` (gear icon) — current agent task from status-line parsing (e.g. "Reading files"). Suppressed for Claude Code (spinner verbs are decorative)
-  - `agentIntent` (crosshair icon) — LLM-declared intent via `intent:` / `action:` token
+  - `agentIntent` (crosshair icon) — LLM-declared intent via `intent:` token
   - `lastPrompt` (speech bubble icon) — last user prompt (>= 10 words). Shown only when no `agentIntent` is present
 - Status color codes: green=working, yellow=waiting, red=rate-limited, gray=idle
 - Rate limit indicators with countdown timers
@@ -427,7 +428,7 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
 - CI badge: ring indicator — click for PR detail popover
 
 ### 5.3 Right Section — Panel Toggles
-- Ideas (lightbulb icon) — `Cmd+N`
+- Ideas (lightbulb icon) — `Cmd+Alt+N`
 - File Browser (folder icon) — `Cmd+E`
 - Markdown (MD icon) — `Cmd+M`
 - Git (diff icon) — `Cmd+Shift+D` (opens Git Panel)
@@ -522,10 +523,8 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
   - Cache persisted to disk as JSON for fast restarts
 
 ### 6.7 Intent Event Tracking
-- Agents declare work phases via `intent: text (Title)` or `action: text` tokens at column 0, colorized dim yellow in terminal output
-- `IntentKind` enum distinguishes planned intent vs. active execution
-- Plain-prefix colorization is agent-gated (only applied in sessions with a detected agent) to prevent false positives
-- Bracket syntax (`[[intent:...]]`, `[[suggest:...]]`) supported for backward compatibility
+- Agents declare work phases via `intent: text (Title)` tokens at column 0, colorized dim yellow in terminal output
+- Colorization is agent-gated (only applied in sessions with a detected agent) to prevent false positives
 - Structural tokens stripped from log lines served to PWA/REST consumers via `LogLine::strip_structural_tokens()`
 - Structured `Intent` events emitted for LLM-declared work phase tracking
 - Centralized debounced busy signal with completion notifications for accurate idle/active status
@@ -555,8 +554,8 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - **Deprecated:** The it2 shim approach (iTerm2 CLI emulation) is commented out — superseded by direct MCP tool spawning
 
 ### 6.11 Suggest Follow-up Actions
-- **Protocol:** Agents emit `suggest: action1 | action2 | action3` at column 0 after completing a task (bracket syntax `[[suggest:...]]` also supported)
-- **Token concealment:** Suggest tokens are concealed in terminal output via line erasure or space replacement — the raw token never appears on screen. Plain-prefix concealment is agent-gated
+- **Protocol:** Agents emit `suggest: action1 | action2 | action3` at column 0 after completing a task
+- **Token concealment:** Suggest tokens are concealed in terminal output via line erasure or space replacement — the raw token never appears on screen. Concealment is agent-gated
 - **Desktop:** Floating chip bar (SuggestOverlay) above terminal with larger buttons and keyboard shortcut badges (`1`–`9` to select, `Esc` to dismiss). Auto-dismiss after 30s, on typing, or on Esc
 - **Mobile:** Horizontal scrollable pill buttons above CommandInput in SessionDetailScreen
 - **Action:** Clicking a chip (or pressing its number key) sends the text to the PTY via `write_pty`
@@ -1081,8 +1080,10 @@ All data persisted to platform config directory via Rust:
 | `Cmd+[` | Toggle sidebar |
 | `Cmd+Shift+D` | Toggle Git Panel |
 | `Cmd+M` | Toggle markdown panel |
-| `Cmd+N` | Toggle Ideas panel |
+| `Cmd+Alt+N` | Toggle Ideas panel |
 | `Cmd+E` | Toggle file browser |
+| `Cmd+O` | Open file… (picker) |
+| `Cmd+N` | New file… (picker for name + location) |
 | `Cmd+P` | Command palette |
 | `Cmd+Shift+P` | Toggle plan panel |
 | `Cmd+,` | Open settings |

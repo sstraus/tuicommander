@@ -105,8 +105,10 @@ Font size range: 8px to 32px, step 2px per action.
 | `Cmd+[` | Toggle sidebar |
 | `Cmd+Shift+D` | Toggle Git Panel |
 | `Cmd+M` | Toggle markdown panel |
-| `Cmd+N` | Toggle Ideas panel |
+| `Cmd+Alt+N` | Toggle Ideas panel |
 | `Cmd+E` | Toggle file browser |
+| `Cmd+O` | Open file… (picker) |
+| `Cmd+N` | New file… (picker for name + location) |
 | `Cmd+,` | Open settings |
 | `Cmd+?` | Toggle help panel |
 | `Cmd+Shift+K` | Prompt library |
@@ -243,7 +245,9 @@ Hold to record, release to transcribe and inject text into active terminal.
 | `switch-tab-1..9` | `Cmd+1..9` | Switch to tab N |
 | `toggle-sidebar` | `Cmd+[` | Toggle sidebar |
 | `toggle-markdown` | `Cmd+M` | Toggle markdown panel |
-| `toggle-notes` | `Cmd+N` | Toggle ideas panel |
+| `toggle-notes` | `Cmd+Alt+N` | Toggle ideas panel |
+| `open-file` | `Cmd+O` | Open file picker |
+| `new-file` | `Cmd+N` | Create new file |
 | `toggle-file-browser` | `Cmd+E` | Toggle file browser |
 | `prompt-library` | `Cmd+Shift+K` | Prompt library |
 | `toggle-settings` | `Cmd+,` | Open settings |

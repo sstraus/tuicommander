@@ -38,8 +38,7 @@ interface TerminalData {
   usageLimit: { percentage: number; limitType: string } | null;
   lastDataAt: number | null;        // Timestamp of last PTY output
   lastPrompt: string | null;        // Last relevant user prompt (>= 10 words), set by Rust
-  agentIntent: string | null;       // LLM-declared intent via intent:/action: token
-  intentKind: "intent" | "action" | null; // Whether intent is planned or in-progress
+  agentIntent: string | null;       // LLM-declared intent via intent: token
   currentTask: string | null;       // Current agent task from status-line parsing
   activeSubTasks: number;           // Count of running sub-agents from ›› status line
   isRemote: boolean;                // Created via HTTP/MCP (not locally by the UI)

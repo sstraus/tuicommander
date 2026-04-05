@@ -199,7 +199,7 @@ On-device speech-to-text powered by whisper-rs. No cloud service, no API keys, n
 - Claude Usage Dashboard: rate limits, 7-day chart, 52-week heatmap, per-project breakdown
 - Prompt library (`Cmd+K`): saved prompts with variable substitution
 - IDE launchers: open in VS Code, Cursor, Zed, or any detected editor
-- Ideas panel (`Cmd+N`): quick notes with image paste and send-to-terminal
+- Ideas panel (`Cmd+Alt+N`): quick notes with image paste and send-to-terminal
 - Voice dictation: streaming on-device Whisper with partial results
 - 13 bundled monospace fonts
 </details>

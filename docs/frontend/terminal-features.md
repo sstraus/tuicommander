@@ -54,7 +54,9 @@ Consolidated reference for all terminal behaviors, keyboard shortcuts, and confi
 | Cmd+, | Settings |
 | Cmd+E | File browser |
 | Cmd+M | Markdown panel |
-| Cmd+N | Notes/ideas panel |
+| Cmd+Alt+N | Notes/ideas panel |
+| Cmd+O | Open file picker |
+| Cmd+N | New file (picker for name + location) |
 | Cmd+J | Task queue |
 | Cmd+B | Quick branch switch |
 | Cmd+G | Branches tab |

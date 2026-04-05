@@ -213,7 +213,9 @@ Features:
 | Cmd+Shift+D | Toggle Git Panel |
 | Cmd+G | Git Panel — Branches tab |
 | Cmd+M | Toggle markdown panel |
-| Cmd+N | Toggle Ideas panel |
+| Cmd+Alt+N | Toggle Ideas panel |
+| Cmd+O | Open file… |
+| Cmd+N | New file… |
 | Cmd+1-9 | Switch to tab N |
 | Cmd++/- | Zoom in/out |
 | Cmd+0 | Reset zoom |
