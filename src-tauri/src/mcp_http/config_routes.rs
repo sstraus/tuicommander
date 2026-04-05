@@ -47,9 +47,12 @@ pub(super) async fn put_config(
     if let Err(resp) = localhost_only(&addr) { return resp; }
     match crate::config::save_app_config(config.clone()) {
         Ok(()) => {
-            let old_disabled = state.config.read().disabled_native_tools.clone();
+            let (old_disabled, old_collapse) = {
+                let c = state.config.read();
+                (c.disabled_native_tools.clone(), c.collapse_tools)
+            };
             *state.config.write() = config.clone();
-            if old_disabled != config.disabled_native_tools {
+            if old_disabled != config.disabled_native_tools || old_collapse != config.collapse_tools {
                 let _ = state.mcp_tools_changed.send(());
             }
             (StatusCode::OK, Json(serde_json::json!({"ok": true})))

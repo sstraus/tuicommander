@@ -340,6 +340,10 @@ pub(crate) struct AppConfig {
     /// Native MCP tool names disabled by the user (excluded from tools/list response)
     #[serde(default)]
     pub(crate) disabled_native_tools: Vec<String>,
+    /// Collapse all MCP tools into 3 meta-tools (search_tools, get_tool_schema, call_tool).
+    /// Reduces AI context from ~35k to ~500 tokens. Default: false (individual tools exposed).
+    #[serde(default)]
+    pub(crate) collapse_tools: bool,
     /// Show agent intent as tab title (from `intent: text (title)` tokens)
     #[serde(default = "default_true")]
     pub(crate) intent_tab_title: bool,
@@ -466,6 +470,7 @@ impl Default for AppConfig {
             copy_on_select: true,
             bell_style: default_bell_style(),
             global_hotkey: None,
+            collapse_tools: false,
         }
     }
 }
@@ -1185,6 +1190,7 @@ mod tests {
             global_hotkey: Some("CommandOrControl+Shift+T".to_string()),
             copy_on_select: true,
             bell_style: "visual".to_string(),
+            collapse_tools: true,
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
         assert_eq!(loaded.shell.as_deref(), Some("/bin/zsh"));

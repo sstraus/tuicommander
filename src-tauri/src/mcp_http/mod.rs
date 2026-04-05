@@ -2460,6 +2460,27 @@ mod tests {
         assert!(result.is_ok(), "expected tools_changed signal after config change");
     }
 
+    /// Changing collapse_tools via put_config fires mcp_tools_changed.
+    #[tokio::test]
+    async fn test_collapse_tools_toggle_fires_tools_changed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _guard = crate::config::set_config_dir_override(tmp.path().to_path_buf());
+
+        let state = test_state();
+        let mut rx = state.mcp_tools_changed.subscribe();
+
+        // Enable collapse_tools
+        let mut config = state.config.read().clone();
+        config.collapse_tools = true;
+        let app = build_router(state.clone(), false, true);
+        let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 0));
+        let resp = app.oneshot(put_from("/config", &serde_json::to_value(&config).unwrap(), addr)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let result = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await;
+        assert!(result.is_ok(), "expected tools_changed signal when collapse_tools toggled");
+    }
+
     /// GET /mcp with valid session returns SSE stream that emits tools/list_changed
     /// when mcp_tools_changed is signaled.
     #[tokio::test]

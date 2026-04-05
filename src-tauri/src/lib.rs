@@ -121,7 +121,8 @@ fn save_config(state: State<'_, Arc<AppState>>, config: config::AppConfig) -> Re
         || old.remote_access_password_hash != config.remote_access_password_hash
         || old.ipv6_enabled != config.ipv6_enabled;
 
-    let tools_changed = old.disabled_native_tools != config.disabled_native_tools;
+    let tools_changed = old.disabled_native_tools != config.disabled_native_tools
+        || old.collapse_tools != config.collapse_tools;
 
     config::save_app_config(config.clone())?;  // clone goes to disk
     *state.config.write() = config;             // move original into state
