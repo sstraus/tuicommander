@@ -648,6 +648,35 @@ pub(crate) fn search_content_impl(
         }
     }
 
+    // Rerank the raw grep hits by BM25 over `line_text` so the most
+    // lexically relevant lines float to the top. Grep returns hits in
+    // file-walk order; with many matches this buries the best hit
+    // arbitrarily far down the list. Skip the rerank for regex/whole-word
+    // queries where the "query" is a pattern, not natural-language text.
+    if !use_regex && !whole_word && !query.is_empty() && all_matches.len() > 1 {
+        let lines: Vec<&str> = all_matches.iter().map(|m| m.line_text.as_str()).collect();
+        let ranked = crate::text_rank::rank_lines(&query, &lines);
+        if !ranked.is_empty() {
+            // Stable reorder: BM25-scored lines first (in score order),
+            // then any zero-score matches in their original grep order so we
+            // never lose a hit the user might still care about.
+            let mut seen = vec![false; all_matches.len()];
+            let mut reordered: Vec<ContentMatch> = Vec::with_capacity(all_matches.len());
+            for (idx, _score) in &ranked {
+                if let Some(m) = all_matches.get(*idx) {
+                    reordered.push(m.clone());
+                    seen[*idx] = true;
+                }
+            }
+            for (idx, m) in all_matches.iter().enumerate() {
+                if !seen[idx] {
+                    reordered.push(m.clone());
+                }
+            }
+            all_matches = reordered;
+        }
+    }
+
     Ok(ContentSearchResult {
         matches: all_matches,
         files_searched,
@@ -1374,6 +1403,45 @@ mod tests {
         let result = search_content_impl(repo_path, "xyzzy_no_such_string_9999".to_string(), true, false, false, None).unwrap();
         assert_eq!(result.matches.len(), 0, "Should return 0 matches for non-existent string");
         assert!(!result.truncated);
+    }
+
+    #[test]
+    fn test_search_content_bm25_reranks_by_relevance() {
+        let dir = setup_test_repo();
+
+        // Two files, both matching "database". a.txt has it once in a line
+        // padded with unrelated tokens (low term frequency, long line);
+        // b.txt has it three times in a focused line (high TF, short line).
+        // Grep returns a.txt first (alphabetical walk) — BM25 must flip it.
+        fs::write(
+            dir.path().join("a.txt"),
+            "lorem ipsum dolor sit amet consectetur database adipiscing elit sed do\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("b.txt"),
+            "database database database\n",
+        )
+        .unwrap();
+
+        let repo_path = dir.path().to_string_lossy().to_string();
+        let result = search_content_impl(
+            repo_path,
+            "database".to_string(),
+            false,
+            false,
+            false,
+            None,
+        )
+        .unwrap();
+
+        assert!(result.matches.len() >= 2, "expected hits from both files");
+        // After rerank, the high-TF / short-line match in b.txt must win.
+        assert_eq!(
+            result.matches[0].path, "b.txt",
+            "BM25 rerank should put the highest-tf line first, got order: {:?}",
+            result.matches.iter().map(|m| &m.path).collect::<Vec<_>>()
+        );
     }
 
     #[test]

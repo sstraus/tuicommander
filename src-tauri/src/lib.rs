@@ -42,6 +42,7 @@ pub(crate) mod push;
 pub(crate) mod state;
 pub(crate) mod tailscale;
 pub(crate) mod tool_search;
+pub(crate) mod text_rank;
 mod updater;
 pub(crate) mod worktree;
 

@@ -14,23 +14,26 @@ describe("searchTerminalBuffer", () => {
     "src/app.ts:42: throw new Error('something failed')",
   ];
 
-  it("finds case-insensitive matches across lines", () => {
+  it("finds case-insensitive matches across lines and reranks by BM25", () => {
     const results = searchTerminalBuffer(lines, "error", "term-1", "Shell");
     expect(results).toHaveLength(3);
-    expect(results[0].lineIndex).toBe(3);
-    expect(results[0].lineText).toBe(lines[3]);
-    expect(results[1].lineIndex).toBe(7);
-    expect(results[2].lineIndex).toBe(8);
+    // All three lines match "error" with tf=1; BM25 length normalization
+    // pushes the shortest line ("$ grep -r error src/", line 7) to the top.
+    const indices = results.map((r) => r.lineIndex);
+    expect(indices).toContain(3);
+    expect(indices).toContain(7);
+    expect(indices).toContain(8);
+    expect(results[0].lineIndex).toBe(7);
   });
 
   it("returns correct match offsets", () => {
     const results = searchTerminalBuffer(lines, "npm", "term-1", "Shell");
-    // Line 0: "$ npm install" → match at 2..5
-    expect(results[0].matchStart).toBe(2);
-    expect(results[0].matchEnd).toBe(5);
-    // Line 2: "npm warn..." → match at 0..3
-    expect(results[1].matchStart).toBe(0);
-    expect(results[1].matchEnd).toBe(3);
+    // Offsets must point to the matched substring regardless of rank order.
+    for (const r of results) {
+      expect(r.lineText.slice(r.matchStart, r.matchEnd).toLowerCase()).toBe("npm");
+    }
+    // Shortest matching line ("$ npm install", line 0) wins under BM25.
+    expect(results[0].lineIndex).toBe(0);
   });
 
   it("finds multiple matches on the same line (first match only per line)", () => {
@@ -68,5 +71,20 @@ describe("searchTerminalBuffer", () => {
 
   it("handles empty query gracefully", () => {
     expect(searchTerminalBuffer(lines, "", "t", "T")).toEqual([]);
+  });
+
+  it("BM25 ranks the best-match line at the top for an ambiguous query", () => {
+    // Ambiguous query: three lines contain "auth" but one line has it
+    // multiple times AND is short — clearest BM25 winner. Without rerank,
+    // scrollback order would return the first line (index 0) first.
+    const scrollback = [
+      "$ curl https://example.com/api/users?auth=x&limit=10&cursor=abc123",
+      "HTTP/1.1 200 OK, content-type: application/json, body 14kb",
+      "auth auth auth",
+      "$ ls -la",
+    ];
+    const results = searchTerminalBuffer(scrollback, "auth", "term-1", "Shell");
+    expect(results[0].lineIndex).toBe(2);
+    expect(results[0].lineText).toBe("auth auth auth");
   });
 });
