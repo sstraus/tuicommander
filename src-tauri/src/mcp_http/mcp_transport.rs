@@ -309,11 +309,69 @@ fn native_tool_definitions() -> serde_json::Value {
     defs
 }
 
+/// The three meta-tool names used when `collapse_tools: true`.
+/// Exposed for handler dispatch and tests.
+pub(crate) const META_TOOL_NAMES: [&str; 3] = ["search_tools", "get_tool_schema", "call_tool"];
+
+/// Speakeasy-style meta-tool definitions. When `collapse_tools: true`,
+/// `merged_tool_definitions()` returns exactly these three tools instead of
+/// the full native + upstream list. The model uses `search_tools` to discover
+/// relevant tools by natural language, `get_tool_schema` to fetch the full
+/// input schema for one, and `call_tool` to execute it.
+fn meta_tool_definitions() -> serde_json::Value {
+    serde_json::json!([
+        {
+            "name": "search_tools",
+            "description": "Find relevant TUICommander tools by natural-language query. Returns a BM25-ranked list of tool names + one-line summaries. Use this before calling any tool to discover what is available, then call `get_tool_schema` for the full input schema of the tool you want to use.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "Natural-language query describing what you want to do (e.g. 'manage terminal sessions', 'github PR status', 'cross-repo knowledge search')" },
+                    "limit": { "type": "integer", "description": "Maximum number of results, default 10" }
+                },
+                "required": ["query"]
+            }
+        },
+        {
+            "name": "get_tool_schema",
+            "description": "Return the full MCP tool definition (name, description, inputSchema) for a single tool by exact name. Call this after `search_tools` to get the arguments needed to invoke a tool.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tool_name": { "type": "string", "description": "Exact tool name as returned by search_tools" }
+                },
+                "required": ["tool_name"]
+            }
+        },
+        {
+            "name": "call_tool",
+            "description": "Invoke a TUICommander tool by name with arguments. Dispatches to native tools (session, github, worktree, agent, messaging, config, workspace, notify, knowledge, debug, plugin_dev_guide) or upstream-proxied tools (`{upstream}__{tool}`). The arguments object must match the tool's inputSchema — fetch it via `get_tool_schema` first.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tool_name": { "type": "string", "description": "Exact tool name" },
+                    "arguments": { "type": "object", "description": "Tool-specific arguments matching the inputSchema returned by get_tool_schema" }
+                },
+                "required": ["tool_name", "arguments"]
+            }
+        }
+    ])
+}
+
 /// Returns native tools merged with upstream proxy tools (namespaced as `{upstream}__`).
 ///
-/// Upstream tools are omitted when no upstreams are Ready.
-/// Native tools listed in `config.disabled_native_tools` are excluded.
+/// When `config.collapse_tools: true`, returns exactly 3 meta-tools
+/// (`search_tools`, `get_tool_schema`, `call_tool`) — the Speakeasy pattern for
+/// massive context reduction.
+///
+/// Otherwise (default), returns native tools filtered by `disabled_native_tools`,
+/// merged with upstream proxy tools. Upstream tools are omitted when no
+/// upstreams are Ready.
 fn merged_tool_definitions(state: &Arc<AppState>) -> serde_json::Value {
+    if state.config.read().collapse_tools {
+        return meta_tool_definitions();
+    }
+
     let disabled = &state.config.read().disabled_native_tools;
     let mut tools: Vec<serde_json::Value> = native_tool_definitions()
         .as_array()
@@ -2154,5 +2212,92 @@ mod tests {
             "action": "send", "to": "tab-2", "message": big_msg
         }), Some("mcp-1"));
         assert!(r["error"].as_str().unwrap().contains("64 KB"));
+    }
+
+    // ── Meta-tool collapse tests (story 1078) ───────────────────────────
+
+    /// Helper: extract tool names from a tool definitions value.
+    fn tool_names(tools: &serde_json::Value) -> Vec<String> {
+        tools
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|t| t["name"].as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn meta_tool_definitions_returns_exactly_three_tools_with_expected_names() {
+        let defs = meta_tool_definitions();
+        let names = tool_names(&defs);
+        assert_eq!(names.len(), 3, "meta_tool_definitions must return 3 tools");
+        assert_eq!(names, vec!["search_tools", "get_tool_schema", "call_tool"]);
+        // Each must have a non-empty description and an inputSchema object.
+        for tool in defs.as_array().unwrap() {
+            assert!(
+                tool["description"].as_str().map(|s| !s.is_empty()).unwrap_or(false),
+                "meta tool {:?} missing description",
+                tool["name"]
+            );
+            assert!(
+                tool["inputSchema"].is_object(),
+                "meta tool {:?} missing inputSchema",
+                tool["name"]
+            );
+        }
+    }
+
+    #[test]
+    fn meta_tool_names_constant_matches_definitions() {
+        let defs = meta_tool_definitions();
+        let names = tool_names(&defs);
+        let expected: Vec<String> = META_TOOL_NAMES.iter().map(|s| s.to_string()).collect();
+        assert_eq!(names, expected);
+    }
+
+    #[test]
+    fn merged_tools_collapse_false_returns_all_native_tools() {
+        let state = test_state();
+        // Sanity: default is false.
+        assert!(!state.config.read().collapse_tools);
+
+        let merged = merged_tool_definitions(&state);
+        let names = tool_names(&merged);
+
+        // All native tool names must appear (no upstreams registered in tests, so
+        // merged == filtered native).
+        let native = tool_names(&native_tool_definitions());
+        assert_eq!(
+            names, native,
+            "collapse_tools=false should return all native tools"
+        );
+        assert!(names.len() > 3, "baseline native tool set must exceed 3 tools");
+    }
+
+    #[test]
+    fn merged_tools_collapse_true_returns_exactly_three_meta_tools() {
+        let state = test_state();
+        state.config.write().collapse_tools = true;
+
+        let merged = merged_tool_definitions(&state);
+        let names = tool_names(&merged);
+
+        assert_eq!(names.len(), 3);
+        assert_eq!(names, vec!["search_tools", "get_tool_schema", "call_tool"]);
+    }
+
+    #[test]
+    fn merged_tools_collapse_true_ignores_disabled_native_tools() {
+        // When collapsed, disabled_native_tools has no effect on the returned list —
+        // the 3 meta-tools are always the full response. (Enforcement happens inside
+        // search_tools / call_tool handlers in story 1079/1080.)
+        let state = test_state();
+        state.config.write().collapse_tools = true;
+        state.config.write().disabled_native_tools = vec!["session".to_string()];
+
+        let merged = merged_tool_definitions(&state);
+        assert_eq!(tool_names(&merged).len(), 3);
     }
 }
