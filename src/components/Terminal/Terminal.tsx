@@ -1068,14 +1068,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
         type: terminal!.buffer.active.type,
       }),
     );
-    // Diagnostic logger for scroll-jump race condition investigation.
-    // Emits to appLogger so we can trace ViewportLock state transitions and
-    // detect the `suspectedRace` signature (user branch firing while locked
-    // and at-bottom, indicating a delayed DOM scroll event after writeEnd()).
-    viewportLock.setLogger((event, details) =>
-      appLogger.debug("terminal", `[scroll] ${event}`, { id: props.id, ...details }),
-    );
-
     // Preload the configured font so the canvas/WebGL renderer can measure
     // and render it correctly from the start (see preloadFont comment above).
     preloadFont(settingsStore.state.font).then(() => doFit());
