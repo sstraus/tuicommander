@@ -44,10 +44,17 @@ export const CommentOverlay: Component<CommentOverlayProps> = (props) => {
   // We must snapshot it immediately because the selection may clear on click.
   let pendingSelection = "";
 
-  // ── Selection listener — show floating "Comment" button on non-empty selection ──
+  // ── Selection detection ──
+  //
+  // We deliberately do NOT listen to `selectionchange` on document: that event
+  // fires on every cursor movement and DOM selection update anywhere in the
+  // app (including xterm buffers repainting), which caused noticeable UI lag.
+  //
+  // Instead we listen to `mouseup` and `keyup` scoped to the markdown content
+  // element. These fire only when the user actively interacts with the
+  // markdown, which is the only time a new selection can be created.
 
-  const handleSelectionChange = () => {
-    // Ignore if popover is open — don't interrupt editing.
+  const checkSelectionAndUpdateButton = () => {
     if (popover()) return;
 
     const sel = window.getSelection();
@@ -63,9 +70,7 @@ export const CommentOverlay: Component<CommentOverlayProps> = (props) => {
       return;
     }
 
-    // Disallow selections that cross block boundaries (single-block only).
-    // A cross-block selection has the start and end in different block-level
-    // ancestors (p, h1-h6, li, blockquote, etc.).
+    // Single-block only: skip selections that cross block boundaries.
     if (crossesBlockBoundary(range, props.contentRef)) {
       setBtnPos(null);
       return;
@@ -75,12 +80,19 @@ export const CommentOverlay: Component<CommentOverlayProps> = (props) => {
     // at the true end of the selection (not the bounding box corner).
     const rects = range.getClientRects();
     const rect = rects.length > 0 ? rects[rects.length - 1] : range.getBoundingClientRect();
-    // Position button immediately after the selection end, vertically centered on that line.
     const BTN_SIZE = 28;
     setBtnPos({
       x: rect.right + 4,
       y: rect.top + rect.height / 2 - BTN_SIZE / 2,
     });
+  };
+
+  const handleMouseUp = () => checkSelectionAndUpdateButton();
+  const handleKeyUp = (e: KeyboardEvent) => {
+    // Only handle shift+arrow-style keyboard selection.
+    if (e.shiftKey || e.key.startsWith("Arrow") || e.key === "Home" || e.key === "End") {
+      checkSelectionAndUpdateButton();
+    }
   };
 
   // ── Click listener — open view/edit popover on existing highlights ──
@@ -122,15 +134,12 @@ export const CommentOverlay: Component<CommentOverlayProps> = (props) => {
   };
 
   onMount(() => {
-    // Selection listener is scoped to the content element, not document,
-    // to avoid firing on every cursor move or keystroke in other parts
-    // of the app (terminals, input fields, etc.).
-    // `selectionchange` is still a document event, but we early-exit fast
-    // when the selection isn't inside our container.
-    document.addEventListener("selectionchange", handleSelectionChange);
+    props.contentRef.addEventListener("mouseup", handleMouseUp);
+    props.contentRef.addEventListener("keyup", handleKeyUp);
     props.contentRef.addEventListener("click", handleClick);
     onCleanup(() => {
-      document.removeEventListener("selectionchange", handleSelectionChange);
+      props.contentRef.removeEventListener("mouseup", handleMouseUp);
+      props.contentRef.removeEventListener("keyup", handleKeyUp);
       props.contentRef.removeEventListener("click", handleClick);
     });
   });
