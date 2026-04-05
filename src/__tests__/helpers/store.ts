@@ -20,32 +20,31 @@ export function makeTerminal(overrides: Partial<{
 
 /**
  * Run a test function inside a SolidJS reactive scope.
- * Disposes the scope after the function completes.
+ * Disposes the scope after the function completes (even on throw).
  */
 export function testInScope<T>(fn: () => T): T {
-  let result!: T;
   let dispose!: () => void;
-  createRoot((d) => {
-    dispose = d;
-    result = fn();
-  });
-  dispose();
-  return result;
+  try {
+    return createRoot((d) => {
+      dispose = d;
+      return fn();
+    });
+  } finally {
+    dispose();
+  }
 }
 
 /**
  * Run an async test function inside a SolidJS reactive scope.
- * Disposes the scope after the function completes.
+ * Disposes the scope after the promise settles (even on rejection).
  */
 export async function testInScopeAsync<T>(fn: () => Promise<T>): Promise<T> {
-  let result!: Promise<T>;
   let dispose!: () => void;
-  createRoot((d) => {
-    dispose = d;
-    result = fn();
-  });
   try {
-    return await result;
+    return await createRoot((d) => {
+      dispose = d;
+      return fn();
+    });
   } finally {
     dispose();
   }

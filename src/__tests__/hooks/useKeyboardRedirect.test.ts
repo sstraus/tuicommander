@@ -376,6 +376,7 @@ describe("useKeyboardRedirect", () => {
 
   describe("cleanup", () => {
     it("removes event listener on dispose", async () => {
+      // Raw createRoot: we need to call dispose() mid-test to verify cleanup
       await createRoot(async (dispose) => {
         useKeyboardRedirect();
         await flushEffects();

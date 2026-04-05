@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createRoot } from "solid-js";
+import { testInScope, testInScopeAsync } from "../helpers/store";
 
 // Mock rpc before importing appLogger
 const mockRpc = vi.fn().mockResolvedValue(undefined);
@@ -24,7 +24,7 @@ describe("appLogger", () => {
   // ---- Basic push/get ----
 
   it("push adds entries retrievable by getEntries", () => {
-    createRoot(() => {
+    testInScope(() => {
       appLogger.info("app", "hello");
       appLogger.warn("git", "warning msg");
 
@@ -39,7 +39,7 @@ describe("appLogger", () => {
   });
 
   it("entries have monotonically increasing ids", () => {
-    createRoot(() => {
+    testInScope(() => {
       appLogger.info("app", "a");
       appLogger.info("app", "b");
       appLogger.info("app", "c");
@@ -51,7 +51,7 @@ describe("appLogger", () => {
   });
 
   it("entries have timestamps", () => {
-    createRoot(() => {
+    testInScope(() => {
       const before = Date.now();
       appLogger.info("app", "timed");
       const after = Date.now();
@@ -65,7 +65,7 @@ describe("appLogger", () => {
   // ---- Convenience methods ----
 
   it("error/warn/info/debug convenience methods set correct level", () => {
-    createRoot(() => {
+    testInScope(() => {
       appLogger.error("app", "e");
       appLogger.warn("app", "w");
       appLogger.info("app", "i");
@@ -79,7 +79,7 @@ describe("appLogger", () => {
   // ---- Data field ----
 
   it("preserves optional data field", () => {
-    createRoot(() => {
+    testInScope(() => {
       const data = { status: 500, url: "/api/test" };
       appLogger.error("network", "request failed", data);
 
@@ -91,7 +91,7 @@ describe("appLogger", () => {
   // ---- Ring buffer wrapping ----
 
   it("getEntries returns chronological order after wrap", () => {
-    createRoot(() => {
+    testInScope(() => {
       // Push more than MAX_ENTRIES would allow in a small buffer
       // We can't control MAX_ENTRIES (it's 1000), so just verify ordering
       for (let i = 0; i < 50; i++) {
@@ -107,7 +107,7 @@ describe("appLogger", () => {
   // ---- Clear ----
 
   it("clear removes all entries", () => {
-    createRoot(() => {
+    testInScope(() => {
       appLogger.info("app", "a");
       appLogger.error("app", "b");
       expect(appLogger.getEntries()).toHaveLength(2);
@@ -119,7 +119,7 @@ describe("appLogger", () => {
   });
 
   it("clear resets unseen error count", () => {
-    createRoot(() => {
+    testInScope(() => {
       appLogger.error("app", "err1");
       appLogger.error("app", "err2");
       expect(appLogger.unseenErrorCount()).toBe(2);
@@ -130,7 +130,7 @@ describe("appLogger", () => {
   });
 
   it("clear calls rpc clear_logs", () => {
-    createRoot(() => {
+    testInScope(() => {
       appLogger.info("app", "a");
       mockRpc.mockClear();
 
@@ -142,7 +142,7 @@ describe("appLogger", () => {
   // ---- Unseen error count ----
 
   it("unseenErrorCount increments only on errors", () => {
-    createRoot(() => {
+    testInScope(() => {
       appLogger.info("app", "info");
       expect(appLogger.unseenErrorCount()).toBe(0);
 
@@ -155,7 +155,7 @@ describe("appLogger", () => {
   });
 
   it("markSeen resets unseen error count", () => {
-    createRoot(() => {
+    testInScope(() => {
       appLogger.error("app", "e1");
       appLogger.error("app", "e2");
       expect(appLogger.unseenErrorCount()).toBe(2);
@@ -168,7 +168,7 @@ describe("appLogger", () => {
   // ---- entryCount ----
 
   it("entryCount returns current count", () => {
-    createRoot(() => {
+    testInScope(() => {
       expect(appLogger.entryCount()).toBe(0);
       appLogger.info("app", "a");
       expect(appLogger.entryCount()).toBe(1);
@@ -180,7 +180,7 @@ describe("appLogger", () => {
   // ---- Rust backend mirroring ----
 
   it("push calls rpc push_log with correct args", async () => {
-    createRoot(() => {
+    testInScope(() => {
       appLogger.error("network", "timeout", { url: "/api" });
     });
 
@@ -199,7 +199,7 @@ describe("appLogger", () => {
   });
 
   it("push sends null dataJson when no data provided", async () => {
-    createRoot(() => {
+    testInScope(() => {
       appLogger.warn("app", "plain message");
     });
 
@@ -217,7 +217,7 @@ describe("appLogger", () => {
   });
 
   it("debug and info levels do not mirror to Rust", () => {
-    createRoot(() => {
+    testInScope(() => {
       mockRpc.mockClear();
       appLogger.debug("app", "debug msg");
       appLogger.info("app", "info msg");
@@ -238,7 +238,7 @@ describe("appLogger", () => {
       return Promise.resolve(undefined);
     });
 
-    await createRoot(async () => {
+    await testInScopeAsync(async () => {
       await appLogger.hydrateFromRust();
 
       const entries = appLogger.getEntries();
@@ -256,7 +256,7 @@ describe("appLogger", () => {
   it("hydrateFromRust deduplicates entries already in local buffer", async () => {
     // First push a local entry, then hydrate with same IDs
     let localId: number;
-    createRoot(() => {
+    testInScope(() => {
       appLogger.info("app", "local");
       localId = appLogger.getEntries()[0].id;
     });
@@ -271,7 +271,7 @@ describe("appLogger", () => {
       return Promise.resolve(undefined);
     });
 
-    await createRoot(async () => {
+    await testInScopeAsync(async () => {
       const countBefore = appLogger.entryCount();
       await appLogger.hydrateFromRust();
       // Should only add 1 new entry (id=999), not duplicate the local one
@@ -285,7 +285,7 @@ describe("appLogger", () => {
       return Promise.resolve(undefined);
     });
 
-    await createRoot(async () => {
+    await testInScopeAsync(async () => {
       appLogger.info("app", "existing");
       await appLogger.hydrateFromRust();
       // No crash, existing entries preserved
@@ -299,7 +299,7 @@ describe("appLogger", () => {
       return Promise.resolve(undefined);
     });
 
-    await createRoot(async () => {
+    await testInScopeAsync(async () => {
       appLogger.info("app", "safe");
       await appLogger.hydrateFromRust();
       // No crash, local buffer still intact
@@ -310,7 +310,7 @@ describe("appLogger", () => {
   // ---- Deduplication tests ----
 
   it("dedup coalesces identical consecutive messages", () => {
-    createRoot(() => {
+    testInScope(() => {
       appLogger.warn("github", "poll failed");
       appLogger.warn("github", "poll failed");
       appLogger.warn("github", "poll failed");
@@ -323,7 +323,7 @@ describe("appLogger", () => {
   });
 
   it("dedup resets on different message", () => {
-    createRoot(() => {
+    testInScope(() => {
       appLogger.warn("github", "poll failed");
       appLogger.warn("github", "poll failed");
       appLogger.info("app", "something else");
@@ -338,7 +338,7 @@ describe("appLogger", () => {
   });
 
   it("dedup requires matching level+source+message", () => {
-    createRoot(() => {
+    testInScope(() => {
       appLogger.warn("github", "poll failed");
       appLogger.warn("git", "poll failed"); // different source
       appLogger.error("github", "poll failed"); // different level
@@ -348,7 +348,7 @@ describe("appLogger", () => {
   });
 
   it("dedup updates timestamp", () => {
-    createRoot(() => {
+    testInScope(() => {
       appLogger.warn("github", "poll failed");
       const ts1 = appLogger.getEntries()[0].timestamp;
 
@@ -362,7 +362,7 @@ describe("appLogger", () => {
   });
 
   it("dedup preserves original id", () => {
-    createRoot(() => {
+    testInScope(() => {
       appLogger.warn("github", "poll failed");
       const id1 = appLogger.getEntries()[0].id;
 
@@ -374,7 +374,7 @@ describe("appLogger", () => {
   });
 
   it("dedup does not re-push to Rust backend", async () => {
-    createRoot(() => {
+    testInScope(() => {
       mockRpc.mockClear();
       appLogger.warn("github", "poll failed");
       appLogger.warn("github", "poll failed");
@@ -391,7 +391,7 @@ describe("appLogger", () => {
   });
 
   it("dedup does not increment unseenErrorCount for repeated errors", () => {
-    createRoot(() => {
+    testInScope(() => {
       appLogger.error("app", "crash");
       appLogger.error("app", "crash");
       appLogger.error("app", "crash");
@@ -402,7 +402,7 @@ describe("appLogger", () => {
   });
 
   it("entryCount reflects coalesced count", () => {
-    createRoot(() => {
+    testInScope(() => {
       appLogger.warn("github", "a");
       appLogger.warn("github", "a");
       appLogger.warn("github", "a");
