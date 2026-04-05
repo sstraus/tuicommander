@@ -41,6 +41,7 @@ pub(crate) mod sleep_prevention;
 pub(crate) mod push;
 pub(crate) mod state;
 pub(crate) mod tailscale;
+pub(crate) mod tool_search;
 mod updater;
 pub(crate) mod worktree;
 
