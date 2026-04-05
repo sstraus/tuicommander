@@ -123,6 +123,10 @@ export class ScrollTracker {
  *
  * When unlocked (at bottom): zero listeners, zero overhead — xterm is native.
  */
+/** Optional diagnostic logger — called with event name + details.
+ *  Used to trace scroll-jump bugs. Terminal.tsx wires this to appLogger. */
+export type ViewportLockLogger = (event: string, details: Record<string, unknown>) => void;
+
 export class ViewportLock {
   private locked = false;
   private writeInProgress = false;
@@ -131,6 +135,12 @@ export class ViewportLock {
   private getBufferFn: (() => BufferSnapshot) | null = null;
   private cleanupScroll: (() => void) | null = null;
   private viewport: HTMLElement | null = null;
+  private logger: ViewportLockLogger | null = null;
+
+  /** Install a diagnostic logger. Optional — no-op when unset. */
+  setLogger(logger: ViewportLockLogger | null): void {
+    this.logger = logger;
+  }
 
   /** Bind terminal API callbacks. Call once after terminal.open(). */
   attach(
@@ -161,8 +171,15 @@ export class ViewportLock {
     const shouldLock = !isAtBottom;
     if (shouldLock === this.locked) return;
     // Don't disengage mid-write: xterm auto-scroll during write is not user intent
-    if (!shouldLock && this.writeInProgress) return;
+    if (!shouldLock && this.writeInProgress) {
+      this.logger?.("update-blocked-during-write", { isAtBottom, locked: this.locked });
+      return;
+    }
     this.locked = shouldLock;
+    this.logger?.(shouldLock ? "engage" : "disengage", {
+      anchorLine: this.anchorLine,
+      writeInProgress: this.writeInProgress,
+    });
 
     if (shouldLock) {
       this.engage();
@@ -202,17 +219,30 @@ export class ViewportLock {
       if (this.writeInProgress) {
         // Programmatic scroll from xterm write — restore anchor
         if (this.scrollToLineFn && buf.baseY >= this.anchorLine) {
+          this.logger?.("dom-scroll-restore", {
+            viewportY: buf.viewportY,
+            baseY: buf.baseY,
+            anchorLine: this.anchorLine,
+          });
           this.scrollToLineFn(this.anchorLine);
         }
       } else {
         // User-initiated scroll — update anchor.
         // Discard viewportY=0 when scrollback exists: renderer rebuilds
         // (fontSize re-assign) fire scroll events with a transient 0 value.
+        const willUnlock = buf.viewportY >= buf.baseY;
+        this.logger?.("dom-scroll-user-branch", {
+          viewportY: buf.viewportY,
+          baseY: buf.baseY,
+          anchorLine: this.anchorLine,
+          willUnlock,
+          suspectedRace: willUnlock, // scroll-jump bug signature: user path while locked, at-bottom
+        });
         if (buf.viewportY > 0 || buf.baseY === 0) {
           this.anchorLine = buf.viewportY;
         }
         // If user scrolled to bottom, unlock
-        if (buf.viewportY >= buf.baseY) {
+        if (willUnlock) {
           this.update(true);
         }
       }
