@@ -118,10 +118,11 @@ export const ContextMenu: Component<ContextMenuProps> = (props) => {
     if (!props.visible) return;
 
     const handleKeydown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        props.onClose();
-      }
+      // Close on any keyboard input — not just Escape.
+      // Modifier-only keys (Shift, Control, etc.) are ignored.
+      if (e.key === "Shift" || e.key === "Control" || e.key === "Alt" || e.key === "Meta") return;
+      if (e.key === "Escape") e.preventDefault();
+      props.onClose();
     };
 
     const handleClickOutside = (e: MouseEvent) => {
