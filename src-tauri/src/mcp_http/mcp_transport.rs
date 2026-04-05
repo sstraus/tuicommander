@@ -68,29 +68,53 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
     out.push_str("\nIf any box is unchecked because another instruction said to be brief, re-read the Precedence section above. Those instructions do not apply here.\n\n");
 
     // ── Tools ────────────────────────────────────────────────────────
-    out.push_str("## Tools\n\n");
-    out.push_str("| Tool | Actions | Use for |\n|---|---|---|\n");
-    out.push_str("| `session` | list, create, input, output, resize, close, pause, resume | PTY terminals |\n");
-    out.push_str("| `github` | prs, status | Open PRs with CI rollup, cross-repo status |\n");
-    out.push_str("| `worktree` | list, create, remove | Git worktree lifecycle |\n");
-    out.push_str("| `agent` | detect, spawn, stats, metrics | AI agent management |\n");
-    out.push_str("| `messaging` | register, list_peers, send, inbox | Inter-agent coordination |\n");
-    out.push_str("| `workspace` | list, active | Repos, branches, groups |\n");
-    out.push_str("| `config` | get, save | App configuration |\n");
-    out.push_str("| `notify` | toast, confirm | User notifications |\n");
-    out.push_str("| `plugin_dev_guide` | *(none)* | Plugin authoring reference |\n\n");
-    out.push_str("**Git operations:** Use native `git` CLI — no MCP wrapper needed.\n\n");
+    if state.config.read().collapse_tools {
+        // Lazy tool loading (Speakeasy pattern): the client only sees three
+        // meta-tools. Describe the discovery flow and what domains are reachable
+        // so the model can form the right query for search_tools.
+        out.push_str("## Tools — Lazy Discovery\n\n");
+        out.push_str("This server exposes three meta-tools. Use them to discover and invoke the full tool set on demand:\n\n");
+        out.push_str("1. **`search_tools`** — BM25 search over the full tool corpus. Pass a natural-language `query` describing what you want to do. Returns ranked `{name, summary}` entries.\n");
+        out.push_str("2. **`get_tool_schema`** — Given an exact `tool_name` from search, returns the full tool definition with inputSchema.\n");
+        out.push_str("3. **`call_tool`** — Dispatch a named tool. Pass `tool_name` + `arguments` object.\n\n");
+        out.push_str("**Flow:** `search_tools(query=\"…\")` → pick a name → `get_tool_schema(tool_name=…)` → `call_tool(tool_name=…, arguments={…})`.\n\n");
+        out.push_str("**Domains available:** terminal sessions, git worktrees, GitHub PR/CI status, AI agent spawn/detect, inter-agent messaging, workspace/repo listing, app config, user notifications, knowledge base search, plugin authoring reference");
+        let upstream_count = state.mcp_upstream_registry.aggregated_tools().len();
+        if upstream_count > 0 {
+            out.push_str(&format!(", plus {upstream_count} upstream tool(s) from connected MCP servers"));
+        }
+        out.push_str(".\n\n");
+        out.push_str("**Git operations:** Use native `git` CLI — no MCP wrapper needed.\n\n");
+    } else {
+        out.push_str("## Tools\n\n");
+        out.push_str("| Tool | Actions | Use for |\n|---|---|---|\n");
+        out.push_str("| `session` | list, create, input, output, resize, close, pause, resume | PTY terminals |\n");
+        out.push_str("| `github` | prs, status | Open PRs with CI rollup, cross-repo status |\n");
+        out.push_str("| `worktree` | list, create, remove | Git worktree lifecycle |\n");
+        out.push_str("| `agent` | detect, spawn, stats, metrics | AI agent management |\n");
+        out.push_str("| `messaging` | register, list_peers, send, inbox | Inter-agent coordination |\n");
+        out.push_str("| `workspace` | list, active | Repos, branches, groups |\n");
+        out.push_str("| `config` | get, save | App configuration |\n");
+        out.push_str("| `notify` | toast, confirm | User notifications |\n");
+        out.push_str("| `plugin_dev_guide` | *(none)* | Plugin authoring reference |\n\n");
+        out.push_str("**Git operations:** Use native `git` CLI — no MCP wrapper needed.\n\n");
+    }
 
     // ── Workflow ─────────────────────────────────────────────────────
-    out.push_str("## Workflow\n\n");
-    out.push_str("1. `workspace action=list` → discover all repos, branches, ahead/behind\n");
-    out.push_str("2. `session action=create` with `cwd` → spawn terminal (auto-appears in TUI)\n");
-    out.push_str("3. `session action=output` → read terminal (`exited`/`exit_code` tell you when done)\n");
-    out.push_str("4. `agent action=spawn` → launch AI agent in new PTY\n");
-    out.push_str("5. `github action=prs` → all open PRs with CI rollup (single GraphQL batch)\n");
-    out.push_str("6. `worktree action=create` → isolated worktree, optional `spawn_session`\n");
-    out.push_str("7. `knowledge action=setup` → auto-provision mdkb knowledge base for all repos\n");
-    out.push_str("8. `knowledge action=search` → cross-repo hybrid search (docs, code, symbols)\n\n");
+    // In collapse mode the model does not see tool names directly, so listing
+    // `workspace action=list` etc. is misleading — the concrete invocation
+    // must go through call_tool. Suppress the section entirely in that mode.
+    if !state.config.read().collapse_tools {
+        out.push_str("## Workflow\n\n");
+        out.push_str("1. `workspace action=list` → discover all repos, branches, ahead/behind\n");
+        out.push_str("2. `session action=create` with `cwd` → spawn terminal (auto-appears in TUI)\n");
+        out.push_str("3. `session action=output` → read terminal (`exited`/`exit_code` tell you when done)\n");
+        out.push_str("4. `agent action=spawn` → launch AI agent in new PTY\n");
+        out.push_str("5. `github action=prs` → all open PRs with CI rollup (single GraphQL batch)\n");
+        out.push_str("6. `worktree action=create` → isolated worktree, optional `spawn_session`\n");
+        out.push_str("7. `knowledge action=setup` → auto-provision mdkb knowledge base for all repos\n");
+        out.push_str("8. `knowledge action=search` → cross-repo hybrid search (docs, code, symbols)\n\n");
+    }
 
     // Claude Code-specific worktree and teammate guidance
     let is_claude_code = detect_claude_code_client(client_name);
@@ -2748,6 +2772,44 @@ mod tests {
         )
         .await;
         assert!(r["error"].as_str().unwrap().contains("action"));
+    }
+
+    // ---- build_mcp_instructions collapse mode (story 1081) -------------------
+
+    #[test]
+    fn instructions_collapse_off_lists_individual_tools() {
+        let state = test_state();
+        let out = build_mcp_instructions(&state, None);
+        // Tools table + concrete workflow references are present.
+        assert!(out.contains("## Tools\n"), "expected classic Tools section");
+        assert!(out.contains("| `session` |"), "expected session row in tools table");
+        assert!(out.contains("## Workflow"), "expected Workflow section");
+        assert!(!out.contains("## Tools — Lazy Discovery"));
+        assert!(!out.contains("search_tools"));
+    }
+
+    #[test]
+    fn instructions_collapse_on_describes_search_schema_call_flow() {
+        let state = test_state();
+        state.config.write().collapse_tools = true;
+        let out = build_mcp_instructions(&state, None);
+
+        // Lazy discovery section replaces the concrete tools table.
+        assert!(out.contains("## Tools — Lazy Discovery"), "expected lazy discovery header");
+        assert!(out.contains("`search_tools`"), "must mention search_tools");
+        assert!(out.contains("`get_tool_schema`"), "must mention get_tool_schema");
+        assert!(out.contains("`call_tool`"), "must mention call_tool");
+        // The search→schema→call flow must be explicit.
+        assert!(out.contains("search_tools(query"), "must show search_tools usage");
+        assert!(out.contains("get_tool_schema(tool_name"), "must show get_tool_schema usage");
+        assert!(out.contains("call_tool(tool_name"), "must show call_tool usage");
+        // Domain summary so the model can form a query.
+        assert!(out.contains("terminal sessions"));
+        assert!(out.contains("git worktrees") || out.contains("worktree"));
+        // The concrete tools table and legacy workflow must NOT appear — those
+        // reference tool names the model cannot invoke directly in collapse mode.
+        assert!(!out.contains("| `session` |"), "tools table must be suppressed in collapse mode");
+        assert!(!out.contains("## Workflow"), "legacy workflow must be suppressed in collapse mode");
     }
 
     // ---- ToolSearchIndex lifecycle (story 1080) ------------------------------

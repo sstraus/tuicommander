@@ -2440,7 +2440,9 @@ mod tests {
     }
 
     /// Changing disabled_native_tools via put_config fires mcp_tools_changed.
+    /// Uses the process-global CONFIG_DIR_OVERRIDE — must run serially.
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_config_change_fires_tools_changed() {
         let tmp = tempfile::tempdir().unwrap();
         let _guard = crate::config::set_config_dir_override(tmp.path().to_path_buf());
@@ -2462,7 +2464,9 @@ mod tests {
     }
 
     /// Changing collapse_tools via put_config fires mcp_tools_changed.
+    /// Uses the process-global CONFIG_DIR_OVERRIDE — must run serially.
     #[tokio::test]
+    #[serial_test::serial]
     async fn test_collapse_tools_toggle_fires_tools_changed() {
         let tmp = tempfile::tempdir().unwrap();
         let _guard = crate::config::set_config_dir_override(tmp.path().to_path_buf());
