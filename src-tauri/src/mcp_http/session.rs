@@ -556,27 +556,34 @@ async fn handle_ws_session(
         return;
     }
 
-    // Register a channel for receiving PTY output broadcasts
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-    state
-        .ws_clients
-        .entry(session_id.clone())
-        .or_default()
-        .push(tx);
-
     // Subscribe to broadcast channel for parsed events (filtered by session_id)
     let mut event_rx = state.event_bus.subscribe();
 
-    // Send existing ring buffer content as initial catch-up.
-    // If the client provides ?offset=N, only send bytes written after that offset (delta).
-    // Data is sent in chunks (64 KB) so the client can render progressively.
-    const CATCHUP_CHUNK_SIZE: usize = 64 * 1024;
-    if let Some(ring) = state.output_buffers.get(&session_id) {
-        let (data, total) = if let Some(off) = initial_offset {
-            ring.lock().read_since(off as u64)
+    // Snapshot the ring buffer and register the live mpsc subscription
+    // atomically while holding ring.lock(). The PTY writer takes the same
+    // lock when appending + broadcasting to ws_clients, so serializing the
+    // two sides guarantees every byte is delivered either via catch-up or
+    // via the live channel — never both (duplicate) nor neither (gap).
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let snapshot = state.output_buffers.get(&session_id).map(|ring| {
+        let r = ring.lock();
+        let snap = if let Some(off) = initial_offset {
+            r.read_since(off as u64)
         } else {
-            ring.lock().read_last(OUTPUT_RING_BUFFER_CAPACITY)
+            r.read_last(OUTPUT_RING_BUFFER_CAPACITY)
         };
+        state
+            .ws_clients
+            .entry(session_id.clone())
+            .or_default()
+            .push(tx);
+        drop(r);
+        snap
+    });
+
+    // Send catch-up data in chunks (64 KB) so the client can render progressively.
+    const CATCHUP_CHUNK_SIZE: usize = 64 * 1024;
+    if let Some((data, total)) = snapshot {
         if !data.is_empty() {
             for chunk in data.chunks(CATCHUP_CHUNK_SIZE) {
                 let text = String::from_utf8_lossy(chunk);

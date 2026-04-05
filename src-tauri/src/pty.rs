@@ -816,15 +816,21 @@ impl ChunkProcessor {
             Vec::new()
         };
 
-        // Write clean text to ring buffer for MCP consumers (no ANSI)
+        // Write to ring buffer and broadcast to WebSocket clients while
+        // holding the ring lock. Serializing these two steps prevents a race
+        // with WS catch-up: a newly-connecting handler that also takes
+        // ring.lock() for its snapshot cannot observe a state where the byte
+        // is in the ring but also still queued for live delivery, which
+        // would cause the catch-up and the live stream to replay the same
+        // bytes to the client.
         if let Some(ring) = state.output_buffers.get(session_id) {
-            ring.lock().write(data.as_bytes());
-        }
-
-        // Broadcast to WebSocket clients
-        if let Some(mut clients) = state.ws_clients.get_mut(session_id) {
-            let owned = data.to_owned();
-            clients.retain(|tx| tx.send(owned.clone()).is_ok());
+            let mut ring_guard = ring.lock();
+            ring_guard.write(data.as_bytes());
+            if let Some(mut clients) = state.ws_clients.get_mut(session_id) {
+                let owned = data.to_owned();
+                clients.retain(|tx| tx.send(owned.clone()).is_ok());
+            }
+            drop(ring_guard);
         }
 
         // Parse events: OSC 9;4 progress from raw stream, others from clean rows.
@@ -1086,13 +1092,15 @@ fn flush_eof(
         flushed.push_str(&esc_buf.flush());
         flushed
     };
-    if !esc_remaining.is_empty() {
-        if let Some(ring) = state.output_buffers.get(session_id) {
-            ring.lock().write(esc_remaining.as_bytes());
-        }
+    if !esc_remaining.is_empty()
+        && let Some(ring) = state.output_buffers.get(session_id)
+    {
+        let mut ring_guard = ring.lock();
+        ring_guard.write(esc_remaining.as_bytes());
         if let Some(mut clients) = state.ws_clients.get_mut(session_id) {
             clients.retain(|tx| tx.send(esc_remaining.clone()).is_ok());
         }
+        drop(ring_guard);
     }
     esc_remaining
 }
