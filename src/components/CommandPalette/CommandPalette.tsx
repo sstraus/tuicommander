@@ -10,6 +10,7 @@ import { FileIcon } from "../FileBrowserPanel/FileIcon";
 import type { ActionEntry } from "../../actions/actionRegistry";
 import type { ContentMatch, DirEntry } from "../../types/fs";
 import type { TerminalMatch } from "../../types";
+import shared from "../shared/dialog.module.css";
 import s from "./CommandPalette.module.css";
 
 export interface CommandPaletteProps {
@@ -200,7 +201,7 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
 
   return (
     <Show when={isOpen()}>
-      <div class={s.overlay} onClick={() => commandPaletteStore.close()}>
+      <div class={shared.overlayTop} onClick={() => commandPaletteStore.close()}>
         <div class={s.palette} onClick={(e) => e.stopPropagation()}>
           <div class={s.search}>
             <input

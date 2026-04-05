@@ -1,6 +1,7 @@
 import { Component, For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { branchSwitcherStore } from "../../stores/branchSwitcher";
+import shared from "../shared/dialog.module.css";
 import s from "./BranchSwitcher.module.css";
 
 interface BranchInfo {
@@ -140,7 +141,7 @@ export const BranchSwitcher: Component<BranchSwitcherProps> = (props) => {
 
   return (
     <Show when={isOpen()}>
-      <div class={s.overlay} onClick={() => branchSwitcherStore.close()}>
+      <div class={shared.overlayTop} onClick={() => branchSwitcherStore.close()}>
         <div class={s.palette} onClick={(e) => e.stopPropagation()}>
           <div class={s.search}>
             <input

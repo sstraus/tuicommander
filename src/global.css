@@ -207,6 +207,13 @@
   --text-on-error: #000000;
   --text-on-success: #000000;
 
+  /* Tab-type colors (shared between TabBar and PaneTree) */
+  --tab-diff-rgb: 239, 68, 68;       /* red */
+  --tab-edit-rgb: 122, 162, 247;     /* blue */
+  --tab-md-rgb: 34, 197, 94;         /* green */
+  --tab-panel-rgb: 167, 139, 250;    /* purple */
+  --tab-html-rgb: 251, 191, 36;      /* amber */
+
   /* Border radius scale */
   --radius-xs: 2px;
   --radius-sm: 3px;

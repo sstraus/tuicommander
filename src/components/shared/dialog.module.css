@@ -9,6 +9,18 @@
   z-index: 1000;
 }
 
+/* Top-anchored modal overlay (CommandPalette, BranchSwitcher) */
+.overlayTop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 80px;
+  z-index: 1000;
+}
+
 .popover {
   width: 320px;
   background: var(--bg-secondary);

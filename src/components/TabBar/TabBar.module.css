@@ -269,18 +269,18 @@
 
 /* Diff tabs */
 .tab.diffTab {
-  background: linear-gradient(to bottom, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.05));
-  border-bottom: 2px solid rgba(239, 68, 68, 0.3);
+  background: linear-gradient(to bottom, rgba(var(--tab-diff-rgb), 0.1), rgba(var(--tab-diff-rgb), 0.05));
+  border-bottom: 2px solid rgba(var(--tab-diff-rgb), 0.3);
 }
 
 @media (hover: hover) {
   .tab.diffTab:hover {
-    background: linear-gradient(to bottom, rgba(239, 68, 68, 0.15), rgba(239, 68, 68, 0.08));
+    background: linear-gradient(to bottom, rgba(var(--tab-diff-rgb), 0.15), rgba(var(--tab-diff-rgb), 0.08));
   }
 }
 
 .tab.diffTab.active {
-  background: linear-gradient(to bottom, rgba(239, 68, 68, 0.25), rgba(239, 68, 68, 0.15));
+  background: linear-gradient(to bottom, rgba(var(--tab-diff-rgb), 0.25), rgba(var(--tab-diff-rgb), 0.15));
   border-bottom-color: #ef4444;
 }
 
@@ -297,18 +297,18 @@
 
 /* Editor tabs */
 .tab.editTab {
-  background: linear-gradient(to bottom, rgba(122, 162, 247, 0.1), rgba(122, 162, 247, 0.05));
-  border-bottom: 2px solid rgba(122, 162, 247, 0.3);
+  background: linear-gradient(to bottom, rgba(var(--tab-edit-rgb), 0.1), rgba(var(--tab-edit-rgb), 0.05));
+  border-bottom: 2px solid rgba(var(--tab-edit-rgb), 0.3);
 }
 
 @media (hover: hover) {
   .tab.editTab:hover {
-    background: linear-gradient(to bottom, rgba(122, 162, 247, 0.15), rgba(122, 162, 247, 0.08));
+    background: linear-gradient(to bottom, rgba(var(--tab-edit-rgb), 0.15), rgba(var(--tab-edit-rgb), 0.08));
   }
 }
 
 .tab.editTab.active {
-  background: linear-gradient(to bottom, rgba(122, 162, 247, 0.25), rgba(122, 162, 247, 0.15));
+  background: linear-gradient(to bottom, rgba(var(--tab-edit-rgb), 0.25), rgba(var(--tab-edit-rgb), 0.15));
   border-bottom-color: var(--accent);
 }
 
@@ -325,19 +325,19 @@
 
 /* Markdown tabs */
 .tab.mdTab {
-  background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(34, 197, 94, 0.05) 100%);
-  border-bottom: 2px solid rgba(34, 197, 94, 0.3);
+  background: linear-gradient(135deg, rgba(var(--tab-md-rgb), 0.1) 0%, rgba(var(--tab-md-rgb), 0.05) 100%);
+  border-bottom: 2px solid rgba(var(--tab-md-rgb), 0.3);
 }
 
 @media (hover: hover) {
   .tab.mdTab:hover {
-    background: linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(34, 197, 94, 0.08) 100%);
-    border-bottom-color: rgba(34, 197, 94, 0.5);
+    background: linear-gradient(135deg, rgba(var(--tab-md-rgb), 0.15) 0%, rgba(var(--tab-md-rgb), 0.08) 100%);
+    border-bottom-color: rgba(var(--tab-md-rgb), 0.5);
   }
 }
 
 .tab.mdTab.active {
-  background: linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(34, 197, 94, 0.1) 100%);
+  background: linear-gradient(135deg, rgba(var(--tab-md-rgb), 0.2) 0%, rgba(var(--tab-md-rgb), 0.1) 100%);
   border-bottom-color: #22c55e;
 }
 
@@ -354,19 +354,19 @@
 
 /* Panel tabs (non-file md tabs: Claude Usage, plugins, etc.) */
 .tab.panelTab {
-  background: linear-gradient(135deg, rgba(167, 139, 250, 0.1) 0%, rgba(167, 139, 250, 0.05) 100%);
-  border-bottom: 2px solid rgba(167, 139, 250, 0.3);
+  background: linear-gradient(135deg, rgba(var(--tab-panel-rgb), 0.1) 0%, rgba(var(--tab-panel-rgb), 0.05) 100%);
+  border-bottom: 2px solid rgba(var(--tab-panel-rgb), 0.3);
 }
 
 @media (hover: hover) {
   .tab.panelTab:hover {
-    background: linear-gradient(135deg, rgba(167, 139, 250, 0.15) 0%, rgba(167, 139, 250, 0.08) 100%);
-    border-bottom-color: rgba(167, 139, 250, 0.5);
+    background: linear-gradient(135deg, rgba(var(--tab-panel-rgb), 0.15) 0%, rgba(var(--tab-panel-rgb), 0.08) 100%);
+    border-bottom-color: rgba(var(--tab-panel-rgb), 0.5);
   }
 }
 
 .tab.panelTab.active {
-  background: linear-gradient(135deg, rgba(167, 139, 250, 0.2) 0%, rgba(167, 139, 250, 0.1) 100%);
+  background: linear-gradient(135deg, rgba(var(--tab-panel-rgb), 0.2) 0%, rgba(var(--tab-panel-rgb), 0.1) 100%);
   border-bottom-color: #a78bfa;
 }
 
@@ -383,18 +383,18 @@
 
 /* Remote/PTY tabs */
 .tab.remoteTab {
-  background: linear-gradient(to bottom, rgba(251, 191, 36, 0.1), rgba(251, 191, 36, 0.05));
-  border-bottom: 2px solid rgba(251, 191, 36, 0.3);
+  background: linear-gradient(to bottom, rgba(var(--tab-html-rgb), 0.1), rgba(var(--tab-html-rgb), 0.05));
+  border-bottom: 2px solid rgba(var(--tab-html-rgb), 0.3);
 }
 
 @media (hover: hover) {
   .tab.remoteTab:hover {
-    background: linear-gradient(to bottom, rgba(251, 191, 36, 0.15), rgba(251, 191, 36, 0.08));
+    background: linear-gradient(to bottom, rgba(var(--tab-html-rgb), 0.15), rgba(var(--tab-html-rgb), 0.08));
   }
 }
 
 .tab.remoteTab.active {
-  background: linear-gradient(to bottom, rgba(251, 191, 36, 0.25), rgba(251, 191, 36, 0.15));
+  background: linear-gradient(to bottom, rgba(var(--tab-html-rgb), 0.25), rgba(var(--tab-html-rgb), 0.15));
   border-bottom-color: #fbbf24;
 }
 

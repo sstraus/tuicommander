@@ -1,15 +1,4 @@
-/* Command Palette overlay */
-.overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 80px;
-  z-index: 1000;
-}
-
+/* Overlay: see shared/dialog.module.css .overlayTop */
 .palette {
   width: 560px;
   max-width: 90vw;
