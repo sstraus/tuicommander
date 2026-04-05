@@ -114,9 +114,7 @@ ParsedEvent::Intent {
 }
 ```
 
-Detected in two formats (both single-line, column 0):
-- **Plain prefix** (preferred): `intent: <text> (<title>)` or `action: <text>`
-- **Bracket syntax** (backward compat): `[[intent: <text>(<title>)]]` or `⟦intent: <text>⟧`
+Detected as a single-line plain-prefix token at column 0: `intent: <text> (<title>)`.
 
 Agents receive this instruction automatically via MCP init. To use manually without MCP, add to CLAUDE.md or equivalent:
 
@@ -124,15 +122,14 @@ Agents receive this instruction automatically via MCP init. To use manually with
 ## Intent Declaration
 At the start of each distinct work phase, emit on its own line:
 intent: <action, present tense, <60 chars> (<tab title, max 3 words>)
-When executing an action, emit: action: <what you are currently doing>
-Examples: `intent: Reading auth module for token flow (Auth review)` · `action: running pytest suite`
+Example: `intent: Reading auth module for token flow (Auth review)`
 ```
 
-The activity dashboard shows intent (crosshair icon) when available, falling back to user prompt (speech bubble) otherwise. The `IntentKind` enum (`Intent` / `Action`) distinguishes planned vs. in-progress work.
+The activity dashboard shows intent (crosshair icon) when available, falling back to user prompt (speech bubble) otherwise.
 
-**Colorization:** `colorize_intent()` wraps intent/action text in `\x1b[2;33m` (dim yellow) for the xterm.js stream. Both plain-prefix and bracket formats are colorized. Embedded ANSI codes from the agent's Ink renderer are stripped from the body. CUF sequences are converted to spaces. Plain-prefix colorization is agent-gated to prevent false positives.
+**Colorization:** `colorize_intent()` wraps intent text in `\x1b[2;33m` (dim yellow) for the xterm.js stream. The optional `(title)` suffix is stripped from the display. Colorization is agent-gated to prevent false positives.
 
-**PWA/REST stripping:** `LogLine::strip_structural_tokens()` removes structural tokens from log line spans before serving to mobile/browser clients. Handles both `intent:`/`action:`/`suggest:` plain-prefix (start-of-line) and bracket `[[intent:...]]`/`[[suggest:...]]` formats.
+**PWA/REST stripping:** `LogLine::strip_structural_tokens()` removes `intent:` / `suggest:` plain-prefix tokens from log line spans before serving to mobile/browser clients.
 
 **Active subtask detection:** The output parser recognizes `⏵⏵` (U+23F5) and `››` (U+203A) mode-line prefixes as active subtask indicators. The `active_sub_tasks` count is tracked in `SessionState` and used to suppress premature completion notifications.
 
@@ -156,11 +153,9 @@ ParsedEvent::Suggest {
 }
 ```
 
-Detected in two formats (both single-line, column 0):
-- **Plain prefix** (preferred): `suggest: A | B | C`
-- **Bracket syntax** (backward compat): `[[suggest: A | B | C]]`, `[suggest: ...]`, or `⟦suggest: ...⟧`
+Detected as a single-line plain-prefix token at column 0: `suggest: A | B | C`.
 
-Items are pipe-delimited. The `conceal_suggest()` function replaces the raw token in the terminal stream with invisible sequences so it never appears on screen. Plain-prefix concealment is agent-gated.
+Items are pipe-delimited. The `conceal_suggest()` function erases the line (or replaces the match with spaces when inline with other text) so the token never appears on screen. Concealment is agent-gated.
 
 ### UsageLimit
 

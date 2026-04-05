@@ -1,15 +1,5 @@
 use serde::Serialize;
 
-/// Whether an intent event represents a planned action or an in-progress execution.
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum IntentKind {
-    /// Agent declares what it plans to do next
-    Intent,
-    /// Agent declares what it is currently executing
-    Action,
-}
-
 /// Structured events parsed from PTY output
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type")]
@@ -77,19 +67,16 @@ pub enum ParsedEvent {
         error_kind: String, // "server", "auth", "unknown"
     },
     /// Agent-declared intent: what the LLM is currently working on.
-    /// Emitted via `intent: <text>` (plain prefix), `[intent: <text>]` or
-    /// `[intent: <text>(tab title)]` (bracket syntax, backward compat).
+    /// Emitted via `intent: <text>` or `intent: <text> (<tab title>)` at column 0.
     #[serde(rename = "intent")]
     Intent {
         text: String,
         /// Optional short title (max ~3 words) for use as tab name
         #[serde(skip_serializing_if = "Option::is_none")]
         title: Option<String>,
-        /// Whether this is a planned intent or an active execution
-        kind: IntentKind,
     },
     /// Suggested follow-up actions for the user to choose from.
-    /// Emitted via `[[suggest: A | B | C]]` token in agent output.
+    /// Emitted via `suggest: A | B | C` at column 0.
     #[serde(rename = "suggest")]
     Suggest {
         items: Vec<String>,
@@ -230,18 +217,13 @@ impl OutputParser {
             events.push(evt);
         }
 
-        // Intent declaration: `intent: text` or `[intent: text]` / `[[intent: text]]`
+        // Intent declaration: `intent: text` at column 0
         // Test-only parse assumes agent context (agent_active=true)
         if let Some(evt) = parse_intent(&clean, true) {
             events.push(evt);
         }
 
-        // Action declaration: `action: text` (plain prefix only)
-        if let Some(evt) = parse_action(&clean) {
-            events.push(evt);
-        }
-
-        // Suggest follow-up actions: [suggest: A | B | C] or [[suggest: ...]]
+        // Suggest follow-up actions: `suggest: A | B | C` at column 0
         if let Some(evt) = parse_suggest(&clean, true) {
             events.push(evt);
         }
@@ -314,17 +296,11 @@ impl OutputParser {
             events.push(evt);
         }
 
-        // Intent, action, and suggest.
-        // Plain-prefix tokens (`intent:`, `action:`, `suggest:` at column 0) are
-        // only parsed when an agent is detected — this prevents false positives from
-        // regular CLI tools that might output text starting with these keywords.
-        // Bracket syntax (`[[intent: ...]]`) is always parsed (agent-specific by design).
+        // Intent and suggest.
+        // Plain-prefix tokens (`intent:`, `suggest:` at column 0) are only parsed
+        // when an agent is detected — this prevents false positives from regular
+        // CLI tools that might output text starting with these keywords.
         if let Some(evt) = parse_intent(&joined, agent_active) {
-            events.push(evt);
-        }
-        if agent_active
-            && let Some(evt) = parse_action(&joined)
-        {
             events.push(evt);
         }
         if let Some(evt) = parse_suggest(&joined, agent_active) {
@@ -990,182 +966,162 @@ fn parse_plan_file(clean: &str) -> Option<ParsedEvent> {
     None
 }
 
-/// Colorize intent/action tokens dim yellow.
-/// Handles both bracket syntax (`[[intent: text(title)]]`) and plain prefix (`intent: text (Title)`).
-/// Operates on raw PTY text via replace_all — only the matched token span is replaced,
-/// preserving surrounding cursor movements (CUU/CUD) that position the text on screen.
-/// ANSI codes within the body are stripped so our dim-yellow SGR is not interrupted
-/// by embedded resets or color changes from the agent's Ink renderer.
-/// Brackets and the optional `(title)` suffix are stripped from display.
-pub fn colorize_intent(raw: &str) -> String {
+/// Regex matching any CSI escape sequence (SGR colors, cursor movement, erase,
+/// private modes). Used to strip ANSI from lines before testing plain-prefix
+/// token patterns and to preserve a clean body for re-emission.
+fn csi_re() -> &'static regex::Regex {
     lazy_static::lazy_static! {
-        // Bracket syntax: `[intent: text(title)]` or `[[intent: text(title)]]` or `⟦intent: text(title)⟧`
-        static ref INTENT_BRACKET_RE: regex::Regex = {
-            let c = r"(?:\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e])*";
-            regex::Regex::new(&format!(
-                r"(?:\[\[?|\x{{27E6}}){C}intent:[ \t]*(.+?)(?:[ \t]*\([^)\r\n]*\))?[ \t]*{C}(?:\]?\]|\x{{27E7}})",
-                C = c
-            )).unwrap()
-        };
-        // Plain prefix: `intent: text (Title)` or `action: text` at start of line
-        static ref INTENT_PLAIN_RE: regex::Regex =
-            regex::Regex::new(r"(?m)^(intent|action):[ \t]+(.+?)(?:[ \t]+\([^)\r\n]*\))?[ \t]*$").unwrap();
-        // CUF (cursor forward) sequences — used by Ink as inter-word spacing
-        static ref CUF_RE: regex::Regex =
-            regex::Regex::new(r"\x1b\[(\d*)C").unwrap();
-        // All CSI sequences for stripping
         static ref CSI_RE: regex::Regex =
             regex::Regex::new(r"\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]").unwrap();
     }
-
-    // Helper: clean body text from ANSI codes and format as dim yellow
-    let colorize_body = |keyword: &str, body_raw: &str| -> String {
-        let body = CUF_RE.replace_all(body_raw, |cuf: &regex::Captures| {
-            let n: usize = cuf.get(1)
-                .and_then(|m| m.as_str().parse().ok())
-                .unwrap_or(1);
-            " ".repeat(n)
-        });
-        let body_clean = CSI_RE.replace_all(&body, "");
-        let body_trimmed = body_clean.trim();
-        format!("\x1b[2;33m{}: {}\x1b[0m", keyword, body_trimmed)
-    };
-
-    // Apply bracket syntax first (more specific, avoids double-matching)
-    let result = INTENT_BRACKET_RE.replace_all(raw, |caps: &regex::Captures| {
-        colorize_body("intent", &caps[1])
-    });
-
-    // Then apply plain prefix
-    let result = INTENT_PLAIN_RE.replace_all(&result, |caps: &regex::Captures| {
-        let keyword = &caps[1]; // "intent" or "action"
-        colorize_body(keyword, &caps[2])
-    });
-
-    result.into_owned()
+    &CSI_RE
 }
 
-/// Hide `[[suggest: ...]]` tokens from the xterm stream by wrapping them in SGR
-/// Replaces the matched token with spaces of the same visible width so cursor
-/// positions stay intact while xterm.js shows nothing.
+/// Colorize `intent: text (Title)` tokens dim yellow on the raw PTY stream.
 ///
-/// We cannot use SGR 8 (conceal) because xterm.js does not support it.
-/// We cannot strip entirely because surrounding cursor-movement sequences
-/// (CUF, CUU, CUD) would mis-position subsequent output.
+/// Splits input on `\n`, strips CSI sequences from each line to test it against
+/// the plain-prefix pattern, and replaces matching lines entirely with a clean
+/// dim-yellow-wrapped form. This is robust to Ink-style SGR wrapping around the
+/// keyword (e.g. `\x1b[2mintent: ...\x1b[0m`) and to SGR codes embedded inside
+/// the body — the simple `^…intent:` regex on raw text missed both cases because
+/// Ink injects color SGRs between the line start and the keyword.
 ///
-/// The regex tolerates CSI sequences between structural bracket/keyword elements — the
-/// same technique used by `colorize_intent` — to handle re-rendered lines that contain
-/// partial ANSI codes mid-token.
-pub fn conceal_suggest(raw: &str) -> String {
-    lazy_static::lazy_static! {
-        // Bracket syntax: `[suggest: ...]`, `[[suggest: ...]]`, `⟦suggest: ...⟧`
-        static ref SUGGEST_BRACKET_RE: regex::Regex = {
-            let c = r"(?:\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e])*";
-            regex::Regex::new(&format!(
-                r"(?:\[\[?|\x{{27E6}}){C}suggest:\s*[^\]\x{{27E7}}]+?\s*{C}(?:\]?\]|\x{{27E7}})",
-                C = c
-            )).unwrap()
-        };
-        // Plain prefix: `suggest: ...` at start of line
-        static ref SUGGEST_PLAIN_RE: regex::Regex =
-            regex::Regex::new(r"(?m)^suggest:[ \t]+.+$").unwrap();
-        static ref ANSI_RE: regex::Regex =
-            regex::Regex::new(r"\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]").unwrap();
+/// The optional `(title)` suffix is stripped from display.
+pub fn colorize_intent(raw: &str) -> String {
+    if !raw.contains("intent:") {
+        return raw.to_string();
     }
-
-    // Shared concealment logic: erase line if token is alone, else replace with spaces
-    let conceal = |raw_ref: &str, m_start: usize, m_end: usize, matched: &str| -> String {
-        let before = &raw_ref[..m_start];
-        let after = &raw_ref[m_end..];
-        let line_prefix = before.rsplit_once('\n').map_or(before, |(_, r)| r);
-        let line_suffix = after.split_once('\n').map_or(after, |(l, _)| l);
-        let prefix_visible = ANSI_RE.replace_all(line_prefix, "");
-        let suffix_visible = ANSI_RE.replace_all(line_suffix, "");
-        if prefix_visible.trim().is_empty() && suffix_visible.trim().is_empty() {
-            "\x1b[2K\x1b[A".to_string()
-        } else {
-            let visible_len = ANSI_RE.replace_all(matched, "").chars().count();
-            " ".repeat(visible_len)
+    lazy_static::lazy_static! {
+        // Matches a clean (CSI-stripped) line containing an intent token.
+        // Mirrors `INTENT_PLAIN_RE` in `parse_intent` to stay in sync.
+        static ref INTENT_LINE_RE: regex::Regex = regex::Regex::new(
+            r"^([\t ]*(?:[\x{25CF}\x{23FA}][\t ]+)?)intent:[ \t]+(.+?)(?:[ \t]+\([^)\r\n]*\))?[ \t]*$"
+        ).unwrap();
+    }
+    let csi = csi_re();
+    let mut out = String::with_capacity(raw.len() + 16);
+    let mut first = true;
+    for line in raw.split('\n') {
+        if !first {
+            out.push('\n');
         }
-    };
-
-    // Apply bracket concealment first
-    let result = SUGGEST_BRACKET_RE.replace_all(raw, |caps: &regex::Captures| {
-        let m = caps.get(0).unwrap();
-        conceal(raw, m.start(), m.end(), &caps[0])
-    });
-
-    // Then apply plain-prefix concealment
-    let result_owned = result.into_owned();
-    let result2 = SUGGEST_PLAIN_RE.replace_all(&result_owned, |caps: &regex::Captures| {
-        let m = caps.get(0).unwrap();
-        conceal(&result_owned, m.start(), m.end(), &caps[0])
-    });
-    result2.into_owned()
+        first = false;
+        if !line.contains("intent:") {
+            out.push_str(line);
+            continue;
+        }
+        // Strip trailing \r before CSI-stripping so the end anchor `$` can match.
+        let (body_slice, trailing_cr) = if let Some(stripped) = line.strip_suffix('\r') {
+            (stripped, "\r")
+        } else {
+            (line, "")
+        };
+        let clean = csi.replace_all(body_slice, "");
+        if let Some(caps) = INTENT_LINE_RE.captures(&clean) {
+            let prefix = &caps[1];
+            let body = caps[2].trim();
+            out.push_str(prefix);
+            out.push_str("\x1b[2;33mintent: ");
+            out.push_str(body);
+            out.push_str("\x1b[0m");
+            out.push_str(trailing_cr);
+        } else {
+            out.push_str(line);
+        }
+    }
+    out
 }
 
-/// Detect agent-declared intent tokens in two formats:
-/// - **Plain prefix** (preferred): `intent: <text>` or `intent: <text> (<title>)` at column 0
-/// - **Bracket syntax** (backward compat): `[intent: <text>]`, `[[intent: <text>]]`, `⟦intent: <text>⟧`
+/// Hide `suggest: ...` tokens from the xterm stream.
+///
+/// Splits input on `\n` and tests each CSI-stripped line against the plain-prefix
+/// pattern. A matching line that contained only the token on the clean view is
+/// replaced with `\x1b[2K\x1b[A` (erase line + cursor up) so xterm.js drops the
+/// visible row without misaligning subsequent content. Matching lines with other
+/// visible text collapse to blank spaces to preserve column alignment.
+///
+/// Robust to Ink SGR wrapping around the keyword, which the old `^…suggest:`
+/// regex missed whenever color codes preceded the token in the raw stream.
+pub fn conceal_suggest(raw: &str) -> String {
+    if !raw.contains("suggest:") {
+        return raw.to_string();
+    }
+    lazy_static::lazy_static! {
+        static ref SUGGEST_LINE_RE: regex::Regex = regex::Regex::new(
+            r"^([\t ]*(?:[\x{25CF}\x{23FA}][\t ]+)?)suggest:[ \t]+(.+)$"
+        ).unwrap();
+    }
+    let csi = csi_re();
+    let mut out = String::with_capacity(raw.len());
+    let mut first = true;
+    for line in raw.split('\n') {
+        if !first {
+            out.push('\n');
+        }
+        first = false;
+        if !line.contains("suggest:") {
+            out.push_str(line);
+            continue;
+        }
+        let (body_slice, trailing_cr) = if let Some(stripped) = line.strip_suffix('\r') {
+            (stripped, "\r")
+        } else {
+            (line, "")
+        };
+        let clean = csi.replace_all(body_slice, "");
+        if let Some(caps) = SUGGEST_LINE_RE.captures(&clean) {
+            let prefix_visible = caps[1].trim();
+            if prefix_visible.is_empty() {
+                // Token alone on its line → erase the whole line.
+                out.push_str("\x1b[2K\x1b[A");
+                out.push_str(trailing_cr);
+            } else {
+                // Other visible content on the line → blank out just the token.
+                let visible_len = clean.chars().count();
+                out.push_str(&" ".repeat(visible_len));
+                out.push_str(trailing_cr);
+            }
+        } else {
+            out.push_str(line);
+        }
+    }
+    out
+}
+
+/// Detect agent-declared intent tokens: `intent: <text>` or `intent: <text> (<title>)`
+/// at column 0. Only parsed when an agent is active — prevents false positives from
+/// prose like "The intent: of this code".
 fn parse_intent(clean: &str, agent_active: bool) -> Option<ParsedEvent> {
-    // Fast path: must contain "intent:"
-    if !clean.contains("intent:") {
+    if !agent_active || !clean.contains("intent:") {
         return None;
     }
     lazy_static::lazy_static! {
-        // Plain prefix: `intent:` at start of line (column 0), captures body to end of line
+        // Plain prefix: `intent:` at line start, with optional leading
+        // horizontal whitespace and/or an Ink bullet glyph (● U+25CF /
+        // ⏺ U+23FA). Ink-hosted agents (Claude Code) decorate the first
+        // line of an assistant message with `● ` and indent every
+        // continuation line by the bullet width, so plain-prefix tokens
+        // emitted after the first line arrive as `  intent: ...`. The
+        // leading whitespace must be horizontal only — any non-whitespace
+        // character before the keyword is rejected.
         static ref INTENT_PLAIN_RE: regex::Regex =
-            regex::Regex::new(r"(?m)^intent:\s+(.+)$").unwrap();
-        // Bracket syntax (backward compat): `[intent: text]`, `[[intent: text]]`, `⟦intent: text⟧`
-        static ref INTENT_RE: regex::Regex =
-            regex::Regex::new(r"(?:^|\s)(?:\[\[?|\x{27E6})intent:\s*(.+?)\s*(?:\]?\]|\x{27E7})").unwrap();
-        // Opener regex: detects the start of a bracket intent token without closing bracket
-        static ref INTENT_OPEN_RE: regex::Regex =
-            regex::Regex::new(r"(?:^|\s)(?:\[\[?|\x{27E6})intent:\s*(.+)$").unwrap();
-        // Closer regex: detects the closing bracket at the end of a line
-        static ref INTENT_CLOSE_RE: regex::Regex =
-            regex::Regex::new(r"^(.+?)\s*(?:\]?\]|\x{27E7})").unwrap();
+            regex::Regex::new(r"(?m)^[\t ]*(?:[\x{25CF}\x{23FA}][\t ]+)?intent:[\t ]+(.+)$").unwrap();
         // Separate regex to split out the optional (title) suffix from the captured text
         static ref TITLE_RE: regex::Regex =
             regex::Regex::new(r"^(.*?)\(([^)]+)\)\s*$").unwrap();
     }
 
-    let lines: Vec<&str> = clean.lines().collect();
-    let mut raw_match: Option<String> = None;
+    let raw_match = INTENT_PLAIN_RE
+        .captures(clean)
+        .map(|caps| caps[1].trim().to_string());
 
-    for (i, line) in lines.iter().enumerate() {
-        // Pass 1: plain prefix at column 0 (only when agent detected)
-        if agent_active
-            && let Some(caps) = INTENT_PLAIN_RE.captures(line)
-        {
-            raw_match = Some(caps[1].trim().to_string());
-            break;
-        }
-        // Pass 2: bracket syntax on a single line (always, agent-specific by design)
-        if let Some(caps) = INTENT_RE.captures(line) {
-            raw_match = Some(caps[1].trim().to_string());
-            break;
-        }
-        // Pass 3: bracket opener on this line, closer on the next line
-        if let Some(open_caps) = INTENT_OPEN_RE.captures(line)
-            && let Some(next_line) = lines.get(i + 1)
-            && let Some(close_caps) = INTENT_CLOSE_RE.captures(next_line)
-        {
-            let body = format!("{} {}", open_caps[1].trim(), close_caps[1].trim());
-            raw_match = Some(body);
-            break;
-        }
-    }
-
-    build_intent_event(raw_match, &TITLE_RE, IntentKind::Intent)
+    build_intent_event(raw_match, &TITLE_RE)
 }
 
 /// Shared logic for building an Intent event from a raw match string.
-/// Used by both `parse_intent` and `parse_action`.
 fn build_intent_event(
     raw_match: Option<String>,
     title_re: &regex::Regex,
-    kind: IntentKind,
 ) -> Option<ParsedEvent> {
     raw_match.and_then(|raw| {
         let raw = raw.trim();
@@ -1190,57 +1146,28 @@ fn build_intent_event(
         // multiple spaces when it renders the VT100 screen buffer to text.
         let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
         let title = title.map(|t| t.split_whitespace().collect::<Vec<_>>().join(" "));
-        Some(ParsedEvent::Intent { text, title, kind })
+        Some(ParsedEvent::Intent { text, title })
     })
 }
 
-/// Detect agent-declared action tokens: `action: <text>` at column 0 (plain prefix only).
-/// Unlike intent, action has no bracket syntax and no title extraction.
-fn parse_action(clean: &str) -> Option<ParsedEvent> {
-    if !clean.contains("action:") {
-        return None;
-    }
-    lazy_static::lazy_static! {
-        static ref ACTION_PLAIN_RE: regex::Regex =
-            regex::Regex::new(r"(?m)^action:\s+(.+)$").unwrap();
-    }
-
-    ACTION_PLAIN_RE.captures(clean).and_then(|caps| {
-        let raw = caps[1].trim();
-        if raw == "..." || raw == "<text>" || raw.len() < 4 {
-            return None;
-        }
-        let text = raw.split_whitespace().collect::<Vec<_>>().join(" ");
-        Some(ParsedEvent::Intent { text, title: None, kind: IntentKind::Action })
-    })
-}
-
-/// Detect suggested follow-up actions in two formats:
-/// - **Plain prefix** (preferred): `suggest: A | B | C` at column 0
-/// - **Bracket syntax** (backward compat): `[suggest: A | B | C]`, `[[suggest: ...]]`, `⟦suggest: ...⟧`
-///   Pipe-separated items. At least one non-empty item required.
+/// Detect suggested follow-up actions: `suggest: A | B | C` at column 0.
+/// Pipe-separated items; at least one non-empty item required.
+/// Only parsed when an agent is active.
 fn parse_suggest(clean: &str, agent_active: bool) -> Option<ParsedEvent> {
-    if !clean.contains("suggest:") {
+    if !agent_active || !clean.contains("suggest:") {
         return None;
     }
     lazy_static::lazy_static! {
-        // Plain prefix: `suggest:` at start of line, captures body to end of line
+        // Plain prefix: `suggest:` at line start, with optional leading
+        // horizontal whitespace and/or an Ink bullet glyph. See
+        // INTENT_PLAIN_RE for the rationale on Ink continuation indent.
         static ref SUGGEST_PLAIN_RE: regex::Regex =
-            regex::Regex::new(r"(?m)^suggest:\s+(.+)$").unwrap();
-        // Bracket syntax (backward compat)
-        static ref SUGGEST_RE: regex::Regex =
-            regex::Regex::new(r"(?m)^\s*(?:\[\[?|\x{27E6})suggest:\s*([^\]\x{27E7}]+?)\s*(?:\]?\]|\x{27E7})\s*$").unwrap();
+            regex::Regex::new(r"(?m)^[\t ]*(?:[\x{25CF}\x{23FA}][\t ]+)?suggest:[\t ]+(.+)$").unwrap();
     }
-    // Plain prefix only when agent detected; bracket syntax always
-    let raw = if agent_active {
-        SUGGEST_PLAIN_RE.captures(clean)
-            .or_else(|| SUGGEST_RE.captures(clean))
-    } else {
-        SUGGEST_RE.captures(clean)
-    }.map(|caps| caps[1].trim().to_string());
 
-    raw.and_then(|raw| {
-        let items: Vec<String> = raw
+    SUGGEST_PLAIN_RE.captures(clean).and_then(|caps| {
+        let items: Vec<String> = caps[1]
+            .trim()
             .split('|')
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
@@ -2650,88 +2577,44 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     }
 
     #[test]
-    fn test_intent_basic() {
-        let mut parser = OutputParser::new();
-        let events = parser.parse("[intent: Refactoring the auth module]");
-        assert_eq!(get_intent(&events), Some("Refactoring the auth module".to_string()));
-    }
-
-    #[test]
-    fn test_intent_double_brackets() {
-        let mut parser = OutputParser::new();
-        // Double brackets still accepted for backward compatibility
-        let events = parser.parse("[[intent: Refactoring the auth module]]");
-        assert_eq!(get_intent(&events), Some("Refactoring the auth module".to_string()));
-    }
-
-    #[test]
-    fn test_intent_unicode_brackets() {
-        let mut parser = OutputParser::new();
-        let events = parser.parse("\u{27E6}intent: Writing unit tests\u{27E7}");
-        assert_eq!(get_intent(&events), Some("Writing unit tests".to_string()));
-    }
-
-    #[test]
-    fn test_intent_in_multiline_output() {
-        let mut parser = OutputParser::new();
-        let events = parser.parse("Some output\n[intent: Debugging login flow]\nMore output");
-        assert_eq!(get_intent(&events), Some("Debugging login flow".to_string()));
-    }
-
-    #[test]
-    fn test_intent_with_ansi() {
-        let mut parser = OutputParser::new();
-        let events = parser.parse("\x1b[33m[intent: Reviewing PR changes]\x1b[0m");
-        assert_eq!(get_intent(&events), Some("Reviewing PR changes".to_string()));
-    }
-
-    #[test]
     fn test_no_intent_normal_output() {
         let mut parser = OutputParser::new();
         assert!(get_intent(&parser.parse("Building project... done")).is_none());
         assert!(get_intent(&parser.parse("The intent is to refactor")).is_none());
     }
 
-    #[test]
-    fn test_intent_single_brackets() {
-        let mut parser = OutputParser::new();
-        // Single brackets now accepted as the canonical format
-        let events = parser.parse("[intent: something cool]");
-        assert_eq!(get_intent(&events), Some("something cool".to_string()));
-    }
-
-    #[test]
-    fn test_intent_trims_whitespace() {
-        let mut parser = OutputParser::new();
-        let events = parser.parse("[intent:   Fix the flaky test   ]");
-        assert_eq!(get_intent(&events), Some("Fix the flaky test".to_string()));
-    }
-
-    #[test]
-    fn test_intent_ellipsis_filtered() {
-        let mut parser = OutputParser::new();
-        assert!(get_intent(&parser.parse("[intent: ...]")).is_none());
-    }
-
-    #[test]
-    fn test_intent_template_placeholder_filtered() {
-        let mut parser = OutputParser::new();
-        assert!(get_intent(&parser.parse("[intent: <text>]")).is_none());
-    }
-
-    #[test]
-    fn test_intent_too_short_filtered() {
-        let mut parser = OutputParser::new();
-        assert!(get_intent(&parser.parse("[intent: ab]")).is_none());
-    }
-
     // --- Plain-prefix intent tests ---
 
-    fn get_intent_kind(events: &[ParsedEvent]) -> Option<IntentKind> {
-        events.iter().find_map(|e| match e {
-            ParsedEvent::Intent { kind, .. } => Some(kind.clone()),
+    #[test]
+    fn test_intent_plain_prefix_with_ink_bullet() {
+        // Claude Code (and other Ink-hosted agents) prepend every assistant
+        // output line with `● ` (U+25CF). The plain-prefix parser must still
+        // recognise the token even when the bullet is present.
+        let mut parser = OutputParser::new();
+        let events = parser.parse("\u{25CF} intent: wiring the parser (Parser Fix)");
+        assert_eq!(get_intent(&events), Some("wiring the parser".to_string()));
+        assert_eq!(get_intent_title(&events), Some("Parser Fix".to_string()));
+    }
+
+    #[test]
+    fn test_intent_plain_prefix_with_record_bullet() {
+        let mut parser = OutputParser::new();
+        let events = parser.parse("\u{23FA} intent: fixing the layout bug");
+        assert_eq!(get_intent(&events), Some("fixing the layout bug".to_string()));
+    }
+
+    #[test]
+    fn test_suggest_plain_prefix_with_ink_bullet() {
+        let mut parser = OutputParser::new();
+        let events = parser.parse("\u{25CF} suggest: Rebuild | Retry | Abort");
+        let items = events.iter().find_map(|e| match e {
+            ParsedEvent::Suggest { items } => Some(items.clone()),
             _ => None,
-        })
+        });
+        assert_eq!(
+            items,
+            Some(vec!["Rebuild".to_string(), "Retry".to_string(), "Abort".to_string()])
+        );
     }
 
     #[test]
@@ -2739,7 +2622,6 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         let mut parser = OutputParser::new();
         let events = parser.parse("intent: reading the config file");
         assert_eq!(get_intent(&events), Some("reading the config file".to_string()));
-        assert_eq!(get_intent_kind(&events), Some(IntentKind::Intent));
     }
 
     #[test]
@@ -2748,14 +2630,19 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         let events = parser.parse("intent: analyzing code (Analysis)");
         assert_eq!(get_intent(&events), Some("analyzing code".to_string()));
         assert_eq!(get_intent_title(&events), Some("Analysis".to_string()));
-        assert_eq!(get_intent_kind(&events), Some(IntentKind::Intent));
     }
 
     #[test]
-    fn test_intent_plain_prefix_indented_no_match() {
+    fn test_intent_plain_prefix_indented_matches() {
+        // Indented continuation lines produced by Ink-hosted agents must
+        // still be detected: Claude Code indents every line after the
+        // first by the bullet width, so plain-prefix intents emitted mid-
+        // message arrive as `  intent: ...` rather than at column 0.
         let mut parser = OutputParser::new();
-        // Indented intent: should NOT match (not column 0)
-        assert!(get_intent(&parser.parse("  intent: indented")).is_none());
+        assert_eq!(
+            get_intent(&parser.parse("  intent: indented continuation")),
+            Some("indented continuation".to_string()),
+        );
     }
 
     #[test]
@@ -2793,104 +2680,6 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     }
 
     #[test]
-    fn test_intent_bracket_still_emits_intent_kind() {
-        let mut parser = OutputParser::new();
-        let events = parser.parse("[intent: bracket format]");
-        assert_eq!(get_intent(&events), Some("bracket format".to_string()));
-        assert_eq!(get_intent_kind(&events), Some(IntentKind::Intent));
-    }
-
-    #[test]
-    fn test_action_not_matched_as_intent_kind() {
-        let mut parser = OutputParser::new();
-        // action: should produce kind=Action, never kind=Intent
-        let events = parser.parse("action: executing git pull");
-        let intent_kind_events: Vec<_> = events.iter().filter(|e| matches!(
-            e, ParsedEvent::Intent { kind: IntentKind::Intent, .. }
-        )).collect();
-        assert!(intent_kind_events.is_empty(), "action: must not produce IntentKind::Intent");
-        assert!(get_action(&events).is_some(), "action: must produce IntentKind::Action");
-    }
-
-    // --- Action event tests ---
-
-    fn get_action(events: &[ParsedEvent]) -> Option<String> {
-        events.iter().find_map(|e| match e {
-            ParsedEvent::Intent { text, kind: IntentKind::Action, .. } => Some(text.clone()),
-            _ => None,
-        })
-    }
-
-    #[test]
-    fn test_action_basic() {
-        let mut parser = OutputParser::new();
-        let events = parser.parse("action: running pytest suite");
-        assert_eq!(get_action(&events), Some("running pytest suite".to_string()));
-        assert_eq!(get_intent_kind(&events), Some(IntentKind::Action));
-    }
-
-    #[test]
-    fn test_action_short_text() {
-        let mut parser = OutputParser::new();
-        // "deploy" is 6 chars, > 4 minimum
-        let events = parser.parse("action: deploy");
-        assert_eq!(get_action(&events), Some("deploy".to_string()));
-    }
-
-    #[test]
-    fn test_action_too_short_filtered() {
-        let mut parser = OutputParser::new();
-        assert!(get_action(&parser.parse("action: ab")).is_none());
-    }
-
-    #[test]
-    fn test_action_empty_body_no_match() {
-        let mut parser = OutputParser::new();
-        assert!(get_action(&parser.parse("action:")).is_none());
-    }
-
-    #[test]
-    fn test_action_indented_no_match() {
-        let mut parser = OutputParser::new();
-        assert!(get_action(&parser.parse("  action: indented")).is_none());
-    }
-
-    #[test]
-    fn test_action_midline_no_match() {
-        let mut parser = OutputParser::new();
-        assert!(get_action(&parser.parse("The action: taken was wrong")).is_none());
-    }
-
-    #[test]
-    fn test_action_no_space_after_colon_no_match() {
-        let mut parser = OutputParser::new();
-        assert!(get_action(&parser.parse("action:nospace")).is_none());
-    }
-
-    #[test]
-    fn test_action_does_not_support_title() {
-        let mut parser = OutputParser::new();
-        // action: has no title syntax — parenthetical is part of the text
-        let events = parser.parse("action: executing git pull (Deploy)");
-        // The title RE would match but action explicitly doesn't extract titles
-        assert!(get_action(&events).is_some());
-    }
-
-    #[test]
-    fn test_colorize_intent_single_brackets() {
-        let raw = "Some output\n[intent: Refactoring auth]\nMore output";
-        let colored = colorize_intent(raw);
-        assert_eq!(colored, "Some output\n\x1b[2;33mintent: Refactoring auth\x1b[0m\nMore output");
-    }
-
-    #[test]
-    fn test_colorize_intent_double_brackets() {
-        let raw = "Some output\n[[intent: Refactoring auth]]\nMore output";
-        let colored = colorize_intent(raw);
-        assert_eq!(colored, "Some output\n\x1b[2;33mintent: Refactoring auth\x1b[0m\nMore output");
-    }
-
-    #[test]
     fn test_colorize_intent_no_match_unchanged() {
         let raw = "Normal terminal output with no intent";
         assert_eq!(colorize_intent(raw), raw);
@@ -2913,13 +2702,6 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     }
 
     #[test]
-    fn test_colorize_action_plain_prefix() {
-        let raw = "action: running pytest suite";
-        let colored = colorize_intent(raw);
-        assert_eq!(colored, "\x1b[2;33maction: running pytest suite\x1b[0m");
-    }
-
-    #[test]
     fn test_colorize_plain_prefix_in_multiline() {
         let raw = "some output\nintent: debugging login\nmore output";
         let colored = colorize_intent(raw);
@@ -2927,9 +2709,93 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     }
 
     #[test]
-    fn test_colorize_plain_prefix_indented_no_change() {
-        let raw = "  intent: indented should not match";
-        assert_eq!(colorize_intent(raw), raw);
+    fn test_colorize_plain_prefix_indented() {
+        // Ink-hosted agents (Claude Code) indent continuation lines, so
+        // plain-prefix intents may arrive as `  intent: ...`. The leading
+        // whitespace is preserved and the keyword + body is colorized so
+        // `parse_intent` and `colorize_intent` stay in sync.
+        let raw = "  intent: indented body";
+        let colored = colorize_intent(raw);
+        assert_eq!(colored, "  \x1b[2;33mintent: indented body\x1b[0m");
+    }
+
+    #[test]
+    fn test_colorize_plain_prefix_ink_bullet() {
+        let raw = "● intent: reading config (Read config)";
+        let colored = colorize_intent(raw);
+        assert_eq!(colored, "● \x1b[2;33mintent: reading config\x1b[0m");
+    }
+
+    #[test]
+    fn test_colorize_intent_with_leading_sgr_wrapping() {
+        // Regression: Ink (Claude Code) wraps assistant text lines in SGR color
+        // codes. The old `^[\t ]*intent:` regex failed because `\x1b[2m` preceded
+        // the keyword, leaving it uncolorized even though `parse_intent` (which
+        // runs on VT100-cleaned rows) still fired the tab title update.
+        let raw = "\x1b[2mintent: refactor scroll tracker (Scroll refactor)\x1b[0m\n";
+        let colored = colorize_intent(raw);
+        assert!(
+            colored.contains("\x1b[2;33mintent: refactor scroll tracker\x1b[0m"),
+            "SGR-wrapped intent must be colorized; got: {:?}",
+            colored
+        );
+        assert!(!colored.contains("(Scroll refactor)"), "title stripped");
+    }
+
+    #[test]
+    fn test_colorize_intent_body_with_embedded_sgr() {
+        // Ink may apply inline emphasis inside the body; stripping CSI from the
+        // clean view lets the match succeed and emit a uniform dim-yellow body.
+        let raw = "intent: fix \x1b[1mscroll\x1b[22m tracker bug\n";
+        let colored = colorize_intent(raw);
+        assert!(
+            colored.contains("\x1b[2;33mintent: fix scroll tracker bug\x1b[0m"),
+            "body SGR must be stripped; got: {:?}",
+            colored
+        );
+    }
+
+    #[test]
+    fn test_colorize_intent_indented_sgr_wrapped() {
+        // Claude Code indents continuation lines of the assistant message and
+        // wraps each one in SGR. Both prefix whitespace and SGR must be tolerated.
+        let raw = "  \x1b[38;5;245mintent: verifying build output\x1b[0m\n";
+        let colored = colorize_intent(raw);
+        assert!(
+            colored.contains("  \x1b[2;33mintent: verifying build output\x1b[0m"),
+            "indented SGR-wrapped intent must be colorized; got: {:?}",
+            colored
+        );
+    }
+
+    #[test]
+    fn test_conceal_suggest_with_leading_sgr_wrapping() {
+        // Regression: SGR-wrapped suggest tokens survived the old concealment
+        // regex and leaked into the terminal, hiding the action-button bar
+        // that's driven by the structured `Suggest` event.
+        let raw = "\x1b[2msuggest: Run tests | Check logs | Push\x1b[0m\n";
+        let out = conceal_suggest(raw);
+        assert!(
+            !out.contains("suggest:"),
+            "SGR-wrapped suggest must be concealed; got: {:?}",
+            out
+        );
+    }
+
+    #[test]
+    fn test_conceal_suggest_indented_sgr_wrapped() {
+        let raw = "  \x1b[38;5;245msuggest: A | B | C\x1b[0m\n";
+        let out = conceal_suggest(raw);
+        assert!(!out.contains("suggest:"), "indented SGR-wrapped suggest must be concealed");
+    }
+
+    #[test]
+    fn test_colorize_intent_no_false_positive_inline_prose() {
+        // The word "intent:" in prose must NOT be colorized when it's not at
+        // the start of a line. The clean-line match still anchors on `^`.
+        let raw = "The real intent: of this code is clear\n";
+        let colored = colorize_intent(raw);
+        assert_eq!(colored, raw, "inline prose must not be colorized");
     }
 
     #[test]
@@ -2945,6 +2811,21 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         let raw = "some output\nsuggest: A | B | C\nmore output";
         let out = conceal_suggest(raw);
         assert!(!out.contains("suggest:"), "plain-prefix suggest should be concealed in multiline");
+    }
+
+    #[test]
+    fn test_conceal_suggest_plain_prefix_indented() {
+        // Ink continuation lines indent by bullet width; keep in sync with parse_suggest.
+        let raw = "  suggest: A | B | C";
+        let out = conceal_suggest(raw);
+        assert!(!out.contains("suggest:"), "indented suggest should be concealed");
+    }
+
+    #[test]
+    fn test_conceal_suggest_plain_prefix_ink_bullet() {
+        let raw = "● suggest: A | B | C";
+        let out = conceal_suggest(raw);
+        assert!(!out.contains("suggest:"), "Ink-bullet suggest should be concealed");
     }
 
     // ---- False positive regression tests ----
@@ -2992,145 +2873,6 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     }
 
     #[test]
-    fn test_no_intent_from_ansi_garbage() {
-        let mut parser = OutputParser::new();
-        // ANSI-stripped garbage producing ]che[[intent: — not a real intent token
-        assert!(get_intent(&parser.parse("]che[[intent: some text]]")).is_none());
-        // Must be at line start or after whitespace
-        assert!(get_intent(&parser.parse("garbage[[intent: some text]]")).is_none());
-    }
-
-    // --- Intent title tests ---
-
-    #[test]
-    fn test_intent_with_title() {
-        let mut parser = OutputParser::new();
-        let events = parser.parse("[[intent: Reading auth module for token flow(Reading auth)]]");
-        assert_eq!(get_intent(&events), Some("Reading auth module for token flow".to_string()));
-        assert_eq!(get_intent_title(&events), Some("Reading auth".to_string()));
-    }
-
-    #[test]
-    fn test_intent_with_title_single_brackets() {
-        let mut parser = OutputParser::new();
-        let events = parser.parse("[intent: Writing parser unit tests(Writing tests)]");
-        assert_eq!(get_intent(&events), Some("Writing parser unit tests".to_string()));
-        assert_eq!(get_intent_title(&events), Some("Writing tests".to_string()));
-    }
-
-    #[test]
-    fn test_intent_with_title_unicode_brackets() {
-        let mut parser = OutputParser::new();
-        let events = parser.parse("\u{27E6}intent: Debugging login redirect(Debugging redirect)\u{27E7}");
-        assert_eq!(get_intent(&events), Some("Debugging login redirect".to_string()));
-        assert_eq!(get_intent_title(&events), Some("Debugging redirect".to_string()));
-    }
-
-    #[test]
-    fn test_intent_without_title_still_works() {
-        let mut parser = OutputParser::new();
-        let events = parser.parse("[[intent: Refactoring the auth module]]");
-        assert_eq!(get_intent(&events), Some("Refactoring the auth module".to_string()));
-        assert_eq!(get_intent_title(&events), None);
-    }
-
-    #[test]
-    fn test_intent_title_trimmed() {
-        let mut parser = OutputParser::new();
-        let events = parser.parse("[[intent: Some task here(  Tab title  )]]");
-        assert_eq!(get_intent_title(&events), Some("Tab title".to_string()));
-    }
-
-    #[test]
-    fn test_colorize_intent_strips_title() {
-        let raw = "[[intent: Reading auth module for token flow(Reading auth)]]";
-        let colored = colorize_intent(raw);
-        assert_eq!(colored, "\x1b[2;33mintent: Reading auth module for token flow\x1b[0m");
-    }
-
-    #[test]
-    fn test_colorize_intent_without_title_unchanged() {
-        let raw = "[[intent: Refactoring auth]]";
-        let colored = colorize_intent(raw);
-        assert_eq!(colored, "\x1b[2;33mintent: Refactoring auth\x1b[0m");
-    }
-
-    #[test]
-    fn test_intent_with_bullet_prefix() {
-        // Claude Code prefixes output lines with ⏺ (U+25CF)
-        let mut parser = OutputParser::new();
-        let input = "\u{25CF} [[intent: Implementing agentTeamsShim config field(Config field)]]";
-        let events = parser.parse(input);
-        let text = get_intent(&events);
-        let title = get_intent_title(&events);
-        assert_eq!(text, Some("Implementing agentTeamsShim config field".to_string()),
-            "intent text not extracted from bullet-prefixed input");
-        assert_eq!(title, Some("Config field".to_string()),
-            "intent title not extracted from bullet-prefixed input");
-    }
-
-    #[test]
-    fn test_colorize_intent_with_bullet_prefix() {
-        // Verify colorize strips brackets + title even with ⏺ prefix
-        let raw = "\u{25CF} [[intent: Implementing agentTeamsShim config field(Config field)]]";
-        let colored = colorize_intent(raw);
-        assert!(colored.contains("\x1b[2;33m"), "should contain dim yellow ANSI");
-        assert!(!colored.contains("(Config field)"), "should strip title from visible output");
-        assert!(!colored.contains("[["), "should strip opening brackets");
-        assert!(!colored.contains("]]"), "should strip closing brackets");
-    }
-
-    #[test]
-    fn test_intent_with_ansi_codes_interleaved() {
-        // ANSI codes wrapping bullet + dim around the intent token
-        let mut parser = OutputParser::new();
-        let raw = "\x1b[1m\u{25CF}\x1b[0m \x1b[2m[[intent: Implementing config(Config field)]]\x1b[0m";
-        let events = parser.parse(raw);
-        assert_eq!(get_intent(&events), Some("Implementing config".to_string()));
-        assert_eq!(get_intent_title(&events), Some("Config field".to_string()));
-        let colored = colorize_intent(raw);
-        assert!(colored.contains("\x1b[2;33m"), "should colorize dim yellow");
-        assert!(!colored.contains("(Config field)"), "should strip title");
-        assert!(!colored.contains("[["), "should strip brackets");
-    }
-
-    #[test]
-    fn test_colorize_intent_ansi_inside_brackets() {
-        // ANSI codes scattered inside the [[intent:...]] token itself
-        let raw = "\x1b[2m[[\x1b[0mintent: Implementing config(Config field)\x1b[2m]]\x1b[0m";
-        let colored = colorize_intent(raw);
-        assert!(colored.contains("\x1b[2;33m"),
-            "should colorize even with ANSI inside brackets; got: {:?}", colored);
-        assert!(!colored.contains("(Config field)"), "should strip title");
-    }
-
-    #[test]
-    fn test_colorize_intent_crlf_line_endings() {
-        // PTY output uses \r\n line endings. The \r at end of line must NOT
-        // cause apply_carriage_returns to wipe the content.
-        let raw = "some output\r\n\u{25CF} [[intent: Removing memory(Cleanup)]]\r\nmore output\r\n";
-        let colored = colorize_intent(raw);
-        assert!(colored.contains("\x1b[2;33m"),
-            "should colorize with CRLF endings; got: {:?}", colored);
-        assert!(!colored.contains("[["), "should strip opening brackets");
-        assert!(!colored.contains("]]"), "should strip closing brackets");
-        assert!(!colored.contains("(Cleanup)"), "should strip title");
-        assert!(colored.contains("some output"), "non-intent lines preserved");
-        assert!(colored.contains("more output"), "non-intent lines preserved");
-    }
-
-    #[test]
-    fn test_colorize_intent_crlf_no_title() {
-        // Same CRLF scenario but without a title suffix
-        let raw = "\x1b[1m\u{25CF}\x1b[0m [[intent: Removing memory: local from reviewer agents]]\r\n";
-        let colored = colorize_intent(raw);
-        assert!(colored.contains("\x1b[2;33m"),
-            "should colorize with CRLF; got: {:?}", colored);
-        assert!(!colored.contains("[["), "should strip brackets");
-        assert!(colored.contains("Removing memory"), "intent text preserved");
-    }
-
-    #[test]
     fn test_no_rate_limit_story_429() {
         let mut parser = OutputParser::new();
         // Conversational text mentioning "story 429" — not an HTTP 429
@@ -3148,55 +2890,6 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         )));
     }
 
-    #[test]
-    fn test_intent_with_cursor_up_down() {
-        // Real Claude Code PTY output: spinner uses CUU (\x1b[8A) to go back up,
-        // then the intent token appears after cursor movements.
-        // VtLogBuffer renders the VT100 and produces the clean row; we simulate that here.
-        let mut parser = OutputParser::new();
-        let raw = "\x1b[38;2;215;119;87m\u{273b}\x1b[39m\r\r\n\r\n\r\n\r\n\x1b[?2026l\x1b[?2026h\r\x1b[8A\x1b[38;2;153;153;153m\u{25cf}\x1b[1C\x1b[39m\x1b[1mBash\x1b[22m\r\x1b[1B  \x1b[38;2;177;185;249m[[intent: Fixing cursor handling(Fix cursor)]]\x1b[39m\r\x1b[1Bmore output";
-        let mut vt_parser = vt100::Parser::new(50, 220, 0);
-        vt_parser.process(raw.as_bytes());
-        let screen = vt_parser.screen();
-        let rows: Vec<crate::state::ChangedRow> = screen.rows(0, screen.size().1)
-            .enumerate()
-            .filter(|(_, r)| !r.trim_end().is_empty())
-            .map(|(i, r)| crate::state::ChangedRow { row_index: i, text: r.trim_end().to_string() })
-            .collect();
-        let events = parser.parse_clean_lines(&rows, true);
-        assert_eq!(
-            get_intent(&events),
-            Some("Fixing cursor handling".to_string()),
-            "intent must be detected via VtLogBuffer-rendered rows; got: {:?}", events
-        );
-        assert_eq!(
-            get_intent_title(&events),
-            Some("Fix cursor".to_string()),
-        );
-    }
-
-    #[test]
-    fn test_intent_with_cursor_down_only() {
-        // Intent token preceded by CUD (cursor down) — \x1b[nB
-        // VtLogBuffer renders this to clean rows; simulate the result.
-        let mut parser = OutputParser::new();
-        let raw = "spinner output\x1b[3B[[intent: Running tests(Tests)]]\x1b[2Amore";
-        let mut vt_parser = vt100::Parser::new(50, 220, 0);
-        vt_parser.process(raw.as_bytes());
-        let screen = vt_parser.screen();
-        let rows: Vec<crate::state::ChangedRow> = screen.rows(0, screen.size().1)
-            .enumerate()
-            .filter(|(_, r)| !r.trim_end().is_empty())
-            .map(|(i, r)| crate::state::ChangedRow { row_index: i, text: r.trim_end().to_string() })
-            .collect();
-        let events = parser.parse_clean_lines(&rows, true);
-        assert_eq!(
-            get_intent(&events),
-            Some("Running tests".to_string()),
-            "intent must be detected via VtLogBuffer-rendered rows; got: {:?}", events
-        );
-    }
-
     // --- Suggest detection tests ---
 
     fn get_suggest(events: &[ParsedEvent]) -> Option<Vec<String>> {
@@ -3207,64 +2900,10 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     }
 
     #[test]
-    fn test_suggest_basic() {
-        let mut parser = OutputParser::new();
-        let events = parser.parse("[[suggest: Fix the test | Refactor code | Add docs]]");
-        let items = get_suggest(&events).expect("should parse suggest");
-        assert_eq!(items, vec!["Fix the test", "Refactor code", "Add docs"]);
-    }
-
-    #[test]
-    fn test_suggest_single_brackets() {
-        let mut parser = OutputParser::new();
-        let events = parser.parse("[suggest: Option A | Option B]");
-        let items = get_suggest(&events).expect("should parse suggest");
-        assert_eq!(items, vec!["Option A", "Option B"]);
-    }
-
-    #[test]
-    fn test_suggest_unicode_brackets() {
-        let mut parser = OutputParser::new();
-        let events = parser.parse("\u{27E6}suggest: Alpha | Beta | Gamma\u{27E7}");
-        let items = get_suggest(&events).expect("should parse suggest");
-        assert_eq!(items, vec!["Alpha", "Beta", "Gamma"]);
-    }
-
-    #[test]
-    fn test_suggest_trims_whitespace() {
-        let mut parser = OutputParser::new();
-        let events = parser.parse("[[suggest:   Fix test  |  Refactor  |  Add docs  ]]");
-        let items = get_suggest(&events).expect("should parse suggest");
-        assert_eq!(items, vec!["Fix test", "Refactor", "Add docs"]);
-    }
-
-    #[test]
-    fn test_suggest_filters_empty_items() {
-        let mut parser = OutputParser::new();
-        // Double pipe or trailing pipe should not produce empty items
-        let events = parser.parse("[[suggest: Fix test || Add docs |]]");
-        let items = get_suggest(&events).expect("should parse suggest");
-        assert_eq!(items, vec!["Fix test", "Add docs"]);
-    }
-
-    #[test]
-    fn test_suggest_needs_at_least_one_item() {
-        let mut parser = OutputParser::new();
-        assert!(get_suggest(&parser.parse("[[suggest: ]]")).is_none());
-        assert!(get_suggest(&parser.parse("[[suggest: |  | ]]")).is_none());
-    }
-
-    #[test]
     fn test_no_suggest_normal_text() {
         let mut parser = OutputParser::new();
         assert!(get_suggest(&parser.parse("I suggest we refactor")).is_none());
         assert!(get_suggest(&parser.parse("Building project...")).is_none());
-    }
-
-    #[test]
-    fn test_suggest_no_ansi_garbage() {
-        let mut parser = OutputParser::new();
-        assert!(get_suggest(&parser.parse("]garbage[[suggest: A | B]]")).is_none());
     }
 
     // --- Plain-prefix suggest tests ---
@@ -3286,9 +2925,12 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     }
 
     #[test]
-    fn test_suggest_plain_prefix_indented_no_match() {
+    fn test_suggest_plain_prefix_indented_matches() {
+        // See test_intent_plain_prefix_indented_matches.
         let mut parser = OutputParser::new();
-        assert!(get_suggest(&parser.parse("  suggest: A | B")).is_none());
+        let items = get_suggest(&parser.parse("  suggest: A | B"))
+            .expect("indented suggest must match");
+        assert_eq!(items, vec!["A", "B"]);
     }
 
     #[test]
@@ -3313,95 +2955,59 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         assert_eq!(items, vec!["Option A", "Option B"]);
     }
 
-    // --- Agent-gating tests for parse_intent / parse_action / parse_suggest ---
-    // Plain-prefix tokens must only be parsed when agent_active=true.
-    // Bracket syntax must always be parsed regardless of agent_active.
+    // --- Agent-gating tests for parse_intent / parse_suggest ---
+    // Tokens must only be parsed when agent_active=true.
 
     #[test]
-    fn test_plain_prefix_intent_not_parsed_without_agent() {
-        // Directly call parse_intent with agent_active=false
+    fn test_intent_not_parsed_without_agent() {
         assert!(parse_intent("intent: reading the config file", false).is_none(),
-            "plain-prefix intent should not parse when agent_active=false");
+            "intent should not parse when agent_active=false");
     }
 
     #[test]
-    fn test_bracket_intent_parsed_without_agent() {
-        // Bracket syntax should always parse regardless of agent_active
-        assert!(parse_intent("[[intent: reading config(Config)]]", false).is_some(),
-            "bracket intent should parse even when agent_active=false");
-    }
-
-    #[test]
-    fn test_plain_prefix_intent_parsed_with_agent() {
+    fn test_intent_parsed_with_agent() {
         assert!(parse_intent("intent: reading the config file", true).is_some(),
-            "plain-prefix intent should parse when agent_active=true");
+            "intent should parse when agent_active=true");
     }
 
     #[test]
-    fn test_plain_prefix_suggest_not_parsed_without_agent() {
+    fn test_suggest_not_parsed_without_agent() {
         assert!(parse_suggest("suggest: Run tests | Check logs", false).is_none(),
-            "plain-prefix suggest should not parse when agent_active=false");
+            "suggest should not parse when agent_active=false");
     }
 
     #[test]
-    fn test_bracket_suggest_parsed_without_agent() {
-        assert!(parse_suggest("[[suggest: Run tests | Check logs]]", false).is_some(),
-            "bracket suggest should parse even when agent_active=false");
-    }
-
-    #[test]
-    fn test_plain_prefix_suggest_parsed_with_agent() {
+    fn test_suggest_parsed_with_agent() {
         assert!(parse_suggest("suggest: Run tests | Check logs", true).is_some(),
-            "plain-prefix suggest should parse when agent_active=true");
+            "suggest should parse when agent_active=true");
     }
 
     #[test]
-    fn test_parse_clean_lines_plain_prefix_gated() {
+    fn test_parse_clean_lines_gated_by_agent() {
         use crate::state::ChangedRow;
         let mut parser = OutputParser::new();
         let rows = vec![ChangedRow { row_index: 0, text: "suggest: A | B | C".into() }];
 
-        // Without agent: plain-prefix suggest should NOT be parsed
+        // Without agent: should NOT be parsed
         let events = parser.parse_clean_lines(&rows, false);
         assert!(!events.iter().any(|e| matches!(e, ParsedEvent::Suggest { .. })),
-            "plain-prefix suggest should be gated when agent_active=false");
+            "suggest should be gated when agent_active=false");
 
         // With agent: should be parsed
         let events = parser.parse_clean_lines(&rows, true);
         assert!(events.iter().any(|e| matches!(e, ParsedEvent::Suggest { .. })),
-            "plain-prefix suggest should parse when agent_active=true");
-    }
-
-    #[test]
-    fn test_parse_clean_lines_bracket_always_parsed() {
-        use crate::state::ChangedRow;
-        let mut parser = OutputParser::new();
-        let rows = vec![ChangedRow { row_index: 0, text: "[[suggest: A | B | C]]".into() }];
-
-        // Without agent: bracket syntax should still be parsed
-        let events = parser.parse_clean_lines(&rows, false);
-        assert!(events.iter().any(|e| matches!(e, ParsedEvent::Suggest { .. })),
-            "bracket suggest should parse even when agent_active=false");
+            "suggest should parse when agent_active=true");
     }
 
     // --- conceal_suggest tests ---
 
     #[test]
     fn test_conceal_suggest_basic() {
-        let raw = "[[suggest: Fix the test | Refactor code | Add docs]]";
+        let raw = "suggest: Fix the test | Refactor code | Add docs";
         let out = conceal_suggest(raw);
         // Token alone on line → erase line + cursor up
         assert!(!out.contains("suggest:"), "token text should be gone");
         assert_eq!(out, "\x1b[2K\x1b[A", "should erase line when token is alone");
-    }
-
-    #[test]
-    fn test_conceal_suggest_preserves_surrounding_text() {
-        let raw = "some text [[suggest: A | B]] more text";
-        let out = conceal_suggest(raw);
-        assert!(out.starts_with("some text "), "prefix preserved");
-        assert!(out.ends_with(" more text"), "suffix preserved");
-        assert!(!out.contains("suggest:"), "token text replaced");
     }
 
     #[test]
@@ -3412,132 +3018,14 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     }
 
     #[test]
-    fn test_conceal_suggest_single_brackets() {
-        let raw = "[suggest: Option A | Option B]";
-        let out = conceal_suggest(raw);
-        assert!(!out.contains("suggest:"), "single brackets also replaced");
-        assert_eq!(out, "\x1b[2K\x1b[A", "should erase line when token is alone");
-    }
-
-    #[test]
     fn test_conceal_suggest_erases_line_with_newlines() {
-        let raw = "line above\n[[suggest: A | B]]\nline below";
+        let raw = "line above\nsuggest: A | B\nline below";
         let out = conceal_suggest(raw);
         assert!(out.contains("line above"), "before preserved");
         assert!(out.contains("line below"), "after preserved");
         assert!(out.contains("\x1b[2K\x1b[A"), "erase line when token is sole content");
     }
 
-    #[test]
-    fn test_conceal_suggest_spaces_when_inline() {
-        // Token shares a line with visible text — must use spaces to preserve alignment
-        let raw = "prefix [[suggest: A | B]] suffix";
-        let out = conceal_suggest(raw);
-        assert!(out.starts_with("prefix "), "prefix preserved");
-        assert!(out.ends_with(" suffix"), "suffix preserved");
-        assert!(!out.contains("\x1b[2K"), "must NOT erase line when not alone");
-        assert!(!out.contains("suggest:"), "token replaced");
-    }
-
-    #[test]
-    fn test_conceal_suggest_preserves_cursor_movements() {
-        // Cursor movements around and inside the token must survive unchanged.
-        let raw = "\x1b[8A text \x1b[1C[[suggest: A | B]]\x1b[1B more";
-        let out = conceal_suggest(raw);
-        assert!(out.contains("\x1b[8A"), "CUU must survive");
-        assert!(out.contains("\x1b[1C"), "CUF must survive");
-        assert!(out.contains("\x1b[1B"), "CUD must survive");
-        assert!(!out.contains("suggest:"), "token replaced with spaces");
-        assert!(out.contains("more"), "text after token preserved");
-    }
-
-    #[test]
-    fn test_colorize_intent_preserves_cursor_movements() {
-        // Cursor movements (CUU, CUD, CUF) must survive colorize_intent unchanged.
-        // The old line-replace approach lost these; replace_all only touches the token.
-        let raw = "\x1b[8A\x1b[38;2;153;153;153m\u{25cf}\x1b[1C\x1b[39m \x1b[38;2;177;185;249m[[intent: Fixing bug(Fix)]]\x1b[39m\x1b[1Bmore";
-        let colored = colorize_intent(raw);
-        assert!(colored.contains("\x1b[2;33m"), "should colorize intent");
-        assert!(colored.contains("\x1b[8A"), "CUU must survive");
-        assert!(colored.contains("\x1b[1C"), "CUF must survive");
-        assert!(colored.contains("\x1b[1B"), "CUD must survive");
-        assert!(colored.contains("more"), "text after cursor movement preserved");
-        assert!(!colored.contains("(Fix)"), "title stripped");
-        assert!(!colored.contains("[["), "brackets stripped");
-    }
-
-    #[test]
-    fn test_colorize_intent_cuf_between_words() {
-        // Claude Code emits \x1b[1C (CUF) instead of spaces between words.
-        // CUF is converted to spaces so words stay separated after SGR stripping.
-        let raw = "[[intent: Project\x1b[1Conboarding\x1b[1Cand\x1b[1Cunderstanding(Prime session)]]";
-        let colored = colorize_intent(raw);
-        // CUF replaced with spaces, words separated
-        assert!(colored.contains("Project onboarding and understanding"),
-            "CUF should become spaces; got: {:?}", colored);
-        assert!(!colored.contains("(Prime session)"), "title stripped");
-        assert!(!colored.contains("[["), "brackets stripped");
-    }
-
-    #[test]
-    fn test_colorize_intent_cursor_up_in_body_stripped() {
-        // Ink re-renders can inject CUU (\x1b[A) or CUD (\x1b[B) inside the intent body.
-        // These MUST be stripped — otherwise xterm.js interprets them as cursor movements,
-        // scattering characters across adjacent rows ("l o p m" layout corruption).
-        let raw = "[[intent: refin\x1b[1Ae plan\x1b[1B for Option A implementation]]";
-        let colored = colorize_intent(raw);
-        assert!(colored.contains("refine plan for Option A implementation"),
-            "CUU/CUD should be stripped from body; got: {:?}", colored);
-        assert!(!colored.contains("\x1b[1A"), "CUU must not survive in output");
-        assert!(!colored.contains("\x1b[1B"), "CUD must not survive in output");
-    }
-
-    #[test]
-    fn test_colorize_intent_cpl_in_body_stripped() {
-        // CPL (\x1b[F) — cursor previous line — also emitted by Ink during redraws.
-        let raw = "[[intent: Fix\x1b[1F all gaps(Fixing)]]";
-        let colored = colorize_intent(raw);
-        assert!(colored.contains("Fix all gaps"),
-            "CPL should be stripped; got: {:?}", colored);
-        assert!(!colored.contains("\x1b[1F"), "CPL must not survive in output");
-    }
-
-    #[test]
-    fn test_colorize_intent_no_double_space_after_sgr_strip() {
-        // SGR sequences between "intent:" and the text can leave a leading space
-        // after stripping — the output must still have exactly one space.
-        let raw = "[[intent:\x1b[0m Reviewing terminal state(Reading state)]]";
-        let colored = colorize_intent(raw);
-        assert!(colored.contains("intent: Reviewing"),
-            "should have exactly one space after 'intent:'; got: {:?}", colored);
-        assert!(!colored.contains("intent:  "),
-            "must NOT have double space; got: {:?}", colored);
-    }
-
-    #[test]
-    fn test_colorize_intent_preserves_cr_cursor_down_after_brackets() {
-        // Ink may emit \r\x1b[1B (CR + cursor-down) between the closing ]]
-        // and the next content line. The old \s* in the regex would consume
-        // the \r, and {C} would consume \x1b[1B, eating the line break.
-        let raw = "[[intent: configure wiz setup(Wiz Setup)]]\r\x1b[1BBoss, ecco";
-        let colored = colorize_intent(raw);
-        assert!(colored.contains("\r\x1b[1B"),
-            "CR + cursor-down after ]] must survive; got: {:?}", colored);
-        assert!(colored.contains("Boss, ecco"),
-            "next line text must survive; got: {:?}", colored);
-    }
-
-    #[test]
-    fn test_colorize_intent_does_not_eat_cr_between_title_and_brackets() {
-        // If Ink wraps the token so ]] lands on the next line (\r\x1b[1B]),
-        // the regex must NOT consume the line break to reach ]].
-        let raw = "[[intent: configure wiz setup(Wiz Setup)\r\x1b[1B]]\r\x1b[1BBoss";
-        let colored = colorize_intent(raw);
-        // The \r\x1b[1B between ) and ]] must survive — the regex should
-        // either fail to match or match without consuming the line break.
-        assert!(colored.contains("\r\x1b[1B"),
-            "line break must not be eaten; got: {:?}", colored);
-    }
 
     // --- parse_clean_lines tests ---
 
@@ -3559,7 +3047,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     #[test]
     fn test_parse_clean_lines_intent_with_title() {
         let mut parser = OutputParser::new();
-        let rows = vec![row(0, "[[intent: Implementing feature(My title)]]")];
+        let rows = vec![row(0, "intent: Implementing feature (My title)")];
         let events = parser.parse_clean_lines(&rows, true);
         assert!(
             events.iter().any(|e| matches!(e, ParsedEvent::Intent { title: Some(_), .. })),
@@ -3570,12 +3058,25 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     #[test]
     fn test_parse_clean_lines_suggest() {
         let mut parser = OutputParser::new();
-        let rows = vec![row(0, "[[suggest: Run tests | Review diff | Deploy]]")];
+        let rows = vec![row(0, "suggest: Run tests | Review diff | Deploy")];
         let events = parser.parse_clean_lines(&rows, true);
         assert!(
             events.iter().any(|e| matches!(e, ParsedEvent::Suggest { items } if items.len() == 3)),
             "expected Suggest with 3 items, got: {:?}", events
         );
+    }
+
+    #[test]
+    fn test_parse_clean_lines_suggest_filters_empty_items() {
+        let mut parser = OutputParser::new();
+        let rows = vec![row(0, "suggest: Run tests |  | Deploy")];
+        let events = parser.parse_clean_lines(&rows, true);
+        let items = events.iter().find_map(|e| match e {
+            ParsedEvent::Suggest { items } => Some(items.clone()),
+            _ => None,
+        });
+        assert_eq!(items.as_deref(), Some(&["Run tests".to_string(), "Deploy".to_string()][..]),
+            "empty items should be filtered; got: {:?}", items);
     }
 
     #[test]
@@ -3602,97 +3103,14 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_parse_clean_lines_intent_with_bullet_prefix() {
-        // Claude Code emits: ⏺ [[intent: text(title)]]
-        // After vt100 rendering, CUF codes become spaces.
+        // Claude Code prepends a bullet glyph (● U+25CF) at column 0 before the token.
         let mut parser = OutputParser::new();
-        let rows = vec![row(0, "\u{25CF} [[intent: Implementing feature(My title)]]")];
+        let rows = vec![row(0, "\u{25CF} intent: Implementing feature (My title)")];
         let events = parser.parse_clean_lines(&rows, true);
         assert!(
             events.iter().any(|e| matches!(e, ParsedEvent::Intent { title: Some(t), .. } if t == "My title")),
             "expected Intent with title='My title', got: {:?}", events
         );
-    }
-
-    #[test]
-    fn test_parse_clean_lines_intent_with_extra_spaces() {
-        // CUF codes rendered as multiple spaces between words
-        let mut parser = OutputParser::new();
-        let rows = vec![row(0, "\u{25CF}  [[intent: Project  onboarding  and  understanding(Prime session)]]")];
-        let events = parser.parse_clean_lines(&rows, true);
-        assert!(
-            events.iter().any(|e| matches!(e, ParsedEvent::Intent { title: Some(t), .. } if t == "Prime session")),
-            "expected Intent with title='Prime session', got: {:?}", events
-        );
-    }
-
-    #[test]
-    fn test_parse_intent_normalizes_whitespace() {
-        // VtLogBuffer renders CUF cursor-forward codes as multiple spaces.
-        // parse_intent must collapse them so agentIntent text is clean.
-        let mut parser = OutputParser::new();
-        let rows = vec![row(0, "[[intent: Project   onboarding   and   understanding]]")];
-        let events = parser.parse_clean_lines(&rows, true);
-        let text = events.iter().find_map(|e| match e {
-            ParsedEvent::Intent { text, .. } => Some(text.clone()),
-            _ => None,
-        });
-        assert_eq!(
-            text.as_deref(),
-            Some("Project onboarding and understanding"),
-            "extra spaces should be collapsed; got: {:?}", text
-        );
-    }
-
-    #[test]
-    fn test_parse_intent_wraps_across_rows() {
-        // When [[intent: very long text(title)]] exceeds 80 cols it splits across two
-        // VtLogBuffer rows joined with \n. INTENT_RE must cross the newline to extract both
-        // text and title.
-        let mut parser = OutputParser::new();
-        // Simulate two rows: first row ends mid-token, second row has the closing bracket.
-        let rows = vec![
-            row(0, "⏺ [[intent: Implementing a very long feature description that wraps"),
-            row(1, "across terminal rows(Long Feature)]]"),
-        ];
-        let events = parser.parse_clean_lines(&rows, true);
-        let intent = events.iter().find_map(|e| match e {
-            ParsedEvent::Intent { text, title, .. } => Some((text.clone(), title.clone())),
-            _ => None,
-        });
-        assert!(intent.is_some(), "intent must be detected even when token wraps; got: {:?}", events);
-        let (text, title) = intent.unwrap();
-        assert!(text.contains("Implementing"), "text should contain intent body; got: {:?}", text);
-        assert_eq!(title.as_deref(), Some("Long Feature"), "title must be extracted; got: {:?}", title);
-    }
-
-    /// Reproduces the cross-row contamination bug: when [[intent: is on one row
-    /// and ]] happens to appear on a distant unrelated row, the old DOTALL regex
-    /// would match garbage in between. The two-pass strategy (single-line first)
-    /// prevents this by preferring the single-line match.
-    #[test]
-    fn test_parse_intent_cross_row_contamination() {
-        let mut parser = OutputParser::new();
-        // Row 0: partial intent (no closing brackets on this row)
-        // Row 1: garbage from old screen content including "1F" (escape leak scenario)
-        // Row 2: closing brackets from old content
-        let rows = vec![
-            row(0, "● [[intent: "),
-            row(1, "1Ffx all 34 documentation)gaps"),
-            row(2, "other stuff]]"),
-        ];
-        let events = parser.parse_clean_lines(&rows, true);
-        let intent = events.iter().find_map(|e| match e {
-            ParsedEvent::Intent { text, .. } => Some(text.clone()),
-            _ => None,
-        });
-        // The old regex would capture "1Ffx all 34 documentation)gaps\nother stuff"
-        // The two-pass strategy should either:
-        // a) Not match at all (preferred — the intent is clearly corrupted), or
-        // b) If it matches, the text should NOT contain "1F"
-        if let Some(text) = &intent {
-            assert!(!text.contains("1F"),
-                "cross-row contamination leaked '1F' into intent: {:?}", text);
-        }
     }
 
     #[test]
@@ -3746,7 +3164,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     fn test_parse_clean_lines_multiple_events() {
         let mut parser = OutputParser::new();
         let rows = vec![
-            row(0, "[[intent: Working on feature(Test)]]"),
+            row(0, "intent: Working on feature (Test)"),
             row(1, "* Reading files..."),
         ];
         let events = parser.parse_clean_lines(&rows, true);
