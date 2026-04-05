@@ -57,6 +57,15 @@ const PaneBranchView: Component<{
 }> = (props) => {
   const isVertical = () => props.branch.direction === "vertical";
 
+  // Ratios are mutated in place by the resize handler for performance (avoids
+  // rebuilding the whole tree on every mouse-move frame). Solid doesn't track
+  // plain JS mutations, so we subscribe to treeRevision() explicitly to
+  // re-evaluate the flex binding whenever ratios change.
+  const flexFor = (idx: number): string => {
+    paneLayoutStore.treeRevision();
+    return `${(props.branch.ratios[idx] ?? 0.5) * 100} 1 0%`;
+  };
+
   const handleMouseDown = (handleIndex: number, startEvent: MouseEvent) => {
     startEvent.preventDefault();
     const container = (startEvent.target as HTMLElement).parentElement;
@@ -129,7 +138,7 @@ const PaneBranchView: Component<{
           <>
             <div
               class="pane-slot"
-              style={{ flex: `${(props.branch.ratios[i()] ?? 0.5) * 100} 1 0%` }}
+              style={{ flex: flexFor(i()) }}
             >
               <PaneNodeView
                 node={child}
@@ -196,6 +205,10 @@ const PaneGroupView: Component<{
       // Orphan tab dragged from main TabBar — adopt into this group
       paneLayoutStore.addTab(props.groupId, { id: tabId, type: type ?? "terminal" });
     }
+    // Follow the dropped tab: the destination group becomes active so the
+    // focus ring (pane-group-active) moves with the user's action instead
+    // of staying on the source pane.
+    paneLayoutStore.setActiveGroup(props.groupId);
   };
 
   return (

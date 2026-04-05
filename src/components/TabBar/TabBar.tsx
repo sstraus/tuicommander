@@ -161,7 +161,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
         { label: t("tabBar.copyPath", "Copy Path"), action: () => { if (tab?.filePath) navigator.clipboard.writeText(shortenHomePath(tab.filePath)).catch((err) => appLogger.error("app", "Failed to copy path", err)); } },
         { label: isPinned ? t("tabBar.unpinTab", "Unpin Tab") : t("tabBar.pinTab", "Pin Tab"), action: () => editorTabsStore.setPinned(id, !isPinned) },
         { label: "", separator: true, action: () => {} },
-        { label: t("tabBar.closeTab", "Close Tab"), action: () => { editorTabsStore.remove(id); props.onTabClose(id); } },
+        { label: t("tabBar.closeTab", "Close Tab"), action: () => props.onTabClose(id) },
         { label: t("tabBar.closeOthers", "Close Other Tabs"), action: () => props.onCloseOthers(id), disabled: ids.length <= 1 },
         { label: t("tabBar.closeRight", "Close Tabs to the Right"), action: () => props.onCloseToRight(id), disabled: idx >= ids.length - 1 },
       ];
@@ -668,7 +668,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
                   editorTabsStore.setActive(id);
                   props.onTabSelect(id);
                 }}
-                onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); editorTabsStore.remove(id); props.onTabClose(id); } }}
+                onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); props.onTabClose(id); } }}
                 onContextMenu={(e) => openTabContextMenu(e, id)}
                 title={editTab()?.filePath}
                 draggable={true}
@@ -688,7 +688,6 @@ export const TabBar: Component<TabBarProps> = (props) => {
                   title={t("tabBar.close", "Close")}
                   onClick={(e) => {
                     e.stopPropagation();
-                    editorTabsStore.remove(id);
                     props.onTabClose(id);
                   }}
                 >

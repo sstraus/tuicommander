@@ -11,6 +11,8 @@ export interface BaseTab {
   branchKey?: string;
   /** Repo scope — when set, tab is only visible when the active branchKey belongs to this repo */
   repoPath?: string;
+  /** Per-tab font size override in pixels (used by zoom actions) */
+  fontSize?: number;
 }
 
 /** Build a branch scope key for tab filtering */

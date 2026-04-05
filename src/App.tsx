@@ -100,6 +100,7 @@ import { applyPlatformClass, getModifierSymbol, isQuickSwitcherActive, isQuickSw
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke, listen } from "./invoke";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { isTauri } from "./transport";
 import { setLastMenuActionTime } from "./menuDedup";
 import { initDeepLinkHandler } from "./deep-link-handler";
@@ -441,6 +442,25 @@ const App: Component = () => {
   }, { defer: true }));
   createEffect(on(() => terminalsStore.state.activeId, (id) => {
     if (id) { diffTabsStore.setActive(null); mdTabsStore.setActive(null); editorTabsStore.setActive(null); }
+  }, { defer: true }));
+
+  // Persist the currently-active terminal to its owning branch on every change,
+  // so returning to a branch (via sidebar click or repo switch) restores the
+  // tab the user last focused — not the first terminal in branch.terminals.
+  createEffect(on(() => terminalsStore.state.activeId, (id) => {
+    if (!id) return;
+    const repoPath = repositoriesStore.getRepoPathForTerminal(id);
+    if (!repoPath) return;
+    const repo = repositoriesStore.state.repositories[repoPath];
+    if (!repo) return;
+    for (const [branchName, branch] of Object.entries(repo.branches)) {
+      if (branch.terminals.includes(id)) {
+        if (branch.lastActiveTerminal !== id) {
+          repositoriesStore.setBranch(repoPath, branchName, { lastActiveTerminal: id });
+        }
+        break;
+      }
+    }
   }, { defer: true }));
 
   // Prevent system sleep while any terminal is busy (debounced — Story 258/405)
@@ -960,11 +980,22 @@ const App: Component = () => {
     });
   });
 
-  // Shared shortcut handlers used by both keyboard shortcuts and command palette
+  // Shared shortcut handlers used by both keyboard shortcuts and command palette.
+  // Zoom is context-aware: when a markdown tab is active, zoom scales its content;
+  // otherwise it scales the active terminal (same dispatch pattern as `findInTerminal`).
   const shortcutHandlers = {
-    zoomIn: terminalLifecycle.zoomIn,
-    zoomOut: terminalLifecycle.zoomOut,
-    zoomReset: terminalLifecycle.zoomReset,
+    zoomIn: () => {
+      if (mdTabsStore.state.activeId) mdTabsStore.zoomIn();
+      else terminalLifecycle.zoomIn();
+    },
+    zoomOut: () => {
+      if (mdTabsStore.state.activeId) mdTabsStore.zoomOut();
+      else terminalLifecycle.zoomOut();
+    },
+    zoomReset: () => {
+      if (mdTabsStore.state.activeId) mdTabsStore.zoomReset();
+      else terminalLifecycle.zoomReset();
+    },
     zoomInAll: terminalLifecycle.zoomInAll,
     zoomOutAll: terminalLifecycle.zoomOutAll,
     zoomResetAll: terminalLifecycle.zoomResetAll,
@@ -1025,6 +1056,32 @@ const App: Component = () => {
       if (!repoPath) return;
       uiStore.setDiffViewMode("scroll");
       diffTabsStore.add(repoPath, "", "M");
+    },
+    openFile: () => {
+      const defaultPath = gitOps.activeWorktreePath() || repositoriesStore.state.activeRepoPath || undefined;
+      (async () => {
+        try {
+          const selected = await openDialog({ multiple: false, directory: false, defaultPath });
+          if (typeof selected === "string") handleOpenFilePath(selected);
+        } catch (err) {
+          appLogger.error("app", "Open file dialog failed", err);
+        }
+      })();
+    },
+    newFile: () => {
+      const defaultPath = gitOps.activeWorktreePath() || repositoriesStore.state.activeRepoPath || undefined;
+      (async () => {
+        try {
+          // Prompt for name+location upfront. The file is created empty and routed
+          // through handleOpenFilePath so existing extension-based dispatch applies.
+          const target = await saveDialog({ title: "New File", defaultPath });
+          if (typeof target !== "string") return;
+          await invoke("write_external_file", { path: target, content: "" });
+          handleOpenFilePath(target);
+        } catch (err) {
+          appLogger.error("app", "New file creation failed", err);
+        }
+      })();
     },
   };
 
@@ -1244,9 +1301,9 @@ const App: Component = () => {
         case "toggle-sidebar": uiStore.toggleSidebar(); break;
         case "split-right": splitPanes.handleSplit("vertical"); break;
         case "split-down": splitPanes.handleSplit("horizontal"); break;
-        case "zoom-in": terminalLifecycle.zoomIn(); break;
-        case "zoom-out": terminalLifecycle.zoomOut(); break;
-        case "zoom-reset": terminalLifecycle.zoomReset(); break;
+        case "zoom-in": shortcutHandlers.zoomIn(); break;
+        case "zoom-out": shortcutHandlers.zoomOut(); break;
+        case "zoom-reset": shortcutHandlers.zoomReset(); break;
         case "zoom-in-all": terminalLifecycle.zoomInAll(); break;
         case "zoom-out-all": terminalLifecycle.zoomOutAll(); break;
         case "zoom-reset-all": terminalLifecycle.zoomResetAll(); break;
