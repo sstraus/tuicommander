@@ -970,4 +970,131 @@ mod tests {
         let result = trim_screen_chrome(vec![]);
         assert_eq!(result.cutoff, 0);
     }
+
+    // --- WebSocket catch-up/subscribe race ---
+    //
+    // Regression guard for the ring-buffer catch-up race: the PTY writer and
+    // the WS handler must serialize `ring.write` + `ws_clients.send` on both
+    // sides via `ring.lock()`. If the two sides drift into separate critical
+    // sections, bytes written during the window are delivered twice (once in
+    // the catch-up snapshot, once through the live mpsc queue).
+    //
+    // This test reproduces the contract with tight concurrent loops and
+    // asserts that every written byte is observed exactly once by a late
+    // subscriber that reads its snapshot + drains its mpsc queue.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn ws_catchup_no_duplicate_with_concurrent_writer() {
+        use crate::state::OutputRingBuffer;
+        use parking_lot::Mutex as PlMutex;
+        use std::sync::Arc;
+
+        const CHUNK_COUNT: u64 = 50_000;
+        const CHUNK_SIZE: usize = 64;
+        const CAPACITY: usize = CHUNK_COUNT as usize * CHUNK_SIZE * 2;
+
+        let ring: Arc<PlMutex<OutputRingBuffer>> =
+            Arc::new(PlMutex::new(OutputRingBuffer::new(CAPACITY)));
+        let clients: Arc<PlMutex<Vec<tokio::sync::mpsc::UnboundedSender<Vec<u8>>>>> =
+            Arc::new(PlMutex::new(Vec::new()));
+
+        // PTY writer: mirror the pty.rs critical section — ring.write + broadcast
+        // under a single ring.lock().
+        let writer_ring = ring.clone();
+        let writer_clients = clients.clone();
+        let writer = tokio::task::spawn_blocking(move || {
+            for i in 0..CHUNK_COUNT {
+                let mut payload = Vec::with_capacity(CHUNK_SIZE);
+                // First 8 bytes = chunk index (big-endian) so the consumer can
+                // reconstruct ordering; remaining bytes are filler.
+                payload.extend_from_slice(&i.to_be_bytes());
+                payload.resize(CHUNK_SIZE, 0);
+
+                // Mirror pty.rs: ring.write + broadcast under one ring.lock().
+                let mut ring_guard = writer_ring.lock();
+                ring_guard.write(&payload);
+                {
+                    let mut subs = writer_clients.lock();
+                    subs.retain(|tx| tx.send(payload.clone()).is_ok());
+                }
+                drop(ring_guard);
+            }
+        });
+
+        // Subscriber: attach mid-stream. Must take ring.lock() around snapshot
+        // read + tx registration (same ordering as session.rs).
+        let sub_ring = ring.clone();
+        let sub_clients = clients.clone();
+        let subscriber = tokio::task::spawn_blocking(move || {
+            // Delay so the writer can make progress first and the race window
+            // is actually exercised.
+            std::thread::sleep(std::time::Duration::from_millis(1));
+
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+            let (snapshot_bytes, snapshot_total) = {
+                let r = sub_ring.lock();
+                let snap = r.read_last(CAPACITY);
+                sub_clients.lock().push(tx);
+                snap
+            };
+            (snapshot_bytes, snapshot_total, rx)
+        });
+
+        let (snapshot_bytes, snapshot_total, mut rx) = subscriber.await.unwrap();
+        writer.await.unwrap();
+
+        // Drain remaining live frames.
+        let mut live_bytes: Vec<u8> = Vec::new();
+        while let Ok(chunk) = rx.try_recv() {
+            live_bytes.extend_from_slice(&chunk);
+        }
+
+        // Reconstruct the chunk indices seen by the subscriber. Every chunk
+        // is exactly CHUNK_SIZE bytes and starts with its 8-byte BE index.
+        let extract_indices = |bytes: &[u8]| -> Vec<u64> {
+            bytes
+                .chunks_exact(CHUNK_SIZE)
+                .map(|c| {
+                    let mut idx = [0u8; 8];
+                    idx.copy_from_slice(&c[..8]);
+                    u64::from_be_bytes(idx)
+                })
+                .collect()
+        };
+
+        let snapshot_indices = extract_indices(&snapshot_bytes);
+        let live_indices = extract_indices(&live_bytes);
+
+        // Invariants:
+        // 1. Snapshot indices are strictly monotonically increasing by 1.
+        for pair in snapshot_indices.windows(2) {
+            assert_eq!(pair[1], pair[0] + 1, "snapshot not contiguous: {:?}", pair);
+        }
+        // 2. Live indices are strictly monotonically increasing by 1.
+        for pair in live_indices.windows(2) {
+            assert_eq!(pair[1], pair[0] + 1, "live not contiguous: {:?}", pair);
+        }
+        // 3. No overlap: the last snapshot index must be exactly one less
+        //    than the first live index (no duplicate, no gap).
+        if let (Some(&last_snap), Some(&first_live)) =
+            (snapshot_indices.last(), live_indices.first())
+        {
+            assert_eq!(
+                first_live,
+                last_snap + 1,
+                "catch-up/live boundary wrong: last snapshot={}, first live={}",
+                last_snap,
+                first_live
+            );
+        }
+        // 4. Every chunk written is accounted for exactly once.
+        let total_seen = snapshot_indices.len() + live_indices.len();
+        assert_eq!(
+            total_seen as u64, CHUNK_COUNT,
+            "expected all {CHUNK_COUNT} chunks, got {total_seen}"
+        );
+        // 5. total_written reported by the snapshot matches the number of
+        //    bytes the writer had committed at snapshot time.
+        assert!(snapshot_total <= CHUNK_COUNT * CHUNK_SIZE as u64);
+        assert!(snapshot_total >= snapshot_indices.len() as u64 * CHUNK_SIZE as u64);
+    }
 }
