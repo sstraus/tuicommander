@@ -18,6 +18,7 @@
 .content {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   overflow: auto;
   padding: 24px;
   cursor: text;
@@ -35,6 +36,25 @@
 
 .content :global(.tweak-highlight:hover) {
   background: color-mix(in srgb, #f5a623 40%, transparent);
+}
+
+/* Hover tooltip for existing highlights */
+.tooltip {
+  position: fixed;
+  z-index: 9002;
+  max-width: 360px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  padding: 6px 10px;
+  font-size: var(--font-sm);
+  font-family: var(--font-ui);
+  color: var(--fg-primary);
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  pointer-events: none;
 }
 
 /* Floating comment button (appears near active selection) */

@@ -15,6 +15,8 @@ export interface MarkdownRendererProps {
   baseDir?: string;
   /** Ref callback to expose the rendered content container for search */
   contentRef?: (el: HTMLDivElement) => void;
+  /** Override the root font size in pixels (children use em, so everything scales). */
+  fontSize?: number;
 }
 
 /** Strip event handler attributes (on*) as defense-in-depth before DOMPurify */
@@ -49,7 +51,7 @@ export const MarkdownRenderer: Component<MarkdownRendererProps> = (props) => {
         );
       }
       return DOMPurify.sanitize(stripEventHandlers(html), {
-        ADD_ATTR: ["data-tweak-id", "data-tweak-comment-b64"],
+        ADD_ATTR: ["data-tweak-id", "data-tweak-at", "data-tweak-comment"],
       });
     } catch (err) {
       appLogger.error("app", "Markdown parsing error", err);
@@ -72,7 +74,12 @@ export const MarkdownRenderer: Component<MarkdownRendererProps> = (props) => {
   };
 
   return (
-    <div id="markdown-content" ref={props.contentRef} onClick={handleClick}>
+    <div
+      id="markdown-content"
+      ref={props.contentRef}
+      onClick={handleClick}
+      style={props.fontSize !== undefined ? { "font-size": `${props.fontSize}px` } : undefined}
+    >
       <Show
         when={!isEmpty()}
         fallback={<p>{props.emptyMessage || "No content"}</p>}

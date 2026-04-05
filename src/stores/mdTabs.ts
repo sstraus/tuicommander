@@ -1,6 +1,13 @@
 import { createTabManager, type BaseTab } from "./tabManager";
 import { currentBranchKey } from "./repositories";
 
+// Zoom bounds mirror the terminal zoom (useTerminalLifecycle) for consistency.
+const MD_MIN_FONT_SIZE = 8;
+const MD_MAX_FONT_SIZE = 32;
+const MD_FONT_STEP = 2;
+/** Default matches #markdown-content font-size: var(--font-lg) = 15px in styles.css */
+export const MD_DEFAULT_FONT_SIZE = 15;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -105,6 +112,31 @@ function createMdTabsStore() {
       const tabId = base._addTab(tab);
 
       return tabId;
+    },
+
+    /** Add a file-based markdown tab in the background (does not change activeId).
+     *  Returns tab ID, or null if a tab for the same file is already open. */
+    addFileBackground(repoPath: string, filePath: string, fsRoot?: string): string | null {
+      const effectiveRoot = fsRoot || repoPath;
+      const existing = Object.values(base.state.tabs).find(
+        (tab) => tab.type === "file" && (tab as FileTab).fsRoot === effectiveRoot && tab.filePath === filePath,
+      ) as FileTab | undefined;
+      if (existing) return null;
+
+      const id = base._nextId("md");
+      const fileName = filePath.split("/").pop() || filePath;
+      const tab: FileTab = {
+        type: "file",
+        id,
+        repoPath,
+        filePath,
+        fileName,
+        branchKey: currentBranchKey(),
+        fsRoot: effectiveRoot,
+        pinned: true,
+      };
+      base._setState("tabs", id, tab);
+      return id;
     },
 
     /** Add a virtual markdown tab (or return existing if same contentUri already open) */
@@ -219,6 +251,39 @@ function createMdTabsStore() {
       const fileName = filePath.split("/").pop() || filePath;
       const tab: HtmlPreviewTab = { type: "html-preview", id, title: fileName, repoPath, filePath, fileName, branchKey: currentBranchKey(), fsRoot: effectiveRoot };
       return base._addTab(tab);
+    },
+
+    /** Set a tab's font size (clamped to [MIN, MAX]). */
+    setFontSize(id: string, fontSize: number): void {
+      if (!base.state.tabs[id]) return;
+      const clamped = Math.max(MD_MIN_FONT_SIZE, Math.min(MD_MAX_FONT_SIZE, fontSize));
+      base._setState("tabs", id, "fontSize" as keyof MdTabData, clamped as MdTabData[keyof MdTabData]);
+    },
+
+    /** Get a tab's effective font size (falls back to default). */
+    getFontSize(id: string): number {
+      return base.state.tabs[id]?.fontSize ?? MD_DEFAULT_FONT_SIZE;
+    },
+
+    /** Zoom in the active markdown tab by one step. */
+    zoomIn(): void {
+      const id = base.state.activeId;
+      if (!id) return;
+      this.setFontSize(id, (base.state.tabs[id]?.fontSize ?? MD_DEFAULT_FONT_SIZE) + MD_FONT_STEP);
+    },
+
+    /** Zoom out the active markdown tab by one step. */
+    zoomOut(): void {
+      const id = base.state.activeId;
+      if (!id) return;
+      this.setFontSize(id, (base.state.tabs[id]?.fontSize ?? MD_DEFAULT_FONT_SIZE) - MD_FONT_STEP);
+    },
+
+    /** Reset the active markdown tab to the default font size. */
+    zoomReset(): void {
+      const id = base.state.activeId;
+      if (!id) return;
+      this.setFontSize(id, MD_DEFAULT_FONT_SIZE);
     },
 
     /** Register an imperative handle for a tab (e.g. MarkdownTabHandle with openSearch) */

@@ -378,6 +378,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
           baseDir={baseDir()}
           onLinkClick={handleMdLink}
           contentRef={(el) => { contentRef = el; setOverlayContentEl(el); }}
+          fontSize={props.tab.fontSize}
           emptyMessage={
             loading()
               ? t("markdownTab.loading", "Loading...")
@@ -397,10 +398,11 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
           mdTabsStore.state.activeId === props.tab.id &&
           overlayContentEl()
         }
+        keyed
       >
         {(el) => (
           <CommentOverlay
-            contentRef={el()}
+            contentRef={el}
             onSave={(c) => { void handleTweakSave(c); }}
             onDelete={(id) => { void handleTweakDelete(id); }}
           />

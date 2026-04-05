@@ -4,9 +4,14 @@
  * Comments are stored directly inside the .md source as HTML comments,
  * which are invisible to any markdown renderer but readable by humans and LLMs:
  *
- *     prefix <!--tweak:begin:ID-->highlighted text<!--tweak:end:ID:BASE64_JSON--> suffix
+ *     prefix <!--tweak:begin:ID-->highlighted text<!--tweak:end:ID @<ISO-TIMESTAMP>
+ *     comment body, free text, may span multiple lines
+ *     --> suffix
  *
- * BASE64_JSON = btoa(JSON.stringify({ comment, created_at }))
+ * The body is plain text. The only forbidden sequence is `-->` (which would
+ * close the enclosing HTML comment prematurely); it is escaped to `--&gt;`
+ * on write and restored on read. No other escaping is performed — quotes,
+ * newlines, unicode, `<`, `&` are all kept verbatim.
  *
  * The first time a comment is added to a file, a convention header is prepended
  * so that any LLM reading the file understands the format without external context.
@@ -21,58 +26,46 @@ export interface TweakComment {
 
 export const CONVENTION_HEADER =
   "<!-- tweak-comments v1: inline review comments.\n" +
-  "     Format: <!--tweak:begin:ID-->highlighted text<!--tweak:end:ID:BASE64_JSON-->\n" +
-  "     BASE64_JSON decodes to {\"comment\":\"...\",\"created_at\":\"...\"}.\n" +
-  "     Read each comment, evaluate the feedback against the highlighted text,\n" +
-  "     apply the requested changes, then remove the tweak markers. -->\n\n";
+  "     Format: [tweak:begin:ID]highlighted text[tweak:end:ID @ISO-TIMESTAMP\n" +
+  "     comment body (free text, may span multiple lines)\n" +
+  "     ] — where [ ] are the HTML comment delimiters <!-- -->.\n" +
+  "     The only escape is '-->' → '--&gt;' inside the comment body.\n" +
+  "     Read each comment, apply the feedback to the highlighted text,\n" +
+  "     then remove the tweak markers. -->\n\n";
 
-// Matches a full tweak comment span: begin marker, highlighted content, end marker with payload.
-// [\s\S]*? = non-greedy across newlines (highlighted text is single-block but may contain inline formatting).
-const FULL_RE = /<!--tweak:begin:([A-Za-z0-9_-]+)-->([\s\S]*?)<!--tweak:end:\1:([A-Za-z0-9+/=]+)-->/g;
+// Matches a full tweak comment span: begin marker, highlighted content,
+// end marker with timestamp + body. Lazy matching is safe because the body
+// cannot contain `-->` (escaped at write time).
+const FULL_RE =
+  /<!--tweak:begin:([A-Za-z0-9_-]+)-->([\s\S]*?)<!--tweak:end:\1 @(\S+)\s([\s\S]*?)-->/g;
 
-interface Payload {
-  comment: string;
-  created_at: string;
+/** Escape the only sequence that would break the enclosing HTML comment. */
+function escapeBody(body: string): string {
+  return body.replace(/-->/g, "--&gt;");
 }
 
-function decodePayload(b64: string): Payload | null {
-  try {
-    const json = atob(b64);
-    const parsed = JSON.parse(json);
-    if (typeof parsed?.comment !== "string" || typeof parsed?.created_at !== "string") {
-      return null;
-    }
-    return parsed as Payload;
-  } catch {
-    return null;
-  }
-}
-
-function encodePayload(comment: string, createdAt: string): string {
-  return btoa(JSON.stringify({ comment, created_at: createdAt }));
+/** Reverse escapeBody. */
+function unescapeBody(body: string): string {
+  return body.replace(/--&gt;/g, "-->");
 }
 
 /** Serialize a comment into its inline marker form (does not insert into source). */
 export function serializeTweakComment(c: TweakComment): string {
-  const payload = encodePayload(c.comment, c.createdAt);
-  return `<!--tweak:begin:${c.id}-->${c.highlighted}<!--tweak:end:${c.id}:${payload}-->`;
+  return `<!--tweak:begin:${c.id}-->${c.highlighted}<!--tweak:end:${c.id} @${c.createdAt}\n${escapeBody(c.comment)}-->`;
 }
 
 /** Parse all tweak comments from a markdown source, in document order. */
 export function parseTweakComments(source: string): TweakComment[] {
   const results: TweakComment[] = [];
-  // Reset regex state (global regex keeps lastIndex between calls).
   FULL_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = FULL_RE.exec(source)) !== null) {
-    const [, id, highlighted, b64] = match;
-    const payload = decodePayload(b64);
-    if (!payload) continue;
+    const [, id, highlighted, createdAt, body] = match;
     results.push({
       id,
       highlighted,
-      comment: payload.comment,
-      createdAt: payload.created_at,
+      comment: unescapeBody(body),
+      createdAt,
     });
   }
   return results;
@@ -95,7 +88,6 @@ function removeConventionHeader(source: string): string {
   const trimmed = CONVENTION_HEADER.trimEnd();
   const idx = source.indexOf(trimmed);
   if (idx === 0) {
-    // Remove header + any trailing whitespace up to the next non-blank line.
     let end = trimmed.length;
     while (end < source.length && (source[end] === "\n" || source[end] === "\r")) end++;
     return source.slice(end);
@@ -106,12 +98,6 @@ function removeConventionHeader(source: string): string {
 /**
  * Insert a tweak comment into the source by wrapping the first occurrence
  * of `highlighted` with begin/end markers. Throws if the text is not found.
- *
- * The caller is responsible for passing a `highlighted` string that matches
- * verbatim in the source — which is guaranteed when the highlight comes from
- * a live text selection on the rendered DOM (the selection text exists in
- * the source too, barring inline markdown syntax that we avoid by scoping
- * selections to plain-text ranges — see the UI layer).
  */
 export function insertTweakComment(source: string, comment: TweakComment): string {
   const idx = source.indexOf(comment.highlighted);
@@ -128,10 +114,9 @@ export function insertTweakComment(source: string, comment: TweakComment): strin
 
 /** Remove a comment by id, keeping the highlighted text in place. */
 export function removeTweakComment(source: string, id: string): string {
-  // Escape id for regex (ids are alphanumeric+_- so this is defensive).
   const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const re = new RegExp(
-    `<!--tweak:begin:${escapedId}-->([\\s\\S]*?)<!--tweak:end:${escapedId}:[A-Za-z0-9+/=]+-->`,
+    `<!--tweak:begin:${escapedId}-->([\\s\\S]*?)<!--tweak:end:${escapedId} @\\S+\\s[\\s\\S]*?-->`,
     "g",
   );
   let changed = false;
@@ -140,7 +125,6 @@ export function removeTweakComment(source: string, id: string): string {
     return highlighted;
   });
   if (!changed) return source;
-  // If no comments remain, strip the convention header too.
   if (parseTweakComments(out).length === 0) {
     return removeConventionHeader(out);
   }
@@ -151,14 +135,12 @@ export function removeTweakComment(source: string, id: string): string {
 export function updateTweakComment(source: string, id: string, newComment: string): string {
   const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const re = new RegExp(
-    `<!--tweak:begin:${escapedId}-->([\\s\\S]*?)<!--tweak:end:${escapedId}:([A-Za-z0-9+/=]+)-->`,
+    `<!--tweak:begin:${escapedId}-->([\\s\\S]*?)<!--tweak:end:${escapedId} @(\\S+)\\s[\\s\\S]*?-->`,
     "g",
   );
-  return source.replace(re, (_, highlighted, b64) => {
-    const existing = decodePayload(b64);
-    const createdAt = existing?.created_at ?? new Date().toISOString();
-    return serializeTweakComment({ id, highlighted, comment: newComment, createdAt });
-  });
+  return source.replace(re, (_, highlighted, createdAt) =>
+    serializeTweakComment({ id, highlighted, comment: newComment, createdAt }),
+  );
 }
 
 /**
@@ -171,20 +153,20 @@ export function updateTweakComment(source: string, id: string, newComment: strin
  * it never appears in rendered output.
  */
 export function applyTweakHighlights(source: string): string {
-  // Remove the convention header — it's for humans/LLMs reading the raw file,
-  // not for the rendered view.
   let out = source.startsWith(CONVENTION_HEADER)
     ? source.slice(CONVENTION_HEADER.length)
     : source;
 
   // Replace each tweak marker pair with a highlight span.
-  // The data-tweak-comment-b64 attribute carries the payload for the click handler.
+  // The comment body is already free of `-->`; for the attribute context we
+  // additionally escape `&` and `"` so the attribute parses correctly. The
+  // browser auto-decodes these when we read via `dataset.tweakComment`.
   FULL_RE.lastIndex = 0;
-  out = out.replace(
-    FULL_RE,
-    (_, id, highlighted, b64) =>
-      `<span class="tweak-highlight" data-tweak-id="${id}" data-tweak-comment-b64="${b64}">${highlighted}</span>`,
-  );
+  out = out.replace(FULL_RE, (_, id, highlighted, createdAt, body) => {
+    const plain = unescapeBody(body);
+    const attrComment = plain.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+    return `<span class="tweak-highlight" data-tweak-id="${id}" data-tweak-at="${createdAt}" data-tweak-comment="${attrComment}">${highlighted}</span>`;
+  });
   return out;
 }
 

@@ -35,9 +35,16 @@ interface PopoverState {
   selectionText?: string;
 }
 
+interface TooltipState {
+  x: number;
+  y: number;
+  text: string;
+}
+
 export const CommentOverlay: Component<CommentOverlayProps> = (props) => {
   const [btnPos, setBtnPos] = createSignal<{ x: number; y: number } | null>(null);
   const [popover, setPopover] = createSignal<PopoverState | null>(null);
+  const [tooltip, setTooltip] = createSignal<TooltipState | null>(null);
   const [draft, setDraft] = createSignal("");
 
   // The selected text captured at "add comment" button time.
@@ -104,18 +111,9 @@ export const CommentOverlay: Component<CommentOverlayProps> = (props) => {
     if (!span) return;
 
     const id = span.dataset["tweakId"];
-    const b64 = span.dataset["tweakCommentB64"];
-    if (!id || !b64) return;
-
-    let comment = "";
-    let createdAt = new Date().toISOString();
-    try {
-      const payload = JSON.parse(atob(b64)) as { comment: string; created_at: string };
-      comment = payload.comment;
-      createdAt = payload.created_at;
-    } catch {
-      return;
-    }
+    const comment = span.dataset["tweakComment"];
+    const createdAt = span.dataset["tweakAt"];
+    if (!id || comment === undefined || !createdAt) return;
 
     e.preventDefault();
     e.stopPropagation();
@@ -133,14 +131,42 @@ export const CommentOverlay: Component<CommentOverlayProps> = (props) => {
     });
   };
 
+  // Hover tooltip: uses mouseover/mouseout (delegated) so no per-span listener.
+  const handleMouseOver = (e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    const span = target.closest(".tweak-highlight") as HTMLElement | null;
+    if (!span) return;
+    const comment = span.dataset["tweakComment"];
+    if (!comment) return;
+    const rect = span.getBoundingClientRect();
+    setTooltip({
+      x: rect.left,
+      y: rect.bottom + 6,
+      text: comment,
+    });
+  };
+  const handleMouseOut = (e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    const related = e.relatedTarget as HTMLElement | null;
+    const leavingSpan = target.closest(".tweak-highlight");
+    if (!leavingSpan) return;
+    // Still inside the same highlight span — don't clear.
+    if (related && leavingSpan.contains(related)) return;
+    setTooltip(null);
+  };
+
   onMount(() => {
     props.contentRef.addEventListener("mouseup", handleMouseUp);
     props.contentRef.addEventListener("keyup", handleKeyUp);
     props.contentRef.addEventListener("click", handleClick);
+    props.contentRef.addEventListener("mouseover", handleMouseOver);
+    props.contentRef.addEventListener("mouseout", handleMouseOut);
     onCleanup(() => {
       props.contentRef.removeEventListener("mouseup", handleMouseUp);
       props.contentRef.removeEventListener("keyup", handleKeyUp);
       props.contentRef.removeEventListener("click", handleClick);
+      props.contentRef.removeEventListener("mouseover", handleMouseOver);
+      props.contentRef.removeEventListener("mouseout", handleMouseOut);
     });
   });
 
@@ -228,6 +254,18 @@ export const CommentOverlay: Component<CommentOverlayProps> = (props) => {
 
   return (
     <Portal>
+      {/* Hover tooltip showing the comment text on existing highlights */}
+      <Show when={!popover() && tooltip()} keyed>
+        {(t) => (
+          <div
+            class={s.tooltip}
+            style={{ left: `${t.x}px`, top: `${t.y}px` }}
+          >
+            {t.text}
+          </div>
+        )}
+      </Show>
+
       {/* Floating "Comment" button near selection */}
       <Show when={btnPos() && !popover()}>
         <button
@@ -274,7 +312,7 @@ export const CommentOverlay: Component<CommentOverlayProps> = (props) => {
               placeholder="Add your comment… (Ctrl+Enter to save)"
               value={draft()}
               onInput={(e) => setDraft(e.currentTarget.value)}
-              autofocus
+              ref={(el) => queueMicrotask(() => el.focus())}
               rows={3}
             />
 

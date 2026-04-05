@@ -13,33 +13,39 @@ import {
 
 describe("tweakComments parser/serializer", () => {
   describe("serializeTweakComment", () => {
-    it("wraps highlighted text with begin/end markers containing base64 payload", () => {
+    it("wraps highlighted text with begin/end markers containing plain-text body", () => {
       const out = serializeTweakComment({
         id: "c_abc",
         highlighted: "evidenziato",
         comment: "il mio commento",
         createdAt: "2026-04-05T10:00:00.000Z",
       });
-      expect(out).toContain("<!--tweak:begin:c_abc-->evidenziato<!--tweak:end:c_abc:");
-      // payload must decode to JSON with comment + created_at
-      const match = out.match(/tweak:end:c_abc:([^>]+)-->/);
-      expect(match).toBeTruthy();
-      const payload = JSON.parse(atob(match![1]));
-      expect(payload.comment).toBe("il mio commento");
-      expect(payload.created_at).toBe("2026-04-05T10:00:00.000Z");
+      expect(out).toBe(
+        "<!--tweak:begin:c_abc-->evidenziato<!--tweak:end:c_abc @2026-04-05T10:00:00.000Z\nil mio commento-->",
+      );
     });
 
-    it("handles comments with quotes, newlines and special characters", () => {
-      const tricky = 'ha "virgolette", a capo\ne simboli --> <!-- <script>';
+    it("handles comments with quotes, newlines and special characters verbatim", () => {
+      const tricky = 'ha "virgolette", a capo\ne simboli < & <!-- <script>';
       const out = serializeTweakComment({
         id: "c_1",
         highlighted: "x",
         comment: tricky,
         createdAt: "2026-04-05T10:00:00.000Z",
       });
-      const match = out.match(/tweak:end:c_1:([^>]+)-->/);
-      const payload = JSON.parse(atob(match![1]));
-      expect(payload.comment).toBe(tricky);
+      // Body appears verbatim after the timestamp newline.
+      expect(out).toContain(`@2026-04-05T10:00:00.000Z\n${tricky}-->`);
+    });
+
+    it("escapes the `-->` sequence in the comment body", () => {
+      const out = serializeTweakComment({
+        id: "c_1",
+        highlighted: "x",
+        comment: "close-me --> now",
+        createdAt: "2026-04-05T10:00:00.000Z",
+      });
+      expect(out).toContain("close-me --&gt; now");
+      expect(out).not.toContain("close-me --> now");
     });
   });
 
@@ -49,10 +55,8 @@ describe("tweakComments parser/serializer", () => {
     });
 
     it("extracts a single comment with its highlighted text", () => {
-      const payload = btoa(
-        JSON.stringify({ comment: "ciao", created_at: "2026-04-05T10:00:00.000Z" }),
-      );
-      const src = `Hello <!--tweak:begin:c_1-->world<!--tweak:end:c_1:${payload}-->!`;
+      const src =
+        "Hello <!--tweak:begin:c_1-->world<!--tweak:end:c_1 @2026-04-05T10:00:00.000Z\nciao-->!";
       const comments = parseTweakComments(src);
       expect(comments).toHaveLength(1);
       expect(comments[0].id).toBe("c_1");
@@ -62,11 +66,9 @@ describe("tweakComments parser/serializer", () => {
     });
 
     it("extracts multiple comments preserving order", () => {
-      const p1 = btoa(JSON.stringify({ comment: "first", created_at: "2026-04-05T10:00:00.000Z" }));
-      const p2 = btoa(JSON.stringify({ comment: "second", created_at: "2026-04-05T10:01:00.000Z" }));
       const src =
-        `A <!--tweak:begin:c_1-->one<!--tweak:end:c_1:${p1}--> B ` +
-        `<!--tweak:begin:c_2-->two<!--tweak:end:c_2:${p2}--> C`;
+        "A <!--tweak:begin:c_1-->one<!--tweak:end:c_1 @2026-04-05T10:00:00.000Z\nfirst--> B " +
+        "<!--tweak:begin:c_2-->two<!--tweak:end:c_2 @2026-04-05T10:01:00.000Z\nsecond--> C";
       const comments = parseTweakComments(src);
       expect(comments.map((c) => c.id)).toEqual(["c_1", "c_2"]);
       expect(comments.map((c) => c.comment)).toEqual(["first", "second"]);
@@ -77,9 +79,11 @@ describe("tweakComments parser/serializer", () => {
       expect(parseTweakComments(src)).toEqual([]);
     });
 
-    it("ignores markers with invalid base64 payload", () => {
-      const src = `<!--tweak:begin:c_1-->x<!--tweak:end:c_1:!!!not-base64!!!-->`;
-      expect(parseTweakComments(src)).toEqual([]);
+    it("unescapes `--&gt;` back to `-->` in the body", () => {
+      const src =
+        "<!--tweak:begin:c_1-->x<!--tweak:end:c_1 @2026-04-05T10:00:00.000Z\nclose-me --&gt; now-->";
+      const [parsed] = parseTweakComments(src);
+      expect(parsed.comment).toBe("close-me --> now");
     });
   });
 
@@ -88,7 +92,7 @@ describe("tweakComments parser/serializer", () => {
       const original: TweakComment = {
         id: "c_xyz",
         highlighted: "la parte evidenziata",
-        comment: 'commento con "quotes" e caratteri speciali <>&',
+        comment: 'commento con "quotes", newline\ne caratteri <>& e perfino -->',
         createdAt: "2026-04-05T10:00:00.000Z",
       };
       const src = `Prefix ${serializeTweakComment(original)} suffix.`;
@@ -106,8 +110,9 @@ describe("tweakComments parser/serializer", () => {
         comment: "nota",
         createdAt: "2026-04-05T10:00:00.000Z",
       });
-      expect(out).toContain("<!--tweak:begin:c_1-->parola evidenziata<!--tweak:end:c_1:");
-      // Body (after convention header) preserves original prefix/suffix around the highlight.
+      expect(out).toContain(
+        "<!--tweak:begin:c_1-->parola evidenziata<!--tweak:end:c_1 @2026-04-05T10:00:00.000Z\nnota-->",
+      );
       const body = out.slice(CONVENTION_HEADER.length);
       expect(body.startsWith("Una frase con ")).toBe(true);
       expect(body.endsWith(" dentro.")).toBe(true);
@@ -157,9 +162,8 @@ describe("tweakComments parser/serializer", () => {
 
   describe("removeTweakComment", () => {
     it("removes markers but preserves highlighted text", () => {
-      const src = `A <!--tweak:begin:c_1-->kept<!--tweak:end:c_1:${btoa(
-        JSON.stringify({ comment: "x", created_at: "2026-04-05T10:00:00.000Z" }),
-      )}--> B`;
+      const src =
+        "A <!--tweak:begin:c_1-->kept<!--tweak:end:c_1 @2026-04-05T10:00:00.000Z\nx--> B";
       const out = removeTweakComment(src, "c_1");
       expect(out).toBe("A kept B");
     });
@@ -204,7 +208,7 @@ describe("tweakComments parser/serializer", () => {
   });
 
   describe("updateTweakComment", () => {
-    it("updates the comment text while preserving id and highlighted text", () => {
+    it("updates the comment text while preserving id, highlighted text and createdAt", () => {
       let src = "Hello world.";
       src = insertTweakComment(src, {
         id: "c_1",
@@ -217,16 +221,33 @@ describe("tweakComments parser/serializer", () => {
       expect(parsed.comment).toBe("updated");
       expect(parsed.highlighted).toBe("world");
       expect(parsed.id).toBe("c_1");
+      expect(parsed.createdAt).toBe("2026-04-05T10:00:00.000Z");
     });
   });
 
   describe("applyTweakHighlights", () => {
-    it("converts tweak markers to highlight spans", () => {
-      const p = btoa(JSON.stringify({ comment: "nota", created_at: "2026-04-05T10:00:00.000Z" }));
-      const src = `Hello <!--tweak:begin:c_1-->world<!--tweak:end:c_1:${p}-->!`;
+    it("converts tweak markers to highlight spans with plain-text data attrs", () => {
+      const src =
+        "Hello <!--tweak:begin:c_1-->world<!--tweak:end:c_1 @2026-04-05T10:00:00.000Z\nnota-->!";
       const out = applyTweakHighlights(src);
-      expect(out).toContain(`<span class="tweak-highlight" data-tweak-id="c_1" data-tweak-comment-b64="${p}">world</span>`);
+      expect(out).toContain(
+        '<span class="tweak-highlight" data-tweak-id="c_1" data-tweak-at="2026-04-05T10:00:00.000Z" data-tweak-comment="nota">world</span>',
+      );
       expect(out).not.toContain("<!--tweak:");
+    });
+
+    it("escapes `&` and `\"` in the data-tweak-comment attribute", () => {
+      const src =
+        '<!--tweak:begin:c_1-->x<!--tweak:end:c_1 @2026-04-05T10:00:00.000Z\nhas "quotes" & amp-->';
+      const out = applyTweakHighlights(src);
+      expect(out).toContain('data-tweak-comment="has &quot;quotes&quot; &amp; amp"');
+    });
+
+    it("unescapes `--&gt;` back to `-->` in the rendered span attribute", () => {
+      const src =
+        "<!--tweak:begin:c_1-->x<!--tweak:end:c_1 @2026-04-05T10:00:00.000Z\nclose --&gt; now-->";
+      const out = applyTweakHighlights(src);
+      expect(out).toContain('data-tweak-comment="close --> now"');
     });
 
     it("strips the convention header", () => {

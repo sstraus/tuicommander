@@ -1,4 +1,5 @@
-import { Component, createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { Component, createEffect, createMemo, createSignal, For, Match, Show, Switch, untrack } from "solid-js";
+import { createVirtualizer } from "@tanstack/solid-virtual";
 import { useRepository } from "../../hooks/useRepository";
 import { repositoriesStore } from "../../stores/repositories";
 import { appLogger } from "../../stores/appLogger";
@@ -24,6 +25,18 @@ interface MdFileEntry {
 }
 
 type SortMode = "folder" | "date";
+
+/** Flat row for virtualization: either a directory header or a file entry. */
+type Row =
+  | { kind: "header"; dir: string }
+  | { kind: "file"; entry: MdFileEntry };
+
+// Fixed row heights for the virtualizer (in px). Must match the CSS-driven
+// content heights exactly — no dynamic measurement is used to avoid reflow
+// loops when switching sort modes.
+const ROW_HEIGHT_HEADER = 28;
+const ROW_HEIGHT_FILE = 30;
+const ROW_HEIGHT_FILE_WITH_PATH = 46;
 
 export interface MarkdownPanelProps {
   visible: boolean;
@@ -53,6 +66,9 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
   const repo = useRepository();
   const contextMenu = createContextMenu();
   const [contextEntry, setContextEntry] = createSignal<MdFileEntry | null>(null);
+  let scrollRef: HTMLDivElement | undefined;
+  // Generation counter: incremented on every effect run so stale async fetches are discarded.
+  let fetchGeneration = 0;
 
   /** Files filtered by search query (supports glob wildcards) */
   const filteredFiles = createMemo(() => {
@@ -76,19 +92,35 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
       return;
     }
 
-    const isInitialLoad = files().length === 0;
+    const gen = ++fetchGeneration;
+    const isInitialLoad = untrack(() => files().length === 0);
     if (isInitialLoad) setLoading(true);
     setError(null);
 
     (async () => {
       try {
         const mdFiles = await repo.listMarkdownFiles(fsRoot);
-        setFiles(mdFiles);
+        if (gen !== fetchGeneration) return;
+        // Skip re-render when entries are identical: same count and every entry
+        // matches on the fields that drive visible state (path, git badge, mtime,
+        // ignored flag). New object instances from Rust would otherwise cause a
+        // full virtualizer remount even when nothing changed — causing hover lag.
+        const current = untrack(() => files());
+        const changed =
+          current.length !== mdFiles.length ||
+          mdFiles.some((e, i) => {
+            const c = current[i];
+            return e.path !== c.path || e.git_status !== c.git_status ||
+              e.modified_at !== c.modified_at || e.is_ignored !== c.is_ignored;
+          });
+        if (changed) setFiles(mdFiles);
       } catch (err) {
+        if (gen !== fetchGeneration) return;
+        appLogger.error("app", "Failed to list markdown files", err);
         setError(String(err));
         setFiles([]);
       } finally {
-        setLoading(false);
+        if (gen === fetchGeneration) setLoading(false);
       }
     })();
   });
@@ -117,6 +149,30 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
       groups[key].push(entry);
     }
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+  });
+
+  /** Flatten grouped entries into a single row list for the virtualizer. */
+  const rows = createMemo<Row[]>(() => {
+    const out: Row[] = [];
+    for (const [dir, entries] of sortedGroups()) {
+      if (dir && dir !== "/") out.push({ kind: "header", dir });
+      for (const entry of entries) out.push({ kind: "file", entry });
+    }
+    return out;
+  });
+
+  const virtualizer = createVirtualizer({
+    get count() { return rows().length; },
+    getScrollElement: () => scrollRef ?? null,
+    estimateSize: (index) => {
+      const row = rows()[index];
+      if (!row) return ROW_HEIGHT_FILE;
+      if (row.kind === "header") return ROW_HEIGHT_HEADER;
+      return sortBy() === "date" && pathDirname(row.entry.path)
+        ? ROW_HEIGHT_FILE_WITH_PATH
+        : ROW_HEIGHT_FILE;
+    },
+    overscan: 8,
   });
 
   const handleContextMenu = (ev: MouseEvent, entry: MdFileEntry) => {
@@ -197,62 +253,73 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
       </div>
 
       <div class={p.content}>
-        <Show when={loading()}>
-          <div class={s.empty}>{t("markdownPanel.loading", "Loading files...")}</div>
-        </Show>
+        {/* Scroll container is always mounted so the virtualizer keeps a stable
+            scrollElement reference across loading/empty/populated state changes. */}
+        <div ref={scrollRef} class={s.fileList}>
+          <Show when={loading()}>
+            <div class={s.empty}>{t("markdownPanel.loading", "Loading files...")}</div>
+          </Show>
 
-        <Show when={error()}>
-          <div class={s.error}>{t("markdownPanel.error", "Error:")} {error()}</div>
-        </Show>
+          <Show when={error()}>
+            <div class={s.error}>{t("markdownPanel.error", "Error:")} {error()}</div>
+          </Show>
 
-        <Show when={!loading() && !error() && filteredFiles().length === 0}>
-          <div class={s.empty}>
-            {!props.repoPath
-              ? t("markdownPanel.noRepo", "No repository selected")
-              : searchQuery()
-              ? t("markdownPanel.noMatches", "No matches")
-              : t("markdownPanel.noFiles", "No markdown files found")}
-          </div>
-        </Show>
+          <Show when={!loading() && !error() && filteredFiles().length === 0}>
+            <div class={s.empty}>
+              {!props.repoPath
+                ? t("markdownPanel.noRepo", "No repository selected")
+                : searchQuery()
+                ? t("markdownPanel.noMatches", "No matches")
+                : t("markdownPanel.noFiles", "No markdown files found")}
+            </div>
+          </Show>
 
-        <Show when={!loading() && !error() && filteredFiles().length > 0}>
-          <div class={s.fileList}>
-            <For each={sortedGroups()}>
-              {([dir, dirEntries]) => (
-                <>
-                  <Show when={dir && dir !== "/"}>
-                    <div class={s.dirHeader}>{dir}/</div>
-                  </Show>
-                  <For each={dirEntries}>
-                    {(entry) => {
-                      const fileName = pathBasename(entry.path) || entry.path;
-                      const dirName = pathDirname(entry.path);
-                      return (
-                        <div
-                          class={cx(s.fileItem, entry.is_ignored && s.fileIgnored)}
-                          onClick={() => handleFileClick(entry.path)}
-                          onContextMenu={(ev) => handleContextMenu(ev, entry)}
-                          title={entry.path}
-                        >
-                          <span class={s.fileIcon}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span>
-                          <div class={s.fileName}>
-                            {fileName}
-                            <Show when={sortBy() === "date" && dirName}>
-                              <span class={s.filePath}>{dirName}/</span>
-                            </Show>
-                          </div>
-                          <Show when={entry.git_status}>
-                            <span class={cx(g.dot, getStatusClass(entry.git_status))} title={entry.git_status} />
-                          </Show>
-                        </div>
-                      );
-                    }}
-                  </For>
-                </>
-              )}
-            </For>
-          </div>
-        </Show>
+          <Show when={!loading() && !error() && filteredFiles().length > 0}>
+            <div class={s.virtualList} style={{ height: `${virtualizer.getTotalSize()}px` }}>
+              <For each={virtualizer.getVirtualItems()}>
+                {(vi) => {
+                  const row = () => rows()[vi.index];
+                  return (
+                    <div
+                      class={s.virtualRow}
+                      style={{
+                        top: `${vi.start}px`,
+                        height: `${vi.size}px`,
+                      }}
+                    >
+                      <Switch>
+                        <Match when={row()?.kind === "header" ? (row() as { kind: "header"; dir: string }) : undefined}>
+                          {(h) => <div class={s.dirHeader}>{h().dir}/</div>}
+                        </Match>
+                        <Match when={row()?.kind === "file" ? (row() as { kind: "file"; entry: MdFileEntry }).entry : undefined}>
+                          {(entry) => (
+                            <div
+                              class={cx(s.fileItem, entry().is_ignored && s.fileIgnored)}
+                              onClick={() => handleFileClick(entry().path)}
+                              onContextMenu={(ev) => handleContextMenu(ev, entry())}
+                              title={entry().path}
+                            >
+                              <span class={s.fileIcon}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span>
+                              <div class={s.fileName}>
+                                {pathBasename(entry().path) || entry().path}
+                                <Show when={sortBy() === "date" && pathDirname(entry().path)}>
+                                  <span class={s.filePath}>{pathDirname(entry().path)}/</span>
+                                </Show>
+                              </div>
+                              <Show when={entry().git_status}>
+                                <span class={cx(g.dot, getStatusClass(entry().git_status))} title={entry().git_status} />
+                              </Show>
+                            </div>
+                          )}
+                        </Match>
+                      </Switch>
+                    </div>
+                  );
+                }}
+              </For>
+            </div>
+          </Show>
+        </div>
       </div>
 
       <ContextMenu

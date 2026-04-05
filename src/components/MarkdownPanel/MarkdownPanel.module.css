@@ -23,9 +23,24 @@
 }
 
 .fileList {
-  padding: 12px;
+  padding: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   height: 100%;
+  position: relative;
+}
+
+.virtualList {
+  position: relative;
+  width: 100%;
+}
+
+/* Each virtualized row is absolutely positioned by the virtualizer. */
+.virtualRow {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .dirHeader {
@@ -35,11 +50,6 @@
   text-transform: uppercase;
   letter-spacing: 0.5px;
   padding: 8px 12px 4px;
-  margin-top: 12px;
-}
-
-.dirHeader:first-child {
-  margin-top: 0;
 }
 
 .fileItem {
