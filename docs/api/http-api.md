@@ -994,17 +994,9 @@ Content-Type: application/json
 { "endpoint": "https://...", "keys": { "p256dh": "...", "auth": "..." } }
 ```
 
-Register a push subscription. Idempotent (same endpoint updates keys). Also activates mobile push target (see Heartbeat).
+Register a push subscription. Idempotent (same endpoint updates keys).
 
-### Heartbeat
-
-```
-POST /api/push/heartbeat
-```
-
-Activates mobile push target. Called by the PWA on open and on `visibilitychange` (e.g. unlock phone). When active, push notifications are sent for question and completion events. The flag is cleared when the desktop window gains focus, preventing duplicate alerts.
-
-**Response:** `204 No Content`
+Push delivery is gated by desktop window focus: notifications for `question` and session completion events are sent whenever the desktop window is **not** focused (including when the app is minimized or the user is on another workspace). This avoids duplicate alerts while the user is actively at the desktop, and still wakes the PWA service worker when the phone is locked.
 
 ### Unsubscribe
 

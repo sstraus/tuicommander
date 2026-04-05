@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 - **Ideas panel shortcut** — Moved from `Cmd+N` to `Cmd+Alt+N` so `Cmd+N` can serve the universal "New file" convention. Users with an override in `keybindings.json` keep their existing binding.
+- **PWA push gate** — Web Push delivery is now gated on desktop window focus instead of a PWA heartbeat. Notifications fire whenever the desktop window is not focused (phone locked, screen off, etc.), finally matching the intended "wake the service worker" semantics. Removed the now-unused `POST /api/push/heartbeat` endpoint.
+
+### Fixed
+- **Duplicate history on WebSocket catch-up** — The raw PTY WebSocket handler racily registered its live subscription against the ring-buffer snapshot read, causing bytes written during the small gap to appear in both the catch-up replay and the live stream. Serialized `ring.write` + `ws_clients` broadcast under the same lock on both the producer and consumer sides, eliminating the duplication window.
 
 ## [0.9.9] - 2026-04-02
 
