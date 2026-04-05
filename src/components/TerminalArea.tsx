@@ -1,11 +1,7 @@
 import { Component, createEffect, createMemo, For, JSX, Show } from "solid-js";
 import { Terminal } from "./Terminal";
 import { DiffTab } from "./DiffTab";
-import { PrDiffTab } from "./PrDiffTab";
-import { MarkdownTab } from "./MarkdownTab";
-import { PluginPanel } from "./PluginPanel";
-import { HtmlPreviewTab } from "./HtmlPreviewTab";
-import { ClaudeUsageDashboard } from "./ClaudeUsageDashboard";
+import { MdTabContent } from "./shared/MdTabContent";
 import { CodeEditorTab } from "./CodeEditorPanel";
 import { PaneNodeView } from "./PaneTree/PaneTree";
 import SuggestOverlay from "./SuggestOverlay/SuggestOverlay";
@@ -31,6 +27,38 @@ export interface TerminalAreaProps {
   onCwdChange?: (id: string, cwd: string) => void;
   children?: JSX.Element;
 }
+
+/** Renders suggested follow-up actions for the active terminal. */
+const SuggestOverlayContainer: Component = () => {
+  const active = () => terminalsStore.getActive();
+  const actions = () => active()?.suggestedActions;
+  const activeId = () => terminalsStore.state.activeId;
+  const dismissed = () => active()?.suggestDismissed;
+  return (
+    <Show when={actions()?.length && !dismissed()}>
+      {(() => {
+        // Capture terminal ID at render time so dismiss always targets the right terminal
+        const capturedId = activeId()!;
+        const capturedSid = active()?.sessionId ?? null;
+        return (
+          <SuggestOverlay
+            items={actions()!}
+            onSelect={async (text) => {
+              terminalsStore.dismissSuggestedActions(capturedId);
+              if (capturedSid) {
+                await rpc("write_pty", { sessionId: capturedSid, data: text });
+                await rpc("write_pty", { sessionId: capturedSid, data: "\r" });
+              }
+            }}
+            onDismiss={() => {
+              terminalsStore.dismissSuggestedActions(capturedId);
+            }}
+          />
+        );
+      })()}
+    </Show>
+  );
+};
 
 export const TerminalArea: Component<TerminalAreaProps> = (props) => {
   const { isDragging, attachTo } = useFileDrop();
@@ -149,30 +177,7 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
                   classList={{ active: mdTabsStore.state.activeId === id }}
                   onContextMenu={(e) => e.stopPropagation()}
                 >
-                  {mdTab && mdTab.type === "claude-usage" ? (
-                    <ClaudeUsageDashboard />
-                  ) : mdTab && mdTab.type === "plugin-panel" ? (
-                    <PluginPanel
-                      tab={mdTab}
-                      onClose={() => props.onCloseTab(id)}
-                    />
-                  ) : mdTab && mdTab.type === "pr-diff" ? (
-                    <PrDiffTab
-                      prNumber={mdTab.prNumber}
-                      prTitle={mdTab.prTitle}
-                      diff={mdTab.diff}
-                    />
-                  ) : mdTab && mdTab.type === "html-preview" ? (
-                    <HtmlPreviewTab
-                      tab={mdTab}
-                      onClose={() => props.onCloseTab(id)}
-                    />
-                  ) : mdTab ? (
-                    <MarkdownTab
-                      tab={mdTab}
-                      onClose={() => props.onCloseTab(id)}
-                    />
-                  ) : null}
+                  {mdTab && <MdTabContent tab={mdTab} onClose={() => props.onCloseTab(id)} />}
                 </div>
               );
             }}
@@ -208,36 +213,7 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
              Tab switch unmounts the overlay (cancelling the timer); returning remounts it (restarting the timer).
              This way suggestions persist until the user actually sees them. */}
         <Show when={settingsStore.state.suggestFollowups}>
-          {(() => {
-            const active = () => terminalsStore.getActive();
-            const actions = () => active()?.suggestedActions;
-            const activeId = () => terminalsStore.state.activeId;
-            const dismissed = () => active()?.suggestDismissed;
-            return (
-              <Show when={actions()?.length && !dismissed()}>
-                {(() => {
-                  // Capture terminal ID at render time so dismiss always targets the right terminal
-                  const capturedId = activeId()!;
-                  const capturedSid = active()?.sessionId ?? null;
-                  return (
-                    <SuggestOverlay
-                      items={actions()!}
-                      onSelect={async (text) => {
-                        terminalsStore.dismissSuggestedActions(capturedId);
-                        if (capturedSid) {
-                          await rpc("write_pty", { sessionId: capturedSid, data: text });
-                          await rpc("write_pty", { sessionId: capturedSid, data: "\r" });
-                        }
-                      }}
-                      onDismiss={() => {
-                        terminalsStore.dismissSuggestedActions(capturedId);
-                      }}
-                    />
-                  );
-                })()}
-              </Show>
-            );
-          })()}
+          <SuggestOverlayContainer />
         </Show>
 
         {/* Drop overlay for external file drag & drop */}

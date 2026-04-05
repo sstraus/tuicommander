@@ -3,7 +3,7 @@ import { repositoriesStore } from "../../stores/repositories";
 import type { RepositoryState } from "../../stores/repositories";
 import { settingsStore } from "../../stores/settings";
 import { uiStore } from "../../stores/ui";
-import { repoSettingsStore } from "../../stores/repoSettings";
+import { getRepoColor } from "../../utils/repoColor";
 import { githubStore } from "../../stores/github";
 import type { ContextMenuItem } from "../ContextMenu";
 import { PrDetailPopover } from "../PrDetailPopover/PrDetailPopover";
@@ -177,9 +177,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
   /** Render a single RepoSection with all its props */
   const renderRepoSection = (repo: RepositoryState) => {
     // Color inheritance: repo color > group color > undefined
-    const repoColor = () => repoSettingsStore.get(repo.path)?.color;
-    const groupColor = () => repositoriesStore.getGroupForRepo(repo.path)?.color;
-    const nameColor = () => repoColor() || groupColor() || undefined;
+    const nameColor = () => getRepoColor(repo.path);
 
     return (
       <RepoSection

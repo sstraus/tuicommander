@@ -1,6 +1,6 @@
 import { Component, Show, For, createSignal, createEffect, createMemo, onCleanup } from "solid-js";
 import { repositoriesStore } from "../../stores/repositories";
-import { repoSettingsStore } from "../../stores/repoSettings";
+import { getRepoColor } from "../../utils/repoColor";
 import { updaterStore } from "../../stores/updater";
 import { useGitHub } from "../../hooks/useGitHub";
 import { uiStore } from "../../stores/ui";
@@ -120,9 +120,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   const activeRepoColor = () => {
     const activeRepoPath = repositoriesStore.state.activeRepoPath;
     if (!activeRepoPath) return undefined;
-    return repoSettingsStore.get(activeRepoPath)?.color
-      || repositoriesStore.getGroupForRepo(activeRepoPath)?.color
-      || undefined;
+    return getRepoColor(activeRepoPath);
   };
 
   const getRepoPath = () => props.repoPath;
@@ -399,8 +397,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                             <span
                               class={s.notifRepo}
                               style={(() => {
-                                const color = repoSettingsStore.get(notif.repoPath)?.color
-                                  || repositoriesStore.getGroupForRepo(notif.repoPath)?.color;
+                                const color = getRepoColor(notif.repoPath);
                                 return color ? { color } : undefined;
                               })()}
                             >

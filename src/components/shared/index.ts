@@ -2,5 +2,4 @@ export { default as panelStyles } from "./panel.module.css";
 export { default as editorHeaderStyles } from "./editor-header.module.css";
 export { default as dialogStyles } from "./dialog.module.css";
 export { default as gitStatusStyles } from "./git-status.module.css";
-export { BranchCombobox } from "./BranchCombobox";
-export type { BranchComboboxProps } from "./BranchCombobox";
+

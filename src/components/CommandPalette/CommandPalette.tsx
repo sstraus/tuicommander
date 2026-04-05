@@ -59,20 +59,12 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
     }
   };
 
-  // Reset selection when query changes
+  // Reset selection when query or result lists change
   createEffect(() => {
-    commandPaletteStore.state.query;
+    void commandPaletteStore.state.query;
+    void commandPaletteStore.state.contentResults.length;
+    void commandPaletteStore.state.terminalResults.length;
     setSelectedIndex(0);
-  });
-
-  // Also reset when content/terminal results change
-  createEffect(() => {
-    commandPaletteStore.state.contentResults.length;
-    if (mode() === "content") setSelectedIndex(0);
-  });
-  createEffect(() => {
-    commandPaletteStore.state.terminalResults.length;
-    if (mode() === "terminal") setSelectedIndex(0);
   });
 
   // Focus input when opened

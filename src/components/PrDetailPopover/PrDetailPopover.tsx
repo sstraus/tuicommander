@@ -2,6 +2,7 @@ import { Component, Show, createMemo, createSignal, onMount, onCleanup } from "s
 import { githubStore } from "../../stores/github";
 import { repositoriesStore } from "../../stores/repositories";
 import { repoSettingsStore } from "../../stores/repoSettings";
+import { getRepoColor } from "../../utils/repoColor";
 import { mdTabsStore } from "../../stores/mdTabs";
 import { repoDefaultsStore } from "../../stores/repoDefaults";
 import { agentConfigsStore } from "../../stores/agentConfigs";
@@ -248,11 +249,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
     document.removeEventListener("keydown", handleKeyDown);
   });
 
-  const repoColor = createMemo(() =>
-    repoSettingsStore.get(props.repoPath)?.color
-      || repositoriesStore.getGroupForRepo(props.repoPath)?.color
-      || undefined,
-  );
+  const repoColor = createMemo(() => getRepoColor(props.repoPath));
 
   const stateClass = () => {
     if (prData()?.is_draft) return "draft";

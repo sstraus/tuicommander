@@ -2,11 +2,7 @@ import { Component, For, Show, Switch, Match, createMemo } from "solid-js";
 import { paneLayoutStore, type PaneNode, type PaneBranch, type PaneLeaf, type PaneTab, type PaneTabType, MIN_PANE_RATIO } from "../../stores/paneLayout";
 import { Terminal } from "../Terminal";
 import { DiffTab } from "../DiffTab";
-import { PrDiffTab } from "../PrDiffTab";
-import { MarkdownTab } from "../MarkdownTab";
-import { PluginPanel } from "../PluginPanel";
-import { HtmlPreviewTab } from "../HtmlPreviewTab";
-import { ClaudeUsageDashboard } from "../ClaudeUsageDashboard";
+import { MdTabContent } from "../shared/MdTabContent";
 import { CodeEditorTab } from "../CodeEditorPanel";
 import { terminalsStore } from "../../stores/terminals";
 import { diffTabsStore } from "../../stores/diffTabs";
@@ -352,22 +348,9 @@ const TerminalPane: Component<{
 
 const MarkdownPane: Component<{ tabId: string; onClose: (id: string) => void }> = (props) => {
   const mdTab = () => mdTabsStore.get(props.tabId);
-  // Use ternary chain (like TerminalArea) for proper type narrowing
   return (
     <Show when={mdTab()} keyed>
-      {(tab) =>
-        tab.type === "claude-usage" ? (
-          <ClaudeUsageDashboard />
-        ) : tab.type === "plugin-panel" ? (
-          <PluginPanel tab={tab} onClose={() => props.onClose(props.tabId)} />
-        ) : tab.type === "pr-diff" ? (
-          <PrDiffTab prNumber={tab.prNumber} prTitle={tab.prTitle} diff={tab.diff} />
-        ) : tab.type === "html-preview" ? (
-          <HtmlPreviewTab tab={tab} onClose={() => props.onClose(props.tabId)} />
-        ) : (
-          <MarkdownTab tab={tab} onClose={() => props.onClose(props.tabId)} />
-        )
-      }
+      {(tab) => <MdTabContent tab={tab} onClose={() => props.onClose(props.tabId)} />}
     </Show>
   );
 };

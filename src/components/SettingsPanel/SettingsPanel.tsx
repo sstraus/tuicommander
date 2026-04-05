@@ -2,6 +2,7 @@ import { Component, Show, createEffect, createSignal } from "solid-js";
 import { repoSettingsStore, type RepoSettings } from "../../stores/repoSettings";
 import { repoDefaultsStore } from "../../stores/repoDefaults";
 import { repositoriesStore } from "../../stores/repositories";
+import { getRepoColor } from "../../utils/repoColor";
 import { uiStore } from "../../stores/ui";
 import { shortenHomePath } from "../../platform";
 import { pathBasename } from "../../utils/pathUtils";
@@ -63,10 +64,7 @@ function buildNavItems(): SettingsShellTab[] {
     items.push({ key: "__label__:Repositories", label: t("settings.repositories", "REPOSITORIES") });
     for (const repo of repos) {
       const label = repo.displayName || pathBasename(repo.path) || repo.path;
-      const color =
-        repoSettingsStore.get(repo.path)?.color ||
-        repositoriesStore.getGroupForRepo(repo.path)?.color ||
-        undefined;
+      const color = getRepoColor(repo.path);
       items.push({ key: `repo:${repo.path}`, label, color });
     }
   }

@@ -31,9 +31,6 @@ export type { PromptOverlayProps } from "./PromptOverlay";
 export { SettingsPanel } from "./SettingsPanel";
 export type { SettingsPanelProps } from "./SettingsPanel";
 
-export { BranchPopover } from "./BranchPopover";
-export type { BranchPopoverProps } from "./BranchPopover";
-
 export { IdeLauncher } from "./IdeLauncher";
 export type { IdeLauncherProps } from "./IdeLauncher";
 
