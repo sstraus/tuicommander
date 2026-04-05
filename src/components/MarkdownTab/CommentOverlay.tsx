@@ -140,17 +140,22 @@ export const CommentOverlay: Component<CommentOverlayProps> = (props) => {
   const openNewCommentPopover = () => {
     const sel = window.getSelection();
     const text = sel?.toString().trim() ?? "";
-    if (!text) return;
+    if (!text || !sel || sel.rangeCount === 0) return;
+
+    // Anchor the popover directly below the start of the selection.
+    // Reading the range BEFORE clearing the selection so we get real coordinates.
+    const range = sel.getRangeAt(0);
+    const rects = range.getClientRects();
+    const firstRect = rects.length > 0 ? rects[0] : range.getBoundingClientRect();
+    const lastRect = rects.length > 0 ? rects[rects.length - 1] : firstRect;
 
     // Snapshot the selection text before clearing it.
     pendingSelection = text;
-    // Clear the floating button and open popover.
     setBtnPos(null);
     setDraft("");
-    const pos = btnPos();
     setPopover({
-      x: pos?.x ?? 200,
-      y: pos?.y ?? 200,
+      x: firstRect.left,
+      y: lastRect.bottom + 8,
       mode: "new",
       selectionText: text,
     });
@@ -232,11 +237,22 @@ export const CommentOverlay: Component<CommentOverlayProps> = (props) => {
 
       {/* Popover (new comment or view/edit) */}
       <Show when={popover()}>
-        {(state) => (
+        {(state) => {
+          // Clamp to viewport so the popover never overflows the right/bottom edge.
+          // Width/height match the CSS in MarkdownTab.module.css (440 × ~240 expected).
+          const clamped = () => {
+            const margin = 12;
+            const w = 440;
+            const h = 240;
+            const x = Math.min(state().x, window.innerWidth - w - margin);
+            const y = Math.min(state().y, window.innerHeight - h - margin);
+            return { x: Math.max(margin, x), y: Math.max(margin, y) };
+          };
+          return (
           <div
             class={s.popover}
             data-tweak-popover="1"
-            style={{ left: `${state().x}px`, top: `${state().y}px` }}
+            style={{ left: `${clamped().x}px`, top: `${clamped().y}px` }}
             onKeyDown={handlePopoverKeyDown}
           >
             {/* Preview of highlighted text */}
@@ -269,7 +285,8 @@ export const CommentOverlay: Component<CommentOverlayProps> = (props) => {
               </button>
             </div>
           </div>
-        )}
+          );
+        }}
       </Show>
     </Portal>
   );

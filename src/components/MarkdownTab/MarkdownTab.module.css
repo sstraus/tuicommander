@@ -65,30 +65,31 @@
 .popover {
   position: fixed;
   z-index: 9001;
-  min-width: 260px;
-  max-width: 360px;
+  width: 440px;
+  max-width: calc(100vw - 32px);
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   box-shadow: 0 4px 16px rgba(0,0,0,0.35);
-  padding: 10px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .popoverTextarea {
   resize: vertical;
-  min-height: 72px;
+  min-height: 110px;
   width: 100%;
   box-sizing: border-box;
   background: var(--bg-primary);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--fg-primary);
-  font-size: var(--font-sm);
+  font-size: var(--font-base);
   font-family: var(--font-ui);
-  padding: 6px 8px;
+  line-height: 1.4;
+  padding: 8px 10px;
   outline: none;
 }
 
