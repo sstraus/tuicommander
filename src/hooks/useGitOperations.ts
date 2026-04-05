@@ -463,8 +463,6 @@ export function useGitOperations(deps: GitOperationsDeps) {
       } else {
         appLogger.info("terminal", `BranchSelect SKIP save lastActiveTerminal — activeId=${currentActiveId} not in branch terminals ${JSON.stringify(prevBranch?.terminals)}`);
       }
-      // Layout persistence is handled by paneLayoutStore (Story #1054)
-      repositoriesStore.setBranch(prevRepo.path, prevRepo.activeBranch, { layout: undefined });
     }
 
     // Batch all reactive updates so downstream effects (file browser, etc.)
@@ -567,12 +565,12 @@ export function useGitOperations(deps: GitOperationsDeps) {
       }
     } else if (!branch?.hadTerminals) {
       // First time selecting this branch — auto-spawn a terminal
-      terminalsStore.setLayout({ direction: "none", panes: [], ratios: [], activePaneIndex: 0 });
+      paneLayoutStore.reset();
       await handleAddTerminalToBranch(repoPath, branchName);
     } else {
       // hadTerminals && no valid terminals → user closed them all, show empty state.
       // Clear layout and activeId so the previous branch's split doesn't bleed through.
-      terminalsStore.setLayout({ direction: "none", panes: [], ratios: [], activePaneIndex: 0 });
+      paneLayoutStore.reset();
       terminalsStore.setActive(null);
     }
 

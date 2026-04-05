@@ -9,7 +9,6 @@ function resetStores() {
   for (const id of terminalsStore.getIds()) {
     terminalsStore.remove(id);
   }
-  terminalsStore.setLayout({ direction: "none", panes: [], ratios: [], activePaneIndex: 0 });
   paneLayoutStore.reset();
   resetGroupCounter();
 }

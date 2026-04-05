@@ -2,7 +2,6 @@ import { batch } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "../invoke";
 import type { SavedTerminal } from "../types";
-import type { TabLayout } from "./terminals";
 import { appLogger } from "./appLogger";
 import { makeBranchKey } from "./tabManager";
 
@@ -25,8 +24,6 @@ export interface BranchState {
   savedTerminals?: SavedTerminal[]; // Persisted terminal metadata for session restore
   /** CI auto-heal: when enabled, CI failures trigger automatic agent fix cycles */
   ciAutoHeal?: { enabled: boolean; attempts: number; lastRunId?: number; healing?: boolean };
-  /** Split layout — persisted per-branch, restored on branch switch */
-  layout?: TabLayout;
 }
 
 /** Repository with branches */

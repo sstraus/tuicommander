@@ -70,9 +70,6 @@ function collectTerminalSnapshots(): Map<string, Map<string, SavedTerminal[]>> {
         }
         const branchMap = snapshots.get(repoPath);
         if (branchMap) branchMap.set(branchName, saved);
-
-        // Layout persistence is handled by paneLayoutStore (Story #1054)
-        repositoriesStore.setBranch(repoPath, branchName, { layout: undefined });
       }
     }
   }

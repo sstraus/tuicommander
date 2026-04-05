@@ -26,7 +26,6 @@ function resetStores() {
   for (const path of repositoriesStore.getPaths()) {
     repositoriesStore.remove(path);
   }
-  terminalsStore.setLayout({ direction: "none", panes: [], ratios: [], activePaneIndex: 0 });
   paneLayoutStore.reset();
   resetGroupCounter();
 }
