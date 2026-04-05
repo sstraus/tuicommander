@@ -10,6 +10,7 @@ import { FileIcon } from "../FileBrowserPanel/FileIcon";
 import type { ActionEntry } from "../../actions/actionRegistry";
 import type { ContentMatch, DirEntry } from "../../types/fs";
 import type { TerminalMatch } from "../../types";
+import { buildIndex } from "../../utils/bm25";
 import shared from "../shared/dialog.module.css";
 import s from "./CommandPalette.module.css";
 
@@ -26,28 +27,48 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
   const mode = () => commandPaletteStore.mode();
   const searchQuery = () => commandPaletteStore.searchQuery();
 
-  /** Filter and sort actions: recent first, then alphabetical. Substring match on label + category. */
+  /**
+   * Rebuild the BM25 index whenever the action list changes. The corpus is
+   * small (~100 items) so building per change is cheap and keeps scoring
+   * allocation-free per keystroke.
+   */
+  const bm25Index = createMemo(() =>
+    buildIndex(
+      props.actions.map((a) => ({ item: a, text: `${a.label} ${a.category}` })),
+    ),
+  );
+
+  /**
+   * Empty query → recent actions first, then alphabetical.
+   * Non-empty query → BM25 ranked; ties and non-matches fall back to the
+   * recency/alphabetical order so frequently used commands stay reachable.
+   */
   const filteredActions = createMemo(() => {
     if (mode() !== "command") return [];
-    const query = commandPaletteStore.state.query.toLowerCase();
+    const query = commandPaletteStore.state.query;
     const recent = commandPaletteStore.state.recentActions;
-    let actions = props.actions;
 
-    if (query) {
-      actions = actions.filter(
-        (a) => a.label.toLowerCase().includes(query) || a.category.toLowerCase().includes(query),
-      );
-    }
-
-    // Sort: recent actions first (by recency rank), then alphabetical
-    return [...actions].sort((a, b) => {
+    const baseSort = (a: ActionEntry, b: ActionEntry) => {
       const aRecent = recent.indexOf(a.id);
       const bRecent = recent.indexOf(b.id);
       if (aRecent !== -1 && bRecent !== -1) return aRecent - bRecent;
       if (aRecent !== -1) return -1;
       if (bRecent !== -1) return 1;
       return a.label.localeCompare(b.label);
-    });
+    };
+
+    if (!query.trim()) {
+      return [...props.actions].sort(baseSort);
+    }
+
+    const ranked = bm25Index().score(query);
+    // Stable tiebreaker: equal scores fall back to recency + alphabetical.
+    return ranked
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return baseSort(a.item, b.item);
+      })
+      .map((r) => r.item);
   });
 
   /** Item count for the current mode */
