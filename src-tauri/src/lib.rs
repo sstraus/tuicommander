@@ -725,6 +725,7 @@ pub fn run() {
         session_states: dashmap::DashMap::new(),
         mcp_upstream_registry: Arc::new(mcp_proxy::registry::UpstreamRegistry::new()),
         mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
+        tool_search_index: Arc::new(parking_lot::RwLock::new(crate::tool_search::ToolSearchIndex::build(&[]))),
         slash_mode: DashMap::new(),
         last_output_ms: DashMap::new(),
         shell_states: DashMap::new(),
@@ -761,6 +762,9 @@ pub fn run() {
             rt.block_on(async move {
                 // Start session state accumulator (consumes broadcast events)
                 AppState::spawn_session_state_accumulator(accumulator_state);
+
+                // Start tool search index updater (rebuilds on mcp_tools_changed)
+                crate::mcp_http::mcp_transport::spawn_tool_search_index_updater(boot_registry_state.clone());
 
                 // Auto-connect saved upstream MCP servers on boot
                 crate::mcp_upstream_config::auto_connect_saved_upstreams(&boot_registry_state).await;

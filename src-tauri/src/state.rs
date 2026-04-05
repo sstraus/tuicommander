@@ -845,6 +845,12 @@ pub struct AppState {
     /// Broadcast channel for MCP `notifications/tools/list_changed`.
     /// Fired when native tools are toggled or upstream tool lists change.
     pub(crate) mcp_tools_changed: tokio::sync::broadcast::Sender<()>,
+    /// Cached BM25 search index over the full tool corpus (native + upstream),
+    /// filtered by `disabled_native_tools`. Used by the MCP `search_tools` /
+    /// `get_tool_schema` meta-handlers and the Command Palette. Rebuilt on
+    /// every `mcp_tools_changed` signal by the updater task in
+    /// `mcp_http::mcp_transport::spawn_tool_search_index_updater`.
+    pub(crate) tool_search_index: Arc<parking_lot::RwLock<crate::tool_search::ToolSearchIndex>>,
     /// Per-session slash command mode (true when input starts with `/`).
     /// Used to suppress false-positive slash menu detection on PTY output.
     pub(crate) slash_mode: DashMap<String, std::sync::atomic::AtomicBool>,
@@ -1915,6 +1921,7 @@ pub(crate) mod tests_support {
             session_states: DashMap::new(),
             mcp_upstream_registry: Arc::new(crate::mcp_proxy::registry::UpstreamRegistry::new()),
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
+            tool_search_index: Arc::new(parking_lot::RwLock::new(crate::tool_search::ToolSearchIndex::build(&[]))),
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
             shell_states: DashMap::new(),
@@ -2344,6 +2351,7 @@ mod tests {
             session_states: DashMap::new(),
             mcp_upstream_registry: Arc::new(crate::mcp_proxy::registry::UpstreamRegistry::new()),
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
+            tool_search_index: Arc::new(parking_lot::RwLock::new(crate::tool_search::ToolSearchIndex::build(&[]))),
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
             shell_states: DashMap::new(),

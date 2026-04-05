@@ -5,7 +5,7 @@ mod fs_routes;
 mod git_routes;
 mod log_routes;
 mod github_routes;
-mod mcp_transport;
+pub(crate) mod mcp_transport;
 mod plugin_docs;
 mod session;
 mod sse_routes;
@@ -940,6 +940,7 @@ mod tests {
             session_states: dashmap::DashMap::new(),
             mcp_upstream_registry: std::sync::Arc::new(crate::mcp_proxy::registry::UpstreamRegistry::new()),
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
+            tool_search_index: std::sync::Arc::new(parking_lot::RwLock::new(crate::tool_search::ToolSearchIndex::build(&[]))),
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
             shell_states: DashMap::new(),

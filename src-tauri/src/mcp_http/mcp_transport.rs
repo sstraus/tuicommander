@@ -448,6 +448,8 @@ fn require_path(args: &serde_json::Value, action: &str) -> Result<String, serde_
 /// Unlike [`merged_tool_definitions`], this bypasses the `collapse_tools`
 /// branch: when collapsed, the client sees only the 3 meta-tools but the
 /// handlers still need the full list to search over and dispatch to.
+///
+/// Upstream allow/deny filters are applied inside `aggregated_tools()`.
 fn searchable_tool_definitions(state: &Arc<AppState>) -> Vec<serde_json::Value> {
     let disabled = state.config.read().disabled_native_tools.clone();
     let mut tools: Vec<serde_json::Value> = native_tool_definitions()
@@ -464,6 +466,38 @@ fn searchable_tool_definitions(state: &Arc<AppState>) -> Vec<serde_json::Value> 
     tools
 }
 
+/// Rebuild the cached `tool_search_index` from the current state.
+///
+/// Called on startup and on every `mcp_tools_changed` signal (native tool
+/// toggle, upstream add/remove, upstream tools/list_changed).
+pub(crate) fn rebuild_tool_search_index(state: &Arc<AppState>) {
+    let tools = searchable_tool_definitions(state);
+    let index = crate::tool_search::ToolSearchIndex::build(&tools);
+    *state.tool_search_index.write() = index;
+}
+
+/// Spawn the background task that subscribes to `mcp_tools_changed` and
+/// rebuilds `tool_search_index` on every signal. Also does an initial build
+/// so the index is populated immediately.
+pub(crate) fn spawn_tool_search_index_updater(state: Arc<AppState>) {
+    // Initial build so search_tools works before the first tools_changed signal.
+    rebuild_tool_search_index(&state);
+
+    let mut rx = state.mcp_tools_changed.subscribe();
+    tokio::spawn(async move {
+        loop {
+            match rx.recv().await {
+                Ok(()) => rebuild_tool_search_index(&state),
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    tracing::warn!(source = "tool_search_index", lagged = n, "tools_changed bus lagged — rebuilding");
+                    rebuild_tool_search_index(&state);
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
+}
+
 /// Handle `search_tools` meta-tool — BM25 search over the full corpus.
 fn handle_search_tools(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
     let query = match args["query"].as_str() {
@@ -474,8 +508,7 @@ fn handle_search_tools(state: &Arc<AppState>, args: &serde_json::Value) -> serde
     };
     let limit = args["limit"].as_u64().unwrap_or(10).clamp(1, 100) as usize;
 
-    let tools = searchable_tool_definitions(state);
-    let index = crate::tool_search::ToolSearchIndex::build(&tools);
+    let index = state.tool_search_index.read();
     let results = index.search(query, limit);
 
     let ranked: Vec<serde_json::Value> = results
@@ -494,8 +527,7 @@ fn handle_get_tool_schema(state: &Arc<AppState>, args: &serde_json::Value) -> se
         }),
     };
 
-    let tools = searchable_tool_definitions(state);
-    let index = crate::tool_search::ToolSearchIndex::build(&tools);
+    let index = state.tool_search_index.read();
 
     match index.get_schema(tool_name) {
         Some(def) => def.clone(),
@@ -2050,7 +2082,7 @@ mod tests {
     use super::*;
 
     fn test_state() -> Arc<AppState> {
-        Arc::new(AppState {
+        let state = Arc::new(AppState {
             sessions: dashmap::DashMap::new(),
             worktrees_dir: std::env::temp_dir().join("test-worktrees"),
             metrics: crate::SessionMetrics::new(),
@@ -2081,6 +2113,7 @@ mod tests {
             session_states: dashmap::DashMap::new(),
             mcp_upstream_registry: std::sync::Arc::new(crate::mcp_proxy::registry::UpstreamRegistry::new()),
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
+            tool_search_index: std::sync::Arc::new(parking_lot::RwLock::new(crate::tool_search::ToolSearchIndex::build(&[]))),
             slash_mode: dashmap::DashMap::new(),
             last_output_ms: dashmap::DashMap::new(),
             shell_states: dashmap::DashMap::new(),
@@ -2096,7 +2129,12 @@ mod tests {
             push_store: crate::push::PushStore::load(&std::env::temp_dir()),
             mobile_push_active: std::sync::atomic::AtomicBool::new(false),
             server_start_time: std::time::Instant::now(),
-        })
+        });
+        // Populate the cached tool search index so handlers that read from
+        // it (search_tools, get_tool_schema) work in tests without requiring
+        // the background updater task.
+        rebuild_tool_search_index(&state);
+        state
     }
 
     #[tokio::test]
@@ -2481,6 +2519,7 @@ mod tests {
     fn search_tools_excludes_disabled_native_tools() {
         let state = test_state();
         state.config.write().disabled_native_tools = vec!["session".to_string()];
+        rebuild_tool_search_index(&state);
 
         let r = handle_search_tools(&state, &serde_json::json!({ "query": "terminal session" }));
         let results = r["results"].as_array().unwrap();
@@ -2538,6 +2577,7 @@ mod tests {
     fn get_tool_schema_excludes_disabled_native_tools() {
         let state = test_state();
         state.config.write().disabled_native_tools = vec!["debug".to_string()];
+        rebuild_tool_search_index(&state);
         let r = handle_get_tool_schema(&state, &serde_json::json!({ "tool_name": "debug" }));
         assert!(r["error"].as_str().is_some());
     }
@@ -2708,5 +2748,91 @@ mod tests {
         )
         .await;
         assert!(r["error"].as_str().unwrap().contains("action"));
+    }
+
+    // ---- ToolSearchIndex lifecycle (story 1080) ------------------------------
+
+    /// Fresh AppState constructed outside the tests-only test_state() helper
+    /// (which eagerly rebuilds) starts with an empty cached index. This pins
+    /// the invariant that the default field value is empty.
+    #[test]
+    fn tool_search_index_default_is_empty() {
+        // Mirror the lib-default construction (no eager rebuild).
+        let idx = crate::tool_search::ToolSearchIndex::build(&[]);
+        assert!(idx.is_empty());
+    }
+
+    /// After `rebuild_tool_search_index`, the cache contains every native
+    /// tool from `native_tool_definitions()`.
+    #[test]
+    fn rebuild_tool_search_index_populates_all_native_tools() {
+        let state = test_state(); // test_state() already calls rebuild internally.
+        let idx = state.tool_search_index.read();
+        let native_count = native_tool_definitions().as_array().unwrap().len();
+        assert_eq!(idx.len(), native_count);
+        // Spot-check a few well-known native tools by name.
+        assert!(idx.get_schema("session").is_some());
+        assert!(idx.get_schema("github").is_some());
+        assert!(idx.get_schema("agent").is_some());
+    }
+
+    /// After mutating `disabled_native_tools` and rebuilding, the disabled
+    /// tool no longer appears in the cached index.
+    #[test]
+    fn rebuild_tool_search_index_respects_disabled_native_tools() {
+        let state = test_state();
+        assert!(state.tool_search_index.read().get_schema("session").is_some());
+        state.config.write().disabled_native_tools = vec!["session".to_string()];
+        rebuild_tool_search_index(&state);
+        assert!(state.tool_search_index.read().get_schema("session").is_none());
+    }
+
+    /// The background updater task subscribes to `mcp_tools_changed` and
+    /// rebuilds the cached index on every signal. This is what wires upstream
+    /// add/remove, native-tool toggle, and collapse-tools toggle events into
+    /// the cache without each call site having to rebuild manually.
+    #[tokio::test]
+    async fn tool_search_index_rebuilds_on_broadcast() {
+        let state = test_state();
+
+        // Start the updater — it does its own initial rebuild, then loops on the broadcast.
+        spawn_tool_search_index_updater(state.clone());
+        // Give the initial build a moment to land.
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        assert!(state.tool_search_index.read().get_schema("session").is_some());
+
+        // Mutate config and fire the signal; the updater must rebuild.
+        state.config.write().disabled_native_tools = vec!["session".to_string()];
+        let _ = state.mcp_tools_changed.send(());
+
+        // Poll for the rebuild with a short deadline — the task is async.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+        while std::time::Instant::now() < deadline {
+            if state.tool_search_index.read().get_schema("session").is_none() {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        panic!("tool_search_index was not rebuilt after mcp_tools_changed signal");
+    }
+
+    /// Toggling `collapse_tools` must not corrupt the searchable corpus:
+    /// the cache always holds the full tool list regardless of the collapse
+    /// state (collapse only affects what the client sees via tools/list).
+    #[tokio::test]
+    async fn tool_search_index_ignores_collapse_tools_toggle() {
+        let state = test_state();
+        spawn_tool_search_index_updater(state.clone());
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        let before = state.tool_search_index.read().len();
+
+        state.config.write().collapse_tools = true;
+        let _ = state.mcp_tools_changed.send(());
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let after = state.tool_search_index.read().len();
+        assert_eq!(before, after, "collapse_tools toggle must not change searchable corpus size");
+        // And native tools must still be searchable.
+        assert!(state.tool_search_index.read().get_schema("session").is_some());
     }
 }
