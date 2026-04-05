@@ -8,6 +8,13 @@ import { editorTabsStore } from "../../stores/editorTabs";
 import { diffTabsStore } from "../../stores/diffTabs";
 import { invoke } from "../../invoke";
 import { mdTabsStore, type MdTabData, type FileTab } from "../../stores/mdTabs";
+import { CommentOverlay } from "./CommentOverlay";
+import {
+  insertTweakComment,
+  removeTweakComment,
+  updateTweakComment,
+  type TweakComment,
+} from "../../utils/tweakComments";
 import { markdownProviderRegistry } from "../../plugins/markdownProviderRegistry";
 import { DomSearchEngine } from "../shared/DomSearchEngine";
 import type { SearchOptions } from "../shared/DomSearchEngine";
@@ -38,6 +45,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
   const contextMenu = createContextMenu();
   let wrapperRef: HTMLDivElement | undefined;
   let contentRef: HTMLDivElement | undefined;
+  let overlayContentRef: HTMLDivElement | undefined;
   let engine: DomSearchEngine | undefined;
   let lastSearchTerm = "";
   let lastSearchOpts: SearchOptions = { caseSensitive: false, regex: false, wholeWord: false };
@@ -228,6 +236,51 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
     mdTabsStore.add(ft.repoPath, resolved, ft.fsRoot);
   };
 
+  /** Write the updated markdown source back to disk and refresh displayed content. */
+  const writeTweakedSource = async (updatedContent: string) => {
+    const tab = props.tab;
+    if (tab.type !== "file") return;
+    const ft = tab as FileTab;
+    const root = ft.fsRoot || ft.repoPath;
+
+    try {
+      if (root) {
+        await invoke<void>("write_file", { repoPath: root, file: ft.filePath, content: updatedContent });
+      } else if (ft.filePath.startsWith("/")) {
+        await invoke<void>("write_external_file", { path: ft.filePath, content: updatedContent });
+      } else {
+        appLogger.error("app", "writeTweakedSource: cannot resolve write target", { filePath: ft.filePath });
+        return;
+      }
+      setContent(updatedContent);
+    } catch (err) {
+      appLogger.error("app", "writeTweakedSource: write failed", err);
+    }
+  };
+
+  const handleTweakSave = async (comment: TweakComment) => {
+    const current = content();
+    // If the id already exists in the source, it's an edit; otherwise it's a new insert.
+    const isExisting = current.includes(`<!--tweak:begin:${comment.id}-->`);
+    try {
+      const updated = isExisting
+        ? updateTweakComment(current, comment.id, comment.comment)
+        : insertTweakComment(current, comment);
+      await writeTweakedSource(updated);
+    } catch (err) {
+      appLogger.error("app", "handleTweakSave failed", err);
+    }
+  };
+
+  const handleTweakDelete = async (id: string) => {
+    try {
+      const updated = removeTweakComment(content(), id);
+      await writeTweakedSource(updated);
+    } catch (err) {
+      appLogger.error("app", "handleTweakDelete failed", err);
+    }
+  };
+
   const handleEdit = () => {
     const tab = props.tab;
     if (tab.type === "file") {
@@ -323,7 +376,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
           content={content()}
           baseDir={baseDir()}
           onLinkClick={handleMdLink}
-          contentRef={(el) => { contentRef = el; }}
+          contentRef={(el) => { contentRef = el; overlayContentRef = el; }}
           emptyMessage={
             loading()
               ? t("markdownTab.loading", "Loading...")
@@ -333,6 +386,14 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
           }
         />
       </div>
+
+      <Show when={props.tab.type === "file" && !!overlayContentRef}>
+        <CommentOverlay
+          contentRef={overlayContentRef!}
+          onSave={(c) => { void handleTweakSave(c); }}
+          onDelete={(id) => { void handleTweakDelete(id); }}
+        />
+      </Show>
 
       <ContextMenu
         items={[{ label: t("markdownTab.copyPath", "Copy Path"), action: handleCopyPath }]}

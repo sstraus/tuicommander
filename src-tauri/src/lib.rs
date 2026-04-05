@@ -465,6 +465,18 @@ fn read_external_file(path: String) -> Result<String, String> {
         .map_err(|e| format!("Failed to read file: {e}"))
 }
 
+/// Write a file at an absolute path (used by the UI for files outside any registered repo,
+/// e.g. markdown files opened via absolute path without a git root).
+#[tauri::command]
+fn write_external_file(path: String, content: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    if !p.is_absolute() {
+        return Err("write_external_file requires an absolute path".to_string());
+    }
+    std::fs::write(p, content)
+        .map_err(|e| format!("Failed to write file: {e}"))
+}
+
 /// Get MCP server status (running, port, active sessions).
 /// Async to avoid blocking the Tauri IPC thread during the TCP self-test.
 #[tauri::command]
@@ -931,6 +943,7 @@ pub fn run() {
             list_markdown_files,
             read_file,
             read_external_file,
+            write_external_file,
             github::get_github_status,
             pty::get_orchestrator_stats,
             pty::get_session_metrics,

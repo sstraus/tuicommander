@@ -4,6 +4,7 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { stripAnsi } from "../../utils/stripAnsi";
 import { appLogger } from "../../stores/appLogger";
+import { applyTweakHighlights } from "../../utils/tweakComments";
 
 export interface MarkdownRendererProps {
   content: string;
@@ -32,7 +33,10 @@ export const MarkdownRenderer: Component<MarkdownRendererProps> = (props) => {
   const processedContent = createMemo(() => {
     const cleaned = stripAnsi(props.content);
     try {
-      let html = marked.parse(cleaned, { async: false }) as string;
+      // Convert tweak markers to highlight spans before markdown parsing,
+      // so they survive the marked+DOMPurify pipeline intact.
+      const withHighlights = applyTweakHighlights(cleaned);
+      let html = marked.parse(withHighlights, { async: false }) as string;
       // Rewrite relative image src attributes to loadable asset:// URLs.
       // Relative paths (not starting with http/data/asset) are resolved
       // against baseDir so images render correctly in the Tauri WebView.
@@ -44,7 +48,9 @@ export const MarkdownRenderer: Component<MarkdownRendererProps> = (props) => {
             `${prefix}${convertFileSrc(`${baseDir}/${relativePath}`)}"`,
         );
       }
-      return DOMPurify.sanitize(stripEventHandlers(html));
+      return DOMPurify.sanitize(stripEventHandlers(html), {
+        ADD_ATTR: ["data-tweak-id", "data-tweak-comment-b64"],
+      });
     } catch (err) {
       appLogger.error("app", "Markdown parsing error", err);
       return `<pre>${cleaned}</pre>`;
