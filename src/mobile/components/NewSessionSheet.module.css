@@ -39,7 +39,7 @@
   padding: 12px 16px;
   border: none;
   background: none;
-  color: var(--foreground);
+  color: var(--fg-primary);
   width: 100%;
   text-align: left;
   cursor: pointer;

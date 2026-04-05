@@ -42,7 +42,7 @@
 
 .error {
   padding: 12px;
-  color: var(--status-error);
+  color: var(--error);
   font-family: var(--font-mono);
   font-size: 14px;
 }

@@ -225,7 +225,7 @@
   justify-content: center;
   width: 100%;
   height: 100%;
-  color: var(--text-secondary);
+  color: var(--fg-secondary);
   font-size: 13px;
   opacity: 0.5;
 }

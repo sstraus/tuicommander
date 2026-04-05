@@ -35,8 +35,8 @@
 }
 
 .danger {
-  color: var(--status-error);
-  border-color: var(--status-error);
+  color: var(--error);
+  border-color: var(--error);
   font-weight: 600;
 }
 

@@ -176,6 +176,6 @@
 }
 
 .killBtn:active {
-  color: var(--status-error);
+  color: var(--error);
   background: rgba(255, 80, 80, 0.1);
 }

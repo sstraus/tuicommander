@@ -24,7 +24,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--foreground-muted);
+  color: var(--fg-muted);
   font-family: var(--font-ui);
 }
 
@@ -60,6 +60,6 @@
 
 .permissionChip {
   composes: chip;
-  color: var(--status-warning);
-  border-color: var(--status-warning);
+  color: var(--warning);
+  border-color: var(--warning);
 }

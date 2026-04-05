@@ -148,7 +148,7 @@
   padding: 32px 48px;
   border: 2px dashed var(--accent);
   border-radius: 12px;
-  color: var(--text-primary);
+  color: var(--fg-primary);
   font-size: 14px;
   opacity: 0.9;
 }
