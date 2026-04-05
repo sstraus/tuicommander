@@ -83,16 +83,19 @@ impl ToolSearchIndex {
     }
 
     /// Get all indexed tool entries (for help/listing).
+    #[cfg(test)]
     pub fn entries(&self) -> &[ToolEntry] {
         &self.entries
     }
 
     /// Number of indexed tools.
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
     /// Whether the index is empty.
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }

@@ -68,7 +68,11 @@ Enable the HTTP API server for external tool integration:
 
 ### TUIC Tools
 
-Native tools exposed to AI agents via MCP. Each tool can be individually enabled or disabled to restrict what agents can access:
+Native tools exposed to AI agents via MCP. Each tool can be individually enabled or disabled to restrict what agents can access.
+
+**Collapse tools** (checkbox) — when enabled, replaces the full tool list sent to AI agents with 3 lazy-discovery meta-tools (`search_tools`, `get_tool_schema`, `call_tool`). Cuts the baseline MCP context cost from ~35k tokens to ~500 tokens per agent turn; the agent fetches schemas on demand via BM25-ranked search. Default: off. Toggling refreshes connected clients via `notifications/tools/list_changed`.
+
+Tools:
 - **session** — PTY terminal session management
 - **git** — Repository state queries
 - **agent** — AI agent detection and spawning

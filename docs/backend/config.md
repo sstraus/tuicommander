@@ -37,6 +37,7 @@ pub fn save_json_config<T: Serialize>(filename: &str, config: &T) -> Result<(), 
 | `ide` | `String` | `"cursor"` | IDE for "Open in..." |
 | `default_font_size` | `u16` | `12` | Default font size for reset |
 | `mcp_server_enabled` | `bool` | `false` | Enable MCP HTTP server |
+| `collapse_tools` | `bool` | `false` | Replace the full MCP tool list with 3 lazy-discovery meta-tools (`search_tools`, `get_tool_schema`, `call_tool`) — see [`mcp-http.md`](mcp-http.md#lazy-tool-discovery-collapse_tools) |
 | `remote_access_enabled` | `bool` | `false` | Enable remote access |
 | `remote_access_port` | `u16` | `3100` | Remote access port |
 | `remote_access_username` | `String` | `""` | Basic auth username |

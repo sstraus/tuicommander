@@ -70,9 +70,21 @@ When adding routes or changing server behavior:
 | File | What to update |
 |------|----------------|
 | `docs/api/http-api.md` | REST endpoint reference |
-| `docs/backend/mcp-http.md` | Server architecture, routing |
+| `docs/backend/mcp-http.md` | Server architecture, routing, lazy tool discovery (`collapse_tools` / meta-tools) |
 | `docs/user-guide/remote-access.md` | User setup guide |
 | `src-tauri/src/mcp_http/plugin_docs.rs` | PLUGIN_DOCS (if plugin-facing) |
+
+### MCP Tool Surface (native tools, upstream proxy, meta-tools)
+When changing the tool list, tool handlers, `disabled_native_tools`, upstream allow/deny filters, or the Speakeasy meta-tools:
+
+| File | What to update |
+|------|----------------|
+| `src-tauri/src/mcp_http/mcp_transport.rs` | Tool definitions, `merged_tool_definitions`, `searchable_tool_definitions`, meta-tool handlers (`search_tools`, `get_tool_schema`, `call_tool`), `build_mcp_instructions` |
+| `src-tauri/src/mcp_proxy/registry.rs` | `aggregated_tools`, `proxy_tool_call` (filter is enforced on BOTH — discovery no longer gates dispatch under `collapse_tools`) |
+| `src-tauri/src/tool_search.rs` | BM25 `ToolSearchIndex` backing `search_tools` / `get_tool_schema` |
+| `docs/backend/mcp-http.md` | Lazy Tool Discovery section, meta-tool table, filter-enforcement note |
+| `docs/backend/config.md` | `collapse_tools` field in `AppConfig` table |
+| `docs/user-guide/settings.md` | Services Tab — "Collapse tools" checkbox description |
 
 ### Git & Worktree Integration
 When modifying git operations, worktree logic, or GitHub API:
@@ -145,7 +157,7 @@ When adding or changing `tuic://` schemes:
 | `docs/backend/git.md` | Git operations |
 | `docs/backend/github.md` | GitHub API integration |
 | `docs/backend/config.md` | Configuration file management |
-| `docs/backend/mcp-http.md` | MCP/HTTP server |
+| `docs/backend/mcp-http.md` | MCP/HTTP server, lazy tool discovery, meta-tools |
 | `docs/backend/dictation.md` | Whisper voice dictation |
 | `docs/backend/error-classification.md` | Error types and backoff |
 | `docs/frontend/STYLE_GUIDE.md` | Visual design rules |

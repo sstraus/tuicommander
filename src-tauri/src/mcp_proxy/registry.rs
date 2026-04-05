@@ -299,6 +299,16 @@ impl UpstreamRegistry {
 
         let entry = Arc::clone(entry.value());
 
+        // Re-apply the allow/deny filter at call time. Listing already excludes
+        // filtered tools from discovery, but with the collapsed meta-tool API
+        // an agent can call any tool by exact name — so the filter must also
+        // gate dispatch, not just enumeration.
+        if !apply_filter(tool_name, &entry.config) {
+            return Err(format!(
+                "Tool '{tool_name}' on upstream '{upstream_name}' is blocked by its allow/deny filter"
+            ));
+        }
+
         // Block calls while backoff is active or upstream permanently failed
         if entry.cb.is_open() {
             return Err(format!("Circuit open for upstream '{upstream_name}' (backoff active, will retry)"));
@@ -985,6 +995,38 @@ mod tests {
         let tools = registry.aggregated_tools();
         assert_eq!(tools.len(), 1);
         assert_eq!(tools[0]["name"], format!("{name}__safe_read"));
+    }
+
+    // -----------------------------------------------------------------------
+    // proxy_tool_call filter enforcement
+    // -----------------------------------------------------------------------
+
+    /// With the Speakeasy `call_tool` meta-tool, agents can invoke any upstream
+    /// tool by exact name — discovery no longer gates dispatch. The filter
+    /// must therefore be re-checked on the call path, otherwise a known denied
+    /// tool name bypasses the allow/deny list.
+    #[tokio::test]
+    async fn proxy_tool_call_rejects_denied_tool_by_name() {
+        let registry = UpstreamRegistry::new();
+        let config = config_with_filter(FilterMode::Deny, &["secret_*"]);
+        let name = config.name.clone();
+        let client = HttpMcpClient::new(name.clone(), "http://x/mcp".to_string(), 10);
+        let entry = Arc::new(UpstreamEntry::new(
+            config,
+            UpstreamClient::Http(tokio::sync::RwLock::new(client)),
+        ));
+        *entry.tools.write() = vec![make_tool_def("secret_key"), make_tool_def("safe_read")];
+        *entry.status.write() = UpstreamStatus::Ready;
+        registry.entries.insert(name.clone(), entry);
+
+        let err = registry
+            .proxy_tool_call(&format!("{name}__secret_key"), serde_json::json!({}))
+            .await
+            .expect_err("denied tool must be blocked at call time");
+        assert!(
+            err.contains("blocked by its allow/deny filter"),
+            "unexpected error: {err}"
+        );
     }
 
     // -----------------------------------------------------------------------

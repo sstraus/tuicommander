@@ -2482,6 +2482,36 @@ mod tests {
         assert_eq!(names, vec!["search_tools", "get_tool_schema", "call_tool"]);
     }
 
+    /// Sanity check on the token-reduction claim for lazy tool loading.
+    /// Measured on the native-only test state (no upstreams registered):
+    /// baseline ≈ 11 KiB, collapsed ≈ 1.7 KiB — roughly 6.7× reduction.
+    /// In production with typical upstreams (100+ tools) the baseline is
+    /// ~35 KiB, pushing the real reduction toward ~20×. Thresholds here
+    /// are regression guards, not targets, so they use the conservative
+    /// native-only numbers.
+    #[test]
+    fn collapse_tools_payload_size_meets_reduction_target() {
+        let state = test_state();
+
+        let baseline = serde_json::to_vec(&merged_tool_definitions(&state))
+            .expect("serialize baseline")
+            .len();
+
+        state.config.write().collapse_tools = true;
+        let collapsed = serde_json::to_vec(&merged_tool_definitions(&state))
+            .expect("serialize collapsed")
+            .len();
+
+        assert!(
+            collapsed < 4096,
+            "collapsed tools/list must stay under 4 KiB, got {collapsed} bytes"
+        );
+        assert!(
+            baseline >= collapsed * 5,
+            "expected >=5x reduction on native-only state, baseline={baseline} collapsed={collapsed}"
+        );
+    }
+
     #[test]
     fn merged_tools_collapse_true_ignores_disabled_native_tools() {
         // When collapsed, disabled_native_tools has no effect on the returned list —
