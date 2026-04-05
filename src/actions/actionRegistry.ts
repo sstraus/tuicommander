@@ -71,6 +71,9 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
   "scroll-page-down": { label: "Scroll page down", category: "Terminal" },
   "zoom-pane": { label: "Maximize/restore pane", category: "Split Panes" },
   "prompt-library": { label: "Prompt Library", category: "Navigation" },
+
+  "open-file": { label: "Open file…", category: "File" },
+  "new-file": { label: "New file…", category: "File" },
 };
 
 /**
@@ -126,6 +129,8 @@ export function getActionEntries(handlers: ShortcutHandlers): ActionEntry[] {
     "scroll-page-down": handlers.scrollPageDown,
     "zoom-pane": handlers.toggleZoomPane,
     "prompt-library": handlers.togglePromptLibrary,
+    "open-file": handlers.openFile,
+    "new-file": handlers.newFile,
   };
 
   for (const [actionId, meta] of Object.entries(ACTION_META)) {

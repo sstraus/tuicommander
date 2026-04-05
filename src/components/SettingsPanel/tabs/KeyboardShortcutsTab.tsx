@@ -152,8 +152,10 @@ const ResetIcon = () => (
 
 export const KeyboardShortcutsTab: Component = () => {
   const [filter, setFilter] = createSignal("");
-  const [editingAction, setEditingAction] = createSignal<ActionName | null>(null);
-  const [conflict, setConflict] = createSignal<{ action: ActionName; combo: string } | null>(null);
+  // editingAction holds either a static ActionName or a plugin-namespaced
+  // dynamic action (`plugin:<id>:<cmd>`), so it's typed as string.
+  const [editingAction, setEditingAction] = createSignal<string | null>(null);
+  const [conflict, setConflict] = createSignal<{ action: string; combo: string } | null>(null);
   let inputRef: HTMLInputElement | undefined;
 
   const filteredSections = createMemo(() => {
@@ -174,7 +176,22 @@ export const KeyboardShortcutsTab: Component = () => {
       .filter((section) => section.shortcuts.length > 0);
   });
 
-  function startEditing(action: ActionName) {
+  /** Dynamic plugin-registered commands, rendered in a dedicated section */
+  const pluginCommandRows = createMemo(() => {
+    // Read version for reactivity
+    keybindingsStore.version;
+    return keybindingsStore.getDynamicActions().map((dyn) => {
+      const combo = keybindingsStore.getKeyForAction(dyn.action);
+      return {
+        action: dyn.action,
+        label: dyn.label,
+        pluginId: dyn.pluginId,
+        keys: combo ? comboToDisplay(combo) : "",
+      };
+    });
+  });
+
+  function startEditing(action: string) {
     setConflict(null);
     setEditingAction(action);
   }
@@ -423,6 +440,89 @@ export const KeyboardShortcutsTab: Component = () => {
         )}
       </For>
 
+      <Show when={pluginCommandRows().length > 0}>
+        <div class={s.group}>
+          <label>{t("helpPanel.pluginCommands", "Plugin Commands")}</label>
+          <table style={{ width: "100%", "border-collapse": "collapse" }}>
+            <For each={pluginCommandRows()}>
+              {(cmd) => (
+                <tr style={{ cursor: "default" }}>
+                  <td style={{ width: "140px", padding: "4px 8px", "vertical-align": "middle" }}>
+                    <Show when={editingAction() === cmd.action} fallback={
+                      <div style={{ display: "flex", "align-items": "center", gap: "4px" }}>
+                        <kbd style={{
+                          display: "inline-block",
+                          padding: "2px 8px",
+                          background: keybindingsStore.isOverridden(cmd.action)
+                            ? "var(--accent-subtle, rgba(100, 149, 237, 0.15))"
+                            : "var(--bg-tertiary)",
+                          border: "1px solid var(--border)",
+                          "border-radius": "var(--radius-md)",
+                          "font-family": "var(--font-mono)",
+                          "font-size": "var(--font-sm)",
+                          color: keybindingsStore.isOverridden(cmd.action)
+                            ? "var(--accent)"
+                            : "var(--fg-secondary)",
+                        }}>{cmd.keys || t("helpPanel.unbound", "unbound")}</kbd>
+                        <button
+                          onClick={() => startEditing(cmd.action)}
+                          title="Edit shortcut"
+                          style={{
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            color: "var(--fg-muted)",
+                            padding: "2px",
+                            "border-radius": "var(--radius-sm)",
+                            display: "flex",
+                            "align-items": "center",
+                            opacity: "0.5",
+                          }}
+                        >
+                          <PencilIcon />
+                        </button>
+                        <Show when={keybindingsStore.isOverridden(cmd.action)}>
+                          <button
+                            onClick={() => keybindingsStore.resetAction(cmd.action)}
+                            title="Reset to default"
+                            style={{
+                              background: "none",
+                              border: "none",
+                              cursor: "pointer",
+                              color: "var(--fg-muted)",
+                              padding: "2px",
+                              "border-radius": "var(--radius-sm)",
+                              display: "flex",
+                              "align-items": "center",
+                              opacity: "0.5",
+                            }}
+                          >
+                            <ResetIcon />
+                          </button>
+                        </Show>
+                      </div>
+                    }>
+                      <RecordingIndicator
+                        conflict={conflict()}
+                        onKeyDown={handleKeyDown}
+                        onCancel={cancelEditing}
+                        onConfirmReplace={confirmConflictReplace}
+                      />
+                    </Show>
+                  </td>
+                  <td style={{ padding: "4px 8px", "font-size": "var(--font-base)", color: "var(--fg-secondary)" }}>
+                    <span style={{ color: "var(--fg-muted)", "font-size": "var(--font-sm)", "margin-right": "6px" }}>
+                      [{cmd.pluginId}]
+                    </span>
+                    {cmd.label}
+                  </td>
+                </tr>
+              )}
+            </For>
+          </table>
+        </div>
+      </Show>
+
       <Show when={filteredSections().length === 0}>
         <p class={s.hint} style={{ "text-align": "center", padding: "20px 0" }}>
           {t("helpPanel.noResults", "No shortcuts match your search")}
@@ -452,7 +552,7 @@ export const KeyboardShortcutsTab: Component = () => {
 
 /** Inline recording indicator shown when editing a shortcut */
 const RecordingIndicator: Component<{
-  conflict: { action: ActionName; combo: string } | null;
+  conflict: { action: string; combo: string } | null;
   onKeyDown: (e: KeyboardEvent) => void;
   onCancel: () => void;
   onConfirmReplace: () => void;

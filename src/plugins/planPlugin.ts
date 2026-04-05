@@ -1,9 +1,9 @@
 import { invoke, listen } from "../invoke";
 import { mdTabsStore } from "../stores/mdTabs";
 import { appLogger } from "../stores/appLogger";
-import { stripFrontmatter, extractPlanMetadata } from "../utils/frontmatter";
+import { extractPlanMetadata } from "../utils/frontmatter";
 import type { DirEntry } from "../types/fs";
-import type { MarkdownProvider, PluginHost, TuiPlugin } from "./types";
+import type { PluginHost, TuiPlugin } from "./types";
 
 
 // ---------------------------------------------------------------------------
@@ -22,29 +22,19 @@ function displayName(absolutePath: string): string {
   return base.replace(/\.[^.]+$/, ""); // strip extension
 }
 
-/** Build the contentUri for a plan file path. */
-function contentUri(absolutePath: string): string {
-  return `plan:file?path=${encodeURIComponent(absolutePath)}`;
+/**
+ * Open a plan file as a background file-based markdown tab, so it uses the
+ * regular markdown editor (edit button, tweak comments, file watching) rather
+ * than a read-only virtual provider view. `repoPath` is the repo root; when
+ * the plan lives inside it we store a relative `filePath`, otherwise we fall
+ * back to the absolute path (the markdown tab handles both transparently).
+ */
+function openPlanTab(absolutePath: string, repoPath: string | undefined): string | null {
+  const root = repoPath?.replace(/\/$/, "");
+  const relativePath =
+    root && absolutePath.startsWith(`${root}/`) ? absolutePath.slice(root.length + 1) : absolutePath;
+  return mdTabsStore.addFileBackground(root ?? "", relativePath);
 }
-
-// ---------------------------------------------------------------------------
-// MarkdownProvider implementation
-// ---------------------------------------------------------------------------
-
-const planMarkdownProvider: MarkdownProvider = {
-  async provideContent(uri: URL): Promise<string | null> {
-    const rawPath = uri.searchParams.get("path");
-    if (!rawPath || rawPath.includes("..")) return null;
-
-    try {
-      const raw = await invoke<string>("plugin_read_file", { path: rawPath, pluginId: PLUGIN_ID });
-      return stripFrontmatter(raw);
-    } catch (err) {
-      appLogger.warn("plugin", `Failed to read plan file: ${rawPath}`, err);
-      return null;
-    }
-  },
-};
 
 // ---------------------------------------------------------------------------
 // Internal plan item tracking
@@ -99,12 +89,10 @@ class PlanPlugin implements TuiPlugin {
       appLogger.info("plugin", `[plan] isNew=${isNew} plans.size=${this.plans.size}`);
 
       if (isNew) {
-        const tabId = mdTabsStore.addVirtualBackground(displayName(absolutePath), contentUri(absolutePath), ownerRepo ?? undefined);
-        appLogger.info("plugin", `[plan] addVirtualBackground result: tabId=${tabId}`);
+        const tabId = openPlanTab(absolutePath, ownerRepo ?? undefined);
+        appLogger.info("plugin", `[plan] openPlanTab result: tabId=${tabId}`);
       }
     });
-
-    host.registerMarkdownProvider("plan", planMarkdownProvider);
 
     const activeRepo = host.getActiveRepoPath();
     if (activeRepo) {
@@ -143,7 +131,7 @@ class PlanPlugin implements TuiPlugin {
           const absolutePath = `${root}/${entry.path}`;
           if (!this.plans.has(absolutePath)) {
             this.addPlan(absolutePath);
-            mdTabsStore.addVirtualBackground(displayName(absolutePath), contentUri(absolutePath), repoPath);
+            openPlanTab(absolutePath, repoPath);
             appLogger.info("plugin", `[plan] new plan detected via watcher: ${absolutePath}`);
           }
         }
@@ -210,8 +198,8 @@ class PlanPlugin implements TuiPlugin {
         if (!this.plans.has(planPath)) {
           this.addPlan(planPath);
         }
-        // addVirtualBackground deduplicates internally — safe to call unconditionally
-        const tabId = mdTabsStore.addVirtualBackground(displayName(planPath), contentUri(planPath), repoPath);
+        // addFileBackground deduplicates internally — safe to call unconditionally
+        const tabId = openPlanTab(planPath, repoPath);
         if (tabId) {
           appLogger.info("plugin", `[plan] auto-opened active plan: ${planPath}`);
         }

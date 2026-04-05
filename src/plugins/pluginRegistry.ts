@@ -11,8 +11,10 @@ import { contextMenuActionsStore } from "../stores/contextMenuActionsStore";
 import { sidebarPluginStore } from "../stores/sidebarPluginStore";
 
 import { pluginStore } from "../stores/pluginStore";
+import { keybindingsStore } from "../stores/keybindings";
 import { markdownProviderRegistry } from "./markdownProviderRegistry";
 import { fileIconRegistry } from "./fileIconRegistry";
+import { dashboardRegistry } from "./dashboardRegistry";
 import { invoke, listen } from "../invoke";
 import { LineBuffer } from "../utils/lineBuffer";
 import { stripAnsi } from "../utils/stripAnsi";
@@ -58,6 +60,11 @@ import type {
 function createPluginRegistry() {
   // Active plugin → its aggregated Disposable (wraps all sub-registrations)
   const plugins = new Map<string, { plugin: TuiPlugin; disposable: Disposable; agentTypes: readonly string[] }>();
+
+  // Plugin command handlers: action name (`plugin:<id>:<cmd>`) → run callback.
+  // Populated via host.registerCommand(), consulted by the global keydown
+  // dispatcher when a combo resolves to a plugin-namespaced action.
+  const pluginCommandHandlers = new Map<string, () => void | Promise<void>>();
 
   // Panel message bridge: tabId → onMessage callback from plugin
   const panelMessageHandlers = new Map<string, (data: unknown) => void>();
@@ -367,6 +374,34 @@ function createPluginRegistry() {
         );
       },
 
+      registerDashboard(options): Disposable {
+        return track(
+          dashboardRegistry.register({
+            pluginId,
+            label: options.label ?? "Dashboard",
+            icon: options.icon,
+            open: options.open,
+          }),
+        );
+      },
+
+      registerCommand(options): Disposable {
+        const actionName = `plugin:${pluginId}:${options.id}`;
+        keybindingsStore.registerDynamicAction({
+          action: actionName,
+          label: options.title,
+          pluginId,
+          defaultKey: options.defaultShortcut,
+        });
+        pluginCommandHandlers.set(actionName, options.run);
+        return track({
+          dispose() {
+            keybindingsStore.unregisterDynamicAction(actionName);
+            pluginCommandHandlers.delete(actionName);
+          },
+        });
+      },
+
       openMarkdownPanel(title: string, contentUri: string): void {
         requireCapability(pluginId, capabilities, "ui:markdown");
         mdTabsStore.addVirtual(title, contentUri);
@@ -400,9 +435,18 @@ function createPluginRegistry() {
         return invoke<string>("plugin_read_file_tail", { path: absolutePath, maxBytes, pluginId });
       },
 
-      async listDirectory(path: string, pattern?: string): Promise<string[]> {
+      async listDirectory(
+        path: string,
+        pattern?: string,
+        options?: { sortBy?: "name" | "mtime" },
+      ): Promise<string[]> {
         requireCapability(pluginId, capabilities, "fs:list");
-        return invoke<string[]>("plugin_list_directory", { path, pattern: pattern ?? null, pluginId });
+        return invoke<string[]>("plugin_list_directory", {
+          path,
+          pattern: pattern ?? null,
+          sortBy: options?.sortBy ?? null,
+          pluginId,
+        });
       },
 
       async writeFile(absolutePath: string, content: string): Promise<void> {
@@ -791,10 +835,32 @@ function createPluginRegistry() {
     panelSendChannels.delete(tabId);
   }
 
+  /**
+   * Invoke a plugin command by its namespaced action name.
+   * Returns true if a handler was found and called.
+   * Used by the global keybinding dispatcher in App.tsx.
+   */
+  function invokePluginCommand(actionName: string): boolean {
+    const handler = pluginCommandHandlers.get(actionName);
+    if (!handler) return false;
+    try {
+      const result = handler();
+      if (result instanceof Promise) {
+        result.catch((err) => {
+          appLogger.error("plugin", `Plugin command "${actionName}" failed`, err);
+        });
+      }
+    } catch (err) {
+      appLogger.error("plugin", `Plugin command "${actionName}" threw`, err);
+    }
+    return true;
+  }
+
   return {
     register, unregister, processRawOutput, dispatchLine, dispatchStructuredEvent,
     notifyStateChange, removeSession, clear,
     handlePanelMessage, registerPanelSendChannel, unregisterPanelSendChannel,
+    invokePluginCommand,
   };
 }
 

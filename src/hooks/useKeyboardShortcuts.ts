@@ -5,6 +5,7 @@ import { lastMenuActionTime } from "../menuDedup";
 import { keybindingsStore } from "../stores/keybindings";
 import { normalizeCombo } from "../keybindingDefaults";
 import type { ActionName } from "../keybindingDefaults";
+import { pluginRegistry } from "../plugins/pluginRegistry";
 import { isTauri } from "../transport";
 
 /**
@@ -69,6 +70,8 @@ export interface ShortcutHandlers {
   closeActivePane?: () => void;
   togglePromptLibrary: () => void;
   toggleDiffScroll: () => void;
+  openFile: () => void;
+  newFile: () => void;
 }
 
 /** Keys that are modifiers only — not real shortcut targets */
@@ -177,6 +180,8 @@ function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean
     case "zoom-pane": handlers.toggleZoomPane(); return true;
     case "prompt-library": handlers.togglePromptLibrary(); return true;
     case "toggle-diff-scroll": handlers.toggleDiffScroll(); return true;
+    case "open-file": handlers.openFile(); return true;
+    case "new-file": handlers.newFile(); return true;
 
     // Tab navigation
     case "prev-tab": handlers.navigateTab("prev"); return true;
@@ -283,8 +288,16 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): () => void {
       action = keybindingsStore.getActionForCombo(altCombo);
     }
 
-    if (action && dispatchAction(action, handlers)) {
-      e.preventDefault();
+    if (action) {
+      // Plugin-registered commands are dispatched through pluginRegistry.
+      // Built-in actions go through the static dispatchAction switch.
+      if (action.startsWith("plugin:")) {
+        if (pluginRegistry.invokePluginCommand(action)) {
+          e.preventDefault();
+        }
+      } else if (dispatchAction(action as ActionName, handlers)) {
+        e.preventDefault();
+      }
     }
   };
 

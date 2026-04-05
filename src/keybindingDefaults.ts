@@ -52,6 +52,8 @@ export const ACTION_NAMES = [
   "zoom-pane",
   "prompt-library",
   "toggle-diff-scroll",
+  "open-file",
+  "new-file",
   // Numbered tabs and branches
   ...Array.from({ length: 9 }, (_, i) => `switch-tab-${i + 1}`),
   ...Array.from({ length: 9 }, (_, i) => `switch-branch-${i + 1}`),
@@ -88,7 +90,7 @@ export const DEFAULT_BINDINGS: Record<ActionName, string> = {
   "run-command": "Cmd+R",
   "edit-command": "Cmd+Shift+R",
   "toggle-markdown": "Cmd+M",
-  "toggle-notes": "Cmd+N",
+  "toggle-notes": "Cmd+Alt+N",
   "toggle-file-browser": "Cmd+E",
   "toggle-settings": "Cmd+,",
   "toggle-task-queue": "Cmd+J",
@@ -116,6 +118,8 @@ export const DEFAULT_BINDINGS: Record<ActionName, string> = {
   "zoom-pane": "Cmd+Shift+Enter",
   "prompt-library": "Cmd+Shift+K",
   "toggle-diff-scroll": "Cmd+Shift+G",
+  "open-file": "Cmd+O",
+  "new-file": "Cmd+N",
   // Numbered tabs
   ...Object.fromEntries(
     Array.from({ length: 9 }, (_, i) => [`switch-tab-${i + 1}`, `Cmd+${i + 1}`]),

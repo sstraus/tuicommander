@@ -224,9 +224,16 @@
 
 .pluginActions {
   display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.pluginActionsRow {
+  display: flex;
   align-items: center;
   gap: 8px;
-  flex-shrink: 0;
 }
 
 .docsBtn {
@@ -272,6 +279,37 @@
   background: var(--bg-tertiary);
   color: var(--fg-primary);
   border-color: var(--fg-muted);
+}
+
+.dashboardBtn {
+  background: none;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: var(--font-sm);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dashboardBtn:hover {
+  background: var(--accent);
+  color: var(--bg-primary);
+}
+
+.btnIcon {
+  display: inline-flex;
+  align-items: center;
+  width: 12px;
+  height: 12px;
+}
+
+.btnIcon svg {
+  width: 100%;
+  height: 100%;
 }
 
 /* Log viewer */

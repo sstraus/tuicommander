@@ -274,4 +274,133 @@ hr {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--fg-muted, #9aa1a9);
 }
+
+/* ────────────────────────────────────────────────────────────────── */
+/* Dashboard layout — matches the built-in Claude Usage dashboard.    */
+/* Plugins that render analytics/status views should use these        */
+/* classes instead of inventing inline styles. See docs/plugins-style */
+/* .md for the full guide and do/don'ts.                              */
+/* ────────────────────────────────────────────────────────────────── */
+
+/* Root container — apply to the outermost element of a dashboard. */
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding: 16px 20px;
+  gap: 16px;
+}
+
+/* Top bar with title + optional controls (refresh, scope selector). */
+.dash-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.dash-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--fg-primary, #ccc);
+  margin: 0;
+}
+.dash-subtitle {
+  font-size: 11px;
+  color: var(--fg-muted, #9aa1a9);
+  margin-top: 2px;
+}
+
+/* Section — logical group inside a dashboard. Stack with gap 16px. */
+.dash-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dash-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-muted, #9aa1a9);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.dash-section-hint {
+  font-weight: 400;
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: normal;
+  opacity: 0.6;
+}
+
+/* Stat grid — auto-fill cards for headline numbers. */
+.dash-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+}
+.dash-stat {
+  background: var(--bg-secondary, #252526);
+  border: 1px solid var(--border, #3e3e42);
+  border-radius: 4px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dash-stat-label {
+  font-size: 10px;
+  color: var(--fg-muted, #9aa1a9);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.dash-stat-value {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--fg-primary, #ccc);
+  font-variant-numeric: tabular-nums;
+}
+.dash-stat-sub {
+  font-size: 11px;
+  color: var(--fg-secondary, #a0a0a0);
+}
+
+/* Progress meter inside a stat card. */
+.dash-meter {
+  height: 4px;
+  background: var(--bg-tertiary, #2d2d30);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.dash-meter-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+  background: var(--accent, #59a8dd);
+}
+.dash-meter-fill.ok { background: var(--success, #4ec9b0); }
+.dash-meter-fill.warn { background: var(--warning, #dcdcaa); }
+.dash-meter-fill.critical { background: var(--error, #f48771); }
+
+/* Card — generic container (tables, config blocks, etc.).
+   Overrides the default .card padding for dashboard-scale layouts. */
+.dashboard .card {
+  padding: 12px 14px;
+}
+
+/* Dashboard-scoped table tweaks: smaller header, hover row highlight. */
+.dashboard table th {
+  font-size: 10px;
+  padding: 6px 8px;
+}
+.dashboard table td {
+  padding: 6px 8px;
+  font-size: 12px;
+}
+.dashboard .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
 `;

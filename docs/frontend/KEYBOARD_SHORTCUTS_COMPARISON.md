@@ -19,7 +19,9 @@ Research date: 2026-02-22
 | Cmd+J | Toggle task queue |
 | Cmd+K | Clear scrollback |
 | Cmd+M | Toggle markdown panel |
-| Cmd+N | Toggle ideas panel |
+| Cmd+N | New file |
+| Cmd+O | Open file |
+| Cmd+Alt+N | Toggle ideas panel |
 | Cmd+R | Run saved command |
 | Cmd+\ | Split vertically |
 | Cmd+Shift+D | Git Panel |
@@ -213,7 +215,9 @@ These are reserved by Windows itself and **must never be used**:
 | Cmd+J | Ctrl+J | Task queue | VS Code toggle panel |
 | Cmd+K | Ctrl+K | Prompt library | VS Code chord prefix |
 | Cmd+M | Ctrl+M | Markdown panel | Low conflict (VS Code: tab focus toggle) |
-| Cmd+N | Ctrl+N | Ideas panel | VS Code/browsers new file/window |
+| Cmd+N | Ctrl+N | New file | Aligned with VS Code/Zed/browsers |
+| Cmd+O | Ctrl+O | Open file | Aligned with VS Code/Zed |
+| Cmd+Alt+N | Ctrl+Alt+N | Ideas panel | No known conflicts |
 | Cmd+R | Ctrl+R | Run command | VS Code open recent, browsers reload |
 | Cmd+\\ | Ctrl+\\ | Split | VS Code split editor (same semantics) |
 | Cmd+Shift+D | Ctrl+Shift+D | Git Panel | VS Code debug (conflicts!) |
@@ -250,7 +254,7 @@ These are reserved by Windows itself and **must never be used**:
 | **Cmd+J** (task queue) | iTerm2 (jump to mark), VS Code (toggle panel), Zed (toggle bottom dock) |
 | **Cmd+K** (prompt library) | iTerm2/Warp/Ghostty (clear), VS Code (chord prefix), Cursor (inline AI), Zed (clear/chord) |
 | **Cmd+M** (markdown) | iTerm2 (set mark), Zed (minimize) |
-| **Cmd+N** (ideas) | Ghostty/Kitty (new window), VS Code/Zed (new file) |
+| **Cmd+N** (new file) | Aligned with VS Code/Zed (new file). Ghostty/Kitty use it for new window — minor mismatch |
 | **Cmd+R** (run command) | Ghostty (clear), Kitty (resize), VS Code (open recent), Zed (toggle right dock) |
 | **Cmd+\\** (split) | iTerm2 (find cursor), Warp (Warp Drive), Zed (split right) |
 | **Cmd+Shift+D** (Git Panel) | VS Code (debug), Warp (n/a) |

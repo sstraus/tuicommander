@@ -46,6 +46,8 @@ function createMockHandlers(): ShortcutHandlers {
     toggleZoomPane: vi.fn(),
     togglePromptLibrary: vi.fn(),
     toggleDiffScroll: vi.fn(),
+    openFile: vi.fn(),
+    newFile: vi.fn(),
   };
 }
 

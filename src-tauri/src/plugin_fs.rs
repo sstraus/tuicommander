@@ -118,16 +118,18 @@ pub async fn plugin_read_file(
 pub async fn plugin_list_directory(
     path: String,
     pattern: Option<String>,
+    sort_by: Option<String>,
     plugin_id: String,
     state: tauri::State<'_, std::sync::Arc<crate::AppState>>,
 ) -> Result<Vec<String>, String> {
     crate::plugins::check_plugin_capability(&state, &plugin_id, "fs:read")?;
-    plugin_list_directory_inner(path, pattern).await
+    plugin_list_directory_inner(path, pattern, sort_by).await
 }
 
 async fn plugin_list_directory_inner(
     path: String,
     pattern: Option<String>,
+    sort_by: Option<String>,
 ) -> Result<Vec<String>, String> {
     let canonical = validate_within_home(&path)?;
 
@@ -143,7 +145,11 @@ async fn plugin_list_directory_inner(
     let entries = std::fs::read_dir(&canonical)
         .map_err(|e| format!("Failed to read directory: {e}"))?;
 
-    let mut names = Vec::new();
+    // Sort mode: "name" (default, alphabetical) or "mtime" (newest first).
+    // mtime mode enables plugins to efficiently find recently-modified files
+    // without scanning every entry (e.g. cache-keepalive picking the active JSONL).
+    let sort_mode = sort_by.as_deref().unwrap_or("name");
+    let mut items: Vec<(String, std::time::SystemTime)> = Vec::new();
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
         if let Some(ref pat) = glob_pattern
@@ -151,11 +157,22 @@ async fn plugin_list_directory_inner(
         {
             continue;
         }
-        names.push(name);
+        let mtime = if sort_mode == "mtime" {
+            entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .unwrap_or(std::time::UNIX_EPOCH)
+        } else {
+            std::time::UNIX_EPOCH
+        };
+        items.push((name, mtime));
     }
 
-    names.sort();
-    Ok(names)
+    match sort_mode {
+        "mtime" => items.sort_by(|a, b| b.1.cmp(&a.1)),
+        _ => items.sort_by(|a, b| a.0.cmp(&b.0)),
+    }
+    Ok(items.into_iter().map(|(n, _)| n).collect())
 }
 
 /// Read the last `max_bytes` of a file as UTF-8 text.

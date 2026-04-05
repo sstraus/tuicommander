@@ -418,13 +418,20 @@ Read a file's content as UTF-8 text. Maximum file size: 10 MB. **Requires `"fs:r
 const content = await host.readFile("/Users/me/.claude/projects/foo/conversation.jsonl");
 ```
 
-#### host.listDirectory(path, pattern?) -> Promise<string[]>
+#### host.listDirectory(path, pattern?, options?) -> Promise<string[]>
 
-List filenames in a directory, optionally filtered by a glob pattern. Returns filenames only (not full paths), sorted alphabetically. **Requires `"fs:list"` capability.**
+List filenames in a directory, optionally filtered by a glob pattern. Returns filenames only (not full paths). **Requires `"fs:list"` capability.**
+
+Options:
+- `sortBy`: `"name"` (default, alphabetical) or `"mtime"` (newest first). Use `"mtime"` to efficiently find the most recently modified file when the directory contains many historical entries.
 
 ```typescript
 const files = await host.listDirectory("/Users/me/.claude/projects/foo", "*.jsonl");
 // ["conversation-1.jsonl", "conversation-2.jsonl"]
+
+// Find the currently active session JSONL among 100+ historical ones:
+const recent = await host.listDirectory(dir, "*.jsonl", { sortBy: "mtime" });
+const activeFile = recent[0]; // most recently written
 ```
 
 #### host.watchPath(path, callback, options?) -> Promise<Disposable>
@@ -609,6 +616,37 @@ panel.close();
   .my-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 </style>
 ```
+
+**Dashboard layout classes.** For analytics/status dashboards, the base stylesheet also ships a `.dashboard`/`.dash-*` class family that mirrors the built-in Claude Usage dashboard. Use them instead of inventing layout CSS — see [`docs/plugins-style.md`](./plugins-style.md) for the full guide, checklist, and class reference.
+
+#### host.registerDashboard(options) -> Disposable
+
+Register a one-click entry point for the plugin's dashboard. When registered, *Settings → Plugins* shows a **Dashboard** button in the plugin row that calls `options.open()` and automatically closes the Settings panel so the dashboard becomes visible.
+
+```typescript
+host.registerDashboard({
+  label: "My Plugin",       // optional, defaults to "Dashboard"
+  icon: MY_PLUGIN_ICON,     // optional inline SVG string
+  open: () => openDashboard(host),
+});
+```
+
+A plugin may only register one dashboard — calling `registerDashboard` a second time replaces the previous entry. Dispose the returned handle in `onunload` (or rely on automatic cleanup via the plugin's disposable tracker).
+
+#### host.registerCommand(options) -> Disposable
+
+Register a plugin command that users can bind to a keyboard shortcut. The command appears in *Settings → Keyboard Shortcuts* under a dedicated "Plugin Commands" section and can be rebound by the user. The action name is auto-namespaced as `plugin:<pluginId>:<id>`.
+
+```typescript
+host.registerCommand({
+  id: "open-dashboard",          // unique per plugin
+  title: "Open My Dashboard",    // label in the Shortcuts UI
+  defaultShortcut: "Cmd+Shift+M",// optional — leave unbound by default
+  run: () => openDashboard(host),
+});
+```
+
+If `defaultShortcut` conflicts with an existing binding (built-in or another plugin), the command is registered but left unbound; a warning is logged and the user can pick a free combo via Settings. The handle returned is automatically tracked and released on plugin unload.
 
 All standard elements (buttons, inputs, tables) will look correct automatically.
 

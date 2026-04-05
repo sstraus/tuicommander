@@ -106,12 +106,46 @@ Content URIs: `scheme:path?key=value` (e.g. `plan:file?path=%2Frepo%2Fplans%2Ffo
 
 ## Panel CSS Design Strategy
 
-Every `ui:panel` iframe gets two automatic injections: (1) a **base stylesheet** with reset, themed typography, buttons (`.primary`, `.danger`), inputs, `.card`, tables, `.badge` variants (`.badge-p1`/`.badge-error`/`.badge-success`/`.badge-accent`/`.badge-muted`), `.filter-bar`, `.empty-state`, `.toast` (`.error`/`.success` + `.show`), and scrollbars; (2) all **CSS theme variables** (`--bg-primary`, `--bg-secondary`, `--bg-tertiary`, `--bg-highlight`, `--fg-primary`, `--fg-secondary`, `--fg-muted`, `--accent`, `--accent-hover`, `--success`, `--warning`, `--error`, `--border`, `--text-on-accent`, `--text-on-error`, `--text-on-success`).
+Every `ui:panel` iframe gets two automatic injections: (1) a **base stylesheet** with reset, themed typography, buttons (`.primary`, `.danger`), inputs, `.card`, tables, `.badge` variants (`.badge-p1`/`.badge-error`/`.badge-success`/`.badge-accent`/`.badge-muted`), `.filter-bar`, `.empty-state`, `.toast` (`.error`/`.success` + `.show`), scrollbars, AND the dashboard class family (`.dashboard`, `.dash-header`, `.dash-title`, `.dash-subtitle`, `.dash-section`, `.dash-section-title`, `.dash-section-hint`, `.dash-stat-grid`, `.dash-stat`, `.dash-stat-label`, `.dash-stat-value`, `.dash-stat-sub`, `.dash-meter`, `.dash-meter-fill` + `.ok`/`.warn`/`.critical`, `.num`); (2) all **CSS theme variables** (`--bg-primary`, `--bg-secondary`, `--bg-tertiary`, `--bg-highlight`, `--fg-primary`, `--fg-secondary`, `--fg-muted`, `--accent`, `--accent-hover`, `--success`, `--warning`, `--error`, `--border`, `--text-on-accent`, `--text-on-error`, `--text-on-success`).
 
 **Write minimal CSS** — only plugin-specific layout. Standard elements are styled automatically. Example:
 ```html
-<style>body { padding: 16px; } .my-grid { display: grid; gap: 8px; }</style>
+<style>.my-grid { display: grid; gap: 8px; }</style>
 ```
+
+## MANDATORY — Dashboard Style Guide
+
+**If your plugin renders a dashboard (analytics, status, reports, summaries) you MUST use the shared `.dashboard`/`.dash-*` classes from the base stylesheet.** Hand-rolling layout/card/stat CSS is forbidden — dashboards must look like a native part of TUICommander, not a third-party widget. The built-in Claude Usage dashboard is the reference.
+
+Rules:
+1. Wrap the entire dashboard in `<div class="dashboard">`.
+2. Use `.dash-header` with `.dash-title` for the top bar (title + optional refresh button).
+3. Group content in `.dash-section` + `.dash-section-title` (uppercase, muted).
+4. Use `.dash-stat-grid` + `.dash-stat` (with `.dash-stat-label` / `.dash-stat-value` / optional `.dash-stat-sub`) for headline numbers — NEVER invent `.stat-card`/`.stat-grid` variants.
+5. Never hardcode colors — use CSS variables listed above. No `#rrggbb` literals, no fixed backgrounds.
+6. Never override `h1`/`h2`/`h3` sizes, `.card` padding, or table typography. Those are global.
+7. Call `host.registerDashboard({ label, icon, open })` so *Settings → Plugins* shows a one-click Dashboard button for your plugin.
+
+Minimum dashboard skeleton:
+```html
+<div class="dashboard">
+  <div class="dash-header">
+    <h1 class="dash-title">My Plugin</h1>
+    <button class="primary" id="refresh">Refresh</button>
+  </div>
+  <div class="dash-section">
+    <h2 class="dash-section-title">Overview</h2>
+    <div class="dash-stat-grid">
+      <div class="dash-stat">
+        <div class="dash-stat-label">Commands</div>
+        <div class="dash-stat-value">1.2k</div>
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+Full reference, checklist, and do/don'ts: `docs/plugins-style.md` in the TUICommander repo. Treat that file as authoritative — if it conflicts with this reference, it wins.
 
 ## PluginHost API
 
@@ -200,6 +234,8 @@ host.getGitDiff(repoPath, scope?)       // unified diff string (scope: "staged" 
 | `host.registerTerminalAction({ id, label, action(ctx), disabled?(ctx) }): Disposable` | `ui:context-menu` |
 | `host.registerContextMenuAction({ id, label, target, action(ctx), disabled?(ctx) }): Disposable` | `ui:context-menu` |
 | `host.registerSidebarPanel({ id, label, icon?, priority?, collapsed? }): SidebarPanelHandle` | `ui:sidebar` |
+| `host.registerDashboard({ label?, icon?, open }): Disposable` | *(none)* |
+| `host.registerCommand({ id, title, defaultShortcut?, run }): Disposable` | *(none)* |
 
 TerminalActionContext (passed to action/disabled at right-click time): `{ sessionId: string | null, repoPath: string | null }`. Actions appear in terminal right-click "Actions" submenu. Submenu hidden when no actions registered. Stale handlers (after plugin unload) are no-ops.
 
@@ -208,6 +244,10 @@ ContextMenuAction targets: `"terminal"`, `"branch"`, `"repo"`, `"tab"`. ContextM
 SidebarPanelHandle: `{ setItems(items), setBadge(text), dispose() }`. SidebarItem: `{ id, label, subtitle?, icon?, iconColor?, onClick?, contextMenu?: [{ label, action, disabled? }] }`. Panels appear below branches in the sidebar, scoped per-repo. Badge shows a counter pill on the header.
 
 PanelHandle: `{ tabId, update(html), close(), send(data) }` — HTML rendered in sandboxed iframe with automatic base stylesheet + CSS theme variable injection. Write minimal plugin-specific CSS only (see Panel CSS Design Strategy above). Use `onMessage` callback to receive messages from iframe, `send()` to post messages back.
+
+`registerDashboard({ label?, icon?, open })`: Register a one-click entry point shown as a **Dashboard** button in *Settings → Plugins*. The host closes the Settings panel automatically before calling `open()`. A plugin may only register one dashboard; second calls replace the first. Pair this with the `.dashboard` style guide above.
+
+`registerCommand({ id, title, defaultShortcut?, run })`: Register a user-rebindable command. Appears in *Settings → Keyboard Shortcuts* under "Plugin Commands". Action name is auto-namespaced as `plugin:<pluginId>:<id>`. `defaultShortcut` is optional ("Cmd+Shift+K" etc.); on conflict the command is registered but left unbound with a warning.
 HttpResponse: `{ status: number, headers: Record<string, string>, body: string }` — non-2xx is NOT an error.
 
 **setTicker notes:** Shared ticker area rotates messages from all plugins. Priority tiers: <10 = popover only, 10-99 = auto-rotate (5s), >=100 = urgent pin. `label` is shown as source prefix (e.g. "Usage · 5h: 42%"). Counter badge (1/3 ▸) shown when multiple tickers active. Click badge to cycle, right-click for popover. Legacy aliases: `postTickerMessage`/`removeTickerMessage`.
@@ -225,8 +265,9 @@ const content = await host.readFile("/Users/me/.claude/projects/foo/conversation
 // Read last N bytes of a file (skip partial first line)
 const tail = await host.readFileTail("/Users/me/.claude/hud-tracking.jsonl", 512 * 1024);  // requires "fs:read"
 
-// List directory (optional glob filter)
+// List directory (optional glob filter, optional sort: "name" default or "mtime" newest-first)
 const files = await host.listDirectory("/Users/me/.claude/projects/foo", "*.jsonl");  // requires "fs:list"
+const recent = await host.listDirectory("/Users/me/.claude/projects/foo", "*.jsonl", { sortBy: "mtime" });
 
 // Watch for changes (returns Disposable)
 const watcher = await host.watchPath(  // requires "fs:watch"

@@ -357,6 +357,28 @@ export interface OpenPanelOptions {
   onMessage?: (data: unknown) => void;
 }
 
+/** Options for host.registerDashboard() */
+export interface DashboardOptions {
+  /** Button label (default: "Dashboard"). Keep short — shown inline in the plugin row. */
+  label?: string;
+  /** Optional inline SVG icon rendered before the label. */
+  icon?: string;
+  /** Called when the user clicks the dashboard button in Settings → Plugins. */
+  open: () => void | Promise<void>;
+}
+
+/** Options for host.registerCommand() */
+export interface CommandOptions {
+  /** Unique per plugin — combined with pluginId to form the action `plugin:<pluginId>:<id>`. */
+  id: string;
+  /** Human-readable label shown in Settings → Keyboard Shortcuts. */
+  title: string;
+  /** Optional default key combo (e.g. "Cmd+Shift+K"). Omit to leave unbound by default. */
+  defaultShortcut?: string;
+  /** Called when the user presses the bound key combo. */
+  run: () => void | Promise<void>;
+}
+
 /** Handle returned by openPanel() for updating or closing the panel */
 export interface PanelHandle {
   /** The tab ID in the mdTabs store */
@@ -525,6 +547,30 @@ export interface PluginHost {
    */
   sendAgentInput(sessionId: string, text: string): Promise<void>;
 
+  /**
+   * Register a dashboard entry point for this plugin.
+   * Adds a "Dashboard" button to the plugin row in Settings → Plugins.
+   * Clicking it invokes `open()` — typically the plugin opens its main markdown
+   * tab or HTML panel inside the callback.
+   *
+   * Only one dashboard per plugin — a second call replaces the previous entry.
+   * The returned Disposable is auto-cleaned on plugin unload.
+   *
+   * No capability required — any plugin may advertise a dashboard entry point.
+   */
+  registerDashboard(options: DashboardOptions): Disposable;
+
+  /**
+   * Register a named command that can be bound to a keyboard shortcut.
+   * The command appears in Settings → Keyboard Shortcuts under "Plugin Commands",
+   * where users can view and remap its key binding.
+   *
+   * Action name is automatically namespaced as `plugin:<pluginId>:<id>`.
+   * No capability required — commands are user-invoked and cannot trigger
+   * privileged operations beyond what the plugin's capabilities already allow.
+   */
+  registerCommand(options: CommandOptions): Disposable;
+
   /** Open a virtual markdown tab and show the panel. Requires "ui:markdown" capability. */
   openMarkdownPanel(title: string, contentUri: string): void;
 
@@ -549,8 +595,17 @@ export interface PluginHost {
    */
   readFileTail(absolutePath: string, maxBytes: number): Promise<string>;
 
-  /** List filenames in a directory, optionally filtered by glob. Requires "fs:list". */
-  listDirectory(path: string, pattern?: string): Promise<string[]>;
+  /**
+   * List filenames in a directory, optionally filtered by glob. Requires "fs:list".
+   * @param options.sortBy "name" (default, alphabetical) or "mtime" (newest first).
+   *        Use "mtime" when you need to find the most recently modified file efficiently
+   *        — e.g. picking the active session JSONL out of many historical ones.
+   */
+  listDirectory(
+    path: string,
+    pattern?: string,
+    options?: { sortBy?: "name" | "mtime" },
+  ): Promise<string[]>;
 
   /** Write content to a file. Path must be absolute and within $HOME. Requires "fs:write". */
   writeFile(absolutePath: string, content: string): Promise<void>;

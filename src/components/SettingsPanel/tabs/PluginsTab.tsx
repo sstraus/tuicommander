@@ -5,6 +5,7 @@ import { pluginStore } from "../../../stores/pluginStore";
 import { appLogger } from "../../../stores/appLogger";
 import { registryStore, type RegistryEntry } from "../../../stores/registryStore";
 import { mdTabsStore } from "../../../stores/mdTabs";
+import { dashboardRegistry } from "../../../plugins/dashboardRegistry";
 import { invoke } from "../../../invoke";
 import { isTauri } from "../../../transport";
 import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
@@ -46,7 +47,7 @@ const PluginLogViewer: Component<{ plugin: PluginState }> = (props) => {
 };
 
 /** Single plugin row in the installed list */
-const PluginRow: Component<{ plugin: PluginState }> = (props) => {
+const PluginRow: Component<{ plugin: PluginState; onClose?: () => void }> = (props) => {
   const [showLogs, setShowLogs] = createSignal(false);
   const [toggling, setToggling] = createSignal(false);
   const [uninstalling, setUninstalling] = createSignal(false);
@@ -133,40 +134,71 @@ const PluginRow: Component<{ plugin: PluginState }> = (props) => {
         </div>
 
         <div class={ps.pluginActions}>
-          <Show when={hasReadme()}>
+          <div class={ps.pluginActionsRow}>
+            <Show when={hasReadme()}>
+              <button
+                class={ps.docsBtn}
+                onClick={handleOpenReadme}
+                title="View plugin documentation"
+              >
+                ?
+              </button>
+            </Show>
+            <label class={s.toggle}>
+              <input
+                type="checkbox"
+                checked={props.plugin.enabled}
+                disabled={toggling()}
+                onChange={handleToggle}
+              />
+            </label>
             <button
-              class={ps.docsBtn}
-              onClick={handleOpenReadme}
-              title="View plugin documentation"
+              class={ps.logsBtn}
+              classList={{ [ps.logsActive]: showLogs() }}
+              onClick={() => setShowLogs(!showLogs())}
+              title="View logs"
             >
-              ?
+              Logs
             </button>
-          </Show>
-          <label class={s.toggle}>
-            <input
-              type="checkbox"
-              checked={props.plugin.enabled}
-              disabled={toggling()}
-              onChange={handleToggle}
-            />
-          </label>
-          <button
-            class={ps.logsBtn}
-            classList={{ [ps.logsActive]: showLogs() }}
-            onClick={() => setShowLogs(!showLogs())}
-            title="View logs"
-          >
-            Logs
-          </button>
-          <Show when={!props.plugin.builtIn}>
-            <button
-              class={ps.uninstallBtn}
-              onClick={handleUninstall}
-              disabled={uninstalling()}
-              title="Uninstall plugin"
-            >
-              {uninstalling() ? "..." : "Uninstall"}
-            </button>
+            <Show when={!props.plugin.builtIn}>
+              <button
+                class={ps.uninstallBtn}
+                onClick={handleUninstall}
+                disabled={uninstalling()}
+                title="Uninstall plugin"
+              >
+                {uninstalling() ? "..." : "Uninstall"}
+              </button>
+            </Show>
+          </div>
+          <Show when={dashboardRegistry.get(props.plugin.id)}>
+            {(entry) => (
+              <div class={ps.pluginActionsRow}>
+                <button
+                  class={ps.dashboardBtn}
+                  onClick={async () => {
+                    // Close the Settings panel first so the dashboard becomes visible
+                    // in the main area instead of being hidden behind Settings.
+                    props.onClose?.();
+                    try {
+                      await entry().open();
+                    } catch (err) {
+                      appLogger.error(
+                        "plugin",
+                        `Dashboard open failed for "${props.plugin.id}"`,
+                        err,
+                      );
+                    }
+                  }}
+                  title={`Open ${entry().label}`}
+                >
+                  <Show when={entry().icon}>
+                    <span class={ps.btnIcon} innerHTML={entry().icon} />
+                  </Show>
+                  {entry().label}
+                </button>
+              </div>
+            )}
           </Show>
         </div>
       </div>
@@ -261,7 +293,7 @@ const BrowseRow: Component<{ entry: RegistryEntry }> = (props) => {
 // Main tab
 // ---------------------------------------------------------------------------
 
-export const PluginsTab: Component = () => {
+export const PluginsTab: Component<{ onClose?: () => void }> = (props) => {
   const plugins = () => pluginStore.getAll();
   const [installing, setInstalling] = createSignal(false);
   const [fileInstallError, setFileInstallError] = createSignal<string | null>(null);
@@ -365,7 +397,7 @@ export const PluginsTab: Component = () => {
         >
           <div class={ps.pluginList}>
             <For each={plugins() as PluginState[]}>
-              {(plugin) => <PluginRow plugin={plugin} />}
+              {(plugin) => <PluginRow plugin={plugin} onClose={props.onClose} />}
             </For>
           </div>
         </Show>

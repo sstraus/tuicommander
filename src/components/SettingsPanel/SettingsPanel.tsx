@@ -169,7 +169,7 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
         <ServicesTab />
       </Show>
       <Show when={activeTab() === "plugins"}>
-        <PluginsTab />
+        <PluginsTab onClose={props.onClose} />
       </Show>
       <Show when={activeTab() === "agents"}>
         <AgentsTab />

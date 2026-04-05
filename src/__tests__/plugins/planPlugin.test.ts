@@ -43,21 +43,6 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("planPlugin lifecycle", () => {
-  it("registers a plan markdown provider on load", async () => {
-    mockedInvoke.mockResolvedValue("# Plan Content");
-    pluginRegistry.register(planPlugin);
-    const result = await markdownProviderRegistry.resolve("plan:file?path=/foo/bar.md");
-    expect(result).not.toBeNull();
-    expect(mockedInvoke).toHaveBeenCalledWith("plugin_read_file", { path: "/foo/bar.md", pluginId: "plan" });
-  });
-
-  it("unregistering removes the plan markdown provider", async () => {
-    pluginRegistry.register(planPlugin);
-    pluginRegistry.unregister("plan");
-    const result = await markdownProviderRegistry.resolve("plan:file?path=/foo/bar.md");
-    expect(result).toBeNull();
-  });
-
   it("clears plans on unload", async () => {
     pluginRegistry.register(planPlugin);
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/foo.md" }, "s1");
@@ -149,46 +134,6 @@ describe("plan-file path resolution", () => {
 });
 
 // ---------------------------------------------------------------------------
-// MarkdownProvider content
-// ---------------------------------------------------------------------------
-
-describe("plan MarkdownProvider", () => {
-  beforeEach(() => {
-    pluginRegistry.register(planPlugin);
-  });
-
-  it("reads file content via plugin_read_file invoke", async () => {
-    mockedInvoke.mockResolvedValue("# Hello Plan");
-    const result = await markdownProviderRegistry.resolve("plan:file?path=%2Frepo%2Fplan.md");
-    expect(result).toBe("# Hello Plan");
-  });
-
-  it("strips frontmatter from rendered content", async () => {
-    mockedInvoke.mockResolvedValue("---\ntitle: My Plan\nstatus: draft\n---\n# Plan Content\nBody here");
-    const result = await markdownProviderRegistry.resolve("plan:file?path=%2Frepo%2Fplan.md");
-    expect(result).not.toContain("---");
-    expect(result).toContain("# Plan Content");
-  });
-
-  it("returns null when path query param is missing", async () => {
-    const result = await markdownProviderRegistry.resolve("plan:file");
-    expect(result).toBeNull();
-  });
-
-  it("returns null when invoke throws", async () => {
-    mockedInvoke.mockRejectedValue(new Error("file not found"));
-    const result = await markdownProviderRegistry.resolve("plan:file?path=%2Ffoo%2Fbar.md");
-    expect(result).toBeNull();
-  });
-
-  it("returns null for path traversal attempts", async () => {
-    const result = await markdownProviderRegistry.resolve("plan:file?path=%2Ffoo%2F..%2F..%2Fetc%2Fpasswd");
-    expect(result).toBeNull();
-    expect(mockedInvoke).not.toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Metadata enrichment
 // ---------------------------------------------------------------------------
 
@@ -242,18 +187,18 @@ describe("plan auto-open", () => {
     for (const path of repositoriesStore.getPaths()) repositoriesStore.remove(path);
   });
 
-  it("auto-opens a new plan as a background virtual tab", async () => {
+  it("auto-opens a new plan as a background file tab (uses the markdown editor, not a read-only virtual view)", async () => {
     addTerminalWithSession("sess-auto", "/repo");
-    const spy = vi.spyOn(mdTabsStore, "addVirtualBackground");
+    const spy = vi.spyOn(mdTabsStore, "addFileBackground");
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/new.md" }, "sess-auto");
     await flushMicrotasks();
-    expect(spy).toHaveBeenCalledWith("new", "plan:file?path=%2Frepo%2Fplans%2Fnew.md", "/repo");
+    expect(spy).toHaveBeenCalledWith("/repo", "plans/new.md");
     spy.mockRestore();
   });
 
   it("does NOT auto-open the same plan on repeated detection", async () => {
     addTerminalWithSession("sess-repeat", "/repo");
-    const spy = vi.spyOn(mdTabsStore, "addVirtualBackground");
+    const spy = vi.spyOn(mdTabsStore, "addFileBackground");
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/dup.md" }, "sess-repeat");
     await flushMicrotasks();
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/repo/plans/dup.md" }, "sess-repeat");
@@ -264,7 +209,7 @@ describe("plan auto-open", () => {
 
   it("does NOT auto-open when plan is for a different repo", async () => {
     addTerminalWithSession("sess-other", "/other-repo");
-    const spy = vi.spyOn(mdTabsStore, "addVirtualBackground");
+    const spy = vi.spyOn(mdTabsStore, "addFileBackground");
     pluginRegistry.dispatchStructuredEvent("plan-file", { path: "/other-repo/plans/x.md" }, "sess-other");
     await flushMicrotasks();
     expect(spy).not.toHaveBeenCalled();
