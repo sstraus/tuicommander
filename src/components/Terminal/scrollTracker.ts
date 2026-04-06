@@ -132,9 +132,18 @@ export type ViewportLockLogger = (event: string, details: Record<string, unknown
  *  events without letting xterm's programmatic writes sneak through. */
 const USER_INTENT_TTL_MS = 300;
 
+/** Grace period after writeEnd() during which DOM scroll events are still
+ *  classified as programmatic. xterm's write callback fires after parsing,
+ *  but the renderer updates the DOM on the next animation frame — scroll
+ *  events from that deferred render would otherwise be misclassified as
+ *  user-initiated, causing the lock to disengage. 50ms covers ~3 frames
+ *  at 60fps with margin. */
+const WRITE_RENDER_LAG_MS = 50;
+
 export class ViewportLock {
   private locked = false;
   private writeInProgress = false;
+  private lastWriteEndMs = 0;
   private userIntent = false;
   private userIntentTimer: ReturnType<typeof setTimeout> | null = null;
   private anchorLine = 0;
@@ -197,9 +206,12 @@ export class ViewportLock {
     this.writeInProgress = true;
   }
 
-  /** Signal that a terminal.write() callback has fired. */
+  /** Signal that a terminal.write() callback has fired. The write flag
+   *  clears immediately, but lastWriteEndMs provides a grace window for
+   *  deferred renderer scroll events (see WRITE_RENDER_LAG_MS). */
   writeEnd(): void {
     this.writeInProgress = false;
+    this.lastWriteEndMs = performance.now();
   }
 
   /** Flag a user-driven scroll intent with the same TTL as the internal
@@ -218,9 +230,12 @@ export class ViewportLock {
   update(isAtBottom: boolean): void {
     const shouldLock = !isAtBottom;
     if (shouldLock === this.locked) return;
-    // Don't disengage mid-write: xterm auto-scroll during write is not user intent,
-    // unless the caller explicitly flagged this as user-driven.
-    if (!shouldLock && this.writeInProgress && !this.userIntent) {
+    // Don't disengage mid-write or during the post-write render grace period:
+    // xterm auto-scroll during write is not user intent.
+    // Exception: userScrollIntent() bypasses the guard.
+    const recentWrite = !this.writeInProgress
+      && (performance.now() - this.lastWriteEndMs < WRITE_RENDER_LAG_MS);
+    if (!shouldLock && (this.writeInProgress || recentWrite) && !this.userIntent) {
       this.logger?.("update-blocked-during-write", { isAtBottom, locked: this.locked });
       return;
     }
@@ -272,12 +287,29 @@ export class ViewportLock {
       if (!this.getBufferFn) return;
       const buf = this.getBufferFn();
 
-      // A write may be in progress AND the user may be actively scrolling —
-      // wheel, trackpad, touch, drag, or key input. The gesture listeners
-      // flag userIntent with a short TTL so we can treat these scroll events
-      // as user-driven and avoid rubber-banding the viewport back to the
-      // anchor on every wheel tick during steady PTY streaming.
-      const isProgrammatic = this.writeInProgress && !this.userIntent;
+      // Scrollback cleared (ESC[3J) — anchor points to deleted lines.
+      // Reset anchor to current viewport position to prevent a stale
+      // anchor from jumping the viewport when baseY eventually regrows.
+      if (buf.baseY < this.anchorLine) {
+        this.logger?.("anchor-invalidated", {
+          oldAnchor: this.anchorLine,
+          baseY: buf.baseY,
+          viewportY: buf.viewportY,
+        });
+        this.anchorLine = buf.viewportY;
+      }
+
+      // Classify scroll origin. A write may be in progress AND the user may
+      // be actively scrolling (wheel, trackpad, etc.). Gesture listeners flag
+      // userIntent with a short TTL so user scrolls aren't rubber-banded.
+      //
+      // Also treat scrolls within WRITE_RENDER_LAG_MS after writeEnd() as
+      // programmatic: xterm's renderer updates the DOM on the next animation
+      // frame, after the write callback — without this grace period those
+      // deferred scrolls are misclassified as user-initiated.
+      const recentWrite = !this.writeInProgress
+        && (performance.now() - this.lastWriteEndMs < WRITE_RENDER_LAG_MS);
+      const isProgrammatic = (this.writeInProgress || recentWrite) && !this.userIntent;
 
       if (isProgrammatic) {
         // Programmatic scroll from xterm write — restore anchor
@@ -294,12 +326,11 @@ export class ViewportLock {
         // Discard viewportY=0 when scrollback exists: renderer rebuilds
         // (fontSize re-assign) fire scroll events with a transient 0 value.
         const willUnlock = buf.viewportY >= buf.baseY;
-        this.logger?.("dom-scroll-user-branch", {
+        this.logger?.("dom-scroll-user", {
           viewportY: buf.viewportY,
           baseY: buf.baseY,
           anchorLine: this.anchorLine,
           willUnlock,
-          suspectedRace: willUnlock, // scroll-jump bug signature: user path while locked, at-bottom
         });
         if (buf.viewportY > 0 || buf.baseY === 0) {
           this.anchorLine = buf.viewportY;

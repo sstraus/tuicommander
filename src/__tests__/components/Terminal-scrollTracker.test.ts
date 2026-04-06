@@ -402,6 +402,97 @@ describe("ViewportLock", () => {
       lock.dispose();
     });
 
+    it("treats DOM scroll shortly after writeEnd as programmatic (render lag)", () => {
+      vi.useFakeTimers();
+      try {
+        const { lock, viewport, scrollToLineCalls, setBuffer } = createLockHarness();
+        setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
+        lock.update(false); // locked at line 50
+
+        // Write completes (parser done), then renderer fires scroll on next frame
+        lock.writeStart();
+        lock.writeEnd();
+        // Advance less than WRITE_RENDER_LAG_MS (50ms)
+        vi.advanceTimersByTime(10);
+        // Deferred renderer scroll — must be classified as programmatic
+        setBuffer({ viewportY: 110, baseY: 110, type: "normal" });
+        viewport.dispatchEvent(new Event("scroll"));
+
+        expect(scrollToLineCalls).toEqual([50]); // restored to anchor, NOT unlocked
+        expect(lock.isLocked).toBe(true);
+
+        lock.dispose();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does NOT disengage when update(true) arrives in render lag window", () => {
+      vi.useFakeTimers();
+      try {
+        const { lock, setBuffer } = createLockHarness();
+        setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
+        lock.update(false); // locked
+
+        lock.writeStart();
+        lock.writeEnd();
+        vi.advanceTimersByTime(10);
+
+        // terminal.onScroll fires with isAtBottom=true during render lag
+        lock.update(true);
+        expect(lock.isLocked).toBe(true); // must stay locked
+
+        lock.dispose();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("allows user scroll after render lag window expires", () => {
+      vi.useFakeTimers();
+      try {
+        const { lock, viewport, setBuffer } = createLockHarness();
+        setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
+        lock.update(false); // locked
+
+        lock.writeStart();
+        lock.writeEnd();
+        // Advance past WRITE_RENDER_LAG_MS (50ms)
+        vi.advanceTimersByTime(60);
+
+        // User scrolls to bottom — should unlock
+        setBuffer({ viewportY: 100, baseY: 100, type: "normal" });
+        viewport.dispatchEvent(new Event("scroll"));
+
+        expect(lock.isLocked).toBe(false);
+        lock.dispose();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("resets anchor when scrollback is cleared (baseY drops below anchor)", () => {
+      const { lock, viewport, scrollToLineCalls, setBuffer } = createLockHarness();
+      setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
+      lock.update(false); // locked at line 50
+
+      // ESC[3J clears scrollback → baseY drops to 0
+      lock.writeStart();
+      setBuffer({ viewportY: 0, baseY: 0, type: "normal" });
+      viewport.dispatchEvent(new Event("scroll"));
+
+      // Anchor should have been reset to 0, NOT attempt to restore to 50
+      expect(scrollToLineCalls).toEqual([0]); // restore to new anchor (0)
+
+      // New content grows baseY — must NOT jump to old anchor (50)
+      setBuffer({ viewportY: 0, baseY: 60, type: "normal" });
+      viewport.dispatchEvent(new Event("scroll"));
+      expect(scrollToLineCalls).toEqual([0, 0]); // still restoring to 0
+      lock.writeEnd();
+
+      lock.dispose();
+    });
+
     it("no listeners active when unlocked (at bottom)", () => {
       const { lock, viewport, scrollToLineCalls } = createLockHarness();
       // Never locked — fire scroll events
