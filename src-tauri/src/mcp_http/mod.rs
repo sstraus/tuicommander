@@ -2847,6 +2847,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_cache_control_index_html_no_cache() {
+        let state = test_state();
+        let app = build_router(state, false, true);
+        let resp = app
+            .oneshot(Request::get("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        // Root serves HTML (or redirect); if 200, should have no-cache
+        let status = resp.status();
+        if status == StatusCode::OK {
+            let cc = resp.headers().get("cache-control").map(|v| v.to_str().unwrap().to_string());
+            assert_eq!(cc.as_deref(), Some("no-cache"), "HTML responses must have no-cache");
+        }
+        // 3xx redirect is also valid (mobile redirect)
+    }
+
+    #[tokio::test]
     async fn test_get_output_format_log_unknown_session_404() {
         let state = test_state();
         let app = build_router(state, false, true);
