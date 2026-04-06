@@ -59,13 +59,14 @@ interface UpstreamStatusEntry {
 
 /** Static definition of native TUIC tools exposed via MCP */
 const NATIVE_TOOLS: { name: string; description: string; actions: string }[] = [
-  { name: "session", description: "Manage PTY terminal sessions", actions: "list, create, input, output, resize, close, pause, resume" },
-  { name: "git", description: "Query git repository state", actions: "info, diff, files, branches, github, prs" },
-  { name: "agent", description: "Detect and spawn AI agents", actions: "detect, spawn, stats, metrics" },
-  { name: "config", description: "Read and write app config", actions: "get, save" },
-  { name: "workspace", description: "Query repos, groups, worktrees", actions: "list, active" },
-  { name: "notify", description: "Show notifications to the user", actions: "toast, confirm" },
+  { name: "session", description: "PTY terminal panes (tmux replacement)", actions: "list, create, input, output, resize, close, kill, pause, resume" },
+  { name: "agent", description: "AI agents + inter-agent messaging", actions: "spawn, detect, stats, metrics, register, list_peers, send, inbox" },
+  { name: "repo", description: "Repos, GitHub PRs, worktrees", actions: "list, active, prs, status, worktree_list, worktree_create, worktree_remove" },
+  { name: "ui", description: "Panel tabs + notifications", actions: "tab, toast, confirm" },
   { name: "plugin_dev_guide", description: "Plugin authoring reference", actions: "Returns full plugin authoring guide" },
+  { name: "config", description: "Read and write app config", actions: "get, save" },
+  { name: "knowledge", description: "Cross-repo knowledge base (mdkb)", actions: "search, code_graph, status, setup" },
+  { name: "debug", description: "Diagnostics + plugin guide", actions: "agent_detection, logs, invoke_js, plugin_guide" },
 ];
 
 export const ServicesTab: Component = () => {
@@ -653,16 +654,8 @@ export const ServicesTab: Component = () => {
           />
         </div>
         <div style={{ display: "flex", "align-items": "center", gap: "6px" }}>
-          <span style={{ "font-weight": 500, "font-size": "13px" }}>Collapse tools (reduces AI context ~98%)</span>
-          <span
-            title="When enabled, MCP clients only see three meta-tools (search_tools, get_tool_schema, call_tool) and discover the full tool set on demand. Drastically reduces token usage for clients that don't need every tool upfront."
-            style={{
-              display: "inline-flex", "align-items": "center", "justify-content": "center",
-              width: "16px", height: "16px", "border-radius": "50%", "flex-shrink": 0,
-              background: "rgba(255,255,255,0.08)", color: "var(--fg-muted, #888)",
-              "font-size": "11px", "font-weight": 600, cursor: "help",
-            }}
-          >?</span>
+          <span style={{ "font-weight": 500, "font-size": "13px" }}>Collapse tools — Speakeasy MCP (reduces AI context ~98%)</span>
+          <span class={s.infoBadge}>?<span class={s.infoBadgeTip}>When enabled, MCP clients only see three meta-tools (search_tools, get_tool_schema, call_tool) and discover the full tool set on demand. Drastically reduces token usage for clients that don't need every tool upfront.</span></span>
         </div>
       </div>
       <For each={NATIVE_TOOLS}>
@@ -687,15 +680,7 @@ export const ServicesTab: Component = () => {
               <div style={{ display: "flex", "align-items": "center", gap: "6px" }}>
                 <span style={{ "font-weight": 500, "font-size": "13px", "font-family": "monospace" }}>{tool.name}</span>
                 <span class={s.hint} style={{ margin: 0 }}>{tool.description}</span>
-                <span
-                  title={tool.actions}
-                  style={{
-                    display: "inline-flex", "align-items": "center", "justify-content": "center",
-                    width: "16px", height: "16px", "border-radius": "50%", "flex-shrink": 0,
-                    background: "rgba(255,255,255,0.08)", color: "var(--fg-muted, #888)",
-                    "font-size": "11px", "font-weight": 600, cursor: "help",
-                  }}
-                >?</span>
+                <span class={s.infoBadge}>?<span class={s.infoBadgeTip}>{tool.actions}</span></span>
               </div>
             </div>
           );

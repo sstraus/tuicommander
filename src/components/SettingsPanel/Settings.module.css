@@ -857,6 +857,49 @@
   font-family: var(--font-mono, monospace);
 }
 
+/* ── Info Badge Tooltip (instant CSS popover) ── */
+.infoBadge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--fg-muted, #888);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: help;
+}
+
+.infoBadge .infoBadgeTip {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 320px;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-popup);
+  color: var(--fg-secondary);
+  font-size: var(--font-sm);
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: normal;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.infoBadge:hover .infoBadgeTip {
+  display: block;
+}
+
 .downloadBtn {
   padding: 8px 16px;
   background: var(--accent);

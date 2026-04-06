@@ -166,13 +166,23 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
     onCleanup(() => pluginRegistry.unregisterPanelSendChannel(tabId));
   });
 
-  // Update iframe content when HTML changes (with theme injection)
+  // Update iframe content when HTML or URL changes
   createEffect(() => {
+    const url = props.tab.url;
     const html = props.tab.html;
-    if (iframeRef) {
+    if (!iframeRef) return;
+    if (url) {
+      // URL mode: load external page via src (clear srcdoc to avoid conflict)
+      iframeRef.removeAttribute("srcdoc");
+      iframeRef.src = url;
+    } else {
+      // HTML mode: render inline content with theme injection
+      iframeRef.removeAttribute("src");
       iframeRef.srcdoc = injectThemeVars(html);
     }
   });
+
+  const isUrlMode = () => !!props.tab.url;
 
   return (
     <div style={{
@@ -183,8 +193,8 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
     }}>
       <iframe
         ref={iframeRef}
-        sandbox="allow-scripts"
-        srcdoc={injectThemeVars(props.tab.html)}
+        sandbox={isUrlMode() ? "allow-scripts allow-same-origin" : "allow-scripts"}
+        {...(isUrlMode() ? { src: props.tab.url } : { srcdoc: injectThemeVars(props.tab.html) })}
         style={{
           width: "100%",
           height: "100%",

@@ -288,9 +288,9 @@ export async function initApp(deps: AppInitDeps) {
   );
 
   // Listen for UI tab open/update requests from MCP tools
-  listen<{ id: string; title: string; html: string; pinned: boolean }>("ui-tab", (event) => {
-    const { id, title, html, pinned } = event.payload;
-    mdTabsStore.openUiTab(id, title, html, pinned);
+  listen<{ id: string; title: string; html: string; pinned: boolean; url?: string }>("ui-tab", (event) => {
+    const { id, title, html, pinned, url } = event.payload;
+    mdTabsStore.openUiTab(id, title, html, pinned, url);
     uiStore.setMarkdownPanelVisible(true);
   }).catch((err) =>
     appLogger.error("app", "Failed to register ui-tab listener", err),
