@@ -61,6 +61,20 @@ export function CommandInput(props: CommandInputProps) {
     textareaEl.style.height = Math.min(textareaEl.scrollHeight, 120) + "px";
   }
 
+  /** Write "/" to PTY immediately so the agent activates its slash menu.
+   *  This is the one exception to the "no live sync" rule — the agent
+   *  can't show its menu unless it receives the "/" keystroke.
+   */
+  function writeSlashToPty() {
+    rpc("write_pty", { sessionId: props.sessionId, data: "/" }).catch((err: unknown) => {
+      appLogger.warn("network", "Failed to write slash to PTY", { error: err });
+    });
+    setValue("");
+    if (textareaEl) { textareaEl.value = ""; }
+    userEditing = false;
+    lastSendAt = Date.now();
+  }
+
   /** On any input change, update local state only — no PTY sync.
    *  This is the mobile CommandInput: live sync causes echo duplication
    *  because the PTY echoes the text back and then send() writes it again.
@@ -69,6 +83,12 @@ export function CommandInput(props: CommandInputProps) {
   function handleInput(e: InputEvent & { currentTarget: HTMLTextAreaElement }) {
     userEditing = true;
     const text = e.currentTarget.value;
+    // Slash trigger: when user types "/" as the first character, send it
+    // to the PTY immediately so the agent can show its slash menu.
+    if (text === "/") {
+      writeSlashToPty();
+      return;
+    }
     setValue(text);
     autoResize();
   }

@@ -41,6 +41,23 @@ describe("CommandInput send() agent-aware write splitting", () => {
   });
 });
 
+describe("CommandInput slash trigger", () => {
+  it("writes / to PTY immediately when input becomes /", () => {
+    // When the user types / as the first character, the mobile CommandInput
+    // must write it to the PTY so the agent can activate its slash menu.
+    // This is the one exception to the "no live sync" rule.
+    expect(tsx).toContain("writeSlashToPty");
+  });
+
+  it("clears the input after sending slash to PTY", () => {
+    // After writing / to PTY, the input should be cleared so the user
+    // doesn't see a stale / while the slash menu loads.
+    const fnBlock = tsx.match(/writeSlashToPty[\s\S]*?(?=\n  function |\n  async function |\n  return \()/);
+    expect(fnBlock, "writeSlashToPty function not found").toBeTruthy();
+    expect(fnBlock![0]).toContain('setValue("")');
+  });
+});
+
 describe("CommandInput iOS auto-zoom prevention", () => {
   it("input font-size is >= 16px to prevent iOS auto-zoom", () => {
     // iOS Safari zooms when the focused input has font-size < 16px.
