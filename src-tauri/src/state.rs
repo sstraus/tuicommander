@@ -1016,33 +1016,10 @@ impl AppState {
         self.git_cache.invalidate_repo(path);
     }
 
-    /// Shell idle timeout: 500ms without PTY output → "idle" (matches desktop model).
-    const SHELL_IDLE_MS: u64 = 500;
-
-    /// Derive shell_state from PTY output timing for a session.
-    /// Returns "busy" if last output was < 500ms ago, "idle" otherwise, None if never output.
-    pub(crate) fn derive_shell_state(&self, session_id: &str) -> Option<String> {
-        self.last_output_ms.get(session_id).map(|ts| {
-            let last = ts.load(std::sync::atomic::Ordering::Relaxed);
-            if last == 0 {
-                return "idle".to_string();
-            }
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64;
-            if now.saturating_sub(last) < Self::SHELL_IDLE_MS {
-                "busy".to_string()
-            } else {
-                "idle".to_string()
-            }
-        })
-    }
-
     /// Default rate limit expiry when no retry_after_ms is provided (120s).
     const RATE_LIMIT_DEFAULT_EXPIRY_MS: u64 = 120_000;
 
-    /// Get a SessionState snapshot with shell_state computed from output timing.
+    /// Get a SessionState snapshot with shell_state from the PTY reader's state machine.
     /// Also expires stale rate limits based on retry_after_ms + timestamp.
     pub(crate) fn session_state_with_shell(&self, session_id: &str) -> Option<SessionState> {
         // Expire stale rate limits in-place before building the snapshot.
@@ -1062,7 +1039,12 @@ impl AppState {
         }
         self.session_states.get(session_id).map(|s| {
             let mut state = s.clone();
-            state.shell_state = self.derive_shell_state(session_id);
+            state.shell_state = self.shell_states.get(session_id).map(|atom| {
+                match atom.load(std::sync::atomic::Ordering::Relaxed) {
+                    1 => "busy".to_string(),  // SHELL_BUSY
+                    _ => "idle".to_string(),
+                }
+            });
             state
         })
     }
@@ -2894,36 +2876,28 @@ mod tests {
         assert!(s.question_text.is_none(), "status-line should clear question_text");
     }
 
-    #[test]
-    fn test_session_state_shell_state_from_output_timing() {
-        let state = fresh_state();
-        // No output yet → idle
-        assert_eq!(state.derive_shell_state("s1"), Some("idle".to_string()));
-        // Stamp recent output
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
-        state.last_output_ms.get("s1").unwrap()
-            .store(now, std::sync::atomic::Ordering::Relaxed);
-        assert_eq!(state.derive_shell_state("s1"), Some("busy".to_string()));
-        // Old output → idle
-        state.last_output_ms.get("s1").unwrap()
-            .store(now - 1000, std::sync::atomic::Ordering::Relaxed);
-        assert_eq!(state.derive_shell_state("s1"), Some("idle".to_string()));
-    }
 
     #[test]
-    fn test_session_state_with_shell_enriches_state() {
+    fn test_session_state_with_shell_reads_shell_states_not_output_timing() {
         let state = fresh_state();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
-        state.last_output_ms.get("s1").unwrap()
-            .store(now, std::sync::atomic::Ordering::Relaxed);
+        // Set shell_states to BUSY (1) — this is the source of truth from PTY reader
+        state.shell_states.insert("s1".to_string(), std::sync::atomic::AtomicU8::new(1));
+        // Intentionally leave last_output_ms at 0 (stale) — should NOT matter
         let ss = state.session_state_with_shell("s1").unwrap();
-        assert_eq!(ss.shell_state.as_deref(), Some("busy"));
+        assert_eq!(ss.shell_state.as_deref(), Some("busy"),
+            "shell_state must come from shell_states, not last_output_ms");
+
+        // Set shell_states to IDLE (2)
+        state.shell_states.get("s1").unwrap()
+            .store(2, std::sync::atomic::Ordering::Relaxed);
+        let ss = state.session_state_with_shell("s1").unwrap();
+        assert_eq!(ss.shell_state.as_deref(), Some("idle"));
+
+        // No shell_states entry → None
+        state.shell_states.remove("s1");
+        let ss = state.session_state_with_shell("s1").unwrap();
+        assert!(ss.shell_state.is_none(),
+            "no shell_states entry should produce None, not derive from timing");
     }
 
     #[test]
