@@ -53,7 +53,13 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
     out.push_str(&format!(
         "**1. `ack` — connection acknowledgement (handshake, not greeting).** Your very first assistant message in the conversation MUST begin with the literal line:\n\n    TUICommander v{ver} is connected.\n\nThis is a protocol ACK, the equivalent of `220` in SMTP. It is not a salutation and is not subject to \"no preamble\" rules. Emit it even if the user's first message is terse or the context instructs you to skip greetings.\n\n"
     ));
-    out.push_str("**2. `intent:` — phase declaration.** At the start of every work phase (new task, new user request, pivot to a different goal), emit on its own line at column 0:\n\n    intent: <what you plan to do, <60 chars> (<tab title, max 3 words>)\n\nExample: `intent: refactor scroll tracker into class (Scroll refactor)`\n\n");
+    out.push_str(concat!(
+        "**2. `intent:` — phase declaration.** Emit on its own line at column 0 ",
+        "**every time your work changes** — new request, sub-task pivot, or resuming after Q&A:\n\n",
+        "    intent: <what you plan to do, <60 chars> (<tab title, max 3 words>)\n\n",
+        "If your current work no longer matches the last intent you emitted, emit a new one. ",
+        "One intent per session = stale tab title = broken.\n\n",
+    ));
     if state.config.read().suggest_followups {
         out.push_str("**3. `suggest:` — follow-up bar.** After completing a task, emit on its own line at column 0:\n\n    suggest: 1) Action1 | 2) Action2 | 3) Action3\n\n2–4 items, 2–5 words each, always numbered. The TUI renders these as clickable buttons.\n\n");
     }
@@ -61,7 +67,7 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
     out.push_str("### Self-check before you respond\n\n");
     out.push_str("Before sending your first message in this conversation, verify:\n");
     out.push_str(&format!("- [ ] First line is exactly: `TUICommander v{ver} is connected.`\n"));
-    out.push_str("- [ ] An `intent:` line will appear before you start work\n");
+    out.push_str("- [ ] An `intent:` line appears before every distinct work phase (not just the first)\n");
     if state.config.read().suggest_followups {
         out.push_str("- [ ] A `suggest:` line will appear when the task is done\n");
     }
