@@ -10,7 +10,14 @@ import { filterValidTerminals } from "../utils/terminalFilter";
 import { verifyAndBuildResumeCommand } from "../utils/agentSession";
 import { repoSettingsStore } from "../stores/repoSettings";
 import { githubStore } from "../stores/github";
-import { paneLayoutStore } from "../stores/paneLayout";
+import { paneLayoutStore, type PaneLayoutState } from "../stores/paneLayout";
+
+/** In-memory pane layout cache per branch — survives branch switches within a session */
+const savedPaneLayouts = new Map<string, PaneLayoutState>();
+
+function paneLayoutKey(repoPath: string, branchName: string): string {
+  return `${repoPath}\0${branchName}`;
+}
 import { effectiveMergeMethod, isMergeMethodNotAllowed } from "../utils/prMerge";
 import type { WorktreeCreateOptions } from "../components/CreateWorktreeDialog";
 
@@ -463,6 +470,15 @@ export function useGitOperations(deps: GitOperationsDeps) {
       } else {
         appLogger.info("terminal", `BranchSelect SKIP save lastActiveTerminal — activeId=${currentActiveId} not in branch terminals ${JSON.stringify(prevBranch?.terminals)}`);
       }
+      // Save pane layout for the branch we're leaving
+      if (paneLayoutStore.isSplit()) {
+        const key = paneLayoutKey(prevRepo.path, prevRepo.activeBranch);
+        savedPaneLayouts.set(key, paneLayoutStore.serialize());
+        appLogger.info("terminal", `BranchSelect SAVE paneLayout for ${prevRepo.activeBranch}`);
+      } else {
+        // Clear any stale layout if user unsplit while on this branch
+        savedPaneLayouts.delete(paneLayoutKey(prevRepo.path, prevRepo.activeBranch));
+      }
     }
 
     // Batch all reactive updates so downstream effects (file browser, etc.)
@@ -514,8 +530,24 @@ export function useGitOperations(deps: GitOperationsDeps) {
     }
 
     if (validTerminals.length > 0) {
-      // Reset pane layout — tree persistence is Story #1054
-      paneLayoutStore.reset();
+      // Restore saved pane layout if available and all its terminals are still valid
+      const layoutKey = paneLayoutKey(repoPath, branchName);
+      const savedLayout = savedPaneLayouts.get(layoutKey);
+      if (savedLayout) {
+        const validSet = new Set(validTerminals);
+        const layoutTerminals = Object.values(savedLayout.groups).flatMap(g => g.tabs.filter(t => t.type === "terminal").map(t => t.id));
+        const allValid = layoutTerminals.length > 0 && layoutTerminals.every(id => validSet.has(id));
+        if (allValid) {
+          paneLayoutStore.restore(savedLayout);
+          appLogger.info("terminal", `BranchSelect RESTORE paneLayout for ${branchName}`);
+        } else {
+          appLogger.info("terminal", `BranchSelect DISCARD stale paneLayout for ${branchName} — terminal IDs changed`);
+          savedPaneLayouts.delete(layoutKey);
+          paneLayoutStore.reset();
+        }
+      } else {
+        paneLayoutStore.reset();
+      }
       // Restore the last active terminal for this branch, or fall back to first
       const remembered = branch?.lastActiveTerminal;
       if (remembered && validTerminals.includes(remembered)) {
@@ -545,7 +577,6 @@ export function useGitOperations(deps: GitOperationsDeps) {
       repositoriesStore.setBranch(repoPath, branchName, { savedTerminals: [] });
       if (restoredIds.length > 0) terminalsStore.setActive(restoredIds[0].id);
 
-      // Reset pane layout — tree persistence is Story #1054
       paneLayoutStore.reset();
 
       // Second pass: verify resume commands in parallel (non-blocking)

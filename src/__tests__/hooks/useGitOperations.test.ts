@@ -8,6 +8,7 @@ import { repoSettingsStore } from "../../stores/repoSettings";
 import { githubStore } from "../../stores/github";
 import type { BranchPrStatus } from "../../types";
 import { useGitOperations } from "../../hooks/useGitOperations";
+import { paneLayoutStore, resetGroupCounter } from "../../stores/paneLayout";
 
 function resetStores() {
   for (const id of terminalsStore.getIds()) {
@@ -66,6 +67,8 @@ describe("useGitOperations", () => {
 
   beforeEach(() => {
     resetStores();
+    paneLayoutStore.reset();
+    resetGroupCounter();
     vi.clearAllMocks();
     mockPty.canSpawn.mockResolvedValue(true);
     mockDialogs.confirmRemoveRepo.mockResolvedValue(true);
@@ -291,6 +294,34 @@ describe("useGitOperations", () => {
       // Switch back to main — should restore m2, not m1
       await gitOps.handleBranchSelect("/repo", "main");
       expect(terminalsStore.state.activeId).toBe(m2);
+    });
+
+    it("persists and restores pane layout across branch switches", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+      repositoriesStore.setBranch("/repo", "feature", { worktreePath: "/repo/wt" });
+
+      // Start on main — auto-spawns a terminal
+      await gitOps.handleBranchSelect("/repo", "main");
+      const t1 = terminalsStore.state.activeId!;
+      expect(t1).toBeTruthy();
+
+      // Create a split layout on main
+      const g1 = paneLayoutStore.createGroup();
+      paneLayoutStore.addTab(g1, { id: t1, type: "terminal" });
+      paneLayoutStore.setRoot({ type: "leaf", id: g1 });
+      paneLayoutStore.setActiveGroup(g1);
+      paneLayoutStore.split(g1, "vertical");
+      expect(paneLayoutStore.isSplit()).toBe(true);
+
+      // Switch to feature — layout should be saved, reset on feature
+      await gitOps.handleBranchSelect("/repo", "feature");
+      expect(paneLayoutStore.isSplit()).toBe(false);
+
+      // Switch back to main — layout should be restored
+      await gitOps.handleBranchSelect("/repo", "main");
+      expect(paneLayoutStore.isSplit()).toBe(true);
+      expect(paneLayoutStore.getAllGroupIds()).toContain(g1);
     });
 
     it("serializes concurrent calls — no duplicate terminals from savedTerminals", async () => {
