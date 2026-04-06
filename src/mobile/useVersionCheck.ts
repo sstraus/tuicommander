@@ -29,19 +29,20 @@ export function useVersionCheck() {
     }
   }
 
+  // iOS SW freshness workaround: force SW update check on every page load
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.ready.then((reg) => {
+      reg.update().catch(() => {});
+    }).catch(() => {});
+  }
+
   check();
   const timer = setInterval(check, CHECK_INTERVAL_MS);
   onCleanup(() => clearInterval(timer));
 
   function applyUpdate() {
-    // Unregister SW so the browser fetches fresh assets on reload
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.getRegistrations().then((regs) => {
-        for (const reg of regs) reg.unregister();
-      });
-    }
-    // Hard reload bypassing cache
-    location.reload();
+    // Cache-bust navigation for iOS standalone mode (location.reload() may serve from RAM cache)
+    location.replace(location.pathname + "?v=" + Date.now());
   }
 
   return { updateAvailable, applyUpdate };
