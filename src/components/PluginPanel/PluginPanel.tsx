@@ -2,6 +2,13 @@ import { Component, createEffect, onCleanup, onMount } from "solid-js";
 import type { PluginPanelTab } from "../../stores/mdTabs";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
 import { PLUGIN_BASE_CSS } from "./pluginBaseStyles";
+import { TUIC_SDK_SCRIPT } from "./tuicSdk";
+import { repositoriesStore } from "../../stores/repositories";
+import { mdTabsStore } from "../../stores/mdTabs";
+import { terminalsStore } from "../../stores/terminals";
+import { settingsStore } from "../../stores/settings";
+import { appLogger } from "../../stores/appLogger";
+import { assignTabToActiveGroup } from "../../utils/paneTabAssign";
 
 export interface PluginPanelProps {
   tab: PluginPanelTab;
@@ -39,7 +46,7 @@ function extractThemeVars(): string {
 function injectThemeVars(html: string): string {
   const themeStyle = extractThemeVars();
   const baseStyle = `<style id="tuic-base">${PLUGIN_BASE_CSS}</style>`;
-  const injection = baseStyle + themeStyle;
+  const injection = baseStyle + themeStyle + TUIC_SDK_SCRIPT;
   const headClose = html.indexOf("</head>");
   if (headClose >= 0) {
     return html.slice(0, headClose) + injection + html.slice(headClose);
@@ -66,6 +73,58 @@ function injectThemeVars(html: string): string {
 export const PluginPanel: Component<PluginPanelProps> = (props) => {
   let iframeRef: HTMLIFrameElement | undefined;
 
+  /** Find the repo that contains the given absolute path, or null */
+  const findRepoForPath = (path: string): string | null => {
+    const repos = Object.keys(repositoriesStore.state.repositories);
+    return repos.find((rp) => path.startsWith(rp + "/") || path === rp) ?? null;
+  };
+
+  /** Handle tuic:* SDK messages from the iframe */
+  const handleTuicMessage = (data: Record<string, unknown>) => {
+    switch (data.type) {
+      case "tuic:open": {
+        const path = typeof data.path === "string" ? data.path : "";
+        if (!path) {
+          appLogger.warn("plugin", "tuic:open missing path");
+          return;
+        }
+        const repoPath = findRepoForPath(path);
+        if (!repoPath) {
+          appLogger.warn("plugin", `tuic:open path not in any known repo: ${path}`);
+          return;
+        }
+        const relPath = path.slice(repoPath.length + 1);
+        const tabId = mdTabsStore.add(repoPath, relPath);
+        if (data.pinned) mdTabsStore.setPinned(tabId, true);
+        return;
+      }
+      case "tuic:terminal": {
+        const repoPath = typeof data.repoPath === "string" ? data.repoPath : "";
+        if (!repoPath) {
+          appLogger.warn("plugin", "tuic:terminal missing repoPath");
+          return;
+        }
+        if (!(repoPath in repositoriesStore.state.repositories)) {
+          appLogger.warn("plugin", `tuic:terminal repo not in repo list: ${repoPath}`);
+          return;
+        }
+        const count = terminalsStore.getCount();
+        const id = terminalsStore.add({
+          sessionId: null,
+          fontSize: settingsStore.state.defaultFontSize,
+          name: `Terminal ${count + 1}`,
+          cwd: repoPath,
+          awaitingInput: null,
+        });
+        assignTabToActiveGroup(id, "terminal");
+        terminalsStore.setActive(id);
+        return;
+      }
+      default:
+        appLogger.warn("plugin", `Unknown tuic SDK command: ${data.type}`);
+    }
+  };
+
   // Handle messages from the iframe
   const handleMessage = (event: MessageEvent) => {
     // Only process messages from our iframe
@@ -77,6 +136,12 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
     // System message: close-panel (backward compatible)
     if (data.type === "close-panel" && data.pluginId === props.tab.pluginId) {
       props.onClose?.();
+      return;
+    }
+
+    // TUIC SDK messages — handled by the host, never forwarded to plugins
+    if (typeof data.type === "string" && data.type.startsWith("tuic:")) {
+      handleTuicMessage(data);
       return;
     }
 

@@ -683,6 +683,60 @@ All standard elements (buttons, inputs, tables) will look correct automatically.
 
 **Security:** The iframe uses `sandbox="allow-scripts"` without `allow-same-origin`, blocking access to Tauri IPC and the parent page DOM. The `close-panel` message type is handled as a system message; all other messages are routed to the `onMessage` callback.
 
+#### TUIC SDK (`window.tuic`)
+
+Every plugin iframe automatically receives the TUIC SDK — a lightweight JavaScript API for host integration. The SDK is injected alongside the base CSS and theme variables.
+
+**Feature detection:**
+
+```javascript
+if (window.tuic) {
+  // Running inside TUICommander — SDK is available
+  console.log("TUIC SDK version:", window.tuic.version);
+}
+```
+
+**Programmatic API:**
+
+| Method | Description |
+|--------|-------------|
+| `tuic.version` | SDK version string (e.g. `"1.0"`) |
+| `tuic.open(path, opts?)` | Open a markdown file in a new tab. `path` is absolute. `opts.pinned` pins the tab. |
+| `tuic.terminal(repoPath)` | Open a new terminal in the given repository. |
+
+```javascript
+// Open a file
+tuic.open("/Users/me/myrepo/README.md");
+
+// Open a pinned file
+tuic.open("/Users/me/myrepo/docs/guide.md", { pinned: true });
+
+// Open a terminal in a repo
+tuic.terminal("/Users/me/myrepo");
+```
+
+**Link interception:** Standard HTML links with `tuic://` scheme are intercepted automatically — no JavaScript required:
+
+```html
+<!-- Opens a markdown file -->
+<a href="tuic://open/Users/me/myrepo/README.md">View README</a>
+
+<!-- Opens a pinned markdown file -->
+<a href="tuic://open/Users/me/myrepo/docs/guide.md" data-pinned>Pinned Guide</a>
+
+<!-- Opens a terminal -->
+<a href="tuic://terminal?repo=/Users/me/myrepo">Open Terminal</a>
+```
+
+**URL format:**
+
+| URL | Action |
+|-----|--------|
+| `tuic://open/<absolute-path>` | Open file in markdown tab |
+| `tuic://terminal?repo=<repo-path>` | Open terminal in repository |
+
+**Security:** Paths are validated against the list of known repositories. Paths outside any registered repo are rejected with a warning. The SDK runs inside the sandbox and communicates with the host exclusively via `postMessage`.
+
 ### Tier 3e: Sidebar Plugin Panels (capability-gated)
 
 #### host.registerSidebarPanel(options) -> SidebarPanelHandle
@@ -1164,8 +1218,10 @@ TUICommander registers the `tuic://` URL scheme for external integration:
 | `tuic://install-plugin?url=https://...` | Download ZIP, show confirmation, install |
 | `tuic://open-repo?path=/path/to/repo` | Switch to repo (must already be in sidebar) |
 | `tuic://settings?tab=plugins` | Open Settings to a specific tab |
+| `tuic://open/<path>` | Open markdown file in tab (iframe SDK only) |
+| `tuic://terminal?repo=<path>` | Open terminal in repo (iframe SDK only) |
 
-**Security:** `install-plugin` requires HTTPS URLs and shows a confirmation dialog. `open-repo` only accepts paths already in the repository list.
+**Security:** `install-plugin` requires HTTPS URLs and shows a confirmation dialog. `open-repo` only accepts paths already in the repository list. `open` and `terminal` validate paths against known repos (available only inside plugin iframes via the TUIC SDK, not as OS-level deep links).
 
 ## Plugin Registry
 
