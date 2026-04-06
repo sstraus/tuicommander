@@ -36,6 +36,18 @@ pub(crate) fn discover_agent_session(
     }
 }
 
+/// Return the absolute path to Claude Code's project directory for a given CWD.
+/// E.g. `/Users/foo/bar` → `~/.claude/projects/-Users-foo-bar`.
+#[tauri::command]
+pub(crate) fn claude_project_dir(cwd: String) -> Result<String, String> {
+    let base = claude_projects_dir()
+        .ok_or_else(|| "Could not determine home directory".to_string())?;
+    let path = base.join(path_to_claude_slug(&cwd));
+    path.to_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "Project path contains non-UTF-8 characters".to_string())
+}
+
 // ─── Claude ──────────────────────────────────────────────────────────────────
 
 /// Base directory for Claude Code session transcripts: `~/.claude/projects/`.
@@ -45,15 +57,17 @@ fn claude_projects_dir() -> Option<PathBuf> {
 
 /// Encode a filesystem path to the slug Claude Code uses as a directory name.
 ///
-/// Claude encodes a path by replacing each path separator with `-` and prepending
-/// a leading `-` to represent the root. Non-separator characters are kept as-is.
+/// Claude encodes a path by replacing `/`, `.`, and `_` with `-`,
+/// prepending a leading `-` to represent the root.
 ///
-/// Example: `/Users/foo/bar` → `-Users-foo-bar`
+/// Example: `/Users/foo.bar/my_project` → `-Users-foo-bar-my-project`
 fn path_to_claude_slug(path: &str) -> String {
     // Normalise separators so this works on Windows too
     let normalised = path.replace('\\', "/");
-    // Replace every `/` with `-` (including the leading one → leading `-`)
-    normalised.replace('/', "-")
+    // Strip trailing separator to avoid a trailing dash in the slug
+    let trimmed = normalised.trim_end_matches('/');
+    // Replace `/`, `.`, and `_` — Claude treats all three as slug delimiters
+    trimmed.replace(['/', '.', '_'], "-")
 }
 
 /// Find the most recently created, unclaimed `.jsonl` session file under
@@ -385,11 +399,62 @@ mod tests {
     }
 
     #[test]
+    fn test_path_to_claude_slug_dots_in_username() {
+        assert_eq!(
+            path_to_claude_slug("/Users/stefano.straus/Gits/project"),
+            "-Users-stefano-straus-Gits-project"
+        );
+    }
+
+    #[test]
+    fn test_path_to_claude_slug_underscores() {
+        assert_eq!(
+            path_to_claude_slug("/Users/foo/CC_Playground/my_project"),
+            "-Users-foo-CC-Playground-my-project"
+        );
+    }
+
+    #[test]
+    fn test_path_to_claude_slug_hidden_dirs() {
+        assert_eq!(
+            path_to_claude_slug("/Users/foo/project/.claude-worktrees/feat"),
+            "-Users-foo-project--claude-worktrees-feat"
+        );
+    }
+
+    #[test]
+    fn test_path_to_claude_slug_trailing_slash() {
+        assert_eq!(
+            path_to_claude_slug("/Users/foo/bar/"),
+            "-Users-foo-bar"
+        );
+    }
+
+    #[test]
     fn test_path_to_claude_slug_windows() {
         assert_eq!(
             path_to_claude_slug("C:\\Users\\foo\\bar"),
             "C:-Users-foo-bar"
         );
+    }
+
+    // ── claude_project_dir ──
+
+    #[test]
+    fn test_claude_project_dir_returns_path_with_slug() {
+        if let Ok(result) = claude_project_dir("/Users/foo/bar".to_string()) {
+            assert!(result.ends_with("/.claude/projects/-Users-foo-bar"),
+                "unexpected path: {result}");
+        }
+        // None only if home dir unavailable (CI) — not a failure
+    }
+
+    #[test]
+    fn test_claude_project_dir_dots_in_username() {
+        if let Ok(result) = claude_project_dir("/Users/foo.bar/proj".to_string()) {
+            assert!(result.ends_with("-Users-foo-bar-proj"),
+                "unexpected path: {result}");
+        }
     }
 
     // ── newest_unclaimed_file ──

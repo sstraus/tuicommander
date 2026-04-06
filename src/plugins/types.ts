@@ -470,6 +470,11 @@ export interface PluginHost {
   /** Get the CWD for a terminal session, or null if not found or cwd is unset */
   getSessionCwd(sessionId: string): string | null;
 
+  /** Resolve a repo path to its Claude Code project directory (absolute path).
+   *  Uses the canonical slug encoding from the Rust side — single source of truth.
+   *  Requires "fs:read" capability. */
+  getClaudeProjectDir(repoPath: string): Promise<string | null>;
+
   /** Get the active repository path, or null if none active */
   getActiveRepoPath(): string | null;
 

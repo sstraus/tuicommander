@@ -1,5 +1,5 @@
 import { For, Show, createSignal } from "solid-js";
-import { notesStore, generateId } from "../../stores/notes";
+import { notesStore } from "../../stores/notes";
 import { rpc } from "../../transport";
 import { retryWrite } from "../utils/retryWrite";
 import { appLogger } from "../../stores/appLogger";

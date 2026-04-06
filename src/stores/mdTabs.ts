@@ -193,6 +193,26 @@ function createMdTabsStore() {
       return tabId;
     },
 
+    /**
+     * Open or update a UI tab (MCP-driven). Deduplicates on pluginId alone —
+     * if a tab with the same pluginId exists, updates its title/html and focuses it.
+     */
+    openUiTab(pluginId: string, title: string, html: string, pinned: boolean): string {
+      const existing = Object.values(base.state.tabs).find(
+        (tab) => tab.type === "plugin-panel" && (tab as PluginPanelTab).pluginId === pluginId,
+      ) as PluginPanelTab | undefined;
+      if (existing) {
+        base._setState("tabs", existing.id, "html" as keyof MdTabData, html as MdTabData[keyof MdTabData]);
+        base._setState("tabs", existing.id, "title" as keyof MdTabData, title as MdTabData[keyof MdTabData]);
+        base.setActive(existing.id);
+        return existing.id;
+      }
+
+      const id = base._nextId("md");
+      const tabId = base._addTab({ type: "plugin-panel", id, title, pluginId, html, pinned } as PluginPanelTab);
+      return tabId;
+    },
+
     /** Update the HTML content of an existing plugin panel tab */
     updatePluginPanel(tabId: string, html: string): void {
       const tab = base.get(tabId);

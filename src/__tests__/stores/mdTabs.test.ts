@@ -326,4 +326,52 @@ describe("mdTabsStore", () => {
       });
     });
   });
+
+  describe("openUiTab()", () => {
+    it("creates a new plugin-panel tab with the given id", () => {
+      testInScope(() => {
+        const tabId = store.openUiTab("wiz-coverage", "Coverage Report", "<h1>Report</h1>", true);
+        expect(tabId).toBeTruthy();
+        expect(store.state.activeId).toBe(tabId);
+        const tab = store.get(tabId);
+        expect(tab?.type).toBe("plugin-panel");
+        if (tab?.type === "plugin-panel") {
+          expect(tab.pluginId).toBe("wiz-coverage");
+          expect(tab.title).toBe("Coverage Report");
+          expect(tab.html).toBe("<h1>Report</h1>");
+          expect(tab.pinned).toBe(true);
+        }
+      });
+    });
+
+    it("deduplicates by pluginId — same id reuses existing tab", () => {
+      testInScope(() => {
+        const id1 = store.openUiTab("wiz-report", "Report v1", "<p>v1</p>", true);
+        const id2 = store.openUiTab("wiz-report", "Report v2", "<p>v2</p>", true);
+        expect(id1).toBe(id2);
+        expect(store.getCount()).toBe(1);
+        const tab = store.get(id1);
+        if (tab?.type === "plugin-panel") {
+          expect(tab.title).toBe("Report v2");
+          expect(tab.html).toBe("<p>v2</p>");
+        }
+      });
+    });
+
+    it("respects pinned=false", () => {
+      testInScope(() => {
+        const tabId = store.openUiTab("wiz-temp", "Temp", "<p>temp</p>", false);
+        const tab = store.get(tabId);
+        expect(tab?.pinned).toBe(false);
+      });
+    });
+
+    it("different ids create separate tabs", () => {
+      testInScope(() => {
+        store.openUiTab("wiz-a", "Tab A", "<p>A</p>", true);
+        store.openUiTab("wiz-b", "Tab B", "<p>B</p>", true);
+        expect(store.getCount()).toBe(2);
+      });
+    });
+  });
 });

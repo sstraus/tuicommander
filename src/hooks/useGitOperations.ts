@@ -548,14 +548,20 @@ export function useGitOperations(deps: GitOperationsDeps) {
       } else {
         paneLayoutStore.reset();
       }
-      // Restore the last active terminal for this branch, or fall back to first
-      const remembered = branch?.lastActiveTerminal;
-      if (remembered && validTerminals.includes(remembered)) {
-        appLogger.info("terminal", `BranchSelect RESTORE lastActiveTerminal=${remembered} for ${branchName}`);
-        terminalsStore.setActive(remembered);
+      // Prefer a terminal that is awaiting input (question/error), then lastActive, then first
+      const awaitingId = validTerminals.find(id => terminalsStore.get(id)?.awaitingInput);
+      if (awaitingId) {
+        appLogger.info("terminal", `BranchSelect FOCUS awaitingInput terminal=${awaitingId} for ${branchName}`);
+        terminalsStore.setActive(awaitingId);
       } else {
-        appLogger.info("terminal", `BranchSelect FALLBACK to first terminal=${validTerminals[0]} for ${branchName} (remembered=${remembered}, valid=${JSON.stringify(validTerminals)})`);
-        terminalsStore.setActive(validTerminals[0]);
+        const remembered = branch?.lastActiveTerminal;
+        if (remembered && validTerminals.includes(remembered)) {
+          appLogger.info("terminal", `BranchSelect RESTORE lastActiveTerminal=${remembered} for ${branchName}`);
+          terminalsStore.setActive(remembered);
+        } else {
+          appLogger.info("terminal", `BranchSelect FALLBACK to first terminal=${validTerminals[0]} for ${branchName} (remembered=${remembered}, valid=${JSON.stringify(validTerminals)})`);
+          terminalsStore.setActive(validTerminals[0]);
+        }
       }
     } else if (branch?.savedTerminals && branch.savedTerminals.length > 0) {
       // Lazy restore: create terminals from persisted session state

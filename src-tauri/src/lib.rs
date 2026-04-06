@@ -43,6 +43,7 @@ pub(crate) mod state;
 pub(crate) mod tailscale;
 pub(crate) mod tool_search;
 pub(crate) mod text_rank;
+pub(crate) mod content_index;
 mod updater;
 pub(crate) mod worktree;
 
@@ -727,6 +728,7 @@ pub fn run() {
         mcp_upstream_registry: Arc::new(mcp_proxy::registry::UpstreamRegistry::new()),
         mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
         tool_search_index: Arc::new(parking_lot::RwLock::new(crate::tool_search::ToolSearchIndex::build(&[]))),
+        content_indices: DashMap::new(),
         slash_mode: DashMap::new(),
         last_output_ms: DashMap::new(),
         shell_states: DashMap::new(),
@@ -766,6 +768,9 @@ pub fn run() {
 
                 // Start tool search index updater (rebuilds on mcp_tools_changed)
                 crate::mcp_http::mcp_transport::spawn_tool_search_index_updater(boot_registry_state.clone());
+
+                // Start content index updater (rebuilds on repo-changed)
+                crate::content_index::spawn_content_index_updater(boot_registry_state.clone());
 
                 // Auto-connect saved upstream MCP servers on boot
                 crate::mcp_upstream_config::auto_connect_saved_upstreams(&boot_registry_state).await;
@@ -974,6 +979,7 @@ pub fn run() {
             agent::spawn_agent,
             agent_session::discover_agent_session,
             agent_session::verify_agent_session,
+            agent_session::claude_project_dir,
             worktree::remove_worktree,
             worktree::check_worktree_dirty,
             worktree::delete_local_branch,

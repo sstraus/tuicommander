@@ -201,6 +201,7 @@ host.getActiveRepo()       // { path, displayName, activeBranch, worktreePath } 
 host.getRepos()            // [{ path, displayName }]
 host.getActiveTerminalSessionId()  // string | null
 host.getRepoPathForSession(sessionId: string)  // string | null (repo owning this terminal session)
+host.getClaudeProjectDir(repoPath: string)     // Promise<string | null> — requires "fs:read"
 host.getPrNotifications()  // [{ id, repoPath, branch, prNumber, title, type }]
 host.getSettings(repoPath: string) // { path, displayName, baseBranch, color } | null
 host.getTerminalState()    // { sessionId, shellState, agentType, agentActive, awaitingInput, repoPath } | null
@@ -259,15 +260,19 @@ HttpResponse: `{ status: number, headers: Record<string, string>, body: string }
 All paths must be absolute and within `$HOME`. Resolved via canonicalize (symlinks, `..` resolved).
 
 ```typescript
+// Resolve a repo path to its Claude Code project directory
+const projectDir = await host.getClaudeProjectDir("/Users/me/my-project");  // requires "fs:read"
+// → "/Users/me/.claude/projects/-Users-me-my-project"
+
 // Read a file (max 10 MB, UTF-8)
-const content = await host.readFile("/Users/me/.claude/projects/foo/conversation.jsonl");  // requires "fs:read"
+const content = await host.readFile(`${projectDir}/conversation.jsonl`);  // requires "fs:read"
 
 // Read last N bytes of a file (skip partial first line)
 const tail = await host.readFileTail("/Users/me/.claude/hud-tracking.jsonl", 512 * 1024);  // requires "fs:read"
 
 // List directory (optional glob filter, optional sort: "name" default or "mtime" newest-first)
-const files = await host.listDirectory("/Users/me/.claude/projects/foo", "*.jsonl");  // requires "fs:list"
-const recent = await host.listDirectory("/Users/me/.claude/projects/foo", "*.jsonl", { sortBy: "mtime" });
+const files = await host.listDirectory(projectDir, "*.jsonl");  // requires "fs:list"
+const recent = await host.listDirectory(projectDir, "*.jsonl", { sortBy: "mtime" });
 
 // Watch for changes (returns Disposable)
 const watcher = await host.watchPath(  // requires "fs:watch"

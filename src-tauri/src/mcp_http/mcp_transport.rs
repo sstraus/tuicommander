@@ -11,7 +11,7 @@ use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use uuid::Uuid;
 
 /// Serialize a value to JSON, returning a structured error on failure instead of silent null.
@@ -100,6 +100,7 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
         out.push_str("| `agent` | detect, spawn, stats, metrics | AI agent management |\n");
         out.push_str("| `messaging` | register, list_peers, send, inbox | Inter-agent coordination |\n");
         out.push_str("| `workspace` | list, active | Repos, branches, groups |\n");
+        out.push_str("| `ui` | tab | Open/update panel tabs |\n");
         out.push_str("| `config` | get, save | App configuration |\n");
         out.push_str("| `notify` | toast, confirm | User notifications |\n");
         out.push_str("| `plugin_dev_guide` | *(none)* | Plugin authoring reference |\n\n");
@@ -192,6 +193,7 @@ const GITHUB_ACTIONS: &str = "prs, status";
 const WORKTREE_ACTIONS: &str = "list, create, remove";
 const CONFIG_ACTIONS: &str = "get, save";
 const WORKSPACE_ACTIONS: &str = "list, active";
+const UI_ACTIONS: &str = "tab";
 const NOTIFY_ACTIONS: &str = "toast, confirm";
 const KNOWLEDGE_ACTIONS: &str = "search, code_graph, status, setup";
 const MESSAGING_ACTIONS: &str = "register, list_peers, send, inbox";
@@ -282,6 +284,17 @@ fn native_tool_definitions() -> serde_json::Value {
             }, "required": ["action"] }
         },
         {
+            "name": "ui",
+            "description": "Control the TUICommander UI.\n\nActions (pass as 'action' parameter):\n- tab: Open or update a pinned panel tab with HTML content. Requires id (stable key for dedup — same id reuses existing tab), title, html. Optional: pinned (default true — visible across all branches; false = scoped to current branch). If a tab with the same id already exists, its content is updated in-place.",
+            "inputSchema": { "type": "object", "properties": {
+                "action": { "type": "string", "description": "One of: tab" },
+                "id": { "type": "string", "description": "Stable identifier for dedup — same id reuses existing tab (action=tab, required)" },
+                "title": { "type": "string", "description": "Tab title (action=tab, required)" },
+                "html": { "type": "string", "description": "HTML content to render in sandboxed iframe (action=tab, required)" },
+                "pinned": { "type": "boolean", "description": "Pin tab across all branches (default true)" }
+            }, "required": ["action"] }
+        },
+        {
             "name": "notify",
             "description": "Show notifications to the TUIC user.\n\nActions (pass as 'action' parameter):\n- toast: Shows a temporary notification. Requires title. Optional: message, level (info/warn/error).\n- confirm: Shows a blocking confirmation dialog. Requires title. Optional: message. Returns {confirmed: boolean}. Restricted to localhost.",
             "inputSchema": { "type": "object", "properties": {
@@ -312,12 +325,13 @@ fn native_tool_definitions() -> serde_json::Value {
         },
         {
             "name": "debug",
-            "description": "Dev-only diagnostics for debugging TUICommander internals.\n\nActions (pass as 'action' parameter):\n- agent_detection: Returns agent detection pipeline diagnostics for a session (raw_fd, pgid, process_name, classified). Requires session_id or omit for all sessions.\n- logs: Returns recent app log entries. Optional: level, source, limit.\n- sessions: Returns all active PTY sessions with process info.",
+            "description": "Dev-only diagnostics for debugging TUICommander internals.\n\nActions (pass as 'action' parameter):\n- agent_detection: Returns agent detection pipeline diagnostics for a session (raw_fd, pgid, process_name, classified). Requires session_id or omit for all sessions.\n- logs: Returns recent app log entries. Optional: level, source, limit.\n- sessions: Returns all active PTY sessions with process info.\n- invoke_js: Executes JavaScript in the main WebView (fire-and-forget). The script is wrapped in async try/catch; result or error is logged with source='eval_js'. Read via: debug(action='logs', source='eval_js', limit=1). Requires script.",
             "inputSchema": { "type": "object", "properties": {
-                "action": { "type": "string", "description": "One of: agent_detection, logs, sessions" },
+                "action": { "type": "string", "description": "One of: agent_detection, logs, sessions, invoke_js" },
                 "session_id": { "type": "string", "description": "PTY session UUID (action=agent_detection, optional — omit for all)" },
                 "level": { "type": "string", "description": "Log level filter: debug, info, warn, error (action=logs)" },
                 "source": { "type": "string", "description": "Log source filter (action=logs)" },
+                "script": { "type": "string", "description": "JavaScript to execute in the WebView (action=invoke_js)" },
                 "limit": { "type": "integer", "description": "Max entries (action=logs, default 50)" }
             }, "required": ["action"] }
         }
@@ -375,7 +389,7 @@ fn meta_tool_definitions() -> serde_json::Value {
         },
         {
             "name": "call_tool",
-            "description": "Invoke a TUICommander tool by name with arguments. Dispatches to native tools (session, github, worktree, agent, messaging, config, workspace, notify, knowledge, debug, plugin_dev_guide) or upstream-proxied tools (`{upstream}__{tool}`). The arguments object must match the tool's inputSchema — fetch it via `get_tool_schema` first.",
+            "description": "Invoke a TUICommander tool by name with arguments. Dispatches to native tools (session, github, worktree, agent, messaging, config, workspace, ui, notify, knowledge, debug, plugin_dev_guide) or upstream-proxied tools (`{upstream}__{tool}`). The arguments object must match the tool's inputSchema — fetch it via `get_tool_schema` first.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -649,6 +663,7 @@ async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &st
         "config" => handle_config(state, addr, args),
         "debug" => handle_debug(state, args),
         "workspace" => handle_workspace(state, args),
+        "ui" => handle_ui(state, args),
         "notify" => handle_notify(state, addr, args),
         "knowledge" => handle_knowledge(state, args).await,
         "plugin_dev_guide" => {
@@ -658,7 +673,7 @@ async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &st
         "get_tool_schema" => handle_get_tool_schema(state, args),
         "call_tool" => handle_call_tool(state, addr, args, mcp_session_id).await,
         _ => serde_json::json!({"error": format!(
-            "Unknown tool '{}'. Available: session, github, worktree, agent, messaging, config, workspace, notify, knowledge, plugin_dev_guide, search_tools, get_tool_schema, call_tool", name
+            "Unknown tool '{}'. Available: session, github, worktree, agent, messaging, config, workspace, ui, notify, knowledge, plugin_dev_guide, search_tools, get_tool_schema, call_tool", name
         )}),
     }
 }
@@ -1506,6 +1521,42 @@ fn handle_debug(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::
             }).collect();
             serde_json::json!(sessions)
         }
+        "invoke_js" => {
+            let script = match args["script"].as_str() {
+                Some(s) => s,
+                None => return serde_json::json!({"error": "script required (string)"}),
+            };
+            let app_handle = state.app_handle.read().clone();
+            let Some(handle) = app_handle else {
+                return serde_json::json!({"error": "AppHandle not initialized"});
+            };
+            let Some(window) = handle.get_webview_window("main") else {
+                return serde_json::json!({"error": "main window not found"});
+            };
+
+            // Wrap user script in try/catch that logs result back via push_log
+            let wrapped = format!(
+                r#"(async () => {{
+  const __src = "eval_js";
+  try {{
+    const __result = await (async () => {{ {script} }})();
+    const __msg = __result === undefined ? "(undefined)" : JSON.stringify(__result, null, 2);
+    window.__TAURI__.core.invoke("push_log", {{ level: "info", source: __src, message: __msg, dataJson: null }});
+  }} catch (__e) {{
+    const __msg = __e instanceof Error ? `${{__e.name}}: ${{__e.message}}\n${{__e.stack}}` : String(__e);
+    window.__TAURI__.core.invoke("push_log", {{ level: "error", source: __src, message: __msg, dataJson: null }});
+  }}
+}})()"#
+            );
+
+            match window.eval(&wrapped) {
+                Ok(()) => serde_json::json!({
+                    "ok": true,
+                    "hint": "Result logged with source='eval_js'. Read via: debug(action='logs', source='eval_js', limit=1)"
+                }),
+                Err(e) => serde_json::json!({"error": format!("eval failed: {e}")}),
+            }
+        }
         other => serde_json::json!({"error": format!(
             "Unknown action '{}' for tool 'debug'. Available: {}", other, DEBUG_ACTIONS
         )}),
@@ -1619,6 +1670,51 @@ fn handle_workspace(_state: &Arc<AppState>, args: &serde_json::Value) -> serde_j
         }
         other => serde_json::json!({"error": format!(
             "Unknown action '{}' for tool 'workspace'. Available: {}", other, WORKSPACE_ACTIONS
+        )}),
+    }
+}
+
+fn handle_ui(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
+    let action = match require_action(args, "ui", UI_ACTIONS) {
+        Ok(a) => a,
+        Err(e) => return e,
+    };
+    match action {
+        "tab" => {
+            let id = match args["id"].as_str() {
+                Some(v) => v.to_string(),
+                None => return serde_json::json!({"error": "Action 'tab' requires 'id'"}),
+            };
+            let title = match args["title"].as_str() {
+                Some(v) => v.to_string(),
+                None => return serde_json::json!({"error": "Action 'tab' requires 'title'"}),
+            };
+            let html = match args["html"].as_str() {
+                Some(v) => v.to_string(),
+                None => return serde_json::json!({"error": "Action 'tab' requires 'html'"}),
+            };
+            let pinned = args["pinned"].as_bool().unwrap_or(true);
+            let payload = serde_json::json!({
+                "id": id,
+                "title": title,
+                "html": html,
+                "pinned": pinned,
+            });
+            // Emit to Tauri webview (native mode)
+            if let Some(app) = state.app_handle.read().as_ref() {
+                let _ = app.emit("ui-tab", &payload);
+            }
+            // Emit to SSE clients (browser/mobile)
+            let _ = state.event_bus.send(crate::state::AppEvent::UiTab {
+                id: id.clone(),
+                title,
+                html,
+                pinned,
+            });
+            serde_json::json!({"ok": true, "id": id})
+        }
+        other => serde_json::json!({"error": format!(
+            "Unknown action '{}' for tool 'ui'. Available: {}", other, UI_ACTIONS
         )}),
     }
 }
@@ -2144,6 +2240,7 @@ mod tests {
             mcp_upstream_registry: std::sync::Arc::new(crate::mcp_proxy::registry::UpstreamRegistry::new()),
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
             tool_search_index: std::sync::Arc::new(parking_lot::RwLock::new(crate::tool_search::ToolSearchIndex::build(&[]))),
+            content_indices: dashmap::DashMap::new(),
             slash_mode: dashmap::DashMap::new(),
             last_output_ms: dashmap::DashMap::new(),
             shell_states: dashmap::DashMap::new(),
@@ -2932,5 +3029,66 @@ mod tests {
         assert_eq!(before, after, "collapse_tools toggle must not change searchable corpus size");
         // And native tools must still be searchable.
         assert!(state.tool_search_index.read().get_schema("session").is_some());
+    }
+
+    #[test]
+    fn ui_tab_emits_event() {
+        let state = test_state();
+        let mut rx = state.event_bus.subscribe();
+
+        let result = handle_ui(&state, &serde_json::json!({
+            "action": "tab",
+            "id": "test-panel",
+            "title": "Test",
+            "html": "<p>hello</p>"
+        }));
+        assert_eq!(result["ok"], true);
+        assert_eq!(result["id"], "test-panel");
+
+        let event = rx.try_recv().expect("Expected UiTab event");
+        match event {
+            crate::state::AppEvent::UiTab { id, title, html, pinned } => {
+                assert_eq!(id, "test-panel");
+                assert_eq!(title, "Test");
+                assert_eq!(html, "<p>hello</p>");
+                assert!(pinned, "pinned should default to true");
+            }
+            other => panic!("Expected UiTab, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn ui_tab_requires_fields() {
+        let state = test_state();
+        let r = handle_ui(&state, &serde_json::json!({"action": "tab"}));
+        assert!(r["error"].as_str().unwrap().contains("'id'"));
+
+        let r = handle_ui(&state, &serde_json::json!({"action": "tab", "id": "x"}));
+        assert!(r["error"].as_str().unwrap().contains("'title'"));
+
+        let r = handle_ui(&state, &serde_json::json!({"action": "tab", "id": "x", "title": "t"}));
+        assert!(r["error"].as_str().unwrap().contains("'html'"));
+    }
+
+    #[test]
+    fn ui_tab_pinned_false() {
+        let state = test_state();
+        let mut rx = state.event_bus.subscribe();
+
+        handle_ui(&state, &serde_json::json!({
+            "action": "tab",
+            "id": "unpinned",
+            "title": "T",
+            "html": "<p/>",
+            "pinned": false
+        }));
+
+        let event = rx.try_recv().expect("Expected UiTab event");
+        match event {
+            crate::state::AppEvent::UiTab { pinned, .. } => {
+                assert!(!pinned);
+            }
+            other => panic!("Expected UiTab, got {:?}", other),
+        }
     }
 }

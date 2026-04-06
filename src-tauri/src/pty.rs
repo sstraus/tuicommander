@@ -672,10 +672,6 @@ struct ChunkProcessor {
     last_question_text: Option<String>,
     /// Session CWD for resolving relative plan-file paths
     session_cwd: Option<String>,
-    /// Buffer for incomplete plain-prefix `intent:`/`suggest:` tokens split across chunks.
-    /// When a chunk ends mid-token (no trailing newline), we hold the data and prepend
-    /// it to the next chunk so the parser sees the full line.
-    pending_xterm: Option<String>,
     /// Plan files awaiting creation on disk (agent announces before writing).
     /// Tuples of (absolute_path, deadline). Checked each chunk until file appears
     /// or 10s deadline expires. Already-emitted paths tracked for dedup.
@@ -691,45 +687,24 @@ impl ChunkProcessor {
             last_status_task: None,
             last_question_text: None,
             session_cwd,
-            pending_xterm: None,
             pending_planfiles: Vec::new(),
             emitted_planfiles: std::collections::HashSet::new(),
         }
     }
 
     /// Colorize `intent:` and conceal `suggest:` plain-prefix tokens on the xterm
-    /// stream, buffering incomplete lines across chunks so regexes see the full
-    /// single-line token. Only runs when an agent is detected.
-    ///
-    /// Returns `Some(data)` ready to emit, or `None` if the data was buffered
-    /// (waiting for a trailing newline in the next chunk).
+    /// stream. Only runs when an agent is detected. Incomplete lines (split across
+    /// chunks) pass through uncolored — cosmetic only, never blocks output.
     fn transform_xterm(&mut self, data: String, agent_active: bool) -> Option<String> {
-        let combined = if let Some(pending) = self.pending_xterm.take() {
-            pending + &data
-        } else {
-            data
-        };
-
-        if has_unclosed_token(&combined, agent_active) {
-            self.pending_xterm = Some(combined);
-            return None;
-        }
-
         if !agent_active {
-            return Some(combined);
+            return Some(data);
         }
 
-        let has_intent = combined.contains("intent:");
-        let has_suggest = combined.contains("suggest:");
-        let result = if has_intent { colorize_intent(&combined) } else { combined };
+        let has_intent = data.contains("intent:");
+        let has_suggest = data.contains("suggest:");
+        let result = if has_intent { colorize_intent(&data) } else { data };
         let result = if has_suggest { conceal_suggest(&result) } else { result };
         Some(result)
-    }
-
-    /// Flush any pending xterm data (e.g. on session end or when we decide
-    /// the opener was a false positive). Returns data as-is without replacement.
-    fn flush_pending_xterm(&mut self) -> Option<String> {
-        self.pending_xterm.take()
     }
 
     /// Resolve a relative plan-file path to absolute using session CWD.
@@ -1007,34 +982,6 @@ impl ChunkProcessor {
 
         Some(data.to_owned())
     }
-}
-
-/// Check if `data` ends with a plain-prefix `intent:`/`suggest:` keyword on the
-/// current (final) line with no trailing newline. The token is single-line, so a
-/// newline signals completion. Only applies when an agent is detected — prevents
-/// false positives from arbitrary CLI tools.
-///
-/// CSI escape sequences (SGR colors, cursor movement) are stripped before the
-/// prefix test so Ink-wrapped tokens like `\x1b[2mintent: ...` are still
-/// recognised and buffered until their trailing newline arrives.
-fn has_unclosed_token(data: &str, agent_active: bool) -> bool {
-    if !agent_active {
-        return false;
-    }
-    lazy_static::lazy_static! {
-        static ref CSI_RE: regex::Regex =
-            regex::Regex::new(r"\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]").unwrap();
-    }
-    let last_line = data.rsplit_once('\n').map_or(data, |(_, r)| r);
-    let clean = CSI_RE.replace_all(last_line, "");
-    let trimmed = clean.trim_start_matches('\r').trim_start();
-    // Also accept Ink bullet glyphs (● ⏺) prepended to the keyword.
-    let without_bullet = trimmed
-        .strip_prefix('\u{25CF}')
-        .or_else(|| trimmed.strip_prefix('\u{23FA}'))
-        .map(|s| s.trim_start())
-        .unwrap_or(trimmed);
-    without_bullet.starts_with("intent:") || without_bullet.starts_with("suggest:")
 }
 
 /// Process kitty keyboard actions (push/pop/query) shared by both reader threads.
@@ -1360,17 +1307,6 @@ pub(crate) fn spawn_reader_thread(
         // Ensure shell state is idle on session end
         if try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE) {
             emit_shell_state(&state, Some(&app), &session_id, "idle");
-        }
-
-        // Flush any pending xterm token buffer (incomplete token at EOF — emit as-is)
-        if let Some(pending) = processor.flush_pending_xterm() {
-            let _ = app.emit(
-                &format!("pty-output-{session_id}"),
-                PtyOutput {
-                    session_id: session_id.clone(),
-                    data: pending,
-                },
-            );
         }
 
         // Flush remaining bytes at EOF
@@ -4160,46 +4096,6 @@ mod tests {
         assert_eq!(resolved, Some("/home/user/repo/plans/foo.md".to_string()));
     }
 
-    // --- has_unclosed_token tests ---
-
-    #[test]
-    fn test_has_unclosed_token_no_token() {
-        assert!(!has_unclosed_token("just regular output", true));
-    }
-
-    #[test]
-    fn test_has_unclosed_token_plain_prefix_intent_no_newline() {
-        // Plain prefix at end of chunk without newline — should buffer (agent active)
-        assert!(has_unclosed_token("intent: reading the config", true));
-    }
-
-    #[test]
-    fn test_has_unclosed_token_plain_prefix_intent_with_newline() {
-        // Plain prefix with trailing newline — complete, should NOT buffer
-        assert!(!has_unclosed_token("intent: reading the config\n", true));
-    }
-
-    #[test]
-    fn test_has_unclosed_token_plain_prefix_suggest() {
-        assert!(has_unclosed_token("suggest: A | B | C", true));
-        assert!(!has_unclosed_token("suggest: A | B | C\n", true));
-    }
-
-    #[test]
-    fn test_has_unclosed_token_plain_prefix_after_other_output() {
-        // Other output followed by plain prefix on last line — should buffer
-        assert!(has_unclosed_token("some output\nintent: doing work", true));
-        // Complete — newline after the token
-        assert!(!has_unclosed_token("some output\nintent: doing work\n", true));
-    }
-
-    #[test]
-    fn test_has_unclosed_token_no_agent_not_buffered() {
-        // Without agent, plain-prefix tokens should NOT be detected as unclosed
-        assert!(!has_unclosed_token("intent: reading config", false));
-        assert!(!has_unclosed_token("suggest: A | B | C", false));
-    }
-
     // --- transform_xterm tests ---
 
     #[test]
@@ -4229,30 +4125,16 @@ mod tests {
     }
 
     #[test]
-    fn test_transform_xterm_plain_prefix_buffers_without_newline() {
+    fn test_transform_xterm_incomplete_intent_passes_through() {
         let mut cp = ChunkProcessor::new(None);
+        // Incomplete intent without newline — passes through uncolored (no blocking)
         let r1 = cp.transform_xterm("intent: doing so".to_string(), true);
-        assert!(r1.is_none(), "plain-prefix without newline should buffer");
-        let r2 = cp.transform_xterm("mething\n".to_string(), true);
-        assert!(r2.is_some(), "completing chunk should emit");
-        let data = r2.unwrap();
-        assert!(data.contains("intent: doing something"), "joined text preserved");
-        assert!(data.contains("\x1b[2;33m"), "intent should be colorized after buffering");
-    }
-
-    #[test]
-    fn test_flush_pending_xterm() {
-        let mut cp = ChunkProcessor::new(None);
-        cp.transform_xterm("intent: incomplete".to_string(), true);
-        let flushed = cp.flush_pending_xterm();
-        assert_eq!(flushed, Some("intent: incomplete".to_string()));
-        assert!(cp.flush_pending_xterm().is_none());
+        assert!(r1.is_some(), "incomplete intent must not block output");
     }
 
     #[test]
     fn test_transform_xterm_no_agent_passes_raw() {
         let mut cp = ChunkProcessor::new(None);
-        // Without agent, plain-prefix tokens pass through unmodified
         let result = cp.transform_xterm("intent: Fix the bug\n".to_string(), false);
         assert!(result.is_some());
         let data = result.unwrap();

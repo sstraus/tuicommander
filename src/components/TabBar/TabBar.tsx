@@ -583,7 +583,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
                       </svg>
                   }
                 </span>
-                <Show when={diffTab()?.pinned}><span class={s.pinIcon}><svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M4.146.854a.5.5 0 1 1 .708-.708l4 4a.5.5 0 0 1-.708.708L7.5 4.208V6.5a.5.5 0 0 1-.146.354L5 9.207l1.146 1.147a.5.5 0 0 1-.353.853H2.5a.5.5 0 0 1-.354-.853L3.293 9.207 1 6.914a.5.5 0 0 1 0-.707L4.146.854z" transform="rotate(45 8 8)"/></svg></span></Show>
+                <Show when={diffTab()?.pinned}><span class={s.pinIcon}><svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="4" r="3.5"/><path d="M6.2 7l-1.7 4.5a.5.5 0 0 0 .13.54l2.84 2.84a.75.75 0 0 0 1.06 0l2.84-2.84a.5.5 0 0 0 .13-.54L9.8 7H6.2z"/></svg></span></Show>
                 <span class={s.tabName}>{diffTab()?.fileName}{diffTab()?.scope ? ` (${diffTab()?.scope?.slice(0, 7)})` : ""}</span>
                 <PanePositionIcon tabId={id} rects={paneRects()} />
                 <button
@@ -634,7 +634,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
                     </svg>
                   )}
                 </span>
-                <Show when={mdTab()?.pinned}><span class={s.pinIcon}><svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M4.146.854a.5.5 0 1 1 .708-.708l4 4a.5.5 0 0 1-.708.708L7.5 4.208V6.5a.5.5 0 0 1-.146.354L5 9.207l1.146 1.147a.5.5 0 0 1-.353.853H2.5a.5.5 0 0 1-.354-.853L3.293 9.207 1 6.914a.5.5 0 0 1 0-.707L4.146.854z" transform="rotate(45 8 8)"/></svg></span></Show>
+                <Show when={mdTab()?.pinned}><span class={s.pinIcon}><svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="4" r="3.5"/><path d="M6.2 7l-1.7 4.5a.5.5 0 0 0 .13.54l2.84 2.84a.75.75 0 0 0 1.06 0l2.84-2.84a.5.5 0 0 0 .13-.54L9.8 7H6.2z"/></svg></span></Show>
                 <span class={s.tabName}>{(() => { const tab = mdTab(); return tab?.type === "file" ? tab.fileName : tab?.title; })()}</span>
                 <PanePositionIcon tabId={id} rects={paneRects()} />
                 <button
@@ -680,7 +680,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
                     : <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M11.13 1.47a1.5 1.5 0 012.12 0l1.28 1.28a1.5 1.5 0 010 2.12L5.9 13.5a1 1 0 01-.5.27l-3.5.87a.5.5 0 01-.6-.6l.87-3.5a1 1 0 01.27-.5L11.13 1.47zm1.07 1.06L3.74 11l-.58 2.34 2.34-.58 8.47-8.46-1.77-1.77z"/></svg>
                   }
                 </span>
-                <Show when={editTab()?.pinned}><span class={s.pinIcon}><svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M4.146.854a.5.5 0 1 1 .708-.708l4 4a.5.5 0 0 1-.708.708L7.5 4.208V6.5a.5.5 0 0 1-.146.354L5 9.207l1.146 1.147a.5.5 0 0 1-.353.853H2.5a.5.5 0 0 1-.354-.853L3.293 9.207 1 6.914a.5.5 0 0 1 0-.707L4.146.854z" transform="rotate(45 8 8)"/></svg></span></Show>
+                <Show when={editTab()?.pinned}><span class={s.pinIcon}><svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="4" r="3.5"/><path d="M6.2 7l-1.7 4.5a.5.5 0 0 0 .13.54l2.84 2.84a.75.75 0 0 0 1.06 0l2.84-2.84a.5.5 0 0 0 .13-.54L9.8 7H6.2z"/></svg></span></Show>
                 <span class={s.tabName}>{editTab()?.fileName}</span>
                 <PanePositionIcon tabId={id} rects={paneRects()} />
                 <button

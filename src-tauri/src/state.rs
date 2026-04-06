@@ -90,6 +90,14 @@ pub enum AppEvent {
     PeerUnregistered {
         tuic_session: String,
     },
+    /// Open or update a plugin panel tab from MCP
+    #[serde(rename = "ui-tab")]
+    UiTab {
+        id: String,
+        title: String,
+        html: String,
+        pinned: bool,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -851,6 +859,9 @@ pub struct AppState {
     /// every `mcp_tools_changed` signal by the updater task in
     /// `mcp_http::mcp_transport::spawn_tool_search_index_updater`.
     pub(crate) tool_search_index: Arc<parking_lot::RwLock<crate::tool_search::ToolSearchIndex>>,
+    /// Per-repo BM25 content index for sub-millisecond file content search.
+    /// Built in background on first search or repo load, rebuilt on `RepoChanged`.
+    pub(crate) content_indices: DashMap<String, Arc<parking_lot::RwLock<crate::content_index::ContentIndex>>>,
     /// Per-session slash command mode (true when input starts with `/`).
     /// Used to suppress false-positive slash menu detection on PTY output.
     pub(crate) slash_mode: DashMap<String, std::sync::atomic::AtomicBool>,
@@ -1270,7 +1281,8 @@ impl AppState {
             | AppEvent::DirChanged { .. }
             | AppEvent::WorktreeCreated { .. }
             | AppEvent::PeerRegistered { .. }
-            | AppEvent::PeerUnregistered { .. } => {}
+            | AppEvent::PeerUnregistered { .. }
+            | AppEvent::UiTab { .. } => {}
         }
     }
 
@@ -1904,6 +1916,7 @@ pub(crate) mod tests_support {
             mcp_upstream_registry: Arc::new(crate::mcp_proxy::registry::UpstreamRegistry::new()),
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
             tool_search_index: Arc::new(parking_lot::RwLock::new(crate::tool_search::ToolSearchIndex::build(&[]))),
+            content_indices: DashMap::new(),
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
             shell_states: DashMap::new(),
@@ -2334,6 +2347,7 @@ mod tests {
             mcp_upstream_registry: Arc::new(crate::mcp_proxy::registry::UpstreamRegistry::new()),
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
             tool_search_index: Arc::new(parking_lot::RwLock::new(crate::tool_search::ToolSearchIndex::build(&[]))),
+            content_indices: DashMap::new(),
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
             shell_states: DashMap::new(),

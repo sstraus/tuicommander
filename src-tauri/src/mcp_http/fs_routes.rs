@@ -16,15 +16,30 @@ pub(super) async fn search_files_http(Query(q): Query<FsSearchQuery>) -> Respons
     json_result(crate::fs::search_files_impl(q.repo_path, q.query, q.limit))
 }
 
-pub(super) async fn search_content_http(Query(q): Query<FsSearchContentQuery>) -> Response {
+pub(super) async fn search_content_http(
+    axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::state::AppState>>,
+    Query(q): Query<FsSearchContentQuery>,
+) -> Response {
     if let Err(e) = validate_repo_path(&q.repo_path) { return e.into_response(); }
+    let use_regex = q.use_regex.unwrap_or(false);
+    let whole_word = q.whole_word.unwrap_or(false);
+    let case_sensitive = q.case_sensitive.unwrap_or(false);
+
+    // Use BM25 index when available and applicable
+    let can_use_index = !use_regex && !whole_word && !q.query.is_empty();
+    if can_use_index {
+        let index_arc = crate::content_index::ensure_index(&state, &q.repo_path);
+        let index = index_arc.read();
+        if index.is_ready() {
+            return json_result(crate::fs::search_via_index(
+                &index, &q.query, case_sensitive, q.limit,
+            ));
+        }
+    }
+
+    // Fallback to full grep
     json_result(crate::fs::search_content_impl(
-        q.repo_path,
-        q.query,
-        q.case_sensitive.unwrap_or(false),
-        q.use_regex.unwrap_or(false),
-        q.whole_word.unwrap_or(false),
-        q.limit,
+        q.repo_path, q.query, case_sensitive, use_regex, whole_word, q.limit,
     ))
 }
 

@@ -31,6 +31,49 @@
         to { transform: rotate(360deg); }
       }
     </style>
+    <script>
+      // Early error catcher — runs before the SolidJS bundle loads.
+      // Captures load failures, syntax errors, and uncaught exceptions that
+      // would otherwise produce a blank white screen with no diagnostics.
+      (function () {
+        var errors = [];
+        function fmt(e) {
+          if (e instanceof Error) return e.message + '\n' + (e.stack || '');
+          if (typeof e === 'string') return e;
+          try { return JSON.stringify(e); } catch (_) { return String(e); }
+        }
+        function report(msg) {
+          errors.push(msg);
+          // Try Tauri backend logging (available after IPC bridge loads)
+          if (window.__TAURI__ && window.__TAURI__.core) {
+            window.__TAURI__.core.invoke('push_log', {
+              level: 'error', source: 'boot', message: msg, dataJson: null
+            }).catch(function () {});
+          }
+          // Visual fallback: show error on screen if splash is still visible
+          var splash = document.getElementById('splash');
+          if (splash) {
+            var errDiv = document.getElementById('boot-errors');
+            if (!errDiv) {
+              errDiv = document.createElement('pre');
+              errDiv.id = 'boot-errors';
+              errDiv.style.cssText = 'color:#f44;font-size:11px;max-width:90vw;white-space:pre-wrap;text-align:left;margin-top:12px;max-height:40vh;overflow:auto;';
+              splash.appendChild(errDiv);
+            }
+            errDiv.textContent = errors.join('\n---\n');
+          }
+        }
+        window.addEventListener('error', function (ev) {
+          var detail = ev.filename
+            ? ev.filename + ':' + ev.lineno + ':' + ev.colno + ' ' + ev.message
+            : ev.message || 'Script error (no details — cross-origin?)';
+          report('[boot error] ' + detail);
+        });
+        window.addEventListener('unhandledrejection', function (ev) {
+          report('[boot rejection] ' + fmt(ev.reason));
+        });
+      })();
+    </script>
     <script type="module" src="/src/index.tsx" defer></script>
   </head>
 

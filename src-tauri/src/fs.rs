@@ -341,6 +341,7 @@ pub async fn search_files(
 pub async fn search_content(
     app: tauri::AppHandle,
     state: tauri::State<'_, ContentSearchCancel>,
+    app_state: tauri::State<'_, std::sync::Arc<crate::state::AppState>>,
     repo_path: String,
     query: String,
     case_sensitive: Option<bool>,
@@ -362,9 +363,14 @@ pub async fn search_content(
     let use_regex = use_regex.unwrap_or(false);
     let whole_word = whole_word.unwrap_or(false);
 
+    // Ensure content index exists for this repo (triggers background build if needed)
+    let index_arc = crate::content_index::ensure_index(&app_state, &repo_path);
+
     // Run search in blocking thread
     tauri::async_runtime::spawn_blocking(move || {
-        match search_content_impl(repo_path, query, case_sensitive, use_regex, whole_word, limit) {
+        match search_content_indexed(
+            &index_arc, repo_path, query, case_sensitive, use_regex, whole_word, limit,
+        ) {
             Ok(result) => {
                 // Check cancellation
                 if cancel_token.load(Ordering::Relaxed) { return; }
@@ -409,6 +415,122 @@ pub async fn search_content(
     });
 
     Ok(())
+}
+
+/// Two-phase content search: BM25 index narrows to top files, then grep for lines.
+/// Falls back to full `search_content_impl` when the index isn't ready or the query
+/// requires regex/whole-word matching.
+fn search_content_indexed(
+    index_arc: &std::sync::Arc<parking_lot::RwLock<crate::content_index::ContentIndex>>,
+    repo_path: String,
+    query: String,
+    case_sensitive: bool,
+    use_regex: bool,
+    whole_word: bool,
+    limit: Option<usize>,
+) -> Result<ContentSearchResult, String> {
+    // Fall back to full grep for regex, whole-word, or if index isn't ready
+    let can_use_index = !use_regex && !whole_word && !query.is_empty();
+    if can_use_index {
+        let index = index_arc.read();
+        if index.is_ready() {
+            return search_via_index(&index, &query, case_sensitive, limit);
+        }
+    }
+
+    // Index not ready or not applicable — fall back to full grep
+    search_content_impl(repo_path, query, case_sensitive, use_regex, whole_word, limit)
+}
+
+/// Search using the pre-built BM25 index: rank files, then grep only the top candidates.
+pub(crate) fn search_via_index(
+    index: &crate::content_index::ContentIndex,
+    query: &str,
+    case_sensitive: bool,
+    limit: Option<usize>,
+) -> Result<ContentSearchResult, String> {
+    use grep_matcher::Matcher;
+    use grep_searcher::{BinaryDetection, SearcherBuilder, sinks::UTF8};
+
+    let max_matches = limit.unwrap_or(1000);
+    // BM25 phase: get top-ranked files (~1ms)
+    let ranked_files = index.search(query, 50);
+
+    if ranked_files.is_empty() {
+        return Ok(ContentSearchResult {
+            matches: Vec::new(),
+            files_searched: 0,
+            files_skipped: 0,
+            truncated: false,
+        });
+    }
+
+    // Grep phase: search only the ranked files for exact line matches
+    let pattern = regex::escape(query);
+    let matcher = grep_regex::RegexMatcherBuilder::new()
+        .case_insensitive(!case_sensitive)
+        .build(&pattern)
+        .map_err(|e| format!("Invalid search pattern: {e}"))?;
+
+    let mut searcher = SearcherBuilder::new()
+        .binary_detection(BinaryDetection::quit(0))
+        .heap_limit(Some(8_000_000))
+        .build();
+
+    let mut all_matches: Vec<ContentMatch> = Vec::new();
+    let mut files_searched: u32 = 0;
+    let mut truncated = false;
+
+    for ranked in &ranked_files {
+        if all_matches.len() >= max_matches {
+            truncated = true;
+            break;
+        }
+
+        let abs_path = index.absolute_path(&ranked.rel_path);
+        if !abs_path.is_file() {
+            continue;
+        }
+
+        files_searched += 1;
+        let rel_path = ranked.rel_path.clone();
+
+        let _ = searcher.search_path(
+            &matcher,
+            &abs_path,
+            UTF8(|line_number, line| {
+                if all_matches.len() >= max_matches {
+                    truncated = true;
+                    return Ok(false);
+                }
+
+                let line_trimmed = line.trim_end_matches('\n').trim_end_matches('\r');
+                let mut match_start: u32 = 0;
+                let mut match_end: u32 = 0;
+                if let Ok(Some(m)) = matcher.find(line.as_bytes()) {
+                    match_start = m.start() as u32;
+                    match_end = m.end() as u32;
+                }
+
+                all_matches.push(ContentMatch {
+                    path: rel_path.clone(),
+                    line_number: line_number as u32,
+                    line_text: line_trimmed.to_string(),
+                    match_start,
+                    match_end,
+                });
+                Ok(true)
+            }),
+        );
+    }
+
+    // BM25 already ranked the files by relevance — no need for post-hoc reranking
+    Ok(ContentSearchResult {
+        matches: all_matches,
+        files_searched,
+        files_skipped: 0,
+        truncated,
+    })
 }
 
 pub(crate) fn search_files_impl(

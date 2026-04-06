@@ -247,6 +247,11 @@ function createPluginRegistry() {
         return terminal?.cwd ?? null;
       },
 
+      async getClaudeProjectDir(repoPath: string): Promise<string | null> {
+        requireCapability(pluginId, capabilities, "fs:read");
+        return invoke<string | null>("claude_project_dir", { cwd: repoPath });
+      },
+
       getActiveRepoPath(): string | null {
         return repositoriesStore.state.activeRepoPath;
       },

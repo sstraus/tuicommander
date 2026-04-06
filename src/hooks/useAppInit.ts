@@ -5,6 +5,8 @@ import { githubStore } from "../stores/github";
 import { appLogger } from "../stores/appLogger";
 import { activityStore } from "../stores/activityStore";
 import { repoSettingsStore } from "../stores/repoSettings";
+import { mdTabsStore } from "../stores/mdTabs";
+import { uiStore } from "../stores/ui";
 import { invoke, listen } from "../invoke";
 import { isTauri } from "../transport";
 import type { SavedTerminal } from "../types";
@@ -279,6 +281,15 @@ export async function initApp(deps: AppInitDeps) {
     }
   }).catch((err) =>
     appLogger.error("app", "Failed to register session-created listener", err),
+  );
+
+  // Listen for UI tab open/update requests from MCP tools
+  listen<{ id: string; title: string; html: string; pinned: boolean }>("ui-tab", (event) => {
+    const { id, title, html, pinned } = event.payload;
+    mdTabsStore.openUiTab(id, title, html, pinned);
+    uiStore.setMarkdownPanelVisible(true);
+  }).catch((err) =>
+    appLogger.error("app", "Failed to register ui-tab listener", err),
   );
 
   listen<{ session_id: string }>("session-closed", (event) => {

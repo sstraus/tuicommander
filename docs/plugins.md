@@ -287,6 +287,16 @@ host.registerOutputWatcher({
 });
 ```
 
+#### host.getClaudeProjectDir(repoPath) -> Promise\<string | null>
+
+Resolves a repository path to the absolute path of its Claude Code project directory (`~/.claude/projects/<slug>`). The slug encoding is handled by the Rust side — plugins should use this instead of constructing paths manually. Requires `"fs:read"` capability.
+
+```typescript
+const projectDir = await host.getClaudeProjectDir("/Users/me/my-project");
+// → "/Users/me/.claude/projects/-Users-me-my-project"
+const files = await host.listDirectory(projectDir, "*.jsonl", { sortBy: "mtime" });
+```
+
 #### host.getPrNotifications() -> PrNotificationSnapshot[]
 
 ```typescript
