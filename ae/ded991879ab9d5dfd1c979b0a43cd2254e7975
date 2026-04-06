@@ -1,0 +1,23 @@
+src/mobile/components/IdeasOverlay.tsx
+  90aa13a5b5cced48 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.5",
+  "base_commit_sha": "aeded991879ab9d5dfd1c979b0a43cd2254e7975",
+  "prompts": {
+    "90aa13a5b5cced48": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e8b95547-3743-43f5-8f7a-b72ecef54ed2",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    }
+  }
+}
