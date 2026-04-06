@@ -47,8 +47,12 @@ function extractThemeVars(): string {
  * Inject a <base href> tag so relative URLs in fetched HTML resolve against the original URL.
  * Inserts after <head> (or <html>), or prepends if neither is found.
  */
+function escapeHtmlAttr(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 function injectBase(html: string, url: string): string {
-  const base = `<base href="${url}">`;
+  const base = `<base href="${escapeHtmlAttr(url)}">`;
   const headOpen = html.indexOf("<head>");
   if (headOpen >= 0) {
     const after = headOpen + "<head>".length;
@@ -191,21 +195,23 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
   // Update iframe content when HTML or URL changes.
   // URL mode: fetch content via Rust (bypasses CORS), inject base href + SDK + theme, render as srcdoc.
   // This ensures window.tuic and theme vars are available in all tab types.
+  // NOTE: createEffect cannot be async — reactive tracking happens synchronously
+  // at the top of the effect. The .then()/.catch() chain is intentional.
   createEffect(() => {
     const url = props.tab.url;
-    const html = props.tab.html;
     if (url) {
-      invoke<string>("fetch_tab_html", { url })
+      void invoke<string>("fetch_tab_html", { url })
         .then((fetchedHtml) => {
           const withBase = injectBase(fetchedHtml, url);
           setSrcdoc(injectThemeVars(withBase));
         })
-        .catch((err) => {
-          appLogger.error("plugin", `fetch_tab_html failed for ${url}: ${err}`);
-          // Fallback: show error page with the URL
-          setSrcdoc(injectThemeVars(`<p style="color:var(--error-text,red)">Failed to load ${url}: ${err}</p>`));
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          appLogger.error("plugin", `fetch_tab_html failed for ${url}: ${message}`);
+          setSrcdoc(injectThemeVars(`<p style="color:var(--error-text,red)">Failed to load ${escapeHtmlAttr(url)}: ${escapeHtmlAttr(message)}</p>`));
         });
     } else {
+      const html = props.tab.html;
       setSrcdoc(injectThemeVars(html));
     }
   });
