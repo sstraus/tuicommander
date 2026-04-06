@@ -9,11 +9,20 @@ import { pluginRegistry } from "../plugins/pluginRegistry";
 const POLL_INTERVAL_MS = 30_000;
 
 /**
- * Number of consecutive null detections required before clearing a detected agent.
- * Prevents flickering when the agent spawns short-lived subprocesses (git, node, etc.)
- * that briefly become the foreground process group.
+ * Number of consecutive null detections on shell-idle required before clearing a detected agent.
+ * Prevents flickering when the shell briefly reports idle during agent subprocess transitions.
  */
 const NULL_THRESHOLD = 3;
+
+/**
+ * Detection trigger source — determines whether the call can clear an existing agentType.
+ * - "idle": Shell-state transitioned to idle (prompt returned). This is the ONLY source
+ *   that can clear a previously detected agent, because it means the foreground process
+ *   ended and the shell reclaimed the terminal.
+ * - "busy": Shell-state transitioned to busy. Can only discover (set) agents, never clear.
+ * - "poll": Periodic 30s fallback. Can only discover (set) agents, never clear.
+ */
+export type DetectionSource = "idle" | "busy" | "poll";
 
 /** Validate a string from the backend is a known AgentType */
 function toAgentType(value: string | null): AgentType | null {
@@ -28,8 +37,12 @@ const nullStreak = new Map<string, number>();
 /**
  * Detect the foreground agent for a single terminal and update the store.
  * Called on shell-state transitions (event-driven) and by the fallback poll.
+ *
+ * @param source - What triggered this detection. Only "idle" can clear an existing agent.
+ *   "busy" and "poll" can only discover new agents — they never clear, because
+ *   foreground-process sampling is inherently flaky during subprocess transitions.
  */
-export async function detectAgentForTerminal(termId: string): Promise<void> {
+export async function detectAgentForTerminal(termId: string, source: DetectionSource = "poll"): Promise<void> {
   const current = terminalsStore.get(termId);
   if (!current) {
     // Terminal removed — clean up module-level tracking state
@@ -52,8 +65,11 @@ export async function detectAgentForTerminal(termId: string): Promise<void> {
 
   const prevAgentType = current.agentType;
 
-  // Debounce agent→null: require N consecutive null detections before clearing.
+  // Agent→null transition: only allowed from "idle" source (shell prompt returned).
+  // Poll and busy sources can only discover agents, never clear them — foreground
+  // process sampling is too flaky during subprocess transitions (git, node, etc.).
   if (prevAgentType !== null && agentType === null) {
+    if (source !== "idle") return; // Not a reliable clearing signal — skip
     const streak = (nullStreak.get(termId) ?? 0) + 1;
     nullStreak.set(termId, streak);
     if (streak < NULL_THRESHOLD) return;

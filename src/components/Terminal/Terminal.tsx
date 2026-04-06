@@ -502,15 +502,15 @@ export const Terminal: Component<TerminalProps> = (props) => {
                 appLogger.error("terminal", "Failed to write init command", { error: String(e) }),
               );
             }
-            // Idle: detect agent immediately (foreground process is stable)
-            detectAgentForTerminal(props.id).catch((err) =>
+            // Idle: detect agent immediately — only idle can clear a detected agent
+            detectAgentForTerminal(props.id, "idle").catch((err) =>
               appLogger.warn("terminal", "[AgentDetect] unexpected error", { error: String(err), termId: props.id }),
             );
           } else {
-            // Busy: detect agent after 500ms debounce (agent needs time to start)
+            // Busy: detect agent after 500ms debounce (can discover, never clear)
             clearTimeout(agentDetectTimer);
             agentDetectTimer = setTimeout(() => {
-              detectAgentForTerminal(props.id).catch((err) =>
+              detectAgentForTerminal(props.id, "busy").catch((err) =>
               appLogger.warn("terminal", "[AgentDetect] unexpected error", { error: String(err), termId: props.id }),
             );
             }, 500);
@@ -538,8 +538,12 @@ export const Terminal: Component<TerminalProps> = (props) => {
           if (originalName && !stillExists.nameIsCustom) {
             terminalsStore.update(props.id, { name: originalName });
           }
-          terminalsStore.update(props.id, { sessionId: null, currentTask: null });
+          const hadAgent = stillExists.agentType !== null;
+          terminalsStore.update(props.id, { sessionId: null, currentTask: null, agentType: null, agentSessionId: null });
           terminalsStore.clearAwaitingInput(props.id);
+          if (hadAgent) {
+            pluginRegistry.notifyStateChange({ type: "agent-stopped", sessionId: targetSessionId, terminalId: props.id });
+          }
         }
         sessionId = null;
         props.onSessionExit?.(props.id);
