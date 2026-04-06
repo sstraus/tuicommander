@@ -284,8 +284,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
       const byteLen = rawData.length;
       pendingWriteBytes += byteLen;
 
-      // Pause reader if we've accumulated too much unprocessed data
-      if (!isPaused && pendingWriteBytes > HIGH_WATERMARK && sessionId) {
+      // Pause reader if we've accumulated too much unprocessed data.
+      // Only pause when the terminal is visible — hidden terminals (inactive
+      // pane-group tabs) may not fire write callbacks because the xterm render
+      // loop is suspended on display:none containers.  Pausing a hidden
+      // terminal's reader would block the PTY permanently since the resume
+      // callback never fires.
+      if (!isPaused && isVisible() && pendingWriteBytes > HIGH_WATERMARK && sessionId) {
         isPaused = true;
         pty.pause(sessionId).catch((err) => appLogger.warn("terminal", "PTY pause failed", { error: String(err) }));
       }
@@ -1335,6 +1340,14 @@ export const Terminal: Component<TerminalProps> = (props) => {
           safeFit(() => initSession());
         } else {
           initSession();
+        }
+
+        // Resume PTY reader if it was paused — hidden terminals skip the pause
+        // guard but a prior visible instance may have paused before hiding.
+        if (isPaused && sessionId) {
+          isPaused = false;
+          pendingWriteBytes = 0; // Reset counter — stale value from hidden state
+          pty.resume(sessionId).catch((err) => appLogger.warn("terminal", "PTY resume on show failed", { error: String(err) }));
         }
 
         // For reconnected terminals (existing sessionId), explicitly sync PTY dimensions.
