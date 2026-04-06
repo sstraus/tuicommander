@@ -155,6 +155,7 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Diff stats: `+N / -N` additions/deletions
 - Merged badge: branches merged into main show a "Merged" badge
 - Question indicator: `?` icon (orange, pulsing) when agent asks a question
+- Idle indicator: branch icons turn grey when the repo has no active terminals
 - Quick switcher badge: numbered index shown when `Cmd+Ctrl` held
 - Remote-only branches with open PRs: shown in sidebar with PR badge and inline accordion actions (Checkout, Create Worktree). Additional actions when PR popover is open: Merge, View Diff, Approve, Dismiss
 - Dismiss/Show Dismissed: remote-only PRs can be dismissed from the sidebar; a "Show Dismissed" toggle reveals them again

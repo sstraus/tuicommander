@@ -30,6 +30,7 @@ const BRANCH_ICON_CLASSES: Record<string, string> = {
   question: s.branchIconQuestion,
   activity: s.branchIconActivity,
   unseen: s.branchIconUnseen,
+  idle: s.branchIconIdle,
 };
 
 const PR_BADGE_CLASSES: Record<string, string> = {
@@ -58,7 +59,8 @@ const PR_BADGE_CLASSES: Record<string, string> = {
  *  1. question  → --attention (pulsing)
  *  2. busy      → --activity  (pulsing)
  *  3. unseen    → --unseen    (static purple)
- *  4. base      → --warning (main) or --success (worktree)
+ *  4. idle      → --fg-muted  (no terminals in repo)
+ *  5. base      → --warning (main) or --success (worktree)
  */
 export const BranchIcon: Component<{
   isMainBranch: boolean;
@@ -68,6 +70,7 @@ export const BranchIcon: Component<{
   hasQuestion?: boolean;
   hasBusy?: boolean;
   hasUnseen?: boolean;
+  repoHasTerminals?: boolean;
 }> = (props) => {
   const iconShape = () => {
     if (props.hasError) return "error";
@@ -88,6 +91,7 @@ export const BranchIcon: Component<{
     if (props.hasQuestion) return "question";
     if (props.hasBusy) return "activity";
     if (props.hasUnseen) return "unseen";
+    if (props.repoHasTerminals === false) return "idle";
     if (props.isMainBranch) return "main";
     return "worktree";
   };
@@ -184,6 +188,7 @@ export const BranchItem: Component<{
   switchBranchList?: () => string[];
   currentBranch?: () => string;
   githubBaseUrl?: string | null;
+  repoHasTerminals: boolean;
 }> = (props) => {
   const ctxMenu = createContextMenu();
 
@@ -304,6 +309,7 @@ export const BranchItem: Component<{
         hasQuestion={hasQuestion()}
         hasBusy={hasBusy()}
         hasUnseen={hasUnseen()}
+        repoHasTerminals={props.repoHasTerminals}
       />
       <div class={s.branchContent}>
         <span
@@ -423,6 +429,7 @@ export const RepoSection: Component<{
   }
 
   const branches = createMemo(() => Object.values(props.repo.branches));
+  const repoHasTerminals = createMemo(() => branches().some((b) => b.terminals.length > 0));
   // Pre-compute PR statuses once per poll cycle; avoids calling getPrStatus inside sort comparator
   const prStatuses = createMemo(() => {
     const map = new Map<string, ReturnType<typeof githubStore.getPrStatus>>();
@@ -593,6 +600,7 @@ export const RepoSection: Component<{
                 switchBranchList={branch.worktreePath === props.repo.path ? props.switchBranchList : undefined}
                 currentBranch={branch.worktreePath === props.repo.path ? props.currentBranch : undefined}
                 githubBaseUrl={githubBaseUrl()}
+                repoHasTerminals={repoHasTerminals()}
               />
             )}
           </For>

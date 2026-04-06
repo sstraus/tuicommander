@@ -410,6 +410,10 @@
   font-weight: bold;
 }
 
+.branchIconIdle {
+  color: var(--fg-muted);
+}
+
 .branchIconUnseen {
   color: var(--unseen);
 }

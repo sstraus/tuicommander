@@ -73,6 +73,7 @@ Each branch row can show:
 | **Diff stats** | `+N / -N` additions and deletions |
 | **Merged badge** | Branches merged into main show a "Merged" badge |
 | **Question icon** | An agent in this branch's terminal is asking a question |
+| **Grey icon** | No active terminals in the repo — branch icons dim to grey |
 
 ### Branch Actions
 
