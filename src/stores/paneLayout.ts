@@ -294,6 +294,7 @@ interface GroupsState {
 function createPaneLayoutStore() {
   // Plain JS tree — no proxy wrapping
   let tree: PaneNode | null = null;
+  let restoredFromDisk = false;
   const [treeRevision, setTreeRevision] = createSignal(0);
 
   const [state, setState] = createStore<GroupsState>({
@@ -502,6 +503,14 @@ function createPaneLayoutStore() {
       return tree !== null && tree.type === "branch";
     },
 
+    /** Check if a group can be split (not at max depth) */
+    canSplit(groupId: string): boolean {
+      treeRevision(); // subscribe
+      if (!tree) return false;
+      const depth = leafDepthFromRoot(tree, groupId);
+      return depth >= 0 && depth + 1 < MAX_SPLIT_DEPTH;
+    },
+
     /** Get all group IDs in DFS order */
     getAllGroupIds(): string[] {
       treeRevision(); // subscribe
@@ -557,12 +566,20 @@ function createPaneLayoutStore() {
     /** Reset to single pane (no split) */
     reset(): void {
       tree = null;
+      restoredFromDisk = false;
       bumpTree();
       setState({
         groups: {},
         activeGroupId: null,
       });
       scheduleSave();
+    },
+
+    /** Returns true (once) if layout was loaded from disk and not yet consumed */
+    consumeRestoredFromDisk(): boolean {
+      const was = restoredFromDisk;
+      restoredFromDisk = false;
+      return was;
     },
 
     /** Load pane layout from disk and restore (filtering non-terminal tabs) */
@@ -580,6 +597,7 @@ function createPaneLayoutStore() {
         }
 
         this.restore(saved);
+        restoredFromDisk = true;
         appLogger.info("app", `Pane layout restored: ${allLeafIds(saved.root).length} panes`);
       } catch (err) {
         appLogger.warn("app", "Failed to load pane layout", err);

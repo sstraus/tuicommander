@@ -684,10 +684,11 @@ const App: Component = () => {
   };
 
   // Context menu items
-  /** Disable split when no active terminal (and not yet split), or at max tree depth */
+  /** Disable split when no active terminal, or active group is at max tree depth */
   const splitDisabled = () => {
-    if (!paneLayoutStore.isSplit() && !terminalsStore.state.activeId) return true;
-    return false;
+    if (!paneLayoutStore.isSplit()) return !terminalsStore.state.activeId;
+    const activeGroupId = paneLayoutStore.state.activeGroupId;
+    return !activeGroupId || !paneLayoutStore.canSplit(activeGroupId);
   };
 
   /** Check if the active terminal has a running agent (disables agent submenu) */

@@ -545,6 +545,17 @@ export function useGitOperations(deps: GitOperationsDeps) {
           savedPaneLayouts.delete(layoutKey);
           paneLayoutStore.reset();
         }
+      } else if (paneLayoutStore.consumeRestoredFromDisk()) {
+        // Layout was loaded from disk at startup — keep it if terminal IDs are still valid
+        const currentLayout = paneLayoutStore.serialize();
+        const validSet = new Set(validTerminals);
+        const layoutTerminals = Object.values(currentLayout.groups).flatMap(g => g.tabs.filter(t => t.type === "terminal").map(t => t.id));
+        if (layoutTerminals.length > 0 && layoutTerminals.every(id => validSet.has(id))) {
+          appLogger.info("terminal", `BranchSelect KEEP disk-restored paneLayout for ${branchName}`);
+        } else {
+          appLogger.info("terminal", `BranchSelect DISCARD disk-restored paneLayout for ${branchName} — terminal IDs changed`);
+          paneLayoutStore.reset();
+        }
       } else {
         paneLayoutStore.reset();
       }
@@ -583,6 +594,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
       repositoriesStore.setBranch(repoPath, branchName, { savedTerminals: [] });
       if (restoredIds.length > 0) terminalsStore.setActive(restoredIds[0].id);
 
+      paneLayoutStore.consumeRestoredFromDisk(); // drain flag — new terminal IDs invalidate disk layout
       paneLayoutStore.reset();
 
       // Second pass: verify resume commands in parallel (non-blocking)

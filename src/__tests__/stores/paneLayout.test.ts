@@ -606,6 +606,52 @@ describe("paneLayoutStore", () => {
     });
   });
 
+  describe("canSplit", () => {
+    it("returns true for a leaf at depth 0", () => {
+      testInScope(() => {
+        const g1 = store.createGroup();
+        store.setRoot({ type: "leaf", id: g1 });
+        expect(store.canSplit(g1)).toBe(true);
+      });
+    });
+
+    it("returns true for a leaf at depth below max", () => {
+      testInScope(() => {
+        const g1 = store.createGroup();
+        store.setRoot({ type: "leaf", id: g1 });
+        const g2 = store.split(g1, "vertical")!;
+        // g1 and g2 at depth 1, MAX_SPLIT_DEPTH=3, depth+1=2 < 3
+        expect(store.canSplit(g1)).toBe(true);
+        expect(store.canSplit(g2)).toBe(true);
+      });
+    });
+
+    it("returns false for a leaf at max depth", () => {
+      testInScope(() => {
+        const g1 = store.createGroup();
+        store.setRoot({ type: "leaf", id: g1 });
+        const g2 = store.split(g1, "vertical")!;
+        const g3 = store.split(g2, "horizontal")!;
+        // g3 at depth 2, 2+1=3 >= MAX_SPLIT_DEPTH(3)
+        expect(store.canSplit(g3)).toBe(false);
+      });
+    });
+
+    it("returns false when no tree exists", () => {
+      testInScope(() => {
+        expect(store.canSplit("g999")).toBe(false);
+      });
+    });
+
+    it("returns false for unknown group", () => {
+      testInScope(() => {
+        const g1 = store.createGroup();
+        store.setRoot({ type: "leaf", id: g1 });
+        expect(store.canSplit("g999")).toBe(false);
+      });
+    });
+  });
+
   describe("loadFromDisk", () => {
     it("filters out non-terminal tabs on restore", async () => {
       const { invoke } = await import("../../invoke");
@@ -667,6 +713,54 @@ describe("paneLayoutStore", () => {
       await testInScope(async () => {
         await store.loadFromDisk();
         expect(store.getRoot()).toBeNull();
+      });
+    });
+
+    it("sets restoredFromDisk flag on successful restore", async () => {
+      const { invoke } = await import("../../invoke");
+      vi.mocked(invoke).mockResolvedValueOnce({
+        root: { type: "branch", direction: "vertical", children: [{ type: "leaf", id: "g1" }, { type: "leaf", id: "g2" }], ratios: [0.5, 0.5] },
+        groups: {
+          g1: { id: "g1", tabs: [{ id: "term-1", type: "terminal" }], activeTabId: "term-1" },
+          g2: { id: "g2", tabs: [{ id: "term-2", type: "terminal" }], activeTabId: "term-2" },
+        },
+        activeGroupId: "g1",
+      });
+
+      await testInScope(async () => {
+        await store.loadFromDisk();
+        // First call returns true and consumes the flag
+        expect(store.consumeRestoredFromDisk()).toBe(true);
+        // Second call returns false
+        expect(store.consumeRestoredFromDisk()).toBe(false);
+      });
+    });
+
+    it("does not set restoredFromDisk when no saved layout", async () => {
+      const { invoke } = await import("../../invoke");
+      vi.mocked(invoke).mockResolvedValueOnce(null);
+
+      await testInScope(async () => {
+        await store.loadFromDisk();
+        expect(store.consumeRestoredFromDisk()).toBe(false);
+      });
+    });
+
+    it("reset clears restoredFromDisk flag", async () => {
+      const { invoke } = await import("../../invoke");
+      vi.mocked(invoke).mockResolvedValueOnce({
+        root: { type: "branch", direction: "vertical", children: [{ type: "leaf", id: "g1" }, { type: "leaf", id: "g2" }], ratios: [0.5, 0.5] },
+        groups: {
+          g1: { id: "g1", tabs: [{ id: "term-1", type: "terminal" }], activeTabId: "term-1" },
+          g2: { id: "g2", tabs: [{ id: "term-2", type: "terminal" }], activeTabId: "term-2" },
+        },
+        activeGroupId: "g1",
+      });
+
+      await testInScope(async () => {
+        await store.loadFromDisk();
+        store.reset();
+        expect(store.consumeRestoredFromDisk()).toBe(false);
       });
     });
   });
