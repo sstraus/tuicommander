@@ -2236,7 +2236,7 @@ pub(super) async fn mcp_delete(
 // ── Unified handlers (merged tools) ──────────────────────────────────────
 
 /// Merged repo tool: dispatches to workspace, github, or worktree handlers.
-async fn handle_repo(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Value, is_claude_code: bool) -> serde_json::Value {
+async fn handle_repo(state: &Arc<AppState>, _addr: SocketAddr, args: &serde_json::Value, is_claude_code: bool) -> serde_json::Value {
     let action = match require_action(args, "repo", REPO_ACTIONS) {
         Ok(a) => a,
         Err(e) => return e,

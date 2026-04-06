@@ -910,7 +910,7 @@ Variables are resolved from the Rust backend (`resolve_context_variables`) and f
 ### 11.3 Services
 - HTTP API server: always active on IPC listener (Unix domain socket on macOS/Linux, named pipe `\\.\pipe\tuicommander-mcp` on Windows). TCP port only for remote access
 - MCP connection info: bridge sidecar auto-installs configs for supported agents (Claude Code, Cursor, etc.)
-- TUIC native tool toggles: enable/disable individual MCP tools (`session`, `git`, `agent`, `config`, `workspace`, `notify`, `knowledge`, `plugin_dev_guide`) to restrict what AI agents can access
+- TUIC native tool toggles: enable/disable individual MCP tools (`session`, `agent`, `repo`, `ui`, `plugin_dev_guide`, `config`, `knowledge`, `debug`) to restrict what AI agents can access
 - MCP Upstreams: add/edit/remove upstream MCP servers (HTTP or stdio with optional `cwd`), per-upstream enable/disable, reconnect, credential storage via OS keyring, live status dots, tool count and metrics. Saved upstreams auto-connect on boot
 - MCP Per-Repo Scoping: each repo can define which upstream MCP servers are relevant via an allowlist in repo settings (3-layer: per-repo > `.tuic.json` > defaults). Null/empty allowlist = all servers. Quick toggle via **Cmd+Shift+M** popup
 - Remote access: port, username, password (bcrypt hash), URL display, QR code, token duration, IPv6 dual-stack, LAN auth bypass

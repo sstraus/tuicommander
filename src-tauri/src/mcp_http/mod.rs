@@ -901,7 +901,7 @@ mod tests {
     }
 
     fn test_state() -> Arc<AppState> {
-        Arc::new(AppState {
+        let state = Arc::new(AppState {
             sessions: DashMap::new(),
             worktrees_dir: std::env::temp_dir().join("test-worktrees"),
             metrics: crate::SessionMetrics::new(),
@@ -949,7 +949,10 @@ mod tests {
             push_store: crate::push::PushStore::load(&std::env::temp_dir()),
             desktop_window_focused: std::sync::atomic::AtomicBool::new(true),
             server_start_time: std::time::Instant::now(),
-        })
+        });
+        // Override default disabled_native_tools so all 8 tools are visible in tests
+        state.config.write().disabled_native_tools = Vec::new();
+        state
     }
 
     #[tokio::test]
@@ -1427,26 +1430,24 @@ mod tests {
         let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let tools = json["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 12);
+        assert_eq!(tools.len(), 8);
 
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"session"));
-        assert!(names.contains(&"github"));
-        assert!(names.contains(&"worktree"));
         assert!(names.contains(&"agent"));
-        assert!(names.contains(&"config"));
-        assert!(names.contains(&"workspace"));
+        assert!(names.contains(&"repo"));
         assert!(names.contains(&"ui"));
-        assert!(names.contains(&"notify"));
-        assert!(names.contains(&"knowledge"));
         assert!(names.contains(&"plugin_dev_guide"));
+        assert!(names.contains(&"config"));
+        assert!(names.contains(&"knowledge"));
+        assert!(names.contains(&"debug"));
     }
 
     #[test]
     fn test_mcp_tool_definitions_count() {
         let tools = mcp_transport::test_mcp_tool_definitions();
         let arr = tools.as_array().unwrap();
-        assert_eq!(arr.len(), 12);
+        assert_eq!(arr.len(), 8);
     }
 
     #[test]
@@ -1784,24 +1785,24 @@ mod tests {
     // --- Git meta-command tests ---
 
     #[tokio::test]
-    async fn test_github_prs_missing_path() {
+    async fn test_repo_prs_missing_path() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "github", serde_json::json!({"action": "prs"})).await;
+        let result = call_mcp_tool(&state, "repo", serde_json::json!({"action": "prs"})).await;
         assert!(result["error"].as_str().unwrap().contains("requires 'path'"));
     }
 
     #[tokio::test]
-    async fn test_worktree_list_missing_path() {
+    async fn test_repo_worktree_list_missing_path() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "worktree", serde_json::json!({"action": "list"})).await;
+        let result = call_mcp_tool(&state, "repo", serde_json::json!({"action": "worktree_list"})).await;
         assert!(result["error"].as_str().unwrap().contains("requires 'path'"));
     }
 
     #[tokio::test]
-    async fn test_worktree_remove_missing_branch() {
+    async fn test_repo_worktree_remove_missing_branch() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "worktree", serde_json::json!({
-            "action": "remove",
+        let result = call_mcp_tool(&state, "repo", serde_json::json!({
+            "action": "worktree_remove",
             "path": "/tmp/test-repo"
         })).await;
         assert!(result["error"].as_str().unwrap().contains("requires 'branch'"));
@@ -1826,24 +1827,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_github_missing_action() {
+    async fn test_repo_missing_action() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "github", serde_json::json!({})).await;
+        let result = call_mcp_tool(&state, "repo", serde_json::json!({})).await;
         assert!(result["error"].as_str().unwrap().contains("Missing 'action'"));
     }
 
     #[tokio::test]
-    async fn test_github_unknown_action() {
+    async fn test_repo_unknown_action() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "github", serde_json::json!({"action": "commit"})).await;
+        let result = call_mcp_tool(&state, "repo", serde_json::json!({"action": "commit"})).await;
         assert!(result["error"].as_str().unwrap().contains("Unknown action 'commit'"));
-    }
-
-    #[tokio::test]
-    async fn test_worktree_missing_action() {
-        let state = test_state();
-        let result = call_mcp_tool(&state, "worktree", serde_json::json!({})).await;
-        assert!(result["error"].as_str().unwrap().contains("Missing 'action'"));
     }
 
     /// Helper: create a temporary git repo with an initial commit for worktree tests.
@@ -1860,13 +1854,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_worktree_create_cc_agent_hint_present_for_claude_code() {
+    async fn test_repo_worktree_create_cc_agent_hint_present_for_claude_code() {
         let repo = create_temp_git_repo();
         let repo_path = repo.path().to_str().unwrap();
         let state = test_state();
         let sid = mcp_initialize_as(&state, "claude-code").await;
-        let result = call_mcp_tool_with_session(&state, "worktree", serde_json::json!({
-            "action": "create",
+        let result = call_mcp_tool_with_session(&state, "repo", serde_json::json!({
+            "action": "worktree_create",
             "path": repo_path,
             "branch": "test-cc-hint"
         }), &sid).await;
@@ -1881,13 +1875,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_worktree_create_no_cc_agent_hint_for_other_clients() {
+    async fn test_repo_worktree_create_no_cc_agent_hint_for_other_clients() {
         let repo = create_temp_git_repo();
         let repo_path = repo.path().to_str().unwrap();
         let state = test_state();
         let sid = mcp_initialize_as(&state, "cursor").await;
-        let result = call_mcp_tool_with_session(&state, "worktree", serde_json::json!({
-            "action": "create",
+        let result = call_mcp_tool_with_session(&state, "repo", serde_json::json!({
+            "action": "worktree_create",
             "path": repo_path,
             "branch": "test-no-hint"
         }), &sid).await;
@@ -1903,7 +1897,7 @@ mod tests {
         let state = test_state();
         let result = call_mcp_tool(&state, "nonexistent_tool", serde_json::json!({})).await;
         assert!(result["error"].as_str().unwrap().contains("Unknown tool"));
-        assert!(result["error"].as_str().unwrap().contains("session, github, worktree, agent"));
+        assert!(result["error"].as_str().unwrap().contains("session, agent, repo, ui"));
     }
 
     // --- isError flag tests ---
@@ -2369,15 +2363,16 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         let tools = json["result"]["tools"].as_array().unwrap();
         // No upstream → native tools only
-        assert_eq!(tools.len(), 12);
+        assert_eq!(tools.len(), 8);
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"session"));
-        assert!(names.contains(&"github"));
-        assert!(names.contains(&"worktree"));
         assert!(names.contains(&"agent"));
-        assert!(names.contains(&"config"));
+        assert!(names.contains(&"repo"));
         assert!(names.contains(&"ui"));
         assert!(names.contains(&"plugin_dev_guide"));
+        assert!(names.contains(&"config"));
+        assert!(names.contains(&"knowledge"));
+        assert!(names.contains(&"debug"));
     }
 
     /// tools/call with upstream-prefixed name returns error (no upstream registered).

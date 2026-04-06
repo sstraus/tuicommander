@@ -114,23 +114,18 @@ mod tests {
                 "inputSchema": { "type": "object", "properties": { "action": { "type": "string" } }, "required": ["action"] }
             }),
             json!({
-                "name": "github",
-                "description": "Query GitHub integration: PR statuses, CI rollup, merge readiness.",
-                "inputSchema": { "type": "object", "properties": { "action": { "type": "string" } }, "required": ["action"] }
-            }),
-            json!({
-                "name": "worktree",
-                "description": "Manage git worktrees for parallel work. Actions: list, create, remove.",
+                "name": "repo",
+                "description": "Repository and version control operations. Query workspace repos, GitHub PR/CI status, and manage git worktrees for parallel work.\n\nActions: list, active, prs, status, worktree_list, worktree_create, worktree_remove.",
                 "inputSchema": { "type": "object", "properties": { "action": { "type": "string" } }, "required": ["action"] }
             }),
             json!({
                 "name": "agent",
-                "description": "Detect and manage AI agents. Actions: detect, spawn, stats, metrics.",
+                "description": "AI agent orchestration and inter-agent messaging. Spawn agents, detect running agents, and coordinate via message passing.\n\nActions: spawn, detect, stats, metrics, register, list_peers, send, inbox.",
                 "inputSchema": { "type": "object", "properties": { "action": { "type": "string" } }, "required": ["action"] }
             }),
             json!({
-                "name": "notify",
-                "description": "Show notifications to the TUIC user. Actions: toast, confirm.",
+                "name": "ui",
+                "description": "Control the TUICommander UI: open panel tabs, show toast notifications, or prompt for user confirmation.\n\nActions: tab, toast, confirm.",
                 "inputSchema": { "type": "object", "properties": { "action": { "type": "string" } }, "required": ["action"] }
             }),
             json!({
@@ -170,11 +165,11 @@ mod tests {
     }
 
     #[test]
-    fn search_github_pr_returns_github_first() {
+    fn search_github_pr_returns_repo_first() {
         let index = ToolSearchIndex::build(&sample_tools());
         let results = index.search("github PR status", 3);
         assert!(!results.is_empty());
-        assert_eq!(results[0].name, "github");
+        assert_eq!(results[0].name, "repo");
     }
 
     #[test]

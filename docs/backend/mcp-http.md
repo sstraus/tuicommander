@@ -158,18 +158,35 @@ The BM25 index lives in `AppState::tool_search_index` (`parking_lot::RwLock<Tool
 
 The MCP instructions string returned by `initialize` (`build_mcp_instructions`) swaps to a "lazy discovery" guide when `collapse_tools: true` so agents know to call `search_tools` first rather than looking for a flat tool table.
 
+### MCP Native Tools
+
+Eight native tools, organized by domain. Three (`config`, `knowledge`, `debug`) are hidden by default via `disabled_native_tools` — discoverable through `search_tools`/`get_tool_schema`/`call_tool` when `collapse_tools` is enabled.
+
+| Tool | Actions | Default |
+|------|---------|---------|
+| `session` | list, create, input, output, resize, close, kill, pause, resume | Enabled |
+| `agent` | spawn, detect, stats, metrics, register, list_peers, send, inbox | Enabled |
+| `repo` | list, active, prs, status, worktree_list, worktree_create, worktree_remove | Enabled |
+| `ui` | tab, toast, confirm | Enabled |
+| `plugin_dev_guide` | *(no actions — returns guide text)* | Enabled |
+| `config` | get, save | Disabled |
+| `knowledge` | search, code_graph, status, setup | Disabled |
+| `debug` | agent_detection, logs, invoke_js, plugin_guide | Disabled |
+
+The `disabled_native_tools` config key accepts an array of tool names to hide from `tools/list`. Default: `["config", "knowledge", "debug"]`.
+
 ### MCP Tool: `session` Output
 
-The `session` tool's `action=output` strips ANSI escape codes by default, returning clean text suitable for AI consumption. Pass `format="raw"` to preserve escape sequences (e.g. for terminal rendering).
+The `session` tool's `action=output` strips ANSI escape codes by default, returning clean text suitable for AI consumption. Pass `format="raw"` to preserve escape sequences (e.g. for terminal rendering). The `action=list` response includes process details per session: `child_pid`, `foreground_pgid`, and `foreground_process`.
 
 | Param | Default | Description |
 |-------|---------|-------------|
 | `limit` | `8192` | Max bytes to read |
 | `format` | (text) | `"raw"` preserves ANSI escape codes |
 
-### MCP Tool: `worktree` — Claude Code Agent Hint
+### MCP Tool: `repo` — Worktree Create (Claude Code Agent Hint)
 
-When the MCP client identifies as Claude Code (detected via `clientInfo.name` at initialize time), the `worktree action=create` response includes an additional `cc_agent_hint` field:
+When the MCP client identifies as Claude Code (detected via `clientInfo.name` at initialize time), the `repo action=worktree_create` response includes an additional `cc_agent_hint` field:
 
 ```json
 {
@@ -188,14 +205,14 @@ Non-Claude Code MCP clients do not receive this field.
 
 ## Inter-Agent Messaging
 
-The `messaging` MCP tool enables coordination between multiple AI agents connected to TUICommander.
+The `agent` tool's messaging actions (`register`, `list_peers`, `send`, `inbox`) enable coordination between multiple AI agents connected to TUICommander.
 
 ### Protocol
 
-1. **Register**: Agent reads `$TUIC_SESSION` env var and calls `messaging action=register tuic_session=<uuid>`. This links the MCP session to the stable tab identity.
-2. **Discover**: `messaging action=list_peers` returns all registered peers (filterable by project).
-3. **Send**: `messaging action=send to=<tuic_session> message="..."` routes the message to the recipient's inbox.
-4. **Receive**: Messages arrive via MCP channel notification (real-time, if SSE connected) and/or `messaging action=inbox` (polling).
+1. **Register**: Agent reads `$TUIC_SESSION` env var and calls `agent action=register tuic_session=<uuid>`. This links the MCP session to the stable tab identity.
+2. **Discover**: `agent action=list_peers` returns all registered peers (filterable by project).
+3. **Send**: `agent action=send to=<tuic_session> message="..."` routes the message to the recipient's inbox.
+4. **Receive**: Messages arrive via MCP channel notification (real-time, if SSE connected) and/or `agent action=inbox` (polling).
 
 ### Channel Push Delivery
 
