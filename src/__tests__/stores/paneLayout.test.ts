@@ -1,4 +1,8 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+
+vi.mock("../../invoke", () => ({
+  invoke: vi.fn(() => Promise.resolve(null)),
+}));
 import {
   splitLeaf,
   removeLeaf,
@@ -598,6 +602,71 @@ describe("paneLayoutStore", () => {
         expect(store.state.groups[g1].tabs).toHaveLength(1);
         expect(store.state.groups[g2].tabs).toHaveLength(1);
         expect(store.state.activeGroupId).toBe(g2);
+      });
+    });
+  });
+
+  describe("loadFromDisk", () => {
+    it("filters out non-terminal tabs on restore", async () => {
+      const { invoke } = await import("../../invoke");
+      const mockInvoke = vi.mocked(invoke);
+
+      const savedLayout = {
+        root: {
+          type: "branch",
+          direction: "vertical",
+          children: [
+            { type: "leaf", id: "g1" },
+            { type: "leaf", id: "g2" },
+          ],
+          ratios: [0.5, 0.5],
+        },
+        groups: {
+          g1: {
+            id: "g1",
+            tabs: [
+              { id: "term-1", type: "terminal" },
+              { id: "md-1", type: "markdown" },
+              { id: "diff-1", type: "diff" },
+            ],
+            activeTabId: "md-1",
+          },
+          g2: {
+            id: "g2",
+            tabs: [
+              { id: "editor-1", type: "editor" },
+            ],
+            activeTabId: "editor-1",
+          },
+        },
+        activeGroupId: "g1",
+      };
+
+      mockInvoke.mockResolvedValueOnce(savedLayout);
+
+      await testInScope(async () => {
+        await store.loadFromDisk();
+
+        // g1 should only have the terminal tab
+        expect(store.state.groups.g1.tabs).toEqual([{ id: "term-1", type: "terminal" }]);
+        expect(store.state.groups.g1.activeTabId).toBe("term-1");
+
+        // g2 had only an editor tab — filtered to empty
+        expect(store.state.groups.g2.tabs).toEqual([]);
+        expect(store.state.groups.g2.activeTabId).toBeNull();
+
+        // Tree structure preserved
+        expect(store.getRoot()?.type).toBe("branch");
+      });
+    });
+
+    it("does nothing when no saved layout", async () => {
+      const { invoke } = await import("../../invoke");
+      vi.mocked(invoke).mockResolvedValueOnce(null);
+
+      await testInScope(async () => {
+        await store.loadFromDisk();
+        expect(store.getRoot()).toBeNull();
       });
     });
   });

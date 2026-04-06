@@ -1087,6 +1087,8 @@ pub fn run() {
             config::save_repo_defaults,
             config::load_repositories,
             config::save_repositories,
+            config::load_pane_layout,
+            config::save_pane_layout,
             config::load_prompt_library,
             config::save_prompt_library,
             config::load_notes,

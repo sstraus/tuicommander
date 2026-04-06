@@ -1,6 +1,7 @@
 import { createStore, produce } from "solid-js/store";
 import { createSignal } from "solid-js";
 import { appLogger } from "./appLogger";
+import { invoke } from "../invoke";
 
 // ---- Layout Tree Types (geometry only) ----
 
@@ -304,7 +305,32 @@ function createPaneLayoutStore() {
     setTreeRevision(r => r + 1);
   }
 
-  return {
+  // Debounced persistence — serializes tree+groups directly (no `this` needed)
+  let saveTimer: ReturnType<typeof setTimeout> | null = null;
+  function scheduleSave(): void {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      const groups: Record<string, PaneGroup> = {};
+      for (const key of Object.keys(state.groups)) {
+        const g = state.groups[key];
+        groups[key] = {
+          id: g.id,
+          tabs: g.tabs.map(t => ({ id: t.id, type: t.type })),
+          activeTabId: g.activeTabId,
+        };
+      }
+      const snapshot: PaneLayoutState = {
+        root: tree ? JSON.parse(JSON.stringify(tree)) : null,
+        groups,
+        activeGroupId: state.activeGroupId,
+      };
+      invoke("save_pane_layout", { layout: snapshot }).catch((err: unknown) =>
+        appLogger.warn("app", "Failed to save pane layout", err),
+      );
+    }, 500);
+  }
+
+  const result = {
     state,
 
     /** Read the tree root. Call treeRevision() first to subscribe to changes. */
@@ -363,6 +389,7 @@ function createPaneLayoutStore() {
         };
         bumpTree();
         setState("activeGroupId", newGroupId);
+        scheduleSave();
         return newGroupId;
       }
 
@@ -376,6 +403,7 @@ function createPaneLayoutStore() {
       tree = newRoot;
       bumpTree();
       setState("activeGroupId", newGroupId);
+      scheduleSave();
       return newGroupId;
     },
 
@@ -392,6 +420,7 @@ function createPaneLayoutStore() {
           s.activeGroupId = newRoot ? allLeafIds(newRoot)[0] ?? null : null;
         }
       }));
+      scheduleSave();
     },
 
     /** Add a tab to a group */
@@ -406,6 +435,7 @@ function createPaneLayoutStore() {
         s.groups[groupId].tabs.push(tab);
         s.groups[groupId].activeTabId = tab.id;
       }));
+      scheduleSave();
     },
 
     /** Remove a tab from a group */
@@ -418,6 +448,7 @@ function createPaneLayoutStore() {
           group.activeTabId = group.tabs.length > 0 ? group.tabs[group.tabs.length - 1].id : null;
         }
       }));
+      scheduleSave();
     },
 
     /** Move a tab from one group to another */
@@ -440,6 +471,7 @@ function createPaneLayoutStore() {
         }
         to.activeTabId = tabId;
       }));
+      scheduleSave();
     },
 
     /** Set the active tab within a group */
@@ -530,8 +562,33 @@ function createPaneLayoutStore() {
         groups: {},
         activeGroupId: null,
       });
+      scheduleSave();
     },
+
+    /** Load pane layout from disk and restore (filtering non-terminal tabs) */
+    async loadFromDisk(): Promise<void> {
+      try {
+        const saved = await invoke<PaneLayoutState | null>("load_pane_layout");
+        if (!saved || !saved.root) return;
+
+        // Filter out non-terminal tabs (md/diff/editor are session-bound)
+        for (const group of Object.values(saved.groups)) {
+          group.tabs = group.tabs.filter((t: PaneTab) => t.type === "terminal");
+          if (group.activeTabId && !group.tabs.some((t: PaneTab) => t.id === group.activeTabId)) {
+            group.activeTabId = group.tabs.length > 0 ? group.tabs[0].id : null;
+          }
+        }
+
+        this.restore(saved);
+        appLogger.info("app", `Pane layout restored: ${allLeafIds(saved.root).length} panes`);
+      } catch (err) {
+        appLogger.warn("app", "Failed to load pane layout", err);
+      }
+    },
+
   };
+
+  return result; // eslint-disable-line @typescript-eslint/no-use-before-define
 }
 
 export const paneLayoutStore = createPaneLayoutStore();

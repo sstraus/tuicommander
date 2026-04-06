@@ -5,6 +5,7 @@ import { githubStore } from "../stores/github";
 import { appLogger } from "../stores/appLogger";
 import { activityStore } from "../stores/activityStore";
 import { repoSettingsStore } from "../stores/repoSettings";
+import { paneLayoutStore } from "../stores/paneLayout";
 import { mdTabsStore } from "../stores/mdTabs";
 import { uiStore } from "../stores/ui";
 import { invoke, listen } from "../invoke";
@@ -148,6 +149,9 @@ export async function initApp(deps: AppInitDeps) {
 
   // Recover log entries from Rust backend (survives webview reloads)
   appLogger.hydrateFromRust().catch(() => {});
+
+  // Restore pane layout from disk (terminal tabs will be re-linked during terminal restore)
+  await paneLayoutStore.loadFromDisk();
 
   // Remove splash screen now that stores are hydrated — prevents flash of empty
   // state (e.g. "Add Repository" button) before persisted repos have loaded.

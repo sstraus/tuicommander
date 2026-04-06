@@ -885,6 +885,7 @@ const PROMPT_LIBRARY_FILE: &str = "prompt-library.json";
 const REPOSITORIES_FILE: &str = "repositories.json";
 const NOTES_FILE: &str = "notes.json";
 const KEYBINDINGS_FILE: &str = "keybindings.json";
+const PANE_LAYOUT_FILE: &str = "pane-layout.json";
 const AGENTS_CONFIG_FILE: &str = "agents.json";
 const ACTIVITY_FILE: &str = "activity.json";
 
@@ -964,6 +965,17 @@ pub(crate) fn load_repositories() -> serde_json::Value {
 #[tauri::command]
 pub(crate) fn save_repositories(config: serde_json::Value) -> Result<(), String> {
     save_json_config(REPOSITORIES_FILE, &config)
+}
+
+// Pane layout (schema owned by frontend)
+#[tauri::command]
+pub(crate) fn load_pane_layout() -> serde_json::Value {
+    load_json_config(PANE_LAYOUT_FILE)
+}
+
+#[tauri::command]
+pub(crate) fn save_pane_layout(layout: serde_json::Value) -> Result<(), String> {
+    save_json_config(PANE_LAYOUT_FILE, &layout)
 }
 
 // Prompt library

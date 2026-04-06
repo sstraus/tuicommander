@@ -230,6 +230,12 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
     map: (args) => ({ method: "PUT", path: "/config/repositories", body: args.config }),
   },
 
+  // --- Config: pane layout ---
+  load_pane_layout: { map: () => ({ method: "GET", path: "/config/pane-layout" }) },
+  save_pane_layout: {
+    map: (args) => ({ method: "PUT", path: "/config/pane-layout", body: args.layout }),
+  },
+
   // --- Config: caches ---
   clear_caches: { map: () => ({ method: "POST", path: "/config/clear-caches" }) },
 

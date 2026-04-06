@@ -142,6 +142,21 @@ pub(super) async fn put_repositories(
     }
 }
 
+pub(super) async fn get_pane_layout() -> impl IntoResponse {
+    Json(crate::config::load_pane_layout())
+}
+
+pub(super) async fn put_pane_layout(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(layout): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    if let Err(resp) = localhost_only(&addr) { return resp; }
+    match crate::config::save_pane_layout(layout) {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
+    }
+}
+
 pub(super) async fn clear_caches(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     state.clear_caches();
     Json(serde_json::json!({"ok": true}))
