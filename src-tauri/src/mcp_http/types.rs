@@ -12,6 +12,12 @@ pub(super) struct HealthResponse {
 }
 
 #[derive(Serialize)]
+pub(super) struct VersionResponse {
+    pub version: &'static str,
+    pub git_hash: &'static str,
+}
+
+#[derive(Serialize)]
 pub(super) struct SessionInfo {
     pub session_id: String,
     pub cwd: Option<String>,

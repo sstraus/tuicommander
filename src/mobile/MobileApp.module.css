@@ -19,3 +19,20 @@
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
+
+.updateBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--accent, #3b82f6);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.updateBanner:active {
+  opacity: 0.85;
+}

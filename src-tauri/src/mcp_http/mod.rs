@@ -421,8 +421,9 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
     };
 
     let mut routes = Router::new()
-        // Health
+        // Health & version
         .route("/health", get(session::health))
+        .route("/api/version", get(session::app_version))
         // Session lifecycle
         .route("/sessions", get(session::list_sessions).post(session::create_session))
         .route("/sessions/{id}/write", post(session::write_to_session))

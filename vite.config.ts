@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { execSync } from "node:child_process";
 import { defineConfig } from "vite";
 import solid from "vite-plugin-solid";
 import checker from "vite-plugin-checker";
@@ -12,10 +13,17 @@ const host = process.env.TAURI_DEV_HOST;
 // Read app version from tauri.conf.json
 const tauriConf = JSON.parse(readFileSync("./src-tauri/tauri.conf.json", "utf-8"));
 
+// Git hash for PWA version checks
+const gitHash = (() => {
+  try { return execSync("git rev-parse --short HEAD").toString().trim(); }
+  catch { return "dev"; }
+})();
+
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   define: {
     __APP_VERSION__: JSON.stringify(tauriConf.version),
+    __BUILD_GIT_HASH__: JSON.stringify(gitHash),
   },
   plugins: [
     solid(),

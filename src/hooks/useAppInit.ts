@@ -232,6 +232,13 @@ export async function initApp(deps: AppInitDeps) {
     );
     if (existing) return;
 
+    // Skip if a local tab is still awaiting its sessionId (race: PTY created but
+    // Terminal.tsx hasn't called terminalsStore.update({sessionId}) yet).
+    const pendingLocal = terminalsStore.getIds().find(
+      (id) => { const t = terminalsStore.get(id); return t && !t.isRemote && t.sessionId === null; },
+    );
+    if (pendingLocal) return;
+
     appLogger.info("app", `Remote session created: ${session_id}`);
     const id = terminalsStore.add({
       sessionId: session_id,

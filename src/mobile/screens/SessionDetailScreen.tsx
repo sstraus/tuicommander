@@ -9,7 +9,7 @@ import { TerminalKeybar } from "../components/TerminalKeybar";
 import { IdeasOverlay } from "../components/IdeasOverlay";
 
 import type { SessionInfo } from "../useSessions";
-import { deriveStatus } from "../utils/deriveStatus";
+import { useDebouncedStatus } from "../utils/useDebouncedStatus";
 import { formatRetryCountdown } from "../utils/formatRetryCountdown";
 import styles from "./SessionDetailScreen.module.css";
 
@@ -36,7 +36,7 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
     // WS state is authoritative when present; poll state fills gaps on reconnect.
     return { ...poll, ...ws } as typeof poll;
   };
-  const status = () => deriveStatus({ ...props.session, state: sessionState() });
+  const status = useDebouncedStatus(() => ({ ...props.session, state: sessionState() }));
 
   // Search filter
   const [searchOpen, setSearchOpen] = createSignal(false);

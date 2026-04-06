@@ -3,7 +3,7 @@ import { AgentIcon } from "../../components/ui/AgentIcon";
 import { AGENT_DISPLAY, type AgentType, AGENT_TYPES } from "../../agents";
 import { StatusBadge } from "./StatusBadge";
 import type { SessionInfo } from "../useSessions";
-import { deriveStatus } from "../utils/deriveStatus";
+import { useDebouncedStatus } from "../utils/useDebouncedStatus";
 import styles from "./SessionCard.module.css";
 
 interface SessionCardProps {
@@ -31,7 +31,7 @@ function isAgentType(value: string): value is AgentType {
 }
 
 export function SessionCard(props: SessionCardProps) {
-  const status = () => deriveStatus(props.session);
+  const status = useDebouncedStatus(() => props.session);
   const agentType = () => props.session.state?.agent_type;
   const agentColor = () => {
     const t = agentType();

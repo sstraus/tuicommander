@@ -38,6 +38,13 @@ pub(super) async fn health(State(state): State<Arc<AppState>>) -> Json<HealthRes
     Json(HealthResponse { ok: true, uptime_secs: uptime, session_count, socket_path })
 }
 
+pub(super) async fn app_version() -> Json<super::types::VersionResponse> {
+    Json(super::types::VersionResponse {
+        version: env!("CARGO_PKG_VERSION"),
+        git_hash: env!("BUILD_GIT_HASH"),
+    })
+}
+
 pub(super) async fn list_sessions(State(state): State<Arc<AppState>>) -> Json<Vec<SessionInfo>> {
     let sessions: Vec<SessionInfo> = state
         .sessions
@@ -583,18 +590,18 @@ async fn handle_ws_session(
 
     // Send catch-up data in chunks (64 KB) so the client can render progressively.
     const CATCHUP_CHUNK_SIZE: usize = 64 * 1024;
-    if let Some((data, total)) = snapshot {
-        if !data.is_empty() {
-            for chunk in data.chunks(CATCHUP_CHUNK_SIZE) {
-                let text = String::from_utf8_lossy(chunk);
-                if !text.is_empty() {
-                    let frame = serde_json::json!({"type": "output", "data": text, "total_written": total});
-                    if futures_util::SinkExt::send(
-                        &mut ws_sender,
-                        Message::Text(frame.to_string().into()),
-                    ).await.is_err() {
-                        return; // Client disconnected during catch-up
-                    }
+    if let Some((data, total)) = snapshot
+        && !data.is_empty()
+    {
+        for chunk in data.chunks(CATCHUP_CHUNK_SIZE) {
+            let text = String::from_utf8_lossy(chunk);
+            if !text.is_empty() {
+                let frame = serde_json::json!({"type": "output", "data": text, "total_written": total});
+                if futures_util::SinkExt::send(
+                    &mut ws_sender,
+                    Message::Text(frame.to_string().into()),
+                ).await.is_err() {
+                    return; // Client disconnected during catch-up
                 }
             }
         }

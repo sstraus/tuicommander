@@ -8,6 +8,7 @@ import { SettingsScreen } from "./screens/SettingsScreen";
 import { QuestionBanner } from "./components/QuestionBanner";
 import { useSessions } from "./useSessions";
 import { useMobileNotifications } from "./useMobileNotifications";
+import { useVersionCheck } from "./useVersionCheck";
 import { appLogger } from "../stores/appLogger";
 import { notesStore } from "../stores/notes";
 import styles from "./MobileApp.module.css";
@@ -32,6 +33,7 @@ export default function MobileApp() {
   const [selectedSessionId, setSelectedSessionId] = createSignal<string | null>(sessionIdFromUrl());
   const { sessions, loading, refreshing, error, refresh, questionCount } = useSessions();
   useMobileNotifications(sessions);
+  const { updateAvailable, applyUpdate } = useVersionCheck();
   notesStore.hydrate();
 
   // Keep the last known session data so the detail screen stays mounted
@@ -67,8 +69,18 @@ export default function MobileApp() {
 
   const showDetail = () => selectedSessionId() !== null && lastKnownSession() !== null;
 
+  const updateBanner = () => (
+    <Show when={updateAvailable()}>
+      <div class={styles.updateBanner} onClick={applyUpdate}>
+        <span>New version available</span>
+        <span>Tap to update</span>
+      </div>
+    </Show>
+  );
+
   return (
     <div class={styles.shell}>
+      {updateBanner()}
       <Show
         when={showDetail()}
         fallback={

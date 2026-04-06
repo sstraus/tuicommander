@@ -1,5 +1,14 @@
-// TUICommander — Push-only Service Worker
-// No fetch interception, no caching. Handles push notifications only.
+// TUICommander — Service Worker
+// Handles push notifications and auto-update lifecycle.
+// No fetch interception or asset caching — the HTTP server owns content delivery.
+
+// Activate immediately when installed (skip waiting for old tabs to close).
+self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
+// --- Push notifications ---
 
 self.addEventListener("push", (event) => {
   let data = {};
