@@ -19,6 +19,8 @@
   word-break: normal;
   font-variant-emoji: text;
   margin: 0;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .tableBlock {
