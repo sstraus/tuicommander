@@ -1,0 +1,42 @@
+src/mobile/components/IdeasOverlay.tsx
+  320c76262d5b38d4 1-138
+src/mobile/components/IdeasOverlay.module.css
+  320c76262d5b38d4 1-202
+src/mobile/screens/SessionDetailScreen.tsx
+  320c76262d5b38d4 9,48-50,119-127,262-268
+src/mobile/MobileApp.tsx
+  320c76262d5b38d4 12,35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.5",
+  "base_commit_sha": "53bd4105183bf04153d45eec1f329f263e8ca10f",
+  "prompts": {
+    "320c76262d5b38d4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c0210499-ec40-4166-8bfb-a9761831388a",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 2,
+      "total_deletions": 0,
+      "accepted_lines": 364,
+      "overriden_lines": 0
+    },
+    "e4f151c186b7b3e2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e325361a-ecb2-4359-b2af-2ed856aae4d8",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 16,
+      "overriden_lines": 0
+    }
+  }
+}
