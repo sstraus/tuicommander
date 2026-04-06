@@ -247,23 +247,30 @@ fn validate_mcp_repo_path(path: &str) -> Result<(), serde_json::Value> {
 }
 
 const SESSION_ACTIONS: &str = "list, create, input, output, resize, close, kill, pause, resume";
-const AGENT_ACTIONS: &str = "detect, spawn, stats, metrics";
-const GITHUB_ACTIONS: &str = "prs, status";
-const WORKTREE_ACTIONS: &str = "list, create, remove";
+const AGENT_ACTIONS: &str = "spawn, detect, stats, metrics, register, list_peers, send, inbox";
+const REPO_ACTIONS: &str = "list, active, prs, status, worktree_list, worktree_create, worktree_remove";
+const UI_ACTIONS: &str = "tab, toast, confirm";
 const CONFIG_ACTIONS: &str = "get, save";
-const WORKSPACE_ACTIONS: &str = "list, active";
-const UI_ACTIONS: &str = "tab";
-const NOTIFY_ACTIONS: &str = "toast, confirm";
 const KNOWLEDGE_ACTIONS: &str = "search, code_graph, status, setup";
-const MESSAGING_ACTIONS: &str = "register, list_peers, send, inbox";
-const DEBUG_ACTIONS: &str = "agent_detection, logs, sessions, invoke_js";
+const DEBUG_ACTIONS: &str = "agent_detection, logs, invoke_js, plugin_guide";
 
-/// MCP tool definitions — 5 meta-commands mirroring tui_mcp_bridge
+// Legacy action constants — still referenced by handlers until dispatch refactor (story 1091).
+// Remove these when handle_mcp_tool_call dispatch is updated.
+const LEGACY_AGENT_ACTIONS: &str = "detect, spawn, stats, metrics";
+const LEGACY_GITHUB_ACTIONS: &str = "prs, status";
+const LEGACY_WORKTREE_ACTIONS: &str = "list, create, remove";
+const LEGACY_WORKSPACE_ACTIONS: &str = "list, active";
+const LEGACY_UI_ACTIONS: &str = "tab";
+const LEGACY_NOTIFY_ACTIONS: &str = "toast, confirm";
+const LEGACY_MESSAGING_ACTIONS: &str = "register, list_peers, send, inbox";
+const LEGACY_DEBUG_ACTIONS: &str = "agent_detection, logs, sessions, invoke_js";
+
+/// MCP tool definitions — 8 native tools (5 enabled by default)
 fn native_tool_definitions() -> serde_json::Value {
     let defs = serde_json::json!([
         {
             "name": "session",
-            "description": "Manage PTY terminal sessions.\n\nActions (pass as 'action' parameter):\n- list: Returns [{session_id, cwd, worktree_path, worktree_branch}] for all active sessions. Call first to discover IDs.\n- create: Creates a new PTY session. Returns {session_id}. Optional: rows, cols, shell, cwd.\n- input: Sends text and/or a special key to a session. Requires session_id, plus input and/or special_key.\n- output: Returns {data, total_written, exited, exit_code} from session ring buffer. Requires session_id. Optional: limit. exited=true when process has terminated; exit_code is the process return code (null if still running).\n- resize: Resizes PTY dimensions. Requires session_id, rows, cols.\n- close: Terminates a session gracefully (sends Ctrl+C, waits briefly). Requires session_id.\n- kill: Force-kills the session process with SIGKILL. Use when Ctrl+C/close don't work (e.g. nested agents that catch SIGINT). Requires session_id.\n- pause: Pauses output buffering. Requires session_id.\n- resume: Resumes output buffering. Requires session_id.",
+            "description": "Manage terminal pane sessions — the PTY multiplexer. Equivalent to tmux pane management: create terminals (split-window), write input (send-keys), read output (capture-pane), list active panes, and control lifecycle. Each session is a full PTY with scrollback, visible in the TUI as a pane.\n\nActions (pass as 'action' parameter):\n- list: All active sessions with cwd, worktree info, and process details (child_pid, foreground_pgid, foreground_process). Call first to discover IDs.\n- create: Spawn a new PTY session (equivalent to tmux split-window). Returns {session_id}. Optional: rows, cols, shell, cwd.\n- input: Send text and/or special keys to a session (equivalent to tmux send-keys). Requires session_id, plus input and/or special_key.\n- output: Read terminal output from ring buffer (equivalent to tmux capture-pane). Returns {data, total_written, exited, exit_code}. Requires session_id. Optional: limit. exited=true when process has terminated.\n- resize: Change PTY dimensions. Requires session_id, rows, cols.\n- close: Graceful shutdown (sends Ctrl+C, waits briefly). Requires session_id.\n- kill: Force SIGKILL. Use when close doesn't work (e.g. nested agents catching SIGINT). Requires session_id.\n- pause: Pause output buffering. Requires session_id.\n- resume: Resume output buffering. Requires session_id.",
             "inputSchema": { "type": "object", "properties": {
                 "action": { "type": "string", "description": "One of: list, create, input, output, resize, close, kill, pause, resume" },
                 "session_id": { "type": "string", "description": "Session ID (required for input, output, resize, close, pause, resume)" },
@@ -278,29 +285,10 @@ fn native_tool_definitions() -> serde_json::Value {
             }, "required": ["action"] }
         },
         {
-            "name": "github",
-            "description": "Query GitHub integration: PR statuses, CI rollup, merge readiness.\n\nActions (pass as 'action' parameter):\n- prs: Returns all open PRs with CI rollup, merge readiness labels, review state. Requires path. Single GraphQL batch — replaces N individual `gh pr` calls.\n- status: Returns cross-repo aggregate: for each workspace repo, returns {path, branch, ahead, behind, open_prs, failing_ci}.",
-            "inputSchema": { "type": "object", "properties": {
-                "action": { "type": "string", "description": "One of: prs, status" },
-                "path": { "type": "string", "description": "Absolute path to git repository (required for prs action)" }
-            }, "required": ["action"] }
-        },
-        {
-            "name": "worktree",
-            "description": "Manage git worktrees for parallel work.\n\nActions (pass as 'action' parameter):\n- list: Returns [{branch, path}] for all worktrees of a repo. Requires path.\n- create: Creates a new worktree with optional branch. Requires path. Optional: branch, base_ref, spawn_session (auto-creates PTY). Returns {worktree_path, branch}. Claude Code clients also receive a cc_agent_hint field with worktree_path and suggested_prompt for spawning a subagent.\n- remove: Removes a worktree by branch name. Requires path, branch.",
-            "inputSchema": { "type": "object", "properties": {
-                "action": { "type": "string", "description": "One of: list, create, remove" },
-                "path": { "type": "string", "description": "Absolute path to base git repository" },
-                "branch": { "type": "string", "description": "Branch name (action=create optional, action=remove required)" },
-                "base_ref": { "type": "string", "description": "Base ref to branch from, default HEAD (action=create)" },
-                "spawn_session": { "type": "boolean", "description": "Auto-create a PTY session in the worktree (action=create, default false)" }
-            }, "required": ["action", "path"] }
-        },
-        {
             "name": "agent",
-            "description": "Detect and manage AI agents.\n\nActions (pass as 'action' parameter):\n- detect: Returns [{name, path, version}] for known agents (claude, codex, aider, goose).\n- spawn: Launches an agent in a new PTY session. Requires prompt. Returns {session_id}. Use session action=input/output to interact.\n- stats: Returns {active_sessions, max_sessions, available_slots}.\n- metrics: Returns cumulative metrics {total_spawned, total_failed, active_sessions, bytes_emitted, pauses_triggered}.",
+            "description": "AI agent orchestration and inter-agent messaging. Spawn Claude Code, Codex, Aider, or Goose agents in managed PTY sessions, detect running agents, and coordinate via message passing.\n\nActions (pass as 'action' parameter):\n- spawn: Launch an AI agent in a new PTY (localhost only). Returns {session_id}. Use session action=input/output to interact.\n- detect: Returns [{name, path, version}] for known agents.\n- stats: Returns {active_sessions, max_sessions, available_slots}.\n- metrics: Returns cumulative metrics {total_spawned, total_failed, active_sessions, bytes_emitted, pauses_triggered}.\n- register: Register as a peer agent for inter-agent messaging. Requires tuic_session (your $TUIC_SESSION env var). Optional: name, project.\n- list_peers: List all registered peer agents. Optional: project (filter by repo path).\n- send: Send a message to a peer. Requires to (recipient's tuic_session UUID), message (max 64KB).\n- inbox: Read buffered messages. Optional: limit (default 50), since (unix millis).",
             "inputSchema": { "type": "object", "properties": {
-                "action": { "type": "string", "description": "One of: detect, spawn, stats, metrics" },
+                "action": { "type": "string", "description": "One of: spawn, detect, stats, metrics, register, list_peers, send, inbox" },
                 "prompt": { "type": "string", "description": "Task prompt for the agent (action=spawn)" },
                 "cwd": { "type": "string", "description": "Working directory (action=spawn)" },
                 "model": { "type": "string", "description": "Model override (action=spawn)" },
@@ -310,22 +298,43 @@ fn native_tool_definitions() -> serde_json::Value {
                 "binary_path": { "type": "string", "description": "Override agent binary path (action=spawn)" },
                 "args": { "type": "array", "items": { "type": "string" }, "description": "Raw CLI args (action=spawn)" },
                 "rows": { "type": "integer", "description": "Terminal rows (action=spawn)" },
-                "cols": { "type": "integer", "description": "Terminal cols (action=spawn)" }
-            }, "required": ["action"] }
-        },
-        {
-            "name": "messaging",
-            "description": "Inter-agent messaging — coordinate with other AI agents connected to TUICommander.\n\nActions (pass as 'action' parameter):\n- register: Register as a peer agent. Requires tuic_session (your $TUIC_SESSION env var). Optional: name, project.\n- list_peers: List all registered peer agents. Optional: project (filter by repo path).\n- send: Send a message to a peer. Requires to (recipient's tuic_session UUID), message (max 64KB).\n- inbox: Read buffered messages. Optional: limit (default 50), since (unix millis, only messages after this timestamp).",
-            "inputSchema": { "type": "object", "properties": {
-                "action": { "type": "string", "description": "One of: register, list_peers, send, inbox" },
+                "cols": { "type": "integer", "description": "Terminal cols (action=spawn)" },
                 "tuic_session": { "type": "string", "description": "Your $TUIC_SESSION env var value (action=register, required)" },
                 "name": { "type": "string", "description": "Display name (action=register, default: 'agent')" },
                 "project": { "type": "string", "description": "Git repo root path (action=register optional, action=list_peers filter)" },
                 "to": { "type": "string", "description": "Recipient tuic_session UUID (action=send, required)" },
                 "message": { "type": "string", "description": "Message content, max 64KB (action=send, required)" },
-                "limit": { "type": "integer", "description": "Max messages to return (action=inbox, default 50)" },
                 "since": { "type": "integer", "description": "Unix millis — only return messages after this (action=inbox)" }
             }, "required": ["action"] }
+        },
+        {
+            "name": "repo",
+            "description": "Repository and version control operations. Query workspace repos, GitHub PR/CI status, and manage git worktrees for parallel work.\n\nActions (pass as 'action' parameter):\n- list: All open repos with group membership, branch, dirty status, and worktrees.\n- active: Currently focused repo path, branch, and group.\n- prs: Open PRs with CI rollup, merge readiness, review state. Requires path. Single GraphQL batch.\n- status: Cross-repo aggregate: {path, branch, ahead, behind, open_prs, failing_ci} per repo.\n- worktree_list: Git worktrees for a repo [{branch, path}]. Requires path.\n- worktree_create: Create isolated worktree with optional branch. Requires path. Optional: branch, base_ref, spawn_session. Claude Code clients receive cc_agent_hint.\n- worktree_remove: Remove a worktree by branch. Requires path, branch.",
+            "inputSchema": { "type": "object", "properties": {
+                "action": { "type": "string", "description": "One of: list, active, prs, status, worktree_list, worktree_create, worktree_remove" },
+                "path": { "type": "string", "description": "Absolute path to git repository (required for prs, worktree_list, worktree_create, worktree_remove)" },
+                "branch": { "type": "string", "description": "Branch name (action=worktree_create optional, action=worktree_remove required)" },
+                "base_ref": { "type": "string", "description": "Base ref to branch from, default HEAD (action=worktree_create)" },
+                "spawn_session": { "type": "boolean", "description": "Auto-create a PTY session in the worktree (action=worktree_create, default false)" }
+            }, "required": ["action"] }
+        },
+        {
+            "name": "ui",
+            "description": "Control the TUICommander UI: open panel tabs with custom HTML, show toast notifications, or prompt for user confirmation.\n\nActions (pass as 'action' parameter):\n- tab: Open/update a pinned panel tab with HTML content. Requires id, title, html. Optional: pinned (default true).\n- toast: Show a non-blocking notification. Requires title. Optional: message, level (info/warn/error).\n- confirm: Show a blocking confirmation dialog. Returns {confirmed: boolean}. Requires title. Optional: message. Restricted to localhost.",
+            "inputSchema": { "type": "object", "properties": {
+                "action": { "type": "string", "description": "One of: tab, toast, confirm" },
+                "id": { "type": "string", "description": "Stable identifier for dedup — same id reuses existing tab (action=tab, required)" },
+                "title": { "type": "string", "description": "Tab or notification title (action=tab/toast/confirm, required)" },
+                "html": { "type": "string", "description": "HTML content to render in sandboxed iframe (action=tab, required)" },
+                "pinned": { "type": "boolean", "description": "Pin tab across all branches (default true)" },
+                "message": { "type": "string", "description": "Optional body text (action=toast/confirm)" },
+                "level": { "type": "string", "description": "Toast level: info, warn, error (default: info)" }
+            }, "required": ["action"] }
+        },
+        {
+            "name": "plugin_dev_guide",
+            "description": "Returns comprehensive plugin authoring reference: manifest format, PluginHost API (all 4 tiers), structured event types, and working examples. Call before writing any plugin code.",
+            "inputSchema": { "type": "object", "properties": {}, "required": [] }
         },
         {
             "name": "config",
@@ -334,34 +343,6 @@ fn native_tool_definitions() -> serde_json::Value {
                 "action": { "type": "string", "description": "One of: get, save" },
                 "config": { "type": "object", "description": "Config fields to save (action=save)" }
             }, "required": ["action"] }
-        },
-        {
-            "name": "workspace",
-            "description": "Query the workspace: open repositories, groups, worktrees, and active focus.\n\nActions (pass as 'action' parameter):\n- list: Returns all open repos with group membership, branch, dirty status, and worktrees.\n- active: Returns the currently focused repo path, branch, and group.",
-            "inputSchema": { "type": "object", "properties": {
-                "action": { "type": "string", "description": "One of: list, active" }
-            }, "required": ["action"] }
-        },
-        {
-            "name": "ui",
-            "description": "Control the TUICommander UI.\n\nActions (pass as 'action' parameter):\n- tab: Open or update a pinned panel tab with HTML content. Requires id (stable key for dedup — same id reuses existing tab), title, html. Optional: pinned (default true — visible across all branches; false = scoped to current branch). If a tab with the same id already exists, its content is updated in-place.",
-            "inputSchema": { "type": "object", "properties": {
-                "action": { "type": "string", "description": "One of: tab" },
-                "id": { "type": "string", "description": "Stable identifier for dedup — same id reuses existing tab (action=tab, required)" },
-                "title": { "type": "string", "description": "Tab title (action=tab, required)" },
-                "html": { "type": "string", "description": "HTML content to render in sandboxed iframe (action=tab, required)" },
-                "pinned": { "type": "boolean", "description": "Pin tab across all branches (default true)" }
-            }, "required": ["action"] }
-        },
-        {
-            "name": "notify",
-            "description": "Show notifications to the TUIC user.\n\nActions (pass as 'action' parameter):\n- toast: Shows a temporary notification. Requires title. Optional: message, level (info/warn/error).\n- confirm: Shows a blocking confirmation dialog. Requires title. Optional: message. Returns {confirmed: boolean}. Restricted to localhost.",
-            "inputSchema": { "type": "object", "properties": {
-                "action": { "type": "string", "description": "One of: toast, confirm" },
-                "title": { "type": "string", "description": "Notification title (required)" },
-                "message": { "type": "string", "description": "Optional body text" },
-                "level": { "type": "string", "description": "Toast level: info, warn, error (default: info)" }
-            }, "required": ["action", "title"] }
         },
         {
             "name": "knowledge",
@@ -378,15 +359,10 @@ fn native_tool_definitions() -> serde_json::Value {
             }, "required": ["action"] }
         },
         {
-            "name": "plugin_dev_guide",
-            "description": "Returns comprehensive plugin authoring reference: manifest format, PluginHost API (all 4 tiers), structured event types, and working examples. Call before writing any plugin code.",
-            "inputSchema": { "type": "object", "properties": {}, "required": [] }
-        },
-        {
             "name": "debug",
-            "description": "Dev-only diagnostics for debugging TUICommander internals.\n\nActions (pass as 'action' parameter):\n- agent_detection: Returns agent detection pipeline diagnostics for a session (raw_fd, pgid, process_name, classified). Requires session_id or omit for all sessions.\n- logs: Returns recent app log entries. Optional: level, source, limit.\n- sessions: Returns all active PTY sessions with process info.\n- invoke_js: Executes JavaScript in the main WebView (fire-and-forget). The script is wrapped in async try/catch; result or error is logged with source='eval_js'. Read via: debug(action='logs', source='eval_js', limit=1). Requires script.",
+            "description": "Dev-only diagnostics for debugging TUICommander internals.\n\nActions (pass as 'action' parameter):\n- agent_detection: Returns agent detection pipeline diagnostics for a session. Optional session_id (omit for all).\n- logs: Returns recent app log entries. Optional: level, source, limit.\n- invoke_js: Executes JavaScript in the main WebView (fire-and-forget). Result logged with source='eval_js'. Requires script.\n- plugin_guide: Returns comprehensive plugin authoring reference (manifest, API, events, examples).",
             "inputSchema": { "type": "object", "properties": {
-                "action": { "type": "string", "description": "One of: agent_detection, logs, sessions, invoke_js" },
+                "action": { "type": "string", "description": "One of: agent_detection, logs, invoke_js, plugin_guide" },
                 "session_id": { "type": "string", "description": "PTY session UUID (action=agent_detection, optional — omit for all)" },
                 "level": { "type": "string", "description": "Log level filter: debug, info, warn, error (action=logs)" },
                 "source": { "type": "string", "description": "Log source filter (action=logs)" },
@@ -945,7 +921,7 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
 }
 
 async fn handle_github(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
-    let action = match require_action(args, "github", GITHUB_ACTIONS) {
+    let action = match require_action(args, "github", LEGACY_GITHUB_ACTIONS) {
         Ok(a) => a,
         Err(e) => return e,
     };
@@ -994,7 +970,7 @@ async fn handle_github(state: &Arc<AppState>, args: &serde_json::Value) -> serde
             serde_json::json!(results)
         }
         other => serde_json::json!({"error": format!(
-            "Unknown action '{}' for tool 'github'. Available: {}", other, GITHUB_ACTIONS
+            "Unknown action '{}' for tool 'github'. Available: {}", other, LEGACY_GITHUB_ACTIONS
         )}),
     }
 }
@@ -1008,7 +984,7 @@ fn create_session_in_dir(state: &Arc<AppState>, cwd: &str) -> Result<String, Str
 }
 
 fn handle_worktree(state: &Arc<AppState>, args: &serde_json::Value, is_claude_code: bool) -> serde_json::Value {
-    let action = match require_action(args, "worktree", WORKTREE_ACTIONS) {
+    let action = match require_action(args, "worktree", LEGACY_WORKTREE_ACTIONS) {
         Ok(a) => a,
         Err(e) => return e,
     };
@@ -1124,13 +1100,13 @@ fn handle_worktree(state: &Arc<AppState>, args: &serde_json::Value, is_claude_co
             }
         }
         other => serde_json::json!({"error": format!(
-            "Unknown action '{}' for tool 'worktree'. Available: {}", other, WORKTREE_ACTIONS
+            "Unknown action '{}' for tool 'worktree'. Available: {}", other, LEGACY_WORKTREE_ACTIONS
         )}),
     }
 }
 
 fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Value) -> serde_json::Value {
-    let action = match require_action(args, "agent", AGENT_ACTIONS) {
+    let action = match require_action(args, "agent", LEGACY_AGENT_ACTIONS) {
         Ok(a) => a,
         Err(e) => return e,
     };
@@ -1271,13 +1247,13 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
             to_json_or_error(metrics)
         }
         other => serde_json::json!({"error": format!(
-            "Unknown action '{}' for tool 'agent'. Available: {}", other, AGENT_ACTIONS
+            "Unknown action '{}' for tool 'agent'. Available: {}", other, LEGACY_AGENT_ACTIONS
         )}),
     }
 }
 
 fn handle_messaging(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_id: Option<&str>) -> serde_json::Value {
-    let action = match require_action(args, "messaging", MESSAGING_ACTIONS) {
+    let action = match require_action(args, "messaging", LEGACY_MESSAGING_ACTIONS) {
         Ok(a) => a,
         Err(e) => return e,
     };
@@ -1443,7 +1419,7 @@ fn handle_messaging(state: &Arc<AppState>, args: &serde_json::Value, mcp_session
             serde_json::json!({"messages": messages, "count": messages.len()})
         }
         other => serde_json::json!({"error": format!(
-            "Unknown action '{}' for tool 'messaging'. Available: {}", other, MESSAGING_ACTIONS
+            "Unknown action '{}' for tool 'messaging'. Available: {}", other, LEGACY_MESSAGING_ACTIONS
         )}),
     }
 }
@@ -1496,7 +1472,7 @@ fn handle_config(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Val
 }
 
 fn handle_debug(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
-    let action = match require_action(args, "debug", DEBUG_ACTIONS) {
+    let action = match require_action(args, "debug", LEGACY_DEBUG_ACTIONS) {
         Ok(a) => a,
         Err(e) => return e,
     };
@@ -1617,13 +1593,13 @@ fn handle_debug(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::
             }
         }
         other => serde_json::json!({"error": format!(
-            "Unknown action '{}' for tool 'debug'. Available: {}", other, DEBUG_ACTIONS
+            "Unknown action '{}' for tool 'debug'. Available: {}", other, LEGACY_DEBUG_ACTIONS
         )}),
     }
 }
 
 fn handle_workspace(_state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
-    let action = match require_action(args, "workspace", WORKSPACE_ACTIONS) {
+    let action = match require_action(args, "workspace", LEGACY_WORKSPACE_ACTIONS) {
         Ok(a) => a,
         Err(e) => return e,
     };
@@ -1728,13 +1704,13 @@ fn handle_workspace(_state: &Arc<AppState>, args: &serde_json::Value) -> serde_j
             result
         }
         other => serde_json::json!({"error": format!(
-            "Unknown action '{}' for tool 'workspace'. Available: {}", other, WORKSPACE_ACTIONS
+            "Unknown action '{}' for tool 'workspace'. Available: {}", other, LEGACY_WORKSPACE_ACTIONS
         )}),
     }
 }
 
 fn handle_ui(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
-    let action = match require_action(args, "ui", UI_ACTIONS) {
+    let action = match require_action(args, "ui", LEGACY_UI_ACTIONS) {
         Ok(a) => a,
         Err(e) => return e,
     };
@@ -1773,13 +1749,13 @@ fn handle_ui(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Val
             serde_json::json!({"ok": true, "id": id})
         }
         other => serde_json::json!({"error": format!(
-            "Unknown action '{}' for tool 'ui'. Available: {}", other, UI_ACTIONS
+            "Unknown action '{}' for tool 'ui'. Available: {}", other, LEGACY_UI_ACTIONS
         )}),
     }
 }
 
 fn handle_notify(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Value) -> serde_json::Value {
-    let action = match require_action(args, "notify", NOTIFY_ACTIONS) {
+    let action = match require_action(args, "notify", LEGACY_NOTIFY_ACTIONS) {
         Ok(a) => a,
         Err(e) => return e,
     };
@@ -1830,7 +1806,7 @@ fn handle_notify(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Val
             serde_json::json!({"confirmed": confirmed})
         }
         other => serde_json::json!({"error": format!(
-            "Unknown action '{}' for tool 'notify'. Available: {}", other, NOTIFY_ACTIONS
+            "Unknown action '{}' for tool 'notify'. Available: {}", other, LEGACY_NOTIFY_ACTIONS
         )}),
     }
 }
@@ -2614,16 +2590,72 @@ mod tests {
     }
 
     #[test]
+    fn native_tool_definitions_returns_exactly_eight_tools() {
+        let defs = native_tool_definitions();
+        let names = tool_names(&defs);
+        assert_eq!(
+            names,
+            vec!["session", "agent", "repo", "ui", "plugin_dev_guide", "config", "knowledge", "debug"],
+            "native_tool_definitions must return exactly these 8 tools in order"
+        );
+    }
+
+    #[test]
+    fn session_description_mentions_tmux_pane_semantics() {
+        let defs = native_tool_definitions();
+        let session = defs.as_array().unwrap().iter().find(|t| t["name"] == "session").unwrap();
+        let desc = session["description"].as_str().unwrap();
+        assert!(desc.contains("tmux"), "session description must reference tmux for discoverability");
+        assert!(desc.contains("send-keys") || desc.contains("send_keys"), "session description must mention send-keys equivalent");
+        assert!(desc.contains("capture-pane") || desc.contains("capture_pane"), "session description must mention capture-pane equivalent");
+    }
+
+    #[test]
+    fn agent_tool_includes_messaging_actions() {
+        let defs = native_tool_definitions();
+        let agent = defs.as_array().unwrap().iter().find(|t| t["name"] == "agent").unwrap();
+        let action_desc = agent["inputSchema"]["properties"]["action"]["description"].as_str().unwrap();
+        for action in &["register", "list_peers", "send", "inbox"] {
+            assert!(action_desc.contains(action), "agent action description must include '{action}'");
+        }
+    }
+
+    #[test]
+    fn repo_tool_includes_workspace_github_worktree_actions() {
+        let defs = native_tool_definitions();
+        let repo = defs.as_array().unwrap().iter().find(|t| t["name"] == "repo").unwrap();
+        let action_desc = repo["inputSchema"]["properties"]["action"]["description"].as_str().unwrap();
+        for action in &["list", "active", "prs", "status", "worktree_list", "worktree_create", "worktree_remove"] {
+            assert!(action_desc.contains(action), "repo action description must include '{action}'");
+        }
+    }
+
+    #[test]
+    fn ui_tool_includes_notify_actions() {
+        let defs = native_tool_definitions();
+        let ui = defs.as_array().unwrap().iter().find(|t| t["name"] == "ui").unwrap();
+        let action_desc = ui["inputSchema"]["properties"]["action"]["description"].as_str().unwrap();
+        for action in &["tab", "toast", "confirm"] {
+            assert!(action_desc.contains(action), "ui action description must include '{action}'");
+        }
+    }
+
+    #[test]
+    fn debug_tool_includes_plugin_guide_action() {
+        let defs = native_tool_definitions();
+        let debug = defs.as_array().unwrap().iter().find(|t| t["name"] == "debug").unwrap();
+        let action_desc = debug["inputSchema"]["properties"]["action"]["description"].as_str().unwrap();
+        assert!(action_desc.contains("plugin_guide"), "debug action description must include 'plugin_guide'");
+    }
+
+    #[test]
     fn merged_tools_collapse_false_returns_all_native_tools() {
         let state = test_state();
-        // Sanity: default is false.
         assert!(!state.config.read().collapse_tools);
 
         let merged = merged_tool_definitions(&state);
         let names = tool_names(&merged);
 
-        // All native tool names must appear (no upstreams registered in tests, so
-        // merged == filtered native).
         let native = tool_names(&native_tool_definitions());
         assert_eq!(
             names, native,
@@ -2728,7 +2760,7 @@ mod tests {
         let state = test_state();
         let r = handle_search_tools(&state, &serde_json::json!({ "query": "github PR status" }));
         let results = r["results"].as_array().unwrap();
-        assert_eq!(results[0]["name"], "github");
+        assert_eq!(results[0]["name"], "repo");
     }
 
     #[test]
@@ -3026,7 +3058,7 @@ mod tests {
         assert_eq!(idx.len(), native_count);
         // Spot-check a few well-known native tools by name.
         assert!(idx.get_schema("session").is_some());
-        assert!(idx.get_schema("github").is_some());
+        assert!(idx.get_schema("repo").is_some());
         assert!(idx.get_schema("agent").is_some());
     }
 
