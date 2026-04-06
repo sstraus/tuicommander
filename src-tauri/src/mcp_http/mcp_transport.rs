@@ -691,24 +691,20 @@ async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &st
         .unwrap_or(false);
     match name {
         "session" => handle_session(state, args),
-        "github" => handle_github(state, args).await,
-        "worktree" => handle_worktree(state, args, is_claude_code),
-        "agent" => handle_agent(state, addr, args),
-        "messaging" => handle_messaging(state, args, mcp_session_id),
-        "config" => handle_config(state, addr, args),
-        "debug" => handle_debug(state, args),
-        "workspace" => handle_workspace(state, args),
-        "ui" => handle_ui(state, args),
-        "notify" => handle_notify(state, addr, args),
-        "knowledge" => handle_knowledge(state, args).await,
+        "agent" => handle_agent_unified(state, addr, args, mcp_session_id),
+        "repo" => handle_repo(state, addr, args, is_claude_code).await,
+        "ui" => handle_ui_unified(state, addr, args),
         "plugin_dev_guide" => {
             serde_json::json!({"content": super::plugin_docs::PLUGIN_DOCS})
         }
+        "config" => handle_config(state, addr, args),
+        "knowledge" => handle_knowledge(state, args).await,
+        "debug" => handle_debug_unified(state, args),
         "search_tools" => handle_search_tools(state, args),
         "get_tool_schema" => handle_get_tool_schema(state, args),
         "call_tool" => handle_call_tool(state, addr, args, mcp_session_id).await,
         _ => serde_json::json!({"error": format!(
-            "Unknown tool '{}'. Available: session, github, worktree, agent, messaging, config, workspace, ui, notify, knowledge, plugin_dev_guide, search_tools, get_tool_schema, call_tool", name
+            "Unknown tool '{}'. Available: session, agent, repo, ui, plugin_dev_guide, config, knowledge, debug, search_tools, get_tool_schema, call_tool", name
         )}),
     }
 }
@@ -723,11 +719,22 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
             let sessions: Vec<serde_json::Value> = state.sessions.iter().map(|entry| {
                 let id = entry.key().clone();
                 let s = entry.value().lock();
+                #[cfg(not(windows))]
+                let pgid = s.master.process_group_leader();
+                #[cfg(windows)]
+                let pgid = s._child.process_id();
+                #[cfg(not(windows))]
+                let process_name = pgid.and_then(|p| crate::pty::process_name_from_pid(p as u32));
+                #[cfg(windows)]
+                let process_name = pgid.and_then(crate::pty::process_name_from_pid);
                 serde_json::json!({
                     "session_id": id,
                     "cwd": s.cwd,
                     "worktree_path": s.worktree.as_ref().map(|w| w.path.to_string_lossy().to_string()),
                     "worktree_branch": s.worktree.as_ref().and_then(|w| w.branch.clone()),
+                    "child_pid": s._child.process_id(),
+                    "foreground_pgid": pgid,
+                    "foreground_process": process_name,
                 })
             }).collect();
             serde_json::json!(sessions)
@@ -2224,6 +2231,84 @@ pub(super) async fn mcp_delete(
     StatusCode::OK
 }
 
+// ── Unified handlers (merged tools) ──────────────────────────────────────
+
+/// Merged repo tool: dispatches to workspace, github, or worktree handlers.
+async fn handle_repo(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Value, is_claude_code: bool) -> serde_json::Value {
+    let action = match require_action(args, "repo", REPO_ACTIONS) {
+        Ok(a) => a,
+        Err(e) => return e,
+    };
+    match action {
+        "list" => handle_workspace(state, &serde_json::json!({"action": "list"})),
+        "active" => handle_workspace(state, &serde_json::json!({"action": "active"})),
+        "prs" => handle_github(state, &remap_action(args, "prs")).await,
+        "status" => handle_github(state, &remap_action(args, "status")).await,
+        "worktree_list" => handle_worktree(state, &remap_action(args, "list"), is_claude_code),
+        "worktree_create" => handle_worktree(state, &remap_action(args, "create"), is_claude_code),
+        "worktree_remove" => handle_worktree(state, &remap_action(args, "remove"), is_claude_code),
+        other => serde_json::json!({"error": format!(
+            "Unknown action '{}' for tool 'repo'. Available: {}", other, REPO_ACTIONS
+        )}),
+    }
+}
+
+/// Merged agent tool: original agent actions + messaging actions.
+fn handle_agent_unified(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Value, mcp_session_id: Option<&str>) -> serde_json::Value {
+    let action = match require_action(args, "agent", AGENT_ACTIONS) {
+        Ok(a) => a,
+        Err(e) => return e,
+    };
+    match action {
+        "spawn" | "detect" | "stats" | "metrics" => {
+            handle_agent(state, addr, &remap_action(args, action))
+        }
+        "register" | "list_peers" | "send" | "inbox" => {
+            handle_messaging(state, &remap_action(args, action), mcp_session_id)
+        }
+        other => serde_json::json!({"error": format!(
+            "Unknown action '{}' for tool 'agent'. Available: {}", other, AGENT_ACTIONS
+        )}),
+    }
+}
+
+/// Merged ui tool: original tab action + notify toast/confirm.
+fn handle_ui_unified(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Value) -> serde_json::Value {
+    let action = match require_action(args, "ui", UI_ACTIONS) {
+        Ok(a) => a,
+        Err(e) => return e,
+    };
+    match action {
+        "tab" => handle_ui(state, args),
+        "toast" | "confirm" => handle_notify(state, addr, &remap_action(args, action)),
+        other => serde_json::json!({"error": format!(
+            "Unknown action '{}' for tool 'ui'. Available: {}", other, UI_ACTIONS
+        )}),
+    }
+}
+
+/// Extended debug tool: original actions + plugin_guide.
+fn handle_debug_unified(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
+    let action = match require_action(args, "debug", DEBUG_ACTIONS) {
+        Ok(a) => a,
+        Err(e) => return e,
+    };
+    match action {
+        "agent_detection" | "logs" | "invoke_js" => handle_debug(state, args),
+        "plugin_guide" => serde_json::json!({"content": super::plugin_docs::PLUGIN_DOCS}),
+        other => serde_json::json!({"error": format!(
+            "Unknown action '{}' for tool 'debug'. Available: {}", other, DEBUG_ACTIONS
+        )}),
+    }
+}
+
+/// Remap an action value in args — preserves all other fields.
+fn remap_action(args: &serde_json::Value, new_action: &str) -> serde_json::Value {
+    let mut remapped = args.clone();
+    remapped["action"] = serde_json::Value::String(new_action.to_string());
+    remapped
+}
+
 // Re-export for tests — these need to be public enough for sibling test module
 #[cfg(test)]
 pub(crate) fn test_mcp_tool_definitions() -> serde_json::Value {
@@ -2996,6 +3081,63 @@ mod tests {
         )
         .await;
         assert!(r["error"].as_str().unwrap().contains("action"));
+    }
+
+    #[tokio::test]
+    async fn handle_mcp_tool_call_routes_repo() {
+        let state = test_state();
+        let r = handle_mcp_tool_call(
+            &state, loopback_addr(), "repo",
+            &serde_json::json!({ "action": "list" }), None,
+        ).await;
+        // repo action=list returns an array of repos (may be empty in test)
+        assert!(r.is_array(), "repo action=list should return array, got: {r}");
+    }
+
+    #[tokio::test]
+    async fn handle_mcp_tool_call_routes_agent_messaging() {
+        let state = test_state();
+        // agent action=register without tuic_session should return an error
+        let r = handle_mcp_tool_call(
+            &state, loopback_addr(), "agent",
+            &serde_json::json!({ "action": "register" }), None,
+        ).await;
+        assert!(r["error"].is_string(), "agent action=register without tuic_session should error");
+    }
+
+    #[tokio::test]
+    async fn handle_mcp_tool_call_routes_ui_toast() {
+        let state = test_state();
+        let r = handle_mcp_tool_call(
+            &state, loopback_addr(), "ui",
+            &serde_json::json!({ "action": "toast", "title": "test" }), None,
+        ).await;
+        assert!(!r["error"].is_string(), "ui action=toast should succeed, got: {r}");
+    }
+
+    #[tokio::test]
+    async fn handle_mcp_tool_call_routes_debug_plugin_guide() {
+        let state = test_state();
+        let r = handle_mcp_tool_call(
+            &state, loopback_addr(), "debug",
+            &serde_json::json!({ "action": "plugin_guide" }), None,
+        ).await;
+        assert!(r["content"].is_string(), "debug action=plugin_guide should return content");
+    }
+
+    #[tokio::test]
+    async fn handle_mcp_tool_call_old_names_return_unknown() {
+        let state = test_state();
+        for old_name in &["github", "worktree", "workspace", "messaging", "notify"] {
+            let r = handle_mcp_tool_call(
+                &state, loopback_addr(), old_name,
+                &serde_json::json!({ "action": "list" }), None,
+            ).await;
+            assert!(
+                r["error"].as_str().unwrap_or("").contains("Unknown tool"),
+                "old tool name '{old_name}' should return Unknown tool error, got: {r}"
+            );
+        }
     }
 
     // ---- build_mcp_instructions collapse mode (story 1081) -------------------
