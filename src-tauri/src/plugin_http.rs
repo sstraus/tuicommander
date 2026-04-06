@@ -12,6 +12,18 @@ const MAX_RESPONSE_BYTES: usize = 10 * 1024 * 1024;
 /// Default request timeout in seconds.
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 
+/// Shared HTTP client — connection pooling across all plugin/tab fetches.
+fn shared_client() -> &'static reqwest::Client {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+            .redirect(reqwest::redirect::Policy::limited(5))
+            .build()
+            .expect("Failed to build shared HTTP client")
+    })
+}
+
 /// Response returned to the plugin.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct HttpResponse {
@@ -123,13 +135,7 @@ pub async fn plugin_http_fetch(
         .parse()
         .map_err(|_| format!("Invalid HTTP method: {method_str}"))?;
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(DEFAULT_TIMEOUT_SECS))
-        .redirect(reqwest::redirect::Policy::limited(5))
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
-
-    let mut request = client.request(http_method, &url);
+    let mut request = shared_client().request(http_method, &url);
 
     if let Some(ref hdrs) = headers {
         for (key, value) in hdrs {
@@ -148,13 +154,21 @@ pub async fn plugin_http_fetch(
 
     let status = response.status().as_u16();
 
+    // Reject early if Content-Length advertises an oversized body
+    if let Some(cl) = response.content_length()
+        && cl as usize > MAX_RESPONSE_BYTES
+    {
+        return Err(format!(
+            "Response body exceeds maximum size ({cl} bytes > {MAX_RESPONSE_BYTES} bytes)"
+        ));
+    }
+
     let resp_headers: HashMap<String, String> = response
         .headers()
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
         .collect();
 
-    // Read body with size cap
     let body_bytes = response
         .bytes()
         .await
@@ -162,9 +176,8 @@ pub async fn plugin_http_fetch(
 
     if body_bytes.len() > MAX_RESPONSE_BYTES {
         return Err(format!(
-            "Response body exceeds maximum size ({} bytes > {} bytes)",
+            "Response body exceeds maximum size ({} bytes > {MAX_RESPONSE_BYTES} bytes)",
             body_bytes.len(),
-            MAX_RESPONSE_BYTES
         ));
     }
 
@@ -213,13 +226,7 @@ fn validate_external_url(url: &str) -> Result<(), String> {
 pub async fn fetch_tab_html(url: String) -> Result<String, String> {
     validate_external_url(&url)?;
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(DEFAULT_TIMEOUT_SECS))
-        .redirect(reqwest::redirect::Policy::limited(5))
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
-
-    let response = client
+    let response = shared_client()
         .get(&url)
         .send()
         .await
@@ -229,6 +236,15 @@ pub async fn fetch_tab_html(url: String) -> Result<String, String> {
         return Err(format!("HTTP {}: {}", response.status().as_u16(), url));
     }
 
+    // Reject early if Content-Length advertises an oversized body
+    if let Some(cl) = response.content_length()
+        && cl as usize > MAX_RESPONSE_BYTES
+    {
+        return Err(format!(
+            "Response body exceeds maximum size ({cl} bytes > {MAX_RESPONSE_BYTES} bytes)"
+        ));
+    }
+
     let body_bytes = response
         .bytes()
         .await
@@ -236,9 +252,8 @@ pub async fn fetch_tab_html(url: String) -> Result<String, String> {
 
     if body_bytes.len() > MAX_RESPONSE_BYTES {
         return Err(format!(
-            "Response body exceeds maximum size ({} bytes > {} bytes)",
+            "Response body exceeds maximum size ({} bytes > {MAX_RESPONSE_BYTES} bytes)",
             body_bytes.len(),
-            MAX_RESPONSE_BYTES
         ));
     }
 

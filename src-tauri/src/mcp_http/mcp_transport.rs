@@ -643,18 +643,7 @@ async fn handle_call_tool(
 
     let tool_args = args.get("arguments").cloned().unwrap_or(serde_json::json!({}));
 
-    // Enforce disabled_native_tools up-front for native tools. Upstream allow/deny
-    // filters are enforced inside the proxy registry.
     let is_upstream = tool_name.contains("__");
-    if !is_upstream {
-        let disabled = state.config.read().disabled_native_tools.clone();
-        if disabled.contains(&tool_name) {
-            return serde_json::json!({
-                "error": format!("Tool '{}' is disabled by configuration", tool_name)
-            });
-        }
-    }
-
     if is_upstream {
         match state
             .mcp_upstream_registry
