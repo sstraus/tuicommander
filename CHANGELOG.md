@@ -6,49 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-04-06
+
 ### Added
 - **Open file / New file** — `Cmd+O` opens a file picker and routes the result through the standard extension-based dispatch (`.md`/`.mdx` → markdown tab, `.html`/`.htm` → HTML preview tab, other → code editor). `Cmd+N` prompts for name + location, creates the empty file, and opens it the same way. Both also available from the command palette under the "File" category.
 - **`file://` URLs in terminal** — Clickable `file:///…` URLs in terminal output are now recognized alongside plain paths. The prefix is stripped and the path resolved via the existing `resolve_terminal_path` flow.
 - **Idle branch icons** — Sidebar branch icons (star, branch, worktree) turn grey when the repo has no active terminals, making it easy to spot repos with running sessions at a glance.
 - **TUIC SDK for plugin iframes** — Every plugin iframe now receives `window.tuic`, a lightweight API for host integration. `tuic.open(path, {pinned?})` opens markdown files, `tuic.terminal(repoPath)` opens terminals, and `<a href="tuic://open/...">` links are intercepted automatically. Paths validated against known repos.
+- **CSS popover tooltips** — Native popover-based tooltips for MCP tool descriptions, replacing title attributes with styled, multi-line popover panels
+- **URL-mode plugin panels** — Plugin panels can now load external URLs directly via the `url` parameter in the MCP `ui` tool, enabling embedded dashboards like Mission Control
+- **PWA reconnection banner** — Mobile PWA shows a reconnect dialog when the server goes down, with auto-reconnect on server recovery
+- **Service worker fetch interception** — PWA service worker intercepts fetch requests for offline splash page and push subscription persistence across updates
 
 ### Changed
 - **Ideas panel shortcut** — Moved from `Cmd+N` to `Cmd+Alt+N` so `Cmd+N` can serve the universal "New file" convention. Users with an override in `keybindings.json` keep their existing binding.
 - **PWA push gate** — Web Push delivery is now gated on desktop window focus instead of a PWA heartbeat. Notifications fire whenever the desktop window is not focused (phone locked, screen off, etc.), finally matching the intended "wake the service worker" semantics. Removed the now-unused `POST /api/push/heartbeat` endpoint.
+- **MCP tool consolidation** — 12 native MCP tools consolidated to 8 with unified dispatch routing, config defaults, and tmux-optimized meta-tool descriptions. Reduces tool-selection overhead for AI agents.
+- **Pane layout persistence** — Split pane layouts now survive app restarts and branch switches, with terminal ID remapping on lazy restore
 
 ### Fixed
 - **Duplicate history on WebSocket catch-up** — The raw PTY WebSocket handler racily registered its live subscription against the ring-buffer snapshot read, causing bytes written during the small gap to appear in both the catch-up replay and the live stream. Serialized `ring.write` + `ws_clients` broadcast under the same lock on both the producer and consumer sides, eliminating the duplication window.
+- **Agent settings checkboxes** — Custom checkbox styles for agent settings toggles now render correctly across all themes
+- **Flaky race condition test** — `ws_catchup_no_duplicate_with_concurrent_writer` test stabilized with explicit subscriber-attached synchronization barrier
 
-## [0.9.9] - 2026-04-02
-
-### Added
-- **Copy on select** — Auto-copy terminal selection to clipboard (enabled by default in Settings > Appearance)
-- **Terminal bell styles** — Configurable bell: none, visual (screen flash), sound (via notification system), or both
-- **Scroll shortcuts** — Cmd+Home (top), Cmd+End (bottom), Shift+PageUp, Shift+PageDown
-- **Zoom pane** — Cmd+Shift+Enter maximizes/restores the active split pane
-- **Ctrl+Tab / Ctrl+Shift+Tab** — Native tab switching via macOS NSEvent monitor (bypasses WKWebView interception)
-- **Dictation auto-send** — Option to automatically press Enter after transcription completes
-- **Environment flags UI** — Per-agent environment variable injection from Settings > Agents
-- **--bare flag** — CLI option for minimal startup
-- **ANSI anomaly logging** — Diagnostic logging for unusual terminal escape sequences (scroll-jump investigation)
-
-### Changed
-- **Watcher v3** — Replaced `notify-debouncer-full` with raw `RecommendedWatcher` and manual per-category debounce
-- **PTY rendering** — Replaced DiffRenderer with cursor-up clamping for simpler escape sequence handling
-- **Bell implementation** — Moved from xterm.js built-in `bellStyle` option to manual `onBell` handler with notification system integration
-- **Prompt library shortcut** — Menu accelerator corrected from Cmd+K to Cmd+Shift+K (Cmd+K is clear scrollback)
-- **Git panel shortcut** — Menu accelerator corrected from Cmd+Shift+G to Cmd+Shift+D (Cmd+Shift+G is diff scroll)
-- **Tab switching** — Removed Cmd+Shift+[/] defaults (unreliable on non-US keyboards), Ctrl+Tab is now primary
-
-### Fixed
-- **Rate limit warning** stuck in status bar after expiry
-- **Terminal CWD** falls back to active repo path when PTY reports no working directory
-- **Agent events** — Plugin system now emits `agent-started` / `agent-stopped` events correctly
-- **Copy-on-select** feedback — Shows "Copied to clipboard" in status bar
-- **Keyboard shortcuts help** — Added 12 missing shortcuts to the help panel
-- **Documentation** — Corrected Cmd+K → Cmd+Shift+K references across 6 doc files, updated tab switching docs
-
-## [Unreleased]
+## [1.0.0] - 2026-04-04
 
 ### Added
 - **HTTP compression** — Gzip and Brotli compression for all HTTP responses >860 bytes via tower-http `CompressionLayer`. Auto-negotiated via `Accept-Encoding`
@@ -148,6 +129,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **False idle from silence timer** — Chrome-chunk arrivals no longer reset the silence timer, preventing false idle transitions during streaming output
 - **Tailscale cert fallback** — Falls back to CLI cert provisioning on macOS App Store builds where Local API is unavailable
 - **rustls CryptoProvider** — Explicitly install `ring` CryptoProvider at startup to prevent "no process-level CryptoProvider" panic
+
+## [0.9.9] - 2026-04-02
+
+### Added
+- **Copy on select** — Auto-copy terminal selection to clipboard (enabled by default in Settings > Appearance)
+- **Terminal bell styles** — Configurable bell: none, visual (screen flash), sound (via notification system), or both
+- **Scroll shortcuts** — Cmd+Home (top), Cmd+End (bottom), Shift+PageUp, Shift+PageDown
+- **Zoom pane** — Cmd+Shift+Enter maximizes/restores the active split pane
+- **Ctrl+Tab / Ctrl+Shift+Tab** — Native tab switching via macOS NSEvent monitor (bypasses WKWebView interception)
+- **Dictation auto-send** — Option to automatically press Enter after transcription completes
+- **Environment flags UI** — Per-agent environment variable injection from Settings > Agents
+- **--bare flag** — CLI option for minimal startup
+- **ANSI anomaly logging** — Diagnostic logging for unusual terminal escape sequences (scroll-jump investigation)
+
+### Changed
+- **Watcher v3** — Replaced `notify-debouncer-full` with raw `RecommendedWatcher` and manual per-category debounce
+- **PTY rendering** — Replaced DiffRenderer with cursor-up clamping for simpler escape sequence handling
+- **Bell implementation** — Moved from xterm.js built-in `bellStyle` option to manual `onBell` handler with notification system integration
+- **Prompt library shortcut** — Menu accelerator corrected from Cmd+K to Cmd+Shift+K (Cmd+K is clear scrollback)
+- **Git panel shortcut** — Menu accelerator corrected from Cmd+Shift+G to Cmd+Shift+D (Cmd+Shift+G is diff scroll)
+- **Tab switching** — Removed Cmd+Shift+[/] defaults (unreliable on non-US keyboards), Ctrl+Tab is now primary
+
+### Fixed
+- **Rate limit warning** stuck in status bar after expiry
+- **Terminal CWD** falls back to active repo path when PTY reports no working directory
+- **Agent events** — Plugin system now emits `agent-started` / `agent-stopped` events correctly
+- **Copy-on-select** feedback — Shows "Copied to clipboard" in status bar
+- **Keyboard shortcuts help** — Added 12 missing shortcuts to the help panel
+- **Documentation** — Corrected Cmd+K → Cmd+Shift+K references across 6 doc files, updated tab switching docs
 
 ## [0.9.7] - 2026-03-26
 

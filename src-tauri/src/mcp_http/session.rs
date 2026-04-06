@@ -1009,12 +1009,15 @@ mod tests {
         let clients: Arc<PlMutex<Vec<tokio::sync::mpsc::UnboundedSender<Vec<u8>>>>> =
             Arc::new(PlMutex::new(Vec::new()));
         let writer_progress: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
+        let subscriber_attached: Arc<std::sync::atomic::AtomicBool> =
+            Arc::new(std::sync::atomic::AtomicBool::new(false));
 
         // PTY writer: mirror the pty.rs critical section — ring.write + broadcast
         // under a single ring.lock().
         let writer_ring = ring.clone();
         let writer_clients = clients.clone();
         let writer_progress_w = writer_progress.clone();
+        let subscriber_attached_w = subscriber_attached.clone();
         let writer = tokio::task::spawn_blocking(move || {
             for i in 0..CHUNK_COUNT {
                 let payload = i.to_be_bytes().to_vec();
@@ -1029,6 +1032,14 @@ mod tests {
                 drop(ring_guard);
 
                 writer_progress_w.store(i + 1, Ordering::Release);
+
+                // After ATTACH_AFTER chunks, wait for the subscriber to attach
+                // before continuing — ensures the race window is exercised.
+                if i + 1 == ATTACH_AFTER {
+                    while !subscriber_attached_w.load(Ordering::Acquire) {
+                        std::hint::spin_loop();
+                    }
+                }
             }
         });
 
@@ -1037,6 +1048,7 @@ mod tests {
         let sub_ring = ring.clone();
         let sub_clients = clients.clone();
         let writer_progress_s = writer_progress.clone();
+        let subscriber_attached_s = subscriber_attached.clone();
         let subscriber = tokio::task::spawn_blocking(move || {
             // Spin until the writer has made enough progress for a non-empty snapshot.
             while writer_progress_s.load(Ordering::Acquire) < ATTACH_AFTER {
@@ -1050,6 +1062,8 @@ mod tests {
                 sub_clients.lock().push(tx);
                 snap
             };
+            // Signal the writer that we're attached — it can resume writing.
+            subscriber_attached_s.store(true, Ordering::Release);
             (snapshot_bytes, snapshot_total, rx)
         });
 
