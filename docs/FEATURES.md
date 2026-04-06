@@ -1239,6 +1239,17 @@ All data persisted to platform config directory via Rust:
 - `tuic://install-plugin?url=https://...` — Download and install plugin (HTTPS only, confirmation dialog)
 - `tuic://open-repo?path=/path` — Switch to repo (must be in sidebar)
 - `tuic://settings?tab=plugins` — Open Settings to specific tab
+- `tuic://open/<path>` — Open markdown file in tab (iframe SDK only, path validated against repos)
+- `tuic://terminal?repo=<path>` — Open terminal in repo (iframe SDK only)
+
+### 17.4.1 TUIC SDK (`window.tuic`)
+- Injected automatically into every plugin iframe alongside base CSS and theme variables
+- Feature detection: `if (window.tuic)` — `tuic.version` reports SDK version
+- `tuic.open(path, {pinned?})` — Open markdown file in tab, optionally pinned
+- `tuic.terminal(repoPath)` — Open terminal in repository
+- `<a href="tuic://open/...">` and `<a href="tuic://terminal?repo=...">` links intercepted automatically
+- `data-pinned` attribute on links sets pinned flag
+- Security: paths validated against known repository list
 
 ### 17.5 Built-in Plugins
 - **Plan Tracker** — Detects Claude Code plan files from structured events

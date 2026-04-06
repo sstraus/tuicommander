@@ -244,7 +244,7 @@ ContextMenuAction targets: `"terminal"`, `"branch"`, `"repo"`, `"tab"`. ContextM
 
 SidebarPanelHandle: `{ setItems(items), setBadge(text), dispose() }`. SidebarItem: `{ id, label, subtitle?, icon?, iconColor?, onClick?, contextMenu?: [{ label, action, disabled? }] }`. Panels appear below branches in the sidebar, scoped per-repo. Badge shows a counter pill on the header.
 
-PanelHandle: `{ tabId, update(html), close(), send(data) }` — HTML rendered in sandboxed iframe with automatic base stylesheet + CSS theme variable injection. Write minimal plugin-specific CSS only (see Panel CSS Design Strategy above). Use `onMessage` callback to receive messages from iframe, `send()` to post messages back.
+PanelHandle: `{ tabId, update(html), close(), send(data) }` — HTML rendered in sandboxed iframe with automatic base stylesheet + CSS theme variable injection. Write minimal plugin-specific CSS only (see Panel CSS Design Strategy above). Use `onMessage` callback to receive messages from iframe, `send()` to post messages back. Every iframe also receives the TUIC SDK (`window.tuic`) — use `tuic.open(path, {pinned?})` to open markdown files, `tuic.terminal(repoPath)` to open terminals, or `<a href="tuic://open/path">` links for automatic interception. Paths must be within a known repo.
 
 `registerDashboard({ label?, icon?, open })`: Register a one-click entry point shown as a **Dashboard** button in *Settings → Plugins*. The host closes the Settings panel automatically before calling `open()`. A plugin may only register one dashboard; second calls replace the first. Pair this with the `.dashboard` style guide above.
 

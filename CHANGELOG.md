@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Open file / New file** — `Cmd+O` opens a file picker and routes the result through the standard extension-based dispatch (`.md`/`.mdx` → markdown tab, `.html`/`.htm` → HTML preview tab, other → code editor). `Cmd+N` prompts for name + location, creates the empty file, and opens it the same way. Both also available from the command palette under the "File" category.
 - **`file://` URLs in terminal** — Clickable `file:///…` URLs in terminal output are now recognized alongside plain paths. The prefix is stripped and the path resolved via the existing `resolve_terminal_path` flow.
 - **Idle branch icons** — Sidebar branch icons (star, branch, worktree) turn grey when the repo has no active terminals, making it easy to spot repos with running sessions at a glance.
+- **TUIC SDK for plugin iframes** — Every plugin iframe now receives `window.tuic`, a lightweight API for host integration. `tuic.open(path, {pinned?})` opens markdown files, `tuic.terminal(repoPath)` opens terminals, and `<a href="tuic://open/...">` links are intercepted automatically. Paths validated against known repos.
 
 ### Changed
 - **Ideas panel shortcut** — Moved from `Cmd+N` to `Cmd+Alt+N` so `Cmd+N` can serve the universal "New file" convention. Users with an override in `keybindings.json` keep their existing binding.
