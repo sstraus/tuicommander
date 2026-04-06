@@ -1064,6 +1064,11 @@ mod tests {
         let snapshot_indices = extract_indices(&snapshot_bytes);
         let live_indices = extract_indices(&live_bytes);
 
+        // Precondition: both streams must be non-empty, otherwise the race
+        // window was not exercised and the boundary invariants are vacuous.
+        assert!(!snapshot_indices.is_empty(), "subscriber attached too late — no snapshot data");
+        assert!(!live_indices.is_empty(), "writer finished before subscriber — race not exercised");
+
         // Invariants:
         // 1. Snapshot indices are strictly monotonically increasing by 1.
         for pair in snapshot_indices.windows(2) {
