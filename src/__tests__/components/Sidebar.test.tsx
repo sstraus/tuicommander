@@ -263,8 +263,8 @@ describe("Sidebar", () => {
       setRepos({
         "/repo1": makeRepo({
           branches: {
-            main: { name: "main", isMain: true, worktreePath: null, terminals: [], additions: 0, deletions: 0 },
-            "feature/x": { name: "feature/x", isMain: false, worktreePath: "/wt/x", terminals: [], additions: 0, deletions: 0 },
+            main: { name: "main", isMain: true, worktreePath: null, terminals: ["t1"], additions: 0, deletions: 0 },
+            "feature/x": { name: "feature/x", isMain: false, worktreePath: "/wt/x", terminals: ["t2"], additions: 0, deletions: 0 },
           },
         }),
       });
