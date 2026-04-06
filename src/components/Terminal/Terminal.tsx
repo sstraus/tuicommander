@@ -1237,6 +1237,29 @@ export const Terminal: Component<TerminalProps> = (props) => {
     terminal.textarea?.addEventListener("focus", () => {
       props.onFocus?.(props.id);
     });
+
+    // Image paste support: intercept paste events in the capture phase (before
+    // xterm's handler) to check for image content.  When the clipboard contains
+    // an image, we send \x16 (Ctrl+V control code) to the PTY so CLI apps like
+    // Claude Code can read the image from the OS clipboard directly.  Without
+    // this, xterm's built-in paste handler calls getData("text/plain") and
+    // silently discards image data.
+    // When no image is present, the event propagates normally and xterm handles
+    // text paste as usual.
+    const handleImagePaste = (e: ClipboardEvent) => {
+      if (!e.clipboardData) return;
+      const items = e.clipboardData.items;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith("image/")) {
+          e.stopPropagation();
+          e.preventDefault();
+          terminal!.input("\x16", true);
+          return;
+        }
+      }
+      // No image — let xterm handle text paste normally
+    };
+    containerRef.addEventListener("paste", handleImagePaste, true);
   };
 
   // Deferred onReady callback: when safeFit exhausts retries, the ResizeObserver
