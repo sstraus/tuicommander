@@ -134,6 +134,59 @@ describe("normalizeLogLine", () => {
   });
 });
 
+// --- normalizeLogLine: VS15 text presentation ---
+
+describe("normalizeLogLine text presentation (VS15)", () => {
+  const VS15 = "\uFE0E";
+
+  it("appends VS15 after ● in plain string", () => {
+    const result = normalizeLogLine("● Reading file...");
+    expect(result.spans[0].text).toBe(`●${VS15} Reading file...`);
+  });
+
+  it("appends VS15 after ⏺ Ink bullet in LogLine span", () => {
+    const line: LogLine = { spans: [{ text: "⏺ intent: do stuff" }] };
+    const result = normalizeLogLine(line);
+    expect(result.spans[0].text).toBe(`⏺${VS15} intent: do stuff`);
+  });
+
+  it("appends VS15 after Codex bullet • and ◦", () => {
+    expect(normalizeLogLine("• Working (5s)").spans[0].text).toBe(`•${VS15} Working (5s)`);
+    expect(normalizeLogLine("◦ Working (12s)").spans[0].text).toBe(`◦${VS15} Working (12s)`);
+  });
+
+  it("appends VS15 after Copilot ∴ thinking indicator", () => {
+    expect(normalizeLogLine("∴ Thinking…").spans[0].text).toBe(`∴${VS15} Thinking…`);
+  });
+
+  it("appends VS15 after ⚙ gear and ✢ star", () => {
+    expect(normalizeLogLine("⚙ Settings").spans[0].text).toBe(`⚙${VS15} Settings`);
+    expect(normalizeLogLine("✢ Status line").spans[0].text).toBe(`✢${VS15} Status line`);
+  });
+
+  it("handles multiple emoji chars in one span", () => {
+    const result = normalizeLogLine("● active ○ queued");
+    expect(result.spans[0].text).toBe(`●${VS15} active ○${VS15} queued`);
+  });
+
+  it("does not modify plain text without emoji chars", () => {
+    const result = normalizeLogLine("hello world");
+    expect(result.spans[0].text).toBe("hello world");
+  });
+
+  it("applies VS15 across all spans in a LogLine", () => {
+    const line: LogLine = {
+      spans: [
+        { text: "● ", fg: { idx: 2 } },
+        { text: "⚙ config" },
+      ],
+    };
+    const result = normalizeLogLine(line);
+    expect(result.spans[0].text).toBe(`●${VS15} `);
+    expect(result.spans[1].text).toBe(`⚙${VS15} config`);
+  });
+});
+
 // --- hasBoxDrawing ---
 
 describe("hasBoxDrawing", () => {

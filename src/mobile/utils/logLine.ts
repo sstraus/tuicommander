@@ -145,6 +145,30 @@ export function lineMatchesQuery(line: LogLine, query: string): boolean {
   return lineText(line).toLowerCase().includes(query.toLowerCase());
 }
 
+/**
+ * Characters that mobile browsers render as color emoji instead of monochrome
+ * text glyphs.  Appending U+FE0E (VS15 — text variation selector) after each
+ * forces the text presentation so they match the desktop xterm.js look.
+ *
+ * ● U+25CF  BLACK CIRCLE         — Claude Code / Copilot CLI status bullet
+ * ○ U+25CB  WHITE CIRCLE         — Copilot CLI queued indicator
+ * ⏺ U+23FA BLACK CIRCLE FOR REC — Claude Code Ink bullet variant
+ * ⏵ U+23F5  PLAY BUTTON          — Claude Code subtask indicator
+ * • U+2022  BULLET               — Codex CLI spinner
+ * ◦ U+25E6  WHITE BULLET         — Codex CLI alternating spinner
+ * ∴ U+2234  THEREFORE            — Copilot CLI thinking indicator
+ * ✢ U+2722  FOUR TEARDROP STAR   — Claude Code v2.1.63+ status
+ * ⚙ U+2699  GEAR                 — tool/settings indicator
+ * ✻ U+273B  TEARDROP ASTERISK    — thinking indicator
+ * ◉ U+25C9  FISHEYE              — occasional indicator
+ */
+const EMOJI_PRESENTATION_RE = /[●○⏺⏵•◦∴✢⚙✻◉]/g;
+
+/** Append VS15 (U+FE0E) to characters that should render as text, not emoji. */
+function forceTextPresentation(text: string): string {
+  return text.replace(EMOJI_PRESENTATION_RE, (ch) => ch + "\uFE0E");
+}
+
 /** Type guard: checks that `value` is a LogLine (object with a `spans` array). */
 export function isLogLine(value: unknown): value is LogLine {
   return (
@@ -158,13 +182,19 @@ export function isLogLine(value: unknown): value is LogLine {
 /**
  * Normalize a raw log line value (from HTTP or WebSocket) to a LogLine.
  * Handles both structured LogLine objects and plain string fallback.
+ * Also forces text presentation for characters that mobile browsers
+ * would otherwise render as color emoji.
  */
 export function normalizeLogLine(raw: unknown): LogLine {
   if (typeof raw === "string") {
-    return { spans: [{ text: raw }] };
+    return { spans: [{ text: forceTextPresentation(raw) }] };
   }
   if (isLogLine(raw)) {
+    // Apply VS15 fixup to every span's text
+    for (const span of raw.spans) {
+      span.text = forceTextPresentation(span.text);
+    }
     return raw;
   }
-  return { spans: [{ text: String(raw) }] };
+  return { spans: [{ text: forceTextPresentation(String(raw)) }] };
 }
