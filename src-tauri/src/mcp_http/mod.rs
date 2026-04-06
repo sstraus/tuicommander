@@ -952,6 +952,7 @@ mod tests {
         });
         // Override default disabled_native_tools so all 8 tools are visible in tests
         state.config.write().disabled_native_tools = Vec::new();
+        mcp_transport::rebuild_tool_search_index(&state);
         state
     }
 

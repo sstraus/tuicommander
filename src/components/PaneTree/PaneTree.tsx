@@ -190,8 +190,7 @@ const PaneGroupView: Component<{
       if (t.type === "terminal") return !!terminalsStore.get(t.id);
       if (t.type === "diff") return !!diffTabsStore.get(t.id);
       if (t.type === "markdown") return !!mdTabsStore.get(t.id);
-      if (t.type === "editor") return !!editorTabsStore.get(t.id);
-      return false;
+      return !!editorTabsStore.get(t.id);
     });
   });
   const showTabBar = () => aliveTabs().length > 1;

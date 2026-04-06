@@ -694,7 +694,7 @@ async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &st
     match name {
         "session" => handle_session(state, args),
         "agent" => handle_agent_unified(state, addr, args, mcp_session_id),
-        "repo" => handle_repo(state, addr, args, is_claude_code).await,
+        "repo" => handle_repo(state, args, is_claude_code).await,
         "ui" => handle_ui_unified(state, addr, args),
         "plugin_dev_guide" => {
             serde_json::json!({"content": super::plugin_docs::PLUGIN_DOCS})
@@ -1566,40 +1566,9 @@ fn handle_debug(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::
             serde_json::json!(sessions)
         }
         "invoke_js" => {
-            let script = match args["script"].as_str() {
-                Some(s) => s,
-                None => return serde_json::json!({"error": "script required (string)"}),
-            };
-            let app_handle = state.app_handle.read().clone();
-            let Some(handle) = app_handle else {
-                return serde_json::json!({"error": "AppHandle not initialized"});
-            };
-            let Some(window) = handle.get_webview_window("main") else {
-                return serde_json::json!({"error": "main window not found"});
-            };
-
-            // Wrap user script in try/catch that logs result back via push_log
-            let wrapped = format!(
-                r#"(async () => {{
-  const __src = "eval_js";
-  try {{
-    const __result = await (async () => {{ {script} }})();
-    const __msg = __result === undefined ? "(undefined)" : JSON.stringify(__result, null, 2);
-    window.__TAURI__.core.invoke("push_log", {{ level: "info", source: __src, message: __msg, dataJson: null }});
-  }} catch (__e) {{
-    const __msg = __e instanceof Error ? `${{__e.name}}: ${{__e.message}}\n${{__e.stack}}` : String(__e);
-    window.__TAURI__.core.invoke("push_log", {{ level: "error", source: __src, message: __msg, dataJson: null }});
-  }}
-}})()"#
-            );
-
-            match window.eval(&wrapped) {
-                Ok(()) => serde_json::json!({
-                    "ok": true,
-                    "hint": "Result logged with source='eval_js'. Read via: debug(action='logs', source='eval_js', limit=1)"
-                }),
-                Err(e) => serde_json::json!({"error": format!("eval failed: {e}")}),
-            }
+            // invoke_js executes arbitrary JS in the WebView — must be routed through
+            // handle_debug_unified which enforces the loopback guard.
+            serde_json::json!({"error": "invoke_js must be called via the debug tool (loopback-only)"})
         }
         other => serde_json::json!({"error": format!(
             "Unknown action '{}' for tool 'debug'. Available: {}", other, LEGACY_DEBUG_ACTIONS
@@ -2247,7 +2216,7 @@ pub(super) async fn mcp_delete(
 // ── Unified handlers (merged tools) ──────────────────────────────────────
 
 /// Merged repo tool: dispatches to workspace, github, or worktree handlers.
-async fn handle_repo(state: &Arc<AppState>, _addr: SocketAddr, args: &serde_json::Value, is_claude_code: bool) -> serde_json::Value {
+async fn handle_repo(state: &Arc<AppState>, args: &serde_json::Value, is_claude_code: bool) -> serde_json::Value {
     let action = match require_action(args, "repo", REPO_ACTIONS) {
         Ok(a) => a,
         Err(e) => return e,
@@ -2311,7 +2280,37 @@ fn handle_debug_unified(state: &Arc<AppState>, addr: SocketAddr, args: &serde_js
             if !addr.ip().is_loopback() {
                 return serde_json::json!({"error": "invoke_js is restricted to localhost connections"});
             }
-            handle_debug(state, args)
+            let script = match args["script"].as_str() {
+                Some(s) => s,
+                None => return serde_json::json!({"error": "script required (string)"}),
+            };
+            let app_handle = state.app_handle.read().clone();
+            let Some(handle) = app_handle else {
+                return serde_json::json!({"error": "AppHandle not initialized"});
+            };
+            let Some(window) = handle.get_webview_window("main") else {
+                return serde_json::json!({"error": "main window not found"});
+            };
+            let wrapped = format!(
+                r#"(async () => {{
+  const __src = "eval_js";
+  try {{
+    const __result = await (async () => {{ {script} }})();
+    const __msg = __result === undefined ? "(undefined)" : JSON.stringify(__result, null, 2);
+    window.__TAURI__.core.invoke("push_log", {{ level: "info", source: __src, message: __msg, dataJson: null }});
+  }} catch (__e) {{
+    const __msg = __e instanceof Error ? `${{__e.name}}: ${{__e.message}}\n${{__e.stack}}` : String(__e);
+    window.__TAURI__.core.invoke("push_log", {{ level: "error", source: __src, message: __msg, dataJson: null }});
+  }}
+}})()"#
+            );
+            match window.eval(&wrapped) {
+                Ok(()) => serde_json::json!({
+                    "ok": true,
+                    "hint": "Result logged with source='eval_js'. Read via: debug(action='logs', source='eval_js', limit=1)"
+                }),
+                Err(e) => serde_json::json!({"error": format!("eval failed: {e}")}),
+            }
         }
         "agent_detection" | "logs" | "sessions" => handle_debug(state, args),
         other => serde_json::json!({"error": format!(
