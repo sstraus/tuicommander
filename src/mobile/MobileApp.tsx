@@ -9,6 +9,7 @@ import { QuestionBanner } from "./components/QuestionBanner";
 import { useSessions } from "./useSessions";
 import { useMobileNotifications } from "./useMobileNotifications";
 import { appLogger } from "../stores/appLogger";
+import { notesStore } from "../stores/notes";
 import styles from "./MobileApp.module.css";
 
 // Register service worker for push notifications (only on HTTPS or localhost)
@@ -31,6 +32,7 @@ export default function MobileApp() {
   const [selectedSessionId, setSelectedSessionId] = createSignal<string | null>(sessionIdFromUrl());
   const { sessions, loading, refreshing, error, refresh, questionCount } = useSessions();
   useMobileNotifications(sessions);
+  notesStore.hydrate();
 
   // Keep the last known session data so the detail screen stays mounted
   // and can show the "Session ended" overlay after a session closes.

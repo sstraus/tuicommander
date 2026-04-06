@@ -6,6 +6,7 @@ import { SlashMenuOverlay } from "../components/SlashMenuOverlay";
 import { CommandWidget } from "../components/CommandWidget";
 import { CommandInput } from "../components/CommandInput";
 import { TerminalKeybar } from "../components/TerminalKeybar";
+import { IdeasOverlay } from "../components/IdeasOverlay";
 
 import type { SessionInfo } from "../useSessions";
 import { deriveStatus } from "../utils/deriveStatus";
@@ -43,6 +44,9 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
 
   // Command widget overlay toggle
   const [commandWidgetOpen, setCommandWidgetOpen] = createSignal(false);
+
+  // Ideas overlay toggle
+  const [ideasOpen, setIdeasOpen] = createSignal(false);
 
   // Prefill value for CommandInput (set by slash menu selection).
   // Counter ensures the effect re-fires even when the same command is selected twice.
@@ -110,6 +114,17 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
             {sessionState()!.usage_limit_pct}%
           </span>
         </Show>
+        <button
+          class={styles.searchToggle}
+          classList={{ [styles.searchToggleActive]: ideasOpen() }}
+          onClick={() => setIdeasOpen((v) => !v)}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 18h6" />
+            <path d="M10 22h4" />
+            <path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z" />
+          </svg>
+        </button>
         <button
           class={styles.searchToggle}
           classList={{ [styles.searchToggleActive]: searchOpen() }}
@@ -242,6 +257,13 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
           sessionId={props.session.session_id}
           agentType={sessionState()?.agent_type as string | null | undefined}
           onDismiss={() => setCommandWidgetOpen(false)}
+        />
+      </Show>
+      <Show when={ideasOpen()}>
+        <IdeasOverlay
+          sessionId={props.session.session_id}
+          repoPath={props.session.cwd}
+          onDismiss={() => setIdeasOpen(false)}
         />
       </Show>
     </div>
