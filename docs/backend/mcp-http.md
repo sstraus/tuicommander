@@ -171,7 +171,7 @@ Eight native tools, organized by domain. Three (`config`, `knowledge`, `debug`) 
 | `plugin_dev_guide` | *(no actions — returns guide text)* | Enabled |
 | `config` | get, save | Disabled |
 | `knowledge` | search, code_graph, status, setup | Disabled |
-| `debug` | agent_detection, logs, invoke_js, plugin_guide | Disabled |
+| `debug` | agent_detection, logs, sessions, invoke_js | Disabled |
 
 The `disabled_native_tools` config key accepts an array of tool names to hide from `tools/list`. Default: `["config", "knowledge", "debug"]`.
 

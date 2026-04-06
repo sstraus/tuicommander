@@ -245,7 +245,7 @@ const REPO_ACTIONS: &str = "list, active, prs, status, worktree_list, worktree_c
 const UI_ACTIONS: &str = "tab, toast, confirm";
 const CONFIG_ACTIONS: &str = "get, save";
 const KNOWLEDGE_ACTIONS: &str = "search, code_graph, status, setup";
-const DEBUG_ACTIONS: &str = "agent_detection, logs, invoke_js, plugin_guide";
+const DEBUG_ACTIONS: &str = "agent_detection, logs, sessions, invoke_js";
 
 // Legacy action constants — still referenced by handlers until dispatch refactor (story 1091).
 // Remove these when handle_mcp_tool_call dispatch is updated.
@@ -355,9 +355,9 @@ fn native_tool_definitions() -> serde_json::Value {
         },
         {
             "name": "debug",
-            "description": "Dev-only diagnostics for debugging TUICommander internals.\n\nActions (pass as 'action' parameter):\n- agent_detection: Returns agent detection pipeline diagnostics for a session. Optional session_id (omit for all).\n- logs: Returns recent app log entries. Optional: level, source, limit.\n- invoke_js: Executes JavaScript in the main WebView (fire-and-forget). Result logged with source='eval_js'. Requires script.\n- plugin_guide: Returns comprehensive plugin authoring reference (manifest, API, events, examples).",
+            "description": "Dev-only diagnostics for debugging TUICommander internals.\n\nActions (pass as 'action' parameter):\n- agent_detection: Returns agent detection pipeline diagnostics for a session. Optional session_id (omit for all).\n- logs: Returns recent app log entries. Optional: level, source, limit.\n- sessions: Returns all PTY sessions with process details (pid, cwd, foreground process).\n- invoke_js: Executes JavaScript in the main WebView (fire-and-forget, localhost only). Result logged with source='eval_js'. Requires script.",
             "inputSchema": { "type": "object", "properties": {
-                "action": { "type": "string", "description": "One of: agent_detection, logs, invoke_js, plugin_guide" },
+                "action": { "type": "string", "description": "One of: agent_detection, logs, sessions, invoke_js" },
                 "session_id": { "type": "string", "description": "PTY session UUID (action=agent_detection, optional — omit for all)" },
                 "level": { "type": "string", "description": "Log level filter: debug, info, warn, error (action=logs)" },
                 "source": { "type": "string", "description": "Log source filter (action=logs)" },
@@ -446,7 +446,7 @@ fn merged_tool_definitions(state: &Arc<AppState>) -> serde_json::Value {
         return meta_tool_definitions();
     }
 
-    let disabled = &state.config.read().disabled_native_tools;
+    let disabled = state.config.read().disabled_native_tools.clone();
     let mut tools: Vec<serde_json::Value> = native_tool_definitions()
         .as_array()
         .cloned()
@@ -454,7 +454,7 @@ fn merged_tool_definitions(state: &Arc<AppState>) -> serde_json::Value {
         .into_iter()
         .filter(|t| {
             let name = t["name"].as_str().unwrap_or("");
-            !disabled.contains(&name.to_string())
+            !disabled.iter().any(|d| d == name)
         })
         .collect();
 
@@ -533,7 +533,7 @@ fn searchable_tool_definitions(state: &Arc<AppState>) -> Vec<serde_json::Value> 
         .into_iter()
         .filter(|t| {
             let name = t["name"].as_str().unwrap_or("");
-            !disabled.contains(&name.to_string())
+            !disabled.iter().any(|d| d == name)
         })
         .collect();
     tools.extend(state.mcp_upstream_registry.aggregated_tools());
@@ -2313,8 +2313,7 @@ fn handle_debug_unified(state: &Arc<AppState>, addr: SocketAddr, args: &serde_js
             }
             handle_debug(state, args)
         }
-        "agent_detection" | "logs" => handle_debug(state, args),
-        "plugin_guide" => serde_json::json!({"content": super::plugin_docs::PLUGIN_DOCS}),
+        "agent_detection" | "logs" | "sessions" => handle_debug(state, args),
         other => serde_json::json!({"error": format!(
             "Unknown action '{}' for tool 'debug'. Available: {}", other, DEBUG_ACTIONS
         )}),
@@ -2748,11 +2747,11 @@ mod tests {
     }
 
     #[test]
-    fn debug_tool_includes_plugin_guide_action() {
+    fn debug_tool_includes_sessions_action() {
         let defs = native_tool_definitions();
         let debug = defs.as_array().unwrap().iter().find(|t| t["name"] == "debug").unwrap();
         let action_desc = debug["inputSchema"]["properties"]["action"]["description"].as_str().unwrap();
-        assert!(action_desc.contains("plugin_guide"), "debug action description must include 'plugin_guide'");
+        assert!(action_desc.contains("sessions"), "debug action description must include 'sessions'");
     }
 
     #[test]
@@ -3138,13 +3137,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn handle_mcp_tool_call_routes_debug_plugin_guide() {
+    async fn handle_mcp_tool_call_routes_debug_sessions() {
         let state = test_state();
         let r = handle_mcp_tool_call(
             &state, loopback_addr(), "debug",
-            &serde_json::json!({ "action": "plugin_guide" }), None,
+            &serde_json::json!({ "action": "sessions" }), None,
         ).await;
-        assert!(r["content"].is_string(), "debug action=plugin_guide should return content");
+        assert!(r.is_array(), "debug action=sessions should return array of sessions");
     }
 
     #[tokio::test]

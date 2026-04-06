@@ -1443,6 +1443,31 @@ mod tests {
         assert!(names.contains(&"debug"));
     }
 
+    #[tokio::test]
+    async fn test_mcp_tools_list_respects_disabled_native_tools() {
+        let state = test_state();
+        state.config.write().disabled_native_tools = vec!["debug".to_string()];
+        let app = build_router(state, false, true);
+        let body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/list",
+            "params": {}
+        });
+        let resp = app
+            .oneshot(mcp_post("/mcp", &body))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let tools = json["result"]["tools"].as_array().unwrap();
+        assert_eq!(tools.len(), 7);
+        let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
+        assert!(!names.contains(&"debug"), "disabled tool must not appear in tools/list");
+        assert!(names.contains(&"session"));
+    }
+
     #[test]
     fn test_mcp_tool_definitions_count() {
         let tools = mcp_transport::test_mcp_tool_definitions();
