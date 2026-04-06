@@ -8,8 +8,12 @@ const CHECK_INTERVAL_MS = 60_000;
  * Returns a signal that becomes true when an update is available,
  * and a function to apply the update (hard reload).
  */
+const CONSECUTIVE_FAILURES_THRESHOLD = 2;
+
 export function useVersionCheck() {
   const [updateAvailable, setUpdateAvailable] = createSignal(false);
+  const [serverDown, setServerDown] = createSignal(false);
+  let consecutiveFailures = 0;
 
   const clientHash: string = typeof __BUILD_GIT_HASH__ !== "undefined" ? __BUILD_GIT_HASH__ : "";
 
@@ -17,6 +21,8 @@ export function useVersionCheck() {
     try {
       const resp = await fetch("/api/version");
       if (!resp.ok) return;
+      consecutiveFailures = 0;
+      setServerDown(false);
       const data = await resp.json() as { version: string; git_hash: string };
       const serverHash = data.git_hash;
       if (!serverHash || !clientHash) return;
@@ -25,7 +31,10 @@ export function useVersionCheck() {
         setUpdateAvailable(true);
       }
     } catch {
-      // Network error — skip silently, will retry next interval
+      consecutiveFailures++;
+      if (consecutiveFailures >= CONSECUTIVE_FAILURES_THRESHOLD) {
+        setServerDown(true);
+      }
     }
   }
 
@@ -45,5 +54,5 @@ export function useVersionCheck() {
     location.replace(location.pathname + "?v=" + Date.now());
   }
 
-  return { updateAvailable, applyUpdate };
+  return { updateAvailable, serverDown, applyUpdate };
 }

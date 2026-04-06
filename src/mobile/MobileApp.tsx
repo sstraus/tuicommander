@@ -33,7 +33,7 @@ export default function MobileApp() {
   const [selectedSessionId, setSelectedSessionId] = createSignal<string | null>(sessionIdFromUrl());
   const { sessions, loading, refreshing, error, refresh, questionCount } = useSessions();
   useMobileNotifications(sessions);
-  const { updateAvailable, applyUpdate } = useVersionCheck();
+  const { updateAvailable, serverDown, applyUpdate } = useVersionCheck();
   notesStore.hydrate();
 
   // Keep the last known session data so the detail screen stays mounted
@@ -78,9 +78,18 @@ export default function MobileApp() {
     </Show>
   );
 
+  const reconnectBanner = () => (
+    <Show when={serverDown()}>
+      <div class={styles.reconnectBanner}>
+        Server unreachable — reconnecting...
+      </div>
+    </Show>
+  );
+
   return (
     <div class={styles.shell}>
       {updateBanner()}
+      {reconnectBanner()}
       <Show
         when={showDetail()}
         fallback={

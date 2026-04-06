@@ -113,6 +113,53 @@ describe("useVersionCheck", () => {
     });
   });
 
+  it("serverDown becomes true after 2 consecutive poll failures", async () => {
+    const useVersionCheck = await importFresh();
+    let failCount = 0;
+    vi.stubGlobal("fetch", vi.fn(() => {
+      failCount++;
+      return Promise.reject(new Error("network"));
+    }));
+
+    await createRoot(async (dispose) => {
+      const { serverDown } = useVersionCheck();
+      // Initial check fires immediately (1st failure)
+      await vi.advanceTimersByTimeAsync(0);
+      expect(serverDown()).toBe(false); // 1 failure not enough
+
+      // Advance to next poll interval (2nd failure)
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(serverDown()).toBe(true);
+      dispose();
+    });
+  });
+
+  it("serverDown becomes false on next successful poll", async () => {
+    const useVersionCheck = await importFresh();
+    let shouldFail = true;
+    vi.stubGlobal("fetch", vi.fn(() => {
+      if (shouldFail) return Promise.reject(new Error("network"));
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ version: "1.0.0", git_hash: "abc123" }),
+      });
+    }));
+
+    await createRoot(async (dispose) => {
+      const { serverDown } = useVersionCheck();
+      // 2 failures → serverDown=true
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(serverDown()).toBe(true);
+
+      // Recovery
+      shouldFail = false;
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(serverDown()).toBe(false);
+      dispose();
+    });
+  });
+
   it("calls registration.update() on init for iOS SW freshness", async () => {
     const updateSpy = vi.fn(() => Promise.resolve());
     mockRegistrations = [{ unregister: vi.fn(), update: updateSpy }];
