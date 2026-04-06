@@ -986,28 +986,31 @@ mod tests {
     async fn ws_catchup_no_duplicate_with_concurrent_writer() {
         use crate::state::OutputRingBuffer;
         use parking_lot::Mutex as PlMutex;
+        use std::sync::atomic::{AtomicU64, Ordering};
         use std::sync::Arc;
 
-        const CHUNK_COUNT: u64 = 50_000;
-        const CHUNK_SIZE: usize = 64;
+        const CHUNK_COUNT: u64 = 5_000;
+        const CHUNK_SIZE: usize = 8; // just the index, no filler
         const CAPACITY: usize = CHUNK_COUNT as usize * CHUNK_SIZE * 2;
+        // Subscriber waits until the writer has committed this many chunks
+        // before attaching — guarantees a non-empty snapshot without relying
+        // on wall-clock sleep.
+        const ATTACH_AFTER: u64 = 100;
 
         let ring: Arc<PlMutex<OutputRingBuffer>> =
             Arc::new(PlMutex::new(OutputRingBuffer::new(CAPACITY)));
         let clients: Arc<PlMutex<Vec<tokio::sync::mpsc::UnboundedSender<Vec<u8>>>>> =
             Arc::new(PlMutex::new(Vec::new()));
+        let writer_progress: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
 
         // PTY writer: mirror the pty.rs critical section — ring.write + broadcast
         // under a single ring.lock().
         let writer_ring = ring.clone();
         let writer_clients = clients.clone();
+        let writer_progress_w = writer_progress.clone();
         let writer = tokio::task::spawn_blocking(move || {
             for i in 0..CHUNK_COUNT {
-                let mut payload = Vec::with_capacity(CHUNK_SIZE);
-                // First 8 bytes = chunk index (big-endian) so the consumer can
-                // reconstruct ordering; remaining bytes are filler.
-                payload.extend_from_slice(&i.to_be_bytes());
-                payload.resize(CHUNK_SIZE, 0);
+                let payload = i.to_be_bytes().to_vec();
 
                 // Mirror pty.rs: ring.write + broadcast under one ring.lock().
                 let mut ring_guard = writer_ring.lock();
@@ -1017,17 +1020,21 @@ mod tests {
                     subs.retain(|tx| tx.send(payload.clone()).is_ok());
                 }
                 drop(ring_guard);
+
+                writer_progress_w.store(i + 1, Ordering::Release);
             }
         });
 
-        // Subscriber: attach mid-stream. Must take ring.lock() around snapshot
-        // read + tx registration (same ordering as session.rs).
+        // Subscriber: attach mid-stream. Spins on the atomic counter instead
+        // of sleeping, so the race window is exercised deterministically.
         let sub_ring = ring.clone();
         let sub_clients = clients.clone();
+        let writer_progress_s = writer_progress.clone();
         let subscriber = tokio::task::spawn_blocking(move || {
-            // Delay so the writer can make progress first and the race window
-            // is actually exercised.
-            std::thread::sleep(std::time::Duration::from_millis(1));
+            // Spin until the writer has made enough progress for a non-empty snapshot.
+            while writer_progress_s.load(Ordering::Acquire) < ATTACH_AFTER {
+                std::hint::spin_loop();
+            }
 
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
             let (snapshot_bytes, snapshot_total) = {
@@ -1049,15 +1056,11 @@ mod tests {
         }
 
         // Reconstruct the chunk indices seen by the subscriber. Every chunk
-        // is exactly CHUNK_SIZE bytes and starts with its 8-byte BE index.
+        // is exactly CHUNK_SIZE bytes = one u64 BE index.
         let extract_indices = |bytes: &[u8]| -> Vec<u64> {
             bytes
                 .chunks_exact(CHUNK_SIZE)
-                .map(|c| {
-                    let mut idx = [0u8; 8];
-                    idx.copy_from_slice(&c[..8]);
-                    u64::from_be_bytes(idx)
-                })
+                .map(|c| u64::from_be_bytes(c.try_into().unwrap()))
                 .collect()
         };
 
@@ -1080,17 +1083,13 @@ mod tests {
         }
         // 3. No overlap: the last snapshot index must be exactly one less
         //    than the first live index (no duplicate, no gap).
-        if let (Some(&last_snap), Some(&first_live)) =
-            (snapshot_indices.last(), live_indices.first())
-        {
-            assert_eq!(
-                first_live,
-                last_snap + 1,
-                "catch-up/live boundary wrong: last snapshot={}, first live={}",
-                last_snap,
-                first_live
-            );
-        }
+        let first_live = *live_indices.first().expect("live_indices must be non-empty");
+        let last_snap = *snapshot_indices.last().expect("snapshot_indices must be non-empty");
+        assert_eq!(
+            first_live,
+            last_snap + 1,
+            "catch-up/live boundary wrong: last snapshot={last_snap}, first live={first_live}"
+        );
         // 4. Every chunk written is accounted for exactly once.
         let total_seen = snapshot_indices.len() + live_indices.len();
         assert_eq!(
