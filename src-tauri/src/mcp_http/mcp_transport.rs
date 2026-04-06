@@ -313,12 +313,13 @@ fn native_tool_definitions() -> serde_json::Value {
         },
         {
             "name": "ui",
-            "description": "Control the TUICommander UI: open panel tabs with custom HTML, show toast notifications, or prompt for user confirmation.\n\nActions (pass as 'action' parameter):\n- tab: Open/update a pinned panel tab with HTML content. Requires id, title, html. Optional: pinned (default true).\n- toast: Show a non-blocking notification. Requires title. Optional: message, level (info/warn/error).\n- confirm: Show a blocking confirmation dialog. Returns {confirmed: boolean}. Requires title. Optional: message. Restricted to localhost.",
+            "description": "Control the TUICommander UI: open panel tabs with custom HTML or a URL, show toast notifications, or prompt for user confirmation.\n\nActions (pass as 'action' parameter):\n- tab: Open/update a pinned panel tab. Requires id, title, and either html (inline) or url (loads in iframe). Optional: pinned (default true).\n- toast: Show a non-blocking notification. Requires title. Optional: message, level (info/warn/error).\n- confirm: Show a blocking confirmation dialog. Returns {confirmed: boolean}. Requires title. Optional: message. Restricted to localhost.",
             "inputSchema": { "type": "object", "properties": {
                 "action": { "type": "string", "description": "One of: tab, toast, confirm" },
                 "id": { "type": "string", "description": "Stable identifier for dedup — same id reuses existing tab (action=tab, required)" },
                 "title": { "type": "string", "description": "Tab or notification title (action=tab/toast/confirm, required)" },
-                "html": { "type": "string", "description": "HTML content to render in sandboxed iframe (action=tab, required)" },
+                "html": { "type": "string", "description": "Inline HTML content to render in sandboxed iframe (action=tab, mutually exclusive with url)" },
+                "url": { "type": "string", "description": "URL to load in the tab iframe (action=tab, mutually exclusive with html)" },
                 "pinned": { "type": "boolean", "description": "Pin tab across all branches (default true)" },
                 "message": { "type": "string", "description": "Optional body text (action=toast/confirm)" },
                 "level": { "type": "string", "description": "Toast level: info, warn, error (default: info)" }
@@ -1724,17 +1725,24 @@ fn handle_ui(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Val
                 Some(v) => v.to_string(),
                 None => return serde_json::json!({"error": "Action 'tab' requires 'title'"}),
             };
-            let html = match args["html"].as_str() {
-                Some(v) => v.to_string(),
-                None => return serde_json::json!({"error": "Action 'tab' requires 'html'"}),
+            let html_arg = args["html"].as_str().map(|s| s.to_string());
+            let url_arg = args["url"].as_str().map(|s| s.to_string());
+            let html = match (&html_arg, &url_arg) {
+                (Some(h), None) => h.clone(),
+                (None, Some(_)) => String::new(), // URL mode — html is empty, frontend uses url
+                (Some(_), Some(_)) => return serde_json::json!({"error": "Provide either 'html' or 'url', not both"}),
+                (None, None) => return serde_json::json!({"error": "Action 'tab' requires 'html' or 'url'"}),
             };
             let pinned = args["pinned"].as_bool().unwrap_or(true);
-            let payload = serde_json::json!({
+            let mut payload = serde_json::json!({
                 "id": id,
                 "title": title,
                 "html": html,
                 "pinned": pinned,
             });
+            if let Some(ref u) = url_arg {
+                payload["url"] = serde_json::Value::String(u.clone());
+            }
             // Emit to Tauri webview (native mode)
             if let Some(app) = state.app_handle.read().as_ref() {
                 let _ = app.emit("ui-tab", &payload);
@@ -1744,6 +1752,7 @@ fn handle_ui(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Val
                 id: id.clone(),
                 title,
                 html,
+                url: url_arg,
                 pinned,
             });
             serde_json::json!({"ok": true, "id": id})
@@ -3276,10 +3285,11 @@ mod tests {
 
         let event = rx.try_recv().expect("Expected UiTab event");
         match event {
-            crate::state::AppEvent::UiTab { id, title, html, pinned } => {
+            crate::state::AppEvent::UiTab { id, title, html, url, pinned } => {
                 assert_eq!(id, "test-panel");
                 assert_eq!(title, "Test");
                 assert_eq!(html, "<p>hello</p>");
+                assert!(url.is_none(), "url should be None for html tab");
                 assert!(pinned, "pinned should default to true");
             }
             other => panic!("Expected UiTab, got {:?}", other),
