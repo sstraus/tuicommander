@@ -1,0 +1,23 @@
+src/stores/appLogger.ts
+  e48362a489f26a59 39-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.5",
+  "base_commit_sha": "51d5824c941926552253bd8ad65c69b1cd817101",
+  "prompts": {
+    "e48362a489f26a59": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "34e04c70-dc16-4d96-ab2c-539dcd68f12a",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 2,
+      "overriden_lines": 0
+    }
+  }
+}
