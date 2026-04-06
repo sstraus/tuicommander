@@ -1,0 +1,31 @@
+docs/FEATURES.md
+  e4f151c186b7b3e2 158
+docs/user-guide/sidebar.md
+  e4f151c186b7b3e2 76
+src/components/Sidebar/RepoSection.tsx
+  e4f151c186b7b3e2 33,62-63,73,94,191,312,432,603
+src/components/Sidebar/Sidebar.module.css
+  e4f151c186b7b3e2 413-416
+CHANGELOG.md
+  e4f151c186b7b3e2 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.5",
+  "base_commit_sha": "ae4685a229565215ca6d1f87d9ed4d291078d95f",
+  "prompts": {
+    "e4f151c186b7b3e2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e325361a-ecb2-4359-b2af-2ed856aae4d8",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 16,
+      "overriden_lines": 0
+    }
+  }
+}
