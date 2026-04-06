@@ -790,6 +790,12 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // keypress from reaching xterm (which would eat the next typed character).
     let blockEscForResumeDismiss = false;
     terminal.attachCustomKeyEventHandler((event: KeyboardEvent) => {
+      // Arrow Down with no modifiers: snap to bottom when viewport is scrolled up
+      if (event.type === "keydown" && event.key === "ArrowDown" && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && !scrollTracker.isAtBottom) {
+        terminal!.scrollToBottom();
+        return false;
+      }
+
       // Intercept Cmd+F (macOS) / Ctrl+F (Win/Linux) to open search overlay
       if (event.type === "keydown" && (event.metaKey || event.ctrlKey) && event.key === "f" && !event.altKey && !event.shiftKey) {
         event.preventDefault();
@@ -1108,6 +1114,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
         type: terminal!.buffer.active.type,
       }),
     );
+    viewportLock.setLogger((event, details) => {
+      appLogger.warn("ViewportLock", `${event} ${JSON.stringify(details)}`);
+    });
     // Preload the configured font so the canvas/WebGL renderer can measure
     // and render it correctly from the start (see preloadFont comment above).
     preloadFont(settingsStore.state.font).then(() => doFit());

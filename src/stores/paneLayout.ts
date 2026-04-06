@@ -527,6 +527,17 @@ function createPaneLayoutStore() {
       return null;
     },
 
+    /** Get all terminal tab IDs across all groups (ordered by group then tab position) */
+    getTerminalTabIds(): string[] {
+      const ids: string[] = [];
+      for (const group of Object.values(state.groups)) {
+        for (const tab of group.tabs) {
+          if (tab.type === "terminal") ids.push(tab.id);
+        }
+      }
+      return ids;
+    },
+
     /** Serialize layout for persistence (JSON-safe, no proxies involved) */
     serialize(): PaneLayoutState {
       // tree is plain JS, groups need to be cloned from SolidJS store
@@ -561,6 +572,24 @@ function createPaneLayoutStore() {
         groups: saved.groups,
         activeGroupId: saved.activeGroupId,
       });
+    },
+
+    /** Remap terminal IDs in all groups (used after lazy restore creates new terminal IDs) */
+    remapTerminalIds(idMap: Map<string, string>): void {
+      setState(
+        produce((s) => {
+          for (const group of Object.values(s.groups)) {
+            for (const tab of group.tabs) {
+              const newId = idMap.get(tab.id);
+              if (newId) tab.id = newId;
+            }
+            if (group.activeTabId && idMap.has(group.activeTabId)) {
+              group.activeTabId = idMap.get(group.activeTabId)!;
+            }
+          }
+        })
+      );
+      scheduleSave();
     },
 
     /** Reset to single pane (no split) */

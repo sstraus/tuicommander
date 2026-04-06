@@ -11,6 +11,7 @@ import { verifyAndBuildResumeCommand } from "../utils/agentSession";
 import { repoSettingsStore } from "../stores/repoSettings";
 import { githubStore } from "../stores/github";
 import { paneLayoutStore, type PaneLayoutState } from "../stores/paneLayout";
+import { assignTabToActiveGroup } from "../utils/paneTabAssign";
 
 /** In-memory pane layout cache per branch — survives branch switches within a session */
 const savedPaneLayouts = new Map<string, PaneLayoutState>();
@@ -426,6 +427,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
 
     repositoriesStore.addTerminalToBranch(repoPath, branchName, id);
     terminalsStore.setActive(id);
+    assignTabToActiveGroup(id, "terminal");
     // Focus the new terminal after SolidJS renders and mounts the component
     // (onMount sets ref, which happens in the next frame).
     requestAnimationFrame(() => terminalsStore.get(id)?.ref?.focus());
@@ -575,6 +577,8 @@ export function useGitOperations(deps: GitOperationsDeps) {
         }
       }
     } else if (branch?.savedTerminals && branch.savedTerminals.length > 0) {
+      // Capture old terminal IDs from the pane layout (branch.terminals is cleared on hydration)
+      const oldTerminalIds = paneLayoutStore.getTerminalTabIds();
       // Lazy restore: create terminals from persisted session state
       // First pass: create all terminals synchronously (instant UI)
       const restoredIds: { id: string; terminal: (typeof branch.savedTerminals)[number] }[] = [];
@@ -594,8 +598,18 @@ export function useGitOperations(deps: GitOperationsDeps) {
       repositoriesStore.setBranch(repoPath, branchName, { savedTerminals: [] });
       if (restoredIds.length > 0) terminalsStore.setActive(restoredIds[0].id);
 
-      paneLayoutStore.consumeRestoredFromDisk(); // drain flag — new terminal IDs invalidate disk layout
-      paneLayoutStore.reset();
+      // Remap disk-restored layout terminal IDs to newly created IDs
+      const hasDiskLayout = paneLayoutStore.consumeRestoredFromDisk();
+      if (hasDiskLayout && oldTerminalIds.length > 0) {
+        const idMap = new Map<string, string>();
+        for (let i = 0; i < Math.min(oldTerminalIds.length, restoredIds.length); i++) {
+          idMap.set(oldTerminalIds[i], restoredIds[i].id);
+        }
+        paneLayoutStore.remapTerminalIds(idMap);
+        appLogger.info("terminal", `BranchSelect REMAP disk-restored paneLayout for ${branchName}`, { remapped: idMap.size });
+      } else {
+        paneLayoutStore.reset();
+      }
 
       // Second pass: verify resume commands in parallel (non-blocking)
       const agentTerminals = restoredIds.filter((r) => r.terminal.agentType);

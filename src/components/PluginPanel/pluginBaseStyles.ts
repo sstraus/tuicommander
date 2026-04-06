@@ -85,11 +85,11 @@ button.primary:hover, .btn-primary:hover {
 }
 button.danger, .btn-danger {
   background: transparent;
-  color: var(--error, #f48771);
-  border-color: var(--error, #f48771);
+  color: var(--error, #ef4444);
+  border-color: var(--error, #ef4444);
 }
 button.danger:hover, .btn-danger:hover {
-  background: var(--error, #f48771);
+  background: var(--error, #ef4444);
   color: var(--text-on-error, #000);
 }
 button:disabled, .btn:disabled {
@@ -171,7 +171,7 @@ tr:hover td {
   line-height: 1.5;
 }
 .badge-p1, .badge-error {
-  background: var(--error, #f48771);
+  background: var(--error, #ef4444);
   color: var(--text-on-error, #000);
 }
 .badge-p2, .badge-warning {
@@ -183,7 +183,7 @@ tr:hover td {
   color: var(--text-on-accent, #000);
 }
 .badge-success {
-  background: var(--success, #4ec9b0);
+  background: var(--success, #4ade80);
   color: var(--text-on-success, #000);
 }
 .badge-accent {
@@ -256,11 +256,11 @@ hr {
 }
 .toast.show { opacity: 1; }
 .toast.error {
-  background: var(--error, #f48771);
+  background: var(--error, #ef4444);
   color: var(--text-on-error, #000);
 }
 .toast.success {
-  background: var(--success, #4ec9b0);
+  background: var(--success, #4ade80);
   color: var(--text-on-success, #000);
 }
 
@@ -380,9 +380,9 @@ hr {
   transition: width 0.3s ease;
   background: var(--accent, #59a8dd);
 }
-.dash-meter-fill.ok { background: var(--success, #4ec9b0); }
+.dash-meter-fill.ok { background: var(--success, #4ade80); }
 .dash-meter-fill.warn { background: var(--warning, #dcdcaa); }
-.dash-meter-fill.critical { background: var(--error, #f48771); }
+.dash-meter-fill.critical { background: var(--error, #ef4444); }
 
 /* Card — generic container (tables, config blocks, etc.).
    Overrides the default .card padding for dashboard-scale layouts. */

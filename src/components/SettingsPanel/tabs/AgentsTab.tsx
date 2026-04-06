@@ -395,6 +395,36 @@ const AgentRow: Component<{
             <p class={s.hint}>Inject "continue" on 5xx errors with backoff (5s, 15s, 30s)</p>
           </div>
 
+          {/* Per-agent TUIC protocol markers — visible when MCP bridge is installed */}
+          <Show when={mcpStatus()?.installed}>
+            <div class={a.expandedSection}>
+              <label class={a.toggleRow} onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  checked={agentConfigsStore.getIntentTabTitle(props.agentType) ?? !AGENTS[props.agentType]?.managesOwnTabTitle}
+                  onChange={(e) => agentConfigsStore.setIntentTabTitle(props.agentType, e.currentTarget.checked)}
+                />
+                <span>Show intent as tab title</span>
+              </label>
+              <p class={s.hint}>
+                Emit <code>intent:</code> markers to update the tab name with current work phase
+                {AGENTS[props.agentType]?.managesOwnTabTitle ? " (off by default — agent manages its own title)" : ""}
+              </p>
+            </div>
+
+            <div class={a.expandedSection}>
+              <label class={a.toggleRow} onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  checked={agentConfigsStore.getSuggestFollowups(props.agentType) ?? settingsStore.state.suggestFollowups}
+                  onChange={(e) => agentConfigsStore.setSuggestFollowups(props.agentType, e.currentTarget.checked)}
+                />
+                <span>Show suggested follow-ups</span>
+              </label>
+              <p class={s.hint}>Emit <code>suggest:</code> markers for clickable follow-up actions</p>
+            </div>
+          </Show>
+
           {/* Headless Command Template */}
           <div class={a.expandedSection}>
             <div class={a.expandedLabel}>Headless Command Template</div>

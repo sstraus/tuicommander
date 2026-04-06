@@ -51,8 +51,8 @@
 }
 
 .modelBadge.downloaded {
-  background: color-mix(in srgb, var(--success, #4ade80) 15%, transparent);
-  color: var(--success, #4ade80);
+  background: color-mix(in srgb, var(--success) 15%, transparent);
+  color: var(--success);
 }
 
 .modelActions {

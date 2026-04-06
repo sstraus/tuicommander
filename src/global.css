@@ -197,10 +197,10 @@
   --accent-hover: #7abde5;
   --activity: #59a8dd;  /* semantic: always blue, not overridden by themes */
   --border: #3e3e42;
-  --success: #4ec9b0;
+  --success: #4ade80;
   --warning: #dcdcaa;
   --attention: #e8984c;
-  --error: #f48771;
+  --error: #ef4444;
   --merged: #a371f7;
   --unseen: #c084fc;  /* terminal completed while user wasn't viewing */
   --text-on-accent: #000000;

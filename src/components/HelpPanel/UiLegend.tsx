@@ -28,18 +28,18 @@ interface TabTypeEntry {
 }
 
 const TAB_TYPE_LEGEND: TabTypeEntry[] = [
-  { color: "#ef4444", label: "Diff", description: "Git diff viewer" },
-  { color: "#7aa2f7", label: "Editor", description: "Code editor" },
-  { color: "#22c55e", label: "Markdown", description: "Markdown viewer" },
-  { color: "#a78bfa", label: "Panel", description: "Dashboard / plugin panel" },
-  { color: "#fbbf24", label: "PTY", description: "Remote session (HTTP/MCP)" },
+  { color: "rgb(var(--tab-diff-rgb))", label: "Diff", description: "Git diff viewer" },
+  { color: "rgb(var(--tab-edit-rgb))", label: "Editor", description: "Code editor" },
+  { color: "rgb(var(--tab-md-rgb))", label: "Markdown", description: "Markdown viewer" },
+  { color: "rgb(var(--tab-panel-rgb))", label: "Panel", description: "Dashboard / plugin panel" },
+  { color: "rgb(var(--tab-remote-rgb))", label: "PTY", description: "Remote session (HTTP/MCP)" },
 ];
 
 const PANEL_COLOR_LEGEND: TabTypeEntry[] = [
-  { color: "#ef4444", label: "Diff Panel", description: "Git diff summary" },
-  { color: "#22c55e", label: "Markdown Panel", description: "Markdown browser" },
-  { color: "#7aa2f7", label: "File Browser", description: "File explorer" },
-  { color: "#a78bfa", label: "Panel", description: "Dashboard / plugin panel" },
+  { color: "rgb(var(--tab-diff-rgb))", label: "Diff Panel", description: "Git diff summary" },
+  { color: "rgb(var(--tab-md-rgb))", label: "Markdown Panel", description: "Markdown browser" },
+  { color: "rgb(var(--tab-edit-rgb))", label: "File Browser", description: "File explorer" },
+  { color: "rgb(var(--tab-panel-rgb))", label: "Panel", description: "Dashboard / plugin panel" },
 ];
 
 interface SymbolEntry {

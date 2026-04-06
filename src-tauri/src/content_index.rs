@@ -19,6 +19,7 @@ const MAX_FILE_SIZE: u64 = 1_048_576;
 
 /// A single indexed file entry.
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // fields used during build, read path uses engine results
 struct FileEntry {
     /// Path relative to repo root (forward-slash separated).
     rel_path: String,
@@ -27,6 +28,7 @@ struct FileEntry {
 }
 
 /// Pre-built BM25 index over file contents in a single repository.
+#[allow(dead_code)] // path_to_idx populated for future incremental rebuilds
 pub struct ContentIndex {
     engine: bm25::SearchEngine<u32>,
     entries: Vec<FileEntry>,
@@ -40,6 +42,7 @@ pub struct ContentIndex {
 
 /// Result of a BM25 file-level query: ranked file paths.
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // score exposed for future ranking/filtering by callers
 pub struct RankedFile {
     pub rel_path: String,
     pub score: f32,

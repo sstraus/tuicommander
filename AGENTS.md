@@ -44,7 +44,7 @@ NEVER write text + `\r` directly to a PTY. Always use `sendCommand()` from `src/
 
 ## Logging
 
-Use `appLogger` from `src/stores/appLogger.ts` — never `console.log/warn/error`. Check app logs via `GET http://localhost:9877/logs` (supports `?level=`, `?source=`, `?limit=` filters) before asking Boss for logs.
+Use `appLogger` from `src/stores/appLogger.ts` — never `console.log/warn/error`. Check app logs via `GET http://localhost:9876/logs` (supports `?level=`, `?source=`, `?limit=` filters) before asking Boss for logs.
 
 ## Releases
 

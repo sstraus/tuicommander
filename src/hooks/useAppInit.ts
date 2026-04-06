@@ -420,9 +420,10 @@ export async function initApp(deps: AppInitDeps) {
           await deps.handleBranchSelect(firstPath, firstRepo.activeBranch);
         }
       } else {
-        // Lazy restore: don't create terminals on startup.
-        // savedTerminals stay in the branch store and will be restored
-        // when the user clicks the branch in the sidebar.
+        // Eagerly restore terminals when a pane layout was loaded from disk —
+        // the layout references terminal IDs that must exist for panes to render.
+        // Without this, the split layout shows empty boxes after a fresh start.
+        await deps.handleBranchSelect(firstPath, firstRepo.activeBranch);
       }
       return;
     }

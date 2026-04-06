@@ -373,6 +373,7 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
       return;
     }
     terminalsStore.setActive(id);
+    activateInPaneGroup(id, "terminal");
   };
 
   /** Activate or adopt a tab into a pane group when split is on */

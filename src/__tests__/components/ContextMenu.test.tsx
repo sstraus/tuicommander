@@ -161,7 +161,7 @@ describe("ContextMenu", () => {
     expect(handleClose).toHaveBeenCalled();
   });
 
-  it("clamps position to viewport bounds", () => {
+  it("clamps position to viewport bounds", async () => {
     // Set a small viewport
     Object.defineProperty(window, "innerWidth", { value: 200, writable: true, configurable: true });
     Object.defineProperty(window, "innerHeight", { value: 100, writable: true, configurable: true });
@@ -175,10 +175,12 @@ describe("ContextMenu", () => {
         onClose={() => {}}
       />
     ));
+    // Position is adjusted after a requestAnimationFrame
+    await new Promise((r) => requestAnimationFrame(r));
     const menu = container.querySelector(".menu") as HTMLElement;
     // x should be clamped: 200 - 180 - 8 = 12
     expect(parseInt(menu.style.left)).toBeLessThan(190);
-    // y should be clamped
+    // y should be clamped (menu grows upward from click point)
     expect(parseInt(menu.style.top)).toBeLessThan(90);
 
     // Restore

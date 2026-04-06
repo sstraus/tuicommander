@@ -27,6 +27,8 @@ export interface AgentConfig {
   outputFormat: "text" | "jsonl" | "markdown";
   /** Default headless command template. Used when user hasn't configured a custom one. */
   defaultHeadlessTemplate?: string;
+  /** Agent manages its own terminal tab title — intent_tab_title defaults to off */
+  managesOwnTabTitle?: boolean;
   detectPatterns: {
     rateLimit: RegExp[];
     completion: RegExp[];
@@ -51,6 +53,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     binary: "claude",
     description: "Anthropic's Claude Code CLI",
     defaultHeadlessTemplate: "claude --bare --print --output-format text --no-session-persistence --system-prompt \"Output only the raw requested text. No explanations, no markdown fences, no commentary.\" -p \"{prompt}\"",
+    managesOwnTabTitle: true,
     resumeCommand: "claude --continue",
     sessionDiscovery: { resumeWithId: (id) => `claude --resume ${id}` },
     spawnArgs: (prompt, options = {}) => {
@@ -194,6 +197,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     binary: "codex",
     description: "OpenAI Codex CLI",
     defaultHeadlessTemplate: "codex \"{prompt}\"",
+    managesOwnTabTitle: true,
     resumeCommand: "codex resume --last",
     sessionDiscovery: { resumeWithId: (id) => `codex resume ${id}` },
     spawnArgs: (prompt, options = {}) => {
@@ -258,6 +262,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
     binary: "cursor-agent",
     description: "Cursor's standalone coding agent CLI",
     defaultHeadlessTemplate: "cursor-agent \"{prompt}\"",
+    managesOwnTabTitle: true,
     resumeCommand: "cursor-agent resume",
     sessionDiscovery: null, // closed-source, storage path undocumented
     spawnArgs: (prompt) => {
@@ -384,6 +389,10 @@ export interface AgentSettingsConfig {
   headless_template?: string;
   /** Environment feature flags — key→value pairs injected into every spawn of this agent */
   env_flags?: Record<string, string>;
+  /** Per-agent override: show intent as tab title. Undefined = use agent-aware default. */
+  intent_tab_title?: boolean;
+  /** Per-agent override: show suggested follow-ups. Undefined = use global default. */
+  suggest_followups?: boolean;
 }
 
 /** Full agents config (matches Rust AgentsConfig) */

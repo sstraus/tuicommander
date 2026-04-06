@@ -4,7 +4,7 @@ import { AGENTS, type AgentType, type AgentRunConfig, type AgentsConfig } from "
 import { appLogger } from "./appLogger";
 
 interface AgentConfigsState {
-  agents: Record<string, { run_configs: AgentRunConfig[]; auto_retry_on_error?: boolean; headless_template?: string; env_flags?: Record<string, string> }>;
+  agents: Record<string, { run_configs: AgentRunConfig[]; auto_retry_on_error?: boolean; headless_template?: string; env_flags?: Record<string, string>; intent_tab_title?: boolean; suggest_followups?: boolean }>;
   /** Which agent CLI to use for headless prompt execution (user-chosen in Settings) */
   headless_agent: AgentType | null;
   loaded: boolean;
@@ -179,6 +179,46 @@ function createAgentConfigsStore() {
         for (let i = 0; i < configs.length; i++) {
           configs[i].is_default = i === index;
         }
+      }));
+      try {
+        await saveToDisk();
+      } catch (err) {
+        // saveToDisk already logged the error
+      }
+    },
+
+    /** Get per-agent intent_tab_title override (undefined = use default) */
+    getIntentTabTitle(type: AgentType): boolean | undefined {
+      return state.agents[type]?.intent_tab_title;
+    },
+
+    /** Set per-agent intent_tab_title override. Pass undefined to reset to default. */
+    async setIntentTabTitle(type: AgentType, value: boolean | undefined): Promise<void> {
+      setState(produce((s) => {
+        if (!s.agents[type]) {
+          s.agents[type] = { run_configs: [] };
+        }
+        s.agents[type].intent_tab_title = value;
+      }));
+      try {
+        await saveToDisk();
+      } catch (err) {
+        // saveToDisk already logged the error
+      }
+    },
+
+    /** Get per-agent suggest_followups override (undefined = use default) */
+    getSuggestFollowups(type: AgentType): boolean | undefined {
+      return state.agents[type]?.suggest_followups;
+    },
+
+    /** Set per-agent suggest_followups override. Pass undefined to reset to default. */
+    async setSuggestFollowups(type: AgentType, value: boolean | undefined): Promise<void> {
+      setState(produce((s) => {
+        if (!s.agents[type]) {
+          s.agents[type] = { run_configs: [] };
+        }
+        s.agents[type].suggest_followups = value;
       }));
       try {
         await saveToDisk();

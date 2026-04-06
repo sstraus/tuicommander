@@ -140,25 +140,42 @@ export const ContextMenu: Component<ContextMenuProps> = (props) => {
     });
   });
 
-  // Calculate position to keep menu in viewport
-  const getPosition = () => {
-    const menuWidth = 180;
-    const menuHeight = props.items.length * 32;
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
+  // Reposition menu after render to use measured dimensions
+  const clampToViewport = () => {
+    if (!menuRef) return;
+    const rect = menuRef.getBoundingClientRect();
+    // Fallback estimates when getBoundingClientRect returns 0 (e.g. jsdom)
+    const menuWidth = rect.width || 180;
+    const menuHeight = rect.height || props.items.length * 36 + 8;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const margin = 8;
 
     let x = props.x;
     let y = props.y;
 
-    if (x + menuWidth > viewportWidth) {
-      x = viewportWidth - menuWidth - 8;
+    // Horizontal: flip left if overflows right
+    if (x + menuWidth > vw - margin) {
+      x = vw - menuWidth - margin;
     }
-    if (y + menuHeight > viewportHeight) {
-      y = viewportHeight - menuHeight - 8;
-    }
+    x = Math.max(margin, x);
 
-    return { x, y };
+    // Vertical: if menu doesn't fit below click point, grow upward
+    if (y + menuHeight > vh - margin) {
+      y = props.y - menuHeight;
+    }
+    // Clamp to viewport top
+    y = Math.max(margin, y);
+
+    menuRef.style.left = `${x}px`;
+    menuRef.style.top = `${y}px`;
+    menuRef.style.opacity = "1";
   };
+
+  createEffect(() => {
+    if (!props.visible || !menuRef) return;
+    requestAnimationFrame(clampToViewport);
+  });
 
   return (
     <Show when={props.visible}>
@@ -167,8 +184,9 @@ export const ContextMenu: Component<ContextMenuProps> = (props) => {
         class={s.menu}
         onClick={(e) => e.stopPropagation()}
         style={{
-          left: `${getPosition().x}px`,
-          top: `${getPosition().y}px`,
+          left: `${props.x}px`,
+          top: `${props.y}px`,
+          opacity: "0",
         }}
       >
         <For each={props.items}>

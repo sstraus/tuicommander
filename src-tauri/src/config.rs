@@ -860,6 +860,12 @@ pub(crate) struct AgentSettings {
     /// Environment feature flags — key→value pairs injected into every spawn of this agent.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub(crate) env_flags: HashMap<String, String>,
+    /// Per-agent override for intent tab title. None = use agent-aware default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) intent_tab_title: Option<bool>,
+    /// Per-agent override for suggested follow-ups. None = use global default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) suggest_followups: Option<bool>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Default)]
@@ -1571,6 +1577,8 @@ mod tests {
                 auto_retry_on_error: false,
                 headless_template: None,
                 env_flags: HashMap::new(),
+                intent_tab_title: Some(false),
+                suggest_followups: None,
             },
         );
         let loaded: AgentsConfig = round_trip_in_dir(dir.path(), "agents.json", &agents);
@@ -1583,6 +1591,8 @@ mod tests {
         assert_eq!(claude.run_configs[1].args, vec!["--model", "sonnet", "--print"]);
         assert_eq!(claude.run_configs[1].env.get("ANTHROPIC_API_KEY").unwrap(), "sk-test");
         assert!(!claude.run_configs[1].is_default);
+        assert_eq!(claude.intent_tab_title, Some(false));
+        assert_eq!(claude.suggest_followups, None);
     }
 
     #[test]

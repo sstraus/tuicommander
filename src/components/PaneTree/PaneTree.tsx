@@ -21,6 +21,7 @@ export const PaneNodeView: Component<{
   onOpenFilePath: (path: string, line?: number, col?: number) => void;
   onTerminalFocus: (id: string) => void;
   onCwdChange?: (id: string, cwd: string) => void;
+  onNewTerminal?: (groupId: string) => void;
 }> = (props) => {
   return (
     <Switch>
@@ -31,6 +32,7 @@ export const PaneNodeView: Component<{
           onOpenFilePath={props.onOpenFilePath}
           onTerminalFocus={props.onTerminalFocus}
           onCwdChange={props.onCwdChange}
+          onNewTerminal={props.onNewTerminal}
         />
       </Match>
       <Match when={props.node.type === "leaf"}>
@@ -40,6 +42,7 @@ export const PaneNodeView: Component<{
           onOpenFilePath={props.onOpenFilePath}
           onTerminalFocus={props.onTerminalFocus}
           onCwdChange={props.onCwdChange}
+          onNewTerminal={props.onNewTerminal}
         />
       </Match>
     </Switch>
@@ -54,6 +57,7 @@ const PaneBranchView: Component<{
   onOpenFilePath: (path: string, line?: number, col?: number) => void;
   onTerminalFocus: (id: string) => void;
   onCwdChange?: (id: string, cwd: string) => void;
+  onNewTerminal?: (groupId: string) => void;
 }> = (props) => {
   const isVertical = () => props.branch.direction === "vertical";
 
@@ -146,6 +150,7 @@ const PaneBranchView: Component<{
                 onOpenFilePath={props.onOpenFilePath}
                 onTerminalFocus={props.onTerminalFocus}
                 onCwdChange={props.onCwdChange}
+                onNewTerminal={props.onNewTerminal}
               />
             </div>
             <Show when={i() < props.branch.children.length - 1}>
@@ -173,16 +178,33 @@ const PaneGroupView: Component<{
   onOpenFilePath: (path: string, line?: number, col?: number) => void;
   onTerminalFocus: (id: string) => void;
   onCwdChange?: (id: string, cwd: string) => void;
+  onNewTerminal?: (groupId: string) => void;
 }> = (props) => {
   const group = () => paneLayoutStore.state.groups[props.groupId];
   const isActive = () => paneLayoutStore.state.activeGroupId === props.groupId;
-  const showTabBar = () => {
+  /** Tabs that reference resources still alive in their respective stores */
+  const aliveTabs = () => {
     const g = group();
-    return g && g.tabs.length > 1;
+    if (!g) return [];
+    return g.tabs.filter((t) => {
+      if (t.type === "terminal") return !!terminalsStore.get(t.id);
+      if (t.type === "diff") return !!diffTabsStore.get(t.id);
+      if (t.type === "markdown") return !!mdTabsStore.get(t.id);
+      if (t.type === "editor") return !!editorTabsStore.get(t.id);
+      return false;
+    });
   };
+  const showTabBar = () => aliveTabs().length > 1;
 
   const handleGroupClick = () => {
     paneLayoutStore.setActiveGroup(props.groupId);
+    // Focus the active terminal in this group so keyboard input goes here
+    const g = group();
+    const activeTab = g?.tabs.find((t) => t.id === g.activeTabId);
+    if (activeTab?.type === "terminal") {
+      props.onTerminalFocus(activeTab.id);
+      terminalsStore.get(activeTab.id)?.ref?.focus();
+    }
   };
 
   /** Handle drop of a pane-tab onto this group (from mini bar, main TabBar, or content area) */
@@ -216,6 +238,7 @@ const PaneGroupView: Component<{
       class="pane-group"
       classList={{ "pane-group-active": isActive() }}
       onClick={handleGroupClick}
+      onContextMenu={handleGroupClick}
     >
       {/* Mini tab bar — auto-show when 2+ tabs, always accept drops */}
       <Show when={showTabBar()}>
@@ -266,7 +289,9 @@ const PaneGroupView: Component<{
         onDragOver={(e) => { e.preventDefault(); e.dataTransfer!.dropEffect = "move"; }}
         onDrop={handlePaneDrop}
       >
-        <Show when={(group()?.tabs.length ?? 0) > 0} fallback={<PanePlaceholder />}>
+        <Show when={(group()?.tabs.length ?? 0) > 0} fallback={
+          <PanePlaceholder onNewTerminal={() => props.onNewTerminal?.(props.groupId)} />
+        }>
           <For each={group()?.tabs ?? []}>
             {(tab) => (
               <div
@@ -291,9 +316,12 @@ const PaneGroupView: Component<{
 
 // ---- PanePlaceholder: empty pane state ----
 
-const PanePlaceholder: Component = () => (
-  <div class="pane-placeholder">
-    <span class="pane-placeholder-text">Open or drop a tab here</span>
+const PanePlaceholder: Component<{ onNewTerminal?: () => void }> = (props) => (
+  <div class="pane-placeholder" onDblClick={() => {
+    appLogger.info("app", "PanePlaceholder dblclick fired", { hasCallback: !!props.onNewTerminal });
+    props.onNewTerminal?.();
+  }}>
+    <span class="pane-placeholder-text">Double-click or drop a tab here</span>
   </div>
 );
 

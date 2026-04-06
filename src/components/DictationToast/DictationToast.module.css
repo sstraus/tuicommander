@@ -33,7 +33,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--error, #f48771);
+  background: var(--error);
   animation: pulse 1s ease-in-out infinite;
   flex-shrink: 0;
 }

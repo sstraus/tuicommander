@@ -128,7 +128,7 @@ export const GeneralTab: Component = () => {
           {updaterStore.state.checking ? t("general.btn.checking", "Checking...") : t("general.btn.checkNow", "Check Now")}
         </button>
         <Show when={updaterStore.state.available && updaterStore.state.version}>
-          <p class={s.hint} style={{ color: "var(--accent-green, #4ec9b0)" }}>
+          <p class={s.hint} style={{ color: "var(--success)" }}>
             {t("general.hint.updateAvailable", "Version {version} is available!", { version: updaterStore.state.version ?? "" })}
           </p>
         </Show>

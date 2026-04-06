@@ -695,11 +695,7 @@ impl ChunkProcessor {
     /// Colorize `intent:` and conceal `suggest:` plain-prefix tokens on the xterm
     /// stream. Only runs when an agent is detected. Incomplete lines (split across
     /// chunks) pass through uncolored — cosmetic only, never blocks output.
-    fn transform_xterm(&mut self, data: String, agent_active: bool) -> Option<String> {
-        if !agent_active {
-            return Some(data);
-        }
-
+    fn transform_xterm(&mut self, data: String) -> Option<String> {
         let has_intent = data.contains("intent:");
         let has_suggest = data.contains("suggest:");
         let result = if has_intent { colorize_intent(&data) } else { data };
@@ -1265,10 +1261,7 @@ pub(crate) fn spawn_reader_thread(
                         // Colorize intent / conceal suggest tokens, buffering incomplete
                         // tokens across streaming chunks to prevent cosmetic flash.
                         // Plain-prefix format only processed when an agent is detected.
-                        let agent_active = state.session_states.get(&session_id)
-                            .map(|s| s.agent_type.is_some())
-                            .unwrap_or(false);
-                        if let Some(xterm_data) = processor.transform_xterm(processed, agent_active) {
+                        if let Some(xterm_data) = processor.transform_xterm(processed) {
                             // Clamp cursor-up sequences to viewport height to prevent
                             // scroll-jump-to-top caused by Ink TUI redraws (CC #33367).
                             let rows = state.terminal_rows.get(&session_id)
@@ -1536,6 +1529,7 @@ pub(crate) async fn create_pty(
     );
     state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
     state.terminal_rows.insert(session_id.clone(), std::sync::atomic::AtomicU16::new(rows));
+    state.session_states.insert(session_id.clone(), crate::state::SessionState::default());
 
     spawn_reader_thread(
         reader,
@@ -1654,6 +1648,7 @@ pub(crate) async fn create_pty_with_worktree(
     );
     state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
     state.terminal_rows.insert(session_id.clone(), std::sync::atomic::AtomicU16::new(pty_rows));
+    state.session_states.insert(session_id.clone(), crate::state::SessionState::default());
 
     spawn_reader_thread(
         reader,
@@ -4101,14 +4096,14 @@ mod tests {
     #[test]
     fn test_transform_xterm_no_token_passes_through() {
         let mut cp = ChunkProcessor::new(None);
-        let result = cp.transform_xterm("just regular output".to_string(), true);
+        let result = cp.transform_xterm("just regular output".to_string());
         assert_eq!(result, Some("just regular output".to_string()));
     }
 
     #[test]
     fn test_transform_xterm_plain_intent_colorized() {
         let mut cp = ChunkProcessor::new(None);
-        let result = cp.transform_xterm("intent: Fix the bug\n".to_string(), true);
+        let result = cp.transform_xterm("intent: Fix the bug\n".to_string());
         assert!(result.is_some(), "complete line should pass through");
         let data = result.unwrap();
         assert!(data.contains("\x1b[2;33m"), "intent should be colorized dim yellow");
@@ -4118,7 +4113,7 @@ mod tests {
     #[test]
     fn test_transform_xterm_plain_suggest_concealed() {
         let mut cp = ChunkProcessor::new(None);
-        let result = cp.transform_xterm("suggest: A | B | C\n".to_string(), true);
+        let result = cp.transform_xterm("suggest: A | B | C\n".to_string());
         assert!(result.is_some());
         let data = result.unwrap();
         assert!(!data.contains("suggest:"), "suggest should be concealed from xterm stream");
@@ -4128,26 +4123,8 @@ mod tests {
     fn test_transform_xterm_incomplete_intent_passes_through() {
         let mut cp = ChunkProcessor::new(None);
         // Incomplete intent without newline — passes through uncolored (no blocking)
-        let r1 = cp.transform_xterm("intent: doing so".to_string(), true);
+        let r1 = cp.transform_xterm("intent: doing so".to_string());
         assert!(r1.is_some(), "incomplete intent must not block output");
-    }
-
-    #[test]
-    fn test_transform_xterm_no_agent_passes_raw() {
-        let mut cp = ChunkProcessor::new(None);
-        let result = cp.transform_xterm("intent: Fix the bug\n".to_string(), false);
-        assert!(result.is_some());
-        let data = result.unwrap();
-        assert!(!data.contains("\x1b[2;33m"), "should NOT be colorized without agent");
-        assert!(data.contains("intent: Fix the bug"), "raw body preserved");
-    }
-
-    #[test]
-    fn test_transform_xterm_suggest_no_agent_passes_raw() {
-        let mut cp = ChunkProcessor::new(None);
-        let result = cp.transform_xterm("suggest: A | B | C\n".to_string(), false);
-        assert!(result.is_some());
-        assert!(result.unwrap().contains("suggest:"), "suggest should NOT be concealed without agent");
     }
 
     // --- log_anomalous_sequences tests ---

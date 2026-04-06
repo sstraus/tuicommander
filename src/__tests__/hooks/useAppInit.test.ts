@@ -96,7 +96,7 @@ describe("initApp", () => {
     expect(branch?.terminals.length).toBe(1);
   });
 
-  it("restores active repo/branch visual state without creating terminals", async () => {
+  it("restores active repo/branch and eagerly calls handleBranchSelect", async () => {
     repositoriesStore.add({ path: "/repo", displayName: "Repo" });
     repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
     repositoriesStore.setActiveBranch("/repo", "main");
@@ -106,9 +106,8 @@ describe("initApp", () => {
 
     expect(deps.setCurrentRepoPath).toHaveBeenCalledWith("/repo");
     expect(deps.setCurrentBranch).toHaveBeenCalledWith("main");
-    // Lazy restore: no terminals created on startup, no handleBranchSelect called
-    expect(deps.handleBranchSelect).not.toHaveBeenCalled();
-    expect(terminalsStore.getCount()).toBe(0);
+    // Eagerly restore terminals so pane layout IDs match
+    expect(deps.handleBranchSelect).toHaveBeenCalledWith("/repo", "main");
   });
 
   it("does not create terminals when repos exist but no active branch (lazy restore)", async () => {

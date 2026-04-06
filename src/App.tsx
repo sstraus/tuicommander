@@ -1528,6 +1528,11 @@ const App: Component = () => {
           onOpenFilePath={handleOpenFilePath}
           onContextMenu={contextMenu.open}
           onCwdChange={gitOps.handleTerminalCwdChange}
+          onNewTerminal={(groupId) => {
+            appLogger.info("app", "onNewTerminal callback", { groupId });
+            paneLayoutStore.setActiveGroup(groupId);
+            gitOps.handleNewTab();
+          }}
         >
           {/* Side panels (right panes inside #terminal-container) */}
           <PanelOrchestrator

@@ -165,7 +165,7 @@
 }
 .pane-tab-diff.pane-tab-active {
   background: linear-gradient(to bottom, rgba(var(--tab-diff-rgb), 0.25), rgba(var(--tab-diff-rgb), 0.15));
-  border-bottom-color: #ef4444;
+  border-bottom-color: rgb(var(--tab-diff-rgb));
 }
 
 .pane-tab-edit {

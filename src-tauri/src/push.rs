@@ -226,7 +226,9 @@ pub(crate) async fn send_push_batch(
                         None
                     }
                     Ok(resp) => {
-                        tracing::warn!(source = "push", status = resp.status().as_u16(), "Push delivery failed");
+                        let status = resp.status().as_u16();
+                        let body_text = resp.text().await.unwrap_or_default();
+                        tracing::warn!(source = "push", status, body = %body_text, "Push delivery failed");
                         None
                     }
                     Err(e) => {

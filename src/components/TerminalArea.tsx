@@ -25,6 +25,7 @@ export interface TerminalAreaProps {
   onOpenFilePath: (path: string, line?: number, col?: number) => void;
   onContextMenu: (e: MouseEvent) => void;
   onCwdChange?: (id: string, cwd: string) => void;
+  onNewTerminal?: (groupId: string) => void;
   children?: JSX.Element;
 }
 
@@ -101,6 +102,7 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
               onOpenFilePath={props.onOpenFilePath}
               onTerminalFocus={props.onTerminalFocus}
               onCwdChange={props.onCwdChange}
+              onNewTerminal={props.onNewTerminal}
             />
           )}
         </Show>

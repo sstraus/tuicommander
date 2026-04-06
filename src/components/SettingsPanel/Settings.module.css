@@ -805,8 +805,8 @@
 }
 
 .mcpStatusDot.running {
-  background: #4ec9b0;
-  box-shadow: 0 0 4px #4ec9b0;
+  background: var(--success);
+  box-shadow: 0 0 4px var(--success);
 }
 
 .mcpStatusDot.stopped {

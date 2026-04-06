@@ -305,7 +305,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                     }}
                   >
                     <span class={s.notifIcon}>
-                      <svg viewBox="0 0 16 16" width="14" height="14" fill="#4ec9b0"><path d="M8 16A8 8 0 1 1 8 0a8 8 0 0 1 0 16zm1-11H7v4H5l3 3 3-3H9V5z"/></svg>
+                      <svg viewBox="0 0 16 16" width="14" height="14" fill="var(--success)"><path d="M8 16A8 8 0 1 1 8 0a8 8 0 0 1 0 16zm1-11H7v4H5l3 3 3-3H9V5z"/></svg>
                     </span>
                     <div class={s.notifDetails}>
                       <span class={s.notifPr}>

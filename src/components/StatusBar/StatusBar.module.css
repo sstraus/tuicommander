@@ -113,7 +113,7 @@
 }
 
 .agentUsageCritical {
-  color: #f48771;
+  color: var(--error);
   animation: pulse-opacity 2s ease-in-out infinite;
 }
 
@@ -352,8 +352,8 @@
   font-weight: 500;
   padding: 1px 6px;
   border-radius: var(--radius-sm);
-  color: #4ec9b0;
-  background: rgba(78, 201, 176, 0.15);
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 15%, transparent);
   white-space: nowrap;
   flex-shrink: 0;
   cursor: pointer;

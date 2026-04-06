@@ -255,36 +255,35 @@
 
 /* Keep native viewport scrollable — xterm v6 reads scrollTop from this element
    to compute viewportY. overflow-y:hidden breaks viewportY (always returns 0).
-   Style the native scrollbar to match app theme. */
-.terminal-pane .xterm-viewport {
+   Selector uses [data-terminal-id] so it works in both flat and split (PaneTree) modes. */
+[data-terminal-id] .xterm-viewport {
   overflow-y: auto;
 }
 
-.terminal-pane .xterm-viewport::-webkit-scrollbar {
+[data-terminal-id] .xterm-viewport::-webkit-scrollbar {
   width: 8px;
 }
 
-.terminal-pane .xterm-viewport::-webkit-scrollbar-track {
+[data-terminal-id] .xterm-viewport::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.terminal-pane .xterm-viewport::-webkit-scrollbar-thumb {
+[data-terminal-id] .xterm-viewport::-webkit-scrollbar-thumb {
   background: var(--bg-highlight);
   border-radius: var(--radius-md);
 }
 
-.terminal-pane .xterm-viewport::-webkit-scrollbar-thumb:hover {
+[data-terminal-id] .xterm-viewport::-webkit-scrollbar-thumb:hover {
   background: var(--fg-muted);
 }
 
 /* Match xterm custom scrollbar widget to app-wide thin style.
-   xterm v6 renders .xterm-scrollable-element > .scrollbar with inline ~14px.
-   Override with !important to match our 8px thin scrollbar. */
-.terminal-pane .xterm .xterm-scrollable-element > .scrollbar.vertical {
+   xterm v6 renders .xterm-scrollable-element > .scrollbar with inline ~14px. */
+[data-terminal-id] .xterm .xterm-scrollable-element > .scrollbar.vertical {
   width: 8px !important;
 }
 
-.terminal-pane .xterm .xterm-scrollable-element > .scrollbar.vertical .slider {
+[data-terminal-id] .xterm .xterm-scrollable-element > .scrollbar.vertical .slider {
   border-radius: var(--radius-md);
 }
 

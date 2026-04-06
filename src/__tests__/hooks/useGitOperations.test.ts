@@ -181,6 +181,61 @@ describe("useGitOperations", () => {
       expect(terminal?.sessionId).toBeNull();
     });
 
+    it("remaps disk-restored pane layout terminal IDs during lazy restore", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      // Simulate old terminal IDs in the branch (from before app restart)
+      const oldTermId1 = "old-term-1";
+      const oldTermId2 = "old-term-2";
+      repositoriesStore.setBranch("/repo", "feature", {
+        worktreePath: "/repo/wt",
+        hadTerminals: true,
+        terminals: [oldTermId1, oldTermId2],
+        savedTerminals: [
+          { name: "Term 1", cwd: "/repo/wt", fontSize: 14, agentType: null },
+          { name: "Term 2", cwd: "/repo/wt", fontSize: 14, agentType: null },
+        ],
+      });
+
+      // Simulate a disk-restored pane layout referencing old terminal IDs
+      resetGroupCounter();
+      paneLayoutStore.restore({
+        root: {
+          type: "branch",
+          direction: "horizontal",
+          children: [
+            { type: "leaf", id: "g1" },
+            { type: "leaf", id: "g2" },
+          ],
+          ratios: [0.5, 0.5],
+        },
+        groups: {
+          g1: { id: "g1", tabs: [{ id: oldTermId1, type: "terminal" }], activeTabId: oldTermId1 },
+          g2: { id: "g2", tabs: [{ id: oldTermId2, type: "terminal" }], activeTabId: oldTermId2 },
+        },
+        activeGroupId: "g1",
+      });
+      // Test remapTerminalIds directly
+      const serializedBefore = paneLayoutStore.serialize();
+      expect(serializedBefore.groups["g1"].tabs[0].id).toBe(oldTermId1);
+      expect(serializedBefore.groups["g2"].tabs[0].id).toBe(oldTermId2);
+
+      const idMap = new Map([
+        [oldTermId1, "new-term-1"],
+        [oldTermId2, "new-term-2"],
+      ]);
+      paneLayoutStore.remapTerminalIds(idMap);
+
+      const serializedAfter = paneLayoutStore.serialize();
+      expect(serializedAfter.groups["g1"].tabs[0].id).toBe("new-term-1");
+      expect(serializedAfter.groups["g1"].activeTabId).toBe("new-term-1");
+      expect(serializedAfter.groups["g2"].tabs[0].id).toBe("new-term-2");
+      expect(serializedAfter.groups["g2"].activeTabId).toBe("new-term-2");
+      // Tree structure preserved
+      expect(serializedAfter.root).toEqual(serializedBefore.root);
+
+      paneLayoutStore.reset();
+    });
+
     it("sets pendingResumeCommand on restored agent terminals", async () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "feature", {

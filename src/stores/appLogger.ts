@@ -36,7 +36,8 @@ export type AppLogSource =
   | "push"
   | "tailscale"
   | "sw"
-  | "files";
+  | "files"
+  | "ViewportLock";
 
 export interface AppLogEntry {
   id: number;

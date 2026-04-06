@@ -39,11 +39,11 @@
 }
 
 .connOnline {
-  background: #4ec9b0;
+  background: var(--success);
 }
 
 .connOffline {
-  background: #f48771;
+  background: var(--error);
   animation: pulse-dot 1.5s ease infinite;
 }
 
