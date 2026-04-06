@@ -220,8 +220,8 @@ describe("useKeyboardShortcuts", () => {
       expect(handlers.toggleHelpPanel).toHaveBeenCalled();
     });
 
-    it("Cmd+N toggles notes panel", () => {
-      fireKeydown("n", { metaKey: true });
+    it("Cmd+Alt+N toggles notes panel", () => {
+      fireKeydown("n", { metaKey: true, altKey: true });
       expect(handlers.toggleNotesPanel).toHaveBeenCalled();
     });
 
