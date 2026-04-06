@@ -381,9 +381,21 @@
   align-items: center;
 }
 
-/* Remote/PTY tabs — subtle icon tint only, no background */
+/* Remote/PTY tabs — subtle cyan tint */
+.tab.remoteTab {
+  border-bottom: 2px solid rgba(var(--tab-remote-rgb), 0.3);
+}
+
+.tab.remoteTab.active {
+  border-bottom-color: rgb(var(--tab-remote-rgb));
+}
+
+.tab.remoteTab.active::before {
+  display: none;
+}
+
 .tab.remoteTab .tabIcon {
-  color: #fbbf24;
+  color: rgb(var(--tab-remote-rgb));
   opacity: 0.8;
 }
 

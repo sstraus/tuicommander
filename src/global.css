@@ -213,6 +213,7 @@
   --tab-md-rgb: 34, 197, 94;         /* green */
   --tab-panel-rgb: 167, 139, 250;    /* purple */
   --tab-html-rgb: 251, 191, 36;      /* amber */
+  --tab-remote-rgb: 34, 211, 238;    /* cyan — remote/network */
 
   /* Border radius scale */
   --radius-xs: 2px;
