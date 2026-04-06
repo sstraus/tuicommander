@@ -381,27 +381,7 @@
   align-items: center;
 }
 
-/* Remote/PTY tabs */
-.tab.remoteTab {
-  background: linear-gradient(to bottom, rgba(var(--tab-html-rgb), 0.1), rgba(var(--tab-html-rgb), 0.05));
-  border-bottom: 2px solid rgba(var(--tab-html-rgb), 0.3);
-}
-
-@media (hover: hover) {
-  .tab.remoteTab:hover {
-    background: linear-gradient(to bottom, rgba(var(--tab-html-rgb), 0.15), rgba(var(--tab-html-rgb), 0.08));
-  }
-}
-
-.tab.remoteTab.active {
-  background: linear-gradient(to bottom, rgba(var(--tab-html-rgb), 0.25), rgba(var(--tab-html-rgb), 0.15));
-  border-bottom-color: #fbbf24;
-}
-
-.tab.remoteTab.active::before {
-  display: none;
-}
-
+/* Remote/PTY tabs — subtle icon tint only, no background */
 .tab.remoteTab .tabIcon {
   color: #fbbf24;
   opacity: 0.8;
