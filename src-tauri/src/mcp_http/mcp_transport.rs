@@ -143,7 +143,7 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
         out.push_str("2. **`get_tool_schema`** — Given an exact `tool_name` from search, returns the full tool definition with inputSchema.\n");
         out.push_str("3. **`call_tool`** — Dispatch a named tool. Pass `tool_name` + `arguments` object.\n\n");
         out.push_str("**Flow:** `search_tools(query=\"…\")` → pick a name → `get_tool_schema(tool_name=…)` → `call_tool(tool_name=…, arguments={…})`.\n\n");
-        out.push_str("**Domains available:** terminal sessions, git worktrees, GitHub PR/CI status, AI agent spawn/detect, inter-agent messaging, workspace/repo listing, app config, user notifications, knowledge base search, plugin authoring reference");
+        out.push_str("**Domains available:** terminal pane sessions (tmux replacement), AI agent orchestration + messaging, repos/GitHub PRs/worktrees, UI tabs + notifications, plugin authoring reference, app config, knowledge base search, diagnostics");
         let upstream_count = state.mcp_upstream_registry.aggregated_tools().len();
         if upstream_count > 0 {
             out.push_str(&format!(", plus {upstream_count} upstream tool(s) from connected MCP servers"));
@@ -153,15 +153,10 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
     } else {
         out.push_str("## Tools\n\n");
         out.push_str("| Tool | Actions | Use for |\n|---|---|---|\n");
-        out.push_str("| `session` | list, create, input, output, resize, close, pause, resume | PTY terminals |\n");
-        out.push_str("| `github` | prs, status | Open PRs with CI rollup, cross-repo status |\n");
-        out.push_str("| `worktree` | list, create, remove | Git worktree lifecycle |\n");
-        out.push_str("| `agent` | detect, spawn, stats, metrics | AI agent management |\n");
-        out.push_str("| `messaging` | register, list_peers, send, inbox | Inter-agent coordination |\n");
-        out.push_str("| `workspace` | list, active | Repos, branches, groups |\n");
-        out.push_str("| `ui` | tab | Open/update panel tabs |\n");
-        out.push_str("| `config` | get, save | App configuration |\n");
-        out.push_str("| `notify` | toast, confirm | User notifications |\n");
+        out.push_str("| `session` | list, create, input, output, resize, close, kill, pause, resume | PTY terminal panes (tmux replacement) |\n");
+        out.push_str("| `agent` | spawn, detect, stats, metrics, register, list_peers, send, inbox | AI agents + inter-agent messaging |\n");
+        out.push_str("| `repo` | list, active, prs, status, worktree_list, worktree_create, worktree_remove | Repos, GitHub PRs, worktrees |\n");
+        out.push_str("| `ui` | tab, toast, confirm | Panel tabs + notifications |\n");
         out.push_str("| `plugin_dev_guide` | *(none)* | Plugin authoring reference |\n\n");
         out.push_str("**Git operations:** Use native `git` CLI — no MCP wrapper needed.\n\n");
     }
@@ -172,21 +167,19 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
     // must go through call_tool. Suppress the section entirely in that mode.
     if !state.config.read().collapse_tools {
         out.push_str("## Workflow\n\n");
-        out.push_str("1. `workspace action=list` → discover all repos, branches, ahead/behind\n");
-        out.push_str("2. `session action=create` with `cwd` → spawn terminal (auto-appears in TUI)\n");
-        out.push_str("3. `session action=output` → read terminal (`exited`/`exit_code` tell you when done)\n");
+        out.push_str("1. `repo action=list` → discover all repos, branches, ahead/behind\n");
+        out.push_str("2. `session action=create` with `cwd` → spawn terminal pane (auto-appears in TUI)\n");
+        out.push_str("3. `session action=output` → read terminal output (`exited`/`exit_code` tell you when done)\n");
         out.push_str("4. `agent action=spawn` → launch AI agent in new PTY\n");
-        out.push_str("5. `github action=prs` → all open PRs with CI rollup (single GraphQL batch)\n");
-        out.push_str("6. `worktree action=create` → isolated worktree, optional `spawn_session`\n");
-        out.push_str("7. `knowledge action=setup` → auto-provision mdkb knowledge base for all repos\n");
-        out.push_str("8. `knowledge action=search` → cross-repo hybrid search (docs, code, symbols)\n\n");
+        out.push_str("5. `repo action=prs` → all open PRs with CI rollup (single GraphQL batch)\n");
+        out.push_str("6. `repo action=worktree_create` → isolated worktree, optional `spawn_session`\n\n");
     }
 
     // Claude Code-specific worktree and teammate guidance
     let is_claude_code = detect_claude_code_client(client_name);
     if is_claude_code {
-        out.push_str("**Worktree workflow:** When `worktree action=create` returns a `cc_agent_hint` field, spawn a subagent (Agent tool) that works in the worktree using absolute paths. The subagent should use Read, Edit, Glob, Grep with absolute file paths and `cd <path> && ...` for shell commands. Do NOT try to change your own working directory — use the subagent pattern instead.\n\n");
-        out.push_str("**Teammates:** When spawning teammates for parallel work, use `worktree action=create` with `spawn_session=true` — creates an isolated worktree + PTY visible in the UI.\n\n");
+        out.push_str("**Worktree workflow:** When `repo action=worktree_create` returns a `cc_agent_hint` field, spawn a subagent (Agent tool) that works in the worktree using absolute paths. The subagent should use Read, Edit, Glob, Grep with absolute file paths and `cd <path> && ...` for shell commands. Do NOT try to change your own working directory — use the subagent pattern instead.\n\n");
+        out.push_str("**Teammates:** When spawning teammates for parallel work, use `repo action=worktree_create` with `spawn_session=true` — creates an isolated worktree + PTY visible in the UI.\n\n");
     }
 
     // ── Inter-agent messaging ─────────────────────────────────────
@@ -195,10 +188,10 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
         out.push_str("## Inter-Agent Messaging\n\n");
         out.push_str(&format!("There are currently **{}** registered peer agent(s). ", peer_count));
         out.push_str("Read your `$TUIC_SESSION` env var — this is your identity.\n\n");
-        out.push_str("- `messaging action=register tuic_session=\"$TUIC_SESSION\"` — register yourself (do this first)\n");
-        out.push_str("- `messaging action=list_peers` — see who else is connected\n");
-        out.push_str("- `messaging action=send to=\"<tuic_session>\" message=\"...\"` — send a message to a peer\n");
-        out.push_str("- `messaging action=inbox` — check for messages (also delivered via channel notifications)\n\n");
+        out.push_str("- `agent action=register tuic_session=\"$TUIC_SESSION\"` — register yourself (do this first)\n");
+        out.push_str("- `agent action=list_peers` — see who else is connected\n");
+        out.push_str("- `agent action=send to=\"<tuic_session>\" message=\"...\"` — send a message to a peer\n");
+        out.push_str("- `agent action=inbox` — check for messages (also delivered via channel notifications)\n\n");
         out.push_str("Coordinate to avoid conflicts: claim files before editing, share progress, ask before modifying shared code.\n\n");
     }
 
@@ -424,7 +417,7 @@ fn meta_tool_definitions() -> serde_json::Value {
         },
         {
             "name": "call_tool",
-            "description": "Invoke a TUICommander tool by name with arguments. Dispatches to native tools (session, github, worktree, agent, messaging, config, workspace, ui, notify, knowledge, debug, plugin_dev_guide) or upstream-proxied tools (`{upstream}__{tool}`). The arguments object must match the tool's inputSchema — fetch it via `get_tool_schema` first.",
+            "description": "Invoke a TUICommander tool by name with arguments. Dispatches to native tools (session, agent, repo, ui, plugin_dev_guide, config, knowledge, debug) or upstream-proxied tools (`{upstream}__{tool}`). The arguments object must match the tool's inputSchema — fetch it via `get_tool_schema` first.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -2377,6 +2370,9 @@ mod tests {
             desktop_window_focused: std::sync::atomic::AtomicBool::new(true),
             server_start_time: std::time::Instant::now(),
         });
+        // Tests start with all native tools enabled (override production default
+        // which disables config, knowledge, debug).
+        state.config.write().disabled_native_tools = Vec::new();
         // Populate the cached tool search index so handlers that read from
         // it (search_tools, get_tool_schema) work in tests without requiring
         // the background updater task.
@@ -3170,8 +3166,8 @@ mod tests {
         assert!(out.contains("get_tool_schema(tool_name"), "must show get_tool_schema usage");
         assert!(out.contains("call_tool(tool_name"), "must show call_tool usage");
         // Domain summary so the model can form a query.
-        assert!(out.contains("terminal sessions"));
-        assert!(out.contains("git worktrees") || out.contains("worktree"));
+        assert!(out.contains("terminal pane sessions"));
+        assert!(out.contains("worktree"));
         // The concrete tools table and legacy workflow must NOT appear — those
         // reference tool names the model cannot invoke directly in collapse mode.
         assert!(!out.contains("| `session` |"), "tools table must be suppressed in collapse mode");
