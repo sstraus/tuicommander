@@ -321,6 +321,7 @@ fn native_tool_definitions() -> serde_json::Value {
                 "html": { "type": "string", "description": "Inline HTML content to render in sandboxed iframe (action=tab, mutually exclusive with url)" },
                 "url": { "type": "string", "description": "URL to load in the tab iframe (action=tab, mutually exclusive with html)" },
                 "pinned": { "type": "boolean", "description": "Pin tab across all branches (default true)" },
+                "focus": { "type": "boolean", "description": "Switch to this tab after open/update (action=tab, default true). Pass false to update silently without stealing focus." },
                 "message": { "type": "string", "description": "Optional body text (action=toast/confirm)" },
                 "level": { "type": "string", "description": "Toast level: info, warn, error (default: info)" }
             }, "required": ["action"] }
@@ -678,6 +679,13 @@ async fn handle_call_tool(
 
 /// Handle an MCP tools/call request, executing against the app state directly (no HTTP round-trip)
 async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &str, args: &serde_json::Value, mcp_session_id: Option<&str>) -> serde_json::Value {
+    // Enforce disabled_native_tools on every call path (not just the call_tool meta-tool)
+    {
+        let disabled = state.config.read().disabled_native_tools.clone();
+        if disabled.iter().any(|d| d == name) {
+            return serde_json::json!({"error": format!("Tool '{}' is disabled by configuration", name)});
+        }
+    }
     // Resolve client identity at dispatch level — tool handlers get a plain bool
     let is_claude_code = mcp_session_id
         .and_then(|sid| state.mcp_sessions.get(sid))
@@ -693,7 +701,7 @@ async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &st
         }
         "config" => handle_config(state, addr, args),
         "knowledge" => handle_knowledge(state, args).await,
-        "debug" => handle_debug_unified(state, args),
+        "debug" => handle_debug_unified(state, addr, args),
         "search_tools" => handle_search_tools(state, args),
         "get_tool_schema" => handle_get_tool_schema(state, args),
         "call_tool" => handle_call_tool(state, addr, args, mcp_session_id).await,
@@ -1734,11 +1742,13 @@ fn handle_ui(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Val
                 (None, None) => return serde_json::json!({"error": "Action 'tab' requires 'html' or 'url'"}),
             };
             let pinned = args["pinned"].as_bool().unwrap_or(true);
+            let focus = args["focus"].as_bool().unwrap_or(true);
             let mut payload = serde_json::json!({
                 "id": id,
                 "title": title,
                 "html": html,
                 "pinned": pinned,
+                "focus": focus,
             });
             if let Some(ref u) = url_arg {
                 payload["url"] = serde_json::Value::String(u.clone());
@@ -1754,6 +1764,7 @@ fn handle_ui(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Val
                 html,
                 url: url_arg,
                 pinned,
+                focus,
             });
             serde_json::json!({"ok": true, "id": id})
         }
@@ -2290,13 +2301,19 @@ fn handle_ui_unified(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json:
 }
 
 /// Extended debug tool: original actions + plugin_guide.
-fn handle_debug_unified(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
+fn handle_debug_unified(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Value) -> serde_json::Value {
     let action = match require_action(args, "debug", DEBUG_ACTIONS) {
         Ok(a) => a,
         Err(e) => return e,
     };
     match action {
-        "agent_detection" | "logs" | "invoke_js" => handle_debug(state, args),
+        "invoke_js" => {
+            if !addr.ip().is_loopback() {
+                return serde_json::json!({"error": "invoke_js is restricted to localhost connections"});
+            }
+            handle_debug(state, args)
+        }
+        "agent_detection" | "logs" => handle_debug(state, args),
         "plugin_guide" => serde_json::json!({"content": super::plugin_docs::PLUGIN_DOCS}),
         other => serde_json::json!({"error": format!(
             "Unknown action '{}' for tool 'debug'. Available: {}", other, DEBUG_ACTIONS
@@ -3285,12 +3302,13 @@ mod tests {
 
         let event = rx.try_recv().expect("Expected UiTab event");
         match event {
-            crate::state::AppEvent::UiTab { id, title, html, url, pinned } => {
+            crate::state::AppEvent::UiTab { id, title, html, url, pinned, focus } => {
                 assert_eq!(id, "test-panel");
                 assert_eq!(title, "Test");
                 assert_eq!(html, "<p>hello</p>");
                 assert!(url.is_none(), "url should be None for html tab");
                 assert!(pinned, "pinned should default to true");
+                assert!(focus, "focus should default to true");
             }
             other => panic!("Expected UiTab, got {:?}", other),
         }
@@ -3305,8 +3323,39 @@ mod tests {
         let r = handle_ui(&state, &serde_json::json!({"action": "tab", "id": "x"}));
         assert!(r["error"].as_str().unwrap().contains("'title'"));
 
+        // Requires either html or url — url is accepted as alternative to html
         let r = handle_ui(&state, &serde_json::json!({"action": "tab", "id": "x", "title": "t"}));
-        assert!(r["error"].as_str().unwrap().contains("'html'"));
+        assert!(r["error"].as_str().unwrap().contains("'html' or 'url'"));
+
+        // url alone is accepted
+        let r = handle_ui(&state, &serde_json::json!({"action": "tab", "id": "x", "title": "t", "url": "http://localhost/"}));
+        assert_eq!(r["ok"], true);
+
+        // Both html and url is rejected
+        let r = handle_ui(&state, &serde_json::json!({"action": "tab", "id": "x", "title": "t", "html": "<p/>", "url": "http://localhost/"}));
+        assert!(r["error"].as_str().unwrap().contains("not both"));
+    }
+
+    #[test]
+    fn ui_tab_focus_false() {
+        let state = test_state();
+        let mut rx = state.event_bus.subscribe();
+
+        handle_ui(&state, &serde_json::json!({
+            "action": "tab",
+            "id": "bg",
+            "title": "Background",
+            "html": "<p/>",
+            "focus": false
+        }));
+
+        let event = rx.try_recv().expect("Expected UiTab event");
+        match event {
+            crate::state::AppEvent::UiTab { focus, .. } => {
+                assert!(!focus, "focus=false should be respected");
+            }
+            other => panic!("Expected UiTab, got {:?}", other),
+        }
     }
 
     #[test]

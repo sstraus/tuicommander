@@ -177,6 +177,45 @@ pub async fn plugin_http_fetch(
     })
 }
 
+/// Fetch HTML content from a URL for rendering in a plugin panel tab.
+/// Used internally by the frontend to inject the TUIC SDK into URL-mode tabs.
+/// No plugin capability check — the frontend controls which URLs are loaded.
+#[tauri::command]
+pub async fn fetch_tab_html(url: String) -> Result<String, String> {
+    validate_url(&url, &[])?;
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
+
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("HTTP request failed: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!("HTTP {}: {}", response.status().as_u16(), url));
+    }
+
+    let body_bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read response body: {e}"))?;
+
+    if body_bytes.len() > MAX_RESPONSE_BYTES {
+        return Err(format!(
+            "Response body exceeds maximum size ({} bytes > {} bytes)",
+            body_bytes.len(),
+            MAX_RESPONSE_BYTES
+        ));
+    }
+
+    Ok(String::from_utf8_lossy(&body_bytes).to_string())
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------

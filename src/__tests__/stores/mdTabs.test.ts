@@ -373,5 +373,34 @@ describe("mdTabsStore", () => {
         expect(store.getCount()).toBe(2);
       });
     });
+
+    it("focus=true (default) sets the new tab as active", () => {
+      testInScope(() => {
+        const id = store.openUiTab("wiz-x", "X", "<p/>", true, undefined, true);
+        expect(store.state.activeId).toBe(id);
+      });
+    });
+
+    it("focus=false does not change activeId when creating a new tab", () => {
+      testInScope(() => {
+        const existing = store.add("/repo", "README.md");
+        expect(store.state.activeId).toBe(existing);
+        store.openUiTab("wiz-bg", "BG", "<p/>", true, undefined, false);
+        expect(store.state.activeId).toBe(existing);
+      });
+    });
+
+    it("focus=false does not change activeId when updating an existing tab", () => {
+      testInScope(() => {
+        store.openUiTab("wiz-mc", "MC v1", "<p>v1</p>", true);
+        const other = store.add("/repo", "README.md");
+        expect(store.state.activeId).toBe(other);
+        store.openUiTab("wiz-mc", "MC v2", "<p>v2</p>", true, undefined, false);
+        expect(store.state.activeId).toBe(other);
+        // content still updated
+        const tab = store.get(store.getIds().find((id) => store.get(id)?.type === "plugin-panel")!);
+        if (tab?.type === "plugin-panel") expect(tab.html).toBe("<p>v2</p>");
+      });
+    });
   });
 });

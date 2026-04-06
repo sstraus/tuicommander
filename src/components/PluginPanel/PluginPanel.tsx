@@ -1,4 +1,5 @@
-import { Component, createEffect, onCleanup, onMount } from "solid-js";
+import { Component, createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import { invoke } from "@tauri-apps/api/core";
 import type { PluginPanelTab } from "../../stores/mdTabs";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
 import { PLUGIN_BASE_CSS } from "./pluginBaseStyles";
@@ -40,6 +41,25 @@ function extractThemeVars(): string {
     }
   }
   return vars.length > 0 ? `<style>:root{${vars.join(";")}}</style>` : "";
+}
+
+/**
+ * Inject a <base href> tag so relative URLs in fetched HTML resolve against the original URL.
+ * Inserts after <head> (or <html>), or prepends if neither is found.
+ */
+function injectBase(html: string, url: string): string {
+  const base = `<base href="${url}">`;
+  const headOpen = html.indexOf("<head>");
+  if (headOpen >= 0) {
+    const after = headOpen + "<head>".length;
+    return html.slice(0, after) + base + html.slice(after);
+  }
+  const htmlOpen = html.indexOf("<html");
+  if (htmlOpen >= 0) {
+    const tagEnd = html.indexOf(">", htmlOpen);
+    if (tagEnd >= 0) return html.slice(0, tagEnd + 1) + base + html.slice(tagEnd + 1);
+  }
+  return base + html;
 }
 
 /** Inject theme CSS variables and base stylesheet into HTML before </head> (or prepend if no </head>) */
@@ -166,23 +186,29 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
     onCleanup(() => pluginRegistry.unregisterPanelSendChannel(tabId));
   });
 
-  // Update iframe content when HTML or URL changes
+  const [srcdoc, setSrcdoc] = createSignal<string>("");
+
+  // Update iframe content when HTML or URL changes.
+  // URL mode: fetch content via Rust (bypasses CORS), inject base href + SDK + theme, render as srcdoc.
+  // This ensures window.tuic and theme vars are available in all tab types.
   createEffect(() => {
     const url = props.tab.url;
     const html = props.tab.html;
-    if (!iframeRef) return;
     if (url) {
-      // URL mode: load external page via src (clear srcdoc to avoid conflict)
-      iframeRef.removeAttribute("srcdoc");
-      iframeRef.src = url;
+      invoke<string>("fetch_tab_html", { url })
+        .then((fetchedHtml) => {
+          const withBase = injectBase(fetchedHtml, url);
+          setSrcdoc(injectThemeVars(withBase));
+        })
+        .catch((err) => {
+          appLogger.error("plugin", `fetch_tab_html failed for ${url}: ${err}`);
+          // Fallback: show error page with the URL
+          setSrcdoc(injectThemeVars(`<p style="color:var(--error-text,red)">Failed to load ${url}: ${err}</p>`));
+        });
     } else {
-      // HTML mode: render inline content with theme injection
-      iframeRef.removeAttribute("src");
-      iframeRef.srcdoc = injectThemeVars(html);
+      setSrcdoc(injectThemeVars(html));
     }
   });
-
-  const isUrlMode = () => !!props.tab.url;
 
   return (
     <div style={{
@@ -193,8 +219,8 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
     }}>
       <iframe
         ref={iframeRef}
-        sandbox={isUrlMode() ? "allow-scripts allow-same-origin" : "allow-scripts"}
-        {...(isUrlMode() ? { src: props.tab.url } : { srcdoc: injectThemeVars(props.tab.html) })}
+        sandbox="allow-scripts"
+        srcdoc={srcdoc()}
         style={{
           width: "100%",
           height: "100%",

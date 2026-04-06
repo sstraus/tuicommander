@@ -1153,6 +1153,7 @@ pub fn run() {
             plugin_fs::plugin_watch_path,
             plugin_fs::plugin_unwatch,
             plugin_http::plugin_http_fetch,
+            plugin_http::fetch_tab_html,
             plugin_exec::plugin_exec_cli,
             plugin_credentials::plugin_read_credential,
             registry::fetch_plugin_registry,

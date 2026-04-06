@@ -144,8 +144,8 @@ fn event_payload(event: &AppEvent) -> serde_json::Value {
         AppEvent::PeerUnregistered { tuic_session } => {
             serde_json::json!({ "tuic_session": tuic_session })
         }
-        AppEvent::UiTab { id, title, html, url, pinned } => {
-            let mut v = serde_json::json!({ "id": id, "title": title, "html": html, "pinned": pinned });
+        AppEvent::UiTab { id, title, html, url, pinned, focus } => {
+            let mut v = serde_json::json!({ "id": id, "title": title, "html": html, "pinned": pinned, "focus": focus });
             if let Some(u) = url { v["url"] = serde_json::Value::String(u.clone()); }
             v
         }

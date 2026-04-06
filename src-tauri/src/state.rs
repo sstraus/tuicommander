@@ -99,6 +99,7 @@ pub enum AppEvent {
         #[serde(skip_serializing_if = "Option::is_none")]
         url: Option<String>,
         pinned: bool,
+        focus: bool,
     },
 }
 
