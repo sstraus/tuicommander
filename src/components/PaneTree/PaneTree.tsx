@@ -183,7 +183,7 @@ const PaneGroupView: Component<{
   const group = () => paneLayoutStore.state.groups[props.groupId];
   const isActive = () => paneLayoutStore.state.activeGroupId === props.groupId;
   /** Tabs that reference resources still alive in their respective stores */
-  const aliveTabs = () => {
+  const aliveTabs = createMemo(() => {
     const g = group();
     if (!g) return [];
     return g.tabs.filter((t) => {
@@ -193,7 +193,7 @@ const PaneGroupView: Component<{
       if (t.type === "editor") return !!editorTabsStore.get(t.id);
       return false;
     });
-  };
+  });
   const showTabBar = () => aliveTabs().length > 1;
 
   const handleGroupClick = () => {
@@ -247,7 +247,7 @@ const PaneGroupView: Component<{
           onDragOver={(e) => { e.preventDefault(); e.dataTransfer!.dropEffect = "move"; }}
           onDrop={handlePaneDrop}
         >
-          <For each={group()?.tabs ?? []}>
+          <For each={aliveTabs()}>
             {(tab) => (
               <button
                 class={`pane-tab ${tabColorClass(tab)}`}
@@ -289,10 +289,10 @@ const PaneGroupView: Component<{
         onDragOver={(e) => { e.preventDefault(); e.dataTransfer!.dropEffect = "move"; }}
         onDrop={handlePaneDrop}
       >
-        <Show when={(group()?.tabs.length ?? 0) > 0} fallback={
+        <Show when={aliveTabs().length > 0} fallback={
           <PanePlaceholder onNewTerminal={() => props.onNewTerminal?.(props.groupId)} />
         }>
-          <For each={group()?.tabs ?? []}>
+          <For each={aliveTabs()}>
             {(tab) => (
               <div
                 class="pane-tab-content"
@@ -317,10 +317,7 @@ const PaneGroupView: Component<{
 // ---- PanePlaceholder: empty pane state ----
 
 const PanePlaceholder: Component<{ onNewTerminal?: () => void }> = (props) => (
-  <div class="pane-placeholder" onDblClick={() => {
-    appLogger.info("app", "PanePlaceholder dblclick fired", { hasCallback: !!props.onNewTerminal });
-    props.onNewTerminal?.();
-  }}>
+  <div class="pane-placeholder" onDblClick={() => props.onNewTerminal?.()}>
     <span class="pane-placeholder-text">Double-click or drop a tab here</span>
   </div>
 );

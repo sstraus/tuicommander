@@ -1529,7 +1529,6 @@ const App: Component = () => {
           onContextMenu={contextMenu.open}
           onCwdChange={gitOps.handleTerminalCwdChange}
           onNewTerminal={(groupId) => {
-            appLogger.info("app", "onNewTerminal callback", { groupId });
             paneLayoutStore.setActiveGroup(groupId);
             gitOps.handleNewTab();
           }}
