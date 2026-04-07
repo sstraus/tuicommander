@@ -216,14 +216,41 @@ export const TabBar: Component<TabBarProps> = (props) => {
     tabMenu.open(e);
   };
 
-  // Get terminals for active branch only
+  // Get terminals for active branch only, ordered by pane layout when split
   const activeTerminals = () => {
     const activeRepoPath = repositoriesStore.state.activeRepoPath;
-    if (!activeRepoPath) return terminalsStore.getIds();
-    const repo = repositoriesStore.state.repositories[activeRepoPath];
-    if (!repo || !repo.activeBranch) return terminalsStore.getIds();
-    const branch = repo.branches[repo.activeBranch];
-    return branch?.terminals || [];
+    let ids: string[];
+    if (!activeRepoPath) {
+      ids = terminalsStore.getIds();
+    } else {
+      const repo = repositoriesStore.state.repositories[activeRepoPath];
+      if (!repo || !repo.activeBranch) {
+        ids = terminalsStore.getIds();
+      } else {
+        const branch = repo.branches[repo.activeBranch];
+        ids = branch?.terminals || [];
+      }
+    }
+
+    // In split mode, reorder tabs to match the spatial pane layout (DFS order)
+    if (!paneLayoutStore.isSplit()) return ids;
+    const idSet = new Set(ids);
+    const ordered: string[] = [];
+    for (const groupId of paneLayoutStore.getAllGroupIds()) {
+      const group = paneLayoutStore.state.groups[groupId];
+      if (!group) continue;
+      for (const tab of group.tabs) {
+        if (tab.type === "terminal" && idSet.has(tab.id)) {
+          ordered.push(tab.id);
+          idSet.delete(tab.id);
+        }
+      }
+    }
+    // Append any orphan terminals not assigned to a pane group
+    for (const id of ids) {
+      if (idSet.has(id)) ordered.push(id);
+    }
+    return ordered;
   };
 
   // Branch key for filtering non-terminal tabs

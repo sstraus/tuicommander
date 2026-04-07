@@ -190,34 +190,36 @@ describe("useAgentPolling", () => {
     });
 
     it("clears agentSessionId on agent→null transition and allows re-discovery", async () => {
-      // NULL_THRESHOLD is 3: need 3 consecutive null polls before clearing
+      // NULL_THRESHOLD is 3: need 3 consecutive idle-source null detections before clearing.
+      // Only source="idle" can clear — polls never clear (sticky agentType fix).
       mockInvoke
         .mockResolvedValueOnce("claude")       // poll 1: claude detected
         .mockResolvedValueOnce("uuid-1")       // discover: uuid-1
         .mockResolvedValueOnce("claude")       // poll 2: still claude
-        .mockResolvedValueOnce(null)           // poll 3: null streak 1
-        .mockResolvedValueOnce(null)           // poll 4: null streak 2
-        .mockResolvedValueOnce(null)           // poll 5: null streak 3 → cleared
-        .mockResolvedValueOnce("claude")       // poll 6: claude re-launched
+        .mockResolvedValueOnce(null)           // idle 1: null streak 1
+        .mockResolvedValueOnce(null)           // idle 2: null streak 2
+        .mockResolvedValueOnce(null)           // idle 3: null streak 3 → cleared
+        .mockResolvedValueOnce("claude")       // poll 3: claude re-launched
         .mockResolvedValueOnce("uuid-2");      // re-discover: uuid-2
 
       await testInScopeAsync(async () => {
         const id = store.add(makeTerminal({ name: "T1", sessionId: "sess-1" }));
 
-        const { useAgentPolling } = await import("../../hooks/useAgentPolling");
+        const { useAgentPolling, detectAgentForTerminal } = await import("../../hooks/useAgentPolling");
         useAgentPolling();
 
         await tick(30_000); // poll 1: claude + discovery queued
         await tick(30_000); // poll 2: still claude (discovery already done)
         expect(store.get(id)?.agentSessionId).toBe("uuid-1");
 
-        await tick(30_000); // poll 3: null streak 1 — still holding agentType
-        await tick(30_000); // poll 4: null streak 2 — still holding
-        await tick(30_000); // poll 5: null streak 3 → agentType cleared
+        // Idle-source detections can clear agentType after NULL_THRESHOLD consecutive nulls
+        await detectAgentForTerminal(id, "idle"); // idle 1: null streak 1 — still holding
+        await detectAgentForTerminal(id, "idle"); // idle 2: null streak 2 — still holding
+        await detectAgentForTerminal(id, "idle"); // idle 3: null streak 3 → cleared
         expect(store.get(id)?.agentType).toBeNull();
         expect(store.get(id)?.agentSessionId).toBeNull();
 
-        await tick(30_000); // poll 6: re-launched → re-discovery
+        await tick(30_000); // poll 3: re-launched → re-discovery
         expect(store.get(id)?.agentType).toBe("claude");
         expect(store.get(id)?.agentSessionId).toBe("uuid-2");
 
