@@ -262,7 +262,12 @@ const PaneGroupView: Component<{
                   }));
                   e.dataTransfer!.effectAllowed = "move";
                 }}
-                onClick={() => paneLayoutStore.setActiveTab(props.groupId, tab.id)}
+                onClick={() => {
+                  paneLayoutStore.setActiveTab(props.groupId, tab.id);
+                  if (tab.type === "terminal") {
+                    requestAnimationFrame(() => terminalsStore.get(tab.id)?.ref?.focus());
+                  }
+                }}
                 title={tabTitle(tab)}
               >
                 <Show when={globalWorkspaceStore.isActive() && tab.type === "terminal"}>

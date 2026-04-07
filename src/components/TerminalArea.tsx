@@ -50,9 +50,11 @@ const SuggestOverlayContainer: Component = () => {
                 await rpc("write_pty", { sessionId: capturedSid, data: text });
                 await rpc("write_pty", { sessionId: capturedSid, data: "\r" });
               }
+              requestAnimationFrame(() => terminalsStore.getActive()?.ref?.focus());
             }}
             onDismiss={() => {
               terminalsStore.dismissSuggestedActions(capturedId);
+              requestAnimationFrame(() => terminalsStore.getActive()?.ref?.focus());
             }}
           />
         );
