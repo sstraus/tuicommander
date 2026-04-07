@@ -5,7 +5,7 @@ vi.mock("../../invoke", () => ({
 }));
 
 import { testInScope, makeTerminal } from "../helpers/store";
-import type { PaneLayoutState } from "../../stores/paneLayout";
+import type { PaneLayoutState, PaneLeaf, PaneBranch } from "../../stores/paneLayout";
 
 describe("globalWorkspaceStore", () => {
   let store: typeof import("../../stores/globalWorkspace").globalWorkspaceStore;
@@ -313,7 +313,7 @@ describe("globalWorkspaceStore", () => {
         expect(layout).not.toBeNull();
         expect(layout!.root!.type).toBe("leaf");
         // The group should contain a terminal tab for t1
-        const groupId = layout!.root!.id;
+        const groupId = (layout!.root! as PaneLeaf).id;
         const group = layout!.groups[groupId];
         expect(group.tabs).toEqual([{ id: "t1", type: "terminal" }]);
       });
@@ -325,12 +325,12 @@ describe("globalWorkspaceStore", () => {
         store.promote("t2");
         const layout = store.getLayout();
         expect(layout!.root!.type).toBe("branch");
-        const root = layout!.root! as import("../../stores/paneLayout").PaneBranch;
+        const root = layout!.root! as PaneBranch;
         expect(root.direction).toBe("horizontal");
         expect(root.children).toHaveLength(2);
         // Both should be leaves with terminal tabs
-        const g1 = layout!.groups[root.children[0].id];
-        const g2 = layout!.groups[root.children[1].id];
+        const g1 = layout!.groups[(root.children[0] as PaneLeaf).id];
+        const g2 = layout!.groups[(root.children[1] as PaneLeaf).id];
         expect(g1.tabs[0].id).toBe("t1");
         expect(g2.tabs[0].id).toBe("t2");
       });
@@ -378,7 +378,7 @@ describe("globalWorkspaceStore", () => {
         expect(layout).not.toBeNull();
         // Should be back to single leaf with t2
         expect(layout!.root!.type).toBe("leaf");
-        const group = layout!.groups[layout!.root!.id];
+        const group = layout!.groups[(layout!.root! as PaneLeaf).id];
         expect(group.tabs[0].id).toBe("t2");
       });
     });

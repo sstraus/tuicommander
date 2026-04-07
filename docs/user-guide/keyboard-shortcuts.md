@@ -271,3 +271,4 @@ Hold to record, release to transcribe and inject text into active terminal.
 | `zoom-pane` | `Cmd+Shift+Enter` | Maximize/restore pane |
 | `toggle-file-browser-content-search` | `Cmd+Shift+F` | File content search |
 | `toggle-diff-scroll` | `Cmd+Shift+G` | Diff scroll view |
+| `toggle-global-workspace` | `Cmd+Shift+X` | Toggle global workspace |

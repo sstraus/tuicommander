@@ -4,10 +4,7 @@ import {
   splitLeaf,
   removeLeaf,
   allLeafIds,
-  nodeDepth,
-  MAX_SPLIT_DEPTH,
   type PaneLayoutState,
-  type PaneNode,
   type PaneGroup,
 } from "./paneLayout";
 import { savedPaneLayouts } from "./savedPaneLayouts";

@@ -2,6 +2,19 @@
 
 Features to test when TUICommander is more usable.
 
+## Global Workspace
+- [ ] Open Activity Dashboard → globe icon on each terminal row → click toggles promoted
+- [ ] Promote 2+ terminals → sidebar shows "Global" entry with badge count
+- [ ] Click sidebar "Global" → switches to global workspace with promoted terminals in split view
+- [ ] Each pane tab shows repo name + colored dot in global workspace
+- [ ] Click sidebar "Global" again → switches back to repo view, both layouts preserved
+- [ ] Cmd+Shift+X → toggles global workspace
+- [ ] Close promoted terminal → auto-unpromoted, removed from global layout
+- [ ] Close last promoted terminal while in global workspace → auto-deactivates
+- [ ] Branch switch while in global workspace → auto-deactivates first
+- [ ] File browser and git panel hidden while in global workspace
+- [ ] Pane tab bar: globe icon on hover, filled when promoted, click toggles
+
 ## Cross-Terminal Search (Command Palette)
 - [ ] Open palette, type `~error` → shows matches from terminal buffers with terminal name + line
 - [ ] Select a result → switches to the correct terminal tab and scrolls to the matched line (centered)
