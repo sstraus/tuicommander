@@ -14,6 +14,7 @@ import { t } from "../../i18n";
 import { RepoSection } from "./RepoSection";
 import { GroupSection } from "./GroupSection";
 import { useSidebarDragDrop } from "./useSidebarDragDrop";
+import { GlobalWorkspaceEntry } from "./GlobalWorkspaceEntry";
 import s from "./Sidebar.module.css";
 
 export interface SidebarProps {
@@ -265,6 +266,8 @@ export const Sidebar: Component<SidebarProps> = (props) => {
           </div>
         </div>
       </div>
+
+      <GlobalWorkspaceEntry />
 
       {/* Git Quick Actions (Story 050) */}
       <Show when={repositoriesStore.getActive()}>

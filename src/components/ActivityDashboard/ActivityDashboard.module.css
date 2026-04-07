@@ -84,7 +84,7 @@
 
 .rowMain {
   display: grid;
-  grid-template-columns: 1fr 80px 100px 80px;
+  grid-template-columns: 1fr 80px 100px 80px 28px;
   align-items: center;
   gap: 12px;
 }
@@ -158,6 +158,36 @@
   color: var(--fg-muted);
   text-align: right;
   white-space: nowrap;
+}
+
+/* Promote to global workspace button */
+.promoteBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  opacity: 0.4;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.promoteBtn:hover {
+  opacity: 1;
+  color: var(--fg-primary);
+  background: var(--bg-highlight);
+}
+
+.promoteBtn.promoted {
+  opacity: 1;
+  color: var(--accent);
+}
+
+.promoteBtn.promoted:hover {
+  color: var(--fg-primary);
 }
 
 /* Sub-rows: current task, last prompt, agent intent */

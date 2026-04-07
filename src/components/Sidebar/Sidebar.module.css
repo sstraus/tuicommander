@@ -603,6 +603,45 @@
   margin-left: auto;
 }
 
+/* ── Global Workspace Entry ── */
+.globalWorkspaceEntry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  color: var(--fg-secondary);
+  transition: background 0.1s, color 0.1s;
+}
+
+.globalWorkspaceEntry:hover {
+  background: var(--bg-tertiary);
+  color: var(--fg-primary);
+}
+
+.globalWorkspaceActive {
+  border-left-color: var(--accent);
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
+.globalWorkspaceLabel {
+  font-size: var(--font-sm);
+  font-weight: 500;
+}
+
+.globalWorkspaceBadge {
+  margin-left: auto;
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  background: var(--bg-tertiary);
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  min-width: 18px;
+  text-align: center;
+}
+
 /* ── Git Quick Actions ── */
 .gitQuickActions {
   padding: 4px 6px;

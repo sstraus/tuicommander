@@ -52,6 +52,7 @@ export const ACTION_NAMES = [
   "zoom-pane",
   "prompt-library",
   "toggle-diff-scroll",
+  "toggle-global-workspace",
   "open-file",
   "new-file",
   // Numbered tabs and branches
@@ -118,6 +119,7 @@ export const DEFAULT_BINDINGS: Record<ActionName, string> = {
   "zoom-pane": "Cmd+Shift+Enter",
   "prompt-library": "Cmd+Shift+K",
   "toggle-diff-scroll": "Cmd+Shift+G",
+  "toggle-global-workspace": "Cmd+Shift+X",
   "open-file": "Cmd+O",
   "new-file": "Cmd+N",
   // Numbered tabs

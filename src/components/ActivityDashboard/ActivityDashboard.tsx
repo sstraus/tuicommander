@@ -1,6 +1,7 @@
 import { Component, For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { activityDashboardStore } from "../../stores/activityDashboard";
 import { terminalsStore } from "../../stores/terminals";
+import { globalWorkspaceStore } from "../../stores/globalWorkspace";
 import { rateLimitStore } from "../../stores/ratelimit";
 import { formatRelativeTime } from "../../utils/time";
 import s from "./ActivityDashboard.module.css";
@@ -55,6 +56,13 @@ const IntentIcon: Component = () => (
 const TaskIcon: Component = () => (
   <svg class={s.subIcon} viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
     <path d="M7.068.727c.243-.97 1.62-.97 1.864 0l.3 1.2a.957.957 0 0 0 1.18.633l1.18-.39c.93-.31 1.753.789 1.13 1.593l-.76.98a.957.957 0 0 0 .166 1.34l1.01.76c.78.59.39 1.82-.55 1.84l-1.22.03a.957.957 0 0 0-.905.905l-.03 1.22c-.02.94-1.25 1.33-1.84.55l-.76-1.01a.957.957 0 0 0-1.34-.166l-.98.76c-.804.623-1.903-.2-1.593-1.13l.39-1.18a.957.957 0 0 0-.633-1.18l-1.2-.3c-.97-.243-.97-1.62 0-1.864l1.2-.3a.957.957 0 0 0 .633-1.18l-.39-1.18c-.31-.93.789-1.753 1.593-1.13l.98.76a.957.957 0 0 0 1.34-.166l.76-1.01ZM8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/>
+  </svg>
+);
+
+/** Globe icon (promote to global workspace) */
+const GlobeIcon: Component = () => (
+  <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+    <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0ZM5.37 1.95A6.5 6.5 0 0 0 1.55 7h2.47a12.97 12.97 0 0 1 1.35-5.05ZM4.02 7a11.45 11.45 0 0 1 1.6-5.03C6.4 2.63 7.17 4.49 7.25 7H4.02Zm4.73 0c-.08-2.51-.85-4.37-1.63-5.03A11.45 11.45 0 0 1 8.73 7H11.98Zm2.7 0a12.97 12.97 0 0 0-1.35-5.05A6.5 6.5 0 0 1 14.45 7h-2.47-.53ZM1.55 9a6.5 6.5 0 0 0 3.82 5.05A12.97 12.97 0 0 1 4.02 9H1.55Zm3.97 0c.08 2.51.85 4.37 1.63 5.03A11.45 11.45 0 0 1 5.52 9H7.25Zm1.73 5.03c.78-.66 1.55-2.52 1.63-5.03H8.73A11.45 11.45 0 0 1 7.12 14.03h.13Zm3.2-.08A12.97 12.97 0 0 0 11.98 9h2.47a6.5 6.5 0 0 1-3.82 5.05l-.18-.1Z"/>
   </svg>
 );
 
@@ -195,6 +203,20 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
                     <span class={s.agent}>{term.agent}</span>
                     <span class={`${s.status} ${term.status.className}`}>{term.status.label}</span>
                     <span class={s.lastActivity}>{formatRelativeTime(term.lastDataAt)}</span>
+                    <button
+                      class={`${s.promoteBtn} ${globalWorkspaceStore.isPromoted(term.id) ? s.promoted : ""}`}
+                      title={globalWorkspaceStore.isPromoted(term.id) ? "Remove from Global Workspace" : "Promote to Global Workspace"}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (globalWorkspaceStore.isPromoted(term.id)) {
+                          globalWorkspaceStore.unpromote(term.id);
+                        } else {
+                          globalWorkspaceStore.promote(term.id);
+                        }
+                      }}
+                    >
+                      <GlobeIcon />
+                    </button>
                   </div>
                   <Show when={term.currentTask}>
                     {(task) => (

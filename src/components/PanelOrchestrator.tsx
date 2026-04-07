@@ -5,6 +5,7 @@ import { NotesPanel } from "./NotesPanel";
 import { GitPanel } from "./GitPanel/GitPanel";
 import { uiStore } from "../stores/ui";
 import { terminalsStore } from "../stores/terminals";
+import { globalWorkspaceStore } from "../stores/globalWorkspace";
 
 export interface PanelOrchestratorProps {
   repoPath: string | null;
@@ -17,7 +18,7 @@ export const PanelOrchestrator: Component<PanelOrchestratorProps> = (props) => {
   return (
     <>
       <FileBrowserPanel
-        visible={uiStore.state.fileBrowserPanelVisible}
+        visible={uiStore.state.fileBrowserPanelVisible && !globalWorkspaceStore.isActive()}
         repoPath={props.repoPath}
         fsRoot={props.fsRoot}
         onClose={() => uiStore.toggleFileBrowserPanel()}
@@ -45,7 +46,7 @@ export const PanelOrchestrator: Component<PanelOrchestratorProps> = (props) => {
       />
 
       <GitPanel
-        visible={uiStore.state.gitPanelVisible}
+        visible={uiStore.state.gitPanelVisible && !globalWorkspaceStore.isActive()}
         repoPath={props.repoPath}
         fsRoot={props.fsRoot}
         onClose={() => uiStore.toggleGitPanel()}

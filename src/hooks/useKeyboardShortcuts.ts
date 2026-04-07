@@ -70,6 +70,7 @@ export interface ShortcutHandlers {
   closeActivePane?: () => void;
   togglePromptLibrary: () => void;
   toggleDiffScroll: () => void;
+  toggleGlobalWorkspace: () => void;
   openFile: () => void;
   newFile: () => void;
 }
@@ -180,6 +181,7 @@ function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean
     case "zoom-pane": handlers.toggleZoomPane(); return true;
     case "prompt-library": handlers.togglePromptLibrary(); return true;
     case "toggle-diff-scroll": handlers.toggleDiffScroll(); return true;
+    case "toggle-global-workspace": handlers.toggleGlobalWorkspace(); return true;
     case "open-file": handlers.openFile(); return true;
     case "new-file": handlers.newFile(); return true;
 

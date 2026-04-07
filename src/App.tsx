@@ -71,6 +71,8 @@ import { updaterStore } from "./stores/updater";
 import { tasksStore } from "./stores/tasks";
 import { userActivityStore } from "./stores/userActivity";
 import { contextMenuActionsStore } from "./stores/contextMenuActionsStore";
+import { globalWorkspaceStore } from "./stores/globalWorkspace";
+import { paneLayoutKey } from "./stores/savedPaneLayouts";
 import { initPlugins } from "./plugins";
 import { usePty } from "./hooks/usePty";
 import { useRepository, tccDeniedPaths, markTccAlertShown } from "./hooks/useRepository";
@@ -1051,6 +1053,17 @@ const App: Component = () => {
     toggleErrorLog: () => errorLogStore.toggle(),
     toggleBranchesTab: () => uiStore.toggleGitPanelOnTab("branches"),
     toggleMcpPopup: () => mcpPopupStore.toggle(),
+    toggleGlobalWorkspace: () => {
+      if (!globalWorkspaceStore.hasPromoted()) return;
+      const repoPath = repositoriesStore.state.activeRepoPath;
+      const repo = repoPath ? repositoriesStore.state.repositories[repoPath] : null;
+      const key = repoPath && repo?.activeBranch ? paneLayoutKey(repoPath, repo.activeBranch) : undefined;
+      if (globalWorkspaceStore.isActive()) {
+        globalWorkspaceStore.deactivate(key);
+      } else {
+        globalWorkspaceStore.activate(key);
+      }
+    },
     toggleDiffScroll: () => {
       // Open a diff tab in scroll mode for the active repo
       const repoPath = repositoriesStore.state.activeRepoPath;
@@ -1560,7 +1573,11 @@ const App: Component = () => {
           onToggleErrorLog={() => errorLogStore.toggle()}
           onDictationStart={dictation.handleDictationStart}
           onDictationStop={dictation.handleDictationStop}
-          currentRepoPath={gitOps.currentRepoPath()}
+          currentRepoPath={globalWorkspaceStore.isActive()
+            ? (terminalsStore.state.activeId
+              ? repositoriesStore.getRepoPathForTerminal(terminalsStore.state.activeId) ?? undefined
+              : undefined)
+            : gitOps.currentRepoPath()}
           cwd={gitOps.activeWorktreePath()}
           onBranchRenamed={(oldName, newName) => {
             const repoPath = gitOps.currentRepoPath();

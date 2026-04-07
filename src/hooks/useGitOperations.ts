@@ -13,6 +13,7 @@ import { githubStore } from "../stores/github";
 import { paneLayoutStore } from "../stores/paneLayout";
 import { assignTabToActiveGroup } from "../utils/paneTabAssign";
 import { savedPaneLayouts, paneLayoutKey } from "../stores/savedPaneLayouts";
+import { globalWorkspaceStore } from "../stores/globalWorkspace";
 import { effectiveMergeMethod, isMergeMethodNotAllowed } from "../utils/prMerge";
 import type { WorktreeCreateOptions } from "../components/CreateWorktreeDialog";
 
@@ -446,6 +447,14 @@ export function useGitOperations(deps: GitOperationsDeps) {
   };
 
   const handleBranchSelectInner = async (repoPath: string, branchName: string) => {
+    // Auto-deactivate global workspace before branch switch
+    if (globalWorkspaceStore.isActive()) {
+      const prevRepoPath = repositoriesStore.state.activeRepoPath;
+      const prevBranch = prevRepoPath ? repositoriesStore.state.repositories[prevRepoPath]?.activeBranch : null;
+      const key = prevRepoPath && prevBranch ? paneLayoutKey(prevRepoPath, prevBranch) : undefined;
+      globalWorkspaceStore.deactivate(key);
+    }
+
     // Log the state we're LEAVING — critical for diagnosing terminal disappearance
     const prevRepo = repositoriesStore.getActive();
     const prevBranchName = prevRepo?.activeBranch;
