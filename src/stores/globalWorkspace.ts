@@ -1,7 +1,6 @@
 import { createSignal } from "solid-js";
 import {
   paneLayoutStore,
-  splitLeaf,
   removeLeaf,
   allLeafIds,
   type PaneLayoutState,
@@ -14,20 +13,19 @@ function nextGlobalGroupId(): string {
   return `gw${++globalGroupCounter}`;
 }
 
-/** Add a terminal to a layout, auto-splitting as needed. Returns updated layout or null if denied. */
+/** Add a terminal as a tab to the active group. Creates the first group if layout is empty. */
 function addTerminalToLayout(
   current: PaneLayoutState | null,
   termId: string,
-): PaneLayoutState | null {
-  const groupId = nextGlobalGroupId();
-  const newGroup: PaneGroup = {
-    id: groupId,
-    tabs: [{ id: termId, type: "terminal" }],
-    activeTabId: termId,
-  };
-
-  // First terminal — single leaf
+): PaneLayoutState {
+  // First terminal — create single group
   if (!current || !current.root) {
+    const groupId = nextGlobalGroupId();
+    const newGroup: PaneGroup = {
+      id: groupId,
+      tabs: [{ id: termId, type: "terminal" }],
+      activeTabId: termId,
+    };
     return {
       root: { type: "leaf", id: groupId },
       groups: { [groupId]: newGroup },
@@ -35,40 +33,25 @@ function addTerminalToLayout(
     };
   }
 
-  const root = current.root;
+  // Add as tab to active group (or first group as fallback)
+  const targetGroupId = current.activeGroupId ?? Object.keys(current.groups)[0];
+  if (!targetGroupId || !current.groups[targetGroupId]) return current;
 
-  // Single leaf — split horizontally
-  if (root.type === "leaf") {
-    return {
-      root: {
-        type: "branch",
-        direction: "horizontal",
-        children: [root, { type: "leaf", id: groupId }],
-        ratios: [0.5, 0.5],
-      },
-      groups: { ...current.groups, [groupId]: newGroup },
-      activeGroupId: groupId,
-    };
-  }
-
-  // Branch — find last leaf and split it
-  const leafIds = allLeafIds(root);
-  const lastLeafId = leafIds[leafIds.length - 1];
-  const newRoot = splitLeaf(root, lastLeafId, "horizontal", groupId);
-
-  if (!newRoot) {
-    // MAX_SPLIT_DEPTH exceeded
-    return null;
-  }
-
+  const group = current.groups[targetGroupId];
   return {
-    root: newRoot,
-    groups: { ...current.groups, [groupId]: newGroup },
-    activeGroupId: groupId,
+    ...current,
+    groups: {
+      ...current.groups,
+      [targetGroupId]: {
+        ...group,
+        tabs: [...group.tabs, { id: termId, type: "terminal" }],
+        activeTabId: termId,
+      },
+    },
   };
 }
 
-/** Remove a terminal from a layout. Returns updated layout or null if empty. */
+/** Remove a terminal tab from its group. Returns null if the layout is now empty. */
 function removeTerminalFromLayout(
   current: PaneLayoutState,
   termId: string,
@@ -83,6 +66,28 @@ function removeTerminalFromLayout(
   }
   if (!targetGroupId || !current.root) return current;
 
+  const group = current.groups[targetGroupId];
+  const remainingTabs = group.tabs.filter(t => t.id !== termId);
+
+  // Group still has tabs — just remove the tab
+  if (remainingTabs.length > 0) {
+    const newActiveTabId = group.activeTabId === termId
+      ? remainingTabs[remainingTabs.length - 1].id
+      : group.activeTabId;
+    return {
+      ...current,
+      groups: {
+        ...current.groups,
+        [targetGroupId]: {
+          ...group,
+          tabs: remainingTabs,
+          activeTabId: newActiveTabId,
+        },
+      },
+    };
+  }
+
+  // Group is empty — remove the leaf from the tree
   const newRoot = removeLeaf(current.root, targetGroupId);
   if (!newRoot) return null;
 
@@ -108,6 +113,9 @@ function createGlobalWorkspaceStore() {
   // Global workspace layout (separate from paneLayoutStore)
   let layout: PaneLayoutState | null = null;
 
+  // Saved repo layout key for restore on auto-deactivation
+  let savedRepoLayoutKey: string | null = null;
+
   function bumpPromoted(): void {
     setPromotedVersion(v => v + 1);
   }
@@ -117,6 +125,29 @@ function createGlobalWorkspaceStore() {
     if (isActive() && layout) {
       paneLayoutStore.restore(layout);
     }
+  }
+
+  /** Restore the repo's pane layout and clear the saved key */
+  function restoreRepoLayout(): void {
+    const key = savedRepoLayoutKey;
+    savedRepoLayoutKey = null;
+    if (key) {
+      const saved = savedPaneLayouts.get(key);
+      if (saved) {
+        paneLayoutStore.restore(saved);
+      } else {
+        paneLayoutStore.reset();
+      }
+    } else {
+      paneLayoutStore.reset();
+    }
+  }
+
+  /** Auto-deactivate when no promoted terminals remain */
+  function autoDeactivate(): void {
+    layout = null;
+    setIsActive(false);
+    restoreRepoLayout();
   }
 
   return {
@@ -134,6 +165,7 @@ function createGlobalWorkspaceStore() {
       if (repoLayoutKey) {
         const current = paneLayoutStore.serialize();
         if (current.root) savedPaneLayouts.set(repoLayoutKey, current);
+        savedRepoLayoutKey = repoLayoutKey;
       }
 
       setIsActive(true);
@@ -159,28 +191,21 @@ function createGlobalWorkspaceStore() {
 
       setIsActive(false);
 
-      // Restore repo layout (or reset if none saved)
+      // Use explicit key if given, otherwise fall back to the key saved on activate
       if (repoLayoutKey) {
-        const saved = savedPaneLayouts.get(repoLayoutKey);
-        if (saved) {
-          paneLayoutStore.restore(saved);
-        } else {
-          paneLayoutStore.reset();
-        }
-      } else {
-        paneLayoutStore.reset();
+        savedRepoLayoutKey = repoLayoutKey;
       }
+      restoreRepoLayout();
     },
 
     /**
      * Promote a terminal to the global workspace.
-     * Returns true if promoted, false if denied (layout full).
+     * Adds it as a tab to the active group (no auto-split).
      */
     promote(termId: string): boolean {
       if (promoted.has(termId)) return true;
 
       const updated = addTerminalToLayout(layout, termId);
-      if (!updated) return false; // MAX_SPLIT_DEPTH exceeded
 
       promoted.add(termId);
       layout = updated;
@@ -189,7 +214,7 @@ function createGlobalWorkspaceStore() {
       return true;
     },
 
-    /** Remove a terminal from the global workspace */
+    /** Remove a terminal from the global workspace. Auto-deactivates when empty. */
     unpromote(termId: string): void {
       if (!promoted.has(termId)) return;
       promoted.delete(termId);
@@ -199,9 +224,11 @@ function createGlobalWorkspaceStore() {
       }
 
       bumpPromoted();
-      syncToPaneStore();
-      if (isActive() && !layout) {
-        paneLayoutStore.reset();
+
+      if (isActive() && promoted.size === 0) {
+        autoDeactivate();
+      } else {
+        syncToPaneStore();
       }
     },
 
@@ -235,9 +262,7 @@ function createGlobalWorkspaceStore() {
       bumpPromoted();
       if (isActive()) {
         if (promoted.size === 0) {
-          layout = null;
-          paneLayoutStore.reset();
-          setIsActive(false);
+          autoDeactivate();
         } else {
           syncToPaneStore();
         }

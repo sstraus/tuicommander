@@ -219,7 +219,7 @@ export const ErrorLogPanel: Component = () => {
           {/* Footer */}
           <div class={s.footer}>
             <span>{filteredEntries().length} of {appLogger.entryCount()} entries</span>
-            <span style={{ "margin-left": "auto", display: "flex", gap: "12px" }}>
+            <span style={{ "margin-left": "auto", display: "flex", "align-items": "center", gap: "12px" }}>
               <button class={s.clearBtn} onClick={handleCopyAll} title="Copy all visible entries">
                 Copy All
               </button>

@@ -5,7 +5,7 @@ vi.mock("../../invoke", () => ({
 }));
 
 import { testInScope, makeTerminal } from "../helpers/store";
-import type { PaneLayoutState, PaneLeaf, PaneBranch } from "../../stores/paneLayout";
+import type { PaneLayoutState, PaneLeaf } from "../../stores/paneLayout";
 
 describe("globalWorkspaceStore", () => {
   let store: typeof import("../../stores/globalWorkspace").globalWorkspaceStore;
@@ -353,74 +353,56 @@ describe("globalWorkspaceStore", () => {
         const layout = store.getLayout();
         expect(layout).not.toBeNull();
         expect(layout!.root!.type).toBe("leaf");
-        // The group should contain a terminal tab for t1
         const groupId = (layout!.root! as PaneLeaf).id;
         const group = layout!.groups[groupId];
         expect(group.tabs).toEqual([{ id: "t1", type: "terminal" }]);
       });
     });
 
-    it("second promote splits horizontally", () => {
+    it("second promote adds tab to same group (no auto-split)", () => {
       testInScope(() => {
         store.promote("t1");
         store.promote("t2");
         const layout = store.getLayout();
-        expect(layout!.root!.type).toBe("branch");
-        const root = layout!.root! as PaneBranch;
-        expect(root.direction).toBe("horizontal");
-        expect(root.children).toHaveLength(2);
-        // Both should be leaves with terminal tabs
-        const g1 = layout!.groups[(root.children[0] as PaneLeaf).id];
-        const g2 = layout!.groups[(root.children[1] as PaneLeaf).id];
-        expect(g1.tabs[0].id).toBe("t1");
-        expect(g2.tabs[0].id).toBe("t2");
+        // Still a single leaf — no split
+        expect(layout!.root!.type).toBe("leaf");
+        const groupId = (layout!.root! as PaneLeaf).id;
+        const group = layout!.groups[groupId];
+        expect(group.tabs.map(t => t.id)).toEqual(["t1", "t2"]);
       });
     });
 
-    it("third promote splits again within depth limit", () => {
+    it("multiple promotes accumulate as tabs in the active group", () => {
       testInScope(() => {
         store.promote("t1");
         store.promote("t2");
         store.promote("t3");
         const layout = store.getLayout();
-        // Should have 3 terminal tabs across groups
-        const termIds = Object.values(layout!.groups).flatMap(g => g.tabs.map(t => t.id)).sort();
+        const termIds = Object.values(layout!.groups).flatMap(g => g.tabs.map(t => t.id));
         expect(termIds).toEqual(["t1", "t2", "t3"]);
       });
     });
 
-    it("promote beyond MAX_SPLIT_DEPTH returns false", () => {
+    it("promote always succeeds (no split depth limit)", () => {
       testInScope(() => {
-        // MAX_SPLIT_DEPTH is 3, so we can have up to 2^3 = 8 leaves
-        // Actually, depth 3 means: leaf at depth 0, 1 split = depth 1, 2 splits = depth 2
-        // Let's fill it up and check
-        store.promote("t1");
-        store.promote("t2");
-        store.promote("t3");
-        store.promote("t4");
-        // At some point it should be denied
-        // With MAX_SPLIT_DEPTH=3, splitting at depth 2 is the last allowed
-        // Let's just verify the method returns false when full
-        const results: boolean[] = [];
-        for (let i = 5; i <= 20; i++) {
-          results.push(store.promote(`t${i}`));
+        for (let i = 1; i <= 20; i++) {
+          expect(store.promote(`t${i}`)).toBe(true);
         }
-        // At least some should be false (denied)
-        expect(results).toContain(false);
+        expect(store.getPromotedIds()).toHaveLength(20);
       });
     });
 
-    it("unpromote removes terminal from layout and flattens tree", () => {
+    it("unpromote removes tab from group, keeps other tabs", () => {
       testInScope(() => {
         store.promote("t1");
         store.promote("t2");
         store.unpromote("t1");
         const layout = store.getLayout();
         expect(layout).not.toBeNull();
-        // Should be back to single leaf with t2
         expect(layout!.root!.type).toBe("leaf");
-        const group = layout!.groups[(layout!.root! as PaneLeaf).id];
-        expect(group.tabs[0].id).toBe("t2");
+        const groupId = (layout!.root! as PaneLeaf).id;
+        const group = layout!.groups[groupId];
+        expect(group.tabs.map(t => t.id)).toEqual(["t2"]);
       });
     });
 
@@ -432,16 +414,24 @@ describe("globalWorkspaceStore", () => {
       });
     });
 
+    it("unpromote last terminal auto-deactivates when workspace is active", () => {
+      testInScope(() => {
+        store.promote("t1");
+        store.activate();
+        expect(store.isActive()).toBe(true);
+        store.unpromote("t1");
+        expect(store.isActive()).toBe(false);
+      });
+    });
+
     it("promote while global workspace active updates paneLayoutStore live", () => {
       testInScope(() => {
         store.promote("t1");
         store.activate();
-        // paneLayoutStore should have the t1 layout
         const beforeGroups = Object.values(paneLayoutStore.serialize().groups);
         expect(beforeGroups.some(g => g.tabs.some(t => t.id === "t1"))).toBe(true);
 
         store.promote("t2");
-        // paneLayoutStore should now also have t2
         const afterGroups = Object.values(paneLayoutStore.serialize().groups);
         expect(afterGroups.some(g => g.tabs.some(t => t.id === "t2"))).toBe(true);
       });
@@ -449,18 +439,64 @@ describe("globalWorkspaceStore", () => {
 
     it("promote while in repo view only updates background layout", () => {
       testInScope(() => {
-        // Set up repo layout in paneLayoutStore
         const gid = paneLayoutStore.createGroup();
         paneLayoutStore.addTab(gid, { id: "repo-t1", type: "terminal" });
 
         store.promote("t1");
 
-        // paneLayoutStore should still have repo layout
         const groups = Object.values(paneLayoutStore.serialize().groups);
         expect(groups.some(g => g.tabs.some(t => t.id === "repo-t1"))).toBe(true);
-        // Global layout should have t1
         const globalLayout = store.getLayout();
         expect(globalLayout).not.toBeNull();
+      });
+    });
+  });
+
+  describe("auto-deactivation restores repo layout", () => {
+    const repoKey = "/repo\0main";
+
+    it("onTerminalRemoved auto-deactivation restores saved repo layout", () => {
+      testInScope(() => {
+        // Set up a repo layout
+        const singlePaneLayout: PaneLayoutState = {
+          root: { type: "leaf", id: "sp1" },
+          groups: { sp1: { id: "sp1", tabs: [{ id: "repo-t1", type: "terminal" }], activeTabId: "repo-t1" } },
+          activeGroupId: "sp1",
+        };
+        paneLayoutStore.restore(singlePaneLayout);
+
+        store.promote("t5");
+        store.activate(repoKey);
+        expect(store.isActive()).toBe(true);
+
+        // Removing last promoted terminal should auto-deactivate AND restore repo layout
+        store.onTerminalRemoved("t5");
+        expect(store.isActive()).toBe(false);
+
+        const restored = paneLayoutStore.serialize();
+        expect(restored.groups.sp1).toBeDefined();
+        expect(restored.groups.sp1.tabs.some(t => t.id === "repo-t1")).toBe(true);
+      });
+    });
+
+    it("unpromote auto-deactivation restores saved repo layout", () => {
+      testInScope(() => {
+        const singlePaneLayout: PaneLayoutState = {
+          root: { type: "leaf", id: "sp1" },
+          groups: { sp1: { id: "sp1", tabs: [{ id: "repo-t1", type: "terminal" }], activeTabId: "repo-t1" } },
+          activeGroupId: "sp1",
+        };
+        paneLayoutStore.restore(singlePaneLayout);
+
+        store.promote("t5");
+        store.activate(repoKey);
+
+        store.unpromote("t5");
+        expect(store.isActive()).toBe(false);
+
+        const restored = paneLayoutStore.serialize();
+        expect(restored.groups.sp1).toBeDefined();
+        expect(restored.groups.sp1.tabs.some(t => t.id === "repo-t1")).toBe(true);
       });
     });
   });
