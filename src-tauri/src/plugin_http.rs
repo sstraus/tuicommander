@@ -190,41 +190,10 @@ pub async fn plugin_http_fetch(
     })
 }
 
-/// Validate that a URL points to an external (non-local, non-private) host.
-/// Used for fetch_tab_html where the URL originates from MCP agents.
-fn validate_external_url(url: &str) -> Result<(), String> {
-    let parsed = url::Url::parse(url).map_err(|e| format!("Invalid URL: {e}"))?;
-
-    match parsed.scheme() {
-        "http" | "https" => {}
-        scheme => return Err(format!("Scheme \"{scheme}\" is not allowed; use http or https")),
-    }
-
-    if let Some(host) = parsed.host_str() {
-        let is_localhost = host == "localhost"
-            || host == "127.0.0.1"
-            || host == "::1"
-            || host == "[::1]"
-            || host == "0.0.0.0";
-
-        let is_private = host.parse::<std::net::IpAddr>()
-            .map(|ip| crate::mcp_http::auth::is_private_ip(&ip))
-            .unwrap_or(false);
-
-        if is_localhost || is_private {
-            let kind = if is_localhost { "Localhost" } else { "Private network" };
-            return Err(format!("{kind} URLs are not allowed for tab content"));
-        }
-    }
-
-    Ok(())
-}
-
 /// Fetch HTML content from a URL for rendering in a plugin panel tab.
-/// Used internally by the frontend to inject the TUIC SDK into URL-mode tabs.
+/// Internal frontend command — no SSRF restrictions (localhost, private IPs all valid).
 #[tauri::command]
 pub async fn fetch_tab_html(url: String) -> Result<String, String> {
-    validate_external_url(&url)?;
 
     let response = shared_client()
         .get(&url)
