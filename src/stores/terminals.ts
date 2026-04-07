@@ -3,7 +3,6 @@ import { createStore, produce } from "solid-js/store";
 import type { AgentType } from "../agents";
 import type { TerminalMatch } from "../types";
 import { appLogger } from "./appLogger";
-import { globalWorkspaceStore } from "./globalWorkspace";
 import { rpc } from "../transport";
 
 /** Type of input being awaited */
@@ -111,6 +110,7 @@ function createTerminalsStore() {
   const busyDurationMap = new Map<string, number>();
   const cooldownTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const busyToIdleCallbacks: Array<(id: string, durationMs: number) => void> = [];
+  const onRemoveCallbacks: Array<(id: string) => void> = [];
   // Tracks which terminals have completed their initial shell startup (reached idle at least once).
   // Used to distinguish "busy from .zshrc startup" from "busy from a user-launched process".
   const reachedIdleSet = new Set<string>();
@@ -195,7 +195,7 @@ function createTerminalsStore() {
       const sessionId = state.terminals[id]?.sessionId;
       if (sessionId) sessionToTerminal.delete(sessionId);
       cleanupBusyState(id);
-      globalWorkspaceStore.onTerminalRemoved(id);
+      for (const cb of onRemoveCallbacks) cb(id);
       setState(
         produce((s) => {
           delete s.terminals[id];
@@ -370,6 +370,16 @@ function createTerminalsStore() {
       return () => {
         const idx = busyToIdleCallbacks.indexOf(callback);
         if (idx >= 0) busyToIdleCallbacks.splice(idx, 1);
+      };
+    },
+
+    /** Register a callback fired when a terminal is removed.
+     *  Used by globalWorkspaceStore to auto-unpromote without direct coupling. */
+    onRemove(callback: (id: string) => void): () => void {
+      onRemoveCallbacks.push(callback);
+      return () => {
+        const idx = onRemoveCallbacks.indexOf(callback);
+        if (idx >= 0) onRemoveCallbacks.splice(idx, 1);
       };
     },
 

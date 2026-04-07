@@ -7,6 +7,7 @@ import {
   type PaneGroup,
 } from "./paneLayout";
 import { savedPaneLayouts } from "./savedPaneLayouts";
+import { terminalsStore } from "./terminals";
 
 let globalGroupCounter = 0;
 function nextGlobalGroupId(): string {
@@ -238,6 +239,15 @@ function createGlobalWorkspaceStore() {
       return promoted.has(termId);
     },
 
+    /** Toggle promote/unpromote a terminal */
+    togglePromote(termId: string): void {
+      if (promoted.has(termId)) {
+        this.unpromote(termId);
+      } else {
+        this.promote(termId);
+      }
+    },
+
     /** Get all promoted terminal IDs */
     getPromotedIds(): string[] {
       promotedVersion(); // subscribe
@@ -282,3 +292,6 @@ function createGlobalWorkspaceStore() {
 }
 
 export const globalWorkspaceStore = createGlobalWorkspaceStore();
+
+// Wire up terminal removal via callback — avoids direct coupling from terminals→globalWorkspace
+terminalsStore.onRemove((id) => globalWorkspaceStore.onTerminalRemoved(id));
