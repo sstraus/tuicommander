@@ -86,6 +86,12 @@ export async function detectAgentForTerminal(termId: string, source: DetectionSo
     const sessId = current.sessionId;
     if (prevAgentType === null && agentType !== null && sessId) {
       pluginRegistry.notifyStateChange({ type: "agent-started", sessionId: sessId, terminalId: termId });
+      // Replay current shell state to plugins filtered by agentType — they missed
+      // events dispatched before detection completed (agentType was still null).
+      const freshShellState = terminalsStore.get(termId)?.shellState;
+      if (freshShellState) {
+        pluginRegistry.dispatchStructuredEvent("shell-state", { state: freshShellState }, sessId);
+      }
     }
     if (prevAgentType !== null && agentType === null) {
       if (sessId) {

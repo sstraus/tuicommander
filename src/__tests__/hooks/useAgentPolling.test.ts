@@ -189,6 +189,52 @@ describe("useAgentPolling", () => {
       });
     });
 
+    it("dispatches synthetic shell-state to plugins when agent first detected", async () => {
+      // Bug: when agentType transitions null→"claude", structured shell-state events
+      // dispatched BEFORE detection completes were filtered out (pluginMatchesSession
+      // returned false because agentType was still null). The plugin never learned
+      // the current shellState. Fix: after agent-started, replay the current shellState
+      // so filtered plugins catch up.
+      mockInvoke.mockResolvedValue("claude");
+
+      await testInScopeAsync(async () => {
+        const { detectAgentForTerminal } = await import("../../hooks/useAgentPolling");
+        const { pluginRegistry } = await import("../../plugins/pluginRegistry");
+
+        const id = store.add(makeTerminal({ name: "T1", sessionId: "sess-synth" }));
+        // Simulate: shell is idle, but agentType not yet detected
+        store.update(id, { shellState: "idle" });
+
+        // Register a plugin with agentTypes: ["claude"] that listens for shell-state
+        const shellStateHandler = vi.fn();
+        await pluginRegistry.register(
+          { id: "test-keepalive", onload: (host) => {
+            host.registerStructuredEventHandler("shell-state", shellStateHandler);
+          }, onunload: () => {} },
+          ["pty:write"],
+          [],
+          ["claude"],
+        );
+
+        // Before detection: dispatch shell-state directly → should be filtered (agentType null)
+        pluginRegistry.dispatchStructuredEvent("shell-state", { state: "idle" }, "sess-synth");
+        await new Promise<void>((r) => queueMicrotask(r));
+        expect(shellStateHandler).not.toHaveBeenCalled();
+
+        // Now detect agent (null → claude) — should trigger synthetic replay
+        await detectAgentForTerminal(id, "idle");
+        await new Promise<void>((r) => queueMicrotask(r));
+
+        // Plugin should have received the synthetic shell-state event
+        expect(shellStateHandler).toHaveBeenCalledWith(
+          expect.objectContaining({ state: "idle" }),
+          "sess-synth",
+        );
+
+        pluginRegistry.unregister("test-keepalive");
+      });
+    });
+
     it("clears agentSessionId on agent→null transition and allows re-discovery", async () => {
       // NULL_THRESHOLD is 3: need 3 consecutive idle-source null detections before clearing.
       // Only source="idle" can clear — polls never clear (sticky agentType fix).
