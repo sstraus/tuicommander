@@ -1,5 +1,4 @@
 import { Component, createEffect, createSignal, onCleanup, onMount } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
 import type { PluginPanelTab } from "../../stores/mdTabs";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
 import { PLUGIN_BASE_CSS } from "./pluginBaseStyles";
@@ -43,28 +42,6 @@ function extractThemeVars(): string {
   return vars.length > 0 ? `<style>:root{${vars.join(";")}}</style>` : "";
 }
 
-/**
- * Inject a <base href> tag so relative URLs in fetched HTML resolve against the original URL.
- * Inserts after <head> (or <html>), or prepends if neither is found.
- */
-function escapeHtmlAttr(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-function injectBase(html: string, url: string): string {
-  const base = `<base href="${escapeHtmlAttr(url)}">`;
-  const headOpen = html.indexOf("<head>");
-  if (headOpen >= 0) {
-    const after = headOpen + "<head>".length;
-    return html.slice(0, after) + base + html.slice(after);
-  }
-  const htmlOpen = html.indexOf("<html");
-  if (htmlOpen >= 0) {
-    const tagEnd = html.indexOf(">", htmlOpen);
-    if (tagEnd >= 0) return html.slice(0, tagEnd + 1) + base + html.slice(tagEnd + 1);
-  }
-  return base + html;
-}
 
 /** Inject theme CSS variables and base stylesheet into HTML before </head> (or prepend if no </head>) */
 function injectThemeVars(html: string): string {
@@ -192,29 +169,21 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
 
   const [srcdoc, setSrcdoc] = createSignal<string>("");
 
-  // Update iframe content when HTML or URL changes.
-  // URL mode: fetch content via Rust (bypasses CORS), inject base href + SDK + theme, render as srcdoc.
-  // This ensures window.tuic and theme vars are available in all tab types.
-  // NOTE: createEffect cannot be async — reactive tracking happens synchronously
-  // at the top of the effect. The .then()/.catch() chain is intentional.
+  // Inline HTML mode: inject theme vars, base styles, and SDK into srcdoc.
+  // URL mode: load directly via src= so the page keeps its own CSP
+  // (srcdoc inherits the parent's Tauri CSP, which blocks external resources).
   createEffect(() => {
-    const url = props.tab.url;
-    if (url) {
-      void invoke<string>("fetch_tab_html", { url })
-        .then((fetchedHtml) => {
-          const withBase = injectBase(fetchedHtml, url);
-          setSrcdoc(injectThemeVars(withBase));
-        })
-        .catch((err: unknown) => {
-          const message = err instanceof Error ? err.message : String(err);
-          appLogger.error("plugin", `fetch_tab_html failed for ${url}: ${message}`);
-          setSrcdoc(injectThemeVars(`<p style="color:var(--error-text,red)">Failed to load ${escapeHtmlAttr(url)}: ${escapeHtmlAttr(message)}</p>`));
-        });
-    } else {
-      const html = props.tab.html;
-      setSrcdoc(injectThemeVars(html));
+    if (!props.tab.url) {
+      setSrcdoc(injectThemeVars(props.tab.html));
     }
   });
+
+  const iframeStyle = {
+    width: "100%",
+    height: "100%",
+    border: "none",
+    background: "transparent",
+  };
 
   return (
     <div style={{
@@ -223,17 +192,21 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
       display: "flex",
       "flex-direction": "column",
     }}>
-      <iframe
-        ref={iframeRef}
-        sandbox="allow-scripts"
-        srcdoc={srcdoc()}
-        style={{
-          width: "100%",
-          height: "100%",
-          border: "none",
-          background: "transparent",
-        }}
-      />
+      {props.tab.url ? (
+        <iframe
+          ref={iframeRef}
+          src={props.tab.url}
+          sandbox="allow-scripts allow-same-origin"
+          style={iframeStyle}
+        />
+      ) : (
+        <iframe
+          ref={iframeRef}
+          sandbox="allow-scripts"
+          srcdoc={srcdoc()}
+          style={iframeStyle}
+        />
+      )}
     </div>
   );
 };
