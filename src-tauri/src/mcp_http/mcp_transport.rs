@@ -355,7 +355,7 @@ fn native_tool_definitions() -> serde_json::Value {
         },
         {
             "name": "debug",
-            "description": "Dev-only diagnostics for debugging TUICommander internals.\n\nActions (pass as 'action' parameter):\n- agent_detection: Returns agent detection pipeline diagnostics for a session. Optional session_id (omit for all).\n- logs: Returns recent app log entries. Optional: level, source, limit.\n- sessions: Returns all PTY sessions with process details (pid, cwd, foreground process).\n- invoke_js: Executes JavaScript in the main WebView (fire-and-forget, localhost only). Result logged with source='eval_js'. Requires script.",
+            "description": "Diagnostics for TUICommander internals.\n\nActions:\n- agent_detection: Agent detection pipeline. Optional session_id.\n- logs: App log entries (info/warn/error). Optional: level, source, limit.\n- sessions: PTY sessions with pid, cwd, foreground process.\n- invoke_js: Run JS in WebView (localhost only). Result + console.log output → source='eval_js'. Read via logs(source='eval_js', limit=1).\n\ninvoke_js: use `return expr` for output. console.log/warn/error are captured. `window.__TUIC__` provides: plugins(), plugin(id), pluginLogs(id), terminals(), terminal(id), agentTypeForSession(sid), activity(), logs(limit).",
             "inputSchema": { "type": "object", "properties": {
                 "action": { "type": "string", "description": "One of: agent_detection, logs, sessions, invoke_js" },
                 "session_id": { "type": "string", "description": "PTY session UUID (action=agent_detection, optional — omit for all)" },
@@ -2283,13 +2283,30 @@ fn handle_debug_unified(state: &Arc<AppState>, addr: SocketAddr, args: &serde_js
             let wrapped = format!(
                 r#"(async () => {{
   const __src = "eval_js";
+  const __logs = [];
+  const __origLog = console.log;
+  const __origWarn = console.warn;
+  const __origError = console.error;
+  const __origInfo = console.info;
+  const __fmt = (a) => typeof a === "string" ? a : JSON.stringify(a);
+  console.log = (...a) => {{ __logs.push(a.map(__fmt).join(" ")); __origLog(...a); }};
+  console.info = (...a) => {{ __logs.push(a.map(__fmt).join(" ")); __origInfo(...a); }};
+  console.warn = (...a) => {{ __logs.push("[WARN] " + a.map(__fmt).join(" ")); __origWarn(...a); }};
+  console.error = (...a) => {{ __logs.push("[ERROR] " + a.map(__fmt).join(" ")); __origError(...a); }};
   try {{
     const __result = await (async () => {{ {script} }})();
-    const __msg = __result === undefined ? "(undefined)" : JSON.stringify(__result, null, 2);
+    const __val = __result === undefined ? "(undefined)" : JSON.stringify(__result, null, 2);
+    const __msg = __logs.length > 0 ? __logs.join("\n") + "\n---\n" + __val : __val;
     window.__TAURI__.core.invoke("push_log", {{ level: "info", source: __src, message: __msg, dataJson: null }});
   }} catch (__e) {{
-    const __msg = __e instanceof Error ? `${{__e.name}}: ${{__e.message}}\n${{__e.stack}}` : String(__e);
+    const __val = __e instanceof Error ? `${{__e.name}}: ${{__e.message}}\n${{__e.stack}}` : String(__e);
+    const __msg = __logs.length > 0 ? __logs.join("\n") + "\n---\n" + __val : __val;
     window.__TAURI__.core.invoke("push_log", {{ level: "error", source: __src, message: __msg, dataJson: null }});
+  }} finally {{
+    console.log = __origLog;
+    console.info = __origInfo;
+    console.warn = __origWarn;
+    console.error = __origError;
   }}
 }})()"#
             );

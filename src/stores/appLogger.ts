@@ -189,9 +189,9 @@ function createAppLogger() {
       case "debug": console.debug(tag, message, data !== undefined ? data : ""); break;
     }
 
-    // Mirror warn/error to Rust backend for cross-reload durability.
-    // Skip debug/info — they're high-frequency (PTY events) and ephemeral.
-    if (level === "warn" || level === "error") {
+    // Mirror info/warn/error to Rust backend for MCP and cross-reload durability.
+    // Skip debug — too high-frequency for the ring buffer.
+    if (level !== "debug") {
       const dataJson = data !== undefined ? JSON.stringify(data) : undefined;
       pushToRust(level, source, message, dataJson);
     }

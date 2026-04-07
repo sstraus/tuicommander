@@ -216,12 +216,26 @@ describe("appLogger", () => {
     });
   });
 
-  it("debug and info levels do not mirror to Rust", () => {
+  it("debug level does not mirror to Rust", () => {
     testInScope(() => {
       mockRpc.mockClear();
       appLogger.debug("app", "debug msg");
-      appLogger.info("app", "info msg");
       expect(mockRpc).not.toHaveBeenCalled();
+    });
+  });
+
+  it("info level mirrors to Rust", () => {
+    testInScope(() => {
+      mockRpc.mockClear();
+      appLogger.info("app", "info msg");
+      expect(mockRpc).toHaveBeenCalledWith(
+        "push_log",
+        expect.objectContaining({
+          level: "info",
+          source: "app",
+          message: "info msg",
+        }),
+      );
     });
   });
 

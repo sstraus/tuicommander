@@ -3,9 +3,13 @@ import { lazy } from "solid-js";
 import { render, ErrorBoundary } from "solid-js/web";
 import App from "./App";
 import { appLogger } from "./stores/appLogger";
+import { initDebugGlobals } from "./debugGlobals";
 import "./global.css";
 import "./styles.css";
 import "@xterm/xterm/css/xterm.css";
+
+// Expose debug globals for MCP eval_js introspection (works in dev and release)
+initDebugGlobals();
 
 // Global error handlers — capture uncaught errors and unhandled promise rejections
 window.addEventListener("error", (event) => {
