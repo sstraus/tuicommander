@@ -82,6 +82,9 @@ export const SmartPromptsDropdown: Component<SmartPromptsDropdownProps> = (props
     smartPromptsDropdownStore.close();
     setSearch("");
     setVariablePrompt(null);
+    // Restore keyboard focus to the active terminal — without this,
+    // focus falls to document.body and typing stops reaching xterm.
+    requestAnimationFrame(() => terminalsStore.getActive()?.ref?.focus());
   };
 
   const toggle = () => {
