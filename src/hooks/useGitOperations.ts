@@ -10,15 +10,9 @@ import { filterValidTerminals } from "../utils/terminalFilter";
 import { verifyAndBuildResumeCommand } from "../utils/agentSession";
 import { repoSettingsStore } from "../stores/repoSettings";
 import { githubStore } from "../stores/github";
-import { paneLayoutStore, type PaneLayoutState } from "../stores/paneLayout";
+import { paneLayoutStore } from "../stores/paneLayout";
 import { assignTabToActiveGroup } from "../utils/paneTabAssign";
-
-/** In-memory pane layout cache per branch — survives branch switches within a session */
-const savedPaneLayouts = new Map<string, PaneLayoutState>();
-
-function paneLayoutKey(repoPath: string, branchName: string): string {
-  return `${repoPath}\0${branchName}`;
-}
+import { savedPaneLayouts, paneLayoutKey } from "../stores/savedPaneLayouts";
 import { effectiveMergeMethod, isMergeMethodNotAllowed } from "../utils/prMerge";
 import type { WorktreeCreateOptions } from "../components/CreateWorktreeDialog";
 

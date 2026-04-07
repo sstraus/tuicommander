@@ -3,6 +3,7 @@ import { createStore, produce } from "solid-js/store";
 import type { AgentType } from "../agents";
 import type { TerminalMatch } from "../types";
 import { appLogger } from "./appLogger";
+import { globalWorkspaceStore } from "./globalWorkspace";
 import { rpc } from "../transport";
 
 /** Type of input being awaited */
@@ -194,6 +195,7 @@ function createTerminalsStore() {
       const sessionId = state.terminals[id]?.sessionId;
       if (sessionId) sessionToTerminal.delete(sessionId);
       cleanupBusyState(id);
+      globalWorkspaceStore.onTerminalRemoved(id);
       setState(
         produce((s) => {
           delete s.terminals[id];
