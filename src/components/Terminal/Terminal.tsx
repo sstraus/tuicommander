@@ -1323,6 +1323,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
   // after the terminal was actually hidden (branch/tab switch), not on every
   // isVisible() re-evaluation.
   let wasHidden = false;
+  let hiddenSince = 0; // timestamp when terminal was last hidden
 
   // When this terminal becomes visible: open xterm, fit, and init PTY session
   createEffect(() => {
@@ -1337,20 +1338,36 @@ export const Terminal: Component<TerminalProps> = (props) => {
         scrollTracker.setVisible(true);
         openTerminal();
         // Rebuild the WebGL addon on hidden→visible transition to recover
-        // from any corruption that may have occurred while the terminal was
-        // detached (layer re-composition, GPU context drop without an event
-        // fire). A full renderer rebuild is required — clearTextureAtlas()
-        // only wipes the glyph cache and leaves structural packer state
-        // intact, so post-detach corruption survives a plain clear.
+        // from GPU context corruption (layer re-composition, context drop
+        // without an event fire). Only needed after long hides (sleep/resume,
+        // display reconnect) — short hides (repo/tab switch, < 10s) don't
+        // cause GPU context loss. Skipping on short hides eliminates N
+        // expensive WebGL recreations during repo switch.
         if (wasActuallyHidden && terminal) {
-          rebuildAtlas();
+          const hidDuration = performance.now() - hiddenSince;
+          if (hidDuration > 10_000) {
+            rebuildAtlas();
+          }
           wasHidden = false;
         }
         // Only fit if the terminal was actually hidden or never fitted.
         // When the visibility effect re-triggers without a real hide (e.g.,
         // activeId flips null→id), skip the fit to avoid resetting scroll.
-        if (wasActuallyHidden || !terminal) {
+        if (!terminal) {
+          // First mount — container may not have dimensions yet, use retries
           safeFit(() => initSession());
+        } else if (wasActuallyHidden) {
+          // Already mounted, was hidden → container reflow complete within
+          // this RAF. Direct fit avoids the 10-retry RAF storm during repo
+          // switch (N terminals × 10 retries saturates the rAF queue on
+          // CPU-loaded machines). Fall back to safeFit only if container
+          // dimensions aren't ready (edge case).
+          if (containerRef && containerRef.offsetWidth > 0 && containerRef.offsetHeight > 0) {
+            doFit();
+            initSession();
+          } else {
+            safeFit(() => initSession());
+          }
         } else {
           initSession();
         }
@@ -1388,18 +1405,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
           terminal?.focus();
         }
 
-        // Safety re-fit: at first app launch the flex layout may not have stabilized
-        // when safeFit runs (sidebar, toolbar, status bar still mounting). Schedule a
-        // deferred fit+resize to catch the final container dimensions.
-        setTimeout(() => {
-          if (!terminal || !containerRef || containerRef.offsetWidth <= 0) return;
-          const prevCols = terminal.cols;
-          const prevRows = terminal.rows;
-          doFit();
-          if (sessionId && (terminal.cols !== prevCols || terminal.rows !== prevRows)) {
-            pty.resize(sessionId, terminal.rows, terminal.cols).catch(() => {});
-          }
-        }, 300);
+        // The ResizeObserver (100ms debounce) is the authoritative resize path
+        // and handles first-launch layout stabilization. No additional safety
+        // refit is needed — it was adding N extra doFit+IPC calls per terminal
+        // on every repo switch, compounding the visibility thundering herd.
       });
 
       onCleanup(() => {
@@ -1412,6 +1421,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
         if (!isVisible()) {
           scrollTracker.setVisible(false);
           wasHidden = true;
+          hiddenSince = performance.now();
         }
       });
     }
