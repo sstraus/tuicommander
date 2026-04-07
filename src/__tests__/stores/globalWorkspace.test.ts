@@ -150,6 +150,22 @@ describe("globalWorkspaceStore", () => {
         expect(store.getPromotedIds()).toEqual(["t2"]);
       });
     });
+
+    it("syncs remaining promoted terminals to paneLayoutStore when active", () => {
+      testInScope(() => {
+        store.promote("t1");
+        store.promote("t2");
+        store.activate();
+
+        store.onTerminalRemoved("t1");
+
+        // t2 must still be in paneLayoutStore (layout synced)
+        const groups = Object.values(paneLayoutStore.serialize().groups);
+        expect(groups.some(g => g.tabs.some(t => t.id === "t2"))).toBe(true);
+        // t1 must be gone
+        expect(groups.some(g => g.tabs.some(t => t.id === "t1"))).toBe(false);
+      });
+    });
   });
 
   describe("layout", () => {
@@ -277,6 +293,31 @@ describe("globalWorkspaceStore", () => {
         // No global layout was set, so paneLayoutStore should be reset
         expect(paneLayoutStore.isSplit()).toBe(false);
         expect(store.isActive()).toBe(true);
+      });
+    });
+
+    it("activate saves single-pane repo layout (not just split)", () => {
+      testInScope(() => {
+        // Restore a single-pane layout directly (mirrors real usage: one terminal, no split)
+        const singlePaneLayout: PaneLayoutState = {
+          root: { type: "leaf", id: "sp1" },
+          groups: { sp1: { id: "sp1", tabs: [{ id: "t1", type: "terminal" }], activeTabId: "t1" } },
+          activeGroupId: "sp1",
+        };
+        paneLayoutStore.restore(singlePaneLayout);
+
+        const globalLayout: PaneLayoutState = {
+          root: { type: "leaf", id: "g10" },
+          groups: { g10: { id: "g10", tabs: [{ id: "t5", type: "terminal" }], activeTabId: "t5" } },
+          activeGroupId: "g10",
+        };
+        store.setLayout(globalLayout);
+        store.promote("t5");
+
+        store.activate(repoKey);
+
+        // Single-pane layout must be saved
+        expect(savedPaneLayouts.get(repoKey)).toEqual(singlePaneLayout);
       });
     });
 

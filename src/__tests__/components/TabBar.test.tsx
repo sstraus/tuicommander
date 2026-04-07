@@ -28,6 +28,7 @@ import { terminalsStore } from "../../stores/terminals";
 import { repositoriesStore } from "../../stores/repositories";
 import { diffTabsStore } from "../../stores/diffTabs";
 import { mdTabsStore } from "../../stores/mdTabs";
+import { globalWorkspaceStore } from "../../stores/globalWorkspace";
 
 describe("TabBar", () => {
   beforeEach(() => {
@@ -47,6 +48,13 @@ describe("TabBar", () => {
     }
     for (const id of mdTabsStore.getIds()) {
       mdTabsStore.remove(id);
+    }
+    // Deactivate global workspace
+    if (globalWorkspaceStore.isActive()) {
+      globalWorkspaceStore.deactivate();
+    }
+    for (const id of globalWorkspaceStore.getPromotedIds()) {
+      globalWorkspaceStore.unpromote(id);
     }
   });
 
@@ -329,6 +337,36 @@ describe("TabBar", () => {
       <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
     ));
     expect(container.querySelectorAll(".tab").length).toBe(3);
+  });
+
+  it("when global workspace is active, shows only promoted terminals", () => {
+    const repoPath = "/test/repo";
+    repositoriesStore.add({ path: repoPath, displayName: "Test Repo" });
+    repositoriesStore.setActive(repoPath);
+
+    const promoted1 = addTerminal({ name: "Promoted 1" });
+    const promoted2 = addTerminal({ name: "Promoted 2" });
+    const repoBound = addTerminal({ name: "Repo Term" });
+
+    repositoriesStore.setBranch(repoPath, "main", {
+      name: "main",
+      terminals: [repoBound],
+    });
+    repositoriesStore.setActiveBranch(repoPath, "main");
+
+    globalWorkspaceStore.promote(promoted1);
+    globalWorkspaceStore.promote(promoted2);
+    globalWorkspaceStore.activate();
+
+    const { container } = render(() => (
+      <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
+    ));
+    const tabs = container.querySelectorAll(".tab");
+    expect(tabs.length).toBe(2);
+    const names = Array.from(tabs).map(t => t.querySelector(".tabName")!.textContent);
+    expect(names).toContain("Promoted 1");
+    expect(names).toContain("Promoted 2");
+    expect(names).not.toContain("Repo Term");
   });
 
   it("with activeRepoPath but no activeBranch, falls back to all terminals", () => {

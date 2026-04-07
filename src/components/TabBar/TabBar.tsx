@@ -13,6 +13,7 @@ import { ContextMenu, createContextMenu } from "../ContextMenu/ContextMenu";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
 import { contextMenuActionsStore } from "../../stores/contextMenuActionsStore";
+import { globalWorkspaceStore } from "../../stores/globalWorkspace";
 import type { ContextMenuItem } from "../ContextMenu/ContextMenu";
 import s from "./TabBar.module.css";
 
@@ -216,19 +217,24 @@ export const TabBar: Component<TabBarProps> = (props) => {
     tabMenu.open(e);
   };
 
-  // Get terminals for active branch only, ordered by pane layout when split
+  // Get terminals for active branch only, ordered by pane layout when split.
+  // When global workspace is active, show only promoted terminals instead.
   const activeTerminals = () => {
-    const activeRepoPath = repositoriesStore.state.activeRepoPath;
     let ids: string[];
-    if (!activeRepoPath) {
-      ids = terminalsStore.getIds();
+    if (globalWorkspaceStore.isActive()) {
+      ids = globalWorkspaceStore.getPromotedIds();
     } else {
-      const repo = repositoriesStore.state.repositories[activeRepoPath];
-      if (!repo || !repo.activeBranch) {
+      const activeRepoPath = repositoriesStore.state.activeRepoPath;
+      if (!activeRepoPath) {
         ids = terminalsStore.getIds();
       } else {
-        const branch = repo.branches[repo.activeBranch];
-        ids = branch?.terminals || [];
+        const repo = repositoriesStore.state.repositories[activeRepoPath];
+        if (!repo || !repo.activeBranch) {
+          ids = terminalsStore.getIds();
+        } else {
+          const branch = repo.branches[repo.activeBranch];
+          ids = branch?.terminals || [];
+        }
       }
     }
 

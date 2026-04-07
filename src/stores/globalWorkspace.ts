@@ -130,9 +130,10 @@ function createGlobalWorkspaceStore() {
     activate(repoLayoutKey?: string): void {
       if (isActive()) return;
 
-      // Save current repo layout
-      if (repoLayoutKey && paneLayoutStore.isSplit()) {
-        savedPaneLayouts.set(repoLayoutKey, paneLayoutStore.serialize());
+      // Save current repo layout (single-pane and split both count)
+      if (repoLayoutKey) {
+        const current = paneLayoutStore.serialize();
+        if (current.root) savedPaneLayouts.set(repoLayoutKey, current);
       }
 
       setIsActive(true);
@@ -232,12 +233,14 @@ function createGlobalWorkspaceStore() {
       }
 
       bumpPromoted();
-      if (isActive() && promoted.size === 0) {
-        if (layout) {
+      if (isActive()) {
+        if (promoted.size === 0) {
           layout = null;
+          paneLayoutStore.reset();
+          setIsActive(false);
+        } else {
+          syncToPaneStore();
         }
-        paneLayoutStore.reset();
-        setIsActive(false);
       }
     },
 
