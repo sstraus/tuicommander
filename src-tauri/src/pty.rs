@@ -111,11 +111,6 @@ const STARTUP_GRACE_MAX: std::time::Duration = std::time::Duration::from_secs(12
 /// Matches the frontend's previous 500ms setTimeout in checkIdle.
 const SHELL_IDLE_MS: u64 = 500;
 
-/// How long real output must be silent before status-line-only ticks allow
-/// idle transition. Claude Code's status line ticks every ~1s, so 3s ensures
-/// we don't transition prematurely during LLM streaming gaps.
-const STATUS_LINE_IDLE_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(3);
-
 /// AtomicU8 encoding for shell_states DashMap.
 const SHELL_NULL: u8 = 0;
 const SHELL_BUSY: u8 = 1;
@@ -396,20 +391,14 @@ impl SilenceState {
             .unwrap_or(false)
     }
 
-    /// Returns true if real output (not chrome-only ticks) was received recently.
-    /// The backup idle timer uses this to avoid false idle transitions when real
-    /// output is still flowing. Uses last_output_at (not last_chunk_at) so that
-    /// status-line-only ticks don't block the backup timer from firing.
+    /// Returns true if any chunk (real or chrome-only) was received recently.
+    /// The backup idle timer uses this to avoid false idle transitions when the
+    /// reader thread IS processing chunks (even chrome-only status-line ticks).
+    /// Status-line ticking proves the agent is alive — the backup timer should
+    /// only fire when truly no chunks arrive (reader blocked on read()).
     /// The 2s threshold matches the frontend debounce hold (BUSY_HOLD_MS).
     pub(crate) fn has_recent_chunks(&self) -> bool {
-        self.last_output_at.elapsed() < std::time::Duration::from_secs(2)
-    }
-
-    /// Returns true if real output has been silent for at least `threshold`.
-    /// Used by the process_chunk guard to allow idle transition even when
-    /// status-line ticks are still arriving.
-    pub(crate) fn is_real_output_stale(&self, threshold: std::time::Duration) -> bool {
-        self.last_output_at.elapsed() >= threshold
+        self.last_chunk_at.elapsed() < std::time::Duration::from_secs(2)
     }
 
     /// Called by the timer thread. Returns the question text if the silence
@@ -551,11 +540,11 @@ fn spawn_silence_timer(
                 break;
             }
 
-            // Backup idle check: when no chunks arrive at all (agent truly silent),
+            // Backup idle check: when no chunks arrive at all (reader blocked on read()),
             // the reader thread never gets a chance to emit idle. The timer catches this.
-            // Guard: skip if the reader thread is actively processing chunks (even
-            // chrome-only ticks) — it already handles idle transitions correctly via
-            // the `!has_status_line` guard in process_chunk.
+            // Guard: skip if the reader thread is actively processing chunks — even
+            // chrome-only status-line ticks block this, because the reader thread
+            // handles idle transitions via its `!has_status_line` guard.
             let reader_active = silence.lock().has_recent_chunks();
             if !reader_active
                 && let Some(atom) = state.shell_states.get(&session_id)
@@ -964,15 +953,15 @@ impl ChunkProcessor {
                     emit_shell_state(state, app, session_id, "busy");
                 }
             }
-        } else if (!has_status_line || silence.lock().is_real_output_stale(STATUS_LINE_IDLE_THRESHOLD))
+        } else if !has_status_line
             && let Some(atom) = state.shell_states.get(session_id)
             && atom.load(std::sync::atomic::Ordering::Acquire) == SHELL_BUSY
             && should_transition_idle(state, session_id)
             && try_shell_transition(state, session_id, SHELL_BUSY, SHELL_IDLE)
         {
-            // Chrome-only chunk: either no status line (separator repaint) or
-            // real output has been silent for STATUS_LINE_IDLE_THRESHOLD while
-            // only status-line ticks arrive — safe to transition idle.
+            // Chrome-only chunk without a status line (e.g. separator repaint) —
+            // safe to transition idle. When has_status_line is true the agent's
+            // timer is ticking, proving it's still alive — stay busy.
             emit_shell_state(state, app, session_id, "idle");
         }
 
@@ -3857,13 +3846,12 @@ mod tests {
     // --- Backup idle guard: has_recent_chunks ---
 
     #[test]
-    fn test_has_recent_chunks_true_when_real_output_recent() {
+    fn test_has_recent_chunks_true_after_any_chunk() {
         let mut s = SilenceState::new();
-        // SilenceState::new() sets last_output_at to now, so has_recent_chunks is true
-        // even after a chrome-only chunk (the real output from creation is still fresh).
+        // Any chunk (including chrome-only) updates last_chunk_at
         s.on_chunk(false, None, true, true);
         assert!(s.has_recent_chunks(),
-            "has_recent_chunks should be true when last_output_at is recent");
+            "has_recent_chunks should be true right after any chunk");
     }
 
     #[test]
@@ -3875,17 +3863,17 @@ mod tests {
     }
 
     #[test]
-    fn test_has_recent_chunks_false_when_no_real_output_for_2s() {
+    fn test_has_recent_chunks_false_when_no_chunks_for_2s() {
         let mut s = SilenceState::new();
         s.on_chunk(false, None, true, true);
-        // Backdate real output to 3 seconds ago
-        s.last_output_at = std::time::Instant::now() - std::time::Duration::from_secs(3);
+        // Backdate last_chunk_at to 3 seconds ago
+        s.last_chunk_at = std::time::Instant::now() - std::time::Duration::from_secs(3);
         assert!(!s.has_recent_chunks(),
-            "has_recent_chunks should be false when last real output was 3s ago");
+            "has_recent_chunks should be false when last chunk was 3s ago");
     }
 
     #[test]
-    fn test_backup_idle_blocked_when_real_output_arriving() {
+    fn test_backup_idle_blocked_when_chunks_arriving() {
         use std::sync::atomic::{AtomicU8, AtomicU64};
         let state = crate::state::tests_support::make_test_app_state();
         let sid = "test-session";
@@ -3898,111 +3886,37 @@ mod tests {
             .unwrap().as_millis() as u64;
         state.last_output_ms.insert(sid.to_string(), AtomicU64::new(now - 600));
 
-        // Real output just arrived
+        // Any chunk just arrived (real or chrome-only)
         let mut silence = SilenceState::new();
-        silence.on_chunk(false, None, false, false); // real output chunk just arrived
+        silence.on_chunk(false, None, false, false); // chunk just arrived
 
         // should_transition_idle says yes (based on last_output_ms alone)
         assert!(should_transition_idle(&state, sid),
             "should_transition_idle sees stale last_output_ms");
-        // But has_recent_chunks blocks the backup timer (recent real output)
+        // But has_recent_chunks blocks the backup timer (recent chunk activity)
         assert!(silence.has_recent_chunks(),
-            "backup idle must be blocked because real output just arrived");
+            "backup idle must be blocked because chunks are arriving");
     }
 
     #[test]
-    fn test_backup_idle_not_blocked_by_chrome_only_ticks() {
-        // Chrome-only ticks (status-line) should NOT block the backup idle timer
-        // when real output has been silent for >2s.
+    fn test_backup_idle_blocked_by_chrome_only_ticks() {
+        // Chrome-only ticks (status-line) MUST block the backup idle timer
+        // because they prove the reader thread is active and the agent is alive.
+        // Regression: f5c07388 changed has_recent_chunks() to use last_output_at,
+        // which let the backup timer fire during tool calls (>3s of no real output
+        // while status-line ticks every ~1s), causing false busy→idle oscillation.
         let mut silence = SilenceState::new();
-        // Backdate real output to 3s ago
-        silence.last_output_at = std::time::Instant::now() - std::time::Duration::from_secs(3);
-        // Chrome-only tick just arrived (updates last_chunk_at but not last_output_at)
+        // Backdate real output to 5s ago (simulates a tool call in progress)
+        silence.last_output_at = std::time::Instant::now() - std::time::Duration::from_secs(5);
+        // Chrome-only tick just arrived (status-line timer tick)
         silence.on_chunk(false, None, true, true);
-        assert!(!silence.has_recent_chunks(),
-            "backup idle should NOT be blocked by chrome-only ticks when real output is stale");
+        assert!(silence.has_recent_chunks(),
+            "backup idle MUST be blocked when chrome-only ticks are arriving — agent is alive");
     }
 
-    // --- Status-line idle transition tests ---
-
-    #[test]
-    fn test_status_line_ticks_allow_idle_when_real_output_stale() {
-        // When only status-line ticks arrive and real output has been silent
-        // for STATUS_LINE_IDLE_THRESHOLD, idle transition should be allowed.
-        let mut s = SilenceState::new();
-        // Simulate a chrome-only status-line tick
-        s.on_chunk(false, None, true, true);
-        // Backdate last_output_at to 4s ago (> STATUS_LINE_IDLE_THRESHOLD)
-        s.last_output_at = std::time::Instant::now() - STATUS_LINE_IDLE_THRESHOLD - std::time::Duration::from_millis(1000);
-        assert!(s.is_real_output_stale(STATUS_LINE_IDLE_THRESHOLD),
-            "should report real output as stale after STATUS_LINE_IDLE_THRESHOLD");
-    }
-
-    #[test]
-    fn test_status_line_ticks_block_idle_when_real_output_recent() {
-        // When status-line ticks arrive but real output was recent,
-        // idle transition should NOT be allowed.
-        let mut s = SilenceState::new();
-        s.on_chunk(false, None, false, false); // real output
-        s.on_chunk(false, None, true, true);   // status-line tick right after
-        assert!(!s.is_real_output_stale(STATUS_LINE_IDLE_THRESHOLD),
-            "should NOT report real output as stale when it just arrived");
-    }
-
-    #[test]
-    fn test_status_line_ticks_idle_transition_with_full_state() {
-        // Integration: with status line ticks, the process_chunk guard should
-        // allow idle transition when real output has been stale for 3s+.
-        use std::sync::atomic::{AtomicU8, AtomicU64};
-        let state = crate::state::tests_support::make_test_app_state();
-        let sid = "test-session";
-        state.shell_states.insert(sid.to_string(), AtomicU8::new(SHELL_BUSY));
-        state.session_states.insert(sid.to_string(), crate::state::SessionState::default());
-
-        // last_output_ms is 4s ago
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap().as_millis() as u64;
-        state.last_output_ms.insert(sid.to_string(), AtomicU64::new(now - 4000));
-
-        let mut silence = SilenceState::new();
-        silence.on_chunk(false, None, true, true); // status-line tick
-        silence.last_output_at = std::time::Instant::now() - STATUS_LINE_IDLE_THRESHOLD - std::time::Duration::from_millis(1000);
-
-        // All conditions for idle should be met:
-        let has_status_line = true;
-        let real_output_stale = silence.is_real_output_stale(STATUS_LINE_IDLE_THRESHOLD);
-        assert!(real_output_stale, "real output should be stale");
-        assert!(!has_status_line || real_output_stale,
-            "guard should pass: status line present but real output stale");
-        assert!(should_transition_idle(&state, sid),
-            "should_transition_idle should allow transition");
-    }
-
-    #[test]
-    fn test_backup_timer_fires_with_status_line_ticks_and_stale_output() {
-        // The backup timer should use last_output_at (not last_chunk_at) so that
-        // status-line-only ticks don't block idle detection.
-        use std::sync::atomic::{AtomicU8, AtomicU64};
-        let state = crate::state::tests_support::make_test_app_state();
-        let sid = "test-session";
-        state.shell_states.insert(sid.to_string(), AtomicU8::new(SHELL_BUSY));
-        state.session_states.insert(sid.to_string(), crate::state::SessionState::default());
-
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap().as_millis() as u64;
-        state.last_output_ms.insert(sid.to_string(), AtomicU64::new(now - 4000));
-
-        let mut silence = SilenceState::new();
-        silence.on_chunk(false, None, true, true); // status-line tick just arrived
-        // Backdate real output to 4s ago
-        silence.last_output_at = std::time::Instant::now() - std::time::Duration::from_secs(4);
-
-        // has_recent_chunks should be false because we use last_output_at
-        assert!(!silence.has_recent_chunks(),
-            "backup timer should NOT be blocked by status-line-only ticks");
-    }
+    // Status-line idle transition: covered by test_backup_idle_blocked_by_chrome_only_ticks.
+    // Status-line ticking proves the agent is alive — the reader thread's !has_status_line
+    // guard blocks idle, and has_recent_chunks() (using last_chunk_at) blocks the backup timer.
 
     // --- ChunkProcessor tests ---
 
