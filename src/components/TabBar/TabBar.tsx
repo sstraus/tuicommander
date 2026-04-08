@@ -238,6 +238,19 @@ export const TabBar: Component<TabBarProps> = (props) => {
       }
     }
 
+    // Diagnostic: detect when TabBar shows 0 terminals but the store has some
+    if (ids.length === 0 && terminalsStore.getIds().length > 0) {
+      const activeRepoPath = repositoriesStore.state.activeRepoPath;
+      const repo = activeRepoPath ? repositoriesStore.state.repositories[activeRepoPath] : null;
+      appLogger.warn("app", "TabBar: activeTerminals empty but store has terminals", {
+        storeIds: terminalsStore.getIds(),
+        activeRepoPath,
+        activeBranch: repo?.activeBranch ?? null,
+        branchTerminals: repo?.activeBranch ? repo.branches[repo.activeBranch]?.terminals : null,
+        activeId: terminalsStore.state.activeId,
+      });
+    }
+
     // In split mode, reorder tabs to match the spatial pane layout (DFS order)
     if (!paneLayoutStore.isSplit()) return ids;
     const idSet = new Set(ids);
