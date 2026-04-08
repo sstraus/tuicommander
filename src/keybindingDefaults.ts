@@ -90,7 +90,7 @@ export const DEFAULT_BINDINGS: Record<ActionName, string> = {
   "split-horizontal": "Cmd+Alt+\\",
   "run-command": "Cmd+R",
   "edit-command": "Cmd+Shift+R",
-  "toggle-markdown": "Cmd+M",
+  "toggle-markdown": "Cmd+Shift+M",
   "toggle-notes": "Cmd+Alt+N",
   "toggle-file-browser": "Cmd+E",
   "toggle-settings": "Cmd+,",
