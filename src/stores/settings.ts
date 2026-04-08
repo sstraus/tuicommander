@@ -239,6 +239,8 @@ interface SettingsStoreState {
   globalHotkey: string | null;
 }
 
+const SAVE_DEBOUNCE_MS = 500;
+
 /** Create the settings store */
 function createSettingsStore() {
   const [state, setState] = createStore<SettingsStoreState>({
@@ -265,6 +267,53 @@ function createSettingsStore() {
     globalHotkey: null,
   });
 
+  // Shadow copy of the last loaded config — preserves fields not tracked in SolidJS store
+  // (e.g. session_token_duration_secs, mcp_server_enabled). Updated on hydrate.
+  let baseConfig: RustAppConfig | null = null;
+  let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Build a full RustAppConfig from current store state + base config fields */
+  function buildConfig(): RustAppConfig {
+    return {
+      ...(baseConfig ?? {} as RustAppConfig),
+      shell: state.shell,
+      font_family: state.font,
+      font_size: state.defaultFontSize,
+      font_weight: state.fontWeight,
+      theme: state.theme,
+      ide: state.ide,
+      default_font_size: state.defaultFontSize,
+      confirm_before_quit: state.confirmBeforeQuit,
+      confirm_before_closing_tab: state.confirmBeforeClosingTab,
+      max_tab_name_length: state.maxTabNameLength,
+      split_tab_mode: state.splitTabMode,
+      auto_show_pr_popover: state.autoShowPrPopover,
+      prevent_sleep_when_busy: state.preventSleepWhenBusy,
+      auto_update_enabled: state.autoUpdateEnabled,
+      language: state.language,
+      update_channel: state.updateChannel,
+      disabled_agents: [...state.disabledAgents],
+      intent_tab_title: state.intentTabTitle,
+      suggest_followups: state.suggestFollowups,
+      copy_on_select: state.copyOnSelect,
+      bell_style: state.bellStyle,
+      global_hotkey: state.globalHotkey,
+      session_token_duration_secs: baseConfig?.session_token_duration_secs ?? 86400,
+      mcp_server_enabled: baseConfig?.mcp_server_enabled ?? true,
+    };
+  }
+
+  /** Debounced save — coalesces rapid setting changes into a single IPC call */
+  function save(): void {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      invoke("save_config", { config: buildConfig() }).catch((err: unknown) =>
+        appLogger.error("config", "Failed to save config", err),
+      );
+    }, SAVE_DEBOUNCE_MS);
+  }
+
   const actions = {
     /** Load settings from Rust config; migrate from localStorage on first run */
     async hydrate(): Promise<void> {
@@ -283,6 +332,7 @@ function createSettingsStore() {
         localStorage.removeItem(LEGACY_KEYS.SESSION);
 
         const config = await invoke<RustAppConfig>("load_config");
+        baseConfig = config;
         setState("font", validateFont(config.font_family));
         setState("fontWeight", config.font_weight || DEFAULTS.fontWeight);
         setState("ide", validateIde(config.ide));
@@ -312,246 +362,103 @@ function createSettingsStore() {
     },
 
     /** Set IDE preference */
-    async setIde(ide: IdeType): Promise<void> {
-      const prevIde = state.ide;
+    setIde(ide: IdeType): void {
       setState("ide", ide);
-      try {
-        const config = await invoke<RustAppConfig>("load_config");
-        config.ide = ide;
-        await invoke("save_config", { config });
-      } catch (err) {
-        appLogger.error("config", "Failed to persist IDE to config", err);
-        setState("ide", prevIde);
-      }
+      save();
     },
 
-    /** Set font preference and persist to Rust config */
-    async setFont(font: FontType): Promise<void> {
-      const prevFont = state.font;
+    /** Set font preference */
+    setFont(font: FontType): void {
       setState("font", font);
-      try {
-        const config = await invoke<RustAppConfig>("load_config");
-        config.font_family = font;
-        await invoke("save_config", { config });
-      } catch (err) {
-        appLogger.error("config", "Failed to persist font to config", err);
-        setState("font", prevFont);
-      }
+      save();
     },
 
-    /** Set terminal font weight and persist to Rust config */
-    async setFontWeight(weight: number): Promise<void> {
-      const clamped = Math.max(100, Math.min(900, Math.round(weight / 100) * 100));
-      const prev = state.fontWeight;
-      setState("fontWeight", clamped);
-      try {
-        const config = await invoke<RustAppConfig>("load_config");
-        config.font_weight = clamped;
-        await invoke("save_config", { config });
-      } catch (err) {
-        appLogger.error("config", "Failed to persist fontWeight", err);
-        setState("fontWeight", prev);
-      }
+    /** Set terminal font weight */
+    setFontWeight(weight: number): void {
+      setState("fontWeight", Math.max(100, Math.min(900, Math.round(weight / 100) * 100)));
+      save();
     },
 
-    /** Load font from Rust config (call on app startup) */
-    async loadFontFromConfig(): Promise<void> {
-      try {
-        const config = await invoke<RustAppConfig>("load_config");
-        const validated = validateFont(config.font_family);
-        setState("font", validated);
-      } catch (err) {
-        appLogger.error("config", "Failed to load font from config", err);
-      }
-    },
-
-    /** Set default font size and persist to Rust config */
-    async setDefaultFontSize(size: number): Promise<void> {
-      const clamped = Math.max(8, Math.min(32, size));
-      const prev = state.defaultFontSize;
-      setState("defaultFontSize", clamped);
-      try {
-        const config = await invoke<RustAppConfig>("load_config");
-        config.default_font_size = clamped;
-        await invoke("save_config", { config });
-      } catch (err) {
-        appLogger.error("config", "Failed to persist defaultFontSize", err);
-        setState("defaultFontSize", prev);
-      }
+    /** Set default font size */
+    setDefaultFontSize(size: number): void {
+      setState("defaultFontSize", Math.max(8, Math.min(32, size)));
+      save();
     },
 
     /** Set custom shell override (null = use system default) */
-    async setShell(shell: string | null): Promise<void> {
-      const value = shell?.trim() || null;
-      const prevShell = state.shell;
-      setState("shell", value);
-      try {
-        const config = await invoke<RustAppConfig>("load_config");
-        config.shell = value;
-        await invoke("save_config", { config });
-      } catch (err) {
-        appLogger.error("config", "Failed to persist shell to config", err);
-        setState("shell", prevShell);
-      }
+    setShell(shell: string | null): void {
+      setState("shell", shell?.trim() || null);
+      save();
     },
 
     /** Set terminal theme */
-    async setTheme(theme: string): Promise<void> {
-      const prevTheme = state.theme;
+    setTheme(theme: string): void {
       setState("theme", theme);
-      try {
-        const config = await invoke<RustAppConfig>("load_config");
-        config.theme = theme;
-        await invoke("save_config", { config });
-      } catch (err) {
-        appLogger.error("config", "Failed to persist theme to config", err);
-        setState("theme", prevTheme);
-      }
+      save();
     },
 
     /** Set confirm-before-quit preference */
-    async setConfirmBeforeQuit(enabled: boolean): Promise<void> {
-      const prevValue = state.confirmBeforeQuit;
+    setConfirmBeforeQuit(enabled: boolean): void {
       setState("confirmBeforeQuit", enabled);
-      try {
-        const config = await invoke<RustAppConfig>("load_config");
-        config.confirm_before_quit = enabled;
-        await invoke("save_config", { config });
-      } catch (err) {
-        appLogger.error("config", "Failed to persist confirmBeforeQuit", err);
-        setState("confirmBeforeQuit", prevValue);
-      }
+      save();
     },
 
     /** Set confirm-before-closing-tab preference */
-    async setConfirmBeforeClosingTab(enabled: boolean): Promise<void> {
-      const prevValue = state.confirmBeforeClosingTab;
+    setConfirmBeforeClosingTab(enabled: boolean): void {
       setState("confirmBeforeClosingTab", enabled);
-      try {
-        const config = await invoke<RustAppConfig>("load_config");
-        config.confirm_before_closing_tab = enabled;
-        await invoke("save_config", { config });
-      } catch (err) {
-        appLogger.error("config", "Failed to persist confirmBeforeClosingTab", err);
-        setState("confirmBeforeClosingTab", prevValue);
-      }
+      save();
     },
 
     /** Set split tab mode preference */
-    async setSplitTabMode(mode: SplitTabMode): Promise<void> {
-      const prevMode = state.splitTabMode;
+    setSplitTabMode(mode: SplitTabMode): void {
       setState("splitTabMode", mode);
-      try {
-        const config = await invoke<RustAppConfig>("load_config");
-        config.split_tab_mode = mode;
-        await invoke("save_config", { config });
-      } catch (err) {
-        appLogger.error("config", "Failed to persist splitTabMode", err);
-        setState("splitTabMode", prevMode);
-      }
+      save();
     },
 
     /** Set auto-show PR popover preference */
-    async setAutoShowPrPopover(enabled: boolean): Promise<void> {
-      const prevValue = state.autoShowPrPopover;
+    setAutoShowPrPopover(enabled: boolean): void {
       setState("autoShowPrPopover", enabled);
-      try {
-        const config = await invoke<RustAppConfig>("load_config");
-        config.auto_show_pr_popover = enabled;
-        await invoke("save_config", { config });
-      } catch (err) {
-        appLogger.error("config", "Failed to persist autoShowPrPopover", err);
-        setState("autoShowPrPopover", prevValue);
-      }
+      save();
     },
 
     /** Set prevent-sleep-when-busy preference */
-    async setPreventSleepWhenBusy(enabled: boolean): Promise<void> {
-      const prevValue = state.preventSleepWhenBusy;
+    setPreventSleepWhenBusy(enabled: boolean): void {
       setState("preventSleepWhenBusy", enabled);
-      try {
-        const config = await invoke<RustAppConfig>("load_config");
-        config.prevent_sleep_when_busy = enabled;
-        await invoke("save_config", { config });
-      } catch (err) {
-        appLogger.error("config", "Failed to persist preventSleepWhenBusy", err);
-        setState("preventSleepWhenBusy", prevValue);
-      }
+      save();
     },
 
     /** Set auto-update-enabled preference */
-    async setAutoUpdateEnabled(enabled: boolean): Promise<void> {
-      const prevValue = state.autoUpdateEnabled;
+    setAutoUpdateEnabled(enabled: boolean): void {
       setState("autoUpdateEnabled", enabled);
-      try {
-        const config = await invoke<RustAppConfig>("load_config");
-        config.auto_update_enabled = enabled;
-        await invoke("save_config", { config });
-      } catch (err) {
-        appLogger.error("config", "Failed to persist autoUpdateEnabled", err);
-        setState("autoUpdateEnabled", prevValue);
-      }
+      save();
     },
 
     /** Set update channel preference */
-    async setUpdateChannel(channel: UpdateChannel): Promise<void> {
-      const prevChannel = state.updateChannel;
+    setUpdateChannel(channel: UpdateChannel): void {
       setState("updateChannel", channel);
-      try {
-        const config = await invoke<RustAppConfig>("load_config");
-        config.update_channel = channel;
-        await invoke("save_config", { config });
-      } catch (err) {
-        appLogger.error("config", "Failed to persist updateChannel", err);
-        setState("updateChannel", prevChannel);
-      }
+      save();
     },
 
     /** Set UI language */
-    async setLanguage(language: string): Promise<void> {
-      const prevLang = state.language;
+    setLanguage(language: string): void {
       setState("language", language);
       setLocale(language);
-      try {
-        const config = await invoke<RustAppConfig>("load_config");
-        config.language = language;
-        await invoke("save_config", { config });
-      } catch (err) {
-        appLogger.error("config", "Failed to persist language", err);
-        setState("language", prevLang);
-        setLocale(prevLang);
-      }
+      save();
     },
 
-    /** Set max tab name length and persist */
-    async setMaxTabNameLength(length: number): Promise<void> {
-      const clamped = Math.max(10, Math.min(60, length));
-      const prev = state.maxTabNameLength;
-      setState("maxTabNameLength", clamped);
-      try {
-        const config = await invoke<RustAppConfig>("load_config");
-        config.max_tab_name_length = clamped;
-        await invoke("save_config", { config });
-      } catch (err) {
-        appLogger.error("config", "Failed to persist maxTabNameLength", err);
-        setState("maxTabNameLength", prev);
-      }
+    /** Set max tab name length */
+    setMaxTabNameLength(length: number): void {
+      setState("maxTabNameLength", Math.max(10, Math.min(60, length)));
+      save();
     },
 
     /** Toggle an agent's enabled/disabled state */
-    async toggleAgent(agentType: string): Promise<void> {
-      const prev = [...state.disabledAgents];
-      const isDisabled = prev.includes(agentType);
-      const next = isDisabled ? prev.filter((a) => a !== agentType) : [...prev, agentType];
-      setState("disabledAgents", next);
-      try {
-        const config = await invoke<RustAppConfig>("load_config");
-        config.disabled_agents = next;
-        await invoke("save_config", { config });
-      } catch (err) {
-        appLogger.error("config", "Failed to persist disabledAgents", err);
-        setState("disabledAgents", prev);
-      }
+    toggleAgent(agentType: string): void {
+      const isDisabled = state.disabledAgents.includes(agentType);
+      setState("disabledAgents", isDisabled
+        ? state.disabledAgents.filter((a) => a !== agentType)
+        : [...state.disabledAgents, agentType]);
+      save();
     },
 
     /** Check if an agent type is enabled */
@@ -560,58 +467,33 @@ function createSettingsStore() {
     },
 
     /** Set intent-as-tab-title preference */
-    async setIntentTabTitle(enabled: boolean): Promise<void> {
-      const prevValue = state.intentTabTitle;
+    setIntentTabTitle(enabled: boolean): void {
       setState("intentTabTitle", enabled);
-      try {
-        const config = await invoke<RustAppConfig>("load_config");
-        config.intent_tab_title = enabled;
-        await invoke("save_config", { config });
-      } catch (err) {
-        appLogger.error("config", "Failed to persist intentTabTitle", err);
-        setState("intentTabTitle", prevValue);
-      }
+      save();
     },
 
     /** Set suggest-followups preference */
-    async setSuggestFollowups(enabled: boolean): Promise<void> {
-      const prevValue = state.suggestFollowups;
+    setSuggestFollowups(enabled: boolean): void {
       setState("suggestFollowups", enabled);
-      try {
-        const config = await invoke<RustAppConfig>("load_config");
-        config.suggest_followups = enabled;
-        await invoke("save_config", { config });
-      } catch (err) {
-        appLogger.error("config", "Failed to persist suggestFollowups", err);
-        setState("suggestFollowups", prevValue);
-      }
+      save();
     },
 
     /** Set copy-on-select preference */
-    async setCopyOnSelect(enabled: boolean): Promise<void> {
-      const prevValue = state.copyOnSelect;
+    setCopyOnSelect(enabled: boolean): void {
       setState("copyOnSelect", enabled);
-      try {
-        const config = await invoke<RustAppConfig>("load_config");
-        config.copy_on_select = enabled;
-        await invoke("save_config", { config });
-      } catch (err) {
-        appLogger.error("config", "Failed to persist copyOnSelect", err);
-        setState("copyOnSelect", prevValue);
-      }
+      save();
     },
 
     /** Set terminal bell style */
-    async setBellStyle(style: SettingsStoreState["bellStyle"]): Promise<void> {
-      const prevValue = state.bellStyle;
+    setBellStyle(style: SettingsStoreState["bellStyle"]): void {
       setState("bellStyle", style);
-      try {
-        const config = await invoke<RustAppConfig>("load_config");
-        config.bell_style = style;
-        await invoke("save_config", { config });
-      } catch (err) {
-        appLogger.error("config", "Failed to persist bellStyle", err);
-        setState("bellStyle", prevValue);
+      save();
+    },
+
+    /** Re-apply font from the last loaded config (no IPC — uses hydrate cache) */
+    loadFontFromConfig(): void {
+      if (baseConfig) {
+        setState("font", validateFont(baseConfig.font_family));
       }
     },
 

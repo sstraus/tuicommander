@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { testInScope, testInScopeAsync } from "../helpers/store";
 
 const mockInvoke = vi.fn().mockResolvedValue(undefined);
@@ -11,6 +11,7 @@ describe("settingsStore", () => {
   let store: typeof import("../../stores/settings").settingsStore;
 
   beforeEach(async () => {
+    vi.useFakeTimers();
     vi.resetModules();
     localStorage.clear();
     mockInvoke.mockReset().mockResolvedValue(undefined);
@@ -20,6 +21,10 @@ describe("settingsStore", () => {
     }));
 
     store = (await import("../../stores/settings")).settingsStore;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   describe("defaults", () => {
@@ -43,37 +48,33 @@ describe("settingsStore", () => {
       });
     });
 
-    it("rolls back IDE on persist failure", async () => {
-      mockInvoke.mockRejectedValueOnce(new Error("fail"));
-      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
+    it("persists IDE via debounced save_config", async () => {
       await testInScopeAsync(async () => {
-        await store.setIde("cursor");
-        expect(store.state.ide).toBe("vscode");
-        expect(errSpy).toHaveBeenCalled();
-        errSpy.mockRestore();
-      });
-    });
-
-    it("persists IDE to Rust config via invoke", async () => {
-      mockInvoke.mockResolvedValueOnce({
-        shell: null,
-        font_family: "JetBrains Mono",
-        font_size: 14,
-        theme: "tokyo-night",
-
-        mcp_server_enabled: false,
-        ide: "vscode",
-        default_font_size: 12,
-      });
-      mockInvoke.mockResolvedValueOnce(undefined);
-
-      await testInScopeAsync(async () => {
-        await store.setIde("cursor");
-        expect(mockInvoke).toHaveBeenCalledWith("load_config");
+        store.setIde("cursor");
+        // Not yet saved (debounced)
+        expect(mockInvoke).not.toHaveBeenCalledWith("save_config", expect.anything());
+        // Advance past debounce
+        vi.advanceTimersByTime(600);
+        await vi.runAllTimersAsync();
         expect(mockInvoke).toHaveBeenCalledWith("save_config", {
           config: expect.objectContaining({ ide: "cursor" }),
         });
+      });
+    });
+
+    it("coalesces rapid changes into single save", async () => {
+      await testInScopeAsync(async () => {
+        store.setIde("cursor");
+        store.setIde("zed");
+        store.setIde("windsurf");
+        vi.advanceTimersByTime(600);
+        await vi.runAllTimersAsync();
+        // Only one save_config call with the final value
+        const saveCalls = mockInvoke.mock.calls.filter(
+          (c: unknown[]) => c[0] === "save_config"
+        );
+        expect(saveCalls).toHaveLength(1);
+        expect(saveCalls[0][1].config.ide).toBe("windsurf");
       });
     });
   });
@@ -86,34 +87,11 @@ describe("settingsStore", () => {
       });
     });
 
-    it("rolls back font on persist failure", async () => {
-      mockInvoke.mockRejectedValueOnce(new Error("fail"));
-      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
+    it("persists font via debounced save_config", async () => {
       await testInScopeAsync(async () => {
-        await store.setFont("Fira Code");
-        expect(store.state.font).toBe("JetBrains Mono");
-        expect(errSpy).toHaveBeenCalled();
-        errSpy.mockRestore();
-      });
-    });
-
-    it("persists font to Rust config via invoke", async () => {
-      mockInvoke.mockResolvedValueOnce({
-        shell: null,
-        font_family: "JetBrains Mono",
-        font_size: 14,
-        theme: "tokyo-night",
-
-        mcp_server_enabled: false,
-        ide: "vscode",
-        default_font_size: 12,
-      });
-      mockInvoke.mockResolvedValueOnce(undefined);
-
-      await testInScopeAsync(async () => {
-        await store.setFont("Fira Code");
-        expect(mockInvoke).toHaveBeenCalledWith("load_config");
+        store.setFont("Fira Code");
+        vi.advanceTimersByTime(600);
+        await vi.runAllTimersAsync();
         expect(mockInvoke).toHaveBeenCalledWith("save_config", {
           config: expect.objectContaining({ font_family: "Fira Code" }),
         });
@@ -142,48 +120,36 @@ describe("settingsStore", () => {
   });
 
   describe("loadFontFromConfig()", () => {
-    it("loads font from Rust config", async () => {
+    it("applies font from hydrated config cache", async () => {
       mockInvoke.mockResolvedValueOnce({
         shell: null,
         font_family: "Hack",
         font_size: 14,
         theme: "tokyo-night",
-
         mcp_server_enabled: false,
         ide: "vscode",
         default_font_size: 12,
       });
 
       await testInScopeAsync(async () => {
-        await store.loadFontFromConfig();
+        await store.hydrate();
+        // Change font locally
+        store.setFont("Fira Code");
+        expect(store.state.font).toBe("Fira Code");
+        // Re-apply from cache (no IPC)
+        store.loadFontFromConfig();
         expect(store.state.font).toBe("Hack");
-        expect(mockInvoke).toHaveBeenCalledWith("load_config");
+        // No extra load_config call — uses hydrate cache
+        const loadCalls = mockInvoke.mock.calls.filter(
+          (c: unknown[]) => c[0] === "load_config"
+        );
+        expect(loadCalls).toHaveLength(1); // only from hydrate
       });
     });
 
-    it("falls back to default for invalid font in config", async () => {
-      mockInvoke.mockResolvedValueOnce({
-        shell: null,
-        font_family: "Comic Sans",
-        font_size: 14,
-        theme: "tokyo-night",
-
-        mcp_server_enabled: false,
-        ide: "vscode",
-        default_font_size: 12,
-      });
-
-      await testInScopeAsync(async () => {
-        await store.loadFontFromConfig();
-        expect(store.state.font).toBe("JetBrains Mono");
-      });
-    });
-
-    it("keeps default on invoke failure", async () => {
-      mockInvoke.mockRejectedValueOnce(new Error("no backend"));
-
-      await testInScopeAsync(async () => {
-        await store.loadFontFromConfig();
+    it("no-op before hydrate", () => {
+      testInScope(() => {
+        store.loadFontFromConfig();
         expect(store.state.font).toBe("JetBrains Mono");
       });
     });
@@ -269,136 +235,74 @@ describe("settingsStore", () => {
   });
 
   describe("setShell()", () => {
-    it("sets custom shell and persists", async () => {
-      mockInvoke.mockResolvedValueOnce({
-        shell: null, font_family: "JetBrains Mono", font_size: 14,
-        theme: "tokyo-night", mcp_server_enabled: false,
-        ide: "vscode", default_font_size: 12,
-      });
-      mockInvoke.mockResolvedValueOnce(undefined);
-
-      await testInScopeAsync(async () => {
-        await store.setShell("/bin/zsh");
+    it("sets custom shell", () => {
+      testInScope(() => {
+        store.setShell("/bin/zsh");
         expect(store.state.shell).toBe("/bin/zsh");
+      });
+    });
+
+    it("trims whitespace and sets null for empty string", () => {
+      testInScope(() => {
+        store.setShell("  ");
+        expect(store.state.shell).toBeNull();
+      });
+    });
+
+    it("persists shell via debounced save", async () => {
+      await testInScopeAsync(async () => {
+        store.setShell("/bin/zsh");
+        vi.advanceTimersByTime(600);
+        await vi.runAllTimersAsync();
         expect(mockInvoke).toHaveBeenCalledWith("save_config", {
           config: expect.objectContaining({ shell: "/bin/zsh" }),
         });
       });
     });
-
-    it("trims whitespace and sets null for empty string", async () => {
-      mockInvoke.mockResolvedValueOnce({
-        shell: null, font_family: "JetBrains Mono", font_size: 14,
-        theme: "tokyo-night", mcp_server_enabled: false,
-        ide: "vscode", default_font_size: 12,
-      });
-      mockInvoke.mockResolvedValueOnce(undefined);
-
-      await testInScopeAsync(async () => {
-        await store.setShell("  ");
-        expect(store.state.shell).toBeNull();
-      });
-    });
-
-    it("rolls back shell on persist failure", async () => {
-      mockInvoke.mockRejectedValueOnce(new Error("fail"));
-      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-      await testInScopeAsync(async () => {
-        await store.setShell("/bin/fish");
-        expect(store.state.shell).toBeNull();
-        expect(errSpy).toHaveBeenCalled();
-        errSpy.mockRestore();
-      });
-    });
   });
 
   describe("setTheme()", () => {
-    it("sets theme and persists", async () => {
-      mockInvoke.mockResolvedValueOnce({
-        shell: null, font_family: "JetBrains Mono", font_size: 14,
-        theme: "tokyo-night", mcp_server_enabled: false,
-        ide: "vscode", default_font_size: 12,
-      });
-      mockInvoke.mockResolvedValueOnce(undefined);
-
+    it("sets theme and persists via debounced save", async () => {
       await testInScopeAsync(async () => {
-        await store.setTheme("dracula");
+        store.setTheme("dracula");
         expect(store.state.theme).toBe("dracula");
+        vi.advanceTimersByTime(600);
+        await vi.runAllTimersAsync();
         expect(mockInvoke).toHaveBeenCalledWith("save_config", {
           config: expect.objectContaining({ theme: "dracula" }),
         });
       });
     });
-
-    it("rolls back theme on persist failure", async () => {
-      mockInvoke.mockRejectedValueOnce(new Error("fail"));
-      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-      await testInScopeAsync(async () => {
-        await store.setTheme("nord");
-        expect(store.state.theme).toBe("commander");
-        expect(errSpy).toHaveBeenCalled();
-        errSpy.mockRestore();
-      });
-    });
   });
 
   describe("setSplitTabMode()", () => {
-    it("sets split tab mode and persists", async () => {
-      mockInvoke.mockResolvedValueOnce({
-        shell: null, font_family: "JetBrains Mono", font_size: 14,
-        theme: "tokyo-night", mcp_server_enabled: false,
-        ide: "vscode", default_font_size: 12, split_tab_mode: "separate",
-      });
-      mockInvoke.mockResolvedValueOnce(undefined);
-
+    it("sets split tab mode and persists via debounced save", async () => {
       await testInScopeAsync(async () => {
-        await store.setSplitTabMode("unified");
+        store.setSplitTabMode("unified");
         expect(store.state.splitTabMode).toBe("unified");
+        vi.advanceTimersByTime(600);
+        await vi.runAllTimersAsync();
         expect(mockInvoke).toHaveBeenCalledWith("save_config", {
           config: expect.objectContaining({ split_tab_mode: "unified" }),
         });
       });
     });
-
-    it("rolls back splitTabMode on persist failure", async () => {
-      mockInvoke.mockRejectedValueOnce(new Error("fail"));
-      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-      await testInScopeAsync(async () => {
-        await store.setSplitTabMode("unified");
-        expect(store.state.splitTabMode).toBe("separate");
-        expect(errSpy).toHaveBeenCalled();
-        errSpy.mockRestore();
-      });
-    });
   });
 
   describe("setConfirmBeforeQuit()", () => {
-    it("rolls back confirmBeforeQuit on persist failure", async () => {
-      mockInvoke.mockRejectedValueOnce(new Error("fail"));
-      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-      await testInScopeAsync(async () => {
-        await store.setConfirmBeforeQuit(false);
-        expect(store.state.confirmBeforeQuit).toBe(true);
-        expect(errSpy).toHaveBeenCalled();
-        errSpy.mockRestore();
+    it("updates state", () => {
+      testInScope(() => {
+        store.setConfirmBeforeQuit(false);
+        expect(store.state.confirmBeforeQuit).toBe(false);
       });
     });
   });
 
   describe("setConfirmBeforeClosingTab()", () => {
-    it("rolls back confirmBeforeClosingTab on persist failure", async () => {
-      mockInvoke.mockRejectedValueOnce(new Error("fail"));
-      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-      await testInScopeAsync(async () => {
-        await store.setConfirmBeforeClosingTab(false);
-        expect(store.state.confirmBeforeClosingTab).toBe(true);
-        expect(errSpy).toHaveBeenCalled();
-        errSpy.mockRestore();
+    it("updates state", () => {
+      testInScope(() => {
+        store.setConfirmBeforeClosingTab(false);
+        expect(store.state.confirmBeforeClosingTab).toBe(false);
       });
     });
   });
@@ -410,32 +314,15 @@ describe("settingsStore", () => {
       });
     });
 
-    it("sets autoShowPrPopover and persists", async () => {
-      mockInvoke.mockResolvedValueOnce({
-        shell: null, font_family: "JetBrains Mono", font_size: 14,
-        theme: "tokyo-night", mcp_server_enabled: false,
-        ide: "vscode", default_font_size: 12, auto_show_pr_popover: true,
-      });
-      mockInvoke.mockResolvedValueOnce(undefined);
-
+    it("sets autoShowPrPopover and persists via debounced save", async () => {
       await testInScopeAsync(async () => {
-        await store.setAutoShowPrPopover(false);
+        store.setAutoShowPrPopover(false);
         expect(store.state.autoShowPrPopover).toBe(false);
+        vi.advanceTimersByTime(600);
+        await vi.runAllTimersAsync();
         expect(mockInvoke).toHaveBeenCalledWith("save_config", {
           config: expect.objectContaining({ auto_show_pr_popover: false }),
         });
-      });
-    });
-
-    it("rolls back autoShowPrPopover on persist failure", async () => {
-      mockInvoke.mockRejectedValueOnce(new Error("fail"));
-      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-      await testInScopeAsync(async () => {
-        await store.setAutoShowPrPopover(false);
-        expect(store.state.autoShowPrPopover).toBe(true);
-        expect(errSpy).toHaveBeenCalled();
-        errSpy.mockRestore();
       });
     });
 

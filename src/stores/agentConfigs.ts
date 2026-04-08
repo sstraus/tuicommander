@@ -10,7 +10,8 @@ interface AgentConfigsState {
   loaded: boolean;
 }
 
-/** Deep-clone a plain object to break SolidJS proxy references */
+/** Deep-clone a plain object to break SolidJS proxy references.
+ * Must use JSON round-trip because structuredClone cannot handle SolidJS proxies. */
 function clone<T>(obj: T): T {
   return JSON.parse(JSON.stringify(obj));
 }

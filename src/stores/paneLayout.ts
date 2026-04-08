@@ -321,7 +321,7 @@ function createPaneLayoutStore() {
         };
       }
       const snapshot: PaneLayoutState = {
-        root: tree ? JSON.parse(JSON.stringify(tree)) : null,
+        root: tree ? structuredClone(tree) : null,
         groups,
         activeGroupId: state.activeGroupId,
       };
@@ -551,7 +551,7 @@ function createPaneLayoutStore() {
         };
       }
       return {
-        root: tree ? JSON.parse(JSON.stringify(tree)) : null,
+        root: tree ? structuredClone(tree) : null,
         groups,
         activeGroupId: state.activeGroupId,
       };

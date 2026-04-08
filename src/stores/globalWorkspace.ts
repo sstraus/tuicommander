@@ -286,7 +286,7 @@ function createGlobalWorkspaceStore() {
 
     /** Set the global workspace layout */
     setLayout(newLayout: PaneLayoutState | null): void {
-      layout = newLayout ? JSON.parse(JSON.stringify(newLayout)) : null;
+      layout = newLayout ? structuredClone(newLayout) : null;
     },
   };
 }
