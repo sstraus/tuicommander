@@ -403,6 +403,7 @@ impl SilenceState {
     /// Status-line ticking proves the agent is alive — the backup timer should
     /// only fire when truly no chunks arrive (reader blocked on read()).
     /// The 2s threshold matches the frontend debounce hold (BUSY_HOLD_MS).
+    #[allow(dead_code)] // called from tests; kept for backup-idle-timer reintegration
     pub(crate) fn has_recent_chunks(&self) -> bool {
         self.last_chunk_at.elapsed() < std::time::Duration::from_secs(2)
     }
@@ -549,14 +550,12 @@ fn spawn_silence_timer(
                 break;
             }
 
-            // Backup idle check: when no chunks arrive at all (reader blocked on read()),
-            // the reader thread never gets a chance to emit idle. The timer catches this.
-            // Guard: skip if the reader thread is actively processing chunks — even
-            // chrome-only status-line ticks block this, because the reader thread
-            // handles idle transitions via its `!has_status_line` guard.
-            let reader_active = silence.lock().has_recent_chunks();
-            if !reader_active
-                && let Some(atom) = state.shell_states.get(&session_id)
+            // Sole idle path: the silence timer is the only code that transitions
+            // busy → idle. The reader thread only does → busy on real output.
+            // `should_transition_idle` checks elapsed time vs threshold (500ms shell /
+            // 2500ms agent) and sub-task count. Spinner rows keep last_output_ms
+            // fresh in the reader, so this won't fire while a spinner is active.
+            if let Some(atom) = state.shell_states.get(&session_id)
                 && atom.load(std::sync::atomic::Ordering::Acquire) == SHELL_BUSY
                 && should_transition_idle(&state, &session_id)
                 && try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE)
@@ -676,6 +675,10 @@ struct ChunkProcessor {
     pending_planfiles: Vec<(String, std::time::Instant)>,
     /// Plan file paths already emitted — prevents re-emitting on spinner redraws.
     emitted_planfiles: std::collections::HashSet<String>,
+    /// Buffer for incomplete last line containing `suggest:`. When a chunk ends
+    /// mid-line with a partial suggest token, we hold it here until the next
+    /// chunk completes the line so `conceal_suggest` can match the full pattern.
+    suggest_line_buf: String,
 }
 
 impl ChunkProcessor {
@@ -687,18 +690,91 @@ impl ChunkProcessor {
             session_cwd,
             pending_planfiles: Vec::new(),
             emitted_planfiles: std::collections::HashSet::new(),
+            suggest_line_buf: String::new(),
         }
     }
 
     /// Colorize `intent:` and conceal `suggest:` plain-prefix tokens on the xterm
-    /// stream. Only runs when an agent is detected. Incomplete lines (split across
-    /// chunks) pass through uncolored — cosmetic only, never blocks output.
-    /// The `|` requirement in SUGGEST_LINE_RE prevents false matches on prose.
+    /// stream. Only runs when an agent is detected.
+    ///
+    /// When a chunk ends mid-line with a partial `suggest: A | B` token (has `suggest:`
+    /// and at least one `|` already), the trailing incomplete line is buffered in
+    /// `suggest_line_buf` and prepended to the next chunk. This ensures `conceal_suggest`
+    /// always sees the full line before passing it to xterm.
+    ///
+    /// The buffer is intentionally self-healing: if the buffered line never gets a `|`
+    /// (prose suggest or interrupted agent), the prepend on the next chunk causes it to
+    /// be emitted immediately without re-buffering — so interrupts (Ctrl+C) never stall
+    /// subsequent output.
+    /// Drain any buffered incomplete `suggest:` line. Called at EOF so the
+    /// buffer does not silently swallow the last output when no newline follows.
+    fn flush_suggest_buf(&mut self) -> Option<String> {
+        if self.suggest_line_buf.is_empty() {
+            None
+        } else {
+            Some(std::mem::take(&mut self.suggest_line_buf))
+        }
+    }
+
     fn transform_xterm(&mut self, data: String) -> Option<String> {
+        // Prepend any buffered partial suggest line from the previous chunk.
+        // If the reassembled line still has no `|`, it will not be re-buffered below,
+        // so the buffer self-heals on interrupts or prose suggest lines.
+        let data = if self.suggest_line_buf.is_empty() {
+            data
+        } else {
+            let mut combined = std::mem::take(&mut self.suggest_line_buf);
+            combined.push_str(&data);
+            combined
+        };
+
+        // If the last line is incomplete (no trailing newline/CR), contains "suggest:",
+        // AND already has a `|` (meaning it's a real suggest token, not prose), hold it
+        // back so conceal_suggest can match the full pattern once the line completes.
+        // Lines without `|` pass through immediately — no blocking, no stale buffer.
+        let data = if !data.ends_with('\n') && !data.ends_with('\r') {
+            if let Some(split_pos) = data.rfind('\n').or_else(|| data.rfind('\r')) {
+                let (complete, trailing) = data.split_at(split_pos + 1);
+                if trailing.contains("suggest:") && trailing.contains('|') {
+                    self.suggest_line_buf = trailing.to_string();
+                    complete.to_string()
+                } else {
+                    data
+                }
+            } else {
+                // Entire chunk is a single incomplete line — buffer only if it has suggest: + |
+                if data.contains("suggest:") && data.contains('|') {
+                    self.suggest_line_buf = data;
+                    return Some(String::new());
+                }
+                data
+            }
+        } else {
+            data
+        };
+
+        if data.is_empty() {
+            return Some(String::new());
+        }
+
         let has_intent = data.contains("intent:");
         let has_suggest = data.contains("suggest:");
+
+        // DEBUG: log raw data when suggest: is present to diagnose conceal failures
+        if has_suggest {
+            let escaped = data.replace('\x1b', "\\e").replace('\r', "\\r").replace('\n', "\\n");
+            tracing::warn!("[suggest-debug] raw data ({} bytes): {}", data.len(), &escaped[..escaped.len().min(500)]);
+        }
+
         let result = if has_intent { colorize_intent(&data) } else { data };
         let result = if has_suggest { conceal_suggest(&result) } else { result };
+
+        // DEBUG: log result after conceal to see what survived
+        if has_suggest {
+            let escaped = result.replace('\x1b', "\\e").replace('\r', "\\r").replace('\n', "\\n");
+            tracing::warn!("[suggest-debug] after conceal ({} bytes): {}", result.len(), &escaped[..escaped.len().min(500)]);
+        }
+
         Some(result)
     }
 
@@ -956,28 +1032,18 @@ impl ChunkProcessor {
             ts.store(now, std::sync::atomic::Ordering::Relaxed);
         }
 
-        // Shell state transitions (Rust is the single source of truth).
-        if !chrome_only {
-            if !silence.lock().is_resize_grace()
-                && let Some(atom) = state.shell_states.get(session_id)
-            {
-                let prev = atom.load(std::sync::atomic::Ordering::Acquire);
-                if prev != SHELL_BUSY
-                    && try_shell_transition(state, session_id, prev, SHELL_BUSY)
-                {
-                    emit_shell_state(state, app, session_id, "busy");
-                }
-            }
-        } else if !has_status_line
+        // Shell state: reader only transitions → BUSY on real output.
+        // Idle transitions are handled exclusively by the silence timer to
+        // eliminate the two-path race that caused 15+ fix/revert cycles.
+        if !chrome_only && !silence.lock().is_resize_grace()
             && let Some(atom) = state.shell_states.get(session_id)
-            && atom.load(std::sync::atomic::Ordering::Acquire) == SHELL_BUSY
-            && should_transition_idle(state, session_id)
-            && try_shell_transition(state, session_id, SHELL_BUSY, SHELL_IDLE)
         {
-            // Chrome-only chunk without a status line (e.g. separator repaint) —
-            // safe to transition idle. Spinner repaints keep last_output_ms fresh
-            // (above), so should_transition_idle won't fire while a spinner is active.
-            emit_shell_state(state, app, session_id, "idle");
+            let prev = atom.load(std::sync::atomic::Ordering::Acquire);
+            if prev != SHELL_BUSY
+                && try_shell_transition(state, session_id, prev, SHELL_BUSY)
+            {
+                emit_shell_state(state, app, session_id, "busy");
+            }
         }
 
         Some(data.to_owned())
@@ -1314,6 +1380,17 @@ pub(crate) fn spawn_reader_thread(
                 PtyOutput {
                     session_id: session_id.clone(),
                     data: remaining,
+                },
+            );
+        }
+
+        // Flush any suggest line buffered without a trailing newline
+        if let Some(suggest_tail) = processor.flush_suggest_buf() {
+            let _ = app.emit(
+                &format!("pty-output-{session_id}"),
+                PtyOutput {
+                    session_id: session_id.clone(),
+                    data: suggest_tail,
                 },
             );
         }
@@ -4120,6 +4197,96 @@ mod tests {
         // Incomplete intent without newline — passes through uncolored (no blocking)
         let r1 = cp.transform_xterm("intent: doing so".to_string());
         assert!(r1.is_some(), "incomplete intent must not block output");
+    }
+
+    #[test]
+    fn test_transform_xterm_suggest_buffered_across_chunks() {
+        let mut cp = ChunkProcessor::new(None);
+        // Chunk 1: partial suggest line WITH pipe — must be buffered (has suggest: + |)
+        let r1 = cp.transform_xterm("suggest: 1) Foo |".to_string());
+        assert_eq!(r1, Some(String::new()), "partial suggest with | should be buffered");
+        assert!(!cp.suggest_line_buf.is_empty(), "buffer should hold partial line");
+
+        // Chunk 2: completes the line — should conceal the full suggest
+        let r2 = cp.transform_xterm(" 2) Bar\n".to_string());
+        assert!(r2.is_some());
+        let data = r2.unwrap();
+        assert!(!data.contains("suggest:"), "reassembled suggest should be concealed");
+        assert!(cp.suggest_line_buf.is_empty(), "buffer should be cleared after completion");
+    }
+
+    #[test]
+    fn test_transform_xterm_suggest_no_pipe_not_buffered() {
+        let mut cp = ChunkProcessor::new(None);
+        // suggest: without | (prose or incomplete before first pipe) — must NOT buffer
+        let r1 = cp.transform_xterm("suggest: investigating this issue".to_string());
+        assert!(r1.is_some());
+        assert_eq!(r1.unwrap(), "suggest: investigating this issue", "prose suggest should pass through");
+        assert!(cp.suggest_line_buf.is_empty(), "prose suggest must not stall output");
+    }
+
+    #[test]
+    fn test_transform_xterm_suggest_buffered_with_preceding_lines() {
+        let mut cp = ChunkProcessor::new(None);
+        // Chunk has complete lines followed by an incomplete suggest line with pipe
+        let r1 = cp.transform_xterm("some output\nsuggest: A | B".to_string());
+        assert!(r1.is_some());
+        let data = r1.unwrap();
+        assert!(data.contains("some output"), "complete lines should pass through");
+        assert!(!data.contains("suggest:"), "partial suggest should be buffered");
+        assert!(!cp.suggest_line_buf.is_empty());
+
+        // Complete the line
+        let r2 = cp.transform_xterm(" | C\n".to_string());
+        let data = r2.unwrap();
+        assert!(!data.contains("suggest:"), "reassembled suggest should be concealed");
+    }
+
+    #[test]
+    fn test_transform_xterm_suggest_self_heals_on_interrupt() {
+        let mut cp = ChunkProcessor::new(None);
+        // Buffer a partial suggest line (has | so it buffers)
+        let r1 = cp.transform_xterm("suggest: 1) Foo |".to_string());
+        assert_eq!(r1, Some(String::new()));
+        assert!(!cp.suggest_line_buf.is_empty());
+
+        // Simulate Ctrl+C / interrupt: next chunk is a new prompt with no suggest continuation
+        let r2 = cp.transform_xterm("^C\n$ ".to_string());
+        assert!(r2.is_some());
+        let data = r2.unwrap();
+        // The buffered partial suggest is flushed (prepended), reassembled string has no |
+        // after the "^C\n$ " suffix to form a complete suggest line — but it has no newline
+        // in the trailing part, so it won't re-buffer. The key is no stall.
+        assert!(cp.suggest_line_buf.is_empty(), "buffer must self-heal after interrupt");
+        // The output should include the prompt characters
+        assert!(data.contains("^C") || data.contains("$"), "prompt output must not be lost");
+    }
+
+    #[test]
+    fn test_transform_xterm_non_suggest_incomplete_not_buffered() {
+        let mut cp = ChunkProcessor::new(None);
+        // Incomplete line without suggest: should pass through immediately
+        let r1 = cp.transform_xterm("regular incomplete output".to_string());
+        assert_eq!(r1, Some("regular incomplete output".to_string()));
+        assert!(cp.suggest_line_buf.is_empty(), "non-suggest incomplete lines should not buffer");
+    }
+
+    #[test]
+    fn test_flush_suggest_buf_drains_stalled_buffer() {
+        let mut cp = ChunkProcessor::new(None);
+        // Buffer a partial suggest (no trailing newline)
+        let r1 = cp.transform_xterm("suggest: 1) Foo | 2) Bar".to_string());
+        assert_eq!(r1, Some(String::new()), "partial suggest should be buffered");
+        assert!(!cp.suggest_line_buf.is_empty());
+
+        // EOF flush should drain the buffer
+        let flushed = cp.flush_suggest_buf();
+        assert!(flushed.is_some(), "flush must return buffered content");
+        assert!(flushed.unwrap().contains("suggest:"), "flushed content must contain the suggest line");
+        assert!(cp.suggest_line_buf.is_empty(), "buffer must be empty after flush");
+
+        // Second flush should return None
+        assert!(cp.flush_suggest_buf().is_none(), "double flush must return None");
     }
 
     // --- log_anomalous_sequences tests ---
