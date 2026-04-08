@@ -1053,36 +1053,46 @@ pub fn conceal_suggest(raw: &str) -> String {
     }
     let csi = csi_re();
     let mut out = String::with_capacity(raw.len());
-    let mut first = true;
-    for line in raw.split('\n') {
-        if !first {
+    let mut first_nl = true;
+    for nl_segment in raw.split('\n') {
+        if !first_nl {
             out.push('\n');
         }
-        first = false;
-        if !line.contains("suggest:") {
-            out.push_str(line);
+        first_nl = false;
+        if !nl_segment.contains("suggest:") {
+            out.push_str(nl_segment);
             continue;
         }
-        let (body_slice, trailing_cr) = if let Some(stripped) = line.strip_suffix('\r') {
-            (stripped, "\r")
-        } else {
-            (line, "")
-        };
-        let clean = csi.replace_all(body_slice, "");
-        if let Some(caps) = SUGGEST_LINE_RE.captures(&clean) {
-            let prefix_visible = caps[1].trim();
-            if prefix_visible.is_empty() {
-                // Token alone on its line → erase the whole line.
-                out.push_str("\x1b[2K\x1b[A");
-                out.push_str(trailing_cr);
-            } else {
-                // Other visible content on the line → blank out just the token.
-                let visible_len = clean.chars().count();
-                out.push_str(&" ".repeat(visible_len));
-                out.push_str(trailing_cr);
+        // Split by \r as well: Ink renders with \r + cursor positioning
+        // instead of \n, so the suggest token may sit inside a \r-segment.
+        let mut first_cr = true;
+        for cr_segment in nl_segment.split('\r') {
+            let is_cr_segment = !first_cr;
+            if !first_cr {
+                out.push('\r');
             }
-        } else {
-            out.push_str(line);
+            first_cr = false;
+            if !cr_segment.contains("suggest:") {
+                out.push_str(cr_segment);
+                continue;
+            }
+            let clean = csi.replace_all(cr_segment, "");
+            if let Some(caps) = SUGGEST_LINE_RE.captures(&clean) {
+                let prefix_visible = caps[1].trim();
+                if prefix_visible.is_empty() && !is_cr_segment {
+                    // \n-delimited line with token alone → erase line + cursor up.
+                    out.push_str("\x1b[2K\x1b[A");
+                } else {
+                    // \r-delimited (Ink cursor positioning) or line with other content:
+                    // preserve CSI sequences (cursor movement) and erase line content.
+                    for m in csi.find_iter(cr_segment) {
+                        out.push_str(m.as_str());
+                    }
+                    out.push_str("\x1b[2K");
+                }
+            } else {
+                out.push_str(cr_segment);
+            }
         }
     }
     out
@@ -3024,6 +3034,28 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         assert!(out.contains("line above"), "before preserved");
         assert!(out.contains("line below"), "after preserved");
         assert!(out.contains("\x1b[2K\x1b[A"), "erase line when token is sole content");
+    }
+
+    #[test]
+    fn test_conceal_suggest_ink_cr_cursor_positioning() {
+        // Ink renders with \r + cursor positioning instead of \n.
+        // The suggest token sits in a \r-delimited segment.
+        let raw = "\r\x1b[5A  suggest: 1) Fix | 2) Test | 3) Deploy                     \r\x1b[1B  more content";
+        let out = conceal_suggest(raw);
+        assert!(!out.contains("suggest:"), "suggest text should be concealed");
+        assert!(out.contains("more content"), "non-suggest content preserved");
+        // Cursor positioning CSI sequences must be preserved
+        assert!(out.contains("\x1b[5A"), "cursor-up preserved");
+        assert!(out.contains("\x1b[1B"), "cursor-down preserved");
+        assert!(out.contains("\x1b[2K"), "line erase emitted");
+    }
+
+    #[test]
+    fn test_conceal_suggest_ink_no_false_positive_on_cr() {
+        // \r-delimited segments without suggest should pass through unchanged
+        let raw = "\r\x1b[5Anormal text here\r\x1b[1Bmore text";
+        let out = conceal_suggest(raw);
+        assert_eq!(out, raw, "no change when suggest absent");
     }
 
 

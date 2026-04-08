@@ -612,11 +612,12 @@
   cursor: pointer;
   border-left: 2px solid transparent;
   color: var(--fg-secondary);
+  background: var(--bg-tertiary);
   transition: background 0.1s, color 0.1s;
 }
 
 .globalWorkspaceEntry:hover {
-  background: var(--bg-tertiary);
+  background: var(--bg-highlight);
   color: var(--fg-primary);
 }
 

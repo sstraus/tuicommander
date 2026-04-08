@@ -31,7 +31,7 @@ export const GlobalWorkspaceEntry: Component = () => {
         onClick={handleClick}
       >
         <GlobeIcon />
-        <span class={s.globalWorkspaceLabel}>Global</span>
+        <span class={s.globalWorkspaceLabel}>Global Workspace</span>
         <span class={s.globalWorkspaceBadge}>{globalWorkspaceStore.getPromotedIds().length}</span>
       </div>
     </Show>
