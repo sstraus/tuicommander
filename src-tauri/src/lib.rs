@@ -56,6 +56,28 @@ use tauri::{Emitter, Manager, State, WebviewWindow};
 pub(crate) use state::{AppState, OutputRingBuffer, PtySession};
 pub(crate) use state::{SessionMetrics, MAX_CONCURRENT_SESSIONS};
 
+/// Open a secondary window for multi-monitor use. The window loads the same
+/// frontend with a `?mode=secondary` query param so App.tsx can render a
+/// pane-only layout without sidebar or tab bar.
+#[tauri::command]
+async fn open_secondary_window(app: tauri::AppHandle) -> Result<(), String> {
+    // If it already exists, just focus it
+    if let Some(existing) = app.get_webview_window("secondary") {
+        existing.set_focus().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    let url = tauri::WebviewUrl::App("/?mode=secondary".into());
+    tauri::WebviewWindowBuilder::new(&app, "secondary", url)
+        .title("TUICommander — Secondary")
+        .inner_size(1200.0, 800.0)
+        .min_inner_size(800.0, 600.0)
+        .build()
+        .map_err(|e| format!("Failed to create secondary window: {e}"))?;
+
+    Ok(())
+}
+
 /// Ensure the window has valid dimensions and is positioned on a visible monitor.
 /// The window-state plugin can persist invalid state (e.g. width/height 0, or
 /// positions off-screen) which causes downstream failures like PTY garbage output.
@@ -366,6 +388,15 @@ pub(crate) fn list_markdown_files_impl(path: String) -> Result<Vec<MarkdownFileE
         return Err(format!("Path does not exist: {path}"));
     }
 
+    // Security: ensure the path is within $HOME to prevent directory enumeration
+    if let Some(home) = dirs::home_dir() {
+        let canonical = repo_path.canonicalize()
+            .map_err(|e| format!("Failed to resolve path: {e}"))?;
+        if !canonical.starts_with(&home) {
+            return Err("Access denied: path must be within the user's home directory".into());
+        }
+    }
+
     // Walk the filesystem to find all .md files (fast, skips heavy dirs).
     // We avoid `git ls-files --others` which is extremely slow on large repos.
     fn walk_dir(dir: &Path, base: &Path, md_paths: &mut Vec<(String, u64)>) -> std::io::Result<()> {
@@ -434,9 +465,16 @@ pub(crate) fn read_file_impl(path: String, file: String) -> Result<String, Strin
     let repo_path = PathBuf::from(&path);
     let file_path = repo_path.join(&file);
 
-    // Security: ensure the file is within the repo path
+    // Security: ensure the repo path is within $HOME
     let canonical_repo = repo_path.canonicalize()
         .map_err(|e| format!("Failed to resolve repo path: {e}"))?;
+    if let Some(home) = dirs::home_dir() {
+        if !canonical_repo.starts_with(&home) {
+            return Err("Access denied: path must be within the user's home directory".into());
+        }
+    }
+
+    // Security: ensure the file is within the repo path
     let canonical_file = file_path.canonicalize()
         .map_err(|e| format!("Failed to resolve file path: {e}"))?;
 
@@ -937,6 +975,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            open_secondary_window,
             pty::create_pty,
             pty::create_pty_with_worktree,
             pty::list_worktrees,

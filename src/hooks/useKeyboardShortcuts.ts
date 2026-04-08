@@ -73,6 +73,7 @@ export interface ShortcutHandlers {
   toggleGlobalWorkspace: () => void;
   openFile: () => void;
   newFile: () => void;
+  openSecondaryWindow: () => void;
 }
 
 /** Keys that are modifiers only — not real shortcut targets */
@@ -184,6 +185,7 @@ function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean
     case "toggle-global-workspace": handlers.toggleGlobalWorkspace(); return true;
     case "open-file": handlers.openFile(); return true;
     case "new-file": handlers.newFile(); return true;
+    case "open-secondary-window": handlers.openSecondaryWindow(); return true;
 
     // Tab navigation
     case "prev-tab": handlers.navigateTab("prev"); return true;

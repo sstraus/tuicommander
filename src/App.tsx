@@ -90,6 +90,7 @@ import { AGENTS, type AgentType } from "./agents";
 import { buildAgentLaunchCommand } from "./utils/agentSession";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { initApp } from "./hooks/useAppInit";
+import { useFocusRestore } from "./hooks/useFocusRestore";
 import { startAutoFetch } from "./hooks/useAutoFetch";
 import { useAutoDeleteBranch } from "./hooks/useAutoDeleteBranch";
 import { useWorktreeSwitchPrompt } from "./hooks/useWorktreeSwitchPrompt";
@@ -110,6 +111,9 @@ import { MobileViewBanner } from "./components/MobileViewBanner";
 
 const getDefaultFontSize = () => settingsStore.state.defaultFontSize;
 const getMaxTabNameLength = () => settingsStore.state.maxTabNameLength;
+
+/** Detect secondary window mode via URL query param */
+const isSecondaryWindow = () => new URLSearchParams(window.location.search).get("mode") === "secondary";
 
 const App: Component = () => {
   const [statusInfo, _setStatusInfoRaw] = createSignal("Ready");
@@ -209,6 +213,10 @@ const App: Component = () => {
 
   // Redirect keyboard input from sidebar to terminal
   useKeyboardRedirect(true);
+
+  // Centralized focus restore: when any dialog/overlay closes (DOM removed),
+  // focus returns to the active terminal automatically.
+  useFocusRestore();
 
   const terminalLifecycle = useTerminalLifecycle({
     pty,
@@ -1082,6 +1090,11 @@ const App: Component = () => {
         }
       })();
     },
+    openSecondaryWindow: () => {
+      invoke("open_secondary_window", {}).catch((err) =>
+        appLogger.error("app", "Failed to open secondary window", err),
+      );
+    },
     newFile: () => {
       const defaultPath = gitOps.activeWorktreePath() || repositoriesStore.state.activeRepoPath || undefined;
       (async () => {
@@ -1443,6 +1456,29 @@ const App: Component = () => {
     });
   });
 
+
+  // Secondary window: minimal pane-only layout
+  if (isSecondaryWindow()) {
+    return (
+      <div id="app" class="sidebar-hidden secondary-window">
+        <div id="app-body">
+          <main id="main">
+            <TerminalArea
+              onTerminalFocus={terminalLifecycle.handleTerminalFocus}
+              onCloseTab={terminalLifecycle.closeTerminal}
+              onOpenFilePath={handleOpenFilePath}
+              onContextMenu={contextMenu.open}
+              onCwdChange={gitOps.handleTerminalCwdChange}
+              onNewTerminal={(groupId) => {
+                paneLayoutStore.setActiveGroup(groupId);
+                gitOps.handleNewTab();
+              }}
+            />
+          </main>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div id="app" classList={{ "sidebar-hidden": !uiStore.state.sidebarVisible }}>

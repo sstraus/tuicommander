@@ -75,6 +75,7 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
 
   "open-file": { label: "Open file…", category: "File" },
   "new-file": { label: "New file…", category: "File" },
+  "open-secondary-window": { label: "Open secondary window", category: "Navigation" },
 };
 
 /**
