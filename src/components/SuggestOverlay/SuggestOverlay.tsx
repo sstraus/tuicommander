@@ -9,6 +9,9 @@ interface SuggestOverlayProps {
 
 const DISMISS_TIMEOUT_MS = 30_000;
 
+/** Strip leading "N) " or "N. " numbering that duplicates the shortcut badge. */
+const stripNumberPrefix = (text: string): string => text.replace(/^\d+[).]\s*/, "");
+
 const SuggestOverlay: Component<SuggestOverlayProps> = (props) => {
   let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -50,7 +53,7 @@ const SuggestOverlay: Component<SuggestOverlayProps> = (props) => {
             <span class={styles.shortcut} data-shortcut>
               {index() + 1}
             </span>
-            {item}
+            {stripNumberPrefix(item)}
           </button>
         )}
       </For>

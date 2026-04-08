@@ -11,6 +11,9 @@ interface SuggestChipsProps {
   agentType?: string | null;
 }
 
+/** Strip leading "N) " or "N. " numbering from suggest items. */
+const stripNumberPrefix = (text: string): string => text.replace(/^\d+[).]\s*/, "");
+
 export function SuggestChips(props: SuggestChipsProps) {
   const send = async (text: string) => {
     try {
@@ -30,7 +33,7 @@ export function SuggestChips(props: SuggestChipsProps) {
       <For each={props.items}>
         {(item) => (
           <button class={styles.chip} onClick={() => send(item)}>
-            {item}
+            {stripNumberPrefix(item)}
           </button>
         )}
       </For>
