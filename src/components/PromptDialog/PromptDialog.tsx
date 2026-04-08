@@ -1,5 +1,6 @@
-import { Component, Show, createSignal, createEffect, onCleanup } from "solid-js";
+import { Component, Show, createSignal, createEffect, on, onCleanup } from "solid-js";
 import { t } from "../../i18n";
+import { terminalsStore } from "../../stores/terminals";
 import d from "../shared/dialog.module.css";
 
 export interface PromptDialogProps {
@@ -31,6 +32,13 @@ export const PromptDialog: Component<PromptDialogProps> = (props) => {
       }, 0);
     }
   });
+
+  // Restore terminal focus when dialog closes
+  createEffect(on(() => props.visible, (visible, prev) => {
+    if (prev && !visible) {
+      requestAnimationFrame(() => terminalsStore.getActive()?.ref?.focus());
+    }
+  }, { defer: true }));
 
   createEffect(() => {
     if (!props.visible) return;

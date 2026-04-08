@@ -1,6 +1,7 @@
-import { Component, For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { Component, For, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { branchSwitcherStore } from "../../stores/branchSwitcher";
+import { terminalsStore } from "../../stores/terminals";
 import shared from "../shared/dialog.module.css";
 import s from "./BranchSwitcher.module.css";
 
@@ -75,6 +76,13 @@ export const BranchSwitcher: Component<BranchSwitcherProps> = (props) => {
       requestAnimationFrame(() => inputRef?.focus());
     }
   });
+
+  // Restore terminal focus when closed
+  createEffect(on(isOpen, (open, prev) => {
+    if (prev && !open) {
+      requestAnimationFrame(() => terminalsStore.getActive()?.ref?.focus());
+    }
+  }, { defer: true }));
 
   // Scroll selected item into view
   createEffect(() => {

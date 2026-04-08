@@ -1,5 +1,6 @@
-import { Component, createSignal, createEffect, onCleanup, Show } from "solid-js";
+import { Component, createSignal, createEffect, on, onCleanup, Show } from "solid-js";
 import { t } from "../../i18n";
+import { terminalsStore } from "../../stores/terminals";
 import d from "../shared/dialog.module.css";
 
 export interface RenameBranchDialogProps {
@@ -62,6 +63,13 @@ export const RenameBranchDialog: Component<RenameBranchDialogProps> = (props) =>
       }, 0);
     }
   });
+
+  // Restore terminal focus when dialog closes
+  createEffect(on(() => props.visible, (visible, prev) => {
+    if (prev && !visible) {
+      requestAnimationFrame(() => terminalsStore.getActive()?.ref?.focus());
+    }
+  }, { defer: true }));
 
   // Handle keyboard events
   createEffect(() => {
