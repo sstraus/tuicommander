@@ -45,7 +45,7 @@ export interface TerminalData {
   agentSessionId: string | null; // Agent session ID for session-specific resume (claude, gemini, codex)
   tuicSession: string | null; // Stable tab UUID — injected as TUIC_SESSION env var, persists across restarts
   suggestedActions: string[] | null; // Follow-up suggestions from suggest: token
-  suggestDismissed: boolean; // true after user dismissed/selected — prevents re-show until next user-input
+  suggestDismissed: boolean; // true after user dismissed/selected/typed — resets on shell-state:idle
 }
 
 /** Fields auto-populated with defaults when creating a terminal — callers only provide the remaining fields. */

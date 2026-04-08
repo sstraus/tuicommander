@@ -459,7 +459,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
           break;
         case "user-input":
           planFileNotified = false;
-          terminalsStore.update(props.id, { suggestDismissed: false, suggestedActions: null, activeSubTasks: 0 });
+          // Clear suggest bar AND mark dismissed so stale suggest events
+          // (still in the VT buffer or re-parsed after erase) can't re-show
+          // the bar. The next idle suggest: will reset suggestDismissed.
+          terminalsStore.update(props.id, { suggestDismissed: true, suggestedActions: null, activeSubTasks: 0 });
           invoke<string | null>("get_last_prompt", { sessionId: targetSessionId }).then((prompt) => {
             if (prompt !== null) terminalsStore.setLastPrompt(props.id, prompt);
           }).catch(() => {});
@@ -516,6 +519,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
           break;
         case "shell-state": {
           terminalsStore.update(props.id, { shellState: parsed.state });
+          if (parsed.state !== "idle") {
+            // Shell goes busy: clear stale suggest bar AND reset the dismissed
+            // flag so the suggest: line emitted at the END of this busy cycle
+            // can show the bar. (suggest events arrive before shell-state:idle
+            // in the Tauri event stream, so resetting on idle is too late.)
+            terminalsStore.update(props.id, { suggestedActions: null, suggestDismissed: false });
+          }
           if (parsed.state === "idle") {
             const initCmd = terminalsStore.get(props.id)?.pendingInitCommand;
             if (initCmd && targetSessionId) {
@@ -1220,9 +1230,14 @@ export const Terminal: Component<TerminalProps> = (props) => {
           if (!containerRef || containerRef.offsetWidth <= 0 || containerRef.offsetHeight <= 0) return;
           doFit();
 
-          // If safeFit exhausted retries and deferred to us, run onReady now
-          // that the container has real dimensions.
-          if (pendingOnReady) {
+          // First ResizeObserver event with valid dimensions: create PTY now
+          // with authoritative rows/cols (layout has settled).
+          if (deferInitToResize) {
+            deferInitToResize = false;
+            pendingOnReady = null; // cancel any safeFit-deferred callback
+            initSession();
+          } else if (pendingOnReady) {
+            // safeFit exhausted retries and deferred to us
             const cb = pendingOnReady;
             pendingOnReady = null;
             cb();
@@ -1306,6 +1321,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
   // picks up the fit + onReady when the container finally gets real dimensions.
   let pendingOnReady: (() => void) | null = null;
 
+  // Whether initSession should wait for the first ResizeObserver event.
+  // On first mount, safeFit may succeed with preliminary dimensions (container
+  // has *some* size but flex layout hasn't settled). The ResizeObserver debounce
+  // fires ~100ms later with authoritative dimensions. Deferring PTY creation to
+  // that event ensures Ink sees the correct terminal size on its first render.
+  let deferInitToResize = false;
+
   /** Fit terminal only when container has valid dimensions, retrying if needed.
    *  If all retries are exhausted, defer to the ResizeObserver rather than
    *  proceeding with zero dimensions. */
@@ -1376,8 +1398,26 @@ export const Terminal: Component<TerminalProps> = (props) => {
         // When the visibility effect re-triggers without a real hide (e.g.,
         // activeId flips null→id), skip the fit to avoid resetting scroll.
         if (!terminal) {
-          // First mount — container may not have dimensions yet, use retries
-          safeFit(() => initSession());
+          // First mount — open xterm and fit, but defer PTY creation to the
+          // first ResizeObserver event. safeFit may succeed with preliminary
+          // dimensions before flex layout settles; the ResizeObserver debounce
+          // fires with authoritative dimensions ~100ms later. Creating the PTY
+          // there ensures Ink (Claude Code) sees correct rows/cols on first render.
+          deferInitToResize = true;
+          safeFit(() => {
+            // If ResizeObserver already fired while safeFit was retrying,
+            // deferInitToResize will be false — init was already called.
+            if (!deferInitToResize) return;
+            // safeFit succeeded but ResizeObserver hasn't fired yet.
+            // Fall back after 200ms in case ResizeObserver never fires
+            // (container already at final size, no resize event).
+            setTimeout(() => {
+              if (!deferInitToResize) return;
+              deferInitToResize = false;
+              pendingOnReady = null;
+              initSession();
+            }, 200);
+          });
         } else if (wasActuallyHidden) {
           // Already mounted, was hidden → container reflow complete within
           // this RAF. Direct fit avoids the 10-retry RAF storm during repo
