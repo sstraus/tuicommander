@@ -459,7 +459,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
           break;
         case "user-input":
           planFileNotified = false;
-          terminalsStore.update(props.id, { suggestDismissed: false, activeSubTasks: 0 });
+          terminalsStore.update(props.id, { suggestDismissed: false, suggestedActions: null, activeSubTasks: 0 });
           invoke<string | null>("get_last_prompt", { sessionId: targetSessionId }).then((prompt) => {
             if (prompt !== null) terminalsStore.setLastPrompt(props.id, prompt);
           }).catch(() => {});
