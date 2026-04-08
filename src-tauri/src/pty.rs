@@ -676,6 +676,9 @@ struct ChunkProcessor {
     pending_planfiles: Vec<(String, std::time::Instant)>,
     /// Plan file paths already emitted — prevents re-emitting on spinner redraws.
     emitted_planfiles: std::collections::HashSet<String>,
+    /// Set by process_chunk when a Suggest event is parsed — gates conceal_suggest
+    /// in transform_xterm to prevent false concealment on prose containing "suggest:".
+    last_had_suggest: bool,
 }
 
 impl ChunkProcessor {
@@ -687,17 +690,23 @@ impl ChunkProcessor {
             session_cwd,
             pending_planfiles: Vec::new(),
             emitted_planfiles: std::collections::HashSet::new(),
+            last_had_suggest: false,
         }
     }
 
     /// Colorize `intent:` and conceal `suggest:` plain-prefix tokens on the xterm
     /// stream. Only runs when an agent is detected. Incomplete lines (split across
     /// chunks) pass through uncolored — cosmetic only, never blocks output.
+    /// Concealment is gated on `last_had_suggest` (set by process_chunk when a
+    /// real Suggest event is parsed) to prevent false matches on prose.
     fn transform_xterm(&mut self, data: String) -> Option<String> {
         let has_intent = data.contains("intent:");
-        let has_suggest = data.contains("suggest:");
         let result = if has_intent { colorize_intent(&data) } else { data };
-        let result = if has_suggest { conceal_suggest(&result) } else { result };
+        let result = if self.last_had_suggest && result.contains("suggest:") {
+            conceal_suggest(&result)
+        } else {
+            result
+        };
         Some(result)
     }
 
@@ -816,6 +825,7 @@ impl ChunkProcessor {
             .map(|s| s.agent_type.is_some())
             .unwrap_or(false);
         events.extend(self.parser.parse_clean_lines(&changed_rows, agent_active_for_parse));
+        self.last_had_suggest = events.iter().any(|e| matches!(e, ParsedEvent::Suggest { .. }));
 
         // Slash menu detection
         if state.slash_mode.get(session_id)
@@ -4097,10 +4107,22 @@ mod tests {
     #[test]
     fn test_transform_xterm_plain_suggest_concealed() {
         let mut cp = ChunkProcessor::new(None);
+        // Simulate process_chunk having detected a Suggest event
+        cp.last_had_suggest = true;
         let result = cp.transform_xterm("suggest: A | B | C\n".to_string());
         assert!(result.is_some());
         let data = result.unwrap();
         assert!(!data.contains("suggest:"), "suggest should be concealed from xterm stream");
+    }
+
+    #[test]
+    fn test_transform_xterm_suggest_not_concealed_without_event() {
+        let mut cp = ChunkProcessor::new(None);
+        // Without last_had_suggest, prose containing "suggest:" passes through
+        let result = cp.transform_xterm("The suggest: token in prose\n".to_string());
+        assert!(result.is_some());
+        let data = result.unwrap();
+        assert!(data.contains("suggest:"), "prose suggest: must not be concealed without event");
     }
 
     #[test]

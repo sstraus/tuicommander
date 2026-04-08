@@ -1047,8 +1047,10 @@ pub fn conceal_suggest(raw: &str) -> String {
         return raw.to_string();
     }
     lazy_static::lazy_static! {
+        // Require at least one `|` — same guard as parse_suggest to prevent
+        // false matches on prose where "suggest:" wraps to column 0.
         static ref SUGGEST_LINE_RE: regex::Regex = regex::Regex::new(
-            r"^([\t ]*(?:[\x{25CF}\x{23FA}][\t ]+)?)suggest:[ \t]+(.+)$"
+            r"^([\t ]*(?:[\x{25CF}\x{23FA}][\t ]+)?)suggest:[ \t]+(.+\|.+)$"
         ).unwrap();
     }
     let csi = csi_re();
@@ -1161,7 +1163,9 @@ fn build_intent_event(
 }
 
 /// Detect suggested follow-up actions: `suggest: A | B | C` at column 0.
-/// Pipe-separated items; at least one non-empty item required.
+/// Requires at least 2 pipe-separated items (TUIC protocol: 2–4 items).
+/// The `|` requirement prevents false positives on prose containing "suggest:"
+/// that happens to wrap to column 0 in Ink's \r-segment rendering.
 /// Only parsed when an agent is active.
 fn parse_suggest(clean: &str, agent_active: bool) -> Option<ParsedEvent> {
     if !agent_active || !clean.contains("suggest:") {
@@ -1169,10 +1173,10 @@ fn parse_suggest(clean: &str, agent_active: bool) -> Option<ParsedEvent> {
     }
     lazy_static::lazy_static! {
         // Plain prefix: `suggest:` at line start, with optional leading
-        // horizontal whitespace and/or an Ink bullet glyph. See
-        // INTENT_PLAIN_RE for the rationale on Ink continuation indent.
+        // horizontal whitespace and/or an Ink bullet glyph. Requires at
+        // least one `|` separator to distinguish from prose.
         static ref SUGGEST_PLAIN_RE: regex::Regex =
-            regex::Regex::new(r"(?m)^[\t ]*(?:[\x{25CF}\x{23FA}][\t ]+)?suggest:[\t ]+(.+)$").unwrap();
+            regex::Regex::new(r"(?m)^[\t ]*(?:[\x{25CF}\x{23FA}][\t ]+)?suggest:[\t ]+(.+\|.+)$").unwrap();
     }
 
     SUGGEST_PLAIN_RE.captures(clean).and_then(|caps| {
@@ -1182,7 +1186,7 @@ fn parse_suggest(clean: &str, agent_active: bool) -> Option<ParsedEvent> {
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect();
-        if items.is_empty() {
+        if items.len() < 2 {
             return None;
         }
         Some(ParsedEvent::Suggest { items })
@@ -2927,11 +2931,14 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     }
 
     #[test]
-    fn test_suggest_plain_prefix_single_item() {
+    fn test_suggest_plain_prefix_single_item_rejected() {
+        // Single item (no `|` separator) must NOT match — prevents false
+        // positives on prose like "suggest: we should refactor" that wraps
+        // to column 0 in Ink's \r-segment rendering.
         let mut parser = OutputParser::new();
         let events = parser.parse("suggest: Single option");
-        let items = get_suggest(&events).expect("should parse single item");
-        assert_eq!(items, vec!["Single option"]);
+        assert!(get_suggest(&events).is_none(),
+            "single item without | must not parse as suggest");
     }
 
     #[test]
@@ -2947,6 +2954,22 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     fn test_suggest_plain_prefix_midline_no_match() {
         let mut parser = OutputParser::new();
         assert!(get_suggest(&parser.parse("I suggest: we should refactor")).is_none());
+    }
+
+    #[test]
+    fn test_suggest_prose_at_column_zero_no_match() {
+        // Prose containing "suggest:" that wraps to column 0 in a VtLogBuffer row
+        // must NOT be parsed as a suggest event.
+        let mut parser = OutputParser::new();
+        assert!(get_suggest(&parser.parse("suggest: we should investigate the streaming issue")).is_none(),
+            "prose at column 0 without | must not match");
+    }
+
+    #[test]
+    fn test_conceal_suggest_prose_no_corruption() {
+        // Prose with "suggest:" must pass through unmodified — no concealment.
+        let raw = "The parser looks for suggest: tokens in each chunk";
+        assert_eq!(conceal_suggest(raw), raw);
     }
 
     #[test]
