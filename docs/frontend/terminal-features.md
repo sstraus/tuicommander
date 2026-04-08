@@ -53,7 +53,7 @@ Consolidated reference for all terminal behaviors, keyboard shortcuts, and confi
 | Cmd+[ | Toggle sidebar |
 | Cmd+, | Settings |
 | Cmd+E | File browser |
-| Cmd+M | Markdown panel |
+| Cmd+Shift+M | Markdown panel |
 | Cmd+Alt+N | Notes/ideas panel |
 | Cmd+O | Open file picker |
 | Cmd+N | New file (picker for name + location) |

@@ -104,7 +104,7 @@ Font size range: 8px to 32px, step 2px per action.
 |----------|--------|
 | `Cmd+[` | Toggle sidebar |
 | `Cmd+Shift+D` | Toggle Git Panel |
-| `Cmd+M` | Toggle markdown panel |
+| `Cmd+Shift+M` | Toggle markdown panel |
 | `Cmd+Alt+N` | Toggle Ideas panel |
 | `Cmd+E` | Toggle file browser |
 | `Cmd+O` | Open file… (picker) |
@@ -244,7 +244,7 @@ Hold to record, release to transcribe and inject text into active terminal.
 | `next-tab` | `Ctrl+Tab` | Next tab |
 | `switch-tab-1..9` | `Cmd+1..9` | Switch to tab N |
 | `toggle-sidebar` | `Cmd+[` | Toggle sidebar |
-| `toggle-markdown` | `Cmd+M` | Toggle markdown panel |
+| `toggle-markdown` | `Cmd+Shift+M` | Toggle markdown panel |
 | `toggle-notes` | `Cmd+Alt+N` | Toggle ideas panel |
 | `open-file` | `Cmd+O` | Open file picker |
 | `new-file` | `Cmd+N` | Create new file |

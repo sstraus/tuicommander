@@ -18,7 +18,7 @@ Research date: 2026-02-22
 | Cmd+E | Toggle file browser |
 | Cmd+J | Toggle task queue |
 | Cmd+K | Clear scrollback |
-| Cmd+M | Toggle markdown panel |
+| Cmd+Shift+M | Toggle markdown panel |
 | Cmd+N | New file |
 | Cmd+O | Open file |
 | Cmd+Alt+N | Toggle ideas panel |
@@ -214,7 +214,7 @@ These are reserved by Windows itself and **must never be used**:
 | Cmd+E | Ctrl+E | File browser | VS Code quick open recent |
 | Cmd+J | Ctrl+J | Task queue | VS Code toggle panel |
 | Cmd+K | Ctrl+K | Prompt library | VS Code chord prefix |
-| Cmd+M | Ctrl+M | Markdown panel | Low conflict (VS Code: tab focus toggle) |
+| Cmd+Shift+M | Ctrl+Shift+M | Markdown panel | Avoids macOS Cmd+M (minimize window) |
 | Cmd+N | Ctrl+N | New file | Aligned with VS Code/Zed/browsers |
 | Cmd+O | Ctrl+O | Open file | Aligned with VS Code/Zed |
 | Cmd+Alt+N | Ctrl+Alt+N | Ideas panel | No known conflicts |
@@ -253,7 +253,7 @@ These are reserved by Windows itself and **must never be used**:
 | **Cmd+E** (file browser) | Zed (buffer search). Low conflict otherwise |
 | **Cmd+J** (task queue) | iTerm2 (jump to mark), VS Code (toggle panel), Zed (toggle bottom dock) |
 | **Cmd+K** (prompt library) | iTerm2/Warp/Ghostty (clear), VS Code (chord prefix), Cursor (inline AI), Zed (clear/chord) |
-| **Cmd+M** (markdown) | iTerm2 (set mark), Zed (minimize) |
+| **Cmd+Shift+M** (markdown) | Low conflict — Cmd+M freed for macOS minimize |
 | **Cmd+N** (new file) | Aligned with VS Code/Zed (new file). Ghostty/Kitty use it for new window — minor mismatch |
 | **Cmd+R** (run command) | Ghostty (clear), Kitty (resize), VS Code (open recent), Zed (toggle right dock) |
 | **Cmd+\\** (split) | iTerm2 (find cursor), Warp (Warp Drive), Zed (split right) |
@@ -324,7 +324,7 @@ Alt+letter shortcuts are generally safe territory because:
 | Cmd+Space | Spotlight |
 | Cmd+, | Preferences (convention) |
 
-**Note on Cmd+M:** TUICommander currently uses Cmd+M for "toggle markdown panel." This conflicts with macOS's "Minimize window" system shortcut. Tauri may intercept this before it reaches the app. Worth testing.
+**Note on Cmd+M:** TUICommander previously used Cmd+M for "toggle markdown panel" but this conflicted with macOS's "Minimize window" system shortcut, causing the panel to open unexpectedly when users tried to minimize. Changed to Cmd+Shift+M.
 
 #### Windows
 
@@ -338,7 +338,7 @@ Alt+letter shortcuts are generally safe territory because:
 | Ctrl+C | Copy / terminal interrupt (dual meaning) |
 | F11 | Toggle fullscreen (browsers, Explorer) |
 
-**Note on Ctrl+M:** Unlike macOS Cmd+M (minimize), Windows Ctrl+M has no system reservation. In VS Code it toggles "Tab key moves focus" — a rarely used feature. Our Cmd+M → Ctrl+M mapping for "toggle markdown panel" is actually safe on Windows.
+**Note on Ctrl+Shift+M:** The markdown panel shortcut maps to Ctrl+Shift+M on Windows/Linux. In VS Code, Ctrl+Shift+M opens the Problems panel — minor conflict but acceptable since TUICommander is a different app context.
 
 #### Linux
 

@@ -186,8 +186,8 @@ describe("useKeyboardShortcuts", () => {
       expect(handlers.toggleGitOpsPanel).toHaveBeenCalled();
     });
 
-    it("Cmd+M toggles markdown panel", () => {
-      fireKeydown("m", { metaKey: true });
+    it("Cmd+Shift+M toggles markdown panel", () => {
+      fireKeydown("m", { metaKey: true, shiftKey: true });
       expect(handlers.toggleMarkdownPanel).toHaveBeenCalled();
     });
 

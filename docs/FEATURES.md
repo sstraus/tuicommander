@@ -195,7 +195,7 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 ### 3.2 ~~Diff Panel~~ (Removed in 0.9.0)
 Replaced by the Git Panel's Changes tab (section 3.8). `Cmd+Shift+D` now opens the Git Panel
 
-### 3.3 Markdown Panel (`Cmd+M`)
+### 3.3 Markdown Panel (`Cmd+Shift+M`)
 - Renders `.md` and `.mdx` files with syntax-highlighted code blocks
 - File list from repository's markdown files
 - Clickable file paths in terminal open `.md` files here
@@ -431,7 +431,7 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
 ### 5.3 Right Section — Panel Toggles
 - Ideas (lightbulb icon) — `Cmd+Alt+N`
 - File Browser (folder icon) — `Cmd+E`
-- Markdown (MD icon) — `Cmd+M`
+- Markdown (MD icon) — `Cmd+Shift+M`
 - Git (diff icon) — `Cmd+Shift+D` (opens Git Panel)
 - Mic button (when dictation enabled): hold to record, release to transcribe
 
@@ -1080,7 +1080,7 @@ All data persisted to platform config directory via Rust:
 |----------|--------|
 | `Cmd+[` | Toggle sidebar |
 | `Cmd+Shift+D` | Toggle Git Panel |
-| `Cmd+M` | Toggle markdown panel |
+| `Cmd+Shift+M` | Toggle markdown panel |
 | `Cmd+Alt+N` | Toggle Ideas panel |
 | `Cmd+E` | Toggle file browser |
 | `Cmd+O` | Open file… (picker) |
