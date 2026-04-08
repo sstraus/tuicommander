@@ -485,9 +485,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
         case "suggest":
           if (settingsStore.state.suggestFollowups && parsed.items?.length) {
             const t = terminalsStore.get(props.id);
-            // Guard: only show suggestions when agent is idle — prevents stale
-            // suggestions from buffer re-scans during resize/tab-switch
-            if (!t?.suggestDismissed && t?.shellState === "idle") {
+            if (!t?.suggestDismissed) {
               terminalsStore.setSuggestedActions(props.id, parsed.items);
             }
           }
