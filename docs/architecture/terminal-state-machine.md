@@ -119,7 +119,8 @@ PTY chunk arrives in reader thread
        │                      shell_state = busy
        │
        └── if shell_state == busy
-           AND last_output_at > 500ms ago
+           AND last_output_at > threshold ago
+               (500ms for shell, 5s for agent sessions)
            AND active_sub_tasks == 0
            AND not in resize grace:
               emit ShellState { "idle" }
@@ -139,7 +140,8 @@ Silence timer (every 1s)
     shell_state == busy?  ─── NO ──► skip
          │ YES
          ▼
-    last_output_at > 500ms ago?  ─── NO ──► skip
+    last_output_at > threshold ago?  ─── NO ──► skip
+    (500ms shell / 5s agent)
          │ YES
          ▼
     active_sub_tasks == 0?  ─── NO ──► skip
@@ -180,7 +182,7 @@ xterm and updates `lastDataAt` — but never touches `shellState`.
 | From | To | Trigger | Condition |
 |------|----|---------|-----------|
 | `null` | `busy` | First real output chunk | — |
-| `busy` | `idle` | Chrome-only chunk or silence timer | `last_output_at > 500ms` AND `active_sub_tasks == 0` AND not resize grace |
+| `busy` | `idle` | Chrome-only chunk or silence timer | `last_output_at > threshold` (500ms shell / 5s agent) AND `active_sub_tasks == 0` AND not resize grace |
 | `idle` | `busy` | Real output chunk | — |
 | `busy` | `idle` | Session ends (reader thread exit) | Always (cleanup) |
 | any | `null` | Terminal removed from store | cleanup |
@@ -419,10 +421,13 @@ identical sounds).
 t=0       Agent starts working (real output) → shellState: busy
 t=0..T    Agent works. Mode-line ticks arrive but don't affect shellState.
 t=T       Agent stops real output. Mode-line may continue.
-t=T+0.5   Rust: last_output_at > 500ms, sub_tasks=0 → shellState: idle
-           (If sub_tasks > 0: stays busy until they finish)
-t=T+2.5   Cooldown expires → debouncedBusy: false → onBusyToIdle fires
-t=T+2.5   duration = T seconds. If T ≥ 5s and agentType:
+t=T+0.5   Shell session: Rust idle threshold (500ms) reached → shellState: idle
+          Agent session: still within 5s threshold → stays busy
+           (If sub_tasks > 0: stays busy regardless of threshold)
+t=T+2.5   Shell: Cooldown expires → debouncedBusy: false → onBusyToIdle fires
+t=T+5     Agent: Rust idle threshold (5s) reached → shellState: idle
+t=T+7     Agent: Cooldown expires → debouncedBusy: false → onBusyToIdle fires
+t=*+0     duration = T seconds. If T ≥ 5s and agentType:
              → defer 10s → fireCompletion at t=T+12.5
 t=T+12.5  fireCompletion checks all guards → play("completion"), unseen=true
 ```
@@ -532,7 +537,8 @@ pty-parsed: Question { prompt_text, confident }
 
 | Constant | Value | Location | Purpose |
 |----------|-------|----------|---------|
-| Shell idle threshold | 500ms | `pty.rs` (Rust) | Real output silence before idle |
+| Shell idle threshold | 500ms | `pty.rs` (Rust) | Real output silence before idle (plain shell) |
+| Agent idle threshold | 5s | `pty.rs` (Rust) | Real output silence before idle (agent sessions) |
 | Debounce hold | 2s | `terminals.ts` | debouncedBusy hold after idle |
 | Silence question threshold | 10s | `pty.rs` | Silence before '?' line → question |
 | Silence check interval | 1s | `pty.rs` | Timer thread wake frequency |
@@ -554,17 +560,17 @@ t=0       Agent outputs "Procedo?" (real output)
           → pending_question_line = "Procedo?"
           → last_output_at = now
 
-t=0.5     No more real output. Rust idle check:
-          last_output_at > 500ms, active_sub_tasks=0
+t=5       No more real output. Rust idle check:
+          last_output_at > 5s (agent threshold), active_sub_tasks=0
           → shellState: idle  │  Tab: blue→(cooldown)
           → debouncedBusy cooldown starts (2s)
 
 t=1-9     Mode-line ticks arrive (chrome_only=true)
-          → shellState stays idle (Rust ignores chrome-only)
+          → shellState stays busy (agent threshold not reached)
           → pending_question_line preserved
 
-t=2.5     Cooldown expires → debouncedBusy: false
-          → onBusyToIdle fires (duration ~0.5s < 5s → no completion)
+t=7       Cooldown expires → debouncedBusy: false
+          → onBusyToIdle fires (duration ~5s ≥ 5s)
           │  Tab: blue→green (Done)
 
 t=10      Silence timer: is_silent()? YES
@@ -599,13 +605,13 @@ t=10      Silence timer: is_silent()? YES
 
 t=60      Last sub-agent finishes → ActiveSubtasks { count: 0 }
 
-t=60.5    Rust: last_output_at > 500ms, sub_tasks=0
+t=65      Rust: last_output_at > 5s (agent threshold), sub_tasks=0
           → shellState: idle  │  Tab: blue→(cooldown)
 
-t=62.5    Cooldown expires → onBusyToIdle(duration=60s)
+t=67      Cooldown expires → onBusyToIdle(duration=60s)
           → ≥ 5s, agentType set → defer 10s
 
-t=72.5    fireCompletion()
+t=77      fireCompletion()
           → activeSubTasks=0, awaitingInput=null
           → play("completion") ✓, unseen=true
           │  Tab: purple (Unseen)
@@ -657,13 +663,13 @@ t=0       Agent starts working (real output)
 
 t=120     Agent finishes, goes to prompt. No more real output.
 
-t=120.5   Rust: last_output_at > 500ms, sub_tasks=0
+t=125     Rust: last_output_at > 5s (agent threshold), sub_tasks=0
           → shellState: idle  │  Tab: blue→(cooldown)
 
-t=122.5   Cooldown expires → onBusyToIdle(duration=120s)
+t=127     Cooldown expires → onBusyToIdle(duration=120s)
           → ≥ 5s, agentType set → defer 10s
 
-t=132.5   fireCompletion()
+t=137     fireCompletion()
           → all guards pass
           → play("completion") ✓, unseen=true
           │  Tab: purple (Unseen)

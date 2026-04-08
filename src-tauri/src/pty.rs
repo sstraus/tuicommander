@@ -111,6 +111,11 @@ const STARTUP_GRACE_MAX: std::time::Duration = std::time::Duration::from_secs(12
 /// Matches the frontend's previous 500ms setTimeout in checkIdle.
 const SHELL_IDLE_MS: u64 = 500;
 
+/// Agent idle threshold: 5s without real PTY output → transition busy→idle.
+/// AI agents produce output in bursts with natural thinking pauses (>500ms).
+/// Using the shell threshold causes visible blue→green→blue oscillation.
+const AGENT_IDLE_MS: u64 = 5000;
+
 /// AtomicU8 encoding for shell_states DashMap.
 const SHELL_NULL: u8 = 0;
 const SHELL_BUSY: u8 = 1;
@@ -471,7 +476,9 @@ fn try_shell_transition(
 }
 
 /// Check whether the session should transition to idle (busy → idle).
-/// Conditions: last real output > SHELL_IDLE_MS ago AND no active sub-tasks.
+/// Conditions: last real output > threshold ago AND no active sub-tasks.
+/// Agent sessions use a longer threshold (AGENT_IDLE_MS) because AI agents
+/// produce output in bursts with natural thinking pauses between them.
 fn should_transition_idle(state: &crate::state::AppState, session_id: &str) -> bool {
     let last_ms = state.last_output_ms.get(session_id)
         .map(|ts| ts.load(std::sync::atomic::Ordering::Relaxed))
@@ -479,17 +486,18 @@ fn should_transition_idle(state: &crate::state::AppState, session_id: &str) -> b
     if last_ms == 0 {
         return false;
     }
+    let session = state.session_states.get(session_id);
+    let is_agent = session.as_ref().map(|s| s.agent_type.is_some()).unwrap_or(false);
+    let threshold = if is_agent { AGENT_IDLE_MS } else { SHELL_IDLE_MS };
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64;
     let elapsed = now.saturating_sub(last_ms);
-    if elapsed < SHELL_IDLE_MS {
+    if elapsed < threshold {
         return false;
     }
-    let sub_tasks = state.session_states.get(session_id)
-        .map(|s| s.active_sub_tasks)
-        .unwrap_or(0);
+    let sub_tasks = session.map(|s| s.active_sub_tasks).unwrap_or(0);
     sub_tasks == 0
 }
 
@@ -3797,6 +3805,52 @@ mod tests {
 
         assert!(!should_transition_idle(&state, sid),
             "should NOT transition idle when active_sub_tasks > 0");
+    }
+
+    #[test]
+    fn test_shell_state_no_idle_agent_session_under_agent_threshold() {
+        use std::sync::atomic::{AtomicU8, AtomicU64};
+        let state = crate::state::tests_support::make_test_app_state();
+        let sid = "test-session";
+        state.shell_states.insert(sid.to_string(), AtomicU8::new(SHELL_BUSY));
+
+        // Agent session: agent_type is set
+        state.session_states.insert(sid.to_string(), crate::state::SessionState {
+            agent_type: Some("claude-code".to_string()),
+            ..Default::default()
+        });
+
+        // 600ms elapsed — would trigger idle for a shell, but NOT for an agent session
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap().as_millis() as u64;
+        state.last_output_ms.insert(sid.to_string(), AtomicU64::new(now - 600));
+
+        assert!(!should_transition_idle(&state, sid),
+            "agent session should NOT transition idle at 600ms (under AGENT_IDLE_MS)");
+    }
+
+    #[test]
+    fn test_shell_state_idle_agent_session_over_agent_threshold() {
+        use std::sync::atomic::{AtomicU8, AtomicU64};
+        let state = crate::state::tests_support::make_test_app_state();
+        let sid = "test-session";
+        state.shell_states.insert(sid.to_string(), AtomicU8::new(SHELL_BUSY));
+
+        // Agent session: agent_type is set
+        state.session_states.insert(sid.to_string(), crate::state::SessionState {
+            agent_type: Some("claude-code".to_string()),
+            ..Default::default()
+        });
+
+        // 5100ms elapsed — well over the agent threshold
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap().as_millis() as u64;
+        state.last_output_ms.insert(sid.to_string(), AtomicU64::new(now - 5100));
+
+        assert!(should_transition_idle(&state, sid),
+            "agent session SHOULD transition idle after agent threshold");
     }
 
     #[test]
