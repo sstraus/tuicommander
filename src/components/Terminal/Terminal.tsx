@@ -110,6 +110,26 @@ export function cleanOscTitle(title: string): string {
   return cleaned;
 }
 
+/** Scan the xterm buffer for a visible "suggest:" line and erase it.
+ *  Called after raw data is flushed (via rAF) so the buffer is up to date.
+ *  Uses save/restore cursor to avoid corrupting the agent's cursor position. */
+function eraseSuggestFromBuffer(term: XTerm): void {
+  const buf = term.buffer.active;
+  const searchStart = Math.max(0, buf.baseY + buf.cursorY - 10);
+  const searchEnd = buf.baseY + buf.cursorY;
+  for (let abs = searchEnd; abs >= searchStart; abs--) {
+    const line = buf.getLine(abs);
+    if (!line) continue;
+    const text = line.translateToString(true);
+    if (/suggest:\s+.+\|/.test(text)) {
+      // viewport-relative row = absolute row - baseY + 1 (1-based for ANSI)
+      const viewRow = abs - buf.baseY + 1;
+      term.write(`\x1b7\x1b[${viewRow};1H\x1b[2K\x1b8`);
+      break;
+    }
+  }
+}
+
 // Max bytes to buffer before terminal is opened (prevents unbounded growth)
 const OUTPUT_BUFFER_MAX_BYTES = 100 * 1024; // 100KB
 
@@ -487,6 +507,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
             const t = terminalsStore.get(props.id);
             if (!t?.suggestDismissed) {
               terminalsStore.setSuggestedActions(props.id, parsed.items);
+              // Erase the raw "suggest:" line from the terminal buffer after
+              // the write coalescing flushes raw data (parsed events arrive
+              // before raw output in the Tauri event stream).
+              if (terminal) requestAnimationFrame(() => eraseSuggestFromBuffer(terminal!));
             }
           }
           break;
