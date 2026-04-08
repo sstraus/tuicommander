@@ -83,6 +83,30 @@ pub fn is_chrome_row(text: &str) -> bool {
     false
 }
 
+/// Returns true when the row contains an animated spinner character, proving
+/// the agent is alive. This is a subset of `is_chrome_row`: mode-line prefixes
+/// (⏵ ⏸ ›), box borders (▀ ▄), and interrupt markers (■) are static chrome
+/// and return false here.
+pub fn is_spinner_row(text: &str) -> bool {
+    if is_codex_chrome_bullet(text) {
+        return true;
+    }
+    for c in text.chars() {
+        match c {
+            '\u{00B7}'        // · — Claude Code middle-dot spinner prefix
+            | '\u{2591}'      // ░ — Aider Knight Rider spinner (light shade)
+            | '\u{2588}'      // █ — Aider Knight Rider spinner (full block)
+            => return true,
+            // Claude Code spinner dingbats (U+2720–U+273F): ✢✣✤...✻✼✽✾✿
+            c if ('\u{2720}'..='\u{273F}').contains(&c) => return true,
+            // Braille spinner chars (U+2800–U+28FF): ⠋⠙⠹⠸⠴⠦⠧⠇ — Gemini CLI
+            c if ('\u{2800}'..='\u{28FF}').contains(&c) => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
 /// Codex uses `•` (U+2022) for both chrome (spinner) and real output (action results).
 /// Returns true only for known chrome patterns.
 fn is_codex_chrome_bullet(text: &str) -> bool {
@@ -612,5 +636,57 @@ mod tests {
         ];
         // Separator at index 6 → cutoff=6
         assert_eq!(find_chrome_cutoff(&rows), Some(6));
+    }
+
+    // --- is_spinner_row tests ---
+
+    #[test]
+    fn spinner_row_dingbat() {
+        assert!(is_spinner_row("✻ Cogitated for 3m 47s"));
+        assert!(is_spinner_row("✳ Ideating… (1m 32s · ↓ 2.2k tokens)"));
+    }
+
+    #[test]
+    fn spinner_row_braille() {
+        assert!(is_spinner_row("⠋ Generating..."));
+    }
+
+    #[test]
+    fn spinner_row_aider() {
+        assert!(is_spinner_row("░██░░░░░░░"));
+    }
+
+    #[test]
+    fn spinner_row_middledot() {
+        assert!(is_spinner_row("· Thinking…"));
+    }
+
+    #[test]
+    fn spinner_row_codex_bullet() {
+        assert!(is_spinner_row("• Working…"));
+    }
+
+    #[test]
+    fn not_spinner_mode_line() {
+        assert!(!is_spinner_row("⏵ auto mode"));
+        assert!(!is_spinner_row("⏸ plan mode"));
+        assert!(!is_spinner_row("› auto"));
+    }
+
+    #[test]
+    fn not_spinner_border() {
+        assert!(!is_spinner_row("▀▀▀▀▀▀▀▀"));
+        assert!(!is_spinner_row("▄▄▄▄▄▄▄▄"));
+    }
+
+    #[test]
+    fn not_spinner_interrupt() {
+        assert!(!is_spinner_row("■ Conversation interrupted"));
+    }
+
+    #[test]
+    fn not_spinner_plain_text() {
+        assert!(!is_spinner_row("Hello world"));
+        assert!(!is_spinner_row(""));
     }
 }

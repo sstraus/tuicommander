@@ -228,10 +228,12 @@ The reader thread tracks output timing to emit `ShellState` events (`busy`/`idle
 
 **Transitions:**
 - **→ busy:** Any non-chrome-only chunk transitions to busy via atomic CAS (`try_shell_transition`)
-- **→ idle (process_chunk):** Chrome-only chunks without a status line, or chrome-only chunks where real output has been silent for `STATUS_LINE_IDLE_THRESHOLD` (3s), transition to idle if `should_transition_idle` passes (real output > 500ms ago, no active sub-tasks)
-- **→ idle (backup timer):** A 1s timer catches the case where no chunks arrive at all (reader blocked on `read()`). Uses `has_recent_chunks()` (checks `last_output_at`, not `last_chunk_at`) to avoid firing when the reader is actively processing status-line-only ticks
+- **→ idle (process_chunk):** Chrome-only chunks without a status line transition to idle if `should_transition_idle` passes (real output > 500ms ago for shells, > 2.5s for agents, no active sub-tasks)
+- **→ idle (backup timer):** A 1s timer catches the case where no chunks arrive at all (reader blocked on `read()`). Uses `has_recent_chunks()` (checks `last_chunk_at` with 2s window) to avoid firing when the reader is actively processing chunks
 
-**Status line ticks:** Claude Code's status line updates every ~1s while an agent is thinking. These are chrome-only chunks with `has_status_line=true`. Previously, the `!has_status_line` guard prevented idle transition entirely while ticks were arriving. Now, idle fires after 3s of real output silence even with status line ticks continuing. This enables the keepalive plugin to detect true idle state.
+**Spinner keepalive:** Agent spinners (dingbats ✻, braille ⠋, Aider ░█) produce chrome-only repaints at ~1Hz without a matching StatusLine event (e.g. timer-only lines like "✻ Cogitated for 3m 47s" lack trailing ellipsis). These spinner rows update `last_output_ms` via `is_spinner_row()` in `chrome.rs`, keeping `should_transition_idle()` from firing while the agent is alive. When the spinner stops, the idle timer expires naturally after AGENT_IDLE_MS (2.5s). Static chrome (mode-line ⏵, borders ▀▄) does NOT update the timestamp.
+
+**Status line ticks:** Claude Code's status line updates every ~1s while an agent is thinking. These are chrome-only chunks with `has_status_line=true`. The `!has_status_line` guard in the chunk-processing idle path prevents idle transition while status line ticks are arriving.
 
 **Agent detection:** `detectAgentForTerminal()` fires on shell-state transitions (immediate on idle, 500ms debounce on busy). A 30s fallback poll catches cold starts. This replaces the previous 3s polling interval, reducing syscalls ~30x.
 

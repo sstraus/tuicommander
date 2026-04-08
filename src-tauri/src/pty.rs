@@ -939,8 +939,13 @@ impl ChunkProcessor {
             sl.on_chunk(regex_found_question, last_q_line, has_status_line, chrome_only);
         }
 
-        // Stamp last_output_ms only for real output (not chrome-only ticks).
-        if !chrome_only
+        // Stamp last_output_ms for real output and for active spinner repaints.
+        // Spinner rows (dingbats ✻, braille ⠋, Aider ░█) prove the agent is
+        // alive even though they are chrome-only — keeping the timestamp fresh
+        // prevents should_transition_idle from firing mid-think.
+        let has_spinner = chrome_only
+            && changed_rows.iter().any(|r| crate::chrome::is_spinner_row(&r.text));
+        if (!chrome_only || has_spinner)
             && let Some(ts) = state.last_output_ms.get(session_id)
         {
             let now = std::time::SystemTime::now()
@@ -969,8 +974,8 @@ impl ChunkProcessor {
             && try_shell_transition(state, session_id, SHELL_BUSY, SHELL_IDLE)
         {
             // Chrome-only chunk without a status line (e.g. separator repaint) —
-            // safe to transition idle. When has_status_line is true the agent's
-            // timer is ticking, proving it's still alive — stay busy.
+            // safe to transition idle. Spinner repaints keep last_output_ms fresh
+            // (above), so should_transition_idle won't fire while a spinner is active.
             emit_shell_state(state, app, session_id, "idle");
         }
 
@@ -3972,6 +3977,16 @@ mod tests {
     // Status-line idle transition: covered by test_backup_idle_blocked_by_chrome_only_ticks.
     // Status-line ticking proves the agent is alive — the reader thread's !has_status_line
     // guard blocks idle, and has_recent_chunks() (using last_chunk_at) blocks the backup timer.
+
+    #[test]
+    fn test_is_spinner_row_distinguishes_spinner_from_static_chrome() {
+        // Spinner rows prove agent is alive
+        assert!(crate::chrome::is_spinner_row("✻ Cogitated for 3m 47s"));
+        assert!(crate::chrome::is_spinner_row("⠋ Generating..."));
+        // Static chrome does NOT prove agent is alive
+        assert!(!crate::chrome::is_spinner_row("⏵ auto mode"));
+        assert!(!crate::chrome::is_spinner_row("▀▀▀▀▀▀▀▀"));
+    }
 
     // --- ChunkProcessor tests ---
 
