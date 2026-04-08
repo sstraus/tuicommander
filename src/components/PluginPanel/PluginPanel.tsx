@@ -5,6 +5,7 @@ import { PLUGIN_BASE_CSS } from "./pluginBaseStyles";
 import { TUIC_SDK_SCRIPT } from "./tuicSdk";
 import { repositoriesStore } from "../../stores/repositories";
 import { mdTabsStore } from "../../stores/mdTabs";
+import { editorTabsStore } from "../../stores/editorTabs";
 import { terminalsStore } from "../../stores/terminals";
 import { settingsStore } from "../../stores/settings";
 import { appLogger } from "../../stores/appLogger";
@@ -97,6 +98,22 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
         const relPath = path.slice(repoPath.length + 1);
         const tabId = mdTabsStore.add(repoPath, relPath);
         if (data.pinned) mdTabsStore.setPinned(tabId, true);
+        return;
+      }
+      case "tuic:edit": {
+        const path = typeof data.path === "string" ? data.path : "";
+        if (!path) {
+          appLogger.warn("plugin", "tuic:edit missing path");
+          return;
+        }
+        const repoPath = findRepoForPath(path);
+        if (!repoPath) {
+          appLogger.warn("plugin", `tuic:edit path not in any known repo: ${path}`);
+          return;
+        }
+        const relPath = path.slice(repoPath.length + 1);
+        const line = typeof data.line === "number" ? data.line : 0;
+        editorTabsStore.add(repoPath, relPath, line || undefined);
         return;
       }
       case "tuic:terminal": {

@@ -22,6 +22,10 @@ describe("TUIC SDK Script", () => {
     expect(TUIC_SDK_SCRIPT).toContain("parent.postMessage");
   });
 
+  it("defines edit method that sends tuic:edit message", () => {
+    expect(TUIC_SDK_SCRIPT).toContain("tuic:edit");
+  });
+
   it("defines terminal method that sends tuic:terminal message", () => {
     expect(TUIC_SDK_SCRIPT).toContain("tuic:terminal");
   });

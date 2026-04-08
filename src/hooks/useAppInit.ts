@@ -7,6 +7,7 @@ import { activityStore } from "../stores/activityStore";
 import { repoSettingsStore } from "../stores/repoSettings";
 import { paneLayoutStore } from "../stores/paneLayout";
 import { mdTabsStore } from "../stores/mdTabs";
+import { editorTabsStore } from "../stores/editorTabs";
 import { uiStore } from "../stores/ui";
 import { invoke, listen } from "../invoke";
 import { isTauri } from "../transport";
@@ -290,6 +291,41 @@ export async function initApp(deps: AppInitDeps) {
   // Listen for UI tab open/update requests from MCP tools
   listen<{ id: string; title: string; html: string; pinned: boolean; url?: string; focus?: boolean }>("ui-tab", (event) => {
     const { id, title, html, pinned, url, focus } = event.payload;
+
+    // Intercept tuic:// protocol URLs — handle as commands, not iframe src
+    if (url?.startsWith("tuic://")) {
+      try {
+        const parsed = new URL(url);
+        const cmd = parsed.hostname; // "open", "edit", "terminal"
+        const filePath = decodeURIComponent(parsed.pathname).replace(/^\//, "");
+        if (!filePath && cmd !== "terminal") return;
+
+        const activeRepoPath = repositoriesStore.state.activeRepoPath;
+        // Resolve: absolute path → find owning repo, relative → active repo
+        let repoPath: string | null = null;
+        let relPath = filePath;
+        if (filePath.startsWith("/")) {
+          const repos = repositoriesStore.getPaths();
+          repoPath = repos.find((rp) => filePath.startsWith(rp + "/") || filePath === rp) ?? null;
+          if (repoPath) relPath = filePath.slice(repoPath.length + 1);
+        } else {
+          repoPath = activeRepoPath ?? null;
+        }
+
+        if (cmd === "open" && repoPath) {
+          mdTabsStore.add(repoPath, relPath);
+        } else if (cmd === "edit" && repoPath) {
+          const line = parseInt(parsed.searchParams.get("line") || "0", 10);
+          editorTabsStore.add(repoPath, relPath, line || undefined);
+        } else {
+          appLogger.warn("app", `tuic:// unhandled: cmd=${cmd} path=${filePath} repo=${repoPath}`);
+        }
+      } catch (err) {
+        appLogger.warn("app", `tuic:// URL parse error: ${url}`, err);
+      }
+      return;
+    }
+
     mdTabsStore.openUiTab(id, title, html, pinned, url, focus ?? true);
     uiStore.setMarkdownPanelVisible(true);
   }).catch((err) =>

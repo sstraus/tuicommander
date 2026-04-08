@@ -13,6 +13,9 @@ export const TUIC_SDK_SCRIPT = `<script id="tuic-sdk">
     open:function(path,opts){
       parent.postMessage({type:"tuic:open",path:path,pinned:!!(opts&&opts.pinned)},"*");
     },
+    edit:function(path,opts){
+      parent.postMessage({type:"tuic:edit",path:path,line:(opts&&opts.line)||0},"*");
+    },
     terminal:function(repoPath){
       parent.postMessage({type:"tuic:terminal",repoPath:repoPath},"*");
     }
@@ -32,6 +35,10 @@ export const TUIC_SDK_SCRIPT = `<script id="tuic-sdk">
         var path=decodeURIComponent(url.pathname);
         var pinned=a.hasAttribute("data-pinned");
         tuic.open(path,{pinned:pinned});
+      }else if(cmd==="edit"){
+        var epath=decodeURIComponent(url.pathname);
+        var line=parseInt(url.searchParams.get("line")||"0",10);
+        tuic.edit(epath,{line:line});
       }else if(cmd==="terminal"){
         var repo=url.searchParams.get("repo");
         if(repo)tuic.terminal(repo);
