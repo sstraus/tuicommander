@@ -111,10 +111,11 @@ const STARTUP_GRACE_MAX: std::time::Duration = std::time::Duration::from_secs(12
 /// Matches the frontend's previous 500ms setTimeout in checkIdle.
 const SHELL_IDLE_MS: u64 = 500;
 
-/// Agent idle threshold: 5s without real PTY output → transition busy→idle.
+/// Agent idle threshold: 2.5s without real PTY output → transition busy→idle.
 /// AI agents produce output in bursts with natural thinking pauses (>500ms).
 /// Using the shell threshold causes visible blue→green→blue oscillation.
-const AGENT_IDLE_MS: u64 = 5000;
+/// Combined with the 2s frontend debounce, this gives ~4.5s total hold.
+const AGENT_IDLE_MS: u64 = 2500;
 
 /// AtomicU8 encoding for shell_states DashMap.
 const SHELL_NULL: u8 = 0;
@@ -3843,11 +3844,11 @@ mod tests {
             ..Default::default()
         });
 
-        // 5100ms elapsed — well over the agent threshold
+        // 3000ms elapsed — over the 2500ms agent threshold
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap().as_millis() as u64;
-        state.last_output_ms.insert(sid.to_string(), AtomicU64::new(now - 5100));
+        state.last_output_ms.insert(sid.to_string(), AtomicU64::new(now - 3000));
 
         assert!(should_transition_idle(&state, sid),
             "agent session SHOULD transition idle after agent threshold");

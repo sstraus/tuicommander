@@ -117,6 +117,11 @@ function createTerminalsStore() {
 
   /** Handle shellState transition for debounced busy tracking */
   function handleShellStateChange(id: string, prev: ShellState, next: ShellState): void {
+    const now = Date.now();
+    const dbBusy = state.debouncedBusy[id] ?? false;
+    const hasCooldown = cooldownTimers.has(id);
+    appLogger.debug("terminal", `[ShellDebounce] ${id} ${prev}→${next} debouncedBusy=${dbBusy} cooldown=${hasCooldown} t=${now % 100000}`);
+
     if (next === "busy" && prev !== "busy") {
       // Entering busy: clear any cooldown, mark busy, record start time.
       // If a cooldown was active, this is a continuation of the same busy period
@@ -126,6 +131,7 @@ function createTerminalsStore() {
       if (hadCooldown) {
         clearTimeout(existingCooldown);
         cooldownTimers.delete(id);
+        appLogger.debug("terminal", `[ShellDebounce] ${id} cooldown CANCELLED (re-entered busy)`);
       }
       setState("debouncedBusy", id, true);
       if (!hadCooldown) {
@@ -151,10 +157,12 @@ function createTerminalsStore() {
       const since = busySinceMap.get(id);
       const duration = since != null ? Date.now() - since : 0;
       busyDurationMap.set(id, duration);
+      appLogger.debug("terminal", `[ShellDebounce] ${id} busy→idle, starting ${BUSY_HOLD_MS}ms cooldown (busyDuration=${duration}ms)`);
 
       const timer = setTimeout(() => {
         cooldownTimers.delete(id);
         setState("debouncedBusy", id, false);
+        appLogger.debug("terminal", `[ShellDebounce] ${id} cooldown EXPIRED → debouncedBusy=false`);
         for (const cb of busyToIdleCallbacks) cb(id, duration);
       }, BUSY_HOLD_MS);
       cooldownTimers.set(id, timer);
