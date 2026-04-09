@@ -1,0 +1,38 @@
+src/components/Terminal/scrollTracker.ts
+  aa06e17d1e145946 143-147,151-153,156-159,167-174,254,257,286-289,291,310-328,331-334,336-346,348-358,360-376,380,382-388,390-391,400-404
+src/__tests__/components/Terminal-scrollTracker.test.ts
+  aa06e17d1e145946 496-591,604-659
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.6",
+  "base_commit_sha": "04b68940c87ad45b4b097c6b87c0254dc5ea63cb",
+  "prompts": {
+    "11b9b131fcd6a64f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0c36b5f6-3af0-4b58-9f0f-ef05f7062418",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 139,
+      "overriden_lines": 0
+    },
+    "aa06e17d1e145946": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e4e106b7-5aeb-4d88-a2b4-c7ff7377d811",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 289,
+      "total_deletions": 82,
+      "accepted_lines": 256,
+      "overriden_lines": 0
+    }
+  }
+}
