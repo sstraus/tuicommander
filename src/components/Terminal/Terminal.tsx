@@ -110,8 +110,9 @@ export function cleanOscTitle(title: string): string {
   return cleaned;
 }
 
-/** Scan the xterm buffer for a visible "suggest:" line and erase it.
+/** Scan the xterm buffer for visible "suggest:" lines and erase them.
  *  Called after raw data is flushed (via rAF) so the buffer is up to date.
+ *  Handles multi-line suggests where the token wraps across rows.
  *  Uses save/restore cursor to avoid corrupting the agent's cursor position. */
 function eraseSuggestFromBuffer(term: XTerm): void {
   const buf = term.buffer.active;
@@ -122,9 +123,24 @@ function eraseSuggestFromBuffer(term: XTerm): void {
     if (!line) continue;
     const text = line.translateToString(true);
     if (/suggest:\s+.+\|/.test(text)) {
-      // viewport-relative row = absolute row - baseY + 1 (1-based for ANSI)
+      // Erase the primary suggest line
       const viewRow = abs - buf.baseY + 1;
-      term.write(`\x1b7\x1b[${viewRow};1H\x1b[2K\x1b8`);
+      let eraseSeq = `\x1b7\x1b[${viewRow};1H\x1b[2K`;
+      // Check subsequent rows for continuation lines (wrapped suggest content:
+      // contains pipe-delimited items but no "suggest:" prefix)
+      for (let cont = abs + 1; cont <= searchEnd; cont++) {
+        const contLine = buf.getLine(cont);
+        if (!contLine) break;
+        const contText = contLine.translateToString(true).trim();
+        // Continuation: non-empty, contains "|", no new token prefix
+        if (contText && contText.includes("|") && !/^\s*(suggest|intent):/.test(contText)) {
+          const contViewRow = cont - buf.baseY + 1;
+          eraseSeq += `\x1b[${contViewRow};1H\x1b[2K`;
+        } else {
+          break;
+        }
+      }
+      term.write(eraseSeq + "\x1b8");
       break;
     }
   }
@@ -379,11 +395,14 @@ export const Terminal: Component<TerminalProps> = (props) => {
   /** Replay buffered output into the now-open terminal */
   const replayBuffer = () => {
     if (terminal && outputBuffer.length > 0) {
+      viewportLock.writeStart();
       for (const chunk of outputBuffer) {
         terminal.write(chunk);
       }
       outputBuffer = [];
       outputBufferBytes = 0;
+      // writeEnd before state check so the scroll classification is correct
+      viewportLock.writeEnd();
       scrollTracker.onScroll(terminal.buffer.active);
       viewportLock.update(scrollTracker.isAtBottom);
     }
@@ -478,10 +497,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
           break;
         case "user-input":
           planFileNotified = false;
-          // Clear suggest bar AND mark dismissed so stale suggest events
-          // (still in the VT buffer or re-parsed after erase) can't re-show
-          // the bar. The next idle suggest: will reset suggestDismissed.
-          terminalsStore.update(props.id, { suggestDismissed: true, suggestedActions: null, activeSubTasks: 0 });
+          // Clear suggest bar, pending buffer, and mark dismissed
+          terminalsStore.update(props.id, { suggestDismissed: true, suggestedActions: null, pendingSuggest: null, activeSubTasks: 0 });
           invoke<string | null>("get_last_prompt", { sessionId: targetSessionId }).then((prompt) => {
             if (prompt !== null) terminalsStore.setLastPrompt(props.id, prompt);
           }).catch(() => {});
@@ -527,25 +544,35 @@ export const Terminal: Component<TerminalProps> = (props) => {
         case "suggest":
           if (settingsStore.state.suggestFollowups && parsed.items?.length) {
             const t = terminalsStore.get(props.id);
-            if (!t?.suggestDismissed) {
-              terminalsStore.setSuggestedActions(props.id, parsed.items);
-              // Erase the raw "suggest:" line from the terminal buffer after
-              // the write coalescing flushes raw data (parsed events arrive
-              // before raw output in the Tauri event stream).
-              if (terminal) requestAnimationFrame(() => eraseSuggestFromBuffer(terminal!));
+            if (t?.shellState === "idle") {
+              // Idle: show immediately (unless user manually dismissed)
+              if (!t.suggestDismissed) {
+                terminalsStore.setSuggestedActions(props.id, parsed.items);
+              }
+            } else {
+              // Busy: buffer — only the latest survives; shown on idle transition
+              terminalsStore.update(props.id, { pendingSuggest: parsed.items });
             }
+            // Erase the raw "suggest:" line from the terminal buffer after
+            // the write coalescing flushes raw data (parsed events arrive
+            // before raw output in the Tauri event stream).
+            if (terminal) requestAnimationFrame(() => eraseSuggestFromBuffer(terminal!));
           }
           break;
         case "shell-state": {
           terminalsStore.update(props.id, { shellState: parsed.state });
           if (parsed.state !== "idle") {
-            // Shell goes busy: clear stale suggest bar AND reset the dismissed
-            // flag so the suggest: line emitted at the END of this busy cycle
-            // can show the bar. (suggest events arrive before shell-state:idle
-            // in the Tauri event stream, so resetting on idle is too late.)
-            terminalsStore.update(props.id, { suggestedActions: null, suggestDismissed: false });
+            // Shell goes busy: clear stale suggest bar and pending from previous cycle.
+            // Reset dismissed so the suggest emitted at the END of this cycle can show.
+            terminalsStore.update(props.id, { suggestedActions: null, suggestDismissed: false, pendingSuggest: null });
           }
           if (parsed.state === "idle") {
+            // Show pending suggest buffered during the just-completed busy cycle
+            const pendingT = terminalsStore.get(props.id);
+            if (pendingT?.pendingSuggest?.length) {
+              terminalsStore.setSuggestedActions(props.id, pendingT.pendingSuggest);
+              terminalsStore.update(props.id, { pendingSuggest: null });
+            }
             const initCmd = terminalsStore.get(props.id)?.pendingInitCommand;
             if (initCmd && targetSessionId) {
               terminalsStore.update(props.id, { pendingInitCommand: null });
@@ -1216,6 +1243,17 @@ export const Terminal: Component<TerminalProps> = (props) => {
           terminalsStore.update(props.id, { name: originalName });
         }
       }
+    });
+
+    // Track command blocks via OSC 133 shell integration (FinalTerm/iTerm2/VS Code protocol).
+    // A=prompt start, B=command start, C=pre-execution, D;exitcode=command finished.
+    terminal.parser.registerOscHandler(133, (data: string) => {
+      const parts = data.split(";");
+      const type = parts[0]; // "A", "B", "C", or "D"
+      if (!type || !"ABCD".includes(type)) return true;
+      const exitCode = type === "D" && parts.length > 1 ? parseInt(parts[1], 10) : undefined;
+      terminalsStore.handleOsc133(props.id, type, Number.isNaN(exitCode) ? undefined : exitCode);
+      return true;
     });
 
     // Track working directory changes via OSC 7 (file://hostname/path).
