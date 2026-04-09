@@ -113,8 +113,9 @@ export function cleanOscTitle(title: string): string {
 /** Scan the xterm buffer for visible "suggest:" lines and erase them.
  *  Called after raw data is flushed (via rAF) so the buffer is up to date.
  *  Handles multi-line suggests where the token wraps across rows.
- *  Uses save/restore cursor to avoid corrupting the agent's cursor position. */
-function eraseSuggestFromBuffer(term: XTerm): void {
+ *  Uses save/restore cursor to avoid corrupting the agent's cursor position.
+ *  Returns true if a suggest line was found and erased. */
+function eraseSuggestFromBuffer(term: XTerm): boolean {
   const buf = term.buffer.active;
   const searchStart = Math.max(0, buf.baseY + buf.cursorY - 10);
   const searchEnd = buf.baseY + buf.cursorY;
@@ -141,9 +142,10 @@ function eraseSuggestFromBuffer(term: XTerm): void {
         }
       }
       term.write(eraseSeq + "\x1b8");
-      break;
+      return true;
     }
   }
+  return false;
 }
 
 // Max bytes to buffer before terminal is opened (prevents unbounded growth)
@@ -553,10 +555,19 @@ export const Terminal: Component<TerminalProps> = (props) => {
               // Busy: buffer — only the latest survives; shown on idle transition
               terminalsStore.update(props.id, { pendingSuggest: parsed.items });
             }
-            // Erase the raw "suggest:" line from the terminal buffer after
-            // the write coalescing flushes raw data (parsed events arrive
-            // before raw output in the Tauri event stream).
-            if (terminal) requestAnimationFrame(() => eraseSuggestFromBuffer(terminal!));
+            // Erase the raw "suggest:" line from the terminal buffer.
+            // Parsed events arrive before raw output in the Tauri event stream,
+            // and terminal.write() is async — double rAF ensures xterm has
+            // flushed its write queue before we scan the buffer.
+            if (terminal) {
+              const t2 = terminal;
+              requestAnimationFrame(() => requestAnimationFrame(() => {
+                if (!eraseSuggestFromBuffer(t2)) {
+                  // Retry once more — write queue may be deep under load
+                  requestAnimationFrame(() => eraseSuggestFromBuffer(t2));
+                }
+              }));
+            }
           }
           break;
         case "shell-state": {
