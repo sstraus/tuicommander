@@ -679,6 +679,11 @@ struct ChunkProcessor {
     /// mid-line with a partial suggest token, we hold it here until the next
     /// chunk completes the line so `conceal_suggest` can match the full pattern.
     suggest_line_buf: String,
+    /// Tracks whether the terminal is in alternate screen buffer mode.
+    /// Set on ESC[?1049h, cleared on ESC[?1049l. Used to inject ESC[2J
+    /// before ESC[H (cursor home) to prevent stale content from partial
+    /// Ink redraws (Ink uses differential rendering without ESC[K).
+    in_alt_buffer: bool,
 }
 
 impl ChunkProcessor {
@@ -691,6 +696,7 @@ impl ChunkProcessor {
             pending_planfiles: Vec::new(),
             emitted_planfiles: std::collections::HashSet::new(),
             suggest_line_buf: String::new(),
+            in_alt_buffer: false,
         }
     }
 
@@ -717,15 +723,41 @@ impl ChunkProcessor {
     }
 
     fn transform_xterm(&mut self, data: String) -> Option<String> {
+        // Track alternate screen buffer state for the clear-before-home fix below.
+        if data.contains("\x1b[?1049h") {
+            self.in_alt_buffer = true;
+        } else if data.contains("\x1b[?1049l") {
+            self.in_alt_buffer = false;
+        }
+
+        // Inject ESC[2J (clear screen) before ESC[H (cursor home) while in alternate
+        // buffer. Ink-based TUIs (Claude Code, etc.) use differential rendering — they
+        // position the cursor at home and redraw changed cells, but never send ESC[K to
+        // erase trailing content. When displayed content shrinks, old characters (box-
+        // drawing separators, progress bars) persist as ghost artifacts. Injecting ESC[2J
+        // clears them before the full redraw. Since xterm.js processes ESC[2J and the
+        // subsequent Ink content in the same write() call, the intermediate clear state
+        // is never rendered — no flicker.
+        let data = if self.in_alt_buffer {
+            inject_clear_before_cursor_home(&data)
+        } else {
+            data
+        };
+
         // Prepend any buffered partial suggest line from the previous chunk.
         // If the reassembled line still has no `|`, it will not be re-buffered below,
         // so the buffer self-heals on interrupts or prose suggest lines.
-        let data = if self.suggest_line_buf.is_empty() {
-            data
+        //
+        // CRITICAL: track whether we prepended from the buffer. If we did, we must NOT
+        // re-buffer the combined data in the "no newline" path — doing so causes an
+        // indefinite output stall: every subsequent chunk (even single keystroke echoes)
+        // gets prepended, still contains "suggest:" + "|", and is re-buffered forever.
+        let (data, was_buffered) = if self.suggest_line_buf.is_empty() {
+            (data, false)
         } else {
             let mut combined = std::mem::take(&mut self.suggest_line_buf);
             combined.push_str(&data);
-            combined
+            (combined, true)
         };
 
         // If the last line is incomplete (no trailing newline/CR), contains "suggest:",
@@ -735,18 +767,23 @@ impl ChunkProcessor {
         let data = if !data.ends_with('\n') && !data.ends_with('\r') {
             if let Some(split_pos) = data.rfind('\n').or_else(|| data.rfind('\r')) {
                 let (complete, trailing) = data.split_at(split_pos + 1);
-                if trailing.contains("suggest:") && trailing.contains('|') {
+                // Mirror the !was_buffered guard from Path B: never re-buffer combined
+                // data — doing so causes indefinite stall when prose/tables contain
+                // "suggest:" + "|" in a trailing fragment.
+                if !was_buffered && is_partial_suggest_token(trailing) {
                     self.suggest_line_buf = trailing.to_string();
                     complete.to_string()
                 } else {
                     data
                 }
+            } else if !was_buffered && is_partial_suggest_token(&data) {
+                // Buffer only on the FIRST chunk — never re-buffer combined data.
+                // Re-buffering causes indefinite output stall: subsequent chunks
+                // (keystroke echoes, cursor blinks) get absorbed into the growing
+                // buffer and never reach xterm.
+                self.suggest_line_buf = data;
+                return Some(String::new());
             } else {
-                // Entire chunk is a single incomplete line — buffer only if it has suggest: + |
-                if data.contains("suggest:") && data.contains('|') {
-                    self.suggest_line_buf = data;
-                    return Some(String::new());
-                }
                 data
             }
         } else {
@@ -1213,6 +1250,83 @@ fn detect_anomalous_sequences(data: &str) -> Vec<&'static str> {
     }
 
     found
+}
+
+/// Returns true if `s` looks like a real (partial) suggest token that should be buffered.
+///
+/// A genuine suggest token starts with optional whitespace/bullet, then "suggest:" followed
+/// immediately by a space/tab/CSI, and has at least one `|` AFTER the "suggest:" keyword.
+///
+/// This is more precise than `contains("suggest:") && contains('|')`, which causes false
+/// positives on prose, tables, or tool results where "|" appears before "suggest:".
+fn is_partial_suggest_token(s: &str) -> bool {
+    let Some(pos) = s.find("suggest:") else {
+        return false;
+    };
+    let before = &s[..pos];
+    let after = &s[pos + 8..]; // skip "suggest:"
+    // "|" in `before` means we're inside a table cell — not a real suggest token.
+    if before.contains('|') {
+        return false;
+    }
+    // "suggest:" must be followed by a space, tab, or CSI (Ink uses \e[1C cursor-forward).
+    let next = after.as_bytes().first();
+    if !matches!(next, Some(b' ') | Some(b'\t') | Some(0x1b)) {
+        return false;
+    }
+    // Must have at least one "|" after the "suggest:" keyword.
+    after.contains('|')
+}
+
+/// Inject ESC[2J (clear screen) before the first ESC[H or ESC[1;1H (cursor home) in `data`.
+///
+/// Ink-based TUIs render differentially: they position the cursor at home and overwrite
+/// changed cells but never send ESC[K (erase to end of line). When output shrinks between
+/// redraws, old characters — especially box-drawing separators — persist as ghost artifacts.
+///
+/// Injecting a single ESC[2J before the cursor-home ensures the screen is blank before
+/// the redraw starts. Because xterm.js processes the entire write() atomically (clear +
+/// cursor home + new content happen before the next paint), no intermediate blank frame
+/// is ever rendered to the user.
+///
+/// Only injects once per call (before the first cursor-home) to avoid unnecessary clears
+/// for chunks that contain multiple ESC[H sequences (common in Ink's rapid redraws).
+fn inject_clear_before_cursor_home(data: &str) -> String {
+    let bytes = data.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+
+    while i < len {
+        if bytes[i] == 0x1b && i + 1 < len && bytes[i + 1] == b'[' {
+            let seq_start = i;
+            i += 2; // skip ESC[
+            // Parse optional numeric parameters
+            let num_start = i;
+            while i < len && (bytes[i].is_ascii_digit() || bytes[i] == b';') {
+                i += 1;
+            }
+            if i < len && bytes[i] == b'H' {
+                let params = std::str::from_utf8(&bytes[num_start..i]).unwrap_or("");
+                // ESC[H (no params) or ESC[1;1H — both mean cursor home
+                if params.is_empty() || params == "1;1" {
+                    // Inject ESC[2J before this cursor-home sequence
+                    let mut result = String::with_capacity(len + 4);
+                    result.push_str(&data[..seq_start]);
+                    result.push_str("\x1b[2J");
+                    result.push_str(&data[seq_start..]);
+                    return result;
+                }
+            }
+            if i < len {
+                i += 1; // skip command byte
+            }
+        } else {
+            i += 1;
+        }
+    }
+
+    // No cursor-home found — return as-is
+    data.to_string()
 }
 
 /// Clamp cursor-up ANSI sequences (ESC[nA) so `n` never exceeds the viewport height.
@@ -4272,6 +4386,96 @@ mod tests {
     }
 
     #[test]
+    fn test_transform_xterm_suggest_no_rebuffer_deadlock() {
+        let mut cp = ChunkProcessor::new(None);
+        // Chunk 1: buffer a partial suggest line
+        let r1 = cp.transform_xterm("suggest: 1) Foo | 2) Bar".to_string());
+        assert_eq!(r1, Some(String::new()), "first chunk should be buffered");
+        assert!(!cp.suggest_line_buf.is_empty());
+
+        // Chunk 2: a keystroke echo (space) arrives — no newline, no suggest
+        let r2 = cp.transform_xterm(" ".to_string());
+        assert!(r2.is_some(), "second chunk must not be swallowed");
+        let data = r2.unwrap();
+        assert!(!data.is_empty(), "combined data must be emitted, not re-buffered");
+        // The buffer must be drained — no indefinite hold
+        assert!(cp.suggest_line_buf.is_empty(), "buffer must be empty after emit");
+    }
+
+    #[test]
+    fn test_transform_xterm_suggest_no_rebuffer_ink_redraw() {
+        let mut cp = ChunkProcessor::new(None);
+        // Chunk 1: buffer a partial suggest line
+        let r1 = cp.transform_xterm("suggest: 1) A | 2) B".to_string());
+        assert_eq!(r1, Some(String::new()));
+
+        // Chunk 2: Ink cursor movement (no newline, no suggest)
+        let r2 = cp.transform_xterm("\x1b[1C\x1b[1B".to_string());
+        assert!(r2.is_some());
+        let data = r2.unwrap();
+        assert!(!data.is_empty(), "Ink cursor data must flow through");
+    }
+
+    #[test]
+    fn test_is_partial_suggest_token_rejects_table_cell() {
+        // "|" before "suggest:" — table row, not a real token
+        assert!(!is_partial_suggest_token("| col | suggest: note | end |"));
+        assert!(!is_partial_suggest_token("| suggest: A | B |"));
+    }
+
+    #[test]
+    fn test_is_partial_suggest_token_rejects_no_pipe_after() {
+        assert!(!is_partial_suggest_token("suggest: investigating this issue"));
+        assert!(!is_partial_suggest_token("suggest: no pipe here"));
+    }
+
+    #[test]
+    fn test_is_partial_suggest_token_rejects_wrong_char_after_colon() {
+        // "suggest:" followed by something other than space/tab/ESC
+        assert!(!is_partial_suggest_token("suggest:1) A | B"));
+        assert!(!is_partial_suggest_token("suggest:A|B"));
+    }
+
+    #[test]
+    fn test_is_partial_suggest_token_accepts_real_tokens() {
+        assert!(is_partial_suggest_token("suggest: 1) A | 2) B"));
+        assert!(is_partial_suggest_token("  suggest: Apply | Skip"));
+        assert!(is_partial_suggest_token("suggest:\t1) A | 2) B"));
+        // Ink uses \e[1C (CSI) instead of space
+        assert!(is_partial_suggest_token("suggest:\x1b[1C1) A | 2) B"));
+    }
+
+    #[test]
+    fn test_transform_xterm_no_stall_on_prose_with_pipe_in_trailing() {
+        // Regression: Path A was re-buffering even with was_buffered=true.
+        // Chunk 1: real suggest buffered
+        let mut cp = ChunkProcessor::new(None);
+        let r1 = cp.transform_xterm("suggest: 1) A | 2) B".to_string());
+        assert_eq!(r1, Some(String::new()));
+        assert!(!cp.suggest_line_buf.is_empty());
+
+        // Chunk 2: has newline + trailing fragment that looks like suggest (was_buffered=true)
+        // Before fix: Path A would re-buffer the trailing, causing stall.
+        let r2 = cp.transform_xterm("\nsome output with | pipe and suggest: here".to_string());
+        assert!(r2.is_some());
+        let data = r2.unwrap();
+        assert!(!data.is_empty(), "output must not be stalled");
+        // After was_buffered=true, trailing must NOT be re-buffered
+        assert!(cp.suggest_line_buf.is_empty(), "buffer must be empty — no re-buffer on was_buffered");
+    }
+
+    #[test]
+    fn test_transform_xterm_table_row_not_buffered() {
+        // Table rows with "suggest:" text and "|" separators must pass through immediately
+        let mut cp = ChunkProcessor::new(None);
+        let table_row = "| feature | suggest: use_cache | true |";
+        let r1 = cp.transform_xterm(table_row.to_string());
+        assert!(r1.is_some());
+        assert_eq!(r1.unwrap(), table_row, "table row must pass through unmodified");
+        assert!(cp.suggest_line_buf.is_empty(), "table row must not be buffered");
+    }
+
+    #[test]
     fn test_flush_suggest_buf_drains_stalled_buffer() {
         let mut cp = ChunkProcessor::new(None);
         // Buffer a partial suggest (no trailing newline)
@@ -4287,6 +4491,38 @@ mod tests {
 
         // Second flush should return None
         assert!(cp.flush_suggest_buf().is_none(), "double flush must return None");
+    }
+
+    // --- alt buffer clear injection tests ---
+
+    #[test]
+    fn test_transform_xterm_alt_buffer_injects_clear() {
+        let mut cp = ChunkProcessor::new(None);
+        // Enter alt buffer
+        cp.transform_xterm("\x1b[?1049h".to_string());
+        assert!(cp.in_alt_buffer);
+        // Cursor home should get ESC[2J injected
+        let result = cp.transform_xterm("\x1b[Hcontent".to_string()).unwrap();
+        assert!(result.contains("\x1b[2J\x1b[H"), "clear should be injected before cursor home");
+    }
+
+    #[test]
+    fn test_transform_xterm_normal_buffer_no_inject() {
+        let mut cp = ChunkProcessor::new(None);
+        // NOT in alt buffer — no injection
+        let result = cp.transform_xterm("\x1b[Hcontent".to_string()).unwrap();
+        assert!(!result.contains("\x1b[2J"), "should not inject clear in normal buffer");
+    }
+
+    #[test]
+    fn test_transform_xterm_alt_buffer_exit_stops_inject() {
+        let mut cp = ChunkProcessor::new(None);
+        // Enter then exit alt buffer
+        cp.transform_xterm("\x1b[?1049h".to_string());
+        cp.transform_xterm("\x1b[?1049l".to_string());
+        assert!(!cp.in_alt_buffer);
+        let result = cp.transform_xterm("\x1b[Hcontent".to_string()).unwrap();
+        assert!(!result.contains("\x1b[2J"), "should not inject after leaving alt buffer");
     }
 
     // --- log_anomalous_sequences tests ---
@@ -4348,6 +4584,67 @@ mod tests {
         // ESC[5;10H is a regular cursor position, not anomalous
         let found = detect_anomalous_sequences("\x1b[5;10H");
         assert!(found.is_empty());
+    }
+
+    // --- inject_clear_before_cursor_home tests ---
+
+    #[test]
+    fn inject_clear_no_cursor_home() {
+        let data = "hello world\x1b[5A\x1b[32mgreen\x1b[0m";
+        assert_eq!(inject_clear_before_cursor_home(data), data);
+    }
+
+    #[test]
+    fn inject_clear_before_bare_home() {
+        let data = "\x1b[Hcontent after home";
+        assert_eq!(
+            inject_clear_before_cursor_home(data),
+            "\x1b[2J\x1b[Hcontent after home"
+        );
+    }
+
+    #[test]
+    fn inject_clear_before_explicit_home() {
+        let data = "\x1b[1;1Hcontent";
+        assert_eq!(
+            inject_clear_before_cursor_home(data),
+            "\x1b[2J\x1b[1;1Hcontent"
+        );
+    }
+
+    #[test]
+    fn inject_clear_preserves_prefix() {
+        let data = "prefix output\x1b[Hredraw content";
+        assert_eq!(
+            inject_clear_before_cursor_home(data),
+            "prefix output\x1b[2J\x1b[Hredraw content"
+        );
+    }
+
+    #[test]
+    fn inject_clear_only_first_home() {
+        // Only one ESC[2J should be injected, before the first ESC[H
+        let data = "\x1b[Hline1\x1b[Hline2";
+        let result = inject_clear_before_cursor_home(data);
+        assert_eq!(result, "\x1b[2J\x1b[Hline1\x1b[Hline2");
+        // Count occurrences of ESC[2J
+        assert_eq!(result.matches("\x1b[2J").count(), 1);
+    }
+
+    #[test]
+    fn inject_clear_ignores_non_home_cursor_position() {
+        // ESC[5;10H is a regular cursor position, not home — should NOT inject
+        let data = "\x1b[5;10Hcontent";
+        assert_eq!(inject_clear_before_cursor_home(data), data);
+    }
+
+    #[test]
+    fn inject_clear_preserves_utf8() {
+        let data = "héllo → \x1b[Hworld 🌍";
+        assert_eq!(
+            inject_clear_before_cursor_home(data),
+            "héllo → \x1b[2J\x1b[Hworld 🌍"
+        );
     }
 
     // --- clamp_cursor_up tests ---
