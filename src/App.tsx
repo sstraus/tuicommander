@@ -717,6 +717,30 @@ const App: Component = () => {
       children: buildAgentMenuItems(),
     }] : []),
     { label: "Copy", shortcut: `${getModifierSymbol()}C`, action: terminalLifecycle.copyFromTerminal, separator: agentDetection.getAvailable().length > 0 },
+    {
+      label: "Copy Block Output",
+      action: () => {
+        const activeId = terminalsStore.state.activeId;
+        if (!activeId) return;
+        const term = terminalsStore.get(activeId);
+        if (!term) return;
+        // Find the most recent completed block
+        const blocks = term.commandBlocks;
+        const lastBlock = blocks[blocks.length - 1];
+        if (!lastBlock || lastBlock.executionLine == null || lastBlock.endLine == null) return;
+        const ref = term.ref;
+        if (!ref) return;
+        const lines = ref.getBufferLines(lastBlock.executionLine + 1, lastBlock.endLine);
+        const text = lines.join("\n").trimEnd();
+        if (text) navigator.clipboard.writeText(text);
+      },
+      disabled: (() => {
+        const activeId = terminalsStore.state.activeId;
+        if (!activeId) return true;
+        const term = terminalsStore.get(activeId);
+        return !term?.commandBlocks?.length;
+      })(),
+    },
     { label: "Paste", shortcut: `${getModifierSymbol()}V`, action: terminalLifecycle.pasteToTerminal },
     { label: "Split Right", shortcut: `${getModifierSymbol()}\\`, action: () => splitPanes.handleSplit("vertical"), disabled: splitDisabled() },
     { label: "Split Left", action: () => splitPanes.handleSplit("vertical"), disabled: splitDisabled() },

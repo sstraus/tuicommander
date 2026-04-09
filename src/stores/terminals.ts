@@ -8,6 +8,24 @@ import { rpc } from "../transport";
 /** Type of input being awaited */
 export type AwaitingInputType = "question" | "error" | null;
 
+/** A completed or in-progress command block detected via OSC 133 shell integration. */
+export interface CommandBlock {
+  /** Prompt start marker line (OSC 133;A) */
+  promptLine: number;
+  /** Command text start marker line (OSC 133;B) — set when user finishes typing */
+  commandLine: number | null;
+  /** Execution start marker line (OSC 133;C) — set when command is submitted */
+  executionLine: number | null;
+  /** Command end marker line (OSC 133;D) — set when command exits */
+  endLine: number | null;
+  /** Exit code from OSC 133;D;exitcode */
+  exitCode: number | null;
+  /** Timestamp when the block started (prompt appeared) */
+  startedAt: number;
+  /** Timestamp when the command finished */
+  endedAt: number | null;
+}
+
 /** Shell activity state: null=never had output, busy=producing output, idle=waiting for input */
 export type ShellState = "busy" | "idle" | null;
 
@@ -46,10 +64,13 @@ export interface TerminalData {
   tuicSession: string | null; // Stable tab UUID — injected as TUIC_SESSION env var, persists across restarts
   suggestedActions: string[] | null; // Follow-up suggestions from suggest: token
   suggestDismissed: boolean; // true after user dismissed/selected/typed — resets on shell-state:idle
+  pendingSuggest: string[] | null; // Buffered suggest during busy — shown on idle transition
+  commandBlocks: CommandBlock[]; // Completed command blocks from OSC 133
+  activeBlock: CommandBlock | null; // Current in-progress block (A received, D not yet)
 }
 
 /** Fields auto-populated with defaults when creating a terminal — callers only provide the remaining fields. */
-type TerminalCreateData = Omit<TerminalData, "id" | "activity" | "unseen" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "pendingInitCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "currentTask" | "activeSubTasks" | "isRemote" | "agentSessionId" | "tuicSession" | "suggestedActions" | "suggestDismissed" | "awaitingInputConfident"> & { tuicSession?: string | null } & { isRemote?: boolean };
+type TerminalCreateData = Omit<TerminalData, "id" | "activity" | "unseen" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "pendingInitCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "currentTask" | "activeSubTasks" | "isRemote" | "agentSessionId" | "tuicSession" | "suggestedActions" | "suggestDismissed" | "pendingSuggest" | "awaitingInputConfident" | "commandBlocks" | "activeBlock"> & { tuicSession?: string | null } & { isRemote?: boolean };
 
 /** Terminal component ref interface */
 export interface TerminalRef {
@@ -69,6 +90,8 @@ export interface TerminalRef {
   scrollToTop: () => void;
   scrollToBottom: () => void;
   scrollPages: (pages: number) => void;
+  /** Read buffer lines between two absolute line indices (exclusive end) */
+  getBufferLines: (startLine: number, endLine: number) => string[];
 }
 
 /** Combined terminal state */
@@ -185,14 +208,14 @@ function createTerminalsStore() {
     add(data: TerminalCreateData): string {
       const id = `term-${state.counter + 1}`;
       setState("counter", (c) => c + 1);
-      setState("terminals", id, { id, activity: false, unseen: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, activeSubTasks: 0, isRemote: false, agentSessionId: null, tuicSession: null, suggestedActions: null, suggestDismissed: false, awaitingInputConfident: false, ...data });
+      setState("terminals", id, { id, activity: false, unseen: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, activeSubTasks: 0, isRemote: false, agentSessionId: null, tuicSession: null, suggestedActions: null, suggestDismissed: false, pendingSuggest: null, awaitingInputConfident: false, commandBlocks: [], activeBlock: null, ...data });
       if (data.sessionId) sessionToTerminal.set(data.sessionId, id);
       return id;
     },
 
     /** Register a terminal with a specific ID (used by floating windows to reconnect to existing PTY sessions) */
     register(id: string, data: TerminalCreateData): void {
-      setState("terminals", id, { id, activity: false, unseen: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, activeSubTasks: 0, isRemote: false, agentSessionId: null, tuicSession: null, suggestedActions: null, suggestDismissed: false, awaitingInputConfident: false, ...data });
+      setState("terminals", id, { id, activity: false, unseen: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, activeSubTasks: 0, isRemote: false, agentSessionId: null, tuicSession: null, suggestedActions: null, suggestDismissed: false, pendingSuggest: null, awaitingInputConfident: false, commandBlocks: [], activeBlock: null, ...data });
       if (data.sessionId) sessionToTerminal.set(data.sessionId, id);
     },
 
@@ -269,6 +292,64 @@ function createTerminalsStore() {
     dismissSuggestedActions(id: string): void {
       setState("terminals", id, "suggestedActions", null);
       setState("terminals", id, "suggestDismissed", true);
+    },
+
+    /** OSC 133: Handle shell integration marker.
+     *  A=prompt start, B=command start, C=pre-execution, D=command finished.
+     *  `line` is the absolute buffer line (baseY + cursorY) when the marker was processed. */
+    handleOsc133(id: string, type: string, line: number, exitCode?: number): void {
+      const term = state.terminals[id];
+      if (!term) return;
+      const now = Date.now();
+
+      switch (type) {
+        case "A": {
+          // Prompt start — begin a new block. If there's already an active block
+          // without a D marker (e.g. Ctrl+C), finalize it first.
+          if (term.activeBlock) {
+            const completed: CommandBlock = { ...term.activeBlock, endedAt: now };
+            setState("terminals", id, "commandBlocks", (prev) => [...prev, completed]);
+          }
+          setState("terminals", id, "activeBlock", {
+            promptLine: line,
+            commandLine: null,
+            executionLine: null,
+            endLine: null,
+            exitCode: null,
+            startedAt: now,
+            endedAt: null,
+          });
+          break;
+        }
+        case "B": {
+          if (term.activeBlock) {
+            setState("terminals", id, "activeBlock", { ...term.activeBlock, commandLine: line });
+          }
+          break;
+        }
+        case "C": {
+          if (term.activeBlock) {
+            setState("terminals", id, "activeBlock", { ...term.activeBlock, executionLine: line });
+          }
+          break;
+        }
+        case "D": {
+          if (term.activeBlock) {
+            const completed: CommandBlock = {
+              ...term.activeBlock,
+              endLine: line,
+              exitCode: exitCode ?? null,
+              endedAt: now,
+            };
+            batch(() => {
+              setState("terminals", id, "commandBlocks", (prev) => [...prev, completed]);
+              setState("terminals", id, "activeBlock", null);
+            });
+            appLogger.debug("terminal", `[OSC133] ${id} block completed, exit=${exitCode ?? "?"}, blocks=${term.commandBlocks.length + 1}`);
+          }
+          break;
+        }
+      }
     },
 
     /** Update agent-declared intent (via intent: token) */

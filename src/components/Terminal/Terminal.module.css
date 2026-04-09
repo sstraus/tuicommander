@@ -86,8 +86,19 @@
   50%      { background-color: rgba(255, 255, 255, 0.15); }
 }
 
-/* Token decoration — applied by MutationObserver on xterm row divs */
-:global(.tuic-intent-row) {
-  color: #b5935a !important;
-  opacity: 0.7;
+
+/* OSC 133 gutter exit code markers */
+.osc133Gutter {
+  width: 3px !important;
+  height: 100% !important;
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+.osc133GutterOk {
+  background: var(--green, #3fb950);
+}
+
+.osc133GutterErr {
+  background: var(--red, #f85149);
 }

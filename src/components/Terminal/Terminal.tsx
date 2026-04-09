@@ -110,83 +110,10 @@ export function cleanOscTitle(title: string): string {
   return cleaned;
 }
 
-// Regex patterns for token decoration — tested against row textContent
+/** Regex to identify suggest rows in xterm buffer text */
 const SUGGEST_RE = /suggest:\s+.+\|/;
+/** Regex to identify intent rows in xterm buffer text */
 const INTENT_RE = /^[\s●⏺]*intent:\s+/;
-
-/** Set up a MutationObserver on .xterm-rows that reactively:
- *  - Hides rows matching the suggest token pattern
- *  - Colors rows matching the intent token pattern (dim yellow)
- *  Fires on every DOM mutation (character data, child list) so it covers
- *  writes, scrolls, resizes, and reflows — no timing hacks needed.
- *  Returns a disconnect function. */
-function installTokenDecorator(container: HTMLElement): (() => void) | null {
-  const screen = container.querySelector(".xterm-rows");
-  if (!screen) return null;
-
-  const decorateRow = (row: HTMLElement) => {
-    const text = row.textContent || "";
-
-    // Suggest: hide the entire row
-    if (SUGGEST_RE.test(text)) {
-      if (row.style.visibility !== "hidden") {
-        row.style.visibility = "hidden";
-      }
-      // Check next sibling for wrapped continuation
-      const next = row.nextElementSibling as HTMLElement | null;
-      if (next) {
-        const nextText = next.textContent || "";
-        if (nextText.trim() && nextText.includes("|") && !SUGGEST_RE.test(nextText) && !INTENT_RE.test(nextText)) {
-          if (next.style.visibility !== "hidden") {
-            next.style.visibility = "hidden";
-          }
-        }
-      }
-      return;
-    }
-
-    // Restore visibility if row no longer matches suggest
-    if (row.style.visibility === "hidden") {
-      row.style.visibility = "";
-    }
-
-    // Intent: apply dim yellow color
-    if (INTENT_RE.test(text)) {
-      if (!row.classList.contains("tuic-intent-row")) {
-        row.classList.add("tuic-intent-row");
-      }
-    } else if (row.classList.contains("tuic-intent-row")) {
-      row.classList.remove("tuic-intent-row");
-    }
-  };
-
-  // Initial pass on all visible rows
-  for (const row of screen.children) {
-    decorateRow(row as HTMLElement);
-  }
-
-  const observer = new MutationObserver((mutations) => {
-    // Collect unique parent rows that changed
-    const seen = new Set<HTMLElement>();
-    for (const m of mutations) {
-      // Target is either the row div or a span inside it
-      const row = (m.target as HTMLElement).closest?.(".xterm-rows > div") as HTMLElement | null
-        ?? (m.target.parentElement?.closest?.(".xterm-rows > div") as HTMLElement | null);
-      if (row && !seen.has(row)) {
-        seen.add(row);
-        decorateRow(row);
-      }
-    }
-  });
-
-  observer.observe(screen, {
-    childList: true,
-    characterData: true,
-    subtree: true,
-  });
-
-  return () => observer.disconnect();
-}
 
 // Max bytes to buffer before terminal is opened (prevents unbounded growth)
 const OUTPUT_BUFFER_MAX_BYTES = 100 * 1024; // 100KB
@@ -241,10 +168,15 @@ export const Terminal: Component<TerminalProps> = (props) => {
   // WebGL addon — retained so we can clear its atlas on demand and recreate
   // it after context loss. The addon exposes events that let us react to
   // actual atlas stress instead of rebuilding on a fixed timer.
-  // MutationObserver-based token decorator (suggest hiding + intent coloring)
-  let tokenDecoratorCleanup: (() => void) | null = null;
-
   let webglAddon: WebglAddon | undefined;
+
+  // Decoration-based token hiding: suggest rows get an opaque overlay via
+  // xterm's registerDecoration API (works with WebGL renderer unlike DOM-based
+  // MutationObserver). Each decoration is disposed when new suggest arrives or
+  // when the agent cycle resets.
+  let suggestDecorations: import("@xterm/xterm").IDecoration[] = [];
+  // Intent rows get a colored overlay (dim yellow) via decoration
+  let intentDecorations: import("@xterm/xterm").IDecoration[] = [];
   // Throttle counter for atlas cleanup triggered by onAddTextureAtlasCanvas.
   // Pages are added when the packer runs out of room for new glyphs, so a
   // burst of additions is a real signal of stress (e.g. large diverse output).
@@ -544,6 +476,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
           planFileNotified = false;
           // Clear suggest bar, pending buffer, and mark dismissed
           terminalsStore.update(props.id, { suggestDismissed: true, suggestedActions: null, pendingSuggest: null, activeSubTasks: 0 });
+          // Remove suggest decoration overlays
+          for (const d of suggestDecorations) d.dispose();
+          suggestDecorations = [];
           invoke<string | null>("get_last_prompt", { sessionId: targetSessionId }).then((prompt) => {
             if (prompt !== null) terminalsStore.setLastPrompt(props.id, prompt);
           }).catch(() => {});
@@ -585,21 +520,104 @@ export const Terminal: Component<TerminalProps> = (props) => {
           if (parsed.title && settingsStore.state.intentTabTitle) {
             terminalsStore.update(props.id, { name: parsed.title });
           }
+          // Color intent row with a subtle tint via decoration overlay
+          if (terminal) {
+            const term = terminal;
+            requestAnimationFrame(() => {
+              const buf = term.buffer.active;
+              const cursorLine = buf.baseY + buf.cursorY;
+              for (let offset = 0; offset < 5; offset++) {
+                const lineIdx = cursorLine - offset;
+                if (lineIdx < 0) break;
+                const line = buf.getLine(lineIdx);
+                if (!line) continue;
+                const text = line.translateToString(true);
+                if (INTENT_RE.test(text)) {
+                  const markerOffset = -(buf.cursorY - (lineIdx - buf.baseY));
+                  const marker = term.registerMarker(markerOffset);
+                  if (marker) {
+                    const deco = term.registerDecoration({ marker, width: term.cols });
+                    if (deco) {
+                      deco.onRender((el) => {
+                        el.style.width = "100%";
+                        el.style.height = "100%";
+                        el.style.background = "rgba(181, 147, 90, 0.12)";
+                        el.style.pointerEvents = "none";
+                      });
+                      intentDecorations.push(deco);
+                      if (intentDecorations.length > 50) {
+                        intentDecorations.shift()?.dispose();
+                      }
+                    }
+                  }
+                  break;
+                }
+              }
+            });
+          }
           break;
         case "suggest":
           if (settingsStore.state.suggestFollowups && parsed.items?.length) {
             const t = terminalsStore.get(props.id);
             if (t?.shellState === "idle") {
-              // Idle: show immediately (unless user manually dismissed)
               if (!t.suggestDismissed) {
                 terminalsStore.setSuggestedActions(props.id, parsed.items);
               }
             } else {
-              // Busy: buffer — only the latest survives; shown on idle transition
               terminalsStore.update(props.id, { pendingSuggest: parsed.items });
             }
-            // Suggest hiding is handled by the MutationObserver token decorator —
-            // no manual intervention needed here.
+            // Hide suggest rows via xterm decoration overlay (opaque background).
+            // Deferred to next frame: the parsed event can arrive before
+            // terminal.write() flushes the chunk into the buffer.
+            if (terminal) {
+              const term = terminal;
+              requestAnimationFrame(() => {
+                for (const d of suggestDecorations) d.dispose();
+                suggestDecorations = [];
+                const buf = term.buffer.active;
+                const cursorLine = buf.baseY + buf.cursorY;
+                const bg = term.options.theme?.background ?? "#1e1e1e";
+                for (let offset = 0; offset < 5; offset++) {
+                  const lineIdx = cursorLine - offset;
+                  if (lineIdx < 0) break;
+                  const line = buf.getLine(lineIdx);
+                  if (!line) continue;
+                  const text = line.translateToString(true);
+                  if (SUGGEST_RE.test(text)) {
+                    const markerOffset = -(buf.cursorY - (lineIdx - buf.baseY));
+                    const marker = term.registerMarker(markerOffset);
+                    if (marker) {
+                      const deco = term.registerDecoration({ marker, width: term.cols });
+                      if (deco) {
+                        deco.onRender((el) => {
+                          el.style.width = "100%";
+                          el.style.height = "100%";
+                          el.style.background = bg;
+                        });
+                        suggestDecorations.push(deco);
+                      }
+                    }
+                    // Cover wrapped continuation line if present
+                    const nextLine = buf.getLine(lineIdx + 1);
+                    if (nextLine && (nextLine.isWrapped || nextLine.translateToString(true).includes("|"))) {
+                      const marker2 = term.registerMarker(markerOffset + 1);
+                      if (marker2) {
+                        const deco2 = term.registerDecoration({ marker: marker2, width: term.cols });
+                        if (deco2) {
+                          deco2.onRender((el) => {
+                            el.style.width = "100%";
+                            el.style.height = "100%";
+                            el.style.background = bg;
+                          });
+                          suggestDecorations.push(deco2);
+                        }
+                      }
+                    }
+                    break;
+                  }
+                }
+              });
+            }
           }
           break;
         case "shell-state": {
@@ -608,6 +626,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
             // Shell goes busy: clear stale suggest bar and pending from previous cycle.
             // Reset dismissed so the suggest emitted at the END of this cycle can show.
             terminalsStore.update(props.id, { suggestedActions: null, suggestDismissed: false, pendingSuggest: null });
+            // Remove suggest decoration overlays from previous cycle
+            for (const d of suggestDecorations) d.dispose();
+            suggestDecorations = [];
           }
           if (parsed.state === "idle") {
             // Show pending suggest buffered during the just-completed busy cycle
@@ -934,6 +955,40 @@ export const Terminal: Component<TerminalProps> = (props) => {
         return false;
       }
 
+      // Cmd+Up/Down (macOS) or Ctrl+Up/Down (Win/Linux): navigate between command blocks (OSC 133)
+      if (event.type === "keydown" && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey
+        && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+        const term = terminalsStore.get(props.id);
+        if (term) {
+          const blocks = term.commandBlocks;
+          const active = term.activeBlock;
+          const allPromptLines = blocks.map((b) => b.promptLine).concat(active ? [active.promptLine] : []);
+          if (allPromptLines.length > 0) {
+            const buf = terminal!.buffer.active;
+            const currentViewLine = buf.viewportY;
+            let targetLine: number | undefined;
+            if (event.key === "ArrowUp") {
+              // Find the nearest block prompt ABOVE the current viewport
+              for (let i = allPromptLines.length - 1; i >= 0; i--) {
+                if (allPromptLines[i] < currentViewLine) { targetLine = allPromptLines[i]; break; }
+              }
+            } else {
+              // Find the nearest block prompt BELOW the current viewport
+              for (let i = 0; i < allPromptLines.length; i++) {
+                if (allPromptLines[i] > currentViewLine) { targetLine = allPromptLines[i]; break; }
+              }
+            }
+            if (targetLine !== undefined) {
+              terminal!.scrollToLine(targetLine);
+              scrollTracker.onScroll(buf);
+              viewportLock.update(scrollTracker.isAtBottom);
+            }
+            event.preventDefault();
+            return false;
+          }
+        }
+      }
+
       // Intercept Cmd+F (macOS) / Ctrl+F (Win/Linux) to open search overlay
       if (event.type === "keydown" && (event.metaKey || event.ctrlKey) && event.key === "f" && !event.altKey && !event.shiftKey) {
         event.preventDefault();
@@ -1243,7 +1298,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
     }
 
     terminal.open(containerRef);
-    tokenDecoratorCleanup = installTokenDecorator(containerRef);
     viewportLock.attach(
       containerRef,
       (line) => terminal!.scrollToLine(line),
@@ -1295,8 +1349,28 @@ export const Terminal: Component<TerminalProps> = (props) => {
       const parts = data.split(";");
       const type = parts[0]; // "A", "B", "C", or "D"
       if (!type || !"ABCD".includes(type)) return true;
-      const exitCode = type === "D" && parts.length > 1 ? parseInt(parts[1], 10) : undefined;
-      terminalsStore.handleOsc133(props.id, type, Number.isNaN(exitCode) ? undefined : exitCode);
+      const ec = type === "D" && parts.length > 1 ? parseInt(parts[1], 10) : undefined;
+      const buf = terminal!.buffer.active;
+      const line = buf.baseY + buf.cursorY;
+      terminalsStore.handleOsc133(props.id, type, line, Number.isNaN(ec) ? undefined : ec);
+
+      // Gutter exit code marker on block completion
+      if (type === "D" && terminal) {
+        const term = terminalsStore.get(props.id);
+        const blocks = term?.commandBlocks;
+        const lastBlock = blocks?.[blocks.length - 1];
+        if (lastBlock) {
+          const offset = lastBlock.promptLine - buf.baseY - buf.cursorY;
+          const marker = terminal.registerMarker(offset);
+          if (marker) {
+            const ok = lastBlock.exitCode === 0;
+            const deco = terminal.registerDecoration({ marker, anchor: "left", x: 0, width: 1, height: 1 });
+            deco?.onRender((el) => {
+              el.classList.add(s.osc133Gutter, ok ? s.osc133GutterOk : s.osc133GutterErr);
+            });
+          }
+        }
+      }
       return true;
     });
 
@@ -1655,7 +1729,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // Clean up plugin line buffer for this session
     if (sessionId) pluginRegistry.removeSession(sessionId);
 
-    tokenDecoratorCleanup?.();
+    for (const d of suggestDecorations) d.dispose();
+    suggestDecorations = [];
+    for (const d of intentDecorations) d.dispose();
+    intentDecorations = [];
     viewportLock.dispose();
     terminal?.dispose();
   });
@@ -1697,6 +1774,16 @@ export const Terminal: Component<TerminalProps> = (props) => {
     scrollToTop: () => terminal?.scrollToTop(),
     scrollToBottom: () => terminal?.scrollToBottom(),
     scrollPages: (pages: number) => terminal?.scrollPages(pages),
+    getBufferLines: (startLine: number, endLine: number) => {
+      if (!terminal) return [];
+      const buf = terminal.buffer.active;
+      const lines: string[] = [];
+      for (let i = startLine; i < endLine; i++) {
+        const line = buf.getLine(i);
+        lines.push(line ? line.translateToString(true) : "");
+      }
+      return lines;
+    },
   };
 
   onMount(() => {
