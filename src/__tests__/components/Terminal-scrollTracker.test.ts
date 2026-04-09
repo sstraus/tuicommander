@@ -493,6 +493,102 @@ describe("ViewportLock", () => {
       lock.dispose();
     });
 
+    it("disengages after user scroll-to-bottom during continuous writes (sticky flag)", () => {
+      vi.useFakeTimers();
+      try {
+        const { lock, viewport, setBuffer } = createLockHarness();
+        setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
+        lock.update(false); // locked at line 50
+
+        // User scrolls while locked (sets sticky userScrolledWhileLocked)
+        setBuffer({ viewportY: 30, baseY: 100, type: "normal" });
+        viewport.dispatchEvent(new Event("wheel"));
+        viewport.dispatchEvent(new Event("scroll"));
+
+        // User intent TTL expires (300ms)
+        vi.advanceTimersByTime(500);
+
+        // User scrolls back to bottom, but a write is in progress.
+        // Without the sticky flag this would stay locked because
+        // userIntent has expired.
+        lock.writeStart();
+        setBuffer({ viewportY: 110, baseY: 110, type: "normal" });
+        viewport.dispatchEvent(new Event("scroll")); // classified as user due to sticky
+        // The DOM scroll handler calls update(true) internally via willUnlock
+
+        expect(lock.isLocked).toBe(false); // must unlock via sticky flag
+        lock.writeEnd();
+        lock.dispose();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("sticky flag resets after disengage so subsequent writes are protected", () => {
+      vi.useFakeTimers();
+      try {
+        const { lock, viewport, setBuffer } = createLockHarness();
+        setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
+        lock.update(false); // locked
+
+        // User scrolls → sets sticky + userIntent
+        setBuffer({ viewportY: 70, baseY: 100, type: "normal" });
+        viewport.dispatchEvent(new Event("wheel"));
+        viewport.dispatchEvent(new Event("scroll"));
+
+        // User scrolls to bottom → disengage
+        setBuffer({ viewportY: 100, baseY: 100, type: "normal" });
+        viewport.dispatchEvent(new Event("scroll"));
+        expect(lock.isLocked).toBe(false);
+
+        // Let userIntent TTL expire so it doesn't interfere with re-lock test
+        vi.advanceTimersByTime(500);
+
+        // Re-lock (user scrolls up again)
+        setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
+        lock.update(false);
+        expect(lock.isLocked).toBe(true);
+
+        // Now WITHOUT user scroll, a write-driven update(true) must stay locked
+        lock.writeStart();
+        lock.update(true);
+        expect(lock.isLocked).toBe(true); // sticky was cleared on disengage
+        lock.writeEnd();
+        lock.dispose();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not infinite-loop when scrollToLine triggers re-entrant scroll event", () => {
+      const { container, viewport } = createViewportContainer();
+      let restoreCalls = 0;
+      let bufferState: BufferSnapshot = { viewportY: 50, baseY: 100, type: "normal" };
+
+      const lock = new ViewportLock();
+      lock.attach(
+        container,
+        (line) => {
+          restoreCalls++;
+          // Simulate xterm's synchronous scroll event from scrollToLine
+          // by dispatching another scroll event inside the callback.
+          // Without the re-entrancy guard this causes an infinite loop.
+          bufferState = { viewportY: line, baseY: bufferState.baseY + 1, type: "normal" };
+          viewport.dispatchEvent(new Event("scroll"));
+        },
+        () => bufferState,
+      );
+
+      lock.update(false); // locked at line 50
+      lock.writeStart();
+      viewport.dispatchEvent(new Event("scroll"));
+      lock.writeEnd();
+
+      // Without guard: infinite loop. With guard: exactly 1 restore call.
+      expect(restoreCalls).toBe(1);
+      lock.dispose();
+    });
+
     it("no listeners active when unlocked (at bottom)", () => {
       const { lock, viewport, scrollToLineCalls } = createLockHarness();
       // Never locked — fire scroll events
@@ -502,6 +598,62 @@ describe("ViewportLock", () => {
 
       expect(scrollToLineCalls).toEqual([]); // no listener installed
       lock.dispose();
+    });
+  });
+
+  describe("watchdog", () => {
+    it("force-disengages after WATCHDOG_TIMEOUT_MS if lock is stuck", () => {
+      vi.useFakeTimers();
+      try {
+        const logEvents: Array<{ event: string; details: Record<string, unknown> }> = [];
+        const { lock, setBuffer } = createLockHarness();
+        lock.setLogger((event, details) => logEvents.push({ event, details }));
+        setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
+        lock.update(false); // locked
+
+        // Simulate stuck lock: write in progress forever, no user intent
+        lock.writeStart();
+
+        expect(lock.isLocked).toBe(true);
+
+        // Advance past watchdog timeout (5000ms)
+        vi.advanceTimersByTime(5_000);
+
+        expect(lock.isLocked).toBe(false); // watchdog forced disengage
+        const watchdogLog = logEvents.find(e => e.event === "watchdog-force-disengage");
+        expect(watchdogLog).toBeDefined();
+        expect(watchdogLog!.details.writeInProgress).toBe(true);
+
+        lock.writeEnd();
+        lock.dispose();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("watchdog is cancelled on normal disengage", () => {
+      vi.useFakeTimers();
+      try {
+        const logEvents: Array<{ event: string; details: Record<string, unknown> }> = [];
+        const { lock, setBuffer } = createLockHarness();
+        lock.setLogger((event, details) => logEvents.push({ event, details }));
+        setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
+        lock.update(false); // locked
+
+        // Normal disengage before watchdog fires
+        lock.update(true);
+        expect(lock.isLocked).toBe(false);
+
+        // Advance past watchdog timeout — should NOT fire
+        vi.advanceTimersByTime(6_000);
+
+        const watchdogLog = logEvents.find(e => e.event === "watchdog-force-disengage");
+        expect(watchdogLog).toBeUndefined();
+
+        lock.dispose();
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 
