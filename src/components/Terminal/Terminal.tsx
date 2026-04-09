@@ -137,6 +137,25 @@ const OUTPUT_BUFFER_MAX_BYTES = 100 * 1024; // 100KB
 const HIGH_WATERMARK = 512 * 1024;  // 512KB — pause reader when exceeded
 const LOW_WATERMARK = 128 * 1024;   // 128KB — resume reader when drained below
 
+// Target line height — snapped to integer device pixels at runtime to prevent
+// sub-pixel seams between WebGL cell quads (see snapLineHeight).
+const TARGET_LINE_HEIGHT = 1.2;
+
+/** Snap lineHeight so cellHeight × devicePixelRatio is an integer.
+ *  Fractional device-pixel cell heights cause visible 1px seams between rows
+ *  in the WebGL renderer because adjacent quads round differently. */
+function snapLineHeight(fontSize: number, target: number = TARGET_LINE_HEIGHT): number {
+  const dpr = window.devicePixelRatio || 1;
+  const rawDevicePx = fontSize * target * dpr;
+  // Pick the closest integer device-pixel height to the target
+  const lo = Math.floor(rawDevicePx);
+  const hi = Math.ceil(rawDevicePx);
+  const best = (Math.abs(rawDevicePx - lo) <= Math.abs(rawDevicePx - hi)) ? lo : hi;
+  // Avoid degenerate values (too tight or too loose)
+  const snapped = best / (fontSize * dpr);
+  return Math.max(1.0, Math.min(snapped, 1.5));
+}
+
 // Minimum container dimensions before fit() is allowed — prevents WebGL rendering
 // artifacts when xterm gets squeezed into impossibly small panes (e.g. narrow split)
 const MIN_FIT_WIDTH = 80;   // px (~5 columns at 14px)
@@ -691,6 +710,19 @@ export const Terminal: Component<TerminalProps> = (props) => {
       if (sessionId) {
         terminalsStore.update(props.id, { sessionId });
         props.onSessionCreated?.(props.id, sessionId);
+
+        // Flush a resize to the PTY with authoritative dimensions. The PTY
+        // may have been created with preliminary rows/cols if the WebView
+        // layout hadn't fully stabilized yet. Re-fit xterm to get the current
+        // container size, then send that to the PTY so the shell (and any
+        // agent launched from it) sees the correct viewport from the start.
+        // Critical for the first terminal after app launch.
+        if (terminal) {
+          doFit();
+          if (terminal.rows > 0 && terminal.cols > 0) {
+            pty.resize(sessionId, terminal.rows, terminal.cols).catch(() => {});
+          }
+        }
       }
     } catch (err) {
       terminal.writeln(`\x1b[31mFailed to create PTY: ${err}\x1b[0m`);
@@ -782,7 +814,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       fontFamily: getFontFamily(),
       fontWeight: String(settingsStore.state.fontWeight) as any,
       fontWeightBold: "bold",
-      lineHeight: 1.2,
+      lineHeight: snapLineHeight(settingsStore.state.defaultFontSize),
       theme: currentTheme(),
       cursorBlink: true,
       allowProposedApi: true,
@@ -1494,7 +1526,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
     const perTerminalSize = terminalsStore.state.terminals[props.id]?.fontSize;
     const defaultSize = settingsStore.state.defaultFontSize;
     if (!terminal) return;
-    terminal.options.fontSize = perTerminalSize ?? defaultSize;
+    const size = perTerminalSize ?? defaultSize;
+    terminal.options.fontSize = size;
+    terminal.options.lineHeight = snapLineHeight(size);
     doFit();
   });
 
