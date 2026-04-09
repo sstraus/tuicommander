@@ -1119,6 +1119,9 @@ const App: Component = () => {
         appLogger.error("app", "Failed to open secondary window", err),
       );
     },
+    toggleCommandOverview: () => {
+      mdTabsStore.addCommandOverview();
+    },
     newFile: () => {
       const defaultPath = gitOps.activeWorktreePath() || repositoriesStore.state.activeRepoPath || undefined;
       (async () => {

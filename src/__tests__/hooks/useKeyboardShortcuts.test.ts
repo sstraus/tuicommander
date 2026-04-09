@@ -61,6 +61,7 @@ function createMockHandlers(): ShortcutHandlers {
     openFile: vi.fn(),
     newFile: vi.fn(),
     openSecondaryWindow: vi.fn(),
+    toggleCommandOverview: vi.fn(),
   };
 }
 

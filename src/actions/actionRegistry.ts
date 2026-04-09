@@ -76,6 +76,7 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
   "open-file": { label: "Open file…", category: "File" },
   "new-file": { label: "New file…", category: "File" },
   "open-secondary-window": { label: "Open secondary window", category: "Navigation" },
+  "command-overview": { label: "Command overview", category: "Panels" },
 };
 
 /**
@@ -134,6 +135,7 @@ export function getActionEntries(handlers: ShortcutHandlers): ActionEntry[] {
     "prompt-library": handlers.togglePromptLibrary,
     "open-file": handlers.openFile,
     "new-file": handlers.newFile,
+    "command-overview": handlers.toggleCommandOverview,
   };
 
   for (const [actionId, meta] of Object.entries(ACTION_META)) {

@@ -70,8 +70,14 @@ export interface HtmlPreviewTab extends BaseTab {
   fsRoot?: string;
 }
 
+/** Native Command Overview panel tab */
+export interface CommandOverviewTab extends BaseTab {
+  type: "command-overview";
+  title: string;
+}
+
 /** Discriminated union of all markdown tab types */
-export type MdTabData = FileTab | VirtualTab | PluginPanelTab | ClaudeUsageTab | PrDiffTab | HtmlPreviewTab;
+export type MdTabData = FileTab | VirtualTab | PluginPanelTab | ClaudeUsageTab | PrDiffTab | HtmlPreviewTab | CommandOverviewTab;
 
 // ---------------------------------------------------------------------------
 // Store
@@ -244,6 +250,20 @@ function createMdTabsStore() {
       const tabId = base._addTab({ type: "claude-usage", id, title: "Claude Usage", pinned: true } as ClaudeUsageTab);
 
       return tabId;
+    },
+
+    /** Add the Command Overview panel tab (singleton — reuses existing if open) */
+    addCommandOverview(): string {
+      const existing = Object.values(base.state.tabs).find(
+        (tab) => tab.type === "command-overview",
+      ) as CommandOverviewTab | undefined;
+      if (existing) {
+        base.setActive(existing.id);
+        return existing.id;
+      }
+
+      const id = base._nextId("md");
+      return base._addTab({ type: "command-overview", id, title: "Commands", pinned: true } as CommandOverviewTab);
     },
 
     /** Add a PR diff tab (or reuse existing for same repo+prNumber, updating diff content) */
