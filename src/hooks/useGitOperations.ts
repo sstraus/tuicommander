@@ -815,7 +815,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
         );
       }
 
-      refreshAllBranchStats();
+      await refreshAllBranchStats();
     } catch (err) {
       appLogger.error("git", "Failed to add repository", err);
       deps.setStatusInfo(`Failed to add repo: ${err}`);
@@ -1017,7 +1017,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
         await deps.repo.finalizeMergedWorktree(repoPath, branchName, action);
         deps.setStatusInfo(`Merged ${branchName} via GitHub (${action === "archive" ? "archived" : "deleted"})`);
         repositoriesStore.removeBranch(repoPath, branchName);
-        refreshAllBranchStats();
+        await refreshAllBranchStats();
         return;
       }
 
@@ -1063,7 +1063,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
     repositoriesStore.removeBranch(repoPath, branchName);
 
     // Refresh to pick up updated branch stats
-    refreshAllBranchStats();
+    await refreshAllBranchStats();
   };
 
   /** Dismiss the post-merge cleanup dialog. */
