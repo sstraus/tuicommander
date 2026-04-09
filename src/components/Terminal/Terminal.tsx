@@ -110,41 +110,82 @@ export function cleanOscTitle(title: string): string {
   return cleaned;
 }
 
-/** Hide visible "suggest:" rows in the xterm DOM.
- *  Scans .xterm-rows children from bottom up, sets visibility:hidden on
- *  matching rows. Returns a cleanup function that restores visibility.
- *  This avoids byte-stream manipulation which breaks Ink cursor positioning. */
-function hideSuggestRows(container: HTMLElement): (() => void) | null {
+// Regex patterns for token decoration — tested against row textContent
+const SUGGEST_RE = /suggest:\s+.+\|/;
+const INTENT_RE = /^[\s●⏺]*intent:\s+/;
+
+/** Set up a MutationObserver on .xterm-rows that reactively:
+ *  - Hides rows matching the suggest token pattern
+ *  - Colors rows matching the intent token pattern (dim yellow)
+ *  Fires on every DOM mutation (character data, child list) so it covers
+ *  writes, scrolls, resizes, and reflows — no timing hacks needed.
+ *  Returns a disconnect function. */
+function installTokenDecorator(container: HTMLElement): (() => void) | null {
   const screen = container.querySelector(".xterm-rows");
   if (!screen) return null;
-  const rows = screen.children;
-  const hidden: HTMLElement[] = [];
-  // Scan bottom 15 rows for suggest pattern
-  const start = Math.max(0, rows.length - 15);
-  for (let i = rows.length - 1; i >= start; i--) {
-    const row = rows[i] as HTMLElement;
+
+  const decorateRow = (row: HTMLElement) => {
     const text = row.textContent || "";
-    if (/suggest:\s+.+\|/.test(text)) {
-      row.style.visibility = "hidden";
-      hidden.push(row);
-      // Check next row for continuation (wrapped suggest)
-      if (i + 1 < rows.length) {
-        const next = rows[i + 1] as HTMLElement;
+
+    // Suggest: hide the entire row
+    if (SUGGEST_RE.test(text)) {
+      if (row.style.visibility !== "hidden") {
+        row.style.visibility = "hidden";
+      }
+      // Check next sibling for wrapped continuation
+      const next = row.nextElementSibling as HTMLElement | null;
+      if (next) {
         const nextText = next.textContent || "";
-        if (nextText.trim() && nextText.includes("|") && !/suggest:|intent:/.test(nextText)) {
-          next.style.visibility = "hidden";
-          hidden.push(next);
+        if (nextText.trim() && nextText.includes("|") && !SUGGEST_RE.test(nextText) && !INTENT_RE.test(nextText)) {
+          if (next.style.visibility !== "hidden") {
+            next.style.visibility = "hidden";
+          }
         }
       }
-      break;
+      return;
     }
-  }
-  if (hidden.length === 0) return null;
-  return () => {
-    for (const el of hidden) {
-      el.style.visibility = "";
+
+    // Restore visibility if row no longer matches suggest
+    if (row.style.visibility === "hidden") {
+      row.style.visibility = "";
+    }
+
+    // Intent: apply dim yellow color
+    if (INTENT_RE.test(text)) {
+      if (!row.classList.contains("tuic-intent-row")) {
+        row.classList.add("tuic-intent-row");
+      }
+    } else if (row.classList.contains("tuic-intent-row")) {
+      row.classList.remove("tuic-intent-row");
     }
   };
+
+  // Initial pass on all visible rows
+  for (const row of screen.children) {
+    decorateRow(row as HTMLElement);
+  }
+
+  const observer = new MutationObserver((mutations) => {
+    // Collect unique parent rows that changed
+    const seen = new Set<HTMLElement>();
+    for (const m of mutations) {
+      // Target is either the row div or a span inside it
+      const row = (m.target as HTMLElement).closest?.(".xterm-rows > div") as HTMLElement | null
+        ?? (m.target.parentElement?.closest?.(".xterm-rows > div") as HTMLElement | null);
+      if (row && !seen.has(row)) {
+        seen.add(row);
+        decorateRow(row);
+      }
+    }
+  });
+
+  observer.observe(screen, {
+    childList: true,
+    characterData: true,
+    subtree: true,
+  });
+
+  return () => observer.disconnect();
 }
 
 // Max bytes to buffer before terminal is opened (prevents unbounded growth)
@@ -200,8 +241,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
   // WebGL addon — retained so we can clear its atlas on demand and recreate
   // it after context loss. The addon exposes events that let us react to
   // actual atlas stress instead of rebuilding on a fixed timer.
-  // Suggest row DOM hiding cleanup — restores visibility on next output
-  let suggestRowCleanup: (() => void) | null = null;
+  // MutationObserver-based token decorator (suggest hiding + intent coloring)
+  let tokenDecoratorCleanup: (() => void) | null = null;
 
   let webglAddon: WebglAddon | undefined;
   // Throttle counter for atlas cleanup triggered by onAddTextureAtlasCanvas.
@@ -358,13 +399,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
       try {
         terminal.write(rawData, () => {
           viewportLock.writeEnd();
-          // Restore any DOM-hidden suggest rows — new output may have
-          // overwritten them, so the hidden visibility would stick on
-          // the wrong row content.
-          if (suggestRowCleanup) {
-            suggestRowCleanup();
-            suggestRowCleanup = null;
-          }
           pendingWriteBytes -= byteLen;
           if (isPaused && pendingWriteBytes < LOW_WATERMARK && sessionId) {
             isPaused = false;
@@ -564,17 +598,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
               // Busy: buffer — only the latest survives; shown on idle transition
               terminalsStore.update(props.id, { pendingSuggest: parsed.items });
             }
-            // Hide the suggest row via DOM visibility (not byte-stream manipulation,
-            // which breaks Ink cursor positioning). Uses double-rAF to ensure xterm
-            // has rendered the write before scanning.
-            if (containerRef) {
-              const el = containerRef;
-              // Clean up any previously hidden rows first
-              suggestRowCleanup?.();
-              requestAnimationFrame(() => requestAnimationFrame(() => {
-                suggestRowCleanup = hideSuggestRows(el);
-              }));
-            }
+            // Suggest hiding is handled by the MutationObserver token decorator —
+            // no manual intervention needed here.
           }
           break;
         case "shell-state": {
@@ -1218,6 +1243,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     }
 
     terminal.open(containerRef);
+    tokenDecoratorCleanup = installTokenDecorator(containerRef);
     viewportLock.attach(
       containerRef,
       (line) => terminal!.scrollToLine(line),
@@ -1629,6 +1655,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // Clean up plugin line buffer for this session
     if (sessionId) pluginRegistry.removeSession(sessionId);
 
+    tokenDecoratorCleanup?.();
     viewportLock.dispose();
     terminal?.dispose();
   });

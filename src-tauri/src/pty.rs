@@ -8,7 +8,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
 
 use crate::input_line_buffer::{InputAction, InputLineBuffer};
-use crate::output_parser::{colorize_intent, OutputParser, ParsedEvent};
+use crate::output_parser::{OutputParser, ParsedEvent};
 use crate::state::{
     AppState, ChangedRow, EscapeAwareBuffer, KittyAction, KittyKeyboardState, OrchestratorStats,
     OutputRingBuffer, PtyConfig, PtyOutput, PtySession, Utf8ReadBuffer, VtLogBuffer,
@@ -767,10 +767,7 @@ impl ChunkProcessor {
             return Some(String::new());
         }
 
-        let has_intent = data.contains("intent:");
-        let result = if has_intent { colorize_intent(&data) } else { data };
-
-        Some(result)
+        Some(data)
     }
 
     /// Resolve a relative plan-file path to absolute using session CWD.
@@ -4322,13 +4319,13 @@ mod tests {
     }
 
     #[test]
-    fn test_transform_xterm_plain_intent_colorized() {
+    fn test_transform_xterm_intent_passes_through() {
+        // Intent coloring is now handled by the frontend MutationObserver.
         let mut cp = ChunkProcessor::new(None);
         let result = cp.transform_xterm("intent: Fix the bug\n".to_string());
-        assert!(result.is_some(), "complete line should pass through");
+        assert!(result.is_some());
         let data = result.unwrap();
-        assert!(data.contains("\x1b[2;33m"), "intent should be colorized dim yellow");
-        assert!(data.contains("intent: Fix the bug"), "body must be preserved");
+        assert!(data.contains("intent: Fix the bug"), "intent must pass through to frontend");
     }
 
     #[test]
@@ -4344,9 +4341,8 @@ mod tests {
     #[test]
     fn test_transform_xterm_incomplete_intent_passes_through() {
         let mut cp = ChunkProcessor::new(None);
-        // Incomplete intent without newline — passes through uncolored (no blocking)
         let r1 = cp.transform_xterm("intent: doing so".to_string());
-        assert!(r1.is_some(), "incomplete intent must not block output");
+        assert!(r1.is_some(), "incomplete intent must pass through");
     }
 
     // --- alt buffer clear injection tests ---
