@@ -680,10 +680,16 @@ struct ChunkProcessor {
     /// chunk completes the line so `conceal_suggest` can match the full pattern.
     suggest_line_buf: String,
     /// Tracks whether the terminal is in alternate screen buffer mode.
-    /// Set on ESC[?1049h, cleared on ESC[?1049l. Used to inject ESC[2J
-    /// before ESC[H (cursor home) to prevent stale content from partial
-    /// Ink redraws (Ink uses differential rendering without ESC[K).
+    /// Set on ESC[?1049h, cleared on ESC[?1049l.
     in_alt_buffer: bool,
+    /// One-shot flag: inject ESC[2J before the next ESC[H cursor-home.
+    /// Set on alt-buffer entry and when content may have shrunk (detected via
+    /// cursor-up ESC[nA with n > previous). Consumed after inject fires.
+    alt_buffer_needs_clear: bool,
+    /// Tracks the largest cursor-up (ESC[nA) value seen since last clear.
+    /// When a new ESC[nA arrives with n < last_cursor_up_n, content has shrunk
+    /// and we need a clear to prevent ghost artifacts.
+    last_cursor_up_n: u16,
 }
 
 impl ChunkProcessor {
@@ -697,6 +703,8 @@ impl ChunkProcessor {
             emitted_planfiles: std::collections::HashSet::new(),
             suggest_line_buf: String::new(),
             in_alt_buffer: false,
+            alt_buffer_needs_clear: false,
+            last_cursor_up_n: 0,
         }
     }
 
@@ -726,20 +734,34 @@ impl ChunkProcessor {
         // Track alternate screen buffer state for the clear-before-home fix below.
         if data.contains("\x1b[?1049h") {
             self.in_alt_buffer = true;
+            self.alt_buffer_needs_clear = true;
         } else if data.contains("\x1b[?1049l") {
             self.in_alt_buffer = false;
+            self.alt_buffer_needs_clear = false;
         }
 
-        // Inject ESC[2J (clear screen) before ESC[H (cursor home) while in alternate
-        // buffer. Ink-based TUIs (Claude Code, etc.) use differential rendering — they
-        // position the cursor at home and redraw changed cells, but never send ESC[K to
-        // erase trailing content. When displayed content shrinks, old characters (box-
-        // drawing separators, progress bars) persist as ghost artifacts. Injecting ESC[2J
-        // clears them before the full redraw. Since xterm.js processes ESC[2J and the
-        // subsequent Ink content in the same write() call, the intermediate clear state
-        // is never rendered — no flicker.
-        let data = if self.in_alt_buffer {
-            inject_clear_before_cursor_home(&data)
+        // Detect content shrink in alternate buffer: when Ink's cursor-up (ESC[nA)
+        // value decreases, the rendered content has gotten shorter and old lines
+        // will persist as ghost artifacts. Schedule a clear for the next cursor-home.
+        if self.in_alt_buffer {
+            if let Some(n) = extract_largest_cursor_up(&data) {
+                if n < self.last_cursor_up_n && self.last_cursor_up_n > 0 {
+                    self.alt_buffer_needs_clear = true;
+                }
+                self.last_cursor_up_n = n;
+            }
+        }
+
+        // Inject ESC[2J (clear screen) before ESC[H (cursor home) when needed.
+        // Triggered on alt-buffer entry and when content shrinks. One-shot: consumed
+        // after inject fires to prevent per-keystroke flicker.
+        let data = if self.alt_buffer_needs_clear {
+            let injected = inject_clear_before_cursor_home(&data);
+            if injected.len() != data.len() {
+                // inject happened — consume the flag
+                self.alt_buffer_needs_clear = false;
+            }
+            injected
         } else {
             data
         };
@@ -1250,6 +1272,37 @@ fn detect_anomalous_sequences(data: &str) -> Vec<&'static str> {
     }
 
     found
+}
+
+/// Extract the largest ESC[nA (cursor-up) value from `data`.
+/// Ink emits ESC[nA where n equals the previous render height before redrawing.
+/// A decrease in n between consecutive redraws signals content shrinkage.
+fn extract_largest_cursor_up(data: &str) -> Option<u16> {
+    let bytes = data.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    let mut max_n: Option<u16> = None;
+
+    while i < len {
+        if bytes[i] == 0x1b && i + 1 < len && bytes[i + 1] == b'[' {
+            i += 2;
+            let num_start = i;
+            while i < len && bytes[i].is_ascii_digit() {
+                i += 1;
+            }
+            if i < len && bytes[i] == b'A' && i > num_start {
+                if let Ok(n) = std::str::from_utf8(&bytes[num_start..i]).unwrap_or("").parse::<u16>() {
+                    max_n = Some(max_n.map_or(n, |prev: u16| prev.max(n)));
+                }
+            }
+            if i < len {
+                i += 1;
+            }
+        } else {
+            i += 1;
+        }
+    }
+    max_n
 }
 
 /// Returns true if `s` looks like a real (partial) suggest token that should be buffered.
@@ -4523,6 +4576,48 @@ mod tests {
         assert!(!cp.in_alt_buffer);
         let result = cp.transform_xterm("\x1b[Hcontent".to_string()).unwrap();
         assert!(!result.contains("\x1b[2J"), "should not inject after leaving alt buffer");
+    }
+
+    #[test]
+    fn test_transform_xterm_alt_buffer_no_clear_on_subsequent_redraws() {
+        let mut cp = ChunkProcessor::new(None);
+        // Enter alt buffer — first cursor-home gets clear
+        cp.transform_xterm("\x1b[?1049h".to_string());
+        let r1 = cp.transform_xterm("\x1b[Hfirst redraw".to_string()).unwrap();
+        assert!(r1.contains("\x1b[2J"), "first redraw must inject clear");
+
+        // Subsequent redraws must NOT inject clear (prevents per-keystroke flicker)
+        let r2 = cp.transform_xterm("\x1b[Hsecond redraw".to_string()).unwrap();
+        assert!(!r2.contains("\x1b[2J"), "subsequent redraws must not inject clear");
+    }
+
+    #[test]
+    fn test_transform_xterm_alt_buffer_clear_on_shrink() {
+        let mut cp = ChunkProcessor::new(None);
+        // Enter alt buffer, consume initial clear
+        cp.transform_xterm("\x1b[?1049h".to_string());
+        cp.transform_xterm("\x1b[Hinit".to_string()); // consumes one-shot
+
+        // Simulate growing content: cursor-up 50 lines
+        cp.transform_xterm("\x1b[50A redraw tall".to_string());
+        assert_eq!(cp.last_cursor_up_n, 50);
+
+        // Simulate shrink: cursor-up only 20 lines (content got shorter)
+        let r = cp.transform_xterm("\x1b[20A\x1b[Hredraw short".to_string()).unwrap();
+        assert!(r.contains("\x1b[2J"), "clear must be injected when content shrinks");
+        assert_eq!(cp.last_cursor_up_n, 20);
+
+        // Next redraw at same height — no clear
+        let r2 = cp.transform_xterm("\x1b[20A\x1b[Hsame height".to_string()).unwrap();
+        assert!(!r2.contains("\x1b[2J"), "no clear when height stays same");
+    }
+
+    #[test]
+    fn test_extract_largest_cursor_up() {
+        assert_eq!(extract_largest_cursor_up("\x1b[5A"), Some(5));
+        assert_eq!(extract_largest_cursor_up("\x1b[10Afoo\x1b[3A"), Some(10));
+        assert_eq!(extract_largest_cursor_up("no cursor up here"), None);
+        assert_eq!(extract_largest_cursor_up("\x1b[H"), None); // cursor home, not up
     }
 
     // --- log_anomalous_sequences tests ---
