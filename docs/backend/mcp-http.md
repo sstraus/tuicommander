@@ -160,7 +160,7 @@ The MCP instructions string returned by `initialize` (`build_mcp_instructions`) 
 
 ### MCP Native Tools
 
-Eight native tools, organized by domain. Three (`config`, `knowledge`, `debug`) are hidden by default via `disabled_native_tools` — discoverable through `search_tools`/`get_tool_schema`/`call_tool` when `collapse_tools` is enabled.
+Seven native tools, organized by domain. Two (`config`, `debug`) are hidden by default via `disabled_native_tools` — discoverable through `search_tools`/`get_tool_schema`/`call_tool` when `collapse_tools` is enabled.
 
 | Tool | Actions | Default |
 |------|---------|---------|
@@ -170,10 +170,9 @@ Eight native tools, organized by domain. Three (`config`, `knowledge`, `debug`) 
 | `ui` | tab, toast, confirm | Enabled |
 | `plugin_dev_guide` | *(no actions — returns guide text)* | Enabled |
 | `config` | get, save | Disabled |
-| `knowledge` | search, code_graph, status, setup | Disabled |
 | `debug` | agent_detection, logs, sessions, invoke_js | Disabled |
 
-The `disabled_native_tools` config key accepts an array of tool names to hide from `tools/list`. Default: `["config", "knowledge", "debug"]`.
+The `disabled_native_tools` config key accepts an array of tool names to hide from `tools/list`. Default: `["config", "debug"]`.
 
 ### MCP Tool: `session` Output
 

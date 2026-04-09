@@ -143,7 +143,7 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
         out.push_str("2. **`get_tool_schema`** — Given an exact `tool_name` from search, returns the full tool definition with inputSchema.\n");
         out.push_str("3. **`call_tool`** — Dispatch a named tool. Pass `tool_name` + `arguments` object.\n\n");
         out.push_str("**Flow:** `search_tools(query=\"…\")` → pick a name → `get_tool_schema(tool_name=…)` → `call_tool(tool_name=…, arguments={…})`.\n\n");
-        out.push_str("**Domains available:** terminal pane sessions (tmux replacement), AI agent orchestration + messaging, repos/GitHub PRs/worktrees, UI tabs + notifications, plugin authoring reference, app config, knowledge base search, diagnostics");
+        out.push_str("**Domains available:** terminal pane sessions (tmux replacement), AI agent orchestration + messaging, repos/GitHub PRs/worktrees, UI tabs + notifications, plugin authoring reference, app config, diagnostics");
         let upstream_count = state.mcp_upstream_registry.aggregated_tools().len();
         if upstream_count > 0 {
             out.push_str(&format!(", plus {upstream_count} upstream tool(s) from connected MCP servers"));
@@ -244,8 +244,7 @@ const AGENT_ACTIONS: &str = "spawn, detect, stats, metrics, register, list_peers
 const REPO_ACTIONS: &str = "list, active, prs, status, worktree_list, worktree_create, worktree_remove";
 const UI_ACTIONS: &str = "tab, toast, confirm";
 const CONFIG_ACTIONS: &str = "get, save";
-const KNOWLEDGE_ACTIONS: &str = "search, code_graph, status, setup";
-const DEBUG_ACTIONS: &str = "agent_detection, logs, sessions, invoke_js";
+const DEBUG_ACTIONS: &str = "agent_detection, logs, sessions, invoke_js, help";
 
 // Legacy action constants — still referenced by handlers until dispatch refactor (story 1091).
 // Remove these when handle_mcp_tool_call dispatch is updated.
@@ -263,7 +262,7 @@ fn native_tool_definitions() -> serde_json::Value {
     let defs = serde_json::json!([
         {
             "name": "session",
-            "description": "Manage terminal pane sessions — the PTY multiplexer. Equivalent to tmux pane management: create terminals (split-window), write input (send-keys), read output (capture-pane), list active panes, and control lifecycle. Each session is a full PTY with scrollback, visible in the TUI as a pane.\n\nActions (pass as 'action' parameter):\n- list: All active sessions with cwd, worktree info, and process details (child_pid, foreground_pgid, foreground_process). Call first to discover IDs.\n- create: Spawn a new PTY session (equivalent to tmux split-window). Returns {session_id}. Optional: rows, cols, shell, cwd.\n- input: Send text and/or special keys to a session (equivalent to tmux send-keys). Requires session_id, plus input and/or special_key.\n- output: Read terminal output from ring buffer (equivalent to tmux capture-pane). Returns {data, total_written, exited, exit_code}. Requires session_id. Optional: limit. exited=true when process has terminated.\n- resize: Change PTY dimensions. Requires session_id, rows, cols.\n- close: Graceful shutdown (sends Ctrl+C, waits briefly). Requires session_id.\n- kill: Force SIGKILL. Use when close doesn't work (e.g. nested agents catching SIGINT). Requires session_id.\n- pause: Pause output buffering. Requires session_id.\n- resume: Resume output buffering. Requires session_id.",
+            "description": "PTY multiplexer (replaces tmux). Create terminals, send input (send-keys), read output (capture-pane), manage lifecycle.\n\nActions:\n- list: Active sessions with cwd, process info. Call first to discover IDs.\n- create: New PTY. Returns {session_id}. Optional: cwd, shell, rows, cols.\n- input: Send text and/or special_key to a session.\n- output: Read from ring buffer. Returns {data, total_written, exited, exit_code}.\n- resize: Change PTY dimensions.\n- close: Graceful shutdown (Ctrl+C, waits).\n- kill: Force SIGKILL (use when close fails).\n- pause: Pause output buffering. resume: Resume.",
             "inputSchema": { "type": "object", "properties": {
                 "action": { "type": "string", "description": "One of: list, create, input, output, resize, close, kill, pause, resume" },
                 "session_id": { "type": "string", "description": "Session ID (required for input, output, resize, close, pause, resume)" },
@@ -279,7 +278,7 @@ fn native_tool_definitions() -> serde_json::Value {
         },
         {
             "name": "agent",
-            "description": "AI agent orchestration and inter-agent messaging. Spawn Claude Code, Codex, Aider, or Goose agents in managed PTY sessions, detect running agents, and coordinate via message passing.\n\nActions (pass as 'action' parameter):\n- spawn: Launch an AI agent in a new PTY (localhost only). Returns {session_id}. Use session action=input/output to interact.\n- detect: Returns [{name, path, version}] for known agents.\n- stats: Returns {active_sessions, max_sessions, available_slots}.\n- metrics: Returns cumulative metrics {total_spawned, total_failed, active_sessions, bytes_emitted, pauses_triggered}.\n- register: Register as a peer agent for inter-agent messaging. Requires tuic_session (your $TUIC_SESSION env var). Optional: name, project.\n- list_peers: List all registered peer agents. Optional: project (filter by repo path).\n- send: Send a message to a peer. Requires to (recipient's tuic_session UUID), message (max 64KB).\n- inbox: Read buffered messages. Optional: limit (default 50), since (unix millis).",
+            "description": "AI agent orchestration. Spawn agents (Claude Code, Codex, Aider, Goose) in managed PTYs, detect installed agents, and peer-to-peer messaging.\n\nActions:\n- spawn: Launch agent in new PTY (localhost only). Returns {session_id}. Use session action=input/output to interact.\n- detect: Installed agents [{name, path, version}].\n- stats: {active_sessions, max_sessions, available_slots}.\n- metrics: Cumulative {total_spawned, total_failed, bytes_emitted, pauses_triggered}.\n- register: Register as peer (pass your $TUIC_SESSION env var).\n- list_peers: List peers. Optional: project filter.\n- send: Message a peer (requires to, message).\n- inbox: Read messages. Optional: limit, since (unix millis).",
             "inputSchema": { "type": "object", "properties": {
                 "action": { "type": "string", "description": "One of: spawn, detect, stats, metrics, register, list_peers, send, inbox" },
                 "prompt": { "type": "string", "description": "Task prompt for the agent (action=spawn)" },
@@ -302,7 +301,7 @@ fn native_tool_definitions() -> serde_json::Value {
         },
         {
             "name": "repo",
-            "description": "Repository and version control operations. Query workspace repos, GitHub PR/CI status, and manage git worktrees for parallel work.\n\nActions (pass as 'action' parameter):\n- list: All open repos with group membership, branch, dirty status, and worktrees.\n- active: Currently focused repo path, branch, and group.\n- prs: Open PRs with CI rollup, merge readiness, review state. Requires path. Single GraphQL batch.\n- status: Cross-repo aggregate: {path, branch, ahead, behind, open_prs, failing_ci} per repo.\n- worktree_list: Git worktrees for a repo [{branch, path}]. Requires path.\n- worktree_create: Create isolated worktree with optional branch. Requires path. Optional: branch, base_ref, spawn_session. Claude Code clients receive cc_agent_hint.\n- worktree_remove: Remove a worktree by branch. Requires path, branch.",
+            "description": "Repository and version control. Query workspace repos, GitHub PR/CI status, manage git worktrees.\n\nActions:\n- list: Open repos with branch, dirty status, worktrees.\n- active: Focused repo path, branch, group.\n- prs: Open PRs with CI, merge readiness, reviews. Requires path.\n- status: Cross-repo {path, branch, ahead, behind, open_prs, failing_ci}.\n- worktree_list: Worktrees for a repo. Requires path.\n- worktree_create: Create worktree. Requires path. Optional: branch, base_ref, spawn_session.\n- worktree_remove: Remove worktree. Requires path, branch.",
             "inputSchema": { "type": "object", "properties": {
                 "action": { "type": "string", "description": "One of: list, active, prs, status, worktree_list, worktree_create, worktree_remove" },
                 "path": { "type": "string", "description": "Absolute path to git repository (required for prs, worktree_list, worktree_create, worktree_remove)" },
@@ -340,24 +339,10 @@ fn native_tool_definitions() -> serde_json::Value {
             }, "required": ["action"] }
         },
         {
-            "name": "knowledge",
-            "description": "Cross-repo knowledge base powered by mdkb (single instance). Search docs, code, symbols, and call graphs.\n\nActions (pass as 'action' parameter):\n- search: Hybrid search (BM25 + semantic). Requires query. Optional: root (repo path or '*' for all), scope (docs/memory/code/symbols), limit.\n- code_graph: Query call graph. Requires name (symbol). Optional: root, direction (calls/callers/impact), max_depth.\n- status: Returns mdkb upstream status.\n- setup: Auto-provision the mdkb upstream server.",
-            "inputSchema": { "type": "object", "properties": {
-                "action": { "type": "string", "description": "One of: search, code_graph, status, setup" },
-                "query": { "type": "string", "description": "Search query text (action=search)" },
-                "name": { "type": "string", "description": "Symbol name to look up (action=code_graph)" },
-                "root": { "type": "string", "description": "Repo path to scope search. Use '*' for cross-repo (default for search)." },
-                "scope": { "type": "string", "description": "Search scope: docs, memory, code, symbols (action=search)" },
-                "direction": { "type": "string", "description": "Graph direction: calls, callers, impact (action=code_graph, default: calls)" },
-                "max_depth": { "type": "integer", "description": "Max traversal depth (action=code_graph, default: 3)" },
-                "limit": { "type": "integer", "description": "Max results per repo (default: 10)" }
-            }, "required": ["action"] }
-        },
-        {
             "name": "debug",
-            "description": "Diagnostics for TUICommander internals.\n\nActions:\n- agent_detection: Agent detection pipeline. Optional session_id.\n- logs: App log entries (info/warn/error). Optional: level, source, limit.\n- sessions: PTY sessions with pid, cwd, foreground process.\n- invoke_js: Run JS in WebView (localhost only). Result + console.log output → source='eval_js'. Read via logs(source='eval_js', limit=1).\n\ninvoke_js: use `return expr` for output. console.log/warn/error are captured. `window.__TUIC__` provides: plugins(), plugin(id), pluginLogs(id), terminals(), terminal(id), agentTypeForSession(sid), activity(), logs(limit).",
+            "description": "Diagnostics for TUICommander internals. Call with action=help for full usage guide.",
             "inputSchema": { "type": "object", "properties": {
-                "action": { "type": "string", "description": "One of: agent_detection, logs, sessions, invoke_js" },
+                "action": { "type": "string", "description": "One of: agent_detection, logs, sessions, invoke_js, help" },
                 "session_id": { "type": "string", "description": "PTY session UUID (action=agent_detection, optional — omit for all)" },
                 "level": { "type": "string", "description": "Log level filter: debug, info, warn, error (action=logs)" },
                 "source": { "type": "string", "description": "Log source filter (action=logs)" },
@@ -689,13 +674,12 @@ async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &st
             serde_json::json!({"content": super::plugin_docs::PLUGIN_DOCS})
         }
         "config" => handle_config(state, addr, args),
-        "knowledge" => handle_knowledge(state, args).await,
         "debug" => handle_debug_unified(state, addr, args),
         "search_tools" => handle_search_tools(state, args),
         "get_tool_schema" => handle_get_tool_schema(state, args),
         "call_tool" => handle_call_tool(state, addr, args, mcp_session_id).await,
         _ => serde_json::json!({"error": format!(
-            "Unknown tool '{}'. Available: session, agent, repo, ui, plugin_dev_guide, config, knowledge, debug, search_tools, get_tool_schema, call_tool", name
+            "Unknown tool '{}'. Available: session, agent, repo, ui, plugin_dev_guide, config, debug, search_tools, get_tool_schema, call_tool", name
         )}),
     }
 }
@@ -1793,138 +1777,6 @@ fn handle_notify(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Val
 // Knowledge (cross-repo mdkb fan-out)
 // ---------------------------------------------------------------------------
 
-/// Slug a repo path for use as an upstream name: `mdkb-{last_component}`.
-/// Single upstream name for the global mdkb instance.
-const MDKB_UPSTREAM_NAME: &str = "mdkb";
-
-
-
-/// Ensure the single global mdkb upstream is registered and connected.
-/// Returns true if the upstream is ready, false if provisioning failed.
-async fn ensure_mdkb_provisioned(state: &Arc<AppState>) -> Result<(), String> {
-    let registry = &state.mcp_upstream_registry;
-
-    // Already registered?
-    if registry.status(MDKB_UPSTREAM_NAME).is_some() {
-        return Ok(());
-    }
-
-    let self_port = state.config.read().remote_access_port;
-    let server = crate::mcp_upstream_config::UpstreamMcpServer {
-        id: uuid::Uuid::new_v4().to_string(),
-        name: MDKB_UPSTREAM_NAME.to_string(),
-        transport: crate::mcp_upstream_config::UpstreamTransport::Stdio {
-            command: "mdkb".to_string(),
-            args: vec!["serve".to_string()],
-            env: std::collections::HashMap::new(),
-            cwd: None, // global instance — mdkb uses its own config
-        },
-        enabled: true,
-        timeout_secs: 60,
-        tool_filter: None,
-    };
-
-    let server_copy = server.clone();
-    registry.connect_upstream(server, Some(self_port)).await
-        .map_err(|e| format!("Failed to connect mdkb: {e}"))?;
-    tracing::info!(source = "knowledge", "Auto-provisioned global mdkb upstream");
-
-    // Persist
-    let mut config = crate::mcp_upstream_config::load_mcp_upstreams();
-    if !config.servers.iter().any(|s| s.name == MDKB_UPSTREAM_NAME) {
-        config.servers.push(server_copy);
-        if let Err(e) = crate::config::save_json_config("mcp-upstreams.json", &config) {
-            tracing::warn!(source = "knowledge", "Failed to persist mdkb upstream: {e}");
-        }
-    }
-
-    Ok(())
-}
-
-async fn handle_knowledge(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
-    let action = match require_action(args, "knowledge", KNOWLEDGE_ACTIONS) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
-
-    match action {
-        "setup" => {
-            match ensure_mdkb_provisioned(state).await {
-                Ok(()) => serde_json::json!({"ok": true, "upstream": MDKB_UPSTREAM_NAME}),
-                Err(e) => serde_json::json!({"error": e}),
-            }
-        }
-
-        "status" => {
-            let registry = &state.mcp_upstream_registry;
-            let status = registry.status(MDKB_UPSTREAM_NAME)
-                .map(|s| format!("{s:?}"))
-                .unwrap_or_else(|| "not provisioned".to_string());
-            serde_json::json!({"upstream": MDKB_UPSTREAM_NAME, "status": status})
-        }
-
-        "search" => {
-            let query = match args["query"].as_str() {
-                Some(q) => q,
-                None => return serde_json::json!({"error": "Action 'search' requires 'query'"}),
-            };
-            let scope = args["scope"].as_str();
-            let limit = args["limit"].as_u64().unwrap_or(10);
-
-            if let Err(e) = ensure_mdkb_provisioned(state).await {
-                return serde_json::json!({"error": e});
-            }
-            let registry = &state.mcp_upstream_registry;
-            let tool_name = format!("{MDKB_UPSTREAM_NAME}__search");
-            let mut tool_args = serde_json::json!({"query": query, "limit": limit});
-            if let Some(s) = scope {
-                tool_args["scope"] = serde_json::json!(s);
-            }
-            // Use root="*" for cross-repo search, or specific root if provided
-            if let Some(root) = args["root"].as_str() {
-                tool_args["root"] = serde_json::json!(root);
-            } else {
-                tool_args["root"] = serde_json::json!("*");
-            }
-            match registry.proxy_tool_call(&tool_name, tool_args).await {
-                Ok(result) => result,
-                Err(e) => serde_json::json!({"error": e}),
-            }
-        }
-
-        "code_graph" => {
-            let symbol_name = match args["name"].as_str() {
-                Some(n) => n,
-                None => return serde_json::json!({"error": "Action 'code_graph' requires 'name'"}),
-            };
-            let direction = args["direction"].as_str().unwrap_or("calls");
-            let max_depth = args["max_depth"].as_u64().unwrap_or(3);
-
-            if let Err(e) = ensure_mdkb_provisioned(state).await {
-                return serde_json::json!({"error": e});
-            }
-            let registry = &state.mcp_upstream_registry;
-            let tool_name = format!("{MDKB_UPSTREAM_NAME}__code_graph");
-            let mut tool_args = serde_json::json!({
-                "name": symbol_name,
-                "direction": direction,
-                "max_depth": max_depth,
-            });
-            if let Some(root) = args["root"].as_str() {
-                tool_args["root"] = serde_json::json!(root);
-            }
-            match registry.proxy_tool_call(&tool_name, tool_args).await {
-                Ok(result) => result,
-                Err(e) => serde_json::json!({"error": e}),
-            }
-        }
-
-        other => serde_json::json!({"error": format!(
-            "Unknown action '{}' for tool 'knowledge'. Available: {}", other, KNOWLEDGE_ACTIONS
-        )}),
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Streamable HTTP transport (MCP spec 2025-03-26)
 // Single /mcp endpoint — POST for JSON-RPC, GET for SSE notifications, DELETE ends session
@@ -2319,6 +2171,33 @@ fn handle_debug_unified(state: &Arc<AppState>, addr: SocketAddr, args: &serde_js
             }
         }
         "agent_detection" | "logs" | "sessions" => handle_debug(state, args),
+        "help" => serde_json::json!({
+            "actions": {
+                "help": "This guide.",
+                "agent_detection": "Agent detection pipeline diagnostics. Optional session_id (omit for all sessions).",
+                "logs": "App log entries (info/warn/error mirrored from JS). Params: level, source, limit (default 50).",
+                "sessions": "All PTY sessions with pid, cwd, foreground process info.",
+                "invoke_js": "Execute JS in the main WebView (localhost only). Use `return expr` for output. Result + captured console output logged as source='eval_js'. Read via logs(source='eval_js', limit=1)."
+            },
+            "invoke_js_guide": {
+                "console_capture": "console.log/warn/error/info are captured and included in the result.",
+                "globals": {
+                    "window.__TUIC__.plugins()": "All plugin states: id, loaded, enabled, error, builtIn",
+                    "window.__TUIC__.plugin(id)": "Single plugin state with manifest",
+                    "window.__TUIC__.pluginLogs(id, limit?)": "Plugin's internal PluginLogger entries (default 20)",
+                    "window.__TUIC__.terminals()": "All terminals: id, name, sessionId, shellState, agentType, cwd",
+                    "window.__TUIC__.terminal(id)": "Single terminal with awaitingInput, usageLimit",
+                    "window.__TUIC__.agentTypeForSession(sid)": "Agent type lookup by PTY session ID",
+                    "window.__TUIC__.activity()": "Activity center sections and active items",
+                    "window.__TUIC__.logs(limit?)": "JS-side appLogger entries, all levels (default 50)"
+                },
+                "examples": [
+                    "return window.__TUIC__.plugins()",
+                    "return window.__TUIC__.pluginLogs('cache-keepalive')",
+                    "return window.__TUIC__.terminals()"
+                ]
+            }
+        }),
         other => serde_json::json!({"error": format!(
             "Unknown action '{}' for tool 'debug'. Available: {}", other, DEBUG_ACTIONS
         )}),
@@ -2706,8 +2585,8 @@ mod tests {
         let names = tool_names(&defs);
         assert_eq!(
             names,
-            vec!["session", "agent", "repo", "ui", "plugin_dev_guide", "config", "knowledge", "debug"],
-            "native_tool_definitions must return exactly these 8 tools in order"
+            vec!["session", "agent", "repo", "ui", "plugin_dev_guide", "config", "debug"],
+            "native_tool_definitions must return exactly these 7 tools in order"
         );
     }
 

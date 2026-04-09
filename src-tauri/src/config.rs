@@ -456,7 +456,7 @@ impl Default for AppConfig {
             ipv6_enabled: false,
             lan_auth_bypass: false,
             disabled_agents: Vec::new(),
-            disabled_native_tools: vec!["config".to_string(), "knowledge".to_string(), "debug".to_string()],
+            disabled_native_tools: vec!["config".to_string(), "debug".to_string()],
             intent_tab_title: true,
             suggest_followups: true,
             relay_enabled: false,

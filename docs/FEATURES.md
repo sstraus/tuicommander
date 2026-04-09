@@ -910,7 +910,7 @@ Variables are resolved from the Rust backend (`resolve_context_variables`) and f
 ### 11.3 Services
 - HTTP API server: always active on IPC listener (Unix domain socket on macOS/Linux, named pipe `\\.\pipe\tuicommander-mcp` on Windows). TCP port only for remote access
 - MCP connection info: bridge sidecar auto-installs configs for supported agents (Claude Code, Cursor, etc.)
-- TUIC native tool toggles: enable/disable individual MCP tools (`session`, `agent`, `repo`, `ui`, `plugin_dev_guide`, `config`, `knowledge`, `debug`) to restrict what AI agents can access
+- TUIC native tool toggles: enable/disable individual MCP tools (`session`, `agent`, `repo`, `ui`, `plugin_dev_guide`, `config`, `debug`) to restrict what AI agents can access
 - MCP Upstreams: add/edit/remove upstream MCP servers (HTTP or stdio with optional `cwd`), per-upstream enable/disable, reconnect, credential storage via OS keyring, live status dots, tool count and metrics. Saved upstreams auto-connect on boot
 - MCP Per-Repo Scoping: each repo can define which upstream MCP servers are relevant via an allowlist in repo settings (3-layer: per-repo > `.tuic.json` > defaults). Null/empty allowlist = all servers. Quick toggle via **Cmd+Shift+M** popup
 - Remote access: port, username, password (bcrypt hash), URL display, QR code, token duration, IPv6 dual-stack, LAN auth bypass
@@ -1017,11 +1017,9 @@ All data persisted to platform config directory via Rust:
 - Unix socket lifecycle is crash-safe: RAII guard removes the socket file on `Drop`; bind retries 3× (×100 ms) removing any stale file before each attempt; liveness check uses a real `connect()` probe so a dead socket from a crashed run never blocks MCP tool loading
 
 ### 14.7 Cross-Repo Knowledge Base
-- `knowledge` MCP tool: fan-out queries across all repos in a workspace group via mdkb upstream servers
-- `setup`: auto-provisions `mdkb serve` (stdio) for each repo, persists to `mcp-upstreams.json`
-- `search`: hybrid BM25 + semantic search across docs, code, symbols, and memory in all group repos
-- `code_graph`: cross-repo call graph queries (calls, callers, impact analysis)
-- `status`: indexing health for all mdkb instances
+- Knowledge base functionality is available via the `mdkb` MCP upstream server (configure in MCP Upstreams settings)
+- Provides hybrid BM25 + semantic search across docs, code, symbols, and memory
+- Call graph queries (calls, callers, impact analysis) via `code_graph` tool
 - Requires `mdkb` binary on PATH (installed separately)
 
 ### 14.8 macOS Dock Badge

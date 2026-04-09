@@ -134,11 +134,6 @@ mod tests {
                 "inputSchema": { "type": "object", "properties": { "action": { "type": "string" } }, "required": ["action"] }
             }),
             json!({
-                "name": "knowledge",
-                "description": "Cross-repo knowledge base powered by mdkb. Search docs, code, symbols, and call graphs.",
-                "inputSchema": { "type": "object", "properties": { "action": { "type": "string" } }, "required": ["action"] }
-            }),
-            json!({
                 "name": "plugin_dev_guide",
                 "description": "Returns comprehensive plugin authoring reference: manifest format, PluginHost API, structured event types, and working examples.",
                 "inputSchema": { "type": "object", "properties": {}, "required": [] }
