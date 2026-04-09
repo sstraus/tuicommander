@@ -8,6 +8,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [1.0.2] - 2026-04-08
 
+### Added
+- **Global Workspace (experimental)** — Cross-repo workspace mode (`Cmd+Shift+X`) that promotes terminals from any repo into a unified view. Auto-layout distributes promoted terminals across panes. Sidebar globe icon indicates promoted state. Deactivating restores per-repo layouts. Repo isolation preserved in TabBar and pane persistence
+- **Multi-monitor (POC)** — Secondary window with pane-only layout for multi-display setups
+- **TUIC SDK `edit` command** — `tuic://edit/path` deep link opens files for editing in the host app
+- **MCP debug introspection** — Full MCP log coverage and `eval_js` action in the debug tool for runtime diagnostics
+
+### Changed
+- **Markdown panel shortcut** — Changed from `Cmd+M` to `Cmd+Shift+M` to avoid conflict with macOS system minimize. All docs, tests, and keybinding defaults updated
+- **Settings IPC** — `structuredClone` for plain-JS store paths eliminates redundant settings IPC round-trips
+
+### Fixed
+- **Suggest bar reliability** — Removed Rust-side `conceal_suggest` byte-stream manipulation (caused scroll freezes and ViewportLock conflicts); suggest tokens now hidden exclusively by the frontend `eraseSuggestFromBuffer` rAF scanner. Also: deferred PTY creation via ResizeObserver, stale actions cleared on user input, number prefixes stripped from chip display
+- **Terminal focus restoration** — Focus returns to the active terminal after closing any modal dialog (CommandPalette, SmartPromptsDropdown, PromptDialog, PromptDrawer, BranchSwitcher, RunCommandDialog, RenameBranchDialog, CreateWorktreeDialog) and after PaneTree tab switches
+- **Repo-switch freeze** — Eliminated visibility thundering herd that caused UI freeze when switching repositories with many terminals
+- **Idle detection** — Replaced chrome-tick guard with spinner keepalive; tuned agent idle thresholds to prevent indicator flicker while maintaining responsive idle transitions
+- **Plugin panel CSP** — URL-mode plugin tabs use `src=` attribute instead of fetch-inject to avoid Content Security Policy blocking
+- **Tab ordering** — Tabs now follow spatial pane layout order in split mode
+- **Keepalive replay** — Shell-state replayed after agent detection completes, preventing stale state after keepalive reconnection
+- **Plugin localhost URLs** — `fetch_tab_html` now allows localhost URLs for local development dashboards
+
 ## [1.0.1] - 2026-04-06
 
 ### Added

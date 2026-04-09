@@ -1032,90 +1032,6 @@ pub fn colorize_intent(raw: &str) -> String {
     out
 }
 
-/// Hide `suggest: ...` tokens from the xterm stream.
-///
-/// Splits input on `\n` and tests each CSI-stripped line against the plain-prefix
-/// pattern. A matching line that contained only the token on the clean view is
-/// replaced with `\x1b[2K\x1b[A` (erase line + cursor up) so xterm.js drops the
-/// visible row without misaligning subsequent content. Matching lines with other
-/// visible text collapse to blank spaces to preserve column alignment.
-///
-/// Robust to Ink SGR wrapping around the keyword, which the old `^…suggest:`
-/// regex missed whenever color codes preceded the token in the raw stream.
-pub fn conceal_suggest(raw: &str) -> String {
-    if !raw.contains("suggest:") {
-        return raw.to_string();
-    }
-    lazy_static::lazy_static! {
-        // Require at least one `|` — same guard as parse_suggest to prevent
-        // false matches on prose where "suggest:" wraps to column 0.
-        static ref SUGGEST_LINE_RE: regex::Regex = regex::Regex::new(
-            r"^([\t ]*(?:[\x{25CF}\x{23FA}][\t ]+)?)suggest:[ \t]+(.+\|.+)$"
-        ).unwrap();
-        // CSI cursor-forward: \e[<n>C — Ink uses this instead of spaces.
-        static ref CUF_RE: regex::Regex = regex::Regex::new(
-            r"\x1b\[(\d*)C"
-        ).unwrap();
-    }
-    let csi = csi_re();
-    let mut out = String::with_capacity(raw.len());
-    let mut first_nl = true;
-    for nl_segment in raw.split('\n') {
-        if !first_nl {
-            out.push('\n');
-        }
-        first_nl = false;
-        if !nl_segment.contains("suggest:") {
-            out.push_str(nl_segment);
-            continue;
-        }
-        // Split by \r as well: Ink renders with \r + cursor positioning
-        // instead of \n, so the suggest token may sit inside a \r-segment.
-        let mut first_cr = true;
-        for cr_segment in nl_segment.split('\r') {
-            let is_cr_segment = !first_cr;
-            if !first_cr {
-                out.push('\r');
-            }
-            first_cr = false;
-            if !cr_segment.contains("suggest:") {
-                out.push_str(cr_segment);
-                continue;
-            }
-            // Replace cursor-forward (\e[<n>C) with spaces before stripping
-            // other CSI sequences — Ink uses CUF instead of literal spaces.
-            let with_spaces = CUF_RE.replace_all(cr_segment, |caps: &regex::Captures| {
-                let n: usize = caps.get(1)
-                    .and_then(|m| m.as_str().parse().ok())
-                    .unwrap_or(1);
-                " ".repeat(n)
-            });
-            let clean = csi.replace_all(&with_spaces, "");
-            if let Some(caps) = SUGGEST_LINE_RE.captures(&clean) {
-                let prefix_visible = caps[1].trim();
-                if prefix_visible.is_empty() && !is_cr_segment {
-                    // \n-delimited line with token alone → erase line only.
-                    // Do NOT emit cursor-up (\e[A) — it shifts the viewport
-                    // position and triggers ViewportLock engage, which then
-                    // anchors the viewport and prevents subsequent output from
-                    // scrolling into view (terminal appears frozen).
-                    out.push_str("\x1b[2K");
-                } else {
-                    // \r-delimited (Ink cursor positioning) or line with other content:
-                    // preserve CSI sequences (cursor movement) and erase line content.
-                    for m in csi.find_iter(cr_segment) {
-                        out.push_str(m.as_str());
-                    }
-                    out.push_str("\x1b[2K");
-                }
-            } else {
-                out.push_str(cr_segment);
-            }
-        }
-    }
-    out
-}
-
 /// Detect agent-declared intent tokens: `intent: <text>` or `intent: <text> (<title>)`
 /// at column 0. Only parsed when an agent is active — prevents false positives from
 /// prose like "The intent: of this code".
@@ -2799,63 +2715,12 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     }
 
     #[test]
-    fn test_conceal_suggest_with_leading_sgr_wrapping() {
-        // Regression: SGR-wrapped suggest tokens survived the old concealment
-        // regex and leaked into the terminal, hiding the action-button bar
-        // that's driven by the structured `Suggest` event.
-        let raw = "\x1b[2msuggest: Run tests | Check logs | Push\x1b[0m\n";
-        let out = conceal_suggest(raw);
-        assert!(
-            !out.contains("suggest:"),
-            "SGR-wrapped suggest must be concealed; got: {:?}",
-            out
-        );
-    }
-
-    #[test]
-    fn test_conceal_suggest_indented_sgr_wrapped() {
-        let raw = "  \x1b[38;5;245msuggest: A | B | C\x1b[0m\n";
-        let out = conceal_suggest(raw);
-        assert!(!out.contains("suggest:"), "indented SGR-wrapped suggest must be concealed");
-    }
-
-    #[test]
     fn test_colorize_intent_no_false_positive_inline_prose() {
         // The word "intent:" in prose must NOT be colorized when it's not at
         // the start of a line. The clean-line match still anchors on `^`.
         let raw = "The real intent: of this code is clear\n";
         let colored = colorize_intent(raw);
         assert_eq!(colored, raw, "inline prose must not be colorized");
-    }
-
-    #[test]
-    fn test_conceal_suggest_plain_prefix() {
-        let raw = "suggest: Run tests | Check logs | Push changes";
-        let out = conceal_suggest(raw);
-        assert!(!out.contains("suggest:"), "plain-prefix suggest should be concealed");
-        assert_eq!(out, "\x1b[2K", "alone on line → erase line (no cursor-up)");
-    }
-
-    #[test]
-    fn test_conceal_suggest_plain_prefix_in_multiline() {
-        let raw = "some output\nsuggest: A | B | C\nmore output";
-        let out = conceal_suggest(raw);
-        assert!(!out.contains("suggest:"), "plain-prefix suggest should be concealed in multiline");
-    }
-
-    #[test]
-    fn test_conceal_suggest_plain_prefix_indented() {
-        // Ink continuation lines indent by bullet width; keep in sync with parse_suggest.
-        let raw = "  suggest: A | B | C";
-        let out = conceal_suggest(raw);
-        assert!(!out.contains("suggest:"), "indented suggest should be concealed");
-    }
-
-    #[test]
-    fn test_conceal_suggest_plain_prefix_ink_bullet() {
-        let raw = "● suggest: A | B | C";
-        let out = conceal_suggest(raw);
-        assert!(!out.contains("suggest:"), "Ink-bullet suggest should be concealed");
     }
 
     // ---- False positive regression tests ----
@@ -2982,13 +2847,6 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     }
 
     #[test]
-    fn test_conceal_suggest_prose_no_corruption() {
-        // Prose with "suggest:" must pass through unmodified — no concealment.
-        let raw = "The parser looks for suggest: tokens in each chunk";
-        assert_eq!(conceal_suggest(raw), raw);
-    }
-
-    #[test]
     fn test_suggest_plain_prefix_trims_whitespace() {
         let mut parser = OutputParser::new();
         let events = parser.parse("suggest:   Fix test  |  Refactor  |  Add docs  ");
@@ -3047,66 +2905,6 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         assert!(events.iter().any(|e| matches!(e, ParsedEvent::Suggest { .. })),
             "suggest should parse when agent_active=true");
     }
-
-    // --- conceal_suggest tests ---
-
-    #[test]
-    fn test_conceal_suggest_basic() {
-        let raw = "suggest: Fix the test | Refactor code | Add docs";
-        let out = conceal_suggest(raw);
-        // Token alone on line → erase line + cursor up
-        assert!(!out.contains("suggest:"), "token text should be gone");
-        assert_eq!(out, "\x1b[2K", "should erase line when token is alone (no cursor-up)");
-    }
-
-    #[test]
-    fn test_conceal_suggest_no_change_when_absent() {
-        let raw = "normal output without suggest token";
-        let out = conceal_suggest(raw);
-        assert_eq!(out, raw, "unchanged when no suggest token");
-    }
-
-    #[test]
-    fn test_conceal_suggest_erases_line_with_newlines() {
-        let raw = "line above\nsuggest: A | B\nline below";
-        let out = conceal_suggest(raw);
-        assert!(out.contains("line above"), "before preserved");
-        assert!(out.contains("line below"), "after preserved");
-        assert!(out.contains("\x1b[2K"), "erase line when token is sole content (no cursor-up)");
-    }
-
-    #[test]
-    fn test_conceal_suggest_ink_cr_cursor_positioning() {
-        // Ink renders with \r + cursor positioning instead of \n.
-        // The suggest token sits in a \r-delimited segment.
-        let raw = "\r\x1b[5A  suggest: 1) Fix | 2) Test | 3) Deploy                     \r\x1b[1B  more content";
-        let out = conceal_suggest(raw);
-        assert!(!out.contains("suggest:"), "suggest text should be concealed");
-        assert!(out.contains("more content"), "non-suggest content preserved");
-        // Cursor positioning CSI sequences must be preserved
-        assert!(out.contains("\x1b[5A"), "cursor-up preserved");
-        assert!(out.contains("\x1b[1B"), "cursor-down preserved");
-        assert!(out.contains("\x1b[2K"), "line erase emitted");
-    }
-
-    #[test]
-    fn test_conceal_suggest_ink_cuf_cursor_forward_as_spaces() {
-        // Ink uses \e[1C (cursor forward 1) instead of literal spaces.
-        // conceal_suggest must replace CUF with spaces before matching.
-        let raw = "\r\x1b[2C\x1b[31Bsuggest:\x1b[1C1)\x1b[1CApply\x1b[1C|\x1b[1C2)\x1b[1CSkip\x1b[1C|\x1b[1C3)\x1b[1CDone\r\x1b[2B\x1b[38;2;215;119;87m\u{2733}\x1b[39m";
-        let out = conceal_suggest(raw);
-        assert!(!out.contains("suggest:"), "suggest text must be concealed when Ink uses CUF");
-        assert!(out.contains("\x1b[2K"), "erase line emitted");
-    }
-
-    #[test]
-    fn test_conceal_suggest_ink_no_false_positive_on_cr() {
-        // \r-delimited segments without suggest should pass through unchanged
-        let raw = "\r\x1b[5Anormal text here\r\x1b[1Bmore text";
-        let out = conceal_suggest(raw);
-        assert_eq!(out, raw, "no change when suggest absent");
-    }
-
 
     // --- parse_clean_lines tests ---
 

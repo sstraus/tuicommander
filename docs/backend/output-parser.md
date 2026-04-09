@@ -155,7 +155,7 @@ ParsedEvent::Suggest {
 
 Detected as a single-line plain-prefix token at column 0: `suggest: A | B | C`.
 
-Items are pipe-delimited. The `conceal_suggest()` function erases the line (or replaces the match with spaces when inline with other text) so the token never appears on screen. Concealment is agent-gated.
+Items are pipe-delimited. The suggest token is hidden from the terminal by the frontend `eraseSuggestFromBuffer` rAF scanner in `Terminal.tsx`, which scans the xterm buffer and erases matching lines. Parsing is agent-gated.
 
 ### UsageLimit
 
