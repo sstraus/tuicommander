@@ -1052,6 +1052,10 @@ pub fn conceal_suggest(raw: &str) -> String {
         static ref SUGGEST_LINE_RE: regex::Regex = regex::Regex::new(
             r"^([\t ]*(?:[\x{25CF}\x{23FA}][\t ]+)?)suggest:[ \t]+(.+\|.+)$"
         ).unwrap();
+        // CSI cursor-forward: \e[<n>C — Ink uses this instead of spaces.
+        static ref CUF_RE: regex::Regex = regex::Regex::new(
+            r"\x1b\[(\d*)C"
+        ).unwrap();
     }
     let csi = csi_re();
     let mut out = String::with_capacity(raw.len());
@@ -1078,12 +1082,24 @@ pub fn conceal_suggest(raw: &str) -> String {
                 out.push_str(cr_segment);
                 continue;
             }
-            let clean = csi.replace_all(cr_segment, "");
+            // Replace cursor-forward (\e[<n>C) with spaces before stripping
+            // other CSI sequences — Ink uses CUF instead of literal spaces.
+            let with_spaces = CUF_RE.replace_all(cr_segment, |caps: &regex::Captures| {
+                let n: usize = caps.get(1)
+                    .and_then(|m| m.as_str().parse().ok())
+                    .unwrap_or(1);
+                " ".repeat(n)
+            });
+            let clean = csi.replace_all(&with_spaces, "");
             if let Some(caps) = SUGGEST_LINE_RE.captures(&clean) {
                 let prefix_visible = caps[1].trim();
                 if prefix_visible.is_empty() && !is_cr_segment {
-                    // \n-delimited line with token alone → erase line + cursor up.
-                    out.push_str("\x1b[2K\x1b[A");
+                    // \n-delimited line with token alone → erase line only.
+                    // Do NOT emit cursor-up (\e[A) — it shifts the viewport
+                    // position and triggers ViewportLock engage, which then
+                    // anchors the viewport and prevents subsequent output from
+                    // scrolling into view (terminal appears frozen).
+                    out.push_str("\x1b[2K");
                 } else {
                     // \r-delimited (Ink cursor positioning) or line with other content:
                     // preserve CSI sequences (cursor movement) and erase line content.
@@ -2817,7 +2833,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         let raw = "suggest: Run tests | Check logs | Push changes";
         let out = conceal_suggest(raw);
         assert!(!out.contains("suggest:"), "plain-prefix suggest should be concealed");
-        assert_eq!(out, "\x1b[2K\x1b[A", "alone on line → erase line");
+        assert_eq!(out, "\x1b[2K", "alone on line → erase line (no cursor-up)");
     }
 
     #[test]
@@ -3040,7 +3056,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         let out = conceal_suggest(raw);
         // Token alone on line → erase line + cursor up
         assert!(!out.contains("suggest:"), "token text should be gone");
-        assert_eq!(out, "\x1b[2K\x1b[A", "should erase line when token is alone");
+        assert_eq!(out, "\x1b[2K", "should erase line when token is alone (no cursor-up)");
     }
 
     #[test]
@@ -3056,7 +3072,7 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         let out = conceal_suggest(raw);
         assert!(out.contains("line above"), "before preserved");
         assert!(out.contains("line below"), "after preserved");
-        assert!(out.contains("\x1b[2K\x1b[A"), "erase line when token is sole content");
+        assert!(out.contains("\x1b[2K"), "erase line when token is sole content (no cursor-up)");
     }
 
     #[test]
@@ -3071,6 +3087,16 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         assert!(out.contains("\x1b[5A"), "cursor-up preserved");
         assert!(out.contains("\x1b[1B"), "cursor-down preserved");
         assert!(out.contains("\x1b[2K"), "line erase emitted");
+    }
+
+    #[test]
+    fn test_conceal_suggest_ink_cuf_cursor_forward_as_spaces() {
+        // Ink uses \e[1C (cursor forward 1) instead of literal spaces.
+        // conceal_suggest must replace CUF with spaces before matching.
+        let raw = "\r\x1b[2C\x1b[31Bsuggest:\x1b[1C1)\x1b[1CApply\x1b[1C|\x1b[1C2)\x1b[1CSkip\x1b[1C|\x1b[1C3)\x1b[1CDone\r\x1b[2B\x1b[38;2;215;119;87m\u{2733}\x1b[39m";
+        let out = conceal_suggest(raw);
+        assert!(!out.contains("suggest:"), "suggest text must be concealed when Ink uses CUF");
+        assert!(out.contains("\x1b[2K"), "erase line emitted");
     }
 
     #[test]
