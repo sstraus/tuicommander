@@ -110,42 +110,41 @@ export function cleanOscTitle(title: string): string {
   return cleaned;
 }
 
-/** Scan the xterm buffer for visible "suggest:" lines and erase them.
- *  Called after raw data is flushed (via rAF) so the buffer is up to date.
- *  Handles multi-line suggests where the token wraps across rows.
- *  Uses save/restore cursor to avoid corrupting the agent's cursor position.
- *  Returns true if a suggest line was found and erased. */
-function eraseSuggestFromBuffer(term: XTerm): boolean {
-  const buf = term.buffer.active;
-  const searchStart = Math.max(0, buf.baseY + buf.cursorY - 10);
-  const searchEnd = buf.baseY + buf.cursorY;
-  for (let abs = searchEnd; abs >= searchStart; abs--) {
-    const line = buf.getLine(abs);
-    if (!line) continue;
-    const text = line.translateToString(true);
+/** Hide visible "suggest:" rows in the xterm DOM.
+ *  Scans .xterm-rows children from bottom up, sets visibility:hidden on
+ *  matching rows. Returns a cleanup function that restores visibility.
+ *  This avoids byte-stream manipulation which breaks Ink cursor positioning. */
+function hideSuggestRows(container: HTMLElement): (() => void) | null {
+  const screen = container.querySelector(".xterm-rows");
+  if (!screen) return null;
+  const rows = screen.children;
+  const hidden: HTMLElement[] = [];
+  // Scan bottom 15 rows for suggest pattern
+  const start = Math.max(0, rows.length - 15);
+  for (let i = rows.length - 1; i >= start; i--) {
+    const row = rows[i] as HTMLElement;
+    const text = row.textContent || "";
     if (/suggest:\s+.+\|/.test(text)) {
-      // Erase the primary suggest line
-      const viewRow = abs - buf.baseY + 1;
-      let eraseSeq = `\x1b7\x1b[${viewRow};1H\x1b[2K`;
-      // Check subsequent rows for continuation lines (wrapped suggest content:
-      // contains pipe-delimited items but no "suggest:" prefix)
-      for (let cont = abs + 1; cont <= searchEnd; cont++) {
-        const contLine = buf.getLine(cont);
-        if (!contLine) break;
-        const contText = contLine.translateToString(true).trim();
-        // Continuation: non-empty, contains "|", no new token prefix
-        if (contText && contText.includes("|") && !/^\s*(suggest|intent):/.test(contText)) {
-          const contViewRow = cont - buf.baseY + 1;
-          eraseSeq += `\x1b[${contViewRow};1H\x1b[2K`;
-        } else {
-          break;
+      row.style.visibility = "hidden";
+      hidden.push(row);
+      // Check next row for continuation (wrapped suggest)
+      if (i + 1 < rows.length) {
+        const next = rows[i + 1] as HTMLElement;
+        const nextText = next.textContent || "";
+        if (nextText.trim() && nextText.includes("|") && !/suggest:|intent:/.test(nextText)) {
+          next.style.visibility = "hidden";
+          hidden.push(next);
         }
       }
-      term.write(eraseSeq + "\x1b8");
-      return true;
+      break;
     }
   }
-  return false;
+  if (hidden.length === 0) return null;
+  return () => {
+    for (const el of hidden) {
+      el.style.visibility = "";
+    }
+  };
 }
 
 // Max bytes to buffer before terminal is opened (prevents unbounded growth)
@@ -201,6 +200,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
   // WebGL addon — retained so we can clear its atlas on demand and recreate
   // it after context loss. The addon exposes events that let us react to
   // actual atlas stress instead of rebuilding on a fixed timer.
+  // Suggest row DOM hiding cleanup — restores visibility on next output
+  let suggestRowCleanup: (() => void) | null = null;
+
   let webglAddon: WebglAddon | undefined;
   // Throttle counter for atlas cleanup triggered by onAddTextureAtlasCanvas.
   // Pages are added when the packer runs out of room for new glyphs, so a
@@ -356,6 +358,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
       try {
         terminal.write(rawData, () => {
           viewportLock.writeEnd();
+          // Restore any DOM-hidden suggest rows — new output may have
+          // overwritten them, so the hidden visibility would stick on
+          // the wrong row content.
+          if (suggestRowCleanup) {
+            suggestRowCleanup();
+            suggestRowCleanup = null;
+          }
           pendingWriteBytes -= byteLen;
           if (isPaused && pendingWriteBytes < LOW_WATERMARK && sessionId) {
             isPaused = false;
@@ -555,17 +564,15 @@ export const Terminal: Component<TerminalProps> = (props) => {
               // Busy: buffer — only the latest survives; shown on idle transition
               terminalsStore.update(props.id, { pendingSuggest: parsed.items });
             }
-            // Erase the raw "suggest:" line from the terminal buffer.
-            // Parsed events arrive before raw output in the Tauri event stream,
-            // and terminal.write() is async — double rAF ensures xterm has
-            // flushed its write queue before we scan the buffer.
-            if (terminal) {
-              const t2 = terminal;
+            // Hide the suggest row via DOM visibility (not byte-stream manipulation,
+            // which breaks Ink cursor positioning). Uses double-rAF to ensure xterm
+            // has rendered the write before scanning.
+            if (containerRef) {
+              const el = containerRef;
+              // Clean up any previously hidden rows first
+              suggestRowCleanup?.();
               requestAnimationFrame(() => requestAnimationFrame(() => {
-                if (!eraseSuggestFromBuffer(t2)) {
-                  // Retry once more — write queue may be deep under load
-                  requestAnimationFrame(() => eraseSuggestFromBuffer(t2));
-                }
+                suggestRowCleanup = hideSuggestRows(el);
               }));
             }
           }
