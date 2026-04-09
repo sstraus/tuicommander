@@ -4,7 +4,7 @@ use serde::Serialize;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
 
 use crate::input_line_buffer::{InputAction, InputLineBuffer};
@@ -681,7 +681,7 @@ struct ChunkProcessor {
     suggest_line_buf: String,
     /// Tracks whether the terminal is in alternate screen buffer mode.
     /// Set on ESC[?1049h, cleared on ESC[?1049l.
-    in_alt_buffer: bool,
+    pub(crate) in_alt_buffer: bool,
     /// One-shot flag: inject ESC[2J before the next ESC[H cursor-home.
     /// Set on alt-buffer entry and when content may have shrunk (detected via
     /// cursor-up ESC[nA with n > previous). Consumed after inject fires.
@@ -1507,8 +1507,9 @@ pub(crate) fn spawn_reader_thread(
                             let clamped_data = clamp_cursor_up(&xterm_data, rows);
 
                             // Detect anomalous ANSI sequences for scroll-jump diagnostics.
-                            // Guard: skip scan + Vec alloc when no ESC byte is present.
-                            if clamped_data.as_bytes().contains(&0x1b) {
+                            // Skip in alternate buffer — ESC[H, ESC[2J are normal there
+                            // (Ink redraws ~15×/sec). Logging them floods the log channel.
+                            if !processor.in_alt_buffer && clamped_data.as_bytes().contains(&0x1b) {
                                 let anomalies = detect_anomalous_sequences(&clamped_data);
                                 for label in &anomalies {
                                     tracing::warn!(source = "terminal", session_id = %session_id, "Anomalous ANSI sequence: {label}");
@@ -1712,6 +1713,11 @@ pub(crate) async fn create_pty(
             cmd.cwd(cwd);
         }
 
+        // Inject OSC 133 shell integration (command block markers)
+        if let Ok(data_dir) = app.path().app_data_dir() {
+            crate::shell_integration::inject(&data_dir, &shell, &mut cmd);
+        }
+
         // Inject stable session UUID so agents can use it for session binding
         // (e.g. `claude --session-id $TUIC_SESSION`, then `claude --resume $TUIC_SESSION`)
         if let Some(ref tuic_session) = config.tuic_session {
@@ -1830,6 +1836,11 @@ pub(crate) async fn create_pty_with_worktree(
 
         let mut cmd = build_shell_command(&shell);
         cmd.cwd(&worktree_path);
+
+        // Inject OSC 133 shell integration (command block markers)
+        if let Ok(data_dir) = app.path().app_data_dir() {
+            crate::shell_integration::inject(&data_dir, &shell, &mut cmd);
+        }
 
         // Inject env flags (feature flags configured in Settings → Agents)
         for (key, value) in &pty_config.env {
