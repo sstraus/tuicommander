@@ -166,6 +166,14 @@ fn is_plausible_question(line: &str) -> bool {
     true
 }
 
+/// Returns true if a changed_row text looks like a suggest token line.
+/// Used to exclude suggest rows from "real output" classification so they
+/// don't reset the silence timer or stale pending questions.
+fn is_suggest_row(text: &str) -> bool {
+    let t = text.trim();
+    t.contains("suggest:") && t.contains('|')
+}
+
 /// Verify that a question candidate is still visible among the bottom rows of the
 /// terminal screen. Returns true only if the exact question text appears as a
 /// complete row (trimmed) within the last `max_bottom_rows` non-empty lines.
@@ -183,6 +191,14 @@ pub(crate) fn verify_question_on_screen(screen_rows: &[String], question: &str, 
 }
 
 use crate::chrome::{is_separator_line, is_prompt_line};
+
+/// Returns true when the line is a TUIC protocol token (`suggest:` or `intent:`
+/// with pipe-separated items). These are structural markers consumed by the
+/// frontend, not agent chat content — they must be skipped by question detection.
+fn is_protocol_token_line(text: &str) -> bool {
+    let t = text.trim_start();
+    (t.starts_with("suggest:") || t.starts_with("intent:")) && t.contains('|')
+}
 
 /// Extract the last chat line from the terminal screen by locating the prompt
 /// line and returning the first non-empty, non-chrome line above it.
@@ -202,11 +218,12 @@ pub(crate) fn extract_last_chat_line(screen_rows: &[String]) -> Option<String> {
         .find(|(_, row)| is_prompt_line(row))?
         .0;
 
-    // Walk upward past separator lines, empty lines, and chrome rows
-    // (timer/spinner like ✻, mode-line like ⏵⏵) to find the last chat line.
+    // Walk upward past separator lines, empty lines, chrome rows
+    // (timer/spinner like ✻, mode-line like ⏵⏵), and protocol token lines
+    // (suggest:/intent: with pipe-separated items) to find the last chat line.
     for i in (0..prompt_idx).rev() {
         let trimmed = screen_rows[i].trim();
-        if !trimmed.is_empty() && !is_separator_line(trimmed) && !is_chrome_row(trimmed) {
+        if !trimmed.is_empty() && !is_separator_line(trimmed) && !is_chrome_row(trimmed) && !is_protocol_token_line(trimmed) {
             return Some(trimmed.to_string());
         }
     }
@@ -978,27 +995,28 @@ impl ChunkProcessor {
         //   "real output" if it is not chrome and not blank — this prevents
         //   has_status_line from suppressing chunks that mix spinner + output.
         let all_chrome_markers = changed_rows.iter().all(|r| is_chrome_row(&r.text));
+        let has_suggest = events.iter().any(|e| matches!(e, ParsedEvent::Suggest { .. }));
         let no_real_output = changed_rows.iter().all(|r| {
             is_chrome_row(&r.text)
                 || r.text.trim().is_empty()
                 || crate::chrome::is_separator_line(&r.text)
                 || crate::chrome::is_prompt_line(&r.text)
+                // Suggest tokens are protocol markers, not real agent output.
+                // Without this, a visible suggest row makes the chunk look like
+                // "real output" and increments the question staleness counter.
+                || (has_suggest && is_suggest_row(&r.text))
         });
-        let has_suggest = events.iter().any(|e| matches!(e, ParsedEvent::Suggest { .. }));
         let chrome_only = !regex_found_question
             && last_q_line.is_none()
             && (changed_rows.is_empty()
                 || all_chrome_markers
-                || (has_status_line && no_real_output));
+                || ((has_status_line || has_suggest) && no_real_output));
         // Suggest-only: chunk produced only Suggest events (no real text).
-        // Like chrome_only, these must not reset the silence timer or count
-        // toward question staleness — the suggest token is a protocol marker,
-        // not meaningful agent output.
         let suggest_only = has_suggest
             && !regex_found_question
             && last_q_line.is_none()
             && !has_status_line
-            && events.iter().all(|e| matches!(e, ParsedEvent::Suggest { .. }));
+            && no_real_output;
         {
             let mut sl = silence.lock();
             sl.on_chunk(regex_found_question, last_q_line, has_status_line, chrome_only, suggest_only);
@@ -3368,6 +3386,57 @@ mod tests {
         assert_eq!(
             extract_last_chat_line(&rows),
             Some("Want to continue?".to_string()),
+        );
+    }
+
+    #[test]
+    fn test_extract_last_chat_line_skips_suggest_token() {
+        // suggest: line between question and prompt must be skipped
+        let rows = screen(&[
+            "È un caso d'uso reale che hai in mente, o stai esplorando le possibilità?",
+            "",
+            "suggest: 1) Implementare Alt long press | 2) Esplorare altri tasti | 3) Valutare UX",
+            "",
+            "────────────────────────────────",
+            ">",
+            "────────────────────────────────",
+            "⏵⏵ bypass permissions on",
+        ]);
+        assert_eq!(
+            extract_last_chat_line(&rows),
+            Some("È un caso d'uso reale che hai in mente, o stai esplorando le possibilità?".to_string()),
+        );
+    }
+
+    #[test]
+    fn test_extract_last_chat_line_skips_intent_token() {
+        // intent: line must also be skipped
+        let rows = screen(&[
+            "Should I proceed with this approach?",
+            "intent: fixing layout | updating styles",
+            "────────────────────────────────",
+            "> yes",
+            "────────────────────────────────",
+            "⏵⏵ bypass permissions on",
+        ]);
+        assert_eq!(
+            extract_last_chat_line(&rows),
+            Some("Should I proceed with this approach?".to_string()),
+        );
+    }
+
+    #[test]
+    fn test_extract_last_chat_line_prose_suggest_not_skipped() {
+        // Prose that happens to start with "suggest:" but has no pipe → real content
+        let rows = screen(&[
+            "I suggest: we should refactor this module",
+            "────────────────────────────────",
+            "> ok",
+            "⏵⏵ bypass permissions on",
+        ]);
+        assert_eq!(
+            extract_last_chat_line(&rows),
+            Some("I suggest: we should refactor this module".to_string()),
         );
     }
 
