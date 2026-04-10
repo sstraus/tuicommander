@@ -1,0 +1,36 @@
+src-tauri/src/pty.rs
+  aa06e17d1e145946 203-255,258-263,268-270,272-274,276-283,607-610,662-665,669,672-673,676,3237,3243,3245,3250,3252,3255,3261-3263,3265-3275,3278-3279,3284-3285,3287-3289,3291,3293,3296-3297,3302-3303,3305,3308,3310,3312,3316-3328,3331-3332,3336-3337,3339-3341,3346,3349-3350,3355-3356,3358,3361,3363,3365,3369-3370,3379-3380
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.6",
+  "base_commit_sha": "2f31e17362d82cec878f861d5922f04b096ff617",
+  "prompts": {
+    "11b9b131fcd6a64f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0c36b5f6-3af0-4b58-9f0f-ef05f7062418",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 139,
+      "overriden_lines": 0
+    },
+    "aa06e17d1e145946": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e4e106b7-5aeb-4d88-a2b4-c7ff7377d811",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 204,
+      "total_deletions": 345,
+      "accepted_lines": 341,
+      "overriden_lines": 0
+    }
+  }
+}
