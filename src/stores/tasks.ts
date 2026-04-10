@@ -241,3 +241,23 @@ function createTasksStore() {
 }
 
 export const tasksStore = createTasksStore();
+
+// Debug registry — expose task execution state for MCP introspection
+import { registerDebugSnapshot } from "./debugRegistry";
+registerDebugSnapshot("tasks", () => {
+  const s = tasksStore.state;
+  return {
+    activeTaskId: s.activeTaskId,
+    queue: s.taskQueue,
+    tasks: Object.fromEntries(
+      Object.entries(s.tasks).map(([id, t]) => [id, {
+        name: t.name,
+        status: t.status,
+        agentType: t.agentType,
+        sessionId: t.sessionId,
+        exitCode: t.exitCode,
+        error: t.error,
+      }]),
+    ),
+  };
+});

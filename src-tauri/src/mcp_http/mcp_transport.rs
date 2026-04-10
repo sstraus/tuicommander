@@ -2200,6 +2200,8 @@ fn handle_debug_unified(state: &Arc<AppState>, addr: SocketAddr, args: &serde_js
             "invoke_js_guide": {
                 "console_capture": "console.log/warn/error/info are captured and included in the result.",
                 "globals": {
+                    "window.__TUIC__.stores()": "List all registered store snapshot names",
+                    "window.__TUIC__.store(name)": "Get a store snapshot by name (repositories, paneLayout, settings, ui, keybindings, ...)",
                     "window.__TUIC__.plugins()": "All plugin states: id, loaded, enabled, error, builtIn",
                     "window.__TUIC__.plugin(id)": "Single plugin state with manifest",
                     "window.__TUIC__.pluginLogs(id, limit?)": "Plugin's internal PluginLogger entries (default 20)",
@@ -2210,8 +2212,10 @@ fn handle_debug_unified(state: &Arc<AppState>, addr: SocketAddr, args: &serde_js
                     "window.__TUIC__.logs(limit?)": "JS-side appLogger entries, all levels (default 50)"
                 },
                 "examples": [
+                    "return window.__TUIC__.stores()",
+                    "return window.__TUIC__.store('repositories')",
+                    "return window.__TUIC__.store('paneLayout')",
                     "return window.__TUIC__.plugins()",
-                    "return window.__TUIC__.pluginLogs('cache-keepalive')",
                     "return window.__TUIC__.terminals()"
                 ]
             }

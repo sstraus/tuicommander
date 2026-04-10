@@ -293,5 +293,15 @@ function createGlobalWorkspaceStore() {
 
 export const globalWorkspaceStore = createGlobalWorkspaceStore();
 
+// Debug registry — expose global workspace state for MCP introspection
+import { registerDebugSnapshot } from "./debugRegistry";
+registerDebugSnapshot("globalWorkspace", () => {
+  return {
+    isActive: globalWorkspaceStore.isActive(),
+    promotedTerminals: globalWorkspaceStore.getPromotedIds(),
+    layout: globalWorkspaceStore.getLayout(),
+  };
+});
+
 // Wire up terminal removal via callback — avoids direct coupling from terminals→globalWorkspace
 terminalsStore.onRemove((id) => globalWorkspaceStore.onTerminalRemoved(id));

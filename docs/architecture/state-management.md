@@ -157,6 +157,23 @@ settingsStore
     └── updateChannel                    ──used by──> updaterStore
 ```
 
+## Debug Registry (MCP Introspection)
+
+Stores self-register snapshot functions via `src/stores/debugRegistry.ts`. Snapshots are exposed on `window.__TUIC__` and accessible through MCP `debug(action=invoke_js)`.
+
+| API | Returns |
+|-----|---------|
+| `__TUIC__.stores()` | List of registered store names |
+| `__TUIC__.store(name)` | Snapshot of the named store |
+
+**Registered:** github, globalWorkspace, keybindings, notes, paneLayout, repositories, settings, tasks, ui.
+
+To register a new store, append at the bottom of the store file:
+```ts
+import { registerDebugSnapshot } from "./debugRegistry";
+registerDebugSnapshot("name", () => ({ /* safe subset */ }));
+```
+
 ## Configuration Files
 
 All config files are JSON, stored in the platform config directory:

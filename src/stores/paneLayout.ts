@@ -639,3 +639,19 @@ function createPaneLayoutStore() {
 }
 
 export const paneLayoutStore = createPaneLayoutStore();
+
+// Debug registry — expose layout tree for MCP introspection
+import { registerDebugSnapshot } from "./debugRegistry";
+registerDebugSnapshot("paneLayout", () => {
+  const s = paneLayoutStore.state;
+  return {
+    activeGroupId: s.activeGroupId,
+    root: paneLayoutStore.getRoot(),
+    groups: Object.fromEntries(
+      Object.entries(s.groups).map(([id, g]) => [id, {
+        tabs: g.tabs,
+        activeTabId: g.activeTabId,
+      }]),
+    ),
+  };
+});

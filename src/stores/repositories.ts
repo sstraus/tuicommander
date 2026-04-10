@@ -796,6 +796,36 @@ function createRepositoriesStore() {
 
 export const repositoriesStore = createRepositoriesStore();
 
+// Debug registry — expose repo topology for MCP introspection
+import { registerDebugSnapshot } from "./debugRegistry";
+registerDebugSnapshot("repositories", () => {
+  const s = repositoriesStore.state;
+  return {
+    activeRepoPath: s.activeRepoPath,
+    repoOrder: s.repoOrder,
+    groupOrder: s.groupOrder,
+    repos: Object.fromEntries(
+      Object.entries(s.repositories).map(([path, r]) => [path, {
+        displayName: r.displayName,
+        activeBranch: r.activeBranch,
+        expanded: r.expanded,
+        collapsed: r.collapsed,
+        parked: r.parked,
+        isGitRepo: r.isGitRepo,
+        branches: Object.fromEntries(
+          Object.entries(r.branches).map(([name, b]) => [name, {
+            isMain: b.isMain,
+            terminals: b.terminals.length,
+            additions: b.additions,
+            deletions: b.deletions,
+            isMerged: b.isMerged,
+          }]),
+        ),
+      }]),
+    ),
+  };
+});
+
 /** Get the branch key for the currently active repo+branch.
  *  Shared helper used by tab stores (diff, md, editor) to scope tabs. */
 export function currentBranchKey(): string | undefined {

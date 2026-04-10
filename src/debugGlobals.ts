@@ -5,6 +5,10 @@
  * debug(action="invoke_js") can inspect runtime state without
  * needing dynamic module imports (which fail in release builds).
  *
+ * Stores self-register snapshots via debugRegistry — this file wires
+ * the registry into window.__TUIC__ and keeps the legacy convenience
+ * functions for backward compatibility.
+ *
  * Initialised once from index.tsx — always available, dev or release.
  */
 
@@ -12,9 +16,20 @@ import { pluginStore } from "./stores/pluginStore";
 import { terminalsStore } from "./stores/terminals";
 import { activityStore } from "./stores/activityStore";
 import { appLogger } from "./stores/appLogger";
+import { getDebugSnapshot, listDebugSnapshots } from "./stores/debugRegistry";
 
 export function initDebugGlobals(): void {
   (window as any).__TUIC__ = {
+    // ---- Dynamic registry ----
+
+    /** List all registered store snapshot names */
+    stores: () => listDebugSnapshots(),
+
+    /** Get a store snapshot by name (returns null if not registered) */
+    store: (name: string) => getDebugSnapshot(name),
+
+    // ---- Legacy convenience functions (backward-compatible) ----
+
     /** All plugin states: id, loaded, enabled, error */
     plugins() {
       return pluginStore.getAll().map((p) => ({

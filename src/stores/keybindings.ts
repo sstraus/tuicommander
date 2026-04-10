@@ -270,3 +270,9 @@ export function createKeybindingsStore() {
 
 /** Singleton keybindings store */
 export const keybindingsStore = createKeybindingsStore();
+
+// Debug registry — expose effective keybindings for MCP introspection
+import { registerDebugSnapshot } from "./debugRegistry";
+registerDebugSnapshot("keybindings", () => {
+  return keybindingsStore.getAllBindings();
+});

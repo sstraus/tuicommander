@@ -158,3 +158,14 @@ function createNotesStore() {
 }
 
 export const notesStore = createNotesStore();
+
+// Debug registry — expose notes for MCP introspection
+import { registerDebugSnapshot } from "./debugRegistry";
+registerDebugSnapshot("notes", () => {
+  return notesStore.state.notes.map((n) => ({
+    id: n.id,
+    text: n.text.substring(0, 100),
+    repoPath: n.repoPath,
+    createdAt: n.createdAt,
+  }));
+});

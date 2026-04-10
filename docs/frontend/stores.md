@@ -432,3 +432,15 @@ Tab ordering, branch-key mapping, and tab persistence logic.
 
 ### appLogger (`appLogger.ts`)
 Centralized logging — replaces direct `console.*` calls. Writes to ring buffer, forwards to console, and surfaces in ErrorLogPanel.
+
+### debugRegistry (`debugRegistry.ts`)
+Dynamic snapshot registry for MCP `invoke_js` introspection. Stores self-register a snapshot function at init time, exposed on `window.__TUIC__` as `stores()` (list names) and `store(name)` (get snapshot).
+
+**Registered stores:** github, globalWorkspace, keybindings, notes, paneLayout, repositories, settings, tasks, ui.
+
+**Adding a new store** — append 2 lines at the end of the store file:
+```ts
+import { registerDebugSnapshot } from "./debugRegistry";
+registerDebugSnapshot("storeName", () => ({ /* fields to expose */ }));
+```
+Each store decides what to expose — no need to modify `debugGlobals.ts`.

@@ -174,6 +174,33 @@ Seven native tools, organized by domain. Two (`config`, `debug`) are hidden by d
 
 The `disabled_native_tools` config key accepts an array of tool names to hide from `tools/list`. Default: `["config", "debug"]`.
 
+### MCP Tool: `debug` — `invoke_js` and the Debug Registry
+
+`invoke_js` executes JavaScript in the WebView (localhost-only). Results are logged with `source='eval_js'` and read via `debug(action='logs', source='eval_js', limit=1)`.
+
+**`window.__TUIC__` bridge** — runtime introspection API:
+
+| Method | Description |
+|--------|-------------|
+| `stores()` | List all registered store snapshot names |
+| `store(name)` | Get a store snapshot by name |
+| `plugins()` | All plugin states (legacy) |
+| `plugin(id)` | Single plugin state with manifest (legacy) |
+| `pluginLogs(id, limit?)` | Plugin log entries (legacy) |
+| `terminals()` | All terminal states (legacy) |
+| `terminal(id)` | Single terminal state (legacy) |
+| `agentTypeForSession(sid)` | Agent type lookup (legacy) |
+| `activity()` | Activity center sections/items (legacy) |
+| `logs(limit?)` | App log entries (legacy) |
+
+**Registered stores** (via debug registry): `github`, `globalWorkspace`, `keybindings`, `notes`, `paneLayout`, `repositories`, `settings`, `tasks`, `ui`. New stores self-register — see `src/stores/debugRegistry.ts`.
+
+**Adding a new store snapshot** — 2 lines at the end of the store file:
+```ts
+import { registerDebugSnapshot } from "./debugRegistry";
+registerDebugSnapshot("storeName", () => ({ /* fields to expose */ }));
+```
+
 ### MCP Tool: `session` Output
 
 The `session` tool's `action=output` strips ANSI escape codes by default, returning clean text suitable for AI consumption. Pass `format="raw"` to preserve escape sequences (e.g. for terminal rendering). The `action=list` response includes process details per session: `child_pid`, `foreground_pgid`, and `foreground_process`.

@@ -465,3 +465,25 @@ function createGitHubStore() {
 }
 
 export const githubStore = createGitHubStore();
+
+// Debug registry — expose GitHub PR/CI state for MCP introspection
+import { registerDebugSnapshot } from "./debugRegistry";
+registerDebugSnapshot("github", () => {
+  const s = githubStore.state;
+  return {
+    repos: Object.fromEntries(
+      Object.entries(s.repos).map(([path, data]) => [path, {
+        lastPolled: data.lastPolled,
+        remoteStatus: data.remoteStatus,
+        branches: Object.fromEntries(
+          Object.entries(data.branches).map(([name, pr]) => [name, {
+            number: pr.number,
+            state: pr.state,
+            checks: pr.checks,
+            url: pr.url,
+          }]),
+        ),
+      }]),
+    ),
+  };
+});

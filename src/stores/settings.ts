@@ -525,3 +525,26 @@ function createSettingsStore() {
 }
 
 export const settingsStore = createSettingsStore();
+
+// Debug registry — expose app settings for MCP introspection
+import { registerDebugSnapshot } from "./debugRegistry";
+registerDebugSnapshot("settings", () => {
+  const s = settingsStore.state;
+  return {
+    ide: s.ide,
+    font: s.font,
+    fontWeight: s.fontWeight,
+    defaultFontSize: s.defaultFontSize,
+    shell: s.shell,
+    theme: s.theme,
+    language: s.language,
+    splitTabMode: s.splitTabMode,
+    bellStyle: s.bellStyle,
+    updateChannel: s.updateChannel,
+    intentTabTitle: s.intentTabTitle,
+    suggestFollowups: s.suggestFollowups,
+    copyOnSelect: s.copyOnSelect,
+    autoUpdateEnabled: s.autoUpdateEnabled,
+    preventSleepWhenBusy: s.preventSleepWhenBusy,
+  };
+});

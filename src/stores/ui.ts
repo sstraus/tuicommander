@@ -349,3 +349,19 @@ function createUIStore() {
 }
 
 export const uiStore = createUIStore();
+
+// Debug registry — expose UI panel state for MCP introspection
+import { registerDebugSnapshot } from "./debugRegistry";
+registerDebugSnapshot("ui", () => {
+  const s = uiStore.state;
+  return {
+    sidebarVisible: s.sidebarVisible,
+    sidebarWidth: s.sidebarWidth,
+    markdownPanelVisible: s.markdownPanelVisible,
+    notesPanelVisible: s.notesPanelVisible,
+    fileBrowserPanelVisible: s.fileBrowserPanelVisible,
+    gitPanelVisible: s.gitPanelVisible,
+    diffViewMode: s.diffViewMode,
+    isLoading: s.isLoading,
+  };
+});
