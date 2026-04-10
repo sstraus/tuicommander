@@ -15,6 +15,14 @@ import type { SavedTerminal } from "../types";
 /** Track PTY sessions created by the browser client so we only close our own on unload */
 export const browserCreatedSessions = new Set<string>();
 
+/** Remote (MCP) sessionId → termId. Persists even after Terminal.tsx nulls sessionId
+ *  on exit, so the session-closed listener can find the tab to auto-remove. */
+const remoteSessionTabs = new Map<string, string>();
+
+/** Delay before auto-removing a remote tab after the backend reports session-closed.
+ *  Gives the user time to see "[Process exited]" in the terminal before it vanishes. */
+const REMOTE_TAB_AUTOCLOSE_MS = 60_000;
+
 /** Dependencies injected into initApp */
 export interface AppInitDeps {
   pty: {
@@ -232,18 +240,12 @@ export async function initApp(deps: AppInitDeps) {
   // Listen for sessions created/closed by remote clients (browser UI or other Tauri windows)
   listen<{ session_id: string; cwd: string | null }>("session-created", (event) => {
     const { session_id, cwd } = event.payload;
-    // Skip if this session is already tracked (created locally)
+    // Skip if this session was created by the local browser client or is already tracked
+    if (browserCreatedSessions.has(session_id)) return;
     const existing = terminalsStore.getIds().find(
       (id) => terminalsStore.get(id)?.sessionId === session_id,
     );
     if (existing) return;
-
-    // Skip if a local tab is still awaiting its sessionId (race: PTY created but
-    // Terminal.tsx hasn't called terminalsStore.update({sessionId}) yet).
-    const pendingLocal = terminalsStore.getIds().find(
-      (id) => { const t = terminalsStore.get(id); return t && !t.isRemote && t.sessionId === null; },
-    );
-    if (pendingLocal) return;
 
     appLogger.info("app", `Remote session created: ${session_id}`);
     const id = terminalsStore.add({
@@ -254,8 +256,10 @@ export async function initApp(deps: AppInitDeps) {
       awaitingInput: null,
       isRemote: true,
     });
+    remoteSessionTabs.set(session_id, id);
 
     // Match to repo/branch by cwd (ancestor path matching)
+    let assigned = false;
     if (cwd) {
       const cwdNorm = cwd.endsWith("/") ? cwd : cwd + "/";
       const matchedRepo = repositoriesStore.getPaths().find((repoPath) => {
@@ -280,7 +284,21 @@ export async function initApp(deps: AppInitDeps) {
 
         if (branchName) {
           repositoriesStore.addTerminalToBranch(matchedRepo, branchName, id);
+          assigned = true;
         }
+      }
+    }
+
+    // Fallback: no repo matched cwd — assign to the currently active repo/branch
+    if (!assigned) {
+      const fallbackRepo = repositoriesStore.state.activeRepoPath;
+      const fallbackState = fallbackRepo ? repositoriesStore.get(fallbackRepo) : undefined;
+      const fallbackBranch = fallbackState?.activeBranch;
+      if (fallbackRepo && fallbackBranch) {
+        appLogger.warn("app", `Remote session ${session_id}: cwd "${cwd ?? "(null)"}" did not match any repo — falling back to active repo/branch`);
+        repositoriesStore.addTerminalToBranch(fallbackRepo, fallbackBranch, id);
+      } else {
+        appLogger.error("app", `Remote session ${session_id}: no repo/branch to assign tab to — tab will be invisible`);
       }
     }
   }).catch((err) =>
@@ -330,15 +348,34 @@ export async function initApp(deps: AppInitDeps) {
     appLogger.error("app", "Failed to register ui-tab listener", err),
   );
 
+  // Keep remoteSessionTabs consistent if the user closes a remote tab manually
+  // before the backend session-closed event arrives.
+  terminalsStore.onRemove((termId) => {
+    for (const [sid, tid] of remoteSessionTabs) {
+      if (tid === termId) remoteSessionTabs.delete(sid);
+    }
+  });
+
   listen<{ session_id: string }>("session-closed", (event) => {
     const { session_id } = event.payload;
-    const termId = terminalsStore.getIds().find(
-      (id) => terminalsStore.get(id)?.sessionId === session_id,
-    );
-    if (termId) {
-      appLogger.info("app", `Remote session closed: ${session_id}`);
-      terminalsStore.remove(termId);
-    }
+    // Prefer the persistent remoteSessionTabs map: the store's reverse map may
+    // have been cleared already by Terminal.tsx resetting sessionId on pty-exit.
+    const termId = remoteSessionTabs.get(session_id)
+      ?? terminalsStore.getTerminalForSession(session_id);
+    if (!termId) return;
+
+    appLogger.info("app", `Remote session closed: ${session_id} — tab ${termId} auto-close in ${REMOTE_TAB_AUTOCLOSE_MS}ms`);
+    remoteSessionTabs.delete(session_id);
+
+    setTimeout(() => {
+      const t = terminalsStore.get(termId);
+      // Only remove if the tab still exists and is still the remote tab for this
+      // session (user may have closed it manually or re-used the slot).
+      if (t && t.isRemote) {
+        appLogger.info("app", `Auto-removing remote tab ${termId} for closed session ${session_id}`);
+        terminalsStore.remove(termId);
+      }
+    }, REMOTE_TAB_AUTOCLOSE_MS);
   }).catch((err) =>
     appLogger.error("app", "Failed to register session-closed listener", err),
   );
