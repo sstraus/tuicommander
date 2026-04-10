@@ -1,0 +1,51 @@
+src-tauri/src/dictation/commands.rs
+  102b9263295b691b 29,283,286-289,291-293,295-297,299-303,305-331,333-335,337-338,341-342,344-354,356-360,366,371,377-384,386-404,406-408,410-416,418-419,421
+docs/backend/dictation.md
+  102b9263295b691b 115-116,120-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "b80358bc187758fa2abaddb29006405b7882c4b8",
+  "prompts": {
+    "102b9263295b691b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0718c6bc-2650-4be5-b2b8-fd7ac7945f3b",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 685,
+      "total_deletions": 121,
+      "accepted_lines": 124,
+      "overriden_lines": 0
+    },
+    "211af807a9999814": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6818ea39-4595-4801-9d1a-ca64eba0b1a1",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 1765,
+      "overriden_lines": 0
+    },
+    "aa3e64856efd23d3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "08e04b53-2cba-4348-b644-41dbef0a4220",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 1111,
+      "overriden_lines": 0
+    }
+  }
+}
