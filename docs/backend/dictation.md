@@ -112,12 +112,15 @@ start_dictation()
 User releases hotkey
     │
     ▼
-stop_dictation_and_transcribe()
+stop_dictation_and_transcribe()  [async]
+    ├── Set recording=false, processing=true (synchronous, UI updates immediately)
     ├── Stop cpal stream (buffer preserved)
     ├── Signal StreamingSession stop → join thread
     ├── Collect ALL audio (processed + unprocessed + capture buffer remainder)
-    ├── Final transcription on full captured audio (if >= 0.5s)
-    ├── Apply text corrections
+    ├── spawn_blocking: Final transcription on full captured audio (if >= 0.5s)
+    │   ├── ProcessingGuard (drop guard) clears processing=false on completion/panic
+    │   ├── Apply text corrections
+    │   └── Return TranscribeResponse
     └── Return TranscribeResponse { text, skip_reason, duration_s }
     │
     ▼
