@@ -880,6 +880,11 @@ pub struct AppState {
     /// Per-session terminal viewport rows. Updated by resize_pty, read by the
     /// reader thread to clamp cursor-up (ESC[nA) sequences to viewport height.
     pub(crate) terminal_rows: DashMap<String, AtomicU16>,
+    /// Exit codes for tombstoned sessions (session_id → code).
+    /// Populated by `pty::mark_session_exited` when a PTY process exits so
+    /// post-mortem `session action=output` reads can return the real code.
+    /// Reaped by `pty::spawn_tombstone_sweeper` alongside the output buffers.
+    pub(crate) exit_codes: DashMap<String, i32>,
     /// Loaded plugin capabilities: plugin_id → list of capability strings.
     /// Populated by the frontend via `register_loaded_plugin` on plugin load.
     /// Used by Rust plugin commands to enforce capability checks server-side.
@@ -1924,6 +1929,7 @@ pub(crate) mod tests_support {
             last_output_ms: DashMap::new(),
             shell_states: DashMap::new(),
             terminal_rows: DashMap::new(),
+            exit_codes: DashMap::new(),
             loaded_plugins: DashMap::new(),
             relay: RelayState::new(),
             peer_agents: DashMap::new(),
@@ -2355,6 +2361,7 @@ mod tests {
             last_output_ms: DashMap::new(),
             shell_states: DashMap::new(),
             terminal_rows: DashMap::new(),
+            exit_codes: DashMap::new(),
             loaded_plugins: DashMap::new(),
             relay: RelayState::new(),
             peer_agents: DashMap::new(),

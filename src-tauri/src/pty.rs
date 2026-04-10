@@ -2,7 +2,7 @@ use parking_lot::Mutex;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use serde::Serialize;
 use std::io::{Read, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
@@ -1180,7 +1180,8 @@ fn flush_eof(
     esc_remaining
 }
 
-/// Clean up session state from all DashMaps after a reader thread exits.
+/// Fully remove session state from all DashMaps.
+/// Called on explicit close/kill — caller has already consumed any output they need.
 pub(crate) fn cleanup_session(session_id: &str, state: &AppState) {
     if state.sessions.remove(session_id).is_some() {
         state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
@@ -1195,6 +1196,84 @@ pub(crate) fn cleanup_session(session_id: &str, state: &AppState) {
     state.last_output_ms.remove(session_id);
     state.last_prompts.remove(session_id);
     state.terminal_rows.remove(session_id);
+    state.exit_codes.remove(session_id);
+}
+
+/// Tombstone a session after its process exited.
+/// Keeps `output_buffers`, `vt_log_buffers`, `last_output_ms`, and `exit_codes`
+/// alive so MCP consumers can read final output + exit status post-mortem.
+/// Tombstones are reaped by `spawn_tombstone_sweeper` after `TOMBSTONE_TTL_MS`.
+pub(crate) fn mark_session_exited(session_id: &str, state: &AppState) {
+    // Capture exit code before dropping the session entry.
+    if let Some(entry) = state.sessions.get(session_id)
+        && let Ok(Some(status)) = entry.value().lock()._child.try_wait()
+    {
+        state.exit_codes.insert(session_id.to_string(), status.exit_code() as i32);
+    }
+    if state.sessions.remove(session_id).is_some() {
+        state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
+    }
+    // Stamp last_output_ms so the sweeper can age out the tombstone.
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    state
+        .last_output_ms
+        .entry(session_id.to_string())
+        .or_insert_with(|| AtomicU64::new(0))
+        .store(now_ms, Ordering::Relaxed);
+    // Reap transient per-session state that has no post-mortem value.
+    state.ws_clients.remove(session_id);
+    state.kitty_states.remove(session_id);
+    state.input_buffers.remove(session_id);
+    state.silence_states.remove(session_id);
+    state.shell_states.remove(session_id);
+    state.last_prompts.remove(session_id);
+    state.terminal_rows.remove(session_id);
+    // Intentionally keep: output_buffers, vt_log_buffers, last_output_ms, exit_codes.
+}
+
+/// Time a tombstoned session's buffers remain readable after process exit.
+pub(crate) const TOMBSTONE_TTL_MS: u64 = 5 * 60 * 1000; // 5 minutes
+
+/// Background sweeper that reaps tombstoned session buffers once they age out.
+/// Started once at boot from the HTTP server runtime.
+pub(crate) fn spawn_tombstone_sweeper(state: Arc<AppState>) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_secs(30));
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        // A tombstone is: buffer entry present, session entry absent, aged past TTL.
+        let candidates: Vec<String> = state
+            .output_buffers
+            .iter()
+            .filter_map(|entry| {
+                let id = entry.key();
+                if state.sessions.contains_key(id) {
+                    return None;
+                }
+                let last_ms = state
+                    .last_output_ms
+                    .get(id)
+                    .map(|m| m.load(Ordering::Relaxed))
+                    .unwrap_or(0);
+                if last_ms == 0 || now_ms.saturating_sub(last_ms) < TOMBSTONE_TTL_MS {
+                    return None;
+                }
+                Some(id.clone())
+            })
+            .collect();
+        for id in candidates {
+            state.output_buffers.remove(&id);
+            state.vt_log_buffers.remove(&id);
+            state.last_output_ms.remove(&id);
+            state.exit_codes.remove(&id);
+            tracing::debug!(source = "pty", session_id = %id, "Tombstone reaped");
+        }
+    });
 }
 
 /// Return the byte length of a UTF-8 character given its leading byte.
@@ -1552,7 +1631,7 @@ pub(crate) fn spawn_reader_thread(
             "reason": "process_exit",
         }));
 
-        cleanup_session(&session_id, &state);
+        mark_session_exited(&session_id, &state);
     });
 }
 
@@ -1636,7 +1715,7 @@ pub(crate) fn spawn_headless_reader_thread(
             }));
         }
 
-        cleanup_session(&session_id, &state);
+        mark_session_exited(&session_id, &state);
     });
 }
 
@@ -2123,6 +2202,7 @@ pub(crate) fn close_pty(
         state.input_buffers.remove(&session_id);
         state.silence_states.remove(&session_id);
         state.shell_states.remove(&session_id);
+        state.exit_codes.remove(&session_id);
         state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
         let mut session = session_mutex.into_inner();
 

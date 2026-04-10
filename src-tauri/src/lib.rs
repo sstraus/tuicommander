@@ -772,6 +772,7 @@ pub fn run() {
         last_output_ms: DashMap::new(),
         shell_states: DashMap::new(),
         terminal_rows: DashMap::new(),
+        exit_codes: DashMap::new(),
         loaded_plugins: DashMap::new(),
         relay: crate::state::RelayState::new(),
         peer_agents: DashMap::new(),
@@ -807,6 +808,9 @@ pub fn run() {
 
                 // Start tool search index updater (rebuilds on mcp_tools_changed)
                 crate::mcp_http::mcp_transport::spawn_tool_search_index_updater(boot_registry_state.clone());
+
+                // Start tombstone sweeper (reaps exited-session buffers after TTL)
+                crate::pty::spawn_tombstone_sweeper(boot_registry_state.clone());
 
                 // Start content index updater (rebuilds on repo-changed)
                 crate::content_index::spawn_content_index_updater(boot_registry_state.clone());

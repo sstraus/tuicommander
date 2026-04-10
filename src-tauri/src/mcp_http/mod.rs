@@ -938,6 +938,7 @@ mod tests {
             last_output_ms: DashMap::new(),
             shell_states: DashMap::new(),
             terminal_rows: DashMap::new(),
+            exit_codes: DashMap::new(),
             loaded_plugins: DashMap::new(),
             relay: crate::state::RelayState::new(),
             peer_agents: DashMap::new(),

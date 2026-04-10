@@ -761,23 +761,33 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
             let limit = args["limit"].as_u64().unwrap_or(8192) as usize;
 
             // Probe child exit status (non-blocking).
-            // If session was already removed from the DashMap but buffers survive, treat as exited.
-            let (exited, exit_code) = match state.sessions.get(session_id) {
-                Some(entry) => {
-                    match entry.lock()._child.try_wait() {
-                        Ok(Some(status)) => (true, status.exit_code() as i64),
-                        _ => (false, 0),
-                    }
+            // A session can be in three states:
+            //   - Live: present in `state.sessions`
+            //   - Tombstoned: absent from `state.sessions` but buffers still present
+            //     (process exited, buffers kept until `spawn_tombstone_sweeper` reaps them)
+            //   - Gone: no buffers at all (never existed or already reaped)
+            let (exited, exit_code): (bool, Option<i64>) = match state.sessions.get(session_id) {
+                Some(entry) => match entry.lock()._child.try_wait() {
+                    Ok(Some(status)) => (true, Some(status.exit_code() as i64)),
+                    _ => (false, None),
+                },
+                None => {
+                    // Tombstoned → look up captured exit code (may be absent on abnormal teardown).
+                    let code = state.exit_codes.get(session_id).map(|e| *e.value() as i64);
+                    (true, code)
                 }
-                None => (true, 0), // session removed but buffers remain
             };
+            let exit_code_json = exit_code.map(serde_json::Value::from).unwrap_or(serde_json::Value::Null);
 
             // Default: serve clean rows from VtLogBuffer (no strip_ansi needed).
             // Pass format="raw" to get the raw ring buffer content with ANSI.
             if args["format"].as_str() != Some("raw") {
                 let vt_log = match state.vt_log_buffers.get(session_id) {
                     Some(b) => b,
-                    None => return serde_json::json!({"error": "Session not found"}),
+                    None => return serde_json::json!({
+                        "error": "Session not found",
+                        "reason": if exited { "session_exited_and_reaped" } else { "session_never_existed" }
+                    }),
                 };
                 let buf = vt_log.lock();
                 let total = buf.total_lines();
@@ -790,15 +800,18 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
                 let mut all_lines: Vec<String> = log_lines.iter().map(|ll| ll.text()).collect();
                 all_lines.extend(screen);
                 let data = all_lines.join("\n");
-                return serde_json::json!({"data": data, "data_length": data.len(), "total_written": total, "exited": exited, "exit_code": if exited { serde_json::Value::from(exit_code) } else { serde_json::Value::Null }});
+                return serde_json::json!({"data": data, "data_length": data.len(), "total_written": total, "exited": exited, "exit_code": exit_code_json});
             }
             let ring = match state.output_buffers.get(session_id) {
                 Some(r) => r,
-                None => return serde_json::json!({"error": "Session not found"}),
+                None => return serde_json::json!({
+                    "error": "Session not found",
+                    "reason": if exited { "session_exited_and_reaped" } else { "session_never_existed" }
+                }),
             };
             let (bytes, total_written) = ring.lock().read_last(limit);
             let data = String::from_utf8_lossy(&bytes).to_string();
-            serde_json::json!({"data": data, "data_length": data.len(), "total_written": total_written, "exited": exited, "exit_code": if exited { serde_json::Value::from(exit_code) } else { serde_json::Value::Null }})
+            serde_json::json!({"data": data, "data_length": data.len(), "total_written": total_written, "exited": exited, "exit_code": exit_code_json})
         }
         "resize" => {
             let session_id = match require_session_id(args, "resize") {
@@ -1155,12 +1168,6 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
                 if let Some(model) = args["model"].as_str() {
                     cmd.arg("--model");
                     cmd.arg(model);
-                }
-                // Enable channel notifications for inter-agent messaging
-                let agent_type = args["agent_type"].as_str().unwrap_or("claude");
-                if agent_type == "claude" {
-                    cmd.arg("--dangerously-load-development-channels");
-                    cmd.arg("server:tuicommander");
                 }
                 cmd.arg(&prompt);
             }
@@ -2260,6 +2267,7 @@ mod tests {
             last_output_ms: dashmap::DashMap::new(),
             shell_states: dashmap::DashMap::new(),
             terminal_rows: dashmap::DashMap::new(),
+            exit_codes: dashmap::DashMap::new(),
             loaded_plugins: dashmap::DashMap::new(),
             relay: crate::state::RelayState::new(),
             peer_agents: dashmap::DashMap::new(),
