@@ -1438,6 +1438,67 @@
   flex-shrink: 0;
 }
 
+/* ── Rate limit banner ── */
+.ghRateLimitBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: rgba(248, 81, 73, 0.12);
+  color: var(--error);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.ghRetryBtn {
+  padding: 2px 10px;
+  font-size: var(--font-2xs);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--error);
+  background: none;
+  color: var(--error);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.ghRetryBtn:hover {
+  background: var(--error);
+  color: var(--bg-primary);
+}
+
+/* ── Focused item (keyboard nav) ── */
+.ghItemFocused {
+  background: var(--bg-tertiary);
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* ── Skeleton loading rows ── */
+.ghSkeletonRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.ghSkeletonBar {
+  flex: 1;
+  height: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  animation: pulse-opacity 1.2s ease-in-out infinite;
+}
+
+.ghSkeletonBarShort {
+  width: 40px;
+  height: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  animation: pulse-opacity 1.2s ease-in-out infinite;
+  animation-delay: 0.2s;
+}
+
 /* ---------------------------------------------------------------------------
    Plugin sidebar sections
    --------------------------------------------------------------------------- */

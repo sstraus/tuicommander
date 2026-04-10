@@ -33,12 +33,16 @@ interface RepoGitHubData {
 interface GitHubStoreState {
   repos: Record<string, RepoGitHubData>;
   issueFilter: IssueFilterMode;
+  issuesLoading: boolean;
+  circuitBreakerOpen: boolean;
 }
 
 function createGitHubStore() {
   const [state, setState] = createStore<GitHubStoreState>({
     repos: {},
     issueFilter: "assigned",
+    issuesLoading: false,
+    circuitBreakerOpen: false,
   });
 
   let intervalId: number | null = null;
@@ -287,11 +291,15 @@ function createGitHubStore() {
 
     try {
       const circuitOk = await invoke<boolean>("check_github_circuit");
-      if (!circuitOk) return;
+      if (!circuitOk) {
+        setState("circuitBreakerOpen", true);
+        return;
+      }
     } catch {
       // If the check fails, proceed normally
     }
 
+    setState("issuesLoading", true);
     try {
       const allIssues = await invoke<Record<string, GitHubIssue[]>>("get_all_issues", {
         paths,
@@ -300,11 +308,16 @@ function createGitHubStore() {
       for (const [path, issues] of Object.entries(allIssues)) {
         updateRepoIssues(path, issues);
       }
+      setState("circuitBreakerOpen", false);
     } catch (err) {
       const errStr = String(err);
-      if (!errStr.includes("circuit breaker open") && !errStr.startsWith("rate-limit:")) {
+      if (errStr.includes("circuit breaker open") || errStr.startsWith("rate-limit:")) {
+        setState("circuitBreakerOpen", true);
+      } else {
         appLogger.warn("github", "Issues poll failed", err);
       }
+    } finally {
+      setState("issuesLoading", false);
     }
   }
 
@@ -318,6 +331,7 @@ function createGitHubStore() {
     try {
       const circuitOk = await invoke<boolean>("check_github_circuit");
       if (!circuitOk) {
+        setState("circuitBreakerOpen", true);
         currentInterval = MAX_INTERVAL;
         scheduleNext();
         return;
@@ -341,6 +355,7 @@ function createGitHubStore() {
       }
       batchSucceeded = true;
       batchFailCount = 0;
+      setState("circuitBreakerOpen", false);
     } catch (err) {
       const errStr = String(err);
       if (errStr.startsWith("rate-limit:") || errStr.includes("circuit breaker open")) {

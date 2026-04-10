@@ -550,6 +550,24 @@ Features to test when TUICommander is more usable.
 - [ ] Multiple rapid clicks → no race condition, each click writes correct state
 - [ ] Tweak comments + checkboxes in same file → both features work independently
 
+## GitHub Issues Panel
+- [ ] Badge in repo header shows GitHub icon + combined count (PRs + issues)
+- [ ] Click badge → unified panel opens with two collapsible sections
+- [ ] PR section: all existing actions work (checkout, worktree, approve, merge, diff, post-merge cleanup)
+- [ ] Issues section: shows issues filtered by assignee (default)
+- [ ] Issue accordion: labels, assignees, milestone, timestamps, comment count
+- [ ] Issue actions: Open in GitHub, Close/Reopen, Copy #number
+- [ ] Filter dropdown (Assigned/Created/Mentioned/All) changes issue list
+- [ ] Section collapse state persists in localStorage
+- [ ] Escape key: closes expanded item first, then panel
+- [ ] Arrow keys navigate items, Enter expands/collapses
+- [ ] Rate limit: banner appears when circuit breaker trips, Retry button works
+- [ ] Loading: skeleton rows shown during first issues fetch
+- [ ] Empty state: "No remote-only PRs" / "No issues found" messages
+- [ ] MCP: `curl localhost:PORT/repo/issues?path=...` returns issues JSON
+- [ ] MCP: `curl -X POST localhost:PORT/repo/issues/close` with JSON body closes issue
+- [ ] MCP tool: `github` action `issues` returns issues for repo
+
 ## Mobile iPad Fixes
 - [ ] iPad: OutputView scrolls with touch drag (finger swipe up/down)
 - [ ] iPad: Sidebar repo/branch selection works on first tap (no double-tap needed)

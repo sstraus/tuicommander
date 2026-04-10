@@ -1,4 +1,4 @@
-import { Component, For, Show, createEffect, createMemo, createSignal } from "solid-js";
+import { Component, For, Show, createEffect, createMemo, createSignal, onMount } from "solid-js";
 import { repositoriesStore } from "../../stores/repositories";
 import { githubStore } from "../../stores/github";
 import { appLogger } from "../../stores/appLogger";
@@ -144,6 +144,20 @@ export const GitHubPanel: Component<{
   const dismissedCount = createMemo(() => dismissedPrs().size);
 
   const issues = createMemo(() => githubStore.getRepoIssues(props.repoPath));
+  const issuesLoading = () => githubStore.state.issuesLoading;
+  const circuitOpen = () => githubStore.state.circuitBreakerOpen;
+
+  // Collect all item keys for keyboard navigation
+  const allItemKeys = createMemo(() => {
+    const keys: { type: "pr"; key: string }[] | { type: "issue"; key: number }[] = [];
+    if (!prCollapsed()) {
+      for (const pr of visiblePrs()) keys.push({ type: "pr", key: pr.branch } as never);
+    }
+    if (!issuesCollapsed()) {
+      for (const issue of issues()) keys.push({ type: "issue", key: issue.number } as never);
+    }
+    return keys as ({ type: "pr"; key: string } | { type: "issue"; key: number })[];
+  });
 
   const handleDismiss = (prNumber: number) => {
     setDismissedPrs((prev) => {
@@ -157,7 +171,11 @@ export const GitHubPanel: Component<{
     setDismissedPrs(new Set<number>());
   };
 
+  // Track focused item index for keyboard nav
+  const [focusedIdx, setFocusedIdx] = createSignal(-1);
+
   const handleKeyDown = (e: KeyboardEvent) => {
+    const items = allItemKeys();
     if (e.key === "Escape") {
       if (expandedPr() || expandedIssue()) {
         setExpandedPr(null);
@@ -165,6 +183,31 @@ export const GitHubPanel: Component<{
       } else {
         props.onClose();
       }
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setFocusedIdx((prev) => Math.min(prev + 1, items.length - 1));
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setFocusedIdx((prev) => Math.max(prev - 1, 0));
+      return;
+    }
+    if (e.key === "Enter") {
+      const idx = focusedIdx();
+      if (idx >= 0 && idx < items.length) {
+        const item = items[idx];
+        if (item.type === "pr") {
+          setExpandedPr((prev) => prev === item.key ? null : item.key);
+          setExpandedIssue(null);
+        } else {
+          setExpandedIssue((prev) => prev === item.key ? null : item.key);
+          setExpandedPr(null);
+        }
+      }
+      return;
     }
   };
 
@@ -266,7 +309,16 @@ export const GitHubPanel: Component<{
       </Show>
       <Show when={!cleanupCtx()}>
         <div class={s.ghPanelOverlay} onClick={props.onClose} onKeyDown={handleKeyDown} tabIndex={-1} />
-        <div class={s.ghPanel} onKeyDown={handleKeyDown} tabIndex={-1}>
+        <div class={s.ghPanel} onKeyDown={handleKeyDown} tabIndex={-1} ref={(el) => onMount(() => el.focus())}>
+          {/* Rate limit warning */}
+          <Show when={circuitOpen()}>
+            <div class={s.ghRateLimitBanner}>
+              <span>{t("github.rateLimited", "GitHub API unavailable")}</span>
+              <button class={s.ghRetryBtn} onClick={() => { githubStore.pollIssues(); }}>
+                {t("github.retry", "Retry")}
+              </button>
+            </div>
+          </Show>
           {/* Panel header */}
           <div class={s.ghPanelHeader}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
@@ -303,9 +355,11 @@ export const GitHubPanel: Component<{
                 }>
                   <div class={s.ghSectionList}>
                     <For each={visiblePrs()}>
-                      {(pr) => (
+                      {(pr, prIdx) => {
+                        const itemIdx = () => prIdx();
+                        return (
                         <div class={cx(s.ghItem, expandedPr() === pr.branch && s.ghItemExpanded)}>
-                          <div class={s.ghItemRow} onClick={() => setExpandedPr((prev) => prev === pr.branch ? null : pr.branch)}>
+                          <div class={cx(s.ghItemRow, focusedIdx() === itemIdx() && s.ghItemFocused)} onClick={() => setExpandedPr((prev) => prev === pr.branch ? null : pr.branch)}>
                             <span class={s.ghItemNum}>#{pr.number}</span>
                             <span class={s.ghItemTitle}>{pr.title}</span>
                             <PrStateBadge
@@ -390,7 +444,8 @@ export const GitHubPanel: Component<{
                             </div>
                           </Show>
                         </div>
-                      )}
+                        );
+                      }}
                     </For>
                   </div>
                 </Show>
@@ -414,14 +469,25 @@ export const GitHubPanel: Component<{
                 </Show>
               </div>
               <Show when={!issuesCollapsed()}>
+                {/* Loading skeleton */}
+                <Show when={issuesLoading() && issues().length === 0}>
+                  <div class={s.ghSectionList}>
+                    <div class={s.ghSkeletonRow}><div class={s.ghSkeletonBar} /><div class={s.ghSkeletonBarShort} /></div>
+                    <div class={s.ghSkeletonRow}><div class={s.ghSkeletonBar} /><div class={s.ghSkeletonBarShort} /></div>
+                    <div class={s.ghSkeletonRow}><div class={s.ghSkeletonBar} /><div class={s.ghSkeletonBarShort} /></div>
+                  </div>
+                </Show>
+                <Show when={!issuesLoading() || issues().length > 0}>
                 <Show when={issues().length > 0} fallback={
                   <div class={s.ghEmpty}>{t("github.noIssues", "No issues found")}</div>
                 }>
                   <div class={s.ghSectionList}>
                     <For each={issues()}>
-                      {(issue: GitHubIssue) => (
+                      {(issue: GitHubIssue, issueIdx) => {
+                        const itemIdx = () => visiblePrs().length + issueIdx();
+                        return (
                         <div class={cx(s.ghItem, expandedIssue() === issue.number && s.ghItemExpanded)}>
-                          <div class={s.ghItemRow} onClick={() => setExpandedIssue((prev) => prev === issue.number ? null : issue.number)}>
+                          <div class={cx(s.ghItemRow, focusedIdx() === itemIdx() && s.ghItemFocused)} onClick={() => setExpandedIssue((prev) => prev === issue.number ? null : issue.number)}>
                             <span class={s.ghItemNum}>#{issue.number}</span>
                             <span class={s.ghItemTitle}>{issue.title}</span>
                             <span class={cx(s.ghIssueBadge, issue.state?.toUpperCase() === "OPEN" ? s.ghIssueOpen : s.ghIssueClosed)}>
@@ -434,9 +500,11 @@ export const GitHubPanel: Component<{
                             </div>
                           </Show>
                         </div>
-                      )}
+                        );
+                      }}
                     </For>
                   </div>
+                </Show>
                 </Show>
 
                 {/* Filter bar */}
