@@ -527,6 +527,9 @@ Features to test when TUICommander is more usable.
 - [ ] Agent detection responds within ~1s of launch (not 3s)
 - [ ] Run git/npm inside Claude Code → no agent type flicker in tab bar
 - [ ] Status line ticking at idle prompt → shell-state transitions to idle within 3-4s
+- [ ] Reverse-map sync (commit 26688881): launch claude in a fresh terminal → `window.__TUIC__.agentTypeForSession(sessionId)` returns `"claude"` (not null) within 2s of the claude process starting
+- [ ] Plugin receives events (commit 26688881): `window.__TUIC__.pluginLogs("cache-keepalive", 30)` shows an `Agent started in term-X — tracking` line after launching claude
+- [ ] Restore pigro preserves agent identity: close app with claude running → reopen → select branch → before the polling detector runs, verify terminal store has `agentType: "claude"` from savedTerminals
 
 ## Mobile iPad Fixes
 - [ ] iPad: OutputView scrolls with touch drag (finger swipe up/down)
