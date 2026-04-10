@@ -24,7 +24,7 @@ const CATEGORY_LABELS: Record<PromptCategory | "all", string> = {
 };
 
 const ALL_PLACEMENTS: SmartPlacement[] = [
-  "toolbar", "git-changes", "git-branches", "pr-popover", "tab-context", "command-palette",
+  "toolbar", "git-changes", "git-branches", "pr-popover", "terminal-context", "command-palette",
 ];
 
 /** Built-in defaults indexed by ID for quick lookup */

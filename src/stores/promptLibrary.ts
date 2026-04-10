@@ -8,7 +8,7 @@ import { SMART_PROMPTS_BUILTIN } from "../data/smartPromptsBuiltIn";
 export type PromptCategory = "custom" | "recent" | "favorite";
 
 /** Where a smart prompt can appear in the UI */
-export type SmartPlacement = "toolbar" | "git-changes" | "git-branches" | "pr-popover" | "tab-context" | "command-palette";
+export type SmartPlacement = "toolbar" | "git-changes" | "git-branches" | "pr-popover" | "terminal-context" | "command-palette";
 
 /** Prompt variable for template substitution */
 export interface PromptVariable {
@@ -110,6 +110,7 @@ function createPromptLibraryStore() {
         }
 
         const loaded = await invoke<{ prompts?: Array<{ id: string; label: string; text: string; pinned: boolean }> }>("load_prompt_library");
+        let migrated = false;
         if (loaded?.prompts && loaded.prompts.length > 0) {
           const restored: Record<string, SavedPrompt> = {};
           for (const entry of loaded.prompts) {
@@ -123,6 +124,13 @@ function createPromptLibraryStore() {
               }
               if (full.placement && !Array.isArray(full.placement)) {
                 full.placement = undefined;
+              }
+              // Migrate legacy placement name: tab-context → terminal-context
+              if (Array.isArray(full.placement) && full.placement.some((p) => (p as string) === "tab-context")) {
+                full.placement = full.placement.map((p) =>
+                  (p as string) === "tab-context" ? "terminal-context" : p,
+                ) as SmartPlacement[];
+                migrated = true;
               }
               restored[full.id] = full;
             } catch (err) {
@@ -139,6 +147,7 @@ function createPromptLibraryStore() {
             }
           }
           setState("prompts", restored);
+          if (migrated) savePrompts(restored);
         }
 
         // Merge built-in smart prompts: add new ones, update unmodified metadata, preserve user overrides
@@ -262,11 +271,11 @@ function createPromptLibraryStore() {
     },
 
 
-    /** Get enabled smart prompts, sorted by category then name (memoized) */
+    /** Get enabled smart prompts (built-in tagged "smart" or any prompt with a placement), sorted by category then name (memoized) */
     getSmartPrompts: (() => {
       const memo = createMemo(() =>
         Object.values(state.prompts)
-          .filter((p) => p.enabled !== false && p.tags?.includes("smart"))
+          .filter((p) => p.enabled !== false && (p.tags?.includes("smart") || (p.placement && p.placement.length > 0)))
           .sort((a, b) => {
             const catCmp = a.category.localeCompare(b.category);
             return catCmp !== 0 ? catCmp : a.name.localeCompare(b.name);

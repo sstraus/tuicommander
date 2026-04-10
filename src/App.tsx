@@ -353,6 +353,29 @@ const App: Component = () => {
     onCleanup(() => disposables.forEach((d) => d.dispose()));
   });
 
+  // Register terminal-context smart prompts as terminal context menu actions.
+  // Reactive: re-registers when prompts are enabled/disabled.
+  createEffect(() => {
+    const disposables: Array<{ dispose(): void }> = [];
+    for (const prompt of promptLibraryStore.getSmartByPlacement("terminal-context")) {
+      const p = prompt;
+      disposables.push(
+        contextMenuActionsStore.registerContextAction("smart-prompts", {
+          id: `smart:${p.id}`,
+          label: p.name,
+          target: "terminal",
+          action: () => {
+            smartPrompts.executeSmartPrompt(p).catch((err) =>
+              appLogger.error("prompts", "Smart prompt execution failed", err),
+            );
+          },
+          disabled: () => !smartPrompts.canExecute(p).ok,
+        }),
+      );
+    }
+    onCleanup(() => disposables.forEach((d) => d.dispose()));
+  });
+
   // Stop GitHub polling on component teardown — registered at body level so
   // SolidJS can track it synchronously (onCleanup inside async onMount is unreliable).
   onCleanup(() => githubStore.stopPolling());
@@ -776,6 +799,24 @@ const App: Component = () => {
         label: "Actions",
         action: () => {},
         children: pluginActions.map((a) => ({
+          label: a.label,
+          action: () => a.action(ctx),
+          disabled: a.disabled?.(ctx) ?? false,
+        })),
+        separator: true,
+      }];
+    })(),
+    ...(() => {
+      const terminalContextActions = contextMenuActionsStore.getContextActions("terminal");
+      if (terminalContextActions.length === 0) return [];
+      const activeId = terminalsStore.state.activeId;
+      const sessionId = activeId ? terminalsStore.get(activeId)?.sessionId ?? undefined : undefined;
+      const repoPath = repositoriesStore.state.activeRepoPath ?? undefined;
+      const ctx = { target: "terminal" as const, sessionId, repoPath };
+      return [{
+        label: "Prompts",
+        action: () => {},
+        children: terminalContextActions.map((a) => ({
           label: a.label,
           action: () => a.action(ctx),
           disabled: a.disabled?.(ctx) ?? false,
