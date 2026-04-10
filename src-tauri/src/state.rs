@@ -811,6 +811,8 @@ pub struct AppState {
     pub(crate) github_token_source: parking_lot::RwLock<crate::github_auth::TokenSource>,
     /// Circuit breaker for GitHub API calls
     pub(crate) github_circuit_breaker: crate::github::GitHubCircuitBreaker,
+    /// Cached GitHub viewer login (authenticated user) for issue filtering.
+    pub(crate) github_viewer_login: parking_lot::RwLock<Option<String>>,
     /// Shutdown sender for the HTTP server — send () to gracefully stop it
     pub(crate) server_shutdown: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
     /// Random session token for browser cookie auth — regenerated on each server start.
@@ -1907,6 +1909,7 @@ pub(crate) mod tests_support {
             github_token: parking_lot::RwLock::new(None),
             github_token_source: parking_lot::RwLock::new(Default::default()),
             github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
+            github_viewer_login: parking_lot::RwLock::new(None),
             server_shutdown: parking_lot::Mutex::new(None),
             session_token: parking_lot::RwLock::new(String::from("test-token")),
             app_handle: parking_lot::RwLock::new(None),
@@ -2339,6 +2342,7 @@ mod tests {
             github_token: parking_lot::RwLock::new(None),
             github_token_source: parking_lot::RwLock::new(Default::default()),
             github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
+            github_viewer_login: parking_lot::RwLock::new(None),
             server_shutdown: parking_lot::Mutex::new(None),
             session_token: parking_lot::RwLock::new(String::from("test-token")),
             app_handle: parking_lot::RwLock::new(None),

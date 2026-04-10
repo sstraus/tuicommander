@@ -674,6 +674,307 @@ fn stamp_merge_policy(nodes: &mut [BranchPrStatus], repo_json: &serde_json::Valu
     }
 }
 
+/// Fetch the authenticated user's GitHub login via `query { viewer { login } }`.
+/// Cached after first successful call for the session lifetime.
+async fn get_viewer_login(state: &AppState) -> Result<String, String> {
+    // Check cached value first
+    if let Some(login) = state.github_viewer_login.read().as_ref() {
+        return Ok(login.clone());
+    }
+    let response = graphql_with_retry(
+        state,
+        "query { viewer { login } }",
+        serde_json::Value::Null,
+    ).await?;
+    let login = response["data"]["viewer"]["login"]
+        .as_str()
+        .ok_or_else(|| "Could not resolve viewer login".to_string())?
+        .to_string();
+    *state.github_viewer_login.write() = Some(login.clone());
+    Ok(login)
+}
+
+// ── GitHub Issues ────────────────────────────────────────────────────────────
+
+/// GitHub Issue status, analogous to BranchPrStatus for PRs.
+#[derive(Clone, Serialize)]
+pub(crate) struct GitHubIssue {
+    pub(crate) number: i32,
+    pub(crate) title: String,
+    pub(crate) state: String,        // OPEN, CLOSED
+    pub(crate) url: String,
+    pub(crate) author: String,
+    pub(crate) labels: Vec<PrLabel>,  // Reuse PrLabel — same GitHub schema
+    pub(crate) assignees: Vec<String>,
+    pub(crate) milestone: Option<String>,
+    pub(crate) comments_count: i32,
+    pub(crate) created_at: String,
+    pub(crate) updated_at: String,
+}
+
+/// Parse a single issue node from GraphQL JSON.
+fn parse_issue_node(v: &serde_json::Value) -> Option<GitHubIssue> {
+    let number = v["number"].as_i64()? as i32;
+    let title = v["title"].as_str().unwrap_or("").to_string();
+    let state = v["state"].as_str().unwrap_or("").to_string();
+    let url = v["url"].as_str().unwrap_or("").to_string();
+    let author = v["author"]["login"].as_str().unwrap_or("").to_string();
+
+    let labels = v["labels"]["nodes"].as_array()
+        .map(|arr| arr.iter().filter_map(|l| {
+            let color = l["color"].as_str().unwrap_or("").to_string();
+            let (text_color, background_color) = if color.len() == 6 {
+                let text = if is_light_color(&color) { "#1e1e1e" } else { "#e5e5e5" };
+                (text.to_string(), hex_to_rgba(&color, 0.3))
+            } else {
+                (String::new(), String::new())
+            };
+            Some(PrLabel {
+                name: l["name"].as_str()?.to_string(),
+                color,
+                text_color,
+                background_color,
+            })
+        }).collect())
+        .unwrap_or_default();
+
+    let assignees = v["assignees"]["nodes"].as_array()
+        .map(|arr| arr.iter().filter_map(|a| a["login"].as_str().map(String::from)).collect())
+        .unwrap_or_default();
+
+    let milestone = v["milestone"]["title"].as_str().map(String::from);
+    let comments_count = v["comments"]["totalCount"].as_i64().unwrap_or(0) as i32;
+    let created_at = v["createdAt"].as_str().unwrap_or("").to_string();
+    let updated_at = v["updatedAt"].as_str().unwrap_or("").to_string();
+
+    Some(GitHubIssue {
+        number,
+        title,
+        state,
+        url,
+        author,
+        labels,
+        assignees,
+        milestone,
+        comments_count,
+        created_at,
+        updated_at,
+    })
+}
+
+/// Build a batched GraphQL query for issues across multiple repos.
+/// `viewer` is the GitHub username for filtering (assignee/creator/mentioned).
+/// `filter_mode`: "assigned", "created", "mentioned", or "all".
+fn build_multi_repo_issues_query(
+    repos: &[(String, String, String)],
+    viewer: &str,
+    filter_mode: &str,
+) -> (String, Vec<(String, String)>) {
+    // Build search qualifier based on filter mode
+    let qualifier = match filter_mode {
+        "assigned" => format!("assignee:{viewer}"),
+        "created" => format!("author:{viewer}"),
+        "mentioned" => format!("mentions:{viewer}"),
+        _ => String::new(), // "all" — no user filter
+    };
+
+    let node_fields = r#"number title state url createdAt updatedAt
+        author { login }
+        labels(first: 10) { nodes { name color } }
+        assignees(first: 5) { nodes { login } }
+        milestone { title }
+        comments { totalCount }"#;
+
+    let mut aliases: Vec<(String, String)> = Vec::new();
+    let mut parts = vec!["query BatchRepoIssues {".to_string()];
+
+    for (i, (path, owner, name)) in repos.iter().enumerate() {
+        let alias = format!("r{i}");
+        let search_q = if qualifier.is_empty() {
+            format!("repo:{owner}/{name} is:issue is:open")
+        } else {
+            format!("repo:{owner}/{name} is:issue is:open {qualifier}")
+        };
+        parts.push(format!(
+            "  {alias}: search(query: \"{search_q}\", type: ISSUE, first: 30) {{\n    nodes {{\n      ... on Issue {{ {node_fields} }}\n    }}\n  }}"
+        ));
+        aliases.push((alias, path.clone()));
+    }
+    parts.push("  rateLimit { cost remaining resetAt }".to_string());
+    parts.push("}".to_string());
+
+    (parts.join("\n"), aliases)
+}
+
+/// Fetch issues for all repos in a single batched GraphQL call.
+pub(crate) async fn get_all_issues_impl(
+    paths: &[String],
+    filter_mode: &str,
+    state: &AppState,
+) -> Result<std::collections::HashMap<String, Vec<GitHubIssue>>, String> {
+    if state.github_token.read().is_none() {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    let now = Instant::now();
+    state.git_cache.github_repo_cooldown.retain(|_key, expiry| *expiry > now);
+
+    let repos: Vec<(String, String, String)> = paths
+        .iter()
+        .filter_map(|path| {
+            let repo_path = PathBuf::from(path);
+            let url = get_github_remote_url(&repo_path)?;
+            let (owner, name) = parse_remote_url(&url)?;
+            let cooldown_key = format!("{owner}/{name}");
+            if state.git_cache.github_repo_cooldown.contains_key(&cooldown_key) {
+                return None;
+            }
+            Some((path.clone(), owner, name))
+        })
+        .collect();
+
+    if repos.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    // Resolve viewer login for filtering
+    let viewer = get_viewer_login(state).await.unwrap_or_default();
+    let (query, aliases) = build_multi_repo_issues_query(&repos, &viewer, filter_mode);
+
+    let response = graphql_with_retry(state, &query, serde_json::Value::Null).await?;
+
+    let mut results = std::collections::HashMap::new();
+    for (alias, path) in &aliases {
+        let nodes = match response["data"][alias]["nodes"].as_array() {
+            Some(arr) => arr,
+            None => continue,
+        };
+        let issues: Vec<GitHubIssue> = nodes.iter().filter_map(parse_issue_node).collect();
+        results.insert(path.clone(), issues);
+    }
+    Ok(results)
+}
+
+/// Fetch issues for a single repo (Tauri command).
+#[tauri::command]
+pub(crate) async fn get_repo_issues(
+    state: State<'_, Arc<AppState>>,
+    path: String,
+    filter_mode: Option<String>,
+) -> Result<Vec<GitHubIssue>, String> {
+    let state = state.inner().clone();
+    let filter = filter_mode.as_deref().unwrap_or("assigned");
+    let mut results = get_all_issues_impl(&[path.clone()], filter, &state).await?;
+    Ok(results.remove(&path).unwrap_or_default())
+}
+
+/// Fetch issues for multiple repos (Tauri command).
+#[tauri::command]
+pub(crate) async fn get_all_issues(
+    state: State<'_, Arc<AppState>>,
+    paths: Vec<String>,
+    filter_mode: String,
+) -> Result<std::collections::HashMap<String, Vec<GitHubIssue>>, String> {
+    let state = state.inner().clone();
+    get_all_issues_impl(&paths, &filter_mode, &state).await
+}
+
+/// Close a GitHub issue via REST API.
+pub(crate) async fn close_issue_impl(
+    repo_path: &str,
+    issue_number: i64,
+    state: &AppState,
+) -> Result<(), String> {
+    let token = state.github_token.read().clone()
+        .ok_or_else(|| "No GitHub token available".to_string())?;
+    let remote_url = get_github_remote_url(std::path::Path::new(repo_path))
+        .ok_or_else(|| "No GitHub remote URL found".to_string())?;
+    let (owner, repo) = parse_remote_url(&remote_url)
+        .ok_or_else(|| format!("Failed to parse remote URL: {remote_url}"))?;
+
+    let url = format!("https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}");
+    let body = serde_json::json!({ "state": "closed" });
+
+    let response = state.http_client
+        .patch(&url)
+        .header("Authorization", format!("Bearer {token}"))
+        .header("User-Agent", "tuicommander")
+        .header("Accept", "application/vnd.github+json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("GitHub API request failed: {e}"))?;
+
+    let status = response.status().as_u16();
+    if (200..300).contains(&status) {
+        Ok(())
+    } else {
+        let json: serde_json::Value = response.json().await.unwrap_or_default();
+        let msg = json["message"].as_str().unwrap_or("Unknown error");
+        Err(format!("Failed to close issue ({status}): {msg}"))
+    }
+}
+
+/// Close a GitHub issue (Tauri command).
+#[tauri::command]
+pub(crate) async fn close_issue(
+    repo_path: String,
+    issue_number: i64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let state = state.inner().clone();
+    close_issue_impl(&repo_path, issue_number, &state).await
+}
+
+/// Reopen a GitHub issue via REST API.
+pub(crate) async fn reopen_issue_impl(
+    repo_path: &str,
+    issue_number: i64,
+    state: &AppState,
+) -> Result<(), String> {
+    let token = state.github_token.read().clone()
+        .ok_or_else(|| "No GitHub token available".to_string())?;
+    let remote_url = get_github_remote_url(std::path::Path::new(repo_path))
+        .ok_or_else(|| "No GitHub remote URL found".to_string())?;
+    let (owner, repo) = parse_remote_url(&remote_url)
+        .ok_or_else(|| format!("Failed to parse remote URL: {remote_url}"))?;
+
+    let url = format!("https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}");
+    let body = serde_json::json!({ "state": "open" });
+
+    let response = state.http_client
+        .patch(&url)
+        .header("Authorization", format!("Bearer {token}"))
+        .header("User-Agent", "tuicommander")
+        .header("Accept", "application/vnd.github+json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("GitHub API request failed: {e}"))?;
+
+    let status = response.status().as_u16();
+    if (200..300).contains(&status) {
+        Ok(())
+    } else {
+        let json: serde_json::Value = response.json().await.unwrap_or_default();
+        let msg = json["message"].as_str().unwrap_or("Unknown error");
+        Err(format!("Failed to reopen issue ({status}): {msg}"))
+    }
+}
+
+/// Reopen a GitHub issue (Tauri command).
+#[tauri::command]
+pub(crate) async fn reopen_issue(
+    repo_path: String,
+    issue_number: i64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let state = state.inner().clone();
+    reopen_issue_impl(&repo_path, issue_number, &state).await
+}
+
+// ── End GitHub Issues ────────────────────────────────────────────────────────
+
 /// Parse a GraphQL batch PR response into BranchPrStatus entries.
 /// Input: full GraphQL response JSON (with data.repository.pullRequests.nodes).
 #[cfg(test)]
@@ -2631,5 +2932,91 @@ mod tests {
         cache.clear_all();
         // Cooldowns must survive cache invalidation — only explicit user actions clear them
         assert!(!cache.github_repo_cooldown.is_empty());
+    }
+
+    #[test]
+    fn test_parse_issue_node_full() {
+        let json = serde_json::json!({
+            "number": 42,
+            "title": "Bug: widget crashes",
+            "state": "OPEN",
+            "url": "https://github.com/owner/repo/issues/42",
+            "createdAt": "2026-01-15T10:00:00Z",
+            "updatedAt": "2026-04-10T12:00:00Z",
+            "author": { "login": "octocat" },
+            "labels": { "nodes": [
+                { "name": "bug", "color": "d73a49" },
+                { "name": "P1", "color": "ffffff" }
+            ]},
+            "assignees": { "nodes": [
+                { "login": "alice" },
+                { "login": "bob" }
+            ]},
+            "milestone": { "title": "v2.0" },
+            "comments": { "totalCount": 5 }
+        });
+        let issue = parse_issue_node(&json).expect("should parse");
+        assert_eq!(issue.number, 42);
+        assert_eq!(issue.title, "Bug: widget crashes");
+        assert_eq!(issue.state, "OPEN");
+        assert_eq!(issue.author, "octocat");
+        assert_eq!(issue.labels.len(), 2);
+        assert_eq!(issue.labels[0].name, "bug");
+        assert_eq!(issue.assignees, vec!["alice", "bob"]);
+        assert_eq!(issue.milestone, Some("v2.0".to_string()));
+        assert_eq!(issue.comments_count, 5);
+    }
+
+    #[test]
+    fn test_parse_issue_node_minimal() {
+        let json = serde_json::json!({
+            "number": 1,
+            "title": "",
+            "state": "CLOSED",
+            "url": "",
+            "createdAt": "",
+            "updatedAt": "",
+            "author": { "login": "" },
+            "labels": { "nodes": [] },
+            "assignees": { "nodes": [] },
+            "milestone": null,
+            "comments": { "totalCount": 0 }
+        });
+        let issue = parse_issue_node(&json).expect("should parse");
+        assert_eq!(issue.number, 1);
+        assert_eq!(issue.milestone, None);
+        assert!(issue.labels.is_empty());
+        assert!(issue.assignees.is_empty());
+    }
+
+    #[test]
+    fn test_parse_issue_node_missing_number() {
+        let json = serde_json::json!({ "title": "no number" });
+        assert!(parse_issue_node(&json).is_none());
+    }
+
+    #[test]
+    fn test_build_multi_repo_issues_query_assigned() {
+        let repos = vec![
+            ("path1".to_string(), "owner".to_string(), "repo".to_string()),
+        ];
+        let (query, aliases) = build_multi_repo_issues_query(&repos, "octocat", "assigned");
+        assert!(query.contains("assignee:octocat"));
+        assert!(query.contains("is:issue"));
+        assert!(query.contains("is:open"));
+        assert_eq!(aliases.len(), 1);
+        assert_eq!(aliases[0].0, "r0");
+    }
+
+    #[test]
+    fn test_build_multi_repo_issues_query_all() {
+        let repos = vec![
+            ("p".to_string(), "o".to_string(), "r".to_string()),
+        ];
+        let (query, _) = build_multi_repo_issues_query(&repos, "viewer", "all");
+        // "all" mode should NOT include user qualifiers
+        assert!(!query.contains("assignee:"));
+        assert!(!query.contains("author:"));
+        assert!(!query.contains("mentions:"));
     }
 }
