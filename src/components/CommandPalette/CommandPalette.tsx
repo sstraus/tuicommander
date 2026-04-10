@@ -350,9 +350,18 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
             <span class={s.footerHint}><kbd>↑↓</kbd> navigate</span>
             <span class={s.footerHint}><kbd>↵</kbd> {mode() === "command" ? "execute" : "open"}</span>
             <span class={s.footerHint}><kbd>esc</kbd> close</span>
-            <span class={s.footerHint}><kbd>!</kbd> files</span>
-            <span class={s.footerHint}><kbd>?</kbd> content</span>
-            <span class={s.footerHint}><kbd>~</kbd> terminals</span>
+            <span
+              class={`${s.footerHint} ${s.footerHintClickable}`}
+              onClick={() => { commandPaletteStore.setQuery("! "); inputRef?.focus(); }}
+            ><kbd>!</kbd> files</span>
+            <span
+              class={`${s.footerHint} ${s.footerHintClickable}`}
+              onClick={() => { commandPaletteStore.setQuery("? "); inputRef?.focus(); }}
+            ><kbd>?</kbd> content</span>
+            <span
+              class={`${s.footerHint} ${s.footerHintClickable}`}
+              onClick={() => { commandPaletteStore.setQuery("~ "); inputRef?.focus(); }}
+            ><kbd>~</kbd> terminals</span>
           </div>
         </div>
       </div>
