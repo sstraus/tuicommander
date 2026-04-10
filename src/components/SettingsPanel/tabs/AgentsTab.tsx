@@ -401,14 +401,14 @@ const AgentRow: Component<{
               <label class={a.toggleRow} onClick={(e) => e.stopPropagation()}>
                 <input
                   type="checkbox"
-                  checked={agentConfigsStore.getIntentTabTitle(props.agentType) ?? !AGENTS[props.agentType]?.managesOwnTabTitle}
+                  checked={agentConfigsStore.getIntentTabTitle(props.agentType) ?? true}
                   onChange={(e) => agentConfigsStore.setIntentTabTitle(props.agentType, e.currentTarget.checked)}
                 />
                 <span>Show intent as tab title</span>
               </label>
               <p class={s.hint}>
-                Emit <code>intent:</code> markers to update the tab name with current work phase
-                {AGENTS[props.agentType]?.managesOwnTabTitle ? " (off by default — agent manages its own title)" : ""}
+                Emit <code>intent:</code> markers to update the tab name with current work phase.
+                Turn off if parsing misbehaves on this agent.
               </p>
             </div>
 

@@ -48,14 +48,10 @@ fn resolve_agent_type(client_name: Option<&str>) -> Option<&'static str> {
     }
 }
 
-/// Agents that manage their own terminal tab title and should have
-/// `intent_tab_title` default to false (when no per-agent override is set).
-fn agent_manages_own_tab_title(agent_type: &str) -> bool {
-    matches!(agent_type, "claude" | "codex" | "cursor")
-}
-
 /// Resolve effective intent_tab_title / suggest_followups for a connecting agent.
-/// Priority: per-agent override → agent-aware default → global config.
+/// Semantics: `global AND (per_agent ?? true)`. Global acts as a kill-switch for
+/// the whole feature; per-agent is an escape hatch (default ON) to disable the
+/// marker on a specific agent where rendering or parsing misbehaves.
 fn resolve_marker_flags(state: &Arc<AppState>, client_name: Option<&str>) -> (bool, bool) {
     let global_intent = state.config.read().intent_tab_title;
     let global_suggest = state.config.read().suggest_followups;
@@ -65,18 +61,15 @@ fn resolve_marker_flags(state: &Arc<AppState>, client_name: Option<&str>) -> (bo
     let agents_cfg = crate::config::load_agents_config();
     let agent_settings = agent_type.and_then(|t| agents_cfg.agents.get(t));
 
-    let show_intent = match agent_settings.and_then(|s| s.intent_tab_title) {
-        Some(v) => v,
-        None => match agent_type {
-            Some(t) if agent_manages_own_tab_title(t) => false,
-            _ => global_intent,
-        },
-    };
+    let show_intent = global_intent
+        && agent_settings
+            .and_then(|s| s.intent_tab_title)
+            .unwrap_or(true);
 
-    let show_suggest = match agent_settings.and_then(|s| s.suggest_followups) {
-        Some(v) => v,
-        None => global_suggest,
-    };
+    let show_suggest = global_suggest
+        && agent_settings
+            .and_then(|s| s.suggest_followups)
+            .unwrap_or(true);
 
     (show_intent, show_suggest)
 }
@@ -110,7 +103,7 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
     ));
     if show_intent {
         out.push_str(concat!(
-            "**`intent:` — phase declaration.** Emit on its own line at column 0 ",
+            "**`intent:` — phase declaration.** Emit on its own line ",
             "**every time your work changes** — new request, sub-task pivot, or resuming after Q&A:\n\n",
             "    intent: <what you plan to do, <60 chars> (<tab title, max 3 words>)\n\n",
             "If your current work no longer matches the last intent you emitted, emit a new one. ",
@@ -118,7 +111,7 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
         ));
     }
     if show_suggest {
-        out.push_str("**`suggest:` — follow-up bar.** After completing a task, emit on its own line at column 0:\n\n    suggest: 1) Action1 | 2) Action2 | 3) Action3\n\n2–4 items, 2–5 words each, always numbered. The TUI renders these as clickable buttons.\n\n");
+        out.push_str("**`suggest:` — follow-up bar.** After completing a task, emit on its own line:\n\n    suggest: 1) Action1 | 2) Action2 | 3) Action3\n\n2–4 items, 2–5 words each, always numbered. The TUI renders these as clickable buttons.\n\n");
     }
 
     out.push_str("### Self-check before you respond\n\n");

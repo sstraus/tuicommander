@@ -765,7 +765,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
           appLogger.warn("terminal", `initSession(${props.id}) — resize failed for ${sessionId}, creating FRESH session`);
           sessionId = null;
           unsubscribePty?.();
+          unsubscribePty = undefined;
           unlistenParsed?.();
+          unlistenParsed = undefined;
           unlistenKitty?.();
           unlistenKitty = undefined;
         }
@@ -1705,8 +1707,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
     clearTimeout(agentDetectTimer);
     resizeObserver?.disconnect();
     unsubscribePty?.();
+    unsubscribePty = undefined;
     unlistenParsed?.();
+    unlistenParsed = undefined;
     unlistenKitty?.();
+    unlistenKitty = undefined;
     kittyFlags = 0;
 
     // Resume reader if paused (don't leave PTY blocked after unmount)
