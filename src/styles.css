@@ -294,6 +294,19 @@
   border-radius: var(--radius-md);
 }
 
+/* xterm v6 hard-codes ScrollbarVisibility.Auto for the vertical scrollbar,
+   which fades the bar out when idle (mac-style). That hides the scrollbar
+   whenever the user isn't actively scrolling — including on agents like
+   Claude Code that rarely retrigger a reveal. Keep the bar visible whenever
+   content overflows: the `.fade` class is added by xterm's internal state
+   machine iff _isNeeded=true (scrollback exists), so overriding its opacity
+   leaves the "no scrollback" state (plain `.invisible` without `.fade`)
+   correctly hidden. */
+[data-terminal-id] .xterm .xterm-scrollable-element > .scrollbar.fade {
+  opacity: 1 !important;
+  transition: none !important;
+}
+
 /* Awaiting Input Visual Indicators */
 @keyframes pulse-question {
   0%, 100% { box-shadow: 0 0 0 0 rgba(232, 152, 76, 0); }
