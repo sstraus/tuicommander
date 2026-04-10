@@ -367,7 +367,23 @@ export async function initApp(deps: AppInitDeps) {
     appLogger.info("app", `Remote session closed: ${session_id} — tab ${termId} auto-close in ${REMOTE_TAB_AUTOCLOSE_MS}ms`);
     remoteSessionTabs.delete(session_id);
 
+    // Countdown in the tab name so the user sees when it will vanish
+    const t0 = terminalsStore.get(termId);
+    const baseName = t0?.name ?? termId;
+    let remaining = Math.round(REMOTE_TAB_AUTOCLOSE_MS / 1000);
+    terminalsStore.update(termId, { name: `${baseName} (${remaining}s)` });
+    const ticker = setInterval(() => {
+      remaining--;
+      const t = terminalsStore.get(termId);
+      if (!t || !t.isRemote || remaining <= 0) {
+        clearInterval(ticker);
+        return;
+      }
+      terminalsStore.update(termId, { name: `${baseName} (${remaining}s)` });
+    }, 1000);
+
     setTimeout(() => {
+      clearInterval(ticker);
       const t = terminalsStore.get(termId);
       // Only remove if the tab still exists and is still the remote tab for this
       // session (user may have closed it manually or re-used the slot).
