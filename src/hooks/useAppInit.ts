@@ -8,7 +8,6 @@ import { repoSettingsStore } from "../stores/repoSettings";
 import { paneLayoutStore } from "../stores/paneLayout";
 import { mdTabsStore } from "../stores/mdTabs";
 import { editorTabsStore } from "../stores/editorTabs";
-import { uiStore } from "../stores/ui";
 import { invoke, listen } from "../invoke";
 import { isTauri } from "../transport";
 import type { SavedTerminal } from "../types";
@@ -327,7 +326,6 @@ export async function initApp(deps: AppInitDeps) {
     }
 
     mdTabsStore.openUiTab(id, title, html, pinned, url, focus ?? true);
-    uiStore.setMarkdownPanelVisible(true);
   }).catch((err) =>
     appLogger.error("app", "Failed to register ui-tab listener", err),
   );

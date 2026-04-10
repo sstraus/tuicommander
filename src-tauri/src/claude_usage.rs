@@ -38,12 +38,48 @@ impl Default for RateBucket {
     }
 }
 
+/// "Extra usage" (overage) bucket — consumption beyond the plan quota.
+/// The Anthropic `/api/oauth/usage` endpoint returns the *credits* fields; the
+/// `/v1/messages` response headers provide `resets_at` and `in_use`. Both paths
+/// feed the same struct so the frontend sees a unified view.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ExtraUsage {
-    pub enabled: bool,
-    pub spend_limit_cents: Option<u64>,
-    pub current_spend_cents: Option<u64>,
+    pub is_enabled: bool,
+    /// Monthly credit allowance (e.g. 17000).
+    pub monthly_limit: Option<u64>,
+    /// Credits consumed this month (float — the API returns e.g. 665.0).
+    pub used_credits: Option<f64>,
+    /// Direct percentage 0-100 of `used_credits / monthly_limit`.
+    pub utilization: Option<f64>,
+    /// ISO8601 reset time (from overage-reset header, not from API body).
+    #[serde(skip_deserializing)]
+    pub resets_at: Option<String>,
+    /// True when overage is actively being consumed (from overage-in-use header).
+    #[serde(skip_deserializing)]
+    pub in_use: bool,
+}
+
+/// Metadata about the overall rate-limit state — populated from
+/// `anthropic-ratelimit-unified-*` response headers on `/v1/messages`.
+/// The primary `/api/oauth/usage` endpoint does not return these fields.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RateLimitMeta {
+    /// Overall request status: "allowed" / "allowed_warning" / "rejected".
+    pub unified_status: Option<String>,
+    /// Which bucket is the active constraint ("five_hour", "seven_day", …).
+    pub representative_claim: Option<String>,
+}
+
+/// Plan / subscription info extracted from the local OAuth credentials file.
+/// NOT fetched from any remote endpoint — lives in the macOS Keychain or
+/// `~/.claude/.credentials.json`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PlanInfo {
+    pub subscription_type: Option<String>,
+    pub rate_limit_tier: Option<String>,
+    pub scopes: Vec<String>,
 }
 
 /// API response from Anthropic OAuth usage endpoint.
@@ -53,10 +89,17 @@ pub struct ExtraUsage {
 pub struct UsageApiResponse {
     pub five_hour: Option<RateBucket>,
     pub seven_day: Option<RateBucket>,
+    pub seven_day_oauth_apps: Option<RateBucket>,
     pub seven_day_opus: Option<RateBucket>,
     pub seven_day_sonnet: Option<RateBucket>,
     pub seven_day_cowork: Option<RateBucket>,
     pub extra_usage: Option<ExtraUsage>,
+    /// Injected by the backend from local credentials — never deserialized from the API body.
+    #[serde(skip_deserializing)]
+    pub plan: Option<PlanInfo>,
+    /// Injected by the backend from response headers — never deserialized from the API body.
+    #[serde(skip_deserializing)]
+    pub meta: Option<RateLimitMeta>,
 }
 
 // ---------------------------------------------------------------------------
@@ -525,10 +568,11 @@ fn parse_jsonl_file_from_offset(
 // Credential reading (with macOS keychain → JSON fallback)
 // ---------------------------------------------------------------------------
 
-/// Read the Claude OAuth access token. On macOS, tries Keychain first then
-/// falls back to `~/.claude/.credentials.json`. On other platforms, reads
-/// the JSON file directly.
-fn read_claude_access_token() -> Result<Option<String>, String> {
+/// Read the Claude OAuth credentials (access token + plan info). On macOS, tries
+/// Keychain first then falls back to `~/.claude/.credentials.json`. On other
+/// platforms, reads the JSON file directly. Both the token and plan may be
+/// absent; callers decide how to react.
+fn read_claude_credentials() -> Result<(Option<String>, Option<PlanInfo>), String> {
     let raw_json = {
         #[cfg(target_os = "macos")]
         {
@@ -553,20 +597,30 @@ fn read_claude_access_token() -> Result<Option<String>, String> {
     };
 
     let Some(json_str) = raw_json else {
-        return Ok(None);
+        return Ok((None, None));
     };
 
-    // Parse JSON and extract the OAuth access token
     let parsed: serde_json::Value =
         serde_json::from_str(&json_str).map_err(|e| format!("Failed to parse credentials: {e}"))?;
 
-    let token = parsed
-        .get("claudeAiOauth")
+    let oauth = parsed.get("claudeAiOauth");
+
+    let token = oauth
         .and_then(|o| o.get("accessToken"))
         .and_then(|t| t.as_str())
         .map(|s| s.to_string());
 
-    Ok(token)
+    let plan = oauth.map(|o| PlanInfo {
+        subscription_type: o.get("subscriptionType").and_then(|v| v.as_str()).map(String::from),
+        rate_limit_tier: o.get("rateLimitTier").and_then(|v| v.as_str()).map(String::from),
+        scopes: o
+            .get("scopes")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|s| s.as_str().map(String::from)).collect())
+            .unwrap_or_default(),
+    });
+
+    Ok((token, plan))
 }
 
 // ---------------------------------------------------------------------------
@@ -681,22 +735,49 @@ fn parse_claim_bucket(headers: &reqwest::header::HeaderMap, abbrev: &str) -> Opt
     })
 }
 
+/// Convert a unix epoch header value (seconds since 1970) to an ISO8601 string.
+fn header_epoch_to_iso(headers: &reqwest::header::HeaderMap, name: &str) -> Option<String> {
+    header_str(headers, name)
+        .and_then(|v| v.parse::<i64>().ok())
+        .and_then(|epoch| chrono::DateTime::from_timestamp(epoch, 0))
+        .map(|dt| dt.to_rfc3339())
+}
+
 /// Parse `anthropic-ratelimit-unified-*` headers into `UsageApiResponse`.
 /// Pure function, no I/O — used by fallback and tests.
 fn parse_unified_rate_limit_headers(headers: &reqwest::header::HeaderMap) -> UsageApiResponse {
     let five_hour = parse_claim_bucket(headers, "5h");
     let seven_day = parse_claim_bucket(headers, "7d");
 
-    // Overage → ExtraUsage
+    // Overage → ExtraUsage (partial — monthly_limit / used_credits only available via /api/oauth/usage)
     let overage_status = header_str(headers, "anthropic-ratelimit-unified-overage-status");
     let overage_in_use = header_str(headers, "anthropic-ratelimit-unified-overage-in-use")
         .map(|v| v == "true")
         .unwrap_or(false);
+    let overage_utilization = header_str(headers, "anthropic-ratelimit-unified-overage-utilization")
+        .and_then(|v| v.parse::<f64>().ok())
+        .map(|f| f * 100.0);
+    let overage_resets_at = header_epoch_to_iso(headers, "anthropic-ratelimit-unified-overage-reset");
     let extra_usage = if overage_status.is_some() || overage_in_use {
         Some(ExtraUsage {
-            enabled: true,
-            spend_limit_cents: None,
-            current_spend_cents: None,
+            is_enabled: true,
+            monthly_limit: None,
+            used_credits: None,
+            utilization: overage_utilization,
+            resets_at: overage_resets_at,
+            in_use: overage_in_use,
+        })
+    } else {
+        None
+    };
+
+    // Global rate-limit meta — status + representative claim (which bucket is the bottleneck).
+    let unified_status = header_str(headers, "anthropic-ratelimit-unified-status").map(String::from);
+    let representative_claim = header_str(headers, "anthropic-ratelimit-unified-representative-claim").map(String::from);
+    let meta = if unified_status.is_some() || representative_claim.is_some() {
+        Some(RateLimitMeta {
+            unified_status,
+            representative_claim,
         })
     } else {
         None
@@ -705,10 +786,13 @@ fn parse_unified_rate_limit_headers(headers: &reqwest::header::HeaderMap) -> Usa
     UsageApiResponse {
         five_hour,
         seven_day,
+        seven_day_oauth_apps: None,
         seven_day_opus: None,
         seven_day_sonnet: None,
         seven_day_cowork: None,
         extra_usage,
+        plan: None,
+        meta,
     }
 }
 
@@ -798,17 +882,18 @@ pub async fn get_claude_usage_api() -> Result<UsageApiResponse, String> {
         return Err("Rate limited — waiting for backoff to expire".to_string());
     }
 
-    let token = read_claude_access_token()?
-        .ok_or_else(|| "No Claude OAuth token found".to_string())?;
+    let (token_opt, plan) = read_claude_credentials()?;
+    let token = token_opt.ok_or_else(|| "No Claude OAuth token found".to_string())?;
 
     // Attempt fetch with 429 retry
     let mut last_err_msg = String::new();
     let mut was_rate_limited = false;
     for attempt in 0..=MAX_429_RETRIES {
         match fetch_usage_from_api(&token).await {
-            Ok(data) => {
+            Ok(mut data) => {
                 // Clear any rate-limit backoff on success
                 *RATE_LIMITED_UNTIL.lock() = None;
+                data.plan = plan.clone();
                 cache_response(&data);
                 return Ok(data);
             }
@@ -848,8 +933,9 @@ pub async fn get_claude_usage_api() -> Result<UsageApiResponse, String> {
 
     // Fallback: extract rate limits from /v1/messages response headers (Haiku, ~9 tokens)
     match fetch_usage_from_headers(&token).await {
-        Ok(data) => {
+        Ok(mut data) => {
             tracing::info!(source = "claude_usage", "Primary API failed, using headers fallback");
+            data.plan = plan.clone();
             cache_response(&data);
             return Ok(data);
         }
@@ -1684,6 +1770,9 @@ mod tests {
         let resp = parse_unified_rate_limit_headers(&headers);
         let five = resp.five_hour.unwrap();
         assert!((five.utilization - 100.0).abs() < 0.01);
+        let meta = resp.meta.expect("meta should be populated from status headers");
+        assert_eq!(meta.unified_status.as_deref(), Some("rejected"));
+        assert_eq!(meta.representative_claim.as_deref(), Some("five_hour"));
     }
 
     #[test]
@@ -1692,11 +1781,44 @@ mod tests {
         headers.insert("anthropic-ratelimit-unified-status", "allowed".parse().unwrap());
         headers.insert("anthropic-ratelimit-unified-overage-status", "allowed_warning".parse().unwrap());
         headers.insert("anthropic-ratelimit-unified-overage-reset", "1773200000".parse().unwrap());
+        headers.insert("anthropic-ratelimit-unified-overage-utilization", "0.039".parse().unwrap());
+        headers.insert("anthropic-ratelimit-unified-overage-in-use", "true".parse().unwrap());
 
         let resp = parse_unified_rate_limit_headers(&headers);
-        // Overage info populates extra_usage
         let extra = resp.extra_usage.unwrap();
-        assert!(extra.enabled);
+        assert!(extra.is_enabled);
+        assert!(extra.in_use);
+        assert!(extra.resets_at.is_some());
+        let util = extra.utilization.expect("utilization should be populated");
+        assert!((util - 3.9).abs() < 0.01); // 0.039 → 3.9%
+    }
+
+    #[test]
+    fn extra_usage_deserializes_real_api_schema() {
+        // Ground-truth payload captured from /api/oauth/usage on 2026-04-10.
+        let json = r#"{
+            "five_hour": {"utilization": 3.0, "resets_at": "2026-04-10T11:00:00.580406+00:00"},
+            "seven_day": {"utilization": 100.0, "resets_at": "2026-04-11T08:00:00.580427+00:00"},
+            "seven_day_oauth_apps": null,
+            "seven_day_opus": null,
+            "seven_day_sonnet": {"utilization": 16.0, "resets_at": "2026-04-11T17:59:59.580435+00:00"},
+            "seven_day_cowork": null,
+            "extra_usage": {
+                "is_enabled": true,
+                "monthly_limit": 17000,
+                "used_credits": 665.0,
+                "utilization": 3.911764705882353
+            }
+        }"#;
+        let parsed: UsageApiResponse = serde_json::from_str(json).unwrap();
+        let extra = parsed.extra_usage.expect("extra_usage must deserialize");
+        assert!(extra.is_enabled);
+        assert_eq!(extra.monthly_limit, Some(17000));
+        assert!((extra.used_credits.unwrap() - 665.0).abs() < 0.001);
+        assert!((extra.utilization.unwrap() - 3.911764705882353).abs() < 0.001);
+        // Headers-only fields should be default on the API-body path.
+        assert!(extra.resets_at.is_none());
+        assert!(!extra.in_use);
     }
 
     /// Call the real Anthropic usage API and verify the response deserializes.
@@ -1704,8 +1826,8 @@ mod tests {
     /// Skipped automatically if no token is available.
     #[tokio::test]
     async fn live_usage_api_deserializes() {
-        let token = match read_claude_access_token() {
-            Ok(Some(t)) => t,
+        let token = match read_claude_credentials() {
+            Ok((Some(t), _)) => t,
             _ => {
                 eprintln!("Skipping live API test: no OAuth token available");
                 return;

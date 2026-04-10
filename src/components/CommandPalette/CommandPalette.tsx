@@ -186,7 +186,6 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
           e.preventDefault();
           e.stopPropagation();
           commandPaletteStore.close();
-          requestAnimationFrame(() => terminalsStore.getActive()?.ref?.focus());
           break;
       }
     };
@@ -223,10 +222,7 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
 
   return (
     <Show when={isOpen()}>
-      <div class={shared.overlayTop} onClick={() => {
-          commandPaletteStore.close();
-          requestAnimationFrame(() => terminalsStore.getActive()?.ref?.focus());
-        }}>
+      <div class={shared.overlayTop} onClick={() => commandPaletteStore.close()}>
         <div class={s.palette} onClick={(e) => e.stopPropagation()}>
           <div class={s.search}>
             <input

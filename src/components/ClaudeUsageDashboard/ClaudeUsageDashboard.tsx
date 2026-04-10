@@ -13,18 +13,37 @@ interface RateBucket {
 }
 
 interface ExtraUsage {
-  enabled: boolean;
-  spend_limit_cents: number | null;
-  current_spend_cents: number | null;
+  is_enabled: boolean;
+  monthly_limit: number | null;
+  used_credits: number | null;
+  utilization: number | null;
+  /** From overage-reset header; not available via primary API body. */
+  resets_at: string | null;
+  /** From overage-in-use header. */
+  in_use: boolean;
+}
+
+interface RateLimitMeta {
+  unified_status: string | null;
+  representative_claim: string | null;
+}
+
+interface PlanInfo {
+  subscription_type: string | null;
+  rate_limit_tier: string | null;
+  scopes: string[];
 }
 
 interface UsageApiResponse {
   five_hour: RateBucket | null;
   seven_day: RateBucket | null;
+  seven_day_oauth_apps: RateBucket | null;
   seven_day_opus: RateBucket | null;
   seven_day_sonnet: RateBucket | null;
   seven_day_cowork: RateBucket | null;
   extra_usage: ExtraUsage | null;
+  plan: PlanInfo | null;
+  meta: RateLimitMeta | null;
 }
 
 interface ModelTokens {
@@ -479,18 +498,57 @@ export const ClaudeUsageDashboard: Component = () => {
   const timer = setInterval(() => { void fetchApi(); void refreshStatsAndTimeline(scope()); }, 5 * 60 * 1000);
   onCleanup(() => clearInterval(timer));
 
-  // Computed data for rate limit cards
+  // Computed data for rate limit cards.
+  // `key` matches the `representative_claim` header value so we can flag the bottleneck bucket.
   const rateBuckets = () => {
     const api = apiData();
     if (!api) return [];
-    const buckets: { label: string; bucket: RateBucket }[] = [];
-    if (api.five_hour) buckets.push({ label: "5-Hour", bucket: api.five_hour });
-    if (api.seven_day) buckets.push({ label: "7-Day", bucket: api.seven_day });
-    if (api.seven_day_opus) buckets.push({ label: "7-Day Opus", bucket: api.seven_day_opus });
-    if (api.seven_day_sonnet) buckets.push({ label: "7-Day Sonnet", bucket: api.seven_day_sonnet });
-    if (api.seven_day_cowork) buckets.push({ label: "7-Day Cowork", bucket: api.seven_day_cowork });
+    const buckets: { key: string; label: string; bucket: RateBucket }[] = [];
+    if (api.five_hour) buckets.push({ key: "five_hour", label: "5-Hour", bucket: api.five_hour });
+    if (api.seven_day) buckets.push({ key: "seven_day", label: "7-Day", bucket: api.seven_day });
+    if (api.seven_day_oauth_apps) buckets.push({ key: "seven_day_oauth_apps", label: "7-Day OAuth Apps", bucket: api.seven_day_oauth_apps });
+    if (api.seven_day_opus) buckets.push({ key: "seven_day_opus", label: "7-Day Opus", bucket: api.seven_day_opus });
+    if (api.seven_day_sonnet) buckets.push({ key: "seven_day_sonnet", label: "7-Day Sonnet", bucket: api.seven_day_sonnet });
+    if (api.seven_day_cowork) buckets.push({ key: "seven_day_cowork", label: "7-Day Cowork", bucket: api.seven_day_cowork });
     return buckets;
   };
+
+  /** Which bucket key is the active constraint — either from header meta or derived from the highest utilization (≥ 95%). */
+  const bottleneckKey = (): string | null => {
+    const api = apiData();
+    if (!api) return null;
+    if (api.meta?.representative_claim) return api.meta.representative_claim;
+    // Fallback: mark the first bucket at or above 95% as the bottleneck.
+    const over = rateBuckets().filter((b) => b.bucket.utilization >= 95);
+    if (over.length === 0) return null;
+    over.sort((a, b) => b.bucket.utilization - a.bucket.utilization);
+    return over[0].key;
+  };
+
+  /** Global status — prefer the backend meta, else derive from utilizations. */
+  type StatusLevel = "allowed" | "warning" | "rejected";
+  const globalStatus = (): StatusLevel | null => {
+    const api = apiData();
+    if (!api) return null;
+    const metaStatus = api.meta?.unified_status;
+    if (metaStatus === "rejected") return "rejected";
+    if (metaStatus === "allowed_warning") return "warning";
+    if (metaStatus === "allowed") return "allowed";
+    // Derive from buckets as fallback when the primary endpoint is used.
+    const maxUtil = Math.max(0, ...rateBuckets().map((b) => b.bucket.utilization));
+    if (maxUtil >= 100) return "rejected";
+    if (maxUtil >= 90) return "warning";
+    return "allowed";
+  };
+
+  /** Pretty-print a claim key like "seven_day_sonnet" → "7-Day Sonnet". */
+  const claimLabel = (key: string): string => {
+    const match = rateBuckets().find((b) => b.key === key);
+    return match ? match.label : key.replace(/_/g, " ");
+  };
+
+  /** Format a number with thousand separators (no decimal for integers). */
+  const formatCount = (n: number): string => n.toLocaleString("en-US", { maximumFractionDigits: 0 });
 
   // Sorted models
   const sortedModels = () => {
@@ -583,6 +641,42 @@ export const ClaudeUsageDashboard: Component = () => {
         <div class={s.loadingState}>Loading usage data...</div>
       </Show>
 
+      {/* Plan strip — subscription + rate-limit tier + global status */}
+      <Show when={apiData()?.plan}>
+        {(plan) => (
+          <div class={s.planStrip}>
+            <div class={s.planIdentity}>
+              <span class={s.planLabel}>Plan</span>
+              <span class={s.planName}>{plan().subscription_type ?? "unknown"}</span>
+              <Show when={plan().rate_limit_tier}>
+                <span class={s.planTier}>{plan().rate_limit_tier}</span>
+              </Show>
+            </div>
+            <Show when={globalStatus()}>
+              {(status) => (
+                <div class={s.planStatusWrap}>
+                  <span class={`${s.planStatus} ${s[`status_${status()}`]}`}>
+                    <span class={s.statusDot} />
+                    <span class={s.statusLabel}>
+                      {status() === "rejected"
+                        ? "At limit"
+                        : status() === "warning"
+                          ? "Warning"
+                          : "Allowed"}
+                    </span>
+                  </span>
+                  <Show when={bottleneckKey()}>
+                    <span class={s.statusConstraint}>
+                      {claimLabel(bottleneckKey()!)} is the bottleneck
+                    </span>
+                  </Show>
+                </div>
+              )}
+            </Show>
+          </div>
+        )}
+      </Show>
+
       {/* Rate limits — show section whenever we have data OR an error to report */}
       <Show when={rateBuckets().length > 0 || (apiError() && !loading())}>
         <div class={s.section}>
@@ -596,9 +690,14 @@ export const ClaudeUsageDashboard: Component = () => {
             <div class={s.rateGrid}>
               <For each={rateBuckets()}>
                 {(item) => (
-                  <div class={s.rateCard}>
+                  <div class={`${s.rateCard} ${bottleneckKey() === item.key ? s.rateCardBottleneck : ""}`}>
                     <div class={s.rateLabel}>
-                      <span>{item.label}</span>
+                      <span>
+                        {item.label}
+                        <Show when={bottleneckKey() === item.key}>
+                          <span class={s.bottleneckArrow} title="Active constraint">←</span>
+                        </Show>
+                      </span>
                       <span class={s.rateValue}>{Math.round(item.bucket.utilization)}%</span>
                     </div>
                     <div class={s.rateBar}>
@@ -622,6 +721,71 @@ export const ClaudeUsageDashboard: Component = () => {
               <span>Rate limit data unavailable</span>
               <button class={s.retryButton} onClick={() => fetchApi()}>Retry</button>
             </div>
+          </Show>
+
+          {/* Extra Usage card — shown always when we have API data, enabled or not */}
+          <Show when={apiData()?.extra_usage || (apiData() && !apiError())}>
+            {(_) => {
+              const extra = (): ExtraUsage | null => apiData()?.extra_usage ?? null;
+              const enabled = () => extra()?.is_enabled === true;
+              const util = () => extra()?.utilization ?? 0;
+              const limit = () => extra()?.monthly_limit;
+              const used = () => extra()?.used_credits;
+              return (
+                <div class={`${s.extraUsageCard} ${enabled() ? s.extraEnabled : s.extraDisabled}`}>
+                  <div class={s.extraHeader}>
+                    <span class={s.extraTitle}>Extra Usage</span>
+                    <Show when={enabled() && extra()?.in_use}>
+                      <span class={s.extraInUse}>
+                        <span class={s.extraInUseDot} /> IN USE NOW
+                      </span>
+                    </Show>
+                    <Show when={!enabled()}>
+                      <span class={s.extraOff}>Disabled</span>
+                    </Show>
+                  </div>
+                  <Show when={enabled()}>
+                    <Show
+                      when={limit() != null && used() != null}
+                      fallback={
+                        <div class={s.extraBody}>
+                          <span class={s.extraValue}>
+                            {Math.round(util()).toString()}%
+                          </span>
+                          <span class={s.extraSub}>
+                            (credit detail available via primary API only)
+                          </span>
+                        </div>
+                      }
+                    >
+                      <div class={s.extraBody}>
+                        <span class={s.extraValue}>
+                          {formatCount(used()!)} / {formatCount(limit()!)}
+                          <span class={s.extraUnit}> credits</span>
+                        </span>
+                        <div class={s.extraBar}>
+                          <div
+                            class={`${s.extraFill} ${rateClass(util())}`}
+                            style={{ width: `${Math.min(100, util())}%` }}
+                          />
+                        </div>
+                        <span class={s.extraSub}>{util().toFixed(1)}% used</span>
+                      </div>
+                    </Show>
+                    <Show when={extra()?.resets_at}>
+                      <span class={s.extraReset}>
+                        Resets in {formatResetTime(extra()!.resets_at!)}
+                      </span>
+                    </Show>
+                  </Show>
+                  <Show when={!enabled()}>
+                    <span class={s.extraHint}>
+                      Enable extra usage at claude.ai/settings to keep working past your plan's limits.
+                    </span>
+                  </Show>
+                </div>
+              );
+            }}
           </Show>
         </div>
       </Show>

@@ -1,6 +1,5 @@
-import { Component, createSignal, createEffect, createMemo, on, onCleanup, Show, For } from "solid-js";
+import { Component, createSignal, createEffect, createMemo, onCleanup, Show, For } from "solid-js";
 import { t } from "../../i18n";
-import { terminalsStore } from "../../stores/terminals";
 import { validateBranchName } from "../RenameBranchDialog/RenameBranchDialog";
 import type { BaseRefOption } from "../../hooks/useRepository";
 import d from "../shared/dialog.module.css";
@@ -154,13 +153,6 @@ export const CreateWorktreeDialog: Component<CreateWorktreeDialogProps> = (props
       }, 0);
     }
   });
-
-  // Restore terminal focus when dialog closes
-  createEffect(on(() => props.visible, (visible, prev) => {
-    if (prev && !visible) {
-      requestAnimationFrame(() => terminalsStore.getActive()?.ref?.focus());
-    }
-  }, { defer: true }));
 
   // Keyboard handling
   createEffect(() => {

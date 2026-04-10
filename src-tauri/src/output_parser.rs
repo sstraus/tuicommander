@@ -1034,30 +1034,72 @@ fn build_intent_event(
 /// The `|` requirement prevents false positives on prose containing "suggest:"
 /// that happens to wrap to column 0 in Ink's \r-segment rendering.
 /// Only parsed when an agent is active.
+///
+/// Handles terminal line-wrap: when the suggest text is wider than the terminal,
+/// vt100 splits it across multiple `ChangedRow`s. The regex matches the first
+/// line, then continuation lines are joined until a line without `|` or starting
+/// with a known token prefix is reached.
 fn parse_suggest(clean: &str, agent_active: bool) -> Option<ParsedEvent> {
     if !agent_active || !clean.contains("suggest:") {
         return None;
     }
     lazy_static::lazy_static! {
-        // Plain prefix: `suggest:` at line start, with optional leading
-        // horizontal whitespace and/or an Ink bullet glyph. Requires at
-        // least one `|` separator to distinguish from prose.
-        static ref SUGGEST_PLAIN_RE: regex::Regex =
-            regex::Regex::new(r"(?m)^[\t ]*(?:[\x{25CF}\x{23FA}][\t ]+)?suggest:[\t ]+(.+\|.+)$").unwrap();
+        // Match the suggest: prefix line. Captures everything after `suggest: `.
+        static ref SUGGEST_START_RE: regex::Regex =
+            regex::Regex::new(r"(?m)^[\t ]*(?:[\x{25CF}\x{23FA}][\t ]+)?suggest:[\t ]+(.+)$").unwrap();
     }
 
-    SUGGEST_PLAIN_RE.captures(clean).and_then(|caps| {
-        let items: Vec<String> = caps[1]
-            .trim()
-            .split('|')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-        if items.len() < 2 {
-            return None;
+    let caps = SUGGEST_START_RE.captures(clean)?;
+    let first_line = caps[1].trim();
+    let match_end = caps.get(0).unwrap().end();
+
+    // Collect continuation lines: text after the matched line that is part of
+    // the same suggest token (wrapped by the terminal). A continuation line
+    // must not start with a recognized token prefix and should contain `|`
+    // (unless it's the tail of the last item).
+    // Skip past the newline that `$` matched before.
+    let remainder = clean[match_end..].strip_prefix('\n').unwrap_or(&clean[match_end..]);
+    let mut full = first_line.to_string();
+    for line in remainder.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            break;
         }
-        Some(ParsedEvent::Suggest { items })
-    })
+        // Stop at lines that look like a new token (intent:, suggest:, etc.)
+        if trimmed.starts_with("intent:")
+            || trimmed.starts_with("suggest:")
+            || trimmed.starts_with("●")
+            || trimmed.starts_with("⏺")
+            || trimmed.starts_with("❯")
+            || trimmed.starts_with(">")
+            || trimmed.starts_with("›")
+        {
+            break;
+        }
+        // Only join if the line contains a `|` — that means it's a
+        // continuation of the pipe-separated list. Lines without `|` are
+        // unrelated output that follows the suggest token.
+        if !trimmed.contains('|') {
+            break;
+        }
+        full.push(' ');
+        full.push_str(trimmed);
+    }
+
+    // Must have at least one `|` separator
+    if !full.contains('|') {
+        return None;
+    }
+
+    let items: Vec<String> = full
+        .split('|')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if items.len() < 2 {
+        return None;
+    }
+    Some(ParsedEvent::Suggest { items })
 }
 
 /// Detect a slash command autocomplete menu from screen bottom rows.
@@ -2697,6 +2739,34 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         let events = parser.parse("some output\r\nsuggest: Option A | Option B\r\nmore output");
         let items = get_suggest(&events).expect("should parse in multiline");
         assert_eq!(items, vec!["Option A", "Option B"]);
+    }
+
+    #[test]
+    fn test_suggest_terminal_line_wrap() {
+        // When the suggest text is wider than the terminal, vt100 splits it
+        // across multiple rows. The parser must join continuation lines.
+        let input = "suggest: 1) Screenshot overview panel | 2) Fix suggest scroll flicker | 3) Fix\n\
+                      Cmd+Shift+M keybinding collision | 4) Manual test OSC 133";
+        let items = parse_suggest(input, true);
+        let items = match items {
+            Some(ParsedEvent::Suggest { items }) => items,
+            _ => panic!("should parse wrapped suggest"),
+        };
+        assert_eq!(items.len(), 4);
+        assert_eq!(items[0], "1) Screenshot overview panel");
+        assert_eq!(items[3], "4) Manual test OSC 133");
+    }
+
+    #[test]
+    fn test_suggest_wrap_stops_at_new_token() {
+        // Continuation must stop when a new token prefix appears.
+        let input = "suggest: A | B | C\nintent: doing something";
+        let items = parse_suggest(input, true);
+        let items = match items {
+            Some(ParsedEvent::Suggest { items }) => items,
+            _ => panic!("should parse"),
+        };
+        assert_eq!(items, vec!["A", "B", "C"]);
     }
 
     // --- Agent-gating tests for parse_intent / parse_suggest ---

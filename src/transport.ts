@@ -905,9 +905,19 @@ export async function subscribePty(
     const unlistenExit = await listen(`pty-exit-${sessionId}`, () => {
       onExit();
     });
+    // Idempotent dispose: Tauri's internal listener registry crashes
+    // on double-unregister (listeners[eventId].handlerId on undefined).
+    let disposed = false;
     return () => {
-      unlistenOutput();
-      unlistenExit();
+      if (disposed) return;
+      disposed = true;
+      try { unlistenOutput(); } catch (err) {
+        // Swallow: listener already gone (e.g. session exit race)
+        void err;
+      }
+      try { unlistenExit(); } catch (err) {
+        void err;
+      }
     };
   }
 

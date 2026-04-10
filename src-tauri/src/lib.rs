@@ -37,6 +37,7 @@ pub(crate) mod llm_api;
 pub(crate) mod registry;
 pub(crate) mod pty;
 pub(crate) mod relay_client;
+mod shell_integration;
 pub(crate) mod sleep_prevention;
 pub(crate) mod push;
 pub(crate) mod state;
@@ -468,10 +469,10 @@ pub(crate) fn read_file_impl(path: String, file: String) -> Result<String, Strin
     // Security: ensure the repo path is within $HOME
     let canonical_repo = repo_path.canonicalize()
         .map_err(|e| format!("Failed to resolve repo path: {e}"))?;
-    if let Some(home) = dirs::home_dir() {
-        if !canonical_repo.starts_with(&home) {
-            return Err("Access denied: path must be within the user's home directory".into());
-        }
+    if let Some(home) = dirs::home_dir()
+        && !canonical_repo.starts_with(&home)
+    {
+        return Err("Access denied: path must be within the user's home directory".into());
     }
 
     // Security: ensure the file is within the repo path

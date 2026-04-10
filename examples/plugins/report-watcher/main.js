@@ -62,7 +62,8 @@ export default {
         if (!file || !repo) return null;
 
         try {
-          return await host.invoke("read_file", { path: repo, file });
+          const absolutePath = repo.endsWith("/") ? repo + file : repo + "/" + file;
+          return await host.readFile(absolutePath);
         } catch (err) {
           host.log("warn", `Failed to load report: ${file}`, err);
           return null;

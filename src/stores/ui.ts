@@ -113,6 +113,9 @@ function createUIStore() {
 
   /** Open one exclusive panel and close the others, or close all if `key` is already open (toggle). */
   function setExclusivePanel(key: ExclusivePanel, visible: boolean): void {
+    if (key === "markdownPanelVisible" && visible) {
+      appLogger.warn("store", `MarkdownPanel OPEN triggered`, { stack: new Error().stack });
+    }
     batch(() => {
       setState(key, visible);
       if (visible) {
@@ -164,6 +167,7 @@ function createUIStore() {
             setState("sidebarWidth", clampWidth(loaded.sidebar_width));
           }
           if (loaded.markdown_panel_visible !== undefined) {
+            if (loaded.markdown_panel_visible) appLogger.warn("store", "hydrate: markdown_panel_visible=true from disk");
             setState("markdownPanelVisible", loaded.markdown_panel_visible);
           }
           if (loaded.notes_panel_visible !== undefined) {

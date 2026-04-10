@@ -35,10 +35,13 @@ interface RateBucket {
 interface UsageApiResponse {
   five_hour: RateBucket | null;
   seven_day: RateBucket | null;
+  seven_day_oauth_apps: RateBucket | null;
   seven_day_opus: RateBucket | null;
   seven_day_sonnet: RateBucket | null;
   seven_day_cowork: RateBucket | null;
   extra_usage: unknown;
+  plan: unknown;
+  meta: unknown;
 }
 
 // ---------------------------------------------------------------------------

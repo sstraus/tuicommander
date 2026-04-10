@@ -19,7 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Settings IPC** — `structuredClone` for plain-JS store paths eliminates redundant settings IPC round-trips
 
 ### Fixed
-- **Suggest bar reliability** — Removed Rust-side `conceal_suggest` byte-stream manipulation (caused scroll freezes and ViewportLock conflicts); suggest tokens now hidden exclusively by the frontend `eraseSuggestFromBuffer` rAF scanner. Also: deferred PTY creation via ResizeObserver, stale actions cleared on user input, number prefixes stripped from chip display
+- **Suggest bar reliability** — Rewrote `conceal_suggest` as a simple single-chunk stream filter (no cross-chunk buffering that caused scroll freezes). Handles `\n`-delimited and Ink `\r`-segment layouts. Also: deferred PTY creation via ResizeObserver, stale actions cleared on user input, number prefixes stripped from chip display
 - **Terminal focus restoration** — Focus returns to the active terminal after closing any modal dialog (CommandPalette, SmartPromptsDropdown, PromptDialog, PromptDrawer, BranchSwitcher, RunCommandDialog, RenameBranchDialog, CreateWorktreeDialog) and after PaneTree tab switches
 - **Repo-switch freeze** — Eliminated visibility thundering herd that caused UI freeze when switching repositories with many terminals
 - **Idle detection** — Replaced chrome-tick guard with spinner keepalive; tuned agent idle thresholds to prevent indicator flicker while maintaining responsive idle transitions

@@ -18,6 +18,7 @@ import { dashboardRegistry } from "./dashboardRegistry";
 import { invoke, listen } from "../invoke";
 import { LineBuffer } from "../utils/lineBuffer";
 import { stripAnsi } from "../utils/stripAnsi";
+import { sanitizeSvgIcon } from "../utils/sanitizeSvg";
 import { sendCommand } from "../utils/sendCommand";
 import {
   INVOKE_WHITELIST,
@@ -197,6 +198,7 @@ function createPluginRegistry() {
       },
 
       addItem(item) {
+        if (item.icon) item.icon = sanitizeSvgIcon(item.icon);
         activityStore.addItem(item);
       },
 
@@ -205,6 +207,7 @@ function createPluginRegistry() {
       },
 
       updateItem(id, updates) {
+        if (updates.icon) updates.icon = sanitizeSvgIcon(updates.icon);
         activityStore.updateItem(id, updates);
       },
 
@@ -358,6 +361,7 @@ function createPluginRegistry() {
 
       registerSidebarPanel(options: import("../stores/sidebarPluginStore").SidebarPanelOptions) {
         requireCapability(pluginId, capabilities, "ui:sidebar");
+        if (options.icon) options.icon = sanitizeSvgIcon(options.icon);
         const handle = sidebarPluginStore.registerPanel(pluginId, options);
         // Track dispose for auto-cleanup, but return the full handle
         track({ dispose: () => handle.dispose() });
@@ -505,7 +509,7 @@ function createPluginRegistry() {
           pluginId,
           text: options.text,
           label: options.label,
-          icon: options.icon,
+          icon: options.icon ? sanitizeSvgIcon(options.icon) : undefined,
           priority: options.priority ?? 0,
           ttlMs: options.ttlMs ?? 60_000,
           onClick: options.onClick,
@@ -678,8 +682,6 @@ function createPluginRegistry() {
       return;
     }
 
-    pluginStore.updatePlugin(plugin.id, { loaded: true, error: null });
-
     plugins.set(plugin.id, {
       plugin,
       disposable: {
@@ -691,6 +693,8 @@ function createPluginRegistry() {
       },
       agentTypes: agentTypes ?? [],
     });
+
+    pluginStore.updatePlugin(plugin.id, { loaded: true, error: null });
   }
 
   function unregister(id: string): void {
@@ -792,7 +796,8 @@ function createPluginRegistry() {
 
   /** Notify all state change listeners of a terminal/branch state change */
   function notifyStateChange(event: StateChangeEvent): void {
-    for (const { callback } of stateChangeListeners) {
+    for (const { pluginId, callback } of stateChangeListeners) {
+      if (event.sessionId && !pluginMatchesSession(pluginId, event.sessionId)) continue;
       try {
         callback(event);
       } catch (err) {

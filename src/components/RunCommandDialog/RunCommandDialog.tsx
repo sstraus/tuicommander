@@ -1,6 +1,5 @@
-import { Component, Show, createSignal, createEffect, on, onCleanup } from "solid-js";
+import { Component, Show, createSignal, createEffect, onCleanup } from "solid-js";
 import { t } from "../../i18n";
-import { terminalsStore } from "../../stores/terminals";
 import { cx } from "../../utils";
 import d from "../shared/dialog.module.css";
 import s from "./RunCommandDialog.module.css";
@@ -28,13 +27,6 @@ export const RunCommandDialog: Component<RunCommandDialogProps> = (props) => {
       }, 0);
     }
   });
-
-  // Restore terminal focus when dialog closes
-  createEffect(on(() => props.visible, (visible, prev) => {
-    if (prev && !visible) {
-      requestAnimationFrame(() => terminalsStore.getActive()?.ref?.focus());
-    }
-  }, { defer: true }));
 
   // Handle keyboard events
   createEffect(() => {

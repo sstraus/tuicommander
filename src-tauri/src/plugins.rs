@@ -109,14 +109,15 @@ pub struct PluginManifest {
     pub binaries: Vec<String>,
 }
 
-/// Binary names that are never permitted in plugin manifests, regardless of declaration.
+/// Binary name prefixes that are never permitted in plugin manifests.
+/// Uses prefix matching to catch versioned variants (e.g. python3.11, nodejs).
 /// Blocks shell interpreters, scripting runtimes, and destructive system tools that would
 /// grant a plugin arbitrary code execution via the `args` array in `exec:cli`.
-const BLOCKED_BINARIES: &[&str] = &[
+const BLOCKED_BINARY_PREFIXES: &[&str] = &[
     // Shell interpreters
     "bash", "sh", "zsh", "fish", "ksh", "dash", "csh", "tcsh",
-    // Scripting runtimes
-    "python", "python3", "ruby", "perl", "node", "deno", "bun",
+    // Scripting runtimes (prefix catches python3.11, nodejs, ruby3, etc.)
+    "python", "ruby", "perl", "node", "deno", "bun", "pypy", "jruby",
     // Network tools
     "curl", "wget", "nc", "netcat", "socat",
     // Destructive filesystem tools
@@ -191,7 +192,7 @@ fn validate_manifest(manifest: &PluginManifest, dir_name: &str) -> Result<(), St
         if binary.is_empty() {
             return Err("binary name must not be empty".into());
         }
-        if BLOCKED_BINARIES.contains(&binary.as_str()) {
+        if BLOCKED_BINARY_PREFIXES.iter().any(|prefix| binary.starts_with(prefix)) {
             return Err(format!(
                 "binary \"{binary}\" is blocked — shell interpreters, scripting runtimes, \
                  and destructive system tools are not permitted"
@@ -347,6 +348,14 @@ pub fn list_user_plugins() -> Vec<PluginManifest> {
     for entry in entries.flatten() {
         let path = entry.path();
         if !path.is_dir() {
+            // Detect broken symlinks and warn (is_dir follows symlinks — false for broken)
+            if path.is_symlink() {
+                let dir_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+                tracing::warn!(
+                    source = "plugins", plugin = %dir_name,
+                    "Plugin symlink target does not exist — skipping"
+                );
+            }
             continue;
         }
 
@@ -403,12 +412,9 @@ pub fn register_loaded_plugin(
     capabilities: Vec<String>,
     state: tauri::State<'_, std::sync::Arc<crate::AppState>>,
 ) -> Result<(), String> {
-    // Ground truth is the on-disk manifest, not the frontend-supplied capabilities
-    let manifests = list_user_plugins();
-    let manifest = manifests
-        .iter()
-        .find(|m| m.id == plugin_id)
-        .ok_or_else(|| format!("Plugin \"{plugin_id}\" is not installed"))?;
+    // Ground truth is the on-disk manifest, not the frontend-supplied capabilities.
+    // Read only the specific plugin's manifest instead of scanning the entire dir.
+    let manifest = read_single_manifest(&plugin_id)?;
 
     // Only allow capabilities that appear in the manifest
     for cap in &capabilities {
@@ -421,6 +427,20 @@ pub fn register_loaded_plugin(
 
     state.loaded_plugins.insert(plugin_id, capabilities);
     Ok(())
+}
+
+/// Read a single plugin's manifest by ID (avoids scanning the entire plugins dir).
+pub(crate) fn read_single_manifest(plugin_id: &str) -> Result<PluginManifest, String> {
+    if plugin_id.is_empty() || is_path_escape(plugin_id) {
+        return Err(format!("Invalid plugin ID: \"{plugin_id}\""));
+    }
+    let manifest_path = plugins_dir().join(plugin_id).join("manifest.json");
+    let data = std::fs::read_to_string(&manifest_path)
+        .map_err(|e| format!("Plugin \"{plugin_id}\" manifest not found: {e}"))?;
+    let manifest: PluginManifest = serde_json::from_str(&data)
+        .map_err(|e| format!("Plugin \"{plugin_id}\" invalid manifest: {e}"))?;
+    validate_manifest(&manifest, plugin_id)?;
+    Ok(manifest)
 }
 
 /// Unregister a plugin's capabilities when it is unloaded.

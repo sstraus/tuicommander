@@ -84,7 +84,7 @@ function mergeEvents(raw) {
 async function loadConfig() {
   try {
     const raw = await hostRef.invoke("read_plugin_data", {
-      plugin_id: PLUGIN_ID,
+      pluginId: PLUGIN_ID,
       path: DATA_FILE,
     });
     const saved = JSON.parse(raw);
@@ -102,7 +102,7 @@ async function loadConfig() {
 
 async function saveConfig() {
   await hostRef.invoke("write_plugin_data", {
-    plugin_id: PLUGIN_ID,
+    pluginId: PLUGIN_ID,
     path: DATA_FILE,
     content: JSON.stringify(config, null, 2),
   });

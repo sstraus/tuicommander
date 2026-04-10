@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Global Workspace: one view for all your agents — TUICommander Blog</title>
+  <meta name="description" content="When you run agents across multiple repos, you lose track of who's doing what. Global Workspace pulls the terminals that matter into a single split-pane view — without moving them." />
+
+  <meta property="og:title" content="Global Workspace: one view for all your agents — TUICommander" />
+  <meta property="og:description" content="Promote terminals from any repo into a cross-repo split-pane view. No context switching, no lost agents." />
+  <meta property="og:image" content="/public/blog/global-workspace/activity-dashboard.png" />
+  <meta property="og:type" content="article" />
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/style.css" />
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PCXPSMR9JZ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-PCXPSMR9JZ');
+  </script>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="/" class="nav-logo">
+        <img src="/logo.png" alt="TUICommander" width="28" height="28" />
+        <span>TUICommander</span>
+      </a>
+      <div class="nav-links">
+        <a href="/#features">Features</a>
+        <a href="/#how-it-works">How it works</a>
+        <a href="/blog.html" class="nav-active">Blog</a>
+        <a href="/#faq">FAQ</a>
+        <a href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary btn-sm" rel="noopener noreferrer">Download</a>
+      </div>
+    </div>
+  </nav>
+
+  <article class="blog-post">
+    <header class="blog-post-header">
+      <a href="/blog.html" class="blog-back">&larr; Blog</a>
+      <time>April 8, 2026</time>
+      <h1>Global Workspace: one view for all your agents</h1>
+      <p class="blog-post-summary">When you run agents across multiple repos, you lose track of who's doing what. Global Workspace pulls the terminals that matter into a single split-pane view — without moving them.</p>
+    </header>
+
+    <div class="blog-section">
+      <h2>The problem</h2>
+      <p>TUICommander already had the Activity Dashboard — a bird's-eye view of every terminal session across every repo. It shows agent names, statuses and last activity timestamps. It's great for monitoring. But monitoring isn't working.</p>
+      <p>When an agent in repo A needs input, you click its row in the dashboard, and the whole UI switches to repo A — the sidebar, the git panel, the pane layout. You answer the question, and now you need to check on the agent in repo B. Click. Everything switches again. Three repos, five agents, and you're spending more time navigating between repos than actually interacting with the agents.</p>
+      <p>The root issue: TUICommander's UI is repo-scoped. One repo at a time. That's the right default — you want your git panel, diff stats and branch list to reflect what you're working on. But when you're orchestrating agents across repos, the repo boundary becomes a wall.</p>
+    </div>
+
+    <figure class="blog-figure">
+      <img src="/public/blog/global-workspace/activity-dashboard.png" alt="Activity Dashboard showing three agents — one waiting for input, one working, one idle — across the tuicommander repo" />
+      <figcaption>The Activity Dashboard shows every agent's status — but clicking a row switches your entire workspace to that repo. With agents across multiple repos, you're constantly context-switching.</figcaption>
+    </figure>
+
+    <div class="blog-section">
+      <h2>Promote, don't move</h2>
+      <p>The key insight behind Global Workspace is that terminals don't need to move. They stay exactly where they are — same repo, same branch, same PTY session. You just <em>promote</em> them into a cross-repo view.</p>
+      <p>A small globe icon appears on each terminal's pane tab. Click it, and the terminal is promoted to the Global Workspace. Click it again, unpromoted. The terminal doesn't move, restart, or lose state. It's still alive in its repo. The Global Workspace is a projection — a curated view of the terminals you care about right now.</p>
+      <p>This matters because the alternative — actually detaching a terminal from its repo and re-attaching elsewhere — would break the repo-scoped model that everything else depends on. Branch switching, layout save/restore, the git panel, terminal-to-repo mapping: all of that assumes terminals belong to a repo. Promotion sidesteps all of it.</p>
+    </div>
+
+
+    <div class="blog-section">
+      <h2>A layout that already existed</h2>
+      <p>TUICommander already saves and restores pane layouts every time you switch branches. The layout tree is serialised, stashed in a Map keyed by repo+branch, and restored when you switch back. This mechanism has been running reliably for months with split panes, tab groups and nested splits.</p>
+      <p>Global Workspace reuses the exact same mechanism. When you activate the Global Workspace, the current repo layout is saved. The global layout is restored into the pane system. When you deactivate, the reverse happens. No new layout engine, no new serialisation format, no new state machine. The same code that handles branch switching handles workspace switching.</p>
+      <p>This is the part we're most satisfied with. The entire workspace-switch logic — save current, restore target, swap back on deactivate — is the same code path that already handles thousands of branch switches a day. The Global Workspace just adds one more entry to the layout Map.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Close means unpromote, not kill</h2>
+      <p>This is a deliberate design choice that deserves its own section. In a normal repo view, closing a pane can kill the terminal (if it's the last tab in the group). In the Global Workspace, closing a pane only unpromotes the terminal. The PTY keeps running. The agent keeps working. You just removed it from the global view.</p>
+      <p>Why? Because accidentally killing an agent that's been working on a complex refactor for 20 minutes is catastrophic. In a cross-repo aggregation view, the close gesture needs to be safe by default. You can still kill the terminal explicitly — right-click, close terminal — but the default action is gentle.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Repo identity in every tab</h2>
+      <p>When you're looking at four terminals from three different repos, you need to know which is which. In Global Workspace, each pane tab shows a coloured dot and the repo name before the terminal name. The colour matches the repo's group colour from the sidebar — the same visual language you already use to tell repos apart.</p>
+      <p>Small detail, but it eliminates the "wait, which repo is this agent working on?" moment that would otherwise happen constantly in a cross-repo view.</p>
+    </div>
+
+    <figure class="blog-figure">
+      <img src="/public/blog/global-workspace/sidebar-entry.png" alt="Sidebar showing the Global Workspace entry with a globe icon and a badge showing 2 promoted terminals" />
+      <figcaption>The Global Workspace entry in the sidebar — visible only when terminals are promoted. The badge shows the count. One click to switch in, one click on any repo to switch back.</figcaption>
+    </figure>
+
+    <div class="blog-section">
+      <h2>How it fits together</h2>
+      <p>The sidebar shows a globe entry at the bottom of the repo list — visible only when you have promoted terminals. It shows a badge with the count. Click it to switch to the Global Workspace. Click a repo in the sidebar (or use <kbd>Cmd+Shift+G</kbd>) to switch back. Your repo layout is restored exactly as you left it.</p>
+      <p>Branch switching works too. If you switch branches while in the Global Workspace, it auto-deactivates the workspace, switches the branch, and you're back in repo mode. The global layout is preserved — activate the workspace again and your arrangement is waiting.</p>
+      <p>When the last promoted terminal is closed, the workspace auto-deactivates. No empty view lingering around.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>What this enables</h2>
+      <p>The workflow we wanted: launch agents across repos, promote the ones you want to keep an eye on, activate the Global Workspace, and work. All your important agents in one split-pane view with full interaction. No sidebar switching, no layout thrashing, no losing track of what's running where. When you need to do repo-specific work — check a diff, browse files, review a PR — click the repo in the sidebar and you're back in repo mode with everything exactly where you left it.</p>
+      <p>It's a small feature in terms of new code. The global workspace store, a sidebar entry, a promote toggle, and a handful of integration points. But it changes how you work with parallel agents across repos — from constant context switching to a single curated view.</p>
+    </div>
+  </article>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sstraus/tuicommander" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/sstraus/tuicommander/releases" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/FEATURES.md" rel="noopener noreferrer">Docs</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin API</a>
+      </div>
+      <p>MIT License &copy; 2026 Stefano Straus</p>
+      <p class="footer-tech">Built with Rust, Tauri v2, SolidJS, xterm.js</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

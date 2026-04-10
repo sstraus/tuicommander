@@ -277,6 +277,13 @@
   background: var(--fg-muted);
 }
 
+/* Hide xterm v6 scroll shadow — the dark overlay bar that appears at the top
+   when scrolled down. Inherited from VS Code's ScrollableElement, not useful
+   in our context and visually jarring. */
+[data-terminal-id] .xterm .xterm-scrollable-element > .shadow {
+  display: none !important;
+}
+
 /* Match xterm custom scrollbar widget to app-wide thin style.
    xterm v6 renders .xterm-scrollable-element > .scrollbar with inline ~14px. */
 [data-terminal-id] .xterm .xterm-scrollable-element > .scrollbar.vertical {

@@ -230,16 +230,7 @@ async function loadPlugin(manifest: PluginManifest): Promise<void> {
   pluginRegistry.register(plugin, manifest.capabilities, manifest.allowedUrls, manifest.agentTypes);
   loadedPluginIds.add(manifest.id);
 
-  // Register capabilities server-side so Rust commands can enforce them
-  try {
-    await invoke("register_loaded_plugin", {
-      pluginId: manifest.id,
-      capabilities: manifest.capabilities,
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    logger.warn(`Failed to register capabilities server-side: ${msg}`);
-  }
+  // Rust-side registration is already handled by pluginRegistry.register()
 
   logger.info(`Loaded v${manifest.version}`);
   appLogger.info("plugin", `Loaded plugin "${manifest.id}" v${manifest.version}`);

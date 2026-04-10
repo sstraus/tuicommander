@@ -116,14 +116,20 @@ fn resolve_binary(name: &str) -> Option<String> {
     None
 }
 
+/// Canonicalized trusted directories, computed once.
+fn canonical_trusted_dirs() -> &'static [std::path::PathBuf] {
+    static DIRS: OnceLock<Vec<std::path::PathBuf>> = OnceLock::new();
+    DIRS.get_or_init(|| {
+        trusted_dirs()
+            .into_iter()
+            .filter_map(|d| d.canonicalize().ok())
+            .collect()
+    })
+}
+
 /// Returns true if `path` resides within one of the trusted directories.
 fn is_in_trusted_dir(path: &std::path::Path) -> bool {
-    trusted_dirs().iter().any(|dir| {
-        // Canonicalize the trusted dir too so we compare resolved paths
-        dir.canonicalize()
-            .map(|d| path.starts_with(&d))
-            .unwrap_or(false)
-    })
+    canonical_trusted_dirs().iter().any(|d| path.starts_with(d))
 }
 
 // ---------------------------------------------------------------------------
@@ -169,11 +175,7 @@ pub async fn plugin_exec_cli(
     crate::plugins::check_plugin_capability(&state, &plugin_id, "exec:cli")?;
 
     // Read allowed binaries from the on-disk manifest (source of truth)
-    let manifests = crate::plugins::list_user_plugins();
-    let manifest = manifests
-        .iter()
-        .find(|m| m.id == plugin_id)
-        .ok_or_else(|| format!("Plugin \"{plugin_id}\" is not installed"))?;
+    let manifest = crate::plugins::read_single_manifest(&plugin_id)?;
 
     plugin_exec_cli_inner(binary, args, cwd, plugin_id, &manifest.binaries).await
 }
@@ -208,35 +210,54 @@ async fn plugin_exec_cli_inner(
         None
     };
 
-    // Build command
-    let mut cmd = Command::new(&binary_path);
-    cmd.args(&args);
-
+    // Build std Command first for apply_no_window, then convert to async
+    let mut std_cmd = Command::new(&binary_path);
+    std_cmd.args(&args);
     if let Some(ref dir) = resolved_cwd {
-        cmd.current_dir(dir);
+        std_cmd.current_dir(dir);
     }
+    std_cmd.stdout(std::process::Stdio::piped());
+    std_cmd.stderr(std::process::Stdio::piped());
+    crate::cli::apply_no_window(&mut std_cmd);
 
-    // Capture stdout and stderr
-    cmd.stdout(std::process::Stdio::piped());
-    cmd.stderr(std::process::Stdio::piped());
-    crate::cli::apply_no_window(&mut cmd);
+    // Convert to tokio::process::Command for async timeout + kill
+    let mut cmd: tokio::process::Command = std_cmd.into();
 
     // Audit log: record invocation before execution
     let start = Instant::now();
     let first_arg = args.first().cloned().unwrap_or_default();
 
-    // Run with timeout via tokio::task::spawn_blocking
-    let result = tokio::time::timeout(
+    // Spawn and wait with timeout — kill child on timeout
+    let mut child = cmd.spawn()
+        .map_err(|e| format!("Failed to execute \"{binary}\": {e}"))?;
+
+    // Take stdout/stderr handles before waiting so we can read them after wait()
+    let mut stdout_pipe = child.stdout.take()
+        .ok_or_else(|| "Failed to capture stdout".to_string())?;
+    let mut stderr_pipe = child.stderr.take()
+        .ok_or_else(|| "Failed to capture stderr".to_string())?;
+
+    let status = match tokio::time::timeout(
         Duration::from_secs(MAX_EXEC_TIMEOUT_SECS),
-        tokio::task::spawn_blocking(move || cmd.output()),
-    )
-    .await
-    .map_err(|_| format!("Command \"{binary}\" timed out after {MAX_EXEC_TIMEOUT_SECS}s"))?
-    .map_err(|e| format!("Task join error: {e}"))?
-    .map_err(|e| format!("Failed to execute \"{binary}\": {e}"))?;
+        child.wait(),
+    ).await {
+        Ok(s) => s.map_err(|e| format!("Failed to execute \"{binary}\": {e}"))?,
+        Err(_) => {
+            // Timeout: kill the child process to prevent zombies
+            let _ = child.kill().await;
+            return Err(format!("Command \"{binary}\" timed out after {MAX_EXEC_TIMEOUT_SECS}s"));
+        }
+    };
+
+    // Read captured output after process has exited
+    use tokio::io::AsyncReadExt;
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let _ = stdout_pipe.read_to_end(&mut stdout).await;
+    let _ = stderr_pipe.read_to_end(&mut stderr).await;
 
     let duration_ms = start.elapsed().as_millis();
-    let exit_ok = result.status.success();
+    let exit_ok = status.success();
     tracing::debug!(
         source = "plugin_exec",
         plugin = %plugin_id, binary = %binary, arg0 = %first_arg,
@@ -244,22 +265,19 @@ async fn plugin_exec_cli_inner(
         "Plugin exec completed"
     );
 
-    if !result.status.success() {
+    if !status.success() {
         // Truncate stderr to prevent leaking secrets a CLI tool might emit
-        let stderr_bytes = &result.stderr[..result.stderr.len().min(MAX_STDERR_BYTES)];
-        let stderr = String::from_utf8_lossy(stderr_bytes);
-        let code = result
-            .status
+        let stderr_bytes = &stderr[..stderr.len().min(MAX_STDERR_BYTES)];
+        let stderr_str = String::from_utf8_lossy(stderr_bytes);
+        let code = status
             .code()
             .map(|c| c.to_string())
             .unwrap_or_else(|| "signal".into());
         return Err(format!(
             "Command \"{binary}\" exited with code {code}: {}",
-            stderr.trim()
+            stderr_str.trim()
         ));
     }
-
-    let stdout = result.stdout;
     if stdout.len() > MAX_STDOUT_BYTES {
         return Err(format!(
             "Command output exceeds maximum size ({} bytes > {} bytes)",

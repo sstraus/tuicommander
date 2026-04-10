@@ -122,7 +122,7 @@ pub async fn plugin_list_directory(
     plugin_id: String,
     state: tauri::State<'_, std::sync::Arc<crate::AppState>>,
 ) -> Result<Vec<String>, String> {
-    crate::plugins::check_plugin_capability(&state, &plugin_id, "fs:read")?;
+    crate::plugins::check_plugin_capability(&state, &plugin_id, "fs:list")?;
     plugin_list_directory_inner(path, pattern, sort_by).await
 }
 
@@ -245,6 +245,7 @@ pub async fn plugin_watch_path(
     state: State<'_, Arc<AppState>>,
     app: AppHandle,
 ) -> Result<String, String> {
+    crate::plugins::check_plugin_capability(&state, &plugin_id, "fs:watch")?;
     let canonical = validate_within_home(&path)?;
 
     let watch_id = uuid::Uuid::new_v4().to_string();
