@@ -240,26 +240,17 @@ fn collect_protocol_token_indices(screen_rows: &[String]) -> std::collections::H
     indices
 }
 
-/// How many chat rows to scan above the prompt box looking for a question.
-/// Wide enough to skip agent footer text like "(stopping here — waiting for
-/// your answer)" or multi-line acknowledgements, narrow enough to avoid
-/// pulling in unrelated `?`-ending lines from earlier in the conversation.
-const QUESTION_SCAN_DEPTH: usize = 15;
-
-/// Walk upward from the prompt box searching for the most recent plausible
-/// question line (`?`-ending, passes `is_plausible_question`). This is more
-/// robust than `extract_last_chat_line` + `ends_with('?')` because the agent
-/// may emit trailing non-question text between the real question and the
-/// prompt box (e.g. Claude Code's "(stopping here — waiting for your answer)"
-/// disclaimer, or suggest-style wrapped continuations that are hidden visually
-/// but still present on the screen).
+/// Find the last chat line above the prompt box and, if it is a plausible
+/// `?`-ending question, return it. Suggest/intent protocol blocks (including
+/// wrapped continuations) are transparently skipped because they sit between
+/// the agent's question and the prompt but are not real chat content — the
+/// agent emits the question first and the suggest arrives after.
 ///
-/// Algorithm:
-/// 1. Locate the prompt line (`>`, `› `, `❯`) from the bottom.
-/// 2. Walk upward, skipping chrome/protocol/separator/empty rows.
-/// 3. Count at most `QUESTION_SCAN_DEPTH` chat rows. For each chat row,
-///    if it ends with `?` and passes the plausible-question filter, return it.
-/// 4. Return `None` if no question is found within the window.
+/// Only the single last chat line is inspected. We deliberately do NOT walk
+/// deeper looking for an older `?`: a multi-line scan would scavenge past
+/// the current agent turn and pick up the user's own previous input (e.g.
+/// `❯ tutto ok?`) or stale content from earlier in the conversation, firing
+/// phantom notifications 10s after the reply.
 pub(crate) fn find_last_chat_question(screen_rows: &[String]) -> Option<String> {
     let prompt_idx = screen_rows.iter().enumerate().rev()
         .find(|(_, row)| is_prompt_line(row))?
@@ -267,7 +258,6 @@ pub(crate) fn find_last_chat_question(screen_rows: &[String]) -> Option<String> 
 
     let protocol_indices = collect_protocol_token_indices(screen_rows);
 
-    let mut chat_rows_seen: usize = 0;
     for i in (0..prompt_idx).rev() {
         if protocol_indices.contains(&i) {
             continue;
@@ -276,13 +266,13 @@ pub(crate) fn find_last_chat_question(screen_rows: &[String]) -> Option<String> 
         if trimmed.is_empty() || is_separator_line(trimmed) || is_chrome_row(trimmed) {
             continue;
         }
-        chat_rows_seen += 1;
-        if chat_rows_seen > QUESTION_SCAN_DEPTH {
-            break;
-        }
+        // First non-skip row above the prompt — this is the last chat line.
+        // Check it for a question, otherwise give up: we do not scavenge
+        // deeper into the buffer.
         if trimmed.ends_with('?') && is_plausible_question(trimmed) {
             return Some(trimmed.to_string());
         }
+        return None;
     }
     None
 }
@@ -3414,9 +3404,13 @@ mod tests {
     }
 
     #[test]
-    fn test_find_last_chat_question_skips_trailing_disclaimer() {
-        // Claude Code emits a disclaimer BELOW the question + suggest block.
-        // Strategy 1 must skip it and find the real question above.
+    fn test_find_last_chat_question_trailing_disclaimer_blocks_detection() {
+        // When the agent emits trailing text AFTER the suggest block (e.g.
+        // Claude Code's "(stopping here — waiting for your answer)" footer),
+        // the last chat line is the disclaimer, not the question. We
+        // deliberately do NOT scavenge past it — accepting this edge case
+        // false negative in exchange for not crossing the agent-turn boundary
+        // and matching the user's own previous `?`-ending input.
         let rows = screen(&[
             "⏺ TUICommander v1.0.2 is connected.",
             "  intent: await handshake then relay fixed response (Await ACK)",
@@ -3430,10 +3424,27 @@ mod tests {
             "  [Opus 4.6 | Max]",
             "  ⏵⏵ bypass permissions on",
         ]);
-        assert_eq!(
-            find_last_chat_question(&rows),
-            Some("Do you want me to proceed with this fix?".to_string()),
-        );
+        assert_eq!(find_last_chat_question(&rows), None);
+    }
+
+    #[test]
+    fn test_find_last_chat_question_does_not_cross_previous_input() {
+        // The user previously typed `tutto ok?` (ending with a `?`), the agent
+        // replied with a plain statement, then arrives at an empty prompt.
+        // The walker MUST NOT scavenge past the agent statement to pick up
+        // the user's own prior input — doing so fires a phantom question
+        // notification 10s after the reply.
+        let rows = screen(&[
+            "❯ tutto ok?",
+            "────────",
+            "⏺ Sì, tutto funziona correttamente.",
+            "  Il fix è stato verificato.",
+            "────────",
+            "❯ ",
+            "────────",
+            "  ⏵⏵ bypass permissions on",
+        ]);
+        assert_eq!(find_last_chat_question(&rows), None);
     }
 
     #[test]
@@ -3469,28 +3480,9 @@ mod tests {
     }
 
     #[test]
-    fn test_find_last_chat_question_stops_after_window() {
-        // A question that is too far above the prompt box must not be returned
-        // — this protects against matching stale questions from earlier in the
-        // conversation that have scrolled into the visible region but are no
-        // longer active.
-        let mut lines: Vec<&str> = vec!["Stale question from long ago?"];
-        for _ in 0..(QUESTION_SCAN_DEPTH + 3) {
-            lines.push("some unrelated agent output line");
-        }
-        lines.extend_from_slice(&[
-            "────────────────────────────────",
-            "> ",
-            "────────────────────────────────",
-            "⏵⏵ bypass permissions on",
-        ]);
-        let rows = screen(&lines);
-        assert_eq!(find_last_chat_question(&rows), None);
-    }
-
-    #[test]
-    fn test_find_last_chat_question_prefers_most_recent() {
-        // Two questions in the window — must return the one closest to the prompt.
+    fn test_find_last_chat_question_only_checks_first_chat_line() {
+        // With multiple chat lines above the prompt, only the immediately
+        // preceding one is considered — even if an older line ends with `?`.
         let rows = screen(&[
             "Old question from earlier?",
             "Here is some context.",
@@ -3501,10 +3493,26 @@ mod tests {
             "────────────────────────────────",
             "⏵⏵ bypass permissions on",
         ]);
+        // Last chat line is the empty line (skipped), then "Do you agree…?" → detected
         assert_eq!(
             find_last_chat_question(&rows),
             Some("Do you agree with this plan?".to_string()),
         );
+    }
+
+    #[test]
+    fn test_find_last_chat_question_non_question_last_line_blocks() {
+        // If the last chat line above the prompt is not a question, we do NOT
+        // keep walking upward to find an older question.
+        let rows = screen(&[
+            "Shall I proceed?",
+            "Here is some unrelated follow-up text.",
+            "────────────────────────────────",
+            "> ",
+            "────────────────────────────────",
+            "⏵⏵ bypass permissions on",
+        ]);
+        assert_eq!(find_last_chat_question(&rows), None);
     }
 
     #[test]
