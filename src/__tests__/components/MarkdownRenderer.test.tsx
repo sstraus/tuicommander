@@ -127,4 +127,84 @@ describe("MarkdownRenderer", () => {
     // Should not throw when clicked without handler
     fireEvent.click(link);
   });
+
+  describe("GFM task-list checkboxes", () => {
+    it("renders checkboxes as enabled input elements with data-source-line", () => {
+      const md = "- [ ] First\n- [x] Second\n- [ ] Third";
+      const { container } = render(() => <MarkdownRenderer content={md} />);
+      const checkboxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+      expect(checkboxes.length).toBe(3);
+      // All should be enabled (disabled removed)
+      checkboxes.forEach((cb) => expect(cb.disabled).toBe(false));
+      // data-source-line should map to correct lines
+      expect(checkboxes[0].dataset.sourceLine).toBe("0");
+      expect(checkboxes[1].dataset.sourceLine).toBe("1");
+      expect(checkboxes[2].dataset.sourceLine).toBe("2");
+    });
+
+    it("marks checked boxes correctly", () => {
+      const md = "- [ ] Unchecked\n- [x] Checked";
+      const { container } = render(() => <MarkdownRenderer content={md} />);
+      const checkboxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+      expect(checkboxes[0].checked).toBe(false);
+      expect(checkboxes[1].checked).toBe(true);
+    });
+
+    it("skips checkboxes inside fenced code blocks for line mapping", () => {
+      const md = [
+        "- [ ] Real task",      // line 0 → sourceLine 0
+        "```",                   // line 1
+        "- [ ] Code example",   // line 2 — inside fence, not rendered as checkbox
+        "```",                   // line 3
+        "- [ ] Another task",   // line 4 → sourceLine 4
+      ].join("\n");
+      const { container } = render(() => <MarkdownRenderer content={md} />);
+      const checkboxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+      expect(checkboxes.length).toBe(2);
+      expect(checkboxes[0].dataset.sourceLine).toBe("0");
+      expect(checkboxes[1].dataset.sourceLine).toBe("4");
+    });
+
+    it("calls onCheckboxToggle with source line and next mark on click", () => {
+      const onToggle = vi.fn();
+      const md = "- [ ] First\n- [x] Second";
+      const { container } = render(() => (
+        <MarkdownRenderer content={md} onCheckboxToggle={onToggle} />
+      ));
+      const checkboxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+      // Click unchecked → should request "x"
+      fireEvent.click(checkboxes[0]);
+      expect(onToggle).toHaveBeenCalledWith(0, "x");
+    });
+
+    it("renders [~] as indeterminate checkbox with sentinel attribute", () => {
+      const md = "- [ ] Normal\n- [~] In progress";
+      const { container } = render(() => <MarkdownRenderer content={md} />);
+      const checkboxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+      expect(checkboxes.length).toBe(2);
+      // First should not have the sentinel
+      expect(checkboxes[0].hasAttribute("data-checkbox-indeterminate")).toBe(false);
+      // Second (tilde) should have the sentinel
+      expect(checkboxes[1].hasAttribute("data-checkbox-indeterminate")).toBe(true);
+    });
+
+    it("handles mixed content: headings, text, and checkboxes", () => {
+      const md = "# Plan\n\nSome text.\n\n- [ ] Task A\n- [x] Task B\n\nMore text.";
+      const { container } = render(() => <MarkdownRenderer content={md} />);
+      const checkboxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+      expect(checkboxes.length).toBe(2);
+      expect(checkboxes[0].dataset.sourceLine).toBe("4");
+      expect(checkboxes[1].dataset.sourceLine).toBe("5");
+    });
+
+    it("handles nested checkboxes", () => {
+      const md = "- [ ] Parent\n  - [ ] Child\n  - [x] Done child";
+      const { container } = render(() => <MarkdownRenderer content={md} />);
+      const checkboxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+      expect(checkboxes.length).toBe(3);
+      expect(checkboxes[0].dataset.sourceLine).toBe("0");
+      expect(checkboxes[1].dataset.sourceLine).toBe("1");
+      expect(checkboxes[2].dataset.sourceLine).toBe("2");
+    });
+  });
 });

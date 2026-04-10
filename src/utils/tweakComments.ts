@@ -176,3 +176,22 @@ export function generateTweakCommentId(): string {
   const ts = Date.now().toString(36);
   return `c_${ts}${rand}`;
 }
+
+// ---- GFM Task-List Checkbox Toggle ----
+
+
+/**
+ * Set the checkbox on the given source line to the specified mark.
+ * `sourceLine` is the 0-based line number in the raw markdown source,
+ * injected as `data-source-line` by the MarkdownRenderer preprocessor.
+ * `mark` is one of: `" "` (unchecked), `"x"` (checked), `"~"` (in-progress).
+ */
+export function toggleCheckbox(source: string, sourceLine: number, mark: " " | "x" | "~"): string {
+  const lines = source.split("\n");
+  if (sourceLine < 0 || sourceLine >= lines.length) return source;
+  const line = lines[sourceLine];
+  const m = /^(\s*[-*+]\s+)\[([ xX~])\]/.exec(line);
+  if (!m) return source;
+  lines[sourceLine] = `${m[1]}[${mark}]${line.slice(m[0].length)}`;
+  return lines.join("\n");
+}

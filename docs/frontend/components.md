@@ -33,8 +33,8 @@ App.tsx (central orchestrator)
 │   ├── PrDiffTab/            # PR diff viewer tab
 │   ├── CodeEditorPanel/      # CodeMirror 6 code editor tab
 │   ├── MarkdownPanel/        # Markdown file browser
-│   │   └── MarkdownRenderer  # Markdown to HTML (DOMPurify)
-│   ├── MarkdownTab/          # Individual markdown file tab
+│   │   └── MarkdownRenderer  # Markdown to HTML (DOMPurify), interactive checkboxes, tweak highlights
+│   ├── MarkdownTab/          # Individual markdown file tab (checkbox toggle, tweak comments, search)
 │   ├── NotesPanel/           # Ideas/notes panel with edit, send, delete
 │   ├── FileBrowserPanel/     # File tree browser with content search
 │   │   └── TreeNode          # Recursive tree node (lazy-loaded)

@@ -1,4 +1,4 @@
-import { Component, createMemo, Show } from "solid-js";
+import { Component, createEffect, createMemo, Show } from "solid-js";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
@@ -11,6 +11,8 @@ export interface MarkdownRendererProps {
   emptyMessage?: string;
   /** Called when a relative .md link is clicked (href passed as argument) */
   onLinkClick?: (href: string) => void;
+  /** Called when a GFM task-list checkbox is clicked (source line number, new mark: " ", "x", or "~") */
+  onCheckboxToggle?: (sourceLine: number, mark: " " | "x" | "~") => void;
   /** Absolute directory path of the source file, used to resolve relative image src attributes */
   baseDir?: string;
   /** Ref callback to expose the rendered content container for search */
@@ -30,18 +32,65 @@ marked.setOptions({
   breaks: true, // Convert \n to <br>
 });
 
+const TILDE_SENTINEL = "data-checkbox-indeterminate";
+
+/**
+ * Pre-process `- [~]` (non-standard "in-progress" checkbox) into `- [ ]`
+ * so marked renders it as a task-list item. We track which source lines
+ * had tilde in a separate set returned alongside the cleaned source.
+ */
+function preprocessTildeCheckboxes(source: string): { cleaned: string; tildeLines: Set<number> } {
+  const lines = source.split("\n");
+  const tildeLines = new Set<number>();
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^(\s*[-*+]\s+)\[~\](.*)$/.exec(lines[i]);
+    if (!m) continue;
+    tildeLines.add(i);
+    lines[i] = `${m[1]}[ ]${m[2]}`;
+  }
+  return { cleaned: lines.join("\n"), tildeLines };
+}
+
+/**
+ * Build a mapping from sequential checkbox index (as rendered by marked)
+ * to source line number. Scans the raw source and returns an array where
+ * entry[domIndex] = sourceLine. Skips lines inside fenced code blocks.
+ */
+function buildCheckboxLineMap(source: string): number[] {
+  const lines = source.split("\n");
+  const map: number[] = [];
+  let inFence = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\s*(`{3,}|~{3,})/.test(lines[i])) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    if (/^\s*[-*+]\s+\[([ xX~])\]/.test(lines[i])) {
+      map.push(i);
+    }
+  }
+  return map;
+}
+
 export const MarkdownRenderer: Component<MarkdownRendererProps> = (props) => {
   // Memoize processed markdown to avoid re-parsing on every render
   const processedContent = createMemo(() => {
-    const cleaned = stripAnsi(props.content);
+    const raw = stripAnsi(props.content);
     try {
-      // Convert tweak markers to highlight spans before markdown parsing,
-      // so they survive the marked+DOMPurify pipeline intact.
+      // 1. Convert [~] to [ ] so marked renders them as standard GFM task-list items.
+      //    Track which source lines had tilde for indeterminate styling later.
+      const { cleaned, tildeLines } = preprocessTildeCheckboxes(raw);
+
+      // 2. Build source-line map BEFORE any transforms: domIndex → sourceLine.
+      //    This must use the tilde-cleaned source (same checkbox count as marked sees).
+      const lineMap = buildCheckboxLineMap(cleaned);
+
+      // 3. Convert tweak markers to highlight spans, then parse markdown.
       const withHighlights = applyTweakHighlights(cleaned);
       let html = marked.parse(withHighlights, { async: false }) as string;
-      // Rewrite relative image src attributes to loadable asset:// URLs.
-      // Relative paths (not starting with http/data/asset) are resolved
-      // against baseDir so images render correctly in the Tauri WebView.
+
+      // 4. Rewrite relative image src attributes to loadable asset:// URLs.
       const baseDir = props.baseDir;
       if (baseDir) {
         html = html.replace(
@@ -50,20 +99,68 @@ export const MarkdownRenderer: Component<MarkdownRendererProps> = (props) => {
             `${prefix}${convertFileSrc(`${baseDir}/${relativePath}`)}"`,
         );
       }
+
+      // 5. Make GFM task-list checkboxes interactive and inject source-line metadata.
+      //    Sequential checkbox index in the HTML maps to lineMap[domIndex].
+      let cbIndex = 0;
+      html = html.replace(/<input\b[^>]*type="checkbox"[^>]*>/gi, (match) => {
+        const idx = cbIndex++;
+        const sourceLine = lineMap[idx];
+        // Remove disabled attribute
+        let out = match.includes("disabled")
+          ? match.replace(/\s*disabled(?:="")?/i, "")
+          : match;
+        // Inject data-source-line for the click handler
+        if (sourceLine !== undefined) {
+          out = out.replace(/>$/, ` data-source-line="${sourceLine}">`);
+          // Mark tilde checkboxes for indeterminate styling
+          if (tildeLines.has(sourceLine)) {
+            out = out.replace(/>$/, ` ${TILDE_SENTINEL}>`);
+          }
+        }
+        return out;
+      });
+
       return DOMPurify.sanitize(stripEventHandlers(html), {
-        ADD_ATTR: ["data-tweak-id", "data-tweak-at", "data-tweak-comment"],
+        ADD_ATTR: ["data-tweak-id", "data-tweak-at", "data-tweak-comment", "data-source-line", TILDE_SENTINEL],
       });
     } catch (err) {
       appLogger.error("app", "Markdown parsing error", err);
-      return `<pre>${cleaned}</pre>`;
+      return `<pre>${raw}</pre>`;
     }
   });
 
   const isEmpty = createMemo(() => props.content.trim() === "");
 
   const handleClick = (e: MouseEvent) => {
-    if (!props.onLinkClick) return;
     const target = e.target as HTMLElement;
+
+    // GFM task-list checkbox toggle (tri-state: [ ] → [x] → [~] → [ ])
+    if (target instanceof HTMLInputElement && target.type === "checkbox" && target.dataset.sourceLine != null) {
+      e.preventDefault();
+      const line = parseInt(target.dataset.sourceLine, 10);
+      const isIndeterminate = target.hasAttribute(TILDE_SENTINEL);
+      // NOTE: by the time the click handler fires, the browser has already
+      // toggled `checked`. So `target.checked` reflects the POST-click value.
+      // The original state was `!target.checked` (for non-indeterminate boxes).
+      const wasChecked = !target.checked;
+
+      // Determine next state in the cycle
+      let nextMark: " " | "x" | "~";
+      if (isIndeterminate) {
+        nextMark = " "; // [~] → [ ]
+      } else if (wasChecked) {
+        nextMark = "~"; // [x] → [~]
+      } else {
+        nextMark = "x"; // [ ] → [x]
+      }
+
+      props.onCheckboxToggle?.(line, nextMark);
+      return;
+    }
+
+    // Relative .md link navigation
+    if (!props.onLinkClick) return;
     const anchor = target.closest("a");
     if (!anchor) return;
     const href = anchor.getAttribute("href");
@@ -73,10 +170,23 @@ export const MarkdownRenderer: Component<MarkdownRendererProps> = (props) => {
     }
   };
 
+  let containerRef: HTMLDivElement | undefined;
+
+  // After render, set indeterminate property on [~] checkboxes (not settable via HTML attribute)
+  createEffect(() => {
+    processedContent(); // subscribe to re-renders
+    if (!containerRef) return;
+    requestAnimationFrame(() => {
+      containerRef!.querySelectorAll<HTMLInputElement>(`input[${TILDE_SENTINEL}]`).forEach((cb) => {
+        cb.indeterminate = true;
+      });
+    });
+  });
+
   return (
     <div
       id="markdown-content"
-      ref={props.contentRef}
+      ref={(el) => { containerRef = el; props.contentRef?.(el); }}
       onClick={handleClick}
       style={props.fontSize !== undefined ? { "font-size": `${props.fontSize}px` } : undefined}
     >

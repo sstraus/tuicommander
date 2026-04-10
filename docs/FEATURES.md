@@ -202,6 +202,8 @@ Replaced by the Git Panel's Changes tab (section 3.8). `Cmd+Shift+D` now opens t
 - Auto-show: adding any markdown tab automatically opens the Markdown panel if it's closed
 - Header bar shows file path (or title for virtual tabs) with Edit button (pencil icon) to open in CodeEditor
 - `Cmd+F` search: find text in rendered markdown with highlight navigation (shared SearchBar component)
+- **Interactive GFM checkboxes**: `- [ ]`, `- [x]`, and `- [~]` task-list items render as clickable checkboxes. Clicking cycles through unchecked → checked → in-progress → unchecked. Changes are written back to the source `.md` file on disk. The `[~]` state renders as an indeterminate (half-filled) checkbox — non-standard GFM extension for tracking in-progress items
+- **Inline review comments (tweaks)**: select text in rendered markdown, add a comment — stored as HTML comment markers invisible to standard renderers but readable by humans and LLMs
 
 ### 3.4 File Browser Panel (`Cmd+E`)
 - Directory tree of active repository

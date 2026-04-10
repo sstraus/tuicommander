@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Interactive GFM checkboxes** — Task-list items (`- [ ]`, `- [x]`, `- [~]`) in the Markdown panel are now clickable. Clicking cycles through unchecked → checked → in-progress (indeterminate) → unchecked. Changes are written back to the source file on disk. Source-line mapping ensures correct checkbox identification even with fenced code blocks
+- **Dynamic debug store registry** — All frontend stores self-register via `debugRegistry.ts`. MCP `invoke_js` can now call `__TUIC__.stores()` and `__TUIC__.store(name)` for runtime introspection without manual bridge additions
+
 ## [1.0.3] - 2026-04-10
 
 ### Added

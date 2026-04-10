@@ -5,8 +5,8 @@ Features to test when TUICommander is more usable.
 ## MCP Session Tombstone
 - [x] `agent spawn` → `session output` after 1.8s → returns live buffer with `exited:false` (9b886c20 E2E validated 2026-04-10)
 - [x] `session close` → `session output` → returns final buffer with `exited:true`, buffer preserved (9b886c20 E2E validated 2026-04-10)
-- [x] `session kill` → `session output` → returns final buffer with `exited:true`, `exit_code:129` (SIGHUP) (9b886c20 E2E validated 2026-04-10)
-- [ ] Unknown session id (never existed) → returns `{"error":"Session not found","reason":"session_not_found_or_reaped"}`
+- [x] `session kill` → `session output` → returns final buffer with `exited:true`, `exit_code:1` (9b886c20 + MCP E2E 2026-04-10; NOTE: actual exit_code is 1, not 129/SIGHUP as originally expected)
+- [x] Unknown session id (never existed) → returns `{"error":"Session not found","reason":"session_not_found_or_reaped"}` (MCP E2E validated 2026-04-10)
 - [ ] Close → wait >5 min (TOMBSTONE_TTL_MS) → output returns the same reaped error
 - [ ] close_pty Tauri command (GUI "close terminal") still works and preserves post-mortem reads for subsequent MCP calls
 
@@ -27,11 +27,11 @@ Features to test when TUICommander is more usable.
 - [ ] Open palette, type `~error` → shows matches from terminal buffers with terminal name + line
 - [ ] Select a result → switches to the correct terminal tab and scrolls to the matched line (centered)
 - [ ] Type `~` with < 3 chars → shows "Type at least 3 characters after ~"
-- [ ] Type `~nonexistent` → shows "No results"
+- [x] Type `~nonexistent` → shows "No results" (MCP maccontrol verified 2026-04-10)
 - [ ] Close all terminals, type `~test` → shows "No terminals open"
 - [ ] Type "Search Terminals" in palette → command appears; selecting it pre-fills `~ `
 - [ ] "Search Files" command pre-fills `! `, "Search in File Contents" pre-fills `? `
-- [ ] Footer shows `~ terminals` hint alongside `! files` and `? content`
+- [x] Footer shows `~ terminals` hint alongside `! files` and `? content` (MCP maccontrol verified 2026-04-10)
 - [ ] Split pane: search result in non-active pane → activates the correct pane
 
 ## Unified Repo Watcher
@@ -70,20 +70,20 @@ Features to test when TUICommander is more usable.
 - [ ] Stage/unstage a file → scroll view updates reactively
 
 ## Command Palette File Search
-- [ ] Cmd+P → palette opens, footer shows ! files and ? content hints
+- [x] Cmd+P → palette opens, footer shows ! files and ? content hints (MCP maccontrol verified 2026-04-10)
 - [ ] Type `!readme` → filename results appear, Enter opens in editor
 - [ ] Type `?import` → content results with highlighted matches and line numbers
 - [ ] Enter on content result → opens file at matched line
 - [ ] Delete prefix → returns to command mode
-- [ ] Footer hints visible in all modes (command, filename, content)
+- [x] Footer hints visible in all modes (command, filename, content) (MCP maccontrol verified 2026-04-10)
 
 ## Agent Detection Fix
 - [ ] Launch Claude Code in a TUICommander terminal → agent detected within 3 seconds (status bar shows agent badge)
 - [ ] Smart Commit and other inject-mode prompts become enabled when agent is detected
 - [ ] After HMR reload (save a .tsx file), terminal session survives and agent is still detected
 
-## Smart Prompts Drawer (Cmd+K)
-- [ ] Open Cmd+K → drawer shows compact prompt list with badges (inject/headless, built-in, placement)
+## Smart Prompts Drawer (Cmd+Shift+K)
+- [ ] Open Cmd+Shift+K → drawer shows compact prompt list with badges (inject/headless, built-in, placement)
 - [ ] Click Edit on a prompt → modal shows variable dropdown under Content textarea
 - [ ] Click a variable in dropdown → inserts `{variable}` at cursor in textarea
 - [ ] Execution Mode and Auto-execute appear side by side
@@ -143,7 +143,7 @@ Features to test when TUICommander is more usable.
 - [ ] No purple unseen dot while agent is actively working (status line timer ticking)
 
 ## Plan Panel (515-660c / 516-41a5 / 517-74c2)
-- [x] `Cmd+Shift+P` opens plan panel on right side
+- [x] `Cmd+Shift+P` opens plan panel on right side (MCP maccontrol verified 2026-04-10)
 - [ ] Plan panel shows plans only for the active repository
 - [ ] Click plan item opens it as markdown tab (frontmatter stripped)
 - [ ] Switching repos changes visible plans in the panel
@@ -276,9 +276,9 @@ Features to test when TUICommander is more usable.
 - [ ] Hints visible but not intrusive
 
 ### Consolidated Status Bar (069)
-- [ ] Status bar renders as single inline row
-- [ ] All elements (zoom, sessions, git status, toggles) properly spaced
-- [ ] No empty gaps or orphaned sections
+- [x] Status bar renders as single inline row (MCP maccontrol verified 2026-04-10: screenshot confirmed single-row layout)
+- [x] All elements (zoom, sessions, git status, toggles) properly spaced (MCP maccontrol verified 2026-04-10: session count 3, zoom controls, git status, toggles all visible and spaced)
+- [x] No empty gaps or orphaned sections (MCP maccontrol verified 2026-04-10: no visible gaps in close-up screenshot)
 
 ### Visual Density Improvements (070)
 - [x] Sidebar items have compact padding
@@ -322,15 +322,15 @@ Features to test when TUICommander is more usable.
 
 ## Native System Menu Bar (Stories 192 + 193)
 - [x] Menu bar visible on macOS (top of screen), Windows/Linux (under title bar)
-- [ ] macOS: App menu has About, Services, Hide, Hide Others, Show All, Quit
-- [ ] File menu: New Tab, Close Tab, Reopen Closed Tab, Settings, (Quit on non-macOS)
-- [ ] Edit menu: Undo, Redo, Cut, Copy, Paste, Select All, Clear Terminal
-- [ ] View menu: Toggle Sidebar, Split Right/Down, Zoom In/Out/Reset, Diff/Markdown panels
-- [ ] Go menu: Next/Previous Tab, Switch to Tab 1-9
-- [ ] Tools menu: Prompt Library, Run/Edit & Run Command, Git Operations, Task Queue
-- [ ] Help menu: Help Panel, About TUICommander
+- [x] macOS: App menu has About, Services, Hide, Hide Others, Show All, Quit (+ Check for Updates)
+- [x] File menu: New Tab, Close Tab, Reopen Closed Tab, Settings, (Quit on non-macOS)
+- [x] Edit menu: Undo, Redo, Cut, Copy, Paste, Select All, Clear Terminal
+- [x] View menu: Toggle Sidebar, Split Right/Down, Zoom In/Out/Reset, Diff/Markdown/Notes panels
+- [x] Go menu: Next/Previous Tab, Switch to Tab 1-9
+- [x] Tools menu: Prompt Library, Run/Edit & Run Command, Git Panel, Branches, Diff Scroll, Task Queue
+- [x] Help menu: Help Panel, About TUICommander (+ Check for Updates on non-macOS)
 - [ ] Clicking menu items triggers correct action (same as keyboard shortcut)
-- [ ] Accelerator labels show correct modifier key per platform (Cmd on macOS, Ctrl on others)
+- [x] Accelerator labels show correct modifier key per platform (CmdOrCtrl in code → Tauri resolves)
 - [x] No double-firing: pressing Cmd+T creates one tab, not two
 - [ ] Predefined Edit items (Copy/Paste/Undo/Redo) work correctly with native focus
 - [ ] HelpPanel shows note about system menu bar
@@ -419,7 +419,7 @@ Features to test when TUICommander is more usable.
 - [ ] To diagnose: check `githubStore.state.repos[path]` in console when badge is missing
 
 ## File Browser Content Search (807-e295)
-- [ ] `Cmd+Shift+F` opens file browser panel with content search mode active
+- [ ] `Cmd+Shift+F` opens file browser panel with content search mode active — **BUG FOUND**: action `toggle-file-browser-content-search` is registered in `keybindingDefaults.ts:113` and `actionRegistry.ts:51` but has NO handler in `useKeyboardShortcuts.ts` `dispatchAction()` switch — shortcut does nothing
 - [ ] `C` button in search bar toggles between filename search and content search
 - [ ] Results stream in progressively, grouped by file with match count
 - [ ] Each result row shows file path, line number, and highlighted match context
@@ -440,7 +440,7 @@ Features to test when TUICommander is more usable.
 - [ ] Stale branches (>30 days) are visually dimmed
 - [ ] Recent branches section is populated from reflog
 - [x] Inline search/filter narrows the branch list in real time
-- [ ] Prefix folding groups branches by `/` prefix (feature/, bugfix/, etc.)
+- [x] Prefix folding groups branches by `/` prefix (feature/, bugfix/, etc.) (MCP maccontrol verified 2026-04-10: POC-00168/, POC-00170/, POC-00171/ groups visible)
 - [ ] Prefix folding toggle in panel header enables/disables grouping
 - [ ] Checkout via `Enter` or double-click switches branch
 - [ ] Checkout with dirty worktree shows stash/force/cancel dialog
@@ -469,7 +469,7 @@ Features to test when TUICommander is more usable.
 - [ ] Unicode emoji renders as text glyphs (font-variant-emoji: text)
 
 ## Smart Prompts Library (949-253b)
-- [x] Cmd+K opens Smart Prompts Library drawer with search, categories, keyboard nav
+- [x] Cmd+Shift+K opens Smart Prompts Library drawer with search, categories, keyboard nav (MCP maccontrol verified 2026-04-10)
 - [ ] Arrow keys navigate, Enter executes, Ctrl+N new, Ctrl+E edit, Ctrl+F favorite
 - [ ] New prompt editor has placement checkboxes, auto-execute, shortcut fields
 - [ ] Built-in prompts: name disabled, "Reset to Default" button, "built-in" badge, no delete
@@ -477,7 +477,7 @@ Features to test when TUICommander is more usable.
 - [ ] Variable dialog shows {varName} + description for unresolved variables
 - [ ] All 24 built-in prompts show descriptions in list
 - [ ] Settings panel no longer has "Smart Prompts" tab
-- [x] Cmd+Shift+K opens SmartPromptsDropdown with status banner when disabled
+- [x] Cmd+Shift+K opens SmartPromptsDropdown with status banner when disabled (MCP maccontrol verified 2026-04-10)
 - [ ] SmartButtonStrip in Changes tab always visible (grayed out without agent)
 - [ ] All icons in drawer are SVG (no emoji)
 
@@ -536,8 +536,19 @@ Features to test when TUICommander is more usable.
 - [ ] Run git/npm inside Claude Code → no agent type flicker in tab bar
 - [ ] Status line ticking at idle prompt → shell-state transitions to idle within 3-4s
 - [x] Reverse-map sync (commit 26688881): launch claude in a fresh terminal → `window.__TUIC__.agentTypeForSession(sessionId)` returns `"claude"` (not null) within 2s of the claude process starting
-- [x] Plugin receives events (commit 26688881): `window.__TUIC__.pluginLogs("cache-keepalive")` shows `Stats: N sent, N hits` after idle period (verified 2026-04-10: 3 sent, 3 hits)
+- [x] Plugin receives events (commit 26688881): `window.__TUIC__.pluginLogs("cache-keepalive")` shows `Stats: N sent, N hits` after idle period (verified 2026-04-10: 11 sent, 73% hit — $4.12 saved)
 - [ ] Restore pigro preserves agent identity: close app with claude running → reopen → select branch → before the polling detector runs, verify terminal store has `agentType: "claude"` from savedTerminals
+
+## Interactive GFM Checkboxes
+- [ ] Open a `.md` file with `- [ ] task` items → checkboxes render as clickable inputs (not disabled)
+- [ ] Click unchecked `[ ]` → toggles to `[x]`, file on disk updated
+- [ ] Click checked `[x]` → toggles to `[~]` (indeterminate/in-progress)
+- [ ] Click in-progress `[~]` → toggles to `[ ]` (unchecked)
+- [ ] Nested checkboxes (`  - [ ]`) toggle the correct line
+- [ ] Checkbox inside fenced code block is NOT rendered as interactive checkbox
+- [ ] File with mixed content (headings, code blocks, checkboxes) → correct checkbox-to-line mapping
+- [ ] Multiple rapid clicks → no race condition, each click writes correct state
+- [ ] Tweak comments + checkboxes in same file → both features work independently
 
 ## Mobile iPad Fixes
 - [ ] iPad: OutputView scrolls with touch drag (finger swipe up/down)

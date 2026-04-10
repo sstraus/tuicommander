@@ -13,6 +13,7 @@ import {
   insertTweakComment,
   removeTweakComment,
   updateTweakComment,
+  toggleCheckbox,
   type TweakComment,
 } from "../../utils/tweakComments";
 import { markdownProviderRegistry } from "../../plugins/markdownProviderRegistry";
@@ -269,8 +270,13 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
         : insertTweakComment(current, comment);
       await writeTweakedSource(updated);
     } catch (err) {
-      appLogger.error("app", "handleTweakSave failed", err);
+      appLogger.error("app", `handleTweakSave failed: ${err instanceof Error ? err.message : String(err)}`);
     }
+  };
+
+  const handleCheckboxToggle = async (sourceLine: number, mark: " " | "x" | "~") => {
+    const updated = toggleCheckbox(content(), sourceLine, mark);
+    await writeTweakedSource(updated);
   };
 
   const handleTweakDelete = async (id: string) => {
@@ -377,6 +383,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
           content={content()}
           baseDir={baseDir()}
           onLinkClick={handleMdLink}
+          onCheckboxToggle={(idx, mark) => { void handleCheckboxToggle(idx, mark); }}
           contentRef={(el) => { contentRef = el; setOverlayContentEl(el); }}
           fontSize={props.tab.fontSize}
           emptyMessage={

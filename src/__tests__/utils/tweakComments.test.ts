@@ -7,6 +7,7 @@ import {
   updateTweakComment,
   ensureConventionHeader,
   applyTweakHighlights,
+  toggleCheckbox,
   CONVENTION_HEADER,
   type TweakComment,
 } from "../../utils/tweakComments";
@@ -274,6 +275,65 @@ describe("tweakComments parser/serializer", () => {
       const first = ensureConventionHeader("body");
       const second = ensureConventionHeader(first);
       expect(second).toBe(first);
+    });
+  });
+
+  describe("toggleCheckbox", () => {
+    const src = [
+      "# Plan",           // line 0
+      "- [ ] First task",  // line 1
+      "- [x] Second task", // line 2
+      "- [~] In progress", // line 3
+      "- [ ] Fourth task",  // line 4
+    ].join("\n");
+
+    it("checks an unchecked box by source line", () => {
+      const out = toggleCheckbox(src, 1, "x");
+      expect(out).toContain("- [x] First task");
+    });
+
+    it("unchecks a checked box by source line", () => {
+      const out = toggleCheckbox(src, 2, " ");
+      expect(out).toContain("- [ ] Second task");
+    });
+
+    it("sets tilde on an unchecked box", () => {
+      const out = toggleCheckbox(src, 4, "~");
+      expect(out).toContain("- [~] Fourth task");
+    });
+
+    it("unchecks a tilde box", () => {
+      const out = toggleCheckbox(src, 3, " ");
+      expect(out).toContain("- [ ] In progress");
+    });
+
+    it("leaves other checkboxes untouched", () => {
+      const out = toggleCheckbox(src, 1, "x");
+      expect(out).toContain("- [x] Second task");
+      expect(out).toContain("- [~] In progress");
+      expect(out).toContain("- [ ] Fourth task");
+    });
+
+    it("handles nested indentation", () => {
+      const nested = "- [x] Top\n  - [ ] Nested\n  - [x] Nested done";
+      const out = toggleCheckbox(nested, 1, "x");
+      expect(out).toContain("  - [x] Nested");
+      expect(out).toContain("- [x] Top"); // unchanged
+    });
+
+    it("handles * and + list markers", () => {
+      const mixed = "* [ ] Star\n+ [ ] Plus\n- [ ] Dash";
+      const out = toggleCheckbox(mixed, 1, "x");
+      expect(out).toContain("+ [x] Plus");
+      expect(out).toContain("* [ ] Star"); // unchanged
+    });
+
+    it("returns source unchanged for non-checkbox line", () => {
+      expect(toggleCheckbox(src, 0, "x")).toBe(src); // line 0 is "# Plan"
+    });
+
+    it("returns source unchanged for out-of-range line", () => {
+      expect(toggleCheckbox(src, 99, "x")).toBe(src);
     });
   });
 });
