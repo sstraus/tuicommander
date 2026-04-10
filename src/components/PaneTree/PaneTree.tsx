@@ -1,4 +1,4 @@
-import { Component, For, Show, Switch, Match, createMemo } from "solid-js";
+import { Component, For, Show, Switch, Match, createMemo, createSignal } from "solid-js";
 import { paneLayoutStore, type PaneNode, type PaneBranch, type PaneLeaf, type PaneTab, type PaneTabType, MIN_PANE_RATIO } from "../../stores/paneLayout";
 import { Terminal } from "../Terminal";
 import { DiffTab } from "../DiffTab";
@@ -11,7 +11,7 @@ import { editorTabsStore } from "../../stores/editorTabs";
 import { repositoriesStore } from "../../stores/repositories";
 import { repoSettingsStore } from "../../stores/repoSettings";
 import { globalWorkspaceStore } from "../../stores/globalWorkspace";
-import { GlobeIcon } from "../GlobeIcon";
+import { ContextMenu, createContextMenu, type ContextMenuItem } from "../ContextMenu/ContextMenu";
 import { getRepoColor } from "../../utils/repoColor";
 import { markInternalDragStart, markInternalDragEnd } from "../../hooks/useFileDrop";
 import { appLogger } from "../../stores/appLogger";
@@ -198,6 +198,42 @@ const PaneGroupView: Component<{
     });
   });
   const showTabBar = () => aliveTabs().length > 1;
+  const subtabMenu = createContextMenu();
+  const [contextTabId, setContextTabId] = createSignal<string | null>(null);
+
+  const openSubtabMenu = (e: MouseEvent, tabId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextTabId(tabId);
+    subtabMenu.open(e);
+  };
+
+  const subtabMenuItems = (): ContextMenuItem[] => {
+    const id = contextTabId();
+    if (!id) return [];
+    const tab = aliveTabs().find((t) => t.id === id);
+    if (!tab) return [];
+    const items: ContextMenuItem[] = [
+      {
+        label: "Close Tab",
+        action: () => {
+          props.onCloseTab(id);
+          paneLayoutStore.removeTab(props.groupId, id);
+        },
+      },
+    ];
+    if (tab.type === "terminal") {
+      const isGlobal = globalWorkspaceStore.isPromoted(id);
+      items.push(
+        { label: "", separator: true, action: () => {} },
+        {
+          label: isGlobal ? "Remove from Global Workspace" : "Promote to Global Workspace",
+          action: () => globalWorkspaceStore.togglePromote(id),
+        },
+      );
+    }
+    return items;
+  };
 
   const handleGroupClick = () => {
     paneLayoutStore.setActiveGroup(props.groupId);
@@ -272,6 +308,7 @@ const PaneGroupView: Component<{
                     requestAnimationFrame(() => terminalsStore.get(tab.id)?.ref?.focus());
                   }
                 }}
+                onContextMenu={(e) => openSubtabMenu(e, tab.id)}
                 title={tabTitle(tab)}
               >
                 <Show when={globalWorkspaceStore.isActive() && tab.type === "terminal"}>
@@ -289,23 +326,6 @@ const PaneGroupView: Component<{
                   })()}
                 </Show>
                 <span class="pane-tab-label">{tabTitle(tab)}</span>
-                <Show when={tab.type === "terminal"}>
-                  {(() => {
-                    const isGlobal = globalWorkspaceStore.isPromoted(tab.id);
-                    return (
-                  <span
-                    class={`pane-tab-promote ${isGlobal ? "pane-tab-promoted" : ""}`}
-                    title={isGlobal ? "Remove from Global Workspace" : "Promote to Global Workspace"}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      globalWorkspaceStore.togglePromote(tab.id);
-                    }}
-                  >
-                    <GlobeIcon size={10} />
-                  </span>
-                    );
-                  })()}
-                </Show>
                 <span
                   class="pane-tab-close"
                   onClick={(e) => {
@@ -351,6 +371,14 @@ const PaneGroupView: Component<{
           </For>
         </Show>
       </div>
+
+      <ContextMenu
+        items={subtabMenuItems()}
+        x={subtabMenu.position().x}
+        y={subtabMenu.position().y}
+        visible={subtabMenu.visible()}
+        onClose={subtabMenu.close}
+      />
     </div>
   );
 };
