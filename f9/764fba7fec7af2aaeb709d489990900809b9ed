@@ -1,0 +1,66 @@
+to-test.md
+  aa3e64856efd23d3 542-552
+  a335ca1642e9242f 8-9,30,34,73,78,85-86,146,279-281,325-331,333,422,443,472,480,539
+docs/FEATURES.md
+  aa3e64856efd23d3 205-206
+CHANGELOG.md
+  aa3e64856efd23d3 9-12
+src/__tests__/utils/tweakComments.test.ts
+  aa3e64856efd23d3 10,280-338
+src/__tests__/components/MarkdownRenderer.test.tsx
+  aa3e64856efd23d3 130-209
+src/utils/tweakComments.ts
+  aa3e64856efd23d3 179-197
+src/components/MarkdownTab/MarkdownTab.tsx
+  aa3e64856efd23d3 16,273,277-281,386
+docs/frontend/components.md
+  aa3e64856efd23d3 36-37
+src/components/ui/MarkdownRenderer.tsx
+  aa3e64856efd23d3 1,14-15,35-75,79,81-89,92-93,102-123,125,129,137-163,173-185,189
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "f9764fba7fec7af2aaeb709d489990900809b9ed",
+  "prompts": {
+    "211af807a9999814": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6818ea39-4595-4801-9d1a-ca64eba0b1a1",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 1765,
+      "overriden_lines": 0
+    },
+    "a335ca1642e9242f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "32f0cfcb-4ebe-450c-af50-c3af91795ec0",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 25,
+      "overriden_lines": 0
+    },
+    "aa3e64856efd23d3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "08e04b53-2cba-4348-b644-41dbef0a4220",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 1639,
+      "total_deletions": 235,
+      "accepted_lines": 1419,
+      "overriden_lines": 0
+    }
+  }
+}
