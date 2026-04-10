@@ -1,0 +1,31 @@
+src-tauri/Cargo.toml
+  211af807a9999814 6
+package.json
+  211af807a9999814 4
+SPEC.md
+  211af807a9999814 3-4
+src-tauri/tauri.conf.json
+  211af807a9999814 4
+CHANGELOG.md
+  211af807a9999814 11-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "b8dcf3940ca8165175feccb544a9ccc428af358f",
+  "prompts": {
+    "211af807a9999814": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6818ea39-4595-4801-9d1a-ca64eba0b1a1",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 5,
+      "total_deletions": 5,
+      "accepted_lines": 1792,
+      "overriden_lines": 0
+    }
+  }
+}
