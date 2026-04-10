@@ -18,9 +18,9 @@ pub struct DictationState {
     pub audio: Mutex<Option<audio::AudioCapture>>,
     /// Name of the model currently loaded in `transcriber_arc` (e.g. "large-v3-turbo")
     pub active_model: Mutex<Option<String>>,
-    pub corrections: Mutex<corrections::TextCorrector>,
+    pub corrections: Arc<Mutex<corrections::TextCorrector>>,
     pub recording: AtomicBool,
-    pub processing: AtomicBool,
+    pub processing: Arc<AtomicBool>,
     /// Active streaming session (None when not streaming).
     pub streaming: Mutex<Option<streaming::StreamingSession>>,
     /// Arc-wrapped transcriber for sharing with the streaming thread.
@@ -34,9 +34,9 @@ impl DictationState {
         Self {
             audio: Mutex::new(None),
             active_model: Mutex::new(None),
-            corrections: Mutex::new(corrections::TextCorrector::load_or_default()),
+            corrections: Arc::new(Mutex::new(corrections::TextCorrector::load_or_default())),
             recording: AtomicBool::new(false),
-            processing: AtomicBool::new(false),
+            processing: Arc::new(AtomicBool::new(false)),
             streaming: Mutex::new(None),
             transcriber_arc: Mutex::new(None),
             accumulated_partials: Arc::new(Mutex::new(String::new())),

@@ -26,6 +26,17 @@ impl Drop for RecordingGuard<'_> {
         }
     }
 }
+
+/// RAII guard that resets the processing flag to false on drop (including panic).
+/// Holds an `Arc<AtomicBool>` so it can be moved into `spawn_blocking`.
+struct ProcessingGuard(Arc<std::sync::atomic::AtomicBool>);
+
+impl Drop for ProcessingGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::app_logger;
@@ -285,7 +296,7 @@ pub async fn stop_dictation_and_transcribe(
 ) -> Result<TranscribeResponse, String> {
     // Gather all data from DictationState synchronously (before any .await).
     // This block ensures no MutexGuard or State borrow lives across the await point.
-    let (all_audio, total_duration_s, transcriber, accumulated_partials) = {
+    let prepare = {
         let dictation = app.state::<DictationState>();
 
         if !dictation.recording.load(Ordering::Acquire) {
@@ -302,56 +313,57 @@ pub async fn stop_dictation_and_transcribe(
             capture.stop_stream();
         }
 
-        // Stop streaming session and collect ALL audio (processed + unprocessed)
+        // Take the streaming session (cheap — no join yet) and the audio buffer handle.
+        // The actual thread join happens in spawn_blocking to avoid blocking the tokio worker.
         let session = dictation.streaming.lock().take();
-        let mut all_audio = session.map(|s| s.stop()).unwrap_or_default();
-
-        // Also drain anything left in the audio capture buffer (arrived after last poll)
-        let capture_remaining = capture_lock.as_ref()
-            .map(|c| c.drain_all())
-            .unwrap_or_default();
+        let audio_buffer = capture_lock.as_ref().map(|c| c.buffer_handle());
         drop(capture_lock);
 
-        all_audio.extend(capture_remaining);
+        // Read config while we still have sync context (avoids file I/O after .await)
+        let config = get_dictation_config();
+        let lang_owned = if config.language == "auto" { None } else { Some(config.language.clone()) };
+
+        // Clone Arc-ed resources for the blocking task
+        let transcriber = dictation.transcriber_arc.lock().clone();
+        let accumulated_partials = dictation.accumulated_partials.clone();
+        let corrections = dictation.corrections.clone();
+        let processing = dictation.processing.clone();
+
+        Some((session, audio_buffer, lang_owned, transcriber, accumulated_partials, corrections, processing))
+    };
+
+    let (session, audio_buffer, lang_owned, transcriber, accumulated_partials, corrections, processing) =
+        prepare.unwrap(); // always Some — the None path returns Err above
+
+    let app_clone = app.clone();
+
+    // Run session join + whisper inference off the IPC thread
+    let result = tokio::task::spawn_blocking(move || {
+        let _guard = ProcessingGuard(processing);
+
+        // Join the streaming thread (may block while last partial window finishes)
+        let mut all_audio = session.map(|s| s.stop()).unwrap_or_default();
+
+        // Drain anything left in the audio capture buffer (arrived after last poll).
+        // Safe: streaming thread is joined above, no more concurrent readers.
+        if let Some(buf) = audio_buffer {
+            let remaining: Vec<f32> = buf.lock().drain(..).collect();
+            all_audio.extend(remaining);
+        }
 
         let total_duration_s = all_audio.len() as f64 / 16000.0;
-        app_logger::log_via_handle(&app, "info", "dictation",
+        app_logger::log_via_handle(&app_clone, "info", "dictation",
             &format!("Streaming stopped, {:.1}s total audio for final transcription", total_duration_s));
 
         // Short audio: no transcription needed
         if all_audio.len() < 8000 {
-            app_logger::log_via_handle(&app, "info", "dictation", "No speech detected");
-            dictation.processing.store(false, Ordering::Release);
-            *dictation.audio.lock() = None;
-            return Ok(TranscribeResponse {
+            app_logger::log_via_handle(&app_clone, "info", "dictation", "No speech detected");
+            return TranscribeResponse {
                 text: String::new(),
                 skip_reason: Some("no speech detected".to_string()),
                 duration_s: total_duration_s,
-            });
+            };
         }
-
-        // Clone Arc-ed resources for the blocking task
-        let transcriber = dictation.transcriber_arc.lock().clone();
-        let accumulated_partials = dictation.inner().accumulated_partials.clone();
-
-        (all_audio, total_duration_s, transcriber, accumulated_partials)
-    }; // dictation (State) dropped here — safe to .await below
-
-    let config = get_dictation_config();
-    let lang_owned = if config.language == "auto" { None } else { Some(config.language.clone()) };
-    let app_clone = app.clone();
-
-    // Run the heavy whisper inference off the IPC thread
-    let result = tokio::task::spawn_blocking(move || {
-        // Drop guard: clears processing=false even on panic.
-        // Uses AppHandle (which is 'static + Send) to access DictationState safely.
-        struct ProcessingGuard(AppHandle);
-        impl Drop for ProcessingGuard {
-            fn drop(&mut self) {
-                self.0.state::<DictationState>().processing.store(false, Ordering::Release);
-            }
-        }
-        let _guard = ProcessingGuard(app_clone.clone());
 
         let mut final_text = String::new();
 
@@ -372,6 +384,14 @@ pub async fn stop_dictation_and_transcribe(
                         &format!("Final transcription failed: {e}"));
                 }
             }
+        } else {
+            app_logger::log_via_handle(&app_clone, "warn", "dictation",
+                "Transcriber not available — model not loaded");
+            return TranscribeResponse {
+                text: String::new(),
+                skip_reason: Some("model not loaded".to_string()),
+                duration_s: total_duration_s,
+            };
         }
 
         if final_text.is_empty() {
@@ -383,28 +403,22 @@ pub async fn stop_dictation_and_transcribe(
             };
         }
 
-        // Log composition vs full-pass comparison for accuracy analysis
+        // Log accuracy comparison (lengths only — no verbatim text to avoid PII in logs)
         let composed = std::mem::take(&mut *accumulated_partials.lock());
         let match_pct = if !composed.is_empty() && !final_text.is_empty() {
             let common = final_text.chars().zip(composed.chars())
                 .take_while(|(a, b)| a == b).count();
             let max_len = final_text.len().max(composed.len());
-            (common as f64 / max_len as f64 * 100.0) as u32
+            (common as f64 / max_len as f64 * 100.0).round() as u32
         } else {
             0
         };
         app_logger::log_via_handle(&app_clone, "info", "dictation",
             &format!("[accuracy] full={} chars, composed={} chars, match={}%, audio={:.1}s",
                 final_text.len(), composed.len(), match_pct, total_duration_s));
-        if composed != final_text {
-            app_logger::log_via_handle(&app_clone, "debug", "dictation",
-                &format!("[accuracy] FULL: \"{}\"", final_text));
-            app_logger::log_via_handle(&app_clone, "debug", "dictation",
-                &format!("[accuracy] COMP: \"{}\"", composed));
-        }
 
         // Apply corrections
-        let corrected = app_clone.state::<DictationState>().corrections.lock().correct(&final_text);
+        let corrected = corrections.lock().correct(&final_text);
         let final_text = corrected.replace('\n', " ");
 
         // _guard drops here → processing = false
@@ -413,7 +427,11 @@ pub async fn stop_dictation_and_transcribe(
             skip_reason: None,
             duration_s: total_duration_s,
         }
-    }).await.map_err(|e| format!("Transcription task panicked: {e}"))?;
+    }).await.map_err(|e| {
+        let msg = format!("Transcription task panicked: {e}");
+        app_logger::log_via_handle(&app, "error", "dictation", &msg);
+        msg
+    })?;
 
     // Clean up audio capture
     *app.state::<DictationState>().audio.lock() = None;

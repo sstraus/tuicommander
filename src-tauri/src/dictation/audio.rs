@@ -142,6 +142,7 @@ impl AudioCapture {
     }
 
     /// Drain all remaining samples from the buffer.
+    #[allow(dead_code)]
     pub fn drain_all(&self) -> Vec<f32> {
         self.buffer.lock().drain(..).collect()
     }
