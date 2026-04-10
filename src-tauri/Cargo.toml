@@ -33,7 +33,7 @@ uuid = { version = "1", features = ["v4"] }
 dirs = "6"
 tauri-plugin-dialog = "2.6.0"
 tauri-plugin-single-instance = "2"
-whisper-rs = "0.15"
+whisper-rs = "0.16"
 cpal = "0.17"
 rodio = "0.20"
 reqwest = { version = "0.13", features = ["stream", "json", "form"] }
@@ -84,16 +84,19 @@ console-subscriber = { version = "0.4", optional = true }
 
 [features]
 default = []
+cuda = ["whisper-rs/cuda"]
+vulkan = ["whisper-rs/vulkan"]
 tokio-console = ["console-subscriber"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
-whisper-rs = { version = "0.15", features = ["metal"] }
+whisper-rs = { version = "0.16", features = ["metal"] }
 objc2 = "0.6"
 objc2-foundation = "0.3"
 objc2-app-kit = { version = "0.3", features = ["NSEvent", "block2"] }
 block2 = "0.6"
 
 [target.'cfg(target_os = "windows")'.dependencies]
+whisper-rs = { version = "0.16", features = ["vulkan"] }
 windows-sys = { version = "0.61", features = ["Win32_System_Diagnostics_ToolHelp", "Win32_Foundation"] }
 
 [dev-dependencies]

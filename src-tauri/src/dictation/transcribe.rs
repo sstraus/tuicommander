@@ -2,6 +2,32 @@ use serde::Serialize;
 use std::path::Path;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
+/// Returns true if a GPU backend is available in this build.
+///
+/// - macOS: Metal is always linked via target-specific dependency — always GPU.
+/// - Windows/Linux: GPU if `vulkan` or `cuda` feature is enabled.
+#[inline]
+pub fn gpu_enabled() -> bool {
+    cfg!(any(
+        target_os = "macos",
+        feature = "cuda",
+        feature = "vulkan"
+    ))
+}
+
+/// Returns the optimal n_threads value based on whether a GPU is active.
+/// With GPU: 1 thread (GPU handles compute). Without: 4 threads.
+pub fn optimal_n_threads() -> i32 {
+    if gpu_enabled() { 1 } else { 4 }
+}
+
+/// Build WhisperContextParameters with GPU enabled when a GPU feature is compiled in.
+pub fn build_context_params() -> WhisperContextParameters<'static> {
+    let mut params = WhisperContextParameters::new();
+    params.use_gpu(gpu_enabled());
+    params
+}
+
 /// Result of a transcription attempt with metadata for user feedback.
 #[derive(Debug, Clone, Serialize)]
 pub struct TranscribeResult {
@@ -28,9 +54,14 @@ impl WhisperTranscriber {
             .to_str()
             .ok_or("Invalid model path (non-UTF8)")?;
 
-        let ctx = WhisperContext::new_with_params(path_str, WhisperContextParameters::default())
+        let params = build_context_params();
+        let backend = if gpu_enabled() { "gpu" } else { "cpu" };
+        tracing::info!(backend, n_threads = optimal_n_threads(), "Loading Whisper model");
+
+        let ctx = WhisperContext::new_with_params(path_str, params)
             .map_err(|e| format!("Failed to load Whisper model: {e}"))?;
 
+        tracing::info!(backend, "Whisper model loaded");
         Ok(Self { ctx })
     }
 }
@@ -76,7 +107,7 @@ impl Transcriber for WhisperTranscriber {
         params.set_print_progress(false);
         params.set_print_realtime(false);
         params.set_print_timestamps(false);
-        params.set_n_threads(4);
+        params.set_n_threads(optimal_n_threads());
         // Suppress non-speech tokens for cleaner output
         params.set_suppress_nst(true);
         // Disable timestamp computation — primary fix for hallucination on silence
@@ -130,4 +161,30 @@ fn is_hallucination(text: &str) -> bool {
         "like and subscribe",
     ];
     HALLUCINATIONS.iter().any(|h| lower.contains(h))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gpu_enabled_matches_feature_flags() {
+        // On macOS with metal feature, gpu_enabled() must return true.
+        // On a plain CPU build, it returns false.
+        // We can't control the compile-time feature here, but we can
+        // assert the function is consistent with optimal_n_threads().
+        let gpu = gpu_enabled();
+        let threads = optimal_n_threads();
+        if gpu {
+            assert_eq!(threads, 1, "GPU active: n_threads should be 1");
+        } else {
+            assert_eq!(threads, 4, "CPU only: n_threads should be 4");
+        }
+    }
+
+    #[test]
+    fn build_context_params_does_not_panic() {
+        // Smoke test: constructing params must not panic regardless of features.
+        let _params = build_context_params();
+    }
 }
