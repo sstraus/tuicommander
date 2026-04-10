@@ -92,6 +92,7 @@ interface DictationStoreState {
   autoSend: boolean;
   capturingHotkey: boolean;
   partialText: string;
+  backendInfo: { backend: "cpu" | "gpu" } | null;
 }
 
 function createDictationStore() {
@@ -116,6 +117,7 @@ function createDictationStore() {
     autoSend: false,
     capturingHotkey: false,
     partialText: "",
+    backendInfo: null,
   });
 
   // Listen for download progress events from Rust
@@ -126,6 +128,11 @@ function createDictationStore() {
   // Listen for streaming partial transcription results
   listen<string>("dictation-partial", (event) => {
     setState("partialText", event.payload);
+  });
+
+  // Listen for backend info (gpu/cpu) after model load
+  listen<{ backend: "cpu" | "gpu" }>("dictation-backend-info", (event) => {
+    setState("backendInfo", event.payload);
   });
 
   const actions = {
