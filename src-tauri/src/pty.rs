@@ -200,30 +200,87 @@ fn is_protocol_token_line(text: &str) -> bool {
     (t.starts_with("suggest:") || t.starts_with("intent:")) && t.contains('|')
 }
 
-/// Extract the last chat line from the terminal screen by locating the prompt
-/// line and returning the first non-empty, non-chrome line above it.
-///
-/// Works across agent UIs:
-/// - **Claude Code**: separator / `> input` / separator / mode line
-/// - **Codex**: (empty) / `› input` / status line
-/// - **Gemini**: `> input` / status line
+/// Returns the set of row indices occupied by a protocol token (including
+/// terminal-wrapped continuation rows). A continuation row is a row that
+/// immediately follows a `suggest:` or `intent:` row and contains `|` but
+/// does NOT start a new token prefix. Used to exclude the entire suggest/intent
+/// block from "last chat line" detection — without this, the continuation row
+/// gets mistaken for real chat content and steals the question slot.
+fn collect_protocol_token_indices(screen_rows: &[String]) -> std::collections::HashSet<usize> {
+    let mut indices = std::collections::HashSet::new();
+    for (i, row) in screen_rows.iter().enumerate() {
+        if is_protocol_token_line(row) {
+            indices.insert(i);
+            // Walk forward to find continuation rows (wrapped by terminal width)
+            for j in (i + 1)..screen_rows.len() {
+                let trimmed = screen_rows[j].trim();
+                if trimmed.is_empty() {
+                    break;
+                }
+                // Stop at rows that start a new protocol token or chat content
+                if is_protocol_token_line(&screen_rows[j])
+                    || trimmed.starts_with('>')
+                    || trimmed.starts_with('›')
+                    || trimmed.starts_with('❯')
+                    || trimmed.starts_with('●')
+                    || trimmed.starts_with('⏺')
+                {
+                    break;
+                }
+                // A continuation row must contain the `|` separator — without
+                // it, the row is regular text (like an answer) that happens
+                // to follow the suggest line.
+                if !trimmed.contains('|') {
+                    break;
+                }
+                indices.insert(j);
+            }
+        }
+    }
+    indices
+}
+
+/// How many chat rows to scan above the prompt box looking for a question.
+/// Wide enough to skip agent footer text like "(stopping here — waiting for
+/// your answer)" or multi-line acknowledgements, narrow enough to avoid
+/// pulling in unrelated `?`-ending lines from earlier in the conversation.
+const QUESTION_SCAN_DEPTH: usize = 15;
+
+/// Walk upward from the prompt box searching for the most recent plausible
+/// question line (`?`-ending, passes `is_plausible_question`). This is more
+/// robust than `extract_last_chat_line` + `ends_with('?')` because the agent
+/// may emit trailing non-question text between the real question and the
+/// prompt box (e.g. Claude Code's "(stopping here — waiting for your answer)"
+/// disclaimer, or suggest-style wrapped continuations that are hidden visually
+/// but still present on the screen).
 ///
 /// Algorithm:
-/// 1. Scan from bottom, find the prompt line (`>`, `› `, `❯`)
-/// 2. Walk up past separator lines and empty lines
-/// 3. First non-empty, non-separator line = last chat line
-pub(crate) fn extract_last_chat_line(screen_rows: &[String]) -> Option<String> {
-    // Scan from the bottom, find the prompt line.
+/// 1. Locate the prompt line (`>`, `› `, `❯`) from the bottom.
+/// 2. Walk upward, skipping chrome/protocol/separator/empty rows.
+/// 3. Count at most `QUESTION_SCAN_DEPTH` chat rows. For each chat row,
+///    if it ends with `?` and passes the plausible-question filter, return it.
+/// 4. Return `None` if no question is found within the window.
+pub(crate) fn find_last_chat_question(screen_rows: &[String]) -> Option<String> {
     let prompt_idx = screen_rows.iter().enumerate().rev()
         .find(|(_, row)| is_prompt_line(row))?
         .0;
 
-    // Walk upward past separator lines, empty lines, chrome rows
-    // (timer/spinner like ✻, mode-line like ⏵⏵), and protocol token lines
-    // (suggest:/intent: with pipe-separated items) to find the last chat line.
+    let protocol_indices = collect_protocol_token_indices(screen_rows);
+
+    let mut chat_rows_seen: usize = 0;
     for i in (0..prompt_idx).rev() {
+        if protocol_indices.contains(&i) {
+            continue;
+        }
         let trimmed = screen_rows[i].trim();
-        if !trimmed.is_empty() && !is_separator_line(trimmed) && !is_chrome_row(trimmed) && !is_protocol_token_line(trimmed) {
+        if trimmed.is_empty() || is_separator_line(trimmed) || is_chrome_row(trimmed) {
+            continue;
+        }
+        chat_rows_seen += 1;
+        if chat_rows_seen > QUESTION_SCAN_DEPTH {
+            break;
+        }
+        if trimmed.ends_with('?') && is_plausible_question(trimmed) {
             return Some(trimmed.to_string());
         }
     }
@@ -547,7 +604,10 @@ fn emit_shell_state(
 }
 
 /// How many bottom screen rows to check when verifying a question candidate.
-const SCREEN_VERIFY_ROWS: usize = 5;
+/// Wide enough to cover agent footer layouts (mode line, spinner, Wiz HUD,
+/// suggest/intent blocks, trailing disclaimer text) that push the actual
+/// question several rows above the prompt box.
+const SCREEN_VERIFY_ROWS: usize = 20;
 
 /// Spawn the silence-detection timer thread. Shared by desktop and headless readers.
 ///
@@ -599,22 +659,21 @@ fn spawn_silence_timer(
                 continue;
             }
 
-            // Strategy 1: screen-based — find last chat line above the prompt box.
+            // Strategy 1: screen-based — walk upward from the prompt box looking
+            // for the most recent plausible question within a bounded window.
+            // This is robust to trailing non-question text between the question
+            // and the prompt box (e.g. "(stopping here — waiting for your answer)").
             let screen_question = state.vt_log_buffers.get(&session_id)
                 .and_then(|vt| {
                     let rows = vt.lock().screen_rows();
-                    let line = extract_last_chat_line(&rows)?;
+                    let line = find_last_chat_question(&rows);
                     tracing::trace!(
                         session_id = %session_id,
-                        last_chat_line = %line,
-                        ends_with_q = line.ends_with('?'),
+                        found = line.is_some(),
+                        line = line.as_deref().unwrap_or(""),
                         "DIAG silence_timer: screen strategy"
                     );
-                    if line.ends_with('?') && is_plausible_question(&line) {
-                        Some(line)
-                    } else {
-                        None
-                    }
+                    line
                 });
 
             // Strategy 2: chunk-based fallback — pending_question_line + screen verify.
@@ -3175,265 +3234,150 @@ mod tests {
         assert_eq!(s.check_silence(), Some("Are you sure?".to_string()));
     }
 
-    // --- extract_last_chat_line tests ---
+    // --- find_last_chat_question tests ---
 
     fn screen(lines: &[&str]) -> Vec<String> {
         lines.iter().map(|s| s.to_string()).collect()
     }
 
+
     #[test]
-    fn test_extract_last_chat_line_standard_claude_code() {
-        // Standard Claude Code layout: question, empty, separator, prompt, separator, mode line
+    fn test_find_last_chat_question_basic() {
         let rows = screen(&[
-            "Some earlier output",
             "Do you want to proceed?",
             "",
             "────────────────────────────────",
-            "> yes please",
+            "> ",
             "────────────────────────────────",
-            "⏵⏵ bypass permissions on (shift+tab to cycle)",
+            "⏵⏵ bypass permissions on",
         ]);
         assert_eq!(
-            extract_last_chat_line(&rows),
+            find_last_chat_question(&rows),
             Some("Do you want to proceed?".to_string()),
         );
     }
 
     #[test]
-    fn test_extract_last_chat_line_no_empty_line_above_separator() {
-        // No empty line between content and upper separator
+    fn test_find_last_chat_question_skips_trailing_disclaimer() {
+        // Claude Code emits a disclaimer BELOW the question + suggest block.
+        // Strategy 1 must skip it and find the real question above.
         let rows = screen(&[
-            "template minimale o anche CI (lint manifest, validate structure)?",
-            "────────────────────────────────",
-            "> repo separato",
-            "────────────────────────────────",
-            "⏵⏵ accept edits on (shift+tab to cycle)",
+            "⏺ TUICommander v1.0.2 is connected.",
+            "  intent: await handshake then relay fixed response (Await ACK)",
+            "  Do you want me to proceed with this fix?",
+            "  suggest: 1) Screenshot overview panel | 2) Fix suggest scroll flicker | 3)",
+            "   Fix Cmd+Shift+M keybinding collision | 4) Manual test OSC 133",
+            "  (stopping here — waiting for your answer)",
+            "────────",
+            "❯ ",
+            "────────",
+            "  [Opus 4.6 | Max]",
+            "  ⏵⏵ bypass permissions on",
         ]);
         assert_eq!(
-            extract_last_chat_line(&rows),
-            Some("template minimale o anche CI (lint manifest, validate structure)?".to_string()),
+            find_last_chat_question(&rows),
+            Some("Do you want me to proceed with this fix?".to_string()),
         );
     }
 
     #[test]
-    fn test_extract_last_chat_line_with_wiz_hud() {
-        // Wiz HUD adds extra lines below the lower separator
-        let rows = screen(&[
-            "Quale delle due hai in mente?",
-            "",
-            "────────────────────────────────",
-            "> something",
-            "────────────────────────────────",
-            "[Opus 4.6 | Team] 54% | wiz-agents git:(main)",
-            "5h: 42% (3h) | 7d: 27% (2d)",
-            "✓ Edit ×7 | ✓ Bash ×5",
-            "⏵⏵ bypass permissions on (shift+tab to cycle)",
-        ]);
-        assert_eq!(
-            extract_last_chat_line(&rows),
-            Some("Quale delle due hai in mente?".to_string()),
-        );
-    }
-
-    #[test]
-    fn test_extract_last_chat_line_empty_prompt() {
-        // User hasn't typed anything yet — prompt box is just `>`
-        let rows = screen(&[
-            "What should I do next?",
-            "",
-            "────────────────────────────────",
-            ">",
-            "────────────────────────────────",
-            "⏵⏵ plan mode on (shift+tab to cycle)",
-        ]);
-        assert_eq!(
-            extract_last_chat_line(&rows),
-            Some("What should I do next?".to_string()),
-        );
-    }
-
-    #[test]
-    fn test_extract_last_chat_line_no_prompt_line() {
-        // No prompt line at all
-        let rows = screen(&[
-            "Just some output",
-            "More output",
-            "",
-        ]);
-        assert_eq!(extract_last_chat_line(&rows), None);
-    }
-
-    #[test]
-    fn test_extract_last_chat_line_empty_screen() {
-        let rows: Vec<String> = vec![];
-        assert_eq!(extract_last_chat_line(&rows), None);
-    }
-
-    #[test]
-    fn test_extract_last_chat_line_interrupted_separator() {
-        // Separator with label in the middle (e.g. model indicator)
-        let rows = screen(&[
-            "Vuoi fare un commit?",
-            "",
-            "──────── ■■■ Medium /model ────────",
-            "> si",
-            "──────── ■■■ Medium /model ────────",
-            "⏵⏵ bypass permissions on",
-        ]);
-        assert_eq!(
-            extract_last_chat_line(&rows),
-            Some("Vuoi fare un commit?".to_string()),
-        );
-    }
-
-    #[test]
-    fn test_extract_last_chat_line_plan_mode() {
-        // Plan mode has a different mode line prefix
+    fn test_find_last_chat_question_skips_wrapped_suggest_block() {
+        // Wrapped suggest between question and prompt must not block detection.
         let rows = screen(&[
             "Should I implement this approach?",
-            "",
+            "suggest: 1) Opzione A | 2) Opzione B | 3) Opzione molto lunga che continua",
+            "su una seconda riga | 4) Quarta opzione",
             "────────────────────────────────",
             "> ",
             "────────────────────────────────",
-            "⏸ plan mode on (shift+tab to cycle)",
+            "⏵⏵ bypass permissions on",
         ]);
         assert_eq!(
-            extract_last_chat_line(&rows),
+            find_last_chat_question(&rows),
             Some("Should I implement this approach?".to_string()),
         );
     }
 
     #[test]
-    fn test_extract_last_chat_line_multiple_empty_lines() {
-        // Multiple empty lines between content and separator
+    fn test_find_last_chat_question_no_question() {
+        // Agent statement (not a question) above prompt → None.
         let rows = screen(&[
-            "Continue with the refactor?",
-            "",
-            "",
+            "I have completed the refactor.",
             "",
             "────────────────────────────────",
-            "> ok",
+            "> ",
             "────────────────────────────────",
+            "⏵⏵ bypass permissions on",
+        ]);
+        assert_eq!(find_last_chat_question(&rows), None);
+    }
+
+    #[test]
+    fn test_find_last_chat_question_stops_after_window() {
+        // A question that is too far above the prompt box must not be returned
+        // — this protects against matching stale questions from earlier in the
+        // conversation that have scrolled into the visible region but are no
+        // longer active.
+        let mut lines: Vec<&str> = vec!["Stale question from long ago?"];
+        for _ in 0..(QUESTION_SCAN_DEPTH + 3) {
+            lines.push("some unrelated agent output line");
+        }
+        lines.extend_from_slice(&[
+            "────────────────────────────────",
+            "> ",
+            "────────────────────────────────",
+            "⏵⏵ bypass permissions on",
+        ]);
+        let rows = screen(&lines);
+        assert_eq!(find_last_chat_question(&rows), None);
+    }
+
+    #[test]
+    fn test_find_last_chat_question_prefers_most_recent() {
+        // Two questions in the window — must return the one closest to the prompt.
+        let rows = screen(&[
+            "Old question from earlier?",
+            "Here is some context.",
+            "Do you agree with this plan?",
             "",
+            "────────────────────────────────",
+            "> ",
+            "────────────────────────────────",
+            "⏵⏵ bypass permissions on",
         ]);
         assert_eq!(
-            extract_last_chat_line(&rows),
-            Some("Continue with the refactor?".to_string()),
+            find_last_chat_question(&rows),
+            Some("Do you agree with this plan?".to_string()),
         );
     }
 
     #[test]
-    fn test_extract_last_chat_line_codex() {
-        // Codex layout: no separator lines, prompt is `›`
+    fn test_find_last_chat_question_rejects_code_syntax() {
+        // `?` in code syntax must not be treated as a question.
         let rows = screen(&[
-            "⚠ MCP startup incomplete (failed: serena)",
+            "let x = map.get(&key)?",
             "",
+            "────────────────────────────────",
+            "> ",
+            "────────────────────────────────",
+            "⏵⏵ bypass permissions on",
+        ]);
+        assert_eq!(find_last_chat_question(&rows), None);
+    }
+
+    #[test]
+    fn test_find_last_chat_question_codex_layout() {
+        // Codex has no separator lines — the walk must still find the question.
+        let rows = screen(&[
             "Do you want me to proceed?",
-            "",
-            "› Implement {feature}",
-            "",
-            "  gpt-5.3-codex high · 100% left · ~/Gits/personal/tuicommander",
-        ]);
-        assert_eq!(
-            extract_last_chat_line(&rows),
-            Some("Do you want me to proceed?".to_string()),
-        );
-    }
-
-    #[test]
-    fn test_extract_last_chat_line_codex_no_question() {
-        // Codex with no question — last chat line doesn't end with ?
-        let rows = screen(&[
-            "I'll implement the feature now.",
             "",
             "› ",
             "",
             "  gpt-5.3-codex high · 100% left · ~/project",
         ]);
         assert_eq!(
-            extract_last_chat_line(&rows),
-            Some("I'll implement the feature now.".to_string()),
-        );
-    }
-
-    #[test]
-    fn test_extract_last_chat_line_gemini() {
-        // Gemini layout: `> ` prompt
-        let rows = screen(&[
-            "Should I refactor the module?",
-            "",
-            "> yes",
-            "⠋ Processing...",
-        ]);
-        assert_eq!(
-            extract_last_chat_line(&rows),
-            Some("Should I refactor the module?".to_string()),
-        );
-    }
-
-    #[test]
-    fn test_extract_last_chat_line_prompt_with_separator_above() {
-        // Prompt with only one separator above (no lower separator)
-        let rows = screen(&[
-            "Want to continue?",
-            "────────────────────────────────",
-            "> ok",
-            "⏵⏵ mode line",
-        ]);
-        assert_eq!(
-            extract_last_chat_line(&rows),
-            Some("Want to continue?".to_string()),
-        );
-    }
-
-    #[test]
-    fn test_extract_last_chat_line_skips_suggest_token() {
-        // suggest: line between question and prompt must be skipped
-        let rows = screen(&[
-            "È un caso d'uso reale che hai in mente, o stai esplorando le possibilità?",
-            "",
-            "suggest: 1) Implementare Alt long press | 2) Esplorare altri tasti | 3) Valutare UX",
-            "",
-            "────────────────────────────────",
-            ">",
-            "────────────────────────────────",
-            "⏵⏵ bypass permissions on",
-        ]);
-        assert_eq!(
-            extract_last_chat_line(&rows),
-            Some("È un caso d'uso reale che hai in mente, o stai esplorando le possibilità?".to_string()),
-        );
-    }
-
-    #[test]
-    fn test_extract_last_chat_line_skips_intent_token() {
-        // intent: line must also be skipped
-        let rows = screen(&[
-            "Should I proceed with this approach?",
-            "intent: fixing layout | updating styles",
-            "────────────────────────────────",
-            "> yes",
-            "────────────────────────────────",
-            "⏵⏵ bypass permissions on",
-        ]);
-        assert_eq!(
-            extract_last_chat_line(&rows),
-            Some("Should I proceed with this approach?".to_string()),
-        );
-    }
-
-    #[test]
-    fn test_extract_last_chat_line_prose_suggest_not_skipped() {
-        // Prose that happens to start with "suggest:" but has no pipe → real content
-        let rows = screen(&[
-            "I suggest: we should refactor this module",
-            "────────────────────────────────",
-            "> ok",
-            "⏵⏵ bypass permissions on",
-        ]);
-        assert_eq!(
-            extract_last_chat_line(&rows),
-            Some("I suggest: we should refactor this module".to_string()),
+            find_last_chat_question(&rows),
+            Some("Do you want me to proceed?".to_string()),
         );
     }
 
