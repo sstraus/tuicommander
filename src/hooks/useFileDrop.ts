@@ -7,6 +7,15 @@ import { terminalsStore } from "../stores/terminals";
 import { appLogger } from "../stores/appLogger";
 import { rpc, isTauri } from "../transport";
 
+/**
+ * Global flag to suppress the file-drop overlay during internal drags
+ * (tab reorder, sidebar repo drag, task queue drag, etc.).
+ * Internal drag handlers set this to true on dragstart and false on dragend.
+ */
+let internalDragCount = 0;
+export function markInternalDragStart(): void { internalDragCount++; }
+export function markInternalDragEnd(): void { internalDragCount = Math.max(0, internalDragCount - 1); }
+
 /** Markdown extensions (case-insensitive) */
 const MD_EXTENSIONS = new Set([".md", ".mdx"]);
 
@@ -82,8 +91,11 @@ export function useFileDrop() {
   const [isDragging, setIsDragging] = createSignal(false);
 
   if (isTauri()) {
-    // Tauri native API — provides absolute paths via onDragDropEvent
+    // Tauri native API — provides absolute paths via onDragDropEvent.
+    // Skip when an internal drag (tab reorder, sidebar) is in progress
+    // to avoid the file-drop overlay intercepting those operations.
     const setup = getCurrentWebview().onDragDropEvent((event) => {
+      if (internalDragCount > 0) return;
       const { type } = event.payload;
       if (type === "enter" || type === "over") {
         if (!isDragging()) setIsDragging(true);

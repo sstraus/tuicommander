@@ -13,6 +13,7 @@ import { repoSettingsStore } from "../../stores/repoSettings";
 import { globalWorkspaceStore } from "../../stores/globalWorkspace";
 import { GlobeIcon } from "../GlobeIcon";
 import { getRepoColor } from "../../utils/repoColor";
+import { markInternalDragStart, markInternalDragEnd } from "../../hooks/useFileDrop";
 import { appLogger } from "../../stores/appLogger";
 import "./PaneTree.css";
 
@@ -256,6 +257,7 @@ const PaneGroupView: Component<{
                 classList={{ "pane-tab-active": tab.id === group()?.activeTabId }}
                 draggable={true}
                 onDragStart={(e) => {
+                  markInternalDragStart();
                   e.dataTransfer!.setData("application/pane-tab", JSON.stringify({
                     tabId: tab.id,
                     fromGroupId: props.groupId,
@@ -263,6 +265,7 @@ const PaneGroupView: Component<{
                   }));
                   e.dataTransfer!.effectAllowed = "move";
                 }}
+                onDragEnd={() => markInternalDragEnd()}
                 onClick={() => {
                   paneLayoutStore.setActiveTab(props.groupId, tab.id);
                   if (tab.type === "terminal") {

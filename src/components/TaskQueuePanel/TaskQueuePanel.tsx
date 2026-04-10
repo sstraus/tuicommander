@@ -1,5 +1,6 @@
 import { Component, For, Show, createSignal, createMemo } from "solid-js";
 import { tasksStore, type TaskData, type TaskStatus } from "../../stores/tasks";
+import { markInternalDragStart, markInternalDragEnd } from "../../hooks/useFileDrop";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
 import { formatDuration } from "../../utils/time";
@@ -37,6 +38,7 @@ export const TaskQueuePanel: Component<TaskQueuePanelProps> = (props) => {
     tasks().filter((t) => t.status === "completed" || t.status === "failed" || t.status === "cancelled"));
 
   const handleDragStart = (e: DragEvent, taskId: string) => {
+    markInternalDragStart();
     setDraggedId(taskId);
     if (e.dataTransfer) {
       e.dataTransfer.effectAllowed = "move";
@@ -55,6 +57,7 @@ export const TaskQueuePanel: Component<TaskQueuePanelProps> = (props) => {
   };
 
   const handleDragEnd = () => {
+    markInternalDragEnd();
     setDraggedId(null);
   };
 

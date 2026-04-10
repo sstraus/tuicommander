@@ -13,6 +13,7 @@ import { ContextMenu, createContextMenu } from "../ContextMenu/ContextMenu";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
 import { contextMenuActionsStore } from "../../stores/contextMenuActionsStore";
+import { markInternalDragStart, markInternalDragEnd } from "../../hooks/useFileDrop";
 import { globalWorkspaceStore } from "../../stores/globalWorkspace";
 import type { ContextMenuItem } from "../ContextMenu/ContextMenu";
 import s from "./TabBar.module.css";
@@ -303,6 +304,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
 
   const handleDragStart = (e: DragEvent, id: string, tabType: "terminal" | "markdown" | "diff" | "editor" = "terminal") => {
     if (!e.dataTransfer) return;
+    markInternalDragStart();
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", id);
     // Also set pane-tab format so PaneTree drop targets accept this drag
@@ -371,6 +373,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
   };
 
   const handleDragEnd = () => {
+    markInternalDragEnd();
     resetDragState();
   };
 

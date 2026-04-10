@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js";
 import { repositoriesStore } from "../../stores/repositories";
+import { markInternalDragStart, markInternalDragEnd } from "../../hooks/useFileDrop";
 
 export type DragPayload =
   | { type: "repo"; path: string; fromGroupId: string | null }
@@ -18,6 +19,7 @@ export function useSidebarDragDrop() {
   };
 
   const resetDragState = () => {
+    markInternalDragEnd();
     setDragPayload(null);
     setDragOverRepoPath(null);
     setDragOverSide(null);
@@ -27,6 +29,7 @@ export function useSidebarDragDrop() {
 
   const handleRepoDragStart = (e: DragEvent, path: string) => {
     if (!e.dataTransfer) return;
+    markInternalDragStart();
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", `repo:${path}`);
     try {
@@ -121,6 +124,7 @@ export function useSidebarDragDrop() {
   // --- Group-level drag handlers ---
   const handleGroupDragStart = (e: DragEvent, groupId: string) => {
     if (!e.dataTransfer) return;
+    markInternalDragStart();
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", `group:${groupId}`);
     try {
