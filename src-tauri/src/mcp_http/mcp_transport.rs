@@ -854,7 +854,24 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
             // Uses the same tombstone path as the Tauri close_pty command so
             // post-mortem MCP reads keep returning final output + exit code.
             // Idempotent: returns ok even if session was already tombstoned.
-            let _ = crate::pty::close_pty_core(state, session_id, false);
+            let existed = crate::pty::close_pty_core(state, session_id, false).is_some()
+                || state.vt_log_buffers.contains_key(session_id);
+            if existed {
+                // Notify frontend and SSE consumers so the tab is removed from
+                // the UI. Without this the reader thread's EOF-driven
+                // session-closed event may never fire (the cloned reader fd
+                // keeps the pty master alive after close_pty_core drops it).
+                let _ = state.event_bus.send(crate::state::AppEvent::SessionClosed {
+                    session_id: session_id.to_string(),
+                    reason: "closed".to_string(),
+                });
+                if let Some(app) = state.app_handle.read().as_ref() {
+                    let _ = app.emit("session-closed", serde_json::json!({
+                        "session_id": session_id,
+                        "reason": "closed",
+                    }));
+                }
+            }
             serde_json::json!({"ok": true})
         }
         "kill" => {

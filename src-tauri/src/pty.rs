@@ -2221,6 +2221,25 @@ pub(crate) fn close_pty_core(
         }
     }
 
+    // If the child is still alive after the grace window, force-kill it.
+    // Without this, agents that ignore Ctrl-C (e.g. claude) become orphans —
+    // the cloned reader fd keeps the pty master alive, the slave never sees
+    // EOF, and the reader thread spins forever.
+    if matches!(session._child.try_wait(), Ok(None)) {
+        if let Err(e) = session._child.kill() {
+            tracing::warn!(session_id = %session_id, "close_pty_core SIGKILL fallback failed: {e}");
+        }
+        // Brief wait so try_wait can observe the termination and record the code.
+        let kill_deadline = std::time::Instant::now() + std::time::Duration::from_millis(100);
+        loop {
+            match session._child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) if std::time::Instant::now() >= kill_deadline => break,
+                _ => std::thread::sleep(std::time::Duration::from_millis(10)),
+            }
+        }
+    }
+
     // Capture exit code for the tombstone before dropping the child handle.
     if let Ok(Some(status)) = session._child.try_wait() {
         state
