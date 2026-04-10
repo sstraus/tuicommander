@@ -1,0 +1,38 @@
+src/components/CommandPalette/CommandPalette.module.css
+  aa3e64856efd23d3 143-153
+src/components/CommandPalette/CommandPalette.tsx
+  aa3e64856efd23d3 353-364
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "196c3068426fc39aaabe6f173120289f6e54ee57",
+  "prompts": {
+    "211af807a9999814": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6818ea39-4595-4801-9d1a-ca64eba0b1a1",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 1765,
+      "overriden_lines": 0
+    },
+    "aa3e64856efd23d3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "08e04b53-2cba-4348-b644-41dbef0a4220",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 23,
+      "total_deletions": 3,
+      "accepted_lines": 1134,
+      "overriden_lines": 0
+    }
+  }
+}
