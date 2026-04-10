@@ -21,10 +21,11 @@ pub fn optimal_n_threads() -> i32 {
     if gpu_enabled() { 1 } else { 4 }
 }
 
-/// Build WhisperContextParameters with GPU enabled when a GPU feature is compiled in.
+/// Build WhisperContextParameters with GPU always preferred.
+/// whisper.cpp attempts GPU first and falls back to CPU gracefully if unavailable.
 pub fn build_context_params() -> WhisperContextParameters<'static> {
     let mut params = WhisperContextParameters::new();
-    params.use_gpu(gpu_enabled());
+    params.use_gpu(true);
     params
 }
 
