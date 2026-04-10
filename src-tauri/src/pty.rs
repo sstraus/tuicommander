@@ -1199,6 +1199,28 @@ pub(crate) fn cleanup_session(session_id: &str, state: &AppState) {
     state.exit_codes.remove(session_id);
 }
 
+/// Reap transient per-session state that has no post-mortem value, and stamp
+/// `last_output_ms` so the tombstone sweeper can age the entry out.
+/// Intentionally keeps: `output_buffers`, `vt_log_buffers`, `last_output_ms`, `exit_codes`.
+fn tombstone_transient_cleanup(session_id: &str, state: &AppState) {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    state
+        .last_output_ms
+        .entry(session_id.to_string())
+        .or_insert_with(|| AtomicU64::new(0))
+        .store(now_ms, Ordering::Relaxed);
+    state.ws_clients.remove(session_id);
+    state.kitty_states.remove(session_id);
+    state.input_buffers.remove(session_id);
+    state.silence_states.remove(session_id);
+    state.shell_states.remove(session_id);
+    state.last_prompts.remove(session_id);
+    state.terminal_rows.remove(session_id);
+}
+
 /// Tombstone a session after its process exited.
 /// Keeps `output_buffers`, `vt_log_buffers`, `last_output_ms`, and `exit_codes`
 /// alive so MCP consumers can read final output + exit status post-mortem.
@@ -1213,25 +1235,7 @@ pub(crate) fn mark_session_exited(session_id: &str, state: &AppState) {
     if state.sessions.remove(session_id).is_some() {
         state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
     }
-    // Stamp last_output_ms so the sweeper can age out the tombstone.
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64;
-    state
-        .last_output_ms
-        .entry(session_id.to_string())
-        .or_insert_with(|| AtomicU64::new(0))
-        .store(now_ms, Ordering::Relaxed);
-    // Reap transient per-session state that has no post-mortem value.
-    state.ws_clients.remove(session_id);
-    state.kitty_states.remove(session_id);
-    state.input_buffers.remove(session_id);
-    state.silence_states.remove(session_id);
-    state.shell_states.remove(session_id);
-    state.last_prompts.remove(session_id);
-    state.terminal_rows.remove(session_id);
-    // Intentionally keep: output_buffers, vt_log_buffers, last_output_ms, exit_codes.
+    tombstone_transient_cleanup(session_id, state);
 }
 
 /// Time a tombstoned session's buffers remain readable after process exit.
@@ -2195,14 +2199,6 @@ pub(crate) fn close_pty(
     cleanup_worktree: bool,
 ) -> Result<(), String> {
     if let Some((_, session_mutex)) = state.sessions.remove(&session_id) {
-        state.output_buffers.remove(&session_id);
-        state.vt_log_buffers.remove(&session_id);
-        state.ws_clients.remove(&session_id);
-        state.kitty_states.remove(&session_id);
-        state.input_buffers.remove(&session_id);
-        state.silence_states.remove(&session_id);
-        state.shell_states.remove(&session_id);
-        state.exit_codes.remove(&session_id);
         state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
         let mut session = session_mutex.into_inner();
 
@@ -2219,6 +2215,18 @@ pub(crate) fn close_pty(
                 _ => std::thread::sleep(std::time::Duration::from_millis(10)),
             }
         }
+
+        // Capture exit code for the tombstone before dropping the child handle.
+        if let Ok(Some(status)) = session._child.try_wait() {
+            state
+                .exit_codes
+                .insert(session_id.clone(), status.exit_code() as i32);
+        }
+
+        // Preserve output_buffers, vt_log_buffers, last_output_ms, exit_codes
+        // so post-mortem MCP reads can still return final output + exit status.
+        // The tombstone sweeper reaps them after TOMBSTONE_TTL_MS.
+        tombstone_transient_cleanup(&session_id, &state);
 
         // Extract worktree info before dropping session
         let worktree_to_cleanup = if cleanup_worktree {

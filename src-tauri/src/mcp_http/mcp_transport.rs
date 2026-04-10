@@ -760,24 +760,38 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
             };
             let limit = args["limit"].as_u64().unwrap_or(8192) as usize;
 
-            // Probe child exit status (non-blocking).
-            // A session can be in three states:
-            //   - Live: present in `state.sessions`
-            //   - Tombstoned: absent from `state.sessions` but buffers still present
-            //     (process exited, buffers kept until `spawn_tombstone_sweeper` reaps them)
-            //   - Gone: no buffers at all (never existed or already reaped)
-            let (exited, exit_code): (bool, Option<i64>) = match state.sessions.get(session_id) {
-                Some(entry) => match entry.lock()._child.try_wait() {
+            // Resolve the session's lifecycle state.
+            //
+            // A session can be in four observable states here:
+            //   1. Live       — present in `state.sessions`, child still running
+            //   2. Draining   — present in `state.sessions`, child already exited
+            //   3. Tombstoned — absent from `state.sessions` but buffers still present
+            //                   (reader thread called `mark_session_exited` on EOF;
+            //                   reaped by `spawn_tombstone_sweeper` after TTL)
+            //   4. Unknown    — no trace at all; either never existed or already reaped
+            //
+            // `exited` is only true for (2) and (3) — cases where we have evidence
+            // the process actually terminated. (4) returns a structured error.
+            let session_entry = state.sessions.get(session_id);
+            let buffers_present = state.vt_log_buffers.contains_key(session_id)
+                || state.output_buffers.contains_key(session_id);
+
+            let (exited, exit_code): (bool, Option<i64>) = if let Some(entry) = &session_entry {
+                match entry.lock()._child.try_wait() {
                     Ok(Some(status)) => (true, Some(status.exit_code() as i64)),
                     _ => (false, None),
-                },
-                None => {
-                    // Tombstoned → look up captured exit code (may be absent on abnormal teardown).
-                    let code = state.exit_codes.get(session_id).map(|e| *e.value() as i64);
-                    (true, code)
                 }
+            } else if buffers_present {
+                // Tombstoned — the reader thread captured the exit code if it could.
+                (true, state.exit_codes.get(session_id).map(|e| *e.value() as i64))
+            } else {
+                // Unknown — no session entry, no buffers, no tombstone.
+                (false, None)
             };
-            let exit_code_json = exit_code.map(serde_json::Value::from).unwrap_or(serde_json::Value::Null);
+            drop(session_entry);
+            let exit_code_json = exit_code
+                .map(serde_json::Value::from)
+                .unwrap_or(serde_json::Value::Null);
 
             // Default: serve clean rows from VtLogBuffer (no strip_ansi needed).
             // Pass format="raw" to get the raw ring buffer content with ANSI.
@@ -786,7 +800,7 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
                     Some(b) => b,
                     None => return serde_json::json!({
                         "error": "Session not found",
-                        "reason": if exited { "session_exited_and_reaped" } else { "session_never_existed" }
+                        "reason": "session_not_found_or_reaped"
                     }),
                 };
                 let buf = vt_log.lock();
@@ -806,7 +820,7 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
                 Some(r) => r,
                 None => return serde_json::json!({
                     "error": "Session not found",
-                    "reason": if exited { "session_exited_and_reaped" } else { "session_never_existed" }
+                    "reason": "session_not_found_or_reaped"
                 }),
             };
             let (bytes, total_written) = ring.lock().read_last(limit);
@@ -3262,5 +3276,127 @@ mod tests {
             }
             other => panic!("Expected UiTab, got {:?}", other),
         }
+    }
+
+    // -------- Tombstone / post-mortem output regression tests --------
+
+    /// Simulate a process-exited session (tombstone) by inserting buffers and
+    /// an exit code without a `sessions` entry. The `output` action must serve
+    /// the last output with `exited: true` and the captured `exit_code` — NOT
+    /// return "Session not found".
+    #[test]
+    fn tombstoned_session_output_returns_last_buffer_and_exit_code() {
+        use crate::state::VtLogBuffer;
+        use crate::OutputRingBuffer;
+        use std::sync::atomic::AtomicU64;
+
+        let state = test_state();
+        let sid = "tombstone-test-1".to_string();
+
+        // Pre-populate buffers with sample output.
+        let mut ring = OutputRingBuffer::new(4096);
+        ring.write(b"hello from the crypt\n");
+        state.output_buffers.insert(sid.clone(), parking_lot::Mutex::new(ring));
+
+        let mut vt = VtLogBuffer::new(24, 80, 100);
+        vt.process(b"hello from the crypt\r\n");
+        state.vt_log_buffers.insert(sid.clone(), parking_lot::Mutex::new(vt));
+
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        state.last_output_ms.insert(sid.clone(), AtomicU64::new(now_ms));
+        state.exit_codes.insert(sid.clone(), 42);
+
+        // Sanity: session entry is absent (this IS the tombstone).
+        assert!(!state.sessions.contains_key(&sid));
+
+        // Raw format path.
+        let raw_res = handle_session(
+            &state,
+            &serde_json::json!({"action": "output", "session_id": sid, "format": "raw"}),
+        );
+        assert!(raw_res.get("error").is_none(), "Unexpected error: {raw_res}");
+        assert_eq!(raw_res["exited"], serde_json::json!(true));
+        assert_eq!(raw_res["exit_code"], serde_json::json!(42));
+        assert!(
+            raw_res["data"].as_str().unwrap().contains("hello from the crypt"),
+            "Expected tombstoned output in raw response: {raw_res}"
+        );
+
+        // Default (VT-clean) format path.
+        let clean_res = handle_session(
+            &state,
+            &serde_json::json!({"action": "output", "session_id": sid}),
+        );
+        assert!(clean_res.get("error").is_none(), "Unexpected error: {clean_res}");
+        assert_eq!(clean_res["exited"], serde_json::json!(true));
+        assert_eq!(clean_res["exit_code"], serde_json::json!(42));
+        assert!(
+            clean_res["data"].as_str().unwrap().contains("hello from the crypt"),
+            "Expected tombstoned output in clean response: {clean_res}"
+        );
+    }
+
+    /// A session with no trace (never existed or fully reaped) must return a
+    /// structured error with `reason: session_not_found_or_reaped` — not the
+    /// bare "Session not found" the pre-fix code returned.
+    #[test]
+    fn unknown_session_id_returns_structured_error() {
+        let state = test_state();
+
+        let res = handle_session(
+            &state,
+            &serde_json::json!({"action": "output", "session_id": "does-not-exist-at-all"}),
+        );
+
+        assert_eq!(
+            res["error"].as_str(),
+            Some("Session not found"),
+            "Should surface error: {res}"
+        );
+        assert_eq!(
+            res["reason"].as_str(),
+            Some("session_not_found_or_reaped"),
+            "Unknown session should report session_not_found_or_reaped: {res}"
+        );
+    }
+
+    /// After `mark_session_exited`, output buffers + last_output_ms + exit_codes
+    /// must survive, while transient per-session state must be reaped.
+    #[test]
+    fn mark_session_exited_preserves_tombstone_state() {
+        use crate::state::VtLogBuffer;
+        use crate::OutputRingBuffer;
+        use std::sync::atomic::{AtomicU64, AtomicU8};
+
+        let state = test_state();
+        let sid = "mark-exited-test".to_string();
+
+        // Insert buffers + transient state as if a session had been running.
+        state.output_buffers.insert(
+            sid.clone(),
+            parking_lot::Mutex::new(OutputRingBuffer::new(1024)),
+        );
+        state.vt_log_buffers.insert(
+            sid.clone(),
+            parking_lot::Mutex::new(VtLogBuffer::new(24, 80, 100)),
+        );
+        state.last_output_ms.insert(sid.clone(), AtomicU64::new(0));
+        state.shell_states.insert(sid.clone(), AtomicU8::new(1));
+        state.terminal_rows.insert(sid.clone(), std::sync::atomic::AtomicU16::new(24));
+
+        // No `sessions` entry — emulate the reader-thread path where the
+        // session has already been removed by the caller before mark.
+        crate::pty::mark_session_exited(&sid, &state);
+
+        // Tombstone survivors.
+        assert!(state.output_buffers.contains_key(&sid), "output buffer must survive");
+        assert!(state.vt_log_buffers.contains_key(&sid), "vt log must survive");
+        assert!(state.last_output_ms.contains_key(&sid), "last_output_ms must survive");
+        // Transient state must be reaped.
+        assert!(!state.shell_states.contains_key(&sid), "shell_states reaped");
+        assert!(!state.terminal_rows.contains_key(&sid), "terminal_rows reaped");
     }
 }
