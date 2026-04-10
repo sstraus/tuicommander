@@ -1691,13 +1691,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_session_close_nonexistent() {
+    async fn test_session_close_nonexistent_is_idempotent() {
+        // close is idempotent: returns ok even for unknown sessions (tombstone design)
         let state = test_state();
         let result = call_mcp_tool(&state, "session", serde_json::json!({
             "action": "close",
             "session_id": "nonexistent"
         })).await;
-        assert_eq!(result["error"], "Session not found");
+        assert_eq!(result["ok"], true);
     }
 
     #[tokio::test]

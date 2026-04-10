@@ -212,13 +212,13 @@ fn collect_protocol_token_indices(screen_rows: &[String]) -> std::collections::H
         if is_protocol_token_line(row) {
             indices.insert(i);
             // Walk forward to find continuation rows (wrapped by terminal width)
-            for j in (i + 1)..screen_rows.len() {
-                let trimmed = screen_rows[j].trim();
+            for (j, row) in screen_rows.iter().enumerate().skip(i + 1) {
+                let trimmed = row.trim();
                 if trimmed.is_empty() {
                     break;
                 }
                 // Stop at rows that start a new protocol token or chat content
-                if is_protocol_token_line(&screen_rows[j])
+                if is_protocol_token_line(row)
                     || trimmed.starts_with('>')
                     || trimmed.starts_with('›')
                     || trimmed.starts_with('❯')
@@ -789,13 +789,12 @@ impl ChunkProcessor {
         // Detect content shrink in alternate buffer: when Ink's cursor-up (ESC[nA)
         // value decreases, the rendered content has gotten shorter and old lines
         // will persist as ghost artifacts. Schedule a clear for the next cursor-home.
-        if self.in_alt_buffer {
-            if let Some(n) = extract_largest_cursor_up(&data) {
+        if self.in_alt_buffer
+            && let Some(n) = extract_largest_cursor_up(&data) {
                 if n < self.last_cursor_up_n && self.last_cursor_up_n > 0 {
                     self.alt_buffer_needs_clear = true;
                 }
                 self.last_cursor_up_n = n;
-            }
         }
 
         // Inject ESC[2J (clear screen) before ESC[H (cursor home) when needed.
@@ -1366,10 +1365,9 @@ fn extract_largest_cursor_up(data: &str) -> Option<u16> {
             while i < len && bytes[i].is_ascii_digit() {
                 i += 1;
             }
-            if i < len && bytes[i] == b'A' && i > num_start {
-                if let Ok(n) = std::str::from_utf8(&bytes[num_start..i]).unwrap_or("").parse::<u16>() {
+            if i < len && bytes[i] == b'A' && i > num_start
+                && let Ok(n) = std::str::from_utf8(&bytes[num_start..i]).unwrap_or("").parse::<u16>() {
                     max_n = Some(max_n.map_or(n, |prev: u16| prev.max(n)));
-                }
             }
             if i < len {
                 i += 1;

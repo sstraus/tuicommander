@@ -10,7 +10,7 @@
 //!   bash — (future) BASH_ENV or --init-file
 //!   fish — (future) XDG_CONFIG_HOME/fish/conf.d/ auto-source
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// Zsh shell integration script.
 const ZSH_INTEGRATION: &str = r#"# TUIC Shell Integration — OSC 133 command block markers
@@ -175,6 +175,6 @@ fn zdotdir_path_str(p: &Path) -> String {
     p.to_string_lossy().into_owned()
 }
 
-fn script_path_str(p: &PathBuf) -> String {
+fn script_path_str(p: &Path) -> String {
     p.to_string_lossy().into_owned()
 }
