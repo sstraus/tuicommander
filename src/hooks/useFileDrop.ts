@@ -1,5 +1,4 @@
 import { createSignal, onCleanup } from "solid-js";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { mdTabsStore } from "../stores/mdTabs";
 import { editorTabsStore } from "../stores/editorTabs";
 import { repositoriesStore } from "../stores/repositories";
@@ -40,16 +39,37 @@ function resolveRepoPaths(absolutePath: string): [repoPath: string, filePath: st
       return [activeRepo, absolutePath.slice(prefix.length)];
     }
   }
-  // File outside any active repo — standalone tab with absolute path
   return ["", absolutePath];
+}
+
+/** Tauri augments File with a non-standard `path` field containing the absolute OS path. */
+interface TauriFile extends File {
+  readonly path?: string;
+}
+
+/** Extract file paths from a drop event's FileList.
+ *  In Tauri webviews, File.path provides the absolute path.
+ *  In browsers, only File.name (bare filename) is available. */
+function extractPaths(files: FileList): string[] {
+  const paths: string[] = [];
+  for (const file of files) {
+    const absPath = (file as TauriFile).path;
+    if (absPath) {
+      paths.push(absPath);
+    } else if (isTauri()) {
+      appLogger.warn("app", "Dropped file missing .path in Tauri context, using name", { name: file.name });
+      paths.push(file.name);
+    } else {
+      paths.push(file.name);
+    }
+  }
+  return paths;
 }
 
 /** Open a list of absolute file paths: write to active PTY if any, else open tabs. */
 function openDroppedPaths(paths: string[]) {
   if (!paths.length) return;
 
-  // If the active terminal has a PTY session, write paths there
-  // so running processes (Claude Code, etc.) can reference them.
   const active = terminalsStore.getActive();
   if (active?.sessionId && terminalsStore.state.activeId) {
     const joined = paths.join(" ");
@@ -59,7 +79,6 @@ function openDroppedPaths(paths: string[]) {
     return;
   }
 
-  // No active PTY — open files in the appropriate tab.
   for (const filePath of paths) {
     const [repoPath, relPath] = resolveRepoPaths(filePath);
     const fileType = classifyDroppedFile(filePath);
@@ -74,53 +93,27 @@ function openDroppedPaths(paths: string[]) {
 }
 
 /**
- * Hook for handling external file drag & drop.
+ * Hook for handling external file drag & drop onto the terminal area.
  *
- * In Tauri mode: uses the native `onDragDropEvent` API which provides
- * absolute OS paths (requires `dragDropEnabled: true` in tauri.conf.json).
+ * Uses HTML5 drag events scoped to a container element, so internal drags
+ * (sidebar repos, tab reorder) are never intercepted.
  *
- * In browser mode: falls back to HTML5 drag events with bare filenames.
+ * Requires `dragDropEnabled: false` in tauri.conf.json — Tauri's native
+ * drag handler intercepts all OS-level drags and breaks internal HTML5 DnD.
+ * Absolute file paths are still available via Tauri's File.path extension
+ * on the standard HTML5 File object.
  *
- * Call `attachTo(el)` with the container element — in browser mode this
- * scopes the HTML5 listeners; in Tauri mode it's a no-op target (overlay
- * still shows window-wide since Tauri intercepts OS-level drops).
- *
+ * Call `attachTo(el)` with the container element to bind listeners.
  * Returns isDragging signal for overlay UI.
  */
 export function useFileDrop() {
   const [isDragging, setIsDragging] = createSignal(false);
 
-  if (isTauri()) {
-    // Tauri native API — provides absolute paths via onDragDropEvent.
-    // Skip when an internal drag (tab reorder, sidebar) is in progress
-    // to avoid the file-drop overlay intercepting those operations.
-    const setup = getCurrentWebview().onDragDropEvent((event) => {
-      if (internalDragCount > 0) return;
-      const { type } = event.payload;
-      if (type === "enter" || type === "over") {
-        if (!isDragging()) setIsDragging(true);
-      } else if (type === "leave") {
-        setIsDragging(false);
-      } else if (type === "drop") {
-        setIsDragging(false);
-        const paths = event.payload.paths;
-        if (paths?.length) openDroppedPaths(paths);
-      }
-    });
-
-    onCleanup(() => {
-      setup.then((unlisten) => unlisten()).catch(() => {});
-    });
-
-    // In Tauri mode, attachTo is a no-op — Tauri captures OS drops window-wide
-    return { isDragging, attachTo: (_el: HTMLElement) => {} };
-  }
-
-  // Browser mode: HTML5 drag events (filenames only, no absolute paths)
+  /** Only react to drags that carry files (not internal tab/repo drags). */
   const hasFiles = (e: DragEvent) => e.dataTransfer?.types?.includes("Files") ?? false;
 
   const onDragOver = (e: DragEvent) => {
-    if (!hasFiles(e)) return;
+    if (!hasFiles(e) || internalDragCount > 0) return;
     e.preventDefault();
     if (!isDragging()) setIsDragging(true);
   };
@@ -140,11 +133,7 @@ export function useFileDrop() {
 
     const files = e.dataTransfer?.files;
     if (!files?.length) return;
-
-    // In browser mode only bare filenames are available
-    const paths: string[] = [];
-    for (const file of files) paths.push(file.name);
-    openDroppedPaths(paths);
+    openDroppedPaths(extractPaths(files));
   };
 
   let boundEl: HTMLElement | null = null;
