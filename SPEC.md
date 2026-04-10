@@ -1,7 +1,7 @@
 # TUICommander Specification
 
-**Version:** 0.9.8
-**Last Updated:** 2026-03-31
+**Version:** 1.0.3
+**Last Updated:** 2026-04-10
 
 ## Overview
 

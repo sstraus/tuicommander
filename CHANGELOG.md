@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-04-10
+
+### Added
+- **Native file drag & drop** — Files dropped onto the window now use Tauri's native `onDragDropEvent` API, providing absolute OS paths instead of bare filenames. Dropped files write to the active PTY (for running agents) or open in the appropriate tab. Browser mode falls back to HTML5 drag events
+- **Remote tab auto-close countdown** — When a remote (MCP) session closes, the tab name shows a live countdown (e.g. "PTY: Session 2 (45s)") before auto-removing after 60 seconds
+
+### Fixed
+- **Remote session tabs not appearing** — Fixed `pendingLocal` guard that blocked all `session-created` events when any local terminal had a null `sessionId` (e.g. during PTY reconnect after page reload). Now uses `browserCreatedSessions` set for accurate local/remote distinction
+- **Remote tabs invisible for non-repo paths** — Sessions spawned from directories outside any tracked repository (e.g. `/tmp`) now fall back to the currently active repo/branch instead of creating an invisible orphan tab
+- **Phantom question notifications** — Question detection now inspects only the single last chat line above the prompt instead of scanning 15 lines deep. Prevents false notifications from the user's own prior `?`-ending input or stale agent content across turn boundaries
+- **xterm scrollbar disappearing** — Override xterm v6's auto-fade scrollbar behavior so the vertical scrollbar stays visible whenever there is scrollback content, instead of hiding when idle
+
 ## [1.0.2] - 2026-04-08
 
 ### Added
