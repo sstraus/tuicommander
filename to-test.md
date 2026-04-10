@@ -521,14 +521,14 @@ Features to test when TUICommander is more usable.
 - [ ] On iOS in browser (not home screen): shows "Add to Home Screen" message
 
 ## Keepalive + Agent Detection Fix
-- [ ] Launch Claude Code, wait at prompt >5min idle → keepalive fires (check Activity Center stats)
+- [x] Launch Claude Code, wait at prompt >5min idle → keepalive fires (check Activity Center stats)
 - [ ] Trigger "out of extra usage" → plugin shows "Rate limited" ticker, keepalives stop
 - [ ] Resume manually (type in terminal) → rate limit cleared, keepalives resume
 - [ ] Agent detection responds within ~1s of launch (not 3s)
 - [ ] Run git/npm inside Claude Code → no agent type flicker in tab bar
 - [ ] Status line ticking at idle prompt → shell-state transitions to idle within 3-4s
-- [ ] Reverse-map sync (commit 26688881): launch claude in a fresh terminal → `window.__TUIC__.agentTypeForSession(sessionId)` returns `"claude"` (not null) within 2s of the claude process starting
-- [ ] Plugin receives events (commit 26688881): `window.__TUIC__.pluginLogs("cache-keepalive", 30)` shows an `Agent started in term-X — tracking` line after launching claude
+- [x] Reverse-map sync (commit 26688881): launch claude in a fresh terminal → `window.__TUIC__.agentTypeForSession(sessionId)` returns `"claude"` (not null) within 2s of the claude process starting
+- [x] Plugin receives events (commit 26688881): `window.__TUIC__.pluginLogs("cache-keepalive")` shows `Stats: N sent, N hits` after idle period (verified 2026-04-10: 3 sent, 3 hits)
 - [ ] Restore pigro preserves agent identity: close app with claude running → reopen → select branch → before the polling detector runs, verify terminal store has `agentType: "claude"` from savedTerminals
 
 ## Mobile iPad Fixes
