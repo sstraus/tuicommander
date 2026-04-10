@@ -285,6 +285,45 @@ describe("terminalsStore", () => {
         expect(store.getAgentTypeForSession("unknown-sess")).toBeNull();
       });
     });
+
+    // Regression: Terminal.tsx used to call update({ sessionId }) which bypassed
+    // the reverse map, breaking plugin filtering (cache-keepalive starved of
+    // shell-state events because getAgentTypeForSession returned null).
+    it("update({ sessionId }) keeps reverse map in sync", () => {
+      testInScope(() => {
+        const id = store.add(makeTerminal({ name: "T1", agentType: "claude" }));
+        expect(store.getTerminalForSession("sess-late")).toBeNull();
+        store.update(id, { sessionId: "sess-late" });
+        expect(store.getTerminalForSession("sess-late")).toBe(id);
+        expect(store.getAgentTypeForSession("sess-late")).toBe("claude");
+      });
+    });
+
+    it("update({ sessionId: null }) removes reverse map entry", () => {
+      testInScope(() => {
+        const id = store.add(makeTerminal({ name: "T1", sessionId: "sess-bye" }));
+        expect(store.getTerminalForSession("sess-bye")).toBe(id);
+        store.update(id, { sessionId: null });
+        expect(store.getTerminalForSession("sess-bye")).toBeNull();
+      });
+    });
+
+    it("update({ sessionId: newId }) replaces prior reverse map entry", () => {
+      testInScope(() => {
+        const id = store.add(makeTerminal({ name: "T1", sessionId: "sess-old" }));
+        store.update(id, { sessionId: "sess-new" });
+        expect(store.getTerminalForSession("sess-old")).toBeNull();
+        expect(store.getTerminalForSession("sess-new")).toBe(id);
+      });
+    });
+
+    it("add({ agentType }) exposes agentType via reverse map lookup", () => {
+      testInScope(() => {
+        const id = store.add(makeTerminal({ name: "T1", sessionId: "sess-restored", agentType: "claude" }));
+        expect(store.getAgentTypeForSession("sess-restored")).toBe("claude");
+        expect(store.getTerminalForSession("sess-restored")).toBe(id);
+      });
+    });
   });
 
   describe("agentType", () => {

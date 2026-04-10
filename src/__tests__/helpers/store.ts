@@ -1,5 +1,7 @@
 import { createRoot } from "solid-js";
 
+import type { AgentType } from "../../agents";
+
 /** Default terminal data for tests — override any field via spread. */
 export function makeTerminal(overrides: Partial<{
   sessionId: string | null;
@@ -7,6 +9,8 @@ export function makeTerminal(overrides: Partial<{
   name: string;
   cwd: string | null;
   awaitingInput: "question" | "error" | null;
+  agentType: AgentType | null;
+  agentSessionId: string | null;
 }> = {}) {
   return {
     sessionId: null as string | null,

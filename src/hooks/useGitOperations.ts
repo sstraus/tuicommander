@@ -593,6 +593,11 @@ export function useGitOperations(deps: GitOperationsDeps) {
           cwd: terminal.cwd,
           awaitingInput: null,
           tuicSession: terminal.tuicSession ?? crypto.randomUUID(),
+          // Preserve agent identity across restore so plugins keyed on agentType
+          // (e.g. cache-keepalive filters agentTypes=["claude"]) don't miss the
+          // initial shell-state events before the polling agent detector runs.
+          agentType: terminal.agentType ?? null,
+          agentSessionId: terminal.agentSessionId ?? null,
         });
         repositoriesStore.addTerminalToBranch(repoPath, branchName, id);
         restoredIds.push({ id, terminal });

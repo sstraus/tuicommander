@@ -115,6 +115,88 @@ const SUGGEST_RE = /suggest:\s+.+\|/;
 /** Regex to identify intent rows in xterm buffer text */
 const INTENT_RE = /^[\s●⏺]*intent:\s+/;
 
+/** Observe xterm renders and cover suggest/intent rows with CSS overlays.
+ *  Unlike decorations (which attach to buffer markers and break when Ink
+ *  redraws the same lines), this scans visible rows on every render pass
+ *  and positions absolute divs over matching rows. Zero timing hacks. */
+function installRenderObserver(
+  term: XTerm,
+  container: HTMLElement,
+): () => void {
+  // Overlay container — must be inside .xterm-screen to sit above WebGL canvases.
+  // The canvases are direct children of .xterm-screen, so appending after them
+  // puts the overlay on top via natural stacking order + z-index.
+  const screen = container.querySelector<HTMLElement>(".xterm-screen");
+  if (!screen) return () => {};
+  const overlay = document.createElement("div");
+  overlay.style.cssText = "position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none;z-index:10;overflow:hidden";
+  screen.appendChild(overlay);
+
+  const scan = () => {
+    const buf = term.buffer.active;
+    const cellH = (term as any)._core?._renderService?.dimensions?.css?.cell?.height;
+    if (!cellH) return;
+
+    // Compute top offset: viewport rows start at viewportY in the buffer.
+    // The first visible row is drawn at y=0 in the canvas.
+    const viewportY = buf.viewportY;
+    const rows = term.rows;
+    const bg = term.options.theme?.background ?? "#1e1e1e";
+
+    let html = "";
+    for (let row = 0; row < rows; row++) {
+      const line = buf.getLine(viewportY + row);
+      if (!line) continue;
+      const text = line.translateToString(true);
+
+      if (SUGGEST_RE.test(text)) {
+        const top = row * cellH;
+        html += `<div style="position:absolute;left:0;right:0;top:${top}px;height:${cellH}px;background:${bg}"></div>`;
+        // Check next row for wrapped continuation
+        if (row + 1 < rows) {
+          const next = buf.getLine(viewportY + row + 1);
+          if (next) {
+            const nextText = next.translateToString(true);
+            if (next.isWrapped || (nextText.includes("|") && !INTENT_RE.test(nextText))) {
+              html += `<div style="position:absolute;left:0;right:0;top:${top + cellH}px;height:${cellH}px;background:${bg}"></div>`;
+            }
+          }
+        }
+      } else if (INTENT_RE.test(text)) {
+        const top = row * cellH;
+        html += `<div style="position:absolute;left:0;right:0;top:${top}px;height:${cellH}px;background:rgba(181,147,90,0.12)"></div>`;
+      }
+    }
+    overlay.innerHTML = html;
+  };
+
+  const disposable = term.onRender(scan);
+  // Initial scan
+  scan();
+
+  // Debug: expose a function to dump buffer for the dev console
+  (window as any).__tuicDebugBuffer = () => {
+    const buf = term.buffer.active;
+    const lines: string[] = [];
+    for (let row = 0; row < term.rows; row++) {
+      const line = buf.getLine(buf.viewportY + row);
+      if (line) lines.push(line.translateToString(true));
+    }
+    return {
+      rows: term.rows,
+      viewportY: buf.viewportY,
+      intentLines: lines.map((l, i) => ({ i, l })).filter(x => x.l.includes("intent")),
+      suggestLines: lines.map((l, i) => ({ i, l })).filter(x => x.l.includes("suggest")),
+      allLines: lines,
+    };
+  };
+
+  return () => {
+    disposable.dispose();
+    overlay.remove();
+  };
+}
+
 // Max bytes to buffer before terminal is opened (prevents unbounded growth)
 const OUTPUT_BUFFER_MAX_BYTES = 100 * 1024; // 100KB
 
@@ -170,13 +252,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
   // actual atlas stress instead of rebuilding on a fixed timer.
   let webglAddon: WebglAddon | undefined;
 
-  // Decoration-based token hiding: suggest rows get an opaque overlay via
-  // xterm's registerDecoration API (works with WebGL renderer unlike DOM-based
-  // MutationObserver). Each decoration is disposed when new suggest arrives or
-  // when the agent cycle resets.
-  let suggestDecorations: import("@xterm/xterm").IDecoration[] = [];
-  // Intent rows get a colored overlay (dim yellow) via decoration
-  let intentDecorations: import("@xterm/xterm").IDecoration[] = [];
+  // Render observer for suggest/intent row overlays — disposed on cleanup
+  let renderObserverCleanup: (() => void) | null = null;
   // Throttle counter for atlas cleanup triggered by onAddTextureAtlasCanvas.
   // Pages are added when the packer runs out of room for new glyphs, so a
   // burst of additions is a real signal of stress (e.g. large diverse output).
@@ -476,9 +553,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
           planFileNotified = false;
           // Clear suggest bar, pending buffer, and mark dismissed
           terminalsStore.update(props.id, { suggestDismissed: true, suggestedActions: null, pendingSuggest: null, activeSubTasks: 0 });
-          // Remove suggest decoration overlays
-          for (const d of suggestDecorations) d.dispose();
-          suggestDecorations = [];
           invoke<string | null>("get_last_prompt", { sessionId: targetSessionId }).then((prompt) => {
             if (prompt !== null) terminalsStore.setLastPrompt(props.id, prompt);
           }).catch(() => {});
@@ -518,43 +592,15 @@ export const Terminal: Component<TerminalProps> = (props) => {
           retryCount = 0;
           terminalsStore.setAgentIntent(props.id, parsed.text);
           if (parsed.title && settingsStore.state.intentTabTitle) {
-            terminalsStore.update(props.id, { name: parsed.title });
+            const agentType = terminalsStore.get(props.id)?.agentType;
+            const perAgentAllowed = agentType
+              ? agentConfigsStore.getIntentTabTitle(agentType) ?? true
+              : true;
+            if (perAgentAllowed) {
+              terminalsStore.update(props.id, { name: parsed.title });
+            }
           }
-          // Color intent row with a subtle tint via decoration overlay
-          if (terminal) {
-            const term = terminal;
-            requestAnimationFrame(() => {
-              const buf = term.buffer.active;
-              const cursorLine = buf.baseY + buf.cursorY;
-              for (let offset = 0; offset < 5; offset++) {
-                const lineIdx = cursorLine - offset;
-                if (lineIdx < 0) break;
-                const line = buf.getLine(lineIdx);
-                if (!line) continue;
-                const text = line.translateToString(true);
-                if (INTENT_RE.test(text)) {
-                  const markerOffset = -(buf.cursorY - (lineIdx - buf.baseY));
-                  const marker = term.registerMarker(markerOffset);
-                  if (marker) {
-                    const deco = term.registerDecoration({ marker, width: term.cols });
-                    if (deco) {
-                      deco.onRender((el) => {
-                        el.style.width = "100%";
-                        el.style.height = "100%";
-                        el.style.background = "rgba(181, 147, 90, 0.12)";
-                        el.style.pointerEvents = "none";
-                      });
-                      intentDecorations.push(deco);
-                      if (intentDecorations.length > 50) {
-                        intentDecorations.shift()?.dispose();
-                      }
-                    }
-                  }
-                  break;
-                }
-              }
-            });
-          }
+          // Intent/suggest row overlays handled by installRenderObserver
           break;
         case "suggest":
           if (settingsStore.state.suggestFollowups && parsed.items?.length) {
@@ -566,58 +612,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
             } else {
               terminalsStore.update(props.id, { pendingSuggest: parsed.items });
             }
-            // Hide suggest rows via xterm decoration overlay (opaque background).
-            // Deferred to next frame: the parsed event can arrive before
-            // terminal.write() flushes the chunk into the buffer.
-            if (terminal) {
-              const term = terminal;
-              requestAnimationFrame(() => {
-                for (const d of suggestDecorations) d.dispose();
-                suggestDecorations = [];
-                const buf = term.buffer.active;
-                const cursorLine = buf.baseY + buf.cursorY;
-                const bg = term.options.theme?.background ?? "#1e1e1e";
-                for (let offset = 0; offset < 5; offset++) {
-                  const lineIdx = cursorLine - offset;
-                  if (lineIdx < 0) break;
-                  const line = buf.getLine(lineIdx);
-                  if (!line) continue;
-                  const text = line.translateToString(true);
-                  if (SUGGEST_RE.test(text)) {
-                    const markerOffset = -(buf.cursorY - (lineIdx - buf.baseY));
-                    const marker = term.registerMarker(markerOffset);
-                    if (marker) {
-                      const deco = term.registerDecoration({ marker, width: term.cols });
-                      if (deco) {
-                        deco.onRender((el) => {
-                          el.style.width = "100%";
-                          el.style.height = "100%";
-                          el.style.background = bg;
-                        });
-                        suggestDecorations.push(deco);
-                      }
-                    }
-                    // Cover wrapped continuation line if present
-                    const nextLine = buf.getLine(lineIdx + 1);
-                    if (nextLine && (nextLine.isWrapped || nextLine.translateToString(true).includes("|"))) {
-                      const marker2 = term.registerMarker(markerOffset + 1);
-                      if (marker2) {
-                        const deco2 = term.registerDecoration({ marker: marker2, width: term.cols });
-                        if (deco2) {
-                          deco2.onRender((el) => {
-                            el.style.width = "100%";
-                            el.style.height = "100%";
-                            el.style.background = bg;
-                          });
-                          suggestDecorations.push(deco2);
-                        }
-                      }
-                    }
-                    break;
-                  }
-                }
-              });
-            }
+            // Suggest row hiding handled by installRenderObserver
           }
           break;
         case "shell-state": {
@@ -626,9 +621,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
             // Shell goes busy: clear stale suggest bar and pending from previous cycle.
             // Reset dismissed so the suggest emitted at the END of this cycle can show.
             terminalsStore.update(props.id, { suggestedActions: null, suggestDismissed: false, pendingSuggest: null });
-            // Remove suggest decoration overlays from previous cycle
-            for (const d of suggestDecorations) d.dispose();
-            suggestDecorations = [];
           }
           if (parsed.state === "idle") {
             // Show pending suggest buffered during the just-completed busy cycle
@@ -799,7 +791,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       }
 
       if (sessionId) {
-        terminalsStore.update(props.id, { sessionId });
+        terminalsStore.setSessionId(props.id, sessionId);
         props.onSessionCreated?.(props.id, sessionId);
 
         // Flush a resize to the PTY with authoritative dimensions. The PTY
@@ -1298,6 +1290,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     }
 
     terminal.open(containerRef);
+    renderObserverCleanup = installRenderObserver(terminal, containerRef);
     viewportLock.attach(
       containerRef,
       (line) => terminal!.scrollToLine(line),
@@ -1729,10 +1722,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // Clean up plugin line buffer for this session
     if (sessionId) pluginRegistry.removeSession(sessionId);
 
-    for (const d of suggestDecorations) d.dispose();
-    suggestDecorations = [];
-    for (const d of intentDecorations) d.dispose();
-    intentDecorations = [];
+    renderObserverCleanup?.();
     viewportLock.dispose();
     terminal?.dispose();
   });

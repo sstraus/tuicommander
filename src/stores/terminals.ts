@@ -70,7 +70,7 @@ export interface TerminalData {
 }
 
 /** Fields auto-populated with defaults when creating a terminal — callers only provide the remaining fields. */
-type TerminalCreateData = Omit<TerminalData, "id" | "activity" | "unseen" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "pendingInitCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "currentTask" | "activeSubTasks" | "isRemote" | "agentSessionId" | "tuicSession" | "suggestedActions" | "suggestDismissed" | "pendingSuggest" | "awaitingInputConfident" | "commandBlocks" | "activeBlock"> & { tuicSession?: string | null } & { isRemote?: boolean };
+type TerminalCreateData = Omit<TerminalData, "id" | "activity" | "unseen" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "pendingInitCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "currentTask" | "activeSubTasks" | "isRemote" | "agentSessionId" | "tuicSession" | "suggestedActions" | "suggestDismissed" | "pendingSuggest" | "awaitingInputConfident" | "commandBlocks" | "activeBlock"> & { tuicSession?: string | null; isRemote?: boolean; agentType?: AgentType | null; agentSessionId?: string | null };
 
 /** Terminal component ref interface */
 export interface TerminalRef {
@@ -258,6 +258,15 @@ function createTerminalsStore() {
           const prev = state.terminals[id]?.shellState ?? null;
           const next = data.shellState ?? null;
           if (prev !== next) handleShellStateChange(id, prev, next);
+        }
+        // Keep sessionToTerminal reverse map in sync: callers that pass sessionId
+        // via update() would otherwise desync the map and break plugin filtering
+        // (pluginMatchesSession → getAgentTypeForSession → null → plugin starved).
+        if ("sessionId" in data) {
+          const prev = state.terminals[id]?.sessionId;
+          if (prev) sessionToTerminal.delete(prev);
+          const next = data.sessionId ?? null;
+          if (next) sessionToTerminal.set(next, id);
         }
         setState("terminals", id, data);
       });
