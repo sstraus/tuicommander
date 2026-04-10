@@ -2,6 +2,14 @@
 
 Features to test when TUICommander is more usable.
 
+## MCP Session Tombstone
+- [x] `agent spawn` → `session output` after 1.8s → returns live buffer with `exited:false` (9b886c20 E2E validated 2026-04-10)
+- [x] `session close` → `session output` → returns final buffer with `exited:true`, buffer preserved (9b886c20 E2E validated 2026-04-10)
+- [x] `session kill` → `session output` → returns final buffer with `exited:true`, `exit_code:129` (SIGHUP) (9b886c20 E2E validated 2026-04-10)
+- [ ] Unknown session id (never existed) → returns `{"error":"Session not found","reason":"session_not_found_or_reaped"}`
+- [ ] Close → wait >5 min (TOMBSTONE_TTL_MS) → output returns the same reaped error
+- [ ] close_pty Tauri command (GUI "close terminal") still works and preserves post-mortem reads for subsequent MCP calls
+
 ## Global Workspace
 - [ ] Open Activity Dashboard → globe icon on each terminal row → click toggles promoted
 - [ ] Promote 2+ terminals → sidebar shows "Global" entry with badge count
