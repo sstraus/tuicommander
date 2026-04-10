@@ -15,6 +15,7 @@ import { ContextMenu, createContextMenu, type ContextMenuItem } from "../Context
 import { getRepoColor } from "../../utils/repoColor";
 import { markInternalDragStart, markInternalDragEnd } from "../../hooks/useFileDrop";
 import { appLogger } from "../../stores/appLogger";
+import { GlobeIcon } from "../GlobeIcon";
 import "./PaneTree.css";
 
 // ---- PaneNodeView: recursive tree renderer ----
@@ -326,6 +327,18 @@ const PaneGroupView: Component<{
                   })()}
                 </Show>
                 <span class="pane-tab-label">{tabTitle(tab)}</span>
+                <Show when={tab.type === "terminal" && globalWorkspaceStore.isPromoted(tab.id)}>
+                  <span
+                    class="pane-tab-globe"
+                    title="Remove from Global Workspace"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      globalWorkspaceStore.unpromote(tab.id);
+                    }}
+                  >
+                    <GlobeIcon size={10} />
+                  </span>
+                </Show>
                 <span
                   class="pane-tab-close"
                   onClick={(e) => {

@@ -221,6 +221,24 @@
   color: var(--fg-primary);
 }
 
+/* Globe icon for promoted terminal tabs */
+.globeIcon {
+  background: none;
+  border: none;
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 0 2px;
+  flex-shrink: 0;
+  opacity: 0.8;
+  transition: opacity 0.1s;
+}
+
+.globeIcon:hover {
+  opacity: 1;
+}
+
 /* Pin icon for pinned tabs */
 .pinIcon {
   display: inline-flex;

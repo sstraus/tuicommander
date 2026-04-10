@@ -10,6 +10,7 @@ import { makeBranchKey } from "../../stores/tabManager";
 import { getModifierSymbol, shortenHomePath } from "../../platform";
 import { appLogger } from "../../stores/appLogger";
 import { ContextMenu, createContextMenu } from "../ContextMenu/ContextMenu";
+import { GlobeIcon } from "../GlobeIcon";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
 import { contextMenuActionsStore } from "../../stores/contextMenuActionsStore";
@@ -195,6 +196,17 @@ export const TabBar: Component<TabBarProps> = (props) => {
         },
       );
     }
+    // Global workspace promote/unpromote
+    const isPromoted = globalWorkspaceStore.isPromoted(id);
+    items.push(
+      { label: "", separator: true, action: () => {} },
+      {
+        label: isPromoted
+          ? t("tabBar.removeFromWorkspace", "Remove from Global Workspace")
+          : t("tabBar.promoteToWorkspace", "Add to Global Workspace"),
+        action: () => globalWorkspaceStore.togglePromote(id),
+      },
+    );
     // Plugin-registered tab actions
     const tabActions = contextMenuActionsStore.getContextActions("tab");
     if (tabActions.length > 0) {
@@ -510,6 +522,8 @@ export const TabBar: Component<TabBarProps> = (props) => {
           const isRemote = () => terminal()?.isRemote;
           const isEditing = () => editingId() === id;
 
+          const isPromoted = () => globalWorkspaceStore.isPromoted(id);
+
           const handleCloseTab = (e: Event) => {
             e.preventDefault();
             e.stopPropagation();
@@ -586,6 +600,18 @@ export const TabBar: Component<TabBarProps> = (props) => {
                   <div class={s.progress} style={{ width: `${progress()}%` }} />
                 )}
                 <PanePositionIcon tabId={id} rects={paneRects()} />
+                <Show when={isPromoted()}>
+                  <button
+                    class={s.globeIcon}
+                    title={t("tabBar.removeFromWorkspace", "Remove from Global Workspace")}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      globalWorkspaceStore.unpromote(id);
+                    }}
+                  >
+                    <GlobeIcon size={11} />
+                  </button>
+                </Show>
                 <Show when={props.quickSwitcherActive && index() < 9}>
                   <span class={s.shortcutBadge}>{getModifierSymbol()}{index() + 1}</span>
                 </Show>

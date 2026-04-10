@@ -183,6 +183,21 @@
   color: var(--accent);
 }
 
+.pane-tab-globe {
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent);
+  opacity: 0.8;
+  cursor: pointer;
+  padding: 0 2px;
+  flex-shrink: 0;
+  transition: opacity 0.1s;
+}
+
+.pane-tab-globe:hover {
+  opacity: 1;
+}
+
 .pane-tab-close {
   opacity: 0;
   font-size: 14px;
