@@ -84,6 +84,7 @@ console-subscriber = { version = "0.4", optional = true }
 
 [features]
 default = []
+# GPU features for Linux builds (macOS always has Metal, Windows always has Vulkan via target deps)
 cuda = ["whisper-rs/cuda"]
 vulkan = ["whisper-rs/vulkan"]
 tokio-console = ["console-subscriber"]

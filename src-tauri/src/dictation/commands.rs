@@ -219,12 +219,14 @@ pub fn start_dictation(
         let t = transcribe::WhisperTranscriber::load(&model::model_path(whisper_model))?;
         *transcriber_arc_lock = Some(Arc::new(t));
         *active_model_lock = Some(whisper_model.name().to_string());
-        let backend = if transcribe::gpu_enabled() { "gpu" } else { "cpu" };
-        app_logger::log_via_handle(&app, "info", "dictation", &format!("Model loaded (backend: {backend})"));
-        let _ = app.emit("dictation-backend-info", serde_json::json!({
-            "backend": backend,
-        }));
+        app_logger::log_via_handle(&app, "info", "dictation",
+            &format!("Model loaded (backend: {})", transcribe::backend_label()));
     }
+
+    // Always emit backend info so the frontend gets it even when model is reused
+    let _ = app.emit("dictation-backend-info", serde_json::json!({
+        "backend": transcribe::backend_label(),
+    }));
 
     let transcriber_arc = transcriber_arc_lock.clone()
         .ok_or("Transcriber not available")?;

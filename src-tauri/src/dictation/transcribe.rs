@@ -2,28 +2,32 @@ use serde::Serialize;
 use std::path::Path;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
-/// Returns true if a GPU backend is available in this build.
-///
-/// - macOS: Metal is always linked via target-specific dependency — always GPU.
-/// - Windows/Linux: GPU if `vulkan` or `cuda` feature is enabled.
-#[inline]
-pub fn gpu_enabled() -> bool {
-    cfg!(any(
-        target_os = "macos",
-        feature = "cuda",
-        feature = "vulkan"
-    ))
+/// True when a GPU backend is compiled into this build.
+/// - macOS: Metal (always, via target-specific dep).
+/// - Windows/Linux: when `cuda` or `vulkan` feature is enabled.
+/// Used only for `n_threads` tuning — `use_gpu(true)` is always set regardless,
+/// because whisper.cpp falls back to CPU gracefully when no GPU is available.
+pub(super) const GPU_COMPILED: bool = cfg!(any(
+    target_os = "macos",
+    feature = "cuda",
+    feature = "vulkan",
+));
+
+/// Optimal n_threads: 1 when a GPU backend is compiled in (GPU handles compute), 4 otherwise.
+pub(super) fn optimal_n_threads() -> i32 {
+    if GPU_COMPILED { 1 } else { 4 }
 }
 
-/// Returns the optimal n_threads value based on whether a GPU is active.
-/// With GPU: 1 thread (GPU handles compute). Without: 4 threads.
-pub fn optimal_n_threads() -> i32 {
-    if gpu_enabled() { 1 } else { 4 }
+/// Backend label for logging and frontend events.
+/// Always "gpu" because `use_gpu(true)` is set unconditionally — whisper.cpp
+/// attempts GPU first and falls back to CPU transparently.
+pub(super) fn backend_label() -> &'static str {
+    "gpu"
 }
 
 /// Build WhisperContextParameters with GPU always preferred.
 /// whisper.cpp attempts GPU first and falls back to CPU gracefully if unavailable.
-pub fn build_context_params() -> WhisperContextParameters<'static> {
+pub(super) fn build_context_params() -> WhisperContextParameters<'static> {
     let mut params = WhisperContextParameters::new();
     params.use_gpu(true);
     params
@@ -56,7 +60,7 @@ impl WhisperTranscriber {
             .ok_or("Invalid model path (non-UTF8)")?;
 
         let params = build_context_params();
-        let backend = if gpu_enabled() { "gpu" } else { "cpu" };
+        let backend = backend_label();
         tracing::info!(backend, n_threads = optimal_n_threads(), "Loading Whisper model");
 
         let ctx = WhisperContext::new_with_params(path_str, params)
@@ -169,23 +173,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn gpu_enabled_matches_feature_flags() {
-        // On macOS with metal feature, gpu_enabled() must return true.
-        // On a plain CPU build, it returns false.
-        // We can't control the compile-time feature here, but we can
-        // assert the function is consistent with optimal_n_threads().
-        let gpu = gpu_enabled();
+    fn optimal_n_threads_consistent_with_gpu_compiled() {
         let threads = optimal_n_threads();
-        if gpu {
-            assert_eq!(threads, 1, "GPU active: n_threads should be 1");
+        if GPU_COMPILED {
+            assert_eq!(threads, 1, "GPU compiled: n_threads should be 1");
         } else {
             assert_eq!(threads, 4, "CPU only: n_threads should be 4");
         }
     }
 
     #[test]
+    fn backend_label_always_gpu() {
+        assert_eq!(backend_label(), "gpu");
+    }
+
+    #[test]
     fn build_context_params_does_not_panic() {
-        // Smoke test: constructing params must not panic regardless of features.
         let _params = build_context_params();
     }
 }

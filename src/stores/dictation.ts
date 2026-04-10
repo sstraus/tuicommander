@@ -13,6 +13,9 @@ interface DictationConfig {
   auto_send: boolean;
 }
 
+/** GPU/CPU backend reported by whisper after model load. */
+export type DictationBackend = "cpu" | "gpu";
+
 /** Model info from Rust backend */
 export interface ModelInfo {
   name: string;
@@ -92,7 +95,7 @@ interface DictationStoreState {
   autoSend: boolean;
   capturingHotkey: boolean;
   partialText: string;
-  backendInfo: { backend: "cpu" | "gpu" } | null;
+  backendInfo: DictationBackend | null;
 }
 
 function createDictationStore() {
@@ -131,8 +134,8 @@ function createDictationStore() {
   });
 
   // Listen for backend info (gpu/cpu) after model load
-  listen<{ backend: "cpu" | "gpu" }>("dictation-backend-info", (event) => {
-    setState("backendInfo", event.payload);
+  listen<{ backend: DictationBackend }>("dictation-backend-info", (event) => {
+    setState("backendInfo", event.payload.backend);
   });
 
   const actions = {
