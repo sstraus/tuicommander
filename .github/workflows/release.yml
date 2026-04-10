@@ -105,8 +105,12 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # whisper.cpp build flags per platform:
-          # - macOS: override -march to avoid i8mm detection mismatch on M-series < M4
+          # - macOS: override -march to avoid i8mm detection mismatch on M-series < M4 (Metal GPU always active)
           # - Linux: -fPIC required for whisper-rs-sys static linking
+          # - Windows: Vulkan GPU support enabled automatically via target-specific Cargo.toml dependency
+          #   (whisper-rs = { version = "0.16", features = ["vulkan"] } in [target.'cfg(windows)'.dependencies])
+          #   Vulkan SDK is pre-installed on windows-latest runners — no extra setup required.
+          #   For optional CUDA support, add: Jimver/cuda-toolkit@v0.2.x + FEATURES=cuda cargo flag.
           CMAKE_C_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Linux-x64' && '-fPIC' || '' }}
           CMAKE_CXX_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Linux-x64' && '-fPIC' || '' }}
         with:
