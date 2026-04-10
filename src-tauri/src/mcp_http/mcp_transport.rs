@@ -851,31 +851,18 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
                 Ok(id) => id,
                 Err(e) => return e,
             };
-            if let Some(entry) = state.sessions.get(session_id) {
-                let mut session = entry.lock();
-                let _ = session.writer.write_all(&[0x03]);
-                let _ = session.writer.flush();
-                drop(session);
-                drop(entry);
-                crate::pty::cleanup_session(session_id, state);
-                serde_json::json!({"ok": true})
-            } else {
-                serde_json::json!({"error": "Session not found"})
-            }
+            // Uses the same tombstone path as the Tauri close_pty command so
+            // post-mortem MCP reads keep returning final output + exit code.
+            // Idempotent: returns ok even if session was already tombstoned.
+            let _ = crate::pty::close_pty_core(state, session_id, false);
+            serde_json::json!({"ok": true})
         }
         "kill" => {
             let session_id = match require_session_id(args, "kill") {
                 Ok(id) => id,
                 Err(e) => return e,
             };
-            if let Some(entry) = state.sessions.get(session_id) {
-                let mut session = entry.lock();
-                if let Err(e) = session._child.kill() {
-                    tracing::warn!(session_id = %session_id, "SIGKILL failed: {e}");
-                }
-                drop(session);
-                drop(entry);
-                crate::pty::cleanup_session(session_id, state);
+            if crate::pty::kill_pty_core(state, session_id) {
                 tracing::info!(source = "session", session_id = %session_id, "Session killed: SIGKILL");
                 let _ = state.event_bus.send(crate::state::AppEvent::SessionClosed {
                     session_id: session_id.to_string(),

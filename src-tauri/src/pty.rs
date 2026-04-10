@@ -2189,6 +2189,97 @@ pub(crate) fn get_kitty_flags(
         .unwrap_or(0)
 }
 
+/// Close a PTY session core: sends Ctrl-C, waits briefly for graceful exit,
+/// captures the exit code for the tombstone, and leaves `output_buffers` +
+/// `vt_log_buffers` + `last_output_ms` + `exit_codes` alive so post-mortem
+/// MCP reads can still return final output and exit status.
+///
+/// Shared between the Tauri `close_pty` command and the MCP `close` action —
+/// both paths must tombstone identically, or post-mortem reads break.
+/// Returns the worktree path when `cleanup_worktree` is true and the session
+/// had one, so the caller can run `remove_worktree_internal` outside this fn.
+pub(crate) fn close_pty_core(
+    state: &AppState,
+    session_id: &str,
+    cleanup_worktree: bool,
+) -> Option<crate::state::WorktreeInfo> {
+    let (_, session_mutex) = state.sessions.remove(session_id)?;
+    state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
+    let mut session = session_mutex.into_inner();
+
+    // Send Ctrl-C (0x03) to give the process a chance to clean up
+    let _ = session.writer.write_all(&[0x03]);
+    let _ = session.writer.flush();
+
+    // Wait up to 100ms for process to exit gracefully
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(100);
+    loop {
+        match session._child.try_wait() {
+            Ok(Some(_)) => break, // Process exited cleanly
+            Ok(None) if std::time::Instant::now() >= deadline => break,
+            _ => std::thread::sleep(std::time::Duration::from_millis(10)),
+        }
+    }
+
+    // Capture exit code for the tombstone before dropping the child handle.
+    if let Ok(Some(status)) = session._child.try_wait() {
+        state
+            .exit_codes
+            .insert(session_id.to_string(), status.exit_code() as i32);
+    }
+
+    // Preserve output_buffers, vt_log_buffers, last_output_ms, exit_codes.
+    // Tombstone sweeper reaps them after TOMBSTONE_TTL_MS.
+    tombstone_transient_cleanup(session_id, state);
+
+    let worktree_to_cleanup = if cleanup_worktree {
+        session.worktree.clone()
+    } else {
+        None
+    };
+
+    // Drop session to release file handles (forcibly kills if still running)
+    drop(session);
+
+    worktree_to_cleanup
+}
+
+/// Force-kill a PTY session and tombstone it. Used by the MCP `kill` action.
+/// Unlike `close_pty_core`, skips the Ctrl-C grace period — sends SIGKILL
+/// immediately. The child exits near-instantly so `try_wait` captures the
+/// exit code before the tombstone is stamped.
+pub(crate) fn kill_pty_core(state: &AppState, session_id: &str) -> bool {
+    let Some((_, session_mutex)) = state.sessions.remove(session_id) else {
+        return false;
+    };
+    state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
+    let mut session = session_mutex.into_inner();
+
+    if let Err(e) = session._child.kill() {
+        tracing::warn!(session_id = %session_id, "SIGKILL failed: {e}");
+    }
+
+    // Give the kernel a brief window to reap the child so try_wait sees it.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(100);
+    loop {
+        match session._child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if std::time::Instant::now() >= deadline => break,
+            _ => std::thread::sleep(std::time::Duration::from_millis(10)),
+        }
+    }
+
+    if let Ok(Some(status)) = session._child.try_wait() {
+        state
+            .exit_codes
+            .insert(session_id.to_string(), status.exit_code() as i32);
+    }
+
+    tombstone_transient_cleanup(session_id, state);
+    drop(session);
+    true
+}
+
 /// Close a PTY session with graceful shutdown and optional worktree cleanup.
 /// Sends Ctrl-C (0x03) and waits briefly for the process to exit cleanly
 /// before forcibly dropping handles.
@@ -2198,53 +2289,11 @@ pub(crate) fn close_pty(
     session_id: String,
     cleanup_worktree: bool,
 ) -> Result<(), String> {
-    if let Some((_, session_mutex)) = state.sessions.remove(&session_id) {
-        state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
-        let mut session = session_mutex.into_inner();
-
-        // Send Ctrl-C (0x03) to give the process a chance to clean up
-        let _ = session.writer.write_all(&[0x03]);
-        let _ = session.writer.flush();
-
-        // Wait up to 100ms for process to exit gracefully
-        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(100);
-        loop {
-            match session._child.try_wait() {
-                Ok(Some(_)) => break, // Process exited cleanly
-                Ok(None) if std::time::Instant::now() >= deadline => break,
-                _ => std::thread::sleep(std::time::Duration::from_millis(10)),
-            }
-        }
-
-        // Capture exit code for the tombstone before dropping the child handle.
-        if let Ok(Some(status)) = session._child.try_wait() {
-            state
-                .exit_codes
-                .insert(session_id.clone(), status.exit_code() as i32);
-        }
-
-        // Preserve output_buffers, vt_log_buffers, last_output_ms, exit_codes
-        // so post-mortem MCP reads can still return final output + exit status.
-        // The tombstone sweeper reaps them after TOMBSTONE_TTL_MS.
-        tombstone_transient_cleanup(&session_id, &state);
-
-        // Extract worktree info before dropping session
-        let worktree_to_cleanup = if cleanup_worktree {
-            session.worktree.clone()
-        } else {
-            None
-        };
-
-        // Drop session to release file handles (forcibly kills if still running)
-        drop(session);
-
-        // Cleanup worktree if requested
-        if let Some(worktree) = worktree_to_cleanup
-            && let Err(e) = remove_worktree_internal(&worktree) {
-                tracing::warn!("Failed to cleanup worktree: {e}");
-            }
+    if let Some(worktree) = close_pty_core(&state, &session_id, cleanup_worktree)
+        && let Err(e) = remove_worktree_internal(&worktree)
+    {
+        tracing::warn!("Failed to cleanup worktree: {e}");
     }
-
     Ok(())
 }
 
