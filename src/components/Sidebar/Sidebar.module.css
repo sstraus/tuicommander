@@ -800,7 +800,8 @@
 
 /* ── Remote-only PR badge button ── */
 /* Always visible (overrides the opacity:0 of repoActions on non-hover) */
-.repoActions:has(.remoteOnlyBadgeBtn) {
+.repoActions:has(.remoteOnlyBadgeBtn),
+.repoActions:has(.ghBadgeBtn) {
   opacity: 1;
   pointer-events: auto;
 }
@@ -1093,6 +1094,348 @@
   font-family: var(--font-mono);
   font-size: var(--font-2xs);
   line-height: 1.4;
+}
+
+/* ---------------------------------------------------------------------------
+   Unified GitHub Panel (replaces RemoteOnlyPrPopover)
+   --------------------------------------------------------------------------- */
+
+.ghPanelOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+}
+
+.ghPanel {
+  position: fixed;
+  left: var(--sidebar-width, 240px);
+  top: 0;
+  bottom: 0;
+  width: 340px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  z-index: 201;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 4px 0 12px rgba(0, 0, 0, 0.3);
+}
+
+.ghPanelHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 12px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--fg-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.ghPanelHeader svg {
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
+
+.ghPanelClose {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--fg-secondary);
+  cursor: pointer;
+  font-size: var(--font-md);
+  margin-left: auto;
+}
+
+.ghPanelClose:hover {
+  background: var(--bg-tertiary);
+  color: var(--fg-primary);
+}
+
+.ghPanelBody {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Section (PR / Issues) ── */
+.ghSection {
+  border-bottom: 1px solid var(--border);
+}
+
+.ghSectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--fg-secondary);
+  user-select: none;
+}
+
+.ghSectionHeader:hover {
+  background: var(--bg-tertiary);
+}
+
+.ghSectionHeader svg {
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
+
+.ghSectionChevron {
+  display: inline-block;
+  font-size: var(--font-md);
+  color: var(--fg-muted);
+  transition: transform 0.15s ease;
+  transform: rotate(0deg);
+  flex-shrink: 0;
+  width: 12px;
+  text-align: center;
+}
+
+.ghSectionChevronOpen {
+  transform: rotate(90deg);
+}
+
+.ghSectionCount {
+  margin-left: auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-2xs);
+  font-weight: 700;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-lg);
+}
+
+.ghShowDismissed {
+  font-size: var(--font-2xs);
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  margin-left: 4px;
+}
+
+.ghShowDismissed:hover {
+  text-decoration: underline;
+}
+
+.ghSectionList {
+  padding: 0;
+}
+
+.ghEmpty {
+  padding: 12px;
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+/* ── Item row (PR or Issue) ── */
+.ghItem {
+  border-bottom: 1px solid transparent;
+}
+
+.ghItemExpanded {
+  border-bottom: 1px solid var(--border);
+}
+
+.ghItemRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.ghItemRow:hover {
+  background: var(--bg-tertiary);
+}
+
+.ghItemNum {
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
+
+.ghItemTitle {
+  flex: 1;
+  font-size: var(--font-sm);
+  color: var(--fg-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* ── Issue state badges ── */
+.ghIssueBadge {
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-2xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.ghIssueOpen {
+  background: rgba(63, 185, 80, 0.12);
+  color: var(--success);
+}
+
+.ghIssueClosed {
+  background: rgba(163, 113, 247, 0.12);
+  color: #a371f7;
+}
+
+/* ── Accordion detail ── */
+.ghItemDetail {
+  position: relative;
+  padding: 0 4px 8px;
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border);
+}
+
+.ghItemDismiss {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: var(--font-md);
+  z-index: 1;
+}
+
+.ghItemDismiss:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
+/* ── Action buttons ── */
+.ghItemActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 8px 4px;
+}
+
+.ghActionBtn {
+  padding: 4px 12px;
+  font-size: var(--font-xs);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--fg-secondary);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.ghActionBtn:hover {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border-color: var(--accent);
+}
+
+.ghActionBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ghApproveBtn {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.ghApproveBtn:hover {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.ghMergeBtn {
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.ghMergeBtn:hover {
+  background: var(--success);
+  color: var(--text-on-success);
+}
+
+.ghActionError {
+  padding: 4px 8px;
+  font-size: var(--font-2xs);
+  color: var(--error);
+}
+
+/* ── Filter bar ── */
+.ghFilterBar {
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.ghFilterSelect {
+  width: 100%;
+  padding: 4px 8px;
+  font-size: var(--font-xs);
+  background: var(--bg-tertiary);
+  color: var(--fg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.ghFilterSelect:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* ── GitHub badge button (replaces remoteOnlyBadgeBtn) ── */
+.ghBadgeBtn {
+  min-width: 20px;
+  width: auto;
+  padding: 0 4px;
+  font-size: var(--font-2xs);
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-lg);
+}
+
+.ghBadgeBtn:hover {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.ghBadgeBtn svg {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
 }
 
 /* ---------------------------------------------------------------------------

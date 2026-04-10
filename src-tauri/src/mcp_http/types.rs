@@ -325,6 +325,25 @@ pub(super) struct GetAllPrStatusesRequest {
     pub include_merged: bool,
 }
 
+// --- GitHub Issues ---
+
+#[derive(Deserialize)]
+pub(super) struct IssuesQuery {
+    pub path: String,
+    #[serde(default = "default_issue_filter")]
+    pub filter: String,
+}
+
+fn default_issue_filter() -> String { "assigned".to_string() }
+
+#[derive(Deserialize)]
+pub(super) struct IssueActionRequest {
+    #[serde(rename = "repoPath")]
+    pub repo_path: String,
+    #[serde(rename = "issueNumber")]
+    pub issue_number: i64,
+}
+
 // --- GitPanel commands ---
 
 #[derive(Deserialize)]

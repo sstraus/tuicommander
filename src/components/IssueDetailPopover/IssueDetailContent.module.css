@@ -1,0 +1,173 @@
+/* Issue Detail Content — follows PrDetailPopover patterns */
+
+/* State badge */
+.stateBadge {
+  display: inline-flex;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-2xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.stateBadge.open {
+  background: rgba(63, 185, 80, 0.12);
+  color: var(--success);
+}
+
+.stateBadge.closed {
+  background: rgba(163, 113, 247, 0.12);
+  color: #a371f7;
+}
+
+/* Labels */
+.labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 12px;
+}
+
+.label {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  border: 1px solid;
+  white-space: nowrap;
+}
+
+/* Meta row */
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+}
+
+.author {
+  font-weight: 600;
+  color: var(--fg-secondary);
+}
+
+.separator {
+  color: var(--fg-muted);
+}
+
+/* Assignees */
+.assignees {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 12px;
+  font-size: var(--font-xs);
+  color: var(--fg-secondary);
+}
+
+.assignee {
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 6px;
+  border-radius: var(--radius-md);
+}
+
+/* Milestone */
+.milestone {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 12px;
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+}
+
+.milestoneIcon {
+  color: var(--fg-muted);
+}
+
+/* Timestamps */
+.timestamps {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 12px;
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+}
+
+/* Actions row */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px;
+}
+
+.actionBtn {
+  padding: 4px 12px;
+  font-size: var(--font-xs);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--fg-secondary);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.actionBtn:hover {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border-color: var(--accent);
+}
+
+.actionBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.closeBtn {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.closeBtn:hover {
+  background: var(--error);
+  color: var(--bg-primary);
+}
+
+.reopenBtn {
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.reopenBtn:hover {
+  background: var(--success);
+  color: var(--bg-primary);
+}
+
+.actionError {
+  padding: 4px 12px;
+  font-size: var(--font-2xs);
+  color: var(--error);
+}
+
+/* Open on GitHub */
+.openGithub {
+  padding: 8px 12px;
+  color: var(--accent);
+  font-size: var(--font-md);
+  font-family: var(--font-ui);
+  cursor: pointer;
+  text-align: center;
+  border-top: 1px solid var(--border);
+  transition: color 0.1s, background 0.1s;
+}
+
+.openGithub:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}

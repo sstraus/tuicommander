@@ -3,7 +3,7 @@ import { mockInvoke } from "../mocks/tauri";
 import "../mocks/tauri";
 import { render, fireEvent, waitFor } from "@solidjs/testing-library";
 import { repoSettingsStore } from "../../stores/repoSettings";
-import { RemoteOnlyPrPopover } from "../../components/Sidebar/RepoSection";
+import { RemoteOnlyPrPopover } from "../../components/Sidebar/RemoteOnlyPrPopover";
 import type { BranchPrStatus } from "../../types";
 
 const {

@@ -186,6 +186,24 @@ export interface SavedTerminal {
   tuicSession?: string | null;
 }
 
+/** GitHub Issue from GraphQL API */
+export interface GitHubIssue {
+  number: number;
+  title: string;
+  state: string;        // OPEN, CLOSED
+  url: string;
+  author: string;
+  labels: PrLabel[];    // Reuses PrLabel — same GitHub schema
+  assignees: string[];
+  milestone: string | null;
+  comments_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Issue filter mode for the GitHub panel */
+export type IssueFilterMode = "assigned" | "created" | "mentioned" | "all";
+
 /** Orchestrator stats from backend */
 export interface OrchestratorStats {
   active_sessions: number;

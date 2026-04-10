@@ -4,7 +4,7 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 
 use crate::state::AppState;
-use super::types::{CiChecksQuery, PathQuery, PrDiffQuery};
+use super::types::{CiChecksQuery, IssueActionRequest, IssuesQuery, PathQuery, PrDiffQuery};
 use super::{err_500, validate_repo_path};
 
 pub(super) async fn repo_github_status(Query(q): Query<PathQuery>) -> Response {
@@ -73,5 +73,43 @@ pub(super) async fn repo_pr_diff(
     match crate::github::get_pr_diff_impl(&path, pr, &state).await {
         Ok(diff) => diff.into_response(),
         Err(e) => (axum::http::StatusCode::BAD_GATEWAY, e).into_response(),
+    }
+}
+
+pub(super) async fn repo_issues(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<IssuesQuery>,
+) -> Response {
+    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    let path = q.path;
+    let filter = q.filter;
+    match crate::github::get_all_issues_impl(&[path.clone()], &filter, &state).await {
+        Ok(mut results) => {
+            let issues = results.remove(&path).unwrap_or_default();
+            Json(issues).into_response()
+        }
+        Err(e) => err_500(&e),
+    }
+}
+
+pub(super) async fn repo_close_issue(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<IssueActionRequest>,
+) -> Response {
+    if let Err(e) = validate_repo_path(&body.repo_path) { return e.into_response(); }
+    match crate::github::close_issue_impl(&body.repo_path, body.issue_number, &state).await {
+        Ok(()) => Json(serde_json::json!({"ok": true})).into_response(),
+        Err(e) => (axum::http::StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": e}))).into_response(),
+    }
+}
+
+pub(super) async fn repo_reopen_issue(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<IssueActionRequest>,
+) -> Response {
+    if let Err(e) = validate_repo_path(&body.repo_path) { return e.into_response(); }
+    match crate::github::reopen_issue_impl(&body.repo_path, body.issue_number, &state).await {
+        Ok(()) => Json(serde_json::json!({"ok": true})).into_response(),
+        Err(e) => (axum::http::StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": e}))).into_response(),
     }
 }

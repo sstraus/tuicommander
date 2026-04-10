@@ -3,13 +3,14 @@ import { invoke } from "../invoke";
 import { appLogger } from "./appLogger";
 import { repositoriesStore } from "./repositories";
 import { prNotificationsStore, type PrNotificationType } from "./prNotifications";
-import type { BranchPrStatus, CheckSummary, CheckDetail, GitHubStatus } from "../types";
+import type { BranchPrStatus, CheckSummary, CheckDetail, GitHubStatus, GitHubIssue, IssueFilterMode } from "../types";
 
 const PR_STATE_STORAGE_KEY = "github:pr_state";
 
 const BASE_INTERVAL = 30000; // 30 seconds
 const HIDDEN_INTERVAL = 120000; // 2 minutes when tab not visible
 const MAX_INTERVAL = 300000; // 5 minutes (backoff cap)
+const ISSUES_INTERVAL = 120000; // 120 seconds for issues polling
 
 /** Per-repo remote tracking data (ahead/behind from local git) */
 interface RepoRemoteStatus {
@@ -24,19 +25,24 @@ interface RepoGitHubData {
   branches: Record<string, BranchPrStatus>;
   remoteStatus: RepoRemoteStatus | null;
   lastPolled: number;
+  issues: GitHubIssue[];
+  issuesLastPolled: number;
 }
 
 /** GitHub store state */
 interface GitHubStoreState {
   repos: Record<string, RepoGitHubData>;
+  issueFilter: IssueFilterMode;
 }
 
 function createGitHubStore() {
   const [state, setState] = createStore<GitHubStoreState>({
     repos: {},
+    issueFilter: "assigned",
   });
 
   let intervalId: number | null = null;
+  let issuesIntervalId: number | null = null;
   let currentInterval = BASE_INTERVAL;
   let pollingActive = false;
   /** True until the first poll completes — startup poll includes MERGED state for offline transition detection */
@@ -135,7 +141,7 @@ function createGitHubStore() {
 
     // Initialize repo entry if it doesn't exist yet
     if (!state.repos[repoPath]) {
-      setState("repos", repoPath, { branches, remoteStatus: null, lastPolled: Date.now() });
+      setState("repos", repoPath, { branches, remoteStatus: null, lastPolled: Date.now(), issues: [], issuesLastPolled: 0 });
       return;
     }
 
@@ -214,6 +220,28 @@ function createGitHubStore() {
     return state.repos[repoPath]?.remoteStatus ?? null;
   }
 
+  /** Get issues for a repo */
+  function getRepoIssues(repoPath: string): GitHubIssue[] {
+    return state.repos[repoPath]?.issues ?? [];
+  }
+
+  /** Update issues for a repo from poll results */
+  function updateRepoIssues(repoPath: string, issues: GitHubIssue[]): void {
+    if (!state.repos[repoPath]) {
+      setState("repos", repoPath, { branches: {}, remoteStatus: null, lastPolled: 0, issues, issuesLastPolled: Date.now() });
+      return;
+    }
+    setState("repos", repoPath, "issues", issues);
+    setState("repos", repoPath, "issuesLastPolled", Date.now());
+  }
+
+  /** Set issue filter mode */
+  function setIssueFilter(filter: IssueFilterMode): void {
+    setState("issueFilter", filter);
+    // Re-poll immediately with new filter
+    pollIssues().catch((err) => appLogger.warn("github", "Issue re-poll failed after filter change", err));
+  }
+
   /** Persist current PR state to localStorage for offline transition detection on next startup */
   function persistPrState(): void {
     try {
@@ -232,7 +260,7 @@ function createGitHubStore() {
       const repos = JSON.parse(raw) as Record<string, RepoGitHubData>;
       for (const [repoPath, repoData] of Object.entries(repos)) {
         if (repoData.branches && typeof repoData.branches === "object") {
-          setState("repos", repoPath, { branches: repoData.branches, remoteStatus: null, lastPolled: 0 });
+          setState("repos", repoPath, { branches: repoData.branches, remoteStatus: null, lastPolled: 0, issues: repoData.issues ?? [], issuesLastPolled: 0 });
         }
       }
     } catch {
@@ -249,6 +277,34 @@ function createGitHubStore() {
       }
     } catch {
       // Remote status is best-effort — ignore failures
+    }
+  }
+
+  /** Poll issues for all repos using batched GraphQL call */
+  async function pollIssues(): Promise<void> {
+    const paths = repositoriesStore.getPaths();
+    if (paths.length === 0) return;
+
+    try {
+      const circuitOk = await invoke<boolean>("check_github_circuit");
+      if (!circuitOk) return;
+    } catch {
+      // If the check fails, proceed normally
+    }
+
+    try {
+      const allIssues = await invoke<Record<string, GitHubIssue[]>>("get_all_issues", {
+        paths,
+        filterMode: state.issueFilter,
+      });
+      for (const [path, issues] of Object.entries(allIssues)) {
+        updateRepoIssues(path, issues);
+      }
+    } catch (err) {
+      const errStr = String(err);
+      if (!errStr.includes("circuit breaker open") && !errStr.startsWith("rate-limit:")) {
+        appLogger.warn("github", "Issues poll failed", err);
+      }
     }
   }
 
@@ -402,13 +458,23 @@ function createGitHubStore() {
     loadPersistedPrState();
     document.addEventListener("visibilitychange", onVisibilityChange);
     pollAll().catch((err) => appLogger.warn("github", "Initial poll failed", err));
+    pollIssues().catch((err) => appLogger.warn("github", "Initial issues poll failed", err));
     scheduleNext();
+    issuesIntervalId = window.setInterval(() => {
+      if (!document.hidden) {
+        pollIssues().catch((err) => appLogger.warn("github", "Issues poll failed", err));
+      }
+    }, ISSUES_INTERVAL);
   }
 
   /** Stop background polling */
   function stopPolling(): void {
     pollingActive = false;
     clearScheduled();
+    if (issuesIntervalId) {
+      clearInterval(issuesIntervalId);
+      issuesIntervalId = null;
+    }
     document.removeEventListener("visibilitychange", onVisibilityChange);
   }
 
@@ -445,6 +511,9 @@ function createGitHubStore() {
     getRemoteOnlyPrs,
     getRemoteStatus,
     setRemoteStatus,
+    getRepoIssues,
+    setIssueFilter,
+    pollIssues,
     loadCheckDetails,
     pollRepo,
     startPolling,
@@ -483,6 +552,8 @@ registerDebugSnapshot("github", () => {
             url: pr.url,
           }]),
         ),
+        issuesCount: data.issues?.length ?? 0,
+        issuesLastPolled: data.issuesLastPolled,
       }]),
     ),
   };

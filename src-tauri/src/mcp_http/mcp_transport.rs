@@ -242,7 +242,7 @@ const DEBUG_ACTIONS: &str = "agent_detection, logs, sessions, invoke_js, help";
 // Legacy action constants — still referenced by handlers until dispatch refactor (story 1091).
 // Remove these when handle_mcp_tool_call dispatch is updated.
 const LEGACY_AGENT_ACTIONS: &str = "detect, spawn, stats, metrics";
-const LEGACY_GITHUB_ACTIONS: &str = "prs, status";
+const LEGACY_GITHUB_ACTIONS: &str = "prs, status, issues, close_issue, reopen_issue";
 const LEGACY_WORKTREE_ACTIONS: &str = "list, create, remove";
 const LEGACY_WORKSPACE_ACTIONS: &str = "list, active";
 const LEGACY_UI_ACTIONS: &str = "tab";
@@ -974,6 +974,49 @@ async fn handle_github(state: &Arc<AppState>, args: &serde_json::Value) -> serde
                 }));
             }
             serde_json::json!(results)
+        }
+        "issues" => {
+            let path = match require_path(args, "issues") {
+                Ok(p) => p,
+                Err(e) => return e,
+            };
+            if let Err(e) = validate_mcp_repo_path(&path) { return e; }
+            let filter = args.get("filter").and_then(|v| v.as_str()).unwrap_or("assigned");
+            let result = crate::github::get_all_issues_impl(&[path.clone()], filter, state).await;
+            match result {
+                Ok(mut map) => serde_json::json!(map.remove(&path).unwrap_or_default()),
+                Err(e) => serde_json::json!({"error": e}),
+            }
+        }
+        "close_issue" => {
+            let path = match require_path(args, "close_issue") {
+                Ok(p) => p,
+                Err(e) => return e,
+            };
+            if let Err(e) = validate_mcp_repo_path(&path) { return e; }
+            let issue_number = args.get("issue_number").and_then(|v| v.as_i64()).unwrap_or(0);
+            if issue_number == 0 {
+                return serde_json::json!({"error": "Missing required parameter: issue_number"});
+            }
+            match crate::github::close_issue_impl(&path, issue_number, state).await {
+                Ok(()) => serde_json::json!({"ok": true}),
+                Err(e) => serde_json::json!({"error": e}),
+            }
+        }
+        "reopen_issue" => {
+            let path = match require_path(args, "reopen_issue") {
+                Ok(p) => p,
+                Err(e) => return e,
+            };
+            if let Err(e) = validate_mcp_repo_path(&path) { return e; }
+            let issue_number = args.get("issue_number").and_then(|v| v.as_i64()).unwrap_or(0);
+            if issue_number == 0 {
+                return serde_json::json!({"error": "Missing required parameter: issue_number"});
+            }
+            match crate::github::reopen_issue_impl(&path, issue_number, state).await {
+                Ok(()) => serde_json::json!({"ok": true}),
+                Err(e) => serde_json::json!({"error": e}),
+            }
         }
         other => serde_json::json!({"error": format!(
             "Unknown action '{}' for tool 'github'. Available: {}", other, LEGACY_GITHUB_ACTIONS
