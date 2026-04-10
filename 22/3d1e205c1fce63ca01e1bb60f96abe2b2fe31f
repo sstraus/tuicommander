@@ -1,0 +1,48 @@
+CHANGELOG.md
+  aa06e17d1e145946 22
+src-tauri/src/lib.rs
+  11b9b131fcd6a64f 472-475
+src/styles.css
+  aa06e17d1e145946 280-286
+src-tauri/src/output_parser.rs
+  aa06e17d1e145946 1037-1041,1047-1066,1068-1102,2744-2771
+website/blog/global-workspace.html
+  11b9b131fcd6a64f 1-126
+docs/backend/output-parser.md
+  aa06e17d1e145946 158
+website/blog/index.json
+  11b9b131fcd6a64f 4-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.6",
+  "base_commit_sha": "223d1e205c1fce63ca01e1bb60f96abe2b2fe31f",
+  "prompts": {
+    "11b9b131fcd6a64f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0c36b5f6-3af0-4b58-9f0f-ef05f7062418",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 139,
+      "overriden_lines": 0
+    },
+    "aa06e17d1e145946": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e4e106b7-5aeb-4d88-a2b4-c7ff7377d811",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 98,
+      "overriden_lines": 0
+    }
+  }
+}
