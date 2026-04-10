@@ -1,4 +1,5 @@
 import { createSignal, onCleanup } from "solid-js";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { mdTabsStore } from "../stores/mdTabs";
 import { editorTabsStore } from "../stores/editorTabs";
 import { repositoriesStore } from "../stores/repositories";
@@ -34,45 +35,76 @@ function resolveRepoPaths(absolutePath: string): [repoPath: string, filePath: st
   return ["", absolutePath];
 }
 
-/** Tauri augments File with a non-standard `path` field containing the absolute path. */
-interface TauriFile extends File {
-  readonly path?: string;
-}
+/** Open a list of absolute file paths: write to active PTY if any, else open tabs. */
+function openDroppedPaths(paths: string[]) {
+  if (!paths.length) return;
 
-/** Extract file paths from a drop event's FileList.
- *  In Tauri webviews, File.path provides the absolute path.
- *  In browsers, only File.name (bare filename) is available. */
-function extractPaths(files: FileList): string[] {
-  const paths: string[] = [];
-  for (const file of files) {
-    const absPath = (file as TauriFile).path;
-    if (absPath) {
-      paths.push(absPath);
-    } else if (isTauri()) {
-      appLogger.warn("app", "Dropped file missing .path in Tauri context, skipping", { name: file.name });
+  // If the active terminal has a PTY session, write paths there
+  // so running processes (Claude Code, etc.) can reference them.
+  const active = terminalsStore.getActive();
+  if (active?.sessionId && terminalsStore.state.activeId) {
+    const joined = paths.join(" ");
+    rpc("write_pty", { sessionId: active.sessionId, data: joined }).catch((err) => {
+      appLogger.error("terminal", "Failed to write dropped file paths", err);
+    });
+    return;
+  }
+
+  // No active PTY — open files in the appropriate tab.
+  for (const filePath of paths) {
+    const [repoPath, relPath] = resolveRepoPaths(filePath);
+    const fileType = classifyDroppedFile(filePath);
+    if (fileType === "markdown") {
+      mdTabsStore.add(repoPath, relPath);
     } else {
-      paths.push(file.name);
+      editorTabsStore.add(repoPath, relPath);
     }
   }
-  return paths;
+
+  appLogger.info("app", `Opened ${paths.length} file(s) via drag & drop`);
 }
 
 /**
- * Hook for handling external file drag & drop onto the terminal area.
- * Uses HTML5 drag events scoped to a container element, so internal drags
- * (sidebar repos, tab reorder) are never intercepted.
+ * Hook for handling external file drag & drop.
  *
- * Requires `dragDropEnabled: false` in tauri.conf.json — Tauri's native
- * drag handler intercepts all OS-level drags and breaks internal HTML5 DnD.
- * File paths are still available via Tauri's File.path extension.
+ * In Tauri mode: uses the native `onDragDropEvent` API which provides
+ * absolute OS paths (requires `dragDropEnabled: true` in tauri.conf.json).
  *
- * Call `attachTo(el)` with the container element to bind listeners.
+ * In browser mode: falls back to HTML5 drag events with bare filenames.
+ *
+ * Call `attachTo(el)` with the container element — in browser mode this
+ * scopes the HTML5 listeners; in Tauri mode it's a no-op target (overlay
+ * still shows window-wide since Tauri intercepts OS-level drops).
+ *
  * Returns isDragging signal for overlay UI.
  */
 export function useFileDrop() {
   const [isDragging, setIsDragging] = createSignal(false);
 
-  /** Only intercept drags that contain external files */
+  if (isTauri()) {
+    // Tauri native API — provides absolute paths via onDragDropEvent
+    const setup = getCurrentWebview().onDragDropEvent((event) => {
+      const { type } = event.payload;
+      if (type === "enter" || type === "over") {
+        if (!isDragging()) setIsDragging(true);
+      } else if (type === "leave") {
+        setIsDragging(false);
+      } else if (type === "drop") {
+        setIsDragging(false);
+        const paths = event.payload.paths;
+        if (paths?.length) openDroppedPaths(paths);
+      }
+    });
+
+    onCleanup(() => {
+      setup.then((unlisten) => unlisten()).catch(() => {});
+    });
+
+    // In Tauri mode, attachTo is a no-op — Tauri captures OS drops window-wide
+    return { isDragging, attachTo: (_el: HTMLElement) => {} };
+  }
+
+  // Browser mode: HTML5 drag events (filenames only, no absolute paths)
   const hasFiles = (e: DragEvent) => e.dataTransfer?.types?.includes("Files") ?? false;
 
   const onDragOver = (e: DragEvent) => {
@@ -83,7 +115,6 @@ export function useFileDrop() {
 
   const onDragLeave = (e: DragEvent) => {
     if (!hasFiles(e)) return;
-    // Only reset when leaving the container itself, not its children
     const container = e.currentTarget as HTMLElement;
     const related = e.relatedTarget as Node | null;
     if (related && container.contains(related)) return;
@@ -98,40 +129,14 @@ export function useFileDrop() {
     const files = e.dataTransfer?.files;
     if (!files?.length) return;
 
-    const paths = extractPaths(files);
-    if (!paths.length) return;
-
-    // If the active terminal has a PTY session, write paths there
-    // so running processes (Claude Code, etc.) can reference them.
-    const active = terminalsStore.getActive();
-    if (active?.sessionId && terminalsStore.state.activeId) {
-      const joined = paths.join(" ");
-      rpc("write_pty", { sessionId: active.sessionId, data: joined }).catch((err) => {
-        appLogger.error("terminal", "Failed to write dropped file paths", err);
-      });
-      return;
-    }
-
-    // No active PTY — open files in the appropriate tab.
-    // In Tauri, paths are absolute so we resolve repo-relative paths.
-    // In browser, only filenames are available — open as standalone tabs.
-    const hasTauriPaths = isTauri();
-    for (const filePath of paths) {
-      const [repoPath, relPath] = hasTauriPaths ? resolveRepoPaths(filePath) : ["", filePath];
-      const fileType = classifyDroppedFile(filePath);
-      if (fileType === "markdown") {
-        mdTabsStore.add(repoPath, relPath);
-      } else {
-        editorTabsStore.add(repoPath, relPath);
-      }
-    }
-
-    appLogger.info("app", `Opened ${paths.length} file(s) via drag & drop`);
+    // In browser mode only bare filenames are available
+    const paths: string[] = [];
+    for (const file of files) paths.push(file.name);
+    openDroppedPaths(paths);
   };
 
   let boundEl: HTMLElement | null = null;
 
-  /** Attach drag & drop listeners to a container element */
   function attachTo(el: HTMLElement) {
     if (boundEl) {
       boundEl.removeEventListener("dragover", onDragOver);

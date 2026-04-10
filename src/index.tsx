@@ -90,9 +90,9 @@ if (!import.meta.env.DEV) {
   });
 }
 
-// Prevent the webview from navigating to dropped files (causes white screen).
-// File drops are handled by useFileDrop scoped to #terminal-panes — these
-// global handlers are a safety net for drops outside that area.
+// Prevent the webview from navigating to dropped files (causes white screen
+// in browser fallback mode). In Tauri mode with dragDropEnabled: true these
+// events never fire — the OS-level handler in useFileDrop intercepts first.
 document.addEventListener("dragover", (e) => {
   e.preventDefault();
 });
