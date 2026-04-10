@@ -112,7 +112,7 @@ export const DEFAULT_BINDINGS: Record<ActionName, string> = {
   "quick-branch-switch": "Cmd+B",
   "toggle-file-browser-content-search": "Cmd+Shift+F",
   "toggle-branches-tab": "Cmd+G",
-  "toggle-mcp-popup": "Cmd+Shift+M",
+  "toggle-mcp-popup": "Cmd+Shift+I",
   "clear-scrollback": "Cmd+K",
   "scroll-to-top": "Cmd+Home",
   "scroll-to-bottom": "Cmd+End",

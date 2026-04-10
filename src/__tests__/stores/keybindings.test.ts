@@ -218,7 +218,7 @@ describe("keybindingsStore", () => {
       await store.hydrate();
 
       // Other defaults should still work
-      expect(store.getActionForCombo("cmd+m")).toBe("toggle-markdown");
+      expect(store.getActionForCombo("cmd+shift+m")).toBe("toggle-markdown");
       expect(store.getActionForCombo("cmd+t")).toBe("new-terminal");
     });
 
