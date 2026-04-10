@@ -1,0 +1,36 @@
+src/styles.css
+  bd0c206bb55d1b6c 297-309
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "0efaa8e5bd5abefa69cc4f4c2c33582456ac2d3b",
+  "prompts": {
+    "211af807a9999814": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6818ea39-4595-4801-9d1a-ca64eba0b1a1",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 534,
+      "overriden_lines": 0
+    },
+    "bd0c206bb55d1b6c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "deef61d4-5ab6-413f-bdfb-d4113b71fc8a",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 13,
+      "overriden_lines": 0
+    }
+  }
+}
