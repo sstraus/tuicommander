@@ -1350,19 +1350,18 @@ export const Terminal: Component<TerminalProps> = (props) => {
       const line = buf.baseY + buf.cursorY;
       terminalsStore.handleOsc133(props.id, type, line, Number.isNaN(ec) ? undefined : ec);
 
-      // Gutter exit code marker on block completion
+      // Gutter exit code marker on block completion (errors only)
       if (type === "D" && terminal) {
         const term = terminalsStore.get(props.id);
         const blocks = term?.commandBlocks;
         const lastBlock = blocks?.[blocks.length - 1];
-        if (lastBlock) {
+        if (lastBlock && lastBlock.exitCode !== 0) {
           const offset = lastBlock.promptLine - buf.baseY - buf.cursorY;
           const marker = terminal.registerMarker(offset);
           if (marker) {
-            const ok = lastBlock.exitCode === 0;
             const deco = terminal.registerDecoration({ marker, anchor: "left", x: 0, width: 1, height: 1 });
             deco?.onRender((el) => {
-              el.classList.add(s.osc133Gutter, ok ? s.osc133GutterOk : s.osc133GutterErr);
+              el.classList.add(s.osc133Gutter, s.osc133GutterErr);
             });
           }
         }

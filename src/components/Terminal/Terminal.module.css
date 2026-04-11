@@ -90,13 +90,9 @@
 /* OSC 133 gutter exit code markers */
 .osc133Gutter {
   width: 3px !important;
-  height: 100% !important;
+  margin-left: -8px !important;
   border-radius: 1px;
   pointer-events: none;
-}
-
-.osc133GutterOk {
-  background: var(--green, #3fb950);
 }
 
 .osc133GutterErr {
