@@ -228,7 +228,13 @@ pub(crate) async fn send_push_batch(
                     Ok(resp) => {
                         let status = resp.status().as_u16();
                         let body_text = resp.text().await.unwrap_or_default();
-                        tracing::warn!(source = "push", status, body = %body_text, "Push delivery failed");
+                        // VAPID key mismatch means the subscription was created with
+                        // a different server key — it will never work again, treat as stale.
+                        if body_text.contains("VapidPkHashMismatch") || status == 403 {
+                            tracing::warn!(source = "push", "Subscription stale (status={status}), removing: {body_text}");
+                            return Some(endpoint);
+                        }
+                        tracing::warn!(source = "push", "Push delivery failed: status={status} body={body_text}");
                         None
                     }
                     Err(e) => {

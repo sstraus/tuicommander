@@ -1478,6 +1478,8 @@ fn handle_config(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Val
             let mut json = to_json_or_error(config);
             if let Some(obj) = json.as_object_mut() {
                 obj.remove("remote_access_password_hash");
+                obj.remove("session_token");
+                obj.remove("vapid_private_key");
             }
             json
         }
@@ -1489,10 +1491,17 @@ fn handle_config(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Val
                 Some(c) => c,
                 None => return serde_json::json!({"error": "Action 'save' requires 'config' object"}),
             };
-            let config: crate::config::AppConfig = match serde_json::from_value(config_val.clone()) {
+            let mut config: crate::config::AppConfig = match serde_json::from_value(config_val.clone()) {
                 Ok(c) => c,
                 Err(e) => return serde_json::json!({"error": format!("Invalid config: {}", e)}),
             };
+            // Preserve server-managed secrets
+            {
+                let current = state.config.read();
+                config.session_token = current.session_token.clone();
+                config.vapid_private_key = current.vapid_private_key.clone();
+                config.vapid_public_key = current.vapid_public_key.clone();
+            }
             match crate::config::save_app_config(config.clone()) {
                 Ok(()) => {
                     let (old_disabled, old_collapse) = {

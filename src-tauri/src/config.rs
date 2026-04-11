@@ -325,6 +325,10 @@ pub(crate) struct AppConfig {
     /// Update channel: "stable" or "nightly"
     #[serde(default = "default_update_channel")]
     pub(crate) update_channel: String,
+    /// Persistent session token for remote access authentication.
+    /// Auto-generated on first run; survives restarts so mobile/PWA sessions stay valid.
+    #[serde(default)]
+    pub(crate) session_token: String,
     /// Session token cookie duration in seconds (0 = session cookie, 31536000 = "never")
     #[serde(default = "default_session_token_duration_secs")]
     pub(crate) session_token_duration_secs: u64,
@@ -452,6 +456,7 @@ impl Default for AppConfig {
             language: default_language(),
             disabled_plugin_ids: Vec::new(),
             update_channel: default_update_channel(),
+            session_token: String::new(),
             session_token_duration_secs: default_session_token_duration_secs(),
             ipv6_enabled: false,
             lan_auth_bypass: false,
@@ -1190,6 +1195,7 @@ mod tests {
             language: "it".to_string(),
             disabled_plugin_ids: vec!["test-disabled".to_string()],
             update_channel: "nightly".to_string(),
+            session_token: "test-session-token".to_string(),
             session_token_duration_secs: 3600,
             ipv6_enabled: true,
             lan_auth_bypass: true,

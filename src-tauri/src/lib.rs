@@ -583,7 +583,13 @@ async fn get_mcp_status(state: State<'_, Arc<AppState>>) -> Result<serde_json::V
 #[tauri::command]
 fn regenerate_session_token(state: State<'_, Arc<AppState>>) {
     let new_token = uuid::Uuid::new_v4().to_string();
-    *state.session_token.write() = new_token;
+    *state.session_token.write() = new_token.clone();
+    // Persist so the new token survives restarts
+    let mut cfg = state.config.read().clone();
+    cfg.session_token = new_token;
+    if let Err(e) = config::save_app_config(cfg) {
+        tracing::error!(source = "auth", "Failed to persist regenerated session token: {e}");
+    }
 }
 
 /// Build a QR-code connect URL server-side so the raw session token
@@ -713,20 +719,29 @@ pub fn run() {
 
     let mut config = config::load_app_config();
 
-    // Auto-generate VAPID keys on first run (needed before any client can subscribe to push)
+    // Auto-generate VAPID keys and session token on first run
+    let mut config_dirty = false;
     if config.vapid_private_key.is_empty() {
         match push::generate_vapid_keys() {
             Ok((private, public)) => {
                 tracing::info!(source = "push", "Generated VAPID key pair");
                 config.vapid_private_key = private;
                 config.vapid_public_key = public;
-                if let Err(e) = config::save_app_config(config.clone()) {
-                    tracing::error!(source = "push", "Failed to persist VAPID keys: {e}");
-                }
+                config_dirty = true;
             }
             Err(e) => {
                 tracing::error!(source = "push", "Failed to generate VAPID keys: {e}");
             }
+        }
+    }
+    if config.session_token.is_empty() {
+        config.session_token = uuid::Uuid::new_v4().to_string();
+        tracing::info!(source = "auth", "Generated persistent session token");
+        config_dirty = true;
+    }
+    if config_dirty {
+        if let Err(e) = config::save_app_config(config.clone()) {
+            tracing::error!(source = "app", "Failed to persist config: {e}");
         }
     }
 
@@ -752,7 +767,7 @@ pub fn run() {
         github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
         github_viewer_login: parking_lot::RwLock::new(None),
         server_shutdown: parking_lot::Mutex::new(None),
-        session_token: parking_lot::RwLock::new(uuid::Uuid::new_v4().to_string()),
+        session_token: parking_lot::RwLock::new(config.session_token.clone()),
         app_handle: parking_lot::RwLock::new(None),
         plugin_watchers: DashMap::new(),
         vt_log_buffers: DashMap::new(),

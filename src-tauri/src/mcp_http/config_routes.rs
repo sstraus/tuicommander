@@ -35,6 +35,8 @@ pub(super) async fn get_config(State(state): State<Arc<AppState>>) -> impl IntoR
     // Strip sensitive fields from HTTP responses
     if let Some(obj) = json.as_object_mut() {
         obj.remove("remote_access_password_hash");
+        obj.remove("session_token");
+        obj.remove("vapid_private_key");
     }
     Json(json).into_response()
 }
@@ -45,6 +47,14 @@ pub(super) async fn put_config(
     Json(config): Json<crate::config::AppConfig>,
 ) -> impl IntoResponse {
     if let Err(resp) = localhost_only(&addr) { return resp; }
+    // Preserve server-managed secrets — clients must not overwrite these via save
+    let mut config = config;
+    {
+        let current = state.config.read();
+        config.session_token = current.session_token.clone();
+        config.vapid_private_key = current.vapid_private_key.clone();
+        config.vapid_public_key = current.vapid_public_key.clone();
+    }
     match crate::config::save_app_config(config.clone()) {
         Ok(()) => {
             let (old_disabled, old_collapse) = {
