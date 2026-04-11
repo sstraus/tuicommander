@@ -95,10 +95,11 @@ jobs:
 
       - name: Install Vulkan SDK (Windows)
         if: matrix.platform == 'windows-latest'
-        uses: humbletim/install-vulkan-sdk@v1.2
+        uses: jakoch/install-vulkan-sdk-action@v1
         with:
-          version: latest
+          vulkan_version: 1.4.309.0
           cache: true
+          stripdown: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v6

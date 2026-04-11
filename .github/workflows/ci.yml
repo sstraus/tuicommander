@@ -82,7 +82,7 @@ jobs:
   # GPU notes:
   # - macOS: whisper-rs compiled with Metal (target-specific dep) — always GPU.
   # - Windows: whisper-rs compiled with Vulkan (target-specific dep).
-  #   Vulkan SDK installed via humbletim/install-vulkan-sdk action.
+  #   Vulkan SDK installed via jakoch/install-vulkan-sdk-action.
   #   CUDA support is optional (add Jimver/cuda-toolkit + --features cuda if needed).
   rust-cross:
     name: Rust (${{ matrix.label }})
@@ -91,8 +91,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest
-            label: macOS-ARM
+          # TEMP: macOS disabled while iterating on Windows Vulkan SDK fix. Re-enable once green.
+          # - platform: macos-latest
+          #   label: macOS-ARM
           - platform: windows-latest
             label: Windows-x64
 
@@ -104,10 +105,11 @@ jobs:
 
       - name: Install Vulkan SDK (Windows)
         if: matrix.platform == 'windows-latest'
-        uses: humbletim/install-vulkan-sdk@v1.2
+        uses: jakoch/install-vulkan-sdk-action@v1
         with:
-          version: latest
+          vulkan_version: 1.4.309.0
           cache: true
+          stripdown: true
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable

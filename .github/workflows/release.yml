@@ -36,10 +36,11 @@ jobs:
 
       - name: Install Vulkan SDK (Windows)
         if: matrix.platform == 'windows-latest'
-        uses: humbletim/install-vulkan-sdk@v1.2
+        uses: jakoch/install-vulkan-sdk-action@v1
         with:
-          version: latest
+          vulkan_version: 1.4.309.0
           cache: true
+          stripdown: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -116,7 +117,7 @@ jobs:
           # - Linux: -fPIC required for whisper-rs-sys static linking
           # - Windows: Vulkan GPU support enabled via target-specific Cargo.toml dependency
           #   (whisper-rs = { version = "0.16", features = ["vulkan"] } in [target.'cfg(windows)'.dependencies])
-          #   Vulkan SDK installed via humbletim/install-vulkan-sdk action.
+          #   Vulkan SDK installed via jakoch/install-vulkan-sdk-action.
           #   For optional CUDA support, add: Jimver/cuda-toolkit@v0.2.x + FEATURES=cuda cargo flag.
           CMAKE_C_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Linux-x64' && '-fPIC' || '' }}
           CMAKE_CXX_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Linux-x64' && '-fPIC' || '' }}
