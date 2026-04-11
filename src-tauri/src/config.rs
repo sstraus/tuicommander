@@ -387,6 +387,9 @@ pub(crate) struct AppConfig {
     /// Global OS-level hotkey combo to toggle window visibility (e.g. "CommandOrControl+Shift+T")
     #[serde(default)]
     pub(crate) global_hotkey: Option<String>,
+    /// Default issue filter mode: "assigned", "created", "mentioned", "all", or "disabled"
+    #[serde(default = "default_issue_filter")]
+    pub(crate) issue_filter: String,
 }
 
 fn default_language() -> String {
@@ -407,6 +410,10 @@ fn default_session_token_duration_secs() -> u64 {
 
 fn default_bell_style() -> String {
     "visual".to_string()
+}
+
+fn default_issue_filter() -> String {
+    "assigned".to_string()
 }
 
 fn default_mcp_port() -> u16 {
@@ -476,6 +483,7 @@ impl Default for AppConfig {
             bell_style: default_bell_style(),
             global_hotkey: None,
             collapse_tools: false,
+            issue_filter: default_issue_filter(),
         }
     }
 }
@@ -1215,6 +1223,7 @@ mod tests {
             copy_on_select: true,
             bell_style: "visual".to_string(),
             collapse_tools: true,
+            issue_filter: "assigned".to_string(),
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
         assert_eq!(loaded.shell.as_deref(), Some("/bin/zsh"));

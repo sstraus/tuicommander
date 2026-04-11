@@ -1135,14 +1135,15 @@ export const Terminal: Component<TerminalProps> = (props) => {
     }));
 
     // Copy on select: auto-copy selection to clipboard when enabled.
-    // Debounced to avoid IPC flood during drag-selection.
+    // Debounced at 200ms to let mouseup clear accidental micro-selections
+    // that happen when clicking to focus. Min 2 chars to ignore stray clicks.
     let copyOnSelectTimer: ReturnType<typeof setTimeout> | undefined;
     terminal.onSelectionChange(() => {
       if (!settingsStore.state.copyOnSelect) return;
       clearTimeout(copyOnSelectTimer);
       copyOnSelectTimer = setTimeout(() => {
         const sel = terminal?.getSelection();
-        if (sel) {
+        if (sel && sel.length >= 2) {
           const setStatus = (window as unknown as Record<string, unknown>).__tuic_setStatusInfo as ((msg: string) => void) | undefined;
           navigator.clipboard.writeText(sel).then(() => {
             setStatus?.("Copied to clipboard");
@@ -1151,7 +1152,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
             setStatus?.("Copy failed — clipboard unavailable");
           });
         }
-      }, 50);
+      }, 200);
     });
 
     // Bell handler: flash and/or beep on BEL character

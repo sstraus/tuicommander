@@ -97,7 +97,11 @@ pub(crate) fn inject(
         return;
     }
 
-    if shell.contains("zsh") {
+    if crate::pty::is_wsl_shell(shell) {
+        // WSL default shell is bash. Inject bash integration with
+        // translated paths so /mnt/c/... references work inside WSL.
+        inject_bash_wsl(&base, cmd);
+    } else if shell.contains("zsh") {
         inject_zsh(&base, cmd);
     } else if shell.contains("bash") {
         inject_bash(&base, cmd);
@@ -168,6 +172,17 @@ fn inject_fish(base: &Path, cmd: &mut portable_pty::CommandBuilder) {
     let script_path = base.join("tuic-integration.fish");
     if write_if_changed(&script_path, FISH_INTEGRATION) {
         cmd.env("TUIC_SHELL_INTEGRATION", script_path_str(&script_path));
+    }
+}
+
+/// Inject bash integration for WSL shells. The script files live on the
+/// Windows filesystem but env vars reference them via `/mnt/` paths so
+/// they're accessible inside the WSL Linux environment.
+fn inject_bash_wsl(base: &Path, cmd: &mut portable_pty::CommandBuilder) {
+    let script_path = base.join("tuic-integration.bash");
+    if write_if_changed(&script_path, BASH_INTEGRATION) {
+        let wsl_path = crate::pty::windows_to_wsl_path(&script_path_str(&script_path));
+        cmd.env("TUIC_SHELL_INTEGRATION", wsl_path);
     }
 }
 

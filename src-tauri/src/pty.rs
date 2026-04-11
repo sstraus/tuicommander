@@ -29,43 +29,100 @@ pub(crate) fn default_shell() -> String {
     }
 }
 
+/// Convert a Windows drive-letter path to a WSL `/mnt/` path.
+/// E.g. `C:\Users\foo\repos` → `/mnt/c/Users/foo/repos`.
+/// Returns the input unchanged if it's not a Windows drive-letter path.
+pub(crate) fn windows_to_wsl_path(path: &str) -> String {
+    let bytes = path.as_bytes();
+    // Match "X:\" or "X:/" where X is an ASCII letter
+    if bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && (bytes[2] == b'\\' || bytes[2] == b'/')
+    {
+        let drive = (bytes[0] as char).to_ascii_lowercase();
+        let rest = &path[3..].replace('\\', "/");
+        format!("/mnt/{drive}/{rest}")
+    } else {
+        path.to_string()
+    }
+}
+
+/// Check whether a shell string targets WSL (e.g. `wsl.exe`, `wsl.exe -d Ubuntu`).
+/// Handles both forward-slash and backslash path separators so it works
+/// correctly regardless of compilation target (cross-compiled from macOS/Linux).
+pub(crate) fn is_wsl_shell(shell: &str) -> bool {
+    let exe = shell.split_whitespace().next().unwrap_or("");
+    // Extract filename from the last path separator (either / or \)
+    let filename = exe.rsplit(|c| c == '/' || c == '\\').next().unwrap_or(exe);
+    // Strip .exe extension if present
+    let stem = filename.strip_suffix(".exe")
+        .or_else(|| filename.strip_suffix(".EXE"))
+        .unwrap_or(filename);
+    stem.eq_ignore_ascii_case("wsl")
+}
+
+/// Inject the Unix-style env vars that Claude Code / Ink need to detect
+/// terminal capabilities (color, kitty keyboard protocol, etc.).
+fn inject_unix_terminal_env(cmd: &mut CommandBuilder) {
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
+    // Signal kitty keyboard protocol support so apps (e.g. Claude Code / Ink)
+    // detect it via heuristic precheck and proceed to query confirmation.
+    cmd.env("KITTY_WINDOW_ID", "1");
+    // Announce as ghostty so Claude Code's terminal detection allow-list
+    // enables kitty keyboard protocol. CC ≥v2.1.52 only recognizes
+    // WezTerm, ghostty, and iTerm.app — "kitty" was removed from the list.
+    // ghostty is chosen because it has no iTerm/WezTerm-specific side effects.
+    // On macOS this also prevents /etc/zshrc sourcing zshrc_Apple_Terminal.
+    cmd.env("TERM_PROGRAM", "ghostty");
+    // CC also checks TERM_PROGRAM_VERSION — missing or matching /^[0-2]\./
+    // causes rejection.  Use a value that passes the gate.
+    cmd.env("TERM_PROGRAM_VERSION", "3.0.0");
+    // Prevent nested-session detection when TUICommander itself runs
+    // inside a Claude Code session (CLAUDECODE env var would propagate).
+    cmd.env_remove("CLAUDECODE");
+    if let Ok(lang) = std::env::var("LANG") {
+        cmd.env("LANG", lang);
+    } else {
+        // Fallback: ensure UTF-8 is available even when LANG is completely unset
+        cmd.env("LANG", "en_US.UTF-8");
+    }
+    // Agent Teams: always inject feature flag so CC unlocks team tools
+    cmd.env("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "1");
+}
+
 /// Build a CommandBuilder for the given shell with platform-appropriate flags.
+///
+/// The `shell` string may contain arguments (e.g. `wsl.exe -d Ubuntu`).
+/// The first whitespace-delimited token is the executable; the rest are args.
 pub(crate) fn build_shell_command(shell: &str) -> CommandBuilder {
+    let mut parts = shell.split_whitespace();
+    let exe = parts.next().unwrap_or(shell);
     #[allow(unused_mut)]
-    let mut cmd = CommandBuilder::new(shell);
-    // Login shell flag is Unix-only; PowerShell/cmd.exe don't support -l
-    #[cfg(not(windows))]
-    cmd.arg("-l");
-    // GUI-launched Tauri apps don't inherit terminal env vars from a parent shell.
-    // Set the essentials so tools detect color/encoding support correctly.
+    let mut cmd = CommandBuilder::new(exe);
+    for arg in parts {
+        cmd.arg(arg);
+    }
+
     #[cfg(not(windows))]
     {
-        cmd.env("TERM", "xterm-256color");
-        cmd.env("COLORTERM", "truecolor");
-        // Signal kitty keyboard protocol support so apps (e.g. Claude Code / Ink)
-        // detect it via heuristic precheck and proceed to query confirmation.
-        cmd.env("KITTY_WINDOW_ID", "1");
-        // Announce as ghostty so Claude Code's terminal detection allow-list
-        // enables kitty keyboard protocol. CC ≥v2.1.52 only recognizes
-        // WezTerm, ghostty, and iTerm.app — "kitty" was removed from the list.
-        // ghostty is chosen because it has no iTerm/WezTerm-specific side effects.
-        // On macOS this also prevents /etc/zshrc sourcing zshrc_Apple_Terminal.
-        cmd.env("TERM_PROGRAM", "ghostty");
-        // CC also checks TERM_PROGRAM_VERSION — missing or matching /^[0-2]\./
-        // causes rejection.  Use a value that passes the gate.
-        cmd.env("TERM_PROGRAM_VERSION", "3.0.0");
-        // Prevent nested-session detection when TUICommander itself runs
-        // inside a Claude Code session (CLAUDECODE env var would propagate).
-        cmd.env_remove("CLAUDECODE");
-        if let Ok(lang) = std::env::var("LANG") {
-            cmd.env("LANG", lang);
-        } else {
-            // Fallback: ensure UTF-8 is available even when LANG is completely unset
-            cmd.env("LANG", "en_US.UTF-8");
-        }
-        // Agent Teams: always inject feature flag so CC unlocks team tools
-        cmd.env("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "1");
+        // Login shell flag is Unix-only; PowerShell/cmd.exe don't support -l
+        cmd.arg("-l");
+        inject_unix_terminal_env(&mut cmd);
     }
+
+    #[cfg(windows)]
+    {
+        // On Windows, if the shell targets WSL, inject Unix-style env vars
+        // so that tools inside WSL (Claude Code, etc.) detect terminal
+        // capabilities correctly. These are passed through to the Linux
+        // environment by wsl.exe.
+        if is_wsl_shell(shell) {
+            inject_unix_terminal_env(&mut cmd);
+        }
+    }
+
     cmd
 }
 
@@ -1752,7 +1809,12 @@ pub(crate) async fn create_pty(
         let mut cmd = build_shell_command(&shell);
 
         if let Some(ref cwd) = config.cwd {
-            cmd.cwd(cwd);
+            // Translate Windows drive-letter paths to /mnt/ for WSL shells
+            if is_wsl_shell(&shell) {
+                cmd.cwd(windows_to_wsl_path(cwd));
+            } else {
+                cmd.cwd(cwd);
+            }
         }
 
         // Inject OSC 133 shell integration (command block markers)
@@ -1877,7 +1939,12 @@ pub(crate) async fn create_pty_with_worktree(
         let shell = resolve_shell(pty_config.shell);
 
         let mut cmd = build_shell_command(&shell);
-        cmd.cwd(&worktree_path);
+        // Translate Windows drive-letter paths to /mnt/ for WSL shells
+        if is_wsl_shell(&shell) {
+            cmd.cwd(windows_to_wsl_path(&worktree_path.to_string_lossy()));
+        } else {
+            cmd.cwd(&worktree_path);
+        }
 
         // Inject OSC 133 shell integration (command block markers)
         if let Ok(data_dir) = app.path().app_data_dir() {
@@ -4712,5 +4779,86 @@ mod tests {
         let input = "├──\x1b[100A🦀──";
         let result = clamp_cursor_up(input, 10);
         assert_eq!(result, "├──\x1b[10A🦀──");
+    }
+
+    // --- is_wsl_shell tests ---
+
+    #[test]
+    fn is_wsl_shell_bare() {
+        assert!(super::is_wsl_shell("wsl.exe"));
+        assert!(super::is_wsl_shell("WSL.EXE"));
+        assert!(super::is_wsl_shell("wsl"));
+    }
+
+    #[test]
+    fn is_wsl_shell_with_args() {
+        assert!(super::is_wsl_shell("wsl.exe -d Ubuntu"));
+        assert!(super::is_wsl_shell("wsl.exe --distribution Debian -- /bin/zsh"));
+    }
+
+    #[test]
+    fn is_wsl_shell_full_path() {
+        assert!(super::is_wsl_shell("C:\\Windows\\System32\\wsl.exe"));
+        assert!(super::is_wsl_shell("C:\\Windows\\System32\\wsl.exe -d Ubuntu"));
+    }
+
+    #[test]
+    fn is_wsl_shell_non_wsl() {
+        assert!(!super::is_wsl_shell("powershell.exe"));
+        assert!(!super::is_wsl_shell("/bin/zsh"));
+        assert!(!super::is_wsl_shell("cmd.exe"));
+        assert!(!super::is_wsl_shell("wslconfig.exe"));
+    }
+
+    // --- build_shell_command arg splitting tests ---
+
+    #[test]
+    fn build_shell_command_splits_args() {
+        let cmd = super::build_shell_command("wsl.exe -d Ubuntu");
+        let argv = cmd.as_unix_command_line().unwrap();
+        // The command line should contain the args as separate tokens
+        assert!(argv.contains("-d"), "Expected -d in: {}", argv);
+        assert!(argv.contains("Ubuntu"), "Expected Ubuntu in: {}", argv);
+    }
+
+    #[test]
+    fn build_shell_command_single_exe() {
+        // Single executable should still work (no extra empty args)
+        let cmd = super::build_shell_command("/bin/zsh");
+        let argv = cmd.as_unix_command_line().unwrap();
+        assert!(argv.contains("/bin/zsh"), "Expected /bin/zsh in: {}", argv);
+    }
+
+    // --- windows_to_wsl_path tests ---
+
+    #[test]
+    fn wsl_path_drive_letter_backslash() {
+        assert_eq!(super::windows_to_wsl_path("C:\\Users\\foo\\repos"), "/mnt/c/Users/foo/repos");
+    }
+
+    #[test]
+    fn wsl_path_drive_letter_forward_slash() {
+        assert_eq!(super::windows_to_wsl_path("C:/Users/foo/repos"), "/mnt/c/Users/foo/repos");
+    }
+
+    #[test]
+    fn wsl_path_lowercase_drive() {
+        assert_eq!(super::windows_to_wsl_path("d:\\work"), "/mnt/d/work");
+    }
+
+    #[test]
+    fn wsl_path_already_linux() {
+        assert_eq!(super::windows_to_wsl_path("/home/user/repos"), "/home/user/repos");
+    }
+
+    #[test]
+    fn wsl_path_unc_unchanged() {
+        // UNC paths are not drive-letter paths — returned as-is
+        assert_eq!(super::windows_to_wsl_path("\\\\server\\share"), "\\\\server\\share");
+    }
+
+    #[test]
+    fn wsl_path_root_drive() {
+        assert_eq!(super::windows_to_wsl_path("C:\\"), "/mnt/c/");
     }
 }
