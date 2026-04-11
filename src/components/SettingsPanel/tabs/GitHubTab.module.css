@@ -185,13 +185,7 @@
   border-radius: var(--radius-sm);
 }
 
-/* ── Section headings ── */
-.sectionHeading {
-  font-size: var(--font-base);
-  font-weight: 600;
-  color: var(--fg-primary);
-  margin: 0;
-}
+/* sectionHeading removed — using shared .section h3 from Settings.module.css */
 
 /* ── Diagnostics section ── */
 .diagnosticsSection {

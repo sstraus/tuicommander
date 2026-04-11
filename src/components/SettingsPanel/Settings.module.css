@@ -228,6 +228,10 @@
   color: var(--fg-primary);
 }
 
+.section h3:not(:first-child) {
+  margin-top: 8px;
+}
+
 .group {
   margin-bottom: 20px;
 }

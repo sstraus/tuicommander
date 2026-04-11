@@ -280,7 +280,7 @@ export const ServicesTab: Component = () => {
         </p>
       </div>
 
-      <h3 style={{ "margin-top": "24px" }}>{t("services.heading.remoteAccess", "Remote Access")}</h3>
+      <h3>{t("services.heading.remoteAccess", "Remote Access")}</h3>
 
       <div class={s.group}>
         <div class={s.toggle}>
@@ -499,7 +499,7 @@ export const ServicesTab: Component = () => {
           const showHint = ts.state === "Running" && !ts.https_enabled;
           return (
             <>
-              <h3 style={{ "margin-top": "24px" }}>Tailscale HTTPS</h3>
+              <h3>Tailscale HTTPS</h3>
               <div class={s.group}>
                 <div class={s.row}>
                   <span class={s.label}>{t("services.label.tailscaleStatus", "Status")}</span>
@@ -534,7 +534,7 @@ export const ServicesTab: Component = () => {
       </Show>
 
       {/* ── Cloud Relay ── */}
-      <h3 style={{ "margin-top": "24px" }}>{t("services.heading.cloudRelay", "Cloud Relay")}</h3>
+      <h3>{t("services.heading.cloudRelay", "Cloud Relay")}</h3>
 
       <div class={s.group}>
         <div class={s.toggle}>
@@ -634,7 +634,7 @@ export const ServicesTab: Component = () => {
       </Show>
 
       {/* ── TUIC Tools ── */}
-      <h3 style={{ "margin-top": "24px" }}>TUIC Tools</h3>
+      <h3>TUIC Tools</h3>
       <div class={s.group}>
         <p class={s.hint}>
           Native tools exposed via MCP. Disable tools to restrict what AI agents can access.
