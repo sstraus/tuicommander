@@ -1,4 +1,5 @@
 import { Component, For, Show, createEffect, createMemo, createSignal, onMount } from "solid-js";
+import { Portal } from "solid-js/web";
 import { repositoriesStore } from "../../stores/repositories";
 import { githubStore } from "../../stores/github";
 import { appLogger } from "../../stores/appLogger";
@@ -10,6 +11,9 @@ import { cx } from "../../utils";
 import { t } from "../../i18n";
 import { PrDetailContent } from "../PrDetailPopover/PrDetailContent";
 import { IssueDetailContent } from "../IssueDetailPopover/IssueDetailContent";
+import { SmartButtonStrip } from "../SmartButtonStrip/SmartButtonStrip";
+import type { SavedPrompt } from "../../stores/promptLibrary";
+import { handleOpenUrl } from "../../utils/openUrl";
 import { mdTabsStore } from "../../stores/mdTabs";
 import { PostMergeCleanupDialog, type CleanupStep, type StepId, type StepStatus } from "../PostMergeCleanupDialog/PostMergeCleanupDialog";
 import { executeCleanup } from "../../hooks/usePostMergeCleanup";
@@ -27,6 +31,7 @@ function canMergePr(pr: BranchPrStatus): boolean {
 }
 
 const FILTER_OPTIONS: { value: IssueFilterMode; label: string }[] = [
+  { value: "disabled", label: "Disabled" },
   { value: "assigned", label: "Assigned" },
   { value: "created", label: "Created" },
   { value: "mentioned", label: "Mentioned" },
@@ -42,23 +47,9 @@ export const GitHubPanel: Component<{
   onCreateWorktree?: (branchName: string) => void;
   onCleanupActive?: (active: boolean) => void;
 }> = (props) => {
-  // Section collapse state — persisted in localStorage
-  const storageKey = `github-panel:${props.repoPath}`;
-  const loadCollapsed = () => {
-    try {
-      const raw = localStorage.getItem(storageKey);
-      if (raw) return JSON.parse(raw) as { prs: boolean; issues: boolean };
-    } catch { /* ignore */ }
-    return { prs: false, issues: false };
-  };
-  const [prCollapsed, setPrCollapsed] = createSignal(loadCollapsed().prs);
-  const [issuesCollapsed, setIssuesCollapsed] = createSignal(loadCollapsed().issues);
-
-  createEffect(() => {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify({ prs: prCollapsed(), issues: issuesCollapsed() }));
-    } catch { /* ignore */ }
-  });
+  // Section collapse state (transient — resets on app restart)
+  const [prCollapsed, setPrCollapsed] = createSignal(false);
+  const [issuesCollapsed, setIssuesCollapsed] = createSignal(false);
 
   // PR accordion state
   const [expandedPr, setExpandedPr] = createSignal<string | null>(null);
@@ -71,6 +62,8 @@ export const GitHubPanel: Component<{
 
   // Issue accordion state
   const [expandedIssue, setExpandedIssue] = createSignal<number | null>(null);
+  const [closingIssue, setClosingIssue] = createSignal<number | null>(null);
+  const [issueActionError, setIssueActionError] = createSignal<string | null>(null);
 
   // Post-merge cleanup state
   const [cleanupCtx, setCleanupCtx] = createSignal<{ branchName: string; baseBranch: string; hasDirtyFiles: boolean } | null>(null);
@@ -272,6 +265,31 @@ export const GitHubPanel: Component<{
     }
   };
 
+  const handleCloseReopenIssue = async (issue: GitHubIssue) => {
+    const isOpen = issue.state?.toUpperCase() === "OPEN";
+    const command = isOpen ? "close_issue" : "reopen_issue";
+    setClosingIssue(issue.number);
+    setIssueActionError(null);
+    try {
+      await invoke(command, {
+        repoPath: props.repoPath,
+        issueNumber: issue.number,
+      });
+      appLogger.info("github", `${isOpen ? "Closed" : "Reopened"} issue #${issue.number}`);
+      githubStore.pollIssues().catch(() => {});
+    } catch (e) {
+      const msg = String(e);
+      setIssueActionError(msg);
+      appLogger.error("github", `Failed to ${command} issue #${issue.number}`, { error: msg });
+    } finally {
+      setClosingIssue(null);
+    }
+  };
+
+  const handleCopyIssueNumber = (issue: GitHubIssue) => {
+    navigator.clipboard.writeText(`#${issue.number}`).catch(() => {});
+  };
+
   const handleViewDiff = async (pr: BranchPrStatus) => {
     setDiffLoading(true);
     try {
@@ -288,7 +306,7 @@ export const GitHubPanel: Component<{
   };
 
   return (
-    <>
+    <Portal>
       <Show when={cleanupCtx()}>
         {(ctx) => (
           <PostMergeCleanupDialog
@@ -373,7 +391,7 @@ export const GitHubPanel: Component<{
                             />
                           </div>
                           <Show when={expandedPr() === pr.branch}>
-                            <div class={s.ghItemDetail}>
+                            <div class={s.ghItemDetail} data-compact>
                               <button
                                 class={s.ghItemDismiss}
                                 onClick={() => handleDismiss(pr.number)}
@@ -433,6 +451,27 @@ export const GitHubPanel: Component<{
                                       ? t("sidebar.loadingDiff", "Loading...")
                                       : t("sidebar.diff", "Diff")}
                                   </button>
+                                  <Show when={pr.url}>
+                                    <button
+                                      class={cx(s.ghActionBtn, s.ghLinkBtn)}
+                                      onClick={() => handleOpenUrl(pr.url)}
+                                      title={t("prDetail.openOnGithub", "Open on GitHub")}
+                                    >
+                                      GitHub {"\u2197"}
+                                    </button>
+                                  </Show>
+                                  <SmartButtonStrip
+                                    placement="pr-popover"
+                                    repoPath={props.repoPath}
+                                    defaultPromptId="smart-review-pr"
+                                    extraFilter={(p: SavedPrompt) => {
+                                      const cs = githubStore.getCheckSummary(props.repoPath, pr.branch);
+                                      if (p.id === "smart-fix-ci") return (cs?.failed ?? 0) > 0;
+                                      if (p.id === "smart-resolve-conflicts") return pr.mergeable === "CONFLICTING";
+                                      if (p.id === "smart-review-comments") return pr.review_decision === "CHANGES_REQUESTED";
+                                      return true;
+                                    }}
+                                  />
                                 </div>
                                 <Show when={approveError()}>
                                   <div class={s.ghActionError}>{approveError()}</div>
@@ -454,76 +493,130 @@ export const GitHubPanel: Component<{
 
             {/* ── Issues section ── */}
             <div class={s.ghSection}>
-              <div
-                class={s.ghSectionHeader}
-                onClick={() => setIssuesCollapsed((v) => !v)}
-              >
-                <span class={cx(s.ghSectionChevron, !issuesCollapsed() && s.ghSectionChevronOpen)}>{"\u203A"}</span>
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/>
-                  <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/>
-                </svg>
-                <span>{t("github.issues", "Issues")}</span>
-                <Show when={issues().length > 0}>
-                  <span class={s.ghSectionCount}>{issues().length}</span>
-                </Show>
-              </div>
-              <Show when={!issuesCollapsed()}>
-                {/* Loading skeleton */}
-                <Show when={issuesLoading() && issues().length === 0}>
-                  <div class={s.ghSectionList}>
-                    <div class={s.ghSkeletonRow}><div class={s.ghSkeletonBar} /><div class={s.ghSkeletonBarShort} /></div>
-                    <div class={s.ghSkeletonRow}><div class={s.ghSkeletonBar} /><div class={s.ghSkeletonBarShort} /></div>
-                    <div class={s.ghSkeletonRow}><div class={s.ghSkeletonBar} /><div class={s.ghSkeletonBarShort} /></div>
-                  </div>
-                </Show>
-                <Show when={!issuesLoading() || issues().length > 0}>
-                <Show when={issues().length > 0} fallback={
-                  <div class={s.ghEmpty}>{t("github.noIssues", "No issues found")}</div>
-                }>
-                  <div class={s.ghSectionList}>
-                    <For each={issues()}>
-                      {(issue: GitHubIssue, issueIdx) => {
-                        const itemIdx = () => visiblePrs().length + issueIdx();
-                        return (
-                        <div class={cx(s.ghItem, expandedIssue() === issue.number && s.ghItemExpanded)}>
-                          <div class={cx(s.ghItemRow, focusedIdx() === itemIdx() && s.ghItemFocused)} onClick={() => setExpandedIssue((prev) => prev === issue.number ? null : issue.number)}>
-                            <span class={s.ghItemNum}>#{issue.number}</span>
-                            <span class={s.ghItemTitle}>{issue.title}</span>
-                            <span class={cx(s.ghIssueBadge, issue.state?.toUpperCase() === "OPEN" ? s.ghIssueOpen : s.ghIssueClosed)}>
-                              {issue.state?.toUpperCase() === "OPEN" ? "Open" : "Closed"}
-                            </span>
-                          </div>
-                          <Show when={expandedIssue() === issue.number}>
-                            <div class={s.ghItemDetail}>
-                              <IssueDetailContent issue={issue} repoPath={props.repoPath} />
-                            </div>
-                          </Show>
-                        </div>
-                        );
-                      }}
-                    </For>
-                  </div>
-                </Show>
-                </Show>
-
-                {/* Filter bar */}
-                <div class={s.ghFilterBar}>
-                  <select
-                    class={s.ghFilterSelect}
-                    value={githubStore.state.issueFilter}
-                    onChange={(e) => githubStore.setIssueFilter(e.currentTarget.value as IssueFilterMode)}
-                  >
-                    <For each={FILTER_OPTIONS}>
-                      {(opt) => <option value={opt.value}>{opt.label}</option>}
-                    </For>
-                  </select>
+              <Show when={githubStore.state.issueFilter !== "disabled"}>
+                <div
+                  class={s.ghSectionHeader}
+                  onClick={() => setIssuesCollapsed((v) => !v)}
+                >
+                  <span class={cx(s.ghSectionChevron, !issuesCollapsed() && s.ghSectionChevronOpen)}>{"\u203A"}</span>
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/>
+                    <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/>
+                  </svg>
+                  <span>{t("github.issues", "Issues")}</span>
+                  <Show when={issues().length > 0}>
+                    <span class={s.ghSectionCount}>{issues().length}</span>
+                  </Show>
                 </div>
+                <Show when={!issuesCollapsed()}>
+                  {/* Loading skeleton */}
+                  <Show when={issuesLoading() && issues().length === 0}>
+                    <div class={s.ghSectionList}>
+                      <div class={s.ghSkeletonRow}><div class={s.ghSkeletonBar} /><div class={s.ghSkeletonBarShort} /></div>
+                      <div class={s.ghSkeletonRow}><div class={s.ghSkeletonBar} /><div class={s.ghSkeletonBarShort} /></div>
+                      <div class={s.ghSkeletonRow}><div class={s.ghSkeletonBar} /><div class={s.ghSkeletonBarShort} /></div>
+                    </div>
+                  </Show>
+                  <Show when={!issuesLoading() || issues().length > 0}>
+                  <Show when={issues().length > 0} fallback={
+                    <div class={s.ghEmpty}>{t("github.noIssues", "No issues found")}</div>
+                  }>
+                    <div class={s.ghSectionList}>
+                      <For each={issues()}>
+                        {(issue: GitHubIssue, issueIdx) => {
+                          const itemIdx = () => visiblePrs().length + issueIdx();
+                          return (
+                          <div class={cx(s.ghItem, expandedIssue() === issue.number && s.ghItemExpanded)}>
+                            <div class={cx(s.ghItemRow, focusedIdx() === itemIdx() && s.ghItemFocused)} onClick={() => setExpandedIssue((prev) => prev === issue.number ? null : issue.number)}>
+                              <span class={s.ghItemNum}>#{issue.number}</span>
+                              <span class={s.ghItemTitle}>{issue.title}</span>
+                              <span class={cx(s.ghIssueBadge, issue.state?.toUpperCase() === "OPEN" ? s.ghIssueOpen : s.ghIssueClosed)}>
+                                {issue.state?.toUpperCase() === "OPEN" ? "Open" : "Closed"}
+                              </span>
+                            </div>
+                            <Show when={expandedIssue() === issue.number}>
+                              <div class={s.ghItemDetail} data-compact>
+                                <IssueDetailContent issue={issue} repoPath={props.repoPath}>
+                                  <div class={s.ghItemActions}>
+                                    <button
+                                      class={cx(s.ghActionBtn, issue.state?.toUpperCase() === "OPEN" ? s.ghCloseBtn : s.ghReopenBtn)}
+                                      onClick={() => handleCloseReopenIssue(issue)}
+                                      disabled={closingIssue() === issue.number}
+                                      title={issue.state?.toUpperCase() === "OPEN"
+                                        ? t("github.closeIssue", "Close issue")
+                                        : t("github.reopenIssue", "Reopen issue")}
+                                    >
+                                      {closingIssue() === issue.number
+                                        ? "..."
+                                        : issue.state?.toUpperCase() === "OPEN"
+                                          ? t("github.close", "Close")
+                                          : t("github.reopen", "Reopen")}
+                                    </button>
+                                    <button
+                                      class={s.ghActionBtn}
+                                      onClick={() => handleCopyIssueNumber(issue)}
+                                      title={t("github.copyNumber", "Copy issue number")}
+                                    >
+                                      #{issue.number}
+                                    </button>
+                                    <Show when={issue.url}>
+                                      <button
+                                        class={cx(s.ghActionBtn, s.ghLinkBtn)}
+                                        onClick={() => handleOpenUrl(issue.url)}
+                                        title={t("prDetail.openOnGithub", "Open on GitHub")}
+                                      >
+                                        GitHub {"\u2197"}
+                                      </button>
+                                    </Show>
+                                    <SmartButtonStrip
+                                      placement="issue-popover"
+                                      repoPath={props.repoPath}
+                                      defaultPromptId="smart-review-issue"
+                                      contextVariables={() => ({
+                                        issue_number: String(issue.number),
+                                        issue_title: issue.title,
+                                        issue_author: issue.author,
+                                        issue_state: issue.state,
+                                        issue_url: issue.url,
+                                        issue_labels: issue.labels?.map((l: { name: string }) => l.name).join(", ") || "none",
+                                        issue_assignees: issue.assignees?.join(", ") || "none",
+                                        issue_milestone: issue.milestone || "none",
+                                        issue_comments_count: String(issue.comments_count),
+                                      })}
+                                    />
+                                  </div>
+                                  <Show when={issueActionError()}>
+                                    <div class={s.ghActionError}>{issueActionError()}</div>
+                                  </Show>
+                                </IssueDetailContent>
+                              </div>
+                            </Show>
+                          </div>
+                          );
+                        }}
+                      </For>
+                    </div>
+                  </Show>
+                  </Show>
+                </Show>
               </Show>
+
+              {/* Filter bar — always visible so user can re-enable issues */}
+              <div class={s.ghFilterBar}>
+                <select
+                  class={s.ghFilterSelect}
+                  value={githubStore.state.issueFilter}
+                  onChange={(e) => githubStore.setIssueFilter(e.currentTarget.value as IssueFilterMode)}
+                >
+                  <For each={FILTER_OPTIONS}>
+                    {(opt) => <option value={opt.value}>{opt.label}</option>}
+                  </For>
+                </select>
+              </div>
             </div>
           </div>
         </div>
       </Show>
-    </>
+    </Portal>
   );
 };

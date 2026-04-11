@@ -1104,6 +1104,8 @@
   position: fixed;
   inset: 0;
   z-index: 200;
+  outline: none;
+  -webkit-app-region: no-drag;
 }
 
 .ghPanel {
@@ -1118,6 +1120,8 @@
   display: flex;
   flex-direction: column;
   box-shadow: 4px 0 12px rgba(0, 0, 0, 0.3);
+  outline: none;
+  -webkit-app-region: no-drag;
 }
 
 .ghPanelHeader {
@@ -1306,7 +1310,7 @@
 /* ── Accordion detail ── */
 .ghItemDetail {
   position: relative;
-  padding: 0 4px 8px;
+  padding: 0 0 8px;
   background: var(--bg-tertiary);
   border-top: 1px solid var(--border);
 }
@@ -1339,7 +1343,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 8px 8px 4px;
+  padding: 8px 12px 4px;
 }
 
 .ghActionBtn {
@@ -1382,6 +1386,36 @@
 .ghMergeBtn:hover {
   background: var(--success);
   color: var(--text-on-success);
+}
+
+.ghLinkBtn {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.ghLinkBtn:hover {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.ghCloseBtn {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.ghCloseBtn:hover {
+  background: var(--error);
+  color: var(--bg-primary);
+}
+
+.ghReopenBtn {
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.ghReopenBtn:hover {
+  background: var(--success);
+  color: var(--bg-primary);
 }
 
 .ghActionError {
