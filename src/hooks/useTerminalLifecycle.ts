@@ -77,7 +77,7 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
     const count = terminalsStore.getCount();
     const id = terminalsStore.add({
       sessionId: null,
-      fontSize: deps.getDefaultFontSize(),
+      fontSize: activeTerminal?.fontSize ?? deps.getDefaultFontSize(),
       name: `Terminal ${count + 1}`,
       cwd: activeTerminal?.cwd ?? repositoriesStore.state.activeRepoPath ?? null,
       awaitingInput: null,
