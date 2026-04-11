@@ -52,7 +52,7 @@ import { pluginRegistry } from "../../plugins/pluginRegistry";
 function makeTab(overrides: Partial<PluginPanelTab> = {}): PluginPanelTab {
   return {
     id: "tab-1",
-    type: "plugin",
+    type: "plugin-panel",
     pluginId: "test-plugin",
     title: "Test Plugin",
     html: "<html><body>hello</body></html>",
@@ -167,5 +167,104 @@ describe("PluginPanel", () => {
     const { container } = render(() => <PluginPanel tab={tab} />);
     const iframe = container.querySelector("iframe");
     expect(iframe?.getAttribute("sandbox")).toBe("allow-scripts");
+  });
+
+  describe("URL mode — SDK handshake", () => {
+    function makeUrlTab(): PluginPanelTab {
+      return {
+        id: "tab-url",
+        type: "plugin-panel",
+        pluginId: "test-plugin",
+        title: "URL Plugin",
+        html: "",
+        url: "about:blank",
+      } as PluginPanelTab;
+    }
+
+    it("renders URL iframe with allow-scripts allow-same-origin sandbox", () => {
+      const tab = makeUrlTab();
+      const { container } = render(() => <PluginPanel tab={tab} />);
+      const iframe = container.querySelector("iframe");
+      expect(iframe?.getAttribute("sandbox")).toBe("allow-scripts allow-same-origin");
+      expect(iframe?.getAttribute("src")).toBe("about:blank");
+    });
+
+    it("posts tuic:sdk-init to the iframe on load", () => {
+      const tab = makeUrlTab();
+      const { container } = render(() => <PluginPanel tab={tab} />);
+      const iframe = container.querySelector("iframe") as HTMLIFrameElement;
+
+      // Stub contentWindow.postMessage — jsdom gives us a real window, we spy on it
+      const postMessageSpy = vi.fn();
+      Object.defineProperty(iframe, "contentWindow", {
+        configurable: true,
+        get: () => ({ postMessage: postMessageSpy }),
+      });
+
+      // Trigger the onLoad handler
+      iframe.dispatchEvent(new Event("load"));
+
+      expect(postMessageSpy).toHaveBeenCalledTimes(1);
+      expect(postMessageSpy).toHaveBeenCalledWith(
+        { type: "tuic:sdk-init", version: "1.0" },
+        "*",
+      );
+    });
+
+    it("responds to tuic:sdk-request with tuic:sdk-init (async-listener fallback)", () => {
+      const tab = makeUrlTab();
+      const { container } = render(() => <PluginPanel tab={tab} />);
+      const iframe = container.querySelector("iframe") as HTMLIFrameElement;
+
+      const postMessageSpy = vi.fn();
+      const fakeContentWindow = { postMessage: postMessageSpy };
+      Object.defineProperty(iframe, "contentWindow", {
+        configurable: true,
+        get: () => fakeContentWindow,
+      });
+
+      // Get the registered window message handler
+      const [, handler] = addEventListenerSpy.mock.calls.find(
+        ([event]: [string]) => event === "message",
+      )!;
+
+      // Simulate the child sending tuic:sdk-request after its listener became ready
+      const event = new MessageEvent("message", {
+        data: { type: "tuic:sdk-request" },
+      });
+      // Force event.source to match contentWindow so the source guard passes
+      Object.defineProperty(event, "source", {
+        get: () => fakeContentWindow,
+      });
+
+      (handler as EventListener)(event);
+
+      expect(postMessageSpy).toHaveBeenCalledTimes(1);
+      expect(postMessageSpy).toHaveBeenCalledWith(
+        { type: "tuic:sdk-init", version: "1.0" },
+        "*",
+      );
+    });
+
+    it("sdk-init is idempotent across repeated onLoad (e.g., in-iframe navigation)", () => {
+      const tab = makeUrlTab();
+      const { container } = render(() => <PluginPanel tab={tab} />);
+      const iframe = container.querySelector("iframe") as HTMLIFrameElement;
+
+      const postMessageSpy = vi.fn();
+      Object.defineProperty(iframe, "contentWindow", {
+        configurable: true,
+        get: () => ({ postMessage: postMessageSpy }),
+      });
+
+      iframe.dispatchEvent(new Event("load"));
+      iframe.dispatchEvent(new Event("load"));
+      iframe.dispatchEvent(new Event("load"));
+
+      expect(postMessageSpy).toHaveBeenCalledTimes(3);
+      for (const call of postMessageSpy.mock.calls) {
+        expect(call[0]).toEqual({ type: "tuic:sdk-init", version: "1.0" });
+      }
+    });
   });
 });

@@ -24,18 +24,25 @@ Tabs created with `url` load content from a remote server in an iframe. The pare
 #### Handshake Protocol
 
 ```
-┌─────────────┐                      ┌─────────────┐
-│  TUIC Host   │                      │  iframe URL  │
-│  (parent)    │                      │  (child)     │
-└──────┬──────┘                      └──────┬──────┘
-       │  iframe onload                      │
-       │─── { type: "tuic:sdk-init" } ──────>│
-       │                                     │ creates window.tuic
-       │                                     │ dispatches "tuic:ready"
-       │<── { type: "tuic:open", path } ─────│ (on user action)
-       │<── { type: "tuic:edit", path, line }│
-       │<── { type: "tuic:terminal", repo }──│
+┌─────────────┐                            ┌─────────────┐
+│  TUIC Host   │                            │  iframe URL  │
+│  (parent)    │                            │  (child)     │
+└──────┬──────┘                            └──────┬──────┘
+       │  iframe onload                            │
+       │── { type: "tuic:sdk-init", version } ───>│
+       │                                           │ creates window.tuic
+       │                                           │ dispatches "tuic:ready"
+       │                                           │
+       │  (fallback path — async listeners)        │
+       │<── { type: "tuic:sdk-request" } ──────────│ child listener wasn't ready
+       │── { type: "tuic:sdk-init", version } ───>│ parent re-sends
+       │                                           │
+       │<── { type: "tuic:open", path } ───────────│ (on user action)
+       │<── { type: "tuic:edit", path, line } ─────│
+       │<── { type: "tuic:terminal", repo } ───────│
 ```
+
+Both paths are implemented in `src/components/PluginPanel/PluginPanel.tsx`. The `version` field carries `TUIC_SDK_VERSION` so the child can feature-detect.
 
 #### Step 1: Child Page — Bootstrap Listener
 
@@ -152,4 +159,4 @@ Open a terminal in the given repository.
 
 The `<script>` bootstrap in the child page **must** be synchronous and in `<head>` to guarantee the `message` listener is registered before the parent's `iframe.onload` fires `tuic:sdk-init`. If your page loads the bootstrap asynchronously (e.g., as an ES module), there is a race condition — the init message may arrive before the listener exists.
 
-If you cannot guarantee synchronous loading, implement a retry: have the child send `{ type: "tuic:sdk-request" }` to the parent on DOMContentLoaded, and have the parent respond with `tuic:sdk-init`.
+If you cannot guarantee synchronous loading, implement a retry: have the child send `{ type: "tuic:sdk-request" }` to the parent on DOMContentLoaded (or whenever the listener is registered), and the parent will respond with `tuic:sdk-init`. This fallback is fully supported by the host.
