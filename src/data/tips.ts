@@ -279,4 +279,44 @@ export const TIPS: Tip[] = [
     description: "Click individual lines in a diff to select them, then discard or unstage just those lines. Shift+click for range selection.",
     shortcut: null,
   },
+  {
+    feature: "Zoom All Terminals",
+    description: "Increase, decrease, or reset font size across every terminal at once — no need to adjust each one individually.",
+    shortcut: `${mod}+Shift+= / ${mod}+Shift+- / ${mod}+Shift+0`,
+  },
+  {
+    feature: "Global Workspace",
+    description: "Promote terminals from different repos into a single cross-repo view. Right-click a tab → Promote, then toggle the workspace with the shortcut. Tabs show a globe icon when promoted.",
+    shortcut: `${mod}+Shift+X`,
+  },
+  {
+    feature: "GitHub Issues Panel",
+    description: "Browse, filter, and act on GitHub issues alongside PRs — all in the unified GitHub panel. Smart prompts work on issues too.",
+    shortcut: null,
+  },
+  {
+    feature: "Interactive Checkboxes",
+    description: "Task-list checkboxes in markdown viewers are clickable — cycle through unchecked, checked, and indeterminate states with a click.",
+    shortcut: null,
+  },
+  {
+    feature: "Sidebar Stats Badge",
+    description: "Click the file-count badge next to a branch name to jump straight to the Git Changes panel.",
+    shortcut: null,
+  },
+  {
+    feature: "Clickable Palette Hints",
+    description: "The footer mode hints in the command palette (! for files, ? for content) are now clickable — tap one to switch mode instantly.",
+    shortcut: null,
+  },
+  {
+    feature: "Repo Overlay on Tab Hover",
+    description: "In the Global Workspace, hover a tab to see which repo it belongs to — useful when terminals from multiple repos share the view.",
+    shortcut: null,
+  },
+  {
+    feature: "WSL Support",
+    description: "TUICommander runs natively on Windows with WSL — shell arguments, environment, and CWD paths are translated automatically.",
+    shortcut: null,
+  },
 ];
