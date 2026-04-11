@@ -83,7 +83,7 @@ pub(super) async fn repo_issues(
     if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
     let path = q.path;
     let filter = q.filter;
-    match crate::github::get_all_issues_impl(&[path.clone()], &filter, &state).await {
+    match crate::github::get_all_issues_impl(std::slice::from_ref(&path), &filter, &state).await {
         Ok(mut results) => {
             let issues = results.remove(&path).unwrap_or_default();
             Json(issues).into_response()

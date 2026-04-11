@@ -982,7 +982,7 @@ async fn handle_github(state: &Arc<AppState>, args: &serde_json::Value) -> serde
             };
             if let Err(e) = validate_mcp_repo_path(&path) { return e; }
             let filter = args.get("filter").and_then(|v| v.as_str()).unwrap_or("assigned");
-            let result = crate::github::get_all_issues_impl(&[path.clone()], filter, state).await;
+            let result = crate::github::get_all_issues_impl(std::slice::from_ref(&path), filter, state).await;
             match result {
                 Ok(mut map) => serde_json::json!(map.remove(&path).unwrap_or_default()),
                 Err(e) => serde_json::json!({"error": e}),

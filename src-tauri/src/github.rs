@@ -606,7 +606,7 @@ fn parse_pr_node(v: &serde_json::Value) -> Option<BranchPrStatus> {
             let color = l["color"].as_str().unwrap_or("").to_string();
             let (text_color, background_color) = if color.len() == 6 {
                 let text = if is_light_color(&color) { "#1e1e1e" } else { "#e5e5e5" };
-                (text.to_string(), hex_to_rgba(&color, 0.3))
+                (text.to_string(), hex_to_rgba(&color, 0.7))
             } else {
                 (String::new(), String::new())
             };
@@ -725,7 +725,7 @@ fn parse_issue_node(v: &serde_json::Value) -> Option<GitHubIssue> {
             let color = l["color"].as_str().unwrap_or("").to_string();
             let (text_color, background_color) = if color.len() == 6 {
                 let text = if is_light_color(&color) { "#1e1e1e" } else { "#e5e5e5" };
-                (text.to_string(), hex_to_rgba(&color, 0.3))
+                (text.to_string(), hex_to_rgba(&color, 0.7))
             } else {
                 (String::new(), String::new())
             };
@@ -864,7 +864,7 @@ pub(crate) async fn get_repo_issues(
 ) -> Result<Vec<GitHubIssue>, String> {
     let state = state.inner().clone();
     let filter = filter_mode.as_deref().unwrap_or("assigned");
-    let mut results = get_all_issues_impl(&[path.clone()], filter, &state).await?;
+    let mut results = get_all_issues_impl(std::slice::from_ref(&path), filter, &state).await?;
     Ok(results.remove(&path).unwrap_or_default())
 }
 
@@ -2114,7 +2114,7 @@ mod tests {
         let bug = &result[0].labels[0];
         assert_eq!(bug.name, "bug");
         assert_eq!(bug.color, "d73a4a");
-        assert_eq!(bug.background_color, "rgba(215, 58, 74, 0.3)");
+        assert_eq!(bug.background_color, "rgba(215, 58, 74, 0.7)");
         assert_eq!(bug.text_color, "#e5e5e5"); // dark label => light text
 
         let enh = &result[0].labels[1];
