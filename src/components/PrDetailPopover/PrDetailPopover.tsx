@@ -16,6 +16,8 @@ import { handleOpenUrl } from "../../utils/openUrl";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
 import { PrDetailContent } from "./PrDetailContent";
+import { SmartButtonStrip } from "../SmartButtonStrip/SmartButtonStrip";
+import type { SavedPrompt } from "../../stores/promptLibrary";
 import { PostMergeCleanupDialog, type CleanupStep, type StepId, type StepStatus } from "../PostMergeCleanupDialog/PostMergeCleanupDialog";
 import { executeCleanup } from "../../hooks/usePostMergeCleanup";
 import type { AgentType } from "../../agents";
@@ -357,6 +359,27 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
                         : mergeLabel()}
                     </button>
                   </Show>
+                  <Show when={pr().url}>
+                    <button
+                      class={s.viewDiffBtn}
+                      onClick={() => handleOpenUrl(pr().url)}
+                      title={t("prDetail.openOnGithub", "Open on GitHub")}
+                    >
+                      GitHub {"\u2197"}
+                    </button>
+                  </Show>
+                  <SmartButtonStrip
+                    placement="pr-popover"
+                    repoPath={props.repoPath}
+                    defaultPromptId="smart-review-pr"
+                    extraFilter={(p: SavedPrompt) => {
+                      const cs = githubStore.getCheckSummary(props.repoPath, props.branch);
+                      if (p.id === "smart-fix-ci") return (cs?.failed ?? 0) > 0;
+                      if (p.id === "smart-resolve-conflicts") return pr().mergeable === "CONFLICTING";
+                      if (p.id === "smart-review-comments") return pr().review_decision === "CHANGES_REQUESTED";
+                      return true;
+                    }}
+                  />
                 </div>
                 <Show when={mergeError()}>
                   <div class={s.errorMsg}>{mergeError()}</div>

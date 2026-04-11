@@ -345,23 +345,6 @@
   color: var(--warning);
 }
 
-/* Open on GitHub */
-.openGithub {
-  padding: 8px 12px;
-  color: var(--accent);
-  font-size: var(--font-md);
-  font-family: var(--font-ui);
-  cursor: pointer;
-  text-align: center;
-  border-top: 1px solid var(--border);
-  transition: color 0.1s, background 0.1s;
-}
-
-.openGithub:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-}
-
 /* View Diff action button */
 .actions {
   display: flex;
@@ -455,4 +438,46 @@
   text-align: center;
   color: var(--fg-muted);
   font-size: var(--font-md);
+}
+
+/* ── Compact mode (sidebar accordion) ── */
+:global([data-compact]) .checkItem {
+  gap: 6px;
+  padding: 4px 8px;
+}
+
+:global([data-compact]) .checkName {
+  font-size: var(--font-sm);
+}
+
+:global([data-compact]) .checkStatus {
+  font-size: var(--font-2xs);
+  padding: 1px 5px;
+}
+
+:global([data-compact]) .checks {
+  padding: 4px;
+}
+
+:global([data-compact]) .ciSummary {
+  padding: 6px 12px;
+  border-bottom: none;
+}
+
+:global([data-compact]) .meta {
+  padding: 6px 12px;
+  font-size: var(--font-xs);
+  border-bottom: none;
+}
+
+:global([data-compact]) .timestamps {
+  padding: 2px 12px;
+}
+
+:global([data-compact]) .mergeDirection {
+  padding: 4px 12px;
+}
+
+:global([data-compact]) .statusRow {
+  padding: 4px 12px;
 }

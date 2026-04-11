@@ -33,6 +33,8 @@ export interface SmartButtonStripProps {
   onError?: (msg: string) => void;
   /** Called when busy state changes (for parent spinner/state) */
   onBusyChange?: (busy: boolean) => void;
+  /** Extra context variables to pass as manualVariables to executeSmartPrompt */
+  contextVariables?: () => Record<string, string>;
 }
 
 /** Translate internal error codes into user-friendly messages */
@@ -95,7 +97,8 @@ export const SmartButtonStrip: Component<SmartButtonStripProps> = (props) => {
     setBusy(true);
     props.onBusyChange?.(true);
     try {
-      const result = await executeSmartPrompt(prompt);
+      const extraVars = props.contextVariables?.();
+      const result = await executeSmartPrompt(prompt, extraVars);
       if (!result.ok) props.onError?.(friendlyError(result, prompt.name));
     } catch (err) {
       props.onError?.(String(err));
