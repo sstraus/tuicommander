@@ -81,25 +81,39 @@ export async function detectAgentForTerminal(termId: string, source: DetectionSo
 
   if (prevAgentType !== agentType) {
     appLogger.debug("app", `[AgentDetect] ${termId} agentType "${prevAgentType}" → "${agentType}"`);
-    terminalsStore.update(termId, { agentType });
 
     const sessId = current.sessionId;
-    if (prevAgentType === null && agentType !== null && sessId) {
+
+    // Notify stop of previous agent BEFORE updating the store. Plugin dispatch
+    // filters read the current store.agentType, so agent-stopped must fire
+    // while the previous type is still current or filtered plugins miss it
+    // (their internal per-session tracking then leaks across agent changes —
+    // e.g. cache-keepalive kept writing to a session that switched claude→codex).
+    if (prevAgentType !== null && sessId) {
+      pluginRegistry.notifyStateChange({ type: "agent-stopped", sessionId: sessId, terminalId: termId });
+    }
+
+    terminalsStore.update(termId, { agentType });
+
+    // Reset agent-specific state carried over from the previous agent.
+    if (prevAgentType !== null) {
+      terminalsStore.update(termId, { agentSessionId: null });
+      discoveryAttempted.delete(termId);
+      if (agentType === null) {
+        nullStreak.delete(termId);
+      }
+    }
+
+    // Notify start of new agent AFTER updating the store so filtered plugins
+    // for the new type see the event and receive the synthetic shell-state replay.
+    if (agentType !== null && sessId) {
       pluginRegistry.notifyStateChange({ type: "agent-started", sessionId: sessId, terminalId: termId });
       // Replay current shell state to plugins filtered by agentType — they missed
-      // events dispatched before detection completed (agentType was still null).
+      // events dispatched before detection completed (agentType was still stale).
       const freshShellState = terminalsStore.get(termId)?.shellState;
       if (freshShellState) {
         pluginRegistry.dispatchStructuredEvent("shell-state", { state: freshShellState }, sessId);
       }
-    }
-    if (prevAgentType !== null && agentType === null) {
-      if (sessId) {
-        pluginRegistry.notifyStateChange({ type: "agent-stopped", sessionId: sessId, terminalId: termId });
-      }
-      terminalsStore.update(termId, { agentSessionId: null });
-      discoveryAttempted.delete(termId);
-      nullStreak.delete(termId);
     }
   }
 

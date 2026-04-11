@@ -235,6 +235,80 @@ describe("useAgentPolling", () => {
       });
     });
 
+    it("fires agent-stopped for filtered plugins on direct agent→agent transitions", async () => {
+      // Bug: when agentType switched from claude to codex without first passing
+      // through null (user exits claude and immediately runs codex, before the
+      // NULL_THRESHOLD idle-streak clears the agent), neither agent-started nor
+      // agent-stopped was dispatched. Plugins filtered on agentTypes=["claude"]
+      // (e.g. cache-keepalive) kept their internal per-session state and wrote
+      // keepalive messages into the now-codex PTY. Fix: emit agent-stopped
+      // before the store update (filter still matches old type) and agent-started
+      // after (filter matches new type).
+      let foregroundReturn: string | null = "claude";
+      mockInvoke.mockImplementation((cmd: string) => {
+        if (cmd === "get_session_foreground_process") return Promise.resolve(foregroundReturn);
+        if (cmd === "discover_agent_session") return Promise.resolve(null);
+        return Promise.resolve(null);
+      });
+
+      await testInScopeAsync(async () => {
+        const { detectAgentForTerminal } = await import("../../hooks/useAgentPolling");
+        const { pluginRegistry } = await import("../../plugins/pluginRegistry");
+
+        const id = store.add(makeTerminal({ name: "T1", sessionId: "sess-trans" }));
+        store.update(id, { shellState: "idle" });
+
+        const claudeEvents: string[] = [];
+        await pluginRegistry.register(
+          {
+            id: "test-claude-only",
+            onload: (host) => {
+              host.onStateChange((e) => {
+                if (e.sessionId === "sess-trans") claudeEvents.push(e.type);
+              });
+            },
+            onunload: () => {},
+          },
+          ["pty:write"],
+          [],
+          ["claude"],
+        );
+
+        const codexEvents: string[] = [];
+        await pluginRegistry.register(
+          {
+            id: "test-codex-only",
+            onload: (host) => {
+              host.onStateChange((e) => {
+                if (e.sessionId === "sess-trans") codexEvents.push(e.type);
+              });
+            },
+            onunload: () => {},
+          },
+          ["pty:write"],
+          [],
+          ["codex"],
+        );
+
+        // null → claude: claude-filtered plugin gets agent-started
+        await detectAgentForTerminal(id, "busy");
+        expect(store.get(id)?.agentType).toBe("claude");
+        expect(claudeEvents).toEqual(["agent-started"]);
+        expect(codexEvents).toEqual([]);
+
+        // claude → codex (direct): claude plugin MUST receive agent-stopped,
+        // codex plugin MUST receive agent-started
+        foregroundReturn = "codex";
+        await detectAgentForTerminal(id, "busy");
+        expect(store.get(id)?.agentType).toBe("codex");
+        expect(claudeEvents).toEqual(["agent-started", "agent-stopped"]);
+        expect(codexEvents).toEqual(["agent-started"]);
+
+        pluginRegistry.unregister("test-claude-only");
+        pluginRegistry.unregister("test-codex-only");
+      });
+    });
+
     it("clears agentSessionId on agent→null transition and allows re-discovery", async () => {
       // NULL_THRESHOLD is 3: need 3 consecutive idle-source null detections before clearing.
       // Only source="idle" can clear — polls never clear (sticky agentType fix).
