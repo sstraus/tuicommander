@@ -55,3 +55,6 @@ src-tauri/binaries/tuic-bridge-*
 docs/research/
 docs/solutions/
 docs/book
+
+# Local embedding cache (mdkb/fastembed model files)
+.fastembed_cache/
