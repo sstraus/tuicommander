@@ -41,9 +41,7 @@ ideas
 .aider*
 benchmarks
 CLAUDE.md
-.codanna
 .mdkb
-.fastembed_cache
 scripts/*
 !scripts/dev-install.sh
 !scripts/perf/

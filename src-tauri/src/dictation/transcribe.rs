@@ -6,6 +6,7 @@ use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextPar
 /// - macOS: Metal (always, via target-specific dep).
 /// - Windows: Vulkan (always, via target-specific dep).
 /// - Linux: when `cuda` or `vulkan` feature is explicitly enabled.
+///
 /// Used only for `n_threads` tuning — `use_gpu(true)` is always set regardless,
 /// because whisper.cpp falls back to CPU gracefully when no GPU is available.
 pub(super) const GPU_COMPILED: bool = cfg!(any(

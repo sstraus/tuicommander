@@ -69,8 +69,8 @@ self.addEventListener("push", (event) => {
   const title = data.title || "TUICommander";
   const options = {
     body: data.body || "",
-    icon: "/mobile-icon.svg",
-    badge: "/mobile-icon.svg",
+    icon: "/mobile-icon.svg?v=2",
+    badge: "/mobile-icon.svg?v=2",
     data: { url: data.url || "/mobile" },
     tag: "tuic-push",
     renotify: true,

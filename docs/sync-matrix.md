@@ -127,6 +127,15 @@ When adding or modifying panels, status bar, toolbar, sidebar:
 | `docs/frontend/components.md` | Component tree, panel descriptions |
 | Domain user guide | e.g. `docs/user-guide/sidebar.md`, `docs/user-guide/file-browser.md` |
 
+### TUIC SDK & iframe Integration
+When modifying the TUIC SDK, iframe postMessage protocol, or tab injection:
+
+| File | What to update |
+|------|----------------|
+| `src/components/PluginPanel/tuicSdk.ts` | Inline SDK script for plugin iframes |
+| `docs/tuic-sdk.md` | SDK reference (both inline and URL tab modes) |
+| `docs/plugins.md` | Plugin developer guide (if plugin-facing API changes) |
+
 ### Deep Links
 When adding or changing `tuic://` schemes:
 
@@ -147,6 +156,7 @@ When adding or changing `tuic://` schemes:
 | **docs/** | |
 | `docs/FEATURES.md` | Canonical feature inventory (single source of truth) |
 | `docs/plugins.md` | Plugin developer authoring guide |
+| `docs/tuic-sdk.md` | TUIC SDK reference (inline + URL tab postMessage protocol) |
 | `docs/api/tauri-commands.md` | All Tauri IPC commands |
 | `docs/api/http-api.md` | REST/HTTP endpoint reference |
 | `docs/architecture/overview.md` | High-level architecture |

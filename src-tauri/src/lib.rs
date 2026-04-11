@@ -739,10 +739,10 @@ pub fn run() {
         tracing::info!(source = "auth", "Generated persistent session token");
         config_dirty = true;
     }
-    if config_dirty {
-        if let Err(e) = config::save_app_config(config.clone()) {
-            tracing::error!(source = "app", "Failed to persist config: {e}");
-        }
+    if config_dirty
+        && let Err(e) = config::save_app_config(config.clone())
+    {
+        tracing::error!(source = "app", "Failed to persist config: {e}");
     }
 
     let (github_token, github_token_source) = crate::github_auth::resolve_token_with_source();
