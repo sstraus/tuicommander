@@ -706,17 +706,30 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - Uses safe `git branch -d` (refuses unmerged branches)
 - Deduplication prevents double-firing on the same PR
 
-### 8.7 Polling
+### 8.7 GitHub Issues Panel
+- Issues displayed in a collapsible section within the GitHub panel alongside PRs
+- Filter modes: Assigned (default), Created, Mentioned, All, Disabled
+- Filter persisted in app config (`issue_filter` field) and configurable in Settings > GitHub
+- Each issue shows: number, title, state (OPEN/CLOSED), author, labels, assignees, milestone, comment count, timestamps
+- Labels rendered with GitHub-matching colors (background opacity 0.7, contrast-aware text color)
+- Issue actions: Open in GitHub, Close/Reopen, Copy issue number
+- Expand accordion to see full details (milestone, assignees, labels, timestamps)
+- Skeleton loading rows shown during first fetch
+- Empty state message when no issues match the filter
+- MCP HTTP endpoint: `GET /repo/issues?path=...` returns issues JSON
+- MCP HTTP endpoint: `POST /repo/issues/close` closes an issue
+
+### 8.8 Polling
 - Active window: every 30 seconds
 - Hidden window: every 2 minutes
 - API budget: ~2 calls/min/repo
 
-### 8.8 Token Resolution
+### 8.9 Token Resolution
 - Priority: `GH_TOKEN` env → `GITHUB_TOKEN` env → OAuth keyring token → `gh_token` crate → `gh auth token` CLI
 - `gh_token` crate with empty-string bug workaround
 - Fallback to `gh auth token` CLI
 
-### 8.9 OAuth Device Flow Login
+### 8.10 OAuth Device Flow Login
 - One-click GitHub authentication from Settings > GitHub tab
 - Uses GitHub OAuth App Device Flow (no client secret, works on desktop)
 - Token stored in OS keyring (macOS Keychain, Windows Credential Manager, Linux Secret Service)

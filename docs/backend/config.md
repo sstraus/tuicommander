@@ -56,6 +56,8 @@ pub fn save_json_config<T: Serialize>(filename: &str, config: &T) -> Result<(), 
 | `push_enabled` | `bool` | `false` | Enable push notifications to PWA clients |
 | `relay_enabled` | `bool` | `false` | Cloud relay for mobile access |
 | `suggest_followups` | `bool` | `true` | Show `suggest:` follow-up actions |
+| `issue_filter` | `Option<String>` | `"assigned"` | GitHub Issues filter: "assigned", "created", "mentioned", "all", "disabled" |
+| `auto_show_pr_popover` | `bool` | `false` | Auto-show PR popover when switching to a branch with a PR |
 | `update_channel` | `String` | `"stable"` | Update channel: "stable" or "nightly" |
 
 **Commands:** `load_app_config()`, `save_app_config(config)`

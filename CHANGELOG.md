@@ -7,8 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **GitHub Issues panel** — Unified GitHub panel now shows issues alongside PRs. Filter by Assigned (default), Created, Mentioned, All, or Disabled. Each issue displays labels with GitHub-matching colors, assignees, milestone, and comment count. Actions: open in browser, close/reopen, copy number. Filter setting persisted in config
+- **Terminal fontSize inheritance** — New terminal tabs inherit font size from the active terminal instead of always using the global default
 - **Interactive GFM checkboxes** — Task-list items (`- [ ]`, `- [x]`, `- [~]`) in the Markdown panel are now clickable. Clicking cycles through unchecked → checked → in-progress (indeterminate) → unchecked. Changes are written back to the source file on disk. Source-line mapping ensures correct checkbox identification even with fenced code blocks
 - **Dynamic debug store registry** — All frontend stores self-register via `debugRegistry.ts`. MCP `invoke_js` can now call `__TUIC__.stores()` and `__TUIC__.store(name)` for runtime introspection without manual bridge additions
+
+### Fixed
+- **Issue filter hydration race** — `issueFilter` now reads from `settingsStore` as single source of truth, eliminating a race where `githubStore` could read the pre-hydrate default
+- **Shared issue action error** — Error messages for issue close/reopen are now scoped per-issue instead of shared across all expanded issues
+- **Smart prompt variable guard** — Unresolved variables are now always flagged even when `contextVariables` are provided
+- **Diagnostics crash in Settings** — Replaced non-null assertions (`!`) with optional chaining (`?.`) in GitHubTab diagnostics section to prevent crash when auth state hasn't resolved
 
 ## [1.0.3] - 2026-04-10
 

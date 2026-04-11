@@ -53,6 +53,9 @@ GitHub authentication and token management:
 | **Auth Status** | Shows current login, avatar, token source (OAuth/env/CLI), and available scopes |
 | **Disconnect** | Clear all GitHub tokens (keyring + env cache). Falls back to next available source. |
 | **Diagnostics** | Token source details, scope verification, API connectivity check |
+| **Issue Filter** | Which issues to show in the GitHub panel: Assigned (default), Created, Mentioned, All, or Disabled |
+| **Auto-show PR popover** | Automatically show PR detail popover when opening a branch with an active PR |
+| **Auto-delete on PR close** | Off (default), Ask, or Auto — controls branch cleanup when a PR is merged/closed |
 
 Token priority: `GH_TOKEN` env → `GITHUB_TOKEN` env → OAuth keyring → `gh` CLI config → `gh auth token` subprocess.
 

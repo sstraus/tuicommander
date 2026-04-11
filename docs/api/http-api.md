@@ -387,6 +387,36 @@ Content-Type: application/json
 
 Returns aggregated PR statuses across multiple repositories.
 
+### Issues
+
+```
+GET /repo/issues?path=/path/to/repo
+```
+
+Returns `GitHubIssue[]` for the repo, filtered by the user's configured issue filter.
+
+### Close Issue
+
+```
+POST /repo/issues/close
+Content-Type: application/json
+
+{ "repo_path": "/path/to/repo", "issue_number": 42 }
+```
+
+Closes the specified issue via GitHub GraphQL API.
+
+### Reopen Issue
+
+```
+POST /repo/issues/reopen
+Content-Type: application/json
+
+{ "repo_path": "/path/to/repo", "issue_number": 42 }
+```
+
+Reopens a closed issue via GitHub GraphQL API.
+
 ### Merged Branches
 
 ```

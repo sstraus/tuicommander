@@ -163,6 +163,50 @@ Converts hex color (e.g., "#ff0000") to rgba string (e.g., "rgba(255, 0, 0, 0.5)
 
 Calculates relative luminance using the sRGB formula to determine if a color is light (for choosing black vs white text).
 
+## Tauri Commands — Issues
+
+| Command | Signature | Description |
+|---------|-----------|-------------|
+| `poll_issues` | `(repos: Vec<(String, String, String)>, login: String, filter: String) -> Vec<RepoIssues>` | Fetch issues for multiple repos using GitHub Search API |
+| `close_issue` | `(repo_path: String, issue_number: i32) -> String` | Close an issue via GitHub GraphQL mutation |
+| `reopen_issue` | `(repo_path: String, issue_number: i32) -> String` | Reopen a closed issue via GitHub GraphQL mutation |
+
+### GitHubIssue
+
+```rust
+struct GitHubIssue {
+    number: i32,
+    title: String,
+    state: String,           // "OPEN", "CLOSED"
+    url: String,
+    created_at: String,
+    updated_at: String,
+    author: String,
+    labels: Vec<PrLabel>,    // Reuses PrLabel with computed colors
+    assignees: Vec<String>,
+    milestone: Option<String>,
+    comments_count: u32,
+}
+```
+
+### Issue Filter Modes
+
+The `filter` parameter in `poll_issues` controls which issues are fetched:
+
+| Filter | GitHub Search Qualifier | Description |
+|--------|------------------------|-------------|
+| `assigned` | `assignee:{login}` | Issues assigned to the authenticated user (default) |
+| `created` | `author:{login}` | Issues created by the authenticated user |
+| `mentioned` | `mentions:{login}` | Issues mentioning the authenticated user |
+| `all` | *(no user qualifier)* | All open issues in the repo |
+| `disabled` | *(no query)* | Issue fetching disabled |
+
+### Issue Query Construction
+
+`build_multi_repo_issues_query` constructs a GitHub Search API query per repo:
+- Format: `repo:{owner}/{name} is:issue is:open {user_qualifier}`
+- Results parsed via `parse_issue_node` which extracts labels with `hex_to_rgba` color computation (same opacity constant `LABEL_BG_OPACITY = 0.7` as PRs)
+
 ## GraphQL Batching
 
 `get_repo_pr_statuses` uses `gh pr list` with extensive `--json` fields to fetch all open PRs in a single call. This is efficient: 1 API call returns all branches with PR data.

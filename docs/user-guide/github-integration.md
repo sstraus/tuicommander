@@ -187,6 +187,39 @@ Steps execute sequentially via the Rust backend (not PTY — your terminal may b
 
 Remote-only PRs can be dismissed from the sidebar to reduce clutter. A "Show Dismissed" toggle in the sidebar reveals them again.
 
+## GitHub Issues
+
+The GitHub panel shows issues alongside PRs in a unified view.
+
+### Issue Filter
+
+Control which issues appear using the filter dropdown in **Settings > GitHub** or directly in the panel:
+
+| Filter | Shows |
+|--------|-------|
+| **Assigned** (default) | Issues assigned to you |
+| **Created** | Issues you opened |
+| **Mentioned** | Issues that mention you |
+| **All** | All open issues in the repo |
+| **Disabled** | Hides the issues section |
+
+The filter setting persists across sessions.
+
+### Issue Details
+
+Expand an issue to see:
+- **Labels** with GitHub-matching colors
+- **Assignees** and **milestone**
+- **Comment count** and **timestamps** (created/updated)
+
+### Issue Actions
+
+| Action | Description |
+|--------|-------------|
+| Open in GitHub | Opens the issue in your browser |
+| Close / Reopen | Changes issue state via GitHub API |
+| Copy number | Copies `#123` to clipboard |
+
 ## Troubleshooting
 
 **No PR data showing:**

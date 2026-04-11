@@ -347,7 +347,8 @@
           </p>
           <ul class="feature-points">
             <li>Diff panel — working tree or last 5 commits, click for inline diff</li>
-            <li>PR status badges (open/merged/draft), CI rings, review state</li>
+            <li>PR status badges (open/merged/draft), CI rings, review state, merge & approve from the app</li>
+            <li>GitHub Issues panel — filter by assigned/created/mentioned, labels with colors, close/reopen</li>
             <li>Built-in CodeMirror 6 editor with syntax highlighting and disk conflict detection</li>
             <li>CI Auto-Heal — fetches failure logs and injects them into your agent for automatic fix</li>
           </ul>
@@ -650,6 +651,13 @@ Use <span class="str">`gh pr create`</span>.
               <td class="highlight-col"><span class="check">Built-in</span></td>
             </tr>
             <tr>
+              <td>GitHub Issues & PR management</td>
+              <td><span class="cross">No</span></td>
+              <td><span class="cross">No</span></td>
+              <td><span class="partial">Extension</span></td>
+              <td class="highlight-col"><span class="check">Built-in</span></td>
+            </tr>
+            <tr>
               <td>CI Auto-Heal</td>
               <td><span class="cross">No</span></td>
               <td><span class="cross">No</span></td>
@@ -686,8 +694,11 @@ Use <span class="str">`gh pr create`</span>.
         <div class="terminal-item"><strong>Tab status dots</strong> — 6 visual states: idle, running, unseen, awaiting, error</div>
         <div class="terminal-item"><strong>Post-merge cleanup</strong> — one-click branch delete, worktree archive</div>
         <div class="terminal-item"><strong>CWD tracking</strong> — tabs auto-follow when you <code>cd</code> into a worktree</div>
+        <div class="terminal-item"><strong>GitHub Issues & PRs</strong> — unified panel with issue filters, labels, close/reopen, PR merge & approve</div>
         <div class="terminal-item"><strong>GitHub OAuth</strong> — Device Flow login, OS keyring storage, no PAT needed</div>
         <div class="terminal-item"><strong>CI Auto-Heal</strong> — fetches failure logs, injects into agent for automatic fix</div>
+        <div class="terminal-item"><strong>File browser</strong> — tree/flat view, content search with regex, case-sensitive, whole-word</div>
+        <div class="terminal-item"><strong>Markdown notes</strong> — interactive GFM checkboxes, live preview, write back to disk</div>
         <div class="terminal-item"><strong>Cross-repo knowledge</strong> — mdkb-powered search across all repos via MCP</div>
         <div class="terminal-item"><strong>Worktree agent bridge</strong> — spawn AI subagents in isolated worktrees via MCP</div>
       </div>
