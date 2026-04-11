@@ -101,6 +101,16 @@ jobs:
           cache: true
           stripdown: true
 
+      # Windows MAX_PATH workaround: whisper.cpp's vulkan-shaders-gen sub-build
+      # creates deeply nested TryCompile paths that exceed 260 chars. MSBuild's
+      # FileTracker uses legacy Win32 APIs that ignore LongPathsEnabled, so the
+      # only fix is to keep the target dir short. tauri-action honours
+      # CARGO_TARGET_DIR for artifact discovery (see tauri-action/src/utils.ts).
+      - name: Short CARGO_TARGET_DIR (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        run: echo "CARGO_TARGET_DIR=C:/t" >> $GITHUB_ENV
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
@@ -114,6 +124,7 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
+          cache-directories: ${{ matrix.platform == 'windows-latest' && 'C:/t' || '' }}
 
       - name: Install frontend dependencies
         run: npm ci

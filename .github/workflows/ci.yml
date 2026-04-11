@@ -91,9 +91,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # TEMP: macOS disabled while iterating on Windows Vulkan SDK fix. Re-enable once green.
-          # - platform: macos-latest
-          #   label: macOS-ARM
+          - platform: macos-latest
+            label: macOS-ARM
           - platform: windows-latest
             label: Windows-x64
 
@@ -126,10 +125,13 @@ jobs:
           components: clippy
 
       - name: Rust cache
-        if: matrix.platform != 'windows-latest'
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
+          # On Windows the real target dir is CARGO_TARGET_DIR=C:/t (MAX_PATH workaround).
+          # rust-cache's `workspaces` input joins target with root, so it can't point at
+          # an absolute path — use `cache-directories` instead.
+          cache-directories: ${{ matrix.platform == 'windows-latest' && 'C:/t' || '' }}
 
       - name: Create dist stub for include_dir
         shell: bash
