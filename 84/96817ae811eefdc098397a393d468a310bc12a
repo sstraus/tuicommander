@@ -1,0 +1,53 @@
+src/App.tsx
+  0b9007b5a0b6d607 792-794,798-799,803-814,819-820,828
+src/__tests__/stores/contextMenuActionsStore.test.ts
+  0b9007b5a0b6d607 75-93
+src/stores/contextMenuActionsStore.ts
+  0b9007b5a0b6d607 84,86-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "8496817ae811eefdc098397a393d468a310bc12a",
+  "prompts": {
+    "0b9007b5a0b6d607": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "572721c6-2103-42a7-ace6-1fc651ea6bbc",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 47,
+      "total_deletions": 13,
+      "accepted_lines": 47,
+      "overriden_lines": 0
+    },
+    "4903f36a5177b734": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a559cea9-83fc-4768-a6d0-7aea573eec20",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 59,
+      "total_deletions": 8,
+      "accepted_lines": 218,
+      "overriden_lines": 0
+    },
+    "9618ed18f7deb10e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "55eac033-a202-406d-b102-a0fc375ffda3",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 1141,
+      "total_deletions": 0,
+      "accepted_lines": 18,
+      "overriden_lines": 0
+    }
+  }
+}
