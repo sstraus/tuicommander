@@ -115,6 +115,69 @@ const SUGGEST_RE = /suggest:\s+.+\|/;
 /** Regex to identify intent rows in xterm buffer text */
 const INTENT_RE = /^[\s●⏺]*intent:\s+/;
 
+/** Keep xterm's vertical scrollbar visible whenever scrollback exists.
+ *
+ *  xterm v6 hard-codes `ScrollbarVisibility.Auto`. The class transitions are:
+ *    !_isNeeded                          → "invisible scrollbar vertical"
+ *    _isNeeded && !_shouldBeVisible      → "invisible scrollbar vertical fade"
+ *    _isNeeded && _shouldBeVisible       → "visible scrollbar vertical"
+ *
+ *  CRITICAL: `_hide(e)` early-returns when `_isVisible === false`, so a
+ *  terminal that has never been interacted with stays in the plain
+ *  "invisible scrollbar vertical" state (no fade) even when scrollback
+ *  accumulates — xterm only reaches the fade branch after the first reveal.
+ *
+ *  A CSS-only override on `.scrollbar.fade` therefore misses the most
+ *  common case: an agent streaming output into a tab the user hasn't
+ *  hovered yet. Source overflow truth from the xterm buffer model itself
+ *  (`buffer.active.length > term.rows`) rather than from the slider DOM:
+ *  the WebGL renderer mutates slider geometry asynchronously and reading
+ *  inline `style.height` can miss real overflow. Force the scrollbar
+ *  visible via inline style — inline styles beat xterm's class-based rules
+ *  without fighting over className. */
+function installScrollbarVisibilityFix(
+  term: XTerm,
+  container: HTMLElement,
+): () => void {
+  const scrollbar = container.querySelector<HTMLElement>(
+    ".xterm-scrollable-element > .scrollbar.vertical",
+  );
+  if (!scrollbar) return () => {};
+
+  const update = () => {
+    const hasOverflow = term.buffer.active.length > term.rows;
+    if (hasOverflow) {
+      scrollbar.style.setProperty("opacity", "1", "important");
+      scrollbar.style.setProperty("pointer-events", "auto", "important");
+    } else {
+      scrollbar.style.removeProperty("opacity");
+      scrollbar.style.removeProperty("pointer-events");
+    }
+  };
+
+  // Buffer-level events cover every path that can add/remove scrollback:
+  // writes (onLineFeed), scrollback navigation (onScroll), and resize
+  // (onResize shrinks/grows term.rows). The MutationObserver is still
+  // needed because xterm re-applies its class-based styles on every render
+  // cycle, so our inline override must be re-asserted if xterm mutates it.
+  const lf = term.onLineFeed(update);
+  const sc = term.onScroll(update);
+  const rs = term.onResize(update);
+  const observer = new MutationObserver(update);
+  observer.observe(scrollbar, {
+    attributes: true,
+    attributeFilter: ["class", "style"],
+  });
+  update();
+
+  return () => {
+    lf.dispose();
+    sc.dispose();
+    rs.dispose();
+    observer.disconnect();
+  };
+}
+
 /** Observe xterm renders and cover suggest/intent rows with CSS overlays.
  *  Unlike decorations (which attach to buffer markers and break when Ink
  *  redraws the same lines), this scans visible rows on every render pass
@@ -131,6 +194,13 @@ function installRenderObserver(
   const overlay = document.createElement("div");
   overlay.style.cssText = "position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none;z-index:10;overflow:hidden";
   screen.appendChild(overlay);
+
+  // Cache the last html string so we can skip innerHTML assignment when
+  // content hasn't changed. xterm's onRender fires on every write and every
+  // scroll frame; without this cache, every render rebuilds the overlay DOM
+  // even when no suggest/intent rows are visible, adding visible jank to
+  // wheel scrolls on busy terminals.
+  let lastHtml = "<uninitialized>";
 
   const scan = () => {
     const buf = term.buffer.active;
@@ -167,10 +237,19 @@ function installRenderObserver(
         html += `<div style="position:absolute;left:0;right:0;top:${top}px;height:${cellH}px;background:rgba(181,147,90,0.12)"></div>`;
       }
     }
-    overlay.innerHTML = html;
+    if (html !== lastHtml) {
+      overlay.innerHTML = html;
+      lastHtml = html;
+    }
   };
 
-  const disposable = term.onRender(scan);
+  // onRender covers writes; onScroll covers scrollback navigation.
+  // Without the onScroll hook, when the user scrolls up through scrollback,
+  // xterm redraws cells but does NOT fire onRender — the overlay rectangles
+  // stay pinned at their old viewport-relative positions and visually
+  // "stick" to the viewport top while content slides beneath them.
+  const renderDisposable = term.onRender(scan);
+  const scrollDisposable = term.onScroll(scan);
   // Initial scan
   scan();
 
@@ -192,7 +271,8 @@ function installRenderObserver(
   };
 
   return () => {
-    disposable.dispose();
+    renderDisposable.dispose();
+    scrollDisposable.dispose();
     overlay.remove();
   };
 }
@@ -254,6 +334,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
   // Render observer for suggest/intent row overlays — disposed on cleanup
   let renderObserverCleanup: (() => void) | null = null;
+  // Scrollbar visibility fix — forces the vertical scrollbar visible when
+  // scrollback overflows, even without prior user interaction. Disposed on cleanup.
+  let scrollbarFixCleanup: (() => void) | null = null;
   // Throttle counter for atlas cleanup triggered by onAddTextureAtlasCanvas.
   // Pages are added when the packer runs out of room for new glyphs, so a
   // burst of additions is a real signal of stress (e.g. large diverse output).
@@ -1294,6 +1377,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
     terminal.open(containerRef);
     renderObserverCleanup = installRenderObserver(terminal, containerRef);
+    scrollbarFixCleanup = installScrollbarVisibilityFix(terminal, containerRef);
     viewportLock.attach(
       containerRef,
       (line) => terminal!.scrollToLine(line),
@@ -1728,6 +1812,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     if (sessionId) pluginRegistry.removeSession(sessionId);
 
     renderObserverCleanup?.();
+    scrollbarFixCleanup?.();
     viewportLock.dispose();
     terminal?.dispose();
   });
