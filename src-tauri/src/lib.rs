@@ -1260,6 +1260,18 @@ pub fn run() {
                         let _ = app_handle.emit("file-open", paths);
                     }
                 }
+                // Cleanly tear down the Whisper/GGML context before std::process::exit
+                // triggers C++ static destructors. GGML's Metal backend uses
+                // dispatch_async for GPU resource init — if that GCD thread is still
+                // running when __cxa_finalize_ranges destroys the Metal device
+                // singleton, ggml_metal_rsets_free aborts. shutdown() joins the
+                // streaming thread (which holds an Arc<WhisperContext>), then drops
+                // the transcriber while the process is still alive.
+                tauri::RunEvent::Exit => {
+                    if let Some(dictation) = app_handle.try_state::<dictation::DictationState>() {
+                        dictation.shutdown();
+                    }
+                }
                 _ => {}
             }
         });

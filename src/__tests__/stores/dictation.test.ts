@@ -296,13 +296,19 @@ describe("dictationStore", () => {
 
   describe("stopRecording()", () => {
     it("returns TranscribeResponse on success", async () => {
-      mockInvoke.mockResolvedValueOnce({
-        text: "Hello world",
-        skip_reason: null,
-        duration_s: 2.5,
-      });
+      // startRecording sets recording=true; mock both start and stop invoke calls
+      mockInvoke
+        .mockResolvedValueOnce(undefined)  // start_dictation
+        .mockResolvedValueOnce({           // stop_dictation_and_transcribe
+          text: "Hello world",
+          skip_reason: null,
+          duration_s: 2.5,
+        });
 
       await testInScopeAsync(async () => {
+        await store.startRecording();
+        expect(store.state.recording).toBe(true);
+
         const result = await store.stopRecording();
         expect(result).toEqual({
           text: "Hello world",
@@ -317,15 +323,26 @@ describe("dictationStore", () => {
     });
 
     it("returns null and resets state on failure", async () => {
-      mockInvoke.mockRejectedValueOnce(new Error("transcription failed"));
+      mockInvoke
+        .mockResolvedValueOnce(undefined)  // start_dictation
+        .mockRejectedValueOnce(new Error("transcription failed"));  // stop
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
       await testInScopeAsync(async () => {
+        await store.startRecording();
         const result = await store.stopRecording();
         expect(result).toBeNull();
         expect(store.state.recording).toBe(false);
         expect(store.state.processing).toBe(false);
         consoleSpy.mockRestore();
+      });
+    });
+
+    it("returns null immediately when not recording", async () => {
+      await testInScopeAsync(async () => {
+        const result = await store.stopRecording();
+        expect(result).toBeNull();
+        expect(mockInvoke).not.toHaveBeenCalled();
       });
     });
   });

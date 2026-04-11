@@ -42,4 +42,17 @@ impl DictationState {
             accumulated_partials: Arc::new(Mutex::new(String::new())),
         }
     }
+
+    /// Clean shutdown: stop the streaming thread, release audio, then drop the
+    /// transcriber. Order matters — the streaming thread holds an Arc clone of
+    /// the transcriber, so we must join it before the WhisperContext can be freed.
+    pub fn shutdown(&self) {
+        // 1. Stop audio capture (upstream source)
+        *self.audio.lock() = None;
+        // 2. Stop + join the streaming thread (Drop impl signals stop flag)
+        //    This releases the thread's Arc<dyn Transcriber> clone.
+        *self.streaming.lock() = None;
+        // 3. Now safe to drop the transcriber — no other Arc holders remain.
+        *self.transcriber_arc.lock() = None;
+    }
 }

@@ -324,15 +324,18 @@ function createDictationStore() {
 
     /** Stop recording and get transcription result */
     async stopRecording(): Promise<TranscribeResponse | null> {
+      // Guard against concurrent stop calls — the Rust side rejects "Not recording"
+      // but we avoid the noise by checking frontend state first.
+      if (!state.recording) return null;
+      // Optimistically clear recording so concurrent callers bail out above.
+      setState("recording", false);
       try {
         const response = await invoke<TranscribeResponse>("stop_dictation_and_transcribe");
-        setState("recording", false);
         setState("processing", false);
         setState("partialText", "");
         return response;
       } catch (err) {
         appLogger.error("dictation", "Failed to stop recording", err);
-        setState("recording", false);
         setState("processing", false);
         setState("partialText", "");
         return null;

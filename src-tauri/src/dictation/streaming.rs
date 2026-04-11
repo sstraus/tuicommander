@@ -104,6 +104,21 @@ impl StreamingSession {
     }
 }
 
+impl Drop for StreamingSession {
+    fn drop(&mut self) {
+        // Signal the stop flag so the streaming thread exits its loop.
+        // Without this, dropping a StreamingSession without calling stop()
+        // leaves the thread running (holding an Arc<dyn Transcriber>),
+        // which prevents GGML Metal cleanup on process exit.
+        self.stop.store(true, Ordering::Release);
+        // Join the thread to ensure it has exited before the session is gone.
+        // This blocks briefly (at most one POLL_INTERVAL_MS + one transcription window).
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
 /// The core streaming loop, runs on a dedicated thread.
 ///
 /// Returns ALL audio captured during the session (both processed and unprocessed)
