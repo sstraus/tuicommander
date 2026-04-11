@@ -55,9 +55,6 @@ pub fn is_prompt_line(text: &str) -> bool {
 /// - `›` (U+203A) — Claude Code / Codex mode-line prefix
 /// - `✻` (U+273B) — Claude Code timer marker (also covers ✶✳✢ via font rendering)
 /// - `•` (U+2022) — Codex spinner / status indicator
-/// - `⎿` (U+23BF) — Claude Code sub-tree bracket (task list container)
-/// - `◻` (U+25FB) — Claude Code pending task checkbox
-/// - `✔` (U+2714) — Claude Code completed task checkbox
 pub fn is_chrome_row(text: &str) -> bool {
     // Check • (U+2022) separately — Codex uses it for both spinner and output.
     // Only classify as chrome when it matches known chrome patterns.
@@ -75,9 +72,6 @@ pub fn is_chrome_row(text: &str) -> bool {
             | '\u{2591}'        // ░ — Aider Knight Rider spinner (light shade)
             | '\u{2588}'        // █ — Aider Knight Rider spinner (full block)
             | '\u{25A0}'        // ■ — Codex interrupt marker
-            | '\u{23BF}'        // ⎿ — Claude Code sub-tree bracket (task list)
-            | '\u{25FB}'        // ◻ — Claude Code pending task checkbox
-            | '\u{2714}'        // ✔ — Claude Code completed task checkbox
             => return true,
             // Claude Code spinner dingbats (U+2720–U+273F): ✢✣✤...✻✼✽✾✿
             c if ('\u{2720}'..='\u{273F}').contains(&c) => return true,
@@ -694,27 +688,5 @@ mod tests {
     fn not_spinner_plain_text() {
         assert!(!is_spinner_row("Hello world"));
         assert!(!is_spinner_row(""));
-    }
-
-    // --- Claude Code task list chrome ---
-
-    #[test]
-    fn cc_task_subtree_bracket() {
-        assert!(is_chrome_row("  ⎿  ✔ Hide globe icon in global workspace (done)"));
-    }
-
-    #[test]
-    fn cc_task_subtree_bracket_with_count() {
-        assert!(is_chrome_row("  ⎿  4 tasks (1 done, 3 open)"));
-    }
-
-    #[test]
-    fn cc_task_pending_checkbox() {
-        assert!(is_chrome_row("     ◻ Screenshot and verify overlay rendering"));
-    }
-
-    #[test]
-    fn cc_task_completed_checkbox() {
-        assert!(is_chrome_row("     ✔ Hide globe icon in global workspace (done)"));
     }
 }
