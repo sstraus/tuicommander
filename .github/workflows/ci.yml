@@ -81,8 +81,8 @@ jobs:
   # Push to main only: verify build on macOS and Windows.
   # GPU notes:
   # - macOS: whisper-rs compiled with Metal (target-specific dep) — always GPU.
-  # - Windows: whisper-rs compiled with Vulkan (target-specific dep) — GPU enabled automatically.
-  #   The windows-latest runner has the Vulkan SDK pre-installed; no extra setup step needed.
+  # - Windows: whisper-rs compiled with Vulkan (target-specific dep).
+  #   Vulkan SDK installed via humbletim/install-vulkan-sdk action.
   #   CUDA support is optional (add Jimver/cuda-toolkit + --features cuda if needed).
   rust-cross:
     name: Rust (${{ matrix.label }})
@@ -101,6 +101,13 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      - name: Install Vulkan SDK (Windows)
+        if: matrix.platform == 'windows-latest'
+        uses: humbletim/install-vulkan-sdk@v1.2.1
+        with:
+          version: latest
+          cache: true
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable

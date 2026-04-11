@@ -34,6 +34,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev
 
+      - name: Install Vulkan SDK (Windows)
+        if: matrix.platform == 'windows-latest'
+        uses: humbletim/install-vulkan-sdk@v1.2.1
+        with:
+          version: latest
+          cache: true
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
@@ -107,9 +114,9 @@ jobs:
           # whisper.cpp build flags per platform:
           # - macOS: override -march to avoid i8mm detection mismatch on M-series < M4 (Metal GPU always active)
           # - Linux: -fPIC required for whisper-rs-sys static linking
-          # - Windows: Vulkan GPU support enabled automatically via target-specific Cargo.toml dependency
+          # - Windows: Vulkan GPU support enabled via target-specific Cargo.toml dependency
           #   (whisper-rs = { version = "0.16", features = ["vulkan"] } in [target.'cfg(windows)'.dependencies])
-          #   Vulkan SDK is pre-installed on windows-latest runners — no extra setup required.
+          #   Vulkan SDK installed via humbletim/install-vulkan-sdk action.
           #   For optional CUDA support, add: Jimver/cuda-toolkit@v0.2.x + FEATURES=cuda cargo flag.
           CMAKE_C_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Linux-x64' && '-fPIC' || '' }}
           CMAKE_CXX_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Linux-x64' && '-fPIC' || '' }}
