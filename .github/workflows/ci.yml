@@ -111,12 +111,22 @@ jobs:
           cache: true
           stripdown: true
 
+      # Windows MAX_PATH workaround: whisper.cpp's vulkan-shaders-gen sub-build
+      # creates deeply nested TryCompile paths that exceed 260 chars. MSBuild's
+      # FileTracker uses legacy Win32 APIs that ignore LongPathsEnabled, so the
+      # only fix is to keep the target dir short.
+      - name: Short CARGO_TARGET_DIR (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        run: echo "CARGO_TARGET_DIR=C:/t" >> $GITHUB_ENV
+
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
 
       - name: Rust cache
+        if: matrix.platform != 'windows-latest'
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
