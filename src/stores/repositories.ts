@@ -562,6 +562,13 @@ function createRepositoriesStore() {
       return terminalToRepo.get(termId) ?? null;
     },
 
+    /** Reverse-lookup: returns repo displayName for a terminal (for overlay labels). */
+    getRepoForTerminal(termId: string): string | null {
+      const path = terminalToRepo.get(termId);
+      if (!path) return null;
+      return state.repositories[path]?.displayName ?? null;
+    },
+
     /** Get terminals for current active branch */
     getActiveTerminals(): string[] {
       const repo = actions.getActive();

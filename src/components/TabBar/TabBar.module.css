@@ -239,6 +239,20 @@
   opacity: 1;
 }
 
+/* Repo name badge shown on tab hover in global workspace */
+.repoOverlay {
+  font-size: 9px;
+  line-height: 1;
+  color: var(--fg-muted);
+  background: var(--bg-tertiary, var(--bg-secondary));
+  border-radius: 3px;
+  padding: 1px 5px;
+  white-space: nowrap;
+  pointer-events: none;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
 /* Pin icon for pinned tabs */
 .pinIcon {
   display: inline-flex;

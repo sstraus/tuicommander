@@ -523,6 +523,8 @@ export const TabBar: Component<TabBarProps> = (props) => {
           const isEditing = () => editingId() === id;
 
           const isPromoted = () => globalWorkspaceStore.isPromoted(id);
+          const [hovered, setHovered] = createSignal(false);
+          const repoName = () => repositoriesStore.getRepoForTerminal(id);
 
           const handleCloseTab = (e: Event) => {
             e.preventDefault();
@@ -560,6 +562,8 @@ export const TabBar: Component<TabBarProps> = (props) => {
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, id)}
                 onDragEnd={handleDragEnd}
+                onMouseEnter={() => setHovered(true)}
+                onMouseLeave={() => setHovered(false)}
                 onDblClick={(e) => {
                   e.stopPropagation();
                   setEditingId(id);
@@ -600,7 +604,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
                   <div class={s.progress} style={{ width: `${progress()}%` }} />
                 )}
                 <PanePositionIcon tabId={id} rects={paneRects()} />
-                <Show when={isPromoted()}>
+                <Show when={isPromoted() && !globalWorkspaceStore.isActive()}>
                   <button
                     class={s.globeIcon}
                     title={t("tabBar.removeFromWorkspace", "Remove from Global Workspace")}
@@ -614,6 +618,9 @@ export const TabBar: Component<TabBarProps> = (props) => {
                 </Show>
                 <Show when={props.quickSwitcherActive && index() < 9}>
                   <span class={s.shortcutBadge}>{getModifierSymbol()}{index() + 1}</span>
+                </Show>
+                <Show when={hovered() && globalWorkspaceStore.isActive() && repoName()}>
+                  <span class={s.repoOverlay}>{repoName()}</span>
                 </Show>
                 <button
                   class={s.tabClose}

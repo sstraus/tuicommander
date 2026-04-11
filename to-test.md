@@ -22,6 +22,10 @@ Features to test when TUICommander is more usable.
 - [ ] Branch switch while in global workspace → auto-deactivates first
 - [ ] File browser and git panel hidden while in global workspace
 - [ ] Pane tab bar: globe icon on hover, filled when promoted, click toggles
+- [ ] Globe icon hidden on tabs when in global workspace (redundant)
+- [ ] Hover tab in global workspace → repo name overlay badge appears (inline, no layout shift)
+- [ ] Overlay shows correct repo displayName per terminal
+- [ ] Overlay NOT shown when hovering tabs in per-repo view
 
 ## Cross-Terminal Search (Command Palette)
 - [ ] Open palette, type `~error` → shows matches from terminal buffers with terminal name + line
