@@ -124,6 +124,25 @@ fn is_codex_chrome_bullet(text: &str) -> bool {
         || after.contains("esc to") || after.contains("interrupt")
 }
 
+/// Returns true if a row is part of Claude Code's Ink-rendered task list.
+///
+/// Detected markers:
+/// - `⎿` (U+23BF) — sub-tree bracket (task container, e.g. "⎿  4 tasks (1 done, 3 open)")
+/// - `◻` (U+25FB) — pending task checkbox
+/// - `✔` (U+2714) — completed task checkbox
+///
+/// Used only by `find_chrome_cutoff` to extend the trim zone upward past task
+/// rows — does NOT affect `is_chrome_row` or shell-state detection.
+fn is_task_list_row(text: &str) -> bool {
+    for c in text.chars() {
+        match c {
+            '\u{23BF}' | '\u{25FB}' | '\u{2714}' => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
 /// Find the row index where agent chrome starts (from the bottom).
 ///
 /// Returns `Some(cutoff)` where `rows[0..cutoff]` are content and
@@ -165,10 +184,16 @@ pub fn find_chrome_cutoff(rows: &[&str]) -> Option<usize> {
 
     let cutoff = match anchor {
         Some(mut idx) => {
-            // Extend cutoff up past separators and empty lines above the anchor.
+            // Extend cutoff up past separators, empty lines, and task list
+            // rows (⎿ ◻ ✔) above the anchor. Note: is_chrome_row is NOT
+            // included here — spinners above the separator are agent output
+            // indicators (e.g. Gemini braille), not footer chrome.
             while idx > 0 {
                 let above = rows[idx - 1].trim();
-                if above.is_empty() || is_separator_line(above) {
+                if above.is_empty()
+                    || is_separator_line(above)
+                    || is_task_list_row(above)
+                {
                     idx -= 1;
                 } else {
                     break;
@@ -688,5 +713,70 @@ mod tests {
     fn not_spinner_plain_text() {
         assert!(!is_spinner_row("Hello world"));
         assert!(!is_spinner_row(""));
+    }
+
+    // --- is_task_list_row ---
+
+    #[test]
+    fn task_subtree_bracket() {
+        assert!(is_task_list_row("  ⎿  ✔ Hide globe icon in global workspace (done)"));
+    }
+
+    #[test]
+    fn task_subtree_bracket_with_count() {
+        assert!(is_task_list_row("  ⎿  4 tasks (1 done, 3 open)"));
+    }
+
+    #[test]
+    fn task_pending_checkbox() {
+        assert!(is_task_list_row("     ◻ Screenshot and verify overlay rendering"));
+    }
+
+    #[test]
+    fn task_completed_checkbox() {
+        assert!(is_task_list_row("     ✔ Hide globe icon in global workspace (done)"));
+    }
+
+    #[test]
+    fn task_plain_text_not_task() {
+        assert!(!is_task_list_row("This is agent output"));
+    }
+
+    // --- find_chrome_cutoff with task list rows ---
+
+    #[test]
+    fn cutoff_cc_with_task_list() {
+        // CC with task list above separator: task rows trimmed, spinner kept.
+        // Walk-up: empty → task ◻ → task ◻ → task ⎿ → spinner (not task/empty/sep) → STOP
+        let rows: Vec<&str> = vec![
+            "Here is the answer to your question.",
+            "✻ Propagating… (1m 57s · ↓ 1.7k tokens)",
+            "  ⎿  ✔ Hide globe icon in global workspace (done)",
+            "     ◻ Screenshot and verify overlay rendering",
+            "     ◻ Add repo overlay on tab hover",
+            "",
+            "────────────────────────────────────────────────────────────────────────",
+            "❯",
+            "────────────────────────────────────────────────────────────────────────",
+            "  [Opus 4.6 | Team] tuicommander git:(main*)",
+            "  ⏵⏵ bypass permissions on (shift+tab to cycle)",
+        ];
+        // Cutoff at row 2: content + spinner kept, task rows + chrome trimmed
+        assert_eq!(find_chrome_cutoff(&rows), Some(2));
+    }
+
+    #[test]
+    fn cutoff_cc_without_task_list() {
+        // CC without task list — should behave exactly as before
+        let rows: Vec<&str> = vec![
+            "Here is the answer to your question.",
+            "",
+            "────────────────────────────────────────────────────────────────────────",
+            "❯",
+            "────────────────────────────────────────────────────────────────────────",
+            "  [Opus 4.6 | Team] tuicommander git:(main*)",
+            "  ⏵⏵ bypass permissions on (shift+tab to cycle)",
+        ];
+        assert_eq!(find_chrome_cutoff(&rows), Some(1));
     }
 }
