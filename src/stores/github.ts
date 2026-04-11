@@ -1,6 +1,7 @@
 import { createStore } from "solid-js/store";
 import { invoke } from "../invoke";
 import { appLogger } from "./appLogger";
+import { settingsStore } from "./settings";
 import { repositoriesStore } from "./repositories";
 import { prNotificationsStore, type PrNotificationType } from "./prNotifications";
 import type { BranchPrStatus, CheckSummary, CheckDetail, GitHubStatus, GitHubIssue, IssueFilterMode } from "../types";
@@ -40,7 +41,7 @@ interface GitHubStoreState {
 function createGitHubStore() {
   const [state, setState] = createStore<GitHubStoreState>({
     repos: {},
-    issueFilter: "assigned",
+    issueFilter: settingsStore.state.issueFilter === "disabled" ? "disabled" : (settingsStore.state.issueFilter || "assigned"),
     issuesLoading: false,
     circuitBreakerOpen: false,
   });
@@ -239,11 +240,14 @@ function createGitHubStore() {
     setState("repos", repoPath, "issuesLastPolled", Date.now());
   }
 
-  /** Set issue filter mode */
+  /** Set issue filter mode — persists to Rust config via settings store */
   function setIssueFilter(filter: IssueFilterMode): void {
     setState("issueFilter", filter);
-    // Re-poll immediately with new filter
-    pollIssues().catch((err) => appLogger.warn("github", "Issue re-poll failed after filter change", err));
+    settingsStore.setIssueFilter(filter);
+    if (filter !== "disabled") {
+      // Re-poll immediately with new filter
+      pollIssues().catch((err) => appLogger.warn("github", "Issue re-poll failed after filter change", err));
+    }
   }
 
   /** Persist current PR state to localStorage for offline transition detection on next startup */
@@ -286,6 +290,7 @@ function createGitHubStore() {
 
   /** Poll issues for all repos using batched GraphQL call */
   async function pollIssues(): Promise<void> {
+    if (state.issueFilter === "disabled") return;
     const paths = repositoriesStore.getPaths();
     if (paths.length === 0) return;
 

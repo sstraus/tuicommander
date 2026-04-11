@@ -1,9 +1,5 @@
-import { Component, Show, For, createSignal } from "solid-js";
-import { invoke } from "../../invoke";
-import { appLogger } from "../../stores/appLogger";
-import { githubStore } from "../../stores/github";
+import { Component, Show, For, type JSX } from "solid-js";
 import { relativeTime } from "../../utils/time";
-import { handleOpenUrl } from "../../utils/openUrl";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
 import type { GitHubIssue } from "../../types";
@@ -12,41 +8,19 @@ import s from "./IssueDetailContent.module.css";
 export interface IssueDetailContentProps {
   issue: GitHubIssue;
   repoPath: string;
+  /** Extra content rendered after metadata (e.g. action buttons) */
+  children?: JSX.Element;
 }
 
+/** Shared issue detail body: state badge, labels, assignees, milestone, timestamps,
+ *  children slot for action buttons, smart prompts, and Open on GitHub link.
+ *  Mirrors the PrDetailContent pattern for layout consistency. */
 export const IssueDetailContent: Component<IssueDetailContentProps> = (props) => {
-  const [actionLoading, setActionLoading] = createSignal(false);
-  const [actionError, setActionError] = createSignal<string | null>(null);
-
   const isOpen = () => props.issue.state?.toUpperCase() === "OPEN";
-
-  const handleCloseReopen = async () => {
-    setActionLoading(true);
-    setActionError(null);
-    const command = isOpen() ? "close_issue" : "reopen_issue";
-    try {
-      await invoke(command, {
-        repoPath: props.repoPath,
-        issueNumber: props.issue.number,
-      });
-      appLogger.info("github", `${isOpen() ? "Closed" : "Reopened"} issue #${props.issue.number}`);
-      githubStore.pollIssues().catch(() => {});
-    } catch (e) {
-      const msg = String(e);
-      setActionError(msg);
-      appLogger.error("github", `Failed to ${command} issue #${props.issue.number}`, { error: msg });
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleCopyNumber = () => {
-    navigator.clipboard.writeText(`#${props.issue.number}`).catch(() => {});
-  };
 
   return (
     <>
-      {/* State badge */}
+      {/* State badge + author + comments */}
       <div class={s.meta}>
         <span class={cx(s.stateBadge, isOpen() ? s.open : s.closed)}>
           {isOpen() ? "Open" : "Closed"}
@@ -107,39 +81,8 @@ export const IssueDetailContent: Component<IssueDetailContentProps> = (props) =>
         </div>
       </Show>
 
-      {/* Actions */}
-      <div class={s.actions}>
-        <button
-          class={s.actionBtn}
-          onClick={() => handleOpenUrl(props.issue.url)}
-          title={t("prDetail.openOnGithub", "Open on GitHub")}
-        >
-          {t("prDetail.openOnGithub", "Open on GitHub")} {"\u2197"}
-        </button>
-        <button
-          class={cx(s.actionBtn, isOpen() ? s.closeBtn : s.reopenBtn)}
-          onClick={handleCloseReopen}
-          disabled={actionLoading()}
-          title={isOpen() ? t("github.closeIssue", "Close issue") : t("github.reopenIssue", "Reopen issue")}
-        >
-          {actionLoading()
-            ? "..."
-            : isOpen()
-              ? t("github.close", "Close")
-              : t("github.reopen", "Reopen")}
-        </button>
-        <button
-          class={s.actionBtn}
-          onClick={handleCopyNumber}
-          title={t("github.copyNumber", "Copy issue number")}
-        >
-          #{props.issue.number}
-        </button>
-      </div>
-
-      <Show when={actionError()}>
-        <div class={s.actionError}>{actionError()}</div>
-      </Show>
+      {/* Extra content (action buttons, smart prompts, open link) */}
+      {props.children}
     </>
   );
 };

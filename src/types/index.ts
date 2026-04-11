@@ -202,7 +202,7 @@ export interface GitHubIssue {
 }
 
 /** Issue filter mode for the GitHub panel */
-export type IssueFilterMode = "assigned" | "created" | "mentioned" | "all";
+export type IssueFilterMode = "assigned" | "created" | "mentioned" | "all" | "disabled";
 
 /** Orchestrator stats from backend */
 export interface OrchestratorStats {

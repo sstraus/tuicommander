@@ -12,7 +12,7 @@ import sp from "./SmartPromptsTab.module.css";
 
 // All placements for the checkbox grid
 const ALL_PLACEMENTS: SmartPlacement[] = [
-  "toolbar", "git-changes", "git-branches", "pr-popover", "terminal-context", "command-palette",
+  "toolbar", "git-changes", "git-branches", "pr-popover", "issue-popover", "terminal-context", "command-palette",
 ];
 
 // Categories extracted from smart prompt tags

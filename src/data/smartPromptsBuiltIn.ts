@@ -26,8 +26,16 @@ export const VARIABLE_DESCRIPTIONS: Record<string, string> = {
   // Agent/terminal context
   agent_type: "Active agent type (claude, aider, codex, etc.)",
   cwd: "Active terminal working directory",
-  // Manual-input variables
-  issue_number: "GitHub issue number to investigate",
+  // Issue context (resolved from expanded issue in the sidebar)
+  issue_number: "GitHub issue number",
+  issue_title: "GitHub issue title",
+  issue_author: "GitHub issue author",
+  issue_labels: "Comma-separated issue labels",
+  issue_state: "Issue state: OPEN or CLOSED",
+  issue_url: "GitHub issue URL",
+  issue_assignees: "Comma-separated assignee usernames",
+  issue_milestone: "Issue milestone name",
+  issue_comments_count: "Number of comments on the issue",
 };
 
 /** Shared defaults for all built-in smart prompts */
@@ -139,6 +147,17 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
     ["pr-popover"],
     "Check the review comments on PR #{pr_number} and address each one. For each comment, either make the requested change or explain why you disagree.",
     ["review"],
+  ),
+
+  // ── Issues ──────────────────────────────────────────────────────
+  builtin(
+    "smart-review-issue",
+    "Review Issue",
+    "Analyze a GitHub issue: feasibility, complexity, and implementation approach",
+    "issue-review",
+    ["issue-popover"],
+    'Review GitHub issue #{issue_number} "{issue_title}" ({issue_url}).\n\nLabels: {issue_labels}\nAuthor: {issue_author}\nAssignees: {issue_assignees}\nMilestone: {issue_milestone}\nComments: {issue_comments_count}\n\nAnalyze this issue: assess feasibility, estimate complexity (S/M/L/XL), identify affected areas in the codebase, suggest an implementation approach, and flag any risks or open questions.',
+    ["review", "investigation"],
   ),
 
   // ── Pull Requests ───────────────────────────────────────────────

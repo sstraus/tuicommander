@@ -99,75 +99,12 @@
   color: var(--fg-muted);
 }
 
-/* Actions row */
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 8px 12px;
-}
-
-.actionBtn {
-  padding: 4px 12px;
+/* ── Compact mode (sidebar accordion) ── */
+:global([data-compact]) .meta {
+  padding: 6px 12px;
   font-size: var(--font-xs);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: none;
-  color: var(--fg-secondary);
-  cursor: pointer;
-  transition: background 0.1s, color 0.1s;
 }
 
-.actionBtn:hover {
-  background: var(--accent);
-  color: var(--text-on-accent);
-  border-color: var(--accent);
-}
-
-.actionBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.closeBtn {
-  border-color: var(--error);
-  color: var(--error);
-}
-
-.closeBtn:hover {
-  background: var(--error);
-  color: var(--bg-primary);
-}
-
-.reopenBtn {
-  border-color: var(--success);
-  color: var(--success);
-}
-
-.reopenBtn:hover {
-  background: var(--success);
-  color: var(--bg-primary);
-}
-
-.actionError {
-  padding: 4px 12px;
-  font-size: var(--font-2xs);
-  color: var(--error);
-}
-
-/* Open on GitHub */
-.openGithub {
-  padding: 8px 12px;
-  color: var(--accent);
-  font-size: var(--font-md);
-  font-family: var(--font-ui);
-  cursor: pointer;
-  text-align: center;
-  border-top: 1px solid var(--border);
-  transition: color 0.1s, background 0.1s;
-}
-
-.openGithub:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
+:global([data-compact]) .timestamps {
+  padding: 2px 12px;
 }

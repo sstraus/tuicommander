@@ -2,6 +2,7 @@ import { createStore } from "solid-js/store";
 import { invoke } from "../invoke";
 import { setLocale } from "../i18n";
 import { appLogger } from "./appLogger";
+import type { IssueFilterMode } from "../types";
 
 // Legacy storage keys for one-time migration
 const LEGACY_KEYS = {
@@ -35,6 +36,7 @@ interface RustAppConfig {
   copy_on_select: boolean;
   bell_style: string;
   global_hotkey: string | null;
+  issue_filter: string;
 }
 
 // Default values
@@ -237,6 +239,7 @@ interface SettingsStoreState {
   copyOnSelect: boolean;
   bellStyle: "none" | "visual" | "sound" | "both";
   globalHotkey: string | null;
+  issueFilter: IssueFilterMode;
 }
 
 const SAVE_DEBOUNCE_MS = 500;
@@ -265,6 +268,7 @@ function createSettingsStore() {
     copyOnSelect: true,
     bellStyle: "visual",
     globalHotkey: null,
+    issueFilter: "assigned",
   });
 
   // Shadow copy of the last loaded config — preserves fields not tracked in SolidJS store
@@ -298,6 +302,7 @@ function createSettingsStore() {
       copy_on_select: state.copyOnSelect,
       bell_style: state.bellStyle,
       global_hotkey: state.globalHotkey,
+      issue_filter: state.issueFilter,
       session_token_duration_secs: baseConfig?.session_token_duration_secs ?? 86400,
       mcp_server_enabled: baseConfig?.mcp_server_enabled ?? true,
     };
@@ -356,6 +361,8 @@ function createSettingsStore() {
         setState("bellStyle", (config.bell_style || "visual") as SettingsStoreState["bellStyle"]);
         setState("suggestFollowups", config.suggest_followups ?? true);
         setState("globalHotkey", config.global_hotkey ?? null);
+        const issueFilter = config.issue_filter || "assigned";
+        setState("issueFilter", (["assigned", "created", "mentioned", "all", "disabled"].includes(issueFilter) ? issueFilter : "assigned") as IssueFilterMode);
       } catch (err) {
         appLogger.error("config", "Failed to hydrate settings", err);
       }
@@ -484,6 +491,12 @@ function createSettingsStore() {
       save();
     },
 
+    /** Set issue filter mode */
+    setIssueFilter(filter: IssueFilterMode): void {
+      setState("issueFilter", filter);
+      save();
+    },
+
     /** Set terminal bell style */
     setBellStyle(style: SettingsStoreState["bellStyle"]): void {
       setState("bellStyle", style);
@@ -546,5 +559,6 @@ registerDebugSnapshot("settings", () => {
     copyOnSelect: s.copyOnSelect,
     autoUpdateEnabled: s.autoUpdateEnabled,
     preventSleepWhenBusy: s.preventSleepWhenBusy,
+    issueFilter: s.issueFilter,
   };
 });
