@@ -1424,9 +1424,12 @@ impl LogLine {
     /// appear in rendered log output (PWA/REST consumers).
     pub fn strip_structural_tokens(&mut self) {
         lazy_static::lazy_static! {
-            // Plain-prefix syntax: ^intent: text$ or ^suggest: text$
+            // Match intent:/suggest: with optional leading whitespace and Ink
+            // bullet glyph (● U+25CF / ⏺ U+23FA) — mirrors the output parser
+            // regexes so scrollback lines that the parser detected are also
+            // stripped from the log delivered to PWA/REST consumers.
             static ref PLAIN_PREFIX_RE: regex::Regex = regex::Regex::new(
-                r"(?m)^(?:intent|suggest):\s+.*$"
+                r"(?m)^[\t ]*(?:[\x{25CF}\x{23FA}][\t ]+)?(?:intent|suggest):[\t ]+.*$"
             ).unwrap();
         }
         for span in &mut self.spans {
@@ -3794,6 +3797,52 @@ mod tests {
         };
         line.strip_structural_tokens();
         assert_eq!(line.spans[0].text, "The intent: of this code is clear");
+    }
+
+    #[test]
+    fn test_strip_structural_tokens_indented_suggest() {
+        // Ink indents continuation lines — suggest: with leading whitespace must be stripped
+        let mut line = LogLine {
+            spans: vec![
+                LogSpan { text: "  suggest: Run tests | Check logs | Push".into(), ..Default::default() },
+            ],
+        };
+        line.strip_structural_tokens();
+        assert!(line.spans.is_empty(), "indented suggest should be stripped");
+    }
+
+    #[test]
+    fn test_strip_structural_tokens_indented_intent() {
+        let mut line = LogLine {
+            spans: vec![
+                LogSpan { text: "  intent: reading the config file".into(), ..Default::default() },
+            ],
+        };
+        line.strip_structural_tokens();
+        assert!(line.spans.is_empty(), "indented intent should be stripped");
+    }
+
+    #[test]
+    fn test_strip_structural_tokens_bullet_suggest() {
+        // Ink bullet prefix: ● suggest: ...
+        let mut line = LogLine {
+            spans: vec![
+                LogSpan { text: "● suggest: A | B | C".into(), ..Default::default() },
+            ],
+        };
+        line.strip_structural_tokens();
+        assert!(line.spans.is_empty(), "bullet-prefixed suggest should be stripped");
+    }
+
+    #[test]
+    fn test_strip_structural_tokens_bullet_intent() {
+        let mut line = LogLine {
+            spans: vec![
+                LogSpan { text: "⏺ intent: doing something (Task)".into(), ..Default::default() },
+            ],
+        };
+        line.strip_structural_tokens();
+        assert!(line.spans.is_empty(), "bullet-prefixed intent should be stripped");
     }
 
     #[test]
