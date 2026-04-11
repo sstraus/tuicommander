@@ -2,7 +2,7 @@ import { Component, createEffect, createSignal, onCleanup, onMount } from "solid
 import type { PluginPanelTab } from "../../stores/mdTabs";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
 import { PLUGIN_BASE_CSS } from "./pluginBaseStyles";
-import { TUIC_SDK_SCRIPT } from "./tuicSdk";
+import { TUIC_SDK_SCRIPT, TUIC_SDK_VERSION } from "./tuicSdk";
 import { repositoriesStore } from "../../stores/repositories";
 import { mdTabsStore } from "../../stores/mdTabs";
 import { editorTabsStore } from "../../stores/editorTabs";
@@ -81,9 +81,33 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
     return repos.find((rp) => path.startsWith(rp + "/") || path === rp) ?? null;
   };
 
+  /**
+   * Send the SDK init handshake to the URL-mode iframe.
+   *
+   * Two call sites (see docs/tuic-sdk.md §Timing Notes):
+   *  1. iframe `onLoad` — primary path for child pages with a synchronous
+   *     `<head>` listener.
+   *  2. In response to `tuic:sdk-request` from the child — fallback for
+   *     child pages whose listener registers asynchronously (ES modules,
+   *     frameworks that mount after DOMContentLoaded). Without this, the
+   *     onLoad message would fire before the listener exists and be lost.
+   */
+  const sendSdkInit = () => {
+    iframeRef?.contentWindow?.postMessage(
+      { type: "tuic:sdk-init", version: TUIC_SDK_VERSION },
+      "*",
+    );
+  };
+
   /** Handle tuic:* SDK messages from the iframe */
   const handleTuicMessage = (data: Record<string, unknown>) => {
     switch (data.type) {
+      case "tuic:sdk-request": {
+        // Fallback handshake: child page's listener was not ready when
+        // iframe onLoad fired; it re-requests init. Respond idempotently.
+        sendSdkInit();
+        return;
+      }
       case "tuic:open": {
         const path = typeof data.path === "string" ? data.path : "";
         if (!path) {
@@ -214,6 +238,7 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
           ref={iframeRef}
           src={props.tab.url}
           sandbox="allow-scripts allow-same-origin"
+          onLoad={sendSdkInit}
           style={iframeStyle}
         />
       ) : (
