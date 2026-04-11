@@ -2965,6 +2965,10 @@ mod tests {
         assert_eq!(issue.author, "octocat");
         assert_eq!(issue.labels.len(), 2);
         assert_eq!(issue.labels[0].name, "bug");
+        assert_eq!(issue.labels[0].background_color, "rgba(215, 58, 73, 0.7)");
+        assert_eq!(issue.labels[0].text_color, "#e5e5e5"); // dark label => light text
+        assert_eq!(issue.labels[1].name, "P1");
+        assert_eq!(issue.labels[1].text_color, "#1e1e1e"); // light label => dark text
         assert_eq!(issue.assignees, vec!["alice", "bob"]);
         assert_eq!(issue.milestone, Some("v2.0".to_string()));
         assert_eq!(issue.comments_count, 5);

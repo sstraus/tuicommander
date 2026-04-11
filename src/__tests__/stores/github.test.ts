@@ -9,6 +9,7 @@ describe("githubStore", () => {
 
   // Mock repositoriesStore to return controlled repo paths
   const mockGetPaths = vi.fn<() => string[]>(() => ["/repo1"]);
+  const mockSetIssueFilter = vi.fn();
 
   beforeEach(async () => {
     vi.resetModules();
@@ -20,6 +21,14 @@ describe("githubStore", () => {
     vi.doMock("../../stores/repositories", () => ({
       repositoriesStore: {
         getPaths: mockGetPaths,
+      },
+    }));
+
+    mockSetIssueFilter.mockReset();
+    vi.doMock("../../stores/settings", () => ({
+      settingsStore: {
+        state: { issueFilter: "assigned" },
+        setIssueFilter: mockSetIssueFilter,
       },
     }));
 
@@ -830,6 +839,24 @@ describe("githubStore", () => {
       testInScope(() => {
         const result = store.getRemoteOnlyPrs("/unknown-repo", new Set([]));
         expect(result).toHaveLength(0);
+      });
+    });
+  });
+
+  describe("setIssueFilter()", () => {
+    it("delegates to settingsStore.setIssueFilter", () => {
+      testInScope(() => {
+        store.setIssueFilter("created");
+        expect(mockSetIssueFilter).toHaveBeenCalledWith("created");
+      });
+    });
+
+    it("does not trigger re-poll when set to 'disabled'", () => {
+      testInScope(() => {
+        store.setIssueFilter("disabled");
+        expect(mockSetIssueFilter).toHaveBeenCalledWith("disabled");
+        // No invoke call for poll_issues when disabled
+        expect(mockInvoke).not.toHaveBeenCalledWith("poll_issues", expect.anything());
       });
     });
   });

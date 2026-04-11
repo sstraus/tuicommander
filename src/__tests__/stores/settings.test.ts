@@ -340,4 +340,65 @@ describe("settingsStore", () => {
       });
     });
   });
+
+  describe("setIssueFilter()", () => {
+    it("updates issueFilter in state", () => {
+      testInScope(() => {
+        store.setIssueFilter("created");
+        expect(store.state.issueFilter).toBe("created");
+      });
+    });
+
+    it("persists issueFilter via debounced save_config", async () => {
+      await testInScopeAsync(async () => {
+        store.setIssueFilter("mentioned");
+        vi.advanceTimersByTime(600);
+        await vi.runAllTimersAsync();
+        expect(mockInvoke).toHaveBeenCalledWith("save_config", {
+          config: expect.objectContaining({ issue_filter: "mentioned" }),
+        });
+      });
+    });
+
+    it("defaults to 'assigned' on hydrate with missing issue_filter", async () => {
+      mockInvoke.mockResolvedValueOnce({
+        shell: null, font_family: "JetBrains Mono", font_size: 14,
+        theme: "dark", mcp_server_enabled: false, ide: "vscode",
+      });
+      mockInvoke.mockResolvedValueOnce({ primary_agent: "claude" });
+
+      await testInScopeAsync(async () => {
+        await store.hydrate();
+        expect(store.state.issueFilter).toBe("assigned");
+      });
+    });
+
+    it("defaults to 'assigned' on hydrate with invalid issue_filter", async () => {
+      mockInvoke.mockResolvedValueOnce({
+        shell: null, font_family: "JetBrains Mono", font_size: 14,
+        theme: "dark", mcp_server_enabled: false, ide: "vscode",
+        issue_filter: "bogus_value",
+      });
+      mockInvoke.mockResolvedValueOnce({ primary_agent: "claude" });
+
+      await testInScopeAsync(async () => {
+        await store.hydrate();
+        expect(store.state.issueFilter).toBe("assigned");
+      });
+    });
+
+    it("preserves valid issue_filter on hydrate", async () => {
+      mockInvoke.mockResolvedValueOnce({
+        shell: null, font_family: "JetBrains Mono", font_size: 14,
+        theme: "dark", mcp_server_enabled: false, ide: "vscode",
+        issue_filter: "all",
+      });
+      mockInvoke.mockResolvedValueOnce({ primary_agent: "claude" });
+
+      await testInScopeAsync(async () => {
+        await store.hydrate();
+        expect(store.state.issueFilter).toBe("all");
+      });
+    });
+  });
 });

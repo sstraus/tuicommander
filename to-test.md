@@ -571,6 +571,8 @@ Features to test when TUICommander is more usable.
 - [ ] MCP: `curl localhost:PORT/repo/issues?path=...` returns issues JSON
 - [ ] MCP: `curl -X POST localhost:PORT/repo/issues/close` with JSON body closes issue
 - [ ] MCP tool: `github` action `issues` returns issues for repo
+- [ ] Compact mode (`[data-compact]`): issue items render with reduced padding
+- [ ] SmartButtonStrip: margin-left removal doesn't misalign across different placements (changes-tab, sidebar, prompt-drawer)
 
 ## Mobile iPad Fixes
 - [ ] iPad: OutputView scrolls with touch drag (finger swipe up/down)
