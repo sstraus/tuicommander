@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-04-11
+
 ### Added
 - **GitHub Issues panel** — Unified GitHub panel now shows issues alongside PRs. Filter by Assigned (default), Created, Mentioned, All, or Disabled. Each issue displays labels with GitHub-matching colors, assignees, milestone, and comment count. Actions: open in browser, close/reopen, copy number. Filter setting persisted in config
 - **Terminal fontSize inheritance** — New terminal tabs inherit font size from the active terminal instead of always using the global default
@@ -17,6 +19,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Shared issue action error** — Error messages for issue close/reopen are now scoped per-issue instead of shared across all expanded issues
 - **Smart prompt variable guard** — Unresolved variables are now always flagged even when `contextVariables` are provided
 - **Diagnostics crash in Settings** — Replaced non-null assertions (`!`) with optional chaining (`?.`) in GitHubTab diagnostics section to prevent crash when auth state hasn't resolved
+- **Agent transition events missed on direct switches** — Switching directly between agents (e.g. claude → codex) without first returning to idle now correctly emits `agent-stopped` for the previous agent and `agent-started` for the new one. Previously, plugins filtered on a single `agentType` (like cache-keepalive) kept leaking internal state across the switch
+- **xterm scrollbar still hidden on untouched terminals** — The previous CSS-only `.fade` override missed terminals that had never been interacted with (xterm's `_hide(e)` early-returns before adding `.fade` on the first reveal). Replaced with a JS observer that sources overflow from the xterm buffer model and forces inline opacity, covering streaming agents in background tabs
+- **Overlay rectangles stuck during scrollback** — Suggest/intent row overlays no longer pin to the viewport top when scrolling through scrollback; the observer now listens to `onScroll` in addition to `onRender`
 
 ## [1.0.3] - 2026-04-10
 
