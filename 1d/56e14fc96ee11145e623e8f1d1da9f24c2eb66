@@ -1,0 +1,102 @@
+website/index.html
+  001af7060cfd9262 350-351,654-659,697,700-701
+docs/user-guide/github-integration.md
+  001af7060cfd9262 190-222
+docs/backend/config.md
+  001af7060cfd9262 59-60
+CHANGELOG.md
+  001af7060cfd9262 10-11,15-19
+docs/FEATURES.md
+  001af7060cfd9262 709-722,727,732
+docs/api/http-api.md
+  001af7060cfd9262 390-419
+docs/user-guide/settings.md
+  001af7060cfd9262 56-58
+docs/backend/github.md
+  001af7060cfd9262 166-209
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "1d56e14fc96ee11145e623e8f1d1da9f24c2eb66",
+  "prompts": {
+    "001af7060cfd9262": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92c3f1dc-615b-4324-ad9a-34fc45c8e7bf",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 148,
+      "total_deletions": 4,
+      "accepted_lines": 399,
+      "overriden_lines": 0
+    },
+    "1a80e168a904a59d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b5884f98-e2e2-456b-babe-67d7599ee2c6",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    },
+    "1b9b9d0cebbf6b0d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5f1b55a2-2657-4970-85d8-71f4c461cc1e",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 10722,
+      "overriden_lines": 0
+    },
+    "233112149c12c4fd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a2eee99c-220b-43fe-bfe0-4afdb8869b64",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 504,
+      "overriden_lines": 0
+    },
+    "4903f36a5177b734": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a559cea9-83fc-4768-a6d0-7aea573eec20",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 155,
+      "overriden_lines": 0
+    },
+    "a0acbd2e8c055785": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4a77729d-9139-4d59-a9ff-edf9bd77fb13",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Stefano Straus",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 3,
+      "overriden_lines": 0
+    }
+  }
+}
