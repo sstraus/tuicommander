@@ -117,14 +117,19 @@ describe("GitHubTab — Repository Defaults section", () => {
     vi.clearAllMocks();
   });
 
-  it("renders Repository Defaults heading", () => {
+  // rpc mock is async — auth-gated sections only render after microtask settles
+  const waitForAuth = () => new Promise((r) => setTimeout(r, 0));
+
+  it("renders Repository Defaults heading", async () => {
     const { container } = render(() => <GitHubTab />);
+    await waitForAuth();
     const headings = Array.from(container.querySelectorAll("h3")).map(h => h.textContent);
     expect(headings).toContain("Repository Defaults");
   });
 
-  it("shows baseBranch dropdown with current global default selected", () => {
+  it("shows baseBranch dropdown with current global default selected", async () => {
     const { container } = render(() => <GitHubTab />);
+    await waitForAuth();
     const selects = Array.from(container.querySelectorAll("select")) as HTMLSelectElement[];
     const baseBranchSelect = selects.find(s =>
       Array.from(s.options).some(o => o.text.includes("Automatic"))
@@ -133,8 +138,9 @@ describe("GitHubTab — Repository Defaults section", () => {
     expect(baseBranchSelect!.value).toBe("automatic");
   });
 
-  it("calls setBaseBranch when dropdown changes", () => {
+  it("calls setBaseBranch when dropdown changes", async () => {
     const { container } = render(() => <GitHubTab />);
+    await waitForAuth();
     const selects = Array.from(container.querySelectorAll("select")) as HTMLSelectElement[];
     const baseBranchSelect = selects.find(s =>
       Array.from(s.options).some(o => o.text.includes("Automatic"))
@@ -143,14 +149,16 @@ describe("GitHubTab — Repository Defaults section", () => {
     expect(mockSetBaseBranch).toHaveBeenCalledWith("main");
   });
 
-  it("shows copyIgnoredFiles and copyUntrackedFiles toggles", () => {
+  it("shows copyIgnoredFiles and copyUntrackedFiles toggles", async () => {
     const { container } = render(() => <GitHubTab />);
+    await waitForAuth();
     const checkboxes = container.querySelectorAll("input[type=checkbox]");
     expect(checkboxes.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("calls setCopyIgnoredFiles when toggle changes", () => {
+  it("calls setCopyIgnoredFiles when toggle changes", async () => {
     const { container } = render(() => <GitHubTab />);
+    await waitForAuth();
     const checkboxes = Array.from(container.querySelectorAll("input[type=checkbox]")) as HTMLInputElement[];
     const repoDefaultsH3 = Array.from(container.querySelectorAll("h3"))
       .find(h => h.textContent === "Repository Defaults")!;
@@ -162,22 +170,25 @@ describe("GitHubTab — Repository Defaults section", () => {
     expect(mockSetCopyIgnoredFiles).toHaveBeenCalledWith(true);
   });
 
-  it("shows setupScript and runScript textareas", () => {
+  it("shows setupScript and runScript textareas", async () => {
     const { container } = render(() => <GitHubTab />);
+    await waitForAuth();
     const textareas = container.querySelectorAll("textarea");
     expect(textareas.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("calls setSetupScript when first repo-defaults textarea changes", () => {
+  it("calls setSetupScript when first repo-defaults textarea changes", async () => {
     const { container } = render(() => <GitHubTab />);
+    await waitForAuth();
     // Find the Setup Script textarea (after the "Repository Defaults" heading)
     const textareas = container.querySelectorAll("textarea");
     fireEvent.input(textareas[0], { target: { value: "npm install" } });
     expect(mockSetSetupScript).toHaveBeenCalledWith("npm install");
   });
 
-  it("renders auto-fetch interval dropdown with Disabled selected", () => {
+  it("renders auto-fetch interval dropdown with Disabled selected", async () => {
     const { container } = render(() => <GitHubTab />);
+    await waitForAuth();
     const selects = Array.from(container.querySelectorAll("select")) as HTMLSelectElement[];
     const fetchSelect = selects.find(s =>
       Array.from(s.options).some(o => o.text === "Disabled")
@@ -186,8 +197,9 @@ describe("GitHubTab — Repository Defaults section", () => {
     expect(fetchSelect!.value).toBe("0");
   });
 
-  it("calls setAutoFetchIntervalMinutes when auto-fetch dropdown changes", () => {
+  it("calls setAutoFetchIntervalMinutes when auto-fetch dropdown changes", async () => {
     const { container } = render(() => <GitHubTab />);
+    await waitForAuth();
     const selects = Array.from(container.querySelectorAll("select")) as HTMLSelectElement[];
     const fetchSelect = selects.find(s =>
       Array.from(s.options).some(o => o.text === "Disabled")

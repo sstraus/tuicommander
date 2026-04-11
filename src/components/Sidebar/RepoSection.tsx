@@ -341,7 +341,7 @@ export const BranchItem: Component<{
           />
         </span>
       </Show>
-      <StatsBadge additions={props.branch.additions} deletions={props.branch.deletions} onClick={props.onShowChanges ? (e) => { e.stopPropagation(); props.onShowChanges!(); } : undefined} />
+      <StatsBadge additions={props.branch.additions} deletions={props.branch.deletions} onClick={props.onShowChanges ? (e) => { e.stopPropagation(); props.onShowChanges?.(); } : undefined} />
       <div class={s.branchActions} style={{ display: props.shortcutIndex !== undefined ? "none" : undefined }}>
         <button
           class={s.branchAddBtn}

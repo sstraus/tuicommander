@@ -2,6 +2,7 @@ import { Component, For, Show, createEffect, createMemo, createSignal, onMount }
 import { Portal } from "solid-js/web";
 import { repositoriesStore } from "../../stores/repositories";
 import { githubStore } from "../../stores/github";
+import { settingsStore } from "../../stores/settings";
 import { appLogger } from "../../stores/appLogger";
 import { repoDefaultsStore } from "../../stores/repoDefaults";
 import { repoSettingsStore } from "../../stores/repoSettings";
@@ -18,17 +19,9 @@ import { mdTabsStore } from "../../stores/mdTabs";
 import { PostMergeCleanupDialog, type CleanupStep, type StepId, type StepStatus } from "../PostMergeCleanupDialog/PostMergeCleanupDialog";
 import { executeCleanup } from "../../hooks/usePostMergeCleanup";
 import { PrStateBadge } from "./RepoSection";
+import { canMergePr } from "./RemoteOnlyPrPopover";
 import type { BranchPrStatus, GitHubIssue, IssueFilterMode } from "../../types";
 import s from "./Sidebar.module.css";
-
-/** Whether a PR is eligible for merge: open, approved, CI all green */
-function canMergePr(pr: BranchPrStatus): boolean {
-  return pr.state?.toUpperCase() === "OPEN"
-    && !pr.is_draft
-    && pr.review_decision === "APPROVED"
-    && (pr.checks?.failed ?? 0) === 0
-    && (pr.checks?.pending ?? 0) === 0;
-}
 
 const FILTER_OPTIONS: { value: IssueFilterMode; label: string }[] = [
   { value: "disabled", label: "Disabled" },
@@ -63,7 +56,7 @@ export const GitHubPanel: Component<{
   // Issue accordion state
   const [expandedIssue, setExpandedIssue] = createSignal<number | null>(null);
   const [closingIssue, setClosingIssue] = createSignal<number | null>(null);
-  const [issueActionError, setIssueActionError] = createSignal<string | null>(null);
+  const [issueActionError, setIssueActionError] = createSignal<{ num: number; msg: string } | null>(null);
 
   // Post-merge cleanup state
   const [cleanupCtx, setCleanupCtx] = createSignal<{ branchName: string; baseBranch: string; hasDirtyFiles: boolean } | null>(null);
@@ -279,7 +272,7 @@ export const GitHubPanel: Component<{
       githubStore.pollIssues().catch(() => {});
     } catch (e) {
       const msg = String(e);
-      setIssueActionError(msg);
+      setIssueActionError({ num: issue.number, msg });
       appLogger.error("github", `Failed to ${command} issue #${issue.number}`, { error: msg });
     } finally {
       setClosingIssue(null);
@@ -493,7 +486,7 @@ export const GitHubPanel: Component<{
 
             {/* ── Issues section ── */}
             <div class={s.ghSection}>
-              <Show when={githubStore.state.issueFilter !== "disabled"}>
+              <Show when={settingsStore.state.issueFilter !== "disabled"}>
                 <div
                   class={s.ghSectionHeader}
                   onClick={() => setIssuesCollapsed((v) => !v)}
@@ -578,15 +571,15 @@ export const GitHubPanel: Component<{
                                         issue_author: issue.author,
                                         issue_state: issue.state,
                                         issue_url: issue.url,
-                                        issue_labels: issue.labels?.map((l: { name: string }) => l.name).join(", ") || "none",
+                                        issue_labels: issue.labels?.map((l) => l.name).join(", ") || "none",
                                         issue_assignees: issue.assignees?.join(", ") || "none",
                                         issue_milestone: issue.milestone || "none",
                                         issue_comments_count: String(issue.comments_count),
                                       })}
                                     />
                                   </div>
-                                  <Show when={issueActionError()}>
-                                    <div class={s.ghActionError}>{issueActionError()}</div>
+                                  <Show when={issueActionError()?.num === issue.number}>
+                                    <div class={s.ghActionError}>{issueActionError()!.msg}</div>
                                   </Show>
                                 </IssueDetailContent>
                               </div>
@@ -605,7 +598,7 @@ export const GitHubPanel: Component<{
               <div class={s.ghFilterBar}>
                 <select
                   class={s.ghFilterSelect}
-                  value={githubStore.state.issueFilter}
+                  value={settingsStore.state.issueFilter}
                   onChange={(e) => githubStore.setIssueFilter(e.currentTarget.value as IssueFilterMode)}
                 >
                   <For each={FILTER_OPTIONS}>

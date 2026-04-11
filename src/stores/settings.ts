@@ -36,7 +36,7 @@ interface RustAppConfig {
   copy_on_select: boolean;
   bell_style: string;
   global_hotkey: string | null;
-  issue_filter: string;
+  issue_filter?: string;
 }
 
 // Default values
@@ -209,6 +209,14 @@ function validateFont(value: string | null): FontType {
   return value && VALID_FONTS.includes(value as FontType) ? (value as FontType) : DEFAULTS.font;
 }
 
+/** Valid issue filter values */
+const VALID_ISSUE_FILTERS: readonly IssueFilterMode[] = ["assigned", "created", "mentioned", "all", "disabled"];
+
+/** Validate and return issue filter or default */
+function validateIssueFilter(value: string | null): IssueFilterMode {
+  return value && (VALID_ISSUE_FILTERS as readonly string[]).includes(value) ? (value as IssueFilterMode) : "assigned";
+}
+
 
 /** Split tab mode */
 export type SplitTabMode = "separate" | "unified";
@@ -361,8 +369,7 @@ function createSettingsStore() {
         setState("bellStyle", (config.bell_style || "visual") as SettingsStoreState["bellStyle"]);
         setState("suggestFollowups", config.suggest_followups ?? true);
         setState("globalHotkey", config.global_hotkey ?? null);
-        const issueFilter = config.issue_filter || "assigned";
-        setState("issueFilter", (["assigned", "created", "mentioned", "all", "disabled"].includes(issueFilter) ? issueFilter : "assigned") as IssueFilterMode);
+        setState("issueFilter", validateIssueFilter(config.issue_filter || null));
       } catch (err) {
         appLogger.error("config", "Failed to hydrate settings", err);
       }

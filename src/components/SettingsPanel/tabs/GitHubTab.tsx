@@ -328,25 +328,25 @@ export const GitHubTab: Component = () => {
           <h4 class={g.diagnosticsTitle}>Status</h4>
 
           {/* Circuit breaker */}
-          <Show when={diagnostics()!.circuit_breaker_open}>
+          <Show when={diagnostics()?.circuit_breaker_open}>
             <div class={g.diagWarning}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink: 0">
                 <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
               </svg>
-              <span>API requests paused: {diagnostics()!.circuit_breaker_status}</span>
+              <span>API requests paused: {diagnostics()?.circuit_breaker_status}</span>
             </div>
           </Show>
 
           {/* Repos not found */}
-          <Show when={diagnostics()!.repos_not_found.length > 0}>
+          <Show when={(diagnostics()?.repos_not_found?.length ?? 0) > 0}>
             <div class={g.diagWarning}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink: 0">
                 <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
               </svg>
               <div>
-                <div>Cannot access {diagnostics()!.repos_not_found.length} repo(s) with this token:</div>
+                <div>Cannot access {diagnostics()?.repos_not_found?.length} repo(s) with this token:</div>
                 <ul class={g.diagRepoList}>
-                  <For each={diagnostics()!.repos_not_found}>
+                  <For each={diagnostics()?.repos_not_found}>
                     {(repo) => <li>{repo}</li>}
                   </For>
                 </ul>
@@ -358,21 +358,21 @@ export const GitHubTab: Component = () => {
           </Show>
 
           {/* All good */}
-          <Show when={!diagnostics()!.circuit_breaker_open && diagnostics()!.repos_not_found.length === 0}>
+          <Show when={!diagnostics()?.circuit_breaker_open && diagnostics()?.repos_not_found?.length === 0}>
             <div class={g.diagOk}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink: 0">
                 <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
               </svg>
-              <span>PR monitoring active — {diagnostics()!.repos_monitored} repo(s) tracked</span>
+              <span>PR monitoring active — {diagnostics()?.repos_monitored} repo(s) tracked</span>
             </div>
           </Show>
 
-          <Show when={diagnostics()!.repos_monitored > 0 && diagnostics()!.repos_not_found.length > 0}>
+          <Show when={(diagnostics()?.repos_monitored ?? 0) > 0 && (diagnostics()?.repos_not_found?.length ?? 0) > 0}>
             <div class={g.diagOk}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink: 0">
                 <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
               </svg>
-              <span>{diagnostics()!.repos_monitored} repo(s) tracked successfully</span>
+              <span>{diagnostics()?.repos_monitored} repo(s) tracked successfully</span>
             </div>
           </Show>
         </div>
@@ -413,7 +413,7 @@ export const GitHubTab: Component = () => {
           <div class={s.toggle}>
             <input
               type="checkbox"
-              checked={githubStore.state.issueFilter !== "disabled"}
+              checked={settingsStore.state.issueFilter !== "disabled"}
               onChange={(e) => {
                 if (e.currentTarget.checked) {
                   githubStore.setIssueFilter("assigned");
@@ -427,11 +427,11 @@ export const GitHubTab: Component = () => {
           <p class={s.hint}>Display the Issues section in the GitHub panel</p>
         </div>
 
-        <Show when={githubStore.state.issueFilter !== "disabled"}>
+        <Show when={settingsStore.state.issueFilter !== "disabled"}>
           <div class={s.group}>
             <label>Issue Filter</label>
             <select
-              value={githubStore.state.issueFilter}
+              value={settingsStore.state.issueFilter}
               onChange={(e) => githubStore.setIssueFilter(e.currentTarget.value as IssueFilterMode)}
             >
               <option value="assigned">Assigned to me</option>

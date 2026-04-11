@@ -118,7 +118,7 @@ export function useSmartPrompts() {
     // Check for unresolved variables — return them so the UI can show a dialog
     const varNames = await promptLibraryStore.extractVariables(prompt.content);
     const unresolved = varNames.filter((v) => !(v in allVars));
-    if (unresolved.length > 0 && !manualVariables) {
+    if (unresolved.length > 0) {
       return { ok: false, reason: "unresolved_variables", output: JSON.stringify(unresolved) };
     }
 

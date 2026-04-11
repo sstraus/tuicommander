@@ -4,7 +4,7 @@ import { appLogger } from "./appLogger";
 import { settingsStore } from "./settings";
 import { repositoriesStore } from "./repositories";
 import { prNotificationsStore, type PrNotificationType } from "./prNotifications";
-import type { BranchPrStatus, CheckSummary, CheckDetail, GitHubStatus, GitHubIssue, IssueFilterMode } from "../types";
+import type { BranchPrStatus, CheckSummary, CheckDetail, GitHubStatus, GitHubIssue } from "../types";
 
 const PR_STATE_STORAGE_KEY = "github:pr_state";
 
@@ -33,7 +33,6 @@ interface RepoGitHubData {
 /** GitHub store state */
 interface GitHubStoreState {
   repos: Record<string, RepoGitHubData>;
-  issueFilter: IssueFilterMode;
   issuesLoading: boolean;
   circuitBreakerOpen: boolean;
 }
@@ -41,7 +40,6 @@ interface GitHubStoreState {
 function createGitHubStore() {
   const [state, setState] = createStore<GitHubStoreState>({
     repos: {},
-    issueFilter: settingsStore.state.issueFilter === "disabled" ? "disabled" : (settingsStore.state.issueFilter || "assigned"),
     issuesLoading: false,
     circuitBreakerOpen: false,
   });
@@ -240,9 +238,9 @@ function createGitHubStore() {
     setState("repos", repoPath, "issuesLastPolled", Date.now());
   }
 
-  /** Set issue filter mode — persists to Rust config via settings store */
-  function setIssueFilter(filter: IssueFilterMode): void {
-    setState("issueFilter", filter);
+  /** Set issue filter mode — persists to Rust config via settings store.
+   *  Reads from settingsStore as single source of truth for the filter value. */
+  function setIssueFilter(filter: import("../types").IssueFilterMode): void {
     settingsStore.setIssueFilter(filter);
     if (filter !== "disabled") {
       // Re-poll immediately with new filter
@@ -290,7 +288,8 @@ function createGitHubStore() {
 
   /** Poll issues for all repos using batched GraphQL call */
   async function pollIssues(): Promise<void> {
-    if (state.issueFilter === "disabled") return;
+    const filter = settingsStore.state.issueFilter;
+    if (filter === "disabled") return;
     const paths = repositoriesStore.getPaths();
     if (paths.length === 0) return;
 
@@ -308,7 +307,7 @@ function createGitHubStore() {
     try {
       const allIssues = await invoke<Record<string, GitHubIssue[]>>("get_all_issues", {
         paths,
-        filterMode: state.issueFilter,
+        filterMode: filter,
       });
       for (const [path, issues] of Object.entries(allIssues)) {
         updateRepoIssues(path, issues);

@@ -497,6 +497,9 @@ fn parse_hex_rgb(hex: &str) -> (u8, u8, u8) {
     (r, g, b)
 }
 
+/// Opacity used for GitHub label backgrounds in PR and issue display
+const LABEL_BG_OPACITY: f64 = 0.7;
+
 /// Convert a 6-char hex color to an rgba() CSS string with the given alpha
 pub(crate) fn hex_to_rgba(hex: &str, alpha: f64) -> String {
     let (r, g, b) = parse_hex_rgb(hex);
@@ -606,7 +609,7 @@ fn parse_pr_node(v: &serde_json::Value) -> Option<BranchPrStatus> {
             let color = l["color"].as_str().unwrap_or("").to_string();
             let (text_color, background_color) = if color.len() == 6 {
                 let text = if is_light_color(&color) { "#1e1e1e" } else { "#e5e5e5" };
-                (text.to_string(), hex_to_rgba(&color, 0.7))
+                (text.to_string(), hex_to_rgba(&color, LABEL_BG_OPACITY))
             } else {
                 (String::new(), String::new())
             };
@@ -725,7 +728,7 @@ fn parse_issue_node(v: &serde_json::Value) -> Option<GitHubIssue> {
             let color = l["color"].as_str().unwrap_or("").to_string();
             let (text_color, background_color) = if color.len() == 6 {
                 let text = if is_light_color(&color) { "#1e1e1e" } else { "#e5e5e5" };
-                (text.to_string(), hex_to_rgba(&color, 0.7))
+                (text.to_string(), hex_to_rgba(&color, LABEL_BG_OPACITY))
             } else {
                 (String::new(), String::new())
             };

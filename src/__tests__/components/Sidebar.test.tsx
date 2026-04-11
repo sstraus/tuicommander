@@ -76,6 +76,7 @@ vi.mock("../../stores/github", () => ({
     getCheckSummary: mockGetCheckSummary,
     getPrStatus: mockGetPrStatus,
     getRemoteOnlyPrs: vi.fn(() => []),
+    getRepoIssues: vi.fn(() => []),
   },
 }));
 
