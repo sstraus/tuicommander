@@ -789,26 +789,35 @@ const App: Component = () => {
       separator: true,
     },
     ...(() => {
-      const pluginActions = contextMenuActionsStore.getActions();
-      if (pluginActions.length === 0) return [];
+      const legacyActions = contextMenuActionsStore.getActions();
+      const pluginContextActions = contextMenuActionsStore.getContextActions("terminal", { excludePluginId: "smart-prompts" });
+      if (legacyActions.length === 0 && pluginContextActions.length === 0) return [];
       const activeId = terminalsStore.state.activeId;
       const sessionId = activeId ? terminalsStore.get(activeId)?.sessionId ?? null : null;
       const repoPath = repositoriesStore.state.activeRepoPath ?? null;
-      const ctx = { sessionId, repoPath };
+      const legacyCtx = { sessionId, repoPath };
+      const ctxMenuCtx = { target: "terminal" as const, sessionId: sessionId ?? undefined, repoPath: repoPath ?? undefined };
       return [{
         label: "Actions",
         action: () => {},
-        children: pluginActions.map((a) => ({
-          label: a.label,
-          action: () => a.action(ctx),
-          disabled: a.disabled?.(ctx) ?? false,
-        })),
+        children: [
+          ...legacyActions.map((a) => ({
+            label: a.label,
+            action: () => a.action(legacyCtx),
+            disabled: a.disabled?.(legacyCtx) ?? false,
+          })),
+          ...pluginContextActions.map((a) => ({
+            label: a.label,
+            action: () => a.action(ctxMenuCtx),
+            disabled: a.disabled?.(ctxMenuCtx) ?? false,
+          })),
+        ],
         separator: true,
       }];
     })(),
     ...(() => {
-      const terminalContextActions = contextMenuActionsStore.getContextActions("terminal");
-      if (terminalContextActions.length === 0) return [];
+      const smartPromptActions = contextMenuActionsStore.getContextActions("terminal", { pluginId: "smart-prompts" });
+      if (smartPromptActions.length === 0) return [];
       const activeId = terminalsStore.state.activeId;
       const sessionId = activeId ? terminalsStore.get(activeId)?.sessionId ?? undefined : undefined;
       const repoPath = repositoriesStore.state.activeRepoPath ?? undefined;
@@ -816,7 +825,7 @@ const App: Component = () => {
       return [{
         label: "Prompts",
         action: () => {},
-        children: terminalContextActions.map((a) => ({
+        children: smartPromptActions.map((a) => ({
           label: a.label,
           action: () => a.action(ctx),
           disabled: a.disabled?.(ctx) ?? false,

@@ -81,9 +81,14 @@ function createContextMenuActionsStore() {
     };
   }
 
-  function getContextActions(target: ContextMenuTarget): ContextMenuAction[] {
+  function getContextActions(target: ContextMenuTarget, sourceFilter?: { pluginId?: string; excludePluginId?: string }): ContextMenuAction[] {
     return contextEntries()
-      .filter((e) => e.action.target === target)
+      .filter((e) => {
+        if (e.action.target !== target) return false;
+        if (sourceFilter?.pluginId && e.pluginId !== sourceFilter.pluginId) return false;
+        if (sourceFilter?.excludePluginId && e.pluginId === sourceFilter.excludePluginId) return false;
+        return true;
+      })
       .map((e) => e.action);
   }
 

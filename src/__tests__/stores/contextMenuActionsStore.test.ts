@@ -72,4 +72,23 @@ describe("contextMenuActionsStore", () => {
     contextMenuActionsStore.clear();
     expect(contextMenuActionsStore.getActions()).toHaveLength(0);
   });
+
+  it("getContextActions filters by pluginId", () => {
+    contextMenuActionsStore.registerContextAction("smart-prompts", {
+      id: "sp1", label: "Prompt 1", target: "terminal", action: () => {},
+    });
+    contextMenuActionsStore.registerContextAction("rtk-dashboard", {
+      id: "rtk1", label: "RTK Savings", target: "terminal", action: () => {},
+    });
+    const all = contextMenuActionsStore.getContextActions("terminal");
+    expect(all).toHaveLength(2);
+
+    const promptsOnly = contextMenuActionsStore.getContextActions("terminal", { pluginId: "smart-prompts" });
+    expect(promptsOnly).toHaveLength(1);
+    expect(promptsOnly[0].id).toBe("sp1");
+
+    const excludePrompts = contextMenuActionsStore.getContextActions("terminal", { excludePluginId: "smart-prompts" });
+    expect(excludePrompts).toHaveLength(1);
+    expect(excludePrompts[0].id).toBe("rtk1");
+  });
 });
