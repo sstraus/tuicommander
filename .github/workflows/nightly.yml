@@ -95,7 +95,7 @@ jobs:
 
       - name: Install Vulkan SDK (Windows)
         if: matrix.platform == 'windows-latest'
-        uses: humbletim/install-vulkan-sdk@v1.2.1
+        uses: humbletim/install-vulkan-sdk@v1.2
         with:
           version: latest
           cache: true
