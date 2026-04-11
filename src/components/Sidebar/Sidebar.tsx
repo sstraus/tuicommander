@@ -198,6 +198,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
         onRemoveBranch={(branch) => props.onRemoveBranch(repo.path, branch)}
         onRenameBranch={(branch) => props.onRenameBranch(repo.path, branch)}
         onShowPrDetail={(branch) => { setPrDetailIsManual(true); setPrDetailTarget({ repoPath: repo.path, branch }); }}
+        onShowChanges={() => uiStore.toggleGitPanelOnTab("changes")}
         buildAgentMenuItems={props.buildAgentMenuItems ? (branch) => props.buildAgentMenuItems!(repo.path, branch) : undefined}
         onAddWorktree={() => props.onAddWorktree(repo.path)}
         onCreateWorktreeFromBranch={props.onCreateWorktreeFromBranch ? (branch) => props.onCreateWorktreeFromBranch!(repo.path, branch) : undefined}

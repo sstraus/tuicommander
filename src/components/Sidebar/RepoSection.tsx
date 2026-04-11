@@ -123,9 +123,9 @@ export const BranchIcon: Component<{
 };
 
 /** Stats badge component - shows additions/deletions */
-export const StatsBadge: Component<{ additions: number; deletions: number }> = (props) => (
+export const StatsBadge: Component<{ additions: number; deletions: number; onClick?: (e: MouseEvent) => void }> = (props) => (
   <Show when={props.additions > 0 || props.deletions > 0}>
-    <div class={s.branchStats}>
+    <div class={s.branchStats} onClick={props.onClick} style={props.onClick ? { cursor: "pointer" } : undefined}>
       <span class={s.statAdd}>+{props.additions}</span>
       <span class={s.statDel}>-{props.deletions}</span>
     </div>
@@ -182,6 +182,7 @@ export const BranchItem: Component<{
   onRemove: () => void;
   onRename: () => void;
   onShowPrDetail: () => void;
+  onShowChanges?: () => void;
   onCreateWorktreeFromBranch?: () => void;
   onMergeAndArchive?: () => void;
   onSwitchBranch?: (branchName: string) => void;
@@ -340,7 +341,7 @@ export const BranchItem: Component<{
           />
         </span>
       </Show>
-      <StatsBadge additions={props.branch.additions} deletions={props.branch.deletions} />
+      <StatsBadge additions={props.branch.additions} deletions={props.branch.deletions} onClick={props.onShowChanges ? (e) => { e.stopPropagation(); props.onShowChanges!(); } : undefined} />
       <div class={s.branchActions} style={{ display: props.shortcutIndex !== undefined ? "none" : undefined }}>
         <button
           class={s.branchAddBtn}
@@ -397,6 +398,7 @@ export const RepoSection: Component<{
   onRemoveBranch: (branchName: string) => void;
   onRenameBranch: (branchName: string) => void;
   onShowPrDetail: (branchName: string) => void;
+  onShowChanges?: () => void;
   buildAgentMenuItems?: (branchName: string) => ContextMenuItem[];
   onAddWorktree: () => void;
   onCreateWorktreeFromBranch?: (branchName: string) => void;
@@ -596,6 +598,7 @@ export const RepoSection: Component<{
                 onRemove={() => props.onRemoveBranch(branch.name)}
                 onRename={() => props.onRenameBranch(branch.name)}
                 onShowPrDetail={() => props.onShowPrDetail(branch.name)}
+                onShowChanges={props.onShowChanges}
                 onCreateWorktreeFromBranch={props.onCreateWorktreeFromBranch ? () => props.onCreateWorktreeFromBranch!(branch.name) : undefined}
                 onMergeAndArchive={props.onMergeAndArchive ? () => props.onMergeAndArchive!(branch.name) : undefined}
                 onSwitchBranch={branch.worktreePath === props.repo.path ? (name) => props.onSwitchBranch(name) : undefined}
