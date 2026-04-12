@@ -110,86 +110,42 @@ export class ScrollTracker {
   }
 }
 
-/**
- * Prevents programmatic scroll changes while the user is scrolled up.
- *
- * Strategy: track whether a terminal.write() is in progress. Scroll events
- * that fire during a write are programmatic (xterm reflow). Scroll events
- * outside a write are user-initiated (wheel, scrollbar drag, keyboard).
- *
- * When locked (user not at bottom):
- * - Programmatic scrolls (during write) → restore to anchor via scrollToLine()
- * - User scrolls → update anchor, check if at bottom → unlock if so
- *
- * When unlocked (at bottom): zero listeners, zero overhead — xterm is native.
- */
 /** Optional diagnostic logger — called with event name + details.
  *  Used to trace scroll-jump bugs. Terminal.tsx wires this to appLogger. */
 export type ViewportLockLogger = (event: string, details: Record<string, unknown>) => void;
 
-/** How long a user gesture marks scroll events as user-driven. Must exceed
- *  the browser's gesture→scroll latency and cover a drag's native scroll
- *  events without letting xterm's programmatic writes sneak through. */
-const USER_INTENT_TTL_MS = 300;
-
-/** Grace period after writeEnd() during which DOM scroll events are still
- *  classified as programmatic. xterm's write callback fires after parsing,
- *  but the renderer updates the DOM on the next animation frame — scroll
- *  events from that deferred render would otherwise be misclassified as
- *  user-initiated, causing the lock to disengage. 50ms covers ~3 frames
- *  at 60fps with margin. */
-const WRITE_RENDER_LAG_MS = 50;
-
-/** How many lines from the exact bottom still count as "user dragged to bottom"
- *  when evaluating the pointerup unlock. The final drag scroll event landing
- *  at buf.baseY is classified as programmatic (write active + atBottom), so
- *  anchorLine ends up at baseY-1. A threshold of 1 covers that gap. */
-const DRAG_BOTTOM_UNLOCK_LINES = 1;
-
-/** Maximum time the ViewportLock can stay engaged before the watchdog
- *  forces a disengage. Prevents the terminal from appearing permanently
- *  frozen due to unforeseen state machine edge cases. */
-const WATCHDOG_TIMEOUT_MS = 2_000;
-
-/** Minimum time after disengage before re-engage is allowed.
- *  Prevents the lock from immediately re-engaging after the user scrolls
- *  to bottom while PTY output is streaming. */
-const REENGAGE_DEBOUNCE_MS = 300;
-
+/**
+ * Anchors the viewport to a specific buffer line while the user has scrolled up.
+ *
+ * Model: "aggancio alla riga". When engaged, every programmatic scroll triggered
+ * by xterm (write parsing, renderer repaint) is restored synchronously to the
+ * anchor line. User scrolls update the anchor; reaching bottom disengages.
+ *
+ * Classification is binary and time-independent:
+ *   programmatic = writeInProgress || pendingRender
+ *   user         = everything else
+ *
+ * `writeInProgress` is set by Terminal.tsx around `terminal.write()`.
+ * `pendingRender` is set in `writeEnd()` and cleared by `renderComplete()`
+ * (wired to `terminal.onRender` which fires after the actual repaint).
+ * This eliminates the race between parse-end and DOM update without resorting
+ * to time-based grace windows or asynchronous restore via microtask/rAF.
+ *
+ * Re-entrancy guard: scrollToLineFn() triggers a synchronous DOM scroll event;
+ * `inRestore` blocks it from being reclassified as a user scroll.
+ */
 export class ViewportLock {
   private locked = false;
   private writeInProgress = false;
-  /** Initialized to negative infinity so the "recent write" grace window
-   *  is never true before the first actual writeEnd() call. */
-  private lastWriteEndMs = -Infinity;
-  private userIntent = false;
-  private userIntentTimer: ReturnType<typeof setTimeout> | null = null;
-  /** Sticky flag: set when user scrolls while locked, cleared on disengage.
-   *  Unlike userIntent (300ms TTL), this persists so that a user scroll-to-bottom
-   *  is recognized even if the next write arrives after the TTL expires. */
-  private userScrolledWhileLocked = false;
+  private pendingRender = false;
   private anchorLine = 0;
   private scrollToLineFn: ((line: number) => void) | null = null;
   private getBufferFn: (() => BufferSnapshot) | null = null;
   private cleanupScroll: (() => void) | null = null;
-  private cleanupGestures: (() => void) | null = null;
   private viewport: HTMLElement | null = null;
   private logger: ViewportLockLogger | null = null;
-  /** True while a microtask-restore is already queued — prevents multiple
-   *  restores from being scheduled for the same write burst. */
-  private pendingMicrotask = false;
-  /** True while scrollToLineFn() is executing inside the microtask restore —
-   *  prevents the re-entrant DOM scroll event from queuing another restore. */
+  /** Blocks re-entry through the scroll handler while scrollToLineFn is restoring. */
   private inRestore = false;
-  /** Cleanup for the document-level pointerup listener installed during a drag.
-   *  Cleared after it fires (once) or on dispose(). */
-  private cleanupPointerUp: (() => void) | null = null;
-  /** Watchdog timer: force-disengages after WATCHDOG_TIMEOUT_MS to prevent
-   *  the terminal from appearing permanently frozen. */
-  private watchdogTimer: ReturnType<typeof setTimeout> | null = null;
-  private engagedAtMs = 0;
-  /** Timestamp of the last disengage — used to enforce re-engage debounce. */
-  private lastDisengagedAtMs = -Infinity;
 
   /** Install a diagnostic logger. Optional — no-op when unset. */
   setLogger(logger: ViewportLockLogger | null): void {
@@ -205,69 +161,6 @@ export class ViewportLock {
     this.viewport = container.querySelector<HTMLElement>(".xterm-viewport");
     this.scrollToLineFn = scrollToLine;
     this.getBufferFn = getBuffer;
-    this.installGestureListeners();
-  }
-
-  /** Listen for wheel/keyboard gestures on the viewport so the user can
-   *  scroll to the bottom to re-follow output while PTY is streaming.
-   *
-   *  wheel/touchmove/keydown set userIntent=true so a scroll-to-bottom
-   *  during a write is classified as user-initiated and unlocks the lock.
-   *
-   *  pointerdown does NOT set userIntent (that caused rubber-banding: the
-   *  gesture TTL was still active when PTY auto-scrolled to bottom during
-   *  a drag, causing the lock to misclassify it as user-at-bottom and
-   *  disengage). Instead, a pointerup listener on the document checks the
-   *  final drag position — if the user released the scrollbar near the
-   *  bottom (within DRAG_BOTTOM_UNLOCK_LINES), the lock disengages. */
-  private installGestureListeners(): void {
-    if (!this.viewport) return;
-    const mark = () => this.markUserIntent();
-    const intentOpts: AddEventListenerOptions = { passive: true, capture: true };
-    const intentEvents = ["wheel", "touchmove", "keydown"] as const;
-    for (const ev of intentEvents) {
-      this.viewport.addEventListener(ev, mark, intentOpts);
-    }
-
-    const onPointerDown = () => {
-      // Clean up any previous pointerup listener that didn't fire.
-      this.cleanupPointerUp?.();
-      const onPointerUp = () => {
-        this.cleanupPointerUp = null;
-        if (!this.locked || !this.getBufferFn) return;
-        const buf = this.getBufferFn();
-        // Unlock if the user released the scrollbar at or near the bottom.
-        // anchorLine holds the last user-scroll position (the final drag event
-        // at exact baseY is classified as programmatic so anchorLine = baseY-1).
-        // A threshold of 1 covers that 1-line gap without false positives.
-        if (this.anchorLine >= buf.baseY - DRAG_BOTTOM_UNLOCK_LINES) {
-          this.update(true);
-        }
-      };
-      document.addEventListener("pointerup", onPointerUp, { once: true, capture: true });
-      this.cleanupPointerUp = () => {
-        document.removeEventListener("pointerup", onPointerUp, { capture: true });
-        this.cleanupPointerUp = null;
-      };
-    };
-    this.viewport.addEventListener("pointerdown", onPointerDown, { passive: true, capture: true });
-
-    this.cleanupGestures = () => {
-      for (const ev of intentEvents) {
-        this.viewport?.removeEventListener(ev, mark, intentOpts);
-      }
-      this.viewport?.removeEventListener("pointerdown", onPointerDown, { capture: true });
-      this.cleanupPointerUp?.();
-    };
-  }
-
-  private markUserIntent(): void {
-    this.userIntent = true;
-    if (this.userIntentTimer) clearTimeout(this.userIntentTimer);
-    this.userIntentTimer = setTimeout(() => {
-      this.userIntent = false;
-      this.userIntentTimer = null;
-    }, USER_INTENT_TTL_MS);
   }
 
   /** Signal that a terminal.write() is about to start. */
@@ -275,62 +168,32 @@ export class ViewportLock {
     this.writeInProgress = true;
   }
 
-  /** Signal that a terminal.write() callback has fired. The write flag
-   *  clears immediately, but lastWriteEndMs provides a grace window for
-   *  deferred renderer scroll events (see WRITE_RENDER_LAG_MS).
-   *  When locked, schedules a microtask to restore the anchor — deduped
-   *  so that bursts of writes produce at most one scrollToLine call.
-   *  Microtasks run before the next paint (unlike rAF), preventing the
-   *  viewport from visibly jumping to the bottom between writes. */
+  /** Signal that a terminal.write() parse callback has fired. The renderer
+   *  still needs to paint — flag `pendingRender` until `renderComplete()`. */
   writeEnd(): void {
     this.writeInProgress = false;
-    this.lastWriteEndMs = performance.now();
-    if (this.locked && !this.pendingMicrotask) {
-      this.pendingMicrotask = true;
-      queueMicrotask(() => {
-        this.pendingMicrotask = false;
-        if (this.locked && this.scrollToLineFn) {
-          this.inRestore = true;
-          this.scrollToLineFn(this.anchorLine);
-          this.inRestore = false;
-        }
-      });
-    }
+    this.pendingRender = true;
   }
 
-  /** Flag a user-driven scroll intent with the same TTL as the internal
-   *  gesture listeners. Kept for callers that detect user input via a
-   *  path other than the viewport listeners (e.g. terminal.onKey) so the
-   *  lock can disengage even while PTY output is streaming. */
-  userScrollIntent(): void {
-    this.markUserIntent();
+  /** Called from terminal.onRender after the renderer has repainted.
+   *  Clears `pendingRender` so subsequent scroll events are classified as user. */
+  renderComplete(): void {
+    this.pendingRender = false;
   }
 
   /** Engage or disengage based on scroll position.
-   *  At bottom → unlock (xterm native). Scrolled up → lock.
-   *  Refuses to disengage during a write — xterm auto-scrolls to bottom
-   *  during writes, which would falsely report "at bottom" and drop the lock.
-   *  Exception: userScrollIntent() bypasses the guard for one call. */
+   *  At bottom → unlock. Scrolled up → lock. */
   update(isAtBottom: boolean): void {
     const shouldLock = !isAtBottom;
     if (shouldLock === this.locked) return;
-    // Debounce re-engage: don't lock again within REENGAGE_DEBOUNCE_MS of last
-    // disengage. Prevents the lock from snapping back immediately when the user
-    // scrolls to bottom while PTY output is streaming.
-    if (shouldLock && (performance.now() - this.lastDisengagedAtMs < REENGAGE_DEBOUNCE_MS)) {
-      this.logger?.("reengage-blocked-debounce", { elapsed: performance.now() - this.lastDisengagedAtMs });
-      return;
-    }
     this.locked = shouldLock;
     this.logger?.(shouldLock ? "engage" : "disengage", {
       anchorLine: this.anchorLine,
       writeInProgress: this.writeInProgress,
     });
-
     if (shouldLock) {
       this.engage();
     } else {
-      this.lastDisengagedAtMs = performance.now();
       this.disengage();
     }
   }
@@ -341,21 +204,6 @@ export class ViewportLock {
 
   dispose(): void {
     this.disengage();
-    this.cleanupGestures?.();
-    this.cleanupGestures = null;
-    if (this.userIntentTimer) {
-      clearTimeout(this.userIntentTimer);
-      this.userIntentTimer = null;
-    }
-    if (this.watchdogTimer) {
-      clearTimeout(this.watchdogTimer);
-      this.watchdogTimer = null;
-    }
-    this.pendingMicrotask = false;
-    this.inRestore = false;
-    this.cleanupPointerUp?.();
-    this.userIntent = false;
-    this.userScrolledWhileLocked = false;
     this.scrollToLineFn = null;
     this.getBufferFn = null;
     this.viewport = null;
@@ -374,36 +222,14 @@ export class ViewportLock {
       this.anchorLine = buf.viewportY;
     }
 
-    // Watchdog: force-disengage after timeout to prevent permanent freeze.
-    this.engagedAtMs = performance.now();
-    this.watchdogTimer = setTimeout(() => {
-      if (!this.locked) return;
-      const elapsed = Math.round(performance.now() - this.engagedAtMs);
-      const buf = this.getBufferFn?.();
-      this.logger?.("watchdog-force-disengage", {
-        elapsedMs: elapsed,
-        anchorLine: this.anchorLine,
-        viewportY: buf?.viewportY ?? -1,
-        baseY: buf?.baseY ?? -1,
-        writeInProgress: this.writeInProgress,
-        userIntent: this.userIntent,
-        userScrolledWhileLocked: this.userScrolledWhileLocked,
-      });
-      this.locked = false;
-      this.disengage();
-    }, WATCHDOG_TIMEOUT_MS);
-
     const onScroll = () => {
-      // Re-entrancy guard: scrollToLineFn() called from the microtask restore
-      // fires a synchronous DOM scroll event — block it to prevent another
-      // microtask being queued for a restore we just performed.
       if (this.inRestore) return;
-      if (!this.getBufferFn) return;
+      if (!this.getBufferFn || !this.scrollToLineFn) return;
       const buf = this.getBufferFn();
 
-      // Scrollback cleared (ESC[3J) — anchor points to deleted lines.
-      // Reset anchor to current viewport position to prevent a stale
-      // anchor from jumping the viewport when baseY eventually regrows.
+      // Scrollback cleared (ESC[3J path surviving strip, or buffer shrink) —
+      // anchor points to deleted lines. Reset to current viewport so the
+      // restore below doesn't jump to a stale line when baseY regrows.
       if (buf.baseY < this.anchorLine) {
         this.logger?.("anchor-invalidated", {
           oldAnchor: this.anchorLine,
@@ -413,58 +239,35 @@ export class ViewportLock {
         this.anchorLine = buf.viewportY;
       }
 
-      // Classify scroll origin.
-      //
-      // xterm auto-scroll during a write ALWAYS lands at buf.baseY (bottom).
-      // User scrolls can land anywhere. We use the destination as the primary
-      // signal — not userIntent — to avoid rubber-banding the scrollbar:
-      //
-      //   write + at bottom  → programmatic (xterm auto-scroll)      → ignore
-      //   write + NOT bottom → user scrolled up during write          → update anchor
-      //   no write + any pos → user scroll                            → update anchor/unlock
-      //
-      // userIntent (set by wheel/keyboard only) overrides the at-bottom case so
-      // the user can wheel down to re-follow output while the PTY is streaming.
-      //
-      // pointerdown/touchstart are NOT in the gesture listeners — they fire at
-      // the start of a scrollbar drag and would set userIntent=true for the
-      // entire drag, causing PTY auto-scrolls to be misclassified as user-initiated.
-      //
-      // Also treat scrolls within WRITE_RENDER_LAG_MS after writeEnd() as
-      // programmatic: xterm's renderer updates the DOM on the next animation
-      // frame, after the write callback — without this grace period those
-      // deferred scrolls are misclassified as user-initiated.
-      const atBottom = buf.viewportY >= buf.baseY;
-      const recentWrite = !this.writeInProgress
-        && (performance.now() - this.lastWriteEndMs < WRITE_RENDER_LAG_MS);
-      const isProgrammatic = (this.writeInProgress || recentWrite) && atBottom && !this.userIntent;
+      const programmatic = this.writeInProgress || this.pendingRender;
 
-      if (isProgrammatic) {
-        // Programmatic scroll from xterm write — ignore. Anchor restore
-        // is handled via rAF scheduled in writeEnd(), not the scroll handler.
-        // No re-entrancy risk: scrollToLine() is called from rAF, not here.
-        this.logger?.("dom-scroll-programmatic-ignored", {
-          viewportY: buf.viewportY,
-          baseY: buf.baseY,
-          anchorLine: this.anchorLine,
-        });
+      if (programmatic) {
+        // xterm auto-scroll from write/render — restore anchor synchronously.
+        // Sync restore in the same tick as the DOM scroll event eliminates
+        // the visible frame-gap that async restore via microtask/rAF creates.
+        if (buf.viewportY !== this.anchorLine) {
+          this.logger?.("restore-sync", {
+            viewportY: buf.viewportY,
+            anchorLine: this.anchorLine,
+          });
+          this.inRestore = true;
+          this.scrollToLineFn(this.anchorLine);
+          this.inRestore = false;
+        }
       } else {
-        // User-initiated scroll — update anchor and set sticky flag.
-        this.userScrolledWhileLocked = true;
+        // User-initiated scroll — update anchor.
         // Discard viewportY=0 when scrollback exists: renderer rebuilds
         // (fontSize re-assign) fire scroll events with a transient 0 value.
-        const willUnlock = buf.viewportY >= buf.baseY;
+        if (buf.viewportY > 0 || buf.baseY === 0) {
+          this.anchorLine = buf.viewportY;
+        }
         this.logger?.("dom-scroll-user", {
           viewportY: buf.viewportY,
           baseY: buf.baseY,
           anchorLine: this.anchorLine,
-          willUnlock,
         });
-        if (buf.viewportY > 0 || buf.baseY === 0) {
-          this.anchorLine = buf.viewportY;
-        }
-        // If user scrolled to bottom, unlock
-        if (willUnlock) {
+        // If user reached bottom, unlock.
+        if (buf.viewportY >= buf.baseY) {
           this.update(true);
         }
       }
@@ -475,12 +278,6 @@ export class ViewportLock {
   }
 
   private disengage(): void {
-    this.userScrolledWhileLocked = false;
-    this.pendingMicrotask = false;
-    if (this.watchdogTimer) {
-      clearTimeout(this.watchdogTimer);
-      this.watchdogTimer = null;
-    }
     this.cleanupScroll?.();
     this.cleanupScroll = null;
   }

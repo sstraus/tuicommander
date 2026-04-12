@@ -471,11 +471,19 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
   /** Process a chunk of PTY output — write to terminal or buffer if not ready/visible */
   const handlePtyData = (rawData: string) => {
+    // Strip ESC[3J (clear scrollback) — Claude Code / Ink sends this on every
+    // TUI redraw, destroying scrollback content AND breaking xterm v6 auto-scroll
+    // (viewportY stuck at 0). Scrollback is managed by TUICommander, not agents.
+    // ESC[2J is left untouched — Ink needs it for viewport redraw; ViewportLock
+    // handles the viewport jump it causes.
+    const data = rawData.includes("\x1b[3J")
+      ? rawData.replaceAll("\x1b[3J", "")
+      : rawData;
     if (terminal) {
       // Dispatch to plugins for all terminals — background tabs may have
       // plugin-relevant output (e.g. agent detection, error tracking)
       if (sessionId) {
-        pluginRegistry.processRawOutput(rawData, sessionId);
+        pluginRegistry.processRawOutput(data, sessionId);
       }
 
       // Track last PTY output timestamp for activity dashboard (throttled to 1s).
@@ -497,8 +505,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
       // jank when 3+ agents are streaming simultaneously (~22 MP hidden
       // canvas work eliminated). Buffer is replayed on hidden→visible.
       if (!isVisible()) {
-        outputBuffer.push(rawData);
-        outputBufferBytes += rawData.length;
+        outputBuffer.push(data);
+        outputBufferBytes += data.length;
         while (outputBufferBytes > OUTPUT_BUFFER_MAX_BYTES && outputBuffer.length > 1) {
           const dropped = outputBuffer.shift()!;
           outputBufferBytes -= dropped.length;
@@ -506,7 +514,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
         return;
       }
 
-      const byteLen = rawData.length;
+      const byteLen = data.length;
       pendingWriteBytes += byteLen;
 
       // Pause reader if we've accumulated too much unprocessed data.
@@ -517,7 +525,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
       viewportLock.writeStart();
       try {
-        terminal.write(rawData, () => {
+        terminal.write(data, () => {
           viewportLock.writeEnd();
           pendingWriteBytes -= byteLen;
           if (isPaused && pendingWriteBytes < LOW_WATERMARK && sessionId) {
@@ -532,8 +540,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
       }
     } else {
       // Buffer output until terminal.open() is called
-      outputBuffer.push(rawData);
-      outputBufferBytes += rawData.length;
+      outputBuffer.push(data);
+      outputBufferBytes += data.length;
       // Cap buffer: drop oldest chunks when over limit
       while (outputBufferBytes > OUTPUT_BUFFER_MAX_BYTES && outputBuffer.length > 1) {
         const dropped = outputBuffer.shift()!;
@@ -1500,14 +1508,12 @@ export const Terminal: Component<TerminalProps> = (props) => {
       viewportLock.update(scrollTracker.isAtBottom);
     });
 
-    // xterm's scrollOnUserInput snaps the viewport to bottom on any user
-    // keystroke. When ViewportLock is engaged and a write is in progress,
-    // the usual disengage path is blocked — flag this as user intent so
-    // the next update() can unlock through the guard.
-    terminal.onKey(() => {
-      if (!scrollTracker.isAtBottom) {
-        viewportLock.userScrollIntent();
-      }
+    // Clear pendingRender once the renderer has repainted. ViewportLock uses
+    // this flag to classify scroll events as programmatic (write/render-driven)
+    // vs user — fires after terminal.write() parse callback, so scroll events
+    // emitted by the deferred renderer paint are classified correctly.
+    terminal.onRender(() => {
+      viewportLock.renderComplete();
     });
 
 

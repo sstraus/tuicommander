@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { ScrollTracker, ViewportLock, type BufferSnapshot } from "../../components/Terminal/scrollTracker";
 
 /** Helper: create a normal-buffer snapshot */
@@ -264,30 +264,92 @@ describe("ViewportLock", () => {
       expect(lock.isLocked).toBe(true);
       lock.dispose();
     });
-  });
 
-  describe("write-based scroll lock", () => {
-    it("programmatic scroll during write ignored by handler; writeEnd microtask restores", async () => {
-      const { lock, viewport, scrollToLineCalls, setBuffer } = createLockHarness();
-      setBuffer({ viewportY: 5, baseY: 100, type: "normal" });
-      lock.update(false); // locked at line 5
+    it("update(true) during write disengages immediately", () => {
+      const { lock, setBuffer } = createLockHarness();
+      setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
+      lock.update(false);
 
       lock.writeStart();
-      viewport.dispatchEvent(new Event("scroll")); // programmatic — handler ignores
-      expect(scrollToLineCalls).toEqual([]); // handler does NOT restore
+      lock.update(true); // writeInProgress must NOT block disengage
+      expect(lock.isLocked).toBe(false);
 
-      lock.writeEnd(); // schedules microtask
-      await Promise.resolve(); // flush microtask queue
-      expect(scrollToLineCalls).toEqual([5]); // restored via microtask
+      lock.writeEnd();
+      lock.dispose();
+    });
+  });
+
+  describe("sync restore during write/render", () => {
+    it("restores anchor synchronously when scroll fires during write", () => {
+      const { lock, viewport, scrollToLineCalls, setBuffer } = createLockHarness();
+      setBuffer({ viewportY: 5, baseY: 100, type: "normal" });
+      lock.update(false); // locked at anchorLine=5
+
+      // xterm write auto-scrolls to bottom → scroll event fires with viewportY != anchorLine
+      lock.writeStart();
+      setBuffer({ viewportY: 100, baseY: 100, type: "normal" });
+      viewport.dispatchEvent(new Event("scroll"));
+
+      expect(scrollToLineCalls).toEqual([5]); // sync restore in the same tick
+      lock.writeEnd();
       lock.dispose();
     });
 
+    it("restores anchor synchronously when scroll fires during pendingRender (after writeEnd, before renderComplete)", () => {
+      const { lock, viewport, scrollToLineCalls, setBuffer } = createLockHarness();
+      setBuffer({ viewportY: 5, baseY: 100, type: "normal" });
+      lock.update(false);
+
+      // Parser finished (writeEnd), renderer hasn't repainted yet — pendingRender=true
+      lock.writeStart();
+      lock.writeEnd();
+      setBuffer({ viewportY: 100, baseY: 100, type: "normal" });
+      viewport.dispatchEvent(new Event("scroll"));
+
+      expect(scrollToLineCalls).toEqual([5]); // classified as programmatic (pendingRender)
+      lock.renderComplete();
+      lock.dispose();
+    });
+
+    it("classifies scroll as user after renderComplete()", () => {
+      const { lock, viewport, scrollToLineCalls, setBuffer } = createLockHarness();
+      setBuffer({ viewportY: 5, baseY: 100, type: "normal" });
+      lock.update(false);
+
+      lock.writeStart();
+      lock.writeEnd();
+      lock.renderComplete(); // renderer repainted — scroll events now classified as user
+
+      // User wheel scroll
+      setBuffer({ viewportY: 30, baseY: 100, type: "normal" });
+      viewport.dispatchEvent(new Event("scroll"));
+
+      expect(scrollToLineCalls).toEqual([]); // user scroll → no restore
+      lock.dispose();
+    });
+
+    it("no restore when scrollY already at anchor during write", () => {
+      const { lock, viewport, scrollToLineCalls, setBuffer } = createLockHarness();
+      setBuffer({ viewportY: 5, baseY: 100, type: "normal" });
+      lock.update(false); // anchorLine=5
+
+      lock.writeStart();
+      setBuffer({ viewportY: 5, baseY: 120, type: "normal" }); // baseY grew, viewportY still at anchor
+      viewport.dispatchEvent(new Event("scroll"));
+
+      expect(scrollToLineCalls).toEqual([]); // no-op, already at anchor
+      lock.writeEnd();
+      lock.dispose();
+    });
+  });
+
+  describe("user scroll outside write", () => {
     it("does NOT restore when scroll fires outside a write (user scroll)", () => {
       const { lock, viewport, scrollToLineCalls, setBuffer } = createLockHarness();
       setBuffer({ viewportY: 5, baseY: 100, type: "normal" });
-      lock.update(false); // locked
+      lock.update(false);
 
-      // User scrolls (no write in progress)
+      // User scrolls (no write in progress, no pendingRender)
       setBuffer({ viewportY: 10, baseY: 100, type: "normal" });
       viewport.dispatchEvent(new Event("scroll"));
 
@@ -295,10 +357,29 @@ describe("ViewportLock", () => {
       lock.dispose();
     });
 
+    it("updates anchor when user scrolls", () => {
+      const { lock, viewport, scrollToLineCalls, setBuffer } = createLockHarness();
+      setBuffer({ viewportY: 5, baseY: 100, type: "normal" });
+      lock.update(false); // anchorLine=5
+
+      // User scrolls to line 40
+      setBuffer({ viewportY: 40, baseY: 100, type: "normal" });
+      viewport.dispatchEvent(new Event("scroll"));
+
+      // Subsequent write must restore to the NEW anchor (40), not the old one (5)
+      lock.writeStart();
+      setBuffer({ viewportY: 100, baseY: 100, type: "normal" });
+      viewport.dispatchEvent(new Event("scroll"));
+
+      expect(scrollToLineCalls).toEqual([40]);
+      lock.writeEnd();
+      lock.dispose();
+    });
+
     it("unlocks when user scrolls to bottom outside a write", () => {
       const { lock, viewport, setBuffer } = createLockHarness();
       setBuffer({ viewportY: 5, baseY: 100, type: "normal" });
-      lock.update(false); // locked
+      lock.update(false);
 
       // User scrolls to bottom
       setBuffer({ viewportY: 100, baseY: 100, type: "normal" });
@@ -308,210 +389,86 @@ describe("ViewportLock", () => {
       lock.dispose();
     });
 
-    it("userScrollIntent() allows disengage during a write", () => {
-      const { lock, setBuffer } = createLockHarness();
-      setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
-      lock.update(false); // locked at line 50
-
-      // User presses a key while scrolled up — xterm will scrollToBottom.
-      // Simulate: write is currently in progress (PTY streaming) AND
-      // the key handler flagged user intent before onScroll fires update(true).
-      lock.writeStart();
-      lock.userScrollIntent();
-      lock.update(true);
-
-      expect(lock.isLocked).toBe(false); // unlocked despite write in progress
-      lock.writeEnd();
-      lock.dispose();
-    });
-
-    it("does NOT restore user wheel scroll during write (userIntent flag set)", () => {
+    it("discards transient viewportY=0 during user scroll when scrollback exists", () => {
       const { lock, viewport, scrollToLineCalls, setBuffer } = createLockHarness();
-      setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
-      lock.update(false); // locked at line 50
+      setBuffer({ viewportY: 40, baseY: 100, type: "normal" });
+      lock.update(false); // anchorLine=40
 
-      // PTY streams heavily while user wheels further up. The wheel event
-      // fires on the viewport (flagging userIntent) before the native scroll.
-      lock.writeStart();
-      setBuffer({ viewportY: 30, baseY: 100, type: "normal" });
-      viewport.dispatchEvent(new Event("wheel"));
+      // Renderer rebuild emits transient viewportY=0 (fontSize reassign) — must NOT update anchor
+      setBuffer({ viewportY: 0, baseY: 100, type: "normal" });
       viewport.dispatchEvent(new Event("scroll"));
 
-      expect(scrollToLineCalls).toEqual([]); // user wheel respected, no rubber-band
+      // Subsequent write restores to 40, not 0
+      lock.writeStart();
+      setBuffer({ viewportY: 100, baseY: 100, type: "normal" });
+      viewport.dispatchEvent(new Event("scroll"));
+
+      expect(scrollToLineCalls).toEqual([40]);
       lock.writeEnd();
       lock.dispose();
     });
+  });
 
-    it("treats DOM scroll shortly after writeEnd as programmatic (render lag)", () => {
-      vi.useFakeTimers();
-      try {
-        const { lock, viewport, scrollToLineCalls, setBuffer } = createLockHarness();
-        setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
-        lock.update(false); // locked at line 50
-
-        // Write completes (parser done), then renderer fires scroll on next frame
-        lock.writeStart();
-        lock.writeEnd();
-        // Advance less than WRITE_RENDER_LAG_MS (50ms)
-        vi.advanceTimersByTime(10);
-        // Deferred renderer scroll — classified as programmatic, ignored by handler
-        setBuffer({ viewportY: 110, baseY: 110, type: "normal" });
-        viewport.dispatchEvent(new Event("scroll"));
-
-        expect(scrollToLineCalls).toEqual([]); // handler does NOT restore (rAF will)
-        expect(lock.isLocked).toBe(true);
-
-        lock.dispose();
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it("allows user scroll after render lag window expires", () => {
-      vi.useFakeTimers();
-      try {
-        const { lock, viewport, setBuffer } = createLockHarness();
-        setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
-        lock.update(false); // locked
-
-        lock.writeStart();
-        lock.writeEnd();
-        // Advance past WRITE_RENDER_LAG_MS (50ms)
-        vi.advanceTimersByTime(60);
-
-        // User scrolls to bottom — should unlock
-        setBuffer({ viewportY: 100, baseY: 100, type: "normal" });
-        viewport.dispatchEvent(new Event("scroll"));
-
-        expect(lock.isLocked).toBe(false);
-        lock.dispose();
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it("resets anchor when scrollback is cleared (baseY drops below anchor)", async () => {
+  describe("anchor invalidation", () => {
+    it("resets anchor when scrollback is cleared (baseY drops below anchor)", () => {
       const { lock, viewport, scrollToLineCalls, setBuffer } = createLockHarness();
       setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
-      lock.update(false); // locked at anchorLine=50
+      lock.update(false); // anchorLine=50
 
-      // ESC[3J clears scrollback → baseY drops to 0, scroll handler resets anchor to 0
+      // ESC[3J clears scrollback → baseY drops below anchor
       lock.writeStart();
       setBuffer({ viewportY: 0, baseY: 0, type: "normal" });
-      viewport.dispatchEvent(new Event("scroll")); // anchor resets, handler ignores (programmatic)
-      expect(scrollToLineCalls).toEqual([]); // handler does NOT restore synchronously
+      viewport.dispatchEvent(new Event("scroll"));
+      // anchor reset to viewportY (0). viewportY === anchorLine → no restore needed
+      expect(scrollToLineCalls).toEqual([]);
 
-      lock.writeEnd(); // schedules microtask → scrollToLine(0)
-      await Promise.resolve(); // flush microtask
-      expect(scrollToLineCalls).toEqual([0]); // restored to reset anchor, NOT 50
+      // New content grows baseY — must NOT jump to stale anchor (50)
+      setBuffer({ viewportY: 60, baseY: 60, type: "normal" });
+      viewport.dispatchEvent(new Event("scroll"));
+      // Sync restore to anchor=0 because classifier still programmatic (writeInProgress)
+      expect(scrollToLineCalls).toEqual([0]);
 
-      // New content grows baseY — must NOT jump to old anchor (50)
-      lock.writeStart();
-      setBuffer({ viewportY: 0, baseY: 60, type: "normal" });
-      viewport.dispatchEvent(new Event("scroll")); // programmatic — ignored
       lock.writeEnd();
-      await Promise.resolve();
-      expect(scrollToLineCalls).toEqual([0, 0]); // still restoring to anchor=0
-
       lock.dispose();
     });
+  });
 
-    it("disengages after user scroll-to-bottom during continuous writes (sticky flag)", () => {
-      vi.useFakeTimers();
-      try {
-        const { lock, viewport, setBuffer } = createLockHarness();
-        setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
-        lock.update(false); // locked at line 50
-
-        // User scrolls while locked with wheel (sets userScrolledWhileLocked + userIntent)
-        setBuffer({ viewportY: 30, baseY: 100, type: "normal" });
-        viewport.dispatchEvent(new Event("wheel"));
-        viewport.dispatchEvent(new Event("scroll"));
-
-        // User intent TTL expires (300ms)
-        vi.advanceTimersByTime(500);
-
-        // Write is in progress. A scroll to bottom WITHOUT active userIntent is
-        // classified as programmatic (xterm auto-scroll always lands at baseY).
-        // Lock must stay engaged — this prevents scrollbar rubber-banding.
-        lock.writeStart();
-        setBuffer({ viewportY: 110, baseY: 110, type: "normal" });
-        viewport.dispatchEvent(new Event("scroll")); // no wheel → classified as programmatic
-        expect(lock.isLocked).toBe(true); // lock holds — not a user unlock gesture
-
-        // With wheel event active (userIntent=true), scroll to bottom DOES unlock.
-        viewport.dispatchEvent(new Event("wheel")); // re-arms userIntent
-        viewport.dispatchEvent(new Event("scroll")); // now classified as user → unlock
-        expect(lock.isLocked).toBe(false); // unlocked via wheel gesture
-
-        lock.writeEnd();
-        lock.dispose();
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it("sticky flag resets after disengage so subsequent writes are protected", () => {
-      vi.useFakeTimers();
-      try {
-        const { lock, viewport, setBuffer } = createLockHarness();
-        setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
-        lock.update(false); // locked
-
-        // User scrolls → sets sticky + userIntent
-        setBuffer({ viewportY: 70, baseY: 100, type: "normal" });
-        viewport.dispatchEvent(new Event("wheel"));
-        viewport.dispatchEvent(new Event("scroll"));
-
-        // User scrolls to bottom → disengage
-        setBuffer({ viewportY: 100, baseY: 100, type: "normal" });
-        viewport.dispatchEvent(new Event("scroll"));
-        expect(lock.isLocked).toBe(false);
-
-        // Let userIntent TTL expire so it doesn't interfere with re-lock test
-        vi.advanceTimersByTime(500);
-
-        // Re-lock (user scrolls up again)
-        setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
-        lock.update(false);
-        expect(lock.isLocked).toBe(true); // sticky was cleared on disengage — re-lock works
-
-        lock.dispose();
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it("microtask restores anchor exactly once even when scrollToLine triggers a re-entrant scroll event", async () => {
+  describe("re-entrant restore guard", () => {
+    it("restores exactly once when scrollToLine triggers a synchronous scroll event", () => {
       const { container, viewport } = createViewportContainer();
       let restoreCalls = 0;
-      let bufferState: BufferSnapshot = { viewportY: 50, baseY: 100, type: "normal" };
+      let bufferState: BufferSnapshot = { viewportY: 100, baseY: 100, type: "normal" };
 
       const lock = new ViewportLock();
       lock.attach(
         container,
         (line) => {
           restoreCalls++;
-          // Simulate xterm's synchronous scroll event from scrollToLine.
-          // The inRestore guard in the scroll handler blocks this re-entrant
-          // scroll from queuing another microtask — exactly one restore occurs.
-          bufferState = { viewportY: line, baseY: bufferState.baseY + 1, type: "normal" };
+          // Simulate xterm's synchronous scroll event from scrollToLine —
+          // inRestore guard must block re-entry.
+          bufferState = { viewportY: line, baseY: bufferState.baseY, type: "normal" };
           viewport.dispatchEvent(new Event("scroll"));
         },
         () => bufferState,
       );
 
-      lock.update(false); // locked at line 50
-      lock.writeStart();
-      viewport.dispatchEvent(new Event("scroll")); // programmatic — ignored
-      lock.writeEnd(); // schedules microtask
+      // Lock at anchorLine=50
+      bufferState = { viewportY: 50, baseY: 100, type: "normal" };
+      lock.update(false);
 
-      await Promise.resolve(); // flush microtask: scrollToLine(50) → re-entrant scroll → blocked by inRestore
+      // Write auto-scrolls to bottom → scroll fires → sync restore → re-entrant scroll blocked
+      lock.writeStart();
+      bufferState = { viewportY: 100, baseY: 100, type: "normal" };
+      viewport.dispatchEvent(new Event("scroll"));
+
       expect(restoreCalls).toBe(1); // exactly one restore, no loop
+      lock.writeEnd();
       lock.dispose();
     });
+  });
 
-    it("no listeners active when unlocked (at bottom)", () => {
+  describe("listener lifecycle", () => {
+    it("no scroll handler active when unlocked", () => {
       const { lock, viewport, scrollToLineCalls } = createLockHarness();
       // Never locked — fire scroll events
       lock.writeStart();
@@ -521,242 +478,30 @@ describe("ViewportLock", () => {
       expect(scrollToLineCalls).toEqual([]); // no listener installed
       lock.dispose();
     });
-  });
 
-  describe("watchdog", () => {
-    it("force-disengages after WATCHDOG_TIMEOUT_MS if lock is stuck", () => {
-      vi.useFakeTimers();
-      try {
-        const logEvents: Array<{ event: string; details: Record<string, unknown> }> = [];
-        const { lock, setBuffer } = createLockHarness();
-        lock.setLogger((event, details) => logEvents.push({ event, details }));
-        setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
-        lock.update(false); // locked
+    it("removes scroll listener on disengage", () => {
+      const { lock, viewport, scrollToLineCalls, setBuffer } = createLockHarness();
+      setBuffer({ viewportY: 5, baseY: 100, type: "normal" });
+      lock.update(false); // listener installed
+      lock.update(true); // disengage → listener removed
 
-        // Simulate stuck lock: write in progress forever, no user intent
-        lock.writeStart();
+      // Scroll events after disengage should have no effect
+      lock.writeStart();
+      setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
+      viewport.dispatchEvent(new Event("scroll"));
+      lock.writeEnd();
 
-        expect(lock.isLocked).toBe(true);
-
-        // Advance past watchdog timeout (5000ms)
-        vi.advanceTimersByTime(5_000);
-
-        expect(lock.isLocked).toBe(false); // watchdog forced disengage
-        const watchdogLog = logEvents.find(e => e.event === "watchdog-force-disengage");
-        expect(watchdogLog).toBeDefined();
-        expect(watchdogLog!.details.writeInProgress).toBe(true);
-
-        lock.writeEnd();
-        lock.dispose();
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it("watchdog is cancelled on normal disengage", () => {
-      vi.useFakeTimers();
-      try {
-        const logEvents: Array<{ event: string; details: Record<string, unknown> }> = [];
-        const { lock, setBuffer } = createLockHarness();
-        lock.setLogger((event, details) => logEvents.push({ event, details }));
-        setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
-        lock.update(false); // locked
-
-        // Normal disengage before watchdog fires
-        lock.update(true);
-        expect(lock.isLocked).toBe(false);
-
-        // Advance past watchdog timeout — should NOT fire
-        vi.advanceTimersByTime(6_000);
-
-        const watchdogLog = logEvents.find(e => e.event === "watchdog-force-disengage");
-        expect(watchdogLog).toBeUndefined();
-
-        lock.dispose();
-      } finally {
-        vi.useRealTimers();
-      }
+      expect(scrollToLineCalls).toEqual([]);
+      lock.dispose();
     });
   });
 
   describe("dispose", () => {
     it("cleans up and is safe to call multiple times", () => {
       const { lock } = createLockHarness();
-      lock.update(false); // locked
+      lock.update(false);
       lock.dispose();
       lock.dispose(); // should not throw
-    });
-  });
-
-  describe("microtask-based restore", () => {
-    it("writeEnd schedules microtask to restore anchor when locked", async () => {
-      const { lock, scrollToLineCalls, setBuffer } = createLockHarness();
-      setBuffer({ viewportY: 5, baseY: 100, type: "normal" });
-      lock.update(false); // locked at line 5
-
-      lock.writeStart();
-      lock.writeEnd(); // should schedule microtask
-
-      expect(scrollToLineCalls).toEqual([]); // not restored yet (microtask pending)
-      await Promise.resolve(); // flush microtask queue
-      expect(scrollToLineCalls).toEqual([5]); // restored via microtask
-      lock.dispose();
-    });
-
-    it("multiple writeEnd calls before microtask fires → single scrollToLine (dedup)", async () => {
-      const { lock, scrollToLineCalls, setBuffer } = createLockHarness();
-      setBuffer({ viewportY: 5, baseY: 100, type: "normal" });
-      lock.update(false);
-
-      // Three writes before microtask fires — only one restore expected
-      lock.writeStart();
-      lock.writeEnd();
-      lock.writeStart();
-      lock.writeEnd();
-      lock.writeStart();
-      lock.writeEnd();
-
-      await Promise.resolve();
-      expect(scrollToLineCalls).toEqual([5]); // exactly one call
-      lock.dispose();
-    });
-
-    it("writeEnd does NOT schedule microtask when unlocked", async () => {
-      const { lock, scrollToLineCalls } = createLockHarness();
-      // Never locked
-      lock.writeStart();
-      lock.writeEnd();
-
-      await Promise.resolve();
-      expect(scrollToLineCalls).toEqual([]);
-      lock.dispose();
-    });
-
-    it("scroll handler does NOT call scrollToLine for programmatic scrolls", () => {
-      const { lock, viewport, scrollToLineCalls, setBuffer } = createLockHarness();
-      setBuffer({ viewportY: 5, baseY: 100, type: "normal" });
-      lock.update(false);
-
-      lock.writeStart();
-      viewport.dispatchEvent(new Event("scroll")); // programmatic — no restore from handler
-      lock.writeEnd();
-
-      expect(scrollToLineCalls).toEqual([]); // handler must not call scrollToLine
-      lock.dispose();
-    });
-
-    it("microtask skips restore when lock disengages before it fires", async () => {
-      const { lock, scrollToLineCalls, setBuffer } = createLockHarness();
-      setBuffer({ viewportY: 5, baseY: 100, type: "normal" });
-      lock.update(false);
-
-      lock.writeStart();
-      lock.writeEnd(); // schedules microtask
-      lock.update(true); // disengage before microtask fires
-
-      await Promise.resolve();
-      expect(scrollToLineCalls).toEqual([]); // microtask fired but locked=false → no restore
-      lock.dispose();
-    });
-  });
-
-  describe("disengage during write (no writeInProgress guard)", () => {
-    it("update(true) during write DOES disengage", () => {
-      const { lock, setBuffer } = createLockHarness();
-      setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
-      lock.update(false);
-
-      lock.writeStart();
-      lock.update(true); // writeInProgress must NOT block disengage anymore
-      expect(lock.isLocked).toBe(false);
-
-      lock.writeEnd();
-      lock.dispose();
-    });
-  });
-
-  describe("re-engage debounce", () => {
-    it("re-engage blocked within 300ms of disengage", () => {
-      vi.useFakeTimers();
-      try {
-        const { lock, setBuffer } = createLockHarness();
-        setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
-        lock.update(false); // engage
-        lock.update(true); // disengage
-        expect(lock.isLocked).toBe(false);
-
-        lock.update(false); // immediate re-engage attempt — blocked
-        expect(lock.isLocked).toBe(false);
-
-        vi.advanceTimersByTime(301);
-        lock.update(false); // now allowed
-        expect(lock.isLocked).toBe(true);
-
-        lock.dispose();
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it("re-engage allowed after debounce expires", () => {
-      vi.useFakeTimers();
-      try {
-        const { lock, setBuffer } = createLockHarness();
-        setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
-        lock.update(false);
-        lock.update(true);
-        vi.advanceTimersByTime(400);
-        lock.update(false);
-        expect(lock.isLocked).toBe(true);
-        lock.dispose();
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-  });
-
-  describe("pointerup drag-to-bottom unlock", () => {
-    it("unlocks when user releases scrollbar at baseY-1 (final drag event is programmatic)", async () => {
-      const { lock, viewport, setBuffer } = createLockHarness();
-      setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
-      lock.update(false); // locked at line 50
-
-      // User drags down — last non-bottom event lands at baseY-1
-      lock.writeStart();
-      setBuffer({ viewportY: 99, baseY: 100, type: "normal" });
-      viewport.dispatchEvent(new Event("scroll")); // user branch → anchorLine=99
-
-      // User releases scrollbar
-      viewport.dispatchEvent(new Event("pointerdown"));
-      document.dispatchEvent(new Event("pointerup", { bubbles: true }));
-
-      expect(lock.isLocked).toBe(false); // anchorLine=99 >= baseY-1=99 → unlocked
-      lock.writeEnd();
-      lock.dispose();
-    });
-
-    it("stays locked when user releases scrollbar far from bottom", () => {
-      const { lock, viewport, setBuffer } = createLockHarness();
-      setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
-      lock.update(false);
-
-      setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
-      viewport.dispatchEvent(new Event("scroll")); // anchorLine=50
-
-      viewport.dispatchEvent(new Event("pointerdown"));
-      document.dispatchEvent(new Event("pointerup", { bubbles: true }));
-
-      expect(lock.isLocked).toBe(true); // anchorLine=50 << baseY=100 → stays locked
-      lock.dispose();
-    });
-
-    it("pointerup does not unlock when lock is already disengaged", () => {
-      const { lock, viewport } = createLockHarness();
-      // Never locked
-      viewport.dispatchEvent(new Event("pointerdown"));
-      document.dispatchEvent(new Event("pointerup", { bubbles: true }));
-      expect(lock.isLocked).toBe(false);
-      lock.dispose();
     });
   });
 });
