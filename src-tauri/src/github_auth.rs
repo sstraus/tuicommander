@@ -18,7 +18,7 @@ const SERVICE_NAME: &str = "tuicommander-github";
 const KEYRING_KEY: &str = "oauth-token";
 
 /// GitHub OAuth App client ID (public — not a secret).
-const CLIENT_ID: &str = "Ov23lirBjdz4Kkt4nybU";
+const CLIENT_ID: &str = "Ov23liN95BHKQDboVFRl";
 
 /// Scopes requested during Device Flow authentication.
 const OAUTH_SCOPES: &str = "repo read:org";
