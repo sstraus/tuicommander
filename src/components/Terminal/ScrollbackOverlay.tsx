@@ -53,6 +53,12 @@ export interface ScrollbackOverlayProps {
   /** Bumped by parent when terminal font size changes, triggering
    *  line-height re-measurement in the overlay. */
   fontVersion?: number;
+  /** Called when the overlay wants to close itself (Escape, Arrow Down). */
+  onClose?: () => void;
+  /** Called when the overlay wants to close only the search bar. */
+  onCloseSearch?: () => void;
+  /** Whether the VtLog search bar is currently visible. */
+  searchVisible?: boolean;
 }
 
 /** Overscan rows above/below the visible window — smooths fast wheel. */
@@ -235,6 +241,31 @@ export const ScrollbackOverlay: Component<ScrollbackOverlayProps> = (props) => {
     Math.max(0, (total() - range().end) * lineHeight()),
   );
 
+  // --- keyboard handler on the overlay itself ---
+  // When the overlay has focus (e.g. after text selection click), keyboard
+  // events bypass xterm's attachCustomKeyEventHandler entirely. This handler
+  // ensures Page Up/Down, Arrow Down, and Escape work regardless of focus.
+  function handleKeyDown(ev: KeyboardEvent) {
+    const noMod = !ev.shiftKey && !ev.ctrlKey && !ev.metaKey && !ev.altKey;
+    if (ev.key === "PageUp" && noMod) {
+      ev.preventDefault();
+      containerEl?.scrollBy(0, -(containerEl.clientHeight));
+    } else if (ev.key === "PageDown" && noMod) {
+      ev.preventDefault();
+      containerEl?.scrollBy(0, containerEl.clientHeight);
+    } else if (ev.key === "ArrowDown" && noMod) {
+      ev.preventDefault();
+      props.onClose?.();
+    } else if (ev.key === "Escape") {
+      ev.preventDefault();
+      if (props.searchVisible) {
+        props.onCloseSearch?.();
+      } else {
+        props.onClose?.();
+      }
+    }
+  }
+
   return (
     <Show when={props.visible}>
       <div
@@ -243,8 +274,10 @@ export const ScrollbackOverlay: Component<ScrollbackOverlayProps> = (props) => {
           props.containerRef?.(el);
         }}
         class={s.overlay}
+        tabIndex={0}
         onScroll={handleScroll}
         onWheel={handleWheel}
+        onKeyDown={handleKeyDown}
         role="log"
         aria-label="Terminal scrollback"
       >

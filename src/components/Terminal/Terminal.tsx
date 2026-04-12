@@ -2118,11 +2118,22 @@ export const Terminal: Component<TerminalProps> = (props) => {
             activeMatch={scrollbackActiveMatch()}
             containerRef={(el) => { scrollbackContainerEl = el; }}
             fontVersion={fontVersion()}
+            searchVisible={vtLogSearchVisible()}
             onReachBottom={() => {
               setScrollbackVisible(false);
               setVtLogSearchVisible(false);
               setScrollbackActiveMatch(null);
               terminal?.focus();
+            }}
+            onClose={() => {
+              setScrollbackVisible(false);
+              setVtLogSearchVisible(false);
+              setScrollbackActiveMatch(null);
+              terminal?.focus();
+            }}
+            onCloseSearch={() => {
+              setVtLogSearchVisible(false);
+              setScrollbackActiveMatch(null);
             }}
           />
         )}
