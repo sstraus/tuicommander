@@ -426,7 +426,7 @@
   display: none;
 }
 
-.tab.remoteTab .tabIcon {
+.tab.remoteTab:not(.shellBusy):not(.shellIdle):not(.shellUnseen) .tabIcon {
   color: rgb(var(--tab-remote-rgb));
   opacity: 0.8;
 }

@@ -232,7 +232,7 @@ fn validate_mcp_repo_path(path: &str) -> Result<(), serde_json::Value> {
         .map_err(|msg| serde_json::json!({"error": msg}))
 }
 
-const SESSION_ACTIONS: &str = "list, create, input, output, resize, close, kill, pause, resume";
+const SESSION_ACTIONS: &str = "list, create, input, output, resize, close, kill, pause, resume, status";
 const AGENT_ACTIONS: &str = "spawn, detect, stats, metrics, register, list_peers, send, inbox";
 const REPO_ACTIONS: &str = "list, active, prs, status, worktree_list, worktree_create, worktree_remove";
 const UI_ACTIONS: &str = "tab, toast, confirm";
@@ -659,7 +659,7 @@ async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &st
         .map(|meta| meta.is_claude_code)
         .unwrap_or(false);
     match name {
-        "session" => handle_session(state, args),
+        "session" => handle_session(state, args, mcp_session_id),
         "agent" => handle_agent_unified(state, addr, args, mcp_session_id),
         "repo" => handle_repo(state, args, is_claude_code).await,
         "ui" => handle_ui_unified(state, addr, args),
@@ -677,7 +677,7 @@ async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &st
     }
 }
 
-fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
+fn handle_session(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_id: Option<&str>) -> serde_json::Value {
     let action = match require_action(args, "session", SESSION_ACTIONS) {
         Ok(a) => a,
         Err(e) => return e,
@@ -851,6 +851,14 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
                 Ok(id) => id,
                 Err(e) => return e,
             };
+            // Self-close guard: prevent an agent from closing its own session.
+            if let Some(sid) = mcp_session_id {
+                if let Some(own_pty) = state.mcp_to_session.get(sid) {
+                    if own_pty.value() == session_id {
+                        return serde_json::json!({"error": "Cannot close own session. Use exit to terminate yourself."});
+                    }
+                }
+            }
             // Uses the same tombstone path as the Tauri close_pty command so
             // post-mortem MCP reads keep returning final output + exit code.
             // Idempotent: returns ok even if session was already tombstoned.
@@ -919,6 +927,23 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json
             };
             entry.lock().paused.store(false, Ordering::Relaxed);
             serde_json::json!({"ok": true})
+        }
+        "status" => {
+            let session_id = match require_session_id(args, "status") {
+                Ok(id) => id,
+                Err(e) => return e,
+            };
+            match state.session_state_with_shell(session_id) {
+                Some(ss) => serde_json::json!({
+                    "session_id": session_id,
+                    "shell_state": ss.shell_state,
+                    "agent_type": ss.agent_type,
+                    "awaiting_input": ss.awaiting_input,
+                    "rate_limited": ss.rate_limited,
+                    "last_activity_ms": ss.last_activity_ms,
+                }),
+                None => serde_json::json!({"error": format!("Session '{}' not found", session_id)}),
+            }
         }
         other => serde_json::json!({"error": format!(
             "Unknown action '{}' for tool 'session'. Available: {}", other, SESSION_ACTIONS
@@ -1270,9 +1295,11 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
             let app_handle = state.app_handle.read().clone();
             if let Some(ref app) = app_handle {
                 // Notify Tauri frontend so it creates a tab
+                let agent_type_val = args["agent_type"].as_str();
                 let _ = app.emit("session-created", serde_json::json!({
                     "session_id": session_id,
                     "cwd": cwd_str,
+                    "agent_type": agent_type_val,
                 }));
                 spawn_reader_thread(reader, paused, session_id.clone(), app.clone(), state.clone());
             } else {
@@ -2347,6 +2374,7 @@ mod tests {
             relay: crate::state::RelayState::new(),
             peer_agents: dashmap::DashMap::new(),
             agent_inbox: dashmap::DashMap::new(),
+            mcp_to_session: dashmap::DashMap::new(),
             messaging_channels: dashmap::DashMap::new(),
             #[cfg(unix)]
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
@@ -2371,7 +2399,7 @@ mod tests {
         let mut rx = state.event_bus.subscribe();
 
         let args = serde_json::json!({"action": "create"});
-        let result = handle_session(&state, &args);
+        let result = handle_session(&state, &args, None);
 
         // Skip if PTY cannot be opened (sandbox/CI without /dev/ptmx access)
         if result.get("error").is_some() {
@@ -2396,7 +2424,7 @@ mod tests {
     async fn session_create_registers_vt_log_and_last_output() {
         let state = test_state();
         let args = serde_json::json!({"action": "create"});
-        let result = handle_session(&state, &args);
+        let result = handle_session(&state, &args, None);
 
         // Skip if PTY cannot be opened (sandbox/CI without /dev/ptmx access)
         if result.get("error").is_some() {
@@ -3377,6 +3405,7 @@ mod tests {
         let raw_res = handle_session(
             &state,
             &serde_json::json!({"action": "output", "session_id": sid, "format": "raw"}),
+            None,
         );
         assert!(raw_res.get("error").is_none(), "Unexpected error: {raw_res}");
         assert_eq!(raw_res["exited"], serde_json::json!(true));
@@ -3390,6 +3419,7 @@ mod tests {
         let clean_res = handle_session(
             &state,
             &serde_json::json!({"action": "output", "session_id": sid}),
+            None,
         );
         assert!(clean_res.get("error").is_none(), "Unexpected error: {clean_res}");
         assert_eq!(clean_res["exited"], serde_json::json!(true));
@@ -3410,6 +3440,7 @@ mod tests {
         let res = handle_session(
             &state,
             &serde_json::json!({"action": "output", "session_id": "does-not-exist-at-all"}),
+            None,
         );
 
         assert_eq!(

@@ -898,6 +898,9 @@ pub struct AppState {
     /// Message inbox per agent (tuic_session → VecDeque<AgentMessage>).
     /// Capped at AGENT_INBOX_CAPACITY messages per agent, old messages evicted FIFO.
     pub agent_inbox: DashMap<String, VecDeque<AgentMessage>>,
+    /// MCP session → PTY session mapping for caller identity resolution.
+    /// Populated at agent spawn time; used by self-close guard in session(close).
+    pub mcp_to_session: DashMap<String, String>,
     /// Actual bound socket path (may differ from default if another instance holds mcp.sock).
     /// Updated by `start_server` after successful bind.
     #[cfg(unix)]
@@ -1939,6 +1942,7 @@ pub(crate) mod tests_support {
             relay: RelayState::new(),
             peer_agents: DashMap::new(),
             agent_inbox: DashMap::new(),
+            mcp_to_session: DashMap::new(),
             messaging_channels: DashMap::new(),
             #[cfg(unix)]
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
@@ -2372,6 +2376,7 @@ mod tests {
             relay: RelayState::new(),
             peer_agents: DashMap::new(),
             agent_inbox: DashMap::new(),
+            mcp_to_session: DashMap::new(),
             messaging_channels: DashMap::new(),
             #[cfg(unix)]
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),

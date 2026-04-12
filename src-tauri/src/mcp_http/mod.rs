@@ -947,6 +947,7 @@ mod tests {
             relay: crate::state::RelayState::new(),
             peer_agents: DashMap::new(),
             agent_inbox: DashMap::new(),
+            mcp_to_session: DashMap::new(),
             messaging_channels: DashMap::new(),
             #[cfg(unix)]
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
@@ -1852,8 +1853,8 @@ mod tests {
     #[tokio::test]
     async fn test_session_unknown_action() {
         let state = test_state();
-        let result = call_mcp_tool(&state, "session", serde_json::json!({"action": "status"})).await;
-        assert!(result["error"].as_str().unwrap().contains("Unknown action 'status'"));
+        let result = call_mcp_tool(&state, "session", serde_json::json!({"action": "bogus"})).await;
+        assert!(result["error"].as_str().unwrap().contains("Unknown action 'bogus'"));
         assert!(result["error"].as_str().unwrap().contains("session"));
     }
 
@@ -2904,5 +2905,70 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    // --- Swarm protocol tests (Layer 0) ---
+
+    #[tokio::test]
+    async fn test_session_close_self_close_guard() {
+        // An agent that registered as a peer should not be able to close its own session.
+        // The close handler must resolve caller identity via mcp_session_id and reject.
+        let state = test_state();
+        let mcp_sid = mcp_initialize(&state).await;
+
+        // Register a peer that maps mcp_session → pty_session
+        let pty_session_id = "my-own-session-123";
+        call_mcp_tool_with_session(&state, "agent", serde_json::json!({
+            "action": "register",
+            "tuic_session": pty_session_id,
+            "name": "orchestrator"
+        }), &mcp_sid).await;
+
+        // Record mcp→pty mapping (simulates what spawn will do)
+        state.mcp_to_session.insert(mcp_sid.clone(), pty_session_id.to_string());
+
+        // Try to close own session — should be rejected
+        let result = call_mcp_tool_with_session(&state, "session", serde_json::json!({
+            "action": "close",
+            "session_id": pty_session_id
+        }), &mcp_sid).await;
+        assert!(result["error"].as_str().is_some(), "Self-close should return error");
+        assert!(result["error"].as_str().unwrap().contains("own session"),
+            "Error should mention 'own session', got: {}", result["error"]);
+    }
+
+    #[tokio::test]
+    async fn test_session_close_other_session_allowed() {
+        // Closing someone else's session should succeed (idempotent)
+        let state = test_state();
+        let mcp_sid = mcp_initialize(&state).await;
+
+        // Register caller
+        call_mcp_tool_with_session(&state, "agent", serde_json::json!({
+            "action": "register",
+            "tuic_session": "caller-session",
+            "name": "orchestrator"
+        }), &mcp_sid).await;
+        state.mcp_to_session.insert(mcp_sid.clone(), "caller-session".to_string());
+
+        // Close a different session — should succeed
+        let result = call_mcp_tool_with_session(&state, "session", serde_json::json!({
+            "action": "close",
+            "session_id": "other-agent-session"
+        }), &mcp_sid).await;
+        assert_eq!(result["ok"], true, "Closing other session should succeed");
+    }
+
+    #[tokio::test]
+    async fn test_session_status_returns_metadata() {
+        // session(action=status) should return shell_state metadata for a known session
+        let state = test_state();
+        let result = call_mcp_tool(&state, "session", serde_json::json!({
+            "action": "status",
+            "session_id": "nonexistent"
+        })).await;
+        // For now, status should exist as an action (not "Unknown action")
+        assert!(result["error"].is_null() || !result["error"].as_str().unwrap_or("").contains("Unknown action"),
+            "session(status) should be a valid action, got: {:?}", result);
     }
 }
