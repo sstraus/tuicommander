@@ -980,9 +980,9 @@ impl ChunkProcessor {
         // Emit scrollback-overlay growth/rotation event (throttled to 100ms).
         // Frontend listens to `pty-vt-log-total-{session_id}` and updates
         // cache.total and cache.oldest for the scrollback overlay.
-        let total_changed = vt_log_total.is_some_and(|t| t > self.last_vt_log_total);
-        let oldest_changed = vt_log_oldest.is_some_and(|o| o > self.last_vt_log_oldest);
-        if total_changed || oldest_changed {
+        if let Some(new_total) = vt_log_total
+            && new_total > self.last_vt_log_total
+        {
             let should_emit = self
                 .last_vt_log_emit
                 .map(|t| t.elapsed() >= std::time::Duration::from_millis(100))
@@ -990,18 +990,19 @@ impl ChunkProcessor {
             if should_emit
                 && let Some(a) = app
             {
-                let new_total = vt_log_total.unwrap_or(self.last_vt_log_total);
-                let new_oldest = vt_log_oldest.unwrap_or(self.last_vt_log_oldest);
-                // Emit {total, oldest} object. Frontend handles both bare
-                // number (backward compat) and object payloads.
+                // Emit as a bare number — wrapping in an object corrupts
+                // the cache's internal counter (Tauri serialization issue).
                 let _ = a.emit(
                     &format!("pty-vt-log-total-{session_id}"),
-                    serde_json::json!({ "total": new_total, "oldest": new_oldest }),
+                    new_total,
                 );
                 self.last_vt_log_emit = Some(std::time::Instant::now());
             }
-            if let Some(t) = vt_log_total { self.last_vt_log_total = t; }
-            if let Some(o) = vt_log_oldest { self.last_vt_log_oldest = o; }
+            self.last_vt_log_total = new_total;
+        }
+        // Update oldest tracking (no event needed — frontend reads it on chunk fetch)
+        if let Some(new_oldest) = vt_log_oldest {
+            self.last_vt_log_oldest = new_oldest;
         }
 
         // Write to ring buffer and broadcast to WebSocket clients while
