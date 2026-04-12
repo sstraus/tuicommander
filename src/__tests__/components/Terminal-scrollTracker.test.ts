@@ -714,4 +714,49 @@ describe("ViewportLock", () => {
       }
     });
   });
+
+  describe("pointerup drag-to-bottom unlock", () => {
+    it("unlocks when user releases scrollbar at baseY-1 (final drag event is programmatic)", async () => {
+      const { lock, viewport, setBuffer } = createLockHarness();
+      setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
+      lock.update(false); // locked at line 50
+
+      // User drags down — last non-bottom event lands at baseY-1
+      lock.writeStart();
+      setBuffer({ viewportY: 99, baseY: 100, type: "normal" });
+      viewport.dispatchEvent(new Event("scroll")); // user branch → anchorLine=99
+
+      // User releases scrollbar
+      viewport.dispatchEvent(new Event("pointerdown"));
+      document.dispatchEvent(new Event("pointerup", { bubbles: true }));
+
+      expect(lock.isLocked).toBe(false); // anchorLine=99 >= baseY-1=99 → unlocked
+      lock.writeEnd();
+      lock.dispose();
+    });
+
+    it("stays locked when user releases scrollbar far from bottom", () => {
+      const { lock, viewport, setBuffer } = createLockHarness();
+      setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
+      lock.update(false);
+
+      setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
+      viewport.dispatchEvent(new Event("scroll")); // anchorLine=50
+
+      viewport.dispatchEvent(new Event("pointerdown"));
+      document.dispatchEvent(new Event("pointerup", { bubbles: true }));
+
+      expect(lock.isLocked).toBe(true); // anchorLine=50 << baseY=100 → stays locked
+      lock.dispose();
+    });
+
+    it("pointerup does not unlock when lock is already disengaged", () => {
+      const { lock, viewport } = createLockHarness();
+      // Never locked
+      viewport.dispatchEvent(new Event("pointerdown"));
+      document.dispatchEvent(new Event("pointerup", { bubbles: true }));
+      expect(lock.isLocked).toBe(false);
+      lock.dispose();
+    });
+  });
 });

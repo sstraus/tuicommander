@@ -140,6 +140,12 @@ const USER_INTENT_TTL_MS = 300;
  *  at 60fps with margin. */
 const WRITE_RENDER_LAG_MS = 50;
 
+/** How many lines from the exact bottom still count as "user dragged to bottom"
+ *  when evaluating the pointerup unlock. The final drag scroll event landing
+ *  at buf.baseY is classified as programmatic (write active + atBottom), so
+ *  anchorLine ends up at baseY-1. A threshold of 1 covers that gap. */
+const DRAG_BOTTOM_UNLOCK_LINES = 1;
+
 /** Maximum time the ViewportLock can stay engaged before the watchdog
  *  forces a disengage. Prevents the terminal from appearing permanently
  *  frozen due to unforeseen state machine edge cases. */
@@ -175,6 +181,9 @@ export class ViewportLock {
   /** True while scrollToLineFn() is executing inside the microtask restore —
    *  prevents the re-entrant DOM scroll event from queuing another restore. */
   private inRestore = false;
+  /** Cleanup for the document-level pointerup listener installed during a drag.
+   *  Cleared after it fires (once) or on dispose(). */
+  private cleanupPointerUp: (() => void) | null = null;
   /** Watchdog timer: force-disengages after WATCHDOG_TIMEOUT_MS to prevent
    *  the terminal from appearing permanently frozen. */
   private watchdogTimer: ReturnType<typeof setTimeout> | null = null;
@@ -202,24 +211,53 @@ export class ViewportLock {
   /** Listen for wheel/keyboard gestures on the viewport so the user can
    *  scroll to the bottom to re-follow output while PTY is streaming.
    *
-   *  Only wheel, touchmove, and keydown are included — NOT pointerdown or
-   *  touchstart. Those events fire at the START of a scrollbar drag and
-   *  would mark userIntent=true for the entire drag duration. Because PTY
-   *  auto-scroll always lands at buf.baseY (bottom), that would cause the
-   *  lock to misclassify xterm's auto-scroll as a user-scroll-to-bottom and
-   *  disengage — pulling the scrollbar back during a drag. */
+   *  wheel/touchmove/keydown set userIntent=true so a scroll-to-bottom
+   *  during a write is classified as user-initiated and unlocks the lock.
+   *
+   *  pointerdown does NOT set userIntent (that caused rubber-banding: the
+   *  gesture TTL was still active when PTY auto-scrolled to bottom during
+   *  a drag, causing the lock to misclassify it as user-at-bottom and
+   *  disengage). Instead, a pointerup listener on the document checks the
+   *  final drag position — if the user released the scrollbar near the
+   *  bottom (within DRAG_BOTTOM_UNLOCK_LINES), the lock disengages. */
   private installGestureListeners(): void {
     if (!this.viewport) return;
     const mark = () => this.markUserIntent();
-    const opts: AddEventListenerOptions = { passive: true, capture: true };
-    const events = ["wheel", "touchmove", "keydown"] as const;
-    for (const ev of events) {
-      this.viewport.addEventListener(ev, mark, opts);
+    const intentOpts: AddEventListenerOptions = { passive: true, capture: true };
+    const intentEvents = ["wheel", "touchmove", "keydown"] as const;
+    for (const ev of intentEvents) {
+      this.viewport.addEventListener(ev, mark, intentOpts);
     }
+
+    const onPointerDown = () => {
+      // Clean up any previous pointerup listener that didn't fire.
+      this.cleanupPointerUp?.();
+      const onPointerUp = () => {
+        this.cleanupPointerUp = null;
+        if (!this.locked || !this.getBufferFn) return;
+        const buf = this.getBufferFn();
+        // Unlock if the user released the scrollbar at or near the bottom.
+        // anchorLine holds the last user-scroll position (the final drag event
+        // at exact baseY is classified as programmatic so anchorLine = baseY-1).
+        // A threshold of 1 covers that 1-line gap without false positives.
+        if (this.anchorLine >= buf.baseY - DRAG_BOTTOM_UNLOCK_LINES) {
+          this.update(true);
+        }
+      };
+      document.addEventListener("pointerup", onPointerUp, { once: true, capture: true });
+      this.cleanupPointerUp = () => {
+        document.removeEventListener("pointerup", onPointerUp, { capture: true });
+        this.cleanupPointerUp = null;
+      };
+    };
+    this.viewport.addEventListener("pointerdown", onPointerDown, { passive: true, capture: true });
+
     this.cleanupGestures = () => {
-      for (const ev of events) {
-        this.viewport?.removeEventListener(ev, mark, opts);
+      for (const ev of intentEvents) {
+        this.viewport?.removeEventListener(ev, mark, intentOpts);
       }
+      this.viewport?.removeEventListener("pointerdown", onPointerDown, { capture: true });
+      this.cleanupPointerUp?.();
     };
   }
 
@@ -315,6 +353,7 @@ export class ViewportLock {
     }
     this.pendingMicrotask = false;
     this.inRestore = false;
+    this.cleanupPointerUp?.();
     this.userIntent = false;
     this.userScrolledWhileLocked = false;
     this.scrollToLineFn = null;
