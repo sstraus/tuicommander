@@ -469,7 +469,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     document.fonts.load(`16px "${fontName}"`);
 
 
-  /** Process a chunk of PTY output — write to terminal or buffer if not ready */
+  /** Process a chunk of PTY output — write to terminal or buffer if not ready/visible */
   const handlePtyData = (rawData: string) => {
     if (terminal) {
       // Dispatch to plugins for all terminals — background tabs may have
@@ -478,16 +478,39 @@ export const Terminal: Component<TerminalProps> = (props) => {
         pluginRegistry.processRawOutput(rawData, sessionId);
       }
 
+      // Track last PTY output timestamp for activity dashboard (throttled to 1s).
+      // Must run before the hidden-terminal early return so the activity dot
+      // and lastDataAt stay accurate for background tabs.
+      const now = Date.now();
+      if (!lastDataAtTimestamp || now - lastDataAtTimestamp > 1000) {
+        lastDataAtTimestamp = now;
+        terminalsStore.update(props.id, { lastDataAt: now });
+      }
+      if (terminalsStore.state.activeId !== props.id && !activityFlagged) {
+        activityFlagged = true;
+        terminalsStore.update(props.id, { activity: true });
+      }
+
+      // Hidden terminals: buffer data instead of writing to xterm.
+      // This eliminates ANSI parsing, internal buffer updates, and WebGL
+      // glyph atlas work for invisible terminals — the dominant source of
+      // jank when 3+ agents are streaming simultaneously (~22 MP hidden
+      // canvas work eliminated). Buffer is replayed on hidden→visible.
+      if (!isVisible()) {
+        outputBuffer.push(rawData);
+        outputBufferBytes += rawData.length;
+        while (outputBufferBytes > OUTPUT_BUFFER_MAX_BYTES && outputBuffer.length > 1) {
+          const dropped = outputBuffer.shift()!;
+          outputBufferBytes -= dropped.length;
+        }
+        return;
+      }
+
       const byteLen = rawData.length;
       pendingWriteBytes += byteLen;
 
       // Pause reader if we've accumulated too much unprocessed data.
-      // Only pause when the terminal is visible — hidden terminals (inactive
-      // pane-group tabs) may not fire write callbacks because the xterm render
-      // loop is suspended on display:none containers.  Pausing a hidden
-      // terminal's reader would block the PTY permanently since the resume
-      // callback never fires.
-      if (!isPaused && isVisible() && pendingWriteBytes > HIGH_WATERMARK && sessionId) {
+      if (!isPaused && pendingWriteBytes > HIGH_WATERMARK && sessionId) {
         isPaused = true;
         pty.pause(sessionId).catch((err) => appLogger.warn("terminal", "PTY pause failed", { error: String(err) }));
       }
@@ -517,21 +540,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
         outputBufferBytes -= dropped.length;
       }
     }
-
-    // Track last PTY output timestamp for activity dashboard (throttled to 1s)
-    const now = Date.now();
-    if (!lastDataAtTimestamp || now - lastDataAtTimestamp > 1000) {
-      lastDataAtTimestamp = now;
-      terminalsStore.update(props.id, { lastDataAt: now });
-    }
-
-    if (terminalsStore.state.activeId !== props.id && !activityFlagged) {
-      activityFlagged = true;
-      terminalsStore.update(props.id, { activity: true });
-    }
-
-    // shellState is now derived in Rust (reader thread + silence timer).
-    // handlePtyData no longer touches shellState — see ParsedEvent "shell-state" handler.
   };
 
   /** Replay buffered output into the now-open terminal */
@@ -1709,6 +1717,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
           // switch (N terminals × 10 retries saturates the rAF queue on
           // CPU-loaded machines). Fall back to safeFit only if container
           // dimensions aren't ready (edge case).
+          replayBuffer();
           if (containerRef && containerRef.offsetWidth > 0 && containerRef.offsetHeight > 0) {
             doFit();
             initSession();
