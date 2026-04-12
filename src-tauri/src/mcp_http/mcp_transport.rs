@@ -74,6 +74,22 @@ fn resolve_marker_flags(state: &Arc<AppState>, client_name: Option<&str>) -> (bo
     (show_intent, show_suggest)
 }
 
+/// Validate that a string is a well-formed UUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).
+/// Used to reject non-UUID `tuic_session` values at register time to prevent
+/// prompt-injection via preamble string interpolation (SEC-1).
+fn is_valid_uuid(s: &str) -> bool {
+    // UUID canonical form: 8-4-4-4-12 hex digits separated by hyphens (36 chars total).
+    let b = s.as_bytes();
+    if b.len() != 36 { return false; }
+    let dash_positions = [8, 13, 18, 23];
+    for &pos in &dash_positions {
+        if b[pos] != b'-' { return false; }
+    }
+    b.iter().enumerate().all(|(i, &c)| {
+        if dash_positions.contains(&i) { true } else { c.is_ascii_hexdigit() }
+    })
+}
+
 /// Build server instructions for the MCP initialize response.
 /// Tells the connecting agent what tools are available, which repos are managed,
 /// and what sessions are currently active so it can orient itself.
@@ -902,6 +918,13 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_i
                 Ok(id) => id,
                 Err(e) => return e,
             };
+            // Self-kill guard: mirror the close branch — an agent must not SIGKILL itself.
+            if let Some(sid) = mcp_session_id
+                && let Some(own_pty) = state.mcp_to_session.get(sid)
+                && own_pty.value() == session_id
+            {
+                return serde_json::json!({"error": "Cannot kill own session. Use exit to terminate yourself."});
+            }
             if crate::pty::kill_pty_core(state, session_id) {
                 tracing::info!(source = "session", session_id = %session_id, "Session killed: SIGKILL");
                 let _ = state.event_bus.send(crate::state::AppEvent::SessionClosed {
@@ -1216,8 +1239,6 @@ fn handle_worktree(state: &Arc<AppState>, args: &serde_json::Value, is_claude_co
     }
 }
 
-/// Build the swarm preamble injected at the top of a spawned agent's prompt.
-/// Called only when the spawner is a registered peer (swarm context).
 /// Build the full prompt for a spawned agent.
 /// Prepends a swarm preamble when the caller is a registered peer so the child
 /// knows its identity and how to communicate back. Returns the original prompt
@@ -1299,13 +1320,10 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
                 Err(e) => return serde_json::json!({"error": format!("Failed to open PTY: {}", e)}),
             };
 
-            // Resolve caller's tuic_session from their MCP session.
+            // Resolve caller's tuic_session from their MCP session via the O(1) reverse map.
             // Only set when caller is a registered peer — drives swarm preamble + TUIC_PARENT.
-            let caller_tuic: Option<String> = mcp_session_id.and_then(|sid| {
-                state.peer_agents.iter()
-                    .find(|e| e.value().mcp_session_id == sid)
-                    .map(|e| e.value().tuic_session.clone())
-            });
+            let caller_tuic: Option<String> = mcp_session_id
+                .and_then(|sid| state.mcp_to_session.get(sid).map(|e| e.value().clone()));
 
             // Effective prompt: preamble prepended for swarm spawns, unchanged otherwise.
             let effective_prompt = build_spawn_prompt(&prompt, caller_tuic.as_deref(), &session_id);
@@ -1438,6 +1456,11 @@ fn handle_messaging(state: &Arc<AppState>, args: &serde_json::Value, mcp_session
                 Some(s) if !s.is_empty() => s,
                 _ => return serde_json::json!({"error": "Action 'register' requires 'tuic_session' (your $TUIC_SESSION env var)"}),
             };
+            // Validate UUID format to prevent prompt-injection via preamble interpolation (SEC-1).
+            // $TUIC_SESSION is always a UUID v4; reject anything that isn't.
+            if !is_valid_uuid(tuic_session) {
+                return serde_json::json!({"error": "tuic_session must be a UUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)"});
+            }
             let mcp_sid = match mcp_session_id {
                 Some(sid) => sid.to_string(),
                 None => return serde_json::json!({"error": "No MCP session — send an initialize request first"}),
@@ -3984,5 +4007,95 @@ mod tests {
         assert!(result["server_ts"].as_u64().is_some(), "server_ts missing: {result}");
         assert!(result["monitor_with"].as_str().is_some(), "monitor_with missing: {result}");
         assert!(result["status_with"].as_str().is_some(), "status_with missing: {result}");
+    }
+
+    // ── is_valid_uuid ────────────────────────────────────────────────────────
+
+    #[test]
+    fn is_valid_uuid_accepts_well_formed_uuid() {
+        assert!(is_valid_uuid("550e8400-e29b-41d4-a716-446655440000"));
+        assert!(is_valid_uuid("00000000-0000-0000-0000-000000000000"));
+    }
+
+    #[test]
+    fn is_valid_uuid_rejects_injection_payloads() {
+        assert!(!is_valid_uuid("injected\n## header"));
+        assert!(!is_valid_uuid("short"));
+        assert!(!is_valid_uuid(""));
+        assert!(!is_valid_uuid("550e8400-e29b-41d4-a716-44665544000g")); // non-hex char
+        assert!(!is_valid_uuid("550e8400e29b41d4a716446655440000"));      // no dashes
+    }
+
+    // ── session(kill) self-kill guard ────────────────────────────────────────
+
+    #[test]
+    fn session_kill_rejects_own_session() {
+        let state = test_state();
+        let mcp_sid = "mcp-kill-guard-test";
+        let tuic_sid = "550e8400-e29b-41d4-a716-446655440001";
+        state.mcp_to_session.insert(mcp_sid.to_string(), tuic_sid.to_string());
+
+        let result = handle_session(
+            &state,
+            &serde_json::json!({"action": "kill", "session_id": tuic_sid}),
+            Some(mcp_sid),
+        );
+        assert!(result["error"].as_str().is_some(), "kill own session must return error: {result}");
+        assert!(
+            result["error"].as_str().unwrap().contains("Cannot kill own session"),
+            "error message must mention 'Cannot kill own session': {result}"
+        );
+    }
+
+    #[test]
+    fn session_kill_allows_other_session() {
+        let state = test_state();
+        let mcp_sid = "mcp-kill-other-test";
+        let own_tuic = "550e8400-e29b-41d4-a716-446655440002";
+        let other_tuic = "550e8400-e29b-41d4-a716-446655440003";
+        state.mcp_to_session.insert(mcp_sid.to_string(), own_tuic.to_string());
+
+        // Killing a different session — should NOT be blocked by self-kill guard.
+        // It will return "Session not found" (no real PTY), not the self-kill error.
+        let result = handle_session(
+            &state,
+            &serde_json::json!({"action": "kill", "session_id": other_tuic}),
+            Some(mcp_sid),
+        );
+        let err = result["error"].as_str().unwrap_or("");
+        assert!(
+            !err.contains("Cannot kill own session"),
+            "self-kill guard must NOT block killing other sessions: {result}"
+        );
+    }
+
+    // ── agent(register) UUID validation ─────────────────────────────────────
+
+    #[test]
+    fn agent_register_rejects_non_uuid_tuic_session() {
+        let state = test_state();
+        let result = handle_messaging(
+            &state,
+            &serde_json::json!({"action": "register", "tuic_session": "not-a-uuid"}),
+            Some("mcp-reg-test"),
+        );
+        assert!(
+            result["error"].as_str().map_or(false, |e| e.contains("UUID")),
+            "register with non-UUID tuic_session must fail: {result}"
+        );
+    }
+
+    #[test]
+    fn agent_register_accepts_valid_uuid() {
+        let state = test_state();
+        let result = handle_messaging(
+            &state,
+            &serde_json::json!({
+                "action": "register",
+                "tuic_session": "550e8400-e29b-41d4-a716-446655440004"
+            }),
+            Some("mcp-reg-valid-test"),
+        );
+        assert!(result["ok"].as_bool() == Some(true), "register with valid UUID must succeed: {result}");
     }
 }
