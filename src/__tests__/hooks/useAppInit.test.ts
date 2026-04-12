@@ -606,6 +606,52 @@ describe("initApp", () => {
     });
   });
 
+  describe("session-closed event (shellState exited)", () => {
+    type SessionClosedPayload = { session_id: string; reason: string; agent_type?: string | null };
+
+    function captureSessionClosed() {
+      const listenMock = vi.mocked(listen);
+      let callback: ((event: { payload: SessionClosedPayload }) => void) | null = null;
+      listenMock.mockImplementation(((event: string, handler: (event: { payload: unknown }) => void) => {
+        if (event === "session-closed") {
+          callback = handler as typeof callback;
+        }
+        return Promise.resolve(vi.fn());
+      }) as unknown as typeof listen);
+      return { getCallback: () => callback };
+    }
+
+    it("sets shellState to exited on the terminal when a remote session closes", async () => {
+      const { getCallback } = captureSessionClosed();
+      const deps = createMockDeps();
+      await initApp(deps);
+
+      const termId = terminalsStore.add({
+        sessionId: "remote-sess",
+        fontSize: 14,
+        name: "Agent",
+        cwd: "/tmp",
+        awaitingInput: null,
+        isRemote: true,
+      });
+
+      getCallback()!({ payload: { session_id: "remote-sess", reason: "process_exit", agent_type: "claude" } });
+
+      expect(terminalsStore.get(termId)?.shellState).toBe("exited");
+    });
+
+    it("does not set shellState when session_id has no matching terminal", async () => {
+      const { getCallback } = captureSessionClosed();
+      const deps = createMockDeps();
+      await initApp(deps);
+
+      // No terminal registered for this session — should not throw
+      expect(() =>
+        getCallback()!({ payload: { session_id: "unknown-sess", reason: "process_exit" } })
+      ).not.toThrow();
+    });
+  });
+
   describe("session-created event (agent tab activation)", () => {
     type SessionCreatedPayload = { session_id: string; cwd: string | null; agent_type?: string | null };
 

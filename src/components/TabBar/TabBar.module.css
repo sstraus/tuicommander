@@ -282,6 +282,12 @@
   font-size: var(--font-3xs);
 }
 
+.tab.shellExited .tabIcon {
+  color: var(--text-muted, #666);
+  opacity: 0.45;
+  font-size: var(--font-3xs);
+}
+
 /* Awaiting input — override tabIcon to show state via left dot */
 .tab.awaitingInput .tabIcon {
   opacity: 1;
@@ -426,7 +432,7 @@
   display: none;
 }
 
-.tab.remoteTab:not(.shellBusy):not(.shellIdle):not(.shellUnseen) .tabIcon {
+.tab.remoteTab:not(.shellBusy):not(.shellIdle):not(.shellUnseen):not(.shellExited) .tabIcon {
   color: rgb(var(--tab-remote-rgb));
   opacity: 0.8;
 }

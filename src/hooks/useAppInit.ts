@@ -395,6 +395,8 @@ export async function initApp(deps: AppInitDeps) {
     const t0 = terminalsStore.get(termId);
     if (!t0?.isRemote) return;
 
+    terminalsStore.update(termId, { shellState: "exited" });
+
     // Agent-spawned sessions get a shorter grace period — they finish their task
     // and can be cleaned up faster than manually-opened remote sessions.
     const autoCloseMs = agent_type ? AGENT_TAB_AUTOCLOSE_MS : REMOTE_TAB_AUTOCLOSE_MS;

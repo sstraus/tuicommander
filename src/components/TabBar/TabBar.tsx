@@ -514,6 +514,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
           const isActive = () => terminalsStore.state.activeId === id;
           const isBusy = () => terminalsStore.isBusy(id);
           const isIdle = () => !isBusy() && terminal()?.shellState === "idle";
+          const isExited = () => terminal()?.shellState === "exited";
           const isUnseen = () => !isActive() && terminal()?.unseen;
           const awaitingInput = () => terminal()?.awaitingInput;
           const isDragging = () => draggingId() === id;
@@ -545,6 +546,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
                   !awaitingInput() && isBusy() && s.shellBusy,
                   !awaitingInput() && !isBusy() && isUnseen() && s.shellUnseen,
                   !awaitingInput() && isIdle() && !isUnseen() && s.shellIdle,
+                  isExited() && s.shellExited,
                   isRemote() && s.remoteTab,
                   isDragging() && s.dragging,
                   isDragOver() && dragOverSide() === "left" && s.dragOverLeft,

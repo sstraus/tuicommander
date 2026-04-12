@@ -26,10 +26,10 @@ export interface CommandBlock {
   endedAt: number | null;
 }
 
-/** Shell activity state: null=never had output, busy=producing output, idle=waiting for input */
-export type ShellState = "busy" | "idle" | null;
+/** Shell activity state: null=never had output, busy=producing output, idle=waiting for input, exited=process terminated */
+export type ShellState = "busy" | "idle" | "exited" | null;
 
-const VALID_SHELL_STATES = new Set<string>(["busy", "idle"]);
+const VALID_SHELL_STATES = new Set<string>(["busy", "idle", "exited"]);
 
 /** Type guard for ShellState values received from backend */
 export function isShellState(value: unknown): value is ShellState {
