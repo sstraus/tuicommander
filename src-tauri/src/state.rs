@@ -905,9 +905,17 @@ pub struct AppState {
     /// Cumulative eviction count per agent since last inbox read (tuic_session → count).
     /// Incremented on each FIFO eviction; consumed and reset by the inbox action.
     pub(crate) agent_inbox_evictions: DashMap<String, u64>,
+    /// HTML tab IDs (pluginIds) created by each session (tuic_session → [tab_id]).
+    /// Populated by ui(tab) calls from registered agents; cleared on session exit
+    /// so orphan tabs can be auto-closed by the frontend.
+    pub(crate) session_html_tabs: DashMap<String, Vec<String>>,
     /// MCP session → PTY session mapping for caller identity resolution.
     /// Populated at agent spawn time; used by self-close guard in session(close).
     pub mcp_to_session: DashMap<String, String>,
+    /// Parent session for swarm-spawned agents (child_tuic_session → parent_tuic_session).
+    /// Populated at spawn time when caller_tuic is set. Used to route auto-notifications
+    /// (state_change messages) to the orchestrator's inbox on exit and idle transitions.
+    pub(crate) session_parent: DashMap<String, String>,
     /// Actual bound socket path (may differ from default if another instance holds mcp.sock).
     /// Updated by `start_server` after successful bind.
     #[cfg(unix)]
@@ -1951,7 +1959,9 @@ pub(crate) mod tests_support {
             peer_agents: DashMap::new(),
             agent_inbox: DashMap::new(),
             agent_inbox_evictions: DashMap::new(),
+            session_html_tabs: DashMap::new(),
             mcp_to_session: DashMap::new(),
+            session_parent: DashMap::new(),
             messaging_channels: DashMap::new(),
             #[cfg(unix)]
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
@@ -2387,7 +2397,9 @@ mod tests {
             peer_agents: DashMap::new(),
             agent_inbox: DashMap::new(),
             agent_inbox_evictions: DashMap::new(),
+            session_html_tabs: DashMap::new(),
             mcp_to_session: DashMap::new(),
+            session_parent: DashMap::new(),
             messaging_channels: DashMap::new(),
             #[cfg(unix)]
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),

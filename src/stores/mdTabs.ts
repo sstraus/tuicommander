@@ -227,6 +227,14 @@ function createMdTabsStore() {
       return id;
     },
 
+    /** Remove a plugin-panel tab by its pluginId (the MCP 'id' param). No-op if not found. */
+    closeUiTab(pluginId: string): void {
+      const existing = Object.values(base.state.tabs).find(
+        (tab) => tab.type === "plugin-panel" && (tab as PluginPanelTab).pluginId === pluginId,
+      ) as PluginPanelTab | undefined;
+      if (existing) base.remove(existing.id);
+    },
+
     /** Update the HTML content of an existing plugin panel tab */
     updatePluginPanel(tabId: string, html: string): void {
       const tab = base.get(tabId);

@@ -423,6 +423,15 @@ export async function initApp(deps: AppInitDeps) {
     appLogger.error("app", "Failed to register session-closed listener", err),
   );
 
+  // Close HTML tabs whose creator session has exited
+  listen<{ tab_ids: string[] }>("close-html-tabs", (event) => {
+    for (const pluginId of event.payload.tab_ids) {
+      mdTabsStore.closeUiTab(pluginId);
+    }
+  }).catch((err) =>
+    appLogger.error("app", "Failed to register close-html-tabs listener", err),
+  );
+
   // Check for surviving PTY sessions (persists across Vite HMR reloads)
   let survivingSessions: Awaited<ReturnType<typeof deps.pty.listActiveSessions>> = [];
   try {

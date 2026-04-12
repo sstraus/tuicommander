@@ -662,7 +662,7 @@ async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &st
         "session" => handle_session(state, args, mcp_session_id),
         "agent" => handle_agent_unified(state, addr, args, mcp_session_id),
         "repo" => handle_repo(state, args, is_claude_code).await,
-        "ui" => handle_ui_unified(state, addr, args),
+        "ui" => handle_ui_unified(state, addr, args, mcp_session_id),
         "plugin_dev_guide" => {
             serde_json::json!({"content": super::plugin_docs::PLUGIN_DOCS})
         }
@@ -887,6 +887,12 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_i
                     }));
                 }
             }
+            // Close any HTML tabs created by this session.
+            if let Some((_, tab_ids)) = state.session_html_tabs.remove(session_id) {
+                if let Some(app) = state.app_handle.read().as_ref() {
+                    let _ = app.emit("close-html-tabs", serde_json::json!({ "tab_ids": tab_ids }));
+                }
+            }
             serde_json::json!({"ok": true})
         }
         "kill" => {
@@ -905,6 +911,12 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_i
                         "session_id": session_id,
                         "reason": "killed",
                     }));
+                }
+                // Close any HTML tabs created by this session.
+                if let Some((_, tab_ids)) = state.session_html_tabs.remove(session_id) {
+                    if let Some(app) = state.app_handle.read().as_ref() {
+                        let _ = app.emit("close-html-tabs", serde_json::json!({ "tab_ids": tab_ids }));
+                    }
                 }
                 serde_json::json!({"ok": true})
             } else {
@@ -1859,7 +1871,7 @@ fn handle_workspace(_state: &Arc<AppState>, args: &serde_json::Value) -> serde_j
     }
 }
 
-fn handle_ui(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Value {
+fn handle_ui(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_id: Option<&str>) -> serde_json::Value {
     let action = match require_action(args, "ui", LEGACY_UI_ACTIONS) {
         Ok(a) => a,
         Err(e) => return e,
@@ -1882,6 +1894,16 @@ fn handle_ui(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Val
                 (Some(_), Some(_)) => return serde_json::json!({"error": "Provide either 'html' or 'url', not both"}),
                 (None, None) => return serde_json::json!({"error": "Action 'tab' requires 'html' or 'url'"}),
             };
+            // Guard: if a tuic session_id is provided and it already has a terminal,
+            // decline to create an HTML tab (agent should use the terminal instead).
+            if let Some(sid) = args["session_id"].as_str() {
+                if state.vt_log_buffers.contains_key(sid) || state.sessions.contains_key(sid) {
+                    return serde_json::json!({
+                        "ok": false,
+                        "warning": format!("Session '{}' already has an active terminal. Use the terminal tab instead of creating an HTML tab.", sid)
+                    });
+                }
+            }
             let pinned = args["pinned"].as_bool().unwrap_or(true);
             let focus = args["focus"].as_bool().unwrap_or(true);
             let mut payload = serde_json::json!({
@@ -1893,6 +1915,16 @@ fn handle_ui(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::Val
             });
             if let Some(ref u) = url_arg {
                 payload["url"] = serde_json::Value::String(u.clone());
+            }
+            // Register this tab under the creator's tuic session so it can be
+            // closed automatically when that session exits.
+            if let Some(mcp_sid) = mcp_session_id {
+                if let Some(tuic_session) = state.mcp_to_session.get(mcp_sid) {
+                    state.session_html_tabs
+                        .entry(tuic_session.value().clone())
+                        .or_insert_with(Vec::new)
+                        .push(id.clone());
+                }
             }
             // Emit to Tauri webview (native mode)
             if let Some(app) = state.app_handle.read().as_ref() {
@@ -2295,13 +2327,13 @@ fn handle_agent_unified(state: &Arc<AppState>, addr: SocketAddr, args: &serde_js
 }
 
 /// Merged ui tool: original tab action + notify toast/confirm.
-fn handle_ui_unified(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Value) -> serde_json::Value {
+fn handle_ui_unified(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Value, mcp_session_id: Option<&str>) -> serde_json::Value {
     let action = match require_action(args, "ui", UI_ACTIONS) {
         Ok(a) => a,
         Err(e) => return e,
     };
     match action {
-        "tab" => handle_ui(state, args),
+        "tab" => handle_ui(state, args, mcp_session_id),
         "toast" | "confirm" => handle_notify(state, addr, &remap_action(args, action)),
         other => serde_json::json!({"error": format!(
             "Unknown action '{}' for tool 'ui'. Available: {}", other, UI_ACTIONS
@@ -2478,7 +2510,9 @@ mod tests {
             peer_agents: dashmap::DashMap::new(),
             agent_inbox: dashmap::DashMap::new(),
             agent_inbox_evictions: dashmap::DashMap::new(),
+            session_html_tabs: dashmap::DashMap::new(),
             mcp_to_session: dashmap::DashMap::new(),
+            session_parent: dashmap::DashMap::new(),
             messaging_channels: dashmap::DashMap::new(),
             #[cfg(unix)]
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
@@ -3416,7 +3450,7 @@ mod tests {
             "id": "test-panel",
             "title": "Test",
             "html": "<p>hello</p>"
-        }));
+        }), None);
         assert_eq!(result["ok"], true);
         assert_eq!(result["id"], "test-panel");
 
@@ -3437,22 +3471,22 @@ mod tests {
     #[test]
     fn ui_tab_requires_fields() {
         let state = test_state();
-        let r = handle_ui(&state, &serde_json::json!({"action": "tab"}));
+        let r = handle_ui(&state, &serde_json::json!({"action": "tab"}), None);
         assert!(r["error"].as_str().unwrap().contains("'id'"));
 
-        let r = handle_ui(&state, &serde_json::json!({"action": "tab", "id": "x"}));
+        let r = handle_ui(&state, &serde_json::json!({"action": "tab", "id": "x"}), None);
         assert!(r["error"].as_str().unwrap().contains("'title'"));
 
         // Requires either html or url — url is accepted as alternative to html
-        let r = handle_ui(&state, &serde_json::json!({"action": "tab", "id": "x", "title": "t"}));
+        let r = handle_ui(&state, &serde_json::json!({"action": "tab", "id": "x", "title": "t"}), None);
         assert!(r["error"].as_str().unwrap().contains("'html' or 'url'"));
 
         // url alone is accepted
-        let r = handle_ui(&state, &serde_json::json!({"action": "tab", "id": "x", "title": "t", "url": "http://localhost/"}));
+        let r = handle_ui(&state, &serde_json::json!({"action": "tab", "id": "x", "title": "t", "url": "http://localhost/"}), None);
         assert_eq!(r["ok"], true);
 
         // Both html and url is rejected
-        let r = handle_ui(&state, &serde_json::json!({"action": "tab", "id": "x", "title": "t", "html": "<p/>", "url": "http://localhost/"}));
+        let r = handle_ui(&state, &serde_json::json!({"action": "tab", "id": "x", "title": "t", "html": "<p/>", "url": "http://localhost/"}), None);
         assert!(r["error"].as_str().unwrap().contains("not both"));
     }
 
@@ -3467,7 +3501,7 @@ mod tests {
             "title": "Background",
             "html": "<p/>",
             "focus": false
-        }));
+        }), None);
 
         let event = rx.try_recv().expect("Expected UiTab event");
         match event {
@@ -3489,7 +3523,7 @@ mod tests {
             "title": "T",
             "html": "<p/>",
             "pinned": false
-        }));
+        }), None);
 
         let event = rx.try_recv().expect("Expected UiTab event");
         match event {
@@ -3498,6 +3532,95 @@ mod tests {
             }
             other => panic!("Expected UiTab, got {:?}", other),
         }
+    }
+
+    // -------- HTML tab lifecycle tests (story 1176-b88b) --------
+
+    #[test]
+    fn ui_tab_warns_when_session_already_has_terminal() {
+        use crate::state::VtLogBuffer;
+        let state = test_state();
+        // Simulate an active session by inserting into vt_log_buffers
+        state.vt_log_buffers.insert(
+            "sess-active".to_string(),
+            parking_lot::Mutex::new(VtLogBuffer::new(24, 220, 500)),
+        );
+
+        // Calling ui(tab) with session_id = active session should warn, not create tab
+        let r = handle_ui(&state, &serde_json::json!({
+            "action": "tab",
+            "id": "status-tab",
+            "title": "Status",
+            "html": "<p>status</p>",
+            "session_id": "sess-active"
+        }), None);
+        assert!(r.get("warning").and_then(|v| v.as_str()).is_some(),
+            "should return warning when session_id has an active terminal");
+        assert_eq!(r["ok"], serde_json::json!(false),
+            "should not create tab when session already has terminal");
+    }
+
+    #[test]
+    fn ui_tab_no_warning_without_session_id() {
+        let state = test_state();
+        // No session_id → normal tab creation, no warning
+        let r = handle_ui(&state, &serde_json::json!({
+            "action": "tab",
+            "id": "standalone-tab",
+            "title": "My Tab",
+            "html": "<p>hello</p>"
+        }), None);
+        assert_eq!(r["ok"], serde_json::json!(true));
+        assert!(r.get("warning").is_none());
+    }
+
+    #[test]
+    fn ui_tab_no_warning_for_unknown_session_id() {
+        let state = test_state();
+        // session_id refers to a session that doesn't exist → no warning, tab created normally
+        let r = handle_ui(&state, &serde_json::json!({
+            "action": "tab",
+            "id": "status-tab",
+            "title": "Status",
+            "html": "<p>hi</p>",
+            "session_id": "nonexistent-session"
+        }), None);
+        assert_eq!(r["ok"], serde_json::json!(true),
+            "nonexistent session_id should not block tab creation");
+    }
+
+    #[test]
+    fn ui_tab_registers_creator_and_clears_on_session_close() {
+        use crate::state::VtLogBuffer;
+        let state = test_state();
+        register_peer(&state, "sess-owner", "orchestrator", "mcp-orch");
+        // Map mcp_session_id → tuic_session
+        state.mcp_to_session.insert("mcp-orch".to_string(), "sess-owner".to_string());
+
+        // Create HTML tab as orchestrator
+        let r = handle_ui(&state, &serde_json::json!({
+            "action": "tab",
+            "id": "orch-status",
+            "title": "Orchestrator",
+            "html": "<p>running</p>"
+        }), Some("mcp-orch"));
+        assert_eq!(r["ok"], serde_json::json!(true));
+
+        // session_html_tabs should have the tab registered under the creator's session
+        let tabs = state.session_html_tabs.get("sess-owner");
+        assert!(tabs.is_some(), "tab should be registered under creator session");
+        assert!(tabs.unwrap().contains(&"orch-status".to_string()));
+
+        // Insert vt_log_buffers so close succeeds
+        state.vt_log_buffers.insert(
+            "sess-owner".to_string(),
+            parking_lot::Mutex::new(VtLogBuffer::new(24, 220, 500)),
+        );
+        // Close the session — should clear its html tabs
+        handle_session(&state, &serde_json::json!({"action": "close", "session_id": "sess-owner"}), None);
+
+        assert!(state.session_html_tabs.get("sess-owner").is_none(),
+            "session_html_tabs should be cleared after session close");
     }
 
     // -------- Tombstone / post-mortem output regression tests --------

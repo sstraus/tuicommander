@@ -403,4 +403,23 @@ describe("mdTabsStore", () => {
       });
     });
   });
+
+  describe("closeUiTab()", () => {
+    it("removes a plugin-panel tab by pluginId", () => {
+      testInScope(() => {
+        store.openUiTab("wiz-status", "Status", "<p>ok</p>", true);
+        expect(store.getCount()).toBe(1);
+        store.closeUiTab("wiz-status");
+        expect(store.getCount()).toBe(0);
+      });
+    });
+
+    it("is a no-op when pluginId does not exist", () => {
+      testInScope(() => {
+        store.openUiTab("wiz-a", "A", "<p>a</p>", true);
+        store.closeUiTab("nonexistent");
+        expect(store.getCount()).toBe(1);
+      });
+    });
+  });
 });

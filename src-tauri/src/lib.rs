@@ -795,7 +795,9 @@ pub fn run() {
         peer_agents: DashMap::new(),
         agent_inbox: DashMap::new(),
         agent_inbox_evictions: DashMap::new(),
+        session_html_tabs: DashMap::new(),
         mcp_to_session: DashMap::new(),
+        session_parent: DashMap::new(),
         messaging_channels: DashMap::new(),
         #[cfg(unix)]
         bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
