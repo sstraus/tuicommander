@@ -591,12 +591,27 @@ fn try_shell_transition(
     new: u8,
 ) -> bool {
     if let Some(atom) = state.shell_states.get(session_id) {
-        atom.compare_exchange(
+        let ok = atom.compare_exchange(
             expected,
             new,
             std::sync::atomic::Ordering::AcqRel,
             std::sync::atomic::Ordering::Relaxed,
-        ).is_ok()
+        ).is_ok();
+        if ok {
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            if let Some(ts) = state.shell_state_since_ms.get(session_id) {
+                ts.store(now_ms, std::sync::atomic::Ordering::Relaxed);
+            } else {
+                state.shell_state_since_ms.insert(
+                    session_id.to_string(),
+                    std::sync::atomic::AtomicU64::new(now_ms),
+                );
+            }
+        }
+        ok
     } else {
         false
     }
