@@ -22,12 +22,12 @@ describe("CommandWidget", () => {
     expect(buttons.length).toBe(0);
   });
 
-  it("renders command buttons for claude-code agent", () => {
+  it("renders command buttons for claude agent", () => {
     const { container } = render(() => (
-      <CommandWidget sessionId="s1" agentType="claude-code" onDismiss={() => {}} />
+      <CommandWidget sessionId="s1" agentType="claude" onDismiss={() => {}} />
     ));
     const buttons = container.querySelectorAll("button");
-    // claude-code has 4 commands + 3 models + 1 permission toggle = 8
+    // claude has 4 commands + 3 models + 1 permission toggle = 8
     expect(buttons.length).toBeGreaterThanOrEqual(4);
     const texts = Array.from(buttons).map((b) => b.textContent);
     expect(texts).toContain("/compact");
@@ -38,7 +38,7 @@ describe("CommandWidget", () => {
 
   it("renders model buttons for claude-code agent", () => {
     const { container } = render(() => (
-      <CommandWidget sessionId="s1" agentType="claude-code" onDismiss={() => {}} />
+      <CommandWidget sessionId="s1" agentType="claude" onDismiss={() => {}} />
     ));
     const buttons = container.querySelectorAll("button");
     const texts = Array.from(buttons).map((b) => b.textContent);
@@ -50,7 +50,7 @@ describe("CommandWidget", () => {
   it("sends slash command via write_pty on click", async () => {
     const onDismiss = vi.fn();
     const { container } = render(() => (
-      <CommandWidget sessionId="s1" agentType="claude-code" onDismiss={onDismiss} />
+      <CommandWidget sessionId="s1" agentType="claude" onDismiss={onDismiss} />
     ));
     const buttons = container.querySelectorAll("button");
     const compactBtn = Array.from(buttons).find((b) => b.textContent === "/compact")!;
@@ -71,7 +71,7 @@ describe("CommandWidget", () => {
   it("sends model switch command via write_pty", async () => {
     const onDismiss = vi.fn();
     const { container } = render(() => (
-      <CommandWidget sessionId="s1" agentType="claude-code" onDismiss={onDismiss} />
+      <CommandWidget sessionId="s1" agentType="claude" onDismiss={onDismiss} />
     ));
     const buttons = container.querySelectorAll("button");
     const opusBtn = Array.from(buttons).find((b) => b.textContent === "opus")!;
@@ -92,7 +92,7 @@ describe("CommandWidget", () => {
   it("sends permission toggle sequence", async () => {
     const onDismiss = vi.fn();
     const { container } = render(() => (
-      <CommandWidget sessionId="s1" agentType="claude-code" onDismiss={onDismiss} />
+      <CommandWidget sessionId="s1" agentType="claude" onDismiss={onDismiss} />
     ));
     const buttons = container.querySelectorAll("button");
     const permBtn = Array.from(buttons).find((b) => b.textContent?.includes("Permission"))!;
@@ -119,7 +119,7 @@ describe("CommandWidget", () => {
   it("calls onDismiss when backdrop is clicked", async () => {
     const onDismiss = vi.fn();
     const { container } = render(() => (
-      <CommandWidget sessionId="s1" agentType="claude-code" onDismiss={onDismiss} />
+      <CommandWidget sessionId="s1" agentType="claude" onDismiss={onDismiss} />
     ));
     const backdrop = container.firstElementChild as HTMLElement;
     await fireEvent.click(backdrop);

@@ -54,7 +54,7 @@ const FALLBACK: AgentCommandSet = {
 };
 
 const AGENT_COMMANDS: Record<string, AgentCommandSet> = {
-  "claude-code": CLAUDE_CODE,
+  claude: CLAUDE_CODE,
   codex: CODEX,
   gemini: GEMINI,
   aider: AIDER,

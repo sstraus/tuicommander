@@ -4338,7 +4338,7 @@ mod tests {
 
         // Agent session: agent_type is set
         state.session_states.insert(sid.to_string(), crate::state::SessionState {
-            agent_type: Some("claude-code".to_string()),
+            agent_type: Some("claude".to_string()),
             ..Default::default()
         });
 
@@ -4361,7 +4361,7 @@ mod tests {
 
         // Agent session: agent_type is set
         state.session_states.insert(sid.to_string(), crate::state::SessionState {
-            agent_type: Some("claude-code".to_string()),
+            agent_type: Some("claude".to_string()),
             ..Default::default()
         });
 
