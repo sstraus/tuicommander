@@ -307,8 +307,19 @@ export async function initApp(deps: AppInitDeps) {
     // Only activate when agent_type is present (MCP agent spawn), not for
     // manually created sessions which should stay in the background.
     if (agent_type) {
+      // In split mode, ensure there is an active group so assignTabToActiveGroup
+      // doesn't silently no-op and leave the tab invisible.
+      if (paneLayoutStore.isSplit() && !paneLayoutStore.state.activeGroupId) {
+        const leafIds = paneLayoutStore.getAllGroupIds();
+        if (leafIds.length > 0) {
+          paneLayoutStore.setActiveGroup(leafIds[0]);
+        }
+      }
       assignTabToActiveGroup(id, "terminal");
-      terminalsStore.setActive(id);
+      // Only steal focus when there is no existing active terminal.
+      if (!terminalsStore.state.activeId) {
+        terminalsStore.setActive(id);
+      }
     }
   }).catch((err) =>
     appLogger.error("app", "Failed to register session-created listener", err),

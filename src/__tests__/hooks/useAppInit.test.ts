@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { makeTerminal } from "../helpers/store";
 import { terminalsStore } from "../../stores/terminals";
 import { repositoriesStore } from "../../stores/repositories";
+import { paneLayoutStore, resetGroupCounter } from "../../stores/paneLayout";
 import { initApp, browserCreatedSessions, type AppInitDeps } from "../../hooks/useAppInit";
 
 function resetStores() {
@@ -602,6 +603,81 @@ describe("initApp", () => {
       expect(() =>
         getCallback()!({ payload: { repo_path: "/unknown-repo", branch: "main" } })
       ).not.toThrow();
+    });
+  });
+
+  describe("session-created event (agent tab activation)", () => {
+    type SessionCreatedPayload = { session_id: string; cwd: string | null; agent_type?: string | null };
+
+    function captureSessionCreated() {
+      const listenMock = vi.mocked(listen);
+      let callback: ((event: { payload: SessionCreatedPayload }) => void) | null = null;
+      listenMock.mockImplementation(((event: string, handler: (event: { payload: unknown }) => void) => {
+        if (event === "session-created") {
+          callback = handler as typeof callback;
+        }
+        return Promise.resolve(vi.fn());
+      }) as unknown as typeof listen);
+      return { getCallback: () => callback };
+    }
+
+    beforeEach(() => {
+      paneLayoutStore.reset();
+      resetGroupCounter();
+    });
+
+    it("setActive not called when active terminal already exists", async () => {
+      const { getCallback } = captureSessionCreated();
+      const deps = createMockDeps();
+      await initApp(deps);
+
+      // Pre-existing active terminal
+      const existingId = terminalsStore.add({ sessionId: "existing", fontSize: 14, name: "Existing", cwd: "/tmp", awaitingInput: null });
+      terminalsStore.setActive(existingId);
+
+      const setActiveSpy = vi.spyOn(terminalsStore, "setActive");
+      getCallback()!({ payload: { session_id: "new-sess", cwd: null, agent_type: "claude" } });
+
+      expect(setActiveSpy).not.toHaveBeenCalled();
+      setActiveSpy.mockRestore();
+    });
+
+    it("setActive called when no active terminal exists", async () => {
+      const { getCallback } = captureSessionCreated();
+      const deps = createMockDeps();
+      await initApp(deps);
+
+      expect(terminalsStore.state.activeId).toBeNull();
+
+      getCallback()!({ payload: { session_id: "new-sess", cwd: null, agent_type: "claude" } });
+
+      const newId = terminalsStore.getIds().find(id => terminalsStore.get(id)?.sessionId === "new-sess");
+      expect(newId).toBeDefined();
+      expect(terminalsStore.state.activeId).toBe(newId);
+    });
+
+    it("setActiveGroup called with first leaf when split but no active group", async () => {
+      const { getCallback } = captureSessionCreated();
+      const deps = createMockDeps();
+      await initApp(deps);
+
+      // Set up split mode with two groups but no activeGroupId
+      const g1 = paneLayoutStore.createGroup();
+      const g2 = paneLayoutStore.createGroup();
+      paneLayoutStore.setRoot({
+        type: "branch",
+        direction: "horizontal",
+        children: [{ type: "leaf", id: g1 }, { type: "leaf", id: g2 }],
+        ratios: [0.5, 0.5],
+      });
+      // activeGroupId should be null since we called setRoot directly (not split())
+      expect(paneLayoutStore.state.activeGroupId).toBeNull();
+
+      const setActiveGroupSpy = vi.spyOn(paneLayoutStore, "setActiveGroup");
+      getCallback()!({ payload: { session_id: "new-sess", cwd: null, agent_type: "claude" } });
+
+      expect(setActiveGroupSpy).toHaveBeenCalledWith(g1);
+      setActiveGroupSpy.mockRestore();
     });
   });
 });
