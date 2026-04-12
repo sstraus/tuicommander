@@ -861,22 +861,19 @@ export const Terminal: Component<TerminalProps> = (props) => {
           cache.setOldest(meta.oldest);
         })
         .catch(() => {});
-      unlistenVtLogTotal = await listen<number>(
+      unlistenVtLogTotal = await listen<number | { total: number; oldest: number }>(
         `pty-vt-log-total-${targetSessionId}`,
         (event) => {
-          cache.setTotal(event.payload);
+          const p = event.payload;
+          if (typeof p === "number") {
+            // Backward compat: bare number = total only
+            cache.setTotal(p);
+          } else if (p && typeof p === "object") {
+            cache.setTotal(p.total);
+            cache.setOldest(p.oldest);
+          }
         },
       );
-      // Listen for buffer rotation (oldest offset advancing) on a separate
-      // event to proactively invalidate stale chunks in the cache.
-      const unlistenOldest = await listen<number>(
-        `pty-vt-log-oldest-${targetSessionId}`,
-        (event) => {
-          cache.setOldest(event.payload);
-        },
-      );
-      const prevUnlisten = unlistenVtLogTotal;
-      unlistenVtLogTotal = () => { prevUnlisten(); unlistenOldest(); };
 
       // Sync shell state from Rust — covers events missed while unsubscribed
       // (e.g. tab switch, branch switch, component remount).

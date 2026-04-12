@@ -992,19 +992,12 @@ impl ChunkProcessor {
             {
                 let new_total = vt_log_total.unwrap_or(self.last_vt_log_total);
                 let new_oldest = vt_log_oldest.unwrap_or(self.last_vt_log_oldest);
-                // Emit total as bare number — wrapping in an object corrupts
-                // the cache's internal counter (Tauri serialization mismatch).
+                // Emit {total, oldest} object. Frontend handles both bare
+                // number (backward compat) and object payloads.
                 let _ = a.emit(
                     &format!("pty-vt-log-total-{session_id}"),
-                    new_total,
+                    serde_json::json!({ "total": new_total, "oldest": new_oldest }),
                 );
-                // Emit oldest on a separate event only when it changes.
-                if oldest_changed {
-                    let _ = a.emit(
-                        &format!("pty-vt-log-oldest-{session_id}"),
-                        new_oldest,
-                    );
-                }
                 self.last_vt_log_emit = Some(std::time::Instant::now());
             }
             if let Some(t) = vt_log_total { self.last_vt_log_total = t; }
