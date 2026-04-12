@@ -133,6 +133,30 @@ export function useGitOperations(deps: GitOperationsDeps) {
   // when a newer refresh has started for the same repo.
   const refreshGeneration = new Map<string, number>();
 
+  // Branch removals processed recently, keyed by `${repoPath}::${branchName}`.
+  // FSEvents fires multiple repo-changed bursts when a worktree is deleted
+  // (one for .git/worktrees/<name>, one for the worktree directory itself),
+  // which can schedule overlapping refresh cycles. Without dedup, the same
+  // terminals would be force-closed twice and the same branch removed twice,
+  // racing store subscribers and causing visible UI thrash. Entries expire
+  // after PROCESS_DEDUP_WINDOW_MS so a legitimate later re-creation is not
+  // blocked indefinitely.
+  const recentlyProcessedBranches = new Map<string, number>();
+  const PROCESS_DEDUP_WINDOW_MS = 2000;
+  const alreadyProcessed = (repoPath: string, branchName: string): boolean => {
+    const key = `${repoPath}::${branchName}`;
+    const ts = recentlyProcessedBranches.get(key);
+    if (ts === undefined) return false;
+    if (Date.now() - ts > PROCESS_DEDUP_WINDOW_MS) {
+      recentlyProcessedBranches.delete(key);
+      return false;
+    }
+    return true;
+  };
+  const markProcessed = (repoPath: string, branchName: string): void => {
+    recentlyProcessedBranches.set(`${repoPath}::${branchName}`, Date.now());
+  };
+
   const refreshAllBranchStats = async () => {
     await Promise.all(repositoriesStore.getPaths().map(async (repoPath) => {
       const gen = (refreshGeneration.get(repoPath) ?? 0) + 1;
@@ -214,10 +238,15 @@ export function useGitOperations(deps: GitOperationsDeps) {
 
       for (const branchName of Object.keys(currentRepo.branches)) {
         if (!(branchName in worktreePaths)) {
+          // Skip branches that a concurrent/recent refresh already handled.
+          // The store removal may not have settled yet (batch scheduled), so
+          // we'd otherwise re-enqueue the same close+remove.
+          if (alreadyProcessed(repoPath, branchName)) continue;
           // If this is the stale activeBranch and we found a replacement, allow removal
           if (branchName === active && activeBranchReplacement) {
             appLogger.info("terminal", `refreshAllBranchStats: activeBranch "${branchName}" replaced by "${activeBranchReplacement}"`);
             toRemove.push(branchName);
+            markProcessed(repoPath, branchName);
             continue;
           }
           // Branch has live terminals — only keep it if the worktree path
@@ -236,6 +265,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
               });
               terminalsToClose.push(...branchState.terminals.filter(id => storeIds.has(id)));
               toRemove.push(branchName);
+              markProcessed(repoPath, branchName);
             } else {
               appLogger.info("terminal", `refreshAllBranchStats: keeping "${branchName}" — has live terminals`, {
                 terminals: branchState.terminals,
@@ -244,6 +274,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
             continue;
           }
           toRemove.push(branchName);
+          markProcessed(repoPath, branchName);
         }
       }
 

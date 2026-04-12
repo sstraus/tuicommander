@@ -37,7 +37,7 @@ export interface AppInitDeps {
   setCurrentRepoPath: (path: string | undefined) => void;
   setCurrentBranch: (branch: string | null) => void;
   handleBranchSelect: (repoPath: string, branchName: string) => Promise<void>;
-  refreshAllBranchStats: () => void;
+  refreshAllBranchStats: () => Promise<void> | void;
   getDefaultFontSize: () => number;
   stores: {
     hydrate: () => Promise<void>;
@@ -218,6 +218,13 @@ export async function initApp(deps: AppInitDeps) {
 
   // Listen for .git/ directory changes (index, refs, etc.) to refresh panels
   let branchStatsTimer: ReturnType<typeof setTimeout> | null = null;
+  // Track the in-flight refresh so we can extend the debounce window when
+  // another repo-changed arrives while one is already running. FSEvents often
+  // fires a burst (worktree delete hits both .git/worktrees/ and the removed
+  // directory), and back-to-back refreshes would double-close terminals and
+  // thrash store subscriptions. Extended debounce + dedup (in refreshAllBranchStats)
+  // collapses the burst into a single run without forcing a UI reset.
+  let activeRefresh: Promise<void> | null = null;
   listen<{ repo_path: string }>("repo-changed", (event) => {
     const { repo_path } = event.payload;
     // Invalidate caches so panels fetch fresh data
@@ -230,12 +237,19 @@ export async function initApp(deps: AppInitDeps) {
     repoSettingsStore.loadLocalConfig(repo_path).catch(() => {});
     // Trigger immediate PR refresh (debounced 2s to coalesce rapid git events)
     githubStore.pollRepo(repo_path);
-    // Discover external worktree changes (debounced 500ms to coalesce rapid events)
+    // Discover external worktree changes. Use 500ms when idle, 1000ms when a
+    // refresh is already running so the next one doesn't race it.
+    const delay = activeRefresh !== null ? 1000 : 500;
     if (branchStatsTimer) clearTimeout(branchStatsTimer);
     branchStatsTimer = setTimeout(() => {
       branchStatsTimer = null;
-      deps.refreshAllBranchStats();
-    }, 500);
+      const result = deps.refreshAllBranchStats();
+      if (result && typeof (result as Promise<void>).then === "function") {
+        activeRefresh = (result as Promise<void>).finally(() => {
+          activeRefresh = null;
+        });
+      }
+    }, delay);
   }).catch((err) =>
     appLogger.error("app", "Failed to register repo-changed listener", err),
   );
