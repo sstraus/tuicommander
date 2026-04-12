@@ -1179,6 +1179,30 @@ fn handle_worktree(state: &Arc<AppState>, args: &serde_json::Value, is_claude_co
     }
 }
 
+/// Build the swarm preamble injected at the top of a spawned agent's prompt.
+/// Called only when the spawner is a registered peer (swarm context).
+/// Build the full prompt for a spawned agent.
+/// Prepends a swarm preamble when the caller is a registered peer so the child
+/// knows its identity and how to communicate back. Returns the original prompt
+/// unchanged when called outside a swarm context (`parent_tuic` is `None`).
+fn build_spawn_prompt(prompt: &str, parent_tuic: Option<&str>, session_id: &str) -> String {
+    let Some(parent) = parent_tuic else {
+        return prompt.to_string();
+    };
+    format!(
+        "## TUICommander Swarm Context\n\
+         You are operating as part of a multi-agent swarm.\n\
+         - Your session ID (`$TUIC_SESSION`): `{session_id}`\n\
+         - Your parent agent session: `{parent}`\n\n\
+         Register yourself immediately so peers can message you:\n\
+         `agent action=register tuic_session=\"{session_id}\"`\n\n\
+         When your task is complete, notify your parent:\n\
+         `agent action=send to=\"{parent}\" message=\"<done summary>\"`\n\n\
+         ## Your Task\n\n\
+         {prompt}"
+    )
+}
+
 fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Value, mcp_session_id: Option<&str>) -> serde_json::Value {
     let action = match require_action(args, "agent", LEGACY_AGENT_ACTIONS) {
         Ok(a) => a,
@@ -1238,18 +1262,22 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
                 Err(e) => return serde_json::json!({"error": format!("Failed to open PTY: {}", e)}),
             };
 
-            let mut cmd = CommandBuilder::new(&binary_path);
-
-            // Inject swarm env vars so spawned agents know their identity and parent.
-            cmd.env("TUIC_SESSION", &session_id);
-            // Resolve caller's tuic_session from their MCP session — this becomes
-            // the child's $TUIC_PARENT. Only set when caller is a registered peer.
-            let caller_tuic_session = mcp_session_id.and_then(|sid| {
+            // Resolve caller's tuic_session from their MCP session.
+            // Only set when caller is a registered peer — drives swarm preamble + TUIC_PARENT.
+            let caller_tuic: Option<String> = mcp_session_id.and_then(|sid| {
                 state.peer_agents.iter()
                     .find(|e| e.value().mcp_session_id == sid)
                     .map(|e| e.value().tuic_session.clone())
             });
-            if let Some(ref parent) = caller_tuic_session {
+
+            // Effective prompt: preamble prepended for swarm spawns, unchanged otherwise.
+            let effective_prompt = build_spawn_prompt(&prompt, caller_tuic.as_deref(), &session_id);
+
+            let mut cmd = CommandBuilder::new(&binary_path);
+
+            // Inject swarm env vars so spawned agents know their identity and parent.
+            cmd.env("TUIC_SESSION", &session_id);
+            if let Some(ref parent) = caller_tuic {
                 cmd.env("TUIC_PARENT", parent);
             }
 
@@ -1269,7 +1297,7 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
                     cmd.arg("--model");
                     cmd.arg(model);
                 }
-                cmd.arg(&prompt);
+                cmd.arg(&effective_prompt);
             }
             if let Some(cwd) = args["cwd"].as_str() { cmd.cwd(cwd); }
 
@@ -1318,6 +1346,22 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
                 spawn_reader_thread(reader, paused, session_id.clone(), app.clone(), state.clone());
             } else {
                 spawn_headless_reader_thread(reader, paused, session_id.clone(), state.clone());
+            }
+
+            // Auto-register child as peer + pre-init inbox when spawned in swarm context.
+            if caller_tuic.is_some() {
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                state.peer_agents.insert(session_id.clone(), crate::state::PeerAgent {
+                    tuic_session: session_id.clone(),
+                    mcp_session_id: String::new(), // filled when child connects via MCP
+                    name: "agent".to_string(),
+                    project: args["cwd"].as_str().map(|s| s.to_string()),
+                    registered_at: now_ms,
+                });
+                state.agent_inbox.entry(session_id.clone()).or_default();
             }
 
             serde_json::json!({"session_id": session_id})
@@ -3506,5 +3550,114 @@ mod tests {
         // Transient state must be reaped.
         assert!(!state.shell_states.contains_key(&sid), "shell_states reaped");
         assert!(!state.terminal_rows.contains_key(&sid), "terminal_rows reaped");
+    }
+
+    // --- build_spawn_prompt ---
+
+    #[test]
+    fn build_spawn_prompt_no_parent_returns_original() {
+        let result = build_spawn_prompt("do the task", None, "child-123");
+        assert_eq!(result, "do the task");
+    }
+
+    #[test]
+    fn build_spawn_prompt_with_parent_prepends_preamble() {
+        let result = build_spawn_prompt("do the task", Some("parent-456"), "child-123");
+        assert!(result.contains("parent-456"), "preamble must mention parent");
+        assert!(result.contains("do the task"), "original prompt must be preserved");
+        let preamble_end = result.find("do the task").unwrap();
+        assert!(preamble_end > 0, "preamble must precede prompt");
+        assert!(result.contains("register"), "preamble must instruct register");
+    }
+
+    #[test]
+    fn build_spawn_prompt_with_parent_includes_send_instruction() {
+        let result = build_spawn_prompt("my task", Some("orch-789"), "child-abc");
+        assert!(result.contains("orch-789"), "preamble must include parent session for send target");
+        assert!(result.contains("send"), "preamble must instruct send on completion");
+    }
+
+    // --- spawn auto-registration + inbox pre-init ---
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn spawn_auto_registers_child_in_peer_list() {
+        let state = test_state();
+        let addr = "127.0.0.1:0".parse().unwrap();
+        register_peer(&state, "orch-session", "orchestrator", "mcp-orch");
+
+        let result = handle_agent(
+            &state,
+            addr,
+            &serde_json::json!({
+                "action": "spawn",
+                "prompt": "hello",
+                "binary_path": "/usr/bin/true",
+                "cwd": "/tmp",
+            }),
+            Some("mcp-orch"),
+        );
+        assert!(result.get("error").is_none(), "spawn failed: {result}");
+        let session_id = result["session_id"].as_str().unwrap();
+
+        let peers = handle_messaging(
+            &state,
+            &serde_json::json!({"action": "list_peers"}),
+            Some("mcp-orch"),
+        );
+        let sessions: Vec<&str> = peers["peers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["tuic_session"].as_str().unwrap())
+            .collect();
+        assert!(sessions.contains(&session_id), "child {session_id} not in list_peers: {sessions:?}");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn spawn_pre_initializes_child_inbox() {
+        let state = test_state();
+        let addr = "127.0.0.1:0".parse().unwrap();
+        register_peer(&state, "orch-session", "orchestrator", "mcp-orch");
+
+        let result = handle_agent(
+            &state,
+            addr,
+            &serde_json::json!({
+                "action": "spawn",
+                "prompt": "hello",
+                "binary_path": "/usr/bin/true",
+                "cwd": "/tmp",
+            }),
+            Some("mcp-orch"),
+        );
+        assert!(result.get("error").is_none(), "spawn failed: {result}");
+        let session_id = result["session_id"].as_str().unwrap();
+
+        assert!(
+            state.agent_inbox.contains_key(session_id),
+            "child inbox must be pre-initialized after spawn"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn spawn_no_preamble_for_non_swarm_caller_succeeds() {
+        let state = test_state();
+        let addr = "127.0.0.1:0".parse().unwrap();
+        let result = handle_agent(
+            &state,
+            addr,
+            &serde_json::json!({
+                "action": "spawn",
+                "prompt": "hello",
+                "binary_path": "/usr/bin/true",
+                "cwd": "/tmp",
+            }),
+            Some("mcp-anon"),
+        );
+        assert!(result.get("error").is_none(), "non-swarm spawn must succeed: {result}");
+        assert!(result["session_id"].as_str().is_some());
     }
 }
