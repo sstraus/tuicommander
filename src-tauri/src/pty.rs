@@ -816,6 +816,9 @@ struct ChunkProcessor {
     /// Last VtLogBuffer total_lines observed — used to detect growth and emit
     /// `pty-vt-log-total-{session_id}` for the scrollback overlay.
     last_vt_log_total: usize,
+    /// Last VtLogBuffer oldest_offset observed — emit when buffer rotation
+    /// advances oldest so the frontend can invalidate stale chunks proactively.
+    last_vt_log_oldest: usize,
     /// Last time we emitted a `pty-vt-log-total-*` event. Throttled to ~100 ms
     /// to avoid flooding the frontend during heavy output.
     last_vt_log_emit: Option<std::time::Instant>,
@@ -834,6 +837,7 @@ impl ChunkProcessor {
             alt_buffer_needs_clear: false,
             last_cursor_up_n: 0,
             last_vt_log_total: 0,
+            last_vt_log_oldest: 0,
             last_vt_log_emit: None,
         }
     }
@@ -961,23 +965,24 @@ impl ChunkProcessor {
         self.check_pending_planfiles(session_id, state, app);
 
         // Feed raw data (post-kitty-strip) into VT100 log buffer.
-        // Also capture the post-process `total_lines` so we can emit a
-        // throttled `pty-vt-log-total-*` event for the scrollback overlay.
-        let (changed_rows, vt_log_total) = if let Some(vt_log) = state.vt_log_buffers.get(session_id) {
+        // Also capture the post-process `total_lines` and `oldest_offset` so
+        // we can emit a throttled growth/rotation event for the scrollback overlay.
+        let (changed_rows, vt_log_total, vt_log_oldest) = if let Some(vt_log) = state.vt_log_buffers.get(session_id) {
             let mut vt = vt_log.lock();
             let changed = vt.process(data.as_bytes());
             let total = vt.total_lines();
-            (changed, Some(total))
+            let oldest = vt.oldest_offset();
+            (changed, Some(total), Some(oldest))
         } else {
-            (Vec::new(), None)
+            (Vec::new(), None, None)
         };
 
-        // Emit scrollback-overlay growth event (throttled to 100ms).
-        // Frontend listens to `pty-vt-log-total-{session_id}` and bumps the
-        // virtualized scrollback height as new log lines are appended.
-        if let Some(new_total) = vt_log_total
-            && new_total > self.last_vt_log_total
-        {
+        // Emit scrollback-overlay growth/rotation event (throttled to 100ms).
+        // Frontend listens to `pty-vt-log-total-{session_id}` and updates
+        // cache.total and cache.oldest for the scrollback overlay.
+        let total_changed = vt_log_total.is_some_and(|t| t > self.last_vt_log_total);
+        let oldest_changed = vt_log_oldest.is_some_and(|o| o > self.last_vt_log_oldest);
+        if total_changed || oldest_changed {
             let should_emit = self
                 .last_vt_log_emit
                 .map(|t| t.elapsed() >= std::time::Duration::from_millis(100))
@@ -985,16 +990,18 @@ impl ChunkProcessor {
             if should_emit
                 && let Some(a) = app
             {
-                // Emit as a bare number — frontend listens `listen<number>`.
-                // Wrapping in an object caused the cache to receive
-                // `{total: N}` and corrupted its internal counter.
+                let new_total = vt_log_total.unwrap_or(self.last_vt_log_total);
+                let new_oldest = vt_log_oldest.unwrap_or(self.last_vt_log_oldest);
+                // Emit {total, oldest} object. Frontend handles both bare
+                // number (backward compat) and object payloads.
                 let _ = a.emit(
                     &format!("pty-vt-log-total-{session_id}"),
-                    new_total,
+                    serde_json::json!({ "total": new_total, "oldest": new_oldest }),
                 );
                 self.last_vt_log_emit = Some(std::time::Instant::now());
             }
-            self.last_vt_log_total = new_total;
+            if let Some(t) = vt_log_total { self.last_vt_log_total = t; }
+            if let Some(o) = vt_log_oldest { self.last_vt_log_oldest = o; }
         }
 
         // Write to ring buffer and broadcast to WebSocket clients while

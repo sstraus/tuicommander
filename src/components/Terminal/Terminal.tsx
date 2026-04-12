@@ -861,10 +861,17 @@ export const Terminal: Component<TerminalProps> = (props) => {
           cache.setOldest(meta.oldest);
         })
         .catch(() => {});
-      unlistenVtLogTotal = await listen<number>(
+      unlistenVtLogTotal = await listen<number | { total: number; oldest: number }>(
         `pty-vt-log-total-${targetSessionId}`,
         (event) => {
-          cache.setTotal(event.payload);
+          const p = event.payload;
+          if (typeof p === "number") {
+            // Backward compat: bare number = total only
+            cache.setTotal(p);
+          } else if (p && typeof p === "object") {
+            cache.setTotal(p.total);
+            cache.setOldest(p.oldest);
+          }
         },
       );
 
