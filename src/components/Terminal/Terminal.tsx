@@ -768,6 +768,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
       targetSessionId,
       (data: string) => handlePtyData(data),
       () => {
+        // Close scrollback overlay immediately so the user sees [Process exited]
+        setScrollbackVisible(false);
+        setVtLogSearchVisible(false);
+        setScrollbackActiveMatch(null);
+
         if (terminal) {
           terminal.writeln("\r\n\x1b[33m[Process exited]\x1b[0m");
         }
