@@ -14,6 +14,8 @@ export interface SearchBarProps {
   matchIndex: number;
   /** Total number of matches */
   matchCount: number;
+  /** Optional label override for match count (e.g. "500+" for truncated results) */
+  matchLabel?: string;
 }
 
 /** SVG icons for toggle buttons and navigation (VS Code style) */
@@ -125,8 +127,9 @@ export const SearchBar: Component<SearchBarProps> = (props) => {
   const counterText = () => {
     if (!searchTerm()) return "";
     if (props.matchCount === 0) return "No results";
-    if (props.matchIndex < 0) return `${props.matchCount} found`;
-    return `${props.matchIndex + 1} of ${props.matchCount}`;
+    const countLabel = props.matchLabel ?? String(props.matchCount);
+    if (props.matchIndex < 0) return `${countLabel} found`;
+    return `${props.matchIndex + 1} of ${countLabel}`;
   };
 
   return (
