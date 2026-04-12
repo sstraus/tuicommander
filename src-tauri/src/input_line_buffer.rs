@@ -1636,4 +1636,35 @@ mod tests {
         // Buffer is "echo /path/to/file" — does NOT start with /
         assert!(!buf.content().starts_with('/'));
     }
+
+    /// Simulate the exact sequence sendCommand() uses for cache-keepalive:
+    ///   write 1: Ctrl-U + "[noop] reply ."
+    ///   write 2: "\r"
+    /// The emitted Line content must exactly match the noop message so the
+    /// plugin's user-input filter can distinguish it from real user input.
+    #[test]
+    fn test_keepalive_noop_round_trip() {
+        let mut buf = InputLineBuffer::new();
+        // Simulate prior partial input that Ctrl-U should clear
+        buf.feed("half typed");
+        assert_eq!(buf.content(), "half typed");
+
+        // Write 1: Ctrl-U clears, then noop text
+        let actions1 = buf.feed("\x15[noop] reply .");
+        assert!(actions1.is_empty(), "no Line until Enter");
+        assert_eq!(buf.content(), "[noop] reply .");
+
+        // Write 2: Enter submits
+        let line = feed_and_get_line(&mut buf, "\r");
+        assert_eq!(line, Some("[noop] reply .".into()));
+    }
+
+    /// A real user message must NOT be confused with the noop.
+    #[test]
+    fn test_real_user_input_not_noop() {
+        let mut buf = InputLineBuffer::new();
+        let line = feed_and_get_line(&mut buf, "fix the login bug\r");
+        assert_eq!(line, Some("fix the login bug".into()));
+        assert!(!line.unwrap().contains("[noop] reply ."));
+    }
 }
