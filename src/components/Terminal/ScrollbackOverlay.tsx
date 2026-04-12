@@ -144,6 +144,9 @@ export const ScrollbackOverlay: Component<ScrollbackOverlayProps> = (props) => {
         if (containerEl) {
           containerEl.scrollTop = containerEl.scrollHeight;
           setScrollTop(containerEl.scrollTop);
+          // Focus the overlay so keyboard events (Page Up/Down, Escape)
+          // route directly here instead of through xterm's handler.
+          containerEl.focus({ preventScroll: true });
         }
       });
     }
@@ -252,7 +255,15 @@ export const ScrollbackOverlay: Component<ScrollbackOverlayProps> = (props) => {
       containerEl?.scrollBy(0, -(containerEl.clientHeight));
     } else if (ev.key === "PageDown" && noMod) {
       ev.preventDefault();
-      containerEl?.scrollBy(0, containerEl.clientHeight);
+      if (containerEl) {
+        // If already at bottom, close overlay instead of scrolling
+        const distBottom = containerEl.scrollHeight - containerEl.scrollTop - containerEl.clientHeight;
+        if (distBottom <= BOTTOM_THRESHOLD_PX) {
+          props.onReachBottom();
+          return;
+        }
+        containerEl.scrollBy(0, containerEl.clientHeight);
+      }
     } else if (ev.key === "ArrowDown" && noMod) {
       ev.preventDefault();
       props.onClose?.();

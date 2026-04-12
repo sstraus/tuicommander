@@ -1123,12 +1123,19 @@ export const Terminal: Component<TerminalProps> = (props) => {
           return false;
         }
 
-        // Page Down: scroll overlay down by one page
+        // Page Down: scroll overlay down by one page, or close if already at bottom
         if (event.key === "PageDown" && noMod) {
           if (scrollbackContainerEl) {
-            scrollbackContainerEl.scrollBy(0, scrollbackContainerEl.clientHeight);
-            // If scrolled to bottom, the overlay's onScroll handler will
-            // fire onReachBottom and close the overlay automatically.
+            const distBottom = scrollbackContainerEl.scrollHeight - scrollbackContainerEl.scrollTop - scrollbackContainerEl.clientHeight;
+            if (distBottom <= 4) {
+              // Already at bottom — close overlay
+              setScrollbackVisible(false);
+              setVtLogSearchVisible(false);
+              setScrollbackActiveMatch(null);
+              terminal!.focus();
+            } else {
+              scrollbackContainerEl.scrollBy(0, scrollbackContainerEl.clientHeight);
+            }
           }
           return false;
         }
