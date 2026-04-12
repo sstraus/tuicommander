@@ -143,7 +143,12 @@ const WRITE_RENDER_LAG_MS = 50;
 /** Maximum time the ViewportLock can stay engaged before the watchdog
  *  forces a disengage. Prevents the terminal from appearing permanently
  *  frozen due to unforeseen state machine edge cases. */
-const WATCHDOG_TIMEOUT_MS = 5_000;
+const WATCHDOG_TIMEOUT_MS = 2_000;
+
+/** Minimum time after disengage before re-engage is allowed.
+ *  Prevents the lock from immediately re-engaging after the user scrolls
+ *  to bottom while PTY output is streaming. */
+const REENGAGE_DEBOUNCE_MS = 300;
 
 export class ViewportLock {
   private locked = false;
@@ -164,14 +169,14 @@ export class ViewportLock {
   private cleanupGestures: (() => void) | null = null;
   private viewport: HTMLElement | null = null;
   private logger: ViewportLockLogger | null = null;
-  /** Re-entrancy guard for the DOM scroll handler. scrollToLine() triggers
-   *  a synchronous scroll event that would re-enter the handler, causing an
-   *  infinite loop that freezes the main thread. */
-  private inScrollHandler = false;
+  /** Pending rAF handle for the deduped anchor-restore scheduled by writeEnd(). */
+  private rafHandle: ReturnType<typeof requestAnimationFrame> | null = null;
   /** Watchdog timer: force-disengages after WATCHDOG_TIMEOUT_MS to prevent
    *  the terminal from appearing permanently frozen. */
   private watchdogTimer: ReturnType<typeof setTimeout> | null = null;
   private engagedAtMs = 0;
+  /** Timestamp of the last disengage — used to enforce re-engage debounce. */
+  private lastDisengagedAtMs = -Infinity;
 
   /** Install a diagnostic logger. Optional — no-op when unset. */
   setLogger(logger: ViewportLockLogger | null): void {
@@ -227,10 +232,20 @@ export class ViewportLock {
 
   /** Signal that a terminal.write() callback has fired. The write flag
    *  clears immediately, but lastWriteEndMs provides a grace window for
-   *  deferred renderer scroll events (see WRITE_RENDER_LAG_MS). */
+   *  deferred renderer scroll events (see WRITE_RENDER_LAG_MS).
+   *  When locked, schedules a single rAF to restore the anchor — deduped
+   *  so that bursts of writes produce at most one scrollToLine per frame. */
   writeEnd(): void {
     this.writeInProgress = false;
     this.lastWriteEndMs = performance.now();
+    if (this.locked && this.rafHandle === null) {
+      this.rafHandle = requestAnimationFrame(() => {
+        this.rafHandle = null;
+        if (this.locked && this.scrollToLineFn) {
+          this.scrollToLineFn(this.anchorLine);
+        }
+      });
+    }
   }
 
   /** Flag a user-driven scroll intent with the same TTL as the internal
@@ -249,13 +264,11 @@ export class ViewportLock {
   update(isAtBottom: boolean): void {
     const shouldLock = !isAtBottom;
     if (shouldLock === this.locked) return;
-    // Don't disengage mid-write or during the post-write render grace period:
-    // xterm auto-scroll during write is not user intent.
-    // Exception: userScrollIntent() or userScrolledWhileLocked bypasses the guard.
-    const recentWrite = !this.writeInProgress
-      && (performance.now() - this.lastWriteEndMs < WRITE_RENDER_LAG_MS);
-    if (!shouldLock && (this.writeInProgress || recentWrite) && !this.userIntent && !this.userScrolledWhileLocked) {
-      this.logger?.("update-blocked-during-write", { isAtBottom, locked: this.locked });
+    // Debounce re-engage: don't lock again within REENGAGE_DEBOUNCE_MS of last
+    // disengage. Prevents the lock from snapping back immediately when the user
+    // scrolls to bottom while PTY output is streaming.
+    if (shouldLock && (performance.now() - this.lastDisengagedAtMs < REENGAGE_DEBOUNCE_MS)) {
+      this.logger?.("reengage-blocked-debounce", { elapsed: performance.now() - this.lastDisengagedAtMs });
       return;
     }
     this.locked = shouldLock;
@@ -267,6 +280,7 @@ export class ViewportLock {
     if (shouldLock) {
       this.engage();
     } else {
+      this.lastDisengagedAtMs = performance.now();
       this.disengage();
     }
   }
@@ -286,6 +300,10 @@ export class ViewportLock {
     if (this.watchdogTimer) {
       clearTimeout(this.watchdogTimer);
       this.watchdogTimer = null;
+    }
+    if (this.rafHandle !== null) {
+      cancelAnimationFrame(this.rafHandle);
+      this.rafHandle = null;
     }
     this.userIntent = false;
     this.userScrolledWhileLocked = false;
@@ -328,67 +346,60 @@ export class ViewportLock {
 
     const onScroll = () => {
       if (!this.getBufferFn) return;
-      if (this.inScrollHandler) return; // prevent re-entrant loop from scrollToLine()
-      this.inScrollHandler = true;
-      try {
-        const buf = this.getBufferFn();
+      const buf = this.getBufferFn();
 
-        // Scrollback cleared (ESC[3J) — anchor points to deleted lines.
-        // Reset anchor to current viewport position to prevent a stale
-        // anchor from jumping the viewport when baseY eventually regrows.
-        if (buf.baseY < this.anchorLine) {
-          this.logger?.("anchor-invalidated", {
-            oldAnchor: this.anchorLine,
-            baseY: buf.baseY,
-            viewportY: buf.viewportY,
-          });
+      // Scrollback cleared (ESC[3J) — anchor points to deleted lines.
+      // Reset anchor to current viewport position to prevent a stale
+      // anchor from jumping the viewport when baseY eventually regrows.
+      if (buf.baseY < this.anchorLine) {
+        this.logger?.("anchor-invalidated", {
+          oldAnchor: this.anchorLine,
+          baseY: buf.baseY,
+          viewportY: buf.viewportY,
+        });
+        this.anchorLine = buf.viewportY;
+      }
+
+      // Classify scroll origin. A write may be in progress AND the user may
+      // be actively scrolling (wheel, trackpad, etc.). Gesture listeners flag
+      // userIntent with a short TTL so user scrolls aren't rubber-banded.
+      //
+      // Also treat scrolls within WRITE_RENDER_LAG_MS after writeEnd() as
+      // programmatic: xterm's renderer updates the DOM on the next animation
+      // frame, after the write callback — without this grace period those
+      // deferred scrolls are misclassified as user-initiated.
+      const recentWrite = !this.writeInProgress
+        && (performance.now() - this.lastWriteEndMs < WRITE_RENDER_LAG_MS);
+      const isProgrammatic = (this.writeInProgress || recentWrite) && !this.userIntent && !this.userScrolledWhileLocked;
+
+      if (isProgrammatic) {
+        // Programmatic scroll from xterm write — ignore. Anchor restore
+        // is handled via rAF scheduled in writeEnd(), not the scroll handler.
+        // No re-entrancy risk: scrollToLine() is called from rAF, not here.
+        this.logger?.("dom-scroll-programmatic-ignored", {
+          viewportY: buf.viewportY,
+          baseY: buf.baseY,
+          anchorLine: this.anchorLine,
+        });
+      } else {
+        // User-initiated scroll — update anchor and set sticky flag.
+        this.userScrolledWhileLocked = true;
+        // Discard viewportY=0 when scrollback exists: renderer rebuilds
+        // (fontSize re-assign) fire scroll events with a transient 0 value.
+        const willUnlock = buf.viewportY >= buf.baseY;
+        this.logger?.("dom-scroll-user", {
+          viewportY: buf.viewportY,
+          baseY: buf.baseY,
+          anchorLine: this.anchorLine,
+          willUnlock,
+        });
+        if (buf.viewportY > 0 || buf.baseY === 0) {
           this.anchorLine = buf.viewportY;
         }
-
-        // Classify scroll origin. A write may be in progress AND the user may
-        // be actively scrolling (wheel, trackpad, etc.). Gesture listeners flag
-        // userIntent with a short TTL so user scrolls aren't rubber-banded.
-        //
-        // Also treat scrolls within WRITE_RENDER_LAG_MS after writeEnd() as
-        // programmatic: xterm's renderer updates the DOM on the next animation
-        // frame, after the write callback — without this grace period those
-        // deferred scrolls are misclassified as user-initiated.
-        const recentWrite = !this.writeInProgress
-          && (performance.now() - this.lastWriteEndMs < WRITE_RENDER_LAG_MS);
-        const isProgrammatic = (this.writeInProgress || recentWrite) && !this.userIntent && !this.userScrolledWhileLocked;
-
-        if (isProgrammatic) {
-          // Programmatic scroll from xterm write — restore anchor
-          if (this.scrollToLineFn && buf.baseY >= this.anchorLine) {
-            this.logger?.("dom-scroll-restore", {
-              viewportY: buf.viewportY,
-              baseY: buf.baseY,
-              anchorLine: this.anchorLine,
-            });
-            this.scrollToLineFn(this.anchorLine);
-          }
-        } else {
-          // User-initiated scroll — update anchor and set sticky flag.
-          this.userScrolledWhileLocked = true;
-          // Discard viewportY=0 when scrollback exists: renderer rebuilds
-          // (fontSize re-assign) fire scroll events with a transient 0 value.
-          const willUnlock = buf.viewportY >= buf.baseY;
-          this.logger?.("dom-scroll-user", {
-            viewportY: buf.viewportY,
-            baseY: buf.baseY,
-            anchorLine: this.anchorLine,
-            willUnlock,
-          });
-          if (buf.viewportY > 0 || buf.baseY === 0) {
-            this.anchorLine = buf.viewportY;
-          }
-          // If user scrolled to bottom, unlock
-          if (willUnlock) {
-            this.update(true);
-          }
+        // If user scrolled to bottom, unlock
+        if (willUnlock) {
+          this.update(true);
         }
-      } finally {
-        this.inScrollHandler = false;
       }
     };
 
