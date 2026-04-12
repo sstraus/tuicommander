@@ -345,6 +345,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
   // xterm search bar (live view) and VtLog search bar (history) never fight
   // over the same signal.
   const [vtLogSearchVisible, setVtLogSearchVisible] = createSignal(false);
+  // Ref to the overlay's scroll container — used for Page Up/Down keyboard nav.
+  let scrollbackContainerEl: HTMLDivElement | undefined;
 
   // Kitty keyboard protocol: current flags for this session (0 = disabled)
   let kittyFlags = 0;
@@ -1092,6 +1094,49 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // keypress from reaching xterm (which would eat the next typed character).
     let blockEscForResumeDismiss = false;
     terminal.attachCustomKeyEventHandler((event: KeyboardEvent) => {
+      // Scrollback overlay keyboard navigation — must run before all other
+      // key handlers so the overlay intercepts keys before they reach xterm.
+      if (event.type === "keydown" && scrollbackVisible()) {
+        const noMod = !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey;
+
+        // Arrow Down: close overlay, return to live terminal
+        if (event.key === "ArrowDown" && noMod) {
+          setScrollbackVisible(false);
+          setVtLogSearchVisible(false);
+          setScrollbackActiveMatch(null);
+          terminal!.focus();
+          return false;
+        }
+
+        // Page Up: scroll overlay up by one page
+        if (event.key === "PageUp" && noMod) {
+          scrollbackContainerEl?.scrollBy(0, -(scrollbackContainerEl.clientHeight));
+          return false;
+        }
+
+        // Page Down: scroll overlay down by one page
+        if (event.key === "PageDown" && noMod) {
+          if (scrollbackContainerEl) {
+            scrollbackContainerEl.scrollBy(0, scrollbackContainerEl.clientHeight);
+            // If scrolled to bottom, the overlay's onScroll handler will
+            // fire onReachBottom and close the overlay automatically.
+          }
+          return false;
+        }
+
+        // Escape: close search if open, otherwise close overlay
+        if (event.key === "Escape") {
+          if (vtLogSearchVisible()) {
+            setVtLogSearchVisible(false);
+            setScrollbackActiveMatch(null);
+          } else {
+            setScrollbackVisible(false);
+            terminal!.focus();
+          }
+          return false;
+        }
+      }
+
       // Arrow Down with no modifiers: snap to bottom when viewport is scrolled up
       if (event.type === "keydown" && event.key === "ArrowDown" && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && !scrollTracker.isAtBottom) {
         terminal!.scrollToBottom();
@@ -2061,9 +2106,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
             cache={cache()}
             visible={scrollbackVisible()}
             activeMatch={scrollbackActiveMatch()}
+            containerRef={(el) => { scrollbackContainerEl = el; }}
             onReachBottom={() => {
               setScrollbackVisible(false);
               setVtLogSearchVisible(false);
+              setScrollbackActiveMatch(null);
               terminal?.focus();
             }}
           />
