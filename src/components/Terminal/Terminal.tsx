@@ -347,6 +347,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
   const [vtLogSearchVisible, setVtLogSearchVisible] = createSignal(false);
   // Ref to the overlay's scroll container — used for Page Up/Down keyboard nav.
   let scrollbackContainerEl: HTMLDivElement | undefined;
+  // Bumped on font size/family changes so ScrollbackOverlay remeasures lineHeight.
+  const [fontVersion, setFontVersion] = createSignal(0);
 
   // Kitty keyboard protocol: current flags for this session (0 = disabled)
   let kittyFlags = 0;
@@ -1530,7 +1532,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       if (ev.deltaY >= 0) return true;
       const cache = scrollbackCache();
       if (!cache) return true;
-      const buf = terminal.buffer.active;
+      const buf = terminal!.buffer.active;
       const atTopOfXterm = buf.viewportY === 0;
       const hasExtraHistory = cache.total > buf.length;
       if (!atTopOfXterm || !hasExtraHistory) return true;
@@ -1935,6 +1937,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     const size = perTerminalSize ?? defaultSize;
     terminal.options.fontSize = size;
     terminal.options.lineHeight = snapLineHeight(size);
+    setFontVersion((v) => v + 1);
     doFit();
   });
 
@@ -2107,6 +2110,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
             visible={scrollbackVisible()}
             activeMatch={scrollbackActiveMatch()}
             containerRef={(el) => { scrollbackContainerEl = el; }}
+            fontVersion={fontVersion()}
             onReachBottom={() => {
               setScrollbackVisible(false);
               setVtLogSearchVisible(false);

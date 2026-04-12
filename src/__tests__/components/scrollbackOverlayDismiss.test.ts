@@ -4,7 +4,7 @@
  * Bug: onData handler cleared scrollbackVisible but not vtLogSearchVisible,
  * causing the search bar to reappear on the next overlay open.
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 
 // Simulate the dismissal logic extracted from Terminal.tsx onData handler.
 // The real handler is deeply coupled to xterm/Tauri, so we test the

@@ -50,6 +50,9 @@ export interface ScrollbackOverlayProps {
   /** Ref callback — exposes the scroll container so the parent can call
    *  scrollBy() for keyboard Page Up/Down navigation. */
   containerRef?: (el: HTMLDivElement) => void;
+  /** Bumped by parent when terminal font size changes, triggering
+   *  line-height re-measurement in the overlay. */
+  fontVersion?: number;
 }
 
 /** Overscan rows above/below the visible window — smooths fast wheel. */
@@ -85,16 +88,31 @@ export const ScrollbackOverlay: Component<ScrollbackOverlayProps> = (props) => {
   });
 
   // --- line-height measurement ---
-  // After the measurement element renders, capture its height. Re-measure
-  // on mount only; font changes are handled by the parent via a prop or
-  // remount.
-  onMount(() => {
+  // Remeasures whenever `fontVersion` changes (parent bumps it on font size
+  // change). Initial measurement happens on mount via the same effect.
+  createEffect(() => {
+    // Track fontVersion so the effect re-runs on font changes.
+    void props.fontVersion;
     if (measureEl) {
       const rect = measureEl.getBoundingClientRect();
       if (rect.height > 0) setLineHeight(rect.height);
     }
+  });
+
+  // --- viewport height tracking via ResizeObserver ---
+  // Keeps viewportHeight in sync when the terminal pane is resized while
+  // the overlay is open. Initial value is set on mount.
+  onMount(() => {
     if (containerEl) {
       setViewportHeight(containerEl.clientHeight);
+      const ro = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const h = entry.contentRect.height;
+          if (h > 0) setViewportHeight(h);
+        }
+      });
+      ro.observe(containerEl);
+      onCleanup(() => ro.disconnect());
     }
   });
 
