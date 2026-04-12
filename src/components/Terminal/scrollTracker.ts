@@ -169,8 +169,12 @@ export class ViewportLock {
   private cleanupGestures: (() => void) | null = null;
   private viewport: HTMLElement | null = null;
   private logger: ViewportLockLogger | null = null;
-  /** Pending rAF handle for the deduped anchor-restore scheduled by writeEnd(). */
-  private rafHandle: ReturnType<typeof requestAnimationFrame> | null = null;
+  /** True while a microtask-restore is already queued — prevents multiple
+   *  restores from being scheduled for the same write burst. */
+  private pendingMicrotask = false;
+  /** True while scrollToLineFn() is executing inside the microtask restore —
+   *  prevents the re-entrant DOM scroll event from queuing another restore. */
+  private inRestore = false;
   /** Watchdog timer: force-disengages after WATCHDOG_TIMEOUT_MS to prevent
    *  the terminal from appearing permanently frozen. */
   private watchdogTimer: ReturnType<typeof setTimeout> | null = null;
@@ -233,16 +237,21 @@ export class ViewportLock {
   /** Signal that a terminal.write() callback has fired. The write flag
    *  clears immediately, but lastWriteEndMs provides a grace window for
    *  deferred renderer scroll events (see WRITE_RENDER_LAG_MS).
-   *  When locked, schedules a single rAF to restore the anchor — deduped
-   *  so that bursts of writes produce at most one scrollToLine per frame. */
+   *  When locked, schedules a microtask to restore the anchor — deduped
+   *  so that bursts of writes produce at most one scrollToLine call.
+   *  Microtasks run before the next paint (unlike rAF), preventing the
+   *  viewport from visibly jumping to the bottom between writes. */
   writeEnd(): void {
     this.writeInProgress = false;
     this.lastWriteEndMs = performance.now();
-    if (this.locked && this.rafHandle === null) {
-      this.rafHandle = requestAnimationFrame(() => {
-        this.rafHandle = null;
+    if (this.locked && !this.pendingMicrotask) {
+      this.pendingMicrotask = true;
+      queueMicrotask(() => {
+        this.pendingMicrotask = false;
         if (this.locked && this.scrollToLineFn) {
+          this.inRestore = true;
           this.scrollToLineFn(this.anchorLine);
+          this.inRestore = false;
         }
       });
     }
@@ -301,10 +310,8 @@ export class ViewportLock {
       clearTimeout(this.watchdogTimer);
       this.watchdogTimer = null;
     }
-    if (this.rafHandle !== null) {
-      cancelAnimationFrame(this.rafHandle);
-      this.rafHandle = null;
-    }
+    this.pendingMicrotask = false;
+    this.inRestore = false;
     this.userIntent = false;
     this.userScrolledWhileLocked = false;
     this.scrollToLineFn = null;
@@ -345,6 +352,10 @@ export class ViewportLock {
     }, WATCHDOG_TIMEOUT_MS);
 
     const onScroll = () => {
+      // Re-entrancy guard: scrollToLineFn() called from the microtask restore
+      // fires a synchronous DOM scroll event — block it to prevent another
+      // microtask being queued for a restore we just performed.
+      if (this.inRestore) return;
       if (!this.getBufferFn) return;
       const buf = this.getBufferFn();
 
@@ -409,6 +420,7 @@ export class ViewportLock {
 
   private disengage(): void {
     this.userScrolledWhileLocked = false;
+    this.pendingMicrotask = false;
     if (this.watchdogTimer) {
       clearTimeout(this.watchdogTimer);
       this.watchdogTimer = null;

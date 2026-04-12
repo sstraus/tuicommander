@@ -267,24 +267,19 @@ describe("ViewportLock", () => {
   });
 
   describe("write-based scroll lock", () => {
-    it("programmatic scroll during write ignored by handler; writeEnd rAF restores", () => {
-      vi.useFakeTimers();
-      try {
-        const { lock, viewport, scrollToLineCalls, setBuffer } = createLockHarness();
-        setBuffer({ viewportY: 5, baseY: 100, type: "normal" });
-        lock.update(false); // locked at line 5
+    it("programmatic scroll during write ignored by handler; writeEnd microtask restores", async () => {
+      const { lock, viewport, scrollToLineCalls, setBuffer } = createLockHarness();
+      setBuffer({ viewportY: 5, baseY: 100, type: "normal" });
+      lock.update(false); // locked at line 5
 
-        lock.writeStart();
-        viewport.dispatchEvent(new Event("scroll")); // programmatic — handler ignores
-        expect(scrollToLineCalls).toEqual([]); // handler does NOT restore
+      lock.writeStart();
+      viewport.dispatchEvent(new Event("scroll")); // programmatic — handler ignores
+      expect(scrollToLineCalls).toEqual([]); // handler does NOT restore
 
-        lock.writeEnd(); // schedules rAF
-        vi.runAllTimers(); // flush rAF
-        expect(scrollToLineCalls).toEqual([5]); // restored via rAF
-        lock.dispose();
-      } finally {
-        vi.useRealTimers();
-      }
+      lock.writeEnd(); // schedules microtask
+      await Promise.resolve(); // flush microtask queue
+      expect(scrollToLineCalls).toEqual([5]); // restored via microtask
+      lock.dispose();
     });
 
     it("does NOT restore when scroll fires outside a write (user scroll)", () => {
@@ -395,35 +390,30 @@ describe("ViewportLock", () => {
       }
     });
 
-    it("resets anchor when scrollback is cleared (baseY drops below anchor)", () => {
-      vi.useFakeTimers();
-      try {
-        const { lock, viewport, scrollToLineCalls, setBuffer } = createLockHarness();
-        setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
-        lock.update(false); // locked at anchorLine=50
+    it("resets anchor when scrollback is cleared (baseY drops below anchor)", async () => {
+      const { lock, viewport, scrollToLineCalls, setBuffer } = createLockHarness();
+      setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
+      lock.update(false); // locked at anchorLine=50
 
-        // ESC[3J clears scrollback → baseY drops to 0, scroll handler resets anchor to 0
-        lock.writeStart();
-        setBuffer({ viewportY: 0, baseY: 0, type: "normal" });
-        viewport.dispatchEvent(new Event("scroll")); // anchor resets, handler ignores (programmatic)
-        expect(scrollToLineCalls).toEqual([]); // handler does NOT restore synchronously
+      // ESC[3J clears scrollback → baseY drops to 0, scroll handler resets anchor to 0
+      lock.writeStart();
+      setBuffer({ viewportY: 0, baseY: 0, type: "normal" });
+      viewport.dispatchEvent(new Event("scroll")); // anchor resets, handler ignores (programmatic)
+      expect(scrollToLineCalls).toEqual([]); // handler does NOT restore synchronously
 
-        lock.writeEnd(); // rAF scheduled → fires → scrollToLine(0)
-        vi.advanceTimersByTime(100); // flush rAF only (watchdog at 2000ms, safe margin)
-        expect(scrollToLineCalls).toEqual([0]); // restored to reset anchor, NOT 50
+      lock.writeEnd(); // schedules microtask → scrollToLine(0)
+      await Promise.resolve(); // flush microtask
+      expect(scrollToLineCalls).toEqual([0]); // restored to reset anchor, NOT 50
 
-        // New content grows baseY — must NOT jump to old anchor (50)
-        lock.writeStart();
-        setBuffer({ viewportY: 0, baseY: 60, type: "normal" });
-        viewport.dispatchEvent(new Event("scroll")); // programmatic — ignored
-        lock.writeEnd();
-        vi.advanceTimersByTime(100);
-        expect(scrollToLineCalls).toEqual([0, 0]); // still restoring to anchor=0
+      // New content grows baseY — must NOT jump to old anchor (50)
+      lock.writeStart();
+      setBuffer({ viewportY: 0, baseY: 60, type: "normal" });
+      viewport.dispatchEvent(new Event("scroll")); // programmatic — ignored
+      lock.writeEnd();
+      await Promise.resolve();
+      expect(scrollToLineCalls).toEqual([0, 0]); // still restoring to anchor=0
 
-        lock.dispose();
-      } finally {
-        vi.useRealTimers();
-      }
+      lock.dispose();
     });
 
     it("disengages after user scroll-to-bottom during continuous writes (sticky flag)", () => {
@@ -488,39 +478,33 @@ describe("ViewportLock", () => {
       }
     });
 
-    it("rAF restores anchor exactly once even when scrollToLine triggers a re-entrant scroll event", () => {
-      vi.useFakeTimers();
-      try {
-        const { container, viewport } = createViewportContainer();
-        let restoreCalls = 0;
-        let bufferState: BufferSnapshot = { viewportY: 50, baseY: 100, type: "normal" };
+    it("microtask restores anchor exactly once even when scrollToLine triggers a re-entrant scroll event", async () => {
+      const { container, viewport } = createViewportContainer();
+      let restoreCalls = 0;
+      let bufferState: BufferSnapshot = { viewportY: 50, baseY: 100, type: "normal" };
 
-        const lock = new ViewportLock();
-        lock.attach(
-          container,
-          (line) => {
-            restoreCalls++;
-            // Simulate xterm's synchronous scroll event from scrollToLine.
-            // With rAF-based restore, scrollToLine is called outside the onScroll
-            // handler so there is no re-entrant loop — the re-entrant scroll is
-            // classified as programmatic and ignored.
-            bufferState = { viewportY: line, baseY: bufferState.baseY + 1, type: "normal" };
-            viewport.dispatchEvent(new Event("scroll"));
-          },
-          () => bufferState,
-        );
+      const lock = new ViewportLock();
+      lock.attach(
+        container,
+        (line) => {
+          restoreCalls++;
+          // Simulate xterm's synchronous scroll event from scrollToLine.
+          // The inRestore guard in the scroll handler blocks this re-entrant
+          // scroll from queuing another microtask — exactly one restore occurs.
+          bufferState = { viewportY: line, baseY: bufferState.baseY + 1, type: "normal" };
+          viewport.dispatchEvent(new Event("scroll"));
+        },
+        () => bufferState,
+      );
 
-        lock.update(false); // locked at line 50
-        lock.writeStart();
-        viewport.dispatchEvent(new Event("scroll")); // programmatic — ignored
-        lock.writeEnd(); // schedules rAF
+      lock.update(false); // locked at line 50
+      lock.writeStart();
+      viewport.dispatchEvent(new Event("scroll")); // programmatic — ignored
+      lock.writeEnd(); // schedules microtask
 
-        vi.runAllTimers(); // rAF fires → scrollToLine(50) → re-entrant scroll → ignored
-        expect(restoreCalls).toBe(1); // exactly one restore, no loop
-        lock.dispose();
-      } finally {
-        vi.useRealTimers();
-      }
+      await Promise.resolve(); // flush microtask: scrollToLine(50) → re-entrant scroll → blocked by inRestore
+      expect(restoreCalls).toBe(1); // exactly one restore, no loop
+      lock.dispose();
     });
 
     it("no listeners active when unlocked (at bottom)", () => {
@@ -600,63 +584,48 @@ describe("ViewportLock", () => {
     });
   });
 
-  describe("rAF-based restore", () => {
-    it("writeEnd schedules rAF to restore anchor when locked", () => {
-      vi.useFakeTimers();
-      try {
-        const { lock, scrollToLineCalls, setBuffer } = createLockHarness();
-        setBuffer({ viewportY: 5, baseY: 100, type: "normal" });
-        lock.update(false); // locked at line 5
+  describe("microtask-based restore", () => {
+    it("writeEnd schedules microtask to restore anchor when locked", async () => {
+      const { lock, scrollToLineCalls, setBuffer } = createLockHarness();
+      setBuffer({ viewportY: 5, baseY: 100, type: "normal" });
+      lock.update(false); // locked at line 5
 
-        lock.writeStart();
-        lock.writeEnd(); // should schedule rAF
+      lock.writeStart();
+      lock.writeEnd(); // should schedule microtask
 
-        expect(scrollToLineCalls).toEqual([]); // not restored yet
-        vi.runAllTimers(); // flush rAF
-        expect(scrollToLineCalls).toEqual([5]); // restored via rAF
-        lock.dispose();
-      } finally {
-        vi.useRealTimers();
-      }
+      expect(scrollToLineCalls).toEqual([]); // not restored yet (microtask pending)
+      await Promise.resolve(); // flush microtask queue
+      expect(scrollToLineCalls).toEqual([5]); // restored via microtask
+      lock.dispose();
     });
 
-    it("multiple writeEnd calls within one rAF frame → single scrollToLine (dedup)", () => {
-      vi.useFakeTimers();
-      try {
-        const { lock, scrollToLineCalls, setBuffer } = createLockHarness();
-        setBuffer({ viewportY: 5, baseY: 100, type: "normal" });
-        lock.update(false);
+    it("multiple writeEnd calls before microtask fires → single scrollToLine (dedup)", async () => {
+      const { lock, scrollToLineCalls, setBuffer } = createLockHarness();
+      setBuffer({ viewportY: 5, baseY: 100, type: "normal" });
+      lock.update(false);
 
-        // Three writes before rAF fires — only one restore expected
-        lock.writeStart();
-        lock.writeEnd();
-        lock.writeStart();
-        lock.writeEnd();
-        lock.writeStart();
-        lock.writeEnd();
+      // Three writes before microtask fires — only one restore expected
+      lock.writeStart();
+      lock.writeEnd();
+      lock.writeStart();
+      lock.writeEnd();
+      lock.writeStart();
+      lock.writeEnd();
 
-        vi.runAllTimers();
-        expect(scrollToLineCalls).toEqual([5]); // exactly one call
-        lock.dispose();
-      } finally {
-        vi.useRealTimers();
-      }
+      await Promise.resolve();
+      expect(scrollToLineCalls).toEqual([5]); // exactly one call
+      lock.dispose();
     });
 
-    it("writeEnd does NOT schedule rAF when unlocked", () => {
-      vi.useFakeTimers();
-      try {
-        const { lock, scrollToLineCalls } = createLockHarness();
-        // Never locked
-        lock.writeStart();
-        lock.writeEnd();
+    it("writeEnd does NOT schedule microtask when unlocked", async () => {
+      const { lock, scrollToLineCalls } = createLockHarness();
+      // Never locked
+      lock.writeStart();
+      lock.writeEnd();
 
-        vi.runAllTimers();
-        expect(scrollToLineCalls).toEqual([]);
-        lock.dispose();
-      } finally {
-        vi.useRealTimers();
-      }
+      await Promise.resolve();
+      expect(scrollToLineCalls).toEqual([]);
+      lock.dispose();
     });
 
     it("scroll handler does NOT call scrollToLine for programmatic scrolls", () => {
@@ -672,23 +641,18 @@ describe("ViewportLock", () => {
       lock.dispose();
     });
 
-    it("rAF cancelled when lock disengages before it fires", () => {
-      vi.useFakeTimers();
-      try {
-        const { lock, scrollToLineCalls, setBuffer } = createLockHarness();
-        setBuffer({ viewportY: 5, baseY: 100, type: "normal" });
-        lock.update(false);
+    it("microtask skips restore when lock disengages before it fires", async () => {
+      const { lock, scrollToLineCalls, setBuffer } = createLockHarness();
+      setBuffer({ viewportY: 5, baseY: 100, type: "normal" });
+      lock.update(false);
 
-        lock.writeStart();
-        lock.writeEnd(); // schedules rAF
-        lock.update(true); // disengage before rAF fires
+      lock.writeStart();
+      lock.writeEnd(); // schedules microtask
+      lock.update(true); // disengage before microtask fires
 
-        vi.runAllTimers();
-        expect(scrollToLineCalls).toEqual([]); // rAF fired but locked=false → no restore
-        lock.dispose();
-      } finally {
-        vi.useRealTimers();
-      }
+      await Promise.resolve();
+      expect(scrollToLineCalls).toEqual([]); // microtask fired but locked=false → no restore
+      lock.dispose();
     });
   });
 
