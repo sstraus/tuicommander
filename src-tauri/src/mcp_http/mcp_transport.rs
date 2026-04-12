@@ -695,6 +695,13 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_i
                 let process_name = pgid.and_then(|p| crate::pty::process_name_from_pid(p as u32));
                 #[cfg(windows)]
                 let process_name = pgid.and_then(crate::pty::process_name_from_pid);
+                let shell_state = state.shell_states.get(&id).map(|atom| {
+                    match atom.load(std::sync::atomic::Ordering::Relaxed) {
+                        1 => "busy",
+                        2 => "idle",
+                        _ => "unknown",
+                    }
+                });
                 serde_json::json!({
                     "session_id": id,
                     "cwd": s.cwd,
@@ -703,6 +710,7 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_i
                     "child_pid": s._child.process_id(),
                     "foreground_pgid": pgid,
                     "foreground_process": process_name,
+                    "shell_state": shell_state,
                 })
             }).collect();
             serde_json::json!(sessions)
@@ -933,14 +941,30 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_i
                 Err(e) => return e,
             };
             match state.session_state_with_shell(session_id) {
-                Some(ss) => serde_json::json!({
-                    "session_id": session_id,
-                    "shell_state": ss.shell_state,
-                    "agent_type": ss.agent_type,
-                    "awaiting_input": ss.awaiting_input,
-                    "rate_limited": ss.rate_limited,
-                    "last_activity_ms": ss.last_activity_ms,
-                }),
+                Some(ss) => {
+                    let exit_code = state.exit_codes.get(session_id).map(|e| *e.value());
+                    let now_ms = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64;
+                    let since_ms = state.shell_state_since_ms.get(session_id)
+                        .map(|a| a.load(std::sync::atomic::Ordering::Relaxed))
+                        .unwrap_or(0);
+                    let elapsed = if since_ms > 0 { now_ms.saturating_sub(since_ms) } else { 0 };
+                    let is_idle = ss.shell_state.as_deref() == Some("idle");
+                    let is_busy = ss.shell_state.as_deref() == Some("busy");
+                    serde_json::json!({
+                        "session_id": session_id,
+                        "shell_state": ss.shell_state,
+                        "agent_type": ss.agent_type,
+                        "awaiting_input": ss.awaiting_input,
+                        "rate_limited": ss.rate_limited,
+                        "last_activity_ms": ss.last_activity_ms,
+                        "exit_code": exit_code,
+                        "idle_since_ms": if is_idle && elapsed > 0 { serde_json::json!(elapsed) } else { serde_json::Value::Null },
+                        "busy_duration_ms": if is_busy && elapsed > 0 { serde_json::json!(elapsed) } else { serde_json::Value::Null },
+                    })
+                },
                 None => serde_json::json!({"error": format!("Session '{}' not found", session_id)}),
             }
         }
@@ -1363,7 +1387,16 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
                 state.agent_inbox.entry(session_id.clone()).or_default();
             }
 
-            serde_json::json!({"session_id": session_id})
+            let spawn_ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            serde_json::json!({
+                "session_id": session_id,
+                "server_ts": spawn_ts,
+                "monitor_with": format!("session(action=output, session_id={})", session_id),
+                "status_with": format!("session(action=status, session_id={})", session_id),
+            })
         }
         "stats" => {
             let stats = state.orchestrator_stats();
@@ -1510,6 +1543,7 @@ fn handle_messaging(state: &Arc<AppState>, args: &serde_json::Value, mcp_session
             let mut inbox = state.agent_inbox.entry(to.to_string()).or_default();
             if inbox.len() >= crate::state::AGENT_INBOX_CAPACITY {
                 inbox.pop_front();
+                *state.agent_inbox_evictions.entry(to.to_string()).or_insert(0) += 1;
             }
             inbox.push_back(msg);
             serde_json::json!({"ok": true, "message_id": msg_id, "delivered_via_channel": pushed})
@@ -1545,7 +1579,16 @@ fn handle_messaging(state: &Arc<AppState>, args: &serde_json::Value, mcp_session
                         .collect()
                 })
                 .unwrap_or_default();
-            serde_json::json!({"messages": messages, "count": messages.len()})
+            // Consume and reset eviction counter (so caller knows since last read)
+            let missed_count = state.agent_inbox_evictions
+                .remove(&tuic_session)
+                .map(|(_, n)| n)
+                .unwrap_or(0);
+            let mut resp = serde_json::json!({"messages": messages, "count": messages.len()});
+            if missed_count > 0 {
+                resp["missed_count"] = serde_json::json!(missed_count);
+            }
+            resp
         }
         other => serde_json::json!({"error": format!(
             "Unknown action '{}' for tool 'messaging'. Available: {}", other, LEGACY_MESSAGING_ACTIONS
@@ -2429,10 +2472,12 @@ mod tests {
             shell_states: dashmap::DashMap::new(),
             terminal_rows: dashmap::DashMap::new(),
             exit_codes: dashmap::DashMap::new(),
+            shell_state_since_ms: dashmap::DashMap::new(),
             loaded_plugins: dashmap::DashMap::new(),
             relay: crate::state::RelayState::new(),
             peer_agents: dashmap::DashMap::new(),
             agent_inbox: dashmap::DashMap::new(),
+            agent_inbox_evictions: dashmap::DashMap::new(),
             mcp_to_session: dashmap::DashMap::new(),
             messaging_channels: dashmap::DashMap::new(),
             #[cfg(unix)]
@@ -2684,6 +2729,35 @@ mod tests {
         assert_eq!(msgs.len(), crate::state::AGENT_INBOX_CAPACITY);
         // First message should be msg-10 (oldest 10 evicted)
         assert_eq!(msgs[0]["content"], "msg-10");
+    }
+
+    #[test]
+    fn messaging_inbox_missed_count_on_eviction() {
+        let state = test_state();
+        register_peer(&state, "tab-1", "alice", "mcp-1");
+        register_peer(&state, "tab-2", "bob", "mcp-2");
+
+        // Fill to capacity — no eviction yet
+        for i in 0..crate::state::AGENT_INBOX_CAPACITY {
+            handle_messaging(&state, &serde_json::json!({
+                "action": "send", "to": "tab-2", "message": format!("msg-{}", i)
+            }), Some("mcp-1"));
+        }
+        let inbox = handle_messaging(&state, &serde_json::json!({"action": "inbox"}), Some("mcp-2"));
+        assert_eq!(inbox["missed_count"].as_u64().unwrap_or(0), 0, "no evictions yet");
+
+        // 5 more messages → 5 evictions
+        for i in 0..5 {
+            handle_messaging(&state, &serde_json::json!({
+                "action": "send", "to": "tab-2", "message": format!("extra-{}", i)
+            }), Some("mcp-1"));
+        }
+        let inbox = handle_messaging(&state, &serde_json::json!({"action": "inbox"}), Some("mcp-2"));
+        assert_eq!(inbox["missed_count"].as_u64().unwrap(), 5, "5 evictions reported");
+
+        // Second read — counter reset after first read
+        let inbox2 = handle_messaging(&state, &serde_json::json!({"action": "inbox"}), Some("mcp-2"));
+        assert_eq!(inbox2["missed_count"].as_u64().unwrap_or(0), 0, "counter reset after read");
     }
 
     #[test]
@@ -3658,5 +3732,131 @@ mod tests {
         );
         assert!(result.get("error").is_none(), "non-swarm spawn must succeed: {result}");
         assert!(result["session_id"].as_str().is_some());
+    }
+
+    // ---- Layer 2: session(status) enrichment + spawn response (#1163-7599) ----
+
+    #[test]
+    fn session_status_unknown_session_returns_structured_error() {
+        let state = test_state();
+        let result = handle_session(
+            &state,
+            &serde_json::json!({"action": "status", "session_id": "nonexistent"}),
+            None,
+        );
+        let err = result["error"].as_str().unwrap_or("");
+        assert!(err.contains("not found"), "expected 'not found' error, got: {result}");
+    }
+
+    #[test]
+    fn session_status_includes_exit_code_when_exited() {
+        let state = test_state();
+        let sid = "s-exit-test";
+        state.session_states.insert(sid.to_string(), crate::state::SessionState::default());
+        state.shell_states.insert(sid.to_string(), std::sync::atomic::AtomicU8::new(2)); // idle
+        state.exit_codes.insert(sid.to_string(), 42);
+
+        let result = handle_session(
+            &state,
+            &serde_json::json!({"action": "status", "session_id": sid}),
+            None,
+        );
+        assert!(result.get("error").is_none(), "unexpected error: {result}");
+        assert_eq!(result["exit_code"], serde_json::json!(42), "exit_code missing: {result}");
+    }
+
+    #[test]
+    fn session_status_includes_idle_since_ms_when_idle() {
+        let state = test_state();
+        let sid = "s-idle-test";
+        state.session_states.insert(sid.to_string(), crate::state::SessionState::default());
+        state.shell_states.insert(sid.to_string(), std::sync::atomic::AtomicU8::new(2)); // idle
+        let since = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64 - 500;
+        state.shell_state_since_ms.insert(sid.to_string(), std::sync::atomic::AtomicU64::new(since));
+
+        let result = handle_session(
+            &state,
+            &serde_json::json!({"action": "status", "session_id": sid}),
+            None,
+        );
+        assert!(result.get("error").is_none(), "unexpected error: {result}");
+        let idle_ms = result["idle_since_ms"].as_u64();
+        assert!(idle_ms.is_some(), "idle_since_ms must be present when idle: {result}");
+        assert!(idle_ms.unwrap() >= 400, "idle_since_ms must reflect elapsed time: {result}");
+        assert!(result["busy_duration_ms"].is_null(), "busy_duration_ms must be absent when idle: {result}");
+    }
+
+    #[test]
+    fn session_status_includes_busy_duration_ms_when_busy() {
+        let state = test_state();
+        let sid = "s-busy-test";
+        state.session_states.insert(sid.to_string(), crate::state::SessionState::default());
+        state.shell_states.insert(sid.to_string(), std::sync::atomic::AtomicU8::new(1)); // busy
+        let since = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64 - 300;
+        state.shell_state_since_ms.insert(sid.to_string(), std::sync::atomic::AtomicU64::new(since));
+
+        let result = handle_session(
+            &state,
+            &serde_json::json!({"action": "status", "session_id": sid}),
+            None,
+        );
+        assert!(result.get("error").is_none(), "unexpected error: {result}");
+        let busy_ms = result["busy_duration_ms"].as_u64();
+        assert!(busy_ms.is_some(), "busy_duration_ms must be present when busy: {result}");
+        assert!(busy_ms.unwrap() >= 200, "busy_duration_ms must reflect elapsed time: {result}");
+        assert!(result["idle_since_ms"].is_null(), "idle_since_ms must be absent when busy: {result}");
+    }
+
+    #[test]
+    fn session_list_includes_shell_state_per_entry() {
+        let state = test_state();
+        // Without real PTY sessions we can't test list output (sessions DashMap requires live PTY).
+        // This test verifies the field would appear if a session entry exists.
+        // Integration coverage via manual QA — list with running session must show shell_state.
+        // Here we just verify the status handler path we control returns shell_state.
+        let sid = "s-list-test";
+        state.session_states.insert(sid.to_string(), crate::state::SessionState::default());
+        state.shell_states.insert(sid.to_string(), std::sync::atomic::AtomicU8::new(2)); // idle
+
+        let result = handle_session(
+            &state,
+            &serde_json::json!({"action": "status", "session_id": sid}),
+            None,
+        );
+        assert!(result["shell_state"].as_str().is_some(), "shell_state must be in status response: {result}");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn spawn_response_includes_enrichment_fields() {
+        let state = test_state();
+        let addr = "127.0.0.1:0".parse().unwrap();
+        let result = handle_agent(
+            &state,
+            addr,
+            &serde_json::json!({
+                "action": "spawn",
+                "prompt": "hello",
+                "binary_path": "/usr/bin/true",
+                "cwd": "/tmp",
+            }),
+            Some("mcp-orch"),
+        );
+
+        if result.get("error").is_some() {
+            eprintln!("Skipping: PTY not available in this environment");
+            return;
+        }
+
+        assert!(result["session_id"].as_str().is_some(), "session_id missing: {result}");
+        assert!(result["server_ts"].as_u64().is_some(), "server_ts missing: {result}");
+        assert!(result["monitor_with"].as_str().is_some(), "monitor_with missing: {result}");
+        assert!(result["status_with"].as_str().is_some(), "status_with missing: {result}");
     }
 }

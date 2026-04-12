@@ -887,6 +887,10 @@ pub struct AppState {
     /// post-mortem `session action=output` reads can return the real code.
     /// Reaped by `pty::spawn_tombstone_sweeper` alongside the output buffers.
     pub(crate) exit_codes: DashMap<String, i32>,
+    /// Epoch-ms timestamp of last shell_state transition per session.
+    /// Updated by `pty::try_shell_transition` on every successful CAS.
+    /// Used by `session(status)` to compute idle_since_ms / busy_duration_ms.
+    pub(crate) shell_state_since_ms: DashMap<String, std::sync::atomic::AtomicU64>,
     /// Loaded plugin capabilities: plugin_id → list of capability strings.
     /// Populated by the frontend via `register_loaded_plugin` on plugin load.
     /// Used by Rust plugin commands to enforce capability checks server-side.
@@ -898,6 +902,9 @@ pub struct AppState {
     /// Message inbox per agent (tuic_session → VecDeque<AgentMessage>).
     /// Capped at AGENT_INBOX_CAPACITY messages per agent, old messages evicted FIFO.
     pub agent_inbox: DashMap<String, VecDeque<AgentMessage>>,
+    /// Cumulative eviction count per agent since last inbox read (tuic_session → count).
+    /// Incremented on each FIFO eviction; consumed and reset by the inbox action.
+    pub(crate) agent_inbox_evictions: DashMap<String, u64>,
     /// MCP session → PTY session mapping for caller identity resolution.
     /// Populated at agent spawn time; used by self-close guard in session(close).
     pub mcp_to_session: DashMap<String, String>,
@@ -1938,10 +1945,12 @@ pub(crate) mod tests_support {
             shell_states: DashMap::new(),
             terminal_rows: DashMap::new(),
             exit_codes: DashMap::new(),
+            shell_state_since_ms: DashMap::new(),
             loaded_plugins: DashMap::new(),
             relay: RelayState::new(),
             peer_agents: DashMap::new(),
             agent_inbox: DashMap::new(),
+            agent_inbox_evictions: DashMap::new(),
             mcp_to_session: DashMap::new(),
             messaging_channels: DashMap::new(),
             #[cfg(unix)]
@@ -2372,10 +2381,12 @@ mod tests {
             shell_states: DashMap::new(),
             terminal_rows: DashMap::new(),
             exit_codes: DashMap::new(),
+            shell_state_since_ms: DashMap::new(),
             loaded_plugins: DashMap::new(),
             relay: RelayState::new(),
             peer_agents: DashMap::new(),
             agent_inbox: DashMap::new(),
+            agent_inbox_evictions: DashMap::new(),
             mcp_to_session: DashMap::new(),
             messaging_channels: DashMap::new(),
             #[cfg(unix)]

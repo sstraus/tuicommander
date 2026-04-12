@@ -943,10 +943,12 @@ mod tests {
             shell_states: DashMap::new(),
             terminal_rows: DashMap::new(),
             exit_codes: DashMap::new(),
+            shell_state_since_ms: DashMap::new(),
             loaded_plugins: DashMap::new(),
             relay: crate::state::RelayState::new(),
             peer_agents: DashMap::new(),
             agent_inbox: DashMap::new(),
+            agent_inbox_evictions: DashMap::new(),
             mcp_to_session: DashMap::new(),
             messaging_channels: DashMap::new(),
             #[cfg(unix)]
