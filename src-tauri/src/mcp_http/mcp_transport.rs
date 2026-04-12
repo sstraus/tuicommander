@@ -1179,7 +1179,7 @@ fn handle_worktree(state: &Arc<AppState>, args: &serde_json::Value, is_claude_co
     }
 }
 
-fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Value) -> serde_json::Value {
+fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Value, mcp_session_id: Option<&str>) -> serde_json::Value {
     let action = match require_action(args, "agent", LEGACY_AGENT_ACTIONS) {
         Ok(a) => a,
         Err(e) => return e,
@@ -1239,6 +1239,20 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
             };
 
             let mut cmd = CommandBuilder::new(&binary_path);
+
+            // Inject swarm env vars so spawned agents know their identity and parent.
+            cmd.env("TUIC_SESSION", &session_id);
+            // Resolve caller's tuic_session from their MCP session — this becomes
+            // the child's $TUIC_PARENT. Only set when caller is a registered peer.
+            let caller_tuic_session = mcp_session_id.and_then(|sid| {
+                state.peer_agents.iter()
+                    .find(|e| e.value().mcp_session_id == sid)
+                    .map(|e| e.value().tuic_session.clone())
+            });
+            if let Some(ref parent) = caller_tuic_session {
+                cmd.env("TUIC_PARENT", parent);
+            }
+
             if let Some(raw_args) = args.get("args").and_then(|a| a.as_array()) {
                 for arg in raw_args {
                     if let Some(s) = arg.as_str() { cmd.arg(s); }
@@ -1346,12 +1360,14 @@ fn handle_messaging(state: &Arc<AppState>, args: &serde_json::Value, mcp_session
 
             let peer = crate::state::PeerAgent {
                 tuic_session: tuic_session.to_string(),
-                mcp_session_id: mcp_sid,
+                mcp_session_id: mcp_sid.clone(),
                 name: name.clone(),
                 project,
                 registered_at: now_ms,
             };
             state.peer_agents.insert(tuic_session.to_string(), peer);
+            // Map MCP session → PTY session for self-close guard resolution
+            state.mcp_to_session.insert(mcp_sid, tuic_session.to_string());
             let _ = state.event_bus.send(crate::state::AppEvent::PeerRegistered {
                 tuic_session: tuic_session.to_string(),
                 name: name.clone(),
@@ -2181,7 +2197,7 @@ fn handle_agent_unified(state: &Arc<AppState>, addr: SocketAddr, args: &serde_js
     };
     match action {
         "spawn" | "detect" | "stats" | "metrics" => {
-            handle_agent(state, addr, &remap_action(args, action))
+            handle_agent(state, addr, &remap_action(args, action), mcp_session_id)
         }
         "register" | "list_peers" | "send" | "inbox" => {
             handle_messaging(state, &remap_action(args, action), mcp_session_id)

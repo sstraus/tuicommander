@@ -2916,16 +2916,13 @@ mod tests {
         let state = test_state();
         let mcp_sid = mcp_initialize(&state).await;
 
-        // Register a peer that maps mcp_session → pty_session
+        // Register a peer — this auto-populates mcp_to_session
         let pty_session_id = "my-own-session-123";
         call_mcp_tool_with_session(&state, "agent", serde_json::json!({
             "action": "register",
             "tuic_session": pty_session_id,
             "name": "orchestrator"
         }), &mcp_sid).await;
-
-        // Record mcp→pty mapping (simulates what spawn will do)
-        state.mcp_to_session.insert(mcp_sid.clone(), pty_session_id.to_string());
 
         // Try to close own session — should be rejected
         let result = call_mcp_tool_with_session(&state, "session", serde_json::json!({
@@ -2943,13 +2940,12 @@ mod tests {
         let state = test_state();
         let mcp_sid = mcp_initialize(&state).await;
 
-        // Register caller
+        // Register caller — auto-populates mcp_to_session
         call_mcp_tool_with_session(&state, "agent", serde_json::json!({
             "action": "register",
             "tuic_session": "caller-session",
             "name": "orchestrator"
         }), &mcp_sid).await;
-        state.mcp_to_session.insert(mcp_sid.clone(), "caller-session".to_string());
 
         // Close a different session — should succeed
         let result = call_mcp_tool_with_session(&state, "session", serde_json::json!({
