@@ -333,13 +333,13 @@ fn native_tool_definitions() -> serde_json::Value {
         },
         {
             "name": "debug",
-            "description": "Diagnostics for TUICommander internals. Call with action=help for full usage guide.",
+            "description": "Diagnostics for TUICommander internals. action=help returns the full usage guide.",
             "inputSchema": { "type": "object", "properties": {
                 "action": { "type": "string", "description": "One of: agent_detection, logs, sessions, invoke_js, help" },
                 "session_id": { "type": "string", "description": "PTY session UUID (action=agent_detection, optional — omit for all)" },
                 "level": { "type": "string", "description": "Log level filter: debug, info, warn, error (action=logs)" },
                 "source": { "type": "string", "description": "Log source filter (action=logs)" },
-                "script": { "type": "string", "description": "JavaScript to execute in the WebView (action=invoke_js)" },
+                "script": { "type": "string", "description": "JavaScript to execute in the WebView (action=invoke_js). The ONLY global is window.__TUIC__ — call action=help for the full API list. Example: return window.__TUIC__.terminals()" },
                 "limit": { "type": "integer", "description": "Max entries (action=logs, default 50)" }
             }, "required": ["action"] }
         }
