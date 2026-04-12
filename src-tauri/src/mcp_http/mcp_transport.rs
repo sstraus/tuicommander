@@ -167,50 +167,45 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
         out.push_str("- `ui` (tabs, toasts, confirm dialogs): tab, toast, confirm\n");
         out.push_str("- `plugin_dev_guide`: plugin authoring reference\n\n");
         out.push_str("**Worktrees:** always `repo action=worktree_create`/`worktree_remove` — never `git worktree add/remove` (TUIC must track them to spawn a PTY inside).\n\n");
+        out.push_str("**UI feedback:** `ui action=toast` on task done/blocking error · `ui action=confirm` BEFORE destructive ops (rm -rf, git reset --hard, force push, DROP TABLE) · `ui action=tab` for structured output >20 lines.\n\n");
     }
 
-    // ── Workflow ─────────────────────────────────────────────────────
-    // In collapse mode the model does not see tool names directly, so listing
-    // `workspace action=list` etc. is misleading — the concrete invocation
-    // must go through call_tool. Suppress the section entirely in that mode.
+    // ── Workflow (phase-grouped) ──────────────────────────────────────
+    // 4 bullets by phase instead of 7 tool-by-tool steps. Details live in each
+    // tool's description (JSON schema); this section gives the mental model.
+    // Suppressed in collapse mode — concrete invocations go through call_tool.
     if !state.config.read().collapse_tools {
         out.push_str("## Workflow\n\n");
-        out.push_str("1. `repo action=list` → discover all repos, branches, ahead/behind\n");
-        out.push_str("2. `session action=create` with `cwd` → spawn terminal pane (auto-appears in TUI)\n");
-        out.push_str("3. `session action=output` → read terminal output (`exited`/`exit_code` tell you when done)\n");
-        out.push_str("4. `session action=status` → poll agent shell state without streaming output (idle/busy/exited)\n");
-        out.push_str("5. `agent action=spawn` → launch AI agent in new PTY (creates visible TUI tab by default)\n");
-        out.push_str("6. `repo action=prs` → all open PRs with CI rollup (single GraphQL batch)\n");
-        out.push_str("7. `repo action=worktree_create` → isolated worktree, optional `spawn_session`\n\n");
+        out.push_str("- **Discover:** `repo action=list|prs|active` · `agent action=detect`.\n");
+        out.push_str("- **Spawn:** `session action=create` (shell) · `agent action=spawn` (AI) · `repo action=worktree_create` (isolated).\n");
+        out.push_str("- **Observe:** `session action=status|output` · `agent action=inbox`.\n");
+        out.push_str("- **Coordinate:** `agent action=register/send/inbox` for peer messaging.\n\n");
     }
 
-    // ── Multi-agent work — unified topology guide ────────────────────
-    // Replaces the old Swarm/Worktree/Teammates blocks. Those pushed Claude Code
-    // toward its native Agent/Task tool when the user asked for a swarm, because
-    // "subagent" + "parallel work" appeared in the worktree-specific guidance.
-    // This version maps "swarm/teammates/parallel" unambiguously to MCP spawning.
+    // ── Multi-agent work — critical pre-spawn knowledge only ─────────
+    // Full operational workflow (monitor semantics, cleanup, examples) lives
+    // in the agent(register) response. Here we keep only the three anchors
+    // a fresh agent needs BEFORE its first tool call:
+    //   1. how to obtain identity ($TUIC_SESSION env → UUID)
+    //   2. golden path (register → spawn → inbox, never stream peer output)
+    //   3. when worktrees apply (isolated branches)
+    let peer_count = state.peer_agents.len();
     let is_claude_code = detect_claude_code_client(client_name);
     out.push_str("## Multi-Agent Work\n\n");
-    out.push_str("Choose by topology, not user wording. Aliases \"swarm\" / \"teammates\" / \"parallel agents\" → Swarm, unless user explicitly says isolated branches.\n\n");
-    out.push_str("- **Swarm (same repo, peer coordination):** `agent action=register tuic_session=$TUIC_SESSION`, then `agent action=spawn` peers. Children post `{type:state_change}` to your inbox — poll via `agent action=inbox`, don't stream output.\n");
-    out.push_str("- **Parallel branches (isolated worktrees):** `repo action=worktree_create` with `spawn_session=true` — each gets its own registered PTY visible in UI.\n");
+    if peer_count > 0 {
+        out.push_str(&format!(
+            "**{peer_count}** peer agent(s) connected. Aliases \"swarm\"/\"teammates\"/\"parallel\" → register first (below).\n\n"
+        ));
+    } else {
+        out.push_str("Aliases \"swarm\"/\"teammates\"/\"parallel\" map here — not to native subagent tools.\n\n");
+    }
+    out.push_str("- **Identity:** your UUID is `$TUIC_SESSION` env var. Register first: `agent action=register tuic_session=$TUIC_SESSION` — response teaches spawn/monitor/cleanup.\n");
+    out.push_str("- **Same repo:** `agent action=spawn` peers; poll `agent action=inbox since=<last_ms>` — never `session output` on peers (token burn).\n");
+    out.push_str("- **Isolated branches:** `repo action=worktree_create spawn_session=true`.\n");
     if is_claude_code {
-        out.push_str("- **Single isolated task:** `repo action=worktree_create` (never `git worktree add`), then delegate to a native Agent/Task subagent using the returned `cc_agent_hint` with absolute paths (`cd <worktree> && …`). This is the ONLY valid use of the native Agent/Task tool.\n");
+        out.push_str("- **Single isolated task (CC only):** `repo action=worktree_create` then delegate via returned `cc_agent_hint` (absolute paths). ONLY valid use of native Agent/Task.\n");
     }
     out.push('\n');
-
-    // ── Inter-agent messaging ─────────────────────────────────────
-    let peer_count = state.peer_agents.len();
-    if peer_count > 0 {
-        out.push_str("## Inter-Agent Messaging\n\n");
-        out.push_str(&format!("There are currently **{}** registered peer agent(s). ", peer_count));
-        out.push_str("Read your `$TUIC_SESSION` env var — this is your identity.\n\n");
-        out.push_str("- `agent action=register tuic_session=\"$TUIC_SESSION\"` — register yourself (do this first)\n");
-        out.push_str("- `agent action=list_peers` — see who else is connected\n");
-        out.push_str("- `agent action=send to=\"<tuic_session>\" message=\"...\"` — send a message to a peer\n");
-        out.push_str("- `agent action=inbox` — check for messages (also delivered via channel notifications)\n\n");
-        out.push_str("Coordinate to avoid conflicts: claim files before editing, share progress, ask before modifying shared code.\n\n");
-    }
 
     // ── Dynamic: repos ──────────────────────────────────────────────
     let repo_settings = crate::config::load_repo_settings();
@@ -301,7 +296,7 @@ fn native_tool_definitions() -> serde_json::Value {
                 "prompt": { "type": "string", "description": "Task prompt for the agent (action=spawn)" },
                 "cwd": { "type": "string", "description": "Working directory (action=spawn)" },
                 "model": { "type": "string", "description": "Model override (action=spawn)" },
-                "print_mode": { "type": "boolean", "description": "false (default) = visible TUI tab with interactive terminal; true = headless stdout-only mode, no tab created (action=spawn)" },
+                "print_mode": { "type": "boolean", "description": "false (default): visible TUI tab, observable via agent(inbox). true: headless, no tab. (action=spawn)" },
                 "output_format": { "type": "string", "description": "Output format, e.g. 'json' (action=spawn)" },
                 "agent_type": { "type": "string", "description": "Agent binary: claude, codex, aider, goose (action=spawn)" },
                 "binary_path": { "type": "string", "description": "Override agent binary path (action=spawn)" },
@@ -329,7 +324,7 @@ fn native_tool_definitions() -> serde_json::Value {
         },
         {
             "name": "ui",
-            "description": "Control the TUICommander UI: open panel tabs with custom HTML or a URL, show toast notifications, or prompt for user confirmation.\n\nActions (pass as 'action' parameter):\n- tab: Open/update a pinned panel tab. Requires id, title, and either html (inline) or url (loads in iframe). Optional: pinned (default true).\n- toast: Show a non-blocking notification. Requires title. Optional: message, level (info/warn/error).\n- confirm: Show a blocking confirmation dialog. Returns {confirmed: boolean}. Requires title. Optional: message. Restricted to localhost.",
+            "description": "Control the TUICommander UI: open panel tabs with custom HTML or a URL, show toast notifications, or prompt for user confirmation.\n\nActions (pass as 'action' parameter):\n- tab: Open/update a pinned panel tab. Requires id, title, and either html (inline) or url (loads in iframe). Optional: pinned (default true).\n- toast: Show a non-blocking notification. Requires title. Optional: message, level (info/warn/error).\n- confirm: Show a blocking confirmation dialog. Returns {confirmed: boolean}. Requires title. Optional: message. Restricted to localhost.\n\nWhen to use:\n- toast: task completed, blocking error, long-running job finished. Use level=error for failures, warn for recoverable issues, info (default) for completions. Skip for micro-steps or verbose progress (chat output suffices).\n- confirm: BEFORE any destructive or irreversible action (rm -rf, git reset --hard, git push --force, DROP TABLE, package uninstall). Proceed only on confirmed=true.\n- tab: structured output worth revisiting (>20 lines, dashboards, reports, rendered diagrams). Prefer over pasting large output into chat.",
             "inputSchema": { "type": "object", "properties": {
                 "action": { "type": "string", "description": "One of: tab, toast, confirm" },
                 "id": { "type": "string", "description": "Stable identifier for dedup — same id reuses existing tab (action=tab, required)" },
@@ -1422,11 +1417,22 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis() as u64;
+            // AC2: monitor_with points to agent(inbox) when the caller is a
+            // registered orchestrator — children auto-register as peers and
+            // post {type:state_change} to the parent's inbox. Streaming
+            // session output per child would burn tokens at 8KB/poll.
+            // Standalone spawns (non-swarm) keep session(output) because
+            // there is no parent inbox to drain.
+            let monitor_with = if caller_tuic.is_some() {
+                format!("agent(action=inbox, since={spawn_ts})")
+            } else {
+                format!("session(action=output, session_id={session_id})")
+            };
             serde_json::json!({
                 "session_id": session_id,
                 "server_ts": spawn_ts,
-                "monitor_with": format!("session(action=output, session_id={})", session_id),
-                "status_with": format!("session(action=status, session_id={})", session_id),
+                "monitor_with": monitor_with,
+                "status_with": format!("session(action=status, session_id={session_id})"),
             })
         }
         "stats" => {
@@ -1484,7 +1490,25 @@ fn handle_messaging(state: &Arc<AppState>, args: &serde_json::Value, mcp_session
                 tuic_session: tuic_session.to_string(),
                 name: name.clone(),
             });
-            serde_json::json!({"ok": true, "tuic_session": tuic_session, "name": name})
+            // Teach the full multi-agent workflow in the register response so the
+            // static instructions can stay compact (AC1 token budget). Any agent
+            // that registers immediately receives the operational details it needs
+            // for spawn/monitor/cleanup.
+            serde_json::json!({
+                "ok": true,
+                "tuic_session": tuic_session,
+                "name": name,
+                "workflow": {
+                    "spawn_same_repo": "agent action=spawn prompt=<task> cwd=<repo_path> — returns {session_id, monitor_with}. Peers inherit $TUIC_SESSION and auto-register.",
+                    "spawn_isolated": "repo action=worktree_create path=<repo> branch=<name> spawn_session=true — worktree + PTY in one call.",
+                    "monitor": "agent action=inbox since=<last_ms> at 500–2000ms cadence. Poll is authoritative for LLMs (SSE push exists but is a hint). NEVER session output on peers (token burn).",
+                    "auto_state_change": "Spawned peers auto-post {type:state_change, state:idle|busy|exited, session_id, exit_code?} to your inbox — no manual send needed for lifecycle.",
+                    "send": "agent action=send to=<peer_tuic_session> message=<text, max 64KB>. Response {delivered_via_channel: bool} — false = queued in peer's inbox (peer reads on next poll), NOT a failure.",
+                    "list_peers": "agent action=list_peers project=<optional filter> — see who else is connected.",
+                    "conflict_control": "Use send/inbox to serialize shared-file edits: child sends 'claim <path>', orchestrator replies 'ack'/'deny'; child sends 'release <path>' on commit. Orchestrator is the arbiter — children never ack each other directly.",
+                    "cleanup": "Automatic on MCP session close (tombstone_transient_cleanup). Peer state + inbox drained; PTY reaped."
+                }
+            })
         }
         "list_peers" => {
             let project_filter = args["project"].as_str();
