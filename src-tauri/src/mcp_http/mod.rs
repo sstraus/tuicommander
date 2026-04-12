@@ -2921,7 +2921,7 @@ mod tests {
         let mcp_sid = mcp_initialize(&state).await;
 
         // Register a peer — this auto-populates mcp_to_session
-        let pty_session_id = "my-own-session-123";
+        let pty_session_id = "550e8400-e29b-41d4-a716-446655440c01";
         call_mcp_tool_with_session(&state, "agent", serde_json::json!({
             "action": "register",
             "tuic_session": pty_session_id,
@@ -2947,7 +2947,7 @@ mod tests {
         // Register caller — auto-populates mcp_to_session
         call_mcp_tool_with_session(&state, "agent", serde_json::json!({
             "action": "register",
-            "tuic_session": "caller-session",
+            "tuic_session": "550e8400-e29b-41d4-a716-446655440c02",
             "name": "orchestrator"
         }), &mcp_sid).await;
 

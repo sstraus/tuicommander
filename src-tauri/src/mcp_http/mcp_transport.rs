@@ -1524,10 +1524,11 @@ fn handle_messaging(state: &Arc<AppState>, args: &serde_json::Value, mcp_session
                     "Message exceeds 64 KB limit ({} bytes)", message.len()
                 )});
             }
-            // Resolve sender from MCP session
-            let sender = match mcp_session_id.and_then(|sid| {
-                state.peer_agents.iter().find(|e| e.value().mcp_session_id == sid).map(|e| (e.value().tuic_session.clone(), e.value().name.clone()))
-            }) {
+            // Resolve sender via O(1) mcp_to_session reverse map (RUST-3/PERF-2).
+            let sender = match mcp_session_id
+                .and_then(|sid| state.mcp_to_session.get(sid).map(|e| e.value().clone()))
+                .and_then(|tuic| state.peer_agents.get(&tuic).map(|p| (p.tuic_session.clone(), p.name.clone())))
+            {
                 Some(s) => s,
                 None => return serde_json::json!({"error": "You are not registered. Register first with messaging action=register"}),
             };
@@ -1587,10 +1588,11 @@ fn handle_messaging(state: &Arc<AppState>, args: &serde_json::Value, mcp_session
             serde_json::json!({"ok": true, "message_id": msg_id, "delivered_via_channel": pushed})
         }
         "inbox" => {
-            // Resolve caller's tuic_session from MCP session
-            let tuic_session = match mcp_session_id.and_then(|sid| {
-                state.peer_agents.iter().find(|e| e.value().mcp_session_id == sid).map(|e| e.value().tuic_session.clone())
-            }) {
+            // Resolve caller's tuic_session via O(1) mcp_to_session reverse map (RUST-3/PERF-2).
+            let tuic_session = match mcp_session_id
+                .and_then(|sid| state.mcp_to_session.get(sid).map(|e| e.value().clone()))
+                .filter(|tuic| state.peer_agents.contains_key(tuic))
+            {
                 Some(ts) => ts,
                 None => return serde_json::json!({"error": "You are not registered. Register first with messaging action=register"}),
             };
@@ -2616,7 +2618,7 @@ mod tests {
     #[test]
     fn messaging_register_requires_mcp_session() {
         let state = test_state();
-        let args = serde_json::json!({"action": "register", "tuic_session": "tab-1"});
+        let args = serde_json::json!({"action": "register", "tuic_session": "550e8400-e29b-41d4-a716-446655440a01"});
         let result = handle_messaging(&state, &args, None);
         assert!(result["error"].as_str().unwrap().contains("MCP session"));
     }
@@ -2627,13 +2629,13 @@ mod tests {
 
         // Register two agents
         let r1 = handle_messaging(&state, &serde_json::json!({
-            "action": "register", "tuic_session": "tab-1", "name": "worker-1", "project": "/repo/a"
+            "action": "register", "tuic_session": "550e8400-e29b-41d4-a716-446655440a01", "name": "worker-1", "project": "/repo/a"
         }), Some("mcp-1"));
         assert_eq!(r1["ok"], true);
         assert_eq!(r1["name"], "worker-1");
 
         let r2 = handle_messaging(&state, &serde_json::json!({
-            "action": "register", "tuic_session": "tab-2", "name": "worker-2", "project": "/repo/a"
+            "action": "register", "tuic_session": "550e8400-e29b-41d4-a716-446655440a02", "name": "worker-2", "project": "/repo/a"
         }), Some("mcp-2"));
         assert_eq!(r2["ok"], true);
 
@@ -2653,24 +2655,24 @@ mod tests {
         let state = test_state();
 
         handle_messaging(&state, &serde_json::json!({
-            "action": "register", "tuic_session": "tab-1", "name": "old-name"
+            "action": "register", "tuic_session": "550e8400-e29b-41d4-a716-446655440a01", "name": "old-name"
         }), Some("mcp-1"));
 
         // Re-register with new name
         handle_messaging(&state, &serde_json::json!({
-            "action": "register", "tuic_session": "tab-1", "name": "new-name"
+            "action": "register", "tuic_session": "550e8400-e29b-41d4-a716-446655440a01", "name": "new-name"
         }), Some("mcp-2"));
 
         assert_eq!(state.peer_agents.len(), 1);
-        assert_eq!(state.peer_agents.get("tab-1").unwrap().name, "new-name");
-        assert_eq!(state.peer_agents.get("tab-1").unwrap().mcp_session_id, "mcp-2");
+        assert_eq!(state.peer_agents.get("550e8400-e29b-41d4-a716-446655440a01").unwrap().name, "new-name");
+        assert_eq!(state.peer_agents.get("550e8400-e29b-41d4-a716-446655440a01").unwrap().mcp_session_id, "mcp-2");
     }
 
     #[test]
     fn messaging_register_default_name() {
         let state = test_state();
         let r = handle_messaging(&state, &serde_json::json!({
-            "action": "register", "tuic_session": "tab-1"
+            "action": "register", "tuic_session": "550e8400-e29b-41d4-a716-446655440a01"
         }), Some("mcp-1"));
         assert_eq!(r["name"], "agent");
     }
@@ -2684,7 +2686,7 @@ mod tests {
     #[test]
     fn messaging_send_requires_to_and_message() {
         let state = test_state();
-        register_peer(&state, "tab-1", "sender", "mcp-1");
+        register_peer(&state, "550e8400-e29b-41d4-a716-446655440a01", "sender", "mcp-1");
 
         let r1 = handle_messaging(&state, &serde_json::json!({
             "action": "send", "message": "hello"
@@ -2692,7 +2694,7 @@ mod tests {
         assert!(r1["error"].as_str().unwrap().contains("'to'"));
 
         let r2 = handle_messaging(&state, &serde_json::json!({
-            "action": "send", "to": "tab-2"
+            "action": "send", "to": "550e8400-e29b-41d4-a716-446655440a02"
         }), Some("mcp-1"));
         assert!(r2["error"].as_str().unwrap().contains("'message'"));
     }
@@ -2700,7 +2702,7 @@ mod tests {
     #[test]
     fn messaging_send_to_unregistered_peer() {
         let state = test_state();
-        register_peer(&state, "tab-1", "sender", "mcp-1");
+        register_peer(&state, "550e8400-e29b-41d4-a716-446655440a01", "sender", "mcp-1");
 
         let r = handle_messaging(&state, &serde_json::json!({
             "action": "send", "to": "tab-999", "message": "hello"
@@ -2711,12 +2713,12 @@ mod tests {
     #[test]
     fn messaging_send_and_inbox() {
         let state = test_state();
-        register_peer(&state, "tab-1", "alice", "mcp-1");
-        register_peer(&state, "tab-2", "bob", "mcp-2");
+        register_peer(&state, "550e8400-e29b-41d4-a716-446655440a01", "alice", "mcp-1");
+        register_peer(&state, "550e8400-e29b-41d4-a716-446655440a02", "bob", "mcp-2");
 
         // Alice sends to Bob
         let r = handle_messaging(&state, &serde_json::json!({
-            "action": "send", "to": "tab-2", "message": "hello bob"
+            "action": "send", "to": "550e8400-e29b-41d4-a716-446655440a02", "message": "hello bob"
         }), Some("mcp-1"));
         assert_eq!(r["ok"], true);
 
@@ -2728,19 +2730,19 @@ mod tests {
         assert_eq!(msgs.len(), 1);
         assert_eq!(msgs[0]["from_name"], "alice");
         assert_eq!(msgs[0]["content"], "hello bob");
-        assert_eq!(msgs[0]["from_tuic_session"], "tab-1");
+        assert_eq!(msgs[0]["from_tuic_session"], "550e8400-e29b-41d4-a716-446655440a01");
     }
 
     #[test]
     fn messaging_inbox_limit_and_since() {
         let state = test_state();
-        register_peer(&state, "tab-1", "alice", "mcp-1");
-        register_peer(&state, "tab-2", "bob", "mcp-2");
+        register_peer(&state, "550e8400-e29b-41d4-a716-446655440a01", "alice", "mcp-1");
+        register_peer(&state, "550e8400-e29b-41d4-a716-446655440a02", "bob", "mcp-2");
 
         // Send 3 messages
         for i in 0..3 {
             handle_messaging(&state, &serde_json::json!({
-                "action": "send", "to": "tab-2", "message": format!("msg-{}", i)
+                "action": "send", "to": "550e8400-e29b-41d4-a716-446655440a02", "message": format!("msg-{}", i)
             }), Some("mcp-1"));
         }
 
@@ -2763,10 +2765,10 @@ mod tests {
     #[test]
     fn messaging_send_requires_sender_registration() {
         let state = test_state();
-        register_peer(&state, "tab-2", "bob", "mcp-2");
+        register_peer(&state, "550e8400-e29b-41d4-a716-446655440a02", "bob", "mcp-2");
 
         let r = handle_messaging(&state, &serde_json::json!({
-            "action": "send", "to": "tab-2", "message": "hello"
+            "action": "send", "to": "550e8400-e29b-41d4-a716-446655440a02", "message": "hello"
         }), Some("mcp-unknown"));
         assert!(r["error"].as_str().unwrap().contains("Register first"));
     }
@@ -2774,13 +2776,13 @@ mod tests {
     #[test]
     fn messaging_inbox_fifo_eviction() {
         let state = test_state();
-        register_peer(&state, "tab-1", "alice", "mcp-1");
-        register_peer(&state, "tab-2", "bob", "mcp-2");
+        register_peer(&state, "550e8400-e29b-41d4-a716-446655440a01", "alice", "mcp-1");
+        register_peer(&state, "550e8400-e29b-41d4-a716-446655440a02", "bob", "mcp-2");
 
         // Send more than AGENT_INBOX_CAPACITY messages
         for i in 0..(crate::state::AGENT_INBOX_CAPACITY + 10) {
             handle_messaging(&state, &serde_json::json!({
-                "action": "send", "to": "tab-2", "message": format!("msg-{}", i)
+                "action": "send", "to": "550e8400-e29b-41d4-a716-446655440a02", "message": format!("msg-{}", i)
             }), Some("mcp-1"));
         }
 
@@ -2794,13 +2796,13 @@ mod tests {
     #[test]
     fn messaging_inbox_missed_count_on_eviction() {
         let state = test_state();
-        register_peer(&state, "tab-1", "alice", "mcp-1");
-        register_peer(&state, "tab-2", "bob", "mcp-2");
+        register_peer(&state, "550e8400-e29b-41d4-a716-446655440a01", "alice", "mcp-1");
+        register_peer(&state, "550e8400-e29b-41d4-a716-446655440a02", "bob", "mcp-2");
 
         // Fill to capacity — no eviction yet
         for i in 0..crate::state::AGENT_INBOX_CAPACITY {
             handle_messaging(&state, &serde_json::json!({
-                "action": "send", "to": "tab-2", "message": format!("msg-{}", i)
+                "action": "send", "to": "550e8400-e29b-41d4-a716-446655440a02", "message": format!("msg-{}", i)
             }), Some("mcp-1"));
         }
         let inbox = handle_messaging(&state, &serde_json::json!({"action": "inbox"}), Some("mcp-2"));
@@ -2809,7 +2811,7 @@ mod tests {
         // 5 more messages → 5 evictions
         for i in 0..5 {
             handle_messaging(&state, &serde_json::json!({
-                "action": "send", "to": "tab-2", "message": format!("extra-{}", i)
+                "action": "send", "to": "550e8400-e29b-41d4-a716-446655440a02", "message": format!("extra-{}", i)
             }), Some("mcp-1"));
         }
         let inbox = handle_messaging(&state, &serde_json::json!({"action": "inbox"}), Some("mcp-2"));
@@ -2823,12 +2825,12 @@ mod tests {
     #[test]
     fn messaging_send_message_size_limit() {
         let state = test_state();
-        register_peer(&state, "tab-1", "alice", "mcp-1");
-        register_peer(&state, "tab-2", "bob", "mcp-2");
+        register_peer(&state, "550e8400-e29b-41d4-a716-446655440a01", "alice", "mcp-1");
+        register_peer(&state, "550e8400-e29b-41d4-a716-446655440a02", "bob", "mcp-2");
 
         let big_msg = "x".repeat(crate::state::AGENT_MESSAGE_MAX_BYTES + 1);
         let r = handle_messaging(&state, &serde_json::json!({
-            "action": "send", "to": "tab-2", "message": big_msg
+            "action": "send", "to": "550e8400-e29b-41d4-a716-446655440a02", "message": big_msg
         }), Some("mcp-1"));
         assert!(r["error"].as_str().unwrap().contains("64 KB"));
     }
@@ -3619,9 +3621,9 @@ mod tests {
     fn ui_tab_registers_creator_and_clears_on_session_close() {
         use crate::state::VtLogBuffer;
         let state = test_state();
-        register_peer(&state, "sess-owner", "orchestrator", "mcp-orch");
+        register_peer(&state, "550e8400-e29b-41d4-a716-446655440b02", "orchestrator", "mcp-orch");
         // Map mcp_session_id → tuic_session
-        state.mcp_to_session.insert("mcp-orch".to_string(), "sess-owner".to_string());
+        state.mcp_to_session.insert("mcp-orch".to_string(), "550e8400-e29b-41d4-a716-446655440b02".to_string());
 
         // Create HTML tab as orchestrator
         let r = handle_ui(&state, &serde_json::json!({
@@ -3633,19 +3635,19 @@ mod tests {
         assert_eq!(r["ok"], serde_json::json!(true));
 
         // session_html_tabs should have the tab registered under the creator's session
-        let tabs = state.session_html_tabs.get("sess-owner");
+        let tabs = state.session_html_tabs.get("550e8400-e29b-41d4-a716-446655440b02");
         assert!(tabs.is_some(), "tab should be registered under creator session");
         assert!(tabs.unwrap().contains(&"orch-status".to_string()));
 
         // Insert vt_log_buffers so close succeeds
         state.vt_log_buffers.insert(
-            "sess-owner".to_string(),
+            "550e8400-e29b-41d4-a716-446655440b02".to_string(),
             parking_lot::Mutex::new(VtLogBuffer::new(24, 220, 500)),
         );
         // Close the session — should clear its html tabs
-        handle_session(&state, &serde_json::json!({"action": "close", "session_id": "sess-owner"}), None);
+        handle_session(&state, &serde_json::json!({"action": "close", "session_id": "550e8400-e29b-41d4-a716-446655440b02"}), None);
 
-        assert!(state.session_html_tabs.get("sess-owner").is_none(),
+        assert!(state.session_html_tabs.get("550e8400-e29b-41d4-a716-446655440b02").is_none(),
             "session_html_tabs should be cleared after session close");
     }
 
@@ -3806,7 +3808,7 @@ mod tests {
     async fn spawn_auto_registers_child_in_peer_list() {
         let state = test_state();
         let addr = "127.0.0.1:0".parse().unwrap();
-        register_peer(&state, "orch-session", "orchestrator", "mcp-orch");
+        register_peer(&state, "550e8400-e29b-41d4-a716-446655440b01", "orchestrator", "mcp-orch");
 
         let result = handle_agent(
             &state,
@@ -3841,7 +3843,7 @@ mod tests {
     async fn spawn_pre_initializes_child_inbox() {
         let state = test_state();
         let addr = "127.0.0.1:0".parse().unwrap();
-        register_peer(&state, "orch-session", "orchestrator", "mcp-orch");
+        register_peer(&state, "550e8400-e29b-41d4-a716-446655440b01", "orchestrator", "mcp-orch");
 
         let result = handle_agent(
             &state,
@@ -4097,5 +4099,93 @@ mod tests {
             Some("mcp-reg-valid-test"),
         );
         assert!(result["ok"].as_bool() == Some(true), "register with valid UUID must succeed: {result}");
+    }
+
+    // ── agent(send) + agent(inbox) caller resolution (RUST-3/PERF-2 — must use mcp_to_session O(1)) ──
+
+    #[test]
+    fn agent_send_succeeds_for_registered_peer() {
+        let state = test_state();
+        let sender_mcp = "mcp-send-sender";
+        let sender_tuic = "550e8400-e29b-41d4-a716-446655440010";
+        let recipient_mcp = "mcp-send-recipient";
+        let recipient_tuic = "550e8400-e29b-41d4-a716-446655440011";
+        register_peer(&state, sender_tuic, "alice", sender_mcp);
+        register_peer(&state, recipient_tuic, "bob", recipient_mcp);
+
+        let result = handle_messaging(
+            &state,
+            &serde_json::json!({
+                "action": "send",
+                "to": recipient_tuic,
+                "message": "hello bob",
+            }),
+            Some(sender_mcp),
+        );
+        assert_eq!(result["ok"].as_bool(), Some(true), "send must succeed: {result}");
+        let inbox = state.agent_inbox.get(recipient_tuic).expect("recipient inbox exists");
+        assert_eq!(inbox.len(), 1, "recipient should have 1 buffered message");
+        assert_eq!(inbox[0].from_tuic_session, sender_tuic);
+        assert_eq!(inbox[0].from_name, "alice");
+    }
+
+    #[test]
+    fn agent_send_rejects_unregistered_caller() {
+        let state = test_state();
+        let recipient_tuic = "550e8400-e29b-41d4-a716-446655440012";
+        register_peer(&state, recipient_tuic, "bob", "mcp-recipient-only");
+
+        let result = handle_messaging(
+            &state,
+            &serde_json::json!({
+                "action": "send",
+                "to": recipient_tuic,
+                "message": "ghost message",
+            }),
+            Some("mcp-not-registered"),
+        );
+        assert!(
+            result["error"].as_str().map_or(false, |e| e.contains("not registered")),
+            "send from unregistered MCP session must error: {result}"
+        );
+    }
+
+    #[test]
+    fn agent_inbox_returns_messages_for_registered_caller() {
+        let state = test_state();
+        let mcp_sid = "mcp-inbox-self";
+        let tuic = "550e8400-e29b-41d4-a716-446655440013";
+        register_peer(&state, tuic, "self", mcp_sid);
+
+        // Send a message to self so the inbox has one entry.
+        let send_result = handle_messaging(
+            &state,
+            &serde_json::json!({"action": "send", "to": tuic, "message": "note to self"}),
+            Some(mcp_sid),
+        );
+        assert_eq!(send_result["ok"].as_bool(), Some(true), "send-to-self must succeed: {send_result}");
+
+        let result = handle_messaging(
+            &state,
+            &serde_json::json!({"action": "inbox"}),
+            Some(mcp_sid),
+        );
+        let messages = result["messages"].as_array().expect("inbox returns messages array");
+        assert_eq!(messages.len(), 1, "inbox should contain 1 message: {result}");
+        assert_eq!(messages[0]["content"].as_str(), Some("note to self"));
+    }
+
+    #[test]
+    fn agent_inbox_rejects_unregistered_caller() {
+        let state = test_state();
+        let result = handle_messaging(
+            &state,
+            &serde_json::json!({"action": "inbox"}),
+            Some("mcp-no-register"),
+        );
+        assert!(
+            result["error"].as_str().map_or(false, |e| e.contains("not registered")),
+            "inbox call from unregistered MCP session must error: {result}"
+        );
     }
 }
