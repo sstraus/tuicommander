@@ -423,7 +423,7 @@ describe("ViewportLock", () => {
         setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
         lock.update(false); // locked at line 50
 
-        // User scrolls while locked (sets sticky userScrolledWhileLocked)
+        // User scrolls while locked with wheel (sets userScrolledWhileLocked + userIntent)
         setBuffer({ viewportY: 30, baseY: 100, type: "normal" });
         viewport.dispatchEvent(new Event("wheel"));
         viewport.dispatchEvent(new Event("scroll"));
@@ -431,15 +431,19 @@ describe("ViewportLock", () => {
         // User intent TTL expires (300ms)
         vi.advanceTimersByTime(500);
 
-        // User scrolls back to bottom, but a write is in progress.
-        // Without the sticky flag this would stay locked because
-        // userIntent has expired.
+        // Write is in progress. A scroll to bottom WITHOUT active userIntent is
+        // classified as programmatic (xterm auto-scroll always lands at baseY).
+        // Lock must stay engaged — this prevents scrollbar rubber-banding.
         lock.writeStart();
         setBuffer({ viewportY: 110, baseY: 110, type: "normal" });
-        viewport.dispatchEvent(new Event("scroll")); // classified as user due to sticky
-        // The DOM scroll handler calls update(true) internally via willUnlock
+        viewport.dispatchEvent(new Event("scroll")); // no wheel → classified as programmatic
+        expect(lock.isLocked).toBe(true); // lock holds — not a user unlock gesture
 
-        expect(lock.isLocked).toBe(false); // must unlock via sticky flag
+        // With wheel event active (userIntent=true), scroll to bottom DOES unlock.
+        viewport.dispatchEvent(new Event("wheel")); // re-arms userIntent
+        viewport.dispatchEvent(new Event("scroll")); // now classified as user → unlock
+        expect(lock.isLocked).toBe(false); // unlocked via wheel gesture
+
         lock.writeEnd();
         lock.dispose();
       } finally {

@@ -199,17 +199,20 @@ export class ViewportLock {
     this.installGestureListeners();
   }
 
-  /** Listen for user input gestures on the viewport so subsequent scroll
-   *  events can be classified as user-driven even while a terminal write
-   *  is in progress. Without this, the write-in-progress guard in engage()
-   *  treats every scroll as programmatic and rubber-bands the user back
-   *  to the anchor — making the scrollbar feel glued to the bottom during
-   *  steady PTY streaming. */
+  /** Listen for wheel/keyboard gestures on the viewport so the user can
+   *  scroll to the bottom to re-follow output while PTY is streaming.
+   *
+   *  Only wheel, touchmove, and keydown are included — NOT pointerdown or
+   *  touchstart. Those events fire at the START of a scrollbar drag and
+   *  would mark userIntent=true for the entire drag duration. Because PTY
+   *  auto-scroll always lands at buf.baseY (bottom), that would cause the
+   *  lock to misclassify xterm's auto-scroll as a user-scroll-to-bottom and
+   *  disengage — pulling the scrollbar back during a drag. */
   private installGestureListeners(): void {
     if (!this.viewport) return;
     const mark = () => this.markUserIntent();
     const opts: AddEventListenerOptions = { passive: true, capture: true };
-    const events = ["wheel", "touchstart", "touchmove", "pointerdown", "keydown"] as const;
+    const events = ["wheel", "touchmove", "keydown"] as const;
     for (const ev of events) {
       this.viewport.addEventListener(ev, mark, opts);
     }
@@ -371,17 +374,31 @@ export class ViewportLock {
         this.anchorLine = buf.viewportY;
       }
 
-      // Classify scroll origin. A write may be in progress AND the user may
-      // be actively scrolling (wheel, trackpad, etc.). Gesture listeners flag
-      // userIntent with a short TTL so user scrolls aren't rubber-banded.
+      // Classify scroll origin.
+      //
+      // xterm auto-scroll during a write ALWAYS lands at buf.baseY (bottom).
+      // User scrolls can land anywhere. We use the destination as the primary
+      // signal — not userIntent — to avoid rubber-banding the scrollbar:
+      //
+      //   write + at bottom  → programmatic (xterm auto-scroll)      → ignore
+      //   write + NOT bottom → user scrolled up during write          → update anchor
+      //   no write + any pos → user scroll                            → update anchor/unlock
+      //
+      // userIntent (set by wheel/keyboard only) overrides the at-bottom case so
+      // the user can wheel down to re-follow output while the PTY is streaming.
+      //
+      // pointerdown/touchstart are NOT in the gesture listeners — they fire at
+      // the start of a scrollbar drag and would set userIntent=true for the
+      // entire drag, causing PTY auto-scrolls to be misclassified as user-initiated.
       //
       // Also treat scrolls within WRITE_RENDER_LAG_MS after writeEnd() as
       // programmatic: xterm's renderer updates the DOM on the next animation
       // frame, after the write callback — without this grace period those
       // deferred scrolls are misclassified as user-initiated.
+      const atBottom = buf.viewportY >= buf.baseY;
       const recentWrite = !this.writeInProgress
         && (performance.now() - this.lastWriteEndMs < WRITE_RENDER_LAG_MS);
-      const isProgrammatic = (this.writeInProgress || recentWrite) && !this.userIntent && !this.userScrolledWhileLocked;
+      const isProgrammatic = (this.writeInProgress || recentWrite) && atBottom && !this.userIntent;
 
       if (isProgrammatic) {
         // Programmatic scroll from xterm write — ignore. Anchor restore
