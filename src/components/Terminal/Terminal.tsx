@@ -1548,7 +1548,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
       if (!cache) return true;
       const buf = terminal!.buffer.active;
       const atTopOfXterm = buf.viewportY === 0;
-      const hasExtraHistory = cache.total > buf.length;
+      // In alt-screen (Ink TUIs like Claude Code), xterm's alt buffer has
+      // zero scrollback and buf.length === rows. Any VtLog history is "extra".
+      // In normal mode, VtLog must exceed xterm's own buffer to be useful.
+      const isAltScreen = buf.type === "alternate";
+      const hasExtraHistory = isAltScreen ? cache.total > 0 : cache.total > buf.length;
       if (!atTopOfXterm || !hasExtraHistory) return true;
       appLogger.info(
         "terminal",
