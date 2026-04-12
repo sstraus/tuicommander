@@ -57,7 +57,7 @@ check:
 	@cd src-tauri && ulimit -n 10240 && cargo test -q && echo "  cargo test ✓"
 	@npx vitest run --reporter=dot 2>&1 | tail -3
 	@npm audit --audit-level=high && echo "  npm audit ✓"
-	@cd src-tauri && cargo audit -q && echo "  cargo audit ✓"
+	@cd src-tauri && cargo audit -q --ignore RUSTSEC-2026-0097 --ignore RUSTSEC-2023-0071 && echo "  cargo audit ✓"
 
 # Sign the built .app bundle
 sign:

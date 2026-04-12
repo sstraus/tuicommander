@@ -86,6 +86,13 @@ When changing the tool list, tool handlers, `disabled_native_tools`, upstream al
 | `docs/backend/config.md` | `collapse_tools` field in `AppConfig` table |
 | `docs/user-guide/settings.md` | Services Tab — "Collapse tools" checkbox description |
 
+#### Session tool actions added (swarm Layer 3–4)
+- `session action=status` — returns `{shell_state, idle_since_ms, busy_duration_ms, exit_code, agent_type}`. Useful for polling agent progress without streaming output.
+- `session action=list` response now includes `shell_state` per entry.
+
+#### Agent tool actions added (swarm inbox)
+- `agent action=inbox` response now includes `missed_count` — number of messages evicted from the FIFO inbox since last read. Non-zero means the orchestrator missed messages and should increase polling frequency.
+
 ### Git & Worktree Integration
 When modifying git operations, worktree logic, or GitHub API:
 

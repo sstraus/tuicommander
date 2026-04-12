@@ -890,10 +890,10 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_i
                 }
             }
             // Close any HTML tabs created by this session.
-            if let Some((_, tab_ids)) = state.session_html_tabs.remove(session_id) {
-                if let Some(app) = state.app_handle.read().as_ref() {
-                    let _ = app.emit("close-html-tabs", serde_json::json!({ "tab_ids": tab_ids }));
-                }
+            if let Some((_, tab_ids)) = state.session_html_tabs.remove(session_id)
+                && let Some(app) = state.app_handle.read().as_ref()
+            {
+                let _ = app.emit("close-html-tabs", serde_json::json!({ "tab_ids": tab_ids }));
             }
             serde_json::json!({"ok": true})
         }
@@ -915,10 +915,10 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_i
                     }));
                 }
                 // Close any HTML tabs created by this session.
-                if let Some((_, tab_ids)) = state.session_html_tabs.remove(session_id) {
-                    if let Some(app) = state.app_handle.read().as_ref() {
-                        let _ = app.emit("close-html-tabs", serde_json::json!({ "tab_ids": tab_ids }));
-                    }
+                if let Some((_, tab_ids)) = state.session_html_tabs.remove(session_id)
+                    && let Some(app) = state.app_handle.read().as_ref()
+                {
+                    let _ = app.emit("close-html-tabs", serde_json::json!({ "tab_ids": tab_ids }));
                 }
                 serde_json::json!({"ok": true})
             } else {
@@ -1899,13 +1899,13 @@ fn handle_ui(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_id: Op
             };
             // Guard: if a tuic session_id is provided and it already has a terminal,
             // decline to create an HTML tab (agent should use the terminal instead).
-            if let Some(sid) = args["session_id"].as_str() {
-                if state.vt_log_buffers.contains_key(sid) || state.sessions.contains_key(sid) {
-                    return serde_json::json!({
-                        "ok": false,
-                        "warning": format!("Session '{}' already has an active terminal. Use the terminal tab instead of creating an HTML tab.", sid)
-                    });
-                }
+            if let Some(sid) = args["session_id"].as_str()
+                && (state.vt_log_buffers.contains_key(sid) || state.sessions.contains_key(sid))
+            {
+                return serde_json::json!({
+                    "ok": false,
+                    "warning": format!("Session '{}' already has an active terminal. Use the terminal tab instead of creating an HTML tab.", sid)
+                });
             }
             let pinned = args["pinned"].as_bool().unwrap_or(true);
             let focus = args["focus"].as_bool().unwrap_or(true);
@@ -1921,13 +1921,13 @@ fn handle_ui(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_id: Op
             }
             // Register this tab under the creator's tuic session so it can be
             // closed automatically when that session exits.
-            if let Some(mcp_sid) = mcp_session_id {
-                if let Some(tuic_session) = state.mcp_to_session.get(mcp_sid) {
-                    state.session_html_tabs
-                        .entry(tuic_session.value().clone())
-                        .or_insert_with(Vec::new)
-                        .push(id.clone());
-                }
+            if let Some(mcp_sid) = mcp_session_id
+                && let Some(tuic_session) = state.mcp_to_session.get(mcp_sid)
+            {
+                state.session_html_tabs
+                    .entry(tuic_session.value().clone())
+                    .or_default()
+                    .push(id.clone());
             }
             // Emit to Tauri webview (native mode)
             if let Some(app) = state.app_handle.read().as_ref() {

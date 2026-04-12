@@ -1,0 +1,7 @@
+[advisories]
+# RUSTSEC-2026-0097: rand 0.10.0 unsound with custom logger using rand::rng()
+# No patched version exists (0.10.0 is the only 0.10.x). Ignore until upstream publishes a fix.
+#
+# RUSTSEC-2023-0071: rsa Marvin Attack timing sidechannel
+# Transitive dependency, no newer version available in our dependency tree.
+ignore = ["RUSTSEC-2026-0097", "RUSTSEC-2023-0071"]

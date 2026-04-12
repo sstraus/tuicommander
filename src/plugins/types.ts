@@ -186,7 +186,7 @@ export interface RepoSettingsSnapshot {
 /** Read-only snapshot of a terminal's state for plugins */
 export interface TerminalStateSnapshot {
   sessionId: string | null;
-  shellState: "busy" | "idle" | null;
+  shellState: "busy" | "idle" | "exited" | null;
   agentType: string | null;
   agentActive: boolean;
   awaitingInput: "question" | "error" | null;
