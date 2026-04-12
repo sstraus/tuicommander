@@ -534,6 +534,10 @@ Features to test when TUICommander is more usable.
 
 ## Keepalive + Agent Detection Fix
 - [x] Launch Claude Code, wait at prompt >5min idle → keepalive fires (check Activity Center stats)
+- [ ] After 3 keepalives with no real user input → keepalives STOP (counter stays at 3/3)
+- [ ] Phantom busy→idle after 3/3 → logs show "No real user message in JSONL → counter stays at 3/3"
+- [ ] Real user sends message → logs show "Real user message in JSONL → counter reset" → next idle stretch gets fresh keepalives
+- [ ] Overnight idle → max 3 pings total, then permanent stop (no infinite loop)
 - [ ] Trigger "out of extra usage" → plugin shows "Rate limited" ticker, keepalives stop
 - [ ] Resume manually (type in terminal) → rate limit cleared, keepalives resume
 - [ ] Agent detection responds within ~1s of launch (not 3s)
