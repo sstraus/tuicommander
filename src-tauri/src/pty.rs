@@ -584,11 +584,19 @@ impl SilenceState {
 
 /// Attempt a shell state transition using compare_exchange.
 /// Returns true if the transition was performed (and a ShellState event should be emitted).
+/// Attempt an atomic shell-state transition.
+///
+/// When `notify_parent` is true and the transition is BUSY→IDLE, pushes a
+/// state_change message to the parent's inbox (used during normal idle detection).
+/// Pass `notify_parent=false` from process-exit paths — the sole "exited"
+/// notification from `mark_session_exited` is sufficient; suppressing the
+/// intermediate "idle" avoids the orchestrator double-firing on exit.
 fn try_shell_transition(
     state: &crate::state::AppState,
     session_id: &str,
     expected: u8,
     new: u8,
+    notify_parent: bool,
 ) -> bool {
     if let Some(atom) = state.shell_states.get(session_id) {
         let ok = atom.compare_exchange(
@@ -602,17 +610,13 @@ fn try_shell_transition(
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis() as u64;
-            if let Some(ts) = state.shell_state_since_ms.get(session_id) {
-                ts.store(now_ms, std::sync::atomic::Ordering::Relaxed);
-            } else {
-                state.shell_state_since_ms.insert(
-                    session_id.to_string(),
-                    std::sync::atomic::AtomicU64::new(now_ms),
-                );
-            }
+            state.shell_state_since_ms
+                .entry(session_id.to_string())
+                .or_insert_with(|| std::sync::atomic::AtomicU64::new(0))
+                .store(now_ms, std::sync::atomic::Ordering::Relaxed);
             // Notify orchestrator when an agent goes idle (BUSY→IDLE only).
             // Plain shell sessions are excluded — only registered agent sessions qualify.
-            if expected == SHELL_BUSY && new == SHELL_IDLE {
+            if notify_parent && expected == SHELL_BUSY && new == SHELL_IDLE {
                 let is_agent = state.session_states.get(session_id)
                     .map(|s| s.agent_type.is_some())
                     .unwrap_or(false);
@@ -715,7 +719,7 @@ fn spawn_silence_timer(
             if let Some(atom) = state.shell_states.get(&session_id)
                 && atom.load(std::sync::atomic::Ordering::Acquire) == SHELL_BUSY
                 && should_transition_idle(&state, &session_id)
-                && try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE)
+                && try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE, true)
             {
                 emit_shell_state(&state, app.as_ref(), &session_id, "idle");
             }
@@ -1234,7 +1238,7 @@ impl ChunkProcessor {
         {
             let prev = atom.load(std::sync::atomic::Ordering::Acquire);
             if prev != SHELL_BUSY
-                && try_shell_transition(state, session_id, prev, SHELL_BUSY)
+                && try_shell_transition(state, session_id, prev, SHELL_BUSY, true)
             {
                 emit_shell_state(state, app, session_id, "busy");
             }
@@ -1351,6 +1355,11 @@ fn tombstone_transient_cleanup(session_id: &str, state: &AppState) {
     state.shell_states.remove(session_id);
     state.last_prompts.remove(session_id);
     state.terminal_rows.remove(session_id);
+    // Swarm maps — inserted at spawn/register time, must be cleaned on exit.
+    state.shell_state_since_ms.remove(session_id);
+    state.session_parent.remove(session_id);
+    // mcp_to_session maps mcp_session_id → tuic_session; clean by value.
+    state.mcp_to_session.retain(|_, v| v != session_id);
 }
 
 /// Tombstone a session after its process exited.
@@ -1402,6 +1411,18 @@ pub(crate) fn mark_session_exited(session_id: &str, state: &AppState) {
         "session_id": session_id,
         "exit_code": exit_code,
     }));
+
+    // Close any HTML tabs this session opened (natural exit path).
+    // The MCP close/kill handlers handle the explicit-close path; this covers
+    // sessions that exit without an explicit MCP close call.
+    if let Some((_, tab_ids)) = state.session_html_tabs.remove(session_id) {
+        if let Some(app) = state.app_handle.read().as_ref() {
+            if let Err(e) = app.emit("close-html-tabs", serde_json::json!({ "tab_ids": tab_ids })) {
+                tracing::warn!(source = "pty", session_id = %session_id,
+                    "close-html-tabs emit failed on natural exit: {e}");
+            }
+        }
+    }
 
     tombstone_transient_cleanup(session_id, state);
 }
@@ -1767,8 +1788,9 @@ pub(crate) fn spawn_reader_thread(
         // Signal timer thread to stop
         running.store(false, Ordering::Relaxed);
 
-        // Ensure shell state is idle on session end
-        if try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE) {
+        // Ensure shell state is idle on session end (frontend indicator only).
+        // notify_parent=false: mark_session_exited sends the sole "exited" notification.
+        if try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE, false) {
             emit_shell_state(&state, Some(&app), &session_id, "idle");
         }
 
@@ -1868,8 +1890,9 @@ pub(crate) fn spawn_headless_reader_thread(
         // Signal silence timer thread to stop
         running.store(false, Ordering::Relaxed);
 
-        // Ensure shell state is idle on session end
-        if try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE) {
+        // Ensure shell state is idle on session end (frontend indicator only).
+        // notify_parent=false: mark_session_exited sends the sole "exited" notification.
+        if try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE, false) {
             emit_shell_state(&state, None, &session_id, "idle");
         }
 
@@ -4300,12 +4323,12 @@ mod tests {
         ));
 
         // Transition null → busy
-        assert!(try_shell_transition(&state, sid, SHELL_NULL, SHELL_BUSY),
+        assert!(try_shell_transition(&state, sid, SHELL_NULL, SHELL_BUSY, true),
             "should transition null → busy");
         assert_eq!(state.shell_states.get(sid).unwrap().load(Ordering::Relaxed), SHELL_BUSY);
 
         // Transition busy → busy should fail (already busy, no re-emit)
-        assert!(!try_shell_transition(&state, sid, SHELL_NULL, SHELL_BUSY),
+        assert!(!try_shell_transition(&state, sid, SHELL_NULL, SHELL_BUSY, true),
             "should NOT re-transition to busy");
     }
 
@@ -4325,7 +4348,7 @@ mod tests {
 
         assert!(should_transition_idle(&state, sid),
             "should be ready to transition idle (600ms elapsed, no sub-tasks)");
-        assert!(try_shell_transition(&state, sid, SHELL_BUSY, SHELL_IDLE),
+        assert!(try_shell_transition(&state, sid, SHELL_BUSY, SHELL_IDLE, true),
             "should transition busy → idle");
         assert_eq!(state.shell_states.get(sid).unwrap().load(Ordering::Relaxed), SHELL_IDLE);
     }
@@ -4422,9 +4445,9 @@ mod tests {
         state.shell_states.insert(sid.to_string(), AtomicU8::new(SHELL_BUSY));
 
         // First CAS succeeds
-        assert!(try_shell_transition(&state, sid, SHELL_BUSY, SHELL_IDLE));
+        assert!(try_shell_transition(&state, sid, SHELL_BUSY, SHELL_IDLE, true));
         // Second CAS fails (already idle)
-        assert!(!try_shell_transition(&state, sid, SHELL_BUSY, SHELL_IDLE),
+        assert!(!try_shell_transition(&state, sid, SHELL_BUSY, SHELL_IDLE, true),
             "second idle transition must fail — already idle");
         assert_eq!(state.shell_states.get(sid).unwrap().load(Ordering::Relaxed), SHELL_IDLE);
     }
@@ -4436,7 +4459,7 @@ mod tests {
         let sid = "test-session";
         state.shell_states.insert(sid.to_string(), AtomicU8::new(SHELL_IDLE));
 
-        assert!(try_shell_transition(&state, sid, SHELL_IDLE, SHELL_BUSY),
+        assert!(try_shell_transition(&state, sid, SHELL_IDLE, SHELL_BUSY, true),
             "should transition idle → busy on real output");
         assert_eq!(state.shell_states.get(sid).unwrap().load(Ordering::Relaxed), SHELL_BUSY);
     }
@@ -5030,7 +5053,7 @@ mod tests {
         state.session_states.insert(child_id.to_string(), ss);
         state.shell_states.insert(child_id.to_string(), std::sync::atomic::AtomicU8::new(SHELL_BUSY));
 
-        let transitioned = try_shell_transition(&state, child_id, SHELL_BUSY, SHELL_IDLE);
+        let transitioned = try_shell_transition(&state, child_id, SHELL_BUSY, SHELL_IDLE, true);
         assert!(transitioned, "transition must succeed");
 
         let inbox = state.agent_inbox.get(parent_id).expect("parent inbox must exist");
@@ -5053,9 +5076,86 @@ mod tests {
         state.session_states.insert(child_id.to_string(), crate::state::SessionState::default());
         state.shell_states.insert(child_id.to_string(), std::sync::atomic::AtomicU8::new(SHELL_BUSY));
 
-        try_shell_transition(&state, child_id, SHELL_BUSY, SHELL_IDLE);
+        try_shell_transition(&state, child_id, SHELL_BUSY, SHELL_IDLE, true);
 
         let inbox = state.agent_inbox.get(parent_id).unwrap();
         assert!(inbox.is_empty(), "non-agent sessions must not send idle notifications to parent");
+    }
+
+    #[test]
+    fn try_shell_transition_exit_path_does_not_push_idle_to_parent() {
+        // notify_parent=false (exit path): orchestrator must NOT receive spurious "idle"
+        // before the "exited" message from mark_session_exited.
+        let state = crate::state::tests_support::make_test_app_state();
+        let child_id = "child-exit-path";
+        let parent_id = "parent-exit-path";
+
+        state.session_parent.insert(child_id.to_string(), parent_id.to_string());
+        state.agent_inbox.entry(parent_id.to_string()).or_default();
+        let mut ss = crate::state::SessionState::default();
+        ss.agent_type = Some("claude".to_string());
+        state.session_states.insert(child_id.to_string(), ss);
+        state.shell_states.insert(child_id.to_string(), std::sync::atomic::AtomicU8::new(SHELL_BUSY));
+
+        let transitioned = try_shell_transition(&state, child_id, SHELL_BUSY, SHELL_IDLE, false);
+        assert!(transitioned, "transition must succeed");
+
+        let inbox = state.agent_inbox.get(parent_id).unwrap();
+        assert!(inbox.is_empty(), "exit path must not push idle notification — mark_session_exited sends exited");
+    }
+
+    #[test]
+    fn tombstone_transient_cleanup_removes_swarm_maps() {
+        // F3: session_parent, shell_state_since_ms, mcp_to_session must all be cleaned on exit.
+        let state = crate::state::tests_support::make_test_app_state();
+        let sid = "sess-cleanup";
+        let mcp_sid = "mcp-sess-cleanup";
+
+        state.session_parent.insert(sid.to_string(), "parent-sess".to_string());
+        state.shell_state_since_ms.insert(
+            sid.to_string(),
+            std::sync::atomic::AtomicU64::new(42),
+        );
+        state.mcp_to_session.insert(mcp_sid.to_string(), sid.to_string());
+
+        tombstone_transient_cleanup(sid, &state);
+
+        assert!(!state.session_parent.contains_key(sid), "session_parent must be removed");
+        assert!(!state.shell_state_since_ms.contains_key(sid), "shell_state_since_ms must be removed");
+        assert!(!state.mcp_to_session.contains_key(mcp_sid), "mcp_to_session entry must be removed");
+    }
+
+    #[test]
+    fn mark_session_exited_sends_single_exited_notification() {
+        // F1/DATA-1: only one state_change("exited") must reach parent inbox on exit.
+        // The BUSY→IDLE transition in the exit path uses notify_parent=false, so the
+        // orchestrator must never see a spurious "idle" before "exited".
+        let state = crate::state::tests_support::make_test_app_state();
+        let child_id = "child-exit-dedup";
+        let parent_id = "parent-exit-dedup";
+
+        state.session_parent.insert(child_id.to_string(), parent_id.to_string());
+        state.agent_inbox.entry(parent_id.to_string()).or_default();
+        let mut ss = crate::state::SessionState::default();
+        ss.agent_type = Some("claude".to_string());
+        state.session_states.insert(child_id.to_string(), ss);
+        state.shell_states.insert(child_id.to_string(), std::sync::atomic::AtomicU8::new(SHELL_BUSY));
+
+        // Simulate exit path: transition (notify_parent=false) + mark_session_exited.
+        try_shell_transition(&state, child_id, SHELL_BUSY, SHELL_IDLE, false);
+        // mark_session_exited needs a sessions entry to attempt exit-code capture
+        // (it's OK if there's none — it just skips the exit code).
+        push_state_change_to_parent(&state, child_id, serde_json::json!({
+            "type": "state_change",
+            "state": "exited",
+            "session_id": child_id,
+            "exit_code": null,
+        }));
+
+        let inbox = state.agent_inbox.get(parent_id).expect("parent inbox must exist");
+        assert_eq!(inbox.len(), 1, "inbox must have exactly one message");
+        let content: serde_json::Value =
+            serde_json::from_str(&inbox.front().unwrap().content).unwrap();
+        assert_eq!(content["state"], "exited", "the single message must be 'exited'");
     }
 }
