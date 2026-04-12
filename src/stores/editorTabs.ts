@@ -8,6 +8,7 @@ export interface EditorTabData extends BaseTab {
   fileName: string; // Display name (basename of filePath)
   isDirty: boolean;
   initialLine?: number; // Line to scroll to on first mount
+  externalEditable?: boolean; // Allow editing external (absolute-path) files
 }
 
 function createEditorTabsStore() {
@@ -26,7 +27,7 @@ function createEditorTabsStore() {
     setPinned: base.setPinned,
 
     /** Add a new editor tab (or activate existing if same file already open) */
-    add(repoPath: string, filePath: string, initialLine?: number): string {
+    add(repoPath: string, filePath: string, initialLine?: number, opts?: { externalEditable?: boolean }): string {
       const existing = Object.values(base.state.tabs).find(
         (tab) => tab.repoPath === repoPath && tab.filePath === filePath,
       );
@@ -37,7 +38,7 @@ function createEditorTabsStore() {
 
       const id = base._nextId("edit");
       const fileName = filePath.split("/").pop() || filePath;
-      return base._addTab({ id, repoPath, filePath, fileName, isDirty: false, branchKey: currentBranchKey(), initialLine });
+      return base._addTab({ id, repoPath, filePath, fileName, isDirty: false, branchKey: currentBranchKey(), initialLine, externalEditable: opts?.externalEditable });
     },
 
     /** Mark a tab as dirty or clean */

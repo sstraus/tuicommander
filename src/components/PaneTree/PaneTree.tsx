@@ -503,6 +503,7 @@ const EditorPane: Component<{ tabId: string; onClose: (id: string) => void }> = 
           repoPath={editTab().repoPath}
           filePath={editTab().filePath}
           initialLine={editTab().initialLine}
+          externalEditable={editTab().externalEditable}
           onClose={() => props.onClose(props.tabId)}
         />
       )}

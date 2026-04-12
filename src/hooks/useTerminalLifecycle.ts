@@ -95,14 +95,14 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
     if (remaining.length > 0) {
       handleTerminalSelect(remaining[remaining.length - 1]);
     } else {
-      // No more tabs of this type — return to last terminal on active branch
+      // No more tabs of this type — return to last terminal on active branch (never pick orphans)
       const activeRepo = repositoriesStore.getActive();
       const branchTerminals = activeRepo?.activeBranch
         ? (activeRepo.branches[activeRepo.activeBranch]?.terminals ?? [])
         : [];
       const nextTerminal = branchTerminals.length > 0
         ? branchTerminals[branchTerminals.length - 1]
-        : terminalsStore.getIds()[0] ?? null;
+        : null;
       if (nextTerminal) {
         handleTerminalSelect(nextTerminal);
       }

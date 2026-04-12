@@ -138,6 +138,13 @@ function createTerminalsStore() {
   // Used to distinguish "busy from .zshrc startup" from "busy from a user-launched process".
   const reachedIdleSet = new Set<string>();
 
+  /** Guard: check terminal exists before mutating. SolidJS setState creates keys
+   *  implicitly — calling setState("terminals", id, ...) on a removed terminal
+   *  resurrects it as a ghost entry with partial data. */
+  function has(id: string): boolean {
+    return id in state.terminals;
+  }
+
   /** Handle shellState transition for debounced busy tracking */
   function handleShellStateChange(id: string, prev: ShellState, next: ShellState): void {
     const now = Date.now();
@@ -240,6 +247,10 @@ function createTerminalsStore() {
     /** Set the active terminal (clears unread activity indicator, preserves shell state) */
     setActive(id: string | null): void {
       if (id) {
+        if (!state.terminals[id]) {
+          appLogger.warn("terminal", `setActive(${id}) — terminal not in store, ignoring`);
+          return;
+        }
         appLogger.debug("terminal", `setActive(${id})`, { shellState: state.terminals[id]?.shellState });
       }
       batch(() => {
@@ -253,6 +264,10 @@ function createTerminalsStore() {
 
     /** Update terminal data */
     update(id: string, data: Partial<TerminalState>): void {
+      if (!state.terminals[id]) {
+        appLogger.warn("terminal", `update(${id}) — terminal not in store, ignoring`);
+        return;
+      }
       batch(() => {
         if ("shellState" in data) {
           const prev = state.terminals[id]?.shellState ?? null;
@@ -281,6 +296,7 @@ function createTerminalsStore() {
 
     /** Update session ID */
     setSessionId(id: string, sessionId: string | null): void {
+      if (!has(id)) return;
       const prev = state.terminals[id]?.sessionId;
       if (prev) sessionToTerminal.delete(prev);
       if (sessionId) sessionToTerminal.set(sessionId, id);
@@ -289,16 +305,19 @@ function createTerminalsStore() {
 
     /** Update last relevant user prompt */
     setLastPrompt(id: string, prompt: string | null): void {
+      if (!has(id)) return;
       setState("terminals", id, "lastPrompt", prompt);
     },
 
     /** Set suggested follow-up actions (timer-free — overlay handles visibility timeout) */
     setSuggestedActions(id: string, items: string[]): void {
+      if (!has(id)) return;
       setState("terminals", id, "suggestedActions", items);
     },
 
     /** Dismiss suggested actions for a specific terminal */
     dismissSuggestedActions(id: string): void {
+      if (!has(id)) return;
       setState("terminals", id, "suggestedActions", null);
       setState("terminals", id, "suggestDismissed", true);
     },
@@ -363,16 +382,19 @@ function createTerminalsStore() {
 
     /** Update agent-declared intent (via intent: token) */
     setAgentIntent(id: string, intent: string | null): void {
+      if (!has(id)) return;
       setState("terminals", id, "agentIntent", intent);
     },
 
     /** Update font size (zoom) */
     setFontSize(id: string, fontSize: number): void {
+      if (!has(id)) return;
       setState("terminals", id, "fontSize", fontSize);
     },
 
     /** Set terminal awaiting input state */
     setAwaitingInput(id: string, type: AwaitingInputType, confident = false): void {
+      if (!has(id)) return;
       const prev = state.terminals[id]?.awaitingInput;
       appLogger.debug("terminal", `setAwaitingInput(${id}) "${prev}" → "${type}" confident=${confident}`);
       batch(() => {
@@ -383,6 +405,7 @@ function createTerminalsStore() {
 
     /** Clear terminal awaiting input state */
     clearAwaitingInput(id: string): void {
+      if (!has(id)) return;
       const prev = state.terminals[id]?.awaitingInput;
       if (prev) appLogger.debug("terminal", `clearAwaitingInput(${id}) was "${prev}" → null`);
       batch(() => {

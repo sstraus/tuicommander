@@ -325,7 +325,7 @@ const AgentRow: Component<{
       const configPath = await invoke<string | null>("get_agent_config_path", { agentType: props.agentType });
       if (configPath) {
         const repoPath = repositoriesStore.state.activeRepoPath ?? "";
-        editorTabsStore.add(repoPath, configPath);
+        editorTabsStore.add(repoPath, configPath, undefined, { externalEditable: true });
       }
     } catch (err) {
       appLogger.error("config", `Failed to open config for ${props.agentType}`, err);

@@ -25,6 +25,7 @@ export interface CodeEditorTabProps {
   repoPath: string;
   filePath: string;
   initialLine?: number; // Line to scroll to on first mount (1-based)
+  externalEditable?: boolean; // Allow editing external (absolute-path) files (e.g. agent config)
   onClose?: () => void;
 }
 
@@ -76,7 +77,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 
         setLoading(true);
         setError(null);
-        if (isExternal()) setIsReadOnly(true);
+        if (isExternal() && !props.externalEditable) setIsReadOnly(true);
 
         try {
           const content = await readContent();
@@ -242,7 +243,11 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
   const handleSave = async () => {
     if (!dirty() || isReadOnly()) return;
     try {
-      await fb.writeFile(props.repoPath, props.filePath, currentCode);
+      if (isExternal()) {
+        await invoke("write_external_file", { path: props.filePath, content: currentCode });
+      } else {
+        await fb.writeFile(props.repoPath, props.filePath, currentCode);
+      }
       setSavedContent(currentCode);
       setDirty(false);
       // Notify revision-subscribed panels (e.g. MarkdownTab) that a file changed on disk
