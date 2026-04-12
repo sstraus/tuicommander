@@ -360,7 +360,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
   // scrollback overflows, even without prior user interaction. Disposed on cleanup.
   let scrollbarFixCleanup: (() => void) | null = null;
   // Wheel-at-top detector that opens the DOM scrollback overlay. Disposed on unmount.
-  let overlayWheelCleanup: (() => void) | null = null;
   // Throttle counter for atlas cleanup triggered by onAddTextureAtlasCanvas.
   // Pages are added when the packer runs out of room for new glyphs, so a
   // burst of additions is a real signal of stress (e.g. large diverse output).
@@ -1463,67 +1462,40 @@ export const Terminal: Component<TerminalProps> = (props) => {
     renderObserverCleanup = installRenderObserver(terminal, containerRef);
     scrollbarFixCleanup = installScrollbarVisibilityFix(terminal, containerRef);
 
-    // Scrollback overlay trigger: intercept wheel events in the capture phase
-    // and decide whether to open the DOM overlay or let xterm consume the
-    // wheel normally.
+    // Scrollback overlay trigger: use xterm's official wheel handler API to
+    // intercept wheel events before xterm processes them.
     //
-    // Gate rules (both must pass):
+    // Return false → suppress xterm scroll (overlay handles it or activates).
+    // Return true  → let xterm handle the wheel normally.
+    //
+    // Gate rules for activation (both must pass):
     //   1. xterm's active buffer is already at the top (`viewportY === 0`)
     //      — i.e. xterm has nothing more to show above the current view.
     //   2. VtLog has strictly more rows than xterm's current buffer length
     //      (`cache.total > buf.length`) — i.e. there IS additional history
     //      beyond what xterm is already rendering.
     //
-    // Gate 1 ensures we don't hijack xterm's own scrollback (especially in
-    // normal mode where xterm has a real scrollback ring). Gate 2 avoids
-    // opening an empty overlay that would just paint a solid background
-    // over xterm when VtLog has nothing new to contribute (e.g. a fresh
-    // zsh session with total=1).
-    //
     // In alt-screen mode (TUIs like Claude), xterm's alt buffer has no
-    // scrollback regardless of the `scrollback` option, so `viewportY === 0`
-    // is always true and `buf.length === rows` — the overlay opens on the
-    // very first wheel-up, which is the primary use case this feature was
-    // built for.
-    const handleWheelForOverlay = (ev: WheelEvent) => {
-      if (!terminal) {
-        appLogger.info("terminal", "wheel: no terminal");
-        return;
-      }
-      if (scrollbackVisible()) return;
-      if (ev.deltaY >= 0) return; // only wheel-up triggers overlay
+    // scrollback, so `viewportY === 0` is always true and `buf.length === rows`
+    // — the overlay opens on the very first wheel-up.
+    terminal.attachCustomWheelEventHandler((ev: WheelEvent): boolean => {
+      // Overlay already visible → suppress xterm scroll entirely
+      if (scrollbackVisible()) return false;
+      // Only wheel-up triggers overlay
+      if (ev.deltaY >= 0) return true;
       const cache = scrollbackCache();
-      if (!cache) {
-        appLogger.info("terminal", "wheel: no scrollback cache");
-        return;
-      }
+      if (!cache) return true;
       const buf = terminal.buffer.active;
       const atTopOfXterm = buf.viewportY === 0;
       const hasExtraHistory = cache.total > buf.length;
-      if (!atTopOfXterm || !hasExtraHistory) {
-        appLogger.info(
-          "terminal",
-          `wheel: skipped — atTop=${atTopOfXterm} viewportY=${buf.viewportY} total=${cache.total} xtermLen=${buf.length} bufType=${buf.type}`,
-        );
-        return;
-      }
+      if (!atTopOfXterm || !hasExtraHistory) return true;
       appLogger.info(
         "terminal",
         `wheel: opening overlay — total=${cache.total} xtermLen=${buf.length} bufType=${buf.type}`,
       );
-      ev.preventDefault();
-      ev.stopPropagation();
       setScrollbackVisible(true);
-    };
-    containerRef.addEventListener("wheel", handleWheelForOverlay, {
-      capture: true,
-      passive: false,
+      return false;
     });
-    const wheelTarget = containerRef;
-    overlayWheelCleanup = () =>
-      wheelTarget.removeEventListener("wheel", handleWheelForOverlay, {
-        capture: true,
-      } as EventListenerOptions);
 
     viewportLock.attach(
       containerRef,
@@ -1973,8 +1945,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
     renderObserverCleanup?.();
     scrollbarFixCleanup?.();
-    overlayWheelCleanup?.();
-    overlayWheelCleanup = null;
     viewportLock.dispose();
     terminal?.dispose();
   });
