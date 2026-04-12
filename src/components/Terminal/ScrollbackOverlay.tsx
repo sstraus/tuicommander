@@ -76,15 +76,27 @@ export const ScrollbackOverlay: Component<ScrollbackOverlayProps> = (props) => {
   let measureEl: HTMLDivElement | undefined;
 
   // --- cache subscription ---
+  // Debounce chunkLoaded → chunkTick via rAF to coalesce parallel chunk
+  // arrivals into a single re-render (ensureLoaded fires 1-2 chunks in
+  // parallel at chunk boundaries, each emitting chunkLoaded separately).
+  let chunkTickRaf = 0;
   onMount(() => {
     const off = props.cache.subscribe((e) => {
       if (e.type === "total") {
         setTotal(e.total);
       } else if (e.type === "chunkLoaded") {
-        setChunkTick((t) => t + 1);
+        if (!chunkTickRaf) {
+          chunkTickRaf = requestAnimationFrame(() => {
+            chunkTickRaf = 0;
+            setChunkTick((t) => t + 1);
+          });
+        }
       }
     });
-    onCleanup(off);
+    onCleanup(() => {
+      off();
+      if (chunkTickRaf) cancelAnimationFrame(chunkTickRaf);
+    });
   });
 
   // --- line-height measurement ---
@@ -213,6 +225,16 @@ export const ScrollbackOverlay: Component<ScrollbackOverlayProps> = (props) => {
   const contentHeightPx = createMemo(() => total() * lineHeight());
   const maxScrollTop = createMemo(() => Math.max(0, contentHeightPx() - viewportHeight()));
 
+  // --- spacer heights for flow-based virtualization ---
+  // Instead of position: absolute on each line, we use a top spacer to push
+  // visible lines to the correct scroll position. This enables native text
+  // selection across multiple lines (absolute positioning breaks cross-element
+  // drag selection in browsers).
+  const topSpacerPx = createMemo(() => range().start * lineHeight());
+  const bottomSpacerPx = createMemo(() =>
+    Math.max(0, (total() - range().end) * lineHeight()),
+  );
+
   return (
     <Show when={props.visible}>
       <div
@@ -230,10 +252,9 @@ export const ScrollbackOverlay: Component<ScrollbackOverlayProps> = (props) => {
         <div ref={measureEl} class={s.measure} aria-hidden="true">
           M
         </div>
-        <div
-          class={s.content}
-          style={{ height: `${contentHeightPx()}px` }}
-        >
+        <div class={s.content}>
+          {/* Top spacer pushes visible lines to their scroll position */}
+          <div style={{ height: `${topSpacerPx()}px` }} />
           <For each={indices()}>
             {(idx) => {
               const line = props.cache.getLine(idx);
@@ -244,16 +265,15 @@ export const ScrollbackOverlay: Component<ScrollbackOverlayProps> = (props) => {
               return (
                 <div
                   class={s.line}
-                  style={{
-                    top: `${idx * lineHeight()}px`,
-                    height: `${lineHeight()}px`,
-                  }}
+                  style={{ height: `${lineHeight()}px` }}
                 >
                   {renderLine(line, match)}
                 </div>
               );
             }}
           </For>
+          {/* Bottom spacer maintains total scroll height */}
+          <div style={{ height: `${bottomSpacerPx()}px` }} />
         </div>
       </div>
       <ScrollbackScrollbar

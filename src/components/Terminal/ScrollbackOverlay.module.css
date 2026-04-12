@@ -25,23 +25,20 @@
   display: none; /* Chrome/Safari/Tauri WebView */
 }
 
-/* Virtualized content area: its height mirrors total_lines * lineHeight,
-   which makes the scrollbar thumb size reflect the full scrollback. */
+/* Virtualized content area: height is driven by top + bottom spacer divs
+   so the total scroll height reflects the full scrollback. */
 .content {
-  position: relative;
   width: 100%;
 }
 
-/* One rendered row. Absolutely positioned so we can place a sparse set
-   of rows in a tall virtual container. */
+/* One rendered row. Flow-positioned (not absolute) so native text
+   selection works across multiple lines via drag. */
 .line {
-  position: absolute;
-  left: 0;
-  right: 0;
   white-space: pre;
   padding-left: 4px;
   padding-right: 4px;
   overflow: hidden;
+  user-select: text;
 }
 
 /* Hidden element used once on mount to measure a single line's height
