@@ -219,7 +219,6 @@ const PaneGroupView: Component<{
         label: "Close Tab",
         action: () => {
           props.onCloseTab(id);
-          paneLayoutStore.removeTab(props.groupId, id);
         },
       },
     ];
@@ -344,7 +343,6 @@ const PaneGroupView: Component<{
                   onClick={(e) => {
                     e.stopPropagation();
                     props.onCloseTab(tab.id);
-                    paneLayoutStore.removeTab(props.groupId, tab.id);
                   }}
                 >
                   ×

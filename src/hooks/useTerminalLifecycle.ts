@@ -89,6 +89,17 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
   };
 
   /** After closing a non-terminal tab, select a sibling on the same branch or fall back to the last terminal */
+  /** Remove a tab from its pane group; if the group becomes empty, collapse the split. */
+  const removeTabFromPane = (tabId: string) => {
+    const containingGroup = paneLayoutStore.getGroupForTab(tabId);
+    if (!containingGroup) return;
+    paneLayoutStore.removeTab(containingGroup, tabId);
+    const updated = paneLayoutStore.state.groups[containingGroup];
+    if (!updated || updated.tabs.length === 0) {
+      paneLayoutStore.closePane(containingGroup);
+    }
+  };
+
   const selectAfterNonTerminalClose = (store: { getIds: () => string[]; getVisibleIds: (key: string | null) => string[]; setActive: (id: string | null) => void }, closedId: string) => {
     const branchKey = currentBranchKey() ?? null;
     const remaining = store.getVisibleIds(branchKey).filter((i) => i !== closedId);
@@ -113,12 +124,14 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
     if (id.startsWith("diff-")) {
       selectAfterNonTerminalClose(diffTabsStore, id);
       diffTabsStore.remove(id);
+      removeTabFromPane(id);
       return;
     }
 
     if (id.startsWith("md-")) {
       selectAfterNonTerminalClose(mdTabsStore, id);
       mdTabsStore.remove(id);
+      removeTabFromPane(id);
       return;
     }
 
@@ -136,6 +149,7 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
       }
       selectAfterNonTerminalClose(editorTabsStore, id);
       editorTabsStore.remove(id);
+      removeTabFromPane(id);
       return;
     }
 
@@ -168,20 +182,11 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
     }
 
     // Remove terminal tab from its pane group (if any)
+    removeTabFromPane(id);
     let survivorId: string | null = null;
-    const containingGroup = paneLayoutStore.getGroupForTab(id);
-    if (containingGroup) {
-      paneLayoutStore.removeTab(containingGroup, id);
-      // If group is now empty, close the pane
-      const updated = paneLayoutStore.state.groups[containingGroup];
-      if (!updated || updated.tabs.length === 0) {
-        paneLayoutStore.closePane(containingGroup);
-      }
-      // Find survivor terminal in the active group
-      const activeGroup = paneLayoutStore.getActiveGroup();
-      const termTab = activeGroup?.tabs.find(t => t.type === "terminal");
-      if (termTab) survivorId = termTab.id;
-    }
+    const activeGroup = paneLayoutStore.getActiveGroup();
+    const termTab = activeGroup?.tabs.find(t => t.type === "terminal");
+    if (termTab) survivorId = termTab.id;
 
     const activeRepo = repositoriesStore.getActive();
     if (activeRepo && activeRepo.activeBranch) {
