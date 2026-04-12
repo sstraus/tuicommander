@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-04-12
+
+### Added
+- **PWA bidirectional live sync** — CommandInput in browser mode now uses delta-based bidirectional sync with the PTY, including echo deduplication and a slash dropup menu for command suggestions
+
+### Fixed
+- **Ghost terminals from resurrected store entries** — Prevented phantom terminal sessions from appearing when store entries were resurrected after session close
+- **MCP debug invoke_js schema** — `__TUIC__` global is now hinted in the invoke_js schema for MCP debug introspection
+- **vt-log-total emitted as bare number** — PTY event now emits the total as a plain number instead of a JSON object wrapper
+- **PWA agent_type unified to "claude"** — Consistent `agent_type` value across the entire codebase
+- **PWA slash menu detection** — Improved slash menu detection accuracy and fixed tab close countdown in browser mode
+- **Cache-keepalive counter reset** — Counter now resets on user-input events instead of arbitrary triggers, preventing phantom busy→idle loops
+
+### Changed
+- **GitHub OAuth app** — Moved to TUICommander organization
+
 ## [1.0.4] - 2026-04-11
 
 ### Added
