@@ -610,6 +610,20 @@ fn try_shell_transition(
                     std::sync::atomic::AtomicU64::new(now_ms),
                 );
             }
+            // Notify orchestrator when an agent goes idle (BUSY→IDLE only).
+            // Plain shell sessions are excluded — only registered agent sessions qualify.
+            if expected == SHELL_BUSY && new == SHELL_IDLE {
+                let is_agent = state.session_states.get(session_id)
+                    .map(|s| s.agent_type.is_some())
+                    .unwrap_or(false);
+                if is_agent {
+                    push_state_change_to_parent(state, session_id, serde_json::json!({
+                        "type": "state_change",
+                        "state": "idle",
+                        "session_id": session_id,
+                    }));
+                }
+            }
         }
         ok
     } else {
@@ -1340,6 +1354,32 @@ fn tombstone_transient_cleanup(session_id: &str, state: &AppState) {
 }
 
 /// Tombstone a session after its process exited.
+/// Push a state_change message to the parent's inbox if this session has a registered parent.
+/// Used for automatic orchestrator notifications on exit and idle transitions.
+fn push_state_change_to_parent(state: &AppState, session_id: &str, payload: serde_json::Value) {
+    let Some(parent_id) = state.session_parent.get(session_id).map(|e| e.value().clone()) else {
+        return;
+    };
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let msg = crate::state::AgentMessage {
+        id: format!("tuic-auto-{}-{}", session_id, now_ms),
+        from_tuic_session: session_id.to_string(),
+        from_name: "tuic".to_string(),
+        content: serde_json::to_string(&payload).unwrap_or_default(),
+        timestamp: now_ms,
+        delivered_via_channel: false,
+    };
+    let mut inbox = state.agent_inbox.entry(parent_id).or_default();
+    if inbox.len() >= crate::state::AGENT_INBOX_CAPACITY {
+        inbox.pop_front();
+        // eviction counting intentionally skipped for system messages (no orchestrator opt-in needed)
+    }
+    inbox.push_back(msg);
+}
+
 /// Keeps `output_buffers`, `vt_log_buffers`, `last_output_ms`, and `exit_codes`
 /// alive so MCP consumers can read final output + exit status post-mortem.
 /// Tombstones are reaped by `spawn_tombstone_sweeper` after `TOMBSTONE_TTL_MS`.
@@ -1353,6 +1393,16 @@ pub(crate) fn mark_session_exited(session_id: &str, state: &AppState) {
     if state.sessions.remove(session_id).is_some() {
         state.metrics.active_sessions.fetch_sub(1, Ordering::Relaxed);
     }
+
+    // Notify orchestrator (if any) that this agent has exited.
+    let exit_code = state.exit_codes.get(session_id).map(|e| *e.value());
+    push_state_change_to_parent(state, session_id, serde_json::json!({
+        "type": "state_change",
+        "state": "exited",
+        "session_id": session_id,
+        "exit_code": exit_code,
+    }));
+
     tombstone_transient_cleanup(session_id, state);
 }
 
@@ -1747,9 +1797,12 @@ pub(crate) fn spawn_reader_thread(
             session_id: session_id.clone(),
             reason: "process_exit".to_string(),
         });
+        let agent_type = state.session_states.get(&session_id)
+            .and_then(|s| s.agent_type.clone());
         let _ = app.emit("session-closed", serde_json::json!({
             "session_id": session_id,
             "reason": "process_exit",
+            "agent_type": agent_type,
         }));
 
         mark_session_exited(&session_id, &state);
@@ -1830,9 +1883,12 @@ pub(crate) fn spawn_headless_reader_thread(
             reason: "process_exit".to_string(),
         });
         if let Some(app) = state.app_handle.read().as_ref() {
+            let agent_type = state.session_states.get(&session_id)
+                .and_then(|s| s.agent_type.clone());
             let _ = app.emit("session-closed", serde_json::json!({
                 "session_id": session_id,
                 "reason": "process_exit",
+                "agent_type": agent_type,
             }));
         }
 
@@ -4935,5 +4991,71 @@ mod tests {
     #[test]
     fn wsl_path_root_drive() {
         assert_eq!(super::windows_to_wsl_path("C:\\"), "/mnt/c/");
+    }
+
+    // ---- Layer 3: state_change auto-notifications (#1164-2571) ----
+
+    #[test]
+    fn mark_session_exited_pushes_state_change_to_parent_inbox() {
+        let state = crate::state::tests_support::make_test_app_state();
+        let child_id = "child-sess";
+        let parent_id = "parent-sess";
+
+        // Register parent-child relationship
+        state.session_parent.insert(child_id.to_string(), parent_id.to_string());
+        // Pre-init parent inbox
+        state.agent_inbox.entry(parent_id.to_string()).or_default();
+
+        mark_session_exited(child_id, &state);
+
+        let inbox = state.agent_inbox.get(parent_id).expect("parent inbox must exist");
+        assert!(!inbox.is_empty(), "parent inbox must have received state_change message");
+        let msg = inbox.front().unwrap();
+        let content: serde_json::Value = serde_json::from_str(&msg.content).expect("content must be valid JSON");
+        assert_eq!(content["type"], "state_change");
+        assert_eq!(content["state"], "exited");
+    }
+
+    #[test]
+    fn try_shell_transition_busy_to_idle_pushes_state_change_to_parent_inbox() {
+        let state = crate::state::tests_support::make_test_app_state();
+        let child_id = "child-idle-sess";
+        let parent_id = "parent-idle-sess";
+
+        state.session_parent.insert(child_id.to_string(), parent_id.to_string());
+        state.agent_inbox.entry(parent_id.to_string()).or_default();
+        // Must have a session_state with agent_type to qualify for idle notification
+        let mut ss = crate::state::SessionState::default();
+        ss.agent_type = Some("claude".to_string());
+        state.session_states.insert(child_id.to_string(), ss);
+        state.shell_states.insert(child_id.to_string(), std::sync::atomic::AtomicU8::new(SHELL_BUSY));
+
+        let transitioned = try_shell_transition(&state, child_id, SHELL_BUSY, SHELL_IDLE);
+        assert!(transitioned, "transition must succeed");
+
+        let inbox = state.agent_inbox.get(parent_id).expect("parent inbox must exist");
+        assert!(!inbox.is_empty(), "parent inbox must have received state_change message");
+        let msg = inbox.front().unwrap();
+        let content: serde_json::Value = serde_json::from_str(&msg.content).expect("content must be valid JSON");
+        assert_eq!(content["type"], "state_change");
+        assert_eq!(content["state"], "idle");
+    }
+
+    #[test]
+    fn try_shell_transition_non_agent_session_does_not_push_idle_notification() {
+        let state = crate::state::tests_support::make_test_app_state();
+        let child_id = "non-agent-sess";
+        let parent_id = "parent-non-agent-sess";
+
+        state.session_parent.insert(child_id.to_string(), parent_id.to_string());
+        state.agent_inbox.entry(parent_id.to_string()).or_default();
+        // No agent_type set — plain shell session
+        state.session_states.insert(child_id.to_string(), crate::state::SessionState::default());
+        state.shell_states.insert(child_id.to_string(), std::sync::atomic::AtomicU8::new(SHELL_BUSY));
+
+        try_shell_transition(&state, child_id, SHELL_BUSY, SHELL_IDLE);
+
+        let inbox = state.agent_inbox.get(parent_id).unwrap();
+        assert!(inbox.is_empty(), "non-agent sessions must not send idle notifications to parent");
     }
 }

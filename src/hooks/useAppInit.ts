@@ -22,7 +22,9 @@ const remoteSessionTabs = new Map<string, string>();
 
 /** Delay before auto-removing a remote tab after the backend reports session-closed.
  *  Gives the user time to see "[Process exited]" in the terminal before it vanishes. */
-const REMOTE_TAB_AUTOCLOSE_MS = 60_000;
+const REMOTE_TAB_AUTOCLOSE_MS = 30_000;
+/** Shorter delay for agent-spawned sessions — they finish their task and can be cleaned up faster. */
+const AGENT_TAB_AUTOCLOSE_MS = 10_000;
 
 /** Dependencies injected into initApp */
 export interface AppInitDeps {
@@ -376,8 +378,8 @@ export async function initApp(deps: AppInitDeps) {
     }
   });
 
-  listen<{ session_id: string }>("session-closed", (event) => {
-    const { session_id } = event.payload;
+  listen<{ session_id: string; agent_type?: string }>("session-closed", (event) => {
+    const { session_id, agent_type } = event.payload;
     // Prefer the persistent remoteSessionTabs map: the store's reverse map may
     // have been cleared already by Terminal.tsx resetting sessionId on pty-exit.
     const termId = remoteSessionTabs.get(session_id)
@@ -387,17 +389,21 @@ export async function initApp(deps: AppInitDeps) {
     remoteSessionTabs.delete(session_id);
 
     // Countdown + auto-remove is only for MCP-spawned (remote) tabs. Locally-created
-    // tabs are managed by Terminal.tsx's pty-exit handler — applying the "(60s)"
-    // rename here would leave the name stuck forever because the ticker's isRemote
+    // tabs are managed by Terminal.tsx's pty-exit handler — applying the rename
+    // here would leave the name stuck forever because the ticker's isRemote
     // guard aborts on the first tick and the setTimeout's isRemote guard skips removal.
     const t0 = terminalsStore.get(termId);
     if (!t0?.isRemote) return;
 
-    appLogger.info("app", `Remote session closed: ${session_id} — tab ${termId} auto-close in ${REMOTE_TAB_AUTOCLOSE_MS}ms`);
+    // Agent-spawned sessions get a shorter grace period — they finish their task
+    // and can be cleaned up faster than manually-opened remote sessions.
+    const autoCloseMs = agent_type ? AGENT_TAB_AUTOCLOSE_MS : REMOTE_TAB_AUTOCLOSE_MS;
+
+    appLogger.info("app", `Remote session closed: ${session_id} — tab ${termId} auto-close in ${autoCloseMs}ms`);
 
     // Countdown in the tab name so the user sees when it will vanish
     const baseName = t0?.name ?? termId;
-    let remaining = Math.round(REMOTE_TAB_AUTOCLOSE_MS / 1000);
+    let remaining = Math.round(autoCloseMs / 1000);
     terminalsStore.update(termId, { name: `${baseName} (${remaining}s)` });
     const ticker = setInterval(() => {
       remaining--;
@@ -418,7 +424,7 @@ export async function initApp(deps: AppInitDeps) {
         appLogger.info("app", `Auto-removing remote tab ${termId} for closed session ${session_id}`);
         terminalsStore.remove(termId);
       }
-    }, REMOTE_TAB_AUTOCLOSE_MS);
+    }, autoCloseMs);
   }).catch((err) =>
     appLogger.error("app", "Failed to register session-closed listener", err),
   );
