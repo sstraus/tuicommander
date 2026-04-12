@@ -15,6 +15,7 @@ import {
   findSpanHighlightSegments,
 } from "./scrollbackSearchUtils";
 import { spanStyle, type LogLine, type LogSpan } from "../../mobile/utils/logLine";
+import { ScrollbackScrollbar } from "./ScrollbackScrollbar";
 import s from "./ScrollbackOverlay.module.css";
 
 /** A single search match returned by the Rust `search_vt_log` command. */
@@ -192,6 +193,7 @@ export const ScrollbackOverlay: Component<ScrollbackOverlayProps> = (props) => {
 
   // --- total scrollback height in CSS pixels ---
   const contentHeightPx = createMemo(() => total() * lineHeight());
+  const maxScrollTop = createMemo(() => Math.max(0, contentHeightPx() - viewportHeight()));
 
   return (
     <Show when={props.visible}>
@@ -236,6 +238,15 @@ export const ScrollbackOverlay: Component<ScrollbackOverlayProps> = (props) => {
           </For>
         </div>
       </div>
+      <ScrollbackScrollbar
+        scrollTop={scrollTop()}
+        maxScrollTop={maxScrollTop()}
+        viewportHeight={viewportHeight()}
+        totalContentHeight={contentHeightPx()}
+        onScrollTo={(st) => {
+          if (containerEl) containerEl.scrollTop = st;
+        }}
+      />
     </Show>
   );
 };
