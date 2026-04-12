@@ -813,6 +813,12 @@ struct ChunkProcessor {
     /// When a new ESC[nA arrives with n < last_cursor_up_n, content has shrunk
     /// and we need a clear to prevent ghost artifacts.
     last_cursor_up_n: u16,
+    /// Last VtLogBuffer total_lines observed — used to detect growth and emit
+    /// `pty-vt-log-total-{session_id}` for the scrollback overlay.
+    last_vt_log_total: usize,
+    /// Last time we emitted a `pty-vt-log-total-*` event. Throttled to ~100 ms
+    /// to avoid flooding the frontend during heavy output.
+    last_vt_log_emit: Option<std::time::Instant>,
 }
 
 impl ChunkProcessor {
@@ -827,6 +833,8 @@ impl ChunkProcessor {
             in_alt_buffer: false,
             alt_buffer_needs_clear: false,
             last_cursor_up_n: 0,
+            last_vt_log_total: 0,
+            last_vt_log_emit: None,
         }
     }
 
@@ -953,11 +961,41 @@ impl ChunkProcessor {
         self.check_pending_planfiles(session_id, state, app);
 
         // Feed raw data (post-kitty-strip) into VT100 log buffer.
-        let changed_rows = if let Some(vt_log) = state.vt_log_buffers.get(session_id) {
-            vt_log.lock().process(data.as_bytes())
+        // Also capture the post-process `total_lines` so we can emit a
+        // throttled `pty-vt-log-total-*` event for the scrollback overlay.
+        let (changed_rows, vt_log_total) = if let Some(vt_log) = state.vt_log_buffers.get(session_id) {
+            let mut vt = vt_log.lock();
+            let changed = vt.process(data.as_bytes());
+            let total = vt.total_lines();
+            (changed, Some(total))
         } else {
-            Vec::new()
+            (Vec::new(), None)
         };
+
+        // Emit scrollback-overlay growth event (throttled to 100ms).
+        // Frontend listens to `pty-vt-log-total-{session_id}` and bumps the
+        // virtualized scrollback height as new log lines are appended.
+        if let Some(new_total) = vt_log_total
+            && new_total > self.last_vt_log_total
+        {
+            let should_emit = self
+                .last_vt_log_emit
+                .map(|t| t.elapsed() >= std::time::Duration::from_millis(100))
+                .unwrap_or(true);
+            if should_emit
+                && let Some(a) = app
+            {
+                // Emit as a bare number — frontend listens `listen<number>`.
+                // Wrapping in an object caused the cache to receive
+                // `{total: N}` and corrupted its internal counter.
+                let _ = a.emit(
+                    &format!("pty-vt-log-total-{session_id}"),
+                    new_total,
+                );
+                self.last_vt_log_emit = Some(std::time::Instant::now());
+            }
+            self.last_vt_log_total = new_total;
+        }
 
         // Write to ring buffer and broadcast to WebSocket clients while
         // holding the ring lock. Serializing these two steps prevents a race
@@ -991,13 +1029,19 @@ impl ChunkProcessor {
             .unwrap_or(false);
         events.extend(self.parser.parse_clean_lines(&changed_rows, agent_active_for_parse));
 
-        // Slash menu detection
+        // Slash menu detection — trim prompt/status chrome from the bottom
+        // of the screen before scanning, because the menu renders above the
+        // prompt line (separator + ❯ + status bar) and the parser scans
+        // bottom-up, breaking on the first non-matching row.
         if state.slash_mode.get(session_id)
             .is_some_and(|v| v.load(std::sync::atomic::Ordering::Relaxed))
             && let Some(vt_log) = state.vt_log_buffers.get(session_id)
         {
             let screen = vt_log.lock().screen_rows();
-            if let Some(evt) = crate::output_parser::parse_slash_menu(&screen) {
+            let refs: Vec<&str> = screen.iter().map(|s| s.as_str()).collect();
+            let cutoff = crate::chrome::find_chrome_cutoff(&refs).unwrap_or(screen.len());
+            let trimmed: Vec<String> = screen[..cutoff].to_vec();
+            if let Some(evt) = crate::output_parser::parse_slash_menu(&trimmed) {
                 events.push(evt);
             }
         }
@@ -2228,6 +2272,71 @@ pub(crate) fn resume_pty(state: State<'_, Arc<AppState>>, session_id: String) ->
         .ok_or_else(|| format!("Session not found: {session_id}"))?;
     entry.lock().paused.store(false, Ordering::Relaxed);
     Ok(())
+}
+
+/// Chunk of VT100-parsed log lines returned by `read_vt_log`.
+/// Used by the desktop scrollback overlay to render paginated history.
+#[derive(serde::Serialize)]
+pub(crate) struct VtLogChunk {
+    pub lines: Vec<crate::state::LogLine>,
+    /// Total number of log lines ever pushed (monotonic cursor).
+    pub total: usize,
+    /// Absolute offset of the oldest retained line. Lines before this were
+    /// evicted by buffer rotation and can no longer be read.
+    pub oldest: usize,
+}
+
+/// Read a paginated slice of the VtLogBuffer for the scrollback overlay.
+///
+/// `offset` is absolute in the same space as `total_lines()`. `limit` bounds
+/// the number of lines returned. The return value includes the live `total`
+/// and `oldest` so the caller can resize the virtualized scrollback without
+/// a second round-trip.
+#[tauri::command]
+pub(crate) fn read_vt_log(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+    offset: usize,
+    limit: usize,
+) -> Result<VtLogChunk, String> {
+    let buf = state
+        .vt_log_buffers
+        .get(&session_id)
+        .ok_or_else(|| format!("Session not found: {session_id}"))?;
+    let vt = buf.lock();
+    let (lines, total) = vt.lines_since_owned(offset, limit);
+    let oldest = vt.oldest_offset();
+    Ok(VtLogChunk { lines, total, oldest })
+}
+
+/// Literal-substring search across a session's VtLogBuffer history.
+///
+/// Frontend drives this from the terminal search bar when the scrollback
+/// overlay is available. Returns absolute line offsets + character column
+/// ranges so the overlay can scroll to and highlight each match.
+/// See `vt_log_search` module for matching semantics and limits.
+#[tauri::command]
+pub(crate) fn search_vt_log(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+    query: String,
+    case_sensitive: bool,
+    max_matches: usize,
+) -> Result<crate::vt_log_search::SearchResults, String> {
+    let buf = state
+        .vt_log_buffers
+        .get(&session_id)
+        .ok_or_else(|| format!("Session not found: {session_id}"))?;
+    let vt = buf.lock();
+    let oldest = vt.oldest_offset();
+    let results = crate::vt_log_search::search_log_lines(
+        vt.lines().iter(),
+        oldest,
+        &query,
+        case_sensitive,
+        max_matches,
+    );
+    Ok(results)
 }
 
 /// Query current kitty keyboard protocol flags for a session.

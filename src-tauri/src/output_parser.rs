@@ -3102,6 +3102,44 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         assert!(parse_slash_menu(&screen).is_none());
     }
 
+    #[test]
+    fn test_slash_menu_above_prompt_chrome_needs_trim() {
+        // Real Claude Code screen: menu renders above the prompt chrome.
+        // parse_slash_menu receives pre-trimmed rows (chrome stripped by caller).
+        let mut screen: Vec<String> = vec![String::new(); 18];
+        screen.push("some output".to_string());
+        screen.push(String::new());
+        // Menu items (these are what remains after chrome trimming)
+        screen.push("  /wiz:plan                   (wiz) Transform feature descriptions into well".to_string());
+        screen.push("  /wiz:stories                (wiz) Persistent file-based task tracking with".to_string());
+        screen.push("  /wiz:review                 (wiz) Exhaustive multi-agent code review for P".to_string());
+        screen.push("  /wiz:work                   (wiz) Execute work plans efficiently while mai".to_string());
+        let evt = parse_slash_menu(&screen).expect("should detect menu from pre-trimmed screen");
+        match evt {
+            ParsedEvent::SlashMenu { items } => {
+                assert_eq!(items.len(), 4);
+                assert_eq!(items[0].command, "/wiz:plan");
+                assert_eq!(items[3].command, "/wiz:work");
+            }
+            _ => panic!("Expected SlashMenu event"),
+        }
+    }
+
+    #[test]
+    fn test_slash_menu_fails_with_chrome_below() {
+        // Without chrome trimming, the parser would fail because it scans
+        // bottom-up and hits the prompt/status bar before the menu rows.
+        let mut screen: Vec<String> = vec![String::new(); 18];
+        screen.push("  /help      Get help with using Claude Code".to_string());
+        screen.push("  /review    Review your code".to_string());
+        // Chrome below the menu (untrimmed)
+        screen.push("────────────────────────────────────────".to_string());
+        screen.push("❯ /".to_string());
+        screen.push("────────────────────────────────────────".to_string());
+        screen.push("  [Opus 4.6 | Max] project git:(main)".to_string());
+        assert!(parse_slash_menu(&screen).is_none(), "untrimmed chrome should prevent detection");
+    }
+
     // ── ActiveSubtasks tests ──────────────────────────────────────────
 
     #[test]

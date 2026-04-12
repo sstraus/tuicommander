@@ -364,11 +364,18 @@ export async function initApp(deps: AppInitDeps) {
       ?? terminalsStore.getTerminalForSession(session_id);
     if (!termId) return;
 
-    appLogger.info("app", `Remote session closed: ${session_id} — tab ${termId} auto-close in ${REMOTE_TAB_AUTOCLOSE_MS}ms`);
     remoteSessionTabs.delete(session_id);
 
-    // Countdown in the tab name so the user sees when it will vanish
+    // Countdown + auto-remove is only for MCP-spawned (remote) tabs. Locally-created
+    // tabs are managed by Terminal.tsx's pty-exit handler — applying the "(60s)"
+    // rename here would leave the name stuck forever because the ticker's isRemote
+    // guard aborts on the first tick and the setTimeout's isRemote guard skips removal.
     const t0 = terminalsStore.get(termId);
+    if (!t0?.isRemote) return;
+
+    appLogger.info("app", `Remote session closed: ${session_id} — tab ${termId} auto-close in ${REMOTE_TAB_AUTOCLOSE_MS}ms`);
+
+    // Countdown in the tab name so the user sees when it will vanish
     const baseName = t0?.name ?? termId;
     let remaining = Math.round(REMOTE_TAB_AUTOCLOSE_MS / 1000);
     terminalsStore.update(termId, { name: `${baseName} (${remaining}s)` });
