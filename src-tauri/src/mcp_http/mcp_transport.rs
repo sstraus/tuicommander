@@ -852,12 +852,11 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_i
                 Err(e) => return e,
             };
             // Self-close guard: prevent an agent from closing its own session.
-            if let Some(sid) = mcp_session_id {
-                if let Some(own_pty) = state.mcp_to_session.get(sid) {
-                    if own_pty.value() == session_id {
-                        return serde_json::json!({"error": "Cannot close own session. Use exit to terminate yourself."});
-                    }
-                }
+            if let Some(sid) = mcp_session_id
+                && let Some(own_pty) = state.mcp_to_session.get(sid)
+                && own_pty.value() == session_id
+            {
+                return serde_json::json!({"error": "Cannot close own session. Use exit to terminate yourself."});
             }
             // Uses the same tombstone path as the Tauri close_pty command so
             // post-mortem MCP reads keep returning final output + exit code.
