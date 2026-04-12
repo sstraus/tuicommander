@@ -74,6 +74,29 @@ fn resolve_marker_flags(state: &Arc<AppState>, client_name: Option<&str>) -> (bo
     (show_intent, show_suggest)
 }
 
+/// SIMP-1: Drain registered HTML tabs for a closing/killed session and emit
+/// `close-html-tabs` to the frontend. SIL-3: log a warning if the emit fails
+/// (don't drop silently — orphan tabs in UI hint at a missing app handle or
+/// a broken event channel).
+fn emit_close_html_tabs(state: &Arc<AppState>, session_id: &str) {
+    let Some((_, tab_ids)) = state.session_html_tabs.remove(session_id) else {
+        return;
+    };
+    let Some(app) = state.app_handle.read().as_ref().cloned() else {
+        // No app handle (test mode or pre-init). Tabs were already drained.
+        return;
+    };
+    if let Err(err) = app.emit("close-html-tabs", serde_json::json!({ "tab_ids": tab_ids })) {
+        tracing::warn!(
+            source = "session",
+            session_id = %session_id,
+            tab_count = tab_ids.len(),
+            error = %err,
+            "failed to emit close-html-tabs — frontend tabs may be orphaned"
+        );
+    }
+}
+
 /// Validate that a string is a well-formed UUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).
 /// Used to reject non-UUID `tuic_session` values at register time to prevent
 /// prompt-injection via preamble string interpolation (SEC-1).
@@ -905,12 +928,8 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_i
                     }));
                 }
             }
-            // Close any HTML tabs created by this session.
-            if let Some((_, tab_ids)) = state.session_html_tabs.remove(session_id)
-                && let Some(app) = state.app_handle.read().as_ref()
-            {
-                let _ = app.emit("close-html-tabs", serde_json::json!({ "tab_ids": tab_ids }));
-            }
+            // SIMP-1: drain HTML tabs registered by this session and emit close.
+            emit_close_html_tabs(state, session_id);
             serde_json::json!({"ok": true})
         }
         "kill" => {
@@ -937,12 +956,8 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_i
                         "reason": "killed",
                     }));
                 }
-                // Close any HTML tabs created by this session.
-                if let Some((_, tab_ids)) = state.session_html_tabs.remove(session_id)
-                    && let Some(app) = state.app_handle.read().as_ref()
-                {
-                    let _ = app.emit("close-html-tabs", serde_json::json!({ "tab_ids": tab_ids }));
-                }
+                // SIMP-1: drain HTML tabs registered by this session and emit close.
+                emit_close_html_tabs(state, session_id);
                 serde_json::json!({"ok": true})
             } else {
                 serde_json::json!({"error": "Session not found"})
@@ -3649,6 +3664,25 @@ mod tests {
 
         assert!(state.session_html_tabs.get("550e8400-e29b-41d4-a716-446655440b02").is_none(),
             "session_html_tabs should be cleared after session close");
+    }
+
+    /// Characterization for SIMP-1: when a session has registered HTML tabs and is
+    /// closed via the MCP `session(close)` action, the entry MUST be drained from
+    /// `session_html_tabs` (the same shared helper is used by `session(kill)`).
+    #[test]
+    fn session_close_drains_session_html_tabs_entry() {
+        let target = "550e8400-e29b-41d4-a716-446655440d01";
+        let state = test_state();
+        state.session_html_tabs.insert(target.to_string(), vec!["html-tab-1".to_string()]);
+
+        use crate::state::VtLogBuffer;
+        state.vt_log_buffers.insert(
+            target.to_string(),
+            parking_lot::Mutex::new(VtLogBuffer::new(24, 220, 500)),
+        );
+        handle_session(&state, &serde_json::json!({"action": "close", "session_id": target}), None);
+        assert!(state.session_html_tabs.get(target).is_none(),
+            "html tabs entry must be removed after close (drives SIMP-1 helper)");
     }
 
     // -------- Tombstone / post-mortem output regression tests --------

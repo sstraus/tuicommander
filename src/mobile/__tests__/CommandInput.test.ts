@@ -180,6 +180,7 @@ describe("CommandInput code structure", () => {
     expect(tsx).toContain('"Tab"');
     expect(tsx).toContain("\\t");
   });
+
 });
 
 describe("CommandInput iOS auto-zoom prevention", () => {

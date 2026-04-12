@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import "../mocks/tauri";
 import { listen } from "@tauri-apps/api/event";
 import { makeTerminal } from "../helpers/store";
 import { terminalsStore } from "../../stores/terminals";
 import { repositoriesStore } from "../../stores/repositories";
 import { paneLayoutStore, resetGroupCounter } from "../../stores/paneLayout";
+import { mdTabsStore } from "../../stores/mdTabs";
 import { initApp, browserCreatedSessions, type AppInitDeps } from "../../hooks/useAppInit";
 
 function resetStores() {
@@ -13,6 +14,9 @@ function resetStores() {
   }
   for (const path of repositoriesStore.getPaths()) {
     repositoriesStore.remove(path);
+  }
+  for (const id of mdTabsStore.getIds()) {
+    mdTabsStore.remove(id);
   }
 }
 
@@ -649,6 +653,125 @@ describe("initApp", () => {
       expect(() =>
         getCallback()!({ payload: { session_id: "unknown-sess", reason: "process_exit" } })
       ).not.toThrow();
+    });
+  });
+
+  describe("session-closed auto-close path", () => {
+    type SessionCreatedPayload = { session_id: string; cwd: string | null; agent_type?: string | null };
+    type SessionClosedPayload = { session_id: string; reason: string; agent_type?: string | null };
+
+    /** Captures both session-created and session-closed callbacks in a single mock pass. */
+    function captureCreatedAndClosed() {
+      const listenMock = vi.mocked(listen);
+      let createdCb: ((event: { payload: SessionCreatedPayload }) => void) | null = null;
+      let closedCb: ((event: { payload: SessionClosedPayload }) => void) | null = null;
+      listenMock.mockImplementation(((event: string, handler: (event: { payload: unknown }) => void) => {
+        if (event === "session-created") createdCb = handler as typeof createdCb;
+        if (event === "session-closed") closedCb = handler as typeof closedCb;
+        return Promise.resolve(vi.fn());
+      }) as unknown as typeof listen);
+      return {
+        getCreated: () => createdCb,
+        getClosed: () => closedCb,
+      };
+    }
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("auto-removes an agent tab after AGENT_TAB_AUTOCLOSE_MS when agent_type is set", async () => {
+      vi.useFakeTimers();
+      const { getCreated, getClosed } = captureCreatedAndClosed();
+      const deps = createMockDeps();
+      await initApp(deps);
+
+      // Register the remote tab via session-created so remoteSessionTabs is populated
+      getCreated()!({ payload: { session_id: "agent-sess", cwd: null, agent_type: "claude" } });
+      const termId = terminalsStore.getIds().find(id => terminalsStore.get(id)?.sessionId === "agent-sess")!;
+      expect(termId).toBeDefined();
+
+      // Fire session-closed with agent_type — triggers AGENT_TAB_AUTOCLOSE_MS (10 000ms)
+      getClosed()!({ payload: { session_id: "agent-sess", reason: "process_exit", agent_type: "claude" } });
+
+      // Tab still present before timeout
+      expect(terminalsStore.get(termId)).toBeDefined();
+
+      // Advance past the 10s agent autoclose
+      vi.advanceTimersByTime(10_001);
+
+      // Tab must be gone
+      expect(terminalsStore.get(termId)).toBeUndefined();
+    });
+
+    it("auto-removes a remote tab after REMOTE_TAB_AUTOCLOSE_MS when agent_type is absent", async () => {
+      vi.useFakeTimers();
+      const { getCreated, getClosed } = captureCreatedAndClosed();
+      const deps = createMockDeps();
+      await initApp(deps);
+
+      getCreated()!({ payload: { session_id: "remote-sess-2", cwd: null, agent_type: null } });
+      const termId = terminalsStore.getIds().find(id => terminalsStore.get(id)?.sessionId === "remote-sess-2")!;
+      expect(termId).toBeDefined();
+
+      getClosed()!({ payload: { session_id: "remote-sess-2", reason: "process_exit", agent_type: null } });
+
+      // Advancing only 10s must NOT remove the tab (REMOTE uses 30s)
+      vi.advanceTimersByTime(10_001);
+      expect(terminalsStore.get(termId)).toBeDefined();
+
+      // Advance to just past 30s — tab must be gone
+      vi.advanceTimersByTime(20_000);
+      expect(terminalsStore.get(termId)).toBeUndefined();
+    });
+  });
+
+  describe("close-html-tabs event", () => {
+    function captureCloseHtmlTabs() {
+      const listenMock = vi.mocked(listen);
+      let callback: ((event: { payload: { tab_ids: string[] } }) => void) | null = null;
+      listenMock.mockImplementation(((event: string, handler: (event: { payload: unknown }) => void) => {
+        if (event === "close-html-tabs") callback = handler as typeof callback;
+        return Promise.resolve(vi.fn());
+      }) as unknown as typeof listen);
+      return { getCallback: () => callback };
+    }
+
+    it("closes mdTab UI tabs matching the emitted tab_ids", async () => {
+      const { getCallback } = captureCloseHtmlTabs();
+      const deps = createMockDeps();
+      await initApp(deps);
+
+      // Open two plugin tabs in mdTabsStore
+      mdTabsStore.openUiTab("plugin-a", "Plugin A", "<p>a</p>", false, undefined, false);
+      mdTabsStore.openUiTab("plugin-b", "Plugin B", "<p>b</p>", false, undefined, false);
+
+      const tabsBefore = Object.values(mdTabsStore.state.tabs).filter(t => t.type === "plugin-panel");
+      expect(tabsBefore).toHaveLength(2);
+
+      // Fire close-html-tabs for one of them
+      getCallback()!({ payload: { tab_ids: ["plugin-a"] } });
+
+      const remaining = Object.values(mdTabsStore.state.tabs).filter(t => t.type === "plugin-panel");
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0].title).toBe("Plugin B");
+    });
+
+    it("is a no-op for unknown tab_ids", async () => {
+      const { getCallback } = captureCloseHtmlTabs();
+      const deps = createMockDeps();
+      await initApp(deps);
+
+      mdTabsStore.openUiTab("plugin-c", "Plugin C", "<p>c</p>", false, undefined, false);
+
+      // Should not throw for IDs that don't exist
+      expect(() =>
+        getCallback()!({ payload: { tab_ids: ["nonexistent-id"] } })
+      ).not.toThrow();
+
+      // Existing tab untouched
+      const remaining = Object.values(mdTabsStore.state.tabs).filter(t => t.type === "plugin-panel");
+      expect(remaining).toHaveLength(1);
     });
   });
 
