@@ -27,7 +27,9 @@ DIST_DIR=dist-release
 all: build sign
 
 # Run in development mode with hot reload (debug tracing for our code only)
+# Pre-builds frontend so the PWA (served from dist/) is up to date.
 dev:
+	@npx vite build
 	RUST_LOG=tuicommander_lib=debug,info npm run tauri dev
 
 # Build frontend + launch Tauri dev (for quick manual testing)
@@ -183,6 +185,7 @@ github-release:
 # tests won't confuse it with the production TUICommander.
 # Uses --debug for fast iteration; full release build only on github-release.
 preview:
+	@npx vite build
 	@echo "Building TUIC-preview $(VERSION) (debug mode)..."
 	npm run tauri build -- --debug --bundles app --config '{"productName":"TUIC-preview","identifier":"com.tuic.preview","bundle":{"createUpdaterArtifacts":false},"app":{"windows":[{"title":"TUIC-preview","width":1200,"height":800,"minWidth":800,"minHeight":600,"decorations":true,"transparent":false,"resizable":true,"fullscreen":false,"hiddenTitle":true,"titleBarStyle":"Overlay","trafficLightPosition":{"x":13,"y":20},"backgroundColor":"#000000","dragDropEnabled":false}]}}'
 	@echo "Launching TUIC-preview..."

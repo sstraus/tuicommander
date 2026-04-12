@@ -69,11 +69,11 @@ export function TerminalKeybar(props: TerminalKeybarProps) {
   }
 
   function handleSlash() {
-    if (props.agentType && props.onCommandWidgetOpen) {
-      props.onCommandWidgetOpen();
-    } else {
-      send("/");
-    }
+    // Escape dismisses any open slash menu (and clears the "/" from the agent's
+    // input buffer), then "/" starts a fresh menu. Without Escape, a second press
+    // appends "/" → "//" which the agent ignores.
+    send("\x1b");
+    send("/");
   }
 
   const confirmKeys = () => getConfirmKeys(props.agentType, props.questionConfident);

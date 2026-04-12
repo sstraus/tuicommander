@@ -84,9 +84,7 @@ input, textarea, select {
   font-size: 16px;
 }
 
-/* Safe area for notched devices */
+/* Safe area handled by individual components (header, CommandInput, BottomTabs) */
 #mobile-app {
   height: 100%;
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
 }

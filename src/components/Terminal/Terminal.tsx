@@ -27,9 +27,6 @@ import { getAwaitingInputSound } from "./awaitingInputSound";
 import { searchTerminalBuffer } from "../../utils/terminalSearch";
 import { ScrollTracker, ViewportLock } from "./scrollTracker";
 import { detectAgentForTerminal } from "../../hooks/useAgentPolling";
-import { ScrollbackOverlay, type ScrollbackMatch } from "./ScrollbackOverlay";
-import { ScrollbackCache, type VtLogChunk } from "./scrollbackCache";
-import { VtLogSearch } from "./VtLogSearch";
 import s from "./Terminal.module.css";
 
 
@@ -318,9 +315,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
   const [searchAddon, setSearchAddon] = createSignal<SearchAddon | undefined>();
   let sessionId: string | null = null;
   // Reactive mirror of the `sessionId` closure var so signal-driven children
-  // (VtLogSearch, etc.) can track session changes across resume/reattach.
+  // can track session changes across resume/reattach.
   // Keep in sync at every `sessionId = X` assignment below.
-  const [currentSessionId, setCurrentSessionId] = createSignal<string | null>(null);
+  const [_currentSessionId, setCurrentSessionId] = createSignal<string | null>(null);
 
   // Search overlay state
   const [searchVisible, setSearchVisible] = createSignal(false);
@@ -330,25 +327,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
   let unsubscribePty: Unsubscribe | undefined;
   let unlistenParsed: (() => void) | undefined;
   let unlistenKitty: (() => void) | undefined;
-  let unlistenVtLogTotal: (() => void) | undefined;
-
-  // Scrollback overlay state — rendered DOM layer that sits above xterm and
-  // provides colored history the alt-screen buffer doesn't expose.
-  const [scrollbackVisible, setScrollbackVisible] = createSignal(false);
-  const [scrollbackCache, setScrollbackCache] = createSignal<ScrollbackCache | null>(null);
-  // Active search match in scrollback (VtLog) find flow. When non-null the
-  // overlay centers on `match.offset` and highlights `[col_start, col_end)`.
-  // Cleared when the find bar closes or the search returns no matches.
-  const [scrollbackActiveMatch, setScrollbackActiveMatch] =
-    createSignal<ScrollbackMatch | null>(null);
-  // Scrollback find bar visibility — independent of `searchVisible` so the
-  // xterm search bar (live view) and VtLog search bar (history) never fight
-  // over the same signal.
-  const [vtLogSearchVisible, setVtLogSearchVisible] = createSignal(false);
-  // Ref to the overlay's scroll container — used for Page Up/Down keyboard nav.
-  let scrollbackContainerEl: HTMLDivElement | undefined;
-  // Bumped on font size/family changes so ScrollbackOverlay remeasures lineHeight.
-  const [fontVersion, setFontVersion] = createSignal(0);
 
   // Kitty keyboard protocol: current flags for this session (0 = disabled)
   let kittyFlags = 0;
@@ -771,11 +749,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
       targetSessionId,
       (data: string) => handlePtyData(data),
       () => {
-        // Close scrollback overlay immediately so the user sees [Process exited]
-        setScrollbackVisible(false);
-        setVtLogSearchVisible(false);
-        setScrollbackActiveMatch(null);
-
         if (terminal) {
           terminal.writeln("\r\n\x1b[33m[Process exited]\x1b[0m");
         }
@@ -833,40 +806,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
       if (flags > 0 && kittyFlags === preListenFlags) {
         kittyFlags = flags;
       }
-
-      // Scrollback overlay: create per-session cache backed by the read_vt_log
-      // command, prime metadata with an initial fetch, and listen for growth
-      // events so the virtualized scrollbar reflects live line count.
-      const cache = new ScrollbackCache({
-        chunkSize: 200,
-        maxChunks: 10,
-        fetcher: async (offset, limit) => {
-          return await invoke<VtLogChunk>("read_vt_log", {
-            sessionId: targetSessionId,
-            offset,
-            limit,
-          });
-        },
-      });
-      setScrollbackCache(cache);
-      // Prime total/oldest without caching an unused chunk — metadata-only
-      // invoke so the overlay can size its virtual scrollbar immediately.
-      void invoke<VtLogChunk>("read_vt_log", {
-        sessionId: targetSessionId,
-        offset: 0,
-        limit: 0,
-      })
-        .then((meta) => {
-          cache.setTotal(meta.total);
-          cache.setOldest(meta.oldest);
-        })
-        .catch(() => {});
-      unlistenVtLogTotal = await listen<number>(
-        `pty-vt-log-total-${targetSessionId}`,
-        (event) => {
-          cache.setTotal(event.payload);
-        },
-      );
 
       // Sync shell state from Rust — covers events missed while unsubscribed
       // (e.g. tab switch, branch switch, component remount).
@@ -1096,56 +1035,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // keypress from reaching xterm (which would eat the next typed character).
     let blockEscForResumeDismiss = false;
     terminal.attachCustomKeyEventHandler((event: KeyboardEvent) => {
-      // Scrollback overlay keyboard navigation — must run before all other
-      // key handlers so the overlay intercepts keys before they reach xterm.
-      if (event.type === "keydown" && scrollbackVisible()) {
-        const noMod = !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey;
-
-        // Arrow Down: close overlay, return to live terminal
-        if (event.key === "ArrowDown" && noMod) {
-          setScrollbackVisible(false);
-          setVtLogSearchVisible(false);
-          setScrollbackActiveMatch(null);
-          terminal!.focus();
-          return false;
-        }
-
-        // Page Up: scroll overlay up by one page
-        if (event.key === "PageUp" && noMod) {
-          scrollbackContainerEl?.scrollBy(0, -(scrollbackContainerEl.clientHeight));
-          return false;
-        }
-
-        // Page Down: scroll overlay down by one page, or close if already at bottom
-        if (event.key === "PageDown" && noMod) {
-          if (scrollbackContainerEl) {
-            const distBottom = scrollbackContainerEl.scrollHeight - scrollbackContainerEl.scrollTop - scrollbackContainerEl.clientHeight;
-            if (distBottom <= 4) {
-              // Already at bottom — close overlay
-              setScrollbackVisible(false);
-              setVtLogSearchVisible(false);
-              setScrollbackActiveMatch(null);
-              terminal!.focus();
-            } else {
-              scrollbackContainerEl.scrollBy(0, scrollbackContainerEl.clientHeight);
-            }
-          }
-          return false;
-        }
-
-        // Escape: close search if open, otherwise close overlay
-        if (event.key === "Escape") {
-          if (vtLogSearchVisible()) {
-            setVtLogSearchVisible(false);
-            setScrollbackActiveMatch(null);
-          } else {
-            setScrollbackVisible(false);
-            terminal!.focus();
-          }
-          return false;
-        }
-      }
-
       // Arrow Down with no modifiers: snap to bottom when viewport is scrolled up
       if (event.type === "keydown" && event.key === "ArrowDown" && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && !scrollTracker.isAtBottom) {
         terminal!.scrollToBottom();
@@ -1186,34 +1075,17 @@ export const Terminal: Component<TerminalProps> = (props) => {
         }
       }
 
-      // Intercept Cmd+F (macOS) / Ctrl+F (Win/Linux) to open search overlay.
-      // Routing rule: when we have a VtLog cache with history wired (Tauri
-      // mode), prefer the DOM scrollback search — it covers the full history
-      // buffer, not just the xterm alt-screen viewport. Auto-opens the
-      // overlay if it wasn't already visible. Falls back to the xterm search
-      // in browser/PWA mode where no VtLog cache exists.
+      // Intercept Cmd+F (macOS) / Ctrl+F (Win/Linux) to open xterm search.
       if (event.type === "keydown" && (event.metaKey || event.ctrlKey) && event.key === "f" && !event.altKey && !event.shiftKey) {
         event.preventDefault();
-        const cache = scrollbackCache();
-        if (cache && cache.total > 0) {
-          if (!scrollbackVisible()) setScrollbackVisible(true);
-          setVtLogSearchVisible(true);
-        } else {
-          setSearchVisible(true);
-        }
+        setSearchVisible(true);
         return false;
       }
 
-      // Escape closes whichever search bar is currently visible. VtLog
-      // search takes precedence when both are flagged (shouldn't normally
-      // happen but defensive).
-      if (event.type === "keydown" && event.key === "Escape" && (searchVisible() || vtLogSearchVisible())) {
+      // Escape closes the search bar.
+      if (event.type === "keydown" && event.key === "Escape" && searchVisible()) {
         event.preventDefault();
-        if (vtLogSearchVisible()) {
-          setVtLogSearchVisible(false);
-        } else {
-          setSearchVisible(false);
-        }
+        setSearchVisible(false);
         return false;
       }
 
@@ -1522,39 +1394,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // Return false → suppress xterm scroll (overlay handles it or activates).
     // Return true  → let xterm handle the wheel normally.
     //
-    // Gate rules for activation (both must pass):
-    //   1. xterm's active buffer is already at the top (`viewportY === 0`)
-    //      — i.e. xterm has nothing more to show above the current view.
-    //   2. VtLog has strictly more rows than xterm's current buffer length
-    //      (`cache.total > buf.length`) — i.e. there IS additional history
-    //      beyond what xterm is already rendering.
-    //
-    // In alt-screen mode (TUIs like Claude), xterm's alt buffer has no
-    // scrollback, so `viewportY === 0` is always true and `buf.length === rows`
-    // — the overlay opens on the very first wheel-up.
-    terminal.attachCustomWheelEventHandler((ev: WheelEvent): boolean => {
-      // Overlay already visible → suppress xterm scroll entirely
-      if (scrollbackVisible()) return false;
-      // Only wheel-up triggers overlay
-      if (ev.deltaY >= 0) return true;
-      const cache = scrollbackCache();
-      if (!cache) return true;
-      const buf = terminal!.buffer.active;
-      const atTopOfXterm = buf.viewportY === 0;
-      // In alt-screen (Ink TUIs like Claude Code), xterm's alt buffer has
-      // zero scrollback and buf.length === rows. Any VtLog history is "extra".
-      // In normal mode, VtLog must exceed xterm's own buffer to be useful.
-      const isAltScreen = buf.type === "alternate";
-      const hasExtraHistory = isAltScreen ? cache.total > 0 : cache.total > buf.length;
-      if (!atTopOfXterm || !hasExtraHistory) return true;
-      appLogger.info(
-        "terminal",
-        `wheel: opening overlay — total=${cache.total} xtermLen=${buf.length} bufType=${buf.type}`,
-      );
-      setScrollbackVisible(true);
-      return false;
-    });
-
     viewportLock.attach(
       containerRef,
       (line) => terminal!.scrollToLine(line),
@@ -1707,11 +1546,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
         // (CC needs them) but don't clear awaitingInput.
         const isFocusReport = data === "\x1b[I" || data === "\x1b[O";
         if (!isFocusReport) {
-          // Any real user keystroke dismisses the scrollback overlay so
-          // focus returns to the live xterm viewport.
-          if (scrollbackVisible()) setScrollbackVisible(false);
-          if (vtLogSearchVisible()) setVtLogSearchVisible(false);
-          if (scrollbackActiveMatch()) setScrollbackActiveMatch(null);
           if (terminalsStore.get(props.id)?.awaitingInput) {
             terminalsStore.clearAwaitingInput(props.id);
           }
@@ -1948,7 +1782,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
     const size = perTerminalSize ?? defaultSize;
     terminal.options.fontSize = size;
     terminal.options.lineHeight = snapLineHeight(size);
-    setFontVersion((v) => v + 1);
     doFit();
   });
 
@@ -1981,12 +1814,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
     unlistenParsed = undefined;
     unlistenKitty?.();
     unlistenKitty = undefined;
-    unlistenVtLogTotal?.();
-    unlistenVtLogTotal = undefined;
-    setScrollbackCache(null);
-    setScrollbackVisible(false);
-    setVtLogSearchVisible(false);
-    setScrollbackActiveMatch(null);
     kittyFlags = 0;
 
     // Resume reader if paused (don't leave PTY blocked after unmount)
@@ -2086,16 +1913,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
           terminal?.focus();
         }}
       />
-      <VtLogSearch
-        visible={vtLogSearchVisible()}
-        sessionId={currentSessionId()}
-        onActiveMatchChange={setScrollbackActiveMatch}
-        onClose={() => {
-          setVtLogSearchVisible(false);
-          // Keep the overlay open so the user can wheel / scroll through
-          // history after dismissing the find bar — matches xterm search UX.
-        }}
-      />
       <Show when={reconnecting()}>
         {(info) => (
           <div class={s.reconnectBanner}>
@@ -2114,34 +1931,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
         class={s.content}
         style={{ width: "100%", height: "100%", opacity: fitted() ? 1 : 0 }}
       />
-      <Show when={scrollbackCache()}>
-        {(cache) => (
-          <ScrollbackOverlay
-            cache={cache()}
-            visible={scrollbackVisible()}
-            activeMatch={scrollbackActiveMatch()}
-            containerRef={(el) => { scrollbackContainerEl = el; }}
-            fontVersion={fontVersion()}
-            searchVisible={vtLogSearchVisible()}
-            onReachBottom={() => {
-              setScrollbackVisible(false);
-              setVtLogSearchVisible(false);
-              setScrollbackActiveMatch(null);
-              terminal?.focus();
-            }}
-            onClose={() => {
-              setScrollbackVisible(false);
-              setVtLogSearchVisible(false);
-              setScrollbackActiveMatch(null);
-              terminal?.focus();
-            }}
-            onCloseSearch={() => {
-              setVtLogSearchVisible(false);
-              setScrollbackActiveMatch(null);
-            }}
-          />
-        )}
-      </Show>
     </div>
   );
 };
