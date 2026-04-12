@@ -127,14 +127,16 @@ export class ScrollbackCache {
   // --- lookups ---
 
   /** Returns the cached line at absolute offset `offset`, or `undefined`
-   *  if that line is not currently loaded. Touches the chunk as MRU. */
+   *  if that line is not currently loaded.
+   *
+   *  Does NOT touch LRU order — the render loop calls getLine() ~56 times
+   *  per frame for visible rows, and the delete+re-insert churn is wasteful.
+   *  LRU promotion is handled by `ensureLoaded()` which is always called
+   *  before rendering via the progressive-load effect. */
   getLine(offset: number): LogLine | undefined {
     const idx = Math.floor(offset / this.chunkSize);
     const chunk = this.chunks.get(idx);
     if (!chunk) return undefined;
-    // Touch LRU position: delete + re-insert moves to tail (MRU).
-    this.chunks.delete(idx);
-    this.chunks.set(idx, chunk);
     const relative = offset - chunk.startOffset;
     return chunk.lines[relative];
   }
