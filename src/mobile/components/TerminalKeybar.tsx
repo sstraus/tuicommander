@@ -11,13 +11,14 @@ interface TerminalKeybarProps {
   /** True when the question was detected with high confidence (Ink menu footer) */
   questionConfident?: boolean;
   onCommandWidgetOpen?: () => void;
+  /** Request to prefill "/" in CommandInput and focus it. */
+  onSlashRequest?: () => void;
 }
 
 interface KeyDef { label: string; seq: string; danger?: boolean; autoEnter?: boolean; confirm?: boolean }
 
 const STANDARD_KEYS: KeyDef[] = [
   { label: "Ctrl+C", seq: "\x03", danger: true },
-  { label: "Ctrl+D", seq: "\x04" },
   { label: "Tab", seq: "\t" },
   { label: "Esc", seq: "\x1b" },
   { label: "\u2191", seq: "\x1b[A" },
@@ -69,11 +70,11 @@ export function TerminalKeybar(props: TerminalKeybarProps) {
   }
 
   function handleSlash() {
-    // Escape dismisses any open slash menu (and clears the "/" from the agent's
-    // input buffer), then "/" starts a fresh menu. Without Escape, a second press
-    // appends "/" → "//" which the agent ignores.
-    send("\x1b");
-    send("/");
+    // Focus the CommandInput with "/" prefilled — the CommandInput handles
+    // PTY sync and slash menu display. We send Escape first to dismiss any
+    // currently open slash menu on the agent side.
+    void send("\x1b");
+    props.onSlashRequest?.();
   }
 
   const confirmKeys = () => getConfirmKeys(props.agentType, props.questionConfident);

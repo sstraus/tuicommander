@@ -3,10 +3,6 @@ import { render, fireEvent, cleanup } from "@solidjs/testing-library";
 import { SlashMenuOverlay } from "../components/SlashMenuOverlay";
 import type { SlashMenuItem } from "../useSessions";
 
-vi.mock("../../transport", () => ({
-  rpc: vi.fn().mockResolvedValue(undefined),
-}));
-
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -21,7 +17,7 @@ const ITEMS: SlashMenuItem[] = [
 describe("SlashMenuOverlay", () => {
   it("renders a button for each menu item", () => {
     const { container } = render(() => (
-      <SlashMenuOverlay sessionId="s1" items={ITEMS} onSelect={() => {}} onDismiss={() => {}} />
+      <SlashMenuOverlay items={ITEMS} onSelect={() => {}} />
     ));
     const buttons = container.querySelectorAll("button");
     expect(buttons.length).toBe(3);
@@ -29,7 +25,7 @@ describe("SlashMenuOverlay", () => {
 
   it("displays command and description text", () => {
     const { container } = render(() => (
-      <SlashMenuOverlay sessionId="s1" items={ITEMS} onSelect={() => {}} onDismiss={() => {}} />
+      <SlashMenuOverlay items={ITEMS} onSelect={() => {}} />
     ));
     const buttons = container.querySelectorAll("button");
     expect(buttons[0].textContent).toContain("/help");
@@ -37,45 +33,30 @@ describe("SlashMenuOverlay", () => {
     expect(buttons[1].textContent).toContain("/review");
   });
 
-  it("calls onSelect with command and dismisses on click", async () => {
-    const onDismiss = vi.fn();
+  it("calls onSelect with command on click", async () => {
     const onSelect = vi.fn();
     const { container } = render(() => (
-      <SlashMenuOverlay sessionId="s1" items={ITEMS} onSelect={onSelect} onDismiss={onDismiss} />
+      <SlashMenuOverlay items={ITEMS} onSelect={onSelect} />
     ));
     const buttons = container.querySelectorAll("button");
     await fireEvent.click(buttons[1]); // click /review
     expect(onSelect).toHaveBeenCalledWith("/review");
-    expect(onDismiss).toHaveBeenCalled();
   });
 
-  it("calls onDismiss when backdrop is clicked", async () => {
-    const onDismiss = vi.fn();
+  it("highlights the item with highlighted=true", () => {
     const { container } = render(() => (
-      <SlashMenuOverlay sessionId="s1" items={ITEMS} onSelect={() => {}} onDismiss={onDismiss} />
+      <SlashMenuOverlay items={ITEMS} onSelect={() => {}} />
     ));
-    // The backdrop is the outermost div
-    const backdrop = container.firstElementChild as HTMLElement;
-    await fireEvent.click(backdrop);
-    expect(onDismiss).toHaveBeenCalled();
-  });
-
-  it("does NOT dismiss when clicking inside the sheet", async () => {
-    const onDismiss = vi.fn();
-    const { container } = render(() => (
-      <SlashMenuOverlay sessionId="s1" items={ITEMS} onSelect={() => {}} onDismiss={onDismiss} />
-    ));
-    // Click a button — onDismiss is called from select(), not from backdrop
-    vi.clearAllMocks(); // clear any prior calls
-    // Click inside the sheet (not the backdrop)
-    const sheet = container.querySelector("button")!.parentElement!;
-    await fireEvent.click(sheet);
-    expect(onDismiss).not.toHaveBeenCalled();
+    const buttons = container.querySelectorAll("button");
+    // /review has highlighted: true
+    expect(buttons[1].className).toContain("Highlighted");
+    // /help does not
+    expect(buttons[0].className).not.toContain("Highlighted");
   });
 
   it("renders empty list when no items", () => {
     const { container } = render(() => (
-      <SlashMenuOverlay sessionId="s1" items={[]} onSelect={() => {}} onDismiss={() => {}} />
+      <SlashMenuOverlay items={[]} onSelect={() => {}} />
     ));
     const buttons = container.querySelectorAll("button");
     expect(buttons.length).toBe(0);

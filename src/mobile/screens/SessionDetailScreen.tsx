@@ -2,7 +2,6 @@ import { Show, createSignal, createEffect, onCleanup } from "solid-js";
 import { StatusBadge } from "../components/StatusBadge";
 import { OutputView } from "../components/OutputView";
 import { SuggestChips } from "../components/SuggestChips";
-import { SlashMenuOverlay } from "../components/SlashMenuOverlay";
 import { CommandWidget } from "../components/CommandWidget";
 import { CommandInput } from "../components/CommandInput";
 import { TerminalKeybar } from "../components/TerminalKeybar";
@@ -49,25 +48,13 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
   const [ideasOpen, setIdeasOpen] = createSignal(false);
 
   // Prefill value for CommandInput (set by slash menu selection).
-  // Counter ensures the effect re-fires even when the same command is selected twice.
-  const [inputPrefill, setInputPrefill] = createSignal<{ text: string; seq: number }>({ text: "", seq: 0 });
-  let prefillSeq = 0;
+  const [inputPrefill] = createSignal<{ text: string; seq: number }>({ text: "", seq: 0 });
 
   // PTY input line synced from WebSocket (what's on the terminal prompt)
   const [ptyInputLine, setPtyInputLine] = createSignal<string | null>(null);
 
-  // Local dismiss flag for the slash menu overlay (resets when new items arrive)
-  const [slashMenuDismissed, setSlashMenuDismissed] = createSignal(false);
-  let lastSlashMenuItems: unknown = null;
-  const showSlashMenu = () => {
-    const items = sessionState()?.slash_menu_items;
-    // Reset dismiss flag when items change
-    if (items !== lastSlashMenuItems) {
-      lastSlashMenuItems = items;
-      setSlashMenuDismissed(false);
-    }
-    return !slashMenuDismissed() && items != null && items.length > 0;
-  };
+  // Registered by CommandInput so TerminalKeybar can trigger slash mode
+  let slashTrigger: (() => void) | undefined;
 
   // Live countdown for rate limit retry_after_ms
   const [retryRemaining, setRetryRemaining] = createSignal(0);
@@ -242,16 +229,9 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
         awaitingInput={sessionState()?.awaiting_input}
         questionConfident={sessionState()?.question_confident}
         onCommandWidgetOpen={() => setCommandWidgetOpen(true)}
+        onSlashRequest={() => slashTrigger?.()}
       />
-      <CommandInput sessionId={props.session.session_id} prefillValue={inputPrefill()} ptyInputLine={ptyInputLine()} agentType={sessionState()?.agent_type as string | null | undefined} />
-      <Show when={showSlashMenu()}>
-        <SlashMenuOverlay
-          sessionId={props.session.session_id}
-          items={sessionState()!.slash_menu_items!}
-          onSelect={(cmd) => setInputPrefill({ text: cmd, seq: ++prefillSeq })}
-          onDismiss={() => setSlashMenuDismissed(true)}
-        />
-      </Show>
+      <CommandInput sessionId={props.session.session_id} prefillValue={inputPrefill()} ptyInputLine={ptyInputLine()} agentType={sessionState()?.agent_type ?? null} slashItems={sessionState()?.slash_menu_items} onRegisterTrigger={(fn) => { slashTrigger = fn; }} />
       <Show when={commandWidgetOpen()}>
         <CommandWidget
           sessionId={props.session.session_id}

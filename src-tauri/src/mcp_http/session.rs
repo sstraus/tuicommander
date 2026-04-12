@@ -103,7 +103,25 @@ pub(super) async fn write_to_session(
     let line_submitted = actions.iter().any(|a| {
         matches!(a, crate::input_line_buffer::InputAction::Line(_) | crate::input_line_buffer::InputAction::Interrupt)
     });
-    let in_slash = if line_submitted { false } else { buf.content().starts_with('/') };
+    // Determine slash mode. The InputLineBuffer may accumulate junk from
+    // terminal responses (e.g. DA reply "1;2c"), so buf.content() alone is
+    // unreliable. Use multiple signals:
+    let in_slash = if line_submitted {
+        false
+    } else if buf.content().starts_with('/') {
+        true
+    } else if body.data == "/" {
+        // Fresh slash keystroke from PWA — always enters slash mode
+        true
+    } else {
+        // Maintain current slash_mode for subsequent chars (delta sync sends
+        // one char at a time after the initial "/"), unless dismissed
+        let dismissed = body.data.contains('\x1b') || body.data.contains('\x03');
+        !dismissed
+            && state.slash_mode.get(&session_id)
+                .is_some_and(|v| v.load(std::sync::atomic::Ordering::Relaxed))
+    };
+    tracing::debug!("write_pty slash_mode: in_slash={in_slash} buf='{}' data='{}'", buf.content(), body.data);
     state
         .slash_mode
         .entry(session_id.clone())

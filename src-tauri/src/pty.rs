@@ -1041,16 +1041,21 @@ impl ChunkProcessor {
         // of the screen before scanning, because the menu renders above the
         // prompt line (separator + ❯ + status bar) and the parser scans
         // bottom-up, breaking on the first non-matching row.
-        if state.slash_mode.get(session_id)
-            .is_some_and(|v| v.load(std::sync::atomic::Ordering::Relaxed))
-            && let Some(vt_log) = state.vt_log_buffers.get(session_id)
-        {
-            let screen = vt_log.lock().screen_rows();
-            let refs: Vec<&str> = screen.iter().map(|s| s.as_str()).collect();
-            let cutoff = crate::chrome::find_chrome_cutoff(&refs).unwrap_or(screen.len());
-            let trimmed: Vec<String> = screen[..cutoff].to_vec();
-            if let Some(evt) = crate::output_parser::parse_slash_menu(&trimmed) {
-                events.push(evt);
+        // Slash menu detection — use full screen rows (not chrome-trimmed).
+        // Claude Code v2.1+ renders autocomplete items BELOW the prompt chrome,
+        // so trimming to above-chrome would discard the menu. parse_slash_menu
+        // scans bottom-up, skips empty rows, and stops at the first non-matching
+        // row (separator/chrome), so it safely finds items regardless of position.
+        let slash_on = state.slash_mode.get(session_id)
+            .is_some_and(|v| v.load(std::sync::atomic::Ordering::Relaxed));
+        if slash_on {
+            if let Some(vt_log) = state.vt_log_buffers.get(session_id) {
+                let screen = vt_log.lock().screen_rows();
+                let menu = crate::output_parser::parse_slash_menu(&screen);
+                tracing::debug!("slash_menu parse: sid={session_id} found={} rows={}", menu.is_some(), screen.len());
+                if let Some(evt) = menu {
+                    events.push(evt);
+                }
             }
         }
 
@@ -2174,10 +2179,13 @@ pub(crate) async fn write_pty(
         }
 
         // Track slash command mode: true when the input buffer starts with /
+        // Fallback: when ESC is sent before "/" (TerminalKeybar's handleSlash),
+        // the InputLineBuffer consumes "/" as an unknown escape-sequence suffix
+        // and never inserts it. Detect bare "/" writes that the buffer missed.
         let in_slash = if line_submitted {
             false
         } else {
-            buf.content().starts_with('/')
+            buf.content().starts_with('/') || (buf.content().is_empty() && data == "/")
         };
         state
             .slash_mode

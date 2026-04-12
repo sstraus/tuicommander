@@ -3127,8 +3127,8 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
 
     #[test]
     fn test_slash_menu_fails_with_chrome_below() {
-        // Without chrome trimming, the parser would fail because it scans
-        // bottom-up and hits the prompt/status bar before the menu rows.
+        // When chrome is at the very bottom (below menu), the parser can't
+        // reach the menu items because it breaks on the status bar row.
         let mut screen: Vec<String> = vec![String::new(); 18];
         screen.push("  /help      Get help with using Claude Code".to_string());
         screen.push("  /review    Review your code".to_string());
@@ -3138,6 +3138,40 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         screen.push("────────────────────────────────────────".to_string());
         screen.push("  [Opus 4.6 | Max] project git:(main)".to_string());
         assert!(parse_slash_menu(&screen).is_none(), "untrimmed chrome should prevent detection");
+    }
+
+    #[test]
+    fn test_slash_menu_below_chrome_cc_v2() {
+        // Claude Code v2.1+ renders the autocomplete menu BELOW the prompt
+        // chrome. The parser receives the full (untrimmed) screen and must
+        // find the menu items by scanning bottom-up past trailing empties.
+        let mut screen: Vec<String> = vec![String::new(); 4]; // banner rows
+        screen[0] = "➜  tuicommander git:(main) ✗ c".into();
+        screen[1] = " ▐▛███▜▌   Claude Code v2.1.104".into();
+        screen[2] = "▝▜█████▛▘  Opus 4.6".into();
+        screen[3] = "  ▘▘ ▝▝    ~/Gits/personal/tuicommander".into();
+        screen.push(String::new()); // empty
+        screen.push("─────────────────────────────────────────────────".into());
+        screen.push("❯ /".into());
+        screen.push("─────────────────────────────────────────────────".into());
+        screen.push("/wiz:plan                             (wiz) Transform feature descriptions into well-structured project plans".into());
+        screen.push("/wiz:work                             (wiz) Execute work plans efficiently while maintaining quality".into());
+        screen.push("/wiz:review                           (wiz) Exhaustive multi-agent code review for PRs".into());
+        screen.push("/wiz:stories                          (wiz) Persistent file-based task tracking".into());
+        screen.push("/add-dir                              Add a new working directory".into());
+        // Trailing empty rows (terminal padding)
+        for _ in 0..20 {
+            screen.push(String::new());
+        }
+        let evt = parse_slash_menu(&screen).expect("should detect menu below chrome");
+        match evt {
+            ParsedEvent::SlashMenu { items } => {
+                assert_eq!(items.len(), 5);
+                assert_eq!(items[0].command, "/wiz:plan");
+                assert_eq!(items[4].command, "/add-dir");
+            }
+            _ => panic!("Expected SlashMenu event"),
+        }
     }
 
     // ── ActiveSubtasks tests ──────────────────────────────────────────

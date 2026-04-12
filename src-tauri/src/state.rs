@@ -1787,14 +1787,15 @@ impl VtLogBuffer {
         lines
     }
 
-    /// Extract the user-typed text from the prompt line, excluding ghost/dim text.
-    /// Scans from the bottom for `❯` or `>` prompt, then collects non-dim cell contents.
+    /// Extract the user-typed text from the prompt line, excluding ghost/suggestion text.
+    /// Uses the cursor position as the boundary — everything after the cursor is suggestion.
+    /// Falls back to dim-detection when the cursor is not on a prompt row.
     pub fn prompt_input_text(&self) -> Option<String> {
         let screen = self.parser.screen();
         let (rows, cols) = screen.size();
+        let (cursor_row, cursor_col) = screen.cursor_position();
         // Scan from bottom to find prompt row
         for row in (0..rows).rev() {
-            // Check first non-space cell for prompt character
             let row_text: String = (0..cols)
                 .filter_map(|c| screen.cell(row, c).map(|cell| cell.contents()))
                 .collect::<Vec<_>>()
@@ -1803,17 +1804,17 @@ impl VtLogBuffer {
             if !(trimmed.starts_with('❯') || trimmed == ">" || trimmed.starts_with("> ")) {
                 continue;
             }
-            // Found prompt row — collect non-dim text after prompt char
+            // Found prompt row — collect text after prompt char up to cursor or dim boundary
+            let col_limit = if row == cursor_row { cursor_col } else { cols };
             let mut result = String::new();
             let mut past_prompt = false;
-            for col in 0..cols {
+            for col in 0..col_limit {
                 let Some(cell) = screen.cell(row, col) else { break };
                 if cell.is_wide_continuation() {
                     continue;
                 }
                 let ch = cell.contents();
                 if !past_prompt {
-                    // Skip until after prompt char(s) and space
                     if ch == "❯" || ch == "›" || ch == ">" {
                         past_prompt = true;
                         continue;
@@ -1824,11 +1825,9 @@ impl VtLogBuffer {
                     past_prompt = true;
                 }
                 if past_prompt && ch.trim().is_empty() && result.is_empty() {
-                    // Skip leading spaces after prompt
                     continue;
                 }
                 if cell.dim() {
-                    // Ghost/suggestion text — stop collecting
                     break;
                 }
                 result.push_str(ch);

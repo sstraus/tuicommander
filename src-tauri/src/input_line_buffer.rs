@@ -1637,6 +1637,21 @@ mod tests {
         assert!(!buf.content().starts_with('/'));
     }
 
+    /// TerminalKeybar sends ESC then "/" as separate writes to dismiss any
+    /// open menu before starting a fresh one. The ESC puts the buffer into
+    /// escape state, and "/" is consumed as an unknown escape-sequence suffix
+    /// — so buf.content() stays empty. The write handler compensates with a
+    /// fallback: `buf.content().is_empty() && data == "/"`.
+    #[test]
+    fn test_esc_then_slash_drops_slash_from_buffer() {
+        let mut buf = InputLineBuffer::new();
+        buf.feed("\x1b"); // Write 1: Escape → esc_state = Esc
+        buf.feed("/");    // Write 2: "/" consumed as unknown ESC sequence
+        // Buffer is empty — "/" was NOT inserted
+        assert!(buf.content().is_empty());
+        assert!(!buf.content().starts_with('/'));
+    }
+
     /// Simulate the exact sequence sendCommand() uses for cache-keepalive:
     ///   write 1: Ctrl-U + "[noop] reply ."
     ///   write 2: "\r"

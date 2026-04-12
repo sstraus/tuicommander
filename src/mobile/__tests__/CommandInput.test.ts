@@ -12,63 +12,185 @@ const tsx = readFileSync(
   "utf-8",
 );
 
-describe("CommandInput no live-sync to PTY", () => {
-  it("handleInput does NOT write to PTY (no debouncedSync)", () => {
-    // Mobile CommandInput must never live-sync to PTY — this caused echo duplication.
-    // Input is only written on explicit send().
-    expect(tsx).not.toContain("debouncedSync");
-    expect(tsx).not.toContain("syncToPty");
-    const handleInputBlock = tsx.match(/function handleInput[\s\S]*?^  \}/m);
-    expect(handleInputBlock, "handleInput function not found").toBeTruthy();
-    expect(handleInputBlock![0]).not.toContain("rpc(");
+/**
+ * Extract the sync logic for unit testing. The delta algorithm is pure:
+ * given oldText (what PTY has) and newText (what we want), compute the
+ * minimal sequence of writes (append, backspace, or clear+retype).
+ */
+function computeDelta(oldText: string, newText: string): string {
+  if (newText.startsWith(oldText)) {
+    return newText.slice(oldText.length);
+  } else if (oldText.startsWith(newText)) {
+    const count = oldText.length - newText.length;
+    return "\x7f".repeat(count);
+  } else {
+    return "\x7f".repeat(oldText.length) + newText;
+  }
+}
+
+describe("CommandInput delta sync algorithm", () => {
+  it("appends characters when new text extends old", () => {
+    expect(computeDelta("/", "/wiz")).toBe("wiz");
+    expect(computeDelta("/wiz", "/wiz:plan")).toBe(":plan");
+    expect(computeDelta("", "/")).toBe("/");
+  });
+
+  it("sends backspaces when characters are deleted", () => {
+    expect(computeDelta("/wiz", "/wi")).toBe("\x7f");
+    expect(computeDelta("/wiz:plan", "/wiz")).toBe("\x7f\x7f\x7f\x7f\x7f");
+    expect(computeDelta("/", "")).toBe("\x7f");
+  });
+
+  it("deletes all then retypes for complex edits (no common prefix)", () => {
+    // /pla → /wiz:changelog (different after /)
+    const delta = computeDelta("/pla", "/wiz:changelog");
+    // Should be: 4 backspaces (delete "/pla") + "/wiz:changelog"
+    expect(delta).toBe("\x7f\x7f\x7f\x7f/wiz:changelog");
+  });
+
+  it("handles slash menu selection: /pl → /wiz:plan (space)", () => {
+    const delta = computeDelta("/pl", "/wiz:plan ");
+    expect(delta).toBe("\x7f\x7f\x7f/wiz:plan ");
+  });
+
+  it("handles empty to command", () => {
+    const delta = computeDelta("", "/wiz:plan ");
+    expect(delta).toBe("/wiz:plan ");
+  });
+
+  it("handles same text (no-op)", () => {
+    expect(computeDelta("/wiz", "/wiz")).toBe("");
+  });
+});
+
+describe("CommandInput sync state management", () => {
+  // Simulate the sync flow with a simple state machine
+  class SyncSimulator {
+    syncedText = "";
+    lastWriteAt = 0;
+    writes: string[] = [];
+
+    writePty(data: string) {
+      this.lastWriteAt = Date.now();
+      this.writes.push(data);
+    }
+
+    syncDelta(newText: string) {
+      const oldText = this.syncedText;
+      if (newText.startsWith(oldText)) {
+        const delta = newText.slice(oldText.length);
+        if (delta) this.writePty(delta);
+      } else if (oldText.startsWith(newText)) {
+        const count = oldText.length - newText.length;
+        this.writePty("\x7f".repeat(count));
+      } else {
+        this.writePty("\x7f".repeat(oldText.length) + newText);
+      }
+      this.syncedText = newText;
+    }
+
+    /** Simulate PTY echo arriving */
+    receivePtyInput(text: string) {
+      if (text === this.syncedText) return "skip"; // echo dedup
+      const recentWrite = Date.now() - this.lastWriteAt < 500;
+      if (!recentWrite) {
+        this.syncedText = text;
+      }
+      return recentWrite ? "display-only" : "full-update";
+    }
+  }
+
+  it("typing / then selecting /wiz:plan does not produce double slash", () => {
+    const sim = new SyncSimulator();
+
+    // User types /
+    sim.syncDelta("/");
+    expect(sim.syncedText).toBe("/");
+    expect(sim.writes).toEqual(["/"]);
+
+    // PTY echoes back / (within 500ms)
+    const result = sim.receivePtyInput("/");
+    expect(result).toBe("skip"); // exact match — skipped entirely
+
+    // User selects /wiz:plan from menu
+    sim.syncDelta("/wiz:plan ");
+    expect(sim.syncedText).toBe("/wiz:plan ");
+    // Should append "wiz:plan " (not send the full command with double /)
+    expect(sim.writes).toEqual(["/", "wiz:plan "]);
+  });
+
+  it("typing /pl then selecting /wiz:plan sends correct backspaces", () => {
+    const sim = new SyncSimulator();
+
+    sim.syncDelta("/");
+    sim.syncDelta("/p");
+    sim.syncDelta("/pl");
+    expect(sim.syncedText).toBe("/pl");
+
+    // Select /wiz:plan — different prefix, needs backspace+retype
+    sim.syncDelta("/wiz:plan ");
+    expect(sim.writes[sim.writes.length - 1]).toBe("\x7f\x7f\x7f/wiz:plan ");
+  });
+
+  it("PTY redraw during interaction does not corrupt syncedText", () => {
+    const sim = new SyncSimulator();
+
+    // User types /pl
+    sim.syncDelta("/");
+    sim.syncDelta("/p");
+    sim.syncDelta("/pl");
+    expect(sim.syncedText).toBe("/pl");
+
+    // PTY sends empty during menu redraw (within 500ms of our write)
+    const result = sim.receivePtyInput("");
+    expect(result).toBe("display-only"); // recent write → don't update syncedText
+    expect(sim.syncedText).toBe("/pl"); // NOT reset to ""
+
+    // User selects /wiz:plan — delta computed from /pl, not ""
+    sim.syncDelta("/wiz:plan ");
+    expect(sim.writes[sim.writes.length - 1]).toBe("\x7f\x7f\x7f/wiz:plan ");
+  });
+
+  it("terminal input updates syncedText after echo window", async () => {
+    const sim = new SyncSimulator();
+    // Force lastWriteAt to be old
+    sim.lastWriteAt = Date.now() - 1000;
+
+    // Terminal sends "hello" — not from PWA
+    const result = sim.receivePtyInput("hello");
+    expect(result).toBe("full-update");
+    expect(sim.syncedText).toBe("hello");
+
+    // Now if PWA user types, delta is computed from "hello"
+    sim.syncDelta("hello world");
+    expect(sim.writes[sim.writes.length - 1]).toBe(" world");
+  });
+});
+
+describe("CommandInput code structure", () => {
+  it("uses live delta sync (syncDelta), not sendCommand for slash", () => {
+    expect(tsx).toContain("syncDelta");
   });
 
   it("agentType prop is declared in CommandInputProps", () => {
     expect(tsx).toContain("agentType?: string | null");
   });
-});
 
-describe("CommandInput send() agent-aware write splitting", () => {
-  it("send() delegates to shared sendCommand utility", () => {
-    // Agent-aware write splitting is handled by the shared sendCommand utility.
-    // CommandInput passes agentType so Ink agents get split writes.
-    expect(tsx).toContain("sendCommand");
-    expect(tsx).toContain("props.agentType");
-  });
-
-  it("sendCommand is imported from shared utils", () => {
-    expect(tsx).toContain('from "../../utils/sendCommand"');
-  });
-});
-
-describe("CommandInput slash trigger", () => {
-  it("writes / to PTY immediately when input becomes /", () => {
-    // When the user types / as the first character, the mobile CommandInput
-    // must write it to the PTY so the agent can activate its slash menu.
-    // This is the one exception to the "no live sync" rule.
-    expect(tsx).toContain("writeSlashToPty");
-  });
-
-  it("clears the input after sending slash to PTY", () => {
-    // After writing / to PTY, the input should be cleared so the user
-    // doesn't see a stale / while the slash menu loads.
-    const fnBlock = tsx.match(/writeSlashToPty[\s\S]*?(?=\n  function |\n  async function |\n  return \()/);
-    expect(fnBlock, "writeSlashToPty function not found").toBeTruthy();
-    expect(fnBlock![0]).toContain('setValue("")');
+  it("Tab key sends \\t to PTY instead of changing focus", () => {
+    expect(tsx).toContain('"Tab"');
+    expect(tsx).toContain("\\t");
   });
 });
 
 describe("CommandInput iOS auto-zoom prevention", () => {
   it("input font-size is >= 16px to prevent iOS auto-zoom", () => {
-    // iOS Safari zooms when the focused input has font-size < 16px.
     const match = css.match(/\.input\s*\{[^}]*font-size:\s*(\d+)px/s);
-    expect(match, "font-size not found in .input rule of CommandInput.module.css").toBeTruthy();
+    expect(match, "font-size not found in .input rule").toBeTruthy();
     const fontSizePx = parseInt(match![1], 10);
     expect(fontSizePx).toBeGreaterThanOrEqual(16);
   });
 
   it('input element has inputmode="text"', () => {
-    // inputmode="text" prevents keyboard layout switching on mobile.
     expect(tsx).toContain('inputmode="text"');
   });
 });
