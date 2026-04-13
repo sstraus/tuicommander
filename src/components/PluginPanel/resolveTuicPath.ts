@@ -1,8 +1,18 @@
-import { normalize } from "path";
-
 export interface ResolvedPath {
   repoPath: string;
   relPath: string;
+}
+
+/** Normalize a POSIX path: resolve . and .. segments, collapse multiple slashes */
+function normalizePath(p: string): string {
+  const parts = p.split("/");
+  const out: string[] = [];
+  for (const seg of parts) {
+    if (seg === "." || seg === "") continue;
+    if (seg === "..") { out.pop(); continue; }
+    out.push(seg);
+  }
+  return (p.startsWith("/") ? "/" : "") + out.join("/");
 }
 
 /**
@@ -32,7 +42,7 @@ export function resolveTuicPath(
   // Relative path — needs an active repo
   if (!activeRepoPath) return null;
 
-  const absoluteResolved = normalize(activeRepoPath + "/" + path);
+  const absoluteResolved = normalizePath(activeRepoPath + "/" + path);
 
   // Guard: resolved path must stay within the repo root
   if (
