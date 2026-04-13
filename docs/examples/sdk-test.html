@@ -100,6 +100,41 @@
   <div id="log"></div>
 
   <script>
+    // ── URL-mode bootstrap: if SDK wasn't injected, set up handshake ──
+    if (!window.tuic) {
+      (function(){
+        var _activeRepo=null, _repoListeners=[], _filePending={}, _reqId=0;
+        var _msgListeners=[], _theme=null, _themeListeners=[];
+        window.tuic={
+          version:"1.0",
+          open:function(p,o){parent.postMessage({type:"tuic:open",path:p,pinned:!!(o&&o.pinned)},"*");},
+          edit:function(p,o){parent.postMessage({type:"tuic:edit",path:p,line:(o&&o.line)||0},"*");},
+          terminal:function(r){parent.postMessage({type:"tuic:terminal",repoPath:r},"*");},
+          activeRepo:function(){return _activeRepo;},
+          onRepoChange:function(cb){if(typeof cb==="function")_repoListeners.push(cb);},
+          offRepoChange:function(cb){_repoListeners=_repoListeners.filter(function(f){return f!==cb;});},
+          toast:function(t,o){parent.postMessage({type:"tuic:toast",title:t,message:(o&&o.message)||"",level:(o&&o.level)||"info"},"*");},
+          clipboard:function(t){parent.postMessage({type:"tuic:clipboard",text:t||""},"*");},
+          getFile:function(p){return new Promise(function(res,rej){var id=++_reqId;_filePending[id]={resolve:res,reject:rej};parent.postMessage({type:"tuic:get-file",path:p,requestId:id},"*");});},
+          onMessage:function(cb){if(typeof cb==="function")_msgListeners.push(cb);},
+          offMessage:function(cb){_msgListeners=_msgListeners.filter(function(f){return f!==cb;});},
+          send:function(d){parent.postMessage({type:"tuic:plugin-message",payload:d},"*");},
+          get theme(){return _theme;},
+          onThemeChange:function(cb){if(typeof cb==="function")_themeListeners.push(cb);},
+          offThemeChange:function(cb){_themeListeners=_themeListeners.filter(function(f){return f!==cb;});}
+        };
+        window.addEventListener("message",function(e){
+          if(!e.data||typeof e.data!=="object")return;
+          var t=e.data.type;
+          if(t==="tuic:repo-changed"){_activeRepo=e.data.repoPath||null;for(var i=0;i<_repoListeners.length;i++)try{_repoListeners[i](_activeRepo);}catch(x){}}
+          else if(t==="tuic:get-file-result"){var p=_filePending[e.data.requestId];if(p){delete _filePending[e.data.requestId];if(e.data.error)p.reject(new Error(e.data.error));else p.resolve(e.data.content);}}
+          else if(t==="tuic:host-message"){for(var j=0;j<_msgListeners.length;j++)try{_msgListeners[j](e.data.payload);}catch(x){}}
+          else if(t==="tuic:theme-changed"){_theme=e.data.theme||null;for(var k=0;k<_themeListeners.length;k++)try{_themeListeners[k](_theme);}catch(x){}}
+        });
+        parent.postMessage({type:"tuic:sdk-request"},"*");
+      })();
+    }
+
     // ── Logging ──
     var logEl = document.getElementById("log");
     function log(msg) {
