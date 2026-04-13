@@ -129,8 +129,8 @@ fn event_payload(event: &AppEvent) -> serde_json::Value {
         AppEvent::UpstreamStatusChanged { name, status } => {
             serde_json::json!({ "name": name, "status": status })
         }
-        AppEvent::McpToast { title, message, level } => {
-            serde_json::json!({ "title": title, "message": message, "level": level })
+        AppEvent::McpToast { title, message, level, sound } => {
+            serde_json::json!({ "title": title, "message": message, "level": level, "sound": sound })
         }
         AppEvent::DirChanged { dir_path } => {
             serde_json::json!({ "dir_path": dir_path })

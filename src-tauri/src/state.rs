@@ -66,6 +66,7 @@ pub enum AppEvent {
         title: String,
         message: Option<String>,
         level: String,
+        sound: bool,
     },
     /// Directory contents changed (non-git filesystem watcher)
     #[serde(rename = "dir-changed")]

@@ -199,7 +199,7 @@ Broadcasts server-side events to all browser/mobile clients. Supports optional `
 | `pty-exit` | `{session_id}` | PTY process exited |
 | `plugin-changed` | `{plugin_ids}` | Plugin(s) installed/removed/updated |
 | `upstream-status-changed` | `{name, status}` | MCP upstream server status change |
-| `mcp-toast` | `{title, message, level}` | Toast notification from MCP layer |
+| `mcp-toast` | `{title, message, level, sound}` | Toast notification from MCP layer |
 | `lagged` | `{missed}` | Client fell behind; N events were dropped |
 
 ### MCP Streamable HTTP

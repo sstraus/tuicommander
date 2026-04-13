@@ -52,8 +52,9 @@ describe("TUIC SDK Script", () => {
     expect(TUIC_SDK_SCRIPT).toContain("offRepoChange");
   });
 
-  it("defines toast method that sends tuic:toast message", () => {
+  it("defines toast method that sends tuic:toast message with sound option", () => {
     expect(TUIC_SDK_SCRIPT).toContain("tuic:toast");
+    expect(TUIC_SDK_SCRIPT).toContain("sound");
   });
 
   it("defines clipboard method that sends tuic:clipboard message", () => {

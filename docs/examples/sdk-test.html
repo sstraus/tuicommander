@@ -90,6 +90,7 @@
     <button class="btn" onclick="testToastInfo()">toast(info)</button>
     <button class="btn" onclick="testToastWarn()">toast(warn)</button>
     <button class="btn" onclick="testToastError()">toast(error)</button>
+    <button class="btn" onclick="testToastSound()">toast(info+sound)</button>
     <button class="btn" onclick="testClipboard()">clipboard("hello")</button>
     <button class="btn" onclick="testGetFile()">getFile("README.md")</button>
     <button class="btn" onclick="testGetFileTraversal()">getFile("../../etc/passwd")</button>
@@ -113,7 +114,7 @@
           activeRepo:function(){return _activeRepo;},
           onRepoChange:function(cb){if(typeof cb==="function")_repoListeners.push(cb);},
           offRepoChange:function(cb){_repoListeners=_repoListeners.filter(function(f){return f!==cb;});},
-          toast:function(t,o){parent.postMessage({type:"tuic:toast",title:t,message:(o&&o.message)||"",level:(o&&o.level)||"info"},"*");},
+          toast:function(t,o){parent.postMessage({type:"tuic:toast",title:t,message:(o&&o.message)||"",level:(o&&o.level)||"info",sound:!!(o&&o.sound)},"*");},
           clipboard:function(t){parent.postMessage({type:"tuic:clipboard",text:t||""},"*");},
           getFile:function(p){return new Promise(function(res,rej){var id=++_reqId;_filePending[id]={resolve:res,reject:rej};parent.postMessage({type:"tuic:get-file",path:p,requestId:id},"*");});},
           onMessage:function(cb){if(typeof cb==="function")_msgListeners.push(cb);},
@@ -329,6 +330,11 @@
     function testToastError() {
       log("tuic.toast('SDK Error', {message:'Error toast', level:'error'})");
       tuic.toast("SDK Error", { message: "Error level toast from plugin", level: "error" });
+    }
+
+    function testToastSound() {
+      log("tuic.toast('SDK Sound', {message:'Toast with sound', level:'info', sound:true})");
+      tuic.toast("SDK Sound", { message: "Toast with notification sound", level: "info", sound: true });
     }
 
     function testClipboard() {

@@ -30,7 +30,7 @@ export const TUIC_SDK_SCRIPT = `<script id="tuic-sdk">
     onRepoChange:function(cb){if(typeof cb==="function")_repoListeners.push(cb);},
     offRepoChange:function(cb){_repoListeners=_repoListeners.filter(function(f){return f!==cb;});},
     toast:function(title,opts){
-      parent.postMessage({type:"tuic:toast",title:title,message:(opts&&opts.message)||"",level:(opts&&opts.level)||"info"},"*");
+      parent.postMessage({type:"tuic:toast",title:title,message:(opts&&opts.message)||"",level:(opts&&opts.level)||"info",sound:!!(opts&&opts.sound)},"*");
     },
     clipboard:function(text){
       parent.postMessage({type:"tuic:clipboard",text:text||""},"*");

@@ -332,7 +332,8 @@ fn native_tool_definitions() -> serde_json::Value {
                 "pinned": { "type": "boolean", "description": "Pin tab across all branches (default true)" },
                 "focus": { "type": "boolean", "description": "Switch to this tab after open/update (action=tab, default true). Pass false to update silently without stealing focus." },
                 "message": { "type": "string", "description": "Optional body text (action=toast/confirm)" },
-                "level": { "type": "string", "description": "Toast level: info, warn, error (default: info)" }
+                "level": { "type": "string", "description": "Toast level: info, warn, error (default: info)" },
+                "sound": { "type": "boolean", "description": "Play a notification sound (action=toast, default: false). Each level has a distinct tone." }
             }, "required": ["action"] }
         },
         {
@@ -2020,10 +2021,12 @@ fn handle_notify(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Val
                     "Invalid level '{}'. Must be: info, warn, error", other
                 )}),
             };
+            let sound = args["sound"].as_bool().unwrap_or(false);
             let _ = state.event_bus.send(crate::state::AppEvent::McpToast {
                 title,
                 message,
                 level,
+                sound,
             });
             serde_json::json!({"ok": true})
         }

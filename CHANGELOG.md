@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - **TUIC SDK v1.0 expansion** — Plugin iframes now have access to the full SDK: `tuic.activeRepo()`, `tuic.onRepoChange()`, `tuic.getFile()`, `tuic.toast()`, `tuic.clipboard()`, `tuic.send()`/`tuic.onMessage()`, `tuic.theme`/`tuic.onThemeChange()`. Relative paths resolve against the active repo with traversal guard. SDK is auto-injected into same-origin URL-mode iframes. Interactive test page at `docs/examples/sdk-test.html`
+- **Visual toast notifications** — `tuic.toast()` (SDK) and MCP `ui action=toast` now display visual toast notifications in the bottom-right corner with auto-dismiss (4s) and click-to-dismiss. Optional `sound` parameter plays a synthesized notification tone per level (info = soft blip, warn = double beep, error = descending sweep)
 
 ## [1.0.5] - 2026-04-12
 

@@ -3,6 +3,7 @@ import { repositoriesStore } from "../stores/repositories";
 import { settingsStore } from "../stores/settings";
 import { githubStore } from "../stores/github";
 import { appLogger } from "../stores/appLogger";
+import { toastsStore } from "../stores/toasts";
 import { activityStore } from "../stores/activityStore";
 import { repoSettingsStore } from "../stores/repoSettings";
 import { paneLayoutStore } from "../stores/paneLayout";
@@ -252,6 +253,15 @@ export async function initApp(deps: AppInitDeps) {
     }, delay);
   }).catch((err) =>
     appLogger.error("app", "Failed to register repo-changed listener", err),
+  );
+
+  // Listen for MCP toast notifications from the Rust backend
+  listen<{ title: string; message: string | null; level: string; sound: boolean | null }>("mcp-toast", (event) => {
+    const { title, message, level, sound } = event.payload;
+    const safeLevel = (level === "warn" || level === "error") ? level : "info";
+    toastsStore.add(title, message ?? "", safeLevel, sound === true);
+  }).catch((err) =>
+    appLogger.error("app", "Failed to register mcp-toast listener", err),
   );
 
   // Listen for sessions created/closed by remote clients (browser UI or other Tauri windows)

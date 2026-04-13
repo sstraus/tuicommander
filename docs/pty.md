@@ -204,7 +204,7 @@ All actions require `path` (absolute path to git repository).
 | `toast` | Shows a temporary notification to the TUIC user | `title` |
 | `confirm` | Shows a blocking confirmation dialog. Returns `{confirmed: bool}`. Localhost only | `title` |
 
-**Optional params for `toast`:** `message`, `level` (info, warn, error; default: info)
+**Optional params for `toast`:** `message`, `level` (info, warn, error; default: info), `sound` (boolean, default: false — plays a notification sound)
 **Optional params for `confirm`:** `message`
 
 ### `plugin_dev_guide` — Plugin authoring reference

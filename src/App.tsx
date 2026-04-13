@@ -40,6 +40,7 @@ import { WorktreeManager, type WorktreeActions } from "./components/WorktreeMana
 import { ErrorLogPanel } from "./components/ErrorLogPanel";
 import { McpPopup } from "./components/McpPopup/McpPopup";
 import { DictationToast } from "./components/DictationToast/DictationToast";
+import { ToastContainer } from "./components/ToastContainer/ToastContainer";
 import { commandPaletteStore } from "./stores/commandPalette";
 import { branchSwitcherStore } from "./stores/branchSwitcher";
 import { mcpPopupStore } from "./stores/mcpPopup";
@@ -1712,6 +1713,7 @@ const App: Component = () => {
 
       {/* Dictation streaming toast — shows partial transcription */}
       <DictationToast />
+      <ToastContainer />
 
       {/* Prompt library drawer */}
       <PromptDrawer />

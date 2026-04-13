@@ -208,10 +208,11 @@ Show a native toast notification in the host app.
 | `title` | `string` | Toast title (required) |
 | `opts.message` | `string` | Optional body text |
 | `opts.level` | `"info" \| "warn" \| "error"` | Severity (default: `"info"`) |
+| `opts.sound` | `boolean` | Play a notification sound (default: `false`). Each level has a distinct tone: info = soft blip, warn = double beep, error = descending sweep. |
 
 ```js
 tuic.toast("Import complete", { message: "42 items imported" });
-tuic.toast("Rate limited", { message: "Try again in 30s", level: "warn" });
+tuic.toast("Rate limited", { message: "Try again in 30s", level: "warn", sound: true });
 ```
 
 #### `tuic.clipboard(text)`

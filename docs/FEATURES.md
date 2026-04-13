@@ -1262,7 +1262,7 @@ All data persisted to platform config directory via Rust:
 - **Path resolution:** relative paths resolve against active repo; absolute paths match longest repo prefix; `../` traversal outside repo root is blocked
 - **Repository:** `tuic.activeRepo()` returns active repo path; `tuic.onRepoChange(cb)` / `tuic.offRepoChange(cb)` for live updates
 - **Terminal:** `tuic.terminal(repoPath)` — open terminal in repository
-- **UI feedback:** `tuic.toast(title, {message?, level?})` — native toast notifications; `tuic.clipboard(text)` — copy to clipboard from sandboxed iframe
+- **UI feedback:** `tuic.toast(title, {message?, level?, sound?})` — native toast notifications with optional sound (info blip, warn double-beep, error descending sweep); `tuic.clipboard(text)` — copy to clipboard from sandboxed iframe
 - **Messaging:** `tuic.send(data)` / `tuic.onMessage(cb)` — bidirectional host↔plugin communication
 - **Theme:** `tuic.theme` — current theme as JS object (camelCase CSS vars); `tuic.onThemeChange(cb)` for live updates
 - `<a href="tuic://open/...">` and `<a href="tuic://terminal?repo=...">` links intercepted automatically

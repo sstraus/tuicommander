@@ -9,6 +9,7 @@ import { editorTabsStore } from "../../stores/editorTabs";
 import { terminalsStore } from "../../stores/terminals";
 import { settingsStore } from "../../stores/settings";
 import { appLogger } from "../../stores/appLogger";
+import { toastsStore } from "../../stores/toasts";
 import { assignTabToActiveGroup } from "../../utils/paneTabAssign";
 import { resolveTuicPath } from "./resolveTuicPath";
 import { invoke } from "@tauri-apps/api/core";
@@ -215,7 +216,8 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
         }
         const message = typeof data.message === "string" ? data.message : "";
         const level = (data.level === "warn" || data.level === "error") ? data.level : "info";
-        appLogger[level === "info" ? "info" : level]("plugin", `${title}${message ? ": " + message : ""}`);
+        const sound = data.sound === true;
+        toastsStore.add(title, message, level, sound);
         return;
       }
       case "tuic:clipboard": {
