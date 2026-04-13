@@ -1411,23 +1411,28 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis() as u64;
-            // AC2: monitor_with points to agent(inbox) when the caller is a
-            // registered orchestrator — children auto-register as peers and
-            // post {type:state_change} to the parent's inbox. Streaming
-            // session output per child would burn tokens at 8KB/poll.
-            // Standalone spawns (non-swarm) keep session(output) because
-            // there is no parent inbox to drain.
-            let monitor_with = if caller_tuic.is_some() {
-                format!("agent(action=inbox, since={spawn_ts})")
-            } else {
-                format!("session(action=output, session_id={session_id})")
-            };
-            serde_json::json!({
+            // ARCH-1: keep `monitor_with` canonical (always session(output)) so
+            // every spawn primitive returns the same mechanism. The peer-only
+            // `peer_monitor_with` is an additive hint included only when the
+            // caller is a registered orchestrator — children auto-register as
+            // peers and post {type:state_change} to the parent's inbox; the
+            // strategic guidance ("NEVER session output on peers — use inbox")
+            // lives in agent(register).workflow, not in this response.
+            let mut response = serde_json::json!({
                 "session_id": session_id,
                 "server_ts": spawn_ts,
-                "monitor_with": monitor_with,
+                "monitor_with": format!("session(action=output, session_id={session_id})"),
                 "status_with": format!("session(action=status, session_id={session_id})"),
-            })
+            });
+            if caller_tuic.is_some()
+                && let Some(obj) = response.as_object_mut()
+            {
+                obj.insert(
+                    "peer_monitor_with".to_string(),
+                    serde_json::json!(format!("agent(action=inbox, since={spawn_ts})")),
+                );
+            }
+            response
         }
         "stats" => {
             let stats = state.orchestrator_stats();
@@ -1498,7 +1503,7 @@ fn handle_messaging(state: &Arc<AppState>, args: &serde_json::Value, mcp_session
                 "tuic_session": tuic_session,
                 "name": name,
                 "workflow": {
-                    "spawn_same_repo": "agent action=spawn prompt=<task> cwd=<repo_path> — returns {session_id, monitor_with}. Peers inherit $TUIC_SESSION and auto-register.",
+                    "spawn_same_repo": "agent action=spawn prompt=<task> cwd=<repo_path> — returns {session_id, monitor_with, peer_monitor_with?}. As registered orchestrator, prefer peer_monitor_with (agent inbox) over monitor_with (raw session output) to avoid token burn.",
                     "spawn_isolated": "repo action=worktree_create path=<repo> branch=<name> spawn_session=true — worktree + PTY in one call.",
                     "monitor": "agent action=inbox since=<last_ms> at 500–2000ms cadence. Poll is authoritative for LLMs (SSE push exists but is a hint). NEVER session output on peers (token burn).",
                     "auto_state_change": "Spawned peers auto-post {type:state_change, state:idle|busy|exited, session_id, exit_code?} to your inbox — no manual send needed for lifecycle.",
@@ -4069,6 +4074,58 @@ mod tests {
         assert!(result["server_ts"].as_u64().is_some(), "server_ts missing: {result}");
         assert!(result["monitor_with"].as_str().is_some(), "monitor_with missing: {result}");
         assert!(result["status_with"].as_str().is_some(), "status_with missing: {result}");
+        // ARCH-1: monitor_with must be canonical session(output), not branched
+        // on caller identity. Standalone spawn (no registered caller) must
+        // not include peer_monitor_with.
+        let monitor = result["monitor_with"].as_str().unwrap();
+        assert!(
+            monitor.starts_with("session(action=output"),
+            "standalone spawn monitor_with must be canonical session(output): {monitor}"
+        );
+        assert!(
+            result.get("peer_monitor_with").is_none(),
+            "standalone spawn must not include peer_monitor_with: {result}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn spawn_response_adds_peer_monitor_hint_when_caller_registered() {
+        // ARCH-1: when the caller is a registered orchestrator, monitor_with
+        // stays canonical (session(output)) and the peer-only hint is added
+        // additively as peer_monitor_with — keeps the spawn response policy-free.
+        let state = test_state();
+        let addr = "127.0.0.1:0".parse().unwrap();
+        let tuic = "550e8400-e29b-41d4-a716-446655440aa2";
+        let mcp = "mcp-arch1-orch";
+        register_peer(&state, tuic, "orchestrator", mcp);
+
+        let result = handle_agent(
+            &state,
+            addr,
+            &serde_json::json!({
+                "action": "spawn",
+                "prompt": "hello",
+                "binary_path": "/usr/bin/true",
+                "cwd": "/tmp",
+            }),
+            Some(mcp),
+        );
+        if result.get("error").is_some() {
+            eprintln!("Skipping: PTY not available in this environment");
+            return;
+        }
+        let monitor = result["monitor_with"].as_str().expect("monitor_with required");
+        assert!(
+            monitor.starts_with("session(action=output"),
+            "monitor_with must be canonical session(output) regardless of caller: {monitor}"
+        );
+        let peer_hint = result["peer_monitor_with"].as_str()
+            .expect("peer_monitor_with must be present for registered caller");
+        assert!(
+            peer_hint.starts_with("agent(action=inbox"),
+            "peer_monitor_with must point at agent(inbox): {peer_hint}"
+        );
     }
 
     // ── is_valid_uuid ────────────────────────────────────────────────────────

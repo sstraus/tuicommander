@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import {
+  isSendGuardActive,
+  isWithinEchoWindow,
+  SEND_GUARD_MS,
+  ECHO_WINDOW_MS,
+} from "../components/syncGuards";
 
 const css = readFileSync(
   resolve(__dirname, "../components/CommandInput.module.css"),
@@ -100,13 +106,13 @@ describe("CommandInput sync state management", () => {
       this.syncedText = "";
     }
 
-    /** Simulate PTY echo arriving */
+    /** Simulate PTY echo arriving. Uses the real production guards from
+     *  syncGuards.ts so this simulator stays in lockstep with CommandInput.tsx. */
     receivePtyInput(text: string) {
-      // Post-send guard: the cleared prompt from xterm must not overwrite
-      // syncedText or bubble into the textarea for 1000ms after send().
-      if (Date.now() - this.lastSendAt < 1000) return "send-guard";
+      const now = Date.now();
+      if (isSendGuardActive(now, this.lastSendAt)) return "send-guard";
       if (text === this.syncedText) return "skip"; // echo dedup
-      const recentWrite = Date.now() - this.lastWriteAt < 500;
+      const recentWrite = isWithinEchoWindow(now, this.lastWriteAt);
       if (!recentWrite) {
         this.syncedText = text;
       }
@@ -212,6 +218,35 @@ describe("CommandInput sync state management", () => {
     const after = sim.receivePtyInput("new-prompt> ");
     expect(after).toBe("full-update");
     expect(sim.syncedText).toBe("new-prompt> ");
+  });
+});
+
+describe("syncGuards (production helpers used by CommandInput)", () => {
+  it("send guard is active strictly inside the SEND_GUARD_MS window", () => {
+    const t0 = 1_000_000;
+    expect(isSendGuardActive(t0, t0)).toBe(true);
+    expect(isSendGuardActive(t0 + SEND_GUARD_MS - 1, t0)).toBe(true);
+    expect(isSendGuardActive(t0 + SEND_GUARD_MS, t0)).toBe(false);
+    expect(isSendGuardActive(t0 + SEND_GUARD_MS + 1, t0)).toBe(false);
+  });
+
+  it("send guard is closed when no send has occurred (lastSendAt = 0)", () => {
+    // Far-future now vs lastSendAt=0 → guard must be closed.
+    expect(isSendGuardActive(Date.now(), 0)).toBe(false);
+  });
+
+  it("echo window is active strictly inside ECHO_WINDOW_MS", () => {
+    const t0 = 1_000_000;
+    expect(isWithinEchoWindow(t0, t0)).toBe(true);
+    expect(isWithinEchoWindow(t0 + ECHO_WINDOW_MS - 1, t0)).toBe(true);
+    expect(isWithinEchoWindow(t0 + ECHO_WINDOW_MS, t0)).toBe(false);
+  });
+
+  it("CommandInput.tsx wires the real guards (no inline duplication)", () => {
+    // Guard against re-introducing inline `Date.now() - lastSendAt < 1000`.
+    expect(tsx).toContain("isSendGuardActive");
+    expect(tsx).toContain("isWithinEchoWindow");
+    expect(tsx).not.toMatch(/Date\.now\(\)\s*-\s*lastSendAt\s*<\s*1000/);
   });
 });
 

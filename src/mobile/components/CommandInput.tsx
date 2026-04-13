@@ -3,6 +3,7 @@ import { rpc } from "../../transport";
 import { appLogger } from "../../stores/appLogger";
 import { retryWrite } from "../utils/retryWrite";
 import { SlashMenuOverlay } from "./SlashMenuOverlay";
+import { isSendGuardActive, isWithinEchoWindow } from "./syncGuards";
 import type { SlashMenuItem } from "../useSessions";
 import styles from "./CommandInput.module.css";
 
@@ -46,10 +47,10 @@ export function CommandInput(props: CommandInputProps) {
   // After the echo window, incoming text is from the terminal — update both.
   createEffect(() => {
     const il = props.ptyInputLine;
-    if (Date.now() - lastSendAt < 1000) return;
+    if (isSendGuardActive(Date.now(), lastSendAt)) return;
     const text = il ?? "";
     if (text === syncedText) return; // exact echo — skip entirely
-    const recentWrite = Date.now() - lastWriteAt < 500;
+    const recentWrite = isWithinEchoWindow(Date.now(), lastWriteAt);
     if (!recentWrite) {
       // No recent PWA write — terminal is driving, update sync state
       syncedText = text;

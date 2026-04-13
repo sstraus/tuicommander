@@ -341,6 +341,71 @@ describe("ViewportLock", () => {
       lock.writeEnd();
       lock.dispose();
     });
+
+    it("user scroll-to-bottom between writes during steady PTY streaming unlocks", () => {
+      // TEST-2 (a): replaces the deleted "allows user scroll after render lag
+      // window expires" coverage. New model: between writeEnd→renderComplete
+      // cycles there is an idle window where user scrolls are classified
+      // correctly. Reaching bottom in that window must disengage the lock so
+      // the next write follows naturally without re-locking.
+      const { lock, viewport, scrollToLineCalls, setBuffer } = createLockHarness();
+      setBuffer({ viewportY: 5, baseY: 100, type: "normal" });
+      lock.update(false); // locked at anchorLine=5
+
+      // Cycle 1: write+render completes (steady streaming chunk)
+      lock.writeStart();
+      setBuffer({ viewportY: 100, baseY: 100, type: "normal" });
+      viewport.dispatchEvent(new Event("scroll"));
+      expect(scrollToLineCalls).toEqual([5]); // restored
+      lock.writeEnd();
+      lock.renderComplete();
+
+      // Idle window between cycles: user wheels to bottom
+      setBuffer({ viewportY: 100, baseY: 100, type: "normal" });
+      viewport.dispatchEvent(new Event("scroll"));
+      expect(lock.isLocked).toBe(false);
+
+      // Cycle 2: next write must not re-lock or restore
+      const callsBefore = scrollToLineCalls.length;
+      lock.writeStart();
+      setBuffer({ viewportY: 100, baseY: 110, type: "normal" });
+      viewport.dispatchEvent(new Event("scroll"));
+      expect(scrollToLineCalls.length).toBe(callsBefore); // no further restore
+      expect(lock.isLocked).toBe(false);
+      lock.writeEnd();
+      lock.dispose();
+    });
+
+    it("user wheel during write+render is anchored (no rubber-band)", () => {
+      // TEST-2 (b): replaces the deleted "does NOT restore user wheel scroll
+      // during write" coverage. In the new binary model, ANY scroll while
+      // writeInProgress || pendingRender is classified as programmatic and
+      // restored to anchor — this is what prevents the visible rubber-band
+      // when the renderer auto-scrolls mid-write.
+      const { lock, viewport, scrollToLineCalls, setBuffer } = createLockHarness();
+      setBuffer({ viewportY: 5, baseY: 100, type: "normal" });
+      lock.update(false); // anchorLine=5
+
+      // Write starts → pendingRender will follow → window of "programmatic"
+      lock.writeStart();
+      // First scroll event: xterm auto-scroll to bottom
+      setBuffer({ viewportY: 100, baseY: 100, type: "normal" });
+      viewport.dispatchEvent(new Event("scroll"));
+      // Second scroll event simulating user wheel landing in the same window
+      setBuffer({ viewportY: 80, baseY: 100, type: "normal" });
+      viewport.dispatchEvent(new Event("scroll"));
+      lock.writeEnd();
+      // Third scroll event during pendingRender (renderer still painting)
+      setBuffer({ viewportY: 60, baseY: 100, type: "normal" });
+      viewport.dispatchEvent(new Event("scroll"));
+      lock.renderComplete();
+
+      // All three scroll events landed inside the programmatic window:
+      // every one of them must restore back to anchorLine (5). No rubber-band,
+      // no anchor drift to the user's wheel position.
+      expect(scrollToLineCalls).toEqual([5, 5, 5]);
+      lock.dispose();
+    });
   });
 
   describe("user scroll outside write", () => {
