@@ -10,6 +10,7 @@ import { terminalsStore } from "../../stores/terminals";
 import { settingsStore } from "../../stores/settings";
 import { appLogger } from "../../stores/appLogger";
 import { assignTabToActiveGroup } from "../../utils/paneTabAssign";
+import { resolveTuicPath } from "./resolveTuicPath";
 
 export interface PluginPanelProps {
   tab: PluginPanelTab;
@@ -75,10 +76,10 @@ function injectThemeVars(html: string): string {
 export const PluginPanel: Component<PluginPanelProps> = (props) => {
   let iframeRef: HTMLIFrameElement | undefined;
 
-  /** Find the repo that contains the given absolute path, or null */
-  const findRepoForPath = (path: string): string | null => {
+  /** Resolve a path (absolute or relative) to repo + relPath */
+  const resolvePathForSdk = (path: string) => {
     const repos = Object.keys(repositoriesStore.state.repositories);
-    return repos.find((rp) => path.startsWith(rp + "/") || path === rp) ?? null;
+    return resolveTuicPath(path, repos, repositoriesStore.state.activeRepoPath);
   };
 
   /**
@@ -114,13 +115,12 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
           appLogger.warn("plugin", "tuic:open missing path");
           return;
         }
-        const repoPath = findRepoForPath(path);
-        if (!repoPath) {
-          appLogger.warn("plugin", `tuic:open path not in any known repo: ${path}`);
+        const resolved = resolvePathForSdk(path);
+        if (!resolved) {
+          appLogger.warn("plugin", `tuic:open cannot resolve path: ${path}`);
           return;
         }
-        const relPath = path.slice(repoPath.length + 1);
-        const tabId = mdTabsStore.add(repoPath, relPath);
+        const tabId = mdTabsStore.add(resolved.repoPath, resolved.relPath);
         if (data.pinned) mdTabsStore.setPinned(tabId, true);
         return;
       }
@@ -130,14 +130,13 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
           appLogger.warn("plugin", "tuic:edit missing path");
           return;
         }
-        const repoPath = findRepoForPath(path);
-        if (!repoPath) {
-          appLogger.warn("plugin", `tuic:edit path not in any known repo: ${path}`);
+        const resolved = resolvePathForSdk(path);
+        if (!resolved) {
+          appLogger.warn("plugin", `tuic:edit cannot resolve path: ${path}`);
           return;
         }
-        const relPath = path.slice(repoPath.length + 1);
         const line = typeof data.line === "number" ? data.line : 0;
-        editorTabsStore.add(repoPath, relPath, line || undefined);
+        editorTabsStore.add(resolved.repoPath, resolved.relPath, line || undefined);
         return;
       }
       case "tuic:terminal": {

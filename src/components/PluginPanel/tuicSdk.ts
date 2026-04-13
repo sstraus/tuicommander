@@ -32,11 +32,13 @@ export const TUIC_SDK_SCRIPT = `<script id="tuic-sdk">
       var url=new URL(href);
       var cmd=url.hostname;
       if(cmd==="open"){
-        var path=decodeURIComponent(url.pathname);
+        var rawPath=decodeURIComponent(url.pathname);
+        var path=rawPath.length>1&&rawPath.charAt(0)==="/"?rawPath.slice(1):rawPath;
         var pinned=a.hasAttribute("data-pinned");
         tuic.open(path,{pinned:pinned});
       }else if(cmd==="edit"){
-        var epath=decodeURIComponent(url.pathname);
+        var rawEpath=decodeURIComponent(url.pathname);
+        var epath=rawEpath.length>1&&rawEpath.charAt(0)==="/"?rawEpath.slice(1):rawEpath;
         var line=parseInt(url.searchParams.get("line")||"0",10);
         tuic.edit(epath,{line:line});
       }else if(cmd==="terminal"){
