@@ -1841,6 +1841,11 @@ mod tests {
             Err(e) if e.status == 429 => {
                 eprintln!("Skipping live API test: rate limited (429)");
             }
+            Err(e) if e.status == 401 => {
+                // Token present but rejected (expired/rotated) — same outcome as
+                // "no token available", skip rather than fail the suite.
+                eprintln!("Skipping live API test: token rejected (401)");
+            }
             Err(e) if e.status == 0 => {
                 eprintln!("Skipping live API test: network error ({})", e.message);
             }
