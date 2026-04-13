@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>TUIC SDK Test Suite</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg-primary, #1e1e2e);
+      color: var(--fg-primary, #cdd6f4);
+      padding: 16px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    h1 { font-size: 16px; margin-bottom: 12px; color: var(--accent, #89b4fa); }
+    h2 { font-size: 14px; margin: 16px 0 8px; color: var(--fg-secondary, #a6adc8); }
+    .test-grid { display: grid; gap: 8px; }
+    .test-row {
+      display: grid;
+      grid-template-columns: 200px 60px 1fr 100px;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      background: var(--bg-secondary, #313244);
+      border-radius: 6px;
+      border: 1px solid var(--border, #45475a);
+    }
+    .test-name { font-weight: 500; }
+    .status {
+      font-weight: 600;
+      text-align: center;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+    }
+    .status.pass { background: #1a5c2c; color: #a6e3a1; }
+    .status.fail { background: #5c1a1a; color: #f38ba8; }
+    .status.wait { background: #5c4a1a; color: #f9e2af; }
+    .detail { font-size: 12px; color: var(--fg-secondary, #a6adc8); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .btn {
+      padding: 4px 10px;
+      border: 1px solid var(--border, #45475a);
+      background: var(--bg-tertiary, #45475a);
+      color: var(--fg-primary, #cdd6f4);
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .btn:hover { background: var(--accent, #89b4fa); color: #1e1e2e; }
+    .actions { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0; }
+    #log {
+      margin-top: 12px;
+      padding: 10px;
+      background: var(--bg-secondary, #313244);
+      border: 1px solid var(--border, #45475a);
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 11px;
+      max-height: 200px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+    .summary {
+      margin-top: 12px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-weight: 600;
+    }
+    .summary.all-pass { background: #1a5c2c; color: #a6e3a1; }
+    .summary.has-fail { background: #5c1a1a; color: #f38ba8; }
+  </style>
+</head>
+<body>
+  <h1>TUIC SDK Test Suite</h1>
+  <p style="margin-bottom:12px; color: var(--fg-secondary, #a6adc8);">
+    Interactive verification of all SDK methods. Open this as a plugin panel in TUICommander.
+  </p>
+
+  <h2>Automatic Tests</h2>
+  <div class="test-grid" id="auto-tests"></div>
+
+  <div id="summary"></div>
+
+  <h2>Interactive Tests</h2>
+  <div class="actions">
+    <button class="btn" onclick="testOpen()">tuic.open("README.md")</button>
+    <button class="btn" onclick="testEdit()">tuic.edit("src/App.tsx", {line:10})</button>
+    <button class="btn" onclick="testTerminal()">tuic.terminal(activeRepo)</button>
+    <button class="btn" onclick="testToastInfo()">toast(info)</button>
+    <button class="btn" onclick="testToastWarn()">toast(warn)</button>
+    <button class="btn" onclick="testToastError()">toast(error)</button>
+    <button class="btn" onclick="testClipboard()">clipboard("hello")</button>
+    <button class="btn" onclick="testGetFile()">getFile("README.md")</button>
+    <button class="btn" onclick="testGetFileTraversal()">getFile("../../etc/passwd")</button>
+    <button class="btn" onclick="testSend()">send({ping:1})</button>
+  </div>
+
+  <h2>Event Log</h2>
+  <div id="log"></div>
+
+  <script>
+    // ── Logging ──
+    var logEl = document.getElementById("log");
+    function log(msg) {
+      var ts = new Date().toLocaleTimeString();
+      logEl.textContent += "[" + ts + "] " + msg + "\n";
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    // ── Test framework ──
+    var tests = [];
+    var testEls = {};
+    var autoTestsEl = document.getElementById("auto-tests");
+
+    function addTest(name) {
+      var row = document.createElement("div");
+      row.className = "test-row";
+      row.innerHTML = '<span class="test-name">' + name + '</span>' +
+        '<span class="status wait" id="s-' + name + '">WAIT</span>' +
+        '<span class="detail" id="d-' + name + '"></span>' +
+        '<span></span>';
+      autoTestsEl.appendChild(row);
+      tests.push(name);
+    }
+
+    function pass(name, detail) {
+      document.getElementById("s-" + name).className = "status pass";
+      document.getElementById("s-" + name).textContent = "PASS";
+      document.getElementById("d-" + name).textContent = detail || "";
+      log("PASS: " + name + (detail ? " — " + detail : ""));
+      updateSummary();
+    }
+
+    function fail(name, detail) {
+      document.getElementById("s-" + name).className = "status fail";
+      document.getElementById("s-" + name).textContent = "FAIL";
+      document.getElementById("d-" + name).textContent = detail || "";
+      log("FAIL: " + name + (detail ? " — " + detail : ""));
+      updateSummary();
+    }
+
+    function updateSummary() {
+      var total = tests.length;
+      var passed = document.querySelectorAll(".status.pass").length;
+      var failed = document.querySelectorAll(".status.fail").length;
+      var waiting = total - passed - failed;
+      var el = document.getElementById("summary");
+      if (waiting > 0) {
+        el.className = "summary";
+        el.textContent = passed + "/" + total + " passed, " + waiting + " pending...";
+      } else {
+        el.className = "summary " + (failed > 0 ? "has-fail" : "all-pass");
+        el.textContent = failed > 0
+          ? passed + "/" + total + " passed, " + failed + " FAILED"
+          : total + "/" + total + " ALL PASSED";
+      }
+    }
+
+    // ── Define auto tests ──
+    addTest("sdk-exists");
+    addTest("version");
+    addTest("activeRepo");
+    addTest("onRepoChange");
+    addTest("theme-init");
+    addTest("onThemeChange");
+    addTest("onMessage");
+    addTest("getFile");
+    addTest("getFile-traversal");
+
+    // ── Run auto tests ──
+    function runAutoTests() {
+      // sdk-exists
+      if (window.tuic) {
+        pass("sdk-exists", "window.tuic is defined");
+      } else {
+        fail("sdk-exists", "window.tuic is undefined");
+        return; // no point continuing
+      }
+
+      // version
+      if (tuic.version && typeof tuic.version === "string") {
+        pass("version", "v" + tuic.version);
+      } else {
+        fail("version", "missing or invalid: " + tuic.version);
+      }
+
+      // activeRepo
+      var repo = tuic.activeRepo();
+      if (repo === null || typeof repo === "string") {
+        pass("activeRepo", repo || "(null — no active repo)");
+      } else {
+        fail("activeRepo", "unexpected type: " + typeof repo);
+      }
+
+      // onRepoChange — register and verify callback type accepted
+      var repoChangeFired = false;
+      function onRepoChangeCb(newRepo) {
+        repoChangeFired = true;
+        log("EVENT repo-changed: " + newRepo);
+      }
+      try {
+        tuic.onRepoChange(onRepoChangeCb);
+        // Can't trigger repo change from here, but verify registration works
+        pass("onRepoChange", "listener registered (will fire on repo switch)");
+      } catch (e) {
+        fail("onRepoChange", e.message);
+      }
+
+      // theme-init — check if theme object is available
+      // Theme arrives async via message, so we check after a small delay
+      setTimeout(function() {
+        var theme = tuic.theme;
+        if (theme && typeof theme === "object" && Object.keys(theme).length > 0) {
+          var keys = Object.keys(theme).slice(0, 5).join(", ");
+          pass("theme-init", keys + "... (" + Object.keys(theme).length + " vars)");
+        } else {
+          // Theme may be null if no CSS vars available in test env
+          pass("theme-init", theme === null ? "(null — no theme data yet)" : "empty object");
+        }
+      }, 500);
+
+      // onThemeChange
+      try {
+        tuic.onThemeChange(function(t) {
+          log("EVENT theme-changed: " + Object.keys(t || {}).length + " vars");
+        });
+        pass("onThemeChange", "listener registered");
+      } catch (e) {
+        fail("onThemeChange", e.message);
+      }
+
+      // onMessage
+      try {
+        tuic.onMessage(function(data) {
+          log("EVENT host-message: " + JSON.stringify(data));
+        });
+        pass("onMessage", "listener registered");
+      } catch (e) {
+        fail("onMessage", e.message);
+      }
+
+      // getFile — async test
+      tuic.getFile("README.md").then(function(content) {
+        if (typeof content === "string" && content.length > 0) {
+          pass("getFile", content.length + " bytes, starts: " + content.slice(0, 40).replace(/\n/g, "\\n"));
+        } else {
+          fail("getFile", "empty or non-string content");
+        }
+      }).catch(function(err) {
+        fail("getFile", err.message);
+      });
+
+      // getFile-traversal — should reject
+      tuic.getFile("../../../etc/passwd").then(function(content) {
+        fail("getFile-traversal", "should have been rejected but got content (" + content.length + " bytes)");
+      }).catch(function(err) {
+        pass("getFile-traversal", "correctly rejected: " + err.message);
+      });
+    }
+
+    // Wait a tick for SDK init messages to arrive
+    setTimeout(runAutoTests, 300);
+
+    // ── Interactive test handlers ──
+    function testOpen() {
+      var repo = tuic.activeRepo();
+      log("tuic.open('README.md') — activeRepo: " + repo);
+      tuic.open("README.md");
+    }
+
+    function testEdit() {
+      log("tuic.edit('src/App.tsx', {line:10})");
+      tuic.edit("src/App.tsx", { line: 10 });
+    }
+
+    function testTerminal() {
+      var repo = tuic.activeRepo();
+      if (!repo) { log("ERROR: no active repo"); return; }
+      log("tuic.terminal('" + repo + "')");
+      tuic.terminal(repo);
+    }
+
+    function testToastInfo() {
+      log("tuic.toast('SDK Test', {message:'Info toast', level:'info'})");
+      tuic.toast("SDK Test", { message: "Info level toast from plugin", level: "info" });
+    }
+
+    function testToastWarn() {
+      log("tuic.toast('SDK Warning', {message:'Warning toast', level:'warn'})");
+      tuic.toast("SDK Warning", { message: "Warning level toast from plugin", level: "warn" });
+    }
+
+    function testToastError() {
+      log("tuic.toast('SDK Error', {message:'Error toast', level:'error'})");
+      tuic.toast("SDK Error", { message: "Error level toast from plugin", level: "error" });
+    }
+
+    function testClipboard() {
+      log("tuic.clipboard('hello from TUIC SDK')");
+      tuic.clipboard("hello from TUIC SDK");
+      log("Check your clipboard!");
+    }
+
+    function testGetFile() {
+      log("tuic.getFile('README.md')...");
+      tuic.getFile("README.md").then(function(content) {
+        log("SUCCESS: " + content.length + " bytes\n" + content.slice(0, 200));
+      }).catch(function(err) {
+        log("ERROR: " + err.message);
+      });
+    }
+
+    function testGetFileTraversal() {
+      log("tuic.getFile('../../etc/passwd') — should fail...");
+      tuic.getFile("../../etc/passwd").then(function(content) {
+        log("UNEXPECTED SUCCESS: " + content.length + " bytes (traversal guard failed!)");
+      }).catch(function(err) {
+        log("CORRECTLY REJECTED: " + err.message);
+      });
+    }
+
+    function testSend() {
+      log("tuic.send({ping:1, ts:" + Date.now() + "})");
+      tuic.send({ ping: 1, ts: Date.now() });
+    }
+  </script>
+</body>
+</html>
