@@ -202,3 +202,17 @@ jobs:
         run: |
           security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
           rm -f "$APPLE_API_KEY_PATH" 2>/dev/null || true
+
+  retry-failed:
+    needs: build
+    if: failure()
+    permissions:
+      actions: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Retry failed jobs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Retrying failed jobs for run ${{ github.run_id }}..."
+          gh run rerun ${{ github.run_id }} --failed --repo "$GITHUB_REPOSITORY"
