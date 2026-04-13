@@ -124,7 +124,23 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
     iframeRef?.contentWindow?.postMessage(data, "*");
   };
 
+  /** Inject SDK script into a URL-mode iframe (same-origin only) */
+  const injectSdkIntoUrlIframe = () => {
+    try {
+      const doc = iframeRef?.contentDocument;
+      if (doc && !doc.getElementById("tuic-sdk")) {
+        const range = doc.createRange();
+        range.selectNode(doc.head || doc.documentElement);
+        const frag = range.createContextualFragment(TUIC_SDK_SCRIPT);
+        (doc.head || doc.documentElement).appendChild(frag);
+      }
+    } catch {
+      // Cross-origin: cannot access contentDocument — fall back to postMessage handshake
+    }
+  };
+
   const sendSdkInit = () => {
+    injectSdkIntoUrlIframe();
     sendToIframe({ type: "tuic:sdk-init", version: TUIC_SDK_VERSION });
     sendToIframe({ type: "tuic:repo-changed", repoPath: repositoriesStore.state.activeRepoPath ?? null });
     sendToIframe({ type: "tuic:theme-changed", theme: extractThemeObject() });
