@@ -1478,8 +1478,13 @@ fn handle_messaging(state: &Arc<AppState>, args: &serde_json::Value, mcp_session
                 registered_at: now_ms,
             };
             state.peer_agents.insert(tuic_session.to_string(), peer);
-            // Map MCP session → PTY session for self-close guard resolution
-            state.mcp_to_session.insert(mcp_sid, tuic_session.to_string());
+            // Map MCP session → PTY session for self-close guard resolution.
+            // Reverse index (session_to_mcp) keeps tombstone cleanup O(1).
+            state.mcp_to_session.insert(mcp_sid.clone(), tuic_session.to_string());
+            state.session_to_mcp
+                .entry(tuic_session.to_string())
+                .or_default()
+                .push(mcp_sid);
             let _ = state.event_bus.send(crate::state::AppEvent::PeerRegistered {
                 tuic_session: tuic_session.to_string(),
                 name: name.clone(),
@@ -2556,6 +2561,7 @@ mod tests {
             agent_inbox_evictions: dashmap::DashMap::new(),
             session_html_tabs: dashmap::DashMap::new(),
             mcp_to_session: dashmap::DashMap::new(),
+            session_to_mcp: dashmap::DashMap::new(),
             session_parent: dashmap::DashMap::new(),
             messaging_channels: dashmap::DashMap::new(),
             #[cfg(unix)]
@@ -2697,6 +2703,25 @@ mod tests {
         handle_messaging(state, &serde_json::json!({
             "action": "register", "tuic_session": tuic, "name": name
         }), Some(mcp));
+    }
+
+    #[test]
+    fn register_populates_reverse_index_for_o1_cleanup() {
+        // PERF-1: agent(register) must populate session_to_mcp so tombstone
+        // cleanup avoids the O(n) scan over mcp_to_session.
+        let state = test_state();
+        let tuic = "550e8400-e29b-41d4-a716-446655440aa1";
+        let mcp = "mcp-perf1";
+        register_peer(&state, tuic, "agent", mcp);
+
+        assert_eq!(
+            state.mcp_to_session.get(mcp).map(|e| e.value().clone()),
+            Some(tuic.to_string()),
+            "forward index must be populated"
+        );
+        let reverse = state.session_to_mcp.get(tuic).map(|e| e.value().clone());
+        assert_eq!(reverse, Some(vec![mcp.to_string()]),
+            "reverse index must be populated to enable O(1) cleanup");
     }
 
     #[test]

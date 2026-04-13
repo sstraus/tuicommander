@@ -1371,8 +1371,14 @@ fn tombstone_transient_cleanup(session_id: &str, state: &AppState) {
     // Swarm maps — inserted at spawn/register time, must be cleaned on exit.
     state.shell_state_since_ms.remove(session_id);
     state.session_parent.remove(session_id);
-    // mcp_to_session maps mcp_session_id → tuic_session; clean by value.
-    state.mcp_to_session.retain(|_, v| v != session_id);
+    // mcp_to_session maps mcp_session_id → tuic_session. The reverse index
+    // session_to_mcp lets us drop O(k) entries (k = mcp sessions for this
+    // tuic_session, typically 1) instead of scanning every entry.
+    if let Some((_, mcp_sids)) = state.session_to_mcp.remove(session_id) {
+        for sid in &mcp_sids {
+            state.mcp_to_session.remove(sid);
+        }
+    }
 }
 
 /// Tombstone a session after its process exited.
@@ -5119,12 +5125,14 @@ mod tests {
             std::sync::atomic::AtomicU64::new(42),
         );
         state.mcp_to_session.insert(mcp_sid.to_string(), sid.to_string());
+        state.session_to_mcp.insert(sid.to_string(), vec![mcp_sid.to_string()]);
 
         tombstone_transient_cleanup(sid, &state);
 
         assert!(!state.session_parent.contains_key(sid), "session_parent must be removed");
         assert!(!state.shell_state_since_ms.contains_key(sid), "shell_state_since_ms must be removed");
         assert!(!state.mcp_to_session.contains_key(mcp_sid), "mcp_to_session entry must be removed");
+        assert!(!state.session_to_mcp.contains_key(sid), "session_to_mcp entry must be removed");
     }
 
     #[test]

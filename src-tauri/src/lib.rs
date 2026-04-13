@@ -797,6 +797,7 @@ pub fn run() {
         agent_inbox_evictions: DashMap::new(),
         session_html_tabs: DashMap::new(),
         mcp_to_session: DashMap::new(),
+        session_to_mcp: DashMap::new(),
         session_parent: DashMap::new(),
         messaging_channels: DashMap::new(),
         #[cfg(unix)]

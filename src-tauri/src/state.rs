@@ -912,6 +912,11 @@ pub struct AppState {
     /// MCP session → PTY session mapping for caller identity resolution.
     /// Populated at agent spawn time; used by self-close guard in session(close).
     pub mcp_to_session: DashMap<String, String>,
+    /// Reverse index of `mcp_to_session`: tuic_session → list of mcp_session_ids.
+    /// Populated alongside `mcp_to_session` at agent(register). Lets
+    /// `tombstone_transient_cleanup` remove entries in O(1) instead of scanning
+    /// every entry of `mcp_to_session` on each session exit.
+    pub session_to_mcp: DashMap<String, Vec<String>>,
     /// Parent session for swarm-spawned agents (child_tuic_session → parent_tuic_session).
     /// Populated at spawn time when caller_tuic is set. Used to route auto-notifications
     /// (state_change messages) to the orchestrator's inbox on exit and idle transitions.
@@ -1959,6 +1964,7 @@ pub(crate) mod tests_support {
             agent_inbox_evictions: DashMap::new(),
             session_html_tabs: DashMap::new(),
             mcp_to_session: DashMap::new(),
+            session_to_mcp: DashMap::new(),
             session_parent: DashMap::new(),
             messaging_channels: DashMap::new(),
             #[cfg(unix)]
@@ -2397,6 +2403,7 @@ mod tests {
             agent_inbox_evictions: DashMap::new(),
             session_html_tabs: DashMap::new(),
             mcp_to_session: DashMap::new(),
+            session_to_mcp: DashMap::new(),
             session_parent: DashMap::new(),
             messaging_channels: DashMap::new(),
             #[cfg(unix)]
