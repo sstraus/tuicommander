@@ -1256,13 +1256,18 @@ All data persisted to platform config directory via Rust:
 - `tuic://terminal?repo=<path>` — Open terminal in repo (iframe SDK only)
 
 ### 17.4.1 TUIC SDK (`window.tuic`)
-- Injected automatically into every plugin iframe alongside base CSS and theme variables
+- Injected automatically into every plugin iframe (inline and same-origin URL mode)
 - Feature detection: `if (window.tuic)` — `tuic.version` reports SDK version
-- `tuic.open(path, {pinned?})` — Open markdown file in tab, optionally pinned
-- `tuic.terminal(repoPath)` — Open terminal in repository
+- **Files:** `tuic.open(path, {pinned?})`, `tuic.edit(path, {line?})`, `tuic.getFile(path): Promise<string>`
+- **Path resolution:** relative paths resolve against active repo; absolute paths match longest repo prefix; `../` traversal outside repo root is blocked
+- **Repository:** `tuic.activeRepo()` returns active repo path; `tuic.onRepoChange(cb)` / `tuic.offRepoChange(cb)` for live updates
+- **Terminal:** `tuic.terminal(repoPath)` — open terminal in repository
+- **UI feedback:** `tuic.toast(title, {message?, level?})` — native toast notifications; `tuic.clipboard(text)` — copy to clipboard from sandboxed iframe
+- **Messaging:** `tuic.send(data)` / `tuic.onMessage(cb)` — bidirectional host↔plugin communication
+- **Theme:** `tuic.theme` — current theme as JS object (camelCase CSS vars); `tuic.onThemeChange(cb)` for live updates
 - `<a href="tuic://open/...">` and `<a href="tuic://terminal?repo=...">` links intercepted automatically
 - `data-pinned` attribute on links sets pinned flag
-- Security: paths validated against known repository list
+- Interactive test page: `docs/examples/sdk-test.html` (see `docs/tuic-sdk.md` for launch instructions)
 
 ### 17.5 Built-in Plugins
 - **Plan Tracker** — Detects Claude Code plan files from structured events

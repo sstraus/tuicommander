@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **TUIC SDK v1.0 expansion** — Plugin iframes now have access to the full SDK: `tuic.activeRepo()`, `tuic.onRepoChange()`, `tuic.getFile()`, `tuic.toast()`, `tuic.clipboard()`, `tuic.send()`/`tuic.onMessage()`, `tuic.theme`/`tuic.onThemeChange()`. Relative paths resolve against the active repo with traversal guard. SDK is auto-injected into same-origin URL-mode iframes. Interactive test page at `docs/examples/sdk-test.html`
+
 ## [1.0.5] - 2026-04-12
 
 ### Added

@@ -135,12 +135,15 @@ When adding or modifying panels, status bar, toolbar, sidebar:
 | Domain user guide | e.g. `docs/user-guide/sidebar.md`, `docs/user-guide/file-browser.md` |
 
 ### TUIC SDK & iframe Integration
-When modifying the TUIC SDK, iframe postMessage protocol, or tab injection:
+When modifying the TUIC SDK, iframe postMessage protocol, path resolution, or tab injection:
 
 | File | What to update |
 |------|----------------|
 | `src/components/PluginPanel/tuicSdk.ts` | Inline SDK script for plugin iframes |
-| `docs/tuic-sdk.md` | SDK reference (both inline and URL tab modes) |
+| `src/components/PluginPanel/resolveTuicPath.ts` | Path resolution (relative/absolute, traversal guard) |
+| `src/components/PluginPanel/PluginPanel.tsx` | Host-side message handlers, SDK injection |
+| `docs/tuic-sdk.md` | SDK reference — API methods, path resolution, testing |
+| `docs/examples/sdk-test.html` | Interactive test page (update when adding SDK methods) |
 | `docs/plugins.md` | Plugin developer guide (if plugin-facing API changes) |
 
 ### Deep Links
