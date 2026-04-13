@@ -1060,6 +1060,7 @@ fn parse_suggest(clean: &str, agent_active: bool) -> Option<ParsedEvent> {
     // Skip past the newline that `$` matched before.
     let remainder = clean[match_end..].strip_prefix('\n').unwrap_or(&clean[match_end..]);
     let mut full = first_line.to_string();
+    let mut joined_tail = false; // allow at most one pipeless tail line
     for line in remainder.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
@@ -1076,14 +1077,20 @@ fn parse_suggest(clean: &str, agent_active: bool) -> Option<ParsedEvent> {
         {
             break;
         }
-        // Only join if the line contains a `|` — that means it's a
-        // continuation of the pipe-separated list. Lines without `|` are
-        // unrelated output that follows the suggest token.
-        if !trimmed.contains('|') {
+        if trimmed.contains('|') {
+            // Continuation with pipe — part of the pipe-separated list.
+            full.push(' ');
+            full.push_str(trimmed);
+        } else if !joined_tail && full.len() >= 70 {
+            // One pipeless tail allowed when the accumulated text is long
+            // enough to suggest terminal line-wrapping (>= 70 chars). Short
+            // suggest lines followed by unrelated output must NOT grab it.
+            full.push(' ');
+            full.push_str(trimmed);
+            joined_tail = true;
+        } else {
             break;
         }
-        full.push(' ');
-        full.push_str(trimmed);
     }
 
     // Must have at least one `|` separator
@@ -2767,6 +2774,34 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
             _ => panic!("should parse"),
         };
         assert_eq!(items, vec!["A", "B", "C"]);
+    }
+
+    #[test]
+    fn test_suggest_wrap_tail_without_pipe() {
+        // When the last item wraps to a new line without a `|`, the continuation
+        // must still be joined — it's the tail of the last option.
+        let input = "suggest: 1) Avviare subito /wiz:work su 1180-f055 | 2) Marcarla ready e lavorarci dopo | 3) Ignorarla per ora e andare avanti con\naltra roba";
+        let items = parse_suggest(input, true);
+        let items = match items {
+            Some(ParsedEvent::Suggest { items }) => items,
+            _ => panic!("should parse suggest with tail wrap"),
+        };
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[2], "3) Ignorarla per ora e andare avanti con altra roba");
+    }
+
+    #[test]
+    fn test_suggest_wrap_tail_stops_at_second_pipeless_line() {
+        // Only ONE tail continuation without `|` is allowed — a second pipeless
+        // line is unrelated output and must not be joined.
+        let input = "suggest: 1) First long option text here | 2) Second long option text here | 3) Third option that wraps to the next\ntail of third\nunrelated output on another line";
+        let items = parse_suggest(input, true);
+        let items = match items {
+            Some(ParsedEvent::Suggest { items }) => items,
+            _ => panic!("should parse"),
+        };
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[2], "3) Third option that wraps to the next tail of third");
     }
 
     // --- Agent-gating tests for parse_intent / parse_suggest ---
