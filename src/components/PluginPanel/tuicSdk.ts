@@ -94,5 +94,6 @@ export const TUIC_SDK_SCRIPT = `<script id="tuic-sdk">
       }
     }catch(err){}
   },true);
+  parent.postMessage({type:"tuic:sdk-request"},"*");
 })();
 </script>`;
