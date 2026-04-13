@@ -52,12 +52,12 @@ build-dmg:
 # Type-check, lint, and test (no Tauri build)
 check:
 	@echo "Running checks..."
-	@npx tsc --noEmit && echo "  tsc ✓"
-	@cd src-tauri && cargo clippy --release -- -D warnings && echo "  clippy ✓"
-	@cd src-tauri && ulimit -n 10240 && cargo test -q && echo "  cargo test ✓"
-	@npx vitest run --reporter=dot 2>&1 | tail -3
-	@npm audit --audit-level=high && echo "  npm audit ✓"
-	@cd src-tauri && cargo audit -q --ignore RUSTSEC-2026-0097 --ignore RUSTSEC-2023-0071 && echo "  cargo audit ✓"
+	@rtk npx tsc --noEmit && echo "  tsc ✓"
+	@cd src-tauri && rtk cargo clippy --release -- -D warnings && echo "  clippy ✓"
+	@cd src-tauri && ulimit -n 10240 && rtk cargo test -q && echo "  cargo test ✓"
+	@rtk npx vitest run --reporter=dot 2>&1 | tail -3
+	@rtk npm audit --audit-level=high && echo "  npm audit ✓"
+	@cd src-tauri && rtk err cargo audit -q --ignore RUSTSEC-2026-0097 --ignore RUSTSEC-2023-0071 && echo "  cargo audit ✓"
 
 # Sign the built .app bundle
 sign:
