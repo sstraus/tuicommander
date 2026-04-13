@@ -1079,10 +1079,8 @@ impl AppState {
         self.session_states.get(session_id).map(|s| {
             let mut state = s.clone();
             state.shell_state = self.shell_states.get(session_id).map(|atom| {
-                match atom.load(std::sync::atomic::Ordering::Relaxed) {
-                    1 => "busy".to_string(),  // SHELL_BUSY
-                    _ => "idle".to_string(),
-                }
+                crate::pty::shell_state_str(atom.load(std::sync::atomic::Ordering::Relaxed))
+                    .to_string()
             });
             state
         })

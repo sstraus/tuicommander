@@ -175,9 +175,20 @@ const SHELL_IDLE_MS: u64 = 500;
 const AGENT_IDLE_MS: u64 = 2500;
 
 /// AtomicU8 encoding for shell_states DashMap.
-const SHELL_NULL: u8 = 0;
-const SHELL_BUSY: u8 = 1;
-const SHELL_IDLE: u8 = 2;
+pub(crate) const SHELL_NULL: u8 = 0;
+pub(crate) const SHELL_BUSY: u8 = 1;
+pub(crate) const SHELL_IDLE: u8 = 2;
+
+/// Converts a shell_states AtomicU8 value into its wire string ("busy"/"idle").
+/// Unknown values (including SHELL_NULL) map to "idle" — the frontend treats
+/// a just-created session with no output yet as idle, not busy.
+pub(crate) fn shell_state_str(state: u8) -> &'static str {
+    match state {
+        SHELL_BUSY => "busy",
+        SHELL_IDLE => "idle",
+        _ => "idle",
+    }
+}
 
 // Re-export from chrome module for use by this module and tests.
 use crate::chrome::is_chrome_row;
@@ -610,10 +621,12 @@ fn try_shell_transition(
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis() as u64;
+            // Insert with the correct timestamp immediately so concurrent
+            // readers never observe a transient 0 between or_insert and store.
             state.shell_state_since_ms
                 .entry(session_id.to_string())
-                .or_insert_with(|| std::sync::atomic::AtomicU64::new(0))
-                .store(now_ms, std::sync::atomic::Ordering::Relaxed);
+                .and_modify(|a| a.store(now_ms, std::sync::atomic::Ordering::Relaxed))
+                .or_insert_with(|| std::sync::atomic::AtomicU64::new(now_ms));
             // Notify orchestrator when an agent goes idle (BUSY→IDLE only).
             // Plain shell sessions are excluded — only registered agent sessions qualify.
             if notify_parent && expected == SHELL_BUSY && new == SHELL_IDLE {
@@ -1412,17 +1425,10 @@ pub(crate) fn mark_session_exited(session_id: &str, state: &AppState) {
         "exit_code": exit_code,
     }));
 
-    // Close any HTML tabs this session opened (natural exit path).
-    // The MCP close/kill handlers handle the explicit-close path; this covers
-    // sessions that exit without an explicit MCP close call.
-    if let Some((_, tab_ids)) = state.session_html_tabs.remove(session_id) {
-        if let Some(app) = state.app_handle.read().as_ref() {
-            if let Err(e) = app.emit("close-html-tabs", serde_json::json!({ "tab_ids": tab_ids })) {
-                tracing::warn!(source = "pty", session_id = %session_id,
-                    "close-html-tabs emit failed on natural exit: {e}");
-            }
-        }
-    }
+    // SIMP-1: drain HTML tabs registered by this session and emit close.
+    // Same helper used by `session(close)` and `session(kill)` so all three
+    // exit paths drain `session_html_tabs` identically (no orphan tabs).
+    crate::mcp_http::mcp_transport::emit_close_html_tabs(state, session_id);
 
     tombstone_transient_cleanup(session_id, state);
 }
@@ -2314,11 +2320,7 @@ pub(crate) fn get_shell_state(
     session_id: String,
 ) -> Option<String> {
     state.shell_states.get(&session_id).map(|atom| {
-        match atom.load(std::sync::atomic::Ordering::Relaxed) {
-            SHELL_BUSY => "busy".to_string(),
-            SHELL_IDLE => "idle".to_string(),
-            _ => "idle".to_string(), // null → treat as idle for frontend
-        }
+        shell_state_str(atom.load(std::sync::atomic::Ordering::Relaxed)).to_string()
     })
 }
 

@@ -154,7 +154,14 @@ export function useGitOperations(deps: GitOperationsDeps) {
     return true;
   };
   const markProcessed = (repoPath: string, branchName: string): void => {
-    recentlyProcessedBranches.set(`${repoPath}::${branchName}`, Date.now());
+    const now = Date.now();
+    // Sweep expired entries on every write so the map stays bounded by the
+    // number of branches removed within PROCESS_DEDUP_WINDOW_MS — without
+    // this, branches removed and never re-queried leak forever.
+    for (const [k, ts] of recentlyProcessedBranches) {
+      if (now - ts > PROCESS_DEDUP_WINDOW_MS) recentlyProcessedBranches.delete(k);
+    }
+    recentlyProcessedBranches.set(`${repoPath}::${branchName}`, now);
   };
 
   const refreshAllBranchStats = async () => {

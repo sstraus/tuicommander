@@ -64,10 +64,14 @@ describe("CommandInput delta sync algorithm", () => {
 });
 
 describe("CommandInput sync state management", () => {
-  // Simulate the sync flow with a simple state machine
+  // Simulate the sync flow with a simple state machine.
+  // Mirrors CommandInput.tsx sync semantics: lastWriteAt (500ms echo window
+  // for per-char deltas) and lastSendAt (1000ms post-Enter suppression of
+  // incoming ptyInputLine so the cleared prompt doesn't reappear).
   class SyncSimulator {
     syncedText = "";
     lastWriteAt = 0;
+    lastSendAt = 0;
     writes: string[] = [];
 
     writePty(data: string) {
@@ -89,8 +93,18 @@ describe("CommandInput sync state management", () => {
       this.syncedText = newText;
     }
 
+    /** Simulate user pressing Enter — sends \r and arms the 1000ms guard. */
+    send() {
+      this.writePty("\r");
+      this.lastSendAt = Date.now();
+      this.syncedText = "";
+    }
+
     /** Simulate PTY echo arriving */
     receivePtyInput(text: string) {
+      // Post-send guard: the cleared prompt from xterm must not overwrite
+      // syncedText or bubble into the textarea for 1000ms after send().
+      if (Date.now() - this.lastSendAt < 1000) return "send-guard";
       if (text === this.syncedText) return "skip"; // echo dedup
       const recentWrite = Date.now() - this.lastWriteAt < 500;
       if (!recentWrite) {
@@ -153,8 +167,10 @@ describe("CommandInput sync state management", () => {
 
   it("terminal input updates syncedText after echo window", async () => {
     const sim = new SyncSimulator();
-    // Force lastWriteAt to be old
+    // Force lastWriteAt to be old (and lastSendAt older still so the send
+    // guard doesn't swallow the update)
     sim.lastWriteAt = Date.now() - 1000;
+    sim.lastSendAt = Date.now() - 2000;
 
     // Terminal sends "hello" — not from PWA
     const result = sim.receivePtyInput("hello");
@@ -164,6 +180,38 @@ describe("CommandInput sync state management", () => {
     // Now if PWA user types, delta is computed from "hello"
     sim.syncDelta("hello world");
     expect(sim.writes[sim.writes.length - 1]).toBe(" world");
+  });
+
+  it("send() arms a 1000ms guard that blocks ptyInputLine updates", () => {
+    const sim = new SyncSimulator();
+
+    // User types "ls" then presses Enter
+    sim.syncDelta("l");
+    sim.syncDelta("ls");
+    sim.send();
+    expect(sim.syncedText).toBe(""); // cleared on send
+    expect(sim.writes[sim.writes.length - 1]).toBe("\r");
+
+    // Within 1000ms, xterm reports the prompt as empty → must NOT overwrite
+    // syncedText and must NOT reach the textarea (mirrors CommandInput.tsx:49
+    // `if (Date.now() - lastSendAt < 1000) return;`).
+    const immediate = sim.receivePtyInput("");
+    expect(immediate).toBe("send-guard");
+    expect(sim.syncedText).toBe("");
+
+    // Even a ghost "ls" echo within the window is suppressed
+    const ghost = sim.receivePtyInput("ls");
+    expect(ghost).toBe("send-guard");
+    expect(sim.syncedText).toBe("");
+
+    // After the guard window expires, normal sync resumes. Also push
+    // lastWriteAt past the 500ms echo window so this is classified as a
+    // terminal-driven update, not a PWA echo.
+    sim.lastSendAt = Date.now() - 1100;
+    sim.lastWriteAt = Date.now() - 600;
+    const after = sim.receivePtyInput("new-prompt> ");
+    expect(after).toBe("full-update");
+    expect(sim.syncedText).toBe("new-prompt> ");
   });
 });
 

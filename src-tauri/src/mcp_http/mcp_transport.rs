@@ -74,11 +74,14 @@ fn resolve_marker_flags(state: &Arc<AppState>, client_name: Option<&str>) -> (bo
     (show_intent, show_suggest)
 }
 
-/// SIMP-1: Drain registered HTML tabs for a closing/killed session and emit
-/// `close-html-tabs` to the frontend. SIL-3: log a warning if the emit fails
-/// (don't drop silently — orphan tabs in UI hint at a missing app handle or
-/// a broken event channel).
-fn emit_close_html_tabs(state: &Arc<AppState>, session_id: &str) {
+/// SIMP-1: Drain registered HTML tabs for a closing/killed/exited session and
+/// emit `close-html-tabs` to the frontend. SIL-3: log a warning if the emit
+/// fails (don't drop silently — orphan tabs in UI hint at a missing app handle
+/// or a broken event channel).
+///
+/// Shared by `session(close)`, `session(kill)`, and `pty::mark_session_exited`
+/// (natural exit) so all three exit paths drain `session_html_tabs` identically.
+pub(crate) fn emit_close_html_tabs(state: &AppState, session_id: &str) {
     let Some((_, tab_ids)) = state.session_html_tabs.remove(session_id) else {
         return;
     };
@@ -97,20 +100,15 @@ fn emit_close_html_tabs(state: &Arc<AppState>, session_id: &str) {
     }
 }
 
-/// Validate that a string is a well-formed UUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).
+/// Validate that a string is a well-formed UUID in canonical 8-4-4-4-12 form.
 /// Used to reject non-UUID `tuic_session` values at register time to prevent
 /// prompt-injection via preamble string interpolation (SEC-1).
+///
+/// Length check rejects the `uuid` crate's accepted simple/urn/braced forms —
+/// `$TUIC_SESSION` is always written canonical, and narrowing the accepted
+/// surface keeps the injection guard tight.
 fn is_valid_uuid(s: &str) -> bool {
-    // UUID canonical form: 8-4-4-4-12 hex digits separated by hyphens (36 chars total).
-    let b = s.as_bytes();
-    if b.len() != 36 { return false; }
-    let dash_positions = [8, 13, 18, 23];
-    for &pos in &dash_positions {
-        if b[pos] != b'-' { return false; }
-    }
-    b.iter().enumerate().all(|(i, &c)| {
-        if dash_positions.contains(&i) { true } else { c.is_ascii_hexdigit() }
-    })
+    s.len() == 36 && Uuid::parse_str(s).is_ok()
 }
 
 /// Build server instructions for the MCP initialize response.
@@ -715,11 +713,7 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_i
                 #[cfg(windows)]
                 let process_name = pgid.and_then(crate::pty::process_name_from_pid);
                 let shell_state = state.shell_states.get(&id).map(|atom| {
-                    match atom.load(std::sync::atomic::Ordering::Relaxed) {
-                        1 => "busy",
-                        2 => "idle",
-                        _ => "unknown",
-                    }
+                    crate::pty::shell_state_str(atom.load(std::sync::atomic::Ordering::Relaxed))
                 });
                 serde_json::json!({
                     "session_id": id,
@@ -907,7 +901,7 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_i
                 }
             }
             // SIMP-1: drain HTML tabs registered by this session and emit close.
-            emit_close_html_tabs(state, session_id);
+            emit_close_html_tabs(state.as_ref(), session_id);
             serde_json::json!({"ok": true})
         }
         "kill" => {
@@ -3801,7 +3795,7 @@ mod tests {
             parking_lot::Mutex::new(VtLogBuffer::new(24, 80, 100)),
         );
         state.last_output_ms.insert(sid.clone(), AtomicU64::new(0));
-        state.shell_states.insert(sid.clone(), AtomicU8::new(1));
+        state.shell_states.insert(sid.clone(), AtomicU8::new(crate::pty::SHELL_BUSY));
         state.terminal_rows.insert(sid.clone(), std::sync::atomic::AtomicU16::new(24));
 
         // No `sessions` entry — emulate the reader-thread path where the
@@ -3945,7 +3939,7 @@ mod tests {
         let state = test_state();
         let sid = "s-exit-test";
         state.session_states.insert(sid.to_string(), crate::state::SessionState::default());
-        state.shell_states.insert(sid.to_string(), std::sync::atomic::AtomicU8::new(2)); // idle
+        state.shell_states.insert(sid.to_string(), std::sync::atomic::AtomicU8::new(crate::pty::SHELL_IDLE));
         state.exit_codes.insert(sid.to_string(), 42);
 
         let result = handle_session(
@@ -3962,7 +3956,7 @@ mod tests {
         let state = test_state();
         let sid = "s-idle-test";
         state.session_states.insert(sid.to_string(), crate::state::SessionState::default());
-        state.shell_states.insert(sid.to_string(), std::sync::atomic::AtomicU8::new(2)); // idle
+        state.shell_states.insert(sid.to_string(), std::sync::atomic::AtomicU8::new(crate::pty::SHELL_IDLE));
         let since = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -3986,7 +3980,7 @@ mod tests {
         let state = test_state();
         let sid = "s-busy-test";
         state.session_states.insert(sid.to_string(), crate::state::SessionState::default());
-        state.shell_states.insert(sid.to_string(), std::sync::atomic::AtomicU8::new(1)); // busy
+        state.shell_states.insert(sid.to_string(), std::sync::atomic::AtomicU8::new(crate::pty::SHELL_BUSY));
         let since = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -4014,7 +4008,7 @@ mod tests {
         // Here we just verify the status handler path we control returns shell_state.
         let sid = "s-list-test";
         state.session_states.insert(sid.to_string(), crate::state::SessionState::default());
-        state.shell_states.insert(sid.to_string(), std::sync::atomic::AtomicU8::new(2)); // idle
+        state.shell_states.insert(sid.to_string(), std::sync::atomic::AtomicU8::new(crate::pty::SHELL_IDLE));
 
         let result = handle_session(
             &state,
