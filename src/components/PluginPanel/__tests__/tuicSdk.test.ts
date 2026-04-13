@@ -59,4 +59,30 @@ describe("TUIC SDK Script", () => {
   it("defines clipboard method that sends tuic:clipboard message", () => {
     expect(TUIC_SDK_SCRIPT).toContain("tuic:clipboard");
   });
+
+  it("defines getFile method that sends tuic:get-file message", () => {
+    expect(TUIC_SDK_SCRIPT).toContain("getFile");
+    expect(TUIC_SDK_SCRIPT).toContain("tuic:get-file");
+  });
+
+  it("handles tuic:get-file-result responses from host", () => {
+    expect(TUIC_SDK_SCRIPT).toContain("tuic:get-file-result");
+  });
+
+  it("defines onMessage method for host-to-plugin messaging", () => {
+    expect(TUIC_SDK_SCRIPT).toContain("onMessage");
+  });
+
+  it("defines send method that sends tuic:plugin-message", () => {
+    expect(TUIC_SDK_SCRIPT).toContain("tuic:plugin-message");
+  });
+
+  it("handles tuic:host-message from host", () => {
+    expect(TUIC_SDK_SCRIPT).toContain("tuic:host-message");
+  });
+
+  it("defines theme property and onThemeChange listener", () => {
+    expect(TUIC_SDK_SCRIPT).toContain("onThemeChange");
+    expect(TUIC_SDK_SCRIPT).toContain("tuic:theme-changed");
+  });
 });

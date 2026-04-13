@@ -10,6 +10,11 @@ export const TUIC_SDK_SCRIPT = `<script id="tuic-sdk">
 (function(){
   var _activeRepo=null;
   var _repoListeners=[];
+  var _filePending={};
+  var _reqId=0;
+  var _msgListeners=[];
+  var _theme=null;
+  var _themeListeners=[];
   var tuic={
     version:"${TUIC_SDK_VERSION}",
     open:function(path,opts){
@@ -29,14 +34,38 @@ export const TUIC_SDK_SCRIPT = `<script id="tuic-sdk">
     },
     clipboard:function(text){
       parent.postMessage({type:"tuic:clipboard",text:text||""},"*");
-    }
+    },
+    getFile:function(path){
+      return new Promise(function(resolve,reject){
+        var id=++_reqId;
+        _filePending[id]={resolve:resolve,reject:reject};
+        parent.postMessage({type:"tuic:get-file",path:path,requestId:id},"*");
+      });
+    },
+    onMessage:function(cb){if(typeof cb==="function")_msgListeners.push(cb);},
+    offMessage:function(cb){_msgListeners=_msgListeners.filter(function(f){return f!==cb;});},
+    send:function(data){
+      parent.postMessage({type:"tuic:plugin-message",payload:data},"*");
+    },
+    get theme(){return _theme;},
+    onThemeChange:function(cb){if(typeof cb==="function")_themeListeners.push(cb);},
+    offThemeChange:function(cb){_themeListeners=_themeListeners.filter(function(f){return f!==cb;});}
   };
   window.tuic=tuic;
   window.addEventListener("message",function(e){
     if(!e.data||typeof e.data!=="object")return;
-    if(e.data.type==="tuic:repo-changed"){
+    var t=e.data.type;
+    if(t==="tuic:repo-changed"){
       _activeRepo=e.data.repoPath||null;
       for(var i=0;i<_repoListeners.length;i++)try{_repoListeners[i](_activeRepo);}catch(err){}
+    }else if(t==="tuic:get-file-result"){
+      var p=_filePending[e.data.requestId];
+      if(p){delete _filePending[e.data.requestId];if(e.data.error)p.reject(new Error(e.data.error));else p.resolve(e.data.content);}
+    }else if(t==="tuic:host-message"){
+      for(var j=0;j<_msgListeners.length;j++)try{_msgListeners[j](e.data.payload);}catch(err){}
+    }else if(t==="tuic:theme-changed"){
+      _theme=e.data.theme||null;
+      for(var k=0;k<_themeListeners.length;k++)try{_themeListeners[k](_theme);}catch(err){}
     }
   });
   document.addEventListener("click",function(e){

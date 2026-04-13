@@ -204,8 +204,8 @@ describe("PluginPanel", () => {
       // Trigger the onLoad handler
       iframe.dispatchEvent(new Event("load"));
 
-      // sendSdkInit posts two messages: sdk-init + repo-changed
-      expect(postMessageSpy).toHaveBeenCalledTimes(2);
+      // sendSdkInit posts three messages: sdk-init + repo-changed + theme-changed
+      expect(postMessageSpy).toHaveBeenCalledTimes(3);
       expect(postMessageSpy).toHaveBeenCalledWith(
         { type: "tuic:sdk-init", version: "1.0" },
         "*",
@@ -244,8 +244,8 @@ describe("PluginPanel", () => {
 
       (handler as EventListener)(event);
 
-      // sendSdkInit posts two messages: sdk-init + repo-changed
-      expect(postMessageSpy).toHaveBeenCalledTimes(2);
+      // sendSdkInit posts three messages: sdk-init + repo-changed + theme-changed
+      expect(postMessageSpy).toHaveBeenCalledTimes(3);
       expect(postMessageSpy).toHaveBeenCalledWith(
         { type: "tuic:sdk-init", version: "1.0" },
         "*",
@@ -271,8 +271,8 @@ describe("PluginPanel", () => {
       iframe.dispatchEvent(new Event("load"));
       iframe.dispatchEvent(new Event("load"));
 
-      // 3 loads × 2 messages each (sdk-init + repo-changed) = 6
-      expect(postMessageSpy).toHaveBeenCalledTimes(6);
+      // 3 loads × 3 messages each (sdk-init + repo-changed + theme-changed) = 9
+      expect(postMessageSpy).toHaveBeenCalledTimes(9);
       const sdkInitCalls = postMessageSpy.mock.calls.filter(
         (call) => call[0]?.type === "tuic:sdk-init",
       );
