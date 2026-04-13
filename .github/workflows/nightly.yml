@@ -68,7 +68,7 @@ jobs:
         run: |
           # Append nightly timestamp to current version
           VERSION=$(python3 -c "import json; print(json.load(open('src-tauri/tauri.conf.json'))['version'])")
-          NIGHTLY="$VERSION-nightly.$(date -u +%Y%m%d.%H%M)"
+          NIGHTLY="$VERSION-nightly.$(date -u +%Y%m%d).t$(date -u +%H%M)"
           echo "Nightly version: $NIGHTLY (from $VERSION)"
 
           # Patch tauri.conf.json: version + add nightly updater endpoint
