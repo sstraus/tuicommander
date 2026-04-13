@@ -93,11 +93,13 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
    *     frameworks that mount after DOMContentLoaded). Without this, the
    *     onLoad message would fire before the listener exists and be lost.
    */
+  const sendToIframe = (data: Record<string, unknown>) => {
+    iframeRef?.contentWindow?.postMessage(data, "*");
+  };
+
   const sendSdkInit = () => {
-    iframeRef?.contentWindow?.postMessage(
-      { type: "tuic:sdk-init", version: TUIC_SDK_VERSION },
-      "*",
-    );
+    sendToIframe({ type: "tuic:sdk-init", version: TUIC_SDK_VERSION });
+    sendToIframe({ type: "tuic:repo-changed", repoPath: repositoriesStore.state.activeRepoPath ?? null });
   };
 
   /** Handle tuic:* SDK messages from the iframe */
@@ -161,6 +163,24 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
         terminalsStore.setActive(id);
         return;
       }
+      case "tuic:toast": {
+        const title = typeof data.title === "string" ? data.title : "";
+        if (!title) {
+          appLogger.warn("plugin", "tuic:toast missing title");
+          return;
+        }
+        const message = typeof data.message === "string" ? data.message : "";
+        const level = (data.level === "warn" || data.level === "error") ? data.level : "info";
+        appLogger[level === "info" ? "info" : level]("plugin", `${title}${message ? ": " + message : ""}`);
+        return;
+      }
+      case "tuic:clipboard": {
+        const text = typeof data.text === "string" ? data.text : "";
+        navigator.clipboard.writeText(text).catch((err) => {
+          appLogger.warn("plugin", `tuic:clipboard failed: ${err}`);
+        });
+        return;
+      }
       default:
         appLogger.warn("plugin", `Unknown tuic SDK command: ${data.type}`);
     }
@@ -205,6 +225,12 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
       }
     });
     onCleanup(() => pluginRegistry.unregisterPanelSendChannel(tabId));
+  });
+
+  // Broadcast active repo changes to the iframe
+  createEffect(() => {
+    const repoPath = repositoriesStore.state.activeRepoPath ?? null;
+    sendToIframe({ type: "tuic:repo-changed", repoPath });
   });
 
   const [srcdoc, setSrcdoc] = createSignal<string>("");

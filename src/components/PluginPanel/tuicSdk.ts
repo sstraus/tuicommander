@@ -8,6 +8,8 @@ export const TUIC_SDK_VERSION = "1.0";
  */
 export const TUIC_SDK_SCRIPT = `<script id="tuic-sdk">
 (function(){
+  var _activeRepo=null;
+  var _repoListeners=[];
   var tuic={
     version:"${TUIC_SDK_VERSION}",
     open:function(path,opts){
@@ -18,9 +20,25 @@ export const TUIC_SDK_SCRIPT = `<script id="tuic-sdk">
     },
     terminal:function(repoPath){
       parent.postMessage({type:"tuic:terminal",repoPath:repoPath},"*");
+    },
+    activeRepo:function(){return _activeRepo;},
+    onRepoChange:function(cb){if(typeof cb==="function")_repoListeners.push(cb);},
+    offRepoChange:function(cb){_repoListeners=_repoListeners.filter(function(f){return f!==cb;});},
+    toast:function(title,opts){
+      parent.postMessage({type:"tuic:toast",title:title,message:(opts&&opts.message)||"",level:(opts&&opts.level)||"info"},"*");
+    },
+    clipboard:function(text){
+      parent.postMessage({type:"tuic:clipboard",text:text||""},"*");
     }
   };
   window.tuic=tuic;
+  window.addEventListener("message",function(e){
+    if(!e.data||typeof e.data!=="object")return;
+    if(e.data.type==="tuic:repo-changed"){
+      _activeRepo=e.data.repoPath||null;
+      for(var i=0;i<_repoListeners.length;i++)try{_repoListeners[i](_activeRepo);}catch(err){}
+    }
+  });
   document.addEventListener("click",function(e){
     var a=e.target;
     while(a&&a.tagName!=="A")a=a.parentElement;

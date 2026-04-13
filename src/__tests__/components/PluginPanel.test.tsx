@@ -204,9 +204,14 @@ describe("PluginPanel", () => {
       // Trigger the onLoad handler
       iframe.dispatchEvent(new Event("load"));
 
-      expect(postMessageSpy).toHaveBeenCalledTimes(1);
+      // sendSdkInit posts two messages: sdk-init + repo-changed
+      expect(postMessageSpy).toHaveBeenCalledTimes(2);
       expect(postMessageSpy).toHaveBeenCalledWith(
         { type: "tuic:sdk-init", version: "1.0" },
+        "*",
+      );
+      expect(postMessageSpy).toHaveBeenCalledWith(
+        { type: "tuic:repo-changed", repoPath: null },
         "*",
       );
     });
@@ -239,9 +244,14 @@ describe("PluginPanel", () => {
 
       (handler as EventListener)(event);
 
-      expect(postMessageSpy).toHaveBeenCalledTimes(1);
+      // sendSdkInit posts two messages: sdk-init + repo-changed
+      expect(postMessageSpy).toHaveBeenCalledTimes(2);
       expect(postMessageSpy).toHaveBeenCalledWith(
         { type: "tuic:sdk-init", version: "1.0" },
+        "*",
+      );
+      expect(postMessageSpy).toHaveBeenCalledWith(
+        { type: "tuic:repo-changed", repoPath: null },
         "*",
       );
     });
@@ -261,8 +271,13 @@ describe("PluginPanel", () => {
       iframe.dispatchEvent(new Event("load"));
       iframe.dispatchEvent(new Event("load"));
 
-      expect(postMessageSpy).toHaveBeenCalledTimes(3);
-      for (const call of postMessageSpy.mock.calls) {
+      // 3 loads × 2 messages each (sdk-init + repo-changed) = 6
+      expect(postMessageSpy).toHaveBeenCalledTimes(6);
+      const sdkInitCalls = postMessageSpy.mock.calls.filter(
+        (call) => call[0]?.type === "tuic:sdk-init",
+      );
+      expect(sdkInitCalls).toHaveLength(3);
+      for (const call of sdkInitCalls) {
         expect(call[0]).toEqual({ type: "tuic:sdk-init", version: "1.0" });
       }
     });

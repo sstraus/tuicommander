@@ -38,4 +38,25 @@ describe("TUIC SDK Script", () => {
   it("reads data-pinned attribute from links", () => {
     expect(TUIC_SDK_SCRIPT).toContain("data-pinned");
   });
+
+  it("defines activeRepo method", () => {
+    expect(TUIC_SDK_SCRIPT).toContain("activeRepo");
+  });
+
+  it("listens for tuic:repo-changed messages from parent", () => {
+    expect(TUIC_SDK_SCRIPT).toContain("tuic:repo-changed");
+  });
+
+  it("defines onRepoChange and offRepoChange for listener management", () => {
+    expect(TUIC_SDK_SCRIPT).toContain("onRepoChange");
+    expect(TUIC_SDK_SCRIPT).toContain("offRepoChange");
+  });
+
+  it("defines toast method that sends tuic:toast message", () => {
+    expect(TUIC_SDK_SCRIPT).toContain("tuic:toast");
+  });
+
+  it("defines clipboard method that sends tuic:clipboard message", () => {
+    expect(TUIC_SDK_SCRIPT).toContain("tuic:clipboard");
+  });
 });

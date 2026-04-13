@@ -1,4 +1,4 @@
-import { normalize, join } from "path";
+import { normalize } from "path";
 
 export interface ResolvedPath {
   repoPath: string;
@@ -32,10 +32,6 @@ export function resolveTuicPath(
   // Relative path — needs an active repo
   if (!activeRepoPath) return null;
 
-  // Normalize: resolve ./ and ../ segments
-  const resolved = normalize(join("/", path));
-  // After normalize, if the path tried to escape root, it gets clamped to "/"
-  // But we need to check explicitly: join the relative with repo and verify containment
   const absoluteResolved = normalize(activeRepoPath + "/" + path);
 
   // Guard: resolved path must stay within the repo root
