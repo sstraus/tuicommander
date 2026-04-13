@@ -563,7 +563,10 @@ const App: Component = () => {
       clearTimeout(deferredCompletionTimers.get(id));
       deferredCompletionTimers.set(id, setTimeout(fireCompletion, DEFERRED_COMPLETION_MS));
     } else {
-      fireCompletion();
+      // Non-agent: short defer to let question detection settle awaitingInput
+      // before checking suppression (avoids completion+question double-sound).
+      clearTimeout(deferredCompletionTimers.get(id));
+      deferredCompletionTimers.set(id, setTimeout(fireCompletion, 800));
     }
   });
   onCleanup(() => {
