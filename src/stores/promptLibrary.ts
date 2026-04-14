@@ -159,8 +159,20 @@ function createPromptLibraryStore() {
             merged[builtin.id] = builtin;
             changed = true;
           } else if (existing.builtIn && existing.content === builtin.content) {
-            // Unmodified built-in: update metadata silently (version, placement, etc.)
-            merged[builtin.id] = { ...existing, ...builtin, content: existing.content };
+            // Unmodified built-in: refresh metadata from the new built-in definition
+            // (version, category, tags) but keep user-owned flags. Without this, the
+            // user's "disabled" toggle resets to the built-in default on every launch.
+            merged[builtin.id] = {
+              ...builtin,
+              content: existing.content,
+              enabled: existing.enabled,
+              shortcut: existing.shortcut,
+              placement: existing.placement,
+              autoExecute: existing.autoExecute,
+              executionMode: existing.executionMode,
+              isFavorite: existing.isFavorite,
+              lastUsed: existing.lastUsed,
+            };
             changed = true;
           }
           // If user has overridden content, keep their version
