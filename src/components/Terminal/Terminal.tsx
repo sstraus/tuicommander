@@ -372,6 +372,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
   let rafHandle = 0;
 
   let activityFlagged = false; // Avoids redundant activity store updates per data chunk
+  const mountedAt = performance.now(); // TIMING: track mount-to-PTY latency
   let lastDataAtTimestamp = 0; // Throttle lastDataAt store updates to 1s
   let planFileNotified = false; // Play info sound at most once per agent cycle
   // Hide terminal until first fit to prevent visible resize flicker (80x24 → actual)
@@ -866,7 +867,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
   const initSession = async () => {
     if (sessionInitialized || !terminal) return;
     sessionInitialized = true;
-    appLogger.info("terminal", `initSession(${props.id}) — existing sessionId=${sessionId ?? "null"}`);
+    const spawnMs = Math.round(performance.now() - mountedAt);
+    appLogger.info("terminal", `initSession(${props.id}) — existing sessionId=${sessionId ?? "null"} spawnDelay=${spawnMs}ms`);
 
     try {
       let reconnected = false;
@@ -1708,26 +1710,33 @@ export const Terminal: Component<TerminalProps> = (props) => {
         // When the visibility effect re-triggers without a real hide (e.g.,
         // activeId flips null→id), skip the fit to avoid resetting scroll.
         if (!terminal) {
-          // First mount — open xterm and fit, but defer PTY creation to the
-          // first ResizeObserver event. safeFit may succeed with preliminary
-          // dimensions before flex layout settles; the ResizeObserver debounce
-          // fires with authoritative dimensions ~100ms later. Creating the PTY
-          // there ensures Ink (Claude Code) sees correct rows/cols on first render.
-          deferInitToResize = true;
-          safeFit(() => {
-            // If ResizeObserver already fired while safeFit was retrying,
-            // deferInitToResize will be false — init was already called.
-            if (!deferInitToResize) return;
-            // safeFit succeeded but ResizeObserver hasn't fired yet.
-            // Fall back after 200ms in case ResizeObserver never fires
-            // (container already at final size, no resize event).
-            setTimeout(() => {
-              if (!deferInitToResize) return;
-              deferInitToResize = false;
-              pendingOnReady = null;
+          // First mount — open xterm and fit. If container already has valid
+          // dimensions at first rAF, call initSession immediately (no 200ms
+          // defer). Otherwise fall back to ResizeObserver for authoritative
+          // dimensions once flex layout settles.
+          if (containerRef && containerRef.offsetWidth > 0 && containerRef.offsetHeight > 0) {
+            // Container ready — fit and init in one rAF, skip the defer chain.
+            requestAnimationFrame(() => {
+              doFit();
               initSession();
-            }, 200);
-          });
+            });
+          } else {
+            deferInitToResize = true;
+            safeFit(() => {
+              // If ResizeObserver already fired while safeFit was retrying,
+              // deferInitToResize will be false — init was already called.
+              if (!deferInitToResize) return;
+              // safeFit succeeded but ResizeObserver hasn't fired yet.
+              // Fall back after 200ms in case ResizeObserver never fires
+              // (container already at final size, no resize event).
+              setTimeout(() => {
+                if (!deferInitToResize) return;
+                deferInitToResize = false;
+                pendingOnReady = null;
+                initSession();
+              }, 200);
+            });
+          }
         } else if (wasActuallyHidden) {
           // Already mounted, was hidden → container reflow complete within
           // this RAF. Direct fit avoids the 10-retry RAF storm during repo
