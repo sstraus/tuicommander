@@ -375,6 +375,83 @@
   transform: rotate(45deg);
 }
 
+/* Run config row wrapper (for inline env editing) */
+
+.configRowWrap {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Env var badge on config row */
+
+.envBadge {
+  font-size: var(--font-2xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: rgba(230, 180, 60, 0.15);
+  color: var(--warning, #e0a040);
+  flex-shrink: 0;
+}
+
+/* Env vars editing */
+
+.envVarsSection {
+  margin-bottom: 6px;
+}
+
+.envVarsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.envVarsLabel {
+  font-size: var(--font-2xs);
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.envVarsList {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.envVarRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.envVarKey {
+  flex: 0 0 35%;
+  min-width: 0;
+}
+
+.envVarEquals {
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  flex-shrink: 0;
+}
+
+.envVarValue {
+  flex: 1;
+  min-width: 0;
+}
+
+.envEditPanel {
+  padding: 8px;
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border);
+}
+
 /* Env flags panel */
 
 .envFlagsGrid {

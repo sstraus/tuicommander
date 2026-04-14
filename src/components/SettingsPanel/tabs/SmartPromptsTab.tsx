@@ -556,8 +556,31 @@ export const SmartPromptsTab: Component = () => {
         >
           <option value="">— Not configured —</option>
           <For each={headlessAgents()}>
-            {(type) => <option value={type}>{AGENTS[type]?.name ?? type}</option>}
+            {(type) => {
+              const configs = () => agentConfigsStore.getRunConfigs(type);
+              return (
+                <>
+                  <Show
+                    when={configs().length > 0}
+                    fallback={<option value={type}>{AGENTS[type]?.name ?? type}</option>}
+                  >
+                    <optgroup label={AGENTS[type]?.name ?? type}>
+                      <option value={type}>{AGENTS[type]?.name ?? type} (default)</option>
+                      <For each={configs()}>
+                        {(cfg) => (
+                          <option value={`${type}:${cfg.name}`}>
+                            {cfg.name}
+                            {cfg.is_default ? " (default)" : ""}
+                          </option>
+                        )}
+                      </For>
+                    </optgroup>
+                  </Show>
+                </>
+              );
+            }}
           </For>
+          <option value="api">External API</option>
         </select>
         <p class={s.hint}>
           Agent CLI used for headless prompts (e.g. generate commit message) when no agent is running in the active terminal.

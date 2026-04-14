@@ -116,6 +116,20 @@ function createAgentConfigsStore() {
       }
     },
 
+    /** Update env vars for a run config at a specific index */
+    async updateRunConfigEnv(type: AgentType, index: number, env: Record<string, string>): Promise<void> {
+      const current = state.agents[type]?.run_configs ?? [];
+      if (index < 0 || index >= current.length) return;
+      setState(produce((s) => {
+        s.agents[type].run_configs[index].env = env;
+      }));
+      try {
+        await saveToDisk();
+      } catch (err) {
+        // saveToDisk already logged the error
+      }
+    },
+
     /** Check if auto-retry on error is enabled for an agent */
     isAutoRetryEnabled(type: AgentType): boolean {
       return state.agents[type]?.auto_retry_on_error === true;

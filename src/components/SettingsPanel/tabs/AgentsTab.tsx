@@ -28,6 +28,31 @@ interface McpStatus {
 // Sub-components
 // ---------------------------------------------------------------------------
 
+/** Key-value row for env var editing */
+const EnvVarRow: Component<{
+  key: string;
+  value: string;
+  onChange: (key: string, value: string) => void;
+  onRemove: () => void;
+}> = (props) => (
+  <div class={a.envVarRow}>
+    <input
+      class={`${a.formInput} ${a.mono} ${a.envVarKey}`}
+      placeholder="KEY"
+      value={props.key}
+      onInput={(e) => props.onChange(e.currentTarget.value, props.value)}
+    />
+    <span class={a.envVarEquals}>=</span>
+    <input
+      class={`${a.formInput} ${a.mono} ${a.envVarValue}`}
+      placeholder="value"
+      value={props.value}
+      onInput={(e) => props.onChange(props.key, e.currentTarget.value)}
+    />
+    <button class={`${a.smallBtn} ${a.danger}`} onClick={props.onRemove} title="Remove">×</button>
+  </div>
+);
+
 /** Inline form for adding a new run config */
 const AddConfigForm: Component<{
   agentType: AgentType;
@@ -36,6 +61,7 @@ const AddConfigForm: Component<{
   const [name, setName] = createSignal("");
   const [command, setCommand] = createSignal(AGENTS[props.agentType].binary);
   const [args, setArgs] = createSignal("");
+  const [envVars, setEnvVars] = createSignal<Array<{ key: string; value: string }>>([]);
 
   // Cross-agent duplicate name detection (case-insensitive)
   const allExistingNames = createMemo(() => {
@@ -52,6 +78,21 @@ const AddConfigForm: Component<{
     return n.length > 0 && allExistingNames().has(n);
   };
 
+  const addEnvVar = () => setEnvVars([...envVars(), { key: "", value: "" }]);
+  const removeEnvVar = (idx: number) => setEnvVars(envVars().filter((_, i) => i !== idx));
+  const updateEnvVar = (idx: number, key: string, value: string) => {
+    setEnvVars(envVars().map((v, i) => i === idx ? { key, value } : v));
+  };
+
+  const buildEnv = (): Record<string, string> => {
+    const env: Record<string, string> = {};
+    for (const { key, value } of envVars()) {
+      const k = key.trim();
+      if (k) env[k] = value;
+    }
+    return env;
+  };
+
   const handleSave = async () => {
     const n = name().trim();
     if (!n || isDuplicate()) return;
@@ -59,7 +100,7 @@ const AddConfigForm: Component<{
       name: n,
       command: command().trim() || AGENTS[props.agentType].binary,
       args: args().trim() ? args().trim().split(/\s+/) : [],
-      env: {},
+      env: buildEnv(),
       is_default: false,
     };
     await agentConfigsStore.addRunConfig(props.agentType, config);
@@ -96,6 +137,27 @@ const AddConfigForm: Component<{
           onKeyDown={(e) => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") props.onClose(); }}
         />
       </div>
+      {/* Env vars section */}
+      <div class={a.envVarsSection}>
+        <div class={a.envVarsHeader}>
+          <span class={a.envVarsLabel}>Environment Variables</span>
+          <button class={a.smallBtn} onClick={addEnvVar} type="button">+ Add</button>
+        </div>
+        <Show when={envVars().length > 0}>
+          <div class={a.envVarsList}>
+            <For each={envVars()}>
+              {(v, i) => (
+                <EnvVarRow
+                  key={v.key}
+                  value={v.value}
+                  onChange={(k, val) => updateEnvVar(i(), k, val)}
+                  onRemove={() => removeEnvVar(i())}
+                />
+              )}
+            </For>
+          </div>
+        </Show>
+      </div>
       <div class={a.formRow}>
         <button class={a.smallBtn} onClick={handleSave} disabled={isDuplicate() || !name().trim()}>Save</button>
         <button class={a.smallBtn} onClick={props.onClose}>Cancel</button>
@@ -104,42 +166,105 @@ const AddConfigForm: Component<{
   );
 };
 
-/** Single run config row */
+/** Single run config row with inline env var editing */
 const RunConfigRow: Component<{
   config: AgentRunConfig;
   index: number;
   agentType: AgentType;
 }> = (props) => {
+  const [editing, setEditing] = createSignal(false);
+  const [envVars, setEnvVars] = createSignal<Array<{ key: string; value: string }>>([]);
+
   const cmdPreview = () => {
     const parts = [props.config.command, ...props.config.args];
     return parts.join(" ");
   };
 
+  const envCount = () => Object.keys(props.config.env).length;
+
+  const startEdit = () => {
+    const entries = Object.entries(props.config.env).map(([key, value]) => ({ key, value }));
+    setEnvVars(entries.length > 0 ? entries : [{ key: "", value: "" }]);
+    setEditing(true);
+  };
+
+  const addEnvVar = () => setEnvVars([...envVars(), { key: "", value: "" }]);
+  const removeEnvVar = (idx: number) => setEnvVars(envVars().filter((_, i) => i !== idx));
+  const updateEnvVar = (idx: number, key: string, value: string) => {
+    setEnvVars(envVars().map((v, i) => i === idx ? { key, value } : v));
+  };
+
+  const saveEnv = async () => {
+    const env: Record<string, string> = {};
+    for (const { key, value } of envVars()) {
+      const k = key.trim();
+      if (k) env[k] = value;
+    }
+    await agentConfigsStore.updateRunConfigEnv(props.agentType, props.index, env);
+    setEditing(false);
+  };
+
   return (
-    <div class={a.configRow}>
-      <span class={a.configName}>{props.config.name}</span>
-      <span class={a.configCommand}>{cmdPreview()}</span>
-      <Show when={props.config.is_default}>
-        <span class={a.defaultBadge}>Default</span>
-      </Show>
-      <div class={a.configActions}>
-        <Show when={!props.config.is_default}>
+    <div class={a.configRowWrap}>
+      <div class={a.configRow}>
+        <span class={a.configName}>{props.config.name}</span>
+        <span class={a.configCommand}>{cmdPreview()}</span>
+        <Show when={envCount() > 0}>
+          <span class={a.envBadge}>{envCount()} env</span>
+        </Show>
+        <Show when={props.config.is_default}>
+          <span class={a.defaultBadge}>Default</span>
+        </Show>
+        <div class={a.configActions}>
           <button
             class={a.smallBtn}
-            onClick={() => agentConfigsStore.setDefaultConfig(props.agentType, props.index)}
-            title="Set as default"
+            onClick={startEdit}
+            title="Edit environment variables"
           >
-            Set Default
+            Env
           </button>
-        </Show>
-        <button
-          class={`${a.smallBtn} ${a.danger}`}
-          onClick={() => agentConfigsStore.removeRunConfig(props.agentType, props.index)}
-          title="Delete configuration"
-        >
-          Delete
-        </button>
+          <Show when={!props.config.is_default}>
+            <button
+              class={a.smallBtn}
+              onClick={() => agentConfigsStore.setDefaultConfig(props.agentType, props.index)}
+              title="Set as default"
+            >
+              Set Default
+            </button>
+          </Show>
+          <button
+            class={`${a.smallBtn} ${a.danger}`}
+            onClick={() => agentConfigsStore.removeRunConfig(props.agentType, props.index)}
+            title="Delete configuration"
+          >
+            Delete
+          </button>
+        </div>
       </div>
+      <Show when={editing()}>
+        <div class={a.envEditPanel}>
+          <div class={a.envVarsHeader}>
+            <span class={a.envVarsLabel}>Environment Variables</span>
+            <button class={a.smallBtn} onClick={addEnvVar} type="button">+ Add</button>
+          </div>
+          <div class={a.envVarsList}>
+            <For each={envVars()}>
+              {(v, i) => (
+                <EnvVarRow
+                  key={v.key}
+                  value={v.value}
+                  onChange={(k, val) => updateEnvVar(i(), k, val)}
+                  onRemove={() => removeEnvVar(i())}
+                />
+              )}
+            </For>
+          </div>
+          <div class={a.formRow}>
+            <button class={a.smallBtn} onClick={saveEnv}>Save</button>
+            <button class={a.smallBtn} onClick={() => setEditing(false)}>Cancel</button>
+          </div>
+        </div>
+      </Show>
     </div>
   );
 };
@@ -589,7 +714,29 @@ export const AgentsTab: Component = () => {
         >
           <option value="">— Not configured —</option>
           <For each={ALL_AGENT_TYPES.filter((t) => t !== "api" && detection.isAvailable(t) && AGENTS[t]?.defaultHeadlessTemplate)}>
-            {(type) => <option value={type}>{AGENTS[type]?.name ?? type}</option>}
+            {(type) => {
+              const configs = () => agentConfigsStore.getRunConfigs(type);
+              return (
+                <>
+                  <Show
+                    when={configs().length > 0}
+                    fallback={<option value={type}>{AGENTS[type]?.name ?? type}</option>}
+                  >
+                    <optgroup label={AGENTS[type]?.name ?? type}>
+                      <option value={type}>{AGENTS[type]?.name ?? type} (default)</option>
+                      <For each={configs()}>
+                        {(cfg) => (
+                          <option value={`${type}:${cfg.name}`}>
+                            {cfg.name}
+                            {cfg.is_default ? " (default)" : ""}
+                          </option>
+                        )}
+                      </For>
+                    </optgroup>
+                  </Show>
+                </>
+              );
+            }}
           </For>
           <option value="api">External API</option>
         </select>
