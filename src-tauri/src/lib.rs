@@ -849,6 +849,10 @@ pub fn run() {
     state.mcp_upstream_registry.set_event_bus(state.event_bus.clone());
     // Wire the MCP tools_changed signal so upstream changes notify MCP bridge clients.
     state.mcp_upstream_registry.set_mcp_tools_tx(state.mcp_tools_changed.clone());
+    // Wire the OAuth flow orchestrator so 401 NeedsOAuth upstreams can start a flow.
+    state
+        .mcp_upstream_registry
+        .set_oauth_flow_manager(state.oauth_flow_manager.clone());
 
     // Always start HTTP API server (Unix socket is always on; TCP only if remote access enabled)
     // Tailscale detection + TLS provisioning happens inside the server thread (non-blocking to Tauri setup)
@@ -1234,6 +1238,7 @@ pub fn run() {
             sleep_prevention::unblock_sleep,
             fs::resolve_terminal_path,
             fs::list_directory,
+            fs::stat_path,
             fs::search_files,
             fs::search_content,
             fs::fs_read_file,

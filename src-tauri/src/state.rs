@@ -60,6 +60,13 @@ pub enum AppEvent {
         name: String,
         status: String,
     },
+    /// Frontend should open the user's browser at `authorization_url` —
+    /// an upstream MCP server has triggered an OAuth flow.
+    #[serde(rename = "mcp-oauth-start")]
+    McpOAuthStart {
+        name: String,
+        authorization_url: String,
+    },
     /// Toast notification from MCP tool
     #[serde(rename = "mcp-toast")]
     McpToast {
@@ -859,7 +866,6 @@ pub struct AppState {
     /// Orchestrator for in-flight OAuth 2.1 authorization flows. Shares the
     /// `auth_semaphore` with `mcp_upstream_registry` so concurrent browser
     /// flows are serialized.
-    #[allow(dead_code)] // wired by registry + Tauri commands in follow-up stories
     pub(crate) oauth_flow_manager: Arc<crate::mcp_oauth::flow::OAuthFlowManager>,
     /// Broadcast channel for MCP `notifications/tools/list_changed`.
     /// Fired when native tools are toggled or upstream tool lists change.
@@ -1314,6 +1320,7 @@ impl AppState {
             | AppEvent::RepoChanged { .. }
             | AppEvent::PluginChanged { .. }
             | AppEvent::UpstreamStatusChanged { .. }
+            | AppEvent::McpOAuthStart { .. }
             | AppEvent::McpToast { .. }
             | AppEvent::DirChanged { .. }
             | AppEvent::WorktreeCreated { .. }

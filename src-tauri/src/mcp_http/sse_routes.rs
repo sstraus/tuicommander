@@ -92,6 +92,7 @@ fn event_type_name(event: &AppEvent) -> &'static str {
         AppEvent::PtyExit { .. } => "pty-exit",
         AppEvent::PluginChanged { .. } => "plugin-changed",
         AppEvent::UpstreamStatusChanged { .. } => "upstream-status-changed",
+        AppEvent::McpOAuthStart { .. } => "mcp-oauth-start",
         AppEvent::McpToast { .. } => "mcp-toast",
         AppEvent::DirChanged { .. } => "dir-changed",
         AppEvent::WorktreeCreated { .. } => "worktree-created",
@@ -128,6 +129,9 @@ fn event_payload(event: &AppEvent) -> serde_json::Value {
         }
         AppEvent::UpstreamStatusChanged { name, status } => {
             serde_json::json!({ "name": name, "status": status })
+        }
+        AppEvent::McpOAuthStart { name, authorization_url } => {
+            serde_json::json!({ "name": name, "authorization_url": authorization_url })
         }
         AppEvent::McpToast { title, message, level, sound } => {
             serde_json::json!({ "title": title, "message": message, "level": level, "sound": sound })

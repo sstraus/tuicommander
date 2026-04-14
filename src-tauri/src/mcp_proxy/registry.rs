@@ -20,7 +20,7 @@
 //!   until the user re-enables/re-connects it.
 //! - Background task runs `health_check` every 60s on every Ready upstream.
 
-use crate::mcp_proxy::http_client::{HttpMcpClient, UpstreamToolDef};
+use crate::mcp_proxy::http_client::{HttpMcpClient, UpstreamError, UpstreamToolDef};
 use crate::mcp_proxy::stdio_client::StdioMcpClient;
 use crate::mcp_upstream_config::{FilterMode, UpstreamMcpServer, UpstreamTransport};
 use dashmap::DashMap;
@@ -208,6 +208,11 @@ pub(crate) struct UpstreamRegistry {
     /// Serializes concurrent OAuth flows so only one browser auth runs at a time.
     /// Shared with `OAuthFlowManager` — both hold the same `Arc`.
     pub(crate) auth_semaphore: Arc<tokio::sync::Semaphore>,
+    /// OAuth flow orchestrator. Stored as `Weak` to avoid an `Arc` cycle since
+    /// `AppState` holds both the registry and the flow manager as `Arc`s.
+    oauth_flow: parking_lot::RwLock<
+        Option<std::sync::Weak<crate::mcp_oauth::flow::OAuthFlowManager>>,
+    >,
 }
 
 impl UpstreamRegistry {
@@ -217,12 +222,26 @@ impl UpstreamRegistry {
             event_bus: parking_lot::RwLock::new(None),
             mcp_tools_tx: parking_lot::RwLock::new(None),
             auth_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
+            oauth_flow: parking_lot::RwLock::new(None),
         }
     }
 
     /// Wire the event bus so status changes emit SSE events.
     pub(crate) fn set_event_bus(&self, bus: tokio::sync::broadcast::Sender<crate::state::AppEvent>) {
         *self.event_bus.write() = Some(bus);
+    }
+
+    /// Wire the OAuth flow orchestrator. Called from `lib.rs` after `AppState`
+    /// is assembled; stores a `Weak` to avoid an `Arc` cycle.
+    pub(crate) fn set_oauth_flow_manager(
+        &self,
+        mgr: Arc<crate::mcp_oauth::flow::OAuthFlowManager>,
+    ) {
+        *self.oauth_flow.write() = Some(Arc::downgrade(&mgr));
+    }
+
+    fn oauth_flow(&self) -> Option<Arc<crate::mcp_oauth::flow::OAuthFlowManager>> {
+        self.oauth_flow.read().as_ref().and_then(|w| w.upgrade())
     }
 
     /// Wire the MCP tools_changed signal so upstream changes notify MCP clients.
@@ -349,6 +368,13 @@ impl UpstreamRegistry {
                 }
                 Ok(v)
             }
+            Err(UpstreamError::NeedsOAuth { .. }) => {
+                // Don't trip the circuit breaker — this is an auth state, not a failure.
+                self.trigger_oauth_flow(&entry, upstream_name);
+                Err(format!(
+                    "{{\"code\":-32001,\"message\":\"Upstream '{upstream_name}' is awaiting OAuth authentication\"}}"
+                ))
+            }
             Err(e) => {
                 entry.metrics.error_count.fetch_add(1, Ordering::Relaxed);
                 let exhausted = entry.cb.record_failure();
@@ -362,9 +388,42 @@ impl UpstreamRegistry {
                         self.emit_status_change(upstream_name, "circuit_open");
                     }
                 }
-                Err(e)
+                Err(e.to_string())
             }
         }
+    }
+
+    /// Transition an upstream into `Authenticating` and spawn
+    /// [`OAuthFlowManager::start_flow`] in the background. Emits a
+    /// `McpOAuthStart` event so the frontend can open the browser. No-op when
+    /// already authenticating or when the flow manager is not wired.
+    fn trigger_oauth_flow(&self, entry: &Arc<UpstreamEntry>, name: &str) {
+        let bus_snapshot = self.event_bus.read().clone();
+        let flow_mgr = self.oauth_flow();
+        start_oauth_flow(entry, name, bus_snapshot, flow_mgr);
+    }
+
+    /// Called by the OAuth command layer once tokens have been successfully
+    /// exchanged and persisted. Transitions the upstream back to `Connecting`
+    /// and spawns [`initialize_entry`] to resume the handshake.
+    #[allow(dead_code)] // invoked from Tauri command layer (#1198)
+    pub(crate) async fn on_oauth_complete(&self, upstream_name: &str) -> Result<(), String> {
+        let entry = self
+            .entries
+            .get(upstream_name)
+            .ok_or_else(|| format!("Unknown upstream '{upstream_name}'"))?;
+        let entry = Arc::clone(entry.value());
+
+        *entry.status.write() = UpstreamStatus::Connecting;
+        self.emit_status_change(upstream_name, "connecting");
+
+        let name = upstream_name.to_string();
+        let bus_snapshot = self.event_bus.read().clone();
+        let flow_snapshot = self.oauth_flow();
+        tokio::spawn(async move {
+            initialize_entry_with_oauth(&entry, &name, bus_snapshot.as_ref(), flow_snapshot).await;
+        });
+        Ok(())
     }
 
     // -----------------------------------------------------------------------
@@ -405,13 +464,21 @@ impl UpstreamRegistry {
         }
 
         // Run initialize in background (don't block the caller).
-        // Snapshot the event bus sender (if any) so the spawned task can emit events
-        // without needing a reference back to the registry.
+        // Snapshot the event bus sender and flow manager (if any) so the
+        // spawned task can emit events and trigger OAuth without a reference
+        // back to the registry.
         let entry_clone = Arc::clone(&entry);
         let name_clone = name.clone();
         let bus_snapshot = self.event_bus.read().clone();
+        let flow_snapshot = self.oauth_flow();
         tokio::spawn(async move {
-            initialize_entry(&entry_clone, &name_clone, bus_snapshot.as_ref()).await;
+            initialize_entry_with_oauth(
+                &entry_clone,
+                &name_clone,
+                bus_snapshot.as_ref(),
+                flow_snapshot,
+            )
+            .await;
         });
 
         Ok(())
@@ -626,7 +693,7 @@ async fn dispatch_tool_call(
     client: &UpstreamClient,
     tool_name: &str,
     args: Value,
-) -> Result<Value, String> {
+) -> Result<Value, UpstreamError> {
     match client {
         UpstreamClient::Http(rwlock) => {
             // Try with read lock first — allows concurrent tool calls
@@ -636,23 +703,31 @@ async fn dispatch_tool_call(
             };
             match result {
                 Ok(val) => Ok(val),
-                Err(e) => {
-                    let e_str = e.to_string();
+                Err(UpstreamError::NeedsOAuth { www_authenticate }) => {
+                    Err(UpstreamError::NeedsOAuth { www_authenticate })
+                }
+                Err(UpstreamError::AuthFailed) => Err(UpstreamError::AuthFailed),
+                Err(UpstreamError::Other(e_str)) => {
                     if e_str.contains("400")
                         || e_str.contains("connection")
                         || e_str.contains("session")
                     {
                         // Reconnectable error — take exclusive lock for initialize + retry
                         let mut guard = rwlock.write().await;
-                        guard.initialize().await.map_err(|ie| {
-                            format!("Upstream reconnect failed: {ie} (original: {e_str})")
-                        })?;
-                        guard
-                            .call_tool(tool_name, args)
-                            .await
-                            .map_err(|e| e.to_string())
+                        if let Err(ie) = guard.initialize().await {
+                            // Surface the original error class too, but preserve NeedsOAuth if it surfaced on reconnect.
+                            return match ie {
+                                UpstreamError::NeedsOAuth { www_authenticate } => {
+                                    Err(UpstreamError::NeedsOAuth { www_authenticate })
+                                }
+                                other => Err(UpstreamError::Other(format!(
+                                    "Upstream reconnect failed: {other} (original: {e_str})"
+                                ))),
+                            };
+                        }
+                        guard.call_tool(tool_name, args).await
                     } else {
-                        Err(e_str)
+                        Err(UpstreamError::Other(e_str))
                     }
                 }
             }
@@ -668,21 +743,115 @@ async fn dispatch_tool_call(
                 guard.call_tool(&tool_name, args)
             })
             .await
-            .map_err(|e| format!("spawn_blocking panicked: {e}"))?
+            .map_err(|e| UpstreamError::Other(format!("spawn_blocking panicked: {e}")))?
+            .map_err(UpstreamError::Other)
         }
     }
 }
 
+/// Fire the OAuth flow for an upstream in the background (shared helper).
+///
+/// Transitions status to `Authenticating`, emits `UpstreamStatusChanged`
+/// immediately via the supplied bus, and spawns the manager's `start_flow`.
+/// On success, emits `McpOAuthStart` with the browser URL.
+fn start_oauth_flow(
+    entry: &Arc<UpstreamEntry>,
+    name: &str,
+    bus: Option<tokio::sync::broadcast::Sender<crate::state::AppEvent>>,
+    flow_mgr: Option<Arc<crate::mcp_oauth::flow::OAuthFlowManager>>,
+) {
+    {
+        let mut status = entry.status.write();
+        if *status == UpstreamStatus::Authenticating {
+            return;
+        }
+        *status = UpstreamStatus::Authenticating;
+    }
+    if let Some(ref sender) = bus {
+        let _ = sender.send(crate::state::AppEvent::UpstreamStatusChanged {
+            name: name.to_string(),
+            status: "authenticating".to_string(),
+        });
+    }
+
+    let Some(flow_mgr) = flow_mgr else {
+        tracing::warn!(
+            source = "mcp_registry",
+            %name,
+            "OAuth flow requested but OAuthFlowManager is not wired"
+        );
+        return;
+    };
+
+    let Some(ref auth) = entry.config.auth else {
+        tracing::warn!(
+            source = "mcp_registry",
+            %name,
+            "OAuth challenge received but no auth config is set — cannot start flow"
+        );
+        return;
+    };
+    let auth = auth.clone();
+
+    let server_url = match &entry.config.transport {
+        UpstreamTransport::Http { url } => url.clone(),
+        UpstreamTransport::Stdio { .. } => {
+            tracing::warn!(
+                source = "mcp_registry",
+                %name,
+                "OAuth challenge on stdio transport — unsupported"
+            );
+            return;
+        }
+    };
+
+    // Dev-mode uses the localhost callback server; production uses the
+    // `tuic://` deep-link handler (resolved in the Tauri command layer, #1198).
+    let redirect_uri = "tuic://oauth/callback".to_string();
+    let name_owned = name.to_string();
+
+    tokio::spawn(async move {
+        match flow_mgr
+            .start_flow(&name_owned, &server_url, &auth, &redirect_uri)
+            .await
+        {
+            Ok(outcome) => {
+                if let Some(ref sender) = bus {
+                    let _ = sender.send(crate::state::AppEvent::McpOAuthStart {
+                        name: name_owned.clone(),
+                        authorization_url: outcome.authorization_url,
+                    });
+                }
+                tracing::info!(
+                    source = "mcp_registry",
+                    name = %name_owned,
+                    "OAuth flow started"
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    source = "mcp_registry",
+                    name = %name_owned,
+                    "OAuth flow failed to start: {e}"
+                );
+            }
+        }
+    });
+}
+
 /// Run the MCP initialize sequence for an entry and update its status.
-async fn initialize_entry(
+/// Triggers the OAuth flow on a `NeedsOAuth` result when `flow_mgr` is wired;
+/// otherwise NeedsOAuth is logged and the entry is left in `Authenticating`.
+async fn initialize_entry_with_oauth(
     entry: &Arc<UpstreamEntry>,
     name: &str,
     bus: Option<&tokio::sync::broadcast::Sender<crate::state::AppEvent>>,
+    flow_mgr: Option<Arc<crate::mcp_oauth::flow::OAuthFlowManager>>,
 ) {
-    let result = match &entry.client {
+    let result: Result<Vec<UpstreamToolDef>, UpstreamError> = match &entry.client {
         UpstreamClient::Http(rwlock) => {
             let mut guard = rwlock.write().await;
-            guard.initialize().await.map_err(|e| e.to_string())
+            guard.initialize().await
         }
         UpstreamClient::Stdio(mutex) => {
             let arc = Arc::clone(mutex);
@@ -692,6 +861,7 @@ async fn initialize_entry(
             })
             .await
             .unwrap_or_else(|e| Err(format!("spawn_blocking error: {e}")))
+            .map_err(UpstreamError::Other)
         }
     };
 
@@ -702,19 +872,29 @@ async fn initialize_entry(
             tracing::info!(source = "mcp_registry", %name, "Initialized (Ready)");
             "ready"
         }
+        Err(UpstreamError::NeedsOAuth { .. }) => {
+            tracing::info!(
+                source = "mcp_registry",
+                %name,
+                "Upstream requires OAuth authentication — starting flow"
+            );
+            start_oauth_flow(entry, name, bus.cloned(), flow_mgr);
+            // Status already set to Authenticating inside start_oauth_flow.
+            return;
+        }
         Err(e) => {
+            let e_str = e.to_string();
             let exhausted = entry.cb.record_failure();
             if exhausted {
-                tracing::error!(source = "mcp_registry", %name, "Failed permanently: {e}");
+                tracing::error!(source = "mcp_registry", %name, "Failed permanently: {e_str}");
                 *entry.status.write() = UpstreamStatus::Failed;
                 "failed"
             } else if entry.cb.is_open() {
-                tracing::warn!(source = "mcp_registry", %name, "Initialization failed (circuit open): {e}");
+                tracing::warn!(source = "mcp_registry", %name, "Initialization failed (circuit open): {e_str}");
                 *entry.status.write() = UpstreamStatus::CircuitOpen;
                 "circuit_open"
             } else {
-                // Below threshold — stay in Connecting, CB not open yet
-                tracing::warn!(source = "mcp_registry", %name, "Initialization failed: {e}");
+                tracing::warn!(source = "mcp_registry", %name, "Initialization failed: {e_str}");
                 "connecting"
             }
         }
@@ -732,6 +912,7 @@ async fn initialize_entry(
 async fn run_health_checks(registry: &UpstreamRegistry) {
     // Snapshot the bus once so each spawned task gets a clone without holding the lock.
     let bus_snapshot = registry.event_bus.read().clone();
+    let flow_snapshot = registry.oauth_flow();
 
     for entry_ref in registry.entries.iter() {
         let status = entry_ref.status.read().clone();
@@ -751,11 +932,12 @@ async fn run_health_checks(registry: &UpstreamRegistry) {
         let entry = Arc::clone(entry_ref.value());
         let name = entry_ref.key().clone();
         let bus = bus_snapshot.clone();
+        let flow = flow_snapshot.clone();
         let needs_recovery = status != UpstreamStatus::Ready;
         tokio::spawn(async move {
             // For stuck Connecting entries, re-run full initialization
             if status == UpstreamStatus::Connecting {
-                initialize_entry(&entry, &name, bus.as_ref()).await;
+                initialize_entry_with_oauth(&entry, &name, bus.as_ref(), flow).await;
                 return;
             }
 
@@ -779,6 +961,14 @@ async fn run_health_checks(registry: &UpstreamRegistry) {
                     } else if old_count != new_count {
                         tracing::info!(source = "mcp_registry", %name, "Tool list refreshed: {old_count} → {new_count}");
                     }
+                }
+                Err(UpstreamError::NeedsOAuth { .. }) => {
+                    tracing::info!(
+                        source = "mcp_registry",
+                        %name,
+                        "Health check received OAuth challenge — starting flow"
+                    );
+                    start_oauth_flow(&entry, &name, bus.clone(), flow);
                 }
                 Err(_) => {
                     let exhausted = entry.cb.record_failure();
@@ -810,12 +1000,12 @@ async fn run_health_checks(registry: &UpstreamRegistry) {
 }
 
 /// Perform a health check on a single entry.
-/// Returns the refreshed tool list on success, or an error string on failure.
-async fn health_check_entry(entry: &UpstreamEntry) -> Result<Vec<UpstreamToolDef>, String> {
+/// Returns the refreshed tool list on success, or a typed error on failure.
+async fn health_check_entry(entry: &UpstreamEntry) -> Result<Vec<UpstreamToolDef>, UpstreamError> {
     match &entry.client {
         UpstreamClient::Http(rwlock) => {
             let guard = rwlock.read().await;
-            guard.health_check().await.map_err(|e| e.to_string())
+            guard.health_check().await
         }
         UpstreamClient::Stdio(mutex) => {
             let arc = Arc::clone(mutex);
@@ -826,6 +1016,7 @@ async fn health_check_entry(entry: &UpstreamEntry) -> Result<Vec<UpstreamToolDef
             })
             .await
             .unwrap_or_else(|e| Err(format!("spawn_blocking error: {e}")))
+            .map_err(UpstreamError::Other)
         }
     }
 }
@@ -1219,6 +1410,86 @@ mod tests {
     fn auth_semaphore_has_one_permit() {
         let registry = UpstreamRegistry::new();
         assert_eq!(registry.auth_semaphore.available_permits(), 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // OAuth integration (#1197)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn set_oauth_flow_manager_stores_weak_ref() {
+        let registry = UpstreamRegistry::new();
+        assert!(registry.oauth_flow().is_none());
+
+        let flow = Arc::new(crate::mcp_oauth::flow::OAuthFlowManager::new(
+            registry.auth_semaphore.clone(),
+        ));
+        registry.set_oauth_flow_manager(flow.clone());
+        assert!(registry.oauth_flow().is_some());
+
+        // Dropping the only strong ref makes the weak upgrade return None.
+        drop(flow);
+        assert!(registry.oauth_flow().is_none());
+    }
+
+    #[tokio::test]
+    async fn start_oauth_flow_transitions_entry_to_authenticating() {
+        let registry = UpstreamRegistry::new();
+        let cfg = http_server_config_disabled("auth-entry", "http://127.0.0.1:1/mcp");
+        registry.connect_upstream(cfg, None).await.unwrap();
+        let entry = Arc::clone(registry.entries.get("auth-entry").unwrap().value());
+
+        // No flow manager wired — should still transition status & emit event.
+        let (tx, mut rx) = tokio::sync::broadcast::channel(4);
+        super::start_oauth_flow(&entry, "auth-entry", Some(tx), None);
+
+        assert_eq!(*entry.status.read(), UpstreamStatus::Authenticating);
+        let evt = rx.recv().await.expect("status event");
+        match evt {
+            crate::state::AppEvent::UpstreamStatusChanged { name, status } => {
+                assert_eq!(name, "auth-entry");
+                assert_eq!(status, "authenticating");
+            }
+            other => panic!("expected UpstreamStatusChanged, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn start_oauth_flow_is_idempotent_when_already_authenticating() {
+        let registry = UpstreamRegistry::new();
+        let cfg = http_server_config_disabled("auth-idem", "http://127.0.0.1:1/mcp");
+        registry.connect_upstream(cfg, None).await.unwrap();
+        let entry = Arc::clone(registry.entries.get("auth-idem").unwrap().value());
+        *entry.status.write() = UpstreamStatus::Authenticating;
+
+        let (tx, mut rx) = tokio::sync::broadcast::channel(4);
+        super::start_oauth_flow(&entry, "auth-idem", Some(tx), None);
+
+        // No event should be emitted — second call is a no-op.
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn on_oauth_complete_transitions_to_connecting() {
+        let registry = UpstreamRegistry::new();
+        let cfg = http_server_config_disabled("auth-done", "http://127.0.0.1:1/mcp");
+        registry.connect_upstream(cfg, None).await.unwrap();
+        {
+            let entry = registry.entries.get("auth-done").unwrap();
+            *entry.status.write() = UpstreamStatus::Authenticating;
+        }
+
+        registry.on_oauth_complete("auth-done").await.unwrap();
+        assert_eq!(
+            registry.status("auth-done"),
+            Some(UpstreamStatus::Connecting)
+        );
+    }
+
+    #[tokio::test]
+    async fn on_oauth_complete_returns_err_for_unknown_upstream() {
+        let registry = UpstreamRegistry::new();
+        assert!(registry.on_oauth_complete("nope").await.is_err());
     }
 
     #[tokio::test]
