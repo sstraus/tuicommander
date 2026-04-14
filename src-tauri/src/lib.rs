@@ -20,6 +20,8 @@ pub(crate) mod github_auth;
 pub(crate) mod repo_watcher;
 pub(crate) mod dir_watcher;
 pub(crate) mod mcp_http;
+#[allow(dead_code)] // Incremental build: wired in story 1196+ (OAuth flow/token/registry)
+pub(crate) mod mcp_oauth;
 pub(crate) mod mcp_proxy;
 pub(crate) mod mcp_upstream_config;
 #[allow(dead_code)] // Used by OAuth discovery (story 1193-7f78), not yet wired
