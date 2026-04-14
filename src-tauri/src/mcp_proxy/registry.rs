@@ -63,6 +63,8 @@ pub(crate) enum UpstreamStatus {
     Disabled,
     /// Permanently failed after `CB_MAX_RETRIES` consecutive circuit re-opens.
     Failed,
+    /// OAuth flow in progress — tool calls are rejected with -32001.
+    Authenticating,
 }
 
 /// Internal state protected by a single mutex to avoid race conditions
@@ -203,6 +205,8 @@ pub(crate) struct UpstreamRegistry {
     event_bus: parking_lot::RwLock<Option<tokio::sync::broadcast::Sender<crate::state::AppEvent>>>,
     /// MCP tools_changed signal — fired when upstream tool availability changes.
     mcp_tools_tx: parking_lot::RwLock<Option<tokio::sync::broadcast::Sender<()>>>,
+    /// Serializes concurrent OAuth flows so only one browser auth runs at a time.
+    pub(crate) auth_semaphore: tokio::sync::Semaphore,
 }
 
 impl UpstreamRegistry {
@@ -211,6 +215,7 @@ impl UpstreamRegistry {
             entries: DashMap::new(),
             event_bus: parking_lot::RwLock::new(None),
             mcp_tools_tx: parking_lot::RwLock::new(None),
+            auth_semaphore: tokio::sync::Semaphore::new(1),
         }
     }
 
@@ -232,7 +237,8 @@ impl UpstreamRegistry {
                 status: status.to_string(),
             });
         }
-        // Status changes to/from Ready affect the merged tool list
+        // Status changes to/from Ready affect the merged tool list.
+        // Authenticating is transient — tools haven't changed, skip notification.
         let status_lower = status.to_ascii_lowercase();
         if matches!(status_lower.as_str(), "ready" | "error" | "disconnected" | "failed" | "circuit_open")
             && let Some(tx) = self.mcp_tools_tx.read().as_ref()
@@ -309,12 +315,20 @@ impl UpstreamRegistry {
             ));
         }
 
-        // Block calls while backoff is active or upstream permanently failed
+        // Block calls while backoff is active, upstream permanently failed, or authenticating
         if entry.cb.is_open() {
             return Err(format!("Circuit open for upstream '{upstream_name}' (backoff active, will retry)"));
         }
-        if *entry.status.read() == UpstreamStatus::Failed {
-            return Err(format!("Upstream '{upstream_name}' has failed — restart the server or reconnect"));
+        {
+            let status = entry.status.read().clone();
+            if status == UpstreamStatus::Failed {
+                return Err(format!("Upstream '{upstream_name}' has failed — restart the server or reconnect"));
+            }
+            if status == UpstreamStatus::Authenticating {
+                return Err(format!(
+                    "{{\"code\":-32001,\"message\":\"Upstream '{upstream_name}' is awaiting OAuth authentication\"}}"
+                ));
+            }
         }
 
         entry.metrics.call_count.fetch_add(1, Ordering::Relaxed);
@@ -442,6 +456,7 @@ impl UpstreamRegistry {
                 UpstreamStatus::CircuitOpen => "circuit_open",
                 UpstreamStatus::Disabled => "disabled",
                 UpstreamStatus::Failed => "failed",
+                UpstreamStatus::Authenticating => "authenticating",
             };
             let transport_info = match &e.config.transport {
                 UpstreamTransport::Http { url } => serde_json::json!({
@@ -717,6 +732,7 @@ async fn run_health_checks(registry: &UpstreamRegistry) {
             UpstreamStatus::Connecting => true,
             UpstreamStatus::Failed => true,
             UpstreamStatus::Disabled => false,
+            UpstreamStatus::Authenticating => false,
         };
         if !should_probe {
             continue;
@@ -1141,6 +1157,57 @@ mod tests {
         assert!(registry.status("toremove").is_some());
         registry.disconnect_upstream("toremove").unwrap();
         assert!(registry.status("toremove").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // Authenticating state
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn status_snapshot_includes_authenticating() {
+        let registry = UpstreamRegistry::new();
+        let (name, entry) = ready_entry("auth-test", vec![]);
+        *entry.status.write() = UpstreamStatus::Authenticating;
+        registry.entries.insert(name, entry);
+
+        let snap = registry.status_snapshot();
+        let upstreams = snap["upstreams"].as_array().unwrap();
+        assert_eq!(upstreams.len(), 1);
+        assert_eq!(upstreams[0]["status"], "authenticating");
+    }
+
+    #[test]
+    fn aggregated_tools_skips_authenticating() {
+        let registry = UpstreamRegistry::new();
+        let (name, entry) = ready_entry("auth-skip", vec![make_tool_def("tool")]);
+        *entry.status.write() = UpstreamStatus::Authenticating;
+        registry.entries.insert(name, entry);
+
+        assert!(registry.aggregated_tools().is_empty());
+    }
+
+    #[tokio::test]
+    async fn proxy_tool_call_rejects_authenticating_with_32001() {
+        let registry = UpstreamRegistry::new();
+        let config = http_server_config_disabled("auth-block", "http://127.0.0.1:1/mcp");
+        registry.connect_upstream(config, None).await.unwrap();
+        // Transition to Authenticating
+        if let Some(entry) = registry.entries.get("auth-block") {
+            *entry.status.write() = UpstreamStatus::Authenticating;
+        }
+
+        let err = registry
+            .proxy_tool_call("auth-block__some_tool", serde_json::json!({}))
+            .await
+            .expect_err("should reject during auth");
+        assert!(err.contains("-32001"), "expected -32001 error code, got: {err}");
+        assert!(err.contains("OAuth authentication"), "expected auth message, got: {err}");
+    }
+
+    #[test]
+    fn auth_semaphore_has_one_permit() {
+        let registry = UpstreamRegistry::new();
+        assert_eq!(registry.auth_semaphore.available_permits(), 1);
     }
 
     #[tokio::test]
