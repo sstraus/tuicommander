@@ -83,6 +83,7 @@ function getShortcutSections(): ShortcutSection[] {
       { action: "command-palette", keys: keyFor("command-palette"), description: t("helpPanel.commandPalette", "Command palette") },
       { action: "activity-dashboard", keys: keyFor("activity-dashboard"), description: t("helpPanel.activityDashboard", "Activity dashboard") },
       { action: "prompt-library", keys: keyFor("prompt-library"), description: "Prompt library" },
+      { action: "toggle-global-workspace", keys: keyFor("toggle-global-workspace"), description: "Toggle global workspace" },
     ],
   },
   {

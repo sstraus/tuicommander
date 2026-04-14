@@ -6,6 +6,7 @@ import type { RepoGroup } from "../../../stores/repositories";
 import type { FontType } from "../../../stores/settings";
 import { THEME_NAMES } from "../../../themes";
 import { ColorSwatchPicker } from "../../shared/ColorSwatchPicker";
+import { UiLegend } from "../../HelpPanel/UiLegend";
 import { t } from "../../../i18n";
 import s from "../Settings.module.css";
 
@@ -226,6 +227,10 @@ export const AppearanceTab: Component = () => {
         </button>
         <p class={s.hint}>{t("appearance.hint.resetLayout", "Reset sidebar and panel widths to default values")}</p>
       </div>
+
+      <h3>{t("appearance.heading.uiLegend", "UI Legend")}</h3>
+      <p class={s.hint} style={{ "margin-bottom": "12px" }}>{t("appearance.hint.uiLegend", "Visual reference for colors, symbols, and badges used throughout the app")}</p>
+      <UiLegend />
     </div>
   );
 };

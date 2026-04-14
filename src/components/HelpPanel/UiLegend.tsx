@@ -81,6 +81,7 @@ const STATS_LEGEND: SymbolEntry[] = [
   { symbol: "-N", label: "Deletions", description: "Lines removed vs main", color: "var(--error)" },
 ];
 
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -202,6 +203,7 @@ export const UiLegend: Component = () => {
           </For>
         </div>
       </div>
+
     </div>
   );
 };
