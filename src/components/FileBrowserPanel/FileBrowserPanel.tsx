@@ -74,8 +74,15 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   const [refreshTrigger, setRefreshTrigger] = createSignal(0);
   const [searchQuery, setSearchQuery] = createSignal("");
   const fb = useFileBrowser();
-  /** Effective filesystem root — worktree path when on a linked worktree */
-  const root = () => props.fsRoot || props.repoPath;
+  /**
+   * Effective filesystem root.
+   *
+   * Priority: uiStore.fileBrowserExternalRoot (set by "Open Folder…" / "Open Path…"
+   * to browse an arbitrary folder outside the active repo) > props.fsRoot (worktree)
+   * > props.repoPath. When external root is set, git status/ignore integration is
+   * best-effort — list_directory still works because it canonicalizes repo_path.
+   */
+  const root = () => uiStore.state.fileBrowserExternalRoot || props.fsRoot || props.repoPath;
   const contextMenu = createContextMenu();
 
   // Rename dialog state

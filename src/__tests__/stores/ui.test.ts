@@ -55,6 +55,40 @@ describe("uiStore", () => {
     });
   });
 
+  describe("fileBrowserExternalRoot", () => {
+    it("defaults to null", () => {
+      testInScope(() => {
+        expect(store.state.fileBrowserExternalRoot).toBeNull();
+      });
+    });
+
+    it("setFileBrowserExternalRoot stores the given path", () => {
+      testInScope(() => {
+        store.setFileBrowserExternalRoot("/tmp/foo");
+        expect(store.state.fileBrowserExternalRoot).toBe("/tmp/foo");
+      });
+    });
+
+    it("setFileBrowserExternalRoot(null) clears it", () => {
+      testInScope(() => {
+        store.setFileBrowserExternalRoot("/tmp/foo");
+        store.setFileBrowserExternalRoot(null);
+        expect(store.state.fileBrowserExternalRoot).toBeNull();
+      });
+    });
+
+    it("is ephemeral — does not persist via save_ui_prefs", () => {
+      testInScope(() => {
+        mockInvoke.mockClear();
+        store.setFileBrowserExternalRoot("/tmp/foo");
+        const persistCalls = mockInvoke.mock.calls.filter(
+          (c) => c[0] === "save_ui_prefs",
+        );
+        expect(persistCalls).toHaveLength(0);
+      });
+    });
+  });
+
   describe("hydrate()", () => {
     it("loads sidebar state from Rust backend", async () => {
       mockInvoke.mockResolvedValueOnce({ sidebar_visible: false, sidebar_width: 280 });

@@ -73,6 +73,8 @@ export interface ShortcutHandlers {
   toggleGlobalWorkspace: () => void;
   openFile: () => void;
   newFile: () => void;
+  openFolder: () => void;
+  openPath: () => void;
   openSecondaryWindow: () => void;
   toggleCommandOverview: () => void;
 }
@@ -186,6 +188,8 @@ function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean
     case "toggle-global-workspace": handlers.toggleGlobalWorkspace(); return true;
     case "open-file": handlers.openFile(); return true;
     case "new-file": handlers.newFile(); return true;
+    case "open-folder": handlers.openFolder(); return true;
+    case "open-path": handlers.openPath(); return true;
     case "open-secondary-window": handlers.openSecondaryWindow(); return true;
     case "command-overview": handlers.toggleCommandOverview(); return true;
 

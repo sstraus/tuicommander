@@ -1124,6 +1124,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
           const sel = terminal!.getSelection();
           if (sel) {
             event.preventDefault();
+            const setStatus = (window as unknown as Record<string, unknown>).__tuic_setStatusInfo as ((msg: string) => void) | undefined;
             navigator.clipboard.writeText(sel).then(
               () => setStatus?.("Copied to clipboard"),
               (err) => appLogger.warn("terminal", "Ctrl+C copy failed", err),

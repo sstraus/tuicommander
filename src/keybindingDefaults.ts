@@ -55,6 +55,8 @@ export const ACTION_NAMES = [
   "toggle-global-workspace",
   "open-file",
   "new-file",
+  "open-folder",
+  "open-path",
   "open-secondary-window",
   "command-overview",
   // Numbered tabs and branches
@@ -124,8 +126,10 @@ export const DEFAULT_BINDINGS: Record<ActionName, string> = {
   "toggle-global-workspace": "Cmd+Shift+X",
   "open-file": "Cmd+O",
   "new-file": "Cmd+N",
+  "open-folder": "Cmd+Shift+O",
+  "open-path": "Cmd+Alt+O",
   "open-secondary-window": "",
-  "command-overview": "Cmd+Shift+O",
+  "command-overview": "",
   // Numbered tabs
   ...Object.fromEntries(
     Array.from({ length: 9 }, (_, i) => [`switch-tab-${i + 1}`, `Cmd+${i + 1}`]),

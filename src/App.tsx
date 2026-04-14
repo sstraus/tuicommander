@@ -205,6 +205,16 @@ const App: Component = () => {
       setRepoPathPromptVisible(true);
     });
 
+  // Arbitrary path prompt — powers "Open Path…" to route files to the viewer/editor
+  // and folders into the file browser.
+  const [openPathPromptVisible, setOpenPathPromptVisible] = createSignal(false);
+  let openPathPromptResolve: ((value: string | null) => void) | null = null;
+  const promptOpenPath = (): Promise<string | null> =>
+    new Promise((resolve) => {
+      openPathPromptResolve = resolve;
+      setOpenPathPromptVisible(true);
+    });
+
   // Context menu state
   const contextMenu = createContextMenu();
 
@@ -848,6 +858,16 @@ const App: Component = () => {
     },
   ];
 
+  /**
+   * Reveal an arbitrary folder in the FileBrowser panel. Sets an ephemeral
+   * external root so browsing works outside the active repo — git badges and
+   * gitignore integration degrade gracefully when the folder isn't a repo.
+   */
+  const revealFolderInBrowser = (absolutePath: string) => {
+    uiStore.setFileBrowserExternalRoot(absolutePath);
+    uiStore.setFileBrowserPanelVisible(true);
+  };
+
   /** Open a file path from terminal output — .md/.mdx in MD viewer, others in internal editor */
   const handleOpenFilePath = (absolutePath: string, _line?: number, _col?: number) => {
     const repoPath = repositoriesStore.state.activeRepoPath;
@@ -1168,6 +1188,34 @@ const App: Component = () => {
         }
       })();
     },
+    openFolder: () => {
+      const defaultPath = gitOps.activeWorktreePath() || repositoriesStore.state.activeRepoPath || undefined;
+      (async () => {
+        try {
+          const selected = await openDialog({ multiple: false, directory: true, defaultPath });
+          if (typeof selected === "string") revealFolderInBrowser(selected);
+        } catch (err) {
+          appLogger.error("app", "Open folder dialog failed", err);
+        }
+      })();
+    },
+    openPath: () => {
+      (async () => {
+        try {
+          const typed = await promptOpenPath();
+          if (!typed) return;
+          const stat = await invoke<{ exists: boolean; is_dir: boolean }>("stat_path", { path: typed });
+          if (!stat.exists) {
+            appLogger.warn("app", "Open Path: path does not exist", { path: typed });
+            return;
+          }
+          if (stat.is_dir) revealFolderInBrowser(typed);
+          else handleOpenFilePath(typed);
+        } catch (err) {
+          appLogger.error("app", "Open path failed", err);
+        }
+      })();
+    },
     openSecondaryWindow: () => {
       invoke("open_secondary_window", {}).catch((err) =>
         appLogger.error("app", "Failed to open secondary window", err),
@@ -1387,6 +1435,9 @@ const App: Component = () => {
           break;
         }
         case "reopen-closed-tab": terminalLifecycle.reopenClosedTab(); break;
+        case "open-file": shortcutHandlers.openFile(); break;
+        case "open-folder": shortcutHandlers.openFolder(); break;
+        case "open-path": shortcutHandlers.openPath(); break;
         case "settings": setSettingsPanelVisible((v) => !v); break;
         case "quit-app": {
           if (settingsStore.state.confirmBeforeQuit) {
@@ -1438,6 +1489,8 @@ const App: Component = () => {
           break;
         }
         case "branches": uiStore.toggleGitPanelOnTab("branches"); break;
+        case "worktree-manager": shortcutHandlers.toggleWorktreeManager(); break;
+        case "quick-branch-switch": shortcutHandlers.toggleBranchSwitcher(); break;
         case "task-queue": setTaskQueueVisible((v) => !v); break;
 
         // Help
@@ -1830,6 +1883,24 @@ const App: Component = () => {
           if (activeId && newName !== termRenameDefault()) {
             terminalsStore.update(activeId, { name: newName, nameIsCustom: true });
           }
+        }}
+      />
+
+      {/* Open arbitrary path (file or folder) */}
+      <PromptDialog
+        visible={openPathPromptVisible()}
+        title="Open Path"
+        placeholder="Absolute path to file or folder"
+        confirmLabel="Open"
+        onClose={() => {
+          setOpenPathPromptVisible(false);
+          openPathPromptResolve?.(null);
+          openPathPromptResolve = null;
+        }}
+        onConfirm={(path) => {
+          setOpenPathPromptVisible(false);
+          openPathPromptResolve?.(path);
+          openPathPromptResolve = null;
         }}
       />
 

@@ -197,6 +197,28 @@ pub(crate) fn get_ignored_paths(repo_path: &str, paths: &[String]) -> std::colle
     ignored
 }
 
+/// Filesystem stat result used by `stat_path` to discriminate file vs directory
+/// for features like "Open Path…" that accept an arbitrary user-typed path.
+#[derive(Debug, Clone, Serialize)]
+pub struct PathStat {
+    pub exists: bool,
+    pub is_dir: bool,
+}
+
+pub(crate) fn stat_path_impl(path: String) -> PathStat {
+    let p = PathBuf::from(&path);
+    match std::fs::metadata(&p) {
+        Ok(meta) => PathStat { exists: true, is_dir: meta.is_dir() },
+        Err(_) => PathStat { exists: false, is_dir: false },
+    }
+}
+
+/// Stat an absolute path — returns existence and directory flag without leaking errors.
+#[tauri::command]
+pub async fn stat_path(path: String) -> PathStat {
+    stat_path_impl(path)
+}
+
 /// List entries in a directory within a repository.
 #[tauri::command]
 pub async fn list_directory(repo_path: String, subdir: String) -> Result<Vec<DirEntry>, String> {
@@ -1166,6 +1188,33 @@ mod tests {
 
         let new_file = entries.iter().find(|e| e.name == "new_file.txt").unwrap();
         assert_eq!(new_file.git_status, "untracked");
+    }
+
+    #[test]
+    fn test_stat_path_file() {
+        let dir = setup_test_repo();
+        let file = dir.path().join("README.md");
+        let stat = stat_path_impl(file.to_string_lossy().to_string());
+        assert!(stat.exists);
+        assert!(!stat.is_dir);
+    }
+
+    #[test]
+    fn test_stat_path_directory() {
+        let dir = setup_test_repo();
+        let subdir = dir.path().join("src");
+        let stat = stat_path_impl(subdir.to_string_lossy().to_string());
+        assert!(stat.exists);
+        assert!(stat.is_dir);
+    }
+
+    #[test]
+    fn test_stat_path_missing() {
+        let dir = setup_test_repo();
+        let missing = dir.path().join("does-not-exist");
+        let stat = stat_path_impl(missing.to_string_lossy().to_string());
+        assert!(!stat.exists);
+        assert!(!stat.is_dir);
     }
 
     #[test]

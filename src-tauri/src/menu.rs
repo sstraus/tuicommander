@@ -32,6 +32,10 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
             "CmdOrCtrl+Shift+T"
         ))
         .separator()
+        .item(&item!("open-file", "Open File…", "CmdOrCtrl+O"))
+        .item(&item!("open-folder", "Open Folder…", "CmdOrCtrl+Shift+O"))
+        .item(&item!("open-path", "Open Path…", "CmdOrCtrl+Alt+O"))
+        .separator()
         .item(&item!("settings", "Settings", "CmdOrCtrl+,"));
 
     if !is_macos {
@@ -119,6 +123,12 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
     // ---------- Tools ----------
     let tools = SubmenuBuilder::new(app, "&Tools")
         .item(&item!(
+            "command-palette",
+            "Command Palette",
+            "CmdOrCtrl+P"
+        ))
+        .separator()
+        .item(&item!(
             "prompt-library",
             "Prompt Library",
             "CmdOrCtrl+Shift+K"
@@ -149,7 +159,32 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
             "Diff Scroll",
             "CmdOrCtrl+Shift+G"
         ))
+        .item(&item!(
+            "worktree-manager",
+            "Worktree Manager",
+            "CmdOrCtrl+Shift+W"
+        ))
+        .item(&item!(
+            "quick-branch-switch",
+            "Quick Branch Switch",
+            "CmdOrCtrl+B"
+        ))
         .separator()
+        .item(&item!(
+            "activity-dashboard",
+            "Activity Dashboard",
+            "CmdOrCtrl+Shift+A"
+        ))
+        .item(&item!(
+            "mcp-popup",
+            "MCP Servers",
+            "CmdOrCtrl+Shift+I"
+        ))
+        .item(&item!(
+            "error-log",
+            "Error Log",
+            "CmdOrCtrl+Shift+E"
+        ))
         .item(&item!("task-queue", "Task Queue", "CmdOrCtrl+J"))
         .build()?;
 

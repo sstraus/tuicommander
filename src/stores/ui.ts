@@ -50,6 +50,10 @@ interface UIStoreState {
   // File browser view mode (persisted)
   fileBrowserViewMode: "flat" | "tree";
 
+  // External root (ephemeral) — when set, FileBrowserPanel browses this absolute
+  // path instead of the active repo. Used by "Open Folder…" / "Open Path…".
+  fileBrowserExternalRoot: string | null;
+
   // Active dropdown (mutually exclusive)
   activeDropdown: "ide" | "font" | "agent" | null;
 
@@ -78,6 +82,7 @@ function createUIStore() {
     settingsNavWidth: SETTINGS_NAV_DEFAULT_WIDTH,
     diffViewMode: "split" as DiffViewMode,
     fileBrowserViewMode: "flat" as "flat" | "tree",
+    fileBrowserExternalRoot: null,
     activeDropdown: null,
     isLoading: false,
     loadingMessage: "",
@@ -213,6 +218,12 @@ function createUIStore() {
     setFileBrowserViewMode(mode: "flat" | "tree"): void {
       setState("fileBrowserViewMode", mode);
       saveUIPrefs();
+    },
+
+    // External root (ephemeral, not persisted) — lets the file browser escape
+    // repo scoping for "Open Folder…" / "Open Path…".
+    setFileBrowserExternalRoot(path: string | null): void {
+      setState("fileBrowserExternalRoot", path);
     },
 
     // Panel toggles — mutually exclusive
