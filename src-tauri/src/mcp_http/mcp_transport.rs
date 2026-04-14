@@ -175,7 +175,7 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
     if !state.config.read().collapse_tools {
         out.push_str("## Workflow\n\n");
         out.push_str("- **Discover:** `repo action=list|prs|active` · `agent action=detect`.\n");
-        out.push_str("- **Spawn:** `session action=create` (shell) · `agent action=spawn` (AI) · `repo action=worktree_create` (isolated).\n");
+        out.push_str("- **Spawn:** `session action=create` (shell) · `agent action=spawn` (AI) · `repo action=worktree_create` (isolated). `agent_type` resolves run config names first (case-insensitive), then agent binary names.\n");
         out.push_str("- **Observe:** `session action=status|output` · `agent action=inbox`.\n");
         out.push_str("- **Coordinate:** `agent action=register/send/inbox` for peer messaging.\n\n");
     }
@@ -296,7 +296,7 @@ fn native_tool_definitions() -> serde_json::Value {
                 "model": { "type": "string", "description": "Model override (action=spawn)" },
                 "print_mode": { "type": "boolean", "description": "false (default): visible TUI tab, observable via agent(inbox). true: headless, no tab. (action=spawn)" },
                 "output_format": { "type": "string", "description": "Output format, e.g. 'json' (action=spawn)" },
-                "agent_type": { "type": "string", "description": "Agent binary: claude, codex, aider, goose (action=spawn)" },
+                "agent_type": { "type": "string", "description": "Agent type OR run config name. Resolved as: (1) run config name match across enabled agents, (2) agent binary name (claude, codex, aider, goose, gemini, ...). Case-insensitive. (action=spawn)" },
                 "binary_path": { "type": "string", "description": "Override agent binary path (action=spawn)" },
                 "args": { "type": "array", "items": { "type": "string" }, "description": "Raw CLI args (action=spawn)" },
                 "rows": { "type": "integer", "description": "Terminal rows (action=spawn)" },
@@ -1276,8 +1276,9 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
                 return serde_json::json!({"error": "Max concurrent sessions reached"});
             }
 
-            // Resolve agent binary
-            let binary_path = if let Some(path) = args["binary_path"].as_str() {
+            // Resolve agent binary — run config name takes priority, then literal agent type
+            let agents_cfg = crate::config::load_agents_config();
+            let (binary_path, resolved) = if let Some(path) = args["binary_path"].as_str() {
                 let p = std::path::Path::new(path);
                 if !p.is_absolute() {
                     return serde_json::json!({"error": "binary_path must be an absolute path"});
@@ -1285,13 +1286,15 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
                 if !p.is_file() {
                     return serde_json::json!({"error": "binary_path does not point to an existing file"});
                 }
-                path.to_string()
+                (path.to_string(), None)
             } else {
-                let agent_type = args["agent_type"].as_str().unwrap_or("claude");
-                let detection = crate::agent::detect_agent_binary(agent_type.to_string());
+                let agent_type_raw = args["agent_type"].as_str().unwrap_or("claude");
+                let rc = resolve_run_config(agent_type_raw, &agents_cfg);
+                let bin = rc.command.as_deref().unwrap_or(&rc.agent_type);
+                let detection = crate::agent::detect_agent_binary(bin.to_string());
                 match detection.path {
-                    Some(p) => p,
-                    None => return serde_json::json!({"error": format!("Agent binary '{}' not found", agent_type)}),
+                    Some(p) => (p, Some(rc)),
+                    None => return serde_json::json!({"error": format!("Agent binary '{}' not found", bin)}),
                 }
             };
 
@@ -1324,22 +1327,46 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
                 cmd.env("TUIC_PARENT", parent);
             }
 
+            // Inject run config env vars
+            if let Some(ref rc) = resolved {
+                for (k, v) in &rc.env {
+                    cmd.env(k, v);
+                }
+            }
+
             if let Some(raw_args) = args.get("args").and_then(|a| a.as_array()) {
+                // Explicit args from caller override everything
                 for arg in raw_args {
                     if let Some(s) = arg.as_str() { cmd.arg(s); }
                 }
+            } else if let Some(ref rc) = resolved {
+                if let Some(ref rc_args) = rc.args {
+                    // Run config matched: merge MCP params, then substitute {prompt}
+                    let merged = match merge_mcp_params_into_args(
+                        rc_args,
+                        args["model"].as_str(),
+                        args["print_mode"].as_bool().unwrap_or(false),
+                        args["output_format"].as_str(),
+                    ) {
+                        Ok(m) => m,
+                        Err(e) => return serde_json::json!({"error": e}),
+                    };
+                    let final_args = substitute_prompt_in_args(&merged, &effective_prompt);
+                    for arg in &final_args {
+                        cmd.arg(arg);
+                    }
+                } else {
+                    // Run config matched but no args override — use default MCP param logic
+                    if args["print_mode"].as_bool().unwrap_or(false) { cmd.arg("--print"); }
+                    if let Some(format) = args["output_format"].as_str() { cmd.arg("--output-format"); cmd.arg(format); }
+                    if let Some(model) = args["model"].as_str() { cmd.arg("--model"); cmd.arg(model); }
+                    cmd.arg(&effective_prompt);
+                }
             } else {
-                if args["print_mode"].as_bool().unwrap_or(false) {
-                    cmd.arg("--print");
-                }
-                if let Some(format) = args["output_format"].as_str() {
-                    cmd.arg("--output-format");
-                    cmd.arg(format);
-                }
-                if let Some(model) = args["model"].as_str() {
-                    cmd.arg("--model");
-                    cmd.arg(model);
-                }
+                // No run config, no explicit args — default MCP param logic
+                if args["print_mode"].as_bool().unwrap_or(false) { cmd.arg("--print"); }
+                if let Some(format) = args["output_format"].as_str() { cmd.arg("--output-format"); cmd.arg(format); }
+                if let Some(model) = args["model"].as_str() { cmd.arg("--model"); cmd.arg(model); }
                 cmd.arg(&effective_prompt);
             }
             if let Some(cwd) = args["cwd"].as_str() { cmd.cwd(cwd); }
@@ -2501,6 +2528,111 @@ fn remap_action(args: &serde_json::Value, new_action: &str) -> serde_json::Value
     let mut remapped = args.clone();
     remapped["action"] = serde_json::Value::String(new_action.to_string());
     remapped
+}
+
+// ---------------------------------------------------------------------------
+// Run config resolution
+// ---------------------------------------------------------------------------
+
+/// Result of resolving an `agent_type` string against the agents config.
+/// When a run config matches, command/args/env override the agent binary defaults.
+#[derive(Debug, Clone)]
+struct ResolvedRunConfig {
+    /// The canonical agent type key (e.g. "claude", "codex").
+    agent_type: String,
+    /// Override command from the matched run config, if any.
+    command: Option<String>,
+    /// Override args from the matched run config, if any.
+    args: Option<Vec<String>>,
+    /// Env vars from the matched run config, if any.
+    env: std::collections::HashMap<String, String>,
+}
+
+/// Resolve an `agent_type` parameter as either:
+/// 1. A run config name (case-insensitive match across all enabled agents), or
+/// 2. A literal agent type / binary name.
+///
+/// Returns `ResolvedRunConfig` with overrides when a run config matches,
+/// or just the agent_type passthrough when it doesn't.
+fn resolve_run_config(agent_type: &str, agents_cfg: &crate::config::AgentsConfig) -> ResolvedRunConfig {
+    let needle = agent_type.to_ascii_lowercase();
+
+    // Pass 1: try to match as a run config name across all agents
+    for (agent_key, settings) in &agents_cfg.agents {
+        for cfg in &settings.run_configs {
+            if cfg.name.to_ascii_lowercase() == needle {
+                return ResolvedRunConfig {
+                    agent_type: agent_key.clone(),
+                    command: Some(cfg.command.clone()),
+                    args: Some(cfg.args.clone()),
+                    env: cfg.env.clone(),
+                };
+            }
+        }
+    }
+
+    // Pass 2: treat as a literal agent type (no run config overrides)
+    ResolvedRunConfig {
+        agent_type: agent_type.to_string(),
+        command: None,
+        args: None,
+        env: Default::default(),
+    }
+}
+
+/// Substitute `{prompt}` placeholders in args, or append prompt as last arg.
+fn substitute_prompt_in_args(args: &[String], prompt: &str) -> Vec<String> {
+    let has_placeholder = args.iter().any(|a| a.contains("{prompt}"));
+    if has_placeholder {
+        args.iter()
+            .map(|a| a.replace("{prompt}", prompt))
+            .collect()
+    } else {
+        let mut result: Vec<String> = args.to_vec();
+        result.push(prompt.to_string());
+        result
+    }
+}
+
+/// Merge MCP params (model, print_mode, output_format) into run config args.
+/// Returns Ok(merged args) or Err(conflict description).
+fn merge_mcp_params_into_args(
+    args: &[String],
+    model: Option<&str>,
+    print_mode: bool,
+    output_format: Option<&str>,
+) -> Result<Vec<String>, String> {
+    let mut merged = args.to_vec();
+
+    if let Some(model_val) = model {
+        if args.iter().any(|a| a.starts_with("--model")) {
+            return Err(format!(
+                "Conflict: run config already contains --model but MCP param model=\"{}\" was also passed",
+                model_val
+            ));
+        }
+        merged.push("--model".to_string());
+        merged.push(model_val.to_string());
+    }
+
+    if print_mode {
+        if !args.iter().any(|a| a.starts_with("--print")) {
+            merged.push("--print".to_string());
+        }
+    }
+
+    if let Some(fmt) = output_format {
+        if args.iter().any(|a| a.starts_with("--output-format")) {
+            return Err(format!(
+                "Conflict: run config already contains --output-format but MCP param output_format=\"{}\" was also passed",
+                fmt
+            ));
+        }
+        merged.push("--output-format".to_string());
+        merged.push(fmt.to_string());
+    }
+
+    Ok(merged)
 }
 
 // Re-export for tests — these need to be public enough for sibling test module
@@ -4346,6 +4478,150 @@ mod tests {
         let messages = result["messages"].as_array().expect("inbox returns messages array");
         assert_eq!(messages.len(), 1, "inbox should contain 1 message: {result}");
         assert_eq!(messages[0]["content"].as_str(), Some("note to self"));
+    }
+
+    // -----------------------------------------------------------------------
+    // resolve_run_config tests
+    // -----------------------------------------------------------------------
+
+    fn make_agents_config() -> crate::config::AgentsConfig {
+        use crate::config::{AgentRunConfig, AgentSettings, AgentsConfig};
+        let mut agents = std::collections::HashMap::new();
+        agents.insert("claude".to_string(), AgentSettings {
+            run_configs: vec![
+                AgentRunConfig {
+                    name: "claude qwen3.5".to_string(),
+                    command: "ollama".to_string(),
+                    args: vec!["launch".to_string(), "claude".to_string(), "--model".to_string(), "qwen3.5".to_string()],
+                    env: [("OLLAMA_HOST".to_string(), "localhost:11434".to_string())].into_iter().collect(),
+                    is_default: false,
+                },
+                AgentRunConfig {
+                    name: "Default".to_string(),
+                    command: "claude".to_string(),
+                    args: vec![],
+                    env: std::collections::HashMap::new(),
+                    is_default: true,
+                },
+            ],
+            ..Default::default()
+        });
+        agents.insert("codex".to_string(), AgentSettings {
+            run_configs: vec![
+                AgentRunConfig {
+                    name: "codex-fast".to_string(),
+                    command: "codex".to_string(),
+                    args: vec!["--fast".to_string()],
+                    env: std::collections::HashMap::new(),
+                    is_default: true,
+                },
+            ],
+            ..Default::default()
+        });
+        AgentsConfig { agents, headless_agent: None }
+    }
+
+    #[test]
+    fn resolve_run_config_matches_by_name_case_insensitive() {
+        let cfg = make_agents_config();
+        let resolved = resolve_run_config("Claude Qwen3.5", &cfg);
+        assert_eq!(resolved.agent_type, "claude");
+        assert_eq!(resolved.command.as_deref(), Some("ollama"));
+        assert!(resolved.args.as_ref().unwrap().contains(&"qwen3.5".to_string()));
+        assert_eq!(resolved.env.get("OLLAMA_HOST").map(|s| s.as_str()), Some("localhost:11434"));
+    }
+
+    #[test]
+    fn resolve_run_config_falls_back_to_agent_type() {
+        let cfg = make_agents_config();
+        let resolved = resolve_run_config("gemini", &cfg);
+        assert_eq!(resolved.agent_type, "gemini");
+        assert!(resolved.command.is_none());
+        assert!(resolved.args.is_none());
+        assert!(resolved.env.is_empty());
+    }
+
+    #[test]
+    fn resolve_run_config_cross_agent_match() {
+        let cfg = make_agents_config();
+        let resolved = resolve_run_config("codex-fast", &cfg);
+        assert_eq!(resolved.agent_type, "codex");
+        assert_eq!(resolved.command.as_deref(), Some("codex"));
+    }
+
+    // -----------------------------------------------------------------------
+    // substitute_prompt_in_args tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn substitute_prompt_placeholder_present() {
+        let args = vec!["-p".to_string(), "{prompt}".to_string(), "--no-input".to_string()];
+        let result = substitute_prompt_in_args(&args, "fix the bug");
+        assert_eq!(result, vec!["-p", "fix the bug", "--no-input"]);
+    }
+
+    #[test]
+    fn substitute_prompt_placeholder_absent_appends() {
+        let args = vec!["--fast".to_string()];
+        let result = substitute_prompt_in_args(&args, "fix the bug");
+        assert_eq!(result, vec!["--fast", "fix the bug"]);
+    }
+
+    #[test]
+    fn substitute_prompt_multiple_placeholders() {
+        let args = vec!["{prompt}".to_string(), "--echo".to_string(), "{prompt}".to_string()];
+        let result = substitute_prompt_in_args(&args, "hello");
+        assert_eq!(result, vec!["hello", "--echo", "hello"]);
+    }
+
+    // -----------------------------------------------------------------------
+    // merge_mcp_params_into_args tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn merge_params_model_no_conflict() {
+        let args = vec!["--fast".to_string()];
+        let result = merge_mcp_params_into_args(&args, Some("gpt-4"), false, None).unwrap();
+        assert!(result.contains(&"--model".to_string()));
+        assert!(result.contains(&"gpt-4".to_string()));
+    }
+
+    #[test]
+    fn merge_params_model_conflict() {
+        let args = vec!["--model".to_string(), "sonnet".to_string()];
+        let result = merge_mcp_params_into_args(&args, Some("gpt-4"), false, None);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Conflict"));
+    }
+
+    #[test]
+    fn merge_params_print_mode_appended() {
+        let args = vec![];
+        let result = merge_mcp_params_into_args(&args, None, true, None).unwrap();
+        assert!(result.contains(&"--print".to_string()));
+    }
+
+    #[test]
+    fn merge_params_print_mode_already_present() {
+        let args = vec!["--print".to_string()];
+        let result = merge_mcp_params_into_args(&args, None, true, None).unwrap();
+        // Should not duplicate
+        assert_eq!(result.iter().filter(|a| *a == "--print").count(), 1);
+    }
+
+    #[test]
+    fn merge_params_output_format_conflict() {
+        let args = vec!["--output-format".to_string(), "json".to_string()];
+        let result = merge_mcp_params_into_args(&args, None, false, Some("text"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn merge_params_output_format_no_conflict() {
+        let args = vec![];
+        let result = merge_mcp_params_into_args(&args, None, false, Some("json")).unwrap();
+        assert!(result.contains(&"--output-format".to_string()));
+        assert!(result.contains(&"json".to_string()));
     }
 
     #[test]

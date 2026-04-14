@@ -532,6 +532,22 @@ Features to test when TUICommander is more usable.
 - [ ] Case-insensitive: "Claude" matches existing "claude"
 - [ ] Cross-agent: name from claude configs rejected when adding to gemini
 
+## Env Vars Editing per Run Config (e917dfdc)
+- [ ] Settings → Agents → Add Config → "Environment Variables" section with + Add button
+- [ ] Add KEY=value row, save config → env persists on reload
+- [ ] Run config row shows "N env" badge when env vars are set
+- [ ] Click "Env" button on saved config → inline edit panel opens
+- [ ] Edit/remove env vars in saved config → changes persist
+
+## Headless Agent Grouped Dropdown (e917dfdc)
+- [ ] Settings → Agents → Headless Agent dropdown: agents with run configs show optgroup
+- [ ] Agents without run configs show as single option
+- [ ] Selecting a run config stores "type:name" in headless_agent field
+- [ ] Same grouped dropdown in Smart Prompts tab
+
+## Settings Nav Scroll (e27fae6c)
+- [ ] Settings panel with 10+ repos → nav sidebar scrolls instead of compressing items
+
 ## Performance
 - [ ] High-throughput output (e.g. `find /`) → terminal stays responsive (rAF coalescing)
 - [ ] Edit a file in repo → git panel updates immediately (watcher-driven cache, not 5s delay)
