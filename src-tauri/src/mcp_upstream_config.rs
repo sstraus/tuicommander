@@ -37,6 +37,9 @@ pub(crate) struct UpstreamMcpServer {
     /// Optional tool filter (allow/deny list).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) tool_filter: Option<ToolFilter>,
+    /// Optional authentication configuration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) auth: Option<UpstreamAuth>,
 }
 
 /// Transport type for connecting to an upstream MCP server.
@@ -72,6 +75,28 @@ pub(crate) enum FilterMode {
     Deny,
 }
 
+/// Authentication method for an upstream MCP server.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub(crate) enum UpstreamAuth {
+    /// Static bearer token.
+    Bearer {
+        token: String,
+    },
+    /// OAuth 2.1 with PKCE (RFC 9449 / RFC 8707).
+    OAuth2 {
+        client_id: String,
+        #[serde(default)]
+        scopes: Vec<String>,
+        /// Override discovered authorization endpoint.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        authorization_endpoint: Option<String>,
+        /// Override discovered token endpoint.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        token_endpoint: Option<String>,
+    },
+}
+
 fn default_true() -> bool {
     true
 }
@@ -94,6 +119,7 @@ pub(crate) enum UpstreamConfigError {
     SelfReferentialUrl(String),
     EmptyUrl(String),
     EmptyCommand(String),
+    EmptyOAuthClientId(String),
 }
 
 impl std::fmt::Display for UpstreamConfigError {
@@ -113,6 +139,9 @@ impl std::fmt::Display for UpstreamConfigError {
             }
             Self::EmptyUrl(id) => write!(f, "Server '{id}' has an empty HTTP URL"),
             Self::EmptyCommand(id) => write!(f, "Server '{id}' has an empty stdio command"),
+            Self::EmptyOAuthClientId(id) => {
+                write!(f, "Server '{id}' has an OAuth2 auth with empty client_id")
+            }
         }
     }
 }
@@ -158,6 +187,13 @@ pub(crate) fn validate_upstream_config(
                 if command.is_empty() {
                     errors.push(UpstreamConfigError::EmptyCommand(server.id.clone()));
                 }
+            }
+        }
+
+        // Auth-specific validation
+        if let Some(UpstreamAuth::OAuth2 { client_id, .. }) = &server.auth {
+            if client_id.is_empty() {
+                errors.push(UpstreamConfigError::EmptyOAuthClientId(server.id.clone()));
             }
         }
     }
@@ -301,6 +337,7 @@ mod tests {
             enabled: true,
             timeout_secs: 30,
             tool_filter: None,
+            auth: None,
         }
     }
 
@@ -317,6 +354,7 @@ mod tests {
             enabled: true,
             timeout_secs: 30,
             tool_filter: None,
+            auth: None,
         }
     }
 
@@ -372,6 +410,7 @@ mod tests {
         assert!(server.enabled); // default_true
         assert_eq!(server.timeout_secs, 30); // default_timeout
         assert!(server.tool_filter.is_none());
+        assert!(server.auth.is_none());
     }
 
     #[test]
@@ -388,6 +427,7 @@ mod tests {
                 mode: FilterMode::Deny,
                 patterns: vec!["dangerous_*".to_string(), "admin_*".to_string()],
             }),
+            auth: None,
         };
         let json = serde_json::to_string_pretty(&server).unwrap();
         let parsed: UpstreamMcpServer = serde_json::from_str(&json).unwrap();
@@ -395,6 +435,121 @@ mod tests {
         let filter = parsed.tool_filter.unwrap();
         assert_eq!(filter.mode, FilterMode::Deny);
         assert_eq!(filter.patterns.len(), 2);
+    }
+
+    // -- Auth serialization --
+
+    #[test]
+    fn bearer_auth_round_trip() {
+        let mut server = http_server("secure", "https://remote:443/mcp");
+        server.auth = Some(UpstreamAuth::Bearer {
+            token: "sk-test-123".to_string(),
+        });
+        let json = serde_json::to_string_pretty(&server).unwrap();
+        let parsed: UpstreamMcpServer = serde_json::from_str(&json).unwrap();
+        assert_eq!(server, parsed);
+        assert!(matches!(parsed.auth, Some(UpstreamAuth::Bearer { .. })));
+    }
+
+    #[test]
+    fn oauth2_auth_round_trip() {
+        let mut server = http_server("oauth", "https://remote:443/mcp");
+        server.auth = Some(UpstreamAuth::OAuth2 {
+            client_id: "my-app".to_string(),
+            scopes: vec!["read".to_string(), "write".to_string()],
+            authorization_endpoint: Some("https://auth.example.com/authorize".to_string()),
+            token_endpoint: Some("https://auth.example.com/token".to_string()),
+        });
+        let json = serde_json::to_string_pretty(&server).unwrap();
+        let parsed: UpstreamMcpServer = serde_json::from_str(&json).unwrap();
+        assert_eq!(server, parsed);
+        if let Some(UpstreamAuth::OAuth2 { client_id, scopes, .. }) = &parsed.auth {
+            assert_eq!(client_id, "my-app");
+            assert_eq!(scopes.len(), 2);
+        } else {
+            panic!("Expected OAuth2 auth variant");
+        }
+    }
+
+    #[test]
+    fn oauth2_minimal_round_trip() {
+        let mut server = http_server("oauth-min", "https://remote:443/mcp");
+        server.auth = Some(UpstreamAuth::OAuth2 {
+            client_id: "my-app".to_string(),
+            scopes: vec![],
+            authorization_endpoint: None,
+            token_endpoint: None,
+        });
+        let json = serde_json::to_string_pretty(&server).unwrap();
+        // Optional fields should be omitted
+        assert!(!json.contains("authorization_endpoint"));
+        assert!(!json.contains("token_endpoint"));
+        let parsed: UpstreamMcpServer = serde_json::from_str(&json).unwrap();
+        assert_eq!(server, parsed);
+    }
+
+    #[test]
+    fn config_without_auth_deserializes_to_none() {
+        let json = r#"{
+            "id": "abc",
+            "name": "test",
+            "transport": { "type": "http", "url": "http://example.com/mcp" }
+        }"#;
+        let server: UpstreamMcpServer = serde_json::from_str(json).unwrap();
+        assert!(server.auth.is_none());
+    }
+
+    #[test]
+    fn auth_not_serialized_when_none() {
+        let server = http_server("plain", "http://remote:8080/mcp");
+        let json = serde_json::to_string_pretty(&server).unwrap();
+        assert!(!json.contains("\"auth\""));
+    }
+
+    // -- Validation: auth --
+
+    #[test]
+    fn oauth2_empty_client_id_rejected() {
+        let mut server = http_server("bad-oauth", "https://remote:443/mcp");
+        server.auth = Some(UpstreamAuth::OAuth2 {
+            client_id: String::new(),
+            scopes: vec![],
+            authorization_endpoint: None,
+            token_endpoint: None,
+        });
+        let config = UpstreamMcpConfig {
+            servers: vec![server],
+        };
+        let errors = validate_upstream_config(&config, 3845);
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], UpstreamConfigError::EmptyOAuthClientId(_)));
+    }
+
+    #[test]
+    fn oauth2_valid_client_id_passes() {
+        let mut server = http_server("good-oauth", "https://remote:443/mcp");
+        server.auth = Some(UpstreamAuth::OAuth2 {
+            client_id: "my-app".to_string(),
+            scopes: vec!["read".to_string()],
+            authorization_endpoint: None,
+            token_endpoint: None,
+        });
+        let config = UpstreamMcpConfig {
+            servers: vec![server],
+        };
+        assert!(validate_upstream_config(&config, 3845).is_empty());
+    }
+
+    #[test]
+    fn bearer_auth_passes_validation() {
+        let mut server = http_server("bearer", "https://remote:443/mcp");
+        server.auth = Some(UpstreamAuth::Bearer {
+            token: "sk-123".to_string(),
+        });
+        let config = UpstreamMcpConfig {
+            servers: vec![server],
+        };
+        assert!(validate_upstream_config(&config, 3845).is_empty());
     }
 
     // -- Validation: valid configs --
@@ -725,6 +880,25 @@ mod tests {
 
         // Unchanged → still registered once (no double-connect)
         assert_eq!(registry.upstream_names(), vec!["delta"]);
+    }
+
+    #[tokio::test]
+    async fn diff_reconnects_on_auth_change() {
+        let registry = UpstreamRegistry::new();
+        let server = disabled_http_server("epsilon", "http://127.0.0.1:1/mcp");
+        registry.connect_upstream(server.clone(), None).await.unwrap();
+
+        let old = UpstreamMcpConfig { servers: vec![server.clone()] };
+
+        // Add bearer auth → should trigger reconnect
+        let mut new_server = server;
+        new_server.auth = Some(UpstreamAuth::Bearer { token: "tok".to_string() });
+        let new = UpstreamMcpConfig { servers: vec![new_server] };
+
+        registry.apply_config_diff(&old, &new, 9999).await;
+
+        // epsilon should still be registered (disconnected + reconnected)
+        assert!(registry.upstream_names().contains(&"epsilon".to_string()));
     }
 
     #[test]

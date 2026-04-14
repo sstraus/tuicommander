@@ -507,6 +507,7 @@ impl UpstreamRegistry {
                         || old_server.enabled != new_server.enabled
                         || old_server.timeout_secs != new_server.timeout_secs
                         || old_server.tool_filter != new_server.tool_filter
+                        || old_server.auth != new_server.auth
                 }
             };
             if should_disconnect {
@@ -525,6 +526,7 @@ impl UpstreamRegistry {
                         || old_server.enabled != new_server.enabled
                         || old_server.timeout_secs != new_server.timeout_secs
                         || old_server.tool_filter != new_server.tool_filter
+                        || old_server.auth != new_server.auth
                 }
             };
             if should_connect
@@ -822,6 +824,7 @@ mod tests {
             enabled: true,
             timeout_secs: 10,
             tool_filter: None,
+            auth: None,
         }
     }
 
@@ -870,6 +873,7 @@ mod tests {
                 mode,
                 patterns: patterns.iter().map(|s| s.to_string()).collect(),
             }),
+            auth: None,
         }
     }
 
