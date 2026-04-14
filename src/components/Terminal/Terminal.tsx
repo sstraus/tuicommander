@@ -18,7 +18,7 @@ import { rateLimitStore } from "../../stores/ratelimit";
 import { appLogger } from "../../stores/appLogger";
 import { notificationsStore } from "../../stores/notifications";
 import { invoke } from "../../invoke";
-import { isMacOS } from "../../platform";
+import { isMacOS, isWindows } from "../../platform";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
 import { agentConfigsStore } from "../../stores/agentConfigs";
 import { parseOsc7Url } from "../../utils/osc7";
@@ -1113,6 +1113,31 @@ export const Terminal: Component<TerminalProps> = (props) => {
             event.preventDefault();
             return false;
           }
+        }
+      }
+
+      // Windows copy/paste: match Windows Terminal / VS Code convention.
+      // Ctrl+C copies the selection when present, otherwise falls through to SIGINT.
+      // Ctrl+V pastes from the clipboard. Linux keeps Ctrl+Shift+C/V (xterm default).
+      if (isWindows() && event.type === "keydown" && event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey) {
+        if (event.key === "c" || event.key === "C") {
+          const sel = terminal!.getSelection();
+          if (sel) {
+            event.preventDefault();
+            navigator.clipboard.writeText(sel).then(
+              () => setStatus?.("Copied to clipboard"),
+              (err) => appLogger.warn("terminal", "Ctrl+C copy failed", err),
+            );
+            return false;
+          }
+          // No selection: let xterm send SIGINT (\x03)
+        } else if (event.key === "v" || event.key === "V") {
+          event.preventDefault();
+          navigator.clipboard.readText().then(
+            (text) => { if (text) terminal!.paste(text); },
+            (err) => appLogger.warn("terminal", "Ctrl+V paste failed", err),
+          );
+          return false;
         }
       }
 
