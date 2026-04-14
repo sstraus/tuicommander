@@ -222,16 +222,28 @@ function installRenderObserver(
       if (SUGGEST_RE.test(text)) {
         const top = row * cellH;
         html += `<div style="position:absolute;left:0;right:0;top:${top}px;height:${cellH}px;background:${bg}"></div>`;
-        // Check next row for wrapped continuation
-        if (row + 1 < rows) {
-          const next = buf.getLine(viewportY + row + 1);
-          if (next) {
-            const nextText = next.translateToString(true);
-            if (next.isWrapped || (nextText.includes("|") && !INTENT_RE.test(nextText))) {
-              html += `<div style="position:absolute;left:0;right:0;top:${top + cellH}px;height:${cellH}px;background:${bg}"></div>`;
-            }
+        // Cover all wrapped continuation rows (suggest can span 3+ terminal rows)
+        let contRow = row + 1;
+        while (contRow < rows) {
+          const next = buf.getLine(viewportY + contRow);
+          if (!next) break;
+          const nextText = next.translateToString(true);
+          // Stop at new token prefixes
+          if (SUGGEST_RE.test(nextText) || INTENT_RE.test(nextText)) break;
+          if (next.isWrapped) {
+            // xterm marks this row as a continuation of the previous logical line
+            html += `<div style="position:absolute;left:0;right:0;top:${contRow * cellH}px;height:${cellH}px;background:${bg}"></div>`;
+            contRow++;
+          } else if (nextText.includes("|")) {
+            // Not wrapped by xterm, but has pipe separators — likely a suggest continuation
+            html += `<div style="position:absolute;left:0;right:0;top:${contRow * cellH}px;height:${cellH}px;background:${bg}"></div>`;
+            contRow++;
+          } else {
+            break;
           }
         }
+        // Skip covered rows so the outer loop doesn't re-process them
+        row = contRow - 1;
       } else if (INTENT_RE.test(text)) {
         const top = row * cellH;
         html += `<div style="position:absolute;left:0;right:0;top:${top}px;height:${cellH}px;background:rgba(181,147,90,0.12)"></div>`;
