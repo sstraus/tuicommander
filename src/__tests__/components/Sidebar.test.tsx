@@ -1576,7 +1576,7 @@ describe("Sidebar", () => {
 
       const { container } = render(() => <Sidebar {...defaultProps()} />);
       // setPrDetailTarget is deferred via queueMicrotask to avoid blocking branch-switch flush
-      await new Promise((r) => queueMicrotask(r));
+      await new Promise<void>((r) => queueMicrotask(r));
       const popover = container.querySelector("[data-testid='pr-detail-popover']");
       expect(popover).not.toBeNull();
       expect(popover!.getAttribute("data-branch")).toBe("main");
