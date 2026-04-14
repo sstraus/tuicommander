@@ -499,6 +499,39 @@ Features to test when TUICommander is more usable.
 - [ ] Right-click branch → "Update from base (rebase)" fetches and rebases
 - [ ] Remote base ref auto-fetched before branch creation
 
+## UI Lock — Thundering Herd Fix (b59c659b)
+- [ ] Switch repo with 5+ existing terminals → no UI freeze (was 1-3s)
+- [ ] Open new terminal on a different repo → instant, no jank
+- [ ] Agent running + repo switch → no freeze
+- [ ] `git commit` in terminal → ChangesTab/BranchesTab update within 1s (bumpRevision deferred)
+- [ ] Switch to repo with open PR → popover appears without UI jank (deferred via queueMicrotask)
+- [ ] Activity dashboard dots still appear for active terminals (lastDataAt non-reactive Map)
+
+## PTY Input Border Filter (f54ad157)
+- [ ] Agent shows quota/budget line below input → silence timer NOT reset by it
+- [ ] Question detection unaffected by status bar content below input border
+- [ ] Completion notification not falsely triggered by post-input status updates
+
+## Terminal Spawn Speed (696082ac)
+- [ ] New terminal appears instantly when container has dimensions (check `spawnDelay` in logs — should be <50ms)
+- [ ] Split-pane scenario where flex layout settles late → still works (falls back to ResizeObserver)
+
+## PR Popover Load (36a1ba00)
+- [ ] PR popover opens instantly with cached data, CI checks load after first paint
+- [ ] Large PR (100+ commits) → popover doesn't freeze UI
+
+## Smart Prompts Shell Script Mode (f60642c5)
+- [ ] Create prompt with "Shell script" mode → runs `sh -c` with content directly
+- [ ] Shell script with `{branch}` variable → resolves correctly
+- [ ] Script timeout (>60s) → shows timeout error
+- [ ] Script with non-zero exit → shows stderr in error
+
+## Run Config Name Validation (9e02fbb4)
+- [ ] Settings → Agents → Add Config → type existing name → red border + "already exists" error
+- [ ] Save button disabled while name is duplicate
+- [ ] Case-insensitive: "Claude" matches existing "claude"
+- [ ] Cross-agent: name from claude configs rejected when adding to gemini
+
 ## Performance
 - [ ] High-throughput output (e.g. `find /`) → terminal stays responsive (rAF coalescing)
 - [ ] Edit a file in repo → git panel updates immediately (watcher-driven cache, not 5s delay)
