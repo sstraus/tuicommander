@@ -3,9 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   isSendGuardActive,
-  isWithinEchoWindow,
   SEND_GUARD_MS,
-  ECHO_WINDOW_MS,
 } from "../components/syncGuards";
 
 const css = readFileSync(
@@ -71,18 +69,28 @@ describe("CommandInput delta sync algorithm", () => {
 
 describe("CommandInput sync state management", () => {
   // Simulate the sync flow with a simple state machine.
-  // Mirrors CommandInput.tsx sync semantics: lastWriteAt (500ms echo window
-  // for per-char deltas) and lastSendAt (1000ms post-Enter suppression of
-  // incoming ptyInputLine so the cleared prompt doesn't reappear).
+  // Mirrors CommandInput.tsx sync semantics: pendingWrites counter (while > 0
+  // incoming ptyInputLine is echo — don't touch syncedText) and lastSendAt
+  // (1000ms post-Enter suppression so the cleared prompt doesn't reappear).
   class SyncSimulator {
     syncedText = "";
-    lastWriteAt = 0;
+    pendingWrites = 0;
     lastSendAt = 0;
     writes: string[] = [];
 
     writePty(data: string) {
-      this.lastWriteAt = Date.now();
+      this.pendingWrites++;
       this.writes.push(data);
+    }
+
+    /** Simulate write_pty RPC completing (promise resolved). */
+    ackWrite() {
+      this.pendingWrites--;
+    }
+
+    /** Acknowledge all pending writes at once. */
+    ackAllWrites() {
+      this.pendingWrites = 0;
     }
 
     syncDelta(newText: string) {
@@ -112,11 +120,12 @@ describe("CommandInput sync state management", () => {
       const now = Date.now();
       if (isSendGuardActive(now, this.lastSendAt)) return "send-guard";
       if (text === this.syncedText) return "skip"; // echo dedup
-      const recentWrite = isWithinEchoWindow(now, this.lastWriteAt);
-      if (!recentWrite) {
+      if (this.pendingWrites === 0) {
+        // No in-flight writes — terminal is driving, accept sync
         this.syncedText = text;
+        return "full-update";
       }
-      return recentWrite ? "display-only" : "full-update";
+      return "display-only";
     }
   }
 
@@ -161,9 +170,9 @@ describe("CommandInput sync state management", () => {
     sim.syncDelta("/pl");
     expect(sim.syncedText).toBe("/pl");
 
-    // PTY sends empty during menu redraw (within 500ms of our write)
+    // PTY sends empty during menu redraw — writes still pending
     const result = sim.receivePtyInput("");
-    expect(result).toBe("display-only"); // recent write → don't update syncedText
+    expect(result).toBe("display-only"); // pending writes → don't update syncedText
     expect(sim.syncedText).toBe("/pl"); // NOT reset to ""
 
     // User selects /wiz:plan — delta computed from /pl, not ""
@@ -171,14 +180,11 @@ describe("CommandInput sync state management", () => {
     expect(sim.writes[sim.writes.length - 1]).toBe("\x7f\x7f\x7f/wiz:plan ");
   });
 
-  it("terminal input updates syncedText after echo window", async () => {
+  it("terminal input updates syncedText when no writes are pending", () => {
     const sim = new SyncSimulator();
-    // Force lastWriteAt to be old (and lastSendAt older still so the send
-    // guard doesn't swallow the update)
-    sim.lastWriteAt = Date.now() - 1000;
-    sim.lastSendAt = Date.now() - 2000;
+    sim.lastSendAt = Date.now() - 2000; // send guard expired
 
-    // Terminal sends "hello" — not from PWA
+    // No pending writes — terminal sends "hello" (e.g. tab completion)
     const result = sim.receivePtyInput("hello");
     expect(result).toBe("full-update");
     expect(sim.syncedText).toBe("hello");
@@ -186,6 +192,38 @@ describe("CommandInput sync state management", () => {
     // Now if PWA user types, delta is computed from "hello"
     sim.syncDelta("hello world");
     expect(sim.writes[sim.writes.length - 1]).toBe(" world");
+  });
+
+  it("tab completion accepted after writes settle", () => {
+    const sim = new SyncSimulator();
+
+    // User types "gi" then presses Tab
+    sim.syncDelta("g");
+    sim.syncDelta("gi");
+    expect(sim.pendingWrites).toBe(2);
+
+    // Tab sends \t
+    sim.syncDelta("gi"); // no change, but tab is separate:
+    sim.writePty("\t");
+    expect(sim.pendingWrites).toBe(3);
+
+    // PTY echoes back "git " (tab completion) — still pending
+    const r1 = sim.receivePtyInput("git ");
+    expect(r1).toBe("display-only");
+    expect(sim.syncedText).toBe("gi"); // NOT updated
+
+    // All RPCs resolve
+    sim.ackAllWrites();
+    expect(sim.pendingWrites).toBe(0);
+
+    // PTY sends "git " again (stable) — now accepted
+    const r2 = sim.receivePtyInput("git ");
+    expect(r2).toBe("full-update");
+    expect(sim.syncedText).toBe("git ");
+
+    // User continues typing — delta from "git ", not "gi"
+    sim.syncDelta("git status");
+    expect(sim.writes[sim.writes.length - 1]).toBe("status");
   });
 
   it("send() arms a 1000ms guard that blocks ptyInputLine updates", () => {
@@ -199,8 +237,7 @@ describe("CommandInput sync state management", () => {
     expect(sim.writes[sim.writes.length - 1]).toBe("\r");
 
     // Within 1000ms, xterm reports the prompt as empty → must NOT overwrite
-    // syncedText and must NOT reach the textarea (mirrors CommandInput.tsx:49
-    // `if (Date.now() - lastSendAt < 1000) return;`).
+    // syncedText and must NOT reach the textarea.
     const immediate = sim.receivePtyInput("");
     expect(immediate).toBe("send-guard");
     expect(sim.syncedText).toBe("");
@@ -210,14 +247,134 @@ describe("CommandInput sync state management", () => {
     expect(ghost).toBe("send-guard");
     expect(sim.syncedText).toBe("");
 
-    // After the guard window expires, normal sync resumes. Also push
-    // lastWriteAt past the 500ms echo window so this is classified as a
-    // terminal-driven update, not a PWA echo.
+    // After the guard window expires, normal sync resumes.
     sim.lastSendAt = Date.now() - 1100;
-    sim.lastWriteAt = Date.now() - 600;
+    sim.ackAllWrites();
     const after = sim.receivePtyInput("new-prompt> ");
     expect(after).toBe("full-update");
     expect(sim.syncedText).toBe("new-prompt> ");
+  });
+
+  it("BUG REPRO: fast typing with network latency does not delete chars", () => {
+    // The original bug: user types "abc" fast on mobile. Each keystroke
+    // sends a write_pty RPC. With network latency, ptyInputLine echoes
+    // arrive late — e.g. "a" arrives when user is already at "abc".
+    // Old code: echo window expired → syncedText = "a" → next delta
+    // computed from "a" instead of "abc" → duplicate chars sent to PTY.
+    const sim = new SyncSimulator();
+
+    // User types a, b, c rapidly
+    sim.syncDelta("a");   // write "a" → pendingWrites=1
+    sim.syncDelta("ab");  // write "b" → pendingWrites=2
+    sim.syncDelta("abc"); // write "c" → pendingWrites=3
+    expect(sim.pendingWrites).toBe(3);
+    expect(sim.syncedText).toBe("abc");
+    expect(sim.writes).toEqual(["a", "b", "c"]);
+
+    // PTY echoes "a" (first RPC response arrives, but echo is stale)
+    const r1 = sim.receivePtyInput("a");
+    expect(r1).toBe("display-only"); // pendingWrites > 0 → ignored
+    expect(sim.syncedText).toBe("abc"); // NOT overwritten to "a"
+
+    // First RPC resolves
+    sim.ackWrite(); // pendingWrites=2
+
+    // PTY echoes "ab"
+    const r2 = sim.receivePtyInput("ab");
+    expect(r2).toBe("display-only"); // still pending
+    expect(sim.syncedText).toBe("abc");
+
+    // Second RPC resolves
+    sim.ackWrite(); // pendingWrites=1
+
+    // PTY echoes "abc" — matches syncedText exactly, so dedup fires
+    const r3 = sim.receivePtyInput("abc");
+    expect(r3).toBe("skip"); // exact match — harmless no-op
+    expect(sim.syncedText).toBe("abc");
+
+    // Last RPC resolves
+    sim.ackWrite(); // pendingWrites=0
+
+    // PTY sends "abc" again (stable state) — now accepted
+    const r4 = sim.receivePtyInput("abc");
+    expect(r4).toBe("skip"); // exact match → no-op
+    expect(sim.syncedText).toBe("abc");
+
+    // User types "d" — delta computed correctly from "abc"
+    sim.syncDelta("abcd");
+    expect(sim.writes[sim.writes.length - 1]).toBe("d");
+  });
+
+  it("late echo after all writes settled does not corrupt state", () => {
+    const sim = new SyncSimulator();
+
+    // User types "xy"
+    sim.syncDelta("x");
+    sim.syncDelta("xy");
+    expect(sim.pendingWrites).toBe(2);
+
+    // Both RPCs resolve before echo arrives
+    sim.ackAllWrites();
+    expect(sim.pendingWrites).toBe(0);
+
+    // Now echo "x" arrives — pendingWrites is 0, so this would be
+    // accepted as terminal-driven. This is the edge case: a stale echo
+    // arriving after writes settled. syncedText becomes "x" which is
+    // wrong — but the display also shows "x", so the user sees the
+    // regression and the next keystroke re-syncs.
+    const r1 = sim.receivePtyInput("x");
+    expect(r1).toBe("full-update"); // accepted (unavoidable without seq numbers)
+    expect(sim.syncedText).toBe("x");
+
+    // But the final echo "xy" arrives and corrects it
+    const r2 = sim.receivePtyInput("xy");
+    expect(r2).toBe("full-update");
+    expect(sim.syncedText).toBe("xy");
+  });
+
+  it("terminal-driven history navigation updates syncedText when idle", () => {
+    const sim = new SyncSimulator();
+    sim.lastSendAt = Date.now() - 2000; // send guard expired
+
+    // PWA is idle — no pending writes. User presses Up arrow on
+    // physical keyboard or terminal keybar → terminal shows previous cmd.
+    // The Up arrow itself is not a syncDelta — it's sent via writePty("\x1b[A").
+    // But the RPC resolves quickly, so by the time ptyInputLine arrives,
+    // pendingWrites is back to 0.
+    sim.writePty("\x1b[A"); // arrow up
+    expect(sim.pendingWrites).toBe(1);
+
+    // RPC resolves
+    sim.ackWrite();
+    expect(sim.pendingWrites).toBe(0);
+
+    // Terminal sends the recalled command
+    const r = sim.receivePtyInput("git log --oneline");
+    expect(r).toBe("full-update");
+    expect(sim.syncedText).toBe("git log --oneline");
+
+    // User edits the recalled command
+    sim.syncDelta("git log --oneline -5");
+    expect(sim.writes[sim.writes.length - 1]).toBe(" -5");
+  });
+
+  it("terminal output while PWA is typing is display-only", () => {
+    const sim = new SyncSimulator();
+
+    // User is typing "hello"
+    sim.syncDelta("h");
+    sim.syncDelta("he");
+    // pendingWrites = 2
+
+    // Meanwhile terminal sends something unexpected (e.g. background
+    // process appended to prompt, or agent inserted text)
+    const r = sim.receivePtyInput("unexpected");
+    expect(r).toBe("display-only");
+    expect(sim.syncedText).toBe("he"); // PWA state preserved
+
+    // User continues typing — delta correct
+    sim.syncDelta("hel");
+    expect(sim.writes[sim.writes.length - 1]).toBe("l");
   });
 });
 
@@ -235,17 +392,10 @@ describe("syncGuards (production helpers used by CommandInput)", () => {
     expect(isSendGuardActive(Date.now(), 0)).toBe(false);
   });
 
-  it("echo window is active strictly inside ECHO_WINDOW_MS", () => {
-    const t0 = 1_000_000;
-    expect(isWithinEchoWindow(t0, t0)).toBe(true);
-    expect(isWithinEchoWindow(t0 + ECHO_WINDOW_MS - 1, t0)).toBe(true);
-    expect(isWithinEchoWindow(t0 + ECHO_WINDOW_MS, t0)).toBe(false);
-  });
-
   it("CommandInput.tsx wires the real guards (no inline duplication)", () => {
     // Guard against re-introducing inline `Date.now() - lastSendAt < 1000`.
     expect(tsx).toContain("isSendGuardActive");
-    expect(tsx).toContain("isWithinEchoWindow");
+    expect(tsx).toContain("pendingWrites");
     expect(tsx).not.toMatch(/Date\.now\(\)\s*-\s*lastSendAt\s*<\s*1000/);
   });
 });

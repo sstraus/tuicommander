@@ -3,7 +3,7 @@ import { rpc } from "../../transport";
 import { appLogger } from "../../stores/appLogger";
 import { retryWrite } from "../utils/retryWrite";
 import { SlashMenuOverlay } from "./SlashMenuOverlay";
-import { isSendGuardActive, isWithinEchoWindow } from "./syncGuards";
+import { isSendGuardActive } from "./syncGuards";
 import type { SlashMenuItem } from "../useSessions";
 import styles from "./CommandInput.module.css";
 
@@ -27,8 +27,11 @@ export function CommandInput(props: CommandInputProps) {
   let lastSendAt = 0;
   // What we last sent to PTY — used to compute deltas
   let syncedText = "";
-  // Timestamp of last write to PTY (any write, not just send)
-  let lastWriteAt = 0;
+  // Number of write_pty RPCs awaiting response. While > 0, incoming
+  // ptyInputLine is echo of our own writes — don't update syncedText.
+  // When 0, the terminal is driving (autocomplete, history nav, tab
+  // completion) and syncedText must accept the PTY value.
+  let pendingWrites = 0;
 
   createEffect(() => {
     const pv = props.prefillValue;
@@ -42,20 +45,21 @@ export function CommandInput(props: CommandInputProps) {
     }
   });
 
-  // PTY input line is the source of truth for display. After a recent PWA
-  // write, incoming text is echo/redraw — update display but not syncedText.
-  // After the echo window, incoming text is from the terminal — update both.
+  // PTY input line sync. While writes are in-flight the PWA is the source of
+  // truth — incoming ptyInputLine is echo of our own keystrokes and must NOT
+  // touch syncedText (doing so causes duplicate/deleted chars under latency).
+  // When no writes are pending the terminal is driving (tab completion,
+  // history navigation, autocomplete) — accept the value into syncedText.
   createEffect(() => {
     const il = props.ptyInputLine;
     if (isSendGuardActive(Date.now(), lastSendAt)) return;
     const text = il ?? "";
     if (text === syncedText) return; // exact echo — skip entirely
-    const recentWrite = isWithinEchoWindow(Date.now(), lastWriteAt);
-    if (!recentWrite) {
-      // No recent PWA write — terminal is driving, update sync state
+    if (pendingWrites === 0) {
+      // No in-flight writes — terminal is driving, accept sync
       syncedText = text;
     }
-    // Always update display
+    // Always update display so the user sees autocomplete/history changes
     setValue(text);
     if (textareaEl) {
       textareaEl.value = text;
@@ -70,10 +74,12 @@ export function CommandInput(props: CommandInputProps) {
   }
 
   function writePty(data: string) {
-    lastWriteAt = Date.now();
-    rpc("write_pty", { sessionId: props.sessionId, data }).catch((err: unknown) => {
-      appLogger.warn("network", "Failed to write to PTY", { error: err });
-    });
+    pendingWrites++;
+    rpc("write_pty", { sessionId: props.sessionId, data })
+      .catch((err: unknown) => {
+        appLogger.warn("network", "Failed to write to PTY", { error: err });
+      })
+      .finally(() => { pendingWrites--; });
   }
 
   /** Send character deltas to PTY so the remote input stays in sync. */
