@@ -582,6 +582,35 @@ async fn get_mcp_status(state: State<'_, Arc<AppState>>) -> Result<serde_json::V
     }))
 }
 
+/// Execute an MCP tool call via deep link: `tuic://cmd/{tool}/{action}?{params}`.
+/// Reuses the same dispatch as the MCP `tools/call` handler — no HTTP round-trip.
+#[tauri::command]
+async fn deep_link_mcp_call(
+    state: State<'_, Arc<AppState>>,
+    tool: String,
+    action: String,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    // Build the args object: merge action into params
+    let mut args = match params {
+        serde_json::Value::Object(map) => map,
+        _ => serde_json::Map::new(),
+    };
+    args.insert("action".to_string(), serde_json::Value::String(action));
+
+    let addr: std::net::SocketAddr = ([127, 0, 0, 1], 0).into();
+    let result = mcp_http::mcp_transport::handle_mcp_tool_call(
+        &state.inner().clone(),
+        addr,
+        &tool,
+        &serde_json::Value::Object(args),
+        None,
+    )
+    .await;
+
+    Ok(result)
+}
+
 /// Regenerate the session token, invalidating all existing remote sessions.
 #[tauri::command]
 fn regenerate_session_token(state: State<'_, Arc<AppState>>) {
@@ -1119,6 +1148,7 @@ pub fn run() {
             get_local_ips,
             updater::check_update_channel,
             get_mcp_status,
+            deep_link_mcp_call,
             get_connect_url,
             regenerate_session_token,
             get_tailscale_status,

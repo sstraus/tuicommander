@@ -662,8 +662,9 @@ async fn handle_call_tool(
     }
 }
 
-/// Handle an MCP tools/call request, executing against the app state directly (no HTTP round-trip)
-async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &str, args: &serde_json::Value, mcp_session_id: Option<&str>) -> serde_json::Value {
+/// Handle an MCP tools/call request, executing against the app state directly (no HTTP round-trip).
+/// Also used by the `deep_link_mcp_call` Tauri command for the `tuic://cmd/` gateway.
+pub(crate) async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &str, args: &serde_json::Value, mcp_session_id: Option<&str>) -> serde_json::Value {
     // Enforce disabled_native_tools on every call path (not just the call_tool meta-tool)
     {
         let disabled = state.config.read().disabled_native_tools.clone();
@@ -2615,10 +2616,8 @@ fn merge_mcp_params_into_args(
         merged.push(model_val.to_string());
     }
 
-    if print_mode {
-        if !args.iter().any(|a| a.starts_with("--print")) {
-            merged.push("--print".to_string());
-        }
+    if print_mode && !args.iter().any(|a| a.starts_with("--print")) {
+        merged.push("--print".to_string());
     }
 
     if let Some(fmt) = output_format {
