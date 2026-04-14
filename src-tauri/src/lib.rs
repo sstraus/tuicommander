@@ -1194,6 +1194,8 @@ pub fn run() {
             mcp_upstream_config::get_mcp_upstream_status,
             mcp_upstream_credentials::save_mcp_upstream_credential,
             mcp_upstream_credentials::delete_mcp_upstream_credential,
+            mcp_oauth::commands::start_mcp_upstream_oauth,
+            mcp_oauth::commands::mcp_oauth_callback,
             config::check_has_custom_settings,
             config::load_repo_defaults,
             config::save_repo_defaults,

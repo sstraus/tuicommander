@@ -244,6 +244,38 @@ impl UpstreamRegistry {
         self.oauth_flow.read().as_ref().and_then(|w| w.upgrade())
     }
 
+    /// Fetch an entry by name. Used by the OAuth command layer when it needs
+    /// to read the upstream's config (URL, auth) before starting a flow.
+    pub(crate) fn entry(&self, name: &str) -> Option<Arc<UpstreamEntry>> {
+        self.entries.get(name).map(|e| Arc::clone(e.value()))
+    }
+
+    /// Transition an upstream to `Authenticating`. No-op if it's already in
+    /// that state. Emits an `UpstreamStatusChanged` event.
+    pub(crate) fn set_authenticating(&self, name: &str) {
+        if let Some(entry) = self.entries.get(name) {
+            let mut status = entry.status.write();
+            if *status == UpstreamStatus::Authenticating {
+                return;
+            }
+            *status = UpstreamStatus::Authenticating;
+            drop(status);
+            self.emit_status_change(name, "authenticating");
+        }
+    }
+
+    /// Emit an `McpOAuthStart` event — called by the Tauri command layer
+    /// once `start_flow` has returned an authorization URL for the frontend
+    /// to open in the user's browser.
+    pub(crate) fn emit_oauth_start(&self, name: &str, authorization_url: &str) {
+        if let Some(bus) = self.event_bus.read().as_ref() {
+            let _ = bus.send(crate::state::AppEvent::McpOAuthStart {
+                name: name.to_string(),
+                authorization_url: authorization_url.to_string(),
+            });
+        }
+    }
+
     /// Wire the MCP tools_changed signal so upstream changes notify MCP clients.
     pub(crate) fn set_mcp_tools_tx(&self, tx: tokio::sync::broadcast::Sender<()>) {
         *self.mcp_tools_tx.write() = Some(tx);

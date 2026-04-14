@@ -221,7 +221,7 @@ impl OAuthFlowManager {
         &self,
         state: &str,
         code: &str,
-    ) -> Result<OAuthTokenSet> {
+    ) -> Result<(String, OAuthTokenSet)> {
         // Look up and remove the pending flow. DashMap lookup is not itself
         // timing-sensitive to the key content (the hash is precomputed), but
         // we additionally verify the stored state matches in constant time to
@@ -250,9 +250,10 @@ impl OAuthFlowManager {
             flow.token_endpoint.clone(),
             flow.resource.clone(),
         );
-        token_mgr
+        let tokens = token_mgr
             .exchange_code(code, &flow.pkce_verifier, &flow.redirect_uri)
-            .await
+            .await?;
+        Ok((flow.upstream_name, tokens))
     }
 
     /// Cancel a pending flow, dropping its permit. Returns true if a flow
@@ -666,14 +667,14 @@ pub(crate) mod dev_server {
         #[allow(dead_code)]
         shutdown_tx: tokio::sync::oneshot::Sender<()>,
         /// Receives the completed [`OAuthTokenSet`] (or error message).
-        pub(crate) result_rx: tokio::sync::oneshot::Receiver<Result<OAuthTokenSet>>,
+        pub(crate) result_rx: tokio::sync::oneshot::Receiver<Result<(String, OAuthTokenSet)>>,
     }
 
     /// Spawn the dev callback server. Returns the assigned port and a handle
     /// to receive the exchange result.
     pub(crate) async fn spawn(manager: Arc<OAuthFlowManager>) -> Result<DevCallbackServer> {
         let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
-        let (result_tx, result_rx) = tokio::sync::oneshot::channel::<Result<OAuthTokenSet>>();
+        let (result_tx, result_rx) = tokio::sync::oneshot::channel::<Result<(String, OAuthTokenSet)>>();
         let result_tx = Arc::new(tokio::sync::Mutex::new(Some(result_tx)));
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
@@ -726,7 +727,7 @@ pub(crate) mod dev_server {
     async fn handle_callback(
         manager: Arc<OAuthFlowManager>,
         params: CallbackParams,
-    ) -> Result<OAuthTokenSet> {
+    ) -> Result<(String, OAuthTokenSet)> {
         if let Some(err) = params.error {
             bail!(
                 "Authorization server returned error: {} ({})",

@@ -44,8 +44,8 @@ const BLOCKED_COMMANDS = new Set([
   "debug/invoke_js",
 ]);
 
-/** Handle a single deep link URL */
-async function handleDeepLink(urlString: string, callbacks: DeepLinkCallbacks): Promise<void> {
+/** Handle a single deep link URL. Exported for tests. */
+export async function handleDeepLink(urlString: string, callbacks: DeepLinkCallbacks): Promise<void> {
   const parsed = parseDeepLink(urlString);
   if (!parsed) {
     appLogger.warn("app", `Unrecognised deep link URL: ${urlString}`);
@@ -102,6 +102,42 @@ async function handleDeepLink(urlString: string, callbacks: DeepLinkCallbacks): 
     case "settings": {
       const tab = params.get("tab") ?? undefined;
       callbacks.openSettings(tab);
+      break;
+    }
+
+    case "oauth-callback": {
+      // OAuth 2.1 authorization code response from the upstream MCP server's
+      // authorization server. Extract code + state and hand them to the
+      // backend, which exchanges the code, persists the tokens, and resumes
+      // the upstream connection.
+      const code = params.get("code");
+      const oauthState = params.get("state");
+      const authError = params.get("error");
+
+      if (authError) {
+        const description = params.get("error_description") ?? "";
+        appLogger.error(
+          "app",
+          `OAuth callback returned error: ${authError}${description ? ` (${description})` : ""}`,
+        );
+        callbacks.onInstallError(
+          `OAuth authorization failed: ${authError}${description ? ` — ${description}` : ""}`,
+        );
+        return;
+      }
+
+      if (!code || !oauthState) {
+        appLogger.warn("app", "Deep link oauth-callback: missing code or state parameter");
+        return;
+      }
+
+      try {
+        await invoke("mcp_oauth_callback", { code, oauthState });
+        appLogger.info("app", "OAuth callback completed");
+      } catch (err) {
+        appLogger.error("app", "OAuth callback invoke failed", err);
+        callbacks.onInstallError(`OAuth callback failed: ${err}`);
+      }
       break;
     }
 
