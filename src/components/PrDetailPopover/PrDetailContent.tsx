@@ -81,11 +81,17 @@ export const PrDetailContent: Component<PrDetailContentProps> = (props) => {
   const checkSummary = () => githubStore.getCheckSummary(props.repoPath, props.branch);
   const checkDetails = () => githubStore.getCheckDetails(props.repoPath, props.branch);
 
-  // Lazy-load CI check details when this content mounts
+  // Lazy-load CI check details when this content mounts.
+  // Deferred via queueMicrotask so the popover renders instantly with cached
+  // data — the IPC call runs after the first paint, not during mount.
   createEffect(() => {
     const pr = prData();
     if (pr) {
-      githubStore.loadCheckDetails(props.repoPath, props.branch, pr.number).catch((e) => appLogger.warn("github", "Failed to load check details", { error: String(e) }));
+      const { repoPath, branch } = props;
+      const prNumber = pr.number;
+      queueMicrotask(() => {
+        githubStore.loadCheckDetails(repoPath, branch, prNumber).catch((e) => appLogger.warn("github", "Failed to load check details", { error: String(e) }));
+      });
     }
   });
 
