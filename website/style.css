@@ -340,6 +340,35 @@ section {
 }
 
 /* ============================================
+   THE PROBLEM
+   ============================================ */
+.the-problem {
+  padding: 80px 0;
+  text-align: center;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.the-problem h2 {
+  font-size: 1.6rem;
+  margin-bottom: 24px;
+  color: var(--fg-primary);
+}
+.problem-quote {
+  max-width: 720px;
+  margin: 0 auto 24px;
+  font-size: 1.1rem;
+  line-height: 1.7;
+  color: var(--fg-secondary);
+  font-style: italic;
+}
+.problem-hook {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* ============================================
    VISUAL ARCHITECTURE
    ============================================ */
 .architecture {
@@ -516,6 +545,16 @@ section {
   background: var(--accent);
   flex-shrink: 0;
   margin-top: 8px;
+}
+.feature-highlight {
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: var(--accent-glow);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  font-size: 0.95rem;
+  color: var(--fg-primary);
+  line-height: 1.6;
 }
 .feature-visual {
   display: flex;

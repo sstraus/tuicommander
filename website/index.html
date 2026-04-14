@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TUICommander — A modern terminal and AI-native IDE</title>
-  <meta name="description" content="A modern terminal and AI-native IDE. Work with multiple agents in one place, without losing context. 10 agents detected, Git worktrees, usage dashboard, MCP Proxy Hub." />
+  <title>TUICommander — The IDE that understands AI agents</title>
+  <meta name="description" content="The IDE that understands AI agents. Run parallel agents on isolated branches with full observability. Diffs, PRs, CI, usage dashboards — one workspace, zero context loss." />
 
   <!-- OpenGraph -->
-  <meta property="og:title" content="TUICommander — A modern terminal and AI-native IDE" />
-  <meta property="og:description" content="Work with multiple agents in one place, without losing context. 10 agents detected, Git worktrees, usage dashboard, MCP Proxy Hub, and more." />
+  <meta property="og:title" content="TUICommander — The IDE that understands AI agents" />
+  <meta property="og:description" content="Run parallel agents on isolated branches with full observability. Diffs, PRs, CI, usage dashboards — one workspace, zero context loss." />
   <meta property="og:image" content="/og.png" />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://sstraus.github.io/tuicommander/" />
@@ -16,7 +16,7 @@
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="TUICommander" />
-  <meta name="twitter:description" content="A modern terminal and AI-native IDE. Work with multiple agents in one place, without losing context." />
+  <meta name="twitter:description" content="The IDE that understands AI agents. Run parallel agents on isolated branches with full observability." />
   <meta name="twitter:image" content="/og.png" />
 
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
@@ -46,7 +46,6 @@
       </a>
       <div class="nav-links">
         <a href="#features">Features</a>
-        <a href="#how-it-works">How it works</a>
         <a href="#compare">Compare</a>
         <a href="/docs/">Docs</a>
         <a href="/blog.html">Blog</a>
@@ -62,10 +61,10 @@
   <section class="hero">
     <div class="container">
       <img src="/logo.png" alt="TUICommander logo" class="hero-logo" />
-      <h1>A modern terminal and<br />AI-native IDE</h1>
+      <h1>The IDE that understands<br />AI agents</h1>
       <p class="hero-tagline">
-        Work with multiple agents in one place, without losing context.<br />
-        Agents, code, diffs, PRs, and CI status — all in a single workspace.
+        Run parallel agents on isolated branches with full observability.<br />
+        Diffs, PRs, CI status, usage dashboards — one workspace, zero context loss.
       </p>
       <div class="hero-pillars">
         <div class="pillar">
@@ -156,77 +155,22 @@
   </section>
 
   <!-- ============================================
-       VISUAL ARCHITECTURE
+       THE PROBLEM
        ============================================ -->
-  <section class="architecture" id="features" data-sal="slide-up">
+  <section class="the-problem" data-sal="fade" data-sal-duration="400">
     <div class="container">
-      <h2>One branch, one worktree, one world</h2>
-      <div class="architecture-diagram">
-        <div class="diagram">Repository
-   <span class="var">|</span>
-   <span class="var">|--</span> branch <span class="fn">feature-auth</span>
-   <span class="var">|</span>       <span class="var">|--</span> worktree <span class="cmt">(isolated copy)</span>
-   <span class="var">|</span>           <span class="var">|--</span> terminal
-   <span class="var">|</span>               <span class="var">|--</span> <span class="kw">Claude Code</span> <span class="fn">Working...</span>
-   <span class="var">|</span>
-   <span class="var">|--</span> branch <span class="fn">fix-payments</span>
-   <span class="var">|</span>       <span class="var">|--</span> worktree <span class="cmt">(isolated copy)</span>
-   <span class="var">|</span>           <span class="var">|--</span> terminal
-   <span class="var">|</span>               <span class="var">|--</span> <span class="kw">Claude Code</span> <span class="str">? Confirm (Y/n)</span>
-   <span class="var">|</span>
-   <span class="var">|--</span> branch <span class="fn">refactor-api</span>
-           <span class="var">|--</span> worktree <span class="cmt">(isolated copy)</span>
-               <span class="var">|--</span> terminal
-                   <span class="var">|--</span> <span class="kw">Claude Code</span> <span class="kw">Rate limited</span> <span class="cmt">(4:32)</span></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================
-       HOW IT WORKS
-       ============================================ -->
-  <section class="workflow" id="how-it-works" data-sal="fade">
-    <div class="container">
-      <h2>How it works</h2>
-      <div class="workflow-steps">
-        <div class="workflow-step">
-          <div class="step-number">1</div>
-          <h4>Add your repository</h4>
-          <p>Point TUICommander at any Git repo — it becomes your workspace</p>
-        </div>
-        <div class="workflow-step">
-          <div class="step-number">2</div>
-          <h4>Create feature branches</h4>
-          <p>Click a branch — an isolated worktree is created automatically</p>
-        </div>
-        <div class="workflow-step">
-          <div class="step-number">3</div>
-          <h4>Launch AI agents in parallel</h4>
-          <p>Each agent runs in its own worktree — no conflicts, no context loss</p>
-        </div>
-        <div class="workflow-step">
-          <div class="step-number">4</div>
-          <h4>Stay aware without checking</h4>
-          <p>Rate limits, questions, and errors surface automatically — no hunting</p>
-        </div>
-        <div class="workflow-step">
-          <div class="step-number">5</div>
-          <h4>Review and iterate</h4>
-          <p>Diffs, PRs, CI status, and the editor — all in the same window</p>
-        </div>
-        <div class="workflow-step">
-          <div class="step-number">6</div>
-          <h4>Merge and clean up</h4>
-          <p>One-click post-merge cleanup — delete branch, archive worktree</p>
-        </div>
-      </div>
+      <h2>The problem</h2>
+      <p class="problem-quote">
+        You're running Claude Code in one terminal, Aider in another, Codex in a third. One hit a rate limit 10 minutes ago and you didn't notice. Another is waiting for a Y/N confirmation. You switch between 6 windows and still lose track.
+      </p>
+      <p class="problem-hook">TUICommander knows your agent is stuck before you do.</p>
     </div>
   </section>
 
   <!-- ============================================
        FEATURE: PARALLEL AI DEVELOPMENT
        ============================================ -->
-  <section class="feature" data-sal="slide-up">
+  <section class="feature" id="features" data-sal="slide-up">
     <div class="container">
       <div class="feature-inner">
         <div class="feature-content">
@@ -257,37 +201,40 @@
   </section>
 
   <!-- ============================================
-       FEATURE: WORKTREE AUTOMATION
+       FEATURE: GIT WORKTREES
        ============================================ -->
   <section class="feature" data-sal="slide-up">
     <div class="container">
       <div class="feature-inner">
         <div class="feature-content">
           <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
-          <h3>Worktrees without the pain</h3>
+          <h3>Git worktrees, fully managed</h3>
           <div class="feature-problem">
-            "git worktree add ../feature-x origin/main && cd ../feature-x — every single time."
+            "git worktree add ../feature-x origin/main && cd ../feature-x — every single time. And I have 8 worktrees open. Which one has the PR approved?"
           </div>
           <p class="feature-solution">
-            Click a branch in the sidebar. TUICommander auto-creates the worktree, opens a terminal inside it, and cleans up when the branch is merged.
+            Click a branch in the sidebar. TUICommander auto-creates the worktree, opens a terminal inside it, and cleans up when the branch is merged. The Worktree Manager gives you a bird's-eye view across all repos.
           </p>
           <ul class="feature-points">
-            <li>Automatic worktree creation on branch click</li>
-            <li>Per-branch isolated environments</li>
-            <li>Automatic cleanup when branches are merged</li>
-            <li>Configurable base branch and setup scripts</li>
+            <li>Automatic worktree creation on branch click, per-branch isolation</li>
+            <li>Worktree Manager panel — PR status, dirty file counts, last commit at a glance</li>
+            <li>Post-merge cleanup dialog — delete branch, archive worktree in one click</li>
+            <li>Terminal auto-follows your <code>cd</code> — switch into a worktree and the tab reassigns</li>
+            <li>Configurable base branch, setup scripts, auto-fetch intervals</li>
           </ul>
         </div>
         <div class="feature-visual">
-          <div class="diagram">Click branch
-  <span class="var">|--</span> Worktree auto-created
-      <span class="var">|--</span> Terminal opens inside
-      <span class="var">|</span>   <span class="var">|--</span> Run <span class="kw">Claude Code</span>
-      <span class="var">|</span>   <span class="var">|--</span> Split &rarr; Run another <span class="kw">Claude Code</span>
-      <span class="var">|--</span> Switch branch
-      <span class="var">|</span>   <span class="var">|--</span> Terminals preserved
-      <span class="var">|--</span> Merge complete
-          <span class="var">|--</span> Worktree auto-removed</div>
+          <div class="code-block">
+<span class="cmt">  WORKTREE MANAGER           PR    FILES</span>
+
+  <span class="fn">myapp</span>
+    <span class="var">main</span>                     —      —
+    <span class="fn">feature/auth</span>       <span class="str">Open</span>   <span class="str">+3</span>
+    <span class="fn">bugfix/session</span>     <span class="kw">Merged</span>  0
+    <span class="fn">refactor/api</span>       <span class="str">Draft</span>  <span class="str">+7</span>
+
+  <span class="cmt">[Clean up merged]  [Fetch all]</span>
+          </div>
         </div>
       </div>
     </div>
@@ -312,19 +259,28 @@
             <li>Detect active tasks, waiting input, rate limits, and idle agents</li>
             <li>Provider-specific countdown timers for rate limits</li>
             <li>Notification sounds and keyboard overlay when agents need input</li>
-            <li>Claude Usage Dashboard — rate limit bars, 7-day chart, 52-week heatmap</li>
             <li>Activity dashboard showing all sessions at a glance</li>
           </ul>
+          <div class="feature-highlight">
+            <strong>Claude Usage Dashboard</strong> — real-time rate limit bars, 7-day usage chart, 52-week contribution heatmap, per-project cost insights. Know exactly where your tokens go.
+          </div>
         </div>
         <div class="feature-visual">
           <div class="code-block">
-<span class="cmt">  ACTIVITY DASHBOARD</span>
+<span class="cmt">  CLAUDE USAGE DASHBOARD</span>
 
-  <span class="fn">feature/auth</span>     Claude  <span class="fn">Working...</span>
-  <span class="fn">bugfix/session</span>  Aider   <span class="str">? Confirm (Y/n)</span>
-  <span class="fn">refactor/api</span>    Codex   <span class="fn">Working...</span>
-  <span class="fn">feature/search</span>  Gemini  <span class="kw">Rate limited</span> (2:41)
-  <span class="fn">wip/docs</span>        Amp     <span class="var">Idle</span> (5m)
+  <span class="fn">Rate Limits</span>
+  Opus    <span class="str">████████░░</span>  78%  resets 2:41
+  Sonnet  <span class="str">██░░░░░░░░</span>  18%
+
+  <span class="fn">7-Day Usage</span>
+  Mon <span class="var">██████</span>  $4.20
+  Tue <span class="var">████</span>    $2.80
+  Wed <span class="var">████████</span>  $5.60
+  Thu <span class="var">██</span>      $1.40
+
+  <span class="fn">52-Week Heatmap</span>
+  <span class="var">░░▓▓██▓▓░░▓▓████▓▓░░</span>
           </div>
         </div>
       </div>
@@ -370,38 +326,37 @@
   </section>
 
   <!-- ============================================
-       FEATURE: WORKTREE MANAGER
+       FEATURE: WORKSPACE & MULTI-MONITOR
        ============================================ -->
   <section class="feature" data-sal="slide-up">
     <div class="container">
-      <div class="feature-inner">
+      <div class="feature-inner reverse">
         <div class="feature-content">
-          <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
-          <h3>Manage worktrees visually</h3>
-          <div class="feature-problem">
-            "I have 8 worktrees open. Which one has the PR approved? Which one is dirty?"
-          </div>
+          <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          <h3>Global Workspace & Multi-Monitor</h3>
           <p class="feature-solution">
-            The Worktree Manager panel gives you a bird's-eye view of every worktree across all repositories — with PR state, dirty file counts, and one-click cleanup.
+            All your repos, branches, and terminals live in one workspace that persists across restarts. Detach any tab into its own native OS window and drag it to a second monitor.
           </p>
           <ul class="feature-points">
-            <li>Visual overlay of all worktrees with PR status, dirty stats, last commit</li>
-            <li>Post-merge cleanup dialog — switch base, pull, delete branch, archive worktree in one click</li>
-            <li>Terminal auto-follows your <code>cd</code> — switch into a worktree and the tab reassigns</li>
-            <li>Auto-fetch on configurable interval (5/15/30/60 min)</li>
+            <li>Global Workspace — every repo, branch, and terminal in a single app</li>
+            <li>Detachable tabs — float any terminal into its own OS window</li>
+            <li>N-way split panes — up to 6 panes per tab, drag-resize, per-branch layout memory</li>
+            <li>Multi-monitor — drag detached windows to any display</li>
+            <li>Native drag and drop — drop files and folders into the terminal</li>
           </ul>
         </div>
         <div class="feature-visual">
           <div class="code-block">
-<span class="cmt">  WORKTREE MANAGER           PR    FILES</span>
+<span class="cmt">  WORKSPACE</span>
 
-  <span class="fn">myapp</span>
-    <span class="var">main</span>                     —      —
-    <span class="fn">feature/auth</span>       <span class="str">Open</span>   <span class="str">+3</span>
-    <span class="fn">bugfix/session</span>     <span class="kw">Merged</span>  0
-    <span class="fn">refactor/api</span>       <span class="str">Draft</span>  <span class="str">+7</span>
+  <span class="fn">Monitor 1</span>  TUICommander (main window)
+    <span class="var">|--</span> Tab: feature/auth    <span class="fn">[2 panes]</span>
+    <span class="var">|--</span> Tab: fix/payments    <span class="fn">[3 panes]</span>
+    <span class="var">|--</span> Tab: refactor/api    <span class="fn">[1 pane]</span>
 
-  <span class="cmt">[Clean up merged]  [Fetch all]</span>
+  <span class="fn">Monitor 2</span>  Detached windows
+    <span class="var">|--</span> wip/migration  <span class="str">(floating)</span>
+    <span class="var">|--</span> docs/rewrite   <span class="str">(floating)</span>
           </div>
         </div>
       </div>
@@ -409,26 +364,17 @@
   </section>
 
   <!-- ============================================
-       FEATURE PAIR: VOICE + REMOTE (side by side)
+       FEATURE: REMOTE ACCESS
        ============================================ -->
-  <section class="feature-pair" data-sal="slide-up">
+  <section class="feature" data-sal="slide-up">
     <div class="container">
-      <div class="feature-pair-grid">
-        <div class="feature-card">
-          <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0014 0"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>
-          <h3>Talk to your agents</h3>
-          <p class="feature-solution">
-            On-device speech-to-text powered by Whisper. No cloud, no API keys, no data leaving your machine.
-          </p>
-          <ul class="feature-points">
-            <li>GPU-accelerated on macOS (Metal), CPU fallback elsewhere</li>
-            <li>Push-to-talk hotkey — text injected into active terminal</li>
-            <li>5 model sizes from tiny (75 MB) to large-v3-turbo (1.6 GB)</li>
-          </ul>
-        </div>
-        <div class="feature-card">
+      <div class="feature-inner">
+        <div class="feature-content">
           <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12" y2="18.01"/><path d="M9 6h6"/></svg>
           <h3>Control from anywhere</h3>
+          <div class="feature-problem">
+            "My agents are running on my desktop. I'm on the couch with my phone."
+          </div>
           <p class="feature-solution">
             Mobile companion PWA with live agent status, suggest chips, and question banners. Access via LAN, Tailscale with auto-provisioned HTTPS, or an E2E-encrypted cloud relay — no VPN or port forwarding needed.
           </p>
@@ -438,6 +384,17 @@
             <li>Cloud relay — AES-256-GCM encrypted, zero-knowledge server</li>
             <li>Answer agent questions with one tap, track rate limits live</li>
           </ul>
+        </div>
+        <div class="feature-visual">
+          <div class="code-block">
+<span class="cmt">  MOBILE COMPANION</span>
+
+  <span class="fn">feature/auth</span>     <span class="fn">Working...</span>
+  <span class="fn">bugfix/session</span>  <span class="str">? Confirm (Y/n)</span>  <span class="kw">[Answer]</span>
+  <span class="fn">refactor/api</span>    <span class="kw">Rate limited</span> (2:41)
+
+  <span class="cmt">Connected via Tailscale (HTTPS)</span>
+          </div>
         </div>
       </div>
     </div>
@@ -453,23 +410,29 @@
           <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l-2 4h4l-2 4h4l-6 10 2-6H8l2-4H6z"/></svg>
           <h3>MCP Proxy Hub + Plugin system</h3>
           <p class="feature-solution">
-            One MCP connection for all your tools, plus an Obsidian-style plugin system with hot reload and a community registry.
+            Aggregate all your MCP servers into a single endpoint — every agent connects once and gets access to every upstream tool. Plus an Obsidian-style plugin system with hot reload and a community registry.
           </p>
           <ul class="feature-points">
-            <li>MCP Proxy Hub — aggregate all MCP servers into a single endpoint for every agent</li>
-            <li>Circuit breakers, health checks, hot-reload, credential management</li>
+            <li>MCP Proxy Hub — single endpoint for all agents, auto-configures Claude Code, Cursor, Windsurf, VS Code, Zed, Amp, Gemini</li>
+            <li>Add or remove MCP servers without restarting anything</li>
+            <li>Circuit breakers, health checks, credential management, hot-reload</li>
+            <li>TUIC SDK v1.0 — <code>tuic.activeRepo</code>, <code>tuic.toast</code>, <code>tuic.onRepoChange</code> and more</li>
             <li>Plugin system with 4 capability tiers, terminal watchers, and regex triggers</li>
             <li>Community registry — browse and install with one click</li>
           </ul>
         </div>
         <div class="feature-visual">
           <div class="code-block">
-<span class="cmt">// my-plugin/index.js</span>
-<span class="kw">export function</span> <span class="fn">activate</span>(<span class="var">host</span>) {
-  <span class="var">host</span>.<span class="fn">registerWatcher</span>({
+<span class="cmt">// my-plugin/index.js — TUIC SDK v1.0</span>
+<span class="kw">export function</span> <span class="fn">activate</span>(<span class="var">tuic</span>) {
+  <span class="kw">const</span> <span class="var">repo</span> = <span class="var">tuic</span>.<span class="fn">activeRepo</span>;
+  <span class="var">tuic</span>.<span class="fn">onRepoChange</span>(<span class="var">repo</span> <span class="kw">=></span> {
+    <span class="var">tuic</span>.<span class="fn">toast</span>(<span class="str">`Switched to ${repo.name}`</span>);
+  });
+  <span class="var">tuic</span>.<span class="fn">registerWatcher</span>({
     <span class="var">pattern</span>: <span class="str">/error|fail/i</span>,
     <span class="fn">onMatch</span>(line) {
-      <span class="var">host</span>.<span class="fn">notify</span>(<span class="str">"Build failed!"</span>);
+      <span class="var">tuic</span>.<span class="fn">toast</span>(<span class="str">"Build failed!"</span>, <span class="str">"error"</span>);
     }
   });
 }
@@ -494,7 +457,8 @@
           <ul class="feature-points">
             <li>Smart Commit, Review Changes, Create PR, Fix CI &mdash; all one click</li>
             <li>31 context variables auto-resolved from git, GitHub, and terminal state</li>
-            <li>Inject mode (PTY write) or headless mode (one-shot subprocess)</li>
+            <li>Inject mode (PTY write), headless mode (one-shot subprocess), or shell script mode (direct execution, no AI needed, 60s timeout)</li>
+            <li>Shell scripts get the same context variables &mdash; automate git, deployment, and CI without an agent</li>
             <li>Variable Input Dialog for any values that need manual input</li>
             <li>Create your own prompts with the same variable system</li>
           </ul>
@@ -522,7 +486,7 @@ Use <span class="str">`gh pr create`</span>.
   </section>
 
   <!-- ============================================
-       FEATURE PAIR: KEYBINDINGS + MCP BRIDGE
+       FEATURE PAIR: KEYBINDINGS + VOICE (side by side)
        ============================================ -->
   <section class="feature-pair" data-sal="slide-up">
     <div class="container">
@@ -540,15 +504,15 @@ Use <span class="str">`gh pr create`</span>.
           </ul>
         </div>
         <div class="feature-card">
-          <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-          <h3>MCP Proxy Hub</h3>
+          <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0014 0"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>
+          <h3>Talk to your agents</h3>
           <p class="feature-solution">
-            Aggregate all your MCP servers into a single endpoint. Claude Code, Cursor, VS Code — each agent connects once and gets access to every upstream tool.
+            On-device speech-to-text powered by Whisper. No cloud, no API keys, no data leaving your machine.
           </p>
           <ul class="feature-points">
-            <li>Auto-configures Claude Code, Cursor, Windsurf, VS Code, Zed, Amp, Gemini</li>
-            <li>Add or remove MCP servers without restarting anything</li>
-            <li>Circuit breakers, health checks, credential management, and hot-reload</li>
+            <li>GPU-accelerated on macOS (Metal), CPU fallback elsewhere</li>
+            <li>Push-to-talk hotkey — text injected into active terminal</li>
+            <li>5 model sizes from tiny (75 MB) to large-v3-turbo (1.6 GB)</li>
           </ul>
         </div>
       </div>
@@ -561,15 +525,16 @@ Use <span class="str">`gh pr create`</span>.
   <section class="comparison" id="compare" data-sal="fade">
     <div class="container">
       <h2>How it compares</h2>
-      <p class="comparison-note">TUICommander complements your IDE — it doesn't replace it.</p>
+      <p class="comparison-note">TUICommander is an AI-native IDE built on a modern terminal.</p>
       <div class="comparison-table-wrap">
         <table class="comparison-table">
           <thead>
             <tr>
               <th>Capability</th>
-              <th>tmux</th>
+              <th>Ghostty / Kitty</th>
               <th>Warp</th>
-              <th>Cursor</th>
+              <th>Cursor IDE</th>
+              <th>Claude Desktop</th>
               <th class="highlight-col">TUICommander</th>
             </tr>
           </thead>
@@ -579,12 +544,14 @@ Use <span class="str">`gh pr create`</span>.
               <td><span class="check">Yes</span></td>
               <td><span class="check">Yes</span></td>
               <td><span class="check">Yes</span></td>
-              <td class="highlight-col"><span class="check">Yes</span></td>
+              <td><span class="cross">No</span></td>
+              <td class="highlight-col"><span class="check">Yes (50)</span></td>
             </tr>
             <tr>
               <td>AI coding agents</td>
               <td><span class="cross">No</span></td>
               <td><span class="partial">Partial</span></td>
+              <td><span class="check">Built-in</span></td>
               <td><span class="check">Built-in</span></td>
               <td class="highlight-col"><span class="check">Any agent (10 detected)</span></td>
             </tr>
@@ -593,10 +560,12 @@ Use <span class="str">`gh pr create`</span>.
               <td><span class="cross">No</span></td>
               <td><span class="cross">No</span></td>
               <td><span class="partial">Limited</span></td>
+              <td><span class="cross">No</span></td>
               <td class="highlight-col"><span class="check">Unlimited</span></td>
             </tr>
             <tr>
               <td>Git worktree orchestration</td>
+              <td><span class="cross">No</span></td>
               <td><span class="cross">No</span></td>
               <td><span class="cross">No</span></td>
               <td><span class="cross">No</span></td>
@@ -607,59 +576,68 @@ Use <span class="str">`gh pr create`</span>.
               <td><span class="cross">No</span></td>
               <td><span class="cross">No</span></td>
               <td><span class="cross">No</span></td>
+              <td><span class="cross">No</span></td>
               <td class="highlight-col"><span class="check">Real-time</span></td>
             </tr>
             <tr>
+              <td>Global Workspace</td>
+              <td><span class="cross">No</span></td>
+              <td><span class="cross">No</span></td>
+              <td><span class="check">Yes</span></td>
+              <td><span class="cross">No</span></td>
+              <td class="highlight-col"><span class="check">Multi-repo</span></td>
+            </tr>
+            <tr>
+              <td>Usage dashboard</td>
+              <td><span class="cross">No</span></td>
+              <td><span class="cross">No</span></td>
+              <td><span class="cross">No</span></td>
+              <td><span class="partial">Basic</span></td>
+              <td class="highlight-col"><span class="check">Full (heatmap, per-project)</span></td>
+            </tr>
+            <tr>
               <td>Remote access (phone/tablet)</td>
-              <td><span class="partial">SSH</span></td>
               <td><span class="cross">No</span></td>
               <td><span class="cross">No</span></td>
-              <td class="highlight-col"><span class="check">Built-in</span></td>
+              <td><span class="cross">No</span></td>
+              <td><span class="check">Mobile app</span></td>
+              <td class="highlight-col"><span class="check">PWA + E2E relay</span></td>
             </tr>
             <tr>
               <td>Voice dictation</td>
               <td><span class="cross">No</span></td>
               <td><span class="cross">No</span></td>
               <td><span class="partial">Extension</span></td>
+              <td><span class="check">Built-in</span></td>
               <td class="highlight-col"><span class="check">Local Whisper</span></td>
-            </tr>
-            <tr>
-              <td>E2E encrypted cloud relay</td>
-              <td><span class="cross">No</span></td>
-              <td><span class="cross">No</span></td>
-              <td><span class="cross">No</span></td>
-              <td class="highlight-col"><span class="check">Built-in</span></td>
-            </tr>
-            <tr>
-              <td>MCP bridge (auto-config)</td>
-              <td><span class="cross">No</span></td>
-              <td><span class="cross">No</span></td>
-              <td><span class="cross">No</span></td>
-              <td class="highlight-col"><span class="check">Zero-config</span></td>
-            </tr>
-            <tr>
-              <td>Plugin system</td>
-              <td><span class="cross">No</span></td>
-              <td><span class="cross">No</span></td>
-              <td><span class="check">Extensions</span></td>
-              <td class="highlight-col"><span class="check">Hot reload</span></td>
             </tr>
             <tr>
               <td>MCP Proxy Hub</td>
               <td><span class="cross">No</span></td>
               <td><span class="cross">No</span></td>
               <td><span class="cross">No</span></td>
+              <td><span class="cross">No</span></td>
               <td class="highlight-col"><span class="check">Built-in</span></td>
+            </tr>
+            <tr>
+              <td>Plugin system</td>
+              <td><span class="cross">No</span></td>
+              <td><span class="cross">No</span></td>
+              <td><span class="check">Extensions</span></td>
+              <td><span class="cross">No</span></td>
+              <td class="highlight-col"><span class="check">Hot reload + SDK</span></td>
             </tr>
             <tr>
               <td>GitHub Issues & PR management</td>
               <td><span class="cross">No</span></td>
               <td><span class="cross">No</span></td>
               <td><span class="partial">Extension</span></td>
+              <td><span class="cross">No</span></td>
               <td class="highlight-col"><span class="check">Built-in</span></td>
             </tr>
             <tr>
               <td>CI Auto-Heal</td>
+              <td><span class="cross">No</span></td>
               <td><span class="cross">No</span></td>
               <td><span class="cross">No</span></td>
               <td><span class="cross">No</span></td>
@@ -700,6 +678,9 @@ Use <span class="str">`gh pr create`</span>.
         <div class="terminal-item"><strong>CI Auto-Heal</strong> — fetches failure logs, injects into agent for automatic fix</div>
         <div class="terminal-item"><strong>File browser</strong> — tree/flat view, content search with regex, case-sensitive, whole-word</div>
         <div class="terminal-item"><strong>Markdown notes</strong> — interactive GFM checkboxes, live preview, write back to disk</div>
+        <div class="terminal-item"><strong>Native drag and drop</strong> — drop files and folders into the terminal</div>
+        <div class="terminal-item"><strong>Open / New file</strong> — Cmd+O and Cmd+N open the built-in editor directly</div>
+        <div class="terminal-item"><strong>Font size inheritance</strong> — terminal inherits editor font size, or set independently</div>
         <div class="terminal-item"><strong>Cross-repo knowledge</strong> — mdkb-powered search across all repos via MCP</div>
         <div class="terminal-item"><strong>Worktree agent bridge</strong> — spawn AI subagents in isolated worktrees via MCP</div>
       </div>
@@ -723,7 +704,7 @@ Use <span class="str">`gh pr create`</span>.
         </details>
         <details>
           <summary>Is this an IDE?</summary>
-          <div class="faq-answer">TUICommander is an AI-native IDE built on a modern terminal. It includes a code editor, file browser, diff views, Git panel, and PR management — everything needed for AI-assisted development. But unlike traditional IDEs, it's designed from the ground up for working with multiple agents as the primary workflow, not as an afterthought.</div>
+          <div class="faq-answer">Yes. TUICommander is an AI-native IDE — the IDE that understands AI agents. It includes a code editor, file browser, diff views, Git panel, PR management, CI Auto-Heal, and a usage dashboard. Unlike traditional IDEs that bolt on AI features, TUICommander is designed from the ground up for working with multiple parallel agents as the primary workflow, with full observability into what each agent is doing.</div>
         </details>
         <details>
           <summary>Can I use it without AI agents?</summary>
@@ -748,6 +729,10 @@ Use <span class="str">`gh pr create`</span>.
         <details>
           <summary>Can I extend it with plugins?</summary>
           <div class="faq-answer">Yes. TUICommander has an Obsidian-style plugin system with hot reload and a community registry. Plugins can watch terminal output, add status bar widgets, create panels, and respond to agent events. See the <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin Authoring Guide</a>.</div>
+        </details>
+        <details>
+          <summary>What is the TUIC SDK?</summary>
+          <div class="faq-answer">The TUIC SDK (v1.0) is the plugin API that gives your extensions access to the TUICommander runtime. It exposes <code>tuic.activeRepo</code>, <code>tuic.toast()</code>, <code>tuic.onRepoChange()</code>, terminal watchers, and more. Plugins are plain JavaScript modules with hot reload — no build step required.</div>
         </details>
         <details>
           <summary>How does the cloud relay work?</summary>
