@@ -6,6 +6,7 @@ import { agentConfigsStore, llmApiStore } from "../stores/agentConfigs";
 import { usePty } from "./usePty";
 import { invoke } from "../invoke";
 import { appLogger } from "../stores/appLogger";
+import { isWindows } from "../platform";
 
 export interface SmartPromptResult {
   ok: boolean;
@@ -147,8 +148,10 @@ export function useSmartPrompts() {
 
     try {
       if (prompt.autoExecute === false) {
-        // Just inject text, no Enter
-        await pty.write(active.sessionId, "\x15" + content);
+        // Just inject text, no Enter. Skip Ctrl-U prefix on native Windows
+        // shells without a detected agent (cmd.exe/PowerShell echo it literally).
+        const prefix = isWindows() && !active.agentType ? "" : "\x15";
+        await pty.write(active.sessionId, prefix + content);
       } else {
         await pty.sendCommand(active.sessionId, content, active.agentType);
       }
