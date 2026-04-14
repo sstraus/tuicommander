@@ -264,6 +264,21 @@ impl UpstreamRegistry {
         }
     }
 
+    /// Transition an upstream out of `Authenticating` back to `Failed` after
+    /// a user-initiated cancel. No-op if the upstream is not currently in
+    /// the authenticating state.
+    pub(crate) fn cancel_authenticating(&self, name: &str) {
+        if let Some(entry) = self.entries.get(name) {
+            let mut status = entry.status.write();
+            if *status != UpstreamStatus::Authenticating {
+                return;
+            }
+            *status = UpstreamStatus::Failed;
+            drop(status);
+            self.emit_status_change(name, "failed");
+        }
+    }
+
     /// Emit an `McpOAuthStart` event — called by the Tauri command layer
     /// once `start_flow` has returned an authorization URL for the frontend
     /// to open in the user's browser.
@@ -1516,6 +1531,42 @@ mod tests {
             registry.status("auth-done"),
             Some(UpstreamStatus::Connecting)
         );
+    }
+
+    #[tokio::test]
+    async fn cancel_authenticating_transitions_to_failed() {
+        let registry = UpstreamRegistry::new();
+        let cfg = http_server_config_disabled("cancel-auth", "http://127.0.0.1:1/mcp");
+        registry.connect_upstream(cfg, None).await.unwrap();
+        {
+            let entry = registry.entries.get("cancel-auth").unwrap();
+            *entry.status.write() = UpstreamStatus::Authenticating;
+        }
+
+        let (tx, mut rx) = tokio::sync::broadcast::channel(4);
+        registry.set_event_bus(tx);
+        registry.cancel_authenticating("cancel-auth");
+        assert_eq!(registry.status("cancel-auth"), Some(UpstreamStatus::Failed));
+
+        match rx.try_recv().unwrap() {
+            crate::state::AppEvent::UpstreamStatusChanged { name, status } => {
+                assert_eq!(name, "cancel-auth");
+                assert_eq!(status, "failed");
+            }
+            other => panic!("expected UpstreamStatusChanged, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn cancel_authenticating_is_noop_when_not_authenticating() {
+        let registry = UpstreamRegistry::new();
+        let cfg = http_server_config_disabled("cancel-noop", "http://127.0.0.1:1/mcp");
+        registry.connect_upstream(cfg, None).await.unwrap();
+        // Default status is Connecting
+        let (tx, mut rx) = tokio::sync::broadcast::channel(4);
+        registry.set_event_bus(tx);
+        registry.cancel_authenticating("cancel-noop");
+        assert!(rx.try_recv().is_err());
     }
 
     #[tokio::test]

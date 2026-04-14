@@ -23,6 +23,16 @@ export interface ToolFilter {
   patterns: string[];
 }
 
+export type UpstreamAuth =
+  | { type: "bearer"; token: string }
+  | {
+      type: "oauth2";
+      client_id: string;
+      scopes?: string[];
+      authorization_endpoint?: string;
+      token_endpoint?: string;
+    };
+
 export interface UpstreamMcpServer {
   id: string;
   name: string;
@@ -30,6 +40,7 @@ export interface UpstreamMcpServer {
   enabled: boolean;
   timeout_secs: number;
   tool_filter?: ToolFilter;
+  auth?: UpstreamAuth;
 }
 
 export interface UpstreamMcpConfig {

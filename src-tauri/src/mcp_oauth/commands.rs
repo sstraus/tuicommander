@@ -92,6 +92,19 @@ pub(crate) async fn mcp_oauth_callback(
         .await
 }
 
+/// Cancel any in-progress OAuth flows for the named upstream and transition
+/// its status out of `Authenticating`. Safe to call even if no flow is
+/// pending — it becomes a no-op.
+#[tauri::command]
+pub(crate) async fn cancel_mcp_upstream_oauth(
+    state: State<'_, Arc<AppState>>,
+    name: String,
+) -> Result<(), String> {
+    state.oauth_flow_manager.cancel_flows_for(&name);
+    state.mcp_upstream_registry.cancel_authenticating(&name);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

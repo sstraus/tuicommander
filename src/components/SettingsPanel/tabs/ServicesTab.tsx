@@ -50,7 +50,7 @@ interface LocalIpEntry { ip: string; label: string; }
 
 interface UpstreamStatusEntry {
   name: string;
-  status: "connecting" | "ready" | "circuit_open" | "disabled" | "failed";
+  status: "connecting" | "ready" | "circuit_open" | "disabled" | "failed" | "authenticating";
   transport: { type: string; url?: string; command?: string; args?: string[] };
   tool_count: number;
   tools: string[];
@@ -711,6 +711,9 @@ function emptyForm() {
     cwd: "",
     credential: "",
     timeout: 30,
+    authMethod: "bearer" as "bearer" | "oauth2",
+    oauthClientId: "",
+    oauthScopes: "",
   };
 }
 
@@ -758,6 +761,10 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
     if (!/^[a-z0-9_-]+$/.test(name)) { setError("Name must be lowercase letters, digits, hyphens, or underscores only"); return; }
     if (f.transportType === "http" && !f.url.trim()) { setError("URL is required for HTTP transport"); return; }
     if (f.transportType === "stdio" && !f.command.trim()) { setError("Command is required for stdio transport"); return; }
+    if (f.transportType === "http" && f.authMethod === "oauth2" && !f.oauthClientId.trim()) {
+      setError("Client ID is required for OAuth 2.1 authentication");
+      return;
+    }
 
     const transport: UpstreamTransport = f.transportType === "http"
       ? { type: "http", url: f.url.trim() }
@@ -776,8 +783,19 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
       timeout_secs: f.timeout,
     };
 
+    if (f.transportType === "http" && f.authMethod === "oauth2") {
+      const scopes = f.oauthScopes.trim()
+        ? f.oauthScopes.trim().split(/[\s,]+/).filter(Boolean)
+        : undefined;
+      server.auth = {
+        type: "oauth2",
+        client_id: f.oauthClientId.trim(),
+        ...(scopes && scopes.length ? { scopes } : {}),
+      };
+    }
+
     // Save credential before persisting config (ignored if empty)
-    if (f.credential) {
+    if (f.credential && f.authMethod === "bearer") {
       try {
         await rpc("save_mcp_upstream_credential", { name: server.name, token: f.credential });
       } catch {
@@ -801,14 +819,29 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
     switch (st) {
       case "ready": return "var(--green, #98c379)";
       case "connecting": return "var(--warning, #e5c07b)";
+      case "authenticating": return "var(--info, #61afef)";
       case "circuit_open":
       case "failed": return "var(--error, #e06c75)";
       default: return "var(--text-dimmed)";
     }
   }
 
+  /** Human-readable label for a status string. */
+  function statusLabel(st: string | undefined): string {
+    switch (st) {
+      case "ready": return "Connected";
+      case "connecting": return "Connecting…";
+      case "authenticating": return "Awaiting authorization…";
+      case "circuit_open": return "Retrying…";
+      case "failed": return "Failed";
+      case "disabled": return "Disabled";
+      default: return st ?? "Unknown";
+    }
+  }
+
   function startEdit(server: UpstreamMcpServer) {
     setEditingId(server.id);
+    const isOAuth = server.auth?.type === "oauth2";
     setEditForm({
       name: server.name,
       transportType: server.transport.type,
@@ -818,6 +851,9 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
       cwd: server.transport.type === "stdio" ? (server.transport.cwd ?? "") : "",
       credential: "",
       timeout: server.timeout_secs,
+      authMethod: isOAuth ? "oauth2" : "bearer",
+      oauthClientId: isOAuth ? (server.auth as { client_id: string }).client_id : "",
+      oauthScopes: isOAuth ? ((server.auth as { scopes?: string[] }).scopes?.join(" ") ?? "") : "",
     });
   }
 
@@ -827,13 +863,31 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
       ? { type: "http", url: f.url.trim() }
       : { type: "stdio", command: f.command.trim(), args: f.args.trim() ? f.args.trim().split(/\s+/) : [], ...(f.cwd.trim() ? { cwd: f.cwd.trim() } : {}) };
 
+    if (f.transportType === "http" && f.authMethod === "oauth2" && !f.oauthClientId.trim()) {
+      setError("Client ID is required for OAuth 2.1 authentication");
+      return;
+    }
+
     const updated: UpstreamMcpServer = {
       ...server,
       transport,
       timeout_secs: f.timeout,
     };
 
-    if (f.credential) {
+    if (f.transportType === "http" && f.authMethod === "oauth2") {
+      const scopes = f.oauthScopes.trim()
+        ? f.oauthScopes.trim().split(/[\s,]+/).filter(Boolean)
+        : undefined;
+      updated.auth = {
+        type: "oauth2",
+        client_id: f.oauthClientId.trim(),
+        ...(scopes && scopes.length ? { scopes } : {}),
+      };
+    } else {
+      delete updated.auth;
+    }
+
+    if (f.credential && f.authMethod === "bearer") {
       try {
         await rpc("save_mcp_upstream_credential", { name: server.name, token: f.credential });
       } catch { /* non-fatal */ }
@@ -911,13 +965,46 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
                 value={form().url}
                 onInput={e => setForm(f => ({ ...f, url: e.currentTarget.value }))}
               />
-              <input
-                type="password"
-                class={s.input}
-                placeholder="API key for remote MCP servers (optional, stored in OS keychain)"
-                value={form().credential}
-                onInput={e => setForm(f => ({ ...f, credential: e.currentTarget.value }))}
-              />
+              <div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
+                <label style={{ "font-size": "12px", color: "var(--text-dimmed)", "min-width": "90px" }}>Authentication</label>
+                <select
+                  class={s.input}
+                  value={form().authMethod}
+                  onChange={e => setForm(f => ({ ...f, authMethod: e.currentTarget.value as "bearer" | "oauth2" }))}
+                  style={{ flex: 1 }}
+                >
+                  <option value="bearer">Bearer token</option>
+                  <option value="oauth2">OAuth 2.1</option>
+                </select>
+              </div>
+              <Show when={form().authMethod === "bearer"}>
+                <input
+                  type="password"
+                  class={s.input}
+                  placeholder="API key for remote MCP servers (optional, stored in OS keychain)"
+                  value={form().credential}
+                  onInput={e => setForm(f => ({ ...f, credential: e.currentTarget.value }))}
+                />
+              </Show>
+              <Show when={form().authMethod === "oauth2"}>
+                <input
+                  type="text"
+                  class={s.input}
+                  placeholder="OAuth client ID (required)"
+                  value={form().oauthClientId}
+                  onInput={e => setForm(f => ({ ...f, oauthClientId: e.currentTarget.value }))}
+                />
+                <input
+                  type="text"
+                  class={s.input}
+                  placeholder="Scopes (optional, space-separated)"
+                  value={form().oauthScopes}
+                  onInput={e => setForm(f => ({ ...f, oauthScopes: e.currentTarget.value }))}
+                />
+                <p class={s.hint} style={{ margin: "2px 0 0" }}>
+                  Authorization will begin after saving. The browser opens for sign-in.
+                </p>
+              </Show>
             </Show>
             <Show when={form().transportType === "stdio"}>
               <input
@@ -1007,13 +1094,20 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
                     }}>
                       {server.transport.type.toUpperCase()}
                     </span>
-                    {/* Status dot */}
+                    {/* Status dot + label */}
                     <Show when={st()}>
                       {(entry) => (
-                        <span style={{
-                          display: "inline-block", width: "7px", height: "7px", "border-radius": "50%",
-                          background: statusColor(entry().status),
-                        }} title={entry().status.replace("_", " ")} />
+                        <>
+                          <span style={{
+                            display: "inline-block", width: "7px", height: "7px", "border-radius": "50%",
+                            background: statusColor(entry().status),
+                          }} title={statusLabel(entry().status)} />
+                          <Show when={entry().status === "authenticating"}>
+                            <span style={{ "font-size": "11px", color: "var(--info, #61afef)" }}>
+                              {statusLabel(entry().status)}
+                            </span>
+                          </Show>
+                        </>
                       )}
                     </Show>
                     <Show when={!server.enabled}>
@@ -1048,6 +1142,31 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
                     <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293z"/>
                   </svg>
                 </button>
+                {/* Authorize (OAuth only) */}
+                <Show when={server.auth?.type === "oauth2"}>
+                  <Show
+                    when={st()?.status === "authenticating"}
+                    fallback={
+                      <button
+                        class={s.copyBtn}
+                        style={{ "flex-shrink": 0, color: "var(--info, #61afef)" }}
+                        title="Authorize via OAuth 2.1"
+                        onClick={() => rpc("start_mcp_upstream_oauth", { name: server.name }).catch(e => appLogger.warn("network", String(e)))}
+                      >
+                        Authorize
+                      </button>
+                    }
+                  >
+                    <button
+                      class={s.copyBtn}
+                      style={{ "flex-shrink": 0, color: "var(--warning, #e5c07b)" }}
+                      title="Cancel authorization"
+                      onClick={() => rpc("cancel_mcp_upstream_oauth", { name: server.name }).catch(e => appLogger.warn("network", String(e)))}
+                    >
+                      Cancel
+                    </button>
+                  </Show>
+                </Show>
                 {/* Reconnect */}
                 <button
                   class={s.copyBtn}
@@ -1084,13 +1203,42 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
                           onInput={e => setEditForm(f => ({ ...f, url: e.currentTarget.value }))} />
                       </div>
                       <div>
-                        <label style={{ "font-size": "12px", color: "var(--text-dimmed)" }}>Bearer token</label>
-                        <input type="password" class={s.input}
-                          placeholder="Enter new token (leave blank to keep current)"
-                          value={editForm().credential}
-                          onInput={e => setEditForm(f => ({ ...f, credential: e.currentTarget.value }))} />
-                        <p class={s.hint} style={{ margin: "2px 0 0" }}>Stored in OS keychain. Leave blank to keep current token.</p>
+                        <label style={{ "font-size": "12px", color: "var(--text-dimmed)" }}>Authentication</label>
+                        <select
+                          class={s.input}
+                          value={editForm().authMethod}
+                          onChange={e => setEditForm(f => ({ ...f, authMethod: e.currentTarget.value as "bearer" | "oauth2" }))}
+                        >
+                          <option value="bearer">Bearer token</option>
+                          <option value="oauth2">OAuth 2.1</option>
+                        </select>
                       </div>
+                      <Show when={editForm().authMethod === "bearer"}>
+                        <div>
+                          <label style={{ "font-size": "12px", color: "var(--text-dimmed)" }}>Bearer token</label>
+                          <input type="password" class={s.input}
+                            placeholder="Enter new token (leave blank to keep current)"
+                            value={editForm().credential}
+                            onInput={e => setEditForm(f => ({ ...f, credential: e.currentTarget.value }))} />
+                          <p class={s.hint} style={{ margin: "2px 0 0" }}>Stored in OS keychain. Leave blank to keep current token.</p>
+                        </div>
+                      </Show>
+                      <Show when={editForm().authMethod === "oauth2"}>
+                        <div>
+                          <label style={{ "font-size": "12px", color: "var(--text-dimmed)" }}>OAuth client ID</label>
+                          <input type="text" class={s.input}
+                            placeholder="Required"
+                            value={editForm().oauthClientId}
+                            onInput={e => setEditForm(f => ({ ...f, oauthClientId: e.currentTarget.value }))} />
+                        </div>
+                        <div>
+                          <label style={{ "font-size": "12px", color: "var(--text-dimmed)" }}>Scopes</label>
+                          <input type="text" class={s.input}
+                            placeholder="Optional, space-separated"
+                            value={editForm().oauthScopes}
+                            onInput={e => setEditForm(f => ({ ...f, oauthScopes: e.currentTarget.value }))} />
+                        </div>
+                      </Show>
                     </Show>
                     <Show when={editForm().transportType === "stdio"}>
                       <div>
