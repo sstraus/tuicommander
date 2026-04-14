@@ -22,6 +22,7 @@ pub(crate) mod dir_watcher;
 pub(crate) mod mcp_http;
 pub(crate) mod mcp_proxy;
 pub(crate) mod mcp_upstream_config;
+#[allow(dead_code)] // Used by OAuth discovery (story 1193-7f78), not yet wired
 pub(crate) mod mcp_upstream_credentials;
 mod menu;
 pub(crate) mod notification_sound;
@@ -1180,6 +1181,7 @@ pub fn run() {
             prompt::process_prompt_content,
             prompt::resolve_context_variables,
             smart_prompt::execute_headless_prompt,
+            smart_prompt::execute_shell_script,
             llm_api::load_llm_api_config,
             llm_api::save_llm_api_config,
             llm_api::has_llm_api_key,

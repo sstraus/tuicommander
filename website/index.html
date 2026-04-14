@@ -82,8 +82,8 @@
         </div>
       </div>
       <div class="hero-ctas">
-        <a href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary" rel="noopener noreferrer">
-          Download for Mac
+        <a id="hero-download" href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary" rel="noopener noreferrer">
+          Download
         </a>
         <a href="https://github.com/sstraus/tuicommander" class="btn btn-secondary" rel="noopener noreferrer">
           View on GitHub
@@ -715,7 +715,7 @@ Use <span class="str">`gh pr create`</span>.
       <div class="faq-list">
         <details>
           <summary>Is it free?</summary>
-          <div class="faq-answer">Yes. TUICommander is MIT licensed, open source, and free forever. No subscriptions, no feature gates.</div>
+          <div class="faq-answer">Yes. TUICommander is Apache 2.0 licensed, open source, and free forever. No subscriptions, no feature gates.</div>
         </details>
         <details>
           <summary>Does it work on Windows and Linux?</summary>
@@ -771,10 +771,10 @@ Use <span class="str">`gh pr create`</span>.
   <section class="bottom-cta">
     <div class="container">
       <h2>Ready to work with AI agents without losing context?</h2>
-      <p>New features land weekly. MIT licensed, zero telemetry, runs locally.</p>
+      <p>New features land weekly. Apache 2.0 licensed, zero telemetry, runs locally.</p>
       <div class="hero-ctas">
-        <a href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary" rel="noopener noreferrer">
-          Download for Mac
+        <a id="bottom-download" href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary" rel="noopener noreferrer">
+          Download
         </a>
         <a href="https://github.com/sstraus/tuicommander" class="btn btn-secondary" rel="noopener noreferrer">
           View on GitHub
@@ -794,11 +794,35 @@ Use <span class="str">`gh pr create`</span>.
         <a href="https://github.com/sstraus/tuicommander/blob/main/docs/FEATURES.md" rel="noopener noreferrer">Docs</a>
         <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin API</a>
       </div>
-      <p>MIT License &copy; 2026 Stefano Straus</p>
+      <p>Apache 2.0 License &copy; 2026 Stefano Straus</p>
       <p class="footer-tech">Built with Rust, Tauri v2, SolidJS, xterm.js</p>
+      <p class="footer-craft">Crafted with ❤️ in Alicante and supported by <a href="https://www.lansweeper.com" rel="noopener noreferrer"><span style="color:#f7941d">Lan</span><span style="color:#ffffff">sweeper</span></a></p>
     </div>
   </footer>
 
   <script type="module" src="/main.js"></script>
+  <script>
+    (function() {
+      var ua = navigator.userAgent || '';
+      var platform = navigator.platform || '';
+      var label, suffix;
+      if (/Mac|iPhone|iPad/.test(platform) || /Mac OS/.test(ua)) {
+        label = 'Download for macOS';
+        suffix = '.dmg';
+      } else if (/Win/.test(platform)) {
+        label = 'Download for Windows';
+        suffix = '.msi';
+      } else if (/Linux/.test(platform)) {
+        label = 'Download for Linux';
+        suffix = '.AppImage';
+      }
+      if (label) {
+        var btns = document.querySelectorAll('#hero-download, #bottom-download');
+        for (var i = 0; i < btns.length; i++) {
+          btns[i].textContent = label;
+        }
+      }
+    })();
+  </script>
 </body>
 </html>
