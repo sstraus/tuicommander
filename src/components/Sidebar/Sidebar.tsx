@@ -85,7 +85,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     }
     const prStatus = githubStore.getPrStatus(active.path, active.activeBranch);
     const prState = prStatus?.state?.toUpperCase();
-    if (prStatus && prState !== "CLOSED" && prState !== "MERGED") {
+    if (prStatus && prState !== "CLOSED" && prState !== "MERGED" && !prStatus.is_draft) {
       const target = { repoPath: active.path, branch: active.activeBranch };
       queueMicrotask(() => setPrDetailTarget(target));
     } else {
