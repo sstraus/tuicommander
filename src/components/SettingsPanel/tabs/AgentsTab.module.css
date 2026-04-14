@@ -253,6 +253,16 @@
   font-family: var(--font-mono);
 }
 
+.formInput.inputError {
+  border-color: var(--danger, #e55);
+}
+
+.validationError {
+  color: var(--danger, #e55);
+  font-size: 0.75rem;
+  padding: 0 4px 4px;
+}
+
 /* Action buttons row */
 
 .actionsRow {

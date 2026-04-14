@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal, onMount } from "solid-js";
+import { Component, For, Show, createMemo, createSignal, onMount } from "solid-js";
 import { AGENTS, AGENT_DISPLAY, MCP_SUPPORT, type AgentType, type AgentRunConfig } from "../../../agents";
 import { appLogger } from "../../../stores/appLogger";
 import { agentConfigsStore, llmApiStore } from "../../../stores/agentConfigs";
@@ -37,9 +37,24 @@ const AddConfigForm: Component<{
   const [command, setCommand] = createSignal(AGENTS[props.agentType].binary);
   const [args, setArgs] = createSignal("");
 
+  // Cross-agent duplicate name detection (case-insensitive)
+  const allExistingNames = createMemo(() => {
+    const names = new Set<string>();
+    for (const agentType of ALL_AGENT_TYPES) {
+      for (const cfg of agentConfigsStore.getRunConfigs(agentType)) {
+        names.add(cfg.name.toLowerCase());
+      }
+    }
+    return names;
+  });
+  const isDuplicate = () => {
+    const n = name().trim().toLowerCase();
+    return n.length > 0 && allExistingNames().has(n);
+  };
+
   const handleSave = async () => {
     const n = name().trim();
-    if (!n) return;
+    if (!n || isDuplicate()) return;
     const config: AgentRunConfig = {
       name: n,
       command: command().trim() || AGENTS[props.agentType].binary,
@@ -56,12 +71,16 @@ const AddConfigForm: Component<{
       <div class={a.formRow}>
         <input
           class={a.formInput}
+          classList={{ [a.inputError]: isDuplicate() }}
           placeholder="Configuration name"
           value={name()}
           onInput={(e) => setName(e.currentTarget.value)}
           onKeyDown={(e) => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") props.onClose(); }}
         />
       </div>
+      <Show when={isDuplicate()}>
+        <div class={a.validationError}>Name "{name().trim()}" already exists</div>
+      </Show>
       <div class={a.formRow}>
         <input
           class={`${a.formInput} ${a.mono}`}
@@ -78,7 +97,7 @@ const AddConfigForm: Component<{
         />
       </div>
       <div class={a.formRow}>
-        <button class={a.smallBtn} onClick={handleSave}>Save</button>
+        <button class={a.smallBtn} onClick={handleSave} disabled={isDuplicate() || !name().trim()}>Save</button>
         <button class={a.smallBtn} onClick={props.onClose}>Cancel</button>
       </div>
     </div>
