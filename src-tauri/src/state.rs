@@ -856,6 +856,11 @@ pub struct AppState {
     pub(crate) session_states: DashMap<String, SessionState>,
     /// Upstream MCP proxy registry — aggregates tools from all connected upstreams.
     pub(crate) mcp_upstream_registry: Arc<crate::mcp_proxy::registry::UpstreamRegistry>,
+    /// Orchestrator for in-flight OAuth 2.1 authorization flows. Shares the
+    /// `auth_semaphore` with `mcp_upstream_registry` so concurrent browser
+    /// flows are serialized.
+    #[allow(dead_code)] // wired by registry + Tauri commands in follow-up stories
+    pub(crate) oauth_flow_manager: Arc<crate::mcp_oauth::flow::OAuthFlowManager>,
     /// Broadcast channel for MCP `notifications/tools/list_changed`.
     /// Fired when native tools are toggled or upstream tool lists change.
     pub(crate) mcp_tools_changed: tokio::sync::broadcast::Sender<()>,
@@ -1948,7 +1953,13 @@ pub(crate) mod tests_support {
             event_bus: tokio::sync::broadcast::channel(256).0,
             event_counter: Arc::new(AtomicU64::new(0)),
             session_states: DashMap::new(),
-            mcp_upstream_registry: Arc::new(crate::mcp_proxy::registry::UpstreamRegistry::new()),
+            mcp_upstream_registry: {
+                let r = Arc::new(crate::mcp_proxy::registry::UpstreamRegistry::new());
+                r
+            },
+            oauth_flow_manager: Arc::new(crate::mcp_oauth::flow::OAuthFlowManager::new(
+                Arc::new(tokio::sync::Semaphore::new(1)),
+            )),
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
             tool_search_index: Arc::new(parking_lot::RwLock::new(crate::tool_search::ToolSearchIndex::build(&[]))),
             content_indices: DashMap::new(),
@@ -2387,7 +2398,13 @@ mod tests {
             event_bus: tokio::sync::broadcast::channel(256).0,
             event_counter: Arc::new(AtomicU64::new(0)),
             session_states: DashMap::new(),
-            mcp_upstream_registry: Arc::new(crate::mcp_proxy::registry::UpstreamRegistry::new()),
+            mcp_upstream_registry: {
+                let r = Arc::new(crate::mcp_proxy::registry::UpstreamRegistry::new());
+                r
+            },
+            oauth_flow_manager: Arc::new(crate::mcp_oauth::flow::OAuthFlowManager::new(
+                Arc::new(tokio::sync::Semaphore::new(1)),
+            )),
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
             tool_search_index: Arc::new(parking_lot::RwLock::new(crate::tool_search::ToolSearchIndex::build(&[]))),
             content_indices: DashMap::new(),

@@ -782,6 +782,8 @@ pub fn run() {
         tracing::warn!(source = "github", "No GitHub token found (checked GH_TOKEN, GITHUB_TOKEN, OAuth keyring, gh CLI config)");
     }
 
+    let mcp_upstream_registry_arc = Arc::new(mcp_proxy::registry::UpstreamRegistry::new());
+
     let state = Arc::new(AppState {
         sessions: DashMap::new(),
         worktrees_dir,
@@ -812,7 +814,10 @@ pub fn run() {
         event_bus: tokio::sync::broadcast::channel(256).0,
         event_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         session_states: dashmap::DashMap::new(),
-        mcp_upstream_registry: Arc::new(mcp_proxy::registry::UpstreamRegistry::new()),
+        mcp_upstream_registry: mcp_upstream_registry_arc.clone(),
+        oauth_flow_manager: Arc::new(crate::mcp_oauth::flow::OAuthFlowManager::new(
+            mcp_upstream_registry_arc.auth_semaphore.clone(),
+        )),
         mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
         tool_search_index: Arc::new(parking_lot::RwLock::new(crate::tool_search::ToolSearchIndex::build(&[]))),
         content_indices: DashMap::new(),

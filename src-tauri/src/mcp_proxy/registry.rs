@@ -206,7 +206,8 @@ pub(crate) struct UpstreamRegistry {
     /// MCP tools_changed signal — fired when upstream tool availability changes.
     mcp_tools_tx: parking_lot::RwLock<Option<tokio::sync::broadcast::Sender<()>>>,
     /// Serializes concurrent OAuth flows so only one browser auth runs at a time.
-    pub(crate) auth_semaphore: tokio::sync::Semaphore,
+    /// Shared with `OAuthFlowManager` — both hold the same `Arc`.
+    pub(crate) auth_semaphore: Arc<tokio::sync::Semaphore>,
 }
 
 impl UpstreamRegistry {
@@ -215,7 +216,7 @@ impl UpstreamRegistry {
             entries: DashMap::new(),
             event_bus: parking_lot::RwLock::new(None),
             mcp_tools_tx: parking_lot::RwLock::new(None),
-            auth_semaphore: tokio::sync::Semaphore::new(1),
+            auth_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
         }
     }
 
