@@ -61,6 +61,7 @@
   display: flex;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
 .nav {
@@ -89,6 +90,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   transition: background 0.1s, color 0.1s;
+  flex-shrink: 0;
 }
 
 .navItem:hover {
@@ -106,6 +108,7 @@
   height: 1px;
   margin: 6px 12px;
   background: var(--border);
+  flex-shrink: 0;
 }
 
 .navLabel {
@@ -116,6 +119,7 @@
   color: var(--fg-muted);
   text-transform: uppercase;
   user-select: none;
+  flex-shrink: 0;
 }
 
 .navItemRepo {
