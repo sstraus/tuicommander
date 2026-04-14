@@ -135,7 +135,7 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
         project: projectName(term.cwd),
         agent: term.agentType || "shell",
         status,
-        lastDataAt: term.lastDataAt,
+        lastDataAt: terminalsStore.getLastDataAt(id),
         lastPrompt: term.lastPrompt,
         agentIntent: term.agentIntent,
         // Claude Code spinner verbs are decorative garbage — suppress them

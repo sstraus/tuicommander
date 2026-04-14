@@ -70,20 +70,24 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     if (!prDetailTarget()) setPrDetailIsManual(false);
   });
 
-  // Auto-show PR popover when active branch has PR data
+  // Auto-show PR popover when active branch has PR data.
+  // The decision logic reads reactive signals synchronously (for SolidJS tracking),
+  // but the actual setPrDetailTarget is deferred via queueMicrotask so popover
+  // mounting doesn't happen during the branch-switch reactive flush.
   createEffect(() => {
     if (!settingsStore.state.autoShowPrPopover) return;
     // Don't override manually-triggered popovers (e.g. badge click on non-active repo)
     if (prDetailIsManual()) return;
     const active = repositoriesStore.getActive();
     if (!active?.activeBranch) {
-      setPrDetailTarget(null);
+      queueMicrotask(() => setPrDetailTarget(null));
       return;
     }
     const prStatus = githubStore.getPrStatus(active.path, active.activeBranch);
     const prState = prStatus?.state?.toUpperCase();
     if (prStatus && prState !== "CLOSED" && prState !== "MERGED") {
-      setPrDetailTarget({ repoPath: active.path, branch: active.activeBranch });
+      const target = { repoPath: active.path, branch: active.activeBranch };
+      queueMicrotask(() => setPrDetailTarget(target));
     } else {
       const current = prDetailTarget();
       if (!current) return; // nothing to close
@@ -92,7 +96,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       // may be mid-merge or interacting with the cleanup dialog. Destroying the
       // popover kills cleanupCtx and aborts post-merge operations.
       if (current.branch !== active.activeBranch) {
-        setPrDetailTarget(null);
+        queueMicrotask(() => setPrDetailTarget(null));
       }
     }
   });

@@ -199,6 +199,24 @@ function createTerminalsStore() {
     }
   }
 
+  // Non-reactive map for lastDataAt timestamps — avoids triggering the reactive
+  // graph on every PTY output (was 1 store write per second per active terminal).
+  // ActivityDashboard reads via getLastDataAt(); flushLastDataAt() syncs to store.
+  const lastDataAtMap = new Map<string, number>();
+  let lastDataAtFlushTimer: ReturnType<typeof setInterval> | null = null;
+
+  function startLastDataAtFlush(): void {
+    if (lastDataAtFlushTimer) return;
+    lastDataAtFlushTimer = setInterval(() => {
+      if (lastDataAtMap.size === 0) return;
+      batch(() => {
+        for (const [id, ts] of lastDataAtMap) {
+          if (state.terminals[id]) setState("terminals", id, "lastDataAt", ts);
+        }
+      });
+    }, 5000);
+  }
+
   /** Clean up debounced busy state for a removed terminal */
   function cleanupBusyState(id: string): void {
     const timer = cooldownTimers.get(id);
@@ -233,6 +251,7 @@ function createTerminalsStore() {
       const sessionId = state.terminals[id]?.sessionId;
       if (sessionId) sessionToTerminal.delete(sessionId);
       cleanupBusyState(id);
+      lastDataAtMap.delete(id);
       for (const cb of onRemoveCallbacks) cb(id);
       setState(
         produce((s) => {
@@ -526,6 +545,27 @@ function createTerminalsStore() {
     /** Get all non-detached terminal IDs */
     getAttachedIds(): string[] {
       return Object.keys(state.terminals).filter((id) => !(id in state.detachedWindows));
+    },
+
+    /** Record last PTY output timestamp without triggering reactive graph */
+    touchLastDataAt(id: string, ts: number): void {
+      lastDataAtMap.set(id, ts);
+      startLastDataAtFlush();
+    },
+
+    /** Read last PTY output timestamp (non-reactive, for ActivityDashboard) */
+    getLastDataAt(id: string): number | null {
+      return lastDataAtMap.get(id) ?? state.terminals[id]?.lastDataAt ?? null;
+    },
+
+    /** Flush all pending lastDataAt values to the reactive store */
+    flushLastDataAt(): void {
+      if (lastDataAtMap.size === 0) return;
+      batch(() => {
+        for (const [id, ts] of lastDataAtMap) {
+          if (state.terminals[id]) setState("terminals", id, "lastDataAt", ts);
+        }
+      });
     },
   };
 

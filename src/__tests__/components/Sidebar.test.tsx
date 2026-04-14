@@ -1564,7 +1564,7 @@ describe("Sidebar", () => {
       expect(popover!.getAttribute("data-repo")).toBe("/repo2");
     });
 
-    it("auto-shows PrDetailPopover when active branch has an open PR", () => {
+    it("auto-shows PrDetailPopover when active branch has an open PR", async () => {
       mockGetActive.mockReturnValue({ path: "/repo1", activeBranch: "main" });
       mockGetPrStatus.mockImplementation((...args: unknown[]) => {
         if (args[0] === "/repo1" && args[1] === "main") {
@@ -1575,6 +1575,8 @@ describe("Sidebar", () => {
       setRepos({ "/repo1": makeRepo() });
 
       const { container } = render(() => <Sidebar {...defaultProps()} />);
+      // setPrDetailTarget is deferred via queueMicrotask to avoid blocking branch-switch flush
+      await new Promise((r) => queueMicrotask(r));
       const popover = container.querySelector("[data-testid='pr-detail-popover']");
       expect(popover).not.toBeNull();
       expect(popover!.getAttribute("data-branch")).toBe("main");

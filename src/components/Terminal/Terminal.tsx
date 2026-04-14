@@ -487,12 +487,12 @@ export const Terminal: Component<TerminalProps> = (props) => {
       }
 
       // Track last PTY output timestamp for activity dashboard (throttled to 1s).
-      // Must run before the hidden-terminal early return so the activity dot
-      // and lastDataAt stay accurate for background tabs.
+      // Written to a non-reactive Map (flushed to store every 5s) to avoid
+      // triggering the reactive graph on every PTY output event.
       const now = Date.now();
       if (!lastDataAtTimestamp || now - lastDataAtTimestamp > 1000) {
         lastDataAtTimestamp = now;
-        terminalsStore.update(props.id, { lastDataAt: now });
+        terminalsStore.touchLastDataAt(props.id, now);
       }
       if (terminalsStore.state.activeId !== props.id && !activityFlagged) {
         activityFlagged = true;
@@ -588,10 +588,14 @@ export const Terminal: Component<TerminalProps> = (props) => {
         case "status-line": {
           retryCount = 0;
           const awState = terminalsStore.get(props.id)?.awaitingInput;
-          if (awState && awState !== "error" && awState !== "question") {
-            terminalsStore.clearAwaitingInput(props.id);
+          const clearAw = awState && awState !== "error" && awState !== "question";
+          if (clearAw) {
+            appLogger.debug("terminal", `clearAwaitingInput(${props.id}) was "${awState}" → null`);
           }
-          terminalsStore.update(props.id, { currentTask: parsed.task_name });
+          terminalsStore.update(props.id, {
+            currentTask: parsed.task_name,
+            ...(clearAw ? { awaitingInput: null, awaitingInputConfident: false } : {}),
+          });
           break;
         }
         case "active-subtasks": {
@@ -720,22 +724,29 @@ export const Terminal: Component<TerminalProps> = (props) => {
           }
           break;
         case "shell-state": {
-          terminalsStore.update(props.id, { shellState: parsed.state });
           if (parsed.state !== "idle") {
-            // Shell goes busy: clear stale suggest bar and pending from previous cycle.
-            // Reset dismissed so the suggest emitted at the END of this cycle can show.
-            terminalsStore.update(props.id, { suggestedActions: null, suggestDismissed: false, pendingSuggest: null });
+            // Shell goes busy: set state + clear stale suggest bar and pending from
+            // previous cycle in a single write. Reset dismissed so the suggest emitted
+            // at the END of this cycle can show.
+            terminalsStore.update(props.id, {
+              shellState: parsed.state,
+              suggestedActions: null,
+              suggestDismissed: false,
+              pendingSuggest: null,
+            });
           }
           if (parsed.state === "idle") {
             // Show pending suggest buffered during the just-completed busy cycle
             const pendingT = terminalsStore.get(props.id);
-            if (pendingT?.pendingSuggest?.length) {
-              terminalsStore.setSuggestedActions(props.id, pendingT.pendingSuggest);
-              terminalsStore.update(props.id, { pendingSuggest: null });
-            }
-            const initCmd = terminalsStore.get(props.id)?.pendingInitCommand;
+            const hasPending = !!pendingT?.pendingSuggest?.length;
+            const initCmd = pendingT?.pendingInitCommand;
+            // Merge shellState + pendingSuggest promotion + initCommand clear into one write
+            terminalsStore.update(props.id, {
+              shellState: parsed.state,
+              ...(hasPending ? { suggestedActions: pendingT!.pendingSuggest, pendingSuggest: null } : {}),
+              ...(initCmd ? { pendingInitCommand: null } : {}),
+            });
             if (initCmd && targetSessionId) {
-              terminalsStore.update(props.id, { pendingInitCommand: null });
               pty.write(targetSessionId, initCmd + "\r").catch((e) =>
                 appLogger.error("terminal", "Failed to write init command", { error: String(e) }),
               );

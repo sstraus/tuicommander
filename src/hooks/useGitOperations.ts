@@ -438,13 +438,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
 
     // Ensure this repo+branch is active without going through handleBranchSelect
     // (which has auto-spawn logic that would create a duplicate terminal).
+    // Batch all store writes to flush the reactive graph once instead of 6+ times.
     const activeRepo = repositoriesStore.getActive();
-    if (activeRepo?.path !== repoPath || activeRepo?.activeBranch !== branchName) {
-      repositoriesStore.setActive(repoPath);
-      repositoriesStore.setActiveBranch(repoPath, branchName);
-      setCurrentRepoPath(repoPath);
-      setCurrentBranch(branchName);
-    }
+    const needsSwitch = activeRepo?.path !== repoPath || activeRepo?.activeBranch !== branchName;
 
     const branch = repositoriesStore.get(repoPath)?.branches[branchName];
     const termCount = branch?.terminals.length || 0;
@@ -458,9 +454,17 @@ export function useGitOperations(deps: GitOperationsDeps) {
       tuicSession: crypto.randomUUID(),
     });
 
-    repositoriesStore.addTerminalToBranch(repoPath, branchName, id);
-    terminalsStore.setActive(id);
-    assignTabToActiveGroup(id, "terminal");
+    batch(() => {
+      if (needsSwitch) {
+        repositoriesStore.setActive(repoPath);
+        repositoriesStore.setActiveBranch(repoPath, branchName);
+        setCurrentRepoPath(repoPath);
+        setCurrentBranch(branchName);
+      }
+      repositoriesStore.addTerminalToBranch(repoPath, branchName, id);
+      terminalsStore.setActive(id);
+      assignTabToActiveGroup(id, "terminal");
+    });
     // Focus the new terminal after SolidJS renders and mounts the component
     // (onMount sets ref, which happens in the next frame).
     requestAnimationFrame(() => terminalsStore.get(id)?.ref?.focus());
@@ -492,6 +496,8 @@ export function useGitOperations(deps: GitOperationsDeps) {
       const key = prevRepoPath && prevBranch ? paneLayoutKey(prevRepoPath, prevBranch) : undefined;
       globalWorkspaceStore.deactivate(key);
     }
+
+    repositoriesStore.setBranchSwitching(true);
 
     // Log the state we're LEAVING — critical for diagnosing terminal disappearance
     const prevRepo = repositoriesStore.getActive();
@@ -682,6 +688,8 @@ export function useGitOperations(deps: GitOperationsDeps) {
       paneLayoutStore.reset();
       terminalsStore.setActive(null);
     }
+
+    repositoriesStore.setBranchSwitching(false);
 
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
