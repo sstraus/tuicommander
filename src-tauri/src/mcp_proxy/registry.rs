@@ -636,15 +636,25 @@ async fn dispatch_tool_call(
             };
             match result {
                 Ok(val) => Ok(val),
-                Err(e) if e.contains("400") || e.contains("connection") || e.contains("session") => {
-                    // Reconnectable error — take exclusive lock for initialize + retry
-                    let mut guard = rwlock.write().await;
-                    guard.initialize().await.map_err(|ie| {
-                        format!("Upstream reconnect failed: {ie} (original: {e})")
-                    })?;
-                    guard.call_tool(tool_name, args).await
+                Err(e) => {
+                    let e_str = e.to_string();
+                    if e_str.contains("400")
+                        || e_str.contains("connection")
+                        || e_str.contains("session")
+                    {
+                        // Reconnectable error — take exclusive lock for initialize + retry
+                        let mut guard = rwlock.write().await;
+                        guard.initialize().await.map_err(|ie| {
+                            format!("Upstream reconnect failed: {ie} (original: {e_str})")
+                        })?;
+                        guard
+                            .call_tool(tool_name, args)
+                            .await
+                            .map_err(|e| e.to_string())
+                    } else {
+                        Err(e_str)
+                    }
                 }
-                Err(e) => Err(e),
             }
         }
         UpstreamClient::Stdio(mutex) => {
@@ -672,7 +682,7 @@ async fn initialize_entry(
     let result = match &entry.client {
         UpstreamClient::Http(rwlock) => {
             let mut guard = rwlock.write().await;
-            guard.initialize().await
+            guard.initialize().await.map_err(|e| e.to_string())
         }
         UpstreamClient::Stdio(mutex) => {
             let arc = Arc::clone(mutex);
@@ -805,7 +815,7 @@ async fn health_check_entry(entry: &UpstreamEntry) -> Result<Vec<UpstreamToolDef
     match &entry.client {
         UpstreamClient::Http(rwlock) => {
             let guard = rwlock.read().await;
-            guard.health_check().await
+            guard.health_check().await.map_err(|e| e.to_string())
         }
         UpstreamClient::Stdio(mutex) => {
             let arc = Arc::clone(mutex);
