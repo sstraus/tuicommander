@@ -161,10 +161,34 @@ export function useSmartPrompts() {
   }
 
   async function executeHeadless(prompt: SavedPrompt, content: string): Promise<SmartPromptResult> {
-    const agentType = agentConfigsStore.getHeadlessAgent();
-    const template = agentType ? agentConfigsStore.getHeadlessTemplate(agentType) : undefined;
-    if (!template) {
+    const headlessVal = agentConfigsStore.getHeadlessAgent();
+    if (!headlessVal) {
       return { ok: false, reason: "No headless agent configured — set one in Settings → Agents" };
+    }
+
+    // Resolve headless_agent: "type:configName" format from grouped dropdown, or plain agent type
+    let template: string | undefined;
+    let envVars: Record<string, string> | undefined;
+    if (headlessVal.includes(":")) {
+      // Run config selected — parse "agentType:configName"
+      const [agentType, configName] = headlessVal.split(":", 2);
+      const configs = agentConfigsStore.getRunConfigs(agentType as import("../agents").AgentType);
+      const cfg = configs.find((c) => c.name === configName);
+      if (cfg) {
+        // Build command line from run config: command + args with {prompt} → stdin pipe
+        const args = cfg.args.map((a) => a === "{prompt}" ? "" : a).join(" ");
+        template = `${cfg.command} ${args}`.trim();
+        envVars = Object.keys(cfg.env).length > 0 ? cfg.env : undefined;
+      } else {
+        // Config not found, fall back to agent type template
+        template = agentConfigsStore.getHeadlessTemplate(agentType as import("../agents").AgentType);
+      }
+    } else {
+      template = agentConfigsStore.getHeadlessTemplate(headlessVal as import("../agents").AgentType);
+    }
+
+    if (!template) {
+      return { ok: false, reason: "No headless template found for the configured agent" };
     }
 
     // Pass prompt content via stdin to avoid shell injection.
@@ -180,6 +204,7 @@ export function useSmartPrompts() {
         stdinContent: content,
         timeoutMs: 300000,
         repoPath,
+        env: envVars,
       });
       promptLibraryStore.markAsUsed(prompt.id);
 

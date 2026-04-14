@@ -77,7 +77,9 @@ pub(super) async fn execute_headless_prompt_http(
     let stdin_content = body.get("stdinContent").and_then(|v| v.as_str()).map(String::from);
     let timeout_ms = body.get("timeoutMs").and_then(|v| v.as_u64()).unwrap_or(300_000);
     let repo_path = body.get("repoPath").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    match crate::smart_prompt::execute_headless_prompt(command_line, stdin_content, timeout_ms, repo_path).await {
+    let env: Option<std::collections::HashMap<String, String>> = body.get("env")
+        .and_then(|v| serde_json::from_value(v.clone()).ok());
+    match crate::smart_prompt::execute_headless_prompt(command_line, stdin_content, timeout_ms, repo_path, env).await {
         Ok(output) => Json(output).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
     }
