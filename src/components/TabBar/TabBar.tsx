@@ -148,6 +148,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
       return [
         ...(hasPath ? [{ label: t("tabBar.copyPath", "Copy Path"), action: () => { navigator.clipboard.writeText(shortenHomePath(tab.filePath)).catch((err) => appLogger.error("app", "Failed to copy path", err)); } }] : []),
         { label: isPinned ? t("tabBar.unpinTab", "Unpin Tab") : t("tabBar.pinTab", "Pin Tab"), action: () => mdTabsStore.setPinned(id, !isPinned) },
+        { label: t("tabBar.print", "Print…"), action: () => window.print() },
         { label: "", separator: true, action: () => {} },
         { label: t("tabBar.closeTab", "Close Tab"), action: () => { mdTabsStore.remove(id); props.onTabClose(id); } },
         { label: t("tabBar.closeOthers", "Close Other Tabs"), action: () => props.onCloseOthers(id), disabled: ids.length <= 1 },
@@ -232,6 +233,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
 
   // Get terminals for active branch only, ordered by pane layout when split.
   // When global workspace is active, show only promoted terminals instead.
+  let prevTerminalIds: string[] = [];
   const activeTerminals = () => {
     let ids: string[];
     if (globalWorkspaceStore.isActive()) {
@@ -251,8 +253,15 @@ export const TabBar: Component<TabBarProps> = (props) => {
       }
     }
 
+    // During branch switch, hold previous tab list to prevent flash of empty tabs
+    if (ids.length === 0 && repositoriesStore.state.branchSwitching) {
+      return prevTerminalIds;
+    }
+
+    prevTerminalIds = ids;
+
     // Diagnostic: detect when TabBar shows 0 terminals but the store has some
-    if (ids.length === 0 && terminalsStore.getIds().length > 0) {
+    if (ids.length === 0 && terminalsStore.getIds().length > 0 && !repositoriesStore.state.branchSwitching) {
       const activeRepoPath = repositoriesStore.state.activeRepoPath;
       const repo = activeRepoPath ? repositoriesStore.state.repositories[activeRepoPath] : null;
       appLogger.warn("app", "TabBar: activeTerminals empty but store has terminals", {

@@ -1,5 +1,5 @@
 import { createTabManager, type BaseTab } from "./tabManager";
-import { currentBranchKey } from "./repositories";
+import { currentBranchKey, repositoriesStore } from "./repositories";
 
 // Zoom bounds mirror the terminal zoom (useTerminalLifecycle) for consistency.
 const MD_MIN_FONT_SIZE = 8;
@@ -219,6 +219,10 @@ function createMdTabsStore() {
 
       const id = base._nextId("md");
       const tab: PluginPanelTab = { type: "plugin-panel", id, title, pluginId, html, pinned };
+      if (!pinned) {
+        const repoPath = repositoriesStore.state.activeRepoPath;
+        if (repoPath) tab.repoPath = repoPath;
+      }
       if (url) tab.url = url;
       if (focus) {
         return base._addTab(tab);
