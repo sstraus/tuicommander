@@ -1018,6 +1018,23 @@ impl ChunkProcessor {
             let changed = vt.process(data.as_bytes());
             let total = vt.total_lines();
             let oldest = vt.oldest_offset();
+
+            // Filter out changed rows below the input area border (horizontal rule).
+            // Claude Code (and similar agents) render a quota/budget status bar below
+            // the input box separator. Those rows are cosmetic chrome — processing them
+            // resets the silence timer and causes false busy→idle→question transitions.
+            let changed = if !changed.is_empty() {
+                let screen = vt.screen_rows();
+                let refs: Vec<&str> = screen.iter().map(|s| s.as_str()).collect();
+                if let Some(cutoff) = crate::chrome::find_chrome_cutoff(&refs) {
+                    changed.into_iter().filter(|r| r.row_index < cutoff).collect()
+                } else {
+                    changed
+                }
+            } else {
+                changed
+            };
+
             (changed, Some(total), Some(oldest))
         } else {
             (Vec::new(), None, None)
