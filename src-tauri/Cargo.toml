@@ -75,6 +75,7 @@ axum-server-dual-protocol = "0.7"
 web-push-native = "0.4"
 base64ct = { version = "1", features = ["alloc"] }
 anyhow = "1"
+oauth2 = "5"
 bm25 = "2.3"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 genai = "0.6.0-beta.11"
