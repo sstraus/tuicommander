@@ -57,6 +57,8 @@ interface RepositoriesStoreState {
   revisions: Record<string, number>;
   groups: Record<string, RepoGroup>;
   groupOrder: string[];        // display order of group IDs
+  /** True while a branch switch is in progress — TabBar holds previous tabs */
+  branchSwitching: boolean;
 }
 
 /** Grouped layout returned by getGroupedLayout() */
@@ -138,6 +140,7 @@ function createRepositoriesStore() {
     revisions: {},
     groups: {},
     groupOrder: [],
+    branchSwitching: false,
   });
 
   // Inverse index: terminal ID → repo path (O(1) lookup instead of O(repos*branches*terminals)).
@@ -790,6 +793,10 @@ function createRepositoriesStore() {
         .filter((r) => r && !r.parked);
 
       return { groups, ungrouped };
+    },
+
+    setBranchSwitching(value: boolean): void {
+      setState("branchSwitching", value);
     },
   };
 

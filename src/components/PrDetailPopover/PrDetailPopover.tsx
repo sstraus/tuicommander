@@ -8,6 +8,7 @@ import { repoDefaultsStore } from "../../stores/repoDefaults";
 import { agentConfigsStore } from "../../stores/agentConfigs";
 import { terminalsStore } from "../../stores/terminals";
 import { appLogger } from "../../stores/appLogger";
+import { toastsStore } from "../../stores/toasts";
 import { invoke } from "../../invoke";
 import { canMergePr, effectiveMergeMethod } from "../Sidebar/RepoSection";
 import { mergeWithFallback, isAlreadyMerged } from "../../utils/prMerge";
@@ -231,7 +232,9 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
       mdTabsStore.addPrDiff(props.repoPath, pr.number, pr.title, diff);
       props.onClose();
     } catch (e) {
-      appLogger.error("github", `Failed to load PR #${pr.number} diff`, { error: String(e) });
+      const msg = String(e);
+      appLogger.error("github", `Failed to load PR #${pr.number} diff`, { error: msg });
+      toastsStore.add(`PR #${pr.number} diff failed`, msg.includes("too_large") ? "Diff too large (>300 files)" : msg, "error");
     } finally {
       setDiffLoading(false);
     }

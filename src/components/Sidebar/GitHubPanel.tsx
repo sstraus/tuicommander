@@ -4,6 +4,7 @@ import { repositoriesStore } from "../../stores/repositories";
 import { githubStore } from "../../stores/github";
 import { settingsStore } from "../../stores/settings";
 import { appLogger } from "../../stores/appLogger";
+import { toastsStore } from "../../stores/toasts";
 import { repoDefaultsStore } from "../../stores/repoDefaults";
 import { repoSettingsStore } from "../../stores/repoSettings";
 import { effectiveMergeMethod, mergeWithFallback } from "../../utils/prMerge";
@@ -292,7 +293,9 @@ export const GitHubPanel: Component<{
       });
       mdTabsStore.addPrDiff(props.repoPath, pr.number, pr.title, diff);
     } catch (e) {
-      appLogger.error("github", `Failed to load PR #${pr.number} diff`, { error: String(e) });
+      const msg = String(e);
+      appLogger.error("github", `Failed to load PR #${pr.number} diff`, { error: msg });
+      toastsStore.add(`PR #${pr.number} diff failed`, msg.includes("too_large") ? "Diff too large (>300 files)" : msg, "error");
     } finally {
       setDiffLoading(false);
     }
