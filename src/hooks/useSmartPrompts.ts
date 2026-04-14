@@ -21,6 +21,10 @@ export function useSmartPrompts() {
   function canExecute(prompt: SavedPrompt): { ok: boolean; reason?: string } {
     if (prompt.enabled === false) return { ok: false, reason: "Prompt is disabled" };
 
+    if (prompt.executionMode === "shell") {
+      return { ok: true };
+    }
+
     if (prompt.executionMode === "api") {
       if (!llmApiStore.isConfigured()) return { ok: false, reason: "LLM API not configured — set provider, model, and API key in Settings → Agents" };
       return { ok: true };
@@ -125,6 +129,9 @@ export function useSmartPrompts() {
     // Substitute variables into content
     const processed = await promptLibraryStore.processContent(prompt, allVars);
 
+    if (effectiveMode === "shell") {
+      return executeShell(prompt, processed);
+    }
     if (effectiveMode === "api") {
       return executeApi(prompt, processed);
     }
@@ -182,6 +189,24 @@ export function useSmartPrompts() {
       return { ok: true, output };
     } catch (err) {
       appLogger.error("prompts", `Headless execution failed for "${prompt.name}"`, err);
+      return { ok: false, reason: String(err) };
+    }
+  }
+
+  async function executeShell(prompt: SavedPrompt, content: string): Promise<SmartPromptResult> {
+    const active = terminalsStore.getActive();
+    const repoPath = active?.cwd ?? repositoriesStore.getActive()?.path ?? "";
+    try {
+      const output = await invoke<string>("execute_shell_script", {
+        scriptContent: content,
+        timeoutMs: 60000,
+        repoPath,
+      });
+      promptLibraryStore.markAsUsed(prompt.id);
+      routeHeadlessOutput(prompt, output);
+      return { ok: true, output };
+    } catch (err) {
+      appLogger.error("prompts", `Shell execution failed for "${prompt.name}"`, err);
       return { ok: false, reason: String(err) };
     }
   }

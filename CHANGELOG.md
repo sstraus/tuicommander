@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Smart Prompts Shell Script mode** — New "Shell script (direct run)" execution mode runs prompt content directly as a shell command without any AI agent. Executes via system shell (`sh`/`cmd`) in the repo directory with 60s timeout. Supports all context variables (`{branch}`, `{repo_path}`, etc.) and output targets (clipboard, toast, panel). Ideal for automating CLI pipelines like branch cleanup, linting, or metrics collection
 - **TUIC SDK v1.0 expansion** — Plugin iframes now have access to the full SDK: `tuic.activeRepo()`, `tuic.onRepoChange()`, `tuic.getFile()`, `tuic.toast()`, `tuic.clipboard()`, `tuic.send()`/`tuic.onMessage()`, `tuic.theme`/`tuic.onThemeChange()`. Relative paths resolve against the active repo with traversal guard. SDK is auto-injected into same-origin URL-mode iframes. Interactive test page at `docs/examples/sdk-test.html`
 - **Visual toast notifications** — `tuic.toast()` (SDK) and MCP `ui action=toast` now display visual toast notifications in the bottom-right corner with auto-dismiss (4s) and click-to-dismiss. Optional `sound` parameter plays a synthesized notification tone per level (info = soft blip, warn = double beep, error = descending sweep)
 

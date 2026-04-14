@@ -1,6 +1,6 @@
 # Smart Prompts
 
-One-click AI automation for common git and code tasks. Smart Prompts inject context-aware commands into your active agent terminal, or run headless one-shot operations.
+One-click AI automation for common git and code tasks. Smart Prompts inject context-aware commands into your active agent terminal, run headless one-shot operations, execute shell scripts directly, or call LLM APIs.
 
 ## What are Smart Prompts?
 
@@ -116,6 +116,14 @@ When a prompt contains variables that cannot be auto-resolved, a **Variable Inpu
 
 The resolved prompt is written directly into the active terminal's PTY — as if you typed it. The agent processes it like any other input. Before sending, TUICommander checks that the agent is idle (configurable per prompt).
 
+### Shell Script Mode
+
+Executes the prompt content as a shell script directly — no AI agent involved. The content runs via the system shell (`sh -c` on macOS/Linux, `cmd /C` on Windows) in the active repository's directory.
+
+Useful for automating repetitive CLI tasks: pruning orphan branches, running linters, collecting metrics, or any command pipeline you'd otherwise type manually. Context variables like `{branch}` and `{repo_path}` are resolved before execution.
+
+Output is routed based on the prompt's output target (clipboard, toast, panel, or returned in result). Timeout: 60 seconds.
+
 ### Headless Mode
 
 Runs a one-shot subprocess without using the terminal. Useful for quick operations like generating a commit message. Output is routed to the clipboard or shown as a toast notification.
@@ -128,3 +136,7 @@ Runs a one-shot subprocess without using the terminal. Useful for quick operatio
 Without a template, headless prompts automatically fall back to inject mode.
 
 **Note:** Headless mode is not available in the Mobile Companion (PWA) — prompts fall back to inject mode automatically.
+
+### API Mode
+
+Calls LLM providers directly via HTTP API without terminal or agent CLI. Supports an optional system prompt per prompt. Output routed via the same output target options. Requires LLM API configuration in Settings > Agents.

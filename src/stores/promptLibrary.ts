@@ -37,7 +37,7 @@ export interface SavedPrompt {
   builtIn?: boolean;
   builtInVersion?: number;
   icon?: string;
-  executionMode?: "inject" | "headless" | "api";
+  executionMode?: "inject" | "headless" | "api" | "shell";
   outputTarget?: "clipboard" | "commit-message" | "toast" | "panel";
   systemPrompt?: string;
   enabled?: boolean;
@@ -118,7 +118,7 @@ function createPromptLibraryStore() {
             try {
               const full = JSON.parse(entry.text) as SavedPrompt;
               // Validate security-relevant fields before trusting deserialized data
-              if (full.executionMode && full.executionMode !== "inject" && full.executionMode !== "headless" && full.executionMode !== "api") {
+              if (full.executionMode && full.executionMode !== "inject" && full.executionMode !== "headless" && full.executionMode !== "api" && full.executionMode !== "shell") {
                 appLogger.warn("store", `Prompt "${entry.id}" has invalid executionMode "${full.executionMode}", resetting to inject`);
                 full.executionMode = "inject";
               }

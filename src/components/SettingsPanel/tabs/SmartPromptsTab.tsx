@@ -304,13 +304,15 @@ const PromptEditor: Component<{
             class={sp.editorInput}
             value={props.prompt.executionMode ?? "inject"}
             onChange={(e) => {
-              const mode = e.currentTarget.value as "inject" | "headless" | "api";
+              const mode = e.currentTarget.value as "inject" | "headless" | "api" | "shell";
               const update: Partial<SavedPrompt> = { executionMode: mode };
               if (mode === "inject") { update.outputTarget = undefined; update.systemPrompt = undefined; }
+              if (mode === "shell") { update.systemPrompt = undefined; }
               promptLibraryStore.updatePrompt(props.prompt.id, update);
             }}
           >
             <option value="inject">Inject into terminal</option>
+            <option value="shell">Shell script (direct run)</option>
             <option value="headless">Headless (one-shot CLI)</option>
             <option value="api">API (LLM direct)</option>
           </select>

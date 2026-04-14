@@ -236,7 +236,8 @@ The live registry exposes status via SSE events (`upstream_status_changed`). Val
 
 | Command | Args | Returns | Description |
 |---------|------|---------|-------------|
-| `execute_headless_prompt` | `command_line: String, timeout_ms: u64, repo_path: String` | `Result<String, String>` | Execute a one-shot shell command for headless prompt mode. Runs via platform shell (sh/cmd), captures stdout. Timeout capped at 5 minutes |
+| `execute_headless_prompt` | `command_line: String, stdin_content: Option<String>, timeout_ms: u64, repo_path: String` | `Result<String, String>` | Execute a one-shot shell command for headless prompt mode. Prompt content piped via stdin. Runs via platform shell (sh/cmd), captures stdout. Timeout capped at 5 minutes |
+| `execute_shell_script` | `script_content: String, timeout_ms: u64, repo_path: String` | `Result<String, String>` | Execute shell script content directly via platform shell (sh/cmd). No agent involved — runs the content as-is. Captures stdout. Timeout capped at 60 seconds |
 
 ## Claude Usage (`claude_usage.rs`)
 

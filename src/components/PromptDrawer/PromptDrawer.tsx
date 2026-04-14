@@ -527,7 +527,7 @@ const PromptEditor: Component<PromptEditorProps> = (props) => {
   const [shortcut, setShortcut] = createSignal(props.prompt?.shortcut || "");
   const [placement, setPlacement] = createSignal<SmartPlacement[]>(props.prompt?.placement ?? []);
   const [autoExecute, setAutoExecute] = createSignal(props.prompt?.autoExecute ?? false);
-  const [executionMode, setExecutionMode] = createSignal<"inject" | "headless" | "api">(props.prompt?.executionMode ?? "inject");
+  const [executionMode, setExecutionMode] = createSignal<"inject" | "headless" | "api" | "shell">(props.prompt?.executionMode ?? "inject");
   const [outputTarget, setOutputTarget] = createSignal<SavedPrompt["outputTarget"]>(props.prompt?.outputTarget);
   const [systemPrompt, setSystemPrompt] = createSignal(props.prompt?.systemPrompt ?? "");
   const [validationError, setValidationError] = createSignal<string | null>(null);
@@ -670,12 +670,14 @@ const PromptEditor: Component<PromptEditorProps> = (props) => {
             <select
               value={executionMode()}
               onChange={(e) => {
-                const mode = e.currentTarget.value as "inject" | "headless" | "api";
+                const mode = e.currentTarget.value as "inject" | "headless" | "api" | "shell";
                 setExecutionMode(mode);
                 if (mode === "inject") { setOutputTarget(undefined); setSystemPrompt(""); }
+                if (mode === "shell") { setSystemPrompt(""); }
               }}
             >
               <option value="inject">Inject into terminal</option>
+              <option value="shell">Shell script (direct run)</option>
               <option value="headless">Headless (one-shot CLI)</option>
               <option value="api">API (LLM direct)</option>
             </select>

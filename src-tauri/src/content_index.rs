@@ -79,6 +79,11 @@ impl ContentIndex {
             .git_ignore(true)
             .git_global(true)
             .git_exclude(true)
+            .filter_entry(|entry| {
+                // Never descend into .git directories
+                !(entry.file_type().is_some_and(|ft| ft.is_dir())
+                    && entry.file_name() == ".git")
+            })
             .build();
 
         for entry in walker {
@@ -385,6 +390,22 @@ mod tests {
         let results = index.search("format_result to_uppercase", 5);
         assert!(!results.is_empty());
         assert_eq!(results[0].rel_path, "src/utils.rs");
+    }
+
+    #[test]
+    fn skips_dot_git_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        fs::write(root.join("real.rs"), "fn real() {}").unwrap();
+        // Simulate .git internals (normally not in .gitignore)
+        fs::create_dir_all(root.join(".git/objects")).unwrap();
+        fs::write(root.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+        fs::write(root.join(".git/objects/pack.txt"), "pack data here").unwrap();
+
+        let index = ContentIndex::build(root.to_path_buf());
+        assert_eq!(index.len(), 1); // only real.rs
+        assert!(index.search("pack data", 5).is_empty());
     }
 
     #[test]
