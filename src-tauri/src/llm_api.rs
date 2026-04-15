@@ -72,7 +72,7 @@ fn delete_api_key() -> Result<(), String> {
 // genai client builder
 // ---------------------------------------------------------------------------
 
-fn build_client(config: &LlmApiConfig, api_key: &str) -> genai::Client {
+pub(crate) fn build_client(config: &LlmApiConfig, api_key: &str) -> genai::Client {
     use genai::resolver::{AuthData, AuthResolver};
 
     let has_custom_url = config

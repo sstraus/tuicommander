@@ -37,6 +37,7 @@ pub(crate) mod plugins;
 pub(crate) mod prompt;
 pub(crate) mod smart_prompt;
 pub(crate) mod llm_api;
+pub(crate) mod ai_chat;
 pub(crate) mod registry;
 pub(crate) mod pty;
 pub(crate) mod relay_client;
@@ -1238,6 +1239,18 @@ pub fn run() {
             llm_api::delete_llm_api_key,
             llm_api::execute_api_prompt,
             llm_api::test_llm_api,
+            ai_chat::load_ai_chat_config,
+            ai_chat::save_ai_chat_config,
+            ai_chat::has_ai_chat_api_key,
+            ai_chat::save_ai_chat_api_key,
+            ai_chat::delete_ai_chat_api_key,
+            ai_chat::check_ollama_status,
+            ai_chat::test_ai_chat_connection,
+            ai_chat::list_conversations,
+            ai_chat::load_conversation,
+            ai_chat::save_conversation,
+            ai_chat::delete_conversation,
+            ai_chat::new_conversation_id,
             repo_watcher::start_repo_watcher,
             repo_watcher::stop_repo_watcher,
             dir_watcher::start_dir_watcher,
