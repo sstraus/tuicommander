@@ -1040,7 +1040,16 @@ fn build_intent_event(
 /// line, then continuation lines are joined until a line without `|` or starting
 /// with a known token prefix is reached.
 fn parse_suggest(clean: &str, agent_active: bool) -> Option<ParsedEvent> {
-    if !agent_active || !clean.contains("suggest:") {
+    if !agent_active {
+        return None;
+    }
+    // First pass: dewrap mid-word wrap of the keyword `suggest:` itself.
+    // On very narrow terminals the VT buffer can split the word across two
+    // physical rows (e.g. `sugges\nt:` or `suggest\n:`). We rejoin these so
+    // the downstream regex can match at column 0.
+    let cow = dewrap_suggest_keyword(clean);
+    let clean = cow.as_ref();
+    if !clean.contains("suggest:") {
         return None;
     }
     lazy_static::lazy_static! {
@@ -1110,6 +1119,66 @@ fn parse_suggest(clean: &str, agent_active: bool) -> Option<ParsedEvent> {
         return None;
     }
     Some(ParsedEvent::Suggest { items })
+}
+
+/// Rejoin a `suggest:` keyword that got split across a newline by terminal
+/// auto-wrap (e.g. zoomed / narrow window). Handles every split position of
+/// the literal word: `s\nuggest:`, `su\nggest:`, ..., `suggest\n:`.
+///
+/// Returns `Cow::Borrowed` when no wrap is detected so the caller pays no
+/// allocation cost in the common (wide terminal) case.
+fn dewrap_suggest_keyword(text: &str) -> std::borrow::Cow<'_, str> {
+    if !text.contains('\n') {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    const SUGGEST: &str = "suggest:";
+
+    // Every way "suggest:" can split across a newline at column 0:
+    //   prefix (non-empty proper prefix of "suggest:") + "\n" + suffix
+    //   where prefix + suffix == "suggest:".
+    // Iterate 1..=7 split points: s|uggest:, su|ggest:, …, suggest|:.
+    let mut current: String = text.to_string();
+    let mut mutated = false;
+
+    for split in 1..SUGGEST.len() {
+        let (prefix, suffix) = SUGGEST.split_at(split);
+        let needle = format!("{prefix}\n{suffix}");
+        if !current.contains(&needle) {
+            continue;
+        }
+
+        let mut buf = String::with_capacity(current.len());
+        let mut last = 0;
+        let mut changed_this_pass = false;
+        for (idx, _) in current.match_indices(&needle) {
+            // Only dewrap when the prefix begins at column 0 — optionally
+            // after whitespace or a Claude Code `●`/`⏺` bullet marker.
+            let line_start = current[..idx].rfind('\n').map_or(0, |n| n + 1);
+            let leading = &current[line_start..idx];
+            let leading_ok = leading
+                .chars()
+                .all(|c| c == ' ' || c == '\t' || c == '\u{25CF}' || c == '\u{23FA}');
+            if !leading_ok {
+                continue;
+            }
+            buf.push_str(&current[last..idx]);
+            buf.push_str(prefix);
+            buf.push_str(suffix);
+            last = idx + needle.len();
+            changed_this_pass = true;
+        }
+        if changed_this_pass {
+            buf.push_str(&current[last..]);
+            current = buf;
+            mutated = true;
+        }
+    }
+
+    if mutated {
+        std::borrow::Cow::Owned(current)
+    } else {
+        std::borrow::Cow::Borrowed(text)
+    }
 }
 
 /// Detect a slash command autocomplete menu from screen bottom rows.
@@ -2791,6 +2860,32 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         };
         assert_eq!(items.len(), 3);
         assert_eq!(items[2], "3) Ignorarla per ora e andare avanti con altra roba");
+    }
+
+    #[test]
+    fn test_suggest_keyword_split_mid_word() {
+        // Extremely narrow terminal splits the `suggest:` keyword itself:
+        // `sugges` on one row, `t:` on the next. The dewrap pass must
+        // rejoin these before the outer regex tries to match.
+        for split in ["s\nuggest:", "su\nggest:", "sug\ngest:", "sugg\nest:",
+                      "sugge\nst:", "sugges\nt:", "suggest\n:"] {
+            let input = format!("{split} A | B | C");
+            let items = parse_suggest(&input, true);
+            let items = match items {
+                Some(ParsedEvent::Suggest { items }) => items,
+                _ => panic!("should dewrap and parse split={split:?}"),
+            };
+            assert_eq!(items, vec!["A", "B", "C"], "split={split:?}");
+        }
+    }
+
+    #[test]
+    fn test_suggest_keyword_split_not_at_column_zero_ignored() {
+        // Only dewrap when the prefix is at column 0 (after optional
+        // whitespace / ● marker). Mid-line `suggest` splits are prose.
+        let input = "I will sugges\nt: we should refactor | no";
+        assert!(parse_suggest(input, true).is_none(),
+            "mid-line split must NOT be dewrapped");
     }
 
     #[test]
