@@ -131,6 +131,67 @@ pub(crate) fn resolve_shell(override_shell: Option<String>) -> String {
     override_shell.unwrap_or_else(default_shell)
 }
 
+/// Which family of shell is running inside a PTY.
+///
+/// Used by the frontend to decide whether control characters like Ctrl-U are
+/// honoured (POSIX readline) or echoed literally (`cmd.exe`, PowerShell).
+/// Classifying by the shell command rather than by host OS is the whole point
+/// of story 1274-2e38: Git Bash, Cygwin, MSYS and WSL all run on Windows yet
+/// support Ctrl-U, so a host-OS check alone is wrong.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ShellFamily {
+    /// POSIX shell with readline semantics: sh, bash, zsh, fish, dash, ksh,
+    /// and friends — including WSL (spawns a Linux shell) and Git Bash /
+    /// Cygwin / MSYS (bash compiled for Windows).
+    Posix,
+    /// Native Windows shell that treats Ctrl-U as a literal character:
+    /// cmd.exe, PowerShell, pwsh.
+    WindowsNative,
+    /// Shell basename didn't match any known set. Callers should fall back to
+    /// the safer default for their host (on Windows: skip Ctrl-U; on
+    /// Unix: send it).
+    Unknown,
+}
+
+/// Classify a shell command string (as passed to `portable_pty`) into a
+/// [`ShellFamily`]. Pure function — no I/O, no env lookups — so it's easy to
+/// test against the set of strings the UI actually produces.
+///
+/// Parses the leading binary path first (supports Windows paths with spaces
+/// like `C:\Program Files\Git\bin\bash.exe`), then matches the basename
+/// case-insensitively with any `.exe` suffix stripped.
+pub(crate) fn classify_shell(cmd: &str) -> ShellFamily {
+    let trimmed = cmd.trim().trim_matches('"');
+    // Locate the binary portion: if there's a case-insensitive `.exe`, take
+    // everything up to and including it; otherwise split on first whitespace.
+    // This keeps `C:\Program Files\...\bash.exe` intact while still trimming
+    // trailing args like `wsl.exe -d Ubuntu`.
+    let exe = match trimmed.to_ascii_lowercase().find(".exe") {
+        Some(idx) => &trimmed[..idx + ".exe".len()],
+        None => trimmed.split_whitespace().next().unwrap_or(""),
+    };
+    let filename = exe.rsplit(['/', '\\']).next().unwrap_or(exe);
+    let stem = filename
+        .strip_suffix(".exe")
+        .or_else(|| filename.strip_suffix(".EXE"))
+        .or_else(|| filename.strip_suffix(".Exe"))
+        .unwrap_or(filename)
+        .to_ascii_lowercase();
+
+    match stem.as_str() {
+        // POSIX shells (same set we pattern-match elsewhere in pty.rs)
+        "sh" | "bash" | "zsh" | "fish" | "dash" | "ksh" | "ash" | "tcsh" | "csh" | "mksh" => {
+            ShellFamily::Posix
+        }
+        // WSL spawns a Linux shell — readline semantics apply.
+        "wsl" => ShellFamily::Posix,
+        // Native Windows shells: Ctrl-U is not line-kill.
+        "cmd" | "powershell" | "pwsh" => ShellFamily::WindowsNative,
+        _ => ShellFamily::Unknown,
+    }
+}
+
 /// How long the agent must be silent after printing a `?`-ending line before
 /// we treat it as a question waiting for input. 10s is long enough to avoid
 /// false positives from AI agents that pause while thinking between API calls.
@@ -2051,6 +2112,7 @@ pub(crate) async fn create_pty(
             worktree: None,
             cwd: config.cwd,
             display_name: None,
+            shell: shell.clone(),
         }),
     );
     state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
@@ -2151,10 +2213,10 @@ pub(crate) async fn create_pty_with_worktree(
             .try_clone_reader()
             .map_err(|e| format!("Failed to get PTY reader: {e}"))?;
 
-        Ok((session_id, pair.master, child, writer, reader))
+        Ok((session_id, pair.master, child, writer, reader, shell))
     })();
 
-    let (session_id, master, child, writer, reader) = match pty_result {
+    let (session_id, master, child, writer, reader, shell) = match pty_result {
         Ok(result) => result,
         Err(e) => {
             // Clean up the worktree since PTY creation failed
@@ -2180,6 +2242,7 @@ pub(crate) async fn create_pty_with_worktree(
             worktree: Some(worktree),
             cwd: worktree_cwd,
             display_name: None,
+            shell,
         }),
     );
     state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
@@ -2345,6 +2408,21 @@ pub(crate) fn get_shell_state(
     state.shell_states.get(&session_id).map(|atom| {
         shell_state_str(atom.load(std::sync::atomic::Ordering::Relaxed)).to_string()
     })
+}
+
+/// Return the classified shell family for a PTY session.
+/// Lets the frontend pick the correct control sequences (e.g. Ctrl-U as
+/// line-kill for POSIX readline vs. literal-char on cmd.exe/PowerShell)
+/// without re-deriving the classification on every keystroke.
+#[tauri::command]
+pub(crate) fn get_session_shell_family(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+) -> Option<ShellFamily> {
+    state
+        .sessions
+        .get(&session_id)
+        .map(|entry| classify_shell(&entry.lock().shell))
 }
 
 /// Enable or disable VT100 diff rendering for a PTY session.
@@ -2992,6 +3070,90 @@ mod tests {
         assert_eq!(classify_agent("node"), None);
         assert_eq!(classify_agent("python"), None);
         assert_eq!(classify_agent("vim"), None);
+    }
+
+    // --- classify_shell tests (story 1274-2e38) ---
+
+    #[test]
+    fn classify_shell_bare_posix_basenames() {
+        for s in ["sh", "bash", "zsh", "fish", "dash", "ksh", "ash", "tcsh", "csh", "mksh"] {
+            assert_eq!(classify_shell(s), ShellFamily::Posix, "{s}");
+        }
+    }
+
+    #[test]
+    fn classify_shell_absolute_posix_paths() {
+        for s in [
+            "/bin/bash",
+            "/usr/bin/zsh",
+            "/opt/homebrew/bin/fish",
+            "/usr/local/bin/sh",
+        ] {
+            assert_eq!(classify_shell(s), ShellFamily::Posix, "{s}");
+        }
+    }
+
+    #[test]
+    fn classify_shell_windows_native() {
+        for s in [
+            "cmd",
+            "cmd.exe",
+            "C:\\Windows\\System32\\cmd.exe",
+            "powershell",
+            "powershell.exe",
+            "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "pwsh",
+            "pwsh.exe",
+        ] {
+            assert_eq!(classify_shell(s), ShellFamily::WindowsNative, "{s}");
+        }
+    }
+
+    /// Critical regression case for story 1274-2e38: Git Bash / Cygwin / MSYS
+    /// ship `bash.exe` on Windows and DO support Ctrl-U. Classifying by host
+    /// OS would wrongly skip the prefix here; classifying by shell basename
+    /// correctly keeps them in the Posix family.
+    #[test]
+    fn classify_shell_git_bash_on_windows_is_posix() {
+        for s in [
+            "bash.exe",
+            "C:\\Program Files\\Git\\bin\\bash.exe",
+            "C:\\Program Files\\Git\\usr\\bin\\bash.exe",
+            "C:/Program Files/Git/bin/bash.exe",
+            "C:\\cygwin64\\bin\\bash.exe",
+            "C:\\msys64\\usr\\bin\\bash.exe",
+        ] {
+            assert_eq!(classify_shell(s), ShellFamily::Posix, "{s}");
+        }
+    }
+
+    #[test]
+    fn classify_shell_wsl_is_posix() {
+        for s in ["wsl", "wsl.exe", "wsl.exe -d Ubuntu", "C:\\Windows\\System32\\wsl.exe"] {
+            assert_eq!(classify_shell(s), ShellFamily::Posix, "{s}");
+        }
+    }
+
+    #[test]
+    fn classify_shell_case_insensitive() {
+        assert_eq!(classify_shell("BASH.EXE"), ShellFamily::Posix);
+        assert_eq!(classify_shell("Cmd.Exe"), ShellFamily::WindowsNative);
+        assert_eq!(classify_shell("PowerShell.exe"), ShellFamily::WindowsNative);
+    }
+
+    #[test]
+    fn classify_shell_ignores_trailing_arguments() {
+        // Arguments after the first whitespace must not affect classification.
+        assert_eq!(classify_shell("bash --login"), ShellFamily::Posix);
+        assert_eq!(classify_shell("powershell.exe -NoProfile"), ShellFamily::WindowsNative);
+    }
+
+    #[test]
+    fn classify_shell_unknown_for_other_binaries() {
+        // Intentionally unknown — callers should fall back to a safe default.
+        for s in ["python", "node", "/usr/bin/env", "", "   "] {
+            assert_eq!(classify_shell(s), ShellFamily::Unknown, "{s:?}");
+        }
     }
 
     // --- SilenceState tests ---

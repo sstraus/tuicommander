@@ -1057,6 +1057,7 @@ pub fn run() {
             pty::get_kitty_flags,
             pty::get_last_prompt,
             pty::get_shell_state,
+            pty::get_session_shell_family,
             pty::close_pty,
             worktree::get_worktrees_dir,
             git::get_repo_info,

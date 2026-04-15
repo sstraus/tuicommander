@@ -99,7 +99,7 @@ import { useCiHeal } from "./hooks/useCiHeal";
 import { useSmartPrompts } from "./hooks/useSmartPrompts";
 import { applyAppTheme, applyFontFamily } from "./themes";
 import { createLongPressHandlerFromHotkey } from "./hooks/useLongPressHotkey";
-import { sendCommand } from "./utils/sendCommand";
+import { sendCommand, getShellFamily } from "./utils/sendCommand";
 import { applyPlatformClass, getModifierSymbol, isQuickSwitcherActive, isQuickSwitcherRelease } from "./platform";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -625,7 +625,15 @@ const App: Component = () => {
     // Use the tab's stable tuicSession UUID as --session-id so resume works via TUIC_SESSION
     const agentSessionId = active.tuicSession ?? (agentType === "claude" ? crypto.randomUUID() : null);
     const finalCmd = buildAgentLaunchCommand(cmd, agentSessionId);
-    await sendCommand((data) => invoke("write_pty", { sessionId: active.sessionId, data }), finalCmd);
+    // Shell family matters here: we're still at the user's shell prompt
+    // (agent not running yet) so Ctrl-U must match the shell, not the agent.
+    const shellFamily = await getShellFamily(active.sessionId);
+    await sendCommand(
+      (data) => invoke("write_pty", { sessionId: active.sessionId, data }),
+      finalCmd,
+      null,
+      shellFamily,
+    );
     terminalsStore.update(active.id, {
       name: AGENTS[agentType].name,
       nameIsCustom: true,

@@ -622,6 +622,7 @@ pub(crate) async fn spawn_agent(
             worktree: None,
             cwd: agent_config.cwd.clone(),
             display_name: None,
+            shell: binary_path.clone(),
         }),
     );
     state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);

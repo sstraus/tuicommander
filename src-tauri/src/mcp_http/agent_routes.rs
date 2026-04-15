@@ -261,6 +261,7 @@ pub(super) async fn spawn_agent_session(
             worktree: None,
             cwd: body.cwd.clone(),
             display_name: None,
+            shell: binary_path.clone(),
         }),
     );
     state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);

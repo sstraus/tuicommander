@@ -352,6 +352,7 @@ pub(super) fn spawn_pty_session(
             worktree,
             cwd: cwd.clone(),
             display_name: None,
+            shell: shell.clone(),
         }),
     );
     state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);

@@ -1399,6 +1399,7 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
             state.sessions.insert(session_id.clone(), Mutex::new(PtySession {
                 writer, master: pair.master, _child: child, paused: paused.clone(), worktree: None,
                 cwd: args["cwd"].as_str().map(|s| s.to_string()), display_name: None,
+                shell: binary_path.clone(),
             }));
             state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
             state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
@@ -3812,6 +3813,7 @@ mod tests {
             worktree: None,
             cwd: Some("/Gits/personal/beta".to_string()),
             display_name: None,
+            shell: "true".to_string(),
         }));
 
         let mut rx = state.event_bus.subscribe();

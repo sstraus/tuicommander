@@ -1,6 +1,6 @@
 import { rpc } from "../transport";
 import { appLogger } from "../stores/appLogger";
-import { sendCommand as sendCommandUtil } from "../utils/sendCommand";
+import { sendCommand as sendCommandUtil, getShellFamily, clearShellFamilyCache } from "../utils/sendCommand";
 import type { PtyConfig, OrchestratorStats } from "../types";
 
 /** Worktree configuration */
@@ -70,7 +70,8 @@ export function usePty() {
 
   /** Send a command to a PTY session with agent-aware Enter handling. */
   async function sendCommand(sessionId: string, text: string, agentType?: string | null): Promise<void> {
-    await sendCommandUtil((data) => write(sessionId, data), text, agentType);
+    const shellFamily = await getShellFamily(sessionId);
+    await sendCommandUtil((data) => write(sessionId, data), text, agentType, shellFamily);
   }
 
   /** Resize a PTY session */
@@ -95,6 +96,7 @@ export function usePty() {
 
   /** Close a PTY session */
   async function close(sessionId: string, cleanupWorktree: boolean = false): Promise<void> {
+    clearShellFamilyCache(sessionId);
     await rpc("close_pty", { sessionId, cleanupWorktree });
   }
 

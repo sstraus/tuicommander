@@ -19,7 +19,7 @@ import { invoke, listen } from "../invoke";
 import { LineBuffer } from "../utils/lineBuffer";
 import { stripAnsi } from "../utils/stripAnsi";
 import { sanitizeSvgIcon } from "../utils/sanitizeSvg";
-import { sendCommand } from "../utils/sendCommand";
+import { sendCommand, getShellFamily } from "../utils/sendCommand";
 import {
   INVOKE_WHITELIST,
   NOTIFICATION_SOUNDS,
@@ -376,10 +376,12 @@ function createPluginRegistry() {
       async sendAgentInput(sessionId: string, text: string): Promise<void> {
         requireCapability(pluginId, capabilities, "pty:write");
         const agentType = terminalsStore.getAgentTypeForSession(sessionId);
+        const shellFamily = await getShellFamily(sessionId);
         await sendCommand(
           (data) => invoke("write_pty", { sessionId, data }),
           text,
           agentType,
+          shellFamily,
         );
       },
 

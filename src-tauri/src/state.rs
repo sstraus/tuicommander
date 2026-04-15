@@ -716,6 +716,10 @@ pub struct PtySession {
     pub cwd: Option<String>,
     /// Display name set by the desktop UI (tab rename, agent launch, intent title).
     pub display_name: Option<String>,
+    /// Resolved shell command used to spawn the PTY (e.g. "/bin/zsh",
+    /// "C:\\Program Files\\Git\\bin\\bash.exe", "wsl.exe -d Ubuntu").
+    /// Kept so `get_session_shell_family` can classify without re-resolving.
+    pub shell: String,
 }
 
 /// Configuration for agent orchestration
