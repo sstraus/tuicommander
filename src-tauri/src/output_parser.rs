@@ -1137,8 +1137,11 @@ fn dewrap_suggest_keyword(text: &str) -> std::borrow::Cow<'_, str> {
     //   prefix (non-empty proper prefix of "suggest:") + "\n" + suffix
     //   where prefix + suffix == "suggest:".
     // Iterate 1..=7 split points: s|uggest:, su|ggest:, …, suggest|:.
-    let mut current: String = text.to_string();
-    let mut mutated = false;
+    //
+    // Stay Borrowed until we actually rewrite. PTY chunks land here on every
+    // newline flush, so allocating a String up-front defeats the Cow return
+    // whenever no suggest-keyword split is present (the common case).
+    let mut current: std::borrow::Cow<'_, str> = std::borrow::Cow::Borrowed(text);
 
     for split in 1..SUGGEST.len() {
         let (prefix, suffix) = SUGGEST.split_at(split);
@@ -1147,38 +1150,34 @@ fn dewrap_suggest_keyword(text: &str) -> std::borrow::Cow<'_, str> {
             continue;
         }
 
-        let mut buf = String::with_capacity(current.len());
+        let src: &str = current.as_ref();
+        let mut buf = String::with_capacity(src.len());
         let mut last = 0;
         let mut changed_this_pass = false;
-        for (idx, _) in current.match_indices(&needle) {
+        for (idx, _) in src.match_indices(&needle) {
             // Only dewrap when the prefix begins at column 0 — optionally
             // after whitespace or a Claude Code `●`/`⏺` bullet marker.
-            let line_start = current[..idx].rfind('\n').map_or(0, |n| n + 1);
-            let leading = &current[line_start..idx];
+            let line_start = src[..idx].rfind('\n').map_or(0, |n| n + 1);
+            let leading = &src[line_start..idx];
             let leading_ok = leading
                 .chars()
                 .all(|c| c == ' ' || c == '\t' || c == '\u{25CF}' || c == '\u{23FA}');
             if !leading_ok {
                 continue;
             }
-            buf.push_str(&current[last..idx]);
+            buf.push_str(&src[last..idx]);
             buf.push_str(prefix);
             buf.push_str(suffix);
             last = idx + needle.len();
             changed_this_pass = true;
         }
         if changed_this_pass {
-            buf.push_str(&current[last..]);
-            current = buf;
-            mutated = true;
+            buf.push_str(&src[last..]);
+            current = std::borrow::Cow::Owned(buf);
         }
     }
 
-    if mutated {
-        std::borrow::Cow::Owned(current)
-    } else {
-        std::borrow::Cow::Borrowed(text)
-    }
+    current
 }
 
 /// Detect a slash command autocomplete menu from screen bottom rows.
@@ -2886,6 +2885,35 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         let input = "I will sugges\nt: we should refactor | no";
         assert!(parse_suggest(input, true).is_none(),
             "mid-line split must NOT be dewrapped");
+    }
+
+    #[test]
+    fn test_dewrap_stays_borrowed_when_no_keyword_match() {
+        // Hot path: most PTY chunks have newlines but no broken `suggest:`
+        // keyword. `dewrap_suggest_keyword` must return `Cow::Borrowed`
+        // without any heap allocation in that case (story 1275-c45e).
+        let inputs = [
+            "",
+            "no newlines here",
+            "line one\nline two\nline three",
+            "prose with the word suggest inside\nbut not a split keyword",
+            "  ● some bullet\nnothing to dewrap",
+        ];
+        for input in inputs {
+            let result = super::dewrap_suggest_keyword(input);
+            assert!(matches!(result, std::borrow::Cow::Borrowed(_)),
+                "must stay borrowed for input={input:?}");
+        }
+    }
+
+    #[test]
+    fn test_dewrap_returns_owned_only_when_it_actually_rewrites() {
+        // Sanity check: the happy path (real keyword split at column 0) does
+        // allocate. Complements the no-alloc test above.
+        let result = super::dewrap_suggest_keyword("sugges\nt: A | B");
+        assert!(matches!(result, std::borrow::Cow::Owned(_)),
+            "must allocate when dewrap actually rewrites");
+        assert_eq!(result.as_ref(), "suggest: A | B");
     }
 
     #[test]
