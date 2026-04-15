@@ -26,8 +26,11 @@ describe("SuggestChips", () => {
   });
 
   it("sends command via sendCommand (Ctrl-U+text then Enter) on click", async () => {
+    // agentType forces the Ctrl-U-prefix branch regardless of host platform
+    // detection in the test environment (sendCommand skips Ctrl-U on native
+    // Windows shells only when no agent is detected).
     const { container } = render(() => (
-      <SuggestChips sessionId="s1" items={["Run tests"]} />
+      <SuggestChips sessionId="s1" items={["Run tests"]} agentType="claude" />
     ));
     const button = container.querySelector("button")!;
     await fireEvent.click(button);
