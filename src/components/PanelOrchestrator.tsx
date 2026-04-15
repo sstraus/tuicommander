@@ -3,6 +3,7 @@ import { FileBrowserPanel } from "./FileBrowserPanel";
 import { MarkdownPanel } from "./MarkdownPanel";
 import { NotesPanel } from "./NotesPanel";
 import { GitPanel } from "./GitPanel/GitPanel";
+import { AIChatPanel } from "./AIChatPanel";
 import { uiStore } from "../stores/ui";
 import { terminalsStore } from "../stores/terminals";
 import { globalWorkspaceStore } from "../stores/globalWorkspace";
@@ -51,6 +52,11 @@ export const PanelOrchestrator: Component<PanelOrchestratorProps> = (props) => {
         fsRoot={props.fsRoot}
         onClose={() => uiStore.toggleGitPanel()}
         requestedTab={uiStore.state.gitPanelRequestedTab}
+      />
+
+      <AIChatPanel
+        visible={uiStore.state.aiChatPanelVisible}
+        onClose={() => uiStore.toggleAiChatPanel()}
       />
     </>
   );

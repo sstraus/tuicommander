@@ -365,6 +365,79 @@ describe("uiStore", () => {
     });
   });
 
+  describe("AI Chat panel", () => {
+    it("defaults to hidden", () => {
+      testInScope(() => {
+        expect(store.state.aiChatPanelVisible).toBe(false);
+      });
+    });
+
+    it("toggleAiChatPanel toggles visibility", () => {
+      testInScope(() => {
+        store.toggleAiChatPanel();
+        expect(store.state.aiChatPanelVisible).toBe(true);
+        store.toggleAiChatPanel();
+        expect(store.state.aiChatPanelVisible).toBe(false);
+      });
+    });
+
+    it("setAiChatPanelVisible sets directly", () => {
+      testInScope(() => {
+        store.setAiChatPanelVisible(true);
+        expect(store.state.aiChatPanelVisible).toBe(true);
+      });
+    });
+
+    it("opening AI Chat closes other exclusive panels", () => {
+      testInScope(() => {
+        store.toggleMarkdownPanel();
+        expect(store.state.markdownPanelVisible).toBe(true);
+        store.toggleAiChatPanel();
+        expect(store.state.aiChatPanelVisible).toBe(true);
+        expect(store.state.markdownPanelVisible).toBe(false);
+      });
+    });
+
+    it("opening another exclusive panel closes AI Chat", () => {
+      testInScope(() => {
+        store.toggleAiChatPanel();
+        expect(store.state.aiChatPanelVisible).toBe(true);
+        store.toggleGitPanel();
+        expect(store.state.gitPanelVisible).toBe(true);
+        expect(store.state.aiChatPanelVisible).toBe(false);
+      });
+    });
+
+    it("aiChatPanelWidth defaults to 500", () => {
+      testInScope(() => {
+        expect(store.state.aiChatPanelWidth).toBe(500);
+      });
+    });
+
+    it("setAiChatPanelWidth updates and persists", () => {
+      testInScope(() => {
+        store.setAiChatPanelWidth(600);
+        expect(store.state.aiChatPanelWidth).toBe(600);
+        expect(mockInvoke).toHaveBeenCalledWith("save_ui_prefs", {
+          config: expect.objectContaining({ ai_chat_panel_width: 600 }),
+        });
+      });
+    });
+
+    it("hydrate loads AI Chat panel width from backend", async () => {
+      mockInvoke.mockResolvedValueOnce({
+        sidebar_visible: true,
+        sidebar_width: 300,
+        ai_chat_panel_width: 550,
+      });
+
+      await testInScopeAsync(async () => {
+        await store.hydrate();
+        expect(store.state.aiChatPanelWidth).toBe(550);
+      });
+    });
+  });
+
   describe("loading state", () => {
     it("setLoading sets loading and message", () => {
       testInScope(() => {

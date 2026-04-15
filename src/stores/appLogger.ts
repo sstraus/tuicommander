@@ -37,7 +37,8 @@ export type AppLogSource =
   | "tailscale"
   | "sw"
   | "files"
-  | "ViewportLock";
+  | "ViewportLock"
+  | "ai-chat";
 
 export interface AppLogEntry {
   id: number;

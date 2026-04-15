@@ -16,6 +16,7 @@ import {
   AppearanceTab,
   PluginsTab,
   AgentsTab,
+  AiChatTab,
   GitHubTab,
   RepoWorktreeTab,
   RepoScriptsTab,
@@ -44,6 +45,7 @@ const GLOBAL_TABS: SettingsShellTab[] = [
   { key: "services", label: t("settings.services", "Services") },
   { key: "plugins", label: t("settings.plugins", "Plugins") },
   { key: "agents", label: t("settings.agents", "Agents") },
+  { key: "ai-chat", label: "AI Chat" },
 ];
 
 function defaultTab(ctx: SettingsContext): string {
@@ -173,6 +175,9 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
       </Show>
       <Show when={activeTab() === "agents"}>
         <AgentsTab />
+      </Show>
+      <Show when={activeTab() === "ai-chat"}>
+        <AiChatTab />
       </Show>
     </SettingsShell>
   );

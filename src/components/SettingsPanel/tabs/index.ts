@@ -5,6 +5,7 @@ export { ServicesTab } from "./ServicesTab";
 export { KeyboardShortcutsTab } from "./KeyboardShortcutsTab";
 export { PluginsTab } from "./PluginsTab";
 export { AgentsTab } from "./AgentsTab";
+export { AiChatTab } from "./AiChatTab";
 export { GitHubTab } from "./GitHubTab";
 export { RepoWorktreeTab } from "./RepoWorktreeTab";
 export { RepoScriptsTab } from "./RepoScriptsTab";
