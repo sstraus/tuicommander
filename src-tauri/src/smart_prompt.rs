@@ -1,6 +1,38 @@
+use std::collections::HashMap;
 use std::time::Duration;
 use tokio::process::Command;
 use tokio::time::timeout;
+
+/// Environment variables that the child process is allowed to inherit from the
+/// Tauri parent. Everything else (notably ANTHROPIC_API_KEY, GITHUB_TOKEN,
+/// OPENAI_API_KEY, AWS_*, …) is stripped so that user-authored shell/headless
+/// prompt scripts cannot exfiltrate host secrets by simply echoing env vars.
+///
+/// Callers remain free to inject additional vars via the `env` parameter; those
+/// are applied on top of the allowlist (see [`apply_clean_env`]).
+const ENV_ALLOWLIST: &[&str] = &[
+    // POSIX essentials
+    "PATH", "HOME", "SHELL", "TERM", "USER", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE",
+    // Windows equivalents
+    "TMP", "TEMP", "USERPROFILE", "USERNAME", "SYSTEMROOT", "COMSPEC",
+];
+
+/// Clear the child's env, re-populate from the allowlist inherited from the
+/// current process, then overlay caller-supplied vars. Centralises the policy
+/// so headless and shell paths can't drift out of sync.
+fn apply_clean_env(cmd: &mut Command, extra: Option<&HashMap<String, String>>) {
+    cmd.env_clear();
+    for key in ENV_ALLOWLIST {
+        if let Ok(value) = std::env::var(key) {
+            cmd.env(key, value);
+        }
+    }
+    if let Some(vars) = extra {
+        for (k, v) in vars {
+            cmd.env(k, v);
+        }
+    }
+}
 
 /// Execute a headless (one-shot) agent command and capture stdout.
 ///
@@ -32,12 +64,9 @@ pub(crate) async fn execute_headless_prompt(
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
 
-    // Inject run config env vars into the process
-    if let Some(env_vars) = &env {
-        for (k, v) in env_vars {
-            cmd.env(k, v);
-        }
-    }
+    // Clear inherited env and inject only allowlist + caller-supplied vars.
+    // See ENV_ALLOWLIST for the rationale.
+    apply_clean_env(&mut cmd, env.as_ref());
 
     let mut child = cmd.spawn()
         .map_err(|e| format!("Failed to spawn process: {e}"))?;
@@ -88,14 +117,21 @@ pub(crate) async fn execute_shell_script(
     let shell = if cfg!(target_os = "windows") { "cmd" } else { "sh" };
     let shell_flag = if cfg!(target_os = "windows") { "/C" } else { "-c" };
 
-    let child = Command::new(shell)
-        .arg(shell_flag)
+    let mut cmd = Command::new(shell);
+    cmd.arg(shell_flag)
         .arg(&script_content)
         .current_dir(&repo_path)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true)
+        .kill_on_drop(true);
+
+    // Shell scripts never receive caller-supplied env vars today — strip the
+    // inherited parent env to the allowlist so repo-controlled script_content
+    // cannot read ANTHROPIC_API_KEY / GITHUB_TOKEN / etc. from the Tauri process.
+    apply_clean_env(&mut cmd, None);
+
+    let child = cmd
         .spawn()
         .map_err(|e| format!("Failed to spawn shell: {e}"))?;
 
@@ -264,5 +300,83 @@ mod tests {
             execute_shell_script("pwd".to_string(), 5000, "/tmp".to_string()).await;
         // macOS resolves /tmp → /private/tmp
         assert!(result.unwrap().contains("tmp"));
+    }
+
+    /// Setting sensitive secrets on the parent and then spawning a headless
+    /// child must NOT leak them into the child's environment. Previously
+    /// Command was spawned without env_clear(), so anything exported by the
+    /// Tauri process (ANTHROPIC_API_KEY, GITHUB_TOKEN, …) became available
+    /// to user-authored headless prompt scripts. Story 1272-c98c.
+    #[tokio::test]
+    async fn headless_does_not_leak_parent_secret_envs() {
+        // SAFETY: these tests run single-threaded per tokio-test file and only
+        // mutate env for the duration of the assert. Still, use unique keys
+        // to reduce collision risk with anything else.
+        const LEAK_KEYS: &[&str] = &[
+            "TUIC_LEAK_TEST_ANTHROPIC_API_KEY",
+            "TUIC_LEAK_TEST_GITHUB_TOKEN",
+            "TUIC_LEAK_TEST_OPENAI_API_KEY",
+        ];
+        for k in LEAK_KEYS {
+            // SAFETY: test-only env mutation; acceptable within a scoped test.
+            unsafe { std::env::set_var(k, "SHOULD-NOT-LEAK") };
+        }
+
+        // Spawn without passing the key in the `env` map: it must NOT appear.
+        for k in LEAK_KEYS {
+            let out = execute_headless_prompt(
+                "sh".to_string(),
+                vec!["-c".to_string(), format!("echo \"${{{k}:-UNSET}}\"")],
+                None,
+                5000,
+                "/tmp".to_string(),
+                None,
+            )
+            .await
+            .unwrap();
+            assert_eq!(out, "UNSET", "leaked {k} into child env");
+        }
+
+        for k in LEAK_KEYS {
+            // SAFETY: see above.
+            unsafe { std::env::remove_var(k) };
+        }
+    }
+
+    #[tokio::test]
+    async fn shell_script_does_not_leak_parent_secret_envs() {
+        const LEAK_KEY: &str = "TUIC_LEAK_TEST_SHELL_SECRET";
+        // SAFETY: test-only env mutation.
+        unsafe { std::env::set_var(LEAK_KEY, "SHOULD-NOT-LEAK") };
+
+        let out = execute_shell_script(
+            format!("echo \"${{{LEAK_KEY}:-UNSET}}\""),
+            5000,
+            "/tmp".to_string(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(out, "UNSET");
+
+        // SAFETY: see above.
+        unsafe { std::env::remove_var(LEAK_KEY) };
+    }
+
+    #[tokio::test]
+    async fn headless_allowlist_keeps_path() {
+        // PATH is on the allowlist, so the child must still be able to resolve
+        // common binaries — otherwise `sh -c 'echo x'` wouldn't even start in
+        // most distro layouts. Regression guard for over-aggressive clearing.
+        let out = execute_headless_prompt(
+            "sh".to_string(),
+            vec!["-c".to_string(), "echo \"${PATH:+PATH_OK}\"".to_string()],
+            None,
+            5000,
+            "/tmp".to_string(),
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(out, "PATH_OK");
     }
 }
