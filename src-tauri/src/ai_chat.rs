@@ -14,7 +14,7 @@ use crate::config::{load_json_config, save_json_config};
 use crate::llm_api;
 use crate::state::AppState;
 
-const CONFIG_FILE: &str = "ai-chat.json";
+pub(crate) const CONFIG_FILE: &str = "ai-chat.json";
 const KEYRING_SERVICE: &str = "tuicommander-ai-chat";
 const KEYRING_USER: &str = "api-key";
 
@@ -90,7 +90,7 @@ impl AiChatConfig {
 // Keyring helpers
 // ---------------------------------------------------------------------------
 
-fn read_api_key() -> Result<Option<String>, String> {
+pub(crate) fn read_api_key() -> Result<Option<String>, String> {
     let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
         .map_err(|e| format!("Failed to create keyring entry: {e}"))?;
     match entry.get_password() {
