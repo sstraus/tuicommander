@@ -38,7 +38,8 @@ export type AppLogSource =
   | "sw"
   | "files"
   | "ViewportLock"
-  | "ai-chat";
+  | "ai-chat"
+  | "ai-agent";
 
 export interface AppLogEntry {
   id: number;

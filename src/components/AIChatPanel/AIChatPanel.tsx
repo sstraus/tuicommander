@@ -1,5 +1,6 @@
 import { Component, For, Show, createSignal, createEffect } from "solid-js";
 import { aiChatStore } from "../../stores/aiChatStore";
+import { aiAgentStore, type ToolCallEntry } from "../../stores/aiAgentStore";
 import { terminalsStore } from "../../stores/terminals";
 import { MarkdownRenderer } from "../ui/MarkdownRenderer";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
@@ -57,6 +58,56 @@ const IconPin = () => (
     <path d="M7 10.5v2" />
   </svg>
 );
+
+const IconRobot = () => (
+  <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+    <path d="M7 1a.75.75 0 01.75.75V3h1.5A2.25 2.25 0 0111.5 5.25v4.5A2.25 2.25 0 019.25 12h-4.5A2.25 2.25 0 012.5 9.75v-4.5A2.25 2.25 0 014.75 3h1.5V1.75A.75.75 0 017 1zM5 6.5a.75.75 0 100 1.5.75.75 0 000-1.5zm4 0a.75.75 0 100 1.5.75.75 0 000-1.5zM5.5 9a.5.5 0 000 1h3a.5.5 0 000-1h-3z" />
+  </svg>
+);
+
+const IconPause = () => (
+  <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+    <rect x="3" y="2" width="3" height="10" rx="0.5" />
+    <rect x="8" y="2" width="3" height="10" rx="0.5" />
+  </svg>
+);
+
+const IconPlay = () => (
+  <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+    <path d="M4 2.5l8 4.5-8 4.5z" />
+  </svg>
+);
+
+/** Collapsible tool call card */
+const ToolCallCard: Component<{ entry: ToolCallEntry }> = (props) => {
+  const [expanded, setExpanded] = createSignal(false);
+  const statusClass = () => {
+    if (!props.entry.result) return s.toolCallPending;
+    return props.entry.result.success ? s.toolCallSuccess : s.toolCallFailure;
+  };
+
+  return (
+    <div class={s.toolCallCard}>
+      <div class={s.toolCallHeader} onClick={() => setExpanded(!expanded())}>
+        <span class={cx(s.toolCallStatusDot, statusClass())} />
+        <span class={s.toolCallName}>{props.entry.toolName}</span>
+        <Show when={props.entry.duration}>
+          <span class={s.toolCallDuration}>{props.entry.duration}ms</span>
+        </Show>
+      </div>
+      <Show when={expanded()}>
+        <div class={s.toolCallBody}>
+          <div>Args: {JSON.stringify(props.entry.args, null, 2)}</div>
+          <Show when={props.entry.result}>
+            <div>
+              Result ({props.entry.result!.success ? "ok" : "error"}): {props.entry.result!.output}
+            </div>
+          </Show>
+        </div>
+      </Show>
+    </div>
+  );
+};
 
 export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
   const [inputText, setInputText] = createSignal("");
@@ -252,6 +303,31 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
         </div>
         <div class={s.headerActions}>
           <button
+            class={cx(s.headerBtn, (aiAgentStore.agentState() === "running" || aiAgentStore.agentState() === "paused") && s.headerBtnActive)}
+            onClick={() => {
+              const sid = aiChatStore.attachedSessionId();
+              if (!sid) return;
+              const st = aiAgentStore.agentState();
+              if (st === "running" || st === "paused") {
+                aiAgentStore.cancelAgent(sid);
+              } else {
+                // Prompt for goal via the input
+                const text = inputText().trim();
+                if (text) {
+                  aiAgentStore.startAgent(sid, text);
+                  setInputText("");
+                }
+              }
+            }}
+            title={
+              aiAgentStore.agentState() === "running" || aiAgentStore.agentState() === "paused"
+                ? "Stop agent"
+                : "Start agent mode (type goal first)"
+            }
+          >
+            <IconRobot />
+          </button>
+          <button
             class={cx(s.headerBtn, aiChatStore.pinned() && s.headerBtnActive)}
             onClick={() => aiChatStore.setPinned(!aiChatStore.pinned())}
             title={aiChatStore.pinned() ? "Unpin (allow auto-attach)" : "Pin terminal (prevent auto-attach)"}
@@ -277,6 +353,82 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
           <span class={s.errorText}>{aiChatStore.error()}</span>
           <button class={s.retryBtn} onClick={handleRetry}>Retry</button>
         </div>
+      </Show>
+
+      {/* ── Agent banner ──────────────────────────────────── */}
+      <Show when={aiAgentStore.agentState() === "running" || aiAgentStore.agentState() === "paused"}>
+        <div class={s.agentBanner}>
+          <IconRobot />
+          <span class={s.agentBannerText}>
+            Agent {aiAgentStore.agentState() === "paused" ? "paused" : "running"}
+          </span>
+          <span class={s.agentBannerIteration}>
+            iter {aiAgentStore.currentIteration() + 1}
+          </span>
+          <Show when={aiAgentStore.agentState() === "running"}>
+            <button
+              class={s.agentBannerBtn}
+              onClick={() => {
+                const sid = aiChatStore.attachedSessionId();
+                if (sid) aiAgentStore.pauseAgent(sid);
+              }}
+              title="Pause agent"
+            >
+              <IconPause />
+            </button>
+          </Show>
+          <Show when={aiAgentStore.agentState() === "paused"}>
+            <button
+              class={s.agentBannerBtn}
+              onClick={() => {
+                const sid = aiChatStore.attachedSessionId();
+                if (sid) aiAgentStore.resumeAgent(sid);
+              }}
+              title="Resume agent"
+            >
+              <IconPlay />
+            </button>
+          </Show>
+          <button
+            class={cx(s.agentBannerBtn, s.agentBannerBtnDanger)}
+            onClick={() => {
+              const sid = aiChatStore.attachedSessionId();
+              if (sid) aiAgentStore.cancelAgent(sid);
+            }}
+            title="Stop agent"
+          >
+            <IconStop />
+          </button>
+        </div>
+      </Show>
+
+      {/* ── Approval prompt ────────────────────────────────── */}
+      <Show when={aiAgentStore.pendingApproval()}>
+        {(approval) => (
+          <div class={s.approvalCard}>
+            <div class={s.approvalText}>
+              Agent wants to run: <strong>{approval().command}</strong>
+              <br />
+              <span style={{ "font-size": "var(--font-xs)", color: "var(--fg-secondary)" }}>
+                {approval().reason}
+              </span>
+            </div>
+            <div class={s.approvalActions}>
+              <button
+                class={cx(s.approvalBtn, s.approveBtn)}
+                onClick={() => aiAgentStore.approveAction(approval().sessionId, true)}
+              >
+                Approve
+              </button>
+              <button
+                class={cx(s.approvalBtn, s.denyBtn)}
+                onClick={() => aiAgentStore.approveAction(approval().sessionId, false)}
+              >
+                Deny
+              </button>
+            </div>
+          </div>
+        )}
       </Show>
 
       {/* ── Message list ────────────────────────────────────── */}
@@ -311,6 +463,18 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
           {/* Streaming text: raw <pre>, NOT markdown */}
           <Show when={aiChatStore.isStreaming() && aiChatStore.streamingText()}>
             <pre class={s.streamingMsg}>{aiChatStore.streamingText()}</pre>
+          </Show>
+
+          {/* Agent tool call cards */}
+          <Show when={aiAgentStore.toolCalls().length > 0}>
+            <For each={aiAgentStore.toolCalls()}>
+              {(entry) => <ToolCallCard entry={entry} />}
+            </For>
+          </Show>
+
+          {/* Agent text output */}
+          <Show when={aiAgentStore.textChunks()}>
+            <pre class={s.streamingMsg}>{aiAgentStore.textChunks()}</pre>
           </Show>
         </Show>
       </div>
