@@ -9,9 +9,10 @@
 //!    random `state` nonce, inserts a [`PendingFlow`], and returns the
 //!    authorization URL for the caller to open in the browser.
 //! 2. [`OAuthFlowManager::complete_flow`]: called from the deep-link handler
-//!    (or the dev-mode localhost callback server). Looks up the pending flow by
-//!    `state` using constant-time comparison, calls [`TokenManager::exchange_code`],
-//!    and returns the resulting [`OAuthTokenSet`].
+//!    (or the dev-mode localhost callback server). Looks up the pending flow
+//!    by keyed `state`, calls [`TokenManager::exchange_code`], and returns the
+//!    resulting [`OAuthTokenSet`]. See that method's docs for the threat
+//!    model that justifies skipping constant-time comparison here.
 //! 3. [`OAuthFlowManager::cancel_flow`]: removes a pending flow (e.g. on user
 //!    cancellation or upstream transition to `Failed`).
 //!
@@ -49,7 +50,7 @@ const CLEANUP_INTERVAL: Duration = Duration::from_secs(30);
 struct PendingFlow {
     /// Upstream name this flow is for.
     upstream_name: String,
-    /// Full `state` nonce (stored for constant-time comparison on lookup).
+    /// Full `state` nonce (also the DashMap key for this entry).
     state: String,
     /// PKCE verifier used when exchanging the code.
     pkce_verifier: String,
@@ -214,18 +215,22 @@ impl OAuthFlowManager {
     }
 
     /// Complete a pending flow with the authorization `code` received on the
-    /// callback. The `state` parameter is compared in constant time against
-    /// the pending flow. On success, the access/refresh tokens are saved to
-    /// the keyring and returned.
+    /// callback. On success, the access/refresh tokens are saved to the
+    /// keyring and returned.
+    ///
+    /// Threat model: this runs in a desktop Tauri app. The `state` parameter
+    /// arrives via an OS-routed `tuic://` deep link, not over the network —
+    /// there is no remote attacker who can probe the `pending` map with
+    /// timing oracles. The miss branch below already returns `Err` in
+    /// variable time, so any extra constant-time equality check on the hit
+    /// branch would be a no-op (a `DashMap::remove(key)` hit proves
+    /// `flow.state == state` by `String`'s `PartialEq`). We therefore rely on
+    /// the keyed lookup alone for state binding.
     pub(crate) async fn complete_flow(
         &self,
         state: &str,
         code: &str,
     ) -> Result<(String, OAuthTokenSet)> {
-        // Look up and remove the pending flow. DashMap lookup is not itself
-        // timing-sensitive to the key content (the hash is precomputed), but
-        // we additionally verify the stored state matches in constant time to
-        // defend against attackers with any side-channel into the map.
         let (_removed_key, flow) = self
             .pending
             .remove(state)
@@ -233,10 +238,6 @@ impl OAuthFlowManager {
         // Drop the permit regardless of exchange outcome — the browser round-
         // trip is over. `let _` here to make the intent explicit.
         let _permit = self.permits.remove(state);
-
-        if !constant_time_eq(flow.state.as_bytes(), state.as_bytes()) {
-            bail!("OAuth state mismatch (constant-time check failed)");
-        }
 
         // Check timeout.
         if flow.created_at.elapsed() > self.timeout {
@@ -373,19 +374,6 @@ fn generate_state_nonce() -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
 }
 
-/// Constant-time byte comparison. Returns `true` only if the two slices are
-/// equal in length and content, without short-circuiting on mismatch.
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff: u8 = 0;
-    for (x, y) in a.iter().zip(b.iter()) {
-        diff |= x ^ y;
-    }
-    diff == 0
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -408,21 +396,6 @@ mod tests {
     }
 
     // -- helpers --
-
-    #[test]
-    fn constant_time_eq_equal() {
-        assert!(constant_time_eq(b"abcdef", b"abcdef"));
-    }
-
-    #[test]
-    fn constant_time_eq_different_content() {
-        assert!(!constant_time_eq(b"abcdef", b"abcxef"));
-    }
-
-    #[test]
-    fn constant_time_eq_different_length() {
-        assert!(!constant_time_eq(b"abc", b"abcd"));
-    }
 
     #[test]
     fn state_nonce_is_random_and_long() {
