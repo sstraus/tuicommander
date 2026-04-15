@@ -3,8 +3,9 @@ import { rpc } from "../../transport";
 import { appLogger } from "../../stores/appLogger";
 import { retryWrite } from "../utils/retryWrite";
 import { SlashMenuOverlay } from "./SlashMenuOverlay";
+import { ChoicePromptOverlay } from "./ChoicePromptOverlay";
 import { isSendGuardActive } from "./syncGuards";
-import type { SlashMenuItem } from "../useSessions";
+import type { SlashMenuItem, ChoicePrompt } from "../useSessions";
 import styles from "./CommandInput.module.css";
 
 interface CommandInputProps {
@@ -17,6 +18,8 @@ interface CommandInputProps {
   agentType?: string | null;
   /** Slash menu items from session state (populated by backend parser). */
   slashItems?: SlashMenuItem[];
+  /** Active numbered choice dialog parsed from agent output. */
+  choicePrompt?: ChoicePrompt;
   /** Registers the triggerSlash function so parent can invoke it. */
   onRegisterTrigger?: (fn: () => void) => void;
 }
@@ -75,11 +78,18 @@ export function CommandInput(props: CommandInputProps) {
 
   function writePty(data: string) {
     pendingWrites++;
+    // Safety: if the rpc promise never settles (transport tear-down races
+    // where neither resolve nor reject fires before the 30s fetch timeout),
+    // pendingWrites would stay elevated forever and block input sync. A 5s
+    // watchdog decrements once even if the rpc is still in flight.
+    let decremented = false;
+    const dec = () => { if (!decremented) { decremented = true; pendingWrites--; } };
+    const watchdog = window.setTimeout(dec, 5000);
     rpc("write_pty", { sessionId: props.sessionId, data })
       .catch((err: unknown) => {
         appLogger.warn("network", "Failed to write to PTY", { error: err });
       })
-      .finally(() => { pendingWrites--; });
+      .finally(() => { window.clearTimeout(watchdog); dec(); });
   }
 
   /** Send character deltas to PTY so the remote input stays in sync. */
@@ -176,10 +186,28 @@ export function CommandInput(props: CommandInputProps) {
   }
 
   const showDropup = () => value().startsWith("/") && (props.slashItems?.length ?? 0) > 0;
+  const showChoicePrompt = () => !!props.choicePrompt;
+
+  async function handleChoiceSelect(key: string) {
+    // ChoicePrompt options are single keypresses — Claude Code and other
+    // agents read stdin raw in dialog mode, so no Ctrl-U prefix and no Enter.
+    // If an agent is discovered that needs Enter, adjust per-agent here.
+    try {
+      await rpc("write_pty", { sessionId: props.sessionId, data: key });
+    } catch (err) {
+      appLogger.warn("terminal", "ChoicePrompt write_pty failed", err);
+    }
+  }
 
   return (
     <div class={styles.form} style={{ position: "relative" }}>
-      <Show when={showDropup()}>
+      <Show when={showChoicePrompt()}>
+        <ChoicePromptOverlay
+          prompt={props.choicePrompt!}
+          onSelect={handleChoiceSelect}
+        />
+      </Show>
+      <Show when={showDropup() && !showChoicePrompt()}>
         <SlashMenuOverlay
           items={props.slashItems ?? []}
           onSelect={handleSlashSelect}

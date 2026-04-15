@@ -181,6 +181,10 @@ pub(crate) struct SessionState {
     /// Slash command menu items (from slash-menu parsed events)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub slash_menu_items: Option<Vec<crate::output_parser::SlashMenuItem>>,
+    /// Active numbered choice dialog (edit-confirm, bash-confirm, apply-patch, ...).
+    /// Cleared when the dialog disappears (e.g. on input, scroll, ptyexit).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub choice_prompt: Option<crate::output_parser::ChoicePromptPayload>,
     /// Epoch ms of last push notification sent for this session (rate limiting)
     #[serde(skip)]
     pub last_push_ms: Option<u64>,
@@ -206,6 +210,7 @@ impl PartialEq for SessionState {
             && self.progress == other.progress
             && self.suggested_actions == other.suggested_actions
             && self.slash_menu_items == other.slash_menu_items
+            && self.choice_prompt == other.choice_prompt
     }
 }
 
@@ -1199,6 +1204,7 @@ impl AppState {
                                 s.question_text = None;
                                 s.question_confident = false;
                                 s.slash_menu_items = None;
+                                s.choice_prompt = None;
                                 // Capture as last_prompt if >= 10 words
                                 if let Some(content) = parsed.get("content").and_then(|v| v.as_str())
                                     && content.split_whitespace().count() >= 10 {
@@ -1237,6 +1243,7 @@ impl AppState {
                                 s.last_error = None;
                                 s.suggested_actions = None;
                                 s.slash_menu_items = None;
+                                s.choice_prompt = None;
                                 // Only update current_task + activity timestamp when task changes.
                                 // Spinner rotations (same task name) are suppressed to avoid
                                 // churning the state and flooding WS clients.
@@ -1262,6 +1269,12 @@ impl AppState {
                             "slash-menu" => {
                                 s.slash_menu_items = parsed.get("items")
                                     .and_then(|v| serde_json::from_value::<Vec<crate::output_parser::SlashMenuItem>>(v.clone()).ok());
+                            }
+                            "choice-prompt" => {
+                                // Deserialise directly from the parsed JSON — the payload fields
+                                // (title/options/dismiss_key/amend_key) are flat at the top level
+                                // alongside "type", and serde ignores the unknown "type" field.
+                                s.choice_prompt = serde_json::from_value::<crate::output_parser::ChoicePromptPayload>(parsed.clone()).ok();
                             }
                             "active-subtasks" => {
                                 s.active_sub_tasks = parsed.get("count")

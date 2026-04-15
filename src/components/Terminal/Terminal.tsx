@@ -44,6 +44,14 @@ type ParsedEvent =
   | { type: "api-error"; pattern_name: string; matched_text: string; error_kind: string }
   | { type: "intent"; text: string; title?: string }
   | { type: "suggest"; items: string[] }
+  | { type: "slash-menu"; items: Array<{ command: string; description: string; highlighted: boolean }> }
+  | {
+      type: "choice-prompt";
+      title: string;
+      options: Array<{ key: string; label: string; highlighted: boolean; destructive: boolean; hint?: string }>;
+      dismiss_key?: string;
+      amend_key?: string;
+    }
   | { type: "active-subtasks"; count: number; task_type: string }
   | { type: "shell-state"; state: "busy" | "idle" };
 
@@ -768,6 +776,21 @@ export const Terminal: Component<TerminalProps> = (props) => {
               appLogger.warn("terminal", "[AgentDetect] unexpected error", { error: String(err), termId: props.id }),
             );
             }, 500);
+          }
+          break;
+        }
+        case "slash-menu":
+          // Desktop renders the TUI natively — no overlay needed. Plugins
+          // still receive the event via dispatchStructuredEvent below.
+          break;
+        case "choice-prompt": {
+          const isActive = terminalsStore.state.activeId === props.id;
+          appLogger.info(
+            "terminal",
+            `[ChoicePrompt] ${props.id} title="${parsed.title}" options=${parsed.options.length}${isActive ? "" : " (background)"}`,
+          );
+          if (!isActive) {
+            notificationsStore.playWarning();
           }
           break;
         }

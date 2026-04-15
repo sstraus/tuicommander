@@ -115,6 +115,18 @@ pub enum ParsedEvent {
     },
 }
 
+/// Payload for ParsedEvent::ChoicePrompt. Separate struct so it can be reused
+/// as a SessionState field without duplicating shape.
+#[derive(Clone, Debug, Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct ChoicePromptPayload {
+    pub title: String,
+    pub options: Vec<ChoiceOption>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dismiss_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub amend_key: Option<String>,
+}
+
 /// A single option in a numbered choice dialog (edit-confirm, bash-confirm, etc.).
 #[derive(Clone, Debug, Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct ChoiceOption {
@@ -3966,6 +3978,87 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
             "❯ 1. Yes",
         ].iter().map(|s| s.to_string()).collect();
         assert!(parse_choice_prompt(&rows).is_none(), "single option should not match");
+    }
+
+    #[test]
+    fn test_choice_prompt_wire_deserializes_into_payload() {
+        // Contract test: state.rs dispatches by deserializing the serialized
+        // ParsedEvent::ChoicePrompt JSON directly into ChoicePromptPayload.
+        // If the wire shape drifts from the payload struct (field rename, type
+        // change), this test fails loudly before the runtime dispatcher does.
+        let evt = ParsedEvent::ChoicePrompt {
+            title: "Do you want to proceed?".into(),
+            options: vec![
+                ChoiceOption { key: "1".into(), label: "Yes".into(),
+                    highlighted: true, destructive: false, hint: None },
+                ChoiceOption { key: "2".into(), label: "No".into(),
+                    highlighted: false, destructive: true, hint: None },
+            ],
+            dismiss_key: Some("cancel".into()),
+            amend_key: Some("amend".into()),
+        };
+        let json = serde_json::to_value(&evt).expect("serialize");
+        assert_eq!(json["type"], "choice-prompt");
+        let payload: ChoicePromptPayload = serde_json::from_value(json)
+            .expect("state.rs-style round-trip through ChoicePromptPayload");
+        assert_eq!(payload.title, "Do you want to proceed?");
+        assert_eq!(payload.options.len(), 2);
+        assert_eq!(payload.dismiss_key.as_deref(), Some("cancel"));
+        assert_eq!(payload.amend_key.as_deref(), Some("amend"));
+    }
+
+    #[test]
+    fn test_choice_prompt_variant_glyphs_and_numbering() {
+        // Chaos table: agents drift glyph/numbering/padding. The parser must
+        // tolerate the common combinations that appear in the wild without
+        // requiring a new fixture for each permutation.
+        let cases: &[(&str, &str)] = &[
+            // (highlight_glyph, number_suffix)
+            ("❯", "."),
+            ("›", "."),
+            (">", "."),
+            ("❯", ")"),
+            ("›", ")"),
+            (">", ")"),
+        ];
+        for (glyph, suffix) in cases {
+            let rows: Vec<String> = [
+                "Do you want to proceed?".to_string(),
+                format!("{} 1{} Yes", glyph, suffix),
+                format!("  2{} No", suffix),
+            ].to_vec();
+            let evt = parse_choice_prompt(&rows).unwrap_or_else(|| {
+                panic!("variant glyph={:?} suffix={:?} should parse", glyph, suffix);
+            });
+            let ParsedEvent::ChoicePrompt { options, .. } = evt else {
+                panic!("wrong variant");
+            };
+            assert_eq!(options.len(), 2,
+                "variant glyph={:?} suffix={:?}: expected 2 options", glyph, suffix);
+            assert_eq!(options[0].key, "1");
+            assert!(options[0].highlighted,
+                "variant glyph={:?} suffix={:?}: option 1 must be highlighted", glyph, suffix);
+            assert_eq!(options[1].key, "2");
+            assert!(!options[1].highlighted);
+        }
+    }
+
+    #[test]
+    fn test_choice_prompt_extra_blank_padding() {
+        // Trailing blank rows (common after repaint) must not defeat bottom-up scan.
+        let rows: Vec<String> = [
+            "Do you want to proceed?",
+            "❯ 1. Yes",
+            "  2. No",
+            "",
+            "",
+            "",
+        ].iter().map(|s| s.to_string()).collect();
+        let evt = parse_choice_prompt(&rows).expect("trailing blanks must be skipped");
+        let ParsedEvent::ChoicePrompt { options, .. } = evt else {
+            panic!("wrong variant");
+        };
+        assert_eq!(options.len(), 2);
     }
 
     #[test]

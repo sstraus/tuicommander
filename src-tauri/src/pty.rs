@@ -901,6 +901,9 @@ struct ChunkProcessor {
     last_status_task: Option<String>,
     /// Dedup: don't re-emit the same question prompt_text
     last_question_text: Option<String>,
+    /// Dedup: last emitted ChoicePrompt signature (title + option keys).
+    /// Prevents re-emit on repaint while the dialog stays on screen.
+    last_choice_prompt_sig: Option<String>,
     /// Session CWD for resolving relative plan-file paths
     session_cwd: Option<String>,
     /// Plan files awaiting creation on disk (agent announces before writing).
@@ -937,6 +940,7 @@ impl ChunkProcessor {
             parser: OutputParser::new(),
             last_status_task: None,
             last_question_text: None,
+            last_choice_prompt_sig: None,
             session_cwd,
             pending_planfiles: Vec::new(),
             emitted_planfiles: std::collections::HashSet::new(),
@@ -1183,6 +1187,20 @@ impl ChunkProcessor {
             }
         }
 
+        // ChoicePrompt detection — numbered confirmation dialogs rendered below
+        // the prompt line (edit-confirm, bash-confirm, apply-patch). Runs on
+        // every chunk (unlike slash_menu which is gated by slash_mode) because
+        // these dialogs appear asynchronously when the agent requests input.
+        // Parser uses a strict shape (title with ?/verb + ≥2 numbered options)
+        // so false-positive cost is low. Dedup via last_choice_prompt_sig
+        // guards against repaint re-emission.
+        if let Some(vt_log) = state.vt_log_buffers.get(session_id) {
+            let screen = vt_log.lock().screen_rows();
+            if let Some(evt) = crate::output_parser::parse_choice_prompt(&screen) {
+                events.push(evt);
+            }
+        }
+
         let regex_found_question = if suppress_notifications { false } else {
             events.iter().any(|e| matches!(e, ParsedEvent::Question { .. }))
         };
@@ -1211,6 +1229,21 @@ impl ChunkProcessor {
                     continue;
                 }
                 self.last_question_text = Some(prompt_text.clone());
+            }
+
+            // Dedup choice-prompt: skip if same (title + option keys) already emitted.
+            // Signature keeps option order but ignores highlighted drift so cursor
+            // movement within the dialog doesn't re-fire.
+            if let ParsedEvent::ChoicePrompt { title, options, .. } = event {
+                let sig = format!(
+                    "{}|{}",
+                    title,
+                    options.iter().map(|o| o.key.as_str()).collect::<Vec<_>>().join(","),
+                );
+                if self.last_choice_prompt_sig.as_deref() == Some(sig.as_str()) {
+                    continue;
+                }
+                self.last_choice_prompt_sig = Some(sig);
             }
 
             // Resolve relative plan-file paths to absolute using session CWD.
@@ -4744,6 +4777,7 @@ mod tests {
         assert_eq!(cp.session_cwd, Some("/home/user/repo".to_string()));
         assert!(cp.last_status_task.is_none());
         assert!(cp.last_question_text.is_none());
+        assert!(cp.last_choice_prompt_sig.is_none());
     }
 
     #[test]
@@ -4791,6 +4825,61 @@ mod tests {
 
         // Verify the result contains data
         assert!(result1.is_some(), "first chunk should return data");
+    }
+
+    #[test]
+    fn test_chunk_processor_dedup_choice_prompt() {
+        use crate::state::VtLogBuffer;
+        use std::sync::atomic::AtomicU64;
+
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let sid = "test-cp-choice-dedup";
+        let silence = Arc::new(Mutex::new(SilenceState::new()));
+        state.silence_states.insert(sid.to_string(), silence.clone());
+        state.shell_states.insert(sid.to_string(), std::sync::atomic::AtomicU8::new(SHELL_NULL));
+        state.vt_log_buffers.insert(sid.to_string(), Mutex::new(VtLogBuffer::new(24, 80, 1000)));
+        state.output_buffers.insert(sid.to_string(), Mutex::new(OutputRingBuffer::new(4096)));
+        state.last_output_ms.insert(sid.to_string(), AtomicU64::new(0));
+
+        let mut cp = ChunkProcessor::new(None);
+        let mut utf8_buf = Utf8ReadBuffer::new();
+        let mut esc_buf = EscapeAwareBuffer::new();
+
+        // Paint a Claude Code edit-confirm screen into the terminal.
+        let screen_bytes =
+            b"Do you want to make this edit to CLAUDE.md?\r\n\
+              \xe2\x9d\xaf 1. Yes\r\n\
+              \x20\x20 2. Yes, allow all edits (shift+tab)\r\n\
+              \x20\x20 3. No\r\n\
+              \r\n\
+              Esc to cancel \xc2\xb7 Tab to amend\r\n";
+        let utf8_data = utf8_buf.push(screen_bytes);
+        let esc_data = esc_buf.push(&utf8_data);
+        let _ = cp.process_chunk(&esc_data, &silence, sid, &state, None);
+
+        // Drain events from the first chunk and count ChoicePrompt emits.
+        let mut rx = state.event_bus.subscribe();
+
+        // Second chunk: add an innocuous repaint (cursor home + re-emit same dialog).
+        // Same (title, option keys) signature → must be deduped.
+        let utf8_data2 = utf8_buf.push(screen_bytes);
+        let esc_data2 = esc_buf.push(&utf8_data2);
+        let _ = cp.process_chunk(&esc_data2, &silence, sid, &state, None);
+
+        let mut choice_count = 0;
+        while let Ok(evt) = rx.try_recv() {
+            if let crate::state::AppEvent::PtyParsed { parsed, .. } = evt
+                && parsed.get("type").and_then(|t| t.as_str()) == Some("choice-prompt")
+            {
+                choice_count += 1;
+            }
+        }
+        assert_eq!(
+            choice_count, 0,
+            "second chunk with identical ChoicePrompt (same title + option keys) must be deduped",
+        );
+        assert!(cp.last_choice_prompt_sig.is_some(),
+            "signature must be stored after first emission");
     }
 
     #[test]

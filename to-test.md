@@ -631,3 +631,19 @@ Features to test when TUICommander is more usable.
 - [ ] iPad: OutputView scrolls with touch drag (finger swipe up/down)
 - [ ] iPad: Sidebar repo/branch selection works on first tap (no double-tap needed)
 - [ ] iPad: Hover-revealed action buttons (⋯, +) not visible on touch devices
+
+## ChoicePrompt (story 1296-ce3e)
+- [ ] Claude Code edit-confirm dialog → PWA ChoicePromptOverlay appears with title + tappable buttons (1/2/3)
+- [ ] Tap option key "1" → PTY receives single digit, Claude Code accepts and proceeds (no extra Enter, no Ctrl-U prefix)
+- [ ] Repaint while dialog is open → overlay does not flicker/duplicate (dedup via `last_choice_prompt_sig`)
+- [ ] Dialog dismissed by typing in terminal → `user-input` event clears `choice_prompt` and overlay disappears
+- [ ] Agent resumes work (status-line emits) → `choice_prompt` cleared, overlay disappears
+- [ ] Slash menu suppressed while ChoicePromptOverlay is visible (only one overlay at a time)
+- [ ] Bash-confirm variant (Claude Code "Do you want to run this command?") surfaces identically
+- [ ] Desktop: background tab with active dialog → warning sound plays via `notificationsStore.playWarning()`
+- [ ] Desktop: active-tab dialog → no sound (user can see it)
+- [ ] Highlighted option (`❯` glyph) renders with `.itemHighlighted` background in overlay
+- [ ] Destructive option ("No"/"Cancel"/"Abort") renders with `.itemDestructive` color
+- [ ] Option hint in parens (e.g. "Yes, and don't ask again (shift+tab)") renders as separate `.hint` span
+- [ ] Codex numbered-choice dialog (if/when encountered) captured by parser — add fixture if not
+- [ ] Aider confirmation dialog — add fixture if layout differs

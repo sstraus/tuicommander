@@ -231,7 +231,7 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
         onCommandWidgetOpen={() => setCommandWidgetOpen(true)}
         onSlashRequest={() => slashTrigger?.()}
       />
-      <CommandInput sessionId={props.session.session_id} prefillValue={inputPrefill()} ptyInputLine={ptyInputLine()} agentType={sessionState()?.agent_type ?? null} slashItems={sessionState()?.slash_menu_items} onRegisterTrigger={(fn) => { slashTrigger = fn; }} />
+      <CommandInput sessionId={props.session.session_id} prefillValue={inputPrefill()} ptyInputLine={ptyInputLine()} agentType={sessionState()?.agent_type ?? null} slashItems={sessionState()?.slash_menu_items} choicePrompt={sessionState()?.choice_prompt} onRegisterTrigger={(fn) => { slashTrigger = fn; }} />
       <Show when={commandWidgetOpen()}>
         <CommandWidget
           sessionId={props.session.session_id}

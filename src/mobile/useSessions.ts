@@ -22,6 +22,7 @@ export interface SessionState {
   progress?: number;
   suggested_actions?: string[];
   slash_menu_items?: SlashMenuItem[];
+  choice_prompt?: ChoicePrompt;
 }
 
 /** A single slash command menu item (matches Rust output_parser::SlashMenuItem) */
@@ -29,6 +30,24 @@ export interface SlashMenuItem {
   command: string;
   description: string;
   highlighted: boolean;
+}
+
+/** A numbered choice dialog (edit-confirm, bash-confirm, etc.).
+ *  Matches Rust output_parser::ChoicePromptPayload. */
+export interface ChoicePrompt {
+  title: string;
+  options: ChoiceOption[];
+  dismiss_key?: string;
+  amend_key?: string;
+}
+
+/** Single option in a ChoicePrompt. Matches Rust output_parser::ChoiceOption. */
+export interface ChoiceOption {
+  key: string;
+  label: string;
+  highlighted: boolean;
+  destructive: boolean;
+  hint?: string;
 }
 
 /** Session info returned by GET /sessions (matches Rust SessionInfo) */
