@@ -185,6 +185,9 @@ pub(crate) struct SessionState {
     /// Cleared when the dialog disappears (e.g. on input, scroll, ptyexit).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub choice_prompt: Option<crate::output_parser::ChoicePromptPayload>,
+    /// Current terminal mode — Shell or FullscreenTui with app hint + nesting depth.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub terminal_mode: Option<crate::ai_agent::tui_detect::TerminalMode>,
     /// Epoch ms of last push notification sent for this session (rate limiting)
     #[serde(skip)]
     pub last_push_ms: Option<u64>,
@@ -211,6 +214,7 @@ impl PartialEq for SessionState {
             && self.suggested_actions == other.suggested_actions
             && self.slash_menu_items == other.slash_menu_items
             && self.choice_prompt == other.choice_prompt
+            && self.terminal_mode == other.terminal_mode
     }
 }
 

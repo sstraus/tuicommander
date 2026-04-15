@@ -915,6 +915,8 @@ struct ChunkProcessor {
     /// Tracks whether the terminal is in alternate screen buffer mode.
     /// Set on ESC[?1049h, cleared on ESC[?1049l.
     pub(crate) in_alt_buffer: bool,
+    /// Structured terminal mode with nesting depth and app detection.
+    terminal_mode: crate::ai_agent::tui_detect::TerminalMode,
     /// One-shot flag: inject ESC[2J before the next ESC[H cursor-home.
     /// Set on alt-buffer entry and when content may have shrunk (detected via
     /// cursor-up ESC[nA with n > previous). Consumed after inject fires.
@@ -945,6 +947,7 @@ impl ChunkProcessor {
             pending_planfiles: Vec::new(),
             emitted_planfiles: std::collections::HashSet::new(),
             in_alt_buffer: false,
+            terminal_mode: crate::ai_agent::tui_detect::TerminalMode::Shell,
             alt_buffer_needs_clear: false,
             last_cursor_up_n: 0,
             last_vt_log_total: 0,
@@ -961,9 +964,11 @@ impl ChunkProcessor {
         if data.contains("\x1b[?1049h") {
             self.in_alt_buffer = true;
             self.alt_buffer_needs_clear = true;
+            self.terminal_mode = self.terminal_mode.on_alt_enter();
         } else if data.contains("\x1b[?1049l") {
             self.in_alt_buffer = false;
             self.alt_buffer_needs_clear = false;
+            self.terminal_mode = self.terminal_mode.on_alt_exit();
         }
 
         // Detect content shrink in alternate buffer: when Ink's cursor-up (ESC[nA)
@@ -1365,6 +1370,25 @@ impl ChunkProcessor {
                 && try_shell_transition(state, session_id, prev, SHELL_BUSY, true)
             {
                 emit_shell_state(state, app, session_id, "busy");
+            }
+        }
+
+        // Update terminal mode in SessionState when it changes.
+        // Detect TUI app from visible screen rows while in alternate buffer.
+        if self.terminal_mode.is_fullscreen() {
+            let row_texts: Vec<&str> = changed_rows.iter().map(|r| r.text.as_str()).collect();
+            if let Some(app) = crate::ai_agent::tui_detect::detect_app_from_rows(&row_texts) {
+                self.terminal_mode = self.terminal_mode.with_app_hint(app.to_string());
+            }
+        }
+        if let Some(mut entry) = state.session_states.get_mut(session_id) {
+            let new_mode = if self.terminal_mode.is_fullscreen() {
+                Some(self.terminal_mode.clone())
+            } else {
+                None
+            };
+            if entry.terminal_mode != new_mode {
+                entry.terminal_mode = new_mode;
             }
         }
 
