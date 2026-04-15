@@ -19,6 +19,33 @@ import a from "./AgentsTab.module.css";
 // All agent types — sorted dynamically by availability then name
 const ALL_AGENT_TYPES: AgentType[] = ["claude", "cursor", "gemini", "amp", "codex", "aider", "opencode", "warp", "droid"];
 
+/**
+ * Build the set of lowercased run-config names across all agent groups,
+ * optionally excluding one name (case-insensitive). Pure: no store access,
+ * no Solid reactivity — callers pass pre-fetched configs so this is trivially
+ * testable and safe to reuse from a future rename UI without the duplicate
+ * check flagging the row's own name.
+ */
+export function collectRunConfigNames(
+  configsByAgent: Array<Array<{ name: string }>>,
+  excludeName?: string,
+): Set<string> {
+  const names = new Set<string>();
+  const excluded = excludeName?.toLowerCase();
+  let excludedSeen = false;
+  for (const configs of configsByAgent) {
+    for (const cfg of configs) {
+      const n = cfg.name.toLowerCase();
+      if (!excludedSeen && n === excluded) {
+        excludedSeen = true;
+        continue;
+      }
+      names.add(n);
+    }
+  }
+  return names;
+}
+
 interface McpStatus {
   supported: boolean;
   installed: boolean;
@@ -66,16 +93,15 @@ const AddConfigForm: Component<{
   const [args, setArgs] = createSignal("");
   const [envVars, setEnvVars] = createSignal<Array<{ key: string; value: string }>>([]);
 
-  // Cross-agent duplicate name detection (case-insensitive)
-  const allExistingNames = createMemo(() => {
-    const names = new Set<string>();
-    for (const agentType of ALL_AGENT_TYPES) {
-      for (const cfg of agentConfigsStore.getRunConfigs(agentType)) {
-        names.add(cfg.name.toLowerCase());
-      }
-    }
-    return names;
-  });
+  // Cross-agent duplicate name detection (case-insensitive). AddConfigForm
+  // passes no excludeName — every existing name is a duplicate for a NEW
+  // config. A future rename UI will pass the row's current name so the user
+  // isn't flagged as duplicating themselves (story 1278-365e).
+  const allExistingNames = createMemo(() =>
+    collectRunConfigNames(
+      ALL_AGENT_TYPES.map((t) => agentConfigsStore.getRunConfigs(t)),
+    ),
+  );
   const isDuplicate = () => {
     const n = name().trim().toLowerCase();
     return n.length > 0 && allExistingNames().has(n);
