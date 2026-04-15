@@ -886,7 +886,9 @@ const LlmApiSection: Component = () => {
               <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
                 <span style={{ color: "var(--success)", "font-size": "var(--font-sm)", "flex-shrink": "0" }}>Stored</span>
                 <input
-                  type="text"
+                  type="password"
+                  autocomplete="off"
+                  spellcheck={false}
                   style={{ flex: "1" }}
                   value={apiKey()}
                   placeholder="Enter new key to replace"
@@ -900,7 +902,9 @@ const LlmApiSection: Component = () => {
           >
             <div style={{ display: "flex", gap: "8px" }}>
               <input
-                type="text"
+                type="password"
+                autocomplete="off"
+                spellcheck={false}
                 style={{ flex: "1" }}
                 value={apiKey()}
                 placeholder="Paste your API key"
