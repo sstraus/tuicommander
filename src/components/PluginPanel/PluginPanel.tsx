@@ -13,6 +13,7 @@ import { toastsStore } from "../../stores/toasts";
 import { assignTabToActiveGroup } from "../../utils/paneTabAssign";
 import { resolveTuicPath } from "./resolveTuicPath";
 import { invoke } from "@tauri-apps/api/core";
+import { ContextMenu, createContextMenu } from "../ContextMenu/ContextMenu";
 
 export interface PluginPanelProps {
   tab: PluginPanelTab;
@@ -103,6 +104,30 @@ function injectThemeVars(html: string): string {
  */
 export const PluginPanel: Component<PluginPanelProps> = (props) => {
   let iframeRef: HTMLIFrameElement | undefined;
+  let containerRef: HTMLDivElement | undefined;
+  const menu = createContextMenu();
+
+  /**
+   * Force a reload of the plugin iframe. URL-mode reassigns `src` to itself
+   * (which WebKit/Chromium treat as a navigation), srcdoc-mode clears and
+   * re-injects the content after a frame so Solid notices the change.
+   */
+  const reloadIframe = () => {
+    if (!iframeRef) return;
+    if (props.tab.url) {
+      const cur = iframeRef.src;
+      iframeRef.src = cur;
+    } else {
+      const cur = srcdoc();
+      setSrcdoc("");
+      requestAnimationFrame(() => setSrcdoc(cur));
+    }
+  };
+
+  /** Open the reload context menu at page-coordinates. */
+  const openReloadMenu = (pageX: number, pageY: number) => {
+    menu.openAt(pageX, pageY);
+  };
 
   /** Resolve a path (absolute or relative) to repo + relPath */
   const resolvePathForSdk = (path: string) => {
@@ -248,6 +273,20 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
         pluginRegistry.handlePanelMessage(props.tab.id, data.payload);
         return;
       }
+      case "tuic:reload-request": {
+        reloadIframe();
+        return;
+      }
+      case "tuic:context-menu": {
+        // Iframe-local coordinates from the SDK → translate to page coords
+        // via the iframe's current bounding rect.
+        if (!iframeRef) return;
+        const rect = iframeRef.getBoundingClientRect();
+        const x = rect.left + (typeof data.x === "number" ? data.x : 0);
+        const y = rect.top + (typeof data.y === "number" ? data.y : 0);
+        openReloadMenu(x, y);
+        return;
+      }
       default:
         appLogger.warn("plugin", `Unknown tuic SDK command: ${data.type}`);
     }
@@ -326,12 +365,21 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
   };
 
   return (
-    <div style={{
-      width: "100%",
-      height: "100%",
-      display: "flex",
-      "flex-direction": "column",
-    }}>
+    <div
+      ref={containerRef}
+      style={{
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        "flex-direction": "column",
+      }}
+      // Catches right-clicks on the iframe border / surrounding area; inside
+      // the iframe the SDK forwards via postMessage (`tuic:context-menu`).
+      onContextMenu={(e) => {
+        e.preventDefault();
+        openReloadMenu(e.clientX, e.clientY);
+      }}
+    >
       {props.tab.url ? (
         <iframe
           ref={iframeRef}
@@ -348,6 +396,15 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
           style={iframeStyle}
         />
       )}
+      <ContextMenu
+        visible={menu.visible()}
+        x={menu.position().x}
+        y={menu.position().y}
+        onClose={menu.close}
+        items={[
+          { label: "Reload", shortcut: navigator.platform.includes("Mac") ? "⌘R" : "Ctrl+R", action: reloadIframe },
+        ]}
+      />
     </div>
   );
 };

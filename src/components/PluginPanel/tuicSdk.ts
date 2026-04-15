@@ -94,6 +94,21 @@ export const TUIC_SDK_SCRIPT = `<script id="tuic-sdk">
       }
     }catch(err){}
   },true);
+  // Reload UX (story for Boss request, 2026-04-15): cross-origin iframes don't
+  // bubble contextmenu/keydown to the parent, so forward them explicitly.
+  // Parent opens its own context menu and reload action — from inside the
+  // iframe this is the only way the app-level menu knows about a right-click
+  // or Cmd/Ctrl+R that happened while the iframe was focused.
+  document.addEventListener("contextmenu",function(e){
+    e.preventDefault();
+    parent.postMessage({type:"tuic:context-menu",x:e.clientX,y:e.clientY},"*");
+  });
+  document.addEventListener("keydown",function(e){
+    if((e.metaKey||e.ctrlKey)&&!e.shiftKey&&!e.altKey&&(e.key==="r"||e.key==="R")){
+      e.preventDefault();
+      parent.postMessage({type:"tuic:reload-request"},"*");
+    }
+  });
   parent.postMessage({type:"tuic:sdk-request"},"*");
 })();
 </script>`;
