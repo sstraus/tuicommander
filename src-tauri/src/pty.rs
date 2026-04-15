@@ -757,6 +757,48 @@ fn emit_shell_state(
     }
 }
 
+/// Emit an `Inferred` command outcome for shells that don't speak OSC 133.
+/// Called right after a busy→idle transition; no-op once we've ever observed
+/// a marker for this session (shell-integration path is authoritative then).
+/// The command text is unknown in this mode, but cwd + snippet still populate
+/// context summary and cwd history.
+fn record_inferred_outcome_if_no_osc133(state: &AppState, session_id: &str) {
+    use crate::ai_agent::knowledge::{CommandOutcome, OutcomeClass};
+
+    if state.has_osc133_integration.contains_key(session_id) {
+        return;
+    }
+    let cwd = state
+        .sessions
+        .get(session_id)
+        .and_then(|s| s.lock().cwd.clone())
+        .unwrap_or_default();
+    let output_snippet = state
+        .vt_log_buffers
+        .get(session_id)
+        .map(|b| {
+            let buf = b.lock();
+            buf.screen_rows().join("\n")
+        })
+        .unwrap_or_default();
+    let tail_start = output_snippet.len().saturating_sub(500);
+    let output_snippet = output_snippet[tail_start..].to_string();
+
+    let outcome = CommandOutcome {
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0),
+        command: String::new(),
+        cwd,
+        exit_code: None,
+        output_snippet,
+        classification: OutcomeClass::Inferred,
+        duration_ms: 0,
+    };
+    state.record_outcome(session_id, outcome);
+}
+
 /// How many bottom screen rows to check when verifying a question candidate.
 /// Wide enough to cover agent footer layouts (mode line, spinner, Wiz HUD,
 /// suggest/intent blocks, trailing disclaimer text) that push the actual
@@ -796,6 +838,7 @@ fn spawn_silence_timer(
                 && try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE, true)
             {
                 emit_shell_state(&state, app.as_ref(), &session_id, "idle");
+                record_inferred_outcome_if_no_osc133(&state, &session_id);
             }
 
             // Update startup grace state (checks if output has settled).
@@ -934,6 +977,11 @@ struct ChunkProcessor {
     /// Last time we emitted a `pty-vt-log-total-*` event. Throttled to ~100 ms
     /// to avoid flooding the frontend during heavy output.
     last_vt_log_emit: Option<std::time::Instant>,
+    /// Command text captured on OSC 133 C — used when the matching D arrives
+    /// to build a `CommandOutcome`. Cleared after D.
+    pending_command: Option<String>,
+    /// `Instant` when OSC 133 C arrived; used for `duration_ms`.
+    pending_command_started: Option<std::time::Instant>,
 }
 
 impl ChunkProcessor {
@@ -953,6 +1001,96 @@ impl ChunkProcessor {
             last_vt_log_total: 0,
             last_vt_log_oldest: 0,
             last_vt_log_emit: None,
+            pending_command: None,
+            pending_command_started: None,
+        }
+    }
+
+    /// Drives the OSC 133 state machine. Call once per chunk, before the
+    /// chunk is transformed for display. On `C` captures the command text
+    /// from the input line buffer; on `D(code)` builds a `CommandOutcome`
+    /// and records it into `state.session_knowledge`.
+    fn record_osc133_outcomes(&mut self, data: &str, session_id: &str, state: &AppState) {
+        use crate::ai_agent::knowledge::{
+            classify_error, scan_osc133, CommandOutcome, Osc133Marker, OutcomeClass,
+            SessionKnowledge,
+        };
+
+        let markers = scan_osc133(data);
+        if markers.is_empty() {
+            return;
+        }
+        state
+            .has_osc133_integration
+            .insert(session_id.to_string(), ());
+
+        for m in markers {
+            match m {
+                Osc133Marker::C => {
+                    let cmd = state
+                        .input_buffers
+                        .get(session_id)
+                        .map(|b| b.lock().content())
+                        .unwrap_or_default();
+                    self.pending_command = Some(cmd);
+                    self.pending_command_started = Some(std::time::Instant::now());
+                }
+                Osc133Marker::D(exit_code) => {
+                    let command = self.pending_command.take().unwrap_or_default();
+                    let duration_ms = self
+                        .pending_command_started
+                        .take()
+                        .map(|t| t.elapsed().as_millis() as u64)
+                        .unwrap_or(0);
+                    let cwd = state
+                        .sessions
+                        .get(session_id)
+                        .and_then(|s| s.lock().cwd.clone())
+                        .unwrap_or_default();
+                    let output_snippet = state
+                        .vt_log_buffers
+                        .get(session_id)
+                        .map(|b| {
+                            let buf = b.lock();
+                            buf.screen_rows().join("\n")
+                        })
+                        .unwrap_or_default();
+                    let tail_start = output_snippet.len().saturating_sub(500);
+                    let output_snippet = output_snippet[tail_start..].to_string();
+
+                    let classification = if exit_code == 0 {
+                        OutcomeClass::Success
+                    } else if let Some(error_type) = classify_error(&output_snippet) {
+                        OutcomeClass::Error { error_type }
+                    } else {
+                        OutcomeClass::Error {
+                            error_type: "unknown".into(),
+                        }
+                    };
+
+                    let outcome = CommandOutcome {
+                        timestamp: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs())
+                            .unwrap_or(0),
+                        command,
+                        cwd,
+                        exit_code: Some(exit_code),
+                        output_snippet,
+                        classification,
+                        duration_ms,
+                    };
+                    {
+                        let entry = state
+                            .session_knowledge
+                            .entry(session_id.to_string())
+                            .or_insert_with(|| Mutex::new(SessionKnowledge::new()));
+                        entry.lock().terminal_mode = self.terminal_mode.clone();
+                    }
+                    state.record_outcome(session_id, outcome);
+                }
+                Osc133Marker::A | Osc133Marker::B => {}
+            }
         }
     }
 
@@ -1076,6 +1214,10 @@ impl ChunkProcessor {
         if data.is_empty() {
             return None;
         }
+
+        // Drive OSC 133 shell-integration state machine (command start/end markers).
+        // No-op when the shell has no integration — falls back to busy→idle inferrer.
+        self.record_osc133_outcomes(data, session_id, state);
 
         // Check pending plan files: emit if file appeared, drop if deadline expired.
         self.check_pending_planfiles(session_id, state, app);
@@ -1617,6 +1759,7 @@ pub(crate) fn spawn_tombstone_sweeper(state: Arc<AppState>) {
 }
 
 /// Return the byte length of a UTF-8 character given its leading byte.
+#[allow(dead_code)] // Used by clamp_cursor_up (currently disabled, see TODO May 2026)
 #[inline]
 fn utf8_char_width(lead: u8) -> usize {
     match lead {
@@ -1786,6 +1929,7 @@ fn inject_clear_before_cursor_home(data: &str) -> String {
 /// the cursor within the visible area without affecting rendering.
 ///
 /// Also clamps ESC[nF (Cursor Previous Line) which has the same jump-to-top effect.
+#[allow(dead_code)] // Disabled 2026-04-15 (scrollback proliferation). TODO: remove May 2026.
 fn clamp_cursor_up(data: &str, max_rows: u16) -> String {
     use std::fmt::Write;
 
@@ -1895,12 +2039,13 @@ pub(crate) fn spawn_reader_thread(
                         // tokens across streaming chunks to prevent cosmetic flash.
                         // Plain-prefix format only processed when an agent is detected.
                         if let Some(xterm_data) = processor.transform_xterm(processed) {
-                            // Clamp cursor-up sequences to viewport height to prevent
-                            // scroll-jump-to-top caused by Ink TUI redraws (CC #33367).
-                            let rows = state.terminal_rows.get(&session_id)
-                                .map(|r| r.load(Ordering::Relaxed))
-                                .unwrap_or(24);
-                            let clamped_data = clamp_cursor_up(&xterm_data, rows);
+                            // DISABLED (2026-04-15): clamp_cursor_up causes scrollback
+                            // proliferation — Ink's large ESC[nA gets clamped to viewport
+                            // height, so the cursor can't reach the top of the previous
+                            // frame and each redraw appends a near-duplicate block.
+                            // Original intent: prevent scroll-jump-to-top (CC #33367).
+                            // TODO: remove entirely in May 2026 if no scroll-jump regression.
+                            let clamped_data = xterm_data;
 
                             // Detect anomalous ANSI sequences for scroll-jump diagnostics.
                             // Skip when: alternate buffer (fullscreen apps), or an Ink agent

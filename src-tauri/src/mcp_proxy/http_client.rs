@@ -36,6 +36,11 @@ const PROTOCOL_VERSION: &str = "2025-03-26";
 pub(crate) enum UpstreamError {
     /// Server returned 401 with a `WWW-Authenticate: Bearer ...` header,
     /// signalling that the client must (re-)run the OAuth authorization flow.
+    ///
+    /// `www_authenticate` is surfaced to the caller verbatim; we do not yet
+    /// parse the `resource_metadata` param (RFC 9728 §3.1), which would let us
+    /// auto-discover the authorization server URL instead of falling back to
+    /// `<origin>/.well-known/oauth-authorization-server`. See story 1284-cc3e.
     NeedsOAuth { www_authenticate: String },
     /// Server returned 401 with no `WWW-Authenticate` header, meaning the
     /// static bearer token was invalid/expired and there's no OAuth challenge

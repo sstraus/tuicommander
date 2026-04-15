@@ -174,6 +174,22 @@ Seven native tools, organized by domain. Two (`config`, `debug`) are hidden by d
 
 The `disabled_native_tools` config key accepts an array of tool names to hide from `tools/list`. Default: `["config", "debug"]`.
 
+### MCP Tools: `ai_terminal_*` (external agent surface)
+
+Six tools exposed to external MCP clients (e.g. Claude Code, Cursor) that let a
+remote AI agent observe and interact with a TUICommander terminal. All input
+operations (`send_input`, `send_key`) require user confirmation and are
+rejected while an internal agent loop is active on the target session.
+
+| Tool | Params | Description |
+|------|--------|-------------|
+| `ai_terminal_read_screen` | `session_id`, `lines?` (default 50) | Read visible terminal text. Output passes through secret redaction. |
+| `ai_terminal_send_input` | `session_id`, `text` | Send a text command to the session. Always prompts for confirmation. |
+| `ai_terminal_send_key` | `session_id`, `key` (enter/tab/ctrl+c/escape/up/down/…) | Send a single special key. Always prompts for confirmation. |
+| `ai_terminal_wait_for` | `session_id`, `pattern?`, `timeout_ms?` (10000), `stability_ms?` (500) | Wait for a regex match or for the screen to stabilise. |
+| `ai_terminal_get_state` | `session_id` | Return structured `SessionState` (shell_state, cwd, terminal_mode, agent_type, …). |
+| `ai_terminal_get_context` | `session_id` | Compact ~500-char context summary (mode, recent CWDs, recent errors, known fixes, TUI apps). |
+
 ### MCP Tool: `debug` — `invoke_js` and the Debug Registry
 
 `invoke_js` executes JavaScript in the WebView (localhost-only). Results are logged with `source='eval_js'` and read via `debug(action='logs', source='eval_js', limit=1)`.

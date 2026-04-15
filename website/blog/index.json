@@ -1,10 +1,19 @@
 {
   "posts": [
     {
+      "slug": "one-month-retrospective",
+      "title": "What one person can ship in a month",
+      "date": "2026-04-15",
+      "status": "published",
+      "feature": "Engineering Retrospective — April 2026",
+      "summary": "Fifteen releases, 226 changelog entries, nearly 90,000 lines of code — shipped solo in evenings and weekends. A retrospective on what Claude Code actually compresses, and what it can't.",
+      "screenshots": []
+    },
+    {
       "slug": "global-workspace",
       "title": "Global Workspace: one view for all your agents",
       "date": "2026-04-08",
-      "status": "draft",
+      "status": "published",
       "feature": "Global Workspace / Cross-repo terminal aggregation",
       "summary": "When you run agents across multiple repos, you lose track of who's doing what. Global Workspace pulls the terminals that matter into a single split-pane view — without moving them.",
       "screenshots": ["activity-dashboard.png", "sidebar-entry.png"]
@@ -13,7 +22,7 @@
       "slug": "integrated-viewers",
       "title": "Read, diff, and edit without leaving the terminal",
       "date": "2026-03-29",
-      "status": "draft",
+      "status": "published",
       "feature": "Markdown viewer / Code editor / Side-by-side diff / Clickable paths",
       "summary": "AI agents reference files constantly. Instead of alt-tabbing to an editor every time, we built markdown, code, and diff viewers right into the terminal workspace.",
       "screenshots": ["markdown-viewer.png", "code-editor.png", "diff-viewer.png"]
@@ -22,7 +31,7 @@
       "slug": "agent-observability",
       "title": "Knowing what your agents are doing without looking",
       "date": "2026-03-28",
-      "status": "draft",
+      "status": "published",
       "feature": "Agent status detection / Sound notifications / Activity Dashboard",
       "summary": "When you run 5 agents in parallel, you can't watch every terminal. We built status detection, sound notifications, and an activity dashboard so you don't have to.",
       "screenshots": ["status-legend.png", "activity-dashboard.png", "tab-status-dots.png"]
@@ -31,7 +40,7 @@
       "slug": "sidebar-workspace",
       "title": "One sidebar, all your repos",
       "date": "2026-03-27",
-      "status": "draft",
+      "status": "published",
       "feature": "Sidebar / Multi-repo workspace / PR management",
       "summary": "When you work across 10+ repositories every day, you need a single place to see branches, worktrees, PRs, and diff stats — without switching tools.",
       "screenshots": ["sidebar-pr.png"]
@@ -40,7 +49,7 @@
       "slug": "remote-mobile",
       "title": "From the couch to 5G: how we built remote access",
       "date": "2026-03-26",
-      "status": "draft",
+      "status": "published",
       "feature": "Remote Access / PWA / Tailscale",
       "summary": "We wanted to check on AI agents without sitting at the desk. After trying session logs, remote proxies, and SSH, we ended up building a full mobile experience.",
       "screenshots": ["pwa-sessions.png", "pwa-terminal.png", "settings.png", "desktop-remote.png", "pwa-activity.png"]
@@ -49,7 +58,7 @@
       "slug": "smart-prompts",
       "title": "Why we built Smart Prompts",
       "date": "2026-03-25",
-      "status": "draft",
+      "status": "published",
       "feature": "Smart Prompts",
       "summary": "We were copy-pasting the same instructions to AI agents every day. So we turned them into one-click actions that know your context.",
       "screenshots": ["library.png", "editor.png", "git-panel.png"]
@@ -58,7 +67,7 @@
       "slug": "terminal-power",
       "title": "A terminal built for 8-hour sessions",
       "date": "2026-03-24",
-      "status": "draft",
+      "status": "published",
       "feature": "Split panes / Detach to window / Persistent sessions / Find / Tab management",
       "summary": "Split panes, detachable windows, persistent sessions, find in content, and up to 50 concurrent terminals. We built a terminal for people who live in it all day.",
       "screenshots": ["multi-agent-tabs.png", "split-pane.png", "detached-window.png"]
@@ -67,7 +76,7 @@
       "slug": "claude-usage",
       "title": "Tracking your AI usage before the rate limit hits",
       "date": "2026-03-23",
-      "status": "draft",
+      "status": "published",
       "feature": "Claude Usage Dashboard / Rate limits / Token tracking",
       "summary": "Running multiple AI agents burns through rate limits fast. We built a usage dashboard so you can see exactly where you stand — and plan your work accordingly.",
       "screenshots": ["dashboard.png"]
@@ -76,7 +85,7 @@
       "slug": "performance",
       "title": "How we keep it fast with 10 repos and 8 terminals open",
       "date": "2026-03-22",
-      "status": "draft",
+      "status": "published",
       "feature": "Async git / PTY coalescing / Watcher cache / Bundle splitting",
       "summary": "A desktop app that manages 10 repos, 8 terminals, and constant git operations can't afford to be slow. Here's the performance work we did under the hood.",
       "screenshots": []
@@ -85,7 +94,7 @@
       "slug": "dictation",
       "title": "Talking to your AI agents instead of typing",
       "date": "2026-03-21",
-      "status": "draft",
+      "status": "published",
       "feature": "Voice dictation / Whisper / Push-to-talk",
       "summary": "Hold a key, speak your instruction, release. The text appears in the terminal. No cloud service, no API key, no latency — Whisper runs locally on your machine.",
       "screenshots": ["settings.png"]
@@ -94,7 +103,7 @@
       "slug": "plugin-system",
       "title": "Extend TUICommander with plugins",
       "date": "2026-03-20",
-      "status": "draft",
+      "status": "published",
       "feature": "Plugin system / MCP / Sidebar panels / Context menus",
       "summary": "Every workflow is different. We built a plugin system so you can extend TUICommander with custom panels, context menu actions, and MCP integrations.",
       "screenshots": ["plugins-panel.png"]

@@ -422,6 +422,23 @@
   border-color: var(--accent);
 }
 
+.testBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.testBtnOk {
+  background: var(--success);
+  border-color: var(--success);
+  color: var(--bg-primary);
+}
+
+.testBtnFail {
+  background: var(--error);
+  border-color: var(--error);
+  color: var(--bg-primary);
+}
+
 .actions {
   display: flex;
   gap: 8px;

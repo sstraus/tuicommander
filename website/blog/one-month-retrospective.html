@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>What one person can ship in a month — TUICommander Blog</title>
+  <meta name="description" content="Fifteen releases, 226 changelog entries, nearly 90,000 lines of code — shipped solo in evenings and weekends. A retrospective on what Claude Code actually compresses, and what it can't." />
+
+  <meta property="og:title" content="What one person can ship in a month — TUICommander" />
+  <meta property="og:description" content="Fifteen releases, 226 changelog entries, nearly 90,000 lines of code — shipped solo in evenings and weekends. A retrospective on what Claude Code actually compresses, and what it can't." />
+  <meta property="og:type" content="article" />
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/style.css" />
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PCXPSMR9JZ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-PCXPSMR9JZ');
+  </script>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="/" class="nav-logo">
+        <img src="/logo.png" alt="TUICommander" width="28" height="28" />
+        <span>TUICommander</span>
+      </a>
+      <div class="nav-links">
+        <a href="/#features">Features</a>
+        <a href="/blog.html" class="nav-active">Blog</a>
+        <a href="/#faq">FAQ</a>
+        <a href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary btn-sm" rel="noopener noreferrer">Download</a>
+      </div>
+    </div>
+  </nav>
+
+  <article class="blog-post">
+    <header class="blog-post-header">
+      <a href="/blog.html" class="blog-back">&larr; Blog</a>
+      <time>April 15, 2026</time>
+      <h1>What one person can ship in a month</h1>
+      <p class="blog-post-summary">Fifteen releases. Two hundred and twenty-six changelog entries. Nearly ninety thousand lines of code. One engineer, three to four hours a day, evenings and weekends. A retrospective on what Claude Code actually compresses — and what it can't.</p>
+    </header>
+
+    <div class="blog-section">
+      <h2>The setup</h2>
+      <p>This is a retrospective of one month of work on TUICommander — the terminal orchestrator you're reading about right now. No team. No product owner. No project manager. One engineer with thirty years of software experience, building a personal project in the hours outside a day job, averaging three to four hours per day, directing a stack of Claude Code sessions in parallel via TUIC itself.</p>
+      <p>The month covered fifteen public releases, including the 1.0.0 milestone. Two hundred and twenty-six discrete entries in the changelog. Roughly one hundred plans dispatched. Eighty-nine thousand lines added across Rust, TypeScript, and UI. A hundred hours of personal attention, total.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>What actually shipped</h2>
+      <p>The instinct when numbers get big is to skip the work and talk about the multipliers. That's the wrong order. Here is the grain of a month, by surface area:</p>
+      <ul>
+        <li><strong>Smart Prompts system.</strong> Twenty-four built-in prompts, six LLM providers, three execution modes (inject, headless, API direct), a variable dropdown editor, and thirty-one auto-resolved context variables.</li>
+        <li><strong>Upstream OAuth for MCP.</strong> End-to-end discovery (RFC 9728, RFC 8414), PKCE, token refresh, race-safe authentication, deep-link callback.</li>
+        <li><strong>Tailscale HTTPS.</strong> Auto-detection, cert provisioning via Local API, dual HTTP/HTTPS on the same port, QR code with TLS, twenty-four-hour background renewal.</li>
+        <li><strong>PWA and mobile.</strong> Web Push notifications with VAPID, iOS standalone detection, lazy viewport loading, touch scroll, and a pile of iOS-specific double-tap fixes.</li>
+        <li><strong>Diff and review tooling.</strong> Side-by-side diff viewer with word-level highlighting, hunk-level restore, line-range revert, continuous scroll across all files.</li>
+        <li><strong>Base branch tracking.</strong> Base ref stored in git config, ahead/behind in the sidebar, rebase-from-base in the context menu, grouped local/remote ref picker.</li>
+        <li><strong>Command palette.</strong> File search, content search, cross-terminal text search, explicit prefix modes, and mode-specific commands for discoverability.</li>
+        <li><strong>Run-config resolution.</strong> Unified pipeline across MCP and headless agents, env vars per config, parameter merging, prompt substitution.</li>
+        <li><strong>Global hotkeys.</strong> OS-level window toggle, combo validation with clear errors, cycle visibility states.</li>
+        <li><strong>File browser.</strong> Tree view with lazy expand, file icons from plugins, full-text content search, drag-and-drop with real paths.</li>
+        <li><strong>Performance layer.</strong> PTY write coalescing via requestAnimationFrame, twenty-five git commands converted to async, watcher-driven cache invalidation, bundle splitting, RwLock for MCP concurrency.</li>
+        <li><strong>Per-repo MCP scoping.</strong> Three-layer allowlist, quick toggle popup, per-repo status with transport badges and tool counts.</li>
+        <li><strong>Deep-link SDK.</strong> A new <code>tuic://cmd/{tool}/{action}</code> surface for external tool invocation.</li>
+        <li><strong>OSC 133 integration.</strong> Shell command block detection, block navigation, gutter exit-code markers, cross-terminal overview.</li>
+        <li><strong>Reactive correctness.</strong> Thundering-herd fix, batched store writes, deferred reactive flushes, debounced repo watcher.</li>
+        <li><strong>Website rewrite.</strong> New IDE positioning, restructured sections, comparison table, docs navbar.</li>
+      </ul>
+      <p>This is not a list of features from a team-year. This is a list of features from one engineer working part-time, for thirty days.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Four lenses on speedup</h2>
+      <p>Speedup is not a single number. It depends on the question. Across four independent measurements, the signal is consistent.</p>
+      <p><strong>Per hour of personal attention: 35–55×.</strong> Denominator: the engineer's own one hundred hours of focused attention. Numerator: the equivalent scope a senior developer would book, which for two hundred and twenty-six changelog entries lands at roughly four hundred and fifty to seven hundred engineering-days. Each hour of dispatch-and-review produces roughly a working week of conventional delivery.</p>
+      <p><strong>Calendar compression: 20–32×.</strong> Scope that a solo senior would plan across two years of full-time work shipped in a single month of part-time effort. Against a team of three, the compression is still measured in years, not months.</p>
+      <p><strong>Release cadence: one every two days.</strong> Fifteen public releases in thirty days, including a major milestone. This is a cadence most funded teams never sustain — and it was held by one person working evenings around a day job.</p>
+      <p><strong>Raw code output: 17–42×.</strong> Nearly ninety thousand lines written across Rust, TypeScript, and UI layers simultaneously. Not boilerplate. Systems code, state machines, async orchestration, framework plumbing. Volume without loss of density.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Why it scales better than a team</h2>
+      <p>The most surprising finding is not that the output is high. It is that a single engineer outperforms multi-person setups on the same scope. The reason is not model capability alone — it is the absence of organizational friction.</p>
+      <p>A traditional team pays a coordination tax that most engineering orgs have learned to accept as normal. A product owner translates intent into tickets. A project manager schedules and chases dependencies. Handoffs happen between frontend and backend and design and QA. Alignment meetings rebuild shared context. Review queues stack up. Context is lost at every cross-department boundary.</p>
+      <p>A solo operator with Claude Code pays none of that tax. No PO — intent lives in the engineer's head. No PM — dispatch <em>is</em> the plan. No handoffs — one mind owns every layer. No meetings — the product vision doesn't fragment. Review is inline, one hop from the work. Context is held end-to-end, without compression into a ticket system.</p>
+      <p>A team multiplies by adding people. This setup multiplies by removing the friction people introduce.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>What actually drives the multiplier</h2>
+      <p>Four forces work in the same direction.</p>
+      <p><strong>Parallel sessions.</strong> Five to seven Claude Code sessions running concurrently via TUIC dispatch. One thread of attention directing many threads of execution.</p>
+      <p><strong>Model-level pattern competence.</strong> For known patterns — OAuth flows, reactive stores, state machines — the first draft arrives in minutes. Unknowns that normally dominate implementation time collapse.</p>
+      <p><strong>Unified product vision.</strong> One engineer holds the full mental model. No translation layer between intent and code. No lossy compression into tickets.</p>
+      <p><strong>Dispatch-and-review loop.</strong> The engineer directs code, does not type it. Time flows into decisions, review, merges — not keystrokes.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Honest caveats</h2>
+      <p>The multiplier is real. It is also not universal. This post would mislead without naming the conditions that produced it.</p>
+      <p><strong>Thirty years of experience is doing heavy lifting.</strong> The ability to spot a dead end in seconds, reject a wrong architectural turn before a single line is written, distinguish a real fix from a symptom patch — that is an experience filter. A less experienced engineer with the same tooling would get dragged into rabbit holes the model cannot see.</p>
+      <p><strong>Context switching at this pace is exhausting.</strong> Running five to seven parallel sessions while keeping the full product in mind is not sustainable at eight hours a day. Burnout is a real risk. Three to four hours per day is already dense — and only holds because the work is motivating, not because the rhythm is comfortable.</p>
+      <p><strong>Passion is part of the multiplier.</strong> A personal project with a clear product vision removes the friction of "what are we actually building and why." Most professional environments cannot replicate that. Remove the passion and the same setup would produce less.</p>
+      <p><strong>The subscription is the speed limit.</strong> The Max plan quota is a hard monthly ceiling. Everything scales until active hours are consumed. Plan size is the lever — there is no infinite dial.</p>
+      <p><strong>Not all code survives the first write.</strong> Roughly a third of the lines written were later deleted or rewritten. The raw output is real, but iteration is part of the process — as it is for humans.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>What this means for a corporate senior dev</h2>
+      <p>The numbers above are outlier conditions: a personal project, three decades of experience, no stakeholders, total ownership. Enterprise engineering is a different environment. Here is what the same toolchain realistically delivers for an average senior developer working inside a company.</p>
+      <p><strong>Profile A — AI pair programmer (1.5–2×).</strong> Completion, chat for explanations, targeted debug help. The developer still writes the code — the model suggests. Consistent with published Copilot studies. Floor for "I use AI at work."</p>
+      <p><strong>Profile B — Single-session dispatch (3–4×).</strong> Delegates discrete tasks to Claude Code in one session. Loop: dispatch, read, correct, merge. Bounded by corporate review gates, cross-team dependencies, and alignment overhead — each of which taxes twenty to thirty percent of the time.</p>
+      <p><strong>Profile C — Multi-session power user (5–8×).</strong> Two or three parallel sessions, plan-driven work, disciplined review. Never reaches 35–55× because peer review, stakeholder alignment, and less dead-end filtering each reclaim part of the gain.</p>
+      <p>The honest middle — the realistic number most senior developers will actually sustain inside an enterprise — is around <strong>three to five times</strong>. Not the outlier multiplier. Not the pair-programmer multiplier either. Enough to reshape planning assumptions, team sizing, and roadmap ambition.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Takeaway</h2>
+      <p>One month of TUICommander, shipped by one person in evenings and weekends, covers scope that conventional planning books at a team-year or more. The multiplier holds across four independent lenses — effort, calendar, cadence, raw output — so it is a method, not a fluke. But the conditions matter: a senior engineer, a passion project, and a subscription plan are all part of the equation. Remove any one and the numbers bend. Keep all three and the result is an engineering velocity that looks, from the outside, like it has no team behind it — because it doesn't.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>What's next</h2>
+      <p>The same method, another month. The 1.0 series is out. The 1.1 cycle opens with deeper MCP integration, more Smart Prompt providers, and whatever Boss decides to ship next in the time between dinner and midnight. If you're running your own experiments on this kind of workflow, the results — and your own multipliers — are probably more interesting than anything a team could have booked.</p>
+    </div>
+  </article>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sstraus/tuicommander" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/sstraus/tuicommander/releases" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/FEATURES.md" rel="noopener noreferrer">Docs</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin API</a>
+      </div>
+      <p>MIT License &copy; 2026 Stefano Straus</p>
+      <p class="footer-tech">Built with Rust, Tauri v2, SolidJS, xterm.js</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

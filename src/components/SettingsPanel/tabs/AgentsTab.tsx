@@ -216,8 +216,11 @@ const RunConfigRow: Component<{
   const envCount = () => Object.keys(props.config.env).length;
 
   const startEdit = () => {
+    // Start with the actual entries — no implicit blank row. Blank rows
+    // trigger the duplicate-key validator unnecessarily and obscure the
+    // "nothing to configure" state. Users add rows explicitly via +Add.
     const entries = Object.entries(props.config.env).map(([key, value]) => ({ key, value }));
-    setEnvVars(entries.length > 0 ? entries : [{ key: "", value: "" }]);
+    setEnvVars(entries);
     setEditing(true);
   };
 

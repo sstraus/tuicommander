@@ -742,16 +742,23 @@ pub(crate) mod dev_server {
         let (result_tx, result_rx) = tokio::sync::oneshot::channel::<Result<(String, OAuthTokenSet)>>();
         let result_tx = Arc::new(tokio::sync::Mutex::new(Some(result_tx)));
 
+        // Fires when the single callback has been handled — lets the server
+        // shut down immediately instead of waiting for the DevCallbackServer
+        // handle to be dropped.
+        let done_notify = Arc::new(tokio::sync::Notify::new());
+
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let port = listener.local_addr()?.port();
 
         let mgr_clone = manager.clone();
         let result_tx_clone = result_tx.clone();
+        let done_notify_clone = done_notify.clone();
         let app = Router::new().route(
             "/oauth/callback",
             get(move |Query(params): Query<CallbackParams>| {
                 let mgr = mgr_clone.clone();
                 let tx_slot = result_tx_clone.clone();
+                let done = done_notify_clone.clone();
                 async move {
                     let outcome = handle_callback(mgr, params).await;
                     let html = match &outcome {
@@ -760,9 +767,11 @@ pub(crate) mod dev_server {
                         Err(_) => "<html><body><h1>Authentication failed</h1>\
                             <p>Check the TUIC logs for details.</p></body></html>",
                     };
-                    // Deliver the result to the caller (first write wins).
+                    // Deliver the result to the caller (first write wins), then
+                    // signal the server to shut down.
                     if let Some(tx) = tx_slot.lock().await.take() {
                         let _ = tx.send(outcome);
+                        done.notify_one();
                     }
                     Html(html).into_response()
                 }
@@ -775,7 +784,10 @@ pub(crate) mod dev_server {
                 app.into_make_service_with_connect_info::<SocketAddr>(),
             )
             .with_graceful_shutdown(async move {
-                let _ = shutdown_rx.await;
+                tokio::select! {
+                    _ = shutdown_rx => {}
+                    _ = done_notify.notified() => {}
+                }
             });
             if let Err(e) = server.await {
                 tracing::warn!(target: "mcp_oauth", error = %e, "dev callback server exited");

@@ -108,6 +108,30 @@ When modifying AI Chat panel, settings, context menu actions, or streaming backe
 | `docs/FEATURES.md` | AI Chat feature section |
 | `docs/user-guide/ai-chat.md` | User-facing guide (create when needed) |
 
+### AI Agent (ReAct loop, knowledge store, MCP terminal tools)
+When modifying the AI agent loop engine, tool dispatch, session knowledge store,
+OSC 133 outcome capture, or the `ai_terminal_*` MCP tools:
+
+| File | What to update |
+|------|----------------|
+| `src-tauri/src/ai_agent/engine.rs` | ReAct loop, approval flow, ACTIVE_AGENTS registry |
+| `src-tauri/src/ai_agent/tools.rs` | Tool dispatch (`ai_terminal_*` handlers) |
+| `src-tauri/src/ai_agent/knowledge.rs` | CommandOutcome, SessionKnowledge, OSC 133 scanner, persist/load/spawn_persist_task |
+| `src-tauri/src/ai_agent/context.rs` | Session-knowledge injection into agent system prompt |
+| `src-tauri/src/ai_agent/tui_detect.rs` | TerminalMode heuristics (Shell vs FullscreenTui) |
+| `src-tauri/src/ai_agent/commands.rs` | Tauri commands: start/cancel/pause/resume/status/approve/get_session_knowledge |
+| `src-tauri/src/pty.rs` | ChunkProcessor.record_osc133_outcomes + Inferred fallback in silence timer |
+| `src-tauri/src/state.rs` | session_knowledge DashMap, knowledge_dirty set, has_osc133_integration, record_outcome helper |
+| `src-tauri/src/lib.rs` | Register new commands in `invoke_handler`; spawn_persist_task at boot |
+| `src-tauri/src/mcp_http/mcp_transport.rs` | `ai_terminal_*` MCP tool defs + dispatch |
+| `src/stores/aiAgentStore.ts` | Frontend agent state (running/paused), tool-call log, approvals |
+| `src/components/AIChatPanel/AIChatPanel.tsx` | Agent banner, approval card, tool-call cards |
+| `src/components/AIChatPanel/SessionKnowledgeBar.tsx` | Collapsible footer summarising the session's knowledge store |
+| `docs/api/tauri-commands.md` | `start_agent_loop`, `cancel_agent_loop`, `pause_agent_loop`, `resume_agent_loop`, `agent_loop_status`, `approve_agent_action`, `get_session_knowledge` |
+| `docs/backend/mcp-http.md` | `ai_terminal_*` MCP tools table |
+| `docs/FEATURES.md` | AI Agent section (Level 2/3 of the AI-assisted terminal roadmap) |
+| `ideas/ai-assisted-terminal.md` | Status updates as capability levels ship |
+
 ### Git & Worktree Integration
 When modifying git operations, worktree logic, or GitHub API:
 

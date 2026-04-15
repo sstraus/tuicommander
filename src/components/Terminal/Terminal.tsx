@@ -357,10 +357,28 @@ export const Terminal: Component<TerminalProps> = (props) => {
   // Throttle counter for atlas cleanup triggered by onAddTextureAtlasCanvas.
   // Pages are added when the packer runs out of room for new glyphs, so a
   // burst of additions is a real signal of stress (e.g. large diverse output).
+  // Thresholds are adaptive: large fonts fill atlas pages ~4× faster (a 512×512
+  // page holds ~600 glyphs at 14px but only ~150 at 21px), so we lower the
+  // page threshold and cooldown proportionally to catch corruption before it
+  // becomes visible.
   let atlasPagesSinceCleanup = 0;
   let atlasLastCleanupMs = 0;
-  const ATLAS_CLEANUP_MIN_PAGES = 3;
-  const ATLAS_CLEANUP_MIN_INTERVAL_MS = 30_000;
+  const ATLAS_BASE_FONT = 14;
+  const ATLAS_BASE_MIN_PAGES = 3;
+  const ATLAS_BASE_MIN_INTERVAL_MS = 30_000;
+  /** Current effective thresholds — recalculated on every fontSize change. */
+  let atlasCleanupMinPages = ATLAS_BASE_MIN_PAGES;
+  let atlasCleanupMinIntervalMs = ATLAS_BASE_MIN_INTERVAL_MS;
+
+  /** Recalculate atlas cleanup thresholds based on current font size.
+   *  At 2× the base font, pages hold ¼ as many glyphs → threshold drops to 1
+   *  page and cooldown drops to ~8s. */
+  const updateAtlasThresholds = (fontSize: number) => {
+    // ratio > 1 when font is larger than base → atlas fills faster
+    const ratio = Math.max(1, fontSize / ATLAS_BASE_FONT);
+    atlasCleanupMinPages = Math.max(1, Math.round(ATLAS_BASE_MIN_PAGES / ratio));
+    atlasCleanupMinIntervalMs = Math.max(5_000, Math.round(ATLAS_BASE_MIN_INTERVAL_MS / ratio));
+  };
 
   // Buffer for PTY output arriving before terminal.open()
   let outputBuffer: string[] = [];
@@ -484,14 +502,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
   /** Process a chunk of PTY output — write to terminal or buffer if not ready/visible */
   const handlePtyData = (rawData: string) => {
-    // Strip ESC[3J (clear scrollback) — Claude Code / Ink sends this on every
-    // TUI redraw, destroying scrollback content AND breaking xterm v6 auto-scroll
-    // (viewportY stuck at 0). Scrollback is managed by TUICommander, not agents.
-    // ESC[2J is left untouched — Ink needs it for viewport redraw; ViewportLock
-    // handles the viewport jump it causes.
-    const data = rawData.includes("\x1b[3J")
-      ? rawData.replaceAll("\x1b[3J", "")
-      : rawData;
+    const data = rawData;
     if (terminal) {
       // Dispatch to plugins for all terminals — background tabs may have
       // plugin-relevant output (e.g. agent detection, error tracking)
@@ -1014,8 +1025,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
         atlasPagesSinceCleanup++;
         const now = performance.now();
         if (
-          atlasPagesSinceCleanup >= ATLAS_CLEANUP_MIN_PAGES &&
-          now - atlasLastCleanupMs > ATLAS_CLEANUP_MIN_INTERVAL_MS
+          atlasPagesSinceCleanup >= atlasCleanupMinPages &&
+          now - atlasLastCleanupMs > atlasCleanupMinIntervalMs
         ) {
           atlasPagesSinceCleanup = 0;
           atlasLastCleanupMs = now;
@@ -1040,6 +1051,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
     const w = window as any;
     if (!w.__terms) w.__terms = {};
     w.__terms[props.id] = () => terminal;
+
+    // Set initial atlas thresholds based on configured font size
+    updateAtlasThresholds(settingsStore.state.defaultFontSize);
 
     terminal = new XTerm({
       scrollback: 10000,
@@ -1769,7 +1783,15 @@ export const Terminal: Component<TerminalProps> = (props) => {
           // dimensions once flex layout settles.
           if (containerRef && containerRef.offsetWidth > 0 && containerRef.offsetHeight > 0) {
             // Container ready — fit and init in one rAF, skip the defer chain.
+            // Re-check dimensions inside the rAF because a parent layout can
+            // collapse between now and the next frame (e.g. a sidebar opening
+            // mid-mount); without the re-check we'd fit against zero and the
+            // terminal would come up at 1×1.
             requestAnimationFrame(() => {
+              if (!containerRef || containerRef.offsetWidth <= 0 || containerRef.offsetHeight <= 0) {
+                safeFit(() => initSession());
+                return;
+              }
               doFit();
               initSession();
             });
@@ -1862,7 +1884,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
     }
   });
 
-  // Handle font size changes (per-terminal zoom OR global default)
+  // Handle font size changes (per-terminal zoom OR global default).
+  // Recalculates atlas cleanup thresholds so zoomed terminals get more
+  // aggressive rebuild triggers (large glyphs fill atlas pages faster).
   createEffect(() => {
     const perTerminalSize = terminalsStore.state.terminals[props.id]?.fontSize;
     const defaultSize = settingsStore.state.defaultFontSize;
@@ -1870,6 +1894,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     const size = perTerminalSize ?? defaultSize;
     terminal.options.fontSize = size;
     terminal.options.lineHeight = snapLineHeight(size);
+    updateAtlasThresholds(size);
     doFit();
   });
 

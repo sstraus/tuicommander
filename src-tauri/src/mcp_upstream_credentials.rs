@@ -199,11 +199,20 @@ pub(crate) fn is_token_valid(token_set: &OAuthTokenSet) -> bool {
 /// - Otherwise → legacy plain Bearer token.
 pub(crate) fn parse_credential(raw: &str) -> StoredCredential {
     if let Ok(cred) = serde_json::from_str::<StoredCredential>(raw) {
-        cred
-    } else {
-        StoredCredential::Bearer {
-            token: raw.to_string(),
-        }
+        return cred;
+    }
+    // Raw looks like structured JSON but failed to parse — likely a corrupted
+    // keyring entry (schema drift, truncated write). Warn so the user can spot
+    // it in logs; the Bearer fallback keeps the caller usable.
+    let trimmed = raw.trim_start();
+    if trimmed.starts_with('{') || trimmed.starts_with('[') {
+        tracing::warn!(
+            target: "mcp_oauth",
+            "Keyring credential looks like JSON but failed to parse — falling back to legacy Bearer"
+        );
+    }
+    StoredCredential::Bearer {
+        token: raw.to_string(),
     }
 }
 

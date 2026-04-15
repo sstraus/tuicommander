@@ -85,6 +85,10 @@ export const Sidebar: Component<SidebarProps> = (props) => {
     }
     const prStatus = githubStore.getPrStatus(active.path, active.activeBranch);
     const prState = prStatus?.state?.toUpperCase();
+    // `!prStatus.is_draft` treats undefined as "not draft", matching the GraphQL
+    // path which always sets the field. If the REST fallback ever ships with
+    // is_draft missing, a draft would auto-open the detail panel — upgrade to
+    // `prStatus.is_draft === false` then.
     if (prStatus && prState !== "CLOSED" && prState !== "MERGED" && !prStatus.is_draft) {
       const target = { repoPath: active.path, branch: active.activeBranch };
       queueMicrotask(() => setPrDetailTarget(target));

@@ -208,7 +208,16 @@ function createTerminalsStore() {
   function startLastDataAtFlush(): void {
     if (lastDataAtFlushTimer) return;
     lastDataAtFlushTimer = setInterval(() => {
-      if (lastDataAtMap.size === 0) return;
+      // Stop the interval once no terminal is pushing lastDataAt updates.
+      // A fresh push via setLastDataAt() restarts it. Prevents a 5s timer from
+      // ticking forever after the user closes every terminal.
+      if (lastDataAtMap.size === 0) {
+        if (lastDataAtFlushTimer) {
+          clearInterval(lastDataAtFlushTimer);
+          lastDataAtFlushTimer = null;
+        }
+        return;
+      }
       batch(() => {
         for (const [id, ts] of lastDataAtMap) {
           if (state.terminals[id]) setState("terminals", id, "lastDataAt", ts);

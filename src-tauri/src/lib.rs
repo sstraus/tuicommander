@@ -843,6 +843,8 @@ pub fn run() {
         session_parent: DashMap::new(),
         messaging_channels: DashMap::new(),
         session_knowledge: DashMap::new(),
+        knowledge_dirty: DashMap::new(),
+        has_osc133_integration: DashMap::new(),
         #[cfg(unix)]
         bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
         tailscale_state: parking_lot::RwLock::new(tailscale::TailscaleState::NotInstalled),
@@ -883,6 +885,9 @@ pub fn run() {
 
                 // Start content index updater (rebuilds on repo-changed)
                 crate::content_index::spawn_content_index_updater(boot_registry_state.clone());
+
+                // Start session-knowledge debounced persister (flushes dirty sessions every 2s).
+                crate::ai_agent::knowledge::spawn_persist_task(boot_registry_state.clone());
 
                 // Auto-connect saved upstream MCP servers on boot
                 crate::mcp_upstream_config::auto_connect_saved_upstreams(&boot_registry_state).await;
@@ -1261,6 +1266,7 @@ pub fn run() {
             ai_agent::commands::resume_agent_loop,
             ai_agent::commands::agent_loop_status,
             ai_agent::commands::approve_agent_action,
+            ai_agent::commands::get_session_knowledge,
             repo_watcher::start_repo_watcher,
             repo_watcher::stop_repo_watcher,
             dir_watcher::start_dir_watcher,

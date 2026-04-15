@@ -164,6 +164,21 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `discover_agent_session` | `session_id, agent_type, cwd` | `Option<String>` | Discover agent session UUID from filesystem for session-aware resume |
 | `verify_agent_session` | `agent_type, session_id, cwd` | `bool` | Verify if a specific agent session file exists on disk (for TUIC_SESSION resume) |
 
+## AI Agent Loop (`ai_agent/commands.rs`)
+
+ReAct-style agent loop driving a terminal session with `ai_terminal_*` tools,
+plus a Tauri-side query for the per-session knowledge store.
+
+| Command | Args | Returns | Description |
+|---------|------|---------|-------------|
+| `start_agent_loop` | `session_id, goal` | `String` (status message) | Start a ReAct loop on the given terminal session with the given goal. Errors if an agent is already active for the session. |
+| `cancel_agent_loop` | `session_id` | `String` | Cancel the active agent loop. Errors if no loop is active. |
+| `pause_agent_loop` | `session_id` | `String` | Pause the active agent loop between iterations. |
+| `resume_agent_loop` | `session_id` | `String` | Resume a paused agent loop. |
+| `agent_loop_status` | `session_id` | `{ active: bool, state: AgentState?, session_id }` | Query whether an agent is active and its current state (`running`/`paused`/`pending_approval`). |
+| `approve_agent_action` | `session_id, approved` | `String` | Approve or reject the pending destructive command the agent wants to run. Errors if no agent is active. |
+| `get_session_knowledge` | `session_id` | `SessionKnowledgeSummary` | Lightweight summary for the `SessionKnowledgeBar` UI: commands count, last 5 outcomes with kind badges, recent errors with `error_type`, TUI mode indicator, TUI apps seen. Returns an empty summary when the session has no recorded knowledge yet. |
+
 ## MCP Upstream Proxy (`mcp_upstream_config.rs`, `mcp_upstream_credentials.rs`)
 
 Commands for managing upstream MCP servers proxied through TUICommander's `/mcp` endpoint.

@@ -28,6 +28,34 @@ Features to test when TUICommander is more usable.
 - [ ] Right-click terminal > "Fix this error": sends error analysis prompt
 - [ ] Selection >2000 chars truncated with "[... truncated]" marker
 
+## AI Agent — Level 2 Loop (1299/1300/1301/1302)
+- [ ] Start button in AI Chat header sends goal → agent banner appears with "running" + iter counter
+- [ ] Tool-call cards render in order for each `ai_terminal_*` the agent emits (read_screen, send_input, wait_for, get_state)
+- [ ] Pause button freezes iteration; resume continues from next tool call
+- [ ] Cancel button clears banner and stops future iterations
+- [ ] Destructive command (rm -rf, git reset --hard, DROP TABLE) triggers approval card; reject skips, approve executes
+- [ ] Agent error (provider failure) surfaces in chat with Retry
+- [ ] Rejoining session after reload: agent state recovered from store; tool-call history preserved (schema v2)
+
+## AI Agent — External MCP Tools (1303)
+- [ ] Remote MCP client (Claude Code / Cursor) lists six `ai_terminal_*` tools via `tools/list`
+- [ ] `ai_terminal_read_screen` returns redacted screen text; respects `lines` cap
+- [ ] `ai_terminal_send_input` on an idle session prompts user confirm dialog; rejects while internal agent loop is active on that session
+- [ ] `ai_terminal_send_key` honours named keys (enter, tab, ctrl+c, escape, up/down) with same confirmation semantics
+- [ ] `ai_terminal_wait_for` returns on regex match, timeout_ms, or stability window
+- [ ] `ai_terminal_get_state` reflects current shell_state/cwd/terminal_mode/agent_type
+- [ ] `ai_terminal_get_context` returns compact ~500-char summary aligned with SessionKnowledge.build_context_summary
+
+## AI Agent — Session Knowledge (1305/1306/1307/1309)
+- [ ] OSC 133 shell (with `shell-integration.sh` sourced): running a command populates SessionKnowledgeBar with a Success/Error row and exit code
+- [ ] Shell without OSC 133: busy→idle transition populates an `inferred` outcome row (no exit code, empty command text)
+- [ ] Error classification tags match expected `error_type` for rust_compilation, npm_error, python_error, missing_tool, missing_file, permission, network
+- [ ] Error→fix correlation: failing command followed within 3 commands by a success populates "Known Fixes" in the context summary
+- [ ] SessionKnowledgeBar collapsed row shows commands count; "recent err" pill appears when errors exist; "tui:" pill appears when in fullscreen TUI
+- [ ] SessionKnowledgeBar auto-refreshes ~2s after new pty-parsed events (debounced)
+- [ ] Relaunch app: `{config_dir}/ai-sessions/{session_id}.json` files exist for recent sessions; bar reloads with history intact
+- [ ] Agent system prompt now includes "## Session Knowledge" block (verify via debug logs)
+
 ## MCP Session Tombstone
 - [x] `agent spawn` → `session output` after 1.8s → returns live buffer with `exited:false` (9b886c20 E2E validated 2026-04-10)
 - [x] `session close` → `session output` → returns final buffer with `exited:true`, buffer preserved (9b886c20 E2E validated 2026-04-10)

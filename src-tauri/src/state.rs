@@ -974,6 +974,33 @@ pub struct AppState {
     #[allow(dead_code)]
     pub(crate) session_knowledge:
         DashMap<String, Mutex<crate::ai_agent::knowledge::SessionKnowledge>>,
+    /// Sessions with unpersisted knowledge changes. Flushed to disk every 2s
+    /// by the background knowledge-persist task.
+    #[allow(dead_code)]
+    pub(crate) knowledge_dirty: DashMap<String, ()>,
+    /// Sessions whose shell has emitted at least one OSC 133 marker. Presence
+    /// here suppresses the Inferred-outcome fallback, since the shell-integration
+    /// path is authoritative once wired.
+    #[allow(dead_code)]
+    pub(crate) has_osc133_integration: DashMap<String, ()>,
+}
+
+impl AppState {
+    /// Record a command outcome into this session's knowledge store and mark it
+    /// dirty for the background persister. Creates the entry on first use.
+    #[allow(dead_code)]
+    pub(crate) fn record_outcome(
+        &self,
+        session_id: &str,
+        outcome: crate::ai_agent::knowledge::CommandOutcome,
+    ) {
+        let entry = self
+            .session_knowledge
+            .entry(session_id.to_string())
+            .or_insert_with(|| Mutex::new(crate::ai_agent::knowledge::SessionKnowledge::new()));
+        entry.lock().record(outcome);
+        self.knowledge_dirty.insert(session_id.to_string(), ());
+    }
 }
 
 /// Cloud relay client state (connection + shutdown handle).
@@ -2018,6 +2045,8 @@ pub(crate) mod tests_support {
             session_parent: DashMap::new(),
             messaging_channels: DashMap::new(),
             session_knowledge: DashMap::new(),
+            knowledge_dirty: DashMap::new(),
+            has_osc133_integration: DashMap::new(),
             #[cfg(unix)]
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
             tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),
@@ -2464,6 +2493,8 @@ mod tests {
             session_parent: DashMap::new(),
             messaging_channels: DashMap::new(),
             session_knowledge: DashMap::new(),
+            knowledge_dirty: DashMap::new(),
+            has_osc133_integration: DashMap::new(),
             #[cfg(unix)]
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
             tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),

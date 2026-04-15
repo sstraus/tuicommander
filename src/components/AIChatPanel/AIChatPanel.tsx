@@ -9,6 +9,7 @@ import { appLogger } from "../../stores/appLogger";
 import { cx } from "../../utils";
 import p from "../shared/panel.module.css";
 import s from "./AIChatPanel.module.css";
+import { SessionKnowledgeBar } from "./SessionKnowledgeBar";
 
 export interface AIChatPanelProps {
   visible: boolean;
@@ -478,6 +479,9 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
           </Show>
         </Show>
       </div>
+
+      {/* ── Session knowledge footer ────────────────────────── */}
+      <SessionKnowledgeBar sessionId={aiChatStore.attachedSessionId()} />
 
       {/* ── Input area ──────────────────────────────────────── */}
       <div class={s.inputArea}>

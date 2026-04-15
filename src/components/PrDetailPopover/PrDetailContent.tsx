@@ -84,6 +84,11 @@ export const PrDetailContent: Component<PrDetailContentProps> = (props) => {
   // Lazy-load CI check details when this content mounts.
   // Deferred via queueMicrotask so the popover renders instantly with cached
   // data — the IPC call runs after the first paint, not during mount.
+  //
+  // UX trade-off: during the fetch window (typically sub-second) the panel
+  // shows stale cached checks. We accept that over a spinner because the cache
+  // is usually fresh (polled elsewhere) and flashing a loading state every
+  // hover would be noisier than the occasional stale render.
   createEffect(() => {
     const pr = prData();
     if (pr) {

@@ -254,6 +254,86 @@ const NETWORK: &[&str] = &[
 ];
 
 // ---------------------------------------------------------------------------
+// OSC 133 shell-integration marker parsing
+// ---------------------------------------------------------------------------
+
+/// FinalTerm-style OSC 133 command-block markers emitted by our shell
+/// integration scripts. `C` fires immediately before command execution,
+/// `D(code)` right after with the exit code. `A`/`B` bracket the prompt
+/// itself and are not currently consumed by the agent loop but are parsed
+/// so the scanner stays faithful to the wire format.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Osc133Marker {
+    A,
+    B,
+    C,
+    D(i32),
+}
+
+/// Scan `data` for OSC 133 markers. Accepts both BEL (`\x07`) and
+/// ST (`\x1b\\`) terminators. Returns markers in the order they appear.
+/// Invalid or unknown subtypes are skipped silently.
+pub fn scan_osc133(data: &str) -> Vec<Osc133Marker> {
+    const PREFIX: &str = "\x1b]133;";
+    let bytes = data.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while let Some(pos) = find_subsequence(&bytes[i..], PREFIX.as_bytes()) {
+        let start = i + pos + PREFIX.len();
+        if start >= bytes.len() {
+            break;
+        }
+        let kind_byte = bytes[start];
+        let after_kind = start + 1;
+        let (end, payload_end) = match find_terminator(&bytes[after_kind..]) {
+            Some((pe, e)) => (after_kind + e, after_kind + pe),
+            None => break,
+        };
+        match kind_byte {
+            b'A' => out.push(Osc133Marker::A),
+            b'B' => out.push(Osc133Marker::B),
+            b'C' => out.push(Osc133Marker::C),
+            b'D' => {
+                let payload = &bytes[after_kind..payload_end];
+                if let Some(code) = parse_d_exit_code(payload) {
+                    out.push(Osc133Marker::D(code));
+                }
+            }
+            _ => {}
+        }
+        i = end;
+    }
+    out
+}
+
+fn find_subsequence(hay: &[u8], needle: &[u8]) -> Option<usize> {
+    hay.windows(needle.len()).position(|w| w == needle)
+}
+
+/// Returns (payload_end, sequence_end) where payload_end excludes the
+/// terminator and sequence_end is the byte after it. BEL = 1 byte,
+/// ST (ESC \\) = 2 bytes.
+fn find_terminator(hay: &[u8]) -> Option<(usize, usize)> {
+    for (i, b) in hay.iter().enumerate() {
+        if *b == 0x07 {
+            return Some((i, i + 1));
+        }
+        if *b == 0x1b && hay.get(i + 1) == Some(&b'\\') {
+            return Some((i, i + 2));
+        }
+    }
+    None
+}
+
+/// D payload is `;<int>` — leading semicolon then signed integer.
+fn parse_d_exit_code(payload: &[u8]) -> Option<i32> {
+    if payload.first() != Some(&b';') {
+        return None;
+    }
+    std::str::from_utf8(&payload[1..]).ok()?.trim().parse().ok()
+}
+
+// ---------------------------------------------------------------------------
 // Persistence
 // ---------------------------------------------------------------------------
 
@@ -285,6 +365,260 @@ pub fn load(session_id: &str) -> Option<SessionKnowledge> {
         k.schema_version = KNOWLEDGE_SCHEMA_VERSION;
     }
     Some(k)
+}
+
+/// Load every persisted session file into `state.session_knowledge`. Called
+/// once at startup so agent context injection has access to historical
+/// sessions. Silently skips files that fail to parse (schema drift / corrupt).
+pub fn load_all(state: &crate::state::AppState) {
+    let Ok(dir) = sessions_dir() else {
+        return;
+    };
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let Some(sid) = path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if let Some(k) = load(sid) {
+            state
+                .session_knowledge
+                .insert(sid.to_string(), parking_lot::Mutex::new(k));
+        }
+    }
+}
+
+/// Debounce window between persist flushes. A 2s window absorbs bursty command
+/// sequences (e.g. a rapid-fire `cd && ls && cat`) into a single disk write.
+const PERSIST_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Spawn the background task that flushes dirty session knowledge to disk.
+/// Runs on the tokio runtime and lives for the process lifetime.
+pub fn spawn_persist_task(state: std::sync::Arc<crate::state::AppState>) {
+    tokio::spawn(async move {
+        load_all(&state);
+        let mut ticker = tokio::time::interval(PERSIST_INTERVAL);
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            ticker.tick().await;
+            flush_dirty(&state);
+        }
+    });
+}
+
+/// Drain `knowledge_dirty` and persist each flagged session. Runs on a
+/// blocking-safe path (small JSON writes); keeps the tokio worker brief.
+pub fn flush_dirty(state: &crate::state::AppState) {
+    let dirty: Vec<String> = state
+        .knowledge_dirty
+        .iter()
+        .map(|e| e.key().clone())
+        .collect();
+    for sid in dirty {
+        state.knowledge_dirty.remove(&sid);
+        let Some(entry) = state.session_knowledge.get(&sid) else {
+            continue;
+        };
+        let snapshot = entry.lock().clone();
+        if let Err(e) = persist(&sid, &snapshot) {
+            tracing::warn!(session_id = %sid, error = %e, "knowledge persist failed");
+        }
+    }
+}
+
+#[cfg(test)]
+mod persist_tests {
+    use super::*;
+    use crate::state::tests_support::make_test_app_state;
+
+    /// Serialize tests that mutate the global `CONFIG_DIR_OVERRIDE` so their
+    /// per-test tempdirs don't leak into each other under cargo's default
+    /// parallel test executor.
+    static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn sample_outcome() -> CommandOutcome {
+        CommandOutcome {
+            timestamp: 100,
+            command: "cargo build".into(),
+            cwd: "/tmp/proj".into(),
+            exit_code: Some(0),
+            output_snippet: String::new(),
+            classification: OutcomeClass::Success,
+            duration_ms: 42,
+        }
+    }
+
+    #[test]
+    fn record_outcome_marks_session_dirty_and_updates_store() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        let _g = crate::config::set_config_dir_override(dir.path().to_path_buf());
+        let state = make_test_app_state();
+        state.record_outcome("s1", sample_outcome());
+        assert!(state.knowledge_dirty.contains_key("s1"));
+        let k = state.session_knowledge.get("s1").unwrap();
+        assert_eq!(k.lock().commands.len(), 1);
+    }
+
+    #[test]
+    fn flush_dirty_writes_file_and_clears_flag() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        let _g = crate::config::set_config_dir_override(dir.path().to_path_buf());
+        let state = make_test_app_state();
+        state.record_outcome("s1", sample_outcome());
+        flush_dirty(&state);
+        assert!(!state.knowledge_dirty.contains_key("s1"));
+        let disk_path = dir.path().join(SESSIONS_DIR).join("s1.json");
+        assert!(disk_path.exists(), "persisted file should exist");
+        let loaded = load("s1").expect("load from disk");
+        assert_eq!(loaded.commands.len(), 1);
+        assert_eq!(loaded.commands[0].command, "cargo build");
+    }
+
+    #[test]
+    fn load_all_restores_known_sessions() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        let _g = crate::config::set_config_dir_override(dir.path().to_path_buf());
+        let mut k = SessionKnowledge::new();
+        k.record(sample_outcome());
+        persist("s-restored", &k).unwrap();
+
+        let state = make_test_app_state();
+        load_all(&state);
+        let restored = state.session_knowledge.get("s-restored").unwrap();
+        assert_eq!(restored.lock().commands.len(), 1);
+    }
+
+    #[test]
+    fn load_all_ignores_non_json_entries() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        let _g = crate::config::set_config_dir_override(dir.path().to_path_buf());
+        let sessions = dir.path().join(SESSIONS_DIR);
+        std::fs::create_dir_all(&sessions).unwrap();
+        std::fs::write(sessions.join("notes.txt"), "ignored").unwrap();
+        std::fs::write(sessions.join("broken.json"), "not json").unwrap();
+        let state = make_test_app_state();
+        load_all(&state); // must not panic
+        assert!(state.session_knowledge.is_empty());
+    }
+
+    #[test]
+    fn end_to_end_command_lifecycle() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        let _g = crate::config::set_config_dir_override(dir.path().to_path_buf());
+        let state = make_test_app_state();
+
+        // Simulate full lifecycle: failing build, then passing build after fix.
+        state.record_outcome(
+            "s-e2e",
+            CommandOutcome {
+                timestamp: 1,
+                command: "cargo build".into(),
+                cwd: "/tmp/proj".into(),
+                exit_code: Some(1),
+                output_snippet: "error[E0425]: cannot find function `foo`".into(),
+                classification: OutcomeClass::Error {
+                    error_type: "rust_compilation".into(),
+                },
+                duration_ms: 500,
+            },
+        );
+        state.record_outcome(
+            "s-e2e",
+            CommandOutcome {
+                timestamp: 2,
+                command: "cargo build".into(),
+                cwd: "/tmp/proj".into(),
+                exit_code: Some(0),
+                output_snippet: String::new(),
+                classification: OutcomeClass::Success,
+                duration_ms: 400,
+            },
+        );
+
+        flush_dirty(&state);
+
+        // Reload into a fresh state to verify persistence round-trips.
+        let fresh = make_test_app_state();
+        load_all(&fresh);
+        let k = fresh.session_knowledge.get("s-e2e").unwrap();
+        let k = k.lock();
+        assert_eq!(k.commands.len(), 2);
+        assert!(k.error_fix_pairs.contains_key("rust_compilation"));
+        let summary = k.build_context_summary();
+        assert!(summary.contains("Known Fixes"));
+        assert!(summary.contains("rust_compilation"));
+    }
+}
+
+#[cfg(test)]
+mod osc133_tests {
+    use super::*;
+
+    #[test]
+    fn scans_c_and_d_with_bel() {
+        let s = "\x1b]133;C\x07ls\n\x1b]133;D;0\x07";
+        assert_eq!(
+            scan_osc133(s),
+            vec![Osc133Marker::C, Osc133Marker::D(0)]
+        );
+    }
+
+    #[test]
+    fn scans_d_with_nonzero_exit() {
+        let s = "\x1b]133;D;127\x07";
+        assert_eq!(scan_osc133(s), vec![Osc133Marker::D(127)]);
+    }
+
+    #[test]
+    fn scans_d_with_st_terminator() {
+        let s = "\x1b]133;D;2\x1b\\";
+        assert_eq!(scan_osc133(s), vec![Osc133Marker::D(2)]);
+    }
+
+    #[test]
+    fn scans_a_and_b_markers() {
+        let s = "\x1b]133;A\x07prompt$\x1b]133;B\x07";
+        assert_eq!(
+            scan_osc133(s),
+            vec![Osc133Marker::A, Osc133Marker::B]
+        );
+    }
+
+    #[test]
+    fn ignores_malformed_d_payload() {
+        let s = "\x1b]133;D;abc\x07\x1b]133;D;3\x07";
+        assert_eq!(scan_osc133(s), vec![Osc133Marker::D(3)]);
+    }
+
+    #[test]
+    fn no_markers_returns_empty() {
+        assert_eq!(scan_osc133("plain text"), vec![]);
+    }
+
+    #[test]
+    fn unterminated_sequence_is_dropped() {
+        let s = "\x1b]133;D;0";
+        assert_eq!(scan_osc133(s), vec![]);
+    }
+
+    #[test]
+    fn multiple_markers_across_chunk() {
+        let s = "before\x1b]133;C\x07cmd\x1b]133;D;0\x07after\x1b]133;A\x07";
+        assert_eq!(
+            scan_osc133(s),
+            vec![Osc133Marker::C, Osc133Marker::D(0), Osc133Marker::A]
+        );
+    }
 }
 
 #[cfg(test)]
