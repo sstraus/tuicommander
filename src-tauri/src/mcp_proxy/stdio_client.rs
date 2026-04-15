@@ -115,13 +115,55 @@ impl StdioMcpClient {
 
         // Re-add safe passthrough variables needed by child processes
         const SAFE_ENV_KEYS: &[&str] = &[
-            "PATH", "HOME", "USER", "LANG", "LC_ALL",
+            "HOME", "USER", "LANG", "LC_ALL",
             "TMPDIR", "TEMP", "TMP", "SHELL", "TERM",
         ];
         for key in SAFE_ENV_KEYS {
             if let Ok(val) = std::env::var(key) {
                 cmd.env(key, val);
             }
+        }
+
+        // PATH needs augmentation: Tauri GUI processes launched from Finder/Dock
+        // inherit a minimal PATH that misses common dev tool locations like
+        // Homebrew and ~/.cargo/bin. Upstream MCP binaries (e.g. `mdkb`) fail
+        // to spawn as a result. Prepend common dev bin dirs when they exist,
+        // then append the inherited PATH.
+        let mut path_parts: Vec<std::path::PathBuf> = Vec::new();
+        #[cfg(target_os = "macos")]
+        let candidate_prefixes: &[&str] = &[
+            "/opt/homebrew/bin",
+            "/opt/homebrew/sbin",
+            "/usr/local/bin",
+            "/usr/local/sbin",
+        ];
+        #[cfg(target_os = "linux")]
+        let candidate_prefixes: &[&str] = &[
+            "/usr/local/bin",
+            "/usr/local/sbin",
+            "/snap/bin",
+        ];
+        #[cfg(target_os = "windows")]
+        let candidate_prefixes: &[&str] = &[];
+        for p in candidate_prefixes {
+            let pb = std::path::PathBuf::from(p);
+            if pb.is_dir() {
+                path_parts.push(pb);
+            }
+        }
+        if let Ok(home) = std::env::var("HOME") {
+            for sub in &[".cargo/bin", ".local/bin", ".bun/bin", "bin"] {
+                let pb = std::path::PathBuf::from(&home).join(sub);
+                if pb.is_dir() {
+                    path_parts.push(pb);
+                }
+            }
+        }
+        if let Some(inherited) = std::env::var_os("PATH") {
+            path_parts.extend(std::env::split_paths(&inherited));
+        }
+        if let Ok(joined) = std::env::join_paths(&path_parts) {
+            cmd.env("PATH", joined);
         }
 
         // Apply user-configured env overrides on top of the safe set

@@ -1471,7 +1471,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       }),
     );
     viewportLock.setLogger((event, details) => {
-      appLogger.warn("ViewportLock", `${event} ${JSON.stringify(details)}`);
+      appLogger.debug("ViewportLock", `${event} ${JSON.stringify(details)}`);
     });
     // Preload the configured font so the canvas/WebGL renderer can measure
     // and render it correctly from the start (see preloadFont comment above).

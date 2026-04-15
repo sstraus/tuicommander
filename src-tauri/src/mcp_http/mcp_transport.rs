@@ -27,6 +27,16 @@ fn detect_claude_code_client(client_name: Option<&str>) -> bool {
     client_name.is_some_and(|n| n.contains("claude") || n.contains("tuic-bridge"))
 }
 
+/// Detect Claude Code from the User-Agent header when the MCP clientInfo is
+/// unavailable (e.g. after session auto-recovery following a TUIC restart).
+fn detect_claude_code_from_headers(headers: &HeaderMap) -> bool {
+    headers
+        .get(axum::http::header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .map(|ua| ua.to_ascii_lowercase())
+        .is_some_and(|ua| ua.contains("claude") || ua.contains("tuic-bridge"))
+}
+
 /// Map MCP client name to TUICommander agent type key.
 /// Returns None when the client cannot be identified.
 fn resolve_agent_type(client_name: Option<&str>) -> Option<&'static str> {
@@ -2170,6 +2180,7 @@ pub(super) async fn mcp_post(
             // Validate MCP session. If the session ID is stale (e.g. app restarted, or
             // long-lived client like Claude Code lost its session), auto-recover by
             // re-registering the session instead of returning an error.
+            let is_cc_ua = detect_claude_code_from_headers(&headers);
             let session_valid = headers
                 .get(MCP_SESSION_HEADER)
                 .and_then(|v| v.to_str().ok())
@@ -2177,12 +2188,17 @@ pub(super) async fn mcp_post(
                     if state.mcp_sessions.contains_key(sid) {
                         true
                     } else {
-                        // Auto-recover: re-register the stale session ID (unknown client identity).
-                        // cc_agent_hint will be unavailable until the client re-initializes.
-                        tracing::warn!("MCP session auto-recovered (stale session_id: {sid}); client identity unknown — cc_agent_hint disabled");
+                        // Auto-recover: re-register the stale session ID. We don't have
+                        // the original clientInfo, but User-Agent is usually enough to
+                        // keep cc_agent_hint working for long-lived Claude Code clients.
+                        let recovered_cc = is_cc_ua;
+                        tracing::warn!(
+                            "MCP session auto-recovered (stale session_id: {sid}); \
+                             is_claude_code={recovered_cc} (from User-Agent)"
+                        );
                         state.mcp_sessions.insert(sid.to_string(), crate::state::McpSessionMeta {
                             created_at: std::time::Instant::now(),
-                            is_claude_code: false,
+                            is_claude_code: recovered_cc,
                             has_sse_stream: false,
                         });
                         true
@@ -2259,12 +2275,16 @@ pub(super) async fn mcp_get(
         .get(MCP_SESSION_HEADER)
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
+    let is_cc_ua = detect_claude_code_from_headers(&headers);
     let session_valid = session_id.as_deref().map(|sid| {
         if !state.mcp_sessions.contains_key(sid) {
-            tracing::warn!("MCP SSE session auto-recovered (stale session_id: {sid}); client identity unknown — cc_agent_hint disabled");
+            tracing::warn!(
+                "MCP SSE session auto-recovered (stale session_id: {sid}); \
+                 is_claude_code={is_cc_ua} (from User-Agent)"
+            );
             state.mcp_sessions.insert(sid.to_string(), crate::state::McpSessionMeta {
                 created_at: std::time::Instant::now(),
-                is_claude_code: false,
+                is_claude_code: is_cc_ua,
                 has_sse_stream: false,
             });
         }

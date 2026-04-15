@@ -1239,10 +1239,14 @@ pub(crate) async fn get_all_pr_statuses_impl(
                 {
                     let cooldown_key = format!("{owner}/{name}");
                     let was_known = state.git_cache.github_repo_cooldown.contains_key(&cooldown_key);
-                    let expiry = Instant::now() + std::time::Duration::from_secs(3600);
+                    // 404 is effectively permanent (repo renamed/deleted/private/never existed).
+                    // Use a long cooldown — cleared only on app restart — to avoid re-warning
+                    // every hour indefinitely. The cooldown is in-memory so a restart is the
+                    // natural recovery point when the user fixes the remote URL.
+                    let expiry = Instant::now() + std::time::Duration::from_secs(24 * 3600);
                     state.git_cache.github_repo_cooldown.insert(cooldown_key, expiry);
                     if !was_known {
-                        let msg = format!("Repository {owner}/{name} not found on GitHub — cooldown 1h");
+                        let msg = format!("Repository {owner}/{name} not found on GitHub — cooldown 24h");
                         let mut buf = state.log_buffer.lock();
                         buf.push("warn".into(), "github".into(), msg, None);
                     }

@@ -503,7 +503,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
     const prevRepo = repositoriesStore.getActive();
     const prevBranchName = prevRepo?.activeBranch;
     const prevBranch = prevBranchName ? prevRepo?.branches[prevBranchName] : null;
-    appLogger.info("terminal", `BranchSelect LEAVING ${prevRepo?.path ?? "(none)"}/${prevBranchName ?? "(none)"}`, {
+    appLogger.debug("terminal", `BranchSelect LEAVING ${prevRepo?.path ?? "(none)"}/${prevBranchName ?? "(none)"}`, {
       prevTerminals: prevBranch?.terminals ?? [],
       prevHadTerminals: prevBranch?.hadTerminals,
       activeTerminalId: terminalsStore.state.activeId,
@@ -515,15 +515,15 @@ export function useGitOperations(deps: GitOperationsDeps) {
       const currentActiveId = terminalsStore.state.activeId;
       if (currentActiveId && prevBranch?.terminals.includes(currentActiveId)) {
         repositoriesStore.setBranch(prevRepo.path, prevRepo.activeBranch, { lastActiveTerminal: currentActiveId });
-        appLogger.info("terminal", `BranchSelect SAVE lastActiveTerminal=${currentActiveId} for ${prevRepo.activeBranch}`);
+        appLogger.debug("terminal", `BranchSelect SAVE lastActiveTerminal=${currentActiveId} for ${prevRepo.activeBranch}`);
       } else {
-        appLogger.info("terminal", `BranchSelect SKIP save lastActiveTerminal — activeId=${currentActiveId} not in branch terminals ${JSON.stringify(prevBranch?.terminals)}`);
+        appLogger.debug("terminal", `BranchSelect SKIP save lastActiveTerminal — activeId=${currentActiveId} not in branch terminals ${JSON.stringify(prevBranch?.terminals)}`);
       }
       // Save pane layout for the branch we're leaving
       if (paneLayoutStore.isSplit()) {
         const key = paneLayoutKey(prevRepo.path, prevRepo.activeBranch);
         savedPaneLayouts.set(key, paneLayoutStore.serialize());
-        appLogger.info("terminal", `BranchSelect SAVE paneLayout for ${prevRepo.activeBranch}`);
+        appLogger.debug("terminal", `BranchSelect SAVE paneLayout for ${prevRepo.activeBranch}`);
       } else {
         // Clear any stale layout if user unsplit while on this branch
         savedPaneLayouts.delete(paneLayoutKey(prevRepo.path, prevRepo.activeBranch));
@@ -565,7 +565,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
         if (claimedIds.has(id)) continue;
         const term = terminalsStore.get(id);
         if (term?.cwd === branch.worktreePath) {
-          appLogger.info("terminal", `BranchSelect: adopting orphan ${id} into ${branchName} (cwd matches worktreePath)`);
+          appLogger.debug("terminal", `BranchSelect: adopting orphan ${id} into ${branchName} (cwd matches worktreePath)`);
           repositoriesStore.addTerminalToBranch(repoPath, branchName, id);
         }
       }
@@ -573,7 +573,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
       branch = repositoriesStore.get(repoPath)?.branches[branchName];
     }
     const validTerminals = filterValidTerminals(branch?.terminals, terminalsStore.getIds());
-    appLogger.info("terminal", `BranchSelect → ${branchName}`, { branchTerminals: branch?.terminals, storeIds: terminalsStore.getIds(), valid: validTerminals, hadTerminals: branch?.hadTerminals, savedTerminals: branch?.savedTerminals?.length ?? 0 });
+    appLogger.debug("terminal", `BranchSelect → ${branchName}`, { branchTerminals: branch?.terminals, storeIds: terminalsStore.getIds(), valid: validTerminals, hadTerminals: branch?.hadTerminals, savedTerminals: branch?.savedTerminals?.length ?? 0 });
     if (validTerminals.length === 0 && (branch?.terminals?.length ?? 0) > 0) {
       appLogger.warn("terminal", `BranchSelect MISMATCH: branch has terminals ${JSON.stringify(branch?.terminals)} but none found in store ${JSON.stringify(terminalsStore.getIds())}. Will create fresh terminal.`);
     }
@@ -588,9 +588,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
         const allValid = layoutTerminals.length > 0 && layoutTerminals.every(id => validSet.has(id));
         if (allValid) {
           paneLayoutStore.restore(savedLayout);
-          appLogger.info("terminal", `BranchSelect RESTORE paneLayout for ${branchName}`);
+          appLogger.debug("terminal", `BranchSelect RESTORE paneLayout for ${branchName}`);
         } else {
-          appLogger.info("terminal", `BranchSelect DISCARD stale paneLayout for ${branchName} — terminal IDs changed`);
+          appLogger.debug("terminal", `BranchSelect DISCARD stale paneLayout for ${branchName} — terminal IDs changed`);
           savedPaneLayouts.delete(layoutKey);
           paneLayoutStore.reset();
         }
@@ -600,9 +600,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
         const validSet = new Set(validTerminals);
         const layoutTerminals = Object.values(currentLayout.groups).flatMap(g => g.tabs.filter(t => t.type === "terminal").map(t => t.id));
         if (layoutTerminals.length > 0 && layoutTerminals.every(id => validSet.has(id))) {
-          appLogger.info("terminal", `BranchSelect KEEP disk-restored paneLayout for ${branchName}`);
+          appLogger.debug("terminal", `BranchSelect KEEP disk-restored paneLayout for ${branchName}`);
         } else {
-          appLogger.info("terminal", `BranchSelect DISCARD disk-restored paneLayout for ${branchName} — terminal IDs changed`);
+          appLogger.debug("terminal", `BranchSelect DISCARD disk-restored paneLayout for ${branchName} — terminal IDs changed`);
           paneLayoutStore.reset();
         }
       } else {
@@ -611,15 +611,15 @@ export function useGitOperations(deps: GitOperationsDeps) {
       // Prefer a terminal that is awaiting input (question/error), then lastActive, then first
       const awaitingId = validTerminals.find(id => terminalsStore.get(id)?.awaitingInput);
       if (awaitingId) {
-        appLogger.info("terminal", `BranchSelect FOCUS awaitingInput terminal=${awaitingId} for ${branchName}`);
+        appLogger.debug("terminal", `BranchSelect FOCUS awaitingInput terminal=${awaitingId} for ${branchName}`);
         terminalsStore.setActive(awaitingId);
       } else {
         const remembered = branch?.lastActiveTerminal;
         if (remembered && validTerminals.includes(remembered)) {
-          appLogger.info("terminal", `BranchSelect RESTORE lastActiveTerminal=${remembered} for ${branchName}`);
+          appLogger.debug("terminal", `BranchSelect RESTORE lastActiveTerminal=${remembered} for ${branchName}`);
           terminalsStore.setActive(remembered);
         } else {
-          appLogger.info("terminal", `BranchSelect FALLBACK to first terminal=${validTerminals[0]} for ${branchName} (remembered=${remembered}, valid=${JSON.stringify(validTerminals)})`);
+          appLogger.debug("terminal", `BranchSelect FALLBACK to first terminal=${validTerminals[0]} for ${branchName} (remembered=${remembered}, valid=${JSON.stringify(validTerminals)})`);
           terminalsStore.setActive(validTerminals[0]);
         }
       }
@@ -658,7 +658,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
           idMap.set(oldTerminalIds[i], restoredIds[i].id);
         }
         paneLayoutStore.remapTerminalIds(idMap);
-        appLogger.info("terminal", `BranchSelect REMAP disk-restored paneLayout for ${branchName}`, { remapped: idMap.size });
+        appLogger.debug("terminal", `BranchSelect REMAP disk-restored paneLayout for ${branchName}`, { remapped: idMap.size });
       } else {
         paneLayoutStore.reset();
       }

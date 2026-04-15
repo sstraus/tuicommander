@@ -1026,7 +1026,12 @@ async fn run_health_checks(registry: &UpstreamRegistry) {
                         }
                         UpstreamStatus::Failed
                     } else {
-                        tracing::warn!(source = "mcp_registry", %name, "Health check failed — circuit opening");
+                        // Only log on transition into CircuitOpen; repeated probe failures
+                        // while already open are coalesced by the ring buffer but we want
+                        // to avoid generating the warn at all once the circuit is open.
+                        if status != UpstreamStatus::CircuitOpen {
+                            tracing::warn!(source = "mcp_registry", %name, "Health check failed — circuit opening");
+                        }
                         UpstreamStatus::CircuitOpen
                     };
                     *entry.status.write() = new_status.clone();
