@@ -207,6 +207,13 @@ pub struct PathStat {
 
 pub(crate) fn stat_path_impl(path: String) -> PathStat {
     let p = PathBuf::from(&path);
+    // SAFETY: Never probe macOS TCC-protected directories. std::fs::metadata on
+    // `~/Desktop/foo` triggers the system permission dialog and also lets
+    // untrusted callers (plugins, frontend bugs) probe arbitrary files outside
+    // any repo scope. Mirrors resolve_terminal_path's guard.
+    if is_tcc_protected_path(&p) {
+        return PathStat { exists: false, is_dir: false };
+    }
     match std::fs::metadata(&p) {
         Ok(meta) => PathStat { exists: true, is_dir: meta.is_dir() },
         Err(_) => PathStat { exists: false, is_dir: false },
@@ -1213,6 +1220,32 @@ mod tests {
         let dir = setup_test_repo();
         let missing = dir.path().join("does-not-exist");
         let stat = stat_path_impl(missing.to_string_lossy().to_string());
+        assert!(!stat.exists);
+        assert!(!stat.is_dir);
+    }
+
+    /// TCC-protected paths (Desktop, Documents, Downloads, …) must not be
+    /// probed with std::fs::metadata — that triggers the macOS permission
+    /// dialog and lets untrusted callers fingerprint user files.
+    /// Guard returns {exists:false, is_dir:false} unconditionally.
+    #[test]
+    fn test_stat_path_tcc_protected_returns_nonexistent() {
+        let Some(home) = dirs::home_dir() else { return; };
+        for protected in &["Desktop", "Documents", "Downloads", "Library", "Movies", "Music", "Pictures"] {
+            let candidate = home.join(protected).join("stat_path_tcc_probe");
+            let stat = stat_path_impl(candidate.to_string_lossy().to_string());
+            assert!(!stat.exists, "TCC-protected path {candidate:?} must report exists=false");
+            assert!(!stat.is_dir, "TCC-protected path {candidate:?} must report is_dir=false");
+        }
+    }
+
+    /// Probing ~/Desktop itself (the directory, not a file under it) also hits
+    /// the guard — no metadata call, no TCC dialog.
+    #[test]
+    fn test_stat_path_tcc_protected_dir_itself() {
+        let Some(home) = dirs::home_dir() else { return; };
+        let desktop = home.join("Desktop");
+        let stat = stat_path_impl(desktop.to_string_lossy().to_string());
         assert!(!stat.exists);
         assert!(!stat.is_dir);
     }
