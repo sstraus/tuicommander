@@ -277,9 +277,9 @@ const LEGACY_NOTIFY_ACTIONS: &str = "toast, confirm";
 const LEGACY_MESSAGING_ACTIONS: &str = "register, list_peers, send, inbox";
 const LEGACY_DEBUG_ACTIONS: &str = "agent_detection, logs, sessions, invoke_js";
 
-/// MCP tool definitions — 8 native tools (5 enabled by default)
+/// MCP tool definitions — 7 base native tools + 6 ai_terminal_* tools.
 fn native_tool_definitions() -> serde_json::Value {
-    let defs = serde_json::json!([
+    let mut defs = serde_json::json!([
         {
             "name": "session",
             "description": "PTY multiplexer (replaces tmux). Create terminals, send input (send-keys), read output (capture-pane), manage lifecycle.\n\nActions:\n- list: Active sessions with cwd, process info. Call first to discover IDs.\n- create: New PTY. Returns {session_id}. Optional: cwd, shell, rows, cols.\n- input: Send text and/or special_key to a session.\n- output: Read from ring buffer. Returns {data, total_written, exited, exit_code}.\n- status: Shell state for a session: {shell_state, idle_since_ms, busy_duration_ms, exit_code, agent_type}. Use to poll agent progress without streaming output.\n- resize: Change PTY dimensions.\n- close: Graceful shutdown (Ctrl+C, waits).\n- kill: Force SIGKILL (use when close fails).\n- pause: Pause output buffering. resume: Resume.",
@@ -372,6 +372,11 @@ fn native_tool_definitions() -> serde_json::Value {
             }, "required": ["action"] }
         }
     ]);
+
+    // Append ai_terminal_* tools (external MCP exposure of agent terminal tools).
+    if let Some(arr) = defs.as_array_mut() {
+        arr.extend(super::ai_terminal::tool_definitions());
+    }
 
     // Guard invariant: native tool names must never contain "__" — that prefix
     // is the routing discriminator for upstream proxy tools.
@@ -700,8 +705,11 @@ pub(crate) async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr
         "search_tools" => handle_search_tools(state, args),
         "get_tool_schema" => handle_get_tool_schema(state, args),
         "call_tool" => handle_call_tool(state, addr, args, mcp_session_id).await,
+        n if super::ai_terminal::is_ai_terminal_tool(n) => {
+            super::ai_terminal::handle(state, n, args).await
+        }
         _ => serde_json::json!({"error": format!(
-            "Unknown tool '{}'. Available: session, agent, repo, ui, plugin_dev_guide, config, debug, search_tools, get_tool_schema, call_tool", name
+            "Unknown tool '{}'. Available: session, agent, repo, ui, plugin_dev_guide, config, debug, search_tools, get_tool_schema, call_tool, ai_terminal_*", name
         )}),
     }
 }
@@ -3096,13 +3104,27 @@ mod tests {
     }
 
     #[test]
-    fn native_tool_definitions_returns_exactly_eight_tools() {
+    fn native_tool_definitions_returns_base_plus_ai_terminal_tools() {
         let defs = native_tool_definitions();
         let names = tool_names(&defs);
         assert_eq!(
             names,
-            vec!["session", "agent", "repo", "ui", "plugin_dev_guide", "config", "debug"],
-            "native_tool_definitions must return exactly these 7 tools in order"
+            vec![
+                "session",
+                "agent",
+                "repo",
+                "ui",
+                "plugin_dev_guide",
+                "config",
+                "debug",
+                "ai_terminal_read_screen",
+                "ai_terminal_send_input",
+                "ai_terminal_send_key",
+                "ai_terminal_wait_for",
+                "ai_terminal_get_state",
+                "ai_terminal_get_context",
+            ],
+            "native_tool_definitions must return 7 base tools + 6 ai_terminal_* tools in order"
         );
     }
 
@@ -3253,7 +3275,10 @@ mod tests {
     #[test]
     fn search_tools_returns_ranked_results_for_session_query() {
         let state = test_state();
-        let r = handle_search_tools(&state, &serde_json::json!({ "query": "terminal session management" }));
+        // Query targets the PTY multiplexer specifically — distinguishes
+        // `session` from the ai_terminal_* observation tools that also
+        // mention "terminal".
+        let r = handle_search_tools(&state, &serde_json::json!({ "query": "PTY multiplexer tmux pane lifecycle" }));
         let results = r["results"].as_array().unwrap();
         assert!(!results.is_empty(), "expected non-empty results");
         assert_eq!(results[0]["name"], "session");
