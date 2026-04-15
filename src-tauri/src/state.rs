@@ -968,6 +968,12 @@ pub struct AppState {
     /// Per-MCP-session broadcast channels for inter-agent messaging notifications.
     /// Each SSE listener subscribes; `send` action pushes here for real-time delivery.
     pub(crate) messaging_channels: DashMap<String, tokio::sync::broadcast::Sender<String>>,
+    /// Per-session command outcome + error/fix knowledge store.
+    /// Populated by pty.rs OSC 133 hooks and SessionState transitions.
+    /// Consumed by the agent loop for context injection.
+    #[allow(dead_code)]
+    pub(crate) session_knowledge:
+        DashMap<String, Mutex<crate::ai_agent::knowledge::SessionKnowledge>>,
 }
 
 /// Cloud relay client state (connection + shutdown handle).
@@ -2011,6 +2017,7 @@ pub(crate) mod tests_support {
             session_to_mcp: DashMap::new(),
             session_parent: DashMap::new(),
             messaging_channels: DashMap::new(),
+            session_knowledge: DashMap::new(),
             #[cfg(unix)]
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
             tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),
@@ -2456,6 +2463,7 @@ mod tests {
             session_to_mcp: DashMap::new(),
             session_parent: DashMap::new(),
             messaging_channels: DashMap::new(),
+            session_knowledge: DashMap::new(),
             #[cfg(unix)]
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
             tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),

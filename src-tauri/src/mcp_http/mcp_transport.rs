@@ -2748,6 +2748,7 @@ mod tests {
             session_to_mcp: dashmap::DashMap::new(),
             session_parent: dashmap::DashMap::new(),
             messaging_channels: dashmap::DashMap::new(),
+            session_knowledge: dashmap::DashMap::new(),
             #[cfg(unix)]
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
             tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),
