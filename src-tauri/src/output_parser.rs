@@ -1081,10 +1081,13 @@ fn parse_suggest(clean: &str, agent_active: bool) -> Option<ParsedEvent> {
             // Continuation with pipe — part of the pipe-separated list.
             full.push(' ');
             full.push_str(trimmed);
-        } else if !joined_tail && full.len() >= 70 {
-            // One pipeless tail allowed when the accumulated text is long
-            // enough to suggest terminal line-wrapping (>= 70 chars). Short
-            // suggest lines followed by unrelated output must NOT grab it.
+        } else if !joined_tail
+            && (full.matches('|').count() >= 2 || full.len() >= 40)
+        {
+            // One pipeless tail allowed when the suggest is already clearly
+            // complete (3+ items → 2+ pipes) or long enough to have wrapped
+            // on a narrow terminal. Short 2-item suggests followed by
+            // unrelated prose must NOT grab it.
             full.push(' ');
             full.push_str(trimmed);
             joined_tail = true;
@@ -2788,6 +2791,34 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         };
         assert_eq!(items.len(), 3);
         assert_eq!(items[2], "3) Ignorarla per ora e andare avanti con altra roba");
+    }
+
+    #[test]
+    fn test_suggest_narrow_wrap_three_items_short_first_line() {
+        // When the terminal is narrow (zoomed window) and `suggest:` is
+        // short but clearly complete (3 items → 2 pipes), the pipeless
+        // wrapped tail must still be joined even when total length < 70.
+        let input = "suggest: A | B | C\ntail wrap";
+        let items = parse_suggest(input, true);
+        let items = match items {
+            Some(ParsedEvent::Suggest { items }) => items,
+            _ => panic!("should parse narrow-wrap 3-item suggest"),
+        };
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[2], "C tail wrap");
+    }
+
+    #[test]
+    fn test_suggest_short_two_items_does_not_grab_tail() {
+        // A short 2-item suggest followed by unrelated prose must NOT grab
+        // the next line as wrap — the length/pipe-count thresholds reject it.
+        let input = "suggest: A | B\nsome unrelated prose here";
+        let items = parse_suggest(input, true);
+        let items = match items {
+            Some(ParsedEvent::Suggest { items }) => items,
+            _ => panic!("should still parse the suggest"),
+        };
+        assert_eq!(items, vec!["A", "B"]);
     }
 
     #[test]
