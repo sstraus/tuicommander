@@ -11,6 +11,50 @@ import { KeyComboCapture } from "../../shared/KeyComboCapture";
 import { appLogger } from "../../../stores/appLogger";
 import s from "../Settings.module.css";
 
+/**
+ * Guard that remembers the pre-capture global-hotkey value and restores it
+ * when the capture session ends without a successful `onChange`. Escape (or
+ * any other blur) in the KeyComboCapture widget emits onCapturingChange(false)
+ * without a preceding onChange — without this guard the hotkey cleared at the
+ * start of the session never comes back and the user silently loses their
+ * configured hotkey (story 1280-6717).
+ *
+ * Pure — takes the current/setter as a port so unit tests can drive it
+ * without Solid or settings-store internals.
+ */
+export function createGlobalHotkeyCaptureGuard(api: {
+  getCurrent: () => string | null;
+  setCurrent: (value: string | null) => Promise<void>;
+}) {
+  let savedValue: string | null = null;
+  let sessionActive = false;
+  let sawChangeThisSession = false;
+  return {
+    async onCapturingChange(capturing: boolean): Promise<void> {
+      if (capturing) {
+        sessionActive = true;
+        sawChangeThisSession = false;
+        savedValue = api.getCurrent();
+        if (savedValue !== null) {
+          await api.setCurrent(null);
+        }
+        return;
+      }
+      // capture ended
+      if (!sessionActive) return; // stray false — ignore
+      const toRestore = savedValue;
+      sessionActive = false;
+      savedValue = null;
+      if (!sawChangeThisSession && toRestore !== null) {
+        await api.setCurrent(toRestore);
+      }
+    },
+    notifyChange(): void {
+      sawChangeThisSession = true;
+    },
+  };
+}
+
 interface ShortcutEntry {
   action?: ActionName;
   keys: string;
@@ -272,6 +316,9 @@ export const KeyboardShortcutsTab: Component = () => {
 
   async function handleGlobalHotkeyChange(combo: string) {
     setGlobalHotkeyError(null);
+    // Tell the capture guard a new value was accepted so the subsequent
+    // onCapturingChange(false) doesn't restore the pre-capture value.
+    globalHotkeyGuard.notifyChange();
     try {
       const validated = validateGlobalHotkeyCombo(combo);
       await settingsStore.setGlobalHotkey(comboToTauri(validated));
@@ -291,18 +338,21 @@ export const KeyboardShortcutsTab: Component = () => {
     }
   }
 
-  /** Temporarily unregister global hotkey while capturing to avoid conflict */
+  /**
+   * Guard that temporarily unregisters the global hotkey on capture start and
+   * restores it if the user cancels (Escape, blur) without setting a new one.
+   * See createGlobalHotkeyCaptureGuard above for the rationale (story 1280-6717).
+   */
+  const globalHotkeyGuard = createGlobalHotkeyCaptureGuard({
+    getCurrent: () => settingsStore.state.globalHotkey,
+    setCurrent: (value) => settingsStore.setGlobalHotkey(value),
+  });
+
   async function handleGlobalCapturingChange(capturing: boolean) {
-    const current = settingsStore.state.globalHotkey;
-    if (!current) return;
     try {
-      if (capturing) {
-        // Temporarily unregister so the OS doesn't intercept the keypress
-        await settingsStore.setGlobalHotkey(null);
-      }
-      // On capture end, the new combo is set via handleGlobalHotkeyChange
+      await globalHotkeyGuard.onCapturingChange(capturing);
     } catch (err) {
-      appLogger.warn("config", "Failed to temporarily unregister global hotkey during capture", err);
+      appLogger.warn("config", "Failed to update global hotkey during capture transition", err);
     }
   }
 
