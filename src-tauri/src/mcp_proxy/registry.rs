@@ -854,7 +854,7 @@ fn start_oauth_flow(
 
     // Dev-mode uses the localhost callback server; production uses the
     // `tuic://` deep-link handler (resolved in the Tauri command layer, #1198).
-    let redirect_uri = "tuic://oauth/callback".to_string();
+    let redirect_uri = crate::mcp_oauth::OAUTH_REDIRECT_URI.to_string();
     let name_owned = name.to_string();
 
     tokio::spawn(async move {

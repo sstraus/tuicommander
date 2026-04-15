@@ -56,7 +56,7 @@ pub(crate) async fn start_mcp_upstream_oauth(
     };
 
     // `tuic://` is the deep-link the OS hands back to the running Tauri app.
-    let redirect_uri = "tuic://oauth-callback".to_string();
+    let redirect_uri = super::OAUTH_REDIRECT_URI.to_string();
     let outcome = flow_mgr
         .start_flow(&name, &server_url, &auth, &redirect_uri)
         .await
