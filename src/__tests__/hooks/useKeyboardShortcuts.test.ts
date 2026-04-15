@@ -231,6 +231,12 @@ describe("useKeyboardShortcuts", () => {
       expect(handlers.toggleNotesPanel).toHaveBeenCalled();
     });
 
+    it("Cmd+Alt+A toggles AI chat panel (option-modified key → å)", () => {
+      // On macOS, Cmd+Alt+A produces e.key="å" — combo must still resolve via e.code
+      fireKeydown("å", { metaKey: true, altKey: true, code: "KeyA" });
+      expect(handlers.toggleAiChatPanel).toHaveBeenCalled();
+    });
+
     it("Cmd+E toggles file browser panel", () => {
       fireKeydown("e", { metaKey: true });
       expect(handlers.toggleFileBrowserPanel).toHaveBeenCalled();

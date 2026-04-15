@@ -285,14 +285,15 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
         <button class="toggle-btn" onClick={() => props.onToggleFileBrowser?.()} title={`${t("statusBar.fileBrowser", "File Browser")} (${getModifierSymbol()}E)`} style={{ position: "relative" }}>
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
         </button>
-        <button class="toggle-btn" onClick={() => props.onToggleAiChat?.()} title={`AI Chat (${getModifierSymbol()}⌥A)`} style={{ position: "relative" }}>
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M3 2a2 2 0 00-2 2v6a2 2 0 002 2h1v2.5L7.5 12H13a2 2 0 002-2V4a2 2 0 00-2-2H3z"/></svg>
-        </button>
         <button class="toggle-btn" onClick={props.onToggleMarkdown} title={`${t("statusBar.markdown", "Markdown")} (${getModifierSymbol()}M)`} style={{ position: "relative" }}>
           <svg viewBox="0 0 208 128" width="16" height="10" fill="currentColor"><rect x="5" y="5" width="198" height="118" rx="12" fill="none" stroke="currentColor" stroke-width="12"/><path d="M30 98V30h20l20 25 20-25h20v68h-20V59L70 84 50 59v39H30zm125 0l-30-33h20V30h20v35h20l-30 33z"/></svg>
         </button>
         <button class="toggle-btn" onClick={props.onToggleDiff} title={`${t("statusBar.git", "Git")} (${getModifierSymbol()}⇧D)`} style={{ position: "relative" }}>
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 7H7v2H5v2h2v2h2v-2h2V9H9V7zm7 2h4v2h-4V9zm0 4h4v2h-4v-2zM5 19h14v2H5v-2zM5 3h14v2H5V3z"/></svg>
+        </button>
+
+        <button class="toggle-btn" onClick={() => props.onToggleAiChat?.()} title={`AI Chat (${getModifierSymbol()}⌥A)`} style={{ position: "relative" }}>
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M3 2a2 2 0 00-2 2v6a2 2 0 002 2h1v2.5L7.5 12H13a2 2 0 002-2V4a2 2 0 00-2-2H3z"/></svg>
         </button>
 
         {/* Mic button - hold to talk (rightmost) */}

@@ -118,6 +118,16 @@ export function eventToCombo(e: KeyboardEvent): string {
   let key = e.key.toLowerCase();
   if (modifierKeys.has(key)) return "";
 
+  // On macOS, Option modifies the character (Cmd+Alt+A → "å"). When Alt is
+  // held, derive letter/digit keys from e.code so combos match binding defs.
+  if (e.altKey && e.code) {
+    if (e.code.length === 4 && e.code.startsWith("Key")) {
+      key = e.code.charAt(3).toLowerCase();
+    } else if (e.code.length === 6 && e.code.startsWith("Digit")) {
+      key = e.code.charAt(5);
+    }
+  }
+
   // Un-shift the key so combos match binding definitions
   if (e.shiftKey && SHIFTED_KEY_MAP[key]) {
     key = SHIFTED_KEY_MAP[key];
