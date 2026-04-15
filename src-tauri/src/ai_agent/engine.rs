@@ -466,7 +466,7 @@ async fn run_loop(
                 args: tc.fn_arguments.clone(),
             });
 
-            let result = tools::dispatch(&state, &tc.fn_name, &tc.fn_arguments).await;
+            let result = tools::dispatch(&state, &session_id, &tc.fn_name, &tc.fn_arguments).await;
 
             let _ = event_tx.send(AgentLoopEvent::ToolResult {
                 session_id: session_id.clone(),

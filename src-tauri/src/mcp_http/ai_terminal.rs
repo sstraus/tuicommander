@@ -125,7 +125,8 @@ pub(crate) async fn handle(
         }
     }
 
-    let result = crate::ai_agent::tools::dispatch(state, inner, args).await;
+    let session_id = args["session_id"].as_str().unwrap_or("");
+    let result = crate::ai_agent::tools::dispatch(state, session_id, inner, args).await;
     if result.success {
         serde_json::json!({"output": result.output})
     } else {

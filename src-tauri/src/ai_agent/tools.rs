@@ -1,9 +1,18 @@
 use serde::Serialize;
 use serde_json::{json, Value};
+use std::io::Write;
 use std::sync::Arc;
 
 use crate::state::AppState;
 use super::safety::{SafetyChecker, RegexSafetyChecker, SafetyVerdict, SafeKey, KeyRisk};
+use super::sandbox::FileSandbox;
+
+/// Max file size accepted by `read_file` / `edit_file` (10 MB).
+const MAX_FILE_BYTES: u64 = 10 * 1024 * 1024;
+/// Default page size for `read_file` when `limit` is unset.
+const READ_FILE_DEFAULT_LINES: usize = 200;
+/// Upper bound for `read_file` `limit`.
+const READ_FILE_MAX_LINES: usize = 2000;
 
 /// Result of executing an agent tool.
 #[derive(Debug, Clone, Serialize)]
@@ -98,6 +107,45 @@ pub fn tool_definitions() -> Value {
                     "session_id": { "type": "string", "description": "PTY session ID" }
                 },
                 "required": ["session_id"]
+            }
+        },
+        {
+            "name": "read_file",
+            "description": "Read a text file from the session's sandboxed repo. Paginated: returns up to 200 lines by default (max 2000). Binary files and files >10MB are rejected. Output is prefixed with line numbers. Secrets are redacted.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_path": { "type": "string", "description": "Path relative to the sandbox root, or absolute path within it" },
+                    "offset": { "type": "integer", "description": "0-based line offset to start reading from", "default": 0 },
+                    "limit": { "type": "integer", "description": "Max lines to return (default 200, max 2000)", "default": 200 }
+                },
+                "required": ["file_path"]
+            }
+        },
+        {
+            "name": "write_file",
+            "description": "Create or overwrite a text file within the session's sandbox. Writes atomically via tmp+rename. Use `edit_file` for surgical changes to existing files.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_path": { "type": "string", "description": "Path relative to the sandbox root, or absolute path within it" },
+                    "content": { "type": "string", "description": "Full file content to write" }
+                },
+                "required": ["file_path", "content"]
+            }
+        },
+        {
+            "name": "edit_file",
+            "description": "Surgical search-and-replace on a file. `old_string` must appear exactly once unless `replace_all` is true. Include enough surrounding context in `old_string` to disambiguate.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_path": { "type": "string", "description": "Path relative to the sandbox root, or absolute path within it" },
+                    "old_string": { "type": "string", "description": "Exact text to replace (must be unique unless replace_all=true)" },
+                    "new_string": { "type": "string", "description": "Replacement text" },
+                    "replace_all": { "type": "boolean", "description": "Replace every occurrence (default false)", "default": false }
+                },
+                "required": ["file_path", "old_string", "new_string"]
             }
         }
     ])
@@ -399,12 +447,258 @@ fn exec_get_context(state: &AppState, args: &Value) -> ToolResult {
     ToolResult::ok(context.to_string())
 }
 
+// ── Filesystem tools ──────────────────────────────────────────
+
+/// Fetch (or lazily create) the filesystem sandbox for a session. The CWD
+/// fallback keeps tests + unconfigured sessions usable; production wiring
+/// will populate the map at agent-loop start.
+fn get_sandbox(state: &AppState, session_id: &str) -> Result<FileSandbox, String> {
+    if let Some(sb) = state.file_sandboxes.get(session_id) {
+        return Ok(sb.clone());
+    }
+    Err(format!("No filesystem sandbox for session: {session_id}"))
+}
+
+fn missing_arg(name: &str) -> ToolResult {
+    ToolResult::err(format!("Missing argument: {name}"))
+}
+
+/// `read_file`: paginated, line-numbered file read with binary + size guards.
+fn exec_read_file(state: &AppState, session_id: &str, args: &Value) -> ToolResult {
+    let Some(file_path) = args["file_path"].as_str() else {
+        return missing_arg("file_path");
+    };
+    let offset = args["offset"].as_u64().unwrap_or(0) as usize;
+    let requested_limit = args["limit"].as_u64().map(|v| v as usize).unwrap_or(READ_FILE_DEFAULT_LINES);
+    let limit = requested_limit.min(READ_FILE_MAX_LINES).max(1);
+
+    let sandbox = match get_sandbox(state, session_id) {
+        Ok(s) => s,
+        Err(e) => return ToolResult::err(e),
+    };
+    let resolved = match sandbox.resolve(file_path) {
+        Ok(p) => p,
+        Err(e) => return ToolResult::err(e),
+    };
+
+    let meta = match std::fs::metadata(&resolved) {
+        Ok(m) => m,
+        Err(e) => return ToolResult::err(format!("stat failed: {e}")),
+    };
+    if !meta.is_file() {
+        return ToolResult::err(format!("not a regular file: {}", resolved.display()));
+    }
+    if meta.len() > MAX_FILE_BYTES {
+        return ToolResult::err(format!(
+            "file too large: {} bytes (max {})",
+            meta.len(),
+            MAX_FILE_BYTES
+        ));
+    }
+    if FileSandbox::is_binary(&resolved) {
+        return ToolResult::err("binary file rejected".to_string());
+    }
+
+    let content = match std::fs::read_to_string(&resolved) {
+        Ok(s) => s,
+        Err(e) => return ToolResult::err(format!("read failed: {e}")),
+    };
+
+    let lines: Vec<&str> = content.split('\n').collect();
+    // `split('\n')` on a trailing newline produces an extra empty element;
+    // drop it so the line count matches the visible content.
+    let total_lines = if content.ends_with('\n') && !lines.is_empty() {
+        lines.len() - 1
+    } else {
+        lines.len()
+    };
+
+    if offset >= total_lines && total_lines > 0 {
+        return ToolResult::err(format!(
+            "offset {offset} past end of file ({total_lines} lines)"
+        ));
+    }
+
+    let end = (offset + limit).min(total_lines);
+    let mut out = String::with_capacity(content.len().min(64 * 1024));
+    for (i, line) in lines[offset..end].iter().enumerate() {
+        use std::fmt::Write as _;
+        let _ = writeln!(out, "{}\t{}", offset + i + 1, line);
+    }
+
+    if end < total_lines {
+        use std::fmt::Write as _;
+        let _ = write!(
+            out,
+            "[... truncated: {total_lines} lines total, showing {}-{}. Use offset={end} to continue ...]",
+            offset + 1,
+            end
+        );
+    }
+
+    ToolResult::ok(redact_secrets(&out))
+}
+
+/// `write_file`: atomic full overwrite (tmp+rename) inside the sandbox.
+fn exec_write_file(state: &AppState, session_id: &str, args: &Value) -> ToolResult {
+    let Some(file_path) = args["file_path"].as_str() else {
+        return missing_arg("file_path");
+    };
+    let Some(content) = args["content"].as_str() else {
+        return missing_arg("content");
+    };
+
+    let sandbox = match get_sandbox(state, session_id) {
+        Ok(s) => s,
+        Err(e) => return ToolResult::err(e),
+    };
+    let resolved = match sandbox.resolve_for_write(file_path) {
+        Ok(p) => p,
+        Err(e) => return ToolResult::err(e),
+    };
+
+    let tmp = {
+        let mut t = resolved.clone().into_os_string();
+        t.push(".tmp.tuic");
+        std::path::PathBuf::from(t)
+    };
+
+    let bytes = content.as_bytes();
+    let write_result = (|| -> std::io::Result<()> {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(bytes)?;
+        f.flush()?;
+        Ok(())
+    })();
+    if let Err(e) = write_result {
+        let _ = std::fs::remove_file(&tmp);
+        return ToolResult::err(format!("write failed: {e}"));
+    }
+    if let Err(e) = std::fs::rename(&tmp, &resolved) {
+        let _ = std::fs::remove_file(&tmp);
+        return ToolResult::err(format!("rename failed: {e}"));
+    }
+
+    ToolResult::ok(
+        json!({
+            "written": true,
+            "path": resolved.display().to_string(),
+            "bytes": bytes.len(),
+        })
+        .to_string(),
+    )
+}
+
+/// `edit_file`: string-exact search-and-replace with uniqueness enforcement.
+fn exec_edit_file(state: &AppState, session_id: &str, args: &Value) -> ToolResult {
+    let Some(file_path) = args["file_path"].as_str() else {
+        return missing_arg("file_path");
+    };
+    let Some(old_string) = args["old_string"].as_str() else {
+        return missing_arg("old_string");
+    };
+    let Some(new_string) = args["new_string"].as_str() else {
+        return missing_arg("new_string");
+    };
+    let replace_all = args["replace_all"].as_bool().unwrap_or(false);
+
+    if old_string.is_empty() {
+        return ToolResult::err("old_string must not be empty".to_string());
+    }
+    if old_string == new_string {
+        return ToolResult::err("old_string and new_string are identical".to_string());
+    }
+
+    let sandbox = match get_sandbox(state, session_id) {
+        Ok(s) => s,
+        Err(e) => return ToolResult::err(e),
+    };
+    let resolved = match sandbox.resolve(file_path) {
+        Ok(p) => p,
+        Err(e) => return ToolResult::err(e),
+    };
+
+    let meta = match std::fs::metadata(&resolved) {
+        Ok(m) => m,
+        Err(e) => return ToolResult::err(format!("stat failed: {e}")),
+    };
+    if !meta.is_file() {
+        return ToolResult::err(format!("not a regular file: {}", resolved.display()));
+    }
+    if meta.len() > MAX_FILE_BYTES {
+        return ToolResult::err(format!(
+            "file too large: {} bytes (max {})",
+            meta.len(),
+            MAX_FILE_BYTES
+        ));
+    }
+
+    let content = match std::fs::read_to_string(&resolved) {
+        Ok(s) => s,
+        Err(e) => return ToolResult::err(format!("read failed: {e}")),
+    };
+
+    let occurrences = content.matches(old_string).count();
+    if occurrences == 0 {
+        return ToolResult::err(
+            json!({
+                "error": "old_string_not_found",
+                "hint": "The literal string was not found — verify whitespace, line endings, and casing.",
+            })
+            .to_string(),
+        );
+    }
+    if occurrences > 1 && !replace_all {
+        return ToolResult::err(
+            json!({
+                "error": "old_string_not_unique",
+                "occurrences": occurrences,
+                "hint": "Include more surrounding lines in old_string, or set replace_all=true.",
+            })
+            .to_string(),
+        );
+    }
+
+    let updated = if replace_all {
+        content.replace(old_string, new_string)
+    } else {
+        content.replacen(old_string, new_string, 1)
+    };
+
+    let replacements = if replace_all { occurrences } else { 1 };
+
+    // Reuse atomic write path.
+    let write_args = json!({
+        "file_path": file_path,
+        "content": updated,
+    });
+    let write_res = exec_write_file(state, session_id, &write_args);
+    if !write_res.success {
+        return write_res;
+    }
+
+    ToolResult::ok(
+        json!({
+            "edited": true,
+            "replacements": replacements,
+            "path": resolved.display().to_string(),
+        })
+        .to_string(),
+    )
+}
+
 // ── Dispatch ──────────────────────────────────────────────────
 
 /// Dispatch a tool call by function name.
-/// Async because `wait_for` needs to poll.
+///
+/// `session_id` is the identity of the agent's PTY session — threaded through
+/// so filesystem tools can look up their sandbox without the LLM needing to
+/// pass it explicitly. Terminal tools continue to read `session_id` from
+/// `args` (the LLM still supplies it) but the dispatch-level value is the
+/// source of truth for cross-session isolation.
 pub async fn dispatch(
     state: &Arc<AppState>,
+    session_id: &str,
     fn_name: &str,
     args: &Value,
 ) -> ToolResult {
@@ -415,6 +709,9 @@ pub async fn dispatch(
         "wait_for" => exec_wait_for(state, args).await,
         "get_state" => exec_get_state(state, args),
         "get_context" => exec_get_context(state, args),
+        "read_file" => exec_read_file(state, session_id, args),
+        "write_file" => exec_write_file(state, session_id, args),
+        "edit_file" => exec_edit_file(state, session_id, args),
         other => ToolResult::err(format!("Unknown tool: {other}")),
     }
 }
@@ -425,11 +722,21 @@ mod tests {
 
     // ── tool_definitions ───────────────────────────────────────
 
+    const TERMINAL_TOOLS: &[&str] = &[
+        "read_screen",
+        "send_input",
+        "send_key",
+        "wait_for",
+        "get_state",
+        "get_context",
+    ];
+    const FILESYSTEM_TOOLS: &[&str] = &["read_file", "write_file", "edit_file"];
+
     #[test]
-    fn definitions_returns_6_tools() {
+    fn definitions_returns_9_tools() {
         let defs = tool_definitions();
         let arr = defs.as_array().unwrap();
-        assert_eq!(arr.len(), 6);
+        assert_eq!(arr.len(), 9);
     }
 
     #[test]
@@ -446,23 +753,56 @@ mod tests {
     #[test]
     fn tool_names_are_correct() {
         let defs = tool_definitions();
-        let names: Vec<&str> = defs.as_array().unwrap()
+        let names: Vec<&str> = defs
+            .as_array()
+            .unwrap()
             .iter()
             .map(|t| t["name"].as_str().unwrap())
             .collect();
-        assert_eq!(names, vec![
-            "read_screen", "send_input", "send_key",
-            "wait_for", "get_state", "get_context"
-        ]);
+        assert_eq!(
+            names,
+            vec![
+                "read_screen",
+                "send_input",
+                "send_key",
+                "wait_for",
+                "get_state",
+                "get_context",
+                "read_file",
+                "write_file",
+                "edit_file",
+            ]
+        );
     }
 
     #[test]
-    fn all_tools_require_session_id() {
+    fn terminal_tools_require_session_id() {
         let defs = tool_definitions();
         for tool in defs.as_array().unwrap() {
+            let name = tool["name"].as_str().unwrap();
+            if !TERMINAL_TOOLS.contains(&name) {
+                continue;
+            }
             let required = tool["inputSchema"]["required"].as_array().unwrap();
             let has_session_id = required.iter().any(|v| v == "session_id");
-            assert!(has_session_id, "tool {} must require session_id", tool["name"]);
+            assert!(
+                has_session_id,
+                "terminal tool {name} must require session_id"
+            );
+        }
+    }
+
+    #[test]
+    fn filesystem_tools_require_file_path() {
+        let defs = tool_definitions();
+        for tool in defs.as_array().unwrap() {
+            let name = tool["name"].as_str().unwrap();
+            if !FILESYSTEM_TOOLS.contains(&name) {
+                continue;
+            }
+            let required = tool["inputSchema"]["required"].as_array().unwrap();
+            let has_file_path = required.iter().any(|v| v == "file_path");
+            assert!(has_file_path, "fs tool {name} must require file_path");
         }
     }
 
@@ -598,7 +938,7 @@ mod tests {
     #[tokio::test]
     async fn dispatch_unknown_tool() {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
-        let result = dispatch(&state, "nonexistent", &json!({})).await;
+        let result = dispatch(&state, "test", "nonexistent", &json!({})).await;
         assert!(!result.success);
         assert!(result.output.contains("Unknown tool"));
     }
@@ -606,7 +946,7 @@ mod tests {
     #[tokio::test]
     async fn dispatch_read_screen_missing_session() {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
-        let result = dispatch(&state, "read_screen", &json!({"session_id": "nope"})).await;
+        let result = dispatch(&state, "test", "read_screen", &json!({"session_id": "nope"})).await;
         assert!(!result.success);
         assert!(result.output.contains("No VT buffer"));
     }
@@ -614,7 +954,7 @@ mod tests {
     #[tokio::test]
     async fn dispatch_send_input_blocks_sudo() {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
-        let result = dispatch(&state, "send_input", &json!({
+        let result = dispatch(&state, "test", "send_input", &json!({
             "session_id": "test",
             "command": "sudo rm -rf /"
         })).await;
@@ -625,7 +965,7 @@ mod tests {
     #[tokio::test]
     async fn dispatch_send_input_needs_approval_for_rm_rf() {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
-        let result = dispatch(&state, "send_input", &json!({
+        let result = dispatch(&state, "test", "send_input", &json!({
             "session_id": "test",
             "command": "rm -rf /tmp/build"
         })).await;
@@ -636,7 +976,7 @@ mod tests {
     #[tokio::test]
     async fn dispatch_send_key_blocks_ctrl_d() {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
-        let result = dispatch(&state, "send_key", &json!({
+        let result = dispatch(&state, "test", "send_key", &json!({
             "session_id": "test",
             "key": "ctrl-d"
         })).await;
@@ -647,14 +987,14 @@ mod tests {
     #[tokio::test]
     async fn dispatch_get_state_missing_session() {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
-        let result = dispatch(&state, "get_state", &json!({"session_id": "nope"})).await;
+        let result = dispatch(&state, "test", "get_state", &json!({"session_id": "nope"})).await;
         assert!(!result.success);
     }
 
     #[tokio::test]
     async fn dispatch_get_context_missing_session() {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
-        let result = dispatch(&state, "get_context", &json!({"session_id": "nope"})).await;
+        let result = dispatch(&state, "test", "get_context", &json!({"session_id": "nope"})).await;
         assert!(result.success); // Returns defaults for missing session
         assert!(result.output.contains("shell_state"));
     }
@@ -662,11 +1002,351 @@ mod tests {
     #[tokio::test]
     async fn dispatch_wait_for_invalid_regex() {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
-        let result = dispatch(&state, "wait_for", &json!({
+        let result = dispatch(&state, "test", "wait_for", &json!({
             "session_id": "test",
             "pattern": "[invalid"
         })).await;
         assert!(!result.success);
         assert!(result.output.contains("Invalid regex"));
+    }
+
+    // ── Filesystem tools ───────────────────────────────────────
+
+    use tempfile::TempDir;
+
+    fn fs_test_state(session: &str) -> (TempDir, Arc<AppState>) {
+        let dir = TempDir::new().unwrap();
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let sb = FileSandbox::new(dir.path()).unwrap();
+        state.file_sandboxes.insert(session.to_string(), sb);
+        (dir, state)
+    }
+
+    #[tokio::test]
+    async fn read_file_requires_sandbox() {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let r = dispatch(&state, "nosession", "read_file", &json!({ "file_path": "x.txt" })).await;
+        assert!(!r.success);
+        assert!(r.output.contains("No filesystem sandbox"));
+    }
+
+    #[tokio::test]
+    async fn read_file_missing_file_path_arg() {
+        let (_d, state) = fs_test_state("s1");
+        let r = dispatch(&state, "s1", "read_file", &json!({})).await;
+        assert!(!r.success);
+        assert!(r.output.contains("file_path"));
+    }
+
+    #[tokio::test]
+    async fn read_file_returns_numbered_lines() {
+        let (dir, state) = fs_test_state("s1");
+        std::fs::write(dir.path().join("a.txt"), "alpha\nbeta\ngamma\n").unwrap();
+        let r = dispatch(&state, "s1", "read_file", &json!({ "file_path": "a.txt" })).await;
+        assert!(r.success, "{}", r.output);
+        assert!(r.output.contains("1\talpha"));
+        assert!(r.output.contains("2\tbeta"));
+        assert!(r.output.contains("3\tgamma"));
+        assert!(!r.output.contains("truncated"));
+    }
+
+    #[tokio::test]
+    async fn read_file_respects_offset_and_limit() {
+        let (dir, state) = fs_test_state("s1");
+        let body: String = (1..=10).map(|i| format!("line{i}\n")).collect();
+        std::fs::write(dir.path().join("a.txt"), body).unwrap();
+        let r = dispatch(
+            &state,
+            "s1",
+            "read_file",
+            &json!({ "file_path": "a.txt", "offset": 3, "limit": 2 }),
+        )
+        .await;
+        assert!(r.success);
+        assert!(r.output.contains("4\tline4"));
+        assert!(r.output.contains("5\tline5"));
+        assert!(!r.output.contains("line3"));
+        assert!(r.output.contains("truncated"));
+        assert!(r.output.contains("offset=5"));
+    }
+
+    #[tokio::test]
+    async fn read_file_caps_limit_at_2000() {
+        let (dir, state) = fs_test_state("s1");
+        std::fs::write(dir.path().join("a.txt"), "x\n").unwrap();
+        let r = dispatch(
+            &state,
+            "s1",
+            "read_file",
+            &json!({ "file_path": "a.txt", "limit": 10_000 }),
+        )
+        .await;
+        // Should succeed without error — cap is silently applied.
+        assert!(r.success);
+    }
+
+    #[tokio::test]
+    async fn read_file_rejects_binary() {
+        let (dir, state) = fs_test_state("s1");
+        std::fs::write(dir.path().join("b.bin"), [0xff, 0xfe, 0x00, 0xc3, 0x28]).unwrap();
+        let r = dispatch(&state, "s1", "read_file", &json!({ "file_path": "b.bin" })).await;
+        assert!(!r.success);
+        assert!(r.output.contains("binary"));
+    }
+
+    #[tokio::test]
+    async fn read_file_rejects_oversized() {
+        let (dir, state) = fs_test_state("s1");
+        // Create a sparse file larger than MAX_FILE_BYTES without writing 10MB.
+        let path = dir.path().join("big.txt");
+        let f = std::fs::File::create(&path).unwrap();
+        f.set_len(MAX_FILE_BYTES + 1).unwrap();
+        let r = dispatch(&state, "s1", "read_file", &json!({ "file_path": "big.txt" })).await;
+        assert!(!r.success);
+        assert!(r.output.contains("too large"));
+    }
+
+    #[tokio::test]
+    async fn read_file_rejects_path_outside_sandbox() {
+        let (_d, state) = fs_test_state("s1");
+        let r = dispatch(
+            &state,
+            "s1",
+            "read_file",
+            &json!({ "file_path": "../../etc/passwd" }),
+        )
+        .await;
+        assert!(!r.success);
+    }
+
+    #[tokio::test]
+    async fn read_file_redacts_secrets() {
+        let (dir, state) = fs_test_state("s1");
+        std::fs::write(
+            dir.path().join("env"),
+            "OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz0123\n",
+        )
+        .unwrap();
+        let r = dispatch(&state, "s1", "read_file", &json!({ "file_path": "env" })).await;
+        assert!(r.success);
+        assert!(r.output.contains("[REDACTED]"));
+        assert!(!r.output.contains("sk-abcdef"));
+    }
+
+    #[tokio::test]
+    async fn write_file_creates_new_file() {
+        let (dir, state) = fs_test_state("s1");
+        let r = dispatch(
+            &state,
+            "s1",
+            "write_file",
+            &json!({ "file_path": "new.txt", "content": "hello" }),
+        )
+        .await;
+        assert!(r.success, "{}", r.output);
+        let written = std::fs::read_to_string(dir.path().join("new.txt")).unwrap();
+        assert_eq!(written, "hello");
+        assert!(r.output.contains("\"written\":true"));
+        assert!(r.output.contains("\"bytes\":5"));
+    }
+
+    #[tokio::test]
+    async fn write_file_overwrites_existing() {
+        let (dir, state) = fs_test_state("s1");
+        std::fs::write(dir.path().join("a.txt"), "old").unwrap();
+        let r = dispatch(
+            &state,
+            "s1",
+            "write_file",
+            &json!({ "file_path": "a.txt", "content": "new" }),
+        )
+        .await;
+        assert!(r.success);
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+            "new"
+        );
+    }
+
+    #[tokio::test]
+    async fn write_file_creates_nested_dirs() {
+        let (dir, state) = fs_test_state("s1");
+        let r = dispatch(
+            &state,
+            "s1",
+            "write_file",
+            &json!({ "file_path": "a/b/c.txt", "content": "x" }),
+        )
+        .await;
+        assert!(r.success, "{}", r.output);
+        assert!(dir.path().join("a/b/c.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn write_file_is_atomic_no_leftover_tmp() {
+        let (dir, state) = fs_test_state("s1");
+        let _ = dispatch(
+            &state,
+            "s1",
+            "write_file",
+            &json!({ "file_path": "a.txt", "content": "x" }),
+        )
+        .await;
+        // Make sure no .tmp.tuic leftover.
+        for entry in std::fs::read_dir(dir.path()).unwrap().flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            assert!(!name.ends_with(".tmp.tuic"), "leftover tmp: {name}");
+        }
+    }
+
+    #[tokio::test]
+    async fn write_file_rejects_path_outside_sandbox() {
+        let (_d, state) = fs_test_state("s1");
+        let r = dispatch(
+            &state,
+            "s1",
+            "write_file",
+            &json!({ "file_path": "../escape.txt", "content": "x" }),
+        )
+        .await;
+        assert!(!r.success);
+    }
+
+    #[tokio::test]
+    async fn edit_file_replaces_unique_occurrence() {
+        let (dir, state) = fs_test_state("s1");
+        std::fs::write(dir.path().join("a.txt"), "foo bar baz").unwrap();
+        let r = dispatch(
+            &state,
+            "s1",
+            "edit_file",
+            &json!({ "file_path": "a.txt", "old_string": "bar", "new_string": "BAR" }),
+        )
+        .await;
+        assert!(r.success, "{}", r.output);
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+            "foo BAR baz"
+        );
+        assert!(r.output.contains("\"edited\":true"));
+        assert!(r.output.contains("\"replacements\":1"));
+    }
+
+    #[tokio::test]
+    async fn edit_file_rejects_non_unique_without_replace_all() {
+        let (dir, state) = fs_test_state("s1");
+        std::fs::write(dir.path().join("a.txt"), "x x x").unwrap();
+        let r = dispatch(
+            &state,
+            "s1",
+            "edit_file",
+            &json!({ "file_path": "a.txt", "old_string": "x", "new_string": "y" }),
+        )
+        .await;
+        assert!(!r.success);
+        assert!(r.output.contains("old_string_not_unique"));
+        assert!(r.output.contains("\"occurrences\":3"));
+        // Verify file is unchanged.
+        assert_eq!(std::fs::read_to_string(dir.path().join("a.txt")).unwrap(), "x x x");
+    }
+
+    #[tokio::test]
+    async fn edit_file_replace_all_replaces_all() {
+        let (dir, state) = fs_test_state("s1");
+        std::fs::write(dir.path().join("a.txt"), "x x x").unwrap();
+        let r = dispatch(
+            &state,
+            "s1",
+            "edit_file",
+            &json!({
+                "file_path": "a.txt",
+                "old_string": "x",
+                "new_string": "y",
+                "replace_all": true,
+            }),
+        )
+        .await;
+        assert!(r.success);
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+            "y y y"
+        );
+        assert!(r.output.contains("\"replacements\":3"));
+    }
+
+    #[tokio::test]
+    async fn edit_file_rejects_missing_old_string() {
+        let (dir, state) = fs_test_state("s1");
+        std::fs::write(dir.path().join("a.txt"), "hello").unwrap();
+        let r = dispatch(
+            &state,
+            "s1",
+            "edit_file",
+            &json!({ "file_path": "a.txt", "old_string": "world", "new_string": "earth" }),
+        )
+        .await;
+        assert!(!r.success);
+        assert!(r.output.contains("old_string_not_found"));
+    }
+
+    #[tokio::test]
+    async fn edit_file_rejects_empty_old_string() {
+        let (dir, state) = fs_test_state("s1");
+        std::fs::write(dir.path().join("a.txt"), "hello").unwrap();
+        let r = dispatch(
+            &state,
+            "s1",
+            "edit_file",
+            &json!({ "file_path": "a.txt", "old_string": "", "new_string": "x" }),
+        )
+        .await;
+        assert!(!r.success);
+        assert!(r.output.contains("must not be empty"));
+    }
+
+    #[tokio::test]
+    async fn edit_file_rejects_identical_strings() {
+        let (dir, state) = fs_test_state("s1");
+        std::fs::write(dir.path().join("a.txt"), "hello").unwrap();
+        let r = dispatch(
+            &state,
+            "s1",
+            "edit_file",
+            &json!({ "file_path": "a.txt", "old_string": "hello", "new_string": "hello" }),
+        )
+        .await;
+        assert!(!r.success);
+        assert!(r.output.contains("identical"));
+    }
+
+    #[tokio::test]
+    async fn edit_file_rejects_path_outside_sandbox() {
+        let (_d, state) = fs_test_state("s1");
+        let r = dispatch(
+            &state,
+            "s1",
+            "edit_file",
+            &json!({ "file_path": "../a.txt", "old_string": "x", "new_string": "y" }),
+        )
+        .await;
+        assert!(!r.success);
+    }
+
+    #[tokio::test]
+    async fn dispatch_routes_fs_tools() {
+        // Unknown file_path -> the tool routes correctly and surfaces a
+        // sandbox/resolve error, not an "unknown tool" error.
+        let (_d, state) = fs_test_state("s1");
+        for name in &["read_file", "write_file", "edit_file"] {
+            let args = match *name {
+                "write_file" => json!({ "file_path": "nope", "content": "x" }),
+                "edit_file" => {
+                    json!({ "file_path": "nope", "old_string": "a", "new_string": "b" })
+                }
+                _ => json!({ "file_path": "nope" }),
+            };
+            let r = dispatch(&state, "s1", name, &args).await;
+            assert!(!r.output.contains("Unknown tool"), "tool {name} did not route");
+        }
     }
 }
