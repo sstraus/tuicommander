@@ -188,6 +188,19 @@ export function createKeybindingsStore() {
       await this.save();
     },
 
+    /**
+     * Explicitly unbind an action: persist a null override so hydrate restores
+     * it as unbound. Used by the conflict-replace flow so the displaced action
+     * is removed from both lookups instead of relying on rebuildMaps' implicit
+     * first-writer-wins resolution (story 1279-ff10).
+     */
+    async unbind(action: string): Promise<void> {
+      userOverrides.set(action, null);
+      rebuildMaps(getMergedBindings());
+      setVersion((v) => v + 1);
+      await this.save();
+    },
+
     /** Reset a single action to its default binding and persist */
     async resetAction(action: string): Promise<void> {
       userOverrides.delete(action);

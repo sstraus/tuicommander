@@ -361,6 +361,39 @@ describe("keybindingsStore", () => {
     });
   });
 
+  describe("unbind (explicit conflict-replace, story 1279-ff10)", () => {
+    it("unbind removes both lookups for the action", async () => {
+      mockInvoke.mockResolvedValue(undefined);
+
+      await store.unbind("toggle-git-ops");
+
+      expect(store.getKeyForAction("toggle-git-ops")).toBeUndefined();
+      expect(store.getActionForCombo("cmd+shift+d")).toBeUndefined();
+      // Persisted as an explicit null override so hydrate restores it as unbound
+      expect(mockInvoke).toHaveBeenLastCalledWith("save_keybindings", {
+        config: [{ action: "toggle-git-ops", key: null }],
+      });
+    });
+
+    it("unbind(displaced) + setOverride(new, combo) yields a single binding", async () => {
+      // Simulates the confirm-conflict-replace UI flow: user wants `new-terminal`
+      // on Cmd+Shift+D (currently bound to `toggle-git-ops`). The UI must
+      // explicitly unbind the displaced action, not rely on first-writer-wins
+      // in rebuildMaps.
+      mockInvoke.mockResolvedValue(undefined);
+
+      await store.unbind("toggle-git-ops");
+      await store.setOverride("new-terminal", "Cmd+Shift+D");
+
+      // Combo resolves ONLY to the new action — no ambiguity.
+      expect(store.getActionForCombo("cmd+shift+d")).toBe("new-terminal");
+      // Displaced action has no key at all.
+      expect(store.getKeyForAction("toggle-git-ops")).toBeUndefined();
+      // And the new action has the combo.
+      expect(store.getKeyForAction("new-terminal")).toBe("Cmd+Shift+D");
+    });
+  });
+
   describe("isOverridden", () => {
     it("returns false for default bindings", () => {
       expect(store.isOverridden("toggle-git-ops")).toBe(false);

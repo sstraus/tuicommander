@@ -221,7 +221,7 @@ export const KeyboardShortcutsTab: Component = () => {
     // Check for conflicts
     const normalized = normalizeCombo(combo);
     const existingAction = keybindingsStore.getActionForCombo(normalized);
-    if (existingAction && existingAction !== action) {
+    if (existingAction && canonicalActionId(existingAction) !== canonicalActionId(action)) {
       setConflict({ action: existingAction, combo });
       return;
     }
@@ -230,13 +230,24 @@ export const KeyboardShortcutsTab: Component = () => {
     cancelEditing();
   }
 
+  /**
+   * Canonicalise an action id before comparing against another. Action ids
+   * flow in from different producers (static ACTION_NAMES, plugin registry,
+   * persisted user overrides) and a case-sensitive === miss would let a
+   * near-duplicate slip past the conflict guard (story 1279-ff10).
+   */
+  function canonicalActionId(id: string): string {
+    return id.trim().toLowerCase();
+  }
+
   async function confirmConflictReplace() {
     const action = editingAction();
     const conf = conflict();
     if (!action || !conf) return;
 
-    // Unbind the conflicting action first by setting it to the old action's key
-    // (or just override both — the setOverride will naturally displace the old binding)
+    // Explicit unbind of the displaced action — don't rely on rebuildMaps'
+    // first-writer-wins to hide the old binding (story 1279-ff10).
+    await keybindingsStore.unbind(conf.action);
     await keybindingsStore.setOverride(action, conf.combo);
     cancelEditing();
   }
