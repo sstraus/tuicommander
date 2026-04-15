@@ -983,6 +983,11 @@ pub struct AppState {
     /// path is authoritative once wired.
     #[allow(dead_code)]
     pub(crate) has_osc133_integration: DashMap<String, ()>,
+    /// Per-session filesystem sandbox for the L2 agent's file/shell tools.
+    /// Keyed by session_id. Populated when the agent loop starts, rooted at the
+    /// session's git repo root or CWD. See `ai_agent::sandbox::FileSandbox`.
+    #[allow(dead_code)]
+    pub(crate) file_sandboxes: DashMap<String, crate::ai_agent::sandbox::FileSandbox>,
 }
 
 impl AppState {
@@ -2047,6 +2052,7 @@ pub(crate) mod tests_support {
             session_knowledge: DashMap::new(),
             knowledge_dirty: DashMap::new(),
             has_osc133_integration: DashMap::new(),
+            file_sandboxes: DashMap::new(),
             #[cfg(unix)]
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
             tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),
@@ -2495,6 +2501,7 @@ mod tests {
             session_knowledge: DashMap::new(),
             knowledge_dirty: DashMap::new(),
             has_osc133_integration: DashMap::new(),
+            file_sandboxes: DashMap::new(),
             #[cfg(unix)]
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
             tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),

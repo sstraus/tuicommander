@@ -4,5 +4,6 @@ pub mod conversation;
 pub mod engine;
 pub mod knowledge;
 pub mod safety;
+pub mod sandbox;
 pub mod tools;
 pub mod tui_detect;

@@ -2751,6 +2751,7 @@ mod tests {
             session_knowledge: dashmap::DashMap::new(),
             knowledge_dirty: dashmap::DashMap::new(),
             has_osc133_integration: dashmap::DashMap::new(),
+            file_sandboxes: dashmap::DashMap::new(),
             #[cfg(unix)]
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
             tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),
