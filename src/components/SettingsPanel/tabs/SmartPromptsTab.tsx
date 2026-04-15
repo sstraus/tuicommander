@@ -64,6 +64,52 @@ const CONTEXT_VARIABLES: VarDef[] = [
   { name: "cwd", description: "Terminal working directory", group: "Terminal" },
 ];
 
+/** Variables whose runtime value is controlled by repository contents
+ * (branch names, commit messages, PR titles, remote URLs). When they are
+ * substituted into a shell-execution template, quoting is mandatory —
+ * otherwise a crafted branch like `main'; rm -rf ~ ;#` escapes `sh -c`.
+ * The Rust backend quotes these for us via `process_prompt_content_shell_safe`;
+ * this list drives a UI warning so the author knows the risk surface. */
+const REPO_CONTROLLED_VARIABLES: ReadonlySet<string> = new Set([
+  "branch",
+  "base_branch",
+  "diff",
+  "staged_diff",
+  "changed_files",
+  "commit_log",
+  "last_commit",
+  "conflict_files",
+  "stash_list",
+  "remote_url",
+  "current_user",
+  "repo_name",
+  "repo_owner",
+  "repo_slug",
+  "pr_title",
+  "pr_author",
+  "pr_labels",
+  "pr_url",
+  "pr_state",
+  "pr_checks",
+  "merge_status",
+  "review_decision",
+  "agent_type",
+  "cwd",
+]);
+
+/** Return the subset of repo-controlled variables referenced in content. */
+export function repoControlledVarsInContent(content: string): string[] {
+  const found = new Set<string>();
+  const re = /\{([^{}]+)\}/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(content)) !== null) {
+    if (REPO_CONTROLLED_VARIABLES.has(match[1])) {
+      found.add(match[1]);
+    }
+  }
+  return [...found].sort();
+}
+
 /** Derive the category from a prompt's tags */
 function promptCategory(prompt: SavedPrompt): Category | "other" {
   const tags = prompt.tags ?? [];
@@ -333,6 +379,25 @@ const PromptEditor: Component<{
           </div>
         </Show>
       </div>
+
+      {/* Shell-mode warning for repo-controlled variable substitution.
+          Even though values are shell-quoted in the backend, authors should
+          know which values come from the repo so they can design the
+          template accordingly. */}
+      <Show
+        when={
+          props.prompt.executionMode === "shell" &&
+          repoControlledVarsInContent(props.prompt.content).length > 0
+        }
+      >
+        <p class={sp.fieldHint} style={{ color: "var(--color-warning, #c07a00)" }}>
+          ⚠ Shell mode substitutes repo-controlled variables (
+          {repoControlledVarsInContent(props.prompt.content).join(", ")}). Values
+          are shell-quoted automatically, but a template that uses them outside
+          argument position (e.g. `eval {"{branch}"}`) can still be abused by
+          crafted branch names / PR titles.
+        </p>
+      </Show>
 
       {/* Output Target (headless and api modes) */}
       <Show when={(props.prompt.executionMode ?? "inject") !== "inject"}>

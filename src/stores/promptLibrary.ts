@@ -367,9 +367,19 @@ function createPromptLibraryStore() {
         return bTime - aTime;
       });
     },
-    /** Process prompt content with variable substitution (Rust backend) */
-    async processContent(prompt: SavedPrompt, variables: Record<string, string>): Promise<string> {
-      return invoke<string>("process_prompt_content", { content: prompt.content, variables });
+    /** Process prompt content with variable substitution (Rust backend).
+     *
+     * Pass `shellSafe: true` when the result will be executed via `sh -c` /
+     * `cmd /C` so that repo-controlled variables (branch names, PR titles,
+     * commit messages…) are shell-quoted and cannot escape the argument to
+     * run arbitrary commands. */
+    async processContent(
+      prompt: SavedPrompt,
+      variables: Record<string, string>,
+      opts?: { shellSafe?: boolean },
+    ): Promise<string> {
+      const cmd = opts?.shellSafe ? "process_prompt_content_shell_safe" : "process_prompt_content";
+      return invoke<string>(cmd, { content: prompt.content, variables });
     },
 
     /** Get variables from prompt content (Rust backend) */

@@ -173,8 +173,12 @@ export function useSmartPrompts() {
       return { ok: false, reason: "unresolved_variables", output: JSON.stringify(unresolved) };
     }
 
-    // Substitute variables into content
-    const processed = await promptLibraryStore.processContent(prompt, allVars);
+    // Substitute variables into content. In shell mode, values go through
+    // shell-quoting so repo-controlled variables (branch/pr_*/commit_log) can't
+    // escape their argument inside `sh -c` / `cmd /C`.
+    const processed = await promptLibraryStore.processContent(prompt, allVars, {
+      shellSafe: effectiveMode === "shell",
+    });
 
     if (effectiveMode === "shell") {
       return executeShell(prompt, processed);

@@ -24,6 +24,23 @@ function processContentLocal(content: string, variables: Record<string, string>)
   return result;
 }
 
+/** Replicate process_content_shell_safe logic from Rust for test mocking:
+ * POSIX single-quoting on every substituted value. Windows would use a
+ * different quoting rule, but this test file runs in Node/vitest where the
+ * invoked backend is mocked so we assert the POSIX shape. */
+function processContentShellSafeLocal(
+  content: string,
+  variables: Record<string, string>,
+): string {
+  let result = content;
+  for (const [name, value] of Object.entries(variables)) {
+    const quoted = `'${value.replace(/'/g, "'\\''")}'`;
+    const pattern = new RegExp(`\\{${name}\\}`, "g");
+    result = result.replace(pattern, quoted);
+  }
+  return result;
+}
+
 describe("promptLibrary pure functions", () => {
   let store: typeof import("../stores/promptLibrary").promptLibraryStore;
 
@@ -43,6 +60,13 @@ describe("promptLibrary pure functions", () => {
         case "process_prompt_content":
           return Promise.resolve(
             processContentLocal(args.content as string, args.variables as Record<string, string>)
+          );
+        case "process_prompt_content_shell_safe":
+          return Promise.resolve(
+            processContentShellSafeLocal(
+              args.content as string,
+              args.variables as Record<string, string>,
+            )
           );
         case "save_prompt_library":
           return Promise.resolve(undefined);
@@ -152,6 +176,45 @@ describe("promptLibrary pure functions", () => {
         });
         const result = await store.processContent(prompt, {});
         expect(result).toBe("No variables here");
+      });
+    });
+
+    it("routes shellSafe=true through process_prompt_content_shell_safe", async () => {
+      await testInScopeAsync(async () => {
+        const prompt = store.createPrompt({
+          name: "test",
+          content: "git checkout {branch}",
+          category: "custom",
+          isFavorite: false,
+        });
+        const baseline = mockInvoke.mock.calls.length;
+        const result = await store.processContent(
+          prompt,
+          { branch: "main'; rm -rf ~; echo '" },
+          { shellSafe: true },
+        );
+        expect(result).toBe("git checkout 'main'\\''; rm -rf ~; echo '\\'''");
+        // Confirm this specific call went to the shell_safe endpoint, not the
+        // plain one. Earlier setup calls (save_prompt_library etc.) are ignored
+        // by snapshotting the invoke count before processContent.
+        const newCalls = mockInvoke.mock.calls.slice(baseline).map((c) => c[0]);
+        expect(newCalls).toEqual(["process_prompt_content_shell_safe"]);
+      });
+    });
+
+    it("defaults to plain process_prompt_content when shellSafe is not set", async () => {
+      await testInScopeAsync(async () => {
+        const prompt = store.createPrompt({
+          name: "test",
+          content: "Hello {name}",
+          category: "custom",
+          isFavorite: false,
+        });
+        const baseline = mockInvoke.mock.calls.length;
+        const result = await store.processContent(prompt, { name: "World" });
+        expect(result).toBe("Hello World");
+        const newCalls = mockInvoke.mock.calls.slice(baseline).map((c) => c[0]);
+        expect(newCalls).toEqual(["process_prompt_content"]);
       });
     });
   });

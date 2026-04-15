@@ -1223,6 +1223,7 @@ pub fn run() {
             agent_mcp::get_agent_config_path,
             prompt::extract_prompt_variables,
             prompt::process_prompt_content,
+            prompt::process_prompt_content_shell_safe,
             prompt::resolve_context_variables,
             smart_prompt::execute_headless_prompt,
             smart_prompt::execute_shell_script,
