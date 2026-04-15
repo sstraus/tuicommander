@@ -353,8 +353,8 @@ export async function initApp(deps: AppInitDeps) {
   );
 
   // Listen for UI tab open/update requests from MCP tools
-  listen<{ id: string; title: string; html: string; pinned: boolean; url?: string; focus?: boolean }>("ui-tab", (event) => {
-    const { id, title, html, pinned, url, focus } = event.payload;
+  listen<{ id: string; title: string; html: string; pinned: boolean; url?: string; focus?: boolean; origin_repo_path?: string }>("ui-tab", (event) => {
+    const { id, title, html, pinned, url, focus, origin_repo_path } = event.payload;
 
     // Intercept tuic:// protocol URLs — handle as commands, not iframe src
     if (url?.startsWith("tuic://")) {
@@ -390,7 +390,7 @@ export async function initApp(deps: AppInitDeps) {
       return;
     }
 
-    mdTabsStore.openUiTab(id, title, html, pinned, url, focus ?? true);
+    mdTabsStore.openUiTab(id, title, html, pinned, url, focus ?? true, origin_repo_path);
   }).catch((err) =>
     appLogger.error("app", "Failed to register ui-tab listener", err),
   );

@@ -108,6 +108,10 @@ pub enum AppEvent {
         url: Option<String>,
         pinned: bool,
         focus: bool,
+        /// Caller repo/cwd — so the tab is scoped to the repo the MCP session
+        /// is working in, not to whichever repo has focus in the frontend.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        origin_repo_path: Option<String>,
     },
 }
 

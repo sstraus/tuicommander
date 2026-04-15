@@ -79,6 +79,26 @@ export interface CommandOverviewTab extends BaseTab {
 /** Discriminated union of all markdown tab types */
 export type MdTabData = FileTab | VirtualTab | PluginPanelTab | ClaudeUsageTab | PrDiffTab | HtmlPreviewTab | CommandOverviewTab;
 
+/**
+ * Resolve a caller-supplied path (repo root or PTY cwd) to a registered repo
+ * path. Exact match first, then longest-prefix match so that nested cwds
+ * (e.g. `/repo/src/foo`) still map back to the repo root (`/repo`).
+ * Returns null when no registered repo owns the path.
+ */
+export function resolveRepoForCwd(cwd: string | null | undefined): string | null {
+  if (!cwd) return null;
+  const repos = Object.keys(repositoriesStore.state.repositories);
+  if (repos.includes(cwd)) return cwd;
+  let best: string | null = null;
+  for (const repo of repos) {
+    const prefix = repo.endsWith("/") ? repo : `${repo}/`;
+    if (cwd.startsWith(prefix) && (best === null || repo.length > best.length)) {
+      best = repo;
+    }
+  }
+  return best;
+}
+
 // ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
@@ -204,8 +224,13 @@ function createMdTabsStore() {
     /**
      * Open or update a UI tab (MCP-driven). Deduplicates on pluginId alone.
      * focus=true (default): switch to this tab. focus=false: update content silently.
+     *
+     * originRepoPath: repo/cwd of the MCP caller. When resolvable to a
+     * registered repo, the tab is scoped there — never to whichever repo
+     * currently has focus. Falls back to activeRepoPath only when the caller
+     * cannot be resolved (non-MCP entry points, unknown repo).
      */
-    openUiTab(pluginId: string, title: string, html: string, pinned: boolean, url?: string, focus = true): string {
+    openUiTab(pluginId: string, title: string, html: string, pinned: boolean, url?: string, focus = true, originRepoPath?: string): string {
       const existing = Object.values(base.state.tabs).find(
         (tab) => tab.type === "plugin-panel" && (tab as PluginPanelTab).pluginId === pluginId,
       ) as PluginPanelTab | undefined;
@@ -219,10 +244,8 @@ function createMdTabsStore() {
 
       const id = base._nextId("md");
       const tab: PluginPanelTab = { type: "plugin-panel", id, title, pluginId, html, pinned };
-      if (!pinned) {
-        const repoPath = repositoriesStore.state.activeRepoPath;
-        if (repoPath) tab.repoPath = repoPath;
-      }
+      const resolvedRepo = resolveRepoForCwd(originRepoPath) ?? (pinned ? undefined : repositoriesStore.state.activeRepoPath ?? undefined);
+      if (resolvedRepo) tab.repoPath = resolvedRepo;
       if (url) tab.url = url;
       if (focus) {
         return base._addTab(tab);

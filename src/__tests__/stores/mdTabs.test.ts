@@ -1,14 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { testInScope } from "../helpers/store";
 
+const mockInvoke = vi.fn().mockResolvedValue(undefined);
+vi.mock("@tauri-apps/api/core", () => ({ invoke: mockInvoke }));
+
 describe("mdTabsStore", () => {
   let store: typeof import("../../stores/mdTabs").mdTabsStore;
   let uiStore: typeof import("../../stores/ui").uiStore;
+  let repositoriesStore: typeof import("../../stores/repositories").repositoriesStore;
+  let resolveRepoForCwd: typeof import("../../stores/mdTabs").resolveRepoForCwd;
 
   beforeEach(async () => {
     vi.resetModules();
-    store = (await import("../../stores/mdTabs")).mdTabsStore;
+    mockInvoke.mockReset().mockResolvedValue(undefined);
+    vi.doMock("@tauri-apps/api/core", () => ({ invoke: mockInvoke }));
+    const mdTabsMod = await import("../../stores/mdTabs");
+    store = mdTabsMod.mdTabsStore;
+    resolveRepoForCwd = mdTabsMod.resolveRepoForCwd;
     uiStore = (await import("../../stores/ui")).uiStore;
+    repositoriesStore = (await import("../../stores/repositories")).repositoriesStore;
+    repositoriesStore._testSetHydrated(true);
   });
 
   describe("add()", () => {
@@ -400,6 +411,101 @@ describe("mdTabsStore", () => {
         // content still updated
         const tab = store.get(store.getIds().find((id) => store.get(id)?.type === "plugin-panel")!);
         if (tab?.type === "plugin-panel") expect(tab.html).toBe("<p>v2</p>");
+      });
+    });
+  });
+
+  describe("resolveRepoForCwd()", () => {
+    it("returns null for null/undefined/empty input", () => {
+      testInScope(() => {
+        expect(resolveRepoForCwd(null)).toBeNull();
+        expect(resolveRepoForCwd(undefined)).toBeNull();
+        expect(resolveRepoForCwd("")).toBeNull();
+      });
+    });
+
+    it("returns null when no repos registered", () => {
+      testInScope(() => {
+        expect(resolveRepoForCwd("/some/path")).toBeNull();
+      });
+    });
+
+    it("returns exact match when cwd equals a registered repo path", () => {
+      testInScope(() => {
+        repositoriesStore.add({ path: "/Gits/alpha", displayName: "alpha" });
+        repositoriesStore.add({ path: "/Gits/beta", displayName: "beta" });
+        expect(resolveRepoForCwd("/Gits/alpha")).toBe("/Gits/alpha");
+      });
+    });
+
+    it("returns the prefix-matching repo when cwd is nested inside it", () => {
+      testInScope(() => {
+        repositoriesStore.add({ path: "/Gits/alpha", displayName: "alpha" });
+        expect(resolveRepoForCwd("/Gits/alpha/src/lib/foo.rs")).toBe("/Gits/alpha");
+      });
+    });
+
+    it("picks the longest-prefix match for nested repos", () => {
+      testInScope(() => {
+        repositoriesStore.add({ path: "/Gits", displayName: "root" });
+        repositoriesStore.add({ path: "/Gits/alpha", displayName: "alpha" });
+        expect(resolveRepoForCwd("/Gits/alpha/src/main.rs")).toBe("/Gits/alpha");
+      });
+    });
+
+    it("does not match a path that merely shares a name prefix with a repo", () => {
+      testInScope(() => {
+        repositoriesStore.add({ path: "/Gits/alpha", displayName: "alpha" });
+        // /Gits/alpha-sibling must NOT match /Gits/alpha
+        expect(resolveRepoForCwd("/Gits/alpha-sibling/src")).toBeNull();
+      });
+    });
+  });
+
+  describe("openUiTab() repo routing", () => {
+    it("scopes tab to the origin repo, NOT the active repo, when originRepoPath is given", () => {
+      testInScope(() => {
+        repositoriesStore.add({ path: "/Gits/alpha", displayName: "alpha" });
+        repositoriesStore.add({ path: "/Gits/beta", displayName: "beta" });
+        repositoriesStore.setActive("/Gits/beta");
+
+        const id = store.openUiTab("wiz-panel", "MCF", "<p/>", false, undefined, true, "/Gits/alpha/src");
+        const tab = store.get(id);
+        expect(tab?.repoPath).toBe("/Gits/alpha");
+      });
+    });
+
+    it("scopes pinned tabs to the origin repo as well (MCP caller always wins)", () => {
+      testInScope(() => {
+        repositoriesStore.add({ path: "/Gits/alpha", displayName: "alpha" });
+        repositoriesStore.add({ path: "/Gits/beta", displayName: "beta" });
+        repositoriesStore.setActive("/Gits/beta");
+
+        const id = store.openUiTab("wiz-pinned", "Pinned", "<p/>", true, undefined, true, "/Gits/alpha");
+        const tab = store.get(id);
+        expect(tab?.repoPath).toBe("/Gits/alpha");
+      });
+    });
+
+    it("falls back to active repo for unpinned tabs when origin cannot be resolved", () => {
+      testInScope(() => {
+        repositoriesStore.add({ path: "/Gits/beta", displayName: "beta" });
+        repositoriesStore.setActive("/Gits/beta");
+
+        const id = store.openUiTab("wiz-unknown", "X", "<p/>", false, undefined, true, "/not/a/registered/repo");
+        const tab = store.get(id);
+        expect(tab?.repoPath).toBe("/Gits/beta");
+      });
+    });
+
+    it("leaves pinned tabs globally scoped (no repoPath) when origin is unresolved", () => {
+      testInScope(() => {
+        repositoriesStore.add({ path: "/Gits/beta", displayName: "beta" });
+        repositoriesStore.setActive("/Gits/beta");
+
+        const id = store.openUiTab("wiz-global", "G", "<p/>", true);
+        const tab = store.get(id);
+        expect(tab?.repoPath).toBeUndefined();
       });
     });
   });

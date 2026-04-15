@@ -1999,6 +1999,17 @@ fn handle_ui(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_id: Op
             }
             let pinned = args["pinned"].as_bool().unwrap_or(true);
             let focus = args["focus"].as_bool().unwrap_or(true);
+            // Resolve origin repo for the calling MCP session so the tab lands
+            // in the repo where the agent is actually working, not whichever
+            // repo happens to have focus in the frontend.
+            let caller_tuic = mcp_session_id
+                .and_then(|mcp_sid| state.mcp_to_session.get(mcp_sid).map(|s| s.value().clone()));
+            let origin_repo_path: Option<String> = caller_tuic.as_ref().and_then(|tuic| {
+                state.peer_agents.get(tuic)
+                    .and_then(|p| p.project.clone())
+                    .or_else(|| state.sessions.get(tuic)
+                        .and_then(|s| s.lock().cwd.clone()))
+            });
             let mut payload = serde_json::json!({
                 "id": id,
                 "title": title,
@@ -2009,13 +2020,14 @@ fn handle_ui(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_id: Op
             if let Some(ref u) = url_arg {
                 payload["url"] = serde_json::Value::String(u.clone());
             }
+            if let Some(ref p) = origin_repo_path {
+                payload["origin_repo_path"] = serde_json::Value::String(p.clone());
+            }
             // Register this tab under the creator's tuic session so it can be
             // closed automatically when that session exits.
-            if let Some(mcp_sid) = mcp_session_id
-                && let Some(tuic_session) = state.mcp_to_session.get(mcp_sid)
-            {
+            if let Some(ref tuic_session) = caller_tuic {
                 state.session_html_tabs
-                    .entry(tuic_session.value().clone())
+                    .entry(tuic_session.clone())
                     .or_default()
                     .push(id.clone());
             }
@@ -2031,6 +2043,7 @@ fn handle_ui(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_id: Op
                 url: url_arg,
                 pinned,
                 focus,
+                origin_repo_path,
             });
             serde_json::json!({"ok": true, "id": id})
         }
@@ -3725,13 +3738,94 @@ mod tests {
 
         let event = rx.try_recv().expect("Expected UiTab event");
         match event {
-            crate::state::AppEvent::UiTab { id, title, html, url, pinned, focus } => {
+            crate::state::AppEvent::UiTab { id, title, html, url, pinned, focus, origin_repo_path } => {
                 assert_eq!(id, "test-panel");
                 assert_eq!(title, "Test");
                 assert_eq!(html, "<p>hello</p>");
                 assert!(url.is_none(), "url should be None for html tab");
                 assert!(pinned, "pinned should default to true");
                 assert!(focus, "focus should default to true");
+                assert!(origin_repo_path.is_none(), "origin_repo_path should be None when no mcp_session");
+            }
+            other => panic!("Expected UiTab, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn ui_tab_includes_origin_repo_path_from_peer_agent() {
+        use crate::state::PeerAgent;
+        let state = test_state();
+        let mcp_sid = "mcp-xyz".to_string();
+        let tuic = "00000000-0000-0000-0000-000000000001".to_string();
+        // Register an MCP→tuic mapping and a peer agent with a project path.
+        state.mcp_to_session.insert(mcp_sid.clone(), tuic.clone());
+        state.peer_agents.insert(tuic.clone(), PeerAgent {
+            tuic_session: tuic.clone(),
+            mcp_session_id: mcp_sid.clone(),
+            name: "wiz".to_string(),
+            project: Some("/Gits/personal/alpha".to_string()),
+            registered_at: 0,
+        });
+
+        let mut rx = state.event_bus.subscribe();
+        let result = handle_ui(&state, &serde_json::json!({
+            "action": "tab",
+            "id": "mcf",
+            "title": "MCF",
+            "html": "<p/>"
+        }), Some(&mcp_sid));
+        assert_eq!(result["ok"], true);
+
+        let event = rx.try_recv().expect("Expected UiTab event");
+        match event {
+            crate::state::AppEvent::UiTab { origin_repo_path, .. } => {
+                assert_eq!(origin_repo_path.as_deref(), Some("/Gits/personal/alpha"),
+                    "caller's repo path must be propagated so the tab lands in the right repo");
+            }
+            other => panic!("Expected UiTab, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn ui_tab_falls_back_to_pty_cwd_when_no_peer_agent() {
+        use crate::state::PtySession;
+        use portable_pty::{native_pty_system, PtySize};
+
+        let state = test_state();
+        let mcp_sid = "mcp-no-peer".to_string();
+        let tuic = "00000000-0000-0000-0000-000000000002".to_string();
+        state.mcp_to_session.insert(mcp_sid.clone(), tuic.clone());
+
+        // Spawn a minimal PTY session with cwd set so we can exercise the fallback.
+        let pty_system = native_pty_system();
+        let pair = pty_system.openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 })
+            .expect("openpty");
+        let mut cmd = portable_pty::CommandBuilder::new("true");
+        cmd.cwd("/tmp");
+        let child = pair.slave.spawn_command(cmd).expect("spawn");
+        let writer = pair.master.take_writer().expect("writer");
+        state.sessions.insert(tuic.clone(), parking_lot::Mutex::new(PtySession {
+            writer,
+            master: pair.master,
+            _child: child,
+            paused: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            worktree: None,
+            cwd: Some("/Gits/personal/beta".to_string()),
+            display_name: None,
+        }));
+
+        let mut rx = state.event_bus.subscribe();
+        handle_ui(&state, &serde_json::json!({
+            "action": "tab",
+            "id": "beta-tab",
+            "title": "Beta",
+            "html": "<p/>"
+        }), Some(&mcp_sid));
+
+        let event = rx.try_recv().expect("Expected UiTab event");
+        match event {
+            crate::state::AppEvent::UiTab { origin_repo_path, .. } => {
+                assert_eq!(origin_repo_path.as_deref(), Some("/Gits/personal/beta"));
             }
             other => panic!("Expected UiTab, got {:?}", other),
         }
