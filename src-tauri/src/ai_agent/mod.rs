@@ -1,4 +1,5 @@
 pub mod commands;
+pub mod context;
 pub mod conversation;
 pub mod engine;
 pub mod knowledge;

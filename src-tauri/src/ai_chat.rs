@@ -670,7 +670,11 @@ pub(crate) async fn stream_ai_chat(
 
     // Assemble terminal context
     let ctx = assemble_terminal_context(&state, &session_id, config.context_lines);
-    let system_prompt = build_system_prompt(&ctx);
+    let mut system_prompt = build_system_prompt(&ctx);
+    if let Some(section) = crate::ai_agent::context::build_knowledge_section(&state, &session_id) {
+        system_prompt.push_str("\n\n");
+        system_prompt.push_str(&section);
+    }
 
     // Build genai request
     let llm_config = llm_api::LlmApiConfig {
