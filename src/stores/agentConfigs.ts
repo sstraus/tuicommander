@@ -2,6 +2,7 @@ import { createStore, produce } from "solid-js/store";
 import { invoke } from "../invoke";
 import { AGENTS, type AgentType, type AgentRunConfig, type AgentsConfig } from "../agents";
 import { appLogger } from "./appLogger";
+import { buildEnvFromEntries, type EnvVarEntry } from "../utils/envVars";
 
 interface AgentConfigsState {
   agents: Record<string, { run_configs: AgentRunConfig[]; auto_retry_on_error?: boolean; headless_template?: string; env_flags?: Record<string, string>; intent_tab_title?: boolean; suggest_followups?: boolean }>;
@@ -116,10 +117,15 @@ function createAgentConfigsStore() {
       }
     },
 
-    /** Update env vars for a run config at a specific index */
-    async updateRunConfigEnv(type: AgentType, index: number, env: Record<string, string>): Promise<void> {
+    /**
+     * Update env vars for a run config at a specific index.
+     * Throws if entries contain duplicate keys — callers must validate first
+     * to avoid silently losing data on key collisions.
+     */
+    async updateRunConfigEnv(type: AgentType, index: number, entries: readonly EnvVarEntry[]): Promise<void> {
       const current = state.agents[type]?.run_configs ?? [];
       if (index < 0 || index >= current.length) return;
+      const env = buildEnvFromEntries(entries);
       setState(produce((s) => {
         s.agents[type].run_configs[index].env = env;
       }));

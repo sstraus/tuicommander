@@ -12,6 +12,7 @@ import { isPluginDisabled, setPluginEnabled } from "../../../plugins/pluginLoade
 import { setClaudeUsageEnabled } from "../../../plugins";
 import { AgentIcon } from "../../ui/AgentIcon";
 import { CC_ENV_FLAGS, ENV_FLAG_CATEGORIES, CATEGORY_ORDER, type EnvFlagDef, type EnvFlagCategory } from "../../../data/ccEnvFlags";
+import { findDuplicateEnvKeys, buildEnvFromEntries } from "../../../utils/envVars";
 import s from "../Settings.module.css";
 import a from "./AgentsTab.module.css";
 
@@ -32,12 +33,14 @@ interface McpStatus {
 const EnvVarRow: Component<{
   key: string;
   value: string;
+  duplicate?: boolean;
   onChange: (key: string, value: string) => void;
   onRemove: () => void;
 }> = (props) => (
   <div class={a.envVarRow}>
     <input
       class={`${a.formInput} ${a.mono} ${a.envVarKey}`}
+      classList={{ [a.inputError]: !!props.duplicate }}
       placeholder="KEY"
       value={props.key}
       onInput={(e) => props.onChange(e.currentTarget.value, props.value)}
@@ -84,23 +87,17 @@ const AddConfigForm: Component<{
     setEnvVars(envVars().map((v, i) => i === idx ? { key, value } : v));
   };
 
-  const buildEnv = (): Record<string, string> => {
-    const env: Record<string, string> = {};
-    for (const { key, value } of envVars()) {
-      const k = key.trim();
-      if (k) env[k] = value;
-    }
-    return env;
-  };
+  const duplicateEnvKeys = createMemo(() => findDuplicateEnvKeys(envVars()));
+  const duplicateEnvKeysSet = createMemo(() => new Set(duplicateEnvKeys()));
 
   const handleSave = async () => {
     const n = name().trim();
-    if (!n || isDuplicate()) return;
+    if (!n || isDuplicate() || duplicateEnvKeys().length > 0) return;
     const config: AgentRunConfig = {
       name: n,
       command: command().trim() || AGENTS[props.agentType].binary,
       args: args().trim() ? args().trim().split(/\s+/) : [],
-      env: buildEnv(),
+      env: buildEnvFromEntries(envVars()),
       is_default: false,
     };
     await agentConfigsStore.addRunConfig(props.agentType, config);
@@ -150,6 +147,7 @@ const AddConfigForm: Component<{
                 <EnvVarRow
                   key={v.key}
                   value={v.value}
+                  duplicate={duplicateEnvKeysSet().has(v.key.trim())}
                   onChange={(k, val) => updateEnvVar(i(), k, val)}
                   onRemove={() => removeEnvVar(i())}
                 />
@@ -157,9 +155,18 @@ const AddConfigForm: Component<{
             </For>
           </div>
         </Show>
+        <Show when={duplicateEnvKeys().length > 0}>
+          <div class={a.validationError}>Duplicate env keys: {duplicateEnvKeys().join(", ")}</div>
+        </Show>
       </div>
       <div class={a.formRow}>
-        <button class={a.smallBtn} onClick={handleSave} disabled={isDuplicate() || !name().trim()}>Save</button>
+        <button
+          class={a.smallBtn}
+          onClick={handleSave}
+          disabled={isDuplicate() || !name().trim() || duplicateEnvKeys().length > 0}
+        >
+          Save
+        </button>
         <button class={a.smallBtn} onClick={props.onClose}>Cancel</button>
       </div>
     </div>
@@ -194,13 +201,12 @@ const RunConfigRow: Component<{
     setEnvVars(envVars().map((v, i) => i === idx ? { key, value } : v));
   };
 
+  const duplicateEnvKeys = createMemo(() => findDuplicateEnvKeys(envVars()));
+  const duplicateEnvKeysSet = createMemo(() => new Set(duplicateEnvKeys()));
+
   const saveEnv = async () => {
-    const env: Record<string, string> = {};
-    for (const { key, value } of envVars()) {
-      const k = key.trim();
-      if (k) env[k] = value;
-    }
-    await agentConfigsStore.updateRunConfigEnv(props.agentType, props.index, env);
+    if (duplicateEnvKeys().length > 0) return;
+    await agentConfigsStore.updateRunConfigEnv(props.agentType, props.index, envVars());
     setEditing(false);
   };
 
@@ -253,14 +259,18 @@ const RunConfigRow: Component<{
                 <EnvVarRow
                   key={v.key}
                   value={v.value}
+                  duplicate={duplicateEnvKeysSet().has(v.key.trim())}
                   onChange={(k, val) => updateEnvVar(i(), k, val)}
                   onRemove={() => removeEnvVar(i())}
                 />
               )}
             </For>
           </div>
+          <Show when={duplicateEnvKeys().length > 0}>
+            <div class={a.validationError}>Duplicate env keys: {duplicateEnvKeys().join(", ")}</div>
+          </Show>
           <div class={a.formRow}>
-            <button class={a.smallBtn} onClick={saveEnv}>Save</button>
+            <button class={a.smallBtn} onClick={saveEnv} disabled={duplicateEnvKeys().length > 0}>Save</button>
             <button class={a.smallBtn} onClick={() => setEditing(false)}>Cancel</button>
           </div>
         </div>

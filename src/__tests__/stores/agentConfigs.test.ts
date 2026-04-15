@@ -158,6 +158,52 @@ describe("agentConfigsStore", () => {
     });
   });
 
+  describe("updateRunConfigEnv()", () => {
+    it("persists env from entries", async () => {
+      await testInScopeAsync(async () => {
+        await hydrateWith(configWithClaude());
+        await store.updateRunConfigEnv("claude", 0, [
+          { key: "FOO", value: "1" },
+          { key: "BAR", value: "2" },
+        ]);
+        expect(store.getRunConfigs("claude")[0].env).toEqual({ FOO: "1", BAR: "2" });
+      });
+    });
+
+    it("throws on duplicate keys rather than silently overwriting", async () => {
+      await testInScopeAsync(async () => {
+        await hydrateWith(configWithClaude());
+        await expect(
+          store.updateRunConfigEnv("claude", 0, [
+            { key: "FOO", value: "1" },
+            { key: "FOO", value: "2" },
+          ]),
+        ).rejects.toThrow(/Duplicate env keys.*FOO/);
+        expect(store.getRunConfigs("claude")[0].env).toEqual({});
+      });
+    });
+
+    it("ignores empty/whitespace keys", async () => {
+      await testInScopeAsync(async () => {
+        await hydrateWith(configWithClaude());
+        await store.updateRunConfigEnv("claude", 0, [
+          { key: "FOO", value: "1" },
+          { key: "  ", value: "2" },
+          { key: "", value: "3" },
+        ]);
+        expect(store.getRunConfigs("claude")[0].env).toEqual({ FOO: "1" });
+      });
+    });
+
+    it("ignores out-of-bounds index", async () => {
+      await testInScopeAsync(async () => {
+        await hydrateWith(configWithClaude());
+        await store.updateRunConfigEnv("claude", 99, [{ key: "FOO", value: "1" }]);
+        expect(store.getRunConfigs("claude")[0].env).toEqual({});
+      });
+    });
+  });
+
   describe("removeRunConfig()", () => {
     it("removes a config and reassigns default", async () => {
       await testInScopeAsync(async () => {
