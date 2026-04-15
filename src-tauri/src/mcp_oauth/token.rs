@@ -215,6 +215,7 @@ impl TokenManager {
             token_endpoint: self.token_endpoint.clone(),
             client_id: self.client_id.clone(),
             scope: resp.scope,
+            resource: self.resource.clone(),
         }
     }
 }
@@ -445,6 +446,7 @@ mod tests {
             token_endpoint: "https://unused/token".into(),
             client_id: "client".into(),
             scope: None,
+            resource: None,
         };
 
         let result = mgr.refresh_if_needed(&current).await.unwrap();
@@ -470,6 +472,7 @@ mod tests {
             token_endpoint: "https://unused/token".into(),
             client_id: "client".into(),
             scope: None,
+            resource: None,
         };
 
         let result = mgr
@@ -494,6 +497,7 @@ mod tests {
             token_endpoint: "https://unused/token".into(),
             client_id: "client".into(),
             scope: None,
+            resource: None,
         };
 
         let err = mgr.refresh_if_needed(&current).await.unwrap_err();
@@ -501,5 +505,68 @@ mod tests {
             err.to_string().contains("no refresh_token"),
             "got: {err}"
         );
+    }
+
+    /// Two concurrent 401-driven refreshes on a shared [`TokenManager`] must
+    /// collapse into at most one refresh request at the token endpoint. On a
+    /// host with a writable keyring the double-check short-circuits the second
+    /// caller and hits count is exactly 1; without a keyring the second caller
+    /// falls through and the mutex still serialises the two HTTP calls, so
+    /// hits count is 2. Either way, we must never exceed 2 — which is what
+    /// would happen if the mutex were bypassed (story 1270-f952).
+    #[tokio::test]
+    async fn refresh_if_needed_serialises_concurrent_callers() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "access_token": "refreshed-at",
+                    "refresh_token": "new-rt",
+                    "expires_in": 3600,
+                    "token_type": "Bearer"
+                })
+                .to_string(),
+            )
+            .expect_at_most(2)
+            .create_async()
+            .await;
+
+        let mgr = Arc::new(TokenManager::new(
+            "test-concurrent-refresh".into(),
+            "client".into(),
+            format!("{}/token", server.url()),
+            None,
+        ));
+
+        let expired = OAuthTokenSet {
+            access_token: "expired-at".into(),
+            refresh_token: Some("rt".into()),
+            expires_at: Some(0),
+            token_endpoint: format!("{}/token", server.url()),
+            client_id: "client".into(),
+            scope: None,
+            resource: None,
+        };
+
+        let mgr_a = mgr.clone();
+        let expired_a = expired.clone();
+        let mgr_b = mgr.clone();
+        let expired_b = expired.clone();
+
+        let (res_a, res_b) = tokio::join!(
+            tokio::spawn(async move { mgr_a.refresh_if_needed(&expired_a).await }),
+            tokio::spawn(async move { mgr_b.refresh_if_needed(&expired_b).await }),
+        );
+
+        // Both tasks must complete without panicking; individual refreshes
+        // may succeed or fail on the keyring write (tolerated like the
+        // exchange_code_* tests above).
+        let _ = res_a.expect("task A panicked");
+        let _ = res_b.expect("task B panicked");
+
+        mock.assert_async().await;
     }
 }

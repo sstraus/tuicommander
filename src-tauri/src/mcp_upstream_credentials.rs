@@ -41,6 +41,13 @@ pub(crate) struct OAuthTokenSet {
     /// Space-separated scopes granted by the AS.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) scope: Option<String>,
+    /// RFC 8707 resource indicator used at token exchange. Replayed on refresh
+    /// so the AS rebinds the new token to the same resource; without this we
+    /// risk drift when the caller's MCP URL differs from the canonical
+    /// resource. Optional for backward compatibility with tokens stored before
+    /// this field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) resource: Option<String>,
 }
 
 /// Credential stored in the OS keyring, tagged by type.
@@ -313,6 +320,7 @@ mod tests {
             token_endpoint: "https://auth.example.com/token".to_string(),
             client_id: "tuic-client-abc".to_string(),
             scope: Some("read write".to_string()),
+            resource: Some("https://api.example.com".to_string()),
         }
     }
 
@@ -345,6 +353,7 @@ mod tests {
             token_endpoint: "https://auth.example.com/token".to_string(),
             client_id: "client".to_string(),
             scope: None,
+            resource: None,
         };
         let cred = StoredCredential::Oauth2(set);
         let json = serde_json::to_string(&cred).unwrap();
@@ -352,6 +361,7 @@ mod tests {
         assert!(!json.contains("refresh_token"));
         assert!(!json.contains("expires_at"));
         assert!(!json.contains("scope"));
+        assert!(!json.contains("\"resource\""));
         // Round-trip
         let parsed: StoredCredential = serde_json::from_str(&json).unwrap();
         assert_eq!(cred, parsed);

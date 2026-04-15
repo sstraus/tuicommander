@@ -15,7 +15,9 @@ use crate::mcp_upstream_credentials::{
     is_token_valid, read_stored_credential, OAuthTokenSet, StoredCredential,
 };
 use serde_json::Value;
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::OnceCell;
 
 const MCP_SESSION_HEADER: &str = "mcp-session-id";
 const PROTOCOL_VERSION: &str = "2025-03-26";
@@ -90,6 +92,11 @@ pub(crate) struct HttpMcpClient {
     pub(crate) name: String,
     /// Active MCP session ID (set after successful initialize).
     session_id: Option<String>,
+    /// Per-client OAuth token manager, lazily initialized from the stored
+    /// OAuth credential on first refresh. Sharing the manager (and its mutex)
+    /// across `refresh_token_if_needed` and `force_refresh` is what keeps
+    /// concurrent 401-retry paths from triggering parallel refresh requests.
+    token_manager: OnceCell<Arc<TokenManager>>,
 }
 
 impl HttpMcpClient {
@@ -119,6 +126,7 @@ impl HttpMcpClient {
             url,
             name,
             session_id: None,
+            token_manager: OnceCell::new(),
         }
     }
 
@@ -172,15 +180,35 @@ impl HttpMcpClient {
         if is_token_valid(set) {
             return Ok(None);
         }
-        let tm = TokenManager::new(
-            self.name.clone(),
-            set.client_id.clone(),
-            set.token_endpoint.clone(),
-            Some(self.url.clone()),
-        );
+        let tm = self.token_manager_for(set).await;
         tm.refresh_if_needed(set)
             .await
             .map_err(|e| UpstreamError::Other(format!("token refresh failed: {e}")))
+    }
+
+    /// Lazily build (or return) the per-client [`TokenManager`]. Sharing the
+    /// instance across calls keeps `refresh_lock` coherent, so two concurrent
+    /// 401 retries collapse into a single refresh request at the AS.
+    ///
+    /// The resource indicator is preferred from `set.resource` (populated at
+    /// exchange time) and falls back to `self.url` only for legacy tokens
+    /// stored before the field existed.
+    async fn token_manager_for(&self, set: &OAuthTokenSet) -> Arc<TokenManager> {
+        self.token_manager
+            .get_or_init(|| async {
+                let resource = set
+                    .resource
+                    .clone()
+                    .or_else(|| Some(self.url.clone()));
+                Arc::new(TokenManager::new(
+                    self.name.clone(),
+                    set.client_id.clone(),
+                    set.token_endpoint.clone(),
+                    resource,
+                ))
+            })
+            .await
+            .clone()
     }
 
     /// Force a refresh regardless of current validity (used after a 401 on
