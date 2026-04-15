@@ -1,6 +1,7 @@
 pub(crate) mod agent;
 pub(crate) mod agent_mcp;
 pub(crate) mod agent_session;
+pub(crate) mod ai_agent;
 pub(crate) mod app_logger;
 pub(crate) mod chrome;
 pub(crate) mod claude_usage;
