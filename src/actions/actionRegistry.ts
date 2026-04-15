@@ -64,6 +64,7 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
   "worktree-manager": { label: "Worktree manager", category: "Git" },
   "quick-branch-switch": { label: "Quick branch switch", category: "Git" },
   "toggle-error-log": { label: "Error log", category: "Navigation" },
+  "toggle-ai-chat": { label: "Toggle AI Chat", category: "Panels" },
   "toggle-mcp-popup": { label: "MCP servers (per-repo)", category: "Panels" },
   "clear-scrollback": { label: "Clear scrollback", category: "Terminal" },
   "scroll-to-top": { label: "Scroll to top", category: "Terminal" },
@@ -127,6 +128,7 @@ export function getActionEntries(handlers: ShortcutHandlers): ActionEntry[] {
     "worktree-manager": handlers.toggleWorktreeManager,
     "quick-branch-switch": handlers.toggleBranchSwitcher,
     "toggle-error-log": handlers.toggleErrorLog,
+    "toggle-ai-chat": handlers.toggleAiChatPanel,
     "toggle-mcp-popup": handlers.toggleMcpPopup,
     "clear-scrollback": handlers.clearScrollback,
     "scroll-to-top": handlers.scrollToTop,
@@ -142,8 +144,13 @@ export function getActionEntries(handlers: ShortcutHandlers): ActionEntry[] {
     "command-overview": handlers.toggleCommandOverview,
   };
 
+  // Defensive dedup-by-id — today ACTION_META is a Record so ids are unique by
+  // construction, but we keep the guard so a future dynamic-action addition
+  // can't silently surface duplicate entries in the palette.
+  const seen = new Set<string>();
   for (const [actionId, meta] of Object.entries(ACTION_META)) {
     if (!meta) continue;
+    if (seen.has(actionId)) continue;
     const handler = handlerMap[actionId as ActionName];
     if (!handler) continue;
 
@@ -155,6 +162,7 @@ export function getActionEntries(handlers: ShortcutHandlers): ActionEntry[] {
       keybinding: combo ? comboToDisplay(combo) : "",
       execute: handler,
     });
+    seen.add(actionId);
   }
 
   return entries;

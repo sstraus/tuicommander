@@ -93,6 +93,21 @@ When changing the tool list, tool handlers, `disabled_native_tools`, upstream al
 #### Agent tool actions added (swarm inbox)
 - `agent action=inbox` response now includes `missed_count` — number of messages evicted from the FIFO inbox since last read. Non-zero means the orchestrator missed messages and should increase polling frequency.
 
+### AI Chat
+When modifying AI Chat panel, settings, context menu actions, or streaming backend:
+
+| File | What to update |
+|------|----------------|
+| `src-tauri/src/ai_chat.rs` | Backend: config, streaming, context assembly, Ollama detection |
+| `src/stores/aiChatStore.ts` | Frontend store: messages, streaming state, terminal attachment |
+| `src/components/AIChatPanel/AIChatPanel.tsx` | Chat panel component |
+| `src/components/AIChatPanel/contextMenuActions.ts` | Terminal context menu integration |
+| `src/components/SettingsPanel/tabs/AiChatTab.tsx` | Settings panel section |
+| `src/stores/ui.ts` | `aiChatPanelVisible` + `aiChatPanelWidth` signals |
+| `src/keybindingDefaults.ts` | `toggle-ai-chat` hotkey |
+| `docs/FEATURES.md` | AI Chat feature section |
+| `docs/user-guide/ai-chat.md` | User-facing guide (create when needed) |
+
 ### Git & Worktree Integration
 When modifying git operations, worktree logic, or GitHub API:
 

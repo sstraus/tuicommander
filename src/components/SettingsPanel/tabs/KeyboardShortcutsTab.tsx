@@ -119,6 +119,7 @@ function getShortcutSections(): ShortcutSection[] {
       { action: "toggle-settings", keys: keyFor("toggle-settings"), description: t("helpPanel.openSettings", "Open settings") },
       { action: "toggle-task-queue", keys: keyFor("toggle-task-queue"), description: t("helpPanel.toggleTaskQueue", "Toggle task queue") },
       { action: "toggle-error-log", keys: keyFor("toggle-error-log"), description: "Toggle error log" },
+      { action: "toggle-ai-chat", keys: keyFor("toggle-ai-chat"), description: "Toggle AI Chat" },
       { action: "toggle-mcp-popup", keys: keyFor("toggle-mcp-popup"), description: "Toggle MCP popup" },
       { action: "worktree-manager", keys: keyFor("worktree-manager"), description: "Worktree manager" },
       { action: "clear-scrollback", keys: keyFor("clear-scrollback"), description: "Clear scrollback" },
@@ -619,7 +620,14 @@ const RecordingIndicator: Component<{
   onCancel: () => void;
   onConfirmReplace: () => void;
 }> = (props) => {
-  // Auto-focus and attach keydown listener
+  // Auto-focus and attach keydown listener.
+  //
+  // A11y limitation: onBlur on the capture div cancels the session, and the
+  // Replace button below uses onMouseDown (not onClick) so the mouse path
+  // works without blurring. That means keyboard users cannot Tab→Space to
+  // Replace — the Tab fires onBlur first. Fixing this requires either a
+  // containing element that owns focus or a conflict-confirm modal; both are
+  // larger refactors. Captured here as tech debt.
   const handleMount = (el: HTMLDivElement) => {
     el.focus();
   };

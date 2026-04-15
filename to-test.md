@@ -2,6 +2,32 @@
 
 Features to test when TUICommander is more usable.
 
+## AI Chat (Level 1)
+- [ ] Settings > AI Chat tab: provider dropdown shows Ollama/Anthropic/OpenAI/OpenRouter/Custom
+- [ ] Ollama selected + running: green dot, model list populated from /api/tags
+- [ ] Ollama selected + not running: red dot with "Not detected" message
+- [ ] API key field: masked, saved to keyring, "Key saved" indicator after save
+- [ ] Test Connection button: success/error result inline
+- [ ] Context lines slider: 50-500, persists across restart
+- [ ] Temperature slider: 0.0-1.0, persists across restart
+- [ ] Cmd+Alt+A toggles AI Chat panel open/closed
+- [ ] Status bar: chat bubble icon toggles panel, highlighted when active
+- [ ] Panel: terminal dropdown lists all open terminals, switching attaches
+- [ ] Panel: pin button prevents auto-attach on terminal focus change
+- [ ] Panel: send message with Cmd+Enter, Shift+Enter for newline
+- [ ] Panel: streaming response shown as raw text, markdown rendered on completion
+- [ ] Panel: code blocks have Copy and Run buttons after stream ends
+- [ ] Panel: Run button sends code to attached terminal via sendCommand
+- [ ] Panel: Stop button visible during streaming, cancels generation
+- [ ] Panel: Clear conversation button resets all messages
+- [ ] Panel: empty state "Ask me about your terminal output" when no messages
+- [ ] Panel: error banner with Retry button on provider failure
+- [ ] Panel: opening AI Chat closes other exclusive panels (markdown, git, file browser)
+- [ ] Right-click terminal selection > "Explain with AI": opens panel, sends selection
+- [ ] Right-click terminal (no selection) > "Explain with AI": sends last 50 buffer lines
+- [ ] Right-click terminal > "Fix this error": sends error analysis prompt
+- [ ] Selection >2000 chars truncated with "[... truncated]" marker
+
 ## MCP Session Tombstone
 - [x] `agent spawn` → `session output` after 1.8s → returns live buffer with `exited:false` (9b886c20 E2E validated 2026-04-10)
 - [x] `session close` → `session output` → returns final buffer with `exited:true`, buffer preserved (9b886c20 E2E validated 2026-04-10)

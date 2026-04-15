@@ -60,6 +60,7 @@ export interface ShortcutHandlers {
   toggleBranchSwitcher: () => void;
   toggleErrorLog: () => void;
   toggleBranchesTab: () => void;
+  toggleAiChatPanel: () => void;
   toggleMcpPopup: () => void;
   clearScrollback: () => void;
   scrollToTop: () => void;
@@ -176,6 +177,7 @@ function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean
     case "quick-branch-switch": handlers.toggleBranchSwitcher(); return true;
     case "toggle-error-log": handlers.toggleErrorLog(); return true;
     case "toggle-branches-tab": handlers.toggleBranchesTab(); return true;
+    case "toggle-ai-chat": handlers.toggleAiChatPanel(); return true;
     case "toggle-mcp-popup": handlers.toggleMcpPopup(); return true;
     case "clear-scrollback": handlers.clearScrollback(); return true;
     case "scroll-to-top": handlers.scrollToTop(); return true;

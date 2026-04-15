@@ -97,6 +97,7 @@ import { useAutoDeleteBranch } from "./hooks/useAutoDeleteBranch";
 import { useWorktreeSwitchPrompt } from "./hooks/useWorktreeSwitchPrompt";
 import { useCiHeal } from "./hooks/useCiHeal";
 import { useSmartPrompts } from "./hooks/useSmartPrompts";
+import { registerAiChatContextActions } from "./components/AIChatPanel/contextMenuActions";
 import { applyAppTheme, applyFontFamily } from "./themes";
 import { createLongPressHandlerFromHotkey } from "./hooks/useLongPressHotkey";
 import { sendCommand, getShellFamily } from "./utils/sendCommand";
@@ -386,6 +387,10 @@ const App: Component = () => {
     }
     onCleanup(() => disposables.forEach((d) => d.dispose()));
   });
+
+  // Register AI Chat context menu actions ("Explain with AI", "Fix this error")
+  const aiChatDisposables = registerAiChatContextActions();
+  onCleanup(() => aiChatDisposables.forEach((d) => d.dispose()));
 
   // Stop GitHub polling on component teardown — registered at body level so
   // SolidJS can track it synchronously (onCleanup inside async onMount is unreliable).
@@ -1166,6 +1171,7 @@ const App: Component = () => {
     toggleBranchSwitcher: () => branchSwitcherStore.toggle(),
     toggleErrorLog: () => errorLogStore.toggle(),
     toggleBranchesTab: () => uiStore.toggleGitPanelOnTab("branches"),
+    toggleAiChatPanel: () => uiStore.toggleAiChatPanel(),
     toggleMcpPopup: () => mcpPopupStore.toggle(),
     toggleGlobalWorkspace: () => {
       if (!globalWorkspaceStore.hasPromoted()) return;
@@ -1748,6 +1754,7 @@ const App: Component = () => {
           onToggleMarkdown={() => uiStore.toggleMarkdownPanel()}
           onToggleNotes={() => uiStore.toggleNotesPanel()}
           onToggleFileBrowser={() => uiStore.toggleFileBrowserPanel()}
+          onToggleAiChat={() => uiStore.toggleAiChatPanel()}
           onToggleErrorLog={() => errorLogStore.toggle()}
           onDictationStart={dictation.handleDictationStart}
           onDictationStop={dictation.handleDictationStop}
