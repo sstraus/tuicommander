@@ -452,6 +452,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn refresh_if_needed_skips_when_expires_at_is_none() {
+        // RFC 6749 §5.1 allows omitting `expires_in`. A token with None expiry
+        // must be used as-is — triggering a refresh on every request would
+        // storm the token endpoint (and outright fail when no refresh_token
+        // is held, as is the case here). #1269-99f2.
+        let mgr = TokenManager::new(
+            "test-refresh-none-expiry".into(),
+            "client".into(),
+            "https://unused/token".into(),
+            None,
+        );
+        let current = OAuthTokenSet {
+            access_token: "opaque".into(),
+            refresh_token: None,
+            expires_at: None,
+            token_endpoint: "https://unused/token".into(),
+            client_id: "client".into(),
+            scope: None,
+        };
+
+        let result = mgr
+            .refresh_if_needed(&current)
+            .await
+            .expect("must not attempt refresh when expires_at is None");
+        assert!(result.is_none(), "should skip refresh for None-expiry token");
+    }
+
+    #[tokio::test]
     async fn refresh_if_needed_errors_without_refresh_token() {
         let mgr = TokenManager::new(
             "test-refresh-notoken".into(),

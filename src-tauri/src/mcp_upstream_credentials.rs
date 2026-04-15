@@ -65,13 +65,19 @@ impl StoredCredential {
 
 /// Check whether an [`OAuthTokenSet`] token is still valid.
 ///
-/// Returns `false` if:
-/// - `expires_at` is `None` (unknown expiry — treat as expired to force refresh)
-/// - current time is within 60 seconds of `expires_at`
+/// `expires_in` is OPTIONAL in RFC 6749 §5.1 — some ASes legitimately omit it.
+/// When `expires_at` is `None` we cannot know when to refresh, so we trust the
+/// token until the upstream returns 401 (at which point the proxy transitions
+/// into `NeedsAuth` and the user is prompted). Returning `false` here would
+/// force a refresh on every request and, when no refresh token is held, loop
+/// the call path into a storm of failed re-exchanges.
+///
+/// Returns `true` unless:
+/// - current time is within 60 seconds of a known `expires_at`
 pub(crate) fn is_token_valid(token_set: &OAuthTokenSet) -> bool {
     const EXPIRY_MARGIN_SECS: i64 = 60;
     match token_set.expires_at {
-        None => false,
+        None => true,
         Some(exp) => {
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -417,10 +423,13 @@ mod tests {
     }
 
     #[test]
-    fn is_token_valid_no_expiry_returns_false() {
+    fn is_token_valid_no_expiry_returns_true() {
+        // RFC 6749 §5.1: expires_in is OPTIONAL. ASes that omit it must not
+        // force a refresh on every request — we trust the token until the
+        // upstream returns 401 and we transition into NeedsAuth.
         let mut set = sample_oauth_token_set();
         set.expires_at = None;
-        assert!(!is_token_valid(&set));
+        assert!(is_token_valid(&set));
     }
 
     #[test]
