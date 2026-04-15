@@ -1325,10 +1325,15 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // Copy on select: auto-copy selection to clipboard when enabled.
     // Debounced at 200ms to let mouseup clear accidental micro-selections
     // that happen when clicking to focus. Min 2 chars to ignore stray clicks.
+    // When selection is cleared (click-to-focus, Cmd+C deselect), cancel the
+    // pending timer immediately to avoid overwriting a valid clipboard entry.
     let copyOnSelectTimer: ReturnType<typeof setTimeout> | undefined;
     terminal.onSelectionChange(() => {
       if (!settingsStore.state.copyOnSelect) return;
       clearTimeout(copyOnSelectTimer);
+      // Check synchronously — if selection is already empty, don't schedule
+      const immediateCheck = terminal?.getSelection();
+      if (!immediateCheck || immediateCheck.length < 2) return;
       copyOnSelectTimer = setTimeout(() => {
         const sel = terminal?.getSelection();
         if (sel && sel.length >= 2) {
