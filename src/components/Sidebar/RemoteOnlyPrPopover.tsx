@@ -39,7 +39,7 @@ export const RemoteOnlyPrPopover: Component<{
   const [expandedBranch, setExpandedBranch] = createSignal<string | null>(null);
   const [mergingPr, setMergingPr] = createSignal<number | null>(null);
   const [mergeError, setMergeError] = createSignal<string | null>(null);
-  const [diffLoading, setDiffLoading] = createSignal(false);
+  const [diffLoadingPr, setDiffLoadingPr] = createSignal<number | null>(null);
   const [approvingPr, setApprovingPr] = createSignal<number | null>(null);
   const [approveError, setApproveError] = createSignal<string | null>(null);
   const [dismissedPrs, setDismissedPrs] = createSignal<Set<number>>(new Set());
@@ -206,7 +206,7 @@ export const RemoteOnlyPrPopover: Component<{
   };
 
   const handleViewDiff = async (pr: BranchPrStatus) => {
-    setDiffLoading(true);
+    setDiffLoadingPr(pr.number);
     try {
       const diff = await invoke<string>("get_pr_diff", {
         repoPath: props.repoPath,
@@ -218,7 +218,7 @@ export const RemoteOnlyPrPopover: Component<{
       appLogger.error("github", `Failed to load PR #${pr.number} diff`, { error: msg });
       toastsStore.add(`PR #${pr.number} diff failed`, msg.includes("too_large") ? "Diff too large (>300 files)" : msg, "error");
     } finally {
-      setDiffLoading(false);
+      setDiffLoadingPr((current) => (current === pr.number ? null : current));
     }
   };
 
@@ -325,10 +325,10 @@ export const RemoteOnlyPrPopover: Component<{
                         <button
                           class={s.remoteOnlyViewDiff}
                           onClick={() => handleViewDiff(pr)}
-                          disabled={diffLoading()}
+                          disabled={diffLoadingPr() === pr.number}
                           title={t("sidebar.viewDiff", "View PR diff")}
                         >
-                          {diffLoading()
+                          {diffLoadingPr() === pr.number
                             ? t("sidebar.loadingDiff", "Loading...")
                             : t("sidebar.diff", "Diff")}
                         </button>
