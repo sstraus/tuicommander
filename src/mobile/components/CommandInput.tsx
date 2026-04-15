@@ -1,6 +1,7 @@
 import { createSignal, createEffect, Show } from "solid-js";
 import { rpc } from "../../transport";
 import { appLogger } from "../../stores/appLogger";
+import { sendPtyKey } from "../../utils/sendCommand";
 import { retryWrite } from "../utils/retryWrite";
 import { SlashMenuOverlay } from "./SlashMenuOverlay";
 import { ChoicePromptOverlay } from "./ChoicePromptOverlay";
@@ -189,13 +190,13 @@ export function CommandInput(props: CommandInputProps) {
   const showChoicePrompt = () => !!props.choicePrompt;
 
   async function handleChoiceSelect(key: string) {
-    // ChoicePrompt options are single keypresses — Claude Code and other
-    // agents read stdin raw in dialog mode, so no Ctrl-U prefix and no Enter.
-    // If an agent is discovered that needs Enter, adjust per-agent here.
     try {
-      await rpc("write_pty", { sessionId: props.sessionId, data: key });
+      await sendPtyKey(
+        (data) => rpc("write_pty", { sessionId: props.sessionId, data }),
+        key,
+      );
     } catch (err) {
-      appLogger.warn("terminal", "ChoicePrompt write_pty failed", err);
+      appLogger.warn("terminal", "ChoicePrompt sendPtyKey failed", err);
     }
   }
 

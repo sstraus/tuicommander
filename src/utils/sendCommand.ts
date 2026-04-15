@@ -69,6 +69,26 @@ export async function sendCommand(
   await writeFn("\r");
 }
 
+/** Send a single raw character/escape sequence to a PTY running a TUI dialog
+ *  in raw stdin mode (Claude Code edit-confirm, bash-confirm, apply-patch, ...).
+ *
+ *  Unlike `sendCommand`, this writes EXACTLY the bytes provided — no Ctrl-U
+ *  prefix, no trailing `\r`. Adding either breaks raw-mode dialog parsers:
+ *  Claude Code reads one key and interprets trailing bytes as the next prompt,
+ *  Codex aborts on unexpected input. This is the intended counterpart to
+ *  `sendCommand` for the ChoicePrompt / numbered-option path.
+ *
+ *  Intentionally a one-liner over `writeFn` so the call site is centralized
+ *  (grep-able, uniform logging) and the AGENTS.md "never raw text+\r" rule
+ *  still routes through a named helper even for single-key writes.
+ */
+export async function sendPtyKey(
+  writeFn: (data: string) => Promise<void>,
+  key: string,
+): Promise<void> {
+  await writeFn(key);
+}
+
 /** True when the session runs a native Windows shell (cmd / PowerShell).
  *  POSIX shells (incl. git-bash on Windows) return false so they still
  *  receive the Ctrl-U prefix.
