@@ -50,7 +50,7 @@ interface LocalIpEntry { ip: string; label: string; }
 
 interface UpstreamStatusEntry {
   name: string;
-  status: "connecting" | "ready" | "circuit_open" | "disabled" | "failed" | "authenticating";
+  status: "connecting" | "ready" | "circuit_open" | "disabled" | "failed" | "authenticating" | "needs_auth";
   transport: { type: string; url?: string; command?: string; args?: string[] };
   tool_count: number;
   tools: string[];
@@ -820,6 +820,7 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
       case "ready": return "var(--green, #98c379)";
       case "connecting": return "var(--warning, #e5c07b)";
       case "authenticating": return "var(--info, #61afef)";
+      case "needs_auth": return "var(--warning, #e5c07b)";
       case "circuit_open":
       case "failed": return "var(--error, #e06c75)";
       default: return "var(--text-dimmed)";
@@ -832,6 +833,7 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
       case "ready": return "Connected";
       case "connecting": return "Connecting…";
       case "authenticating": return "Awaiting authorization…";
+      case "needs_auth": return "Authorization required";
       case "circuit_open": return "Retrying…";
       case "failed": return "Failed";
       case "disabled": return "Disabled";
@@ -1102,8 +1104,8 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
                             display: "inline-block", width: "7px", height: "7px", "border-radius": "50%",
                             background: statusColor(entry().status),
                           }} title={statusLabel(entry().status)} />
-                          <Show when={entry().status === "authenticating"}>
-                            <span style={{ "font-size": "11px", color: "var(--info, #61afef)" }}>
+                          <Show when={entry().status === "authenticating" || entry().status === "needs_auth"}>
+                            <span style={{ "font-size": "11px", color: statusColor(entry().status) }}>
                               {statusLabel(entry().status)}
                             </span>
                           </Show>
@@ -1149,8 +1151,14 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
                     fallback={
                       <button
                         class={s.copyBtn}
-                        style={{ "flex-shrink": 0, color: "var(--info, #61afef)" }}
-                        title="Authorize via OAuth 2.1"
+                        style={{
+                          "flex-shrink": 0,
+                          color: st()?.status === "needs_auth" ? "var(--warning, #e5c07b)" : "var(--info, #61afef)",
+                          "font-weight": st()?.status === "needs_auth" ? "600" : undefined,
+                        }}
+                        title={st()?.status === "needs_auth"
+                          ? "Upstream requires authorization — click to open the provider's consent page"
+                          : "Authorize via OAuth 2.1"}
                         onClick={() => rpc("start_mcp_upstream_oauth", { name: server.name }).catch(e => appLogger.warn("network", String(e)))}
                       >
                         Authorize

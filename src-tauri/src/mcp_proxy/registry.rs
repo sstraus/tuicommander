@@ -63,6 +63,14 @@ pub(crate) enum UpstreamStatus {
     Disabled,
     /// Permanently failed after `CB_MAX_RETRIES` consecutive circuit re-opens.
     Failed,
+    /// Upstream returned a 401/challenge; we have flagged it as needing auth
+    /// and are waiting for the user to click "Authorize". Tool calls are
+    /// rejected with -32001 until a user-initiated OAuth flow succeeds.
+    ///
+    /// Distinct from `Authenticating` so the UI can tell apart
+    /// "auto-detected, waiting for consent" from "user clicked Authorize,
+    /// flow in progress" and render the right button.
+    NeedsAuth,
     /// OAuth flow in progress — tool calls are rejected with -32001.
     Authenticating,
 }
@@ -391,7 +399,10 @@ impl UpstreamRegistry {
             if status == UpstreamStatus::Failed {
                 return Err(format!("Upstream '{upstream_name}' has failed — restart the server or reconnect"));
             }
-            if status == UpstreamStatus::Authenticating {
+            if matches!(
+                status,
+                UpstreamStatus::Authenticating | UpstreamStatus::NeedsAuth
+            ) {
                 return Err(format!(
                     "{{\"code\":-32001,\"message\":\"Upstream '{upstream_name}' is awaiting OAuth authentication\"}}"
                 ));
@@ -417,7 +428,10 @@ impl UpstreamRegistry {
             }
             Err(UpstreamError::NeedsOAuth { .. }) => {
                 // Don't trip the circuit breaker — this is an auth state, not a failure.
-                self.trigger_oauth_flow(&entry, upstream_name);
+                // Flag as NeedsAuth and wait for the user to click "Authorize"; never
+                // auto-open a browser (RFC 8252 §8.11, guards against a compromised
+                // upstream steering the user to an attacker-controlled AS).
+                self.mark_needs_auth(&entry, upstream_name);
                 Err(format!(
                     "{{\"code\":-32001,\"message\":\"Upstream '{upstream_name}' is awaiting OAuth authentication\"}}"
                 ))
@@ -440,14 +454,13 @@ impl UpstreamRegistry {
         }
     }
 
-    /// Transition an upstream into `Authenticating` and spawn
-    /// [`OAuthFlowManager::start_flow`] in the background. Emits a
-    /// `McpOAuthStart` event so the frontend can open the browser. No-op when
-    /// already authenticating or when the flow manager is not wired.
-    fn trigger_oauth_flow(&self, entry: &Arc<UpstreamEntry>, name: &str) {
-        let bus_snapshot = self.event_bus.read().clone();
-        let flow_mgr = self.oauth_flow();
-        start_oauth_flow(entry, name, bus_snapshot, flow_mgr);
+    /// Transition an upstream into `NeedsAuth` — the auto-detected "awaiting
+    /// user consent" state. Does **not** spawn the OAuth flow; the browser
+    /// must only open after an explicit user click (frontend calls
+    /// [`start_mcp_upstream_oauth`](crate::mcp_oauth::commands::start_mcp_upstream_oauth)).
+    fn mark_needs_auth(&self, entry: &Arc<UpstreamEntry>, name: &str) {
+        let bus = self.event_bus.read().clone();
+        mark_entry_needs_auth(entry, name, bus.as_ref());
     }
 
     /// Called by the OAuth command layer once tokens have been successfully
@@ -572,6 +585,7 @@ impl UpstreamRegistry {
                 UpstreamStatus::Disabled => "disabled",
                 UpstreamStatus::Failed => "failed",
                 UpstreamStatus::Authenticating => "authenticating",
+                UpstreamStatus::NeedsAuth => "needs_auth",
             };
             let transport_info = match &e.config.transport {
                 UpstreamTransport::Http { url } => serde_json::json!({
@@ -796,99 +810,40 @@ async fn dispatch_tool_call(
     }
 }
 
-/// Fire the OAuth flow for an upstream in the background (shared helper).
+/// Flag an upstream as `NeedsAuth` without starting the OAuth flow.
 ///
-/// Transitions status to `Authenticating`, emits `UpstreamStatusChanged`
-/// immediately via the supplied bus, and spawns the manager's `start_flow`.
-/// On success, emits `McpOAuthStart` with the browser URL.
-fn start_oauth_flow(
+/// Used by auto-detection paths (init, health check, tool call) to park the
+/// upstream in "awaiting user consent" and emit `UpstreamStatusChanged` so the
+/// UI renders the Authorize button. The browser is only opened after the
+/// user's explicit click (the frontend then invokes `start_mcp_upstream_oauth`,
+/// which runs `start_oauth_flow`). Idempotent if already NeedsAuth/Authenticating.
+fn mark_entry_needs_auth(
     entry: &Arc<UpstreamEntry>,
     name: &str,
-    bus: Option<tokio::sync::broadcast::Sender<crate::state::AppEvent>>,
-    flow_mgr: Option<Arc<crate::mcp_oauth::flow::OAuthFlowManager>>,
+    bus: Option<&tokio::sync::broadcast::Sender<crate::state::AppEvent>>,
 ) {
     {
         let mut status = entry.status.write();
-        if *status == UpstreamStatus::Authenticating {
+        if matches!(
+            *status,
+            UpstreamStatus::NeedsAuth | UpstreamStatus::Authenticating
+        ) {
             return;
         }
-        *status = UpstreamStatus::Authenticating;
+        *status = UpstreamStatus::NeedsAuth;
     }
-    if let Some(ref sender) = bus {
+    if let Some(sender) = bus {
         let _ = sender.send(crate::state::AppEvent::UpstreamStatusChanged {
             name: name.to_string(),
-            status: "authenticating".to_string(),
+            status: "needs_auth".to_string(),
         });
     }
-
-    let Some(flow_mgr) = flow_mgr else {
-        tracing::warn!(
-            source = "mcp_registry",
-            %name,
-            "OAuth flow requested but OAuthFlowManager is not wired"
-        );
-        return;
-    };
-
-    let Some(ref auth) = entry.config.auth else {
-        tracing::warn!(
-            source = "mcp_registry",
-            %name,
-            "OAuth challenge received but no auth config is set — cannot start flow"
-        );
-        return;
-    };
-    let auth = auth.clone();
-
-    let server_url = match &entry.config.transport {
-        UpstreamTransport::Http { url } => url.clone(),
-        UpstreamTransport::Stdio { .. } => {
-            tracing::warn!(
-                source = "mcp_registry",
-                %name,
-                "OAuth challenge on stdio transport — unsupported"
-            );
-            return;
-        }
-    };
-
-    // Dev-mode uses the localhost callback server; production uses the
-    // `tuic://` deep-link handler (resolved in the Tauri command layer, #1198).
-    let redirect_uri = crate::mcp_oauth::OAUTH_REDIRECT_URI.to_string();
-    let name_owned = name.to_string();
-
-    tokio::spawn(async move {
-        match flow_mgr
-            .start_flow(&name_owned, &server_url, &auth, &redirect_uri)
-            .await
-        {
-            Ok(outcome) => {
-                if let Some(ref sender) = bus {
-                    let _ = sender.send(crate::state::AppEvent::McpOAuthStart {
-                        name: name_owned.clone(),
-                        authorization_url: outcome.authorization_url,
-                    });
-                }
-                tracing::info!(
-                    source = "mcp_registry",
-                    name = %name_owned,
-                    "OAuth flow started"
-                );
-            }
-            Err(e) => {
-                tracing::error!(
-                    source = "mcp_registry",
-                    name = %name_owned,
-                    "OAuth flow failed to start: {e}"
-                );
-            }
-        }
-    });
 }
 
 /// Run the MCP initialize sequence for an entry and update its status.
-/// Triggers the OAuth flow on a `NeedsOAuth` result when `flow_mgr` is wired;
-/// otherwise NeedsOAuth is logged and the entry is left in `Authenticating`.
+/// On a `NeedsOAuth` result, the entry is flagged as `NeedsAuth` and the user
+/// must explicitly click "Authorize" in the UI — the browser is never opened
+/// automatically (RFC 8252 §8.11).
 async fn initialize_entry_with_oauth(
     entry: &Arc<UpstreamEntry>,
     name: &str,
@@ -923,10 +878,10 @@ async fn initialize_entry_with_oauth(
             tracing::info!(
                 source = "mcp_registry",
                 %name,
-                "Upstream requires OAuth authentication — starting flow"
+                "Upstream requires OAuth authentication — awaiting user consent"
             );
-            start_oauth_flow(entry, name, bus.cloned(), flow_mgr);
-            // Status already set to Authenticating inside start_oauth_flow.
+            let _ = flow_mgr; // flow is only started after user click, never here
+            mark_entry_needs_auth(entry, name, bus);
             return;
         }
         Err(e) => {
@@ -972,6 +927,7 @@ async fn run_health_checks(registry: &UpstreamRegistry) {
             UpstreamStatus::Failed => true,
             UpstreamStatus::Disabled => false,
             UpstreamStatus::Authenticating => false,
+            UpstreamStatus::NeedsAuth => false,
         };
         if !should_probe {
             continue;
@@ -1013,9 +969,10 @@ async fn run_health_checks(registry: &UpstreamRegistry) {
                     tracing::info!(
                         source = "mcp_registry",
                         %name,
-                        "Health check received OAuth challenge — starting flow"
+                        "Health check received OAuth challenge — awaiting user consent"
                     );
-                    start_oauth_flow(&entry, &name, bus.clone(), flow);
+                    let _ = flow; // flow is only started after user click, never here
+                    mark_entry_needs_auth(&entry, &name, bus.as_ref());
                 }
                 Err(_) => {
                     let exhausted = entry.cb.record_failure();
@@ -1484,41 +1441,90 @@ mod tests {
         assert!(registry.oauth_flow().is_none());
     }
 
+    // -----------------------------------------------------------------------
+    // Consent gate (#1267-d522): auto-detected NeedsOAuth must NOT open the
+    // browser; it parks the upstream in NeedsAuth awaiting a user click.
+    // -----------------------------------------------------------------------
+
     #[tokio::test]
-    async fn start_oauth_flow_transitions_entry_to_authenticating() {
+    async fn mark_entry_needs_auth_transitions_to_needs_auth() {
         let registry = UpstreamRegistry::new();
-        let cfg = http_server_config_disabled("auth-entry", "http://127.0.0.1:1/mcp");
+        let cfg = http_server_config_disabled("needs-auth-1", "http://127.0.0.1:1/mcp");
         registry.connect_upstream(cfg, None).await.unwrap();
-        let entry = Arc::clone(registry.entries.get("auth-entry").unwrap().value());
+        let entry = Arc::clone(registry.entries.get("needs-auth-1").unwrap().value());
 
-        // No flow manager wired — should still transition status & emit event.
         let (tx, mut rx) = tokio::sync::broadcast::channel(4);
-        super::start_oauth_flow(&entry, "auth-entry", Some(tx), None);
+        super::mark_entry_needs_auth(&entry, "needs-auth-1", Some(&tx));
 
-        assert_eq!(*entry.status.read(), UpstreamStatus::Authenticating);
-        let evt = rx.recv().await.expect("status event");
-        match evt {
+        assert_eq!(*entry.status.read(), UpstreamStatus::NeedsAuth);
+        match rx.recv().await.expect("status event") {
             crate::state::AppEvent::UpstreamStatusChanged { name, status } => {
-                assert_eq!(name, "auth-entry");
-                assert_eq!(status, "authenticating");
+                assert_eq!(name, "needs-auth-1");
+                assert_eq!(status, "needs_auth");
             }
             other => panic!("expected UpstreamStatusChanged, got {other:?}"),
         }
     }
 
     #[tokio::test]
-    async fn start_oauth_flow_is_idempotent_when_already_authenticating() {
+    async fn mark_entry_needs_auth_is_idempotent() {
         let registry = UpstreamRegistry::new();
-        let cfg = http_server_config_disabled("auth-idem", "http://127.0.0.1:1/mcp");
+        let cfg = http_server_config_disabled("needs-auth-idem", "http://127.0.0.1:1/mcp");
         registry.connect_upstream(cfg, None).await.unwrap();
-        let entry = Arc::clone(registry.entries.get("auth-idem").unwrap().value());
+        let entry = Arc::clone(registry.entries.get("needs-auth-idem").unwrap().value());
+        *entry.status.write() = UpstreamStatus::NeedsAuth;
+
+        let (tx, mut rx) = tokio::sync::broadcast::channel(4);
+        super::mark_entry_needs_auth(&entry, "needs-auth-idem", Some(&tx));
+
+        // Second call on an already-NeedsAuth entry must be silent.
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn mark_entry_needs_auth_noop_when_already_authenticating() {
+        // A user-initiated flow in progress must not be downgraded to NeedsAuth
+        // by a concurrent auto-detection path.
+        let registry = UpstreamRegistry::new();
+        let cfg = http_server_config_disabled("needs-auth-active", "http://127.0.0.1:1/mcp");
+        registry.connect_upstream(cfg, None).await.unwrap();
+        let entry = Arc::clone(registry.entries.get("needs-auth-active").unwrap().value());
         *entry.status.write() = UpstreamStatus::Authenticating;
 
         let (tx, mut rx) = tokio::sync::broadcast::channel(4);
-        super::start_oauth_flow(&entry, "auth-idem", Some(tx), None);
+        super::mark_entry_needs_auth(&entry, "needs-auth-active", Some(&tx));
 
-        // No event should be emitted — second call is a no-op.
+        assert_eq!(*entry.status.read(), UpstreamStatus::Authenticating);
         assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn proxy_tool_call_rejects_needs_auth_with_32001() {
+        let registry = UpstreamRegistry::new();
+        let config = http_server_config_disabled("needs-auth-block", "http://127.0.0.1:1/mcp");
+        registry.connect_upstream(config, None).await.unwrap();
+        if let Some(entry) = registry.entries.get("needs-auth-block") {
+            *entry.status.write() = UpstreamStatus::NeedsAuth;
+        }
+
+        let err = registry
+            .proxy_tool_call("needs-auth-block__some_tool", serde_json::json!({}))
+            .await
+            .expect_err("should reject while awaiting user consent");
+        assert!(err.contains("-32001"), "expected -32001 error code, got: {err}");
+        assert!(err.contains("OAuth authentication"), "expected auth message, got: {err}");
+    }
+
+    #[test]
+    fn status_snapshot_serializes_needs_auth() {
+        let registry = UpstreamRegistry::new();
+        let (name, entry) = ready_entry("needs-auth-snap", vec![]);
+        *entry.status.write() = UpstreamStatus::NeedsAuth;
+        registry.entries.insert(name, entry);
+
+        let snap = registry.status_snapshot();
+        let upstreams = snap["upstreams"].as_array().unwrap();
+        assert_eq!(upstreams[0]["status"], "needs_auth");
     }
 
     #[tokio::test]
