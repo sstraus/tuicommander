@@ -87,6 +87,18 @@ pub enum ParsedEvent {
     SlashMenu {
         items: Vec<SlashMenuItem>,
     },
+    /// Numbered choice dialog rendered below the prompt line (edit-confirmation,
+    /// bash-confirmation, apply-patch, etc.). Cross-agent: Claude Code, Codex,
+    /// Aider, Gemini all follow the same "title? / N. option" layout.
+    #[serde(rename = "choice-prompt")]
+    ChoicePrompt {
+        title: String,
+        options: Vec<ChoiceOption>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        dismiss_key: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        amend_key: Option<String>,
+    },
     /// Claude Code sub-task indicator: `›› task · N local agents` or `›› task · 1 bash`.
     /// Count > 0 means the agent has background work in progress; 0 means all sub-tasks finished.
     #[serde(rename = "active-subtasks")]
@@ -101,6 +113,22 @@ pub enum ParsedEvent {
     ShellState {
         state: String, // "busy" | "idle"
     },
+}
+
+/// A single option in a numbered choice dialog (edit-confirm, bash-confirm, etc.).
+#[derive(Clone, Debug, Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct ChoiceOption {
+    /// Keypress the agent expects to select this option (e.g. "1", "2", "3").
+    pub key: String,
+    /// Primary label shown to the user (e.g. "Yes", "No", "Yes, allow all edits").
+    pub label: String,
+    /// Whether this option is currently highlighted (cursor position).
+    pub highlighted: bool,
+    /// Best-effort flag: label contains a "reject/cancel/no" verb.
+    pub destructive: bool,
+    /// Optional parenthetical hint (e.g. "(shift+tab)"), stripped from label.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
 }
 
 /// A single item in a slash command autocomplete menu.
@@ -1239,6 +1267,137 @@ pub fn parse_slash_menu(screen_rows: &[String]) -> Option<ParsedEvent> {
     }
 
     Some(ParsedEvent::SlashMenu { items })
+}
+
+/// Detect a numbered choice dialog rendered below the prompt line.
+///
+/// Shape expected (Claude Code edit-confirm example):
+/// ```text
+/// Do you want to make this edit to CLAUDE.md?
+/// ❯ 1. Yes
+///   2. Yes, allow all edits during this session (shift+tab)
+///   3. No
+///
+/// Esc to cancel · Tab to amend
+/// ```
+///
+/// Strategy — scan bottom-up:
+///   1. Skip trailing empty rows and optional footer hints (`Esc to .* · Tab .*`).
+///   2. Collect contiguous numbered option rows (`  1. label`, `❯ 2. label`, etc.).
+///   3. Walk up past blank rows to find the first non-empty row preceding the
+///      block — that's the title. Title must end in `?` OR be preceded by a
+///      `Do you want` / `Proceed` / `Continue` / `Should I` verb (guardrail
+///      against markdown numbered lists).
+///   4. Require ≥ 2 options to reduce false positives.
+pub fn parse_choice_prompt(screen_rows: &[String]) -> Option<ParsedEvent> {
+    lazy_static::lazy_static! {
+        // Option: optional ❯/›/> marker, digit(s), . or ), space, label.
+        static ref OPTION_RE: regex::Regex =
+            regex::Regex::new(r"^\s*(?:[❯›>]\s*)?(\d+)[.)]\s+(.+?)\s*$").unwrap();
+        // Footer: `Esc to cancel · Tab to amend` style.
+        static ref FOOTER_RE: regex::Regex =
+            regex::Regex::new(r"^\s*(?:Esc|esc|ESC)\s+to\s+(\S+).*?(?:·|\||•)\s*(?:Tab|tab|TAB)\s+to\s+(\S+)").unwrap();
+        // Title sentinel: question mark OR imperative verb. Keeps us off markdown lists.
+        static ref TITLE_VERB_RE: regex::Regex =
+            regex::Regex::new(r"(?i)^\s*(?:do you want|proceed with|continue|should i|confirm|apply|allow)\b").unwrap();
+        // Hint in parens at end of label: "(shift+tab)".
+        static ref HINT_RE: regex::Regex =
+            regex::Regex::new(r"\s*\(([^()]+)\)\s*$").unwrap();
+    }
+
+    if screen_rows.is_empty() {
+        return None;
+    }
+
+    let mut idx = screen_rows.len();
+    let mut dismiss_key: Option<String> = None;
+    let mut amend_key: Option<String> = None;
+
+    // Step 1: skip trailing blanks + optional footer.
+    while idx > 0 {
+        let row = screen_rows[idx - 1].trim();
+        if row.is_empty() {
+            idx -= 1;
+            continue;
+        }
+        if let Some(caps) = FOOTER_RE.captures(&screen_rows[idx - 1]) {
+            dismiss_key = Some(caps[1].to_string());
+            amend_key = Some(caps[2].to_string());
+            idx -= 1;
+            continue;
+        }
+        break;
+    }
+
+    // Step 2: collect contiguous option rows bottom-up.
+    let mut options_rev: Vec<ChoiceOption> = Vec::new();
+    while idx > 0 {
+        let raw = &screen_rows[idx - 1];
+        if raw.trim().is_empty() {
+            break;
+        }
+        if let Some(caps) = OPTION_RE.captures(raw) {
+            let key = caps[1].to_string();
+            let mut label = caps[2].trim().to_string();
+            let highlighted = raw.contains('❯') || raw.contains('›');
+
+            let hint = HINT_RE.captures(&label).map(|c| c[1].to_string());
+            if hint.is_some() {
+                label = HINT_RE.replace(&label, "").trim().to_string();
+            }
+
+            let destructive = {
+                let lower = label.to_lowercase();
+                matches!(lower.as_str(), "no" | "cancel" | "reject" | "abort" | "deny")
+                    || lower.starts_with("no,")
+                    || lower.starts_with("no ")
+                    || lower.starts_with("don't")
+                    || lower.starts_with("do not")
+            };
+
+            options_rev.push(ChoiceOption { key, label, highlighted, destructive, hint });
+            idx -= 1;
+        } else {
+            break;
+        }
+    }
+
+    if options_rev.len() < 2 {
+        return None;
+    }
+
+    // Step 3: walk past blank rows, find title row.
+    while idx > 0 && screen_rows[idx - 1].trim().is_empty() {
+        idx -= 1;
+    }
+    if idx == 0 {
+        return None;
+    }
+    let title_row = screen_rows[idx - 1].trim();
+    let title_qualifies =
+        title_row.ends_with('?') || TITLE_VERB_RE.is_match(title_row);
+    if !title_qualifies {
+        return None;
+    }
+    let title = title_row.to_string();
+
+    // Step 4: restore top-to-bottom order.
+    options_rev.reverse();
+    let mut options = options_rev;
+
+    // Fallback highlight: if none marked, highlight the first option.
+    if !options.iter().any(|o| o.highlighted)
+        && let Some(first) = options.first_mut()
+    {
+        first.highlighted = true;
+    }
+
+    Some(ParsedEvent::ChoicePrompt {
+        title,
+        options,
+        dismiss_key,
+        amend_key,
+    })
 }
 
 #[cfg(test)]
@@ -3679,6 +3838,147 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         let input = "Do you want to proceed?";
         let evt = parse_question(input);
         assert!(evt.is_none(), "Regular questions use silence detector, not parse_question");
+    }
+
+    // --- parse_choice_prompt fixture-driven golden tests ---
+
+    // Fixture corpus lives at src-tauri/src/fixtures/choice_prompts/. Each
+    // positive fixture is a pair <name>.txt (raw screen rows) + <name>.json
+    // (expected ChoicePrompt). Negatives are under negative/ and must parse
+    // to None. To add a new fixture: drop the files in the folder — the test
+    // auto-discovers. When an agent layout drifts, add a new .txt/.json pair
+    // and loosen the parser only as needed.
+
+    fn fixtures_dir() -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("src/fixtures/choice_prompts")
+    }
+
+    fn load_rows(path: &std::path::Path) -> Vec<String> {
+        let text = std::fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("read fixture {}: {}", path.display(), e));
+        text.lines().map(|l| l.to_string()).collect()
+    }
+
+    fn assert_matches_expected(
+        fixture_name: &str,
+        actual: &ParsedEvent,
+        expected: &serde_json::Value,
+    ) {
+        let ParsedEvent::ChoicePrompt { title, options, dismiss_key, amend_key } = actual else {
+            panic!("fixture {}: expected ChoicePrompt, got {:?}", fixture_name, actual);
+        };
+        assert_eq!(title, expected["title"].as_str().unwrap(),
+            "fixture {} title mismatch", fixture_name);
+        let exp_opts = expected["options"].as_array().unwrap();
+        assert_eq!(options.len(), exp_opts.len(),
+            "fixture {} option count mismatch", fixture_name);
+        for (i, (got, want)) in options.iter().zip(exp_opts.iter()).enumerate() {
+            assert_eq!(got.key, want["key"].as_str().unwrap(),
+                "fixture {} opt[{}] key", fixture_name, i);
+            assert_eq!(got.label, want["label"].as_str().unwrap(),
+                "fixture {} opt[{}] label", fixture_name, i);
+            assert_eq!(got.highlighted, want["highlighted"].as_bool().unwrap(),
+                "fixture {} opt[{}] highlighted", fixture_name, i);
+            assert_eq!(got.destructive, want["destructive"].as_bool().unwrap(),
+                "fixture {} opt[{}] destructive", fixture_name, i);
+            let want_hint = want.get("hint").and_then(|v| v.as_str()).map(String::from);
+            assert_eq!(got.hint, want_hint,
+                "fixture {} opt[{}] hint", fixture_name, i);
+        }
+        let want_dismiss = expected.get("dismiss_key").and_then(|v| v.as_str()).map(String::from);
+        let want_amend = expected.get("amend_key").and_then(|v| v.as_str()).map(String::from);
+        assert_eq!(dismiss_key, &want_dismiss, "fixture {} dismiss_key", fixture_name);
+        assert_eq!(amend_key, &want_amend, "fixture {} amend_key", fixture_name);
+    }
+
+    #[test]
+    fn test_choice_prompt_positive_fixtures() {
+        let dir = fixtures_dir();
+        let mut count = 0;
+        for entry in std::fs::read_dir(&dir)
+            .unwrap_or_else(|e| panic!("read_dir {}: {}", dir.display(), e))
+        {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|s| s.to_str()) != Some("txt") {
+                continue;
+            }
+            let name = path.file_stem().unwrap().to_string_lossy().into_owned();
+            let json_path = path.with_extension("json");
+            let expected: serde_json::Value = serde_json::from_str(
+                &std::fs::read_to_string(&json_path)
+                    .unwrap_or_else(|_| panic!("missing expected JSON for {}", name)),
+            ).unwrap_or_else(|e| panic!("parse {}.json: {}", name, e));
+
+            let rows = load_rows(&path);
+            let actual = parse_choice_prompt(&rows)
+                .unwrap_or_else(|| panic!("fixture {} did not parse — parser regression?", name));
+            assert_matches_expected(&name, &actual, &expected);
+            count += 1;
+        }
+        assert!(count >= 1, "no positive fixtures found in {}", dir.display());
+    }
+
+    #[test]
+    fn test_choice_prompt_negative_fixtures() {
+        let dir = fixtures_dir().join("negative");
+        let mut count = 0;
+        for entry in std::fs::read_dir(&dir)
+            .unwrap_or_else(|e| panic!("read_dir {}: {}", dir.display(), e))
+        {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|s| s.to_str()) != Some("txt") {
+                continue;
+            }
+            let rows = load_rows(&path);
+            let result = parse_choice_prompt(&rows);
+            assert!(
+                result.is_none(),
+                "negative fixture {} should NOT parse, got {:?}",
+                path.file_stem().unwrap().to_string_lossy(),
+                result,
+            );
+            count += 1;
+        }
+        assert!(count >= 1, "no negative fixtures found in {}", dir.display());
+    }
+
+    #[test]
+    fn test_choice_prompt_no_footer() {
+        // Dialog without "Esc to cancel" footer — still valid.
+        let rows: Vec<String> = [
+            "Proceed with deletion?",
+            "❯ 1. Yes",
+            "  2. No",
+        ].iter().map(|s| s.to_string()).collect();
+        let evt = parse_choice_prompt(&rows).expect("should parse without footer");
+        let ParsedEvent::ChoicePrompt { dismiss_key, amend_key, .. } = evt else {
+            panic!("wrong variant");
+        };
+        assert!(dismiss_key.is_none());
+        assert!(amend_key.is_none());
+    }
+
+    #[test]
+    fn test_choice_prompt_single_option_rejected() {
+        let rows: Vec<String> = [
+            "Continue?",
+            "❯ 1. Yes",
+        ].iter().map(|s| s.to_string()).collect();
+        assert!(parse_choice_prompt(&rows).is_none(), "single option should not match");
+    }
+
+    #[test]
+    fn test_choice_prompt_title_must_be_question_or_verb() {
+        // Plain numbered list with a non-question, non-verb preceding line.
+        let rows: Vec<String> = [
+            "Results:",
+            "  1. apple",
+            "  2. banana",
+            "  3. cherry",
+        ].iter().map(|s| s.to_string()).collect();
+        assert!(parse_choice_prompt(&rows).is_none(),
+            "numbered list without question/verb title must not match");
     }
 
 }

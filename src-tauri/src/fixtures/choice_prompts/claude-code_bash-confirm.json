@@ -1,0 +1,11 @@
+{
+  "type": "choice-prompt",
+  "title": "Do you want to proceed?",
+  "options": [
+    { "key": "1", "label": "Yes", "highlighted": false, "destructive": false },
+    { "key": "2", "label": "Yes, and don't ask again for npm commands in /Users/me/project", "highlighted": true, "destructive": false },
+    { "key": "3", "label": "No, and tell Claude what to do differently", "highlighted": false, "destructive": true, "hint": "esc" }
+  ],
+  "dismiss_key": "cancel",
+  "amend_key": "amend"
+}

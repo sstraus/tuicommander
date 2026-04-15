@@ -1,0 +1,11 @@
+{
+  "type": "choice-prompt",
+  "title": "Do you want to make this edit to CLAUDE.md?",
+  "options": [
+    { "key": "1", "label": "Yes", "highlighted": true, "destructive": false },
+    { "key": "2", "label": "Yes, allow all edits during this session", "highlighted": false, "destructive": false, "hint": "shift+tab" },
+    { "key": "3", "label": "No", "highlighted": false, "destructive": true }
+  ],
+  "dismiss_key": "cancel",
+  "amend_key": "amend"
+}

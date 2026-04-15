@@ -1,0 +1,5 @@
+Refactored to:
+  1. extract validation
+  2. inline the helper
+  3. update tests
+Done refactoring the module.
