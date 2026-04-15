@@ -498,6 +498,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
     }
 
     repositoriesStore.setBranchSwitching(true);
+    try {
 
     // Log the state we're LEAVING — critical for diagnosing terminal disappearance
     const prevRepo = repositoriesStore.getActive();
@@ -689,13 +690,17 @@ export function useGitOperations(deps: GitOperationsDeps) {
       terminalsStore.setActive(null);
     }
 
-    repositoriesStore.setBranchSwitching(false);
-
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         terminalsStore.getActive()?.ref?.focus();
       });
     });
+    } finally {
+      // Story 1281-a37d: always clear the flag, even on throw. Without this,
+      // a rejected close_pty / getDiffStats / resume-verification left the
+      // TabBar filtering on the previous repo until app restart.
+      repositoriesStore.setBranchSwitching(false);
+    }
   };
 
   const handleRemoveRepo = async (repoPath: string) => {

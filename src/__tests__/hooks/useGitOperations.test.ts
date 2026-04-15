@@ -379,6 +379,23 @@ describe("useGitOperations", () => {
       expect(paneLayoutStore.getAllGroupIds()).toContain(g1);
     });
 
+    it("clears branchSwitching even when auto-spawn throws (story 1281-a37d)", async () => {
+      // Regression: before the try/finally wrap, any throw inside
+      // handleBranchSelectInner (e.g. pty.canSpawn rejecting, close_pty failing,
+      // resume-command verification bubbling a sync error) stranded the
+      // branchSwitching flag at true. The TabBar reads that flag and shows
+      // the previous repo's tabs until the app restarts.
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "feature", { worktreePath: "/repo/wt-feature" });
+      // Brand-new branch with no terminals triggers the auto-spawn path at the
+      // end of handleBranchSelectInner, which awaits handleAddTerminalToBranch.
+      mockPty.canSpawn.mockRejectedValueOnce(new Error("pty boom"));
+
+      await expect(gitOps.handleBranchSelect("/repo", "feature")).rejects.toThrow("pty boom");
+
+      expect(repositoriesStore.state.branchSwitching).toBe(false);
+    });
+
     it("serializes concurrent calls — no duplicate terminals from savedTerminals", async () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "feature", {
