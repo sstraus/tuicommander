@@ -323,6 +323,13 @@ export const TabBar: Component<TabBarProps> = (props) => {
     }
   });
 
+  // Evict non-pinned plugin-panel tabs from other repos on repo switch — they
+  // would otherwise pile up forever, invisible but still holding HTML in memory.
+  createEffect(() => {
+    const current = repositoriesStore.state.activeRepoPath;
+    mdTabsStore.evictNonPinnedPluginPanelsForOtherRepos(current);
+  });
+
   const handleDragStart = (e: DragEvent, id: string, tabType: "terminal" | "markdown" | "diff" | "editor" = "terminal") => {
     if (!e.dataTransfer) return;
     markInternalDragStart();

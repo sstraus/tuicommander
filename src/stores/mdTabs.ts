@@ -384,6 +384,24 @@ function createMdTabsStore() {
       return handles.get(tabId) as T | undefined;
     },
 
+    /**
+     * Evict non-pinned plugin-panel tabs whose repoPath is set and doesn't match
+     * the given repo. Without this, every visited repo leaves a stale UI tab in
+     * state.tabs forever — invisible (getVisibleIds hides them) but still holding
+     * HTML in memory. Called on repo switch. Pinned tabs and tabs with no
+     * repoPath (globally scoped) are preserved. Non-plugin-panel tabs (file,
+     * virtual, pr-diff, html-preview, etc.) are untouched — they have their own
+     * lifecycle and users rely on them persisting across repo switches.
+     */
+    evictNonPinnedPluginPanelsForOtherRepos(currentRepoPath: string | null): void {
+      base._clearWhere((tab) =>
+        tab.type === "plugin-panel" &&
+        !tab.pinned &&
+        !!tab.repoPath &&
+        tab.repoPath !== currentRepoPath,
+      );
+    },
+
     /** Clear all file-based markdown tabs for a repository (virtual tabs are unaffected) */
     clearForRepo(repoPath: string): void {
       base._clearWhere((tab) => tab.type === "file" && (tab as FileTab).repoPath === repoPath);

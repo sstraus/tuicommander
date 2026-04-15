@@ -510,6 +510,76 @@ describe("mdTabsStore", () => {
     });
   });
 
+  describe("evictNonPinnedPluginPanelsForOtherRepos() (story 1283-1d9b)", () => {
+    // Without eviction, every visited repo leaves a stale non-pinned plugin-panel
+    // entry in state.tabs. getVisibleIds already hides them, but the HTML is
+    // retained forever. Eviction runs on repo switch, keyed by repoPath.
+    it("evicts non-pinned plugin-panel tabs belonging to other repos", () => {
+      testInScope(() => {
+        repositoriesStore.add({ path: "/Gits/alpha", displayName: "alpha" });
+        repositoriesStore.add({ path: "/Gits/beta", displayName: "beta" });
+        repositoriesStore.setActive("/Gits/alpha");
+        const aId = store.openUiTab("plug-a", "A", "<p/>", false, undefined, true, "/Gits/alpha");
+        repositoriesStore.setActive("/Gits/beta");
+        const bId = store.openUiTab("plug-b", "B", "<p/>", false, undefined, true, "/Gits/beta");
+        expect(store.getCount()).toBe(2);
+
+        // Switch back to alpha — beta's non-pinned tab must be gone, alpha's still here.
+        store.evictNonPinnedPluginPanelsForOtherRepos("/Gits/alpha");
+        expect(store.get(aId)).toBeDefined();
+        expect(store.get(bId)).toBeUndefined();
+      });
+    });
+
+    it("preserves pinned plugin-panel tabs regardless of repo", () => {
+      testInScope(() => {
+        repositoriesStore.add({ path: "/Gits/alpha", displayName: "alpha" });
+        repositoriesStore.add({ path: "/Gits/beta", displayName: "beta" });
+        repositoriesStore.setActive("/Gits/beta");
+        const pinnedId = store.openUiTab("plug-pin", "Pin", "<p/>", true, undefined, true, "/Gits/beta");
+
+        store.evictNonPinnedPluginPanelsForOtherRepos("/Gits/alpha");
+        expect(store.get(pinnedId)).toBeDefined();
+      });
+    });
+
+    it("does not touch non-plugin-panel tabs (file/virtual/pr-diff untouched)", () => {
+      testInScope(() => {
+        repositoriesStore.add({ path: "/Gits/alpha", displayName: "alpha" });
+        repositoriesStore.add({ path: "/Gits/beta", displayName: "beta" });
+        repositoriesStore.setActive("/Gits/beta");
+        const fileId = store.add("/Gits/beta", "docs/README.md");
+        const diffId = store.addPrDiff("/Gits/beta", 42, "PR title", "diff");
+
+        store.evictNonPinnedPluginPanelsForOtherRepos("/Gits/alpha");
+        expect(store.get(fileId)).toBeDefined();
+        expect(store.get(diffId)).toBeDefined();
+      });
+    });
+
+    it("preserves plugin-panel tabs with no repoPath (globally scoped)", () => {
+      testInScope(() => {
+        // Pinned + no originRepoPath leaves repoPath undefined → globally visible.
+        const globalId = store.openUiTab("plug-global", "Global", "<p/>", true);
+        store.evictNonPinnedPluginPanelsForOtherRepos("/Gits/alpha");
+        expect(store.get(globalId)).toBeDefined();
+      });
+    });
+
+    it("clears activeId if it pointed at an evicted tab", () => {
+      testInScope(() => {
+        repositoriesStore.add({ path: "/Gits/alpha", displayName: "alpha" });
+        repositoriesStore.add({ path: "/Gits/beta", displayName: "beta" });
+        repositoriesStore.setActive("/Gits/beta");
+        const bId = store.openUiTab("plug-b", "B", "<p/>", false, undefined, true, "/Gits/beta");
+        expect(store.state.activeId).toBe(bId);
+
+        store.evictNonPinnedPluginPanelsForOtherRepos("/Gits/alpha");
+        expect(store.state.activeId).toBeNull();
+      });
+    });
+  });
+
   describe("closeUiTab()", () => {
     it("removes a plugin-panel tab by pluginId", () => {
       testInScope(() => {
