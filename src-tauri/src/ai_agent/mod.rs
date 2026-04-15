@@ -1,4 +1,5 @@
 pub mod commands;
+pub mod conversation;
 pub mod engine;
 pub mod safety;
 pub mod tools;

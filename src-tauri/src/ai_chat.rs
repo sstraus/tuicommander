@@ -74,7 +74,9 @@ impl AiChatConfig {
     pub fn effective_base_url(&self) -> Option<String> {
         if let Some(url) = &self.base_url {
             if !url.is_empty() {
-                return Some(url.clone());
+                // genai concatenates base_url + "chat/completions" — trailing slash required
+                let url = if url.ends_with('/') { url.clone() } else { format!("{url}/") };
+                return Some(url);
             }
         }
         // Default URLs for known providers that need one
@@ -94,7 +96,7 @@ pub(crate) fn read_api_key() -> Result<Option<String>, String> {
     let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
         .map_err(|e| format!("Failed to create keyring entry: {e}"))?;
     match entry.get_password() {
-        Ok(key) => Ok(Some(key)),
+        Ok(key) => Ok(Some(key.trim().to_string())),
         Err(keyring::Error::NoEntry) => Ok(None),
         Err(e) => Err(format!("Failed to read AI Chat API key: {e}")),
     }
@@ -226,7 +228,7 @@ pub(crate) async fn check_ollama_status() -> OllamaStatus {
     detect_ollama(&base).await
 }
 
-/// Quick connection test: send a minimal prompt and verify a response comes back.
+/// Quick connection test: first validate the API key, then send a minimal completion.
 #[tauri::command]
 pub(crate) async fn test_ai_chat_connection() -> Result<String, String> {
     let config: AiChatConfig = load_json_config(CONFIG_FILE);
@@ -245,7 +247,62 @@ pub(crate) async fn test_ai_chat_connection() -> Result<String, String> {
         })?
     };
 
-    // Reuse llm_api's build_client — same genai crate, same pattern
+    // Step 1: lightweight key validation via provider-specific endpoint
+    let http = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("HTTP client error: {e}"))?;
+
+    let base = config.effective_base_url().unwrap_or_default();
+    let key_check = match config.provider.as_str() {
+        "openrouter" => {
+            let url = format!("{}auth/key", if base.is_empty() { "https://openrouter.ai/api/v1/" } else { &base });
+            Some(http.get(&url).bearer_auth(&api_key).send().await)
+        }
+        "anthropic" => {
+            let url = "https://api.anthropic.com/v1/models";
+            Some(http.get(url)
+                .header("x-api-key", &api_key)
+                .header("anthropic-version", "2023-06-01")
+                .send().await)
+        }
+        "openai" => {
+            let url = format!("{}models", if base.is_empty() { "https://api.openai.com/v1/" } else { &base });
+            Some(http.get(&url).bearer_auth(&api_key).send().await)
+        }
+        "ollama" => {
+            let url = format!("{}models", if base.is_empty() { "http://localhost:11434/v1/" } else { &base });
+            Some(http.get(&url).send().await)
+        }
+        _ => {
+            // Custom/unknown provider — skip key check, go straight to completion
+            None
+        }
+    };
+
+    // For known providers, verify the key check response
+    if let Some(key_check) = key_check {
+        match key_check {
+            Ok(resp) => {
+                let status = resp.status();
+                if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+                    return Err("API key is invalid or expired".to_string());
+                }
+                if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                    return Err("Rate limited — try again in a moment".to_string());
+                }
+                if !status.is_success() {
+                    let body = resp.text().await.unwrap_or_default();
+                    return Err(format!("Key check failed (HTTP {}): {}", status.as_u16(), &body[..body.len().min(200)]));
+                }
+            }
+            Err(e) => {
+                return Err(format!("Cannot reach {} API: {e}", config.provider));
+            }
+        }
+    }
+
+    // Step 2: actual completion test to verify model works
     let llm_config = llm_api::LlmApiConfig {
         provider: config.provider.clone(),
         model: config.model.clone(),
@@ -271,46 +328,19 @@ pub(crate) async fn test_ai_chat_connection() -> Result<String, String> {
         .map(|s| s.trim().to_string())
         .unwrap_or_default();
 
-    Ok(format!("Connection successful — model replied: {text}"))
+    Ok(format!("Key valid — model replied: {text}"))
 }
 
 // ---------------------------------------------------------------------------
 // Conversation persistence
 // ---------------------------------------------------------------------------
 
-/// A single message in a conversation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct ChatMessage {
-    pub role: String, // "user" | "assistant" | "system"
-    pub content: String,
-    #[serde(default)]
-    pub timestamp: u64, // unix millis
-}
-
-/// Metadata for a saved conversation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct ConversationMeta {
-    pub id: String,
-    pub title: String,
-    /// Session ID of the attached terminal (if any)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub session_id: Option<String>,
-    pub created: u64,  // unix millis
-    pub updated: u64,  // unix millis
-    pub message_count: usize,
-    /// Provider + model used
-    #[serde(default)]
-    pub provider: String,
-    #[serde(default)]
-    pub model: String,
-}
-
-/// A full conversation with messages.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct Conversation {
-    pub meta: ConversationMeta,
-    pub messages: Vec<ChatMessage>,
-}
+// Persistence types live in `ai_agent::conversation` so L2 tool-call
+// extensions sit next to the agent code. L1 keeps the same import path.
+#[cfg_attr(not(test), allow(unused_imports))]
+pub(crate) use crate::ai_agent::conversation::{
+    migrate_to_current, ChatMessage, Conversation, ConversationMeta,
+};
 
 const CONVERSATIONS_DIR: &str = "ai-chat-conversations";
 
@@ -356,8 +386,10 @@ pub(crate) fn load_conversation(id: String) -> Result<Conversation, String> {
     let path = dir.join(format!("{id}.json"));
     let data = std::fs::read_to_string(&path)
         .map_err(|_| format!("Conversation not found: {id}"))?;
-    serde_json::from_str(&data)
-        .map_err(|e| format!("Failed to parse conversation: {e}"))
+    let mut conv: Conversation = serde_json::from_str(&data)
+        .map_err(|e| format!("Failed to parse conversation: {e}"))?;
+    migrate_to_current(&mut conv);
+    Ok(conv)
 }
 
 #[tauri::command]
@@ -948,11 +980,7 @@ mod tests {
 
     #[test]
     fn chat_message_serde_round_trip() {
-        let msg = ChatMessage {
-            role: "user".to_string(),
-            content: "explain this error".to_string(),
-            timestamp: 1713200000000,
-        };
+        let msg = ChatMessage::text("user", "explain this error", 1713200000000);
         let json = serde_json::to_string(&msg).unwrap();
         let loaded: ChatMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(loaded.role, "user");
@@ -1016,17 +1044,14 @@ mod tests {
                 model: "claude-sonnet-4-5-20241022".to_string(),
             },
             messages: vec![
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: "why is CI failing?".to_string(),
-                    timestamp: 1713200000000,
-                },
-                ChatMessage {
-                    role: "assistant".to_string(),
-                    content: "The test suite has a flaky assertion...".to_string(),
-                    timestamp: 1713200001000,
-                },
+                ChatMessage::text("user", "why is CI failing?", 1713200000000),
+                ChatMessage::text(
+                    "assistant",
+                    "The test suite has a flaky assertion...",
+                    1713200001000,
+                ),
             ],
+            schema_version: crate::ai_agent::conversation::CURRENT_SCHEMA_VERSION,
         };
         let json = serde_json::to_string_pretty(&conv).unwrap();
         let loaded: Conversation = serde_json::from_str(&json).unwrap();
@@ -1057,11 +1082,8 @@ mod tests {
                 provider: "ollama".to_string(),
                 model: "qwen2.5:7b".to_string(),
             },
-            messages: vec![ChatMessage {
-                role: "user".to_string(),
-                content: "hello".to_string(),
-                timestamp: now_millis(),
-            }],
+            messages: vec![ChatMessage::text("user", "hello", now_millis())],
+            schema_version: crate::ai_agent::conversation::CURRENT_SCHEMA_VERSION,
         };
 
         // Save
