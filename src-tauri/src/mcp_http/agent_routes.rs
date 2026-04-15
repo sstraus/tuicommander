@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use uuid::Uuid;
 
+use super::guards::localhost_only;
 use super::types::*;
 
 pub(super) async fn detect_agents() -> impl IntoResponse {
@@ -68,8 +69,10 @@ pub(super) async fn resolve_context_variables_http(
 }
 
 pub(super) async fn execute_headless_prompt_http(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<serde_json::Value>,
 ) -> Response {
+    if let Err(resp) = localhost_only(&addr) { return resp.into_response(); }
     let command = match body.get("command").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()) {
         Some(c) => c.to_string(),
         None => return (StatusCode::BAD_REQUEST, "missing required field 'command'").into_response(),
@@ -90,8 +93,10 @@ pub(super) async fn execute_headless_prompt_http(
 }
 
 pub(super) async fn execute_api_prompt_http(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<serde_json::Value>,
 ) -> Response {
+    if let Err(resp) = localhost_only(&addr) { return resp.into_response(); }
     let system_prompt = body.get("systemPrompt").and_then(|v| v.as_str()).map(String::from);
     let content = match body.get("content").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
         Some(c) => c.to_string(),
@@ -118,12 +123,7 @@ pub(super) async fn spawn_agent_session(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<SpawnAgentRequest>,
 ) -> Response {
-    if !addr.ip().is_loopback() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({"error": "Agent session spawning is only allowed from localhost"})),
-        ).into_response();
-    }
+    if let Err(resp) = localhost_only(&addr) { return resp.into_response(); }
     if state.sessions.len() >= MAX_CONCURRENT_SESSIONS {
         return (
             StatusCode::TOO_MANY_REQUESTS,
@@ -302,4 +302,50 @@ pub(super) async fn spawn_agent_session(
         StatusCode::CREATED,
         Json(serde_json::json!({"session_id": session_id})),
     ).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn loopback() -> SocketAddr { "127.0.0.1:1".parse().unwrap() }
+    fn lan() -> SocketAddr { "192.168.1.2:1".parse().unwrap() }
+
+    #[tokio::test]
+    async fn execute_headless_prompt_http_rejects_non_loopback() {
+        let resp = execute_headless_prompt_http(
+            ConnectInfo(lan()),
+            Json(serde_json::json!({ "command": "echo", "args": ["x"] })),
+        ).await;
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn execute_headless_prompt_http_loopback_passes_guard() {
+        // Loopback with missing 'command' field must yield 400 from the validator,
+        // proving the 403 guard is NOT fired for loopback callers.
+        let resp = execute_headless_prompt_http(
+            ConnectInfo(loopback()),
+            Json(serde_json::json!({})),
+        ).await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn execute_api_prompt_http_rejects_non_loopback() {
+        let resp = execute_api_prompt_http(
+            ConnectInfo(lan()),
+            Json(serde_json::json!({ "content": "hello" })),
+        ).await;
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn execute_api_prompt_http_loopback_passes_guard() {
+        let resp = execute_api_prompt_http(
+            ConnectInfo(loopback()),
+            Json(serde_json::json!({})),
+        ).await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
 }

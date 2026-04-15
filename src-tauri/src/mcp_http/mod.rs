@@ -3,6 +3,7 @@ pub(crate) mod auth;
 mod config_routes;
 mod fs_routes;
 mod git_routes;
+mod guards;
 mod log_routes;
 mod github_routes;
 pub(crate) mod mcp_transport;

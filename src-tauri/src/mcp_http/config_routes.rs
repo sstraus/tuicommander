@@ -6,20 +6,8 @@ use axum::Json;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use super::guards::localhost_only;
 use super::types::*;
-
-/// Reject requests from non-loopback addresses.
-/// Config mutations are only allowed from localhost to prevent remote tampering.
-fn localhost_only(addr: &SocketAddr) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
-    if addr.ip().is_loopback() {
-        Ok(())
-    } else {
-        Err((
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({"error": "Config modification is only allowed from localhost"})),
-        ))
-    }
-}
 
 pub(super) async fn get_config(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let config = state.config.read().clone();
