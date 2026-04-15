@@ -1,4 +1,4 @@
-//! AI Chat backend — config, keyring, and Ollama detection.
+//! AI Chat backend — config, keyring, Ollama detection, and streaming.
 //!
 //! Separate from `llm_api.rs` (Smart Prompts) so Chat and Smart Prompts
 //! can use different providers/models independently.
@@ -6,10 +6,13 @@
 //! distinct service name.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::config::{load_json_config, save_json_config};
 use crate::llm_api;
+use crate::state::AppState;
 
 const CONFIG_FILE: &str = "ai-chat.json";
 const KEYRING_SERVICE: &str = "tuicommander-ai-chat";
@@ -389,6 +392,393 @@ pub(crate) fn new_conversation_id() -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Streaming chat types
+// ---------------------------------------------------------------------------
+
+/// Events sent to the frontend via `tauri::ipc::Channel`.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase", tag = "event", content = "data")]
+pub(crate) enum ChatStreamEvent {
+    Chunk { text: String },
+    End { full_text: String },
+    Error { message: String },
+}
+
+/// Default context budget in characters (~4K tokens).
+const DEFAULT_CONTEXT_BUDGET: usize = 16_000;
+
+/// Truncate terminal output to `max_chars` using 25% head + 75% tail split.
+/// Inserts a `[... N lines truncated ...]` marker in the middle.
+pub(crate) fn truncate_terminal_output(text: &str, max_chars: usize) -> String {
+    if text.len() <= max_chars {
+        return text.to_string();
+    }
+    let head_budget = max_chars / 4;
+    let tail_budget = max_chars - head_budget;
+
+    // Split into lines for clean truncation at line boundaries.
+    let lines: Vec<&str> = text.lines().collect();
+    let total_lines = lines.len();
+
+    // Collect head lines within budget
+    let mut head_len = 0;
+    let mut head_end = 0;
+    for (i, line) in lines.iter().enumerate() {
+        let cost = line.len() + 1; // +1 for newline
+        if head_len + cost > head_budget && i > 0 {
+            break;
+        }
+        head_len += cost;
+        head_end = i + 1;
+    }
+
+    // Collect tail lines within budget (scan backwards)
+    let mut tail_len = 0;
+    let mut tail_start = total_lines;
+    for i in (0..total_lines).rev() {
+        let cost = lines[i].len() + 1;
+        if tail_len + cost > tail_budget && tail_start < total_lines {
+            break;
+        }
+        tail_len += cost;
+        tail_start = i;
+    }
+
+    // Ensure no overlap
+    if tail_start <= head_end {
+        // Not enough to truncate meaningfully — return raw slice
+        let mut result = String::with_capacity(max_chars + 40);
+        result.push_str(&text[..max_chars]);
+        result.push_str("\n[... truncated ...]");
+        return result;
+    }
+
+    let truncated_count = tail_start - head_end;
+    let mut result = String::with_capacity(head_len + tail_len + 40);
+    for line in &lines[..head_end] {
+        result.push_str(line);
+        result.push('\n');
+    }
+    result.push_str(&format!("[... {truncated_count} lines truncated ...]\n"));
+    for (i, line) in lines[tail_start..].iter().enumerate() {
+        result.push_str(line);
+        if i < lines.len() - tail_start - 1 {
+            result.push('\n');
+        }
+    }
+    result
+}
+
+/// Assembled terminal context for the AI system prompt.
+#[derive(Debug, Default)]
+struct TerminalContext {
+    terminal_output: String,
+    shell_state: Option<String>,
+    cwd: Option<String>,
+    agent_type: Option<String>,
+    agent_intent: Option<String>,
+    awaiting_input: bool,
+}
+
+impl TerminalContext {
+    fn to_system_section(&self) -> String {
+        let mut s = String::with_capacity(self.terminal_output.len() + 256);
+        s.push_str("## Terminal Context\n\n");
+
+        if let Some(ref state) = self.shell_state {
+            s.push_str(&format!("**Shell state:** {state}\n"));
+        }
+        if let Some(ref cwd) = self.cwd {
+            s.push_str(&format!("**Working directory:** {cwd}\n"));
+        }
+        if let Some(ref agent) = self.agent_type {
+            s.push_str(&format!("**Agent:** {agent}\n"));
+        }
+        if let Some(ref intent) = self.agent_intent {
+            s.push_str(&format!("**Current task:** {intent}\n"));
+        }
+        if self.awaiting_input {
+            s.push_str("**Status:** Awaiting user input\n");
+        }
+
+        if !self.terminal_output.is_empty() {
+            s.push_str("\n### Recent Terminal Output\n\n```\n");
+            s.push_str(&self.terminal_output);
+            if !self.terminal_output.ends_with('\n') {
+                s.push('\n');
+            }
+            s.push_str("```\n");
+        }
+        s
+    }
+}
+
+/// Build context from a terminal session's VtLogBuffer and state.
+fn assemble_terminal_context(
+    state: &AppState,
+    session_id: &str,
+    context_lines: u32,
+) -> TerminalContext {
+    let mut ctx = TerminalContext::default();
+
+    // Session state
+    if let Some(ss) = state.session_state_with_shell(session_id) {
+        ctx.shell_state = ss.shell_state;
+        ctx.agent_type = ss.agent_type;
+        ctx.agent_intent = ss.agent_intent;
+        ctx.awaiting_input = ss.awaiting_input;
+    }
+
+    // CWD from PtySession
+    if let Some(sess) = state.sessions.get(session_id) {
+        let sess = sess.lock();
+        ctx.cwd = sess.cwd.clone();
+    }
+
+    // Terminal output from VtLogBuffer
+    if let Some(buf_entry) = state.vt_log_buffers.get(session_id) {
+        let buf = buf_entry.lock();
+        let lines = buf.lines();
+        let n = context_lines as usize;
+        let skip = lines.len().saturating_sub(n);
+        let mut output = String::new();
+        for line in lines.iter().skip(skip) {
+            let text: String = line.text();
+            let trimmed = text.trim_end();
+            if !trimmed.is_empty() {
+                output.push_str(trimmed);
+                output.push('\n');
+            }
+        }
+        // Also include current screen rows for the freshest state
+        if output.is_empty() {
+            for row in buf.screen_rows() {
+                let trimmed = row.trim_end();
+                if !trimmed.is_empty() {
+                    output.push_str(trimmed);
+                    output.push('\n');
+                }
+            }
+        }
+        ctx.terminal_output = truncate_terminal_output(&output, DEFAULT_CONTEXT_BUDGET);
+    }
+
+    ctx
+}
+
+const SYSTEM_PROMPT_PREFIX: &str = "\
+You are a helpful terminal assistant embedded in TUICommander. \
+You can see the user's terminal output and help them understand errors, \
+debug issues, explain commands, and suggest next steps. \
+Be concise and practical. When suggesting commands, use fenced code blocks. \
+Do not repeat terminal output back unless highlighting a specific line.";
+
+fn build_system_prompt(ctx: &TerminalContext) -> String {
+    let mut prompt = String::with_capacity(SYSTEM_PROMPT_PREFIX.len() + 256);
+    prompt.push_str(SYSTEM_PROMPT_PREFIX);
+    prompt.push_str("\n\n");
+    prompt.push_str(&ctx.to_system_section());
+    prompt
+}
+
+// ---------------------------------------------------------------------------
+// Cancellation
+// ---------------------------------------------------------------------------
+
+use std::sync::atomic::{AtomicBool, Ordering};
+use tokio::sync::Mutex as TokioMutex;
+
+lazy_static::lazy_static! {
+    static ref ACTIVE_CHATS: TokioMutex<HashMap<String, Arc<AtomicBool>>> =
+        TokioMutex::new(HashMap::new());
+}
+
+// ---------------------------------------------------------------------------
+// Streaming command
+// ---------------------------------------------------------------------------
+
+/// Input message from the frontend.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct StreamChatMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[tauri::command]
+pub(crate) async fn stream_ai_chat(
+    state: tauri::State<'_, Arc<AppState>>,
+    session_id: String,
+    messages: Vec<StreamChatMessage>,
+    chat_id: String,
+    on_event: tauri::ipc::Channel<ChatStreamEvent>,
+) -> Result<(), String> {
+    let config: AiChatConfig = load_json_config(CONFIG_FILE);
+    if !config.is_configured() {
+        let _ = on_event.send(ChatStreamEvent::Error {
+            message: "AI Chat not configured — set provider and model in Settings > AI Chat"
+                .to_string(),
+        });
+        return Ok(());
+    }
+
+    // Resolve API key
+    let api_key = if config.provider == "ollama" {
+        read_api_key()?.unwrap_or_else(|| "ollama".to_string())
+    } else {
+        match read_api_key()? {
+            Some(k) => k,
+            None => {
+                let _ = on_event.send(ChatStreamEvent::Error {
+                    message: "No API key stored — add one in Settings > AI Chat".to_string(),
+                });
+                return Ok(());
+            }
+        }
+    };
+
+    // Assemble terminal context
+    let ctx = assemble_terminal_context(&state, &session_id, config.context_lines);
+    let system_prompt = build_system_prompt(&ctx);
+
+    // Build genai request
+    let llm_config = llm_api::LlmApiConfig {
+        provider: config.provider.clone(),
+        model: config.model.clone(),
+        base_url: config.effective_base_url(),
+    };
+    let client = llm_api::build_client(&llm_config, &api_key);
+
+    use genai::chat::{ChatMessage as GenaiMessage, ChatRequest};
+    let mut chat_req = ChatRequest::default().with_system(system_prompt);
+
+    for msg in &messages {
+        match msg.role.as_str() {
+            "user" => chat_req = chat_req.append_message(GenaiMessage::user(&msg.content)),
+            "assistant" => {
+                chat_req = chat_req.append_message(GenaiMessage::assistant(&msg.content))
+            }
+            _ => {}
+        }
+    }
+
+    // Set up cancellation
+    let cancelled = Arc::new(AtomicBool::new(false));
+    {
+        let mut active = ACTIVE_CHATS.lock().await;
+        active.insert(chat_id.clone(), cancelled.clone());
+    }
+
+    // Stream
+    let result = stream_with_batching(
+        client,
+        &config.model,
+        chat_req,
+        &on_event,
+        &cancelled,
+    )
+    .await;
+
+    // Cleanup cancellation token
+    {
+        let mut active = ACTIVE_CHATS.lock().await;
+        active.remove(&chat_id);
+    }
+
+    if let Err(e) = result {
+        let _ = on_event.send(ChatStreamEvent::Error {
+            message: e.to_string(),
+        });
+    }
+
+    Ok(())
+}
+
+/// Stream LLM response with ~50ms chunk batching to avoid IPC saturation.
+async fn stream_with_batching(
+    client: genai::Client,
+    model: &str,
+    chat_req: genai::chat::ChatRequest,
+    on_event: &tauri::ipc::Channel<ChatStreamEvent>,
+    cancelled: &AtomicBool,
+) -> Result<(), String> {
+    use futures_util::StreamExt;
+    use genai::chat::ChatStreamEvent as GenaiStreamEvent;
+
+    let stream_resp = client
+        .exec_chat_stream(model, chat_req, None)
+        .await
+        .map_err(|e| format!("Failed to start stream: {e}"))?;
+
+    let mut stream = stream_resp.stream;
+    let mut full_text = String::new();
+    let mut batch_buf = String::new();
+    let mut interval = tokio::time::interval(Duration::from_millis(50));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+    loop {
+        // Check cancellation at top of each iteration
+        if cancelled.load(Ordering::Relaxed) {
+            if !batch_buf.is_empty() {
+                let _ = on_event.send(ChatStreamEvent::Chunk { text: batch_buf.clone() });
+                full_text.push_str(&batch_buf);
+            }
+            let _ = on_event.send(ChatStreamEvent::End { full_text });
+            return Ok(());
+        }
+
+        tokio::select! {
+            _ = interval.tick() => {
+                if !batch_buf.is_empty() {
+                    let _ = on_event.send(ChatStreamEvent::Chunk { text: batch_buf.clone() });
+                    full_text.push_str(&batch_buf);
+                    batch_buf.clear();
+                }
+            }
+            event = stream.next() => {
+                match event {
+                    Some(Ok(GenaiStreamEvent::Chunk(chunk))) => {
+                        batch_buf.push_str(&chunk.content);
+                    }
+                    Some(Ok(GenaiStreamEvent::End(_))) => {
+                        if !batch_buf.is_empty() {
+                            let _ = on_event.send(ChatStreamEvent::Chunk { text: batch_buf.clone() });
+                            full_text.push_str(&batch_buf);
+                        }
+                        let _ = on_event.send(ChatStreamEvent::End { full_text });
+                        return Ok(());
+                    }
+                    Some(Err(e)) => {
+                        if !batch_buf.is_empty() {
+                            let _ = on_event.send(ChatStreamEvent::Chunk { text: batch_buf.clone() });
+                            full_text.push_str(&batch_buf);
+                        }
+                        return Err(format!("Stream error: {e}"));
+                    }
+                    None => {
+                        if !batch_buf.is_empty() {
+                            let _ = on_event.send(ChatStreamEvent::Chunk { text: batch_buf.clone() });
+                            full_text.push_str(&batch_buf);
+                        }
+                        let _ = on_event.send(ChatStreamEvent::End { full_text });
+                        return Ok(());
+                    }
+                    _ => {} // Start, ReasoningChunk, etc.
+                }
+            }
+        }
+    }
+}
+
+#[tauri::command]
+pub(crate) async fn cancel_ai_chat(chat_id: String) -> Result<(), String> {
+    let active = ACTIVE_CHATS.lock().await;
+    if let Some(flag) = active.get(&chat_id) {
+        flag.store(true, Ordering::Relaxed);
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -713,5 +1103,153 @@ mod tests {
         let result = load_conversation("does-not-exist".to_string());
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));
+    }
+
+    // -- Truncation tests --
+
+    #[test]
+    fn truncate_short_text_unchanged() {
+        let text = "line1\nline2\nline3";
+        let result = truncate_terminal_output(text, 1000);
+        assert_eq!(result, text);
+    }
+
+    #[test]
+    fn truncate_preserves_line_boundaries() {
+        // Create text that exceeds budget
+        let lines: Vec<String> = (0..100).map(|i| format!("line {i}: some terminal output here")).collect();
+        let text = lines.join("\n");
+        let result = truncate_terminal_output(&text, 500);
+        assert!(result.len() < text.len());
+        assert!(result.contains("[..."));
+        assert!(result.contains("lines truncated ...]"));
+    }
+
+    #[test]
+    fn truncate_25_75_split() {
+        // 200 lines of ~20 chars each = ~4000 chars. Budget 1000 → must truncate.
+        let lines: Vec<String> = (0..200).map(|i| format!("line {:>3}: data here", i)).collect();
+        let text = lines.join("\n");
+        let result = truncate_terminal_output(&text, 1000);
+
+        // Head should have fewer lines than tail
+        let parts: Vec<&str> = result.split("[...").collect();
+        assert_eq!(parts.len(), 2, "should have truncation marker");
+        let head_part = parts[0];
+        let tail_part = parts[1];
+        // Head is roughly 25% of budget, tail 75%
+        assert!(tail_part.len() > head_part.len(),
+            "tail ({}) should be larger than head ({})", tail_part.len(), head_part.len());
+    }
+
+    #[test]
+    fn truncate_includes_first_and_last_lines() {
+        let lines: Vec<String> = (0..200).map(|i| format!("LINE-{i:03}")).collect();
+        let text = lines.join("\n");
+        let result = truncate_terminal_output(&text, 500);
+        assert!(result.contains("LINE-000"), "should contain first line");
+        assert!(result.contains("LINE-199"), "should contain last line");
+    }
+
+    #[test]
+    fn truncate_empty_text() {
+        let result = truncate_terminal_output("", 1000);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn truncate_exact_budget() {
+        let text = "abcde";
+        let result = truncate_terminal_output(text, 5);
+        assert_eq!(result, "abcde");
+    }
+
+    // -- ChatStreamEvent serialization tests --
+
+    #[test]
+    fn chat_stream_event_chunk_serializes() {
+        let event = ChatStreamEvent::Chunk { text: "hello".to_string() };
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains(r#""event":"chunk""#), "json: {json}");
+        assert!(json.contains("hello"), "json: {json}");
+    }
+
+    #[test]
+    fn chat_stream_event_end_serializes() {
+        let event = ChatStreamEvent::End { full_text: "full response".to_string() };
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains(r#""event":"end""#), "json: {json}");
+        assert!(json.contains("full response"), "json: {json}");
+    }
+
+    #[test]
+    fn chat_stream_event_error_serializes() {
+        let event = ChatStreamEvent::Error { message: "connection failed".to_string() };
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains(r#""event":"error""#), "json: {json}");
+        assert!(json.contains("connection failed"), "json: {json}");
+    }
+
+    // -- Context assembly tests --
+
+    #[test]
+    fn terminal_context_to_system_section_full() {
+        let ctx = TerminalContext {
+            terminal_output: "$ cargo build\nerror[E0308]: mismatched types".to_string(),
+            shell_state: Some("idle".to_string()),
+            cwd: Some("/home/user/project".to_string()),
+            agent_type: Some("claude-code".to_string()),
+            agent_intent: Some("fixing build errors".to_string()),
+            awaiting_input: false,
+        };
+        let section = ctx.to_system_section();
+        assert!(section.contains("**Shell state:** idle"));
+        assert!(section.contains("**Working directory:** /home/user/project"));
+        assert!(section.contains("**Agent:** claude-code"));
+        assert!(section.contains("**Current task:** fixing build errors"));
+        assert!(section.contains("cargo build"));
+        assert!(section.contains("error[E0308]"));
+        assert!(!section.contains("Awaiting user input"));
+    }
+
+    #[test]
+    fn terminal_context_to_system_section_minimal() {
+        let ctx = TerminalContext::default();
+        let section = ctx.to_system_section();
+        assert!(section.contains("## Terminal Context"));
+        assert!(!section.contains("```")); // no code block when no output
+    }
+
+    #[test]
+    fn terminal_context_awaiting_input() {
+        let ctx = TerminalContext {
+            awaiting_input: true,
+            ..Default::default()
+        };
+        let section = ctx.to_system_section();
+        assert!(section.contains("Awaiting user input"));
+    }
+
+    #[test]
+    fn build_system_prompt_includes_prefix_and_context() {
+        let ctx = TerminalContext {
+            terminal_output: "$ ls\nfile.rs".to_string(),
+            shell_state: Some("idle".to_string()),
+            ..Default::default()
+        };
+        let prompt = build_system_prompt(&ctx);
+        assert!(prompt.starts_with("You are a helpful terminal assistant"));
+        assert!(prompt.contains("## Terminal Context"));
+        assert!(prompt.contains("file.rs"));
+    }
+
+    // -- StreamChatMessage deserialization --
+
+    #[test]
+    fn stream_chat_message_deserializes() {
+        let json = r#"{"role":"user","content":"explain this error"}"#;
+        let msg: StreamChatMessage = serde_json::from_str(json).unwrap();
+        assert_eq!(msg.role, "user");
+        assert_eq!(msg.content, "explain this error");
     }
 }

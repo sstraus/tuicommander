@@ -1251,6 +1251,8 @@ pub fn run() {
             ai_chat::save_conversation,
             ai_chat::delete_conversation,
             ai_chat::new_conversation_id,
+            ai_chat::stream_ai_chat,
+            ai_chat::cancel_ai_chat,
             repo_watcher::start_repo_watcher,
             repo_watcher::stop_repo_watcher,
             dir_watcher::start_dir_watcher,
