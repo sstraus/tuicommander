@@ -26,6 +26,7 @@ import { kittySequenceForKey } from "./kittyKeyboard";
 import { getAwaitingInputSound } from "./awaitingInputSound";
 import { searchTerminalBuffer } from "../../utils/terminalSearch";
 import { ScrollTracker, ViewportLock } from "./scrollTracker";
+import { continuationRowsAfterSuggest } from "./suggestOverlay";
 import { detectAgentForTerminal } from "../../hooks/useAgentPolling";
 import s from "./Terminal.module.css";
 
@@ -222,28 +223,19 @@ function installRenderObserver(
       if (SUGGEST_RE.test(text)) {
         const top = row * cellH;
         html += `<div style="position:absolute;left:0;right:0;top:${top}px;height:${cellH}px;background:${bg}"></div>`;
-        // Cover all wrapped continuation rows (suggest can span 3+ terminal rows)
-        let contRow = row + 1;
-        while (contRow < rows) {
-          const next = buf.getLine(viewportY + contRow);
-          if (!next) break;
-          const nextText = next.translateToString(true);
-          // Stop at new token prefixes
-          if (SUGGEST_RE.test(nextText) || INTENT_RE.test(nextText)) break;
-          if (next.isWrapped) {
-            // xterm marks this row as a continuation of the previous logical line
-            html += `<div style="position:absolute;left:0;right:0;top:${contRow * cellH}px;height:${cellH}px;background:${bg}"></div>`;
-            contRow++;
-          } else if (nextText.includes("|")) {
-            // Not wrapped by xterm, but has pipe separators — likely a suggest continuation
-            html += `<div style="position:absolute;left:0;right:0;top:${contRow * cellH}px;height:${cellH}px;background:${bg}"></div>`;
-            contRow++;
-          } else {
-            break;
-          }
+        // Delegate the bounded continuation scan to the pure helper so
+        // Makefile/table/diff rows that merely contain `|` aren't swallowed
+        // by an unbounded pipe-tail consumer (story 1276-a3c2).
+        const hiddenRows = continuationRowsAfterSuggest(row, rows, (i) => {
+          const ln = buf.getLine(viewportY + i);
+          if (!ln) return null;
+          return { text: ln.translateToString(true), isWrapped: ln.isWrapped };
+        });
+        for (const contRow of hiddenRows) {
+          html += `<div style="position:absolute;left:0;right:0;top:${contRow * cellH}px;height:${cellH}px;background:${bg}"></div>`;
         }
         // Skip covered rows so the outer loop doesn't re-process them
-        row = contRow - 1;
+        if (hiddenRows.length > 0) row = hiddenRows[hiddenRows.length - 1];
       } else if (INTENT_RE.test(text)) {
         const top = row * cellH;
         html += `<div style="position:absolute;left:0;right:0;top:${top}px;height:${cellH}px;background:rgba(181,147,90,0.12)"></div>`;
