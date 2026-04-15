@@ -1104,6 +1104,57 @@ pub fn add_to_gitignore(repo_path: String, pattern: String) -> Result<(), String
         .map_err(|e| format!("Failed to write .gitignore: {e}"))
 }
 
+/// Validate that `path` is a safe target for `write_external_file`.
+///
+/// Scope decision (story 1273-c95e): `write_external_file` is a catch-all for
+/// files the UI opens by absolute path (drag-drop, markdown tab, code editor
+/// outside the active repo). Prior to this guard, a compromised frontend or
+/// malicious deep-link could overwrite `~/.ssh/authorized_keys`, `/etc/hosts`,
+/// or any other host file — the only check was `is_absolute()`.
+///
+/// Rules:
+/// - Absolute path required (unchanged).
+/// - No `..` components — blocks traversal before any canonicalization.
+/// - The target's parent directory must exist, canonicalize, and land inside
+///   `home` (canonicalized). The file itself may not exist yet, so we anchor
+///   the containment check on the parent. Symlinks inside the parent path are
+///   resolved by canonicalize, so a symlink `~/tmp -> /etc` is caught.
+///
+/// The allowlist is deliberately home-dir only, not home + workspace roots:
+/// every existing frontend caller already writes files the user opened from a
+/// file picker under `$HOME`, and widening the allowlist to arbitrary
+/// "workspace roots" would re-introduce the attack surface we're trying to
+/// close (any registered repo could be outside home, e.g. `/opt/proj`).
+pub(crate) fn validate_external_write_path(
+    path: &std::path::Path,
+    home: &std::path::Path,
+) -> Result<(), String> {
+    if !path.is_absolute() {
+        return Err("write_external_file requires an absolute path".to_string());
+    }
+    if path
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err("Access denied: path must not contain '..' components".to_string());
+    }
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Access denied: path has no parent directory".to_string())?;
+    let canonical_parent = parent
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve parent directory: {e}"))?;
+    let canonical_home = home
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve home directory: {e}"))?;
+    if !canonical_parent.starts_with(&canonical_home) {
+        return Err(
+            "Access denied: path must be within the user's home directory".to_string(),
+        );
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1777,5 +1828,92 @@ mod tests {
         );
         assert!(result.is_some());
         assert!(result.unwrap().is_directory);
+    }
+
+    // ----- validate_external_write_path (story 1273-c95e) -----
+    //
+    // Tests are TempDir-rooted — we treat the tempdir as "home" so the test
+    // doesn't depend on or mutate the user's real `$HOME`. This mirrors the
+    // parameterised signature of the helper itself.
+
+    #[test]
+    fn validate_external_write_rejects_relative_path() {
+        let home = TempDir::new().unwrap();
+        let result = validate_external_write_path(
+            std::path::Path::new("foo.txt"),
+            home.path(),
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("absolute path"));
+    }
+
+    #[test]
+    fn validate_external_write_rejects_parent_dir_component() {
+        let home = TempDir::new().unwrap();
+        // Path starts inside home but escapes via `..`.
+        let escaping = home.path().join("sub").join("..").join("..").join("etc").join("passwd");
+        let result = validate_external_write_path(&escaping, home.path());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains(".."));
+    }
+
+    #[test]
+    fn validate_external_write_rejects_path_outside_home() {
+        let home = TempDir::new().unwrap();
+        let other = TempDir::new().unwrap(); // sibling tempdir, NOT inside `home`
+        let result = validate_external_write_path(
+            &other.path().join("victim.txt"),
+            home.path(),
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("within the user's home"));
+    }
+
+    #[test]
+    fn validate_external_write_accepts_file_in_home() {
+        let home = TempDir::new().unwrap();
+        let target = home.path().join("notes.md");
+        let result = validate_external_write_path(&target, home.path());
+        assert!(result.is_ok(), "expected Ok, got {:?}", result);
+    }
+
+    #[test]
+    fn validate_external_write_accepts_file_in_home_subdir() {
+        let home = TempDir::new().unwrap();
+        let sub = home.path().join("projects").join("demo");
+        fs::create_dir_all(&sub).unwrap();
+        let target = sub.join("README.md");
+        let result = validate_external_write_path(&target, home.path());
+        assert!(result.is_ok(), "expected Ok, got {:?}", result);
+    }
+
+    #[test]
+    fn validate_external_write_rejects_nonexistent_parent() {
+        let home = TempDir::new().unwrap();
+        // Parent directory doesn't exist — canonicalize fails, we reject
+        // rather than auto-creating. Callers that need intermediate dirs must
+        // mkdir first.
+        let target = home.path().join("never_created_dir").join("file.txt");
+        let result = validate_external_write_path(&target, home.path());
+        assert!(result.is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn validate_external_write_rejects_symlink_escaping_home() {
+        use std::os::unix::fs::symlink;
+        let home = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        // Create `home/escape -> outside/` so a file path like
+        // `home/escape/pwned.txt` would resolve outside home.
+        let link = home.path().join("escape");
+        symlink(outside.path(), &link).unwrap();
+        let target = link.join("pwned.txt");
+        let result = validate_external_write_path(&target, home.path());
+        assert!(
+            result.is_err(),
+            "symlink-based escape must be rejected, got {:?}",
+            result
+        );
     }
 }

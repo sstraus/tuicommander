@@ -513,12 +513,15 @@ fn read_external_file(path: String) -> Result<String, String> {
 
 /// Write a file at an absolute path (used by the UI for files outside any registered repo,
 /// e.g. markdown files opened via absolute path without a git root).
+///
+/// Target must be inside the user's home directory — see
+/// [`crate::fs::validate_external_write_path`] for the full rationale (story 1273-c95e).
 #[tauri::command]
 fn write_external_file(path: String, content: String) -> Result<(), String> {
     let p = std::path::Path::new(&path);
-    if !p.is_absolute() {
-        return Err("write_external_file requires an absolute path".to_string());
-    }
+    let home = dirs::home_dir()
+        .ok_or_else(|| "Could not resolve user home directory".to_string())?;
+    fs::validate_external_write_path(p, &home)?;
     std::fs::write(p, content)
         .map_err(|e| format!("Failed to write file: {e}"))
 }
