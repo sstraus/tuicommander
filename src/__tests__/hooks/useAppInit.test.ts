@@ -464,6 +464,43 @@ describe("initApp", () => {
     vi.useRealTimers();
   });
 
+  it("repo-changed bumps revision synchronously on every event (not debounced)", async () => {
+    // Regression: bumpRevision used to live inside the branchStatsTimer setTimeout,
+    // so when a second repo-changed arrived within the debounce window the first
+    // timer was cleared and its bump was lost — panel data went stale.
+    vi.useFakeTimers();
+
+    const listenMock = vi.mocked(listen);
+    let repoChangedCallback: ((event: { payload: { repo_path: string } }) => void) | null = null;
+    listenMock.mockImplementation(((event: string, handler: (event: { payload: unknown }) => void) => {
+      if (event === "repo-changed") {
+        repoChangedCallback = handler as typeof repoChangedCallback;
+      }
+      return Promise.resolve(vi.fn());
+    }) as unknown as typeof listen);
+
+    repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+    const before = repositoriesStore.getRevision("/repo");
+
+    const deps = createMockDeps();
+    await initApp(deps);
+
+    // Two rapid events — without the decoupling fix, the second event's
+    // clearTimeout drops the first bump and the counter only advances once.
+    repoChangedCallback!({ payload: { repo_path: "/repo" } });
+    repoChangedCallback!({ payload: { repo_path: "/repo" } });
+
+    // Bumps must be visible synchronously, before any timer fires.
+    expect(repositoriesStore.getRevision("/repo")).toBe(before + 2);
+
+    // And the branch-stats refresh stays debounced.
+    expect(deps.refreshAllBranchStats).toHaveBeenCalledTimes(1); // init only
+    await vi.advanceTimersByTimeAsync(500);
+    expect(deps.refreshAllBranchStats).toHaveBeenCalledTimes(2);
+
+    vi.useRealTimers();
+  });
+
   describe("head-changed event", () => {
     function captureHeadChanged() {
       const listenMock = vi.mocked(listen);

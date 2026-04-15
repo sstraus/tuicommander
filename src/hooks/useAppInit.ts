@@ -236,15 +236,17 @@ export async function initApp(deps: AppInitDeps) {
     repoSettingsStore.loadLocalConfig(repo_path).catch(() => {});
     // Trigger immediate PR refresh (debounced 2s to coalesce rapid git events)
     githubStore.pollRepo(repo_path);
+    // Signal panels to re-fetch on EVERY event. Coalescing the bump into the
+    // setTimeout below loses updates when rapid events clear the pending timer,
+    // leaving panels stuck on stale data (story 1277-31a0).
+    repositoriesStore.bumpRevision(repo_path);
     // Discover external worktree changes. Use 500ms when idle, 1000ms when a
-    // refresh is already running so the next one doesn't race it.
-    // bumpRevision is deferred into the same timer so ~10 panel effects don't
-    // fire synchronously during a branch switch — they refresh after it settles.
+    // refresh is already running so the next one doesn't race it. Only the
+    // branch-stats refresh is debounced; the revision bump above is not.
     const delay = activeRefresh !== null ? 1000 : 500;
     if (branchStatsTimer) clearTimeout(branchStatsTimer);
     branchStatsTimer = setTimeout(() => {
       branchStatsTimer = null;
-      repositoriesStore.bumpRevision(repo_path);
       const result = deps.refreshAllBranchStats();
       if (result && typeof (result as Promise<void>).then === "function") {
         activeRefresh = (result as Promise<void>).finally(() => {
