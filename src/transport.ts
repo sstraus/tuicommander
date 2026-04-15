@@ -560,10 +560,12 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
       method: "POST",
       path: "/prompt/execute-headless",
       body: {
-        commandLine: args.commandLine,
+        command: args.command,
+        args: args.args,
         stdinContent: args.stdinContent,
         timeoutMs: args.timeoutMs,
         repoPath: args.repoPath,
+        env: args.env,
       },
     }),
   },

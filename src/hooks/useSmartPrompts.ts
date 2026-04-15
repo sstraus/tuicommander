@@ -15,6 +15,52 @@ export interface SmartPromptResult {
   output?: string;
 }
 
+/**
+ * Minimal shell-word splitter for headless templates.
+ * Respects single and double quotes; backslash escapes the next char (outside single quotes).
+ * Does NOT perform variable expansion, command substitution, or globbing — those would
+ * re-introduce the injection vector we are removing. Metacharacters like `;` and backticks
+ * are treated as literal characters inside the resulting argv tokens.
+ */
+export function shellSplit(input: string): string[] {
+  const tokens: string[] = [];
+  let cur = "";
+  let quote: '"' | "'" | null = null;
+  let hasToken = false;
+  let escaped = false;
+  for (const ch of input) {
+    if (escaped) {
+      cur += ch;
+      escaped = false;
+      hasToken = true;
+      continue;
+    }
+    if (quote === "'") {
+      if (ch === "'") { quote = null; }
+      else { cur += ch; }
+      hasToken = true;
+      continue;
+    }
+    if (quote === '"') {
+      if (ch === '"') { quote = null; }
+      else if (ch === "\\") { escaped = true; }
+      else { cur += ch; }
+      hasToken = true;
+      continue;
+    }
+    if (ch === "'" || ch === '"') { quote = ch; hasToken = true; continue; }
+    if (ch === "\\") { escaped = true; continue; }
+    if (/\s/.test(ch)) {
+      if (hasToken) { tokens.push(cur); cur = ""; hasToken = false; }
+      continue;
+    }
+    cur += ch;
+    hasToken = true;
+  }
+  if (hasToken) tokens.push(cur);
+  return tokens;
+}
+
 export function useSmartPrompts() {
   const pty = usePty();
 
@@ -169,41 +215,46 @@ export function useSmartPrompts() {
       return { ok: false, reason: "No headless agent configured — set one in Settings → Agents" };
     }
 
-    // Resolve headless_agent: "type:configName" format from grouped dropdown, or plain agent type
-    let template: string | undefined;
+    // Resolve headless_agent: "type:configName" format from grouped dropdown, or plain agent type.
+    // Prompt content is sent via stdin — {prompt} tokens in args/templates are dropped, never
+    // interpolated. Args are passed as a structured argv array (no shell) to eliminate injection.
+    let command: string | undefined;
+    let args: string[] = [];
     let envVars: Record<string, string> | undefined;
+    let fallbackTemplate: string | undefined;
     if (headlessVal.includes(":")) {
       // Run config selected — parse "agentType:configName"
       const [agentType, configName] = headlessVal.split(":", 2);
       const configs = agentConfigsStore.getRunConfigs(agentType as import("../agents").AgentType);
       const cfg = configs.find((c) => c.name === configName);
       if (cfg) {
-        // Build command line from run config: command + args with {prompt} → stdin pipe
-        const args = cfg.args.map((a) => a === "{prompt}" ? "" : a).join(" ");
-        template = `${cfg.command} ${args}`.trim();
+        command = cfg.command;
+        args = cfg.args.filter((a) => a !== "{prompt}");
         envVars = Object.keys(cfg.env).length > 0 ? cfg.env : undefined;
       } else {
         // Config not found, fall back to agent type template
-        template = agentConfigsStore.getHeadlessTemplate(agentType as import("../agents").AgentType);
+        fallbackTemplate = agentConfigsStore.getHeadlessTemplate(agentType as import("../agents").AgentType);
       }
     } else {
-      template = agentConfigsStore.getHeadlessTemplate(headlessVal as import("../agents").AgentType);
+      fallbackTemplate = agentConfigsStore.getHeadlessTemplate(headlessVal as import("../agents").AgentType);
     }
 
-    if (!template) {
+    if (!command && fallbackTemplate) {
+      const tokens = shellSplit(fallbackTemplate).filter((t) => t !== "{prompt}");
+      command = tokens[0];
+      args = tokens.slice(1);
+    }
+
+    if (!command) {
       return { ok: false, reason: "No headless template found for the configured agent" };
     }
-
-    // Pass prompt content via stdin to avoid shell injection.
-    // The template's {prompt} placeholder is replaced with a stdin pipe marker
-    // so the backend reads content from stdin instead of interpolating into sh -c.
-    const commandLine = template.replace("{prompt}", "");
 
     const active = terminalsStore.getActive();
     const repoPath = active?.cwd ?? repositoriesStore.getActive()?.path ?? "";
     try {
       const output = await invoke<string>("execute_headless_prompt", {
-        commandLine,
+        command,
+        args,
         stdinContent: content,
         timeoutMs: 300000,
         repoPath,

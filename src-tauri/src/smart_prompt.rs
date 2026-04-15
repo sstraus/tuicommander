@@ -4,13 +4,14 @@ use tokio::time::timeout;
 
 /// Execute a headless (one-shot) agent command and capture stdout.
 ///
-/// `command_line` is the full shell command (e.g. `claude -p "review this code"`).
-/// `stdin_content` is piped to the process stdin to avoid shell injection — prompt
-/// content must NEVER be interpolated into the command_line string.
-/// Uses platform-appropriate shell for argument parsing. Timeout is capped at 5 minutes.
+/// `command` is the binary to run and `args` are literal argv elements — no shell
+/// interpolation is performed, so characters like `;`, `&&`, backticks or `$()` in
+/// args are passed to the child process verbatim. `stdin_content` is piped to the
+/// process stdin to convey prompt content. Timeout is capped at 5 minutes.
 #[tauri::command]
 pub(crate) async fn execute_headless_prompt(
-    command_line: String,
+    command: String,
+    args: Vec<String>,
     stdin_content: Option<String>,
     timeout_ms: u64,
     repo_path: String,
@@ -18,13 +19,13 @@ pub(crate) async fn execute_headless_prompt(
 ) -> Result<String, String> {
     let duration = Duration::from_millis(timeout_ms.min(300_000)); // Cap at 5 minutes
 
-    let shell = if cfg!(target_os = "windows") { "cmd" } else { "sh" };
-    let shell_flag = if cfg!(target_os = "windows") { "/C" } else { "-c" };
+    if command.trim().is_empty() {
+        return Err("command must not be empty".into());
+    }
 
     let needs_stdin = stdin_content.is_some();
-    let mut cmd = Command::new(shell);
-    cmd.arg(shell_flag)
-        .arg(&command_line)
+    let mut cmd = Command::new(&command);
+    cmd.args(&args)
         .current_dir(&repo_path)
         .stdin(if needs_stdin { std::process::Stdio::piped() } else { std::process::Stdio::null() })
         .stdout(std::process::Stdio::piped())
@@ -125,8 +126,14 @@ mod tests {
 
     #[tokio::test]
     async fn headless_echo_command() {
-        let result =
-            execute_headless_prompt("echo hello".to_string(), None, 5000, "/tmp".to_string(), None).await;
+        let result = execute_headless_prompt(
+            "echo".to_string(),
+            vec!["hello".to_string()],
+            None,
+            5000,
+            "/tmp".to_string(),
+            None,
+        ).await;
         assert_eq!(result.unwrap(), "hello");
     }
 
@@ -134,6 +141,7 @@ mod tests {
     async fn headless_stdin_piped() {
         let result = execute_headless_prompt(
             "cat".to_string(),
+            vec![],
             Some("hello from stdin".to_string()),
             5000,
             "/tmp".to_string(),
@@ -144,15 +152,27 @@ mod tests {
 
     #[tokio::test]
     async fn headless_nonzero_exit() {
-        let result =
-            execute_headless_prompt("false".to_string(), None, 5000, "/tmp".to_string(), None).await;
+        let result = execute_headless_prompt(
+            "false".to_string(),
+            vec![],
+            None,
+            5000,
+            "/tmp".to_string(),
+            None,
+        ).await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn headless_timeout() {
-        let result =
-            execute_headless_prompt("sleep 10".to_string(), None, 100, "/tmp".to_string(), None).await;
+        let result = execute_headless_prompt(
+            "sleep".to_string(),
+            vec!["10".to_string()],
+            None,
+            100,
+            "/tmp".to_string(),
+            None,
+        ).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Timed out"));
     }
@@ -160,14 +180,50 @@ mod tests {
     #[tokio::test]
     async fn headless_env_vars_injected() {
         let env = Some([("TUIC_TEST_VAR".to_string(), "injected_value".to_string())].into_iter().collect());
+        // printenv reads env directly — no shell interpolation needed.
         let result = execute_headless_prompt(
-            "echo $TUIC_TEST_VAR".to_string(),
+            "printenv".to_string(),
+            vec!["TUIC_TEST_VAR".to_string()],
             None,
             5000,
             "/tmp".to_string(),
             env,
         ).await;
         assert_eq!(result.unwrap(), "injected_value");
+    }
+
+    /// Run config with shell metacharacters in args must be passed literally —
+    /// no command injection regardless of arg content.
+    #[tokio::test]
+    async fn headless_args_shell_metachars_are_literal() {
+        // Semicolon + command substitution + backticks — if passed through a shell,
+        // these would execute `whoami` / run `rm -rf`. With argv form, echo prints them verbatim.
+        let injection = "safe; rm -rf /tmp/tuictest_inject; $(whoami); `whoami`".to_string();
+        let result = execute_headless_prompt(
+            "echo".to_string(),
+            vec![injection.clone()],
+            None,
+            5000,
+            "/tmp".to_string(),
+            None,
+        ).await;
+        assert_eq!(result.unwrap(), injection);
+        // Confirm the would-be created file does not exist.
+        assert!(!std::path::Path::new("/tmp/tuictest_inject").exists());
+    }
+
+    #[tokio::test]
+    async fn headless_empty_command_rejected() {
+        let result = execute_headless_prompt(
+            "   ".to_string(),
+            vec![],
+            None,
+            5000,
+            "/tmp".to_string(),
+            None,
+        ).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("command must not be empty"));
     }
 
     #[tokio::test]
