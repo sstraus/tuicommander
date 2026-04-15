@@ -356,31 +356,19 @@ mod tests {
             .await;
 
         let mgr = TokenManager::new(
-            // Use a unique name to avoid keyring conflicts in tests
             "test-exchange-happy".into(),
             "my-client".into(),
             format!("{}/token", server.url()),
             None,
         );
-        let result = mgr
+        let set = mgr
             .exchange_code("auth-code-123", "pkce-verifier", "http://localhost/callback")
-            .await;
-
-        // exchange_code also saves to keyring — may fail on CI without keyring
-        match result {
-            Ok(set) => {
-                assert_eq!(set.access_token, "new-at");
-                assert_eq!(set.refresh_token, Some("new-rt".into()));
-                assert_eq!(set.scope, Some("read".into()));
-                mock.assert_async().await;
-            }
-            Err(e) if e.to_string().contains("keyring") => {
-                // No keyring in test environment — still verify the HTTP call happened
-                eprintln!("Skipping keyring assertion: {e}");
-                mock.assert_async().await;
-            }
-            Err(e) => panic!("Unexpected error: {e}"),
-        }
+            .await
+            .expect("exchange_code should succeed against mock keyring + mock AS");
+        assert_eq!(set.access_token, "new-at");
+        assert_eq!(set.refresh_token, Some("new-rt".into()));
+        assert_eq!(set.scope, Some("read".into()));
+        mock.assert_async().await;
     }
 
     #[tokio::test]
@@ -413,17 +401,11 @@ mod tests {
             format!("{}/token", server.url()),
             Some("https://api.example.com".into()),
         );
-        let result = mgr
+        let set = mgr
             .exchange_code("code", "verifier", "http://localhost/cb")
-            .await;
-
-        match result {
-            Ok(set) => assert_eq!(set.access_token, "at-with-resource"),
-            Err(e) if e.to_string().contains("keyring") => {
-                eprintln!("Skipping keyring assertion: {e}");
-            }
-            Err(e) => panic!("Unexpected error: {e}"),
-        }
+            .await
+            .expect("exchange_code should succeed with mock keyring");
+        assert_eq!(set.access_token, "at-with-resource");
         mock.assert_async().await;
     }
 
@@ -508,12 +490,12 @@ mod tests {
     }
 
     /// Two concurrent 401-driven refreshes on a shared [`TokenManager`] must
-    /// collapse into at most one refresh request at the token endpoint. On a
-    /// host with a writable keyring the double-check short-circuits the second
-    /// caller and hits count is exactly 1; without a keyring the second caller
-    /// falls through and the mutex still serialises the two HTTP calls, so
-    /// hits count is 2. Either way, we must never exceed 2 — which is what
-    /// would happen if the mutex were bypassed (story 1270-f952).
+    /// collapse into exactly one refresh request at the token endpoint: the
+    /// first caller acquires the refresh_lock and writes the new token to the
+    /// (mocked) keyring; the second caller wakes up, re-reads the now-valid
+    /// token via the double-check pattern, and returns without calling the AS.
+    /// If the mutex were bypassed (story 1270-f952 regression) both callers
+    /// would race and hits would be 2.
     #[tokio::test]
     async fn refresh_if_needed_serialises_concurrent_callers() {
         let mut server = mockito::Server::new_async().await;
@@ -530,7 +512,7 @@ mod tests {
                 })
                 .to_string(),
             )
-            .expect_at_most(2)
+            .expect(1)
             .create_async()
             .await;
 
@@ -561,11 +543,16 @@ mod tests {
             tokio::spawn(async move { mgr_b.refresh_if_needed(&expired_b).await }),
         );
 
-        // Both tasks must complete without panicking; individual refreshes
-        // may succeed or fail on the keyring write (tolerated like the
-        // exchange_code_* tests above).
-        let _ = res_a.expect("task A panicked");
-        let _ = res_b.expect("task B panicked");
+        // Both tasks must succeed against the mock keyring; the mutex-driven
+        // double-check means only one HTTP refresh actually fires (asserted
+        // by mock.expect(1)).
+        let a = res_a.expect("task A panicked").expect("refresh A failed");
+        let b = res_b.expect("task B panicked").expect("refresh B failed");
+        // Whichever task ran first did the refresh; both end up with a token.
+        let token_a = a.unwrap().access_token;
+        let token_b = b.unwrap().access_token;
+        assert_eq!(token_a, "refreshed-at");
+        assert_eq!(token_b, "refreshed-at");
 
         mock.assert_async().await;
     }
