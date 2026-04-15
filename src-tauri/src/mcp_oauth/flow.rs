@@ -30,7 +30,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Semaphore;
 
-use crate::mcp_oauth::discovery::{discover_auth_server, discover_protected_resource};
+use crate::mcp_oauth::discovery::{
+    discover_auth_server, discover_protected_resource, registrable_domain,
+};
 use crate::mcp_oauth::token::{PkceChallengePair, TokenManager};
 use crate::mcp_upstream_config::UpstreamAuth;
 use crate::mcp_upstream_credentials::OAuthTokenSet;
@@ -327,6 +329,9 @@ impl OAuthFlowManager {
             .authorization_servers
             .first()
             .ok_or_else(|| anyhow!("Protected resource returned no authorization servers"))?;
+        // AS mix-up defence: refuse to follow an issuer whose registrable
+        // domain differs from the resource's (unless both are loopback).
+        check_issuer_matches_resource(server_url, issuer)?;
         let as_meta = discover_auth_server(&self.http_client, issuer).await?;
         Ok((as_meta.authorization_endpoint, as_meta.token_endpoint))
     }
@@ -364,6 +369,44 @@ fn build_authorization_url(
         }
     }
     url.to_string()
+}
+
+/// AS mix-up defence (RFC 9700 §4.6): reject a discovered authorization
+/// server whose registrable domain differs from the protected resource's.
+///
+/// A compromised or hostile resource server can put any HTTPS URL in the
+/// `authorization_servers` array of its RFC 9728 metadata. Following that URL
+/// blindly lets the attacker route the user to their own consent page.
+/// Explicit overrides in `UpstreamAuth::OAuth2 { authorization_endpoint, ... }`
+/// bypass discovery entirely, so this check only applies to the discovery
+/// path — the user has already vetted the hard-coded endpoints in that case.
+///
+/// The error message includes both hostnames so the frontend surfaces them
+/// in the consent UI (criterion #3). Loopback addresses are intentionally
+/// treated as an automatic match — dev environments frequently put the AS
+/// and resource on different localhost ports.
+fn check_issuer_matches_resource(server_url: &str, issuer_url: &str) -> Result<()> {
+    let server_domain = registrable_domain(server_url)
+        .ok_or_else(|| anyhow!("MCP server_url \"{server_url}\" is not a valid URL"))?;
+    let issuer_domain = registrable_domain(issuer_url)
+        .ok_or_else(|| anyhow!("Authorization server issuer \"{issuer_url}\" is not a valid URL"))?;
+
+    // Loopback — always allow (dev environments).
+    if matches!(server_domain.as_str(), "localhost" | "127.0.0.1")
+        || matches!(issuer_domain.as_str(), "localhost" | "127.0.0.1")
+    {
+        return Ok(());
+    }
+
+    if server_domain != issuer_domain {
+        bail!(
+            "Authorization server mix-up: MCP resource \"{server_url}\" advertises \
+             issuer \"{issuer_url}\" whose registrable domain \"{issuer_domain}\" does \
+             not match the resource's \"{server_domain}\". Configure an explicit \
+             authorization_endpoint in the MCP auth config if this is intentional."
+        );
+    }
+    Ok(())
 }
 
 /// Generate a 32-byte cryptographically random `state` nonce, URL-safe
@@ -430,6 +473,55 @@ mod tests {
         assert!(url.contains("code_challenge_method=S256"));
         assert!(url.contains("resource="));
         assert!(url.contains("redirect_uri=tuic"));
+    }
+
+    // -- AS mix-up defence (#1268-40e8) --
+
+    #[test]
+    fn check_issuer_allows_same_registrable_domain() {
+        assert!(check_issuer_matches_resource(
+            "https://api.example.com/mcp",
+            "https://auth.example.com",
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn check_issuer_allows_exact_host_match() {
+        assert!(check_issuer_matches_resource(
+            "https://example.com/mcp",
+            "https://example.com",
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn check_issuer_rejects_cross_domain_attacker() {
+        let err = check_issuer_matches_resource(
+            "https://api.example.com/mcp",
+            "https://attacker.example.org",
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("mix-up"), "msg: {msg}");
+        assert!(msg.contains("api.example.com"), "msg: {msg}");
+        assert!(msg.contains("attacker.example.org"), "msg: {msg}");
+    }
+
+    #[test]
+    fn check_issuer_allows_loopback_dev() {
+        assert!(check_issuer_matches_resource(
+            "http://127.0.0.1:8080/mcp",
+            "http://localhost:9090",
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn check_issuer_rejects_malformed_server_url() {
+        let err = check_issuer_matches_resource("not a url", "https://auth.example.com")
+            .unwrap_err();
+        assert!(err.to_string().contains("server_url"));
     }
 
     // -- start_flow --

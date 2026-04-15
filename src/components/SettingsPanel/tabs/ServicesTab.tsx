@@ -1,10 +1,50 @@
 import { Component, For, Show, createSignal, createResource, createEffect, onMount, onCleanup } from "solid-js";
 import { rpc, type UpstreamMcpConfig, type UpstreamMcpServer, type UpstreamTransport } from "../../../transport";
 import { appLogger } from "../../../stores/appLogger";
+import { handleOpenUrl } from "../../../utils/openUrl";
 import QRCode from "qrcode";
 import { t } from "../../../i18n";
 import { cx } from "../../../utils";
 import s from "../Settings.module.css";
+
+interface StartOAuthResponse {
+  authorization_url: string;
+  state: string;
+}
+
+async function startAuthorizeFlow(name: string): Promise<void> {
+  let resp: StartOAuthResponse;
+  try {
+    resp = await rpc<StartOAuthResponse>("start_mcp_upstream_oauth", { name });
+  } catch (e) {
+    appLogger.warn("network", `start_mcp_upstream_oauth failed: ${String(e)}`);
+    return;
+  }
+
+  // Surface the AS origin before opening the browser so the user sees where
+  // they're being sent (AS mix-up defence, #1268-40e8). The backend already
+  // bails on cross-domain mismatches, but showing the hostname makes phishing
+  // attempts visible even when the mismatch check is bypassed by an explicit
+  // authorization_endpoint override.
+  let asOrigin = resp.authorization_url;
+  try {
+    asOrigin = new URL(resp.authorization_url).origin;
+  } catch {
+    // keep full URL if parsing fails
+  }
+  const { confirm } = await import("@tauri-apps/plugin-dialog");
+  const proceed = await confirm(
+    `About to open ${asOrigin} to authorize "${name}".\n\nContinue?`,
+    { title: "Authorize MCP server", kind: "info" },
+  );
+  if (!proceed) {
+    rpc("cancel_mcp_upstream_oauth", { name }).catch((e) =>
+      appLogger.warn("network", `cancel_mcp_upstream_oauth failed: ${String(e)}`),
+    );
+    return;
+  }
+  handleOpenUrl(resp.authorization_url);
+}
 
 interface McpStatus {
   enabled: boolean;
@@ -1159,7 +1199,7 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
                         title={st()?.status === "needs_auth"
                           ? "Upstream requires authorization — click to open the provider's consent page"
                           : "Authorize via OAuth 2.1"}
-                        onClick={() => rpc("start_mcp_upstream_oauth", { name: server.name }).catch(e => appLogger.warn("network", String(e)))}
+                        onClick={() => { startAuthorizeFlow(server.name).catch(e => appLogger.warn("network", String(e))); }}
                       >
                         Authorize
                       </button>

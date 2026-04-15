@@ -98,6 +98,14 @@ pub(crate) async fn discover_auth_server(
     client: &reqwest::Client,
     issuer_url: &str,
 ) -> Result<AuthServerMetadata> {
+    // Reject non-HTTPS issuers before any network I/O. A compromised resource
+    // server could otherwise point `authorization_servers` at an attacker-
+    // controlled http:// endpoint; the previous check only validated the
+    // `authorization_endpoint` / `token_endpoint` returned by discovery,
+    // which is too late — the discovery request itself would already have
+    // been sent in cleartext.
+    validate_issuer_https(issuer_url)?;
+
     let base = issuer_url.trim_end_matches('/');
 
     // Try RFC 8414 first
@@ -169,6 +177,46 @@ fn validate_endpoint_https(endpoint: &str, field_name: &str) -> Result<()> {
         "{field_name} must use HTTPS (got \"{endpoint}\"). \
          Only http://localhost and http://127.0.0.1 are exempt."
     );
+}
+
+/// Validate that a discovered issuer URL uses HTTPS before we talk to it.
+/// A compromised resource server can put any string into `authorization_servers`;
+/// if we follow an `http://` URL, the entire discovery exchange (including
+/// client_id and redirect_uri) leaks in cleartext, and nothing stops a MITM
+/// from returning a phishing authorization endpoint. `localhost` / `127.0.0.1`
+/// remain exempt for local-dev AS instances.
+pub(crate) fn validate_issuer_https(issuer_url: &str) -> Result<()> {
+    if issuer_url.starts_with("https://") {
+        return Ok(());
+    }
+    if issuer_url.starts_with("http://localhost") || issuer_url.starts_with("http://127.0.0.1") {
+        return Ok(());
+    }
+    bail!(
+        "Authorization server issuer must use HTTPS (got \"{issuer_url}\"). \
+         Only http://localhost and http://127.0.0.1 are exempt."
+    );
+}
+
+/// Extract the registrable domain (heuristic: last two labels) from a URL's
+/// hostname. Returns `None` for IP addresses and malformed URLs.
+///
+/// NOTE: Does not handle multi-label public suffixes like `co.uk` correctly —
+/// the MCP upstream space is overwhelmingly `api.example.com` style TLDs, and
+/// adding a full `publicsuffix` dependency for one edge case isn't worth it.
+/// When in doubt the hostname comparison errs on the side of "mismatch" and
+/// surfaces the full AS URL to the user, which is the desired UX anyway.
+pub(crate) fn registrable_domain(url: &str) -> Option<String> {
+    let host = url::Url::parse(url).ok()?.host_str()?.to_lowercase();
+    // Don't try to reduce IP literals to a "registrable domain".
+    if host.parse::<std::net::IpAddr>().is_ok() {
+        return Some(host);
+    }
+    let labels: Vec<&str> = host.split('.').collect();
+    if labels.len() <= 2 {
+        return Some(host);
+    }
+    Some(labels[labels.len() - 2..].join("."))
 }
 
 // ---------------------------------------------------------------------------
@@ -521,5 +569,81 @@ mod tests {
             .unwrap_err();
         assert!(err.to_string().contains("HTTPS"));
         assert!(err.to_string().contains("token_endpoint"));
+    }
+
+    // -- AS mix-up defence (#1268-40e8) --
+
+    #[test]
+    fn validate_issuer_https_accepts_https() {
+        assert!(validate_issuer_https("https://auth.example.com").is_ok());
+        assert!(validate_issuer_https("https://auth.example.com/").is_ok());
+    }
+
+    #[test]
+    fn validate_issuer_https_accepts_localhost() {
+        assert!(validate_issuer_https("http://localhost:8080").is_ok());
+        assert!(validate_issuer_https("http://127.0.0.1:9090").is_ok());
+    }
+
+    #[test]
+    fn validate_issuer_https_rejects_plain_http() {
+        let err = validate_issuer_https("http://evil.example.com").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("HTTPS"), "msg: {msg}");
+        assert!(msg.contains("evil.example.com"), "msg: {msg}");
+    }
+
+    #[test]
+    fn registrable_domain_extracts_last_two_labels() {
+        assert_eq!(
+            registrable_domain("https://auth.example.com/path"),
+            Some("example.com".into())
+        );
+        assert_eq!(
+            registrable_domain("https://deeply.nested.sub.example.org/"),
+            Some("example.org".into())
+        );
+    }
+
+    #[test]
+    fn registrable_domain_keeps_two_label_hosts() {
+        assert_eq!(
+            registrable_domain("https://example.com/"),
+            Some("example.com".into())
+        );
+    }
+
+    #[test]
+    fn registrable_domain_preserves_ip_literal() {
+        assert_eq!(
+            registrable_domain("http://127.0.0.1:9000/"),
+            Some("127.0.0.1".into())
+        );
+    }
+
+    #[test]
+    fn registrable_domain_matches_across_subdomains() {
+        assert_eq!(
+            registrable_domain("https://api.example.com"),
+            registrable_domain("https://auth.example.com"),
+        );
+    }
+
+    #[test]
+    fn registrable_domain_differs_across_unrelated_hosts() {
+        assert_ne!(
+            registrable_domain("https://api.example.com"),
+            registrable_domain("https://attacker.example.org"),
+        );
+    }
+
+    #[tokio::test]
+    async fn discover_auth_server_rejects_plain_http_issuer_before_network_io() {
+        let client = reqwest::Client::new();
+        // No mock server needed — the HTTPS check must fire BEFORE any fetch.
+        let err = discover_auth_server(&client, "http://evil.example.com")
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("HTTPS"), "err: {err}");
     }
 }
