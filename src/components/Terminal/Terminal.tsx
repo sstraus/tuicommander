@@ -29,6 +29,7 @@ import { ScrollTracker, ViewportLock } from "./scrollTracker";
 import { WebglLifecycle } from "./webglLifecycle";
 import { installScrollbarVisibilityFix } from "./scrollbarFix";
 import { installRenderObserver } from "./renderObserver";
+import { FlowController } from "./flowControl";
 import { detectAgentForTerminal } from "../../hooks/useAgentPolling";
 import s from "./Terminal.module.css";
 
@@ -125,9 +126,6 @@ export function cleanOscTitle(title: string): string {
 // Max bytes to buffer before terminal is opened (prevents unbounded growth)
 const OUTPUT_BUFFER_MAX_BYTES = 100 * 1024; // 100KB
 
-// Flow control watermarks (bytes pending in xterm.js write queue)
-const HIGH_WATERMARK = 512 * 1024;  // 512KB — pause reader when exceeded
-const LOW_WATERMARK = 128 * 1024;   // 128KB — resume reader when drained below
 
 // Target line height — snapped to integer device pixels at runtime to prevent
 // sub-pixel seams between WebGL cell quads (see snapLineHeight).
@@ -190,9 +188,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
   let outputBuffer: string[] = [];
   let outputBufferBytes = 0;
 
-  // Flow control state
-  let pendingWriteBytes = 0;
-  let isPaused = false;
+  // Flow control — backpressure on PTY reader. See flowControl.ts.
+  const flow = new FlowController();
 
   // Auto-retry on API server errors — per-agent setting
   const RETRY_DELAYS = [5_000, 15_000, 30_000]; // exponential backoff
@@ -345,11 +342,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
       }
 
       const byteLen = data.length;
-      pendingWriteBytes += byteLen;
+      flow.trackWrite(byteLen);
 
       // Pause reader if we've accumulated too much unprocessed data.
-      if (!isPaused && pendingWriteBytes > HIGH_WATERMARK && sessionId) {
-        isPaused = true;
+      if (flow.checkPause() === "pause" && sessionId) {
         pty.pause(sessionId).catch((err) => appLogger.warn("terminal", "PTY pause failed", { error: String(err) }));
       }
 
@@ -357,15 +353,14 @@ export const Terminal: Component<TerminalProps> = (props) => {
       try {
         terminal.write(data, () => {
           viewportLock.writeEnd();
-          pendingWriteBytes -= byteLen;
-          if (isPaused && pendingWriteBytes < LOW_WATERMARK && sessionId) {
-            isPaused = false;
+          flow.trackDrain(byteLen);
+          if (flow.checkResume() === "resume" && sessionId) {
             pty.resume(sessionId).catch((err) => appLogger.warn("terminal", "PTY resume failed", { error: String(err) }));
           }
         });
       } catch (e) {
         viewportLock.writeEnd();
-        pendingWriteBytes -= byteLen;
+        flow.trackDrain(byteLen);
         appLogger.warn("terminal", "terminal.write() threw", { error: String(e), sessionId });
       }
     } else {
@@ -1590,9 +1585,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
         // Resume PTY reader if it was paused — hidden terminals skip the pause
         // guard but a prior visible instance may have paused before hiding.
-        if (isPaused && sessionId) {
-          isPaused = false;
-          pendingWriteBytes = 0; // Reset counter — stale value from hidden state
+        if (flow.forceResume() && sessionId) {
+          flow.reset(); // Clear stale counter from hidden state
           pty.resume(sessionId).catch((err) => appLogger.warn("terminal", "PTY resume on show failed", { error: String(err) }));
         }
 
@@ -1689,8 +1683,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     kittyFlags = 0;
 
     // Resume reader if paused (don't leave PTY blocked after unmount)
-    if (isPaused && sessionId) {
-      isPaused = false;
+    if (flow.forceResume() && sessionId) {
       pty.resume(sessionId).catch((err) => appLogger.warn("terminal", "PTY resume failed (cleanup)", { error: String(err) }));
     }
 
