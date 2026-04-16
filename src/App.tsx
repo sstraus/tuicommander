@@ -56,6 +56,7 @@ import { initPaneTabAssignment } from "./utils/paneTabAssign";
 import { repositoriesStore } from "./stores/repositories";
 import { pluginStore } from "./stores/pluginStore";
 import { mdTabsStore } from "./stores/mdTabs";
+import { classifyFile } from "./utils/filePreview";
 import { diffTabsStore } from "./stores/diffTabs";
 import { uiStore } from "./stores/ui";
 import { settingsStore } from "./stores/settings";
@@ -912,9 +913,10 @@ const App: Component = () => {
       ? absolutePath.slice(rootPrefix.length)
       : absolutePath;
 
-    if (filePath.endsWith(".md") || filePath.endsWith(".mdx")) {
+    const target = classifyFile(filePath);
+    if (target === "markdown") {
       mdTabsStore.add(repoPath, filePath, fsRoot);
-    } else if (filePath.endsWith(".html") || filePath.endsWith(".htm")) {
+    } else if (target === "preview") {
       mdTabsStore.addHtmlPreview(repoPath, filePath, fsRoot);
     } else {
       const tabId = editorTabsStore.add(fsRoot, filePath);
@@ -1758,8 +1760,12 @@ const App: Component = () => {
             repoPath={gitOps.currentRepoPath() || null}
             fsRoot={gitOps.activeWorktreePath() || null}
             onFileOpen={(fsRoot, filePath, line) => {
-              if ((filePath.endsWith(".md") || filePath.endsWith(".mdx")) && line === undefined) {
-                mdTabsStore.add(gitOps.currentRepoPath() || fsRoot, filePath, fsRoot || undefined);
+              const target = classifyFile(filePath);
+              const repoPath = gitOps.currentRepoPath() || fsRoot;
+              if (target === "markdown" && line === undefined) {
+                mdTabsStore.add(repoPath, filePath, fsRoot || undefined);
+              } else if (target === "preview" && line === undefined) {
+                mdTabsStore.addHtmlPreview(repoPath, filePath, fsRoot || undefined);
               } else {
                 const tabId = editorTabsStore.add(fsRoot, filePath, line);
                 terminalLifecycle.handleTerminalSelect(tabId);

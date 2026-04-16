@@ -5,6 +5,7 @@ import { repositoriesStore } from "../stores/repositories";
 import { terminalsStore } from "../stores/terminals";
 import { appLogger } from "../stores/appLogger";
 import { rpc, isTauri } from "../transport";
+import { classifyFile } from "../utils/filePreview";
 
 /**
  * Global flag to suppress the file-drop overlay during internal drags
@@ -15,15 +16,11 @@ let internalDragCount = 0;
 export function markInternalDragStart(): void { internalDragCount++; }
 export function markInternalDragEnd(): void { internalDragCount = Math.max(0, internalDragCount - 1); }
 
-/** Markdown extensions (case-insensitive) */
-const MD_EXTENSIONS = new Set([".md", ".mdx"]);
-
-/** Classify a file path as markdown or editor based on extension */
+/** Classify a file path for opening — delegates to shared utility.
+ *  @deprecated Use classifyFile from utils/filePreview instead */
 export function classifyDroppedFile(filePath: string): "markdown" | "editor" {
-  const dotIndex = filePath.lastIndexOf(".");
-  if (dotIndex === -1) return "editor";
-  const ext = filePath.slice(dotIndex).toLowerCase();
-  return MD_EXTENSIONS.has(ext) ? "markdown" : "editor";
+  const target = classifyFile(filePath);
+  return target === "markdown" ? "markdown" : "editor";
 }
 
 /**
@@ -81,9 +78,11 @@ function openDroppedPaths(paths: string[]) {
 
   for (const filePath of paths) {
     const [repoPath, relPath] = resolveRepoPaths(filePath);
-    const fileType = classifyDroppedFile(filePath);
-    if (fileType === "markdown") {
+    const target = classifyFile(filePath);
+    if (target === "markdown") {
       mdTabsStore.add(repoPath, relPath);
+    } else if (target === "preview") {
+      mdTabsStore.addHtmlPreview(repoPath, relPath);
     } else {
       editorTabsStore.add(repoPath, relPath);
     }
