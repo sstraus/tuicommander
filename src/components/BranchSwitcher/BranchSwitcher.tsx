@@ -1,5 +1,5 @@
 import { Component, For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../invoke";
 import { branchSwitcherStore } from "../../stores/branchSwitcher";
 import shared from "../shared/dialog.module.css";
 import s from "./BranchSwitcher.module.css";

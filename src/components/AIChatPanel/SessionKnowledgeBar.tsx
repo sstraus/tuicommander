@@ -1,6 +1,5 @@
 import { Component, For, Show, createSignal, createEffect, onCleanup } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { invoke, listen } from "../../invoke";
 import { cx } from "../../utils";
 import { appLogger } from "../../stores/appLogger";
 import s from "./SessionKnowledgeBar.module.css";

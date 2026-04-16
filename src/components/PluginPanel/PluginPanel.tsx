@@ -12,7 +12,7 @@ import { appLogger } from "../../stores/appLogger";
 import { toastsStore } from "../../stores/toasts";
 import { assignTabToActiveGroup } from "../../utils/paneTabAssign";
 import { resolveTuicPath } from "./resolveTuicPath";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../invoke";
 import { ContextMenu, createContextMenu } from "../ContextMenu/ContextMenu";
 
 export interface PluginPanelProps {
@@ -89,9 +89,12 @@ function injectThemeVars(html: string): string {
 /**
  * Renders plugin HTML content in a sandboxed iframe.
  *
- * Security: `sandbox="allow-scripts"` without `allow-same-origin` ensures
- * the iframe cannot access Tauri IPC, the parent window, or same-origin
- * resources. Communication happens via postMessage bridge only.
+ * Security: `sandbox="allow-scripts allow-same-origin"` — plugins run in
+ * a desktop app where users install them voluntarily (same trust model as
+ * VS Code extensions). `allow-same-origin` is required because WKWebView
+ * inherits the parent's CSP into srcdoc iframes and CSP3 ignores
+ * `unsafe-inline` when source-list entries are present, which silently
+ * blocks all inline scripts without it.
  *
  * CSP: The parent's CSP includes 'unsafe-inline' in script-src to allow
  * inline scripts in srcdoc iframes (inherited CSP). This is safe because
@@ -389,9 +392,14 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
           style={iframeStyle}
         />
       ) : (
+        /* DO NOT remove allow-same-origin — WKWebView inherits the parent
+           CSP into srcdoc iframes and CSP3 silently blocks ALL inline scripts
+           when source-list entries coexist with 'unsafe-inline'. Without
+           allow-same-origin every plugin's JS is dead (no D&D, no filters,
+           no SDK). Plugins are user-installed, same trust as VS Code exts. */
         <iframe
           ref={iframeRef}
-          sandbox="allow-scripts"
+          sandbox="allow-scripts allow-same-origin"
           srcdoc={srcdoc()}
           style={iframeStyle}
         />

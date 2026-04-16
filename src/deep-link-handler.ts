@@ -1,5 +1,5 @@
 import { onOpenUrl } from "@tauri-apps/plugin-deep-link";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./invoke";
 import { isTauri } from "./transport";
 import { appLogger } from "./stores/appLogger";
 import { pluginStore } from "./stores/pluginStore";
