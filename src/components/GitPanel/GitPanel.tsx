@@ -89,7 +89,9 @@ export const GitPanel: Component<GitPanelProps> = (props) => {
           &times;
         </button>
       </div>
-      {/* Main tab content */}
+      {/* Main tab content — <Switch>/<Match> unmounts inactive tabs, preventing hidden
+         tabs from reacting to revision bumps. Additionally, repoPath is null when the
+         panel is hidden (props.visible=false), so even the active tab won't fetch. */}
       <div class={s.tabContent}>
         <Switch>
           <Match when={activeTab() === "changes"}>
