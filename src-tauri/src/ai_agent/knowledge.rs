@@ -478,6 +478,12 @@ pub fn spawn_persist_task(state: std::sync::Arc<crate::state::AppState>) {
 
 /// Drain `knowledge_dirty` and persist each flagged session. Runs on a
 /// blocking-safe path (small JSON writes); keeps the tokio worker brief.
+///
+/// Race-safety (#1374-b298): the dirty flag is cleared *before* snapshotting.
+/// If `record_outcome` runs concurrently, it re-inserts the flag and the new
+/// state is picked up by the next flush. If persist fails, the flag is
+/// re-inserted so we retry. Without this ordering, a write landing between
+/// snapshot-clone and remove was silently dropped (lost on shutdown/crash).
 pub fn flush_dirty(state: &crate::state::AppState) {
     let dirty: Vec<String> = state
         .knowledge_dirty
@@ -485,16 +491,17 @@ pub fn flush_dirty(state: &crate::state::AppState) {
         .map(|e| e.key().clone())
         .collect();
     for sid in dirty {
+        // Clear the flag FIRST. A concurrent record_outcome between this
+        // line and the snapshot below will re-insert the flag and be picked
+        // up by the next tick (or by the failure path below).
+        state.knowledge_dirty.remove(&sid);
         let Some(entry) = state.session_knowledge.get(&sid) else {
-            state.knowledge_dirty.remove(&sid);
             continue;
         };
         let snapshot = entry.lock().clone();
-        match persist(&sid, &snapshot) {
-            Ok(()) => { state.knowledge_dirty.remove(&sid); }
-            Err(e) => {
-                tracing::warn!(session_id = %sid, error = %e, "knowledge persist failed, will retry");
-            }
+        if let Err(e) = persist(&sid, &snapshot) {
+            tracing::warn!(session_id = %sid, error = %e, "knowledge persist failed, will retry");
+            state.knowledge_dirty.insert(sid, ());
         }
     }
 }
@@ -547,6 +554,86 @@ mod persist_tests {
         let loaded = load("s1").expect("load from disk");
         assert_eq!(loaded.commands.len(), 1);
         assert_eq!(loaded.commands[0].command, "cargo build");
+    }
+
+    /// Regression for #1374-b298: a record_outcome arriving after the
+    /// snapshot but before the dirty-flag remove was silently dropped.
+    /// With mark-then-snapshot the new write must keep the flag set so
+    /// the next flush (or shutdown drain) picks it up.
+    #[test]
+    fn flush_dirty_does_not_lose_concurrent_record_outcome() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        let _g = crate::config::set_config_dir_override(dir.path().to_path_buf());
+        let state = std::sync::Arc::new(make_test_app_state());
+
+        state.record_outcome("s-race", sample_outcome());
+        assert!(state.knowledge_dirty.contains_key("s-race"));
+
+        // Spawn a background writer that keeps appending while the flush runs.
+        // With the old "snapshot → persist → unconditional remove" ordering,
+        // any record arriving in that window left the dirty flag cleared and
+        // the new outcome unpersisted. Repeating the race many times catches
+        // both interleavings (record before/after the flag-remove).
+        let writer_state = state.clone();
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stop_writer = stop.clone();
+        let writer = std::thread::spawn(move || {
+            let mut n = 1u64;
+            while !stop_writer.load(std::sync::atomic::Ordering::Relaxed) {
+                let mut o = sample_outcome();
+                o.timestamp = 1000 + n;
+                writer_state.record_outcome("s-race", o);
+                n += 1;
+            }
+            n
+        });
+
+        for _ in 0..50 {
+            flush_dirty(&state);
+        }
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        let writes = writer.join().unwrap();
+
+        // Final drain after the writer has stopped. Any leftover dirty flag
+        // means a write was correctly preserved across the flush.
+        flush_dirty(&state);
+        assert!(!state.knowledge_dirty.contains_key("s-race"));
+
+        let in_memory = state.session_knowledge.get("s-race").unwrap();
+        let in_memory_count = in_memory.lock().commands.len();
+        drop(in_memory);
+        let on_disk = load("s-race").expect("load from disk");
+        assert_eq!(
+            on_disk.commands.len(),
+            in_memory_count,
+            "in-memory ({in_memory_count}) and on-disk ({}) records must match \
+             after final flush — writer made {writes} writes",
+            on_disk.commands.len()
+        );
+    }
+
+    #[test]
+    fn flush_dirty_re_marks_dirty_on_persist_failure() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        let _g = crate::config::set_config_dir_override(dir.path().to_path_buf());
+        let state = make_test_app_state();
+        state.record_outcome("s-fail", sample_outcome());
+
+        // Sabotage persistence: replace the sessions directory with a regular
+        // file so create_dir_all + write both fail.
+        let sessions_dir = dir.path().join(SESSIONS_DIR);
+        if sessions_dir.exists() {
+            std::fs::remove_dir_all(&sessions_dir).unwrap();
+        }
+        std::fs::write(&sessions_dir, b"not a directory").unwrap();
+
+        flush_dirty(&state);
+        assert!(
+            state.knowledge_dirty.contains_key("s-fail"),
+            "dirty flag must be re-inserted on persist failure so the next flush retries"
+        );
     }
 
     #[test]

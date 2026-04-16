@@ -1368,6 +1368,12 @@ pub fn run() {
                     if let Some(dictation) = app_handle.try_state::<dictation::DictationState>() {
                         dictation.shutdown();
                     }
+                    // Drain any remaining dirty knowledge entries to disk
+                    // before the process exits. Without this, outcomes
+                    // recorded in the last <2s window are lost. (#1374-b298)
+                    if let Some(state) = app_handle.try_state::<Arc<AppState>>() {
+                        crate::ai_agent::knowledge::flush_dirty(state.inner());
+                    }
                 }
                 _ => {}
             }
