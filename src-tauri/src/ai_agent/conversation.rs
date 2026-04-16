@@ -91,6 +91,22 @@ pub(crate) struct Conversation {
     pub schema_version: u32,
 }
 
+const TOOL_RESULT_MAX_BYTES: usize = 8192;
+
+impl Conversation {
+    pub fn sanitize_for_persist(&mut self) {
+        for msg in &mut self.messages {
+            if let Some(ref mut result) = msg.tool_result {
+                *result = crate::ai_agent::tools::redact_secrets(result);
+                if result.len() > TOOL_RESULT_MAX_BYTES {
+                    result.truncate(TOOL_RESULT_MAX_BYTES);
+                    result.push_str("\n[truncated]");
+                }
+            }
+        }
+    }
+}
+
 /// In-place migration to `CURRENT_SCHEMA_VERSION`. No-op when already current.
 ///
 /// v1 → v2: schema_version is bumped. Tool-call fields are already `None` via

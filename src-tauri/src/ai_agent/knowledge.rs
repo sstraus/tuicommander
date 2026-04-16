@@ -157,6 +157,8 @@ impl SessionKnowledge {
         }
 
         outcome.output_snippet = sanitize_snippet(&outcome.output_snippet);
+        outcome.command = crate::ai_agent::tools::redact_secrets(&outcome.command);
+        outcome.output_snippet = crate::ai_agent::tools::redact_secrets(&outcome.output_snippet);
         self.commands.push_back(outcome);
         while self.commands.len() > MAX_COMMANDS {
             self.commands.pop_front();
@@ -402,24 +404,38 @@ pub fn persist(session_id: &str, knowledge: &SessionKnowledge) -> Result<(), Str
     let path = dir.join(format!("{session_id}.json"));
     let data = serde_json::to_string_pretty(knowledge)
         .map_err(|e| format!("Failed to serialize knowledge: {e}"))?;
-    std::fs::write(&path, data).map_err(|e| format!("Failed to write knowledge: {e}"))
+    crate::config::persist_atomic(&path, data.as_bytes())
 }
 
 pub fn load(session_id: &str) -> Option<SessionKnowledge> {
     validate_file_stem(session_id).ok()?;
     let dir = sessions_dir().ok()?;
     let path = dir.join(format!("{session_id}.json"));
-    let data = std::fs::read_to_string(&path).ok()?;
-    let mut k: SessionKnowledge = serde_json::from_str(&data).ok()?;
+    let data = match std::fs::read_to_string(&path) {
+        Ok(d) => d,
+        Err(_) => return None,
+    };
+    let mut k: SessionKnowledge = match serde_json::from_str(&data) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(session_id, error = %e, "Failed to parse knowledge file, skipping");
+            return None;
+        }
+    };
     if k.schema_version < KNOWLEDGE_SCHEMA_VERSION {
         k.schema_version = KNOWLEDGE_SCHEMA_VERSION;
+        if let Err(e) = persist(session_id, &k) {
+            tracing::warn!(session_id, error = %e, "Failed to re-save migrated knowledge");
+        }
     }
     Some(k)
 }
 
+const RETENTION_DAYS: u64 = 30;
+
 /// Load every persisted session file into `state.session_knowledge`. Called
 /// once at startup so agent context injection has access to historical
-/// sessions. Silently skips files that fail to parse (schema drift / corrupt).
+/// sessions. Prunes files older than 30 days.
 pub fn load_all(state: &crate::state::AppState) {
     let Ok(dir) = sessions_dir() else {
         return;
@@ -427,10 +443,20 @@ pub fn load_all(state: &crate::state::AppState) {
     let Ok(entries) = std::fs::read_dir(&dir) else {
         return;
     };
+    let cutoff = std::time::SystemTime::now()
+        - std::time::Duration::from_secs(RETENTION_DAYS * 86400);
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("json") {
             continue;
+        }
+        if let Ok(meta) = path.metadata() {
+            if let Ok(modified) = meta.modified() {
+                if modified < cutoff {
+                    let _ = std::fs::remove_file(&path);
+                    continue;
+                }
+            }
         }
         let Some(sid) = path.file_stem().and_then(|s| s.to_str()) else {
             continue;
@@ -474,13 +500,16 @@ pub fn flush_dirty(state: &crate::state::AppState) {
         .map(|e| e.key().clone())
         .collect();
     for sid in dirty {
-        state.knowledge_dirty.remove(&sid);
         let Some(entry) = state.session_knowledge.get(&sid) else {
+            state.knowledge_dirty.remove(&sid);
             continue;
         };
         let snapshot = entry.lock().clone();
-        if let Err(e) = persist(&sid, &snapshot) {
-            tracing::warn!(session_id = %sid, error = %e, "knowledge persist failed");
+        match persist(&sid, &snapshot) {
+            Ok(()) => { state.knowledge_dirty.remove(&sid); }
+            Err(e) => {
+                tracing::warn!(session_id = %sid, error = %e, "knowledge persist failed, will retry");
+            }
         }
     }
 }

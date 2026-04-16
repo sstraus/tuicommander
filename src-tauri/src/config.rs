@@ -149,40 +149,39 @@ pub(crate) fn load_json_config<T: DeserializeOwned + Default>(filename: &str) ->
     }
 }
 
-/// Save a JSON config file atomically (temp file + rename).
-/// Sets 0600 permissions on Unix to protect sensitive data.
-pub(crate) fn save_json_config<T: Serialize>(filename: &str, config: &T) -> Result<(), String> {
-    let dir = config_dir();
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("Failed to create config directory: {e}"))?;
+/// Atomically write `data` to `target` via temp+rename with 0600 perms.
+pub(crate) fn persist_atomic(target: &std::path::Path, data: &[u8]) -> Result<(), String> {
+    if let Some(dir) = target.parent() {
+        std::fs::create_dir_all(dir)
+            .map_err(|e| format!("Failed to create directory: {e}"))?;
+    }
+    let temp = target.with_extension(format!("tmp.{}", std::process::id()));
+    std::fs::write(&temp, data)
+        .map_err(|e| format!("Failed to write temp file: {e}"))?;
 
-    let json = serde_json::to_string_pretty(config)
-        .map_err(|e| format!("Failed to serialize config: {e}"))?;
-
-    let target = dir.join(filename);
-    let temp = dir.join(format!("{}.tmp.{}", filename, std::process::id()));
-
-    std::fs::write(&temp, &json)
-        .map_err(|e| format!("Failed to write temp config: {e}"))?;
-
-    // Set restrictive permissions before rename (owner read/write only)
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         let perms = std::fs::Permissions::from_mode(0o600);
         std::fs::set_permissions(&temp, perms)
-            .map_err(|e| format!("Failed to set config permissions: {e}"))?;
+            .map_err(|e| format!("Failed to set permissions: {e}"))?;
     }
 
-    // Atomic rename: either the old file or new file exists, never partial
-    std::fs::rename(&temp, &target)
+    std::fs::rename(&temp, target)
         .map_err(|e| {
-            // Clean up temp file on rename failure
             let _ = std::fs::remove_file(&temp);
-            format!("Failed to commit config: {e}")
+            format!("Failed to commit file: {e}")
         })?;
-
     Ok(())
+}
+
+/// Save a JSON config file atomically (temp file + rename).
+/// Sets 0600 permissions on Unix to protect sensitive data.
+pub(crate) fn save_json_config<T: Serialize>(filename: &str, config: &T) -> Result<(), String> {
+    let json = serde_json::to_string_pretty(config)
+        .map_err(|e| format!("Failed to serialize config: {e}"))?;
+    let target = config_dir().join(filename);
+    persist_atomic(&target, json.as_bytes())
 }
 
 // ---------------------------------------------------------------------------

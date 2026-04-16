@@ -363,16 +363,21 @@ fn now_millis() -> u64 {
 
 #[tauri::command]
 pub(crate) fn list_conversations() -> Result<Vec<ConversationMeta>, String> {
+    #[derive(serde::Deserialize)]
+    struct MetaOnly { meta: ConversationMeta }
+
     let dir = conversations_dir()?;
     let mut metas = Vec::new();
     let entries = std::fs::read_dir(&dir).map_err(|e| format!("Failed to read conversations dir: {e}"))?;
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().is_some_and(|e| e == "json") {
-            if let Ok(data) = std::fs::read_to_string(&path) {
-                if let Ok(conv) = serde_json::from_str::<Conversation>(&data) {
-                    metas.push(conv.meta);
-                }
+            match std::fs::read_to_string(&path) {
+                Ok(data) => match serde_json::from_str::<MetaOnly>(&data) {
+                    Ok(wrapper) => metas.push(wrapper.meta),
+                    Err(e) => tracing::warn!(path = %path.display(), error = %e, "Failed to parse conversation metadata"),
+                },
+                Err(e) => tracing::warn!(path = %path.display(), error = %e, "Failed to read conversation file"),
             }
         }
     }
@@ -394,14 +399,14 @@ pub(crate) fn load_conversation(id: String) -> Result<Conversation, String> {
 }
 
 #[tauri::command]
-pub(crate) fn save_conversation(conversation: Conversation) -> Result<(), String> {
+pub(crate) fn save_conversation(mut conversation: Conversation) -> Result<(), String> {
     crate::ai_agent::knowledge::validate_file_stem(&conversation.meta.id)?;
+    conversation.sanitize_for_persist();
     let dir = conversations_dir()?;
     let path = dir.join(format!("{}.json", conversation.meta.id));
     let data = serde_json::to_string_pretty(&conversation)
         .map_err(|e| format!("Failed to serialize conversation: {e}"))?;
-    std::fs::write(&path, data)
-        .map_err(|e| format!("Failed to write conversation: {e}"))
+    crate::config::persist_atomic(&path, data.as_bytes())
 }
 
 #[tauri::command]
