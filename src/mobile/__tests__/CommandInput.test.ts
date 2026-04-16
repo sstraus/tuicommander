@@ -4,6 +4,11 @@ import { resolve } from "node:path";
 import {
   isSendGuardActive,
   SEND_GUARD_MS,
+  WRITE_GRACE_MS,
+  isStalePrefix,
+  isSupersetEcho,
+  isWriteGraceActive,
+  classifyEcho,
 } from "../components/syncGuards";
 
 const css = readFileSync(
@@ -76,6 +81,7 @@ describe("CommandInput sync state management", () => {
     syncedText = "";
     pendingWrites = 0;
     lastSendAt = 0;
+    lastWriteSettledAt = 0;
     writes: string[] = [];
 
     writePty(data: string) {
@@ -86,11 +92,13 @@ describe("CommandInput sync state management", () => {
     /** Simulate write_pty RPC completing (promise resolved). */
     ackWrite() {
       this.pendingWrites--;
+      if (this.pendingWrites === 0) this.lastWriteSettledAt = Date.now();
     }
 
     /** Acknowledge all pending writes at once. */
     ackAllWrites() {
       this.pendingWrites = 0;
+      this.lastWriteSettledAt = Date.now();
     }
 
     syncDelta(newText: string) {
@@ -119,13 +127,16 @@ describe("CommandInput sync state management", () => {
     receivePtyInput(text: string) {
       const now = Date.now();
       if (isSendGuardActive(now, this.lastSendAt)) return "send-guard";
-      if (text === this.syncedText) return "skip"; // echo dedup
-      if (this.pendingWrites === 0) {
-        // No in-flight writes — terminal is driving, accept sync
+      if (text === this.syncedText) return "skip"; // exact echo — skip entirely
+      if (this.pendingWrites > 0) return "display-only";
+
+      // pendingWrites === 0 — use classifyEcho for smart echo filtering
+      const verdict = classifyEcho(text, this.syncedText, now, this.lastWriteSettledAt);
+      if (verdict === "accept") {
         this.syncedText = text;
         return "full-update";
       }
-      return "display-only";
+      return verdict; // "display-only" or "reject"
     }
   }
 
@@ -305,7 +316,7 @@ describe("CommandInput sync state management", () => {
     expect(sim.writes[sim.writes.length - 1]).toBe("d");
   });
 
-  it("late echo after all writes settled does not corrupt state", () => {
+  it("late echo after all writes settled — stale prefix is rejected", () => {
     const sim = new SyncSimulator();
 
     // User types "xy"
@@ -317,19 +328,111 @@ describe("CommandInput sync state management", () => {
     sim.ackAllWrites();
     expect(sim.pendingWrites).toBe(0);
 
-    // Now echo "x" arrives — pendingWrites is 0, so this would be
-    // accepted as terminal-driven. This is the edge case: a stale echo
-    // arriving after writes settled. syncedText becomes "x" which is
-    // wrong — but the display also shows "x", so the user sees the
-    // regression and the next keystroke re-syncs.
+    // Echo "x" arrives — strict prefix of syncedText "xy" → rejected
     const r1 = sim.receivePtyInput("x");
-    expect(r1).toBe("full-update"); // accepted (unavoidable without seq numbers)
-    expect(sim.syncedText).toBe("x");
+    expect(r1).toBe("reject"); // stale prefix — always wrong
+    expect(sim.syncedText).toBe("xy"); // NOT corrupted
 
-    // But the final echo "xy" arrives and corrects it
+    // Final echo "xy" arrives — exact match → skip
     const r2 = sim.receivePtyInput("xy");
-    expect(r2).toBe("full-update");
+    expect(r2).toBe("skip");
     expect(sim.syncedText).toBe("xy");
+  });
+
+  it("tab completion (superset echo) accepted immediately during grace window", () => {
+    const sim = new SyncSimulator();
+
+    // User types "gi" then presses Tab
+    sim.syncDelta("g");
+    sim.syncDelta("gi");
+    sim.writePty("\t");
+    expect(sim.pendingWrites).toBe(3);
+
+    // All RPCs resolve (grace window starts)
+    sim.ackAllWrites();
+    expect(sim.pendingWrites).toBe(0);
+
+    // PTY sends "git " (tab completion) — superset of "gi" → accepted immediately
+    const r = sim.receivePtyInput("git ");
+    expect(r).toBe("full-update");
+    expect(sim.syncedText).toBe("git ");
+  });
+
+  it("history nav (completely different text) held during grace, accepted after", () => {
+    const sim = new SyncSimulator();
+
+    // User types "xy" then presses Up arrow
+    sim.syncDelta("x");
+    sim.syncDelta("xy");
+    sim.writePty("\x1b[A"); // arrow up
+    expect(sim.pendingWrites).toBe(3);
+
+    // All RPCs resolve — grace window starts now
+    sim.ackAllWrites();
+
+    // PTY sends "ls -la" (history recall) — not a prefix, not a superset
+    // Within grace window → display-only
+    const r1 = sim.receivePtyInput("ls -la");
+    expect(r1).toBe("display-only");
+    expect(sim.syncedText).toBe("xy"); // preserved during grace
+
+    // Grace window expires
+    sim.lastWriteSettledAt = Date.now() - WRITE_GRACE_MS - 1;
+
+    // Same echo arrives again → accepted
+    const r2 = sim.receivePtyInput("ls -la");
+    expect(r2).toBe("full-update");
+    expect(sim.syncedText).toBe("ls -la");
+  });
+
+  it("Ctrl+U (kill line) during grace is display-only, accepted after", () => {
+    const sim = new SyncSimulator();
+
+    // User types "hello" then Ctrl+U
+    sim.syncDelta("hello"); // 1 write ("hello")
+    sim.writePty("\x15"); // Ctrl+U — 2nd write
+    expect(sim.pendingWrites).toBe(2);
+
+    // All RPCs resolve
+    sim.ackAllWrites();
+
+    // PTY sends "" (line killed) — prefix of "hello", but also empty string
+    // Empty is a strict prefix of non-empty → rejected during grace
+    const r1 = sim.receivePtyInput("");
+    expect(r1).toBe("reject"); // strict prefix
+    expect(sim.syncedText).toBe("hello");
+
+    // Grace window expires — but "" is still a strict prefix of "hello"
+    sim.lastWriteSettledAt = Date.now() - WRITE_GRACE_MS - 1;
+
+    // Stale prefix is ALWAYS rejected regardless of grace
+    const r2 = sim.receivePtyInput("");
+    expect(r2).toBe("reject");
+    expect(sim.syncedText).toBe("hello");
+
+    // The real Ctrl+U flow: syncDelta("") was called, so syncedText = ""
+    // Let's simulate that properly
+    sim.syncDelta("");
+    expect(sim.syncedText).toBe("");
+
+    // Now PTY echo "" matches exactly → skip
+    const r3 = sim.receivePtyInput("");
+    expect(r3).toBe("skip");
+  });
+
+  it("stale partial echo rejected even after grace window expires", () => {
+    const sim = new SyncSimulator();
+
+    sim.syncDelta("abc");
+    sim.ackAllWrites();
+
+    // Grace expires
+    sim.lastWriteSettledAt = Date.now() - WRITE_GRACE_MS - 1;
+
+    // Stale "a" arrives late — strict prefix → always rejected
+    const r = sim.receivePtyInput("a");
+    expect(r).toBe("reject");
+    expect(sim.syncedText).toBe("abc");
   });
 
   it("terminal-driven history navigation updates syncedText when idle", () => {
@@ -397,6 +500,66 @@ describe("syncGuards (production helpers used by CommandInput)", () => {
     expect(tsx).toContain("isSendGuardActive");
     expect(tsx).toContain("pendingWrites");
     expect(tsx).not.toMatch(/Date\.now\(\)\s*-\s*lastSendAt\s*<\s*1000/);
+  });
+
+  it("CommandInput.tsx uses classifyEcho", () => {
+    expect(tsx).toContain("classifyEcho");
+  });
+});
+
+describe("echo classification guards", () => {
+  it("isStalePrefix detects strict prefixes", () => {
+    expect(isStalePrefix("a", "abc")).toBe(true);
+    expect(isStalePrefix("ab", "abc")).toBe(true);
+    expect(isStalePrefix("", "abc")).toBe(true);
+  });
+
+  it("isStalePrefix rejects equal, superset, and unrelated strings", () => {
+    expect(isStalePrefix("abc", "abc")).toBe(false); // equal, not strict
+    expect(isStalePrefix("abcd", "abc")).toBe(false); // superset
+    expect(isStalePrefix("xyz", "abc")).toBe(false); // unrelated
+  });
+
+  it("isSupersetEcho detects strict superset", () => {
+    expect(isSupersetEcho("git ", "gi")).toBe(true);
+    expect(isSupersetEcho("abcd", "abc")).toBe(true);
+  });
+
+  it("isSupersetEcho rejects equal, prefix, and unrelated", () => {
+    expect(isSupersetEcho("abc", "abc")).toBe(false);
+    expect(isSupersetEcho("ab", "abc")).toBe(false);
+    expect(isSupersetEcho("xyz", "abc")).toBe(false);
+  });
+
+  it("isWriteGraceActive respects WRITE_GRACE_MS window", () => {
+    const t0 = 1_000_000;
+    expect(isWriteGraceActive(t0, t0)).toBe(true);
+    expect(isWriteGraceActive(t0 + WRITE_GRACE_MS - 1, t0)).toBe(true);
+    expect(isWriteGraceActive(t0 + WRITE_GRACE_MS, t0)).toBe(false);
+    expect(isWriteGraceActive(t0 + WRITE_GRACE_MS + 1, t0)).toBe(false);
+  });
+
+  it("isWriteGraceActive is inactive when no writes have settled (0)", () => {
+    expect(isWriteGraceActive(Date.now(), 0)).toBe(false);
+  });
+
+  it("classifyEcho: stale prefix always rejected", () => {
+    const now = Date.now();
+    expect(classifyEcho("a", "abc", now, now)).toBe("reject"); // in grace
+    expect(classifyEcho("a", "abc", now, now - WRITE_GRACE_MS - 1)).toBe("reject"); // after grace
+    expect(classifyEcho("a", "abc", now, 0)).toBe("reject"); // no grace
+  });
+
+  it("classifyEcho: superset always accepted", () => {
+    const now = Date.now();
+    expect(classifyEcho("git ", "gi", now, now)).toBe("accept"); // in grace
+    expect(classifyEcho("git ", "gi", now, now - WRITE_GRACE_MS - 1)).toBe("accept"); // after grace
+  });
+
+  it("classifyEcho: unrelated text display-only during grace, accepted after", () => {
+    const now = Date.now();
+    expect(classifyEcho("ls -la", "xy", now, now)).toBe("display-only"); // in grace
+    expect(classifyEcho("ls -la", "xy", now, now - WRITE_GRACE_MS - 1)).toBe("accept"); // after grace
   });
 });
 

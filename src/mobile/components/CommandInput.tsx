@@ -5,7 +5,7 @@ import { sendPtyKey } from "../../utils/sendCommand";
 import { retryWrite } from "../utils/retryWrite";
 import { SlashMenuOverlay } from "./SlashMenuOverlay";
 import { ChoicePromptOverlay } from "./ChoicePromptOverlay";
-import { isSendGuardActive } from "./syncGuards";
+import { isSendGuardActive, classifyEcho } from "./syncGuards";
 import type { SlashMenuItem, ChoicePrompt } from "../useSessions";
 import styles from "./CommandInput.module.css";
 
@@ -36,6 +36,10 @@ export function CommandInput(props: CommandInputProps) {
   // When 0, the terminal is driving (autocomplete, history nav, tab
   // completion) and syncedText must accept the PTY value.
   let pendingWrites = 0;
+  // Timestamp when pendingWrites last dropped to 0. Used by classifyEcho
+  // to reject stale echoes that arrive after RPCs resolved but before the
+  // WebSocket echo catches up.
+  let lastWriteSettledAt = 0;
 
   createEffect(() => {
     const pv = props.prefillValue;
@@ -49,26 +53,32 @@ export function CommandInput(props: CommandInputProps) {
     }
   });
 
-  // PTY input line sync. While writes are in-flight the PWA is the source of
-  // truth — incoming ptyInputLine is echo of our own keystrokes and must NOT
-  // touch syncedText (doing so causes duplicate/deleted chars under latency).
-  // When no writes are pending the terminal is driving (tab completion,
-  // history navigation, autocomplete) — accept the value into syncedText.
+  // PTY input line sync. Three layers of protection against stale echoes:
+  // 1. Send guard (1s post-Enter) — suppresses prompt-clear noise
+  // 2. pendingWrites > 0 — our writes are still in-flight, display-only
+  // 3. classifyEcho — after writes settle, rejects stale prefixes and
+  //    holds unrelated text during a 300ms grace window (superset echoes
+  //    like tab completion are accepted immediately)
   createEffect(() => {
     const il = props.ptyInputLine;
     if (isSendGuardActive(Date.now(), lastSendAt)) return;
     const text = il ?? "";
     if (text === syncedText) return; // exact echo — skip entirely
-    if (pendingWrites === 0) {
-      // No in-flight writes — terminal is driving, accept sync
-      syncedText = text;
+
+    if (pendingWrites > 0) {
+      // Writes in-flight — display only, don't touch syncedText
+      setValue(text);
+      if (textareaEl) { textareaEl.value = text; autoResize(); }
+      return;
     }
-    // Always update display so the user sees autocomplete/history changes
+
+    // pendingWrites === 0 — use smart echo classification
+    const verdict = classifyEcho(text, syncedText, Date.now(), lastWriteSettledAt);
+    if (verdict === "reject") return; // stale prefix — ignore entirely
+    if (verdict === "accept") syncedText = text;
+    // "display-only" and "accept" both update the display
     setValue(text);
-    if (textareaEl) {
-      textareaEl.value = text;
-      autoResize();
-    }
+    if (textareaEl) { textareaEl.value = text; autoResize(); }
   });
 
   function autoResize() {
@@ -84,7 +94,13 @@ export function CommandInput(props: CommandInputProps) {
     // pendingWrites would stay elevated forever and block input sync. A 5s
     // watchdog decrements once even if the rpc is still in flight.
     let decremented = false;
-    const dec = () => { if (!decremented) { decremented = true; pendingWrites--; } };
+    const dec = () => {
+      if (!decremented) {
+        decremented = true;
+        pendingWrites--;
+        if (pendingWrites === 0) lastWriteSettledAt = Date.now();
+      }
+    };
     const watchdog = window.setTimeout(dec, 5000);
     rpc("write_pty", { sessionId: props.sessionId, data })
       .catch((err: unknown) => {
