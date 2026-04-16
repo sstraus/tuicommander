@@ -320,7 +320,10 @@ pub(crate) fn get_agent_mcp_status(agent_type: String) -> AgentMcpStatus {
 /// Install the tui-mcp-bridge MCP entry into an agent's config.
 /// Also removes the agent from `disabled_mcp_agents` so `ensure_mcp_configs` won't skip it.
 #[tauri::command]
-pub(crate) fn install_agent_mcp(agent_type: String) -> Result<(), String> {
+pub(crate) fn install_agent_mcp(
+    agent_type: String,
+    state: tauri::State<'_, std::sync::Arc<crate::state::AppState>>,
+) -> Result<(), String> {
     let spec = get_mcp_config_spec(&agent_type)
         .ok_or_else(|| format!("Agent '{agent_type}' does not support MCP configuration"))?;
 
@@ -345,7 +348,7 @@ pub(crate) fn install_agent_mcp(agent_type: String) -> Result<(), String> {
     write_json_file(&spec.config_path, &root)?;
 
     // Remove from disabled list so ensure_mcp_configs won't undo this
-    update_disabled_mcp_agents(|list| list.retain(|a| a != &agent_type));
+    update_disabled_mcp_agents(state.inner(), |list| list.retain(|a| a != &agent_type));
 
     Ok(())
 }
@@ -353,7 +356,10 @@ pub(crate) fn install_agent_mcp(agent_type: String) -> Result<(), String> {
 /// Remove the tui-mcp-bridge MCP entry from an agent's config.
 /// Also adds the agent to `disabled_mcp_agents` so `ensure_mcp_configs` won't reinstall it.
 #[tauri::command]
-pub(crate) fn remove_agent_mcp(agent_type: String) -> Result<(), String> {
+pub(crate) fn remove_agent_mcp(
+    agent_type: String,
+    state: tauri::State<'_, std::sync::Arc<crate::state::AppState>>,
+) -> Result<(), String> {
     let spec = get_mcp_config_spec(&agent_type)
         .ok_or_else(|| format!("Agent '{agent_type}' does not support MCP configuration"))?;
 
@@ -369,7 +375,7 @@ pub(crate) fn remove_agent_mcp(agent_type: String) -> Result<(), String> {
     }
 
     // Add to disabled list so ensure_mcp_configs won't reinstall
-    update_disabled_mcp_agents(|list| {
+    update_disabled_mcp_agents(state.inner(), |list| {
         if !list.contains(&agent_type) {
             list.push(agent_type.clone());
         }
@@ -378,12 +384,21 @@ pub(crate) fn remove_agent_mcp(agent_type: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Helper: load AppConfig, apply a mutation to `disabled_mcp_agents`, save back.
-fn update_disabled_mcp_agents(mutator: impl FnOnce(&mut Vec<String>)) {
-    use crate::config::{load_json_config, save_json_config, AppConfig};
-    let mut config: AppConfig = load_json_config("config.json");
-    mutator(&mut config.disabled_mcp_agents);
-    if let Err(e) = save_json_config("config.json", &config) {
+/// Helper: mutate `disabled_mcp_agents` in BOTH the in-memory `AppState.config`
+/// and on-disk `config.json`. Updating only disk would leave a stale snapshot in
+/// memory, and a subsequent `put_config` from the FE (carrying that stale list)
+/// would silently revert the toggle.
+fn update_disabled_mcp_agents(
+    state: &std::sync::Arc<crate::state::AppState>,
+    mutator: impl FnOnce(&mut Vec<String>),
+) {
+    use crate::config::save_json_config;
+    let snapshot = {
+        let mut cfg = state.config.write();
+        mutator(&mut cfg.disabled_mcp_agents);
+        cfg.clone()
+    };
+    if let Err(e) = save_json_config("config.json", &snapshot) {
         tracing::error!(source = "mcp", "Failed to save disabled_mcp_agents: {e}");
     }
 }
@@ -659,6 +674,35 @@ mod tests {
         let disabled = vec!["claude".to_string(), "cursor".to_string()];
         assert!(disabled.iter().any(|d| d == "claude"));
         assert!(!disabled.iter().any(|d| d == "vscode"));
+    }
+
+    /// Regression for #1368-fa9b: `update_disabled_mcp_agents` must mutate the
+    /// in-memory `AppState.config.disabled_mcp_agents`, not just the on-disk file.
+    /// Otherwise a `put_config` PUT carrying a stale snapshot silently reverts.
+    #[test]
+    fn update_disabled_mcp_agents_mutates_in_memory_state() {
+        let state = std::sync::Arc::new(crate::state::tests_support::make_test_app_state());
+        assert!(state.config.read().disabled_mcp_agents.is_empty(), "precondition");
+
+        // Simulate remove_agent_mcp's branch: add an agent to the disabled list.
+        update_disabled_mcp_agents(&state, |list| {
+            if !list.contains(&"claude".to_string()) {
+                list.push("claude".to_string());
+            }
+        });
+
+        assert!(
+            state.config.read().disabled_mcp_agents.iter().any(|a| a == "claude"),
+            "in-memory state.config must be updated, not only disk",
+        );
+
+        // Simulate install_agent_mcp's branch: remove the agent.
+        update_disabled_mcp_agents(&state, |list| list.retain(|a| a != "claude"));
+
+        assert!(
+            !state.config.read().disabled_mcp_agents.iter().any(|a| a == "claude"),
+            "in-memory state.config must be cleared on remove",
+        );
     }
 
     #[test]
