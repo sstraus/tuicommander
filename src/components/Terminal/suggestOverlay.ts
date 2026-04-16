@@ -7,7 +7,6 @@ export interface RowSnapshot {
 /** Re-declared here instead of imported: keeps the helper self-contained and
  *  avoids pulling the full Terminal module into unit tests. Must stay in
  *  sync with the patterns used in Terminal.tsx. */
-const SUGGEST_RE = /suggest:\s+.+\|/;
 const SUGGEST_ANCHOR_RE = /^[\s●⏺]*suggest:\s+\S/;
 const INTENT_RE = /^intent:\s+\S/;
 /** Match a NEW `suggest:` anchor for stop-detection during a continuation

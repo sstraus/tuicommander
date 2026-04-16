@@ -397,7 +397,7 @@ const App: Component = () => {
     aiChatDisposables = [];
     if (settingsStore.isAiChatEnabled()) {
       aiChatDisposables = registerAiChatContextActions();
-    } else {
+    } else if (uiStore.state.aiChatPanelVisible) {
       uiStore.setAiChatPanelVisible(false);
     }
   });
