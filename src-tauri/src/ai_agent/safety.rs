@@ -1,4 +1,7 @@
 use serde::Serialize;
+use std::sync::LazyLock;
+
+static SAFETY_CHECKER: LazyLock<RegexSafetyChecker> = LazyLock::new(RegexSafetyChecker::compile);
 
 /// Risk level for special key presses in a terminal context.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -44,9 +47,6 @@ pub enum SafetyVerdict {
 }
 
 /// Trait for evaluating command safety before PTY execution.
-pub trait SafetyChecker: Send + Sync {
-    fn evaluate(&self, command: &str) -> SafetyVerdict;
-}
 
 /// Split a command string on shell metacharacters (;, &&, ||, |, newlines)
 /// and expand $(...) / backtick subshells, returning individual sub-commands
@@ -142,7 +142,11 @@ pub struct RegexSafetyChecker {
 }
 
 impl RegexSafetyChecker {
-    pub fn new() -> Self {
+    pub fn get() -> &'static Self {
+        &SAFETY_CHECKER
+    }
+
+    fn compile() -> Self {
         let needs_approval = vec![
             // rm with -r and -f in any order, including split flags like `rm -r -f`
             (regex::Regex::new(r"\brm\s+(?:-\w*r\w*\s+)*(?:-\w*f|-\w*r)\b.*-\w*[rf]|\brm\s+-\w*rf|\brm\s+-\w*fr").unwrap(), "recursive force delete"),
@@ -172,8 +176,8 @@ impl RegexSafetyChecker {
     }
 }
 
-impl SafetyChecker for RegexSafetyChecker {
-    fn evaluate(&self, command: &str) -> SafetyVerdict {
+impl RegexSafetyChecker {
+    pub fn evaluate(&self, command: &str) -> SafetyVerdict {
         let sub_commands = split_shell_commands(command);
 
         // Evaluate each sub-command — worst verdict wins
@@ -285,8 +289,8 @@ pub fn format_rejection(verdict: &SafetyVerdict) -> Option<String> {
 mod tests {
     use super::*;
 
-    fn checker() -> RegexSafetyChecker {
-        RegexSafetyChecker::new()
+    fn checker() -> &'static RegexSafetyChecker {
+        RegexSafetyChecker::get()
     }
 
     // ── Safe commands return Allow ──────────────────────────────

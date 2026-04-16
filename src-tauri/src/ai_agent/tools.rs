@@ -4,7 +4,7 @@ use std::io::Write;
 use std::sync::Arc;
 
 use crate::state::AppState;
-use super::safety::{SafetyChecker, RegexSafetyChecker, SafetyVerdict, SafeKey, KeyRisk};
+use super::safety::{RegexSafetyChecker, SafetyVerdict, SafeKey, KeyRisk};
 use super::sandbox::FileSandbox;
 
 /// Max file size accepted by `read_file` / `edit_file` (10 MB).
@@ -358,7 +358,7 @@ fn exec_send_input_inner(state: &AppState, args: &Value, skip_safety: bool) -> T
     };
 
     if !skip_safety {
-        let checker = RegexSafetyChecker::new();
+        let checker = RegexSafetyChecker::get();
         match checker.evaluate(command) {
             SafetyVerdict::Allow => {}
             SafetyVerdict::NeedsApproval { reason } => {
@@ -438,7 +438,10 @@ async fn exec_wait_for(state: &Arc<AppState>, args: &Value) -> ToolResult {
 
     loop {
         if tokio::time::Instant::now() >= deadline {
-            return ToolResult::err("Timeout waiting for pattern or stability");
+            if compiled.is_some() {
+                return ToolResult::err("Timeout: pattern not matched within stability window");
+            }
+            return ToolResult::err("Timeout waiting for stability");
         }
 
         let current = {
@@ -450,20 +453,16 @@ async fn exec_wait_for(state: &Arc<AppState>, args: &Value) -> ToolResult {
             vt.screen_rows().join("\n")
         };
 
-        // Check regex match
         if let Some(ref re) = compiled {
             if let Some(m) = re.find(&current) {
                 return ToolResult::ok(redact_secrets(m.as_str()));
             }
         }
 
-        // Check stability
         if current != last_content {
             last_content = current;
             stable_since = tokio::time::Instant::now();
-        } else if compiled.is_none()
-            && stable_since.elapsed() >= std::time::Duration::from_millis(stability_ms)
-        {
+        } else if stable_since.elapsed() >= std::time::Duration::from_millis(stability_ms) {
             return ToolResult::ok(redact_secrets(&last_content));
         }
 
@@ -628,7 +627,7 @@ fn exec_write_file_inner(state: &AppState, session_id: &str, args: &Value, skip_
     };
 
     if !skip_safety {
-        let checker = RegexSafetyChecker::new();
+        let checker = RegexSafetyChecker::get();
         let verdict = checker.evaluate_file_write(file_path);
         match &verdict {
             SafetyVerdict::NeedsApproval { reason } => {
@@ -701,7 +700,7 @@ fn exec_edit_file_inner(state: &AppState, session_id: &str, args: &Value, skip_s
     let replace_all = args["replace_all"].as_bool().unwrap_or(false);
 
     if !skip_safety {
-        let checker = RegexSafetyChecker::new();
+        let checker = RegexSafetyChecker::get();
         let verdict = checker.evaluate_file_write(file_path);
         match &verdict {
             SafetyVerdict::NeedsApproval { reason } => {
@@ -1068,7 +1067,7 @@ async fn exec_run_command_inner(state: &AppState, session_id: &str, args: &Value
     let cwd_arg = args["cwd"].as_str();
 
     if !skip_safety {
-        let checker = RegexSafetyChecker::new();
+        let checker = RegexSafetyChecker::get();
         let verdict = checker.evaluate(command);
         match &verdict {
             SafetyVerdict::Block { .. } => {

@@ -374,17 +374,18 @@ async fn run_loop(
     let tool_defs = tools::tool_definitions();
     let genai_tools: Vec<Tool> = tool_defs
         .as_array()
-        .unwrap()
+        .unwrap_or(&Vec::new())
         .iter()
-        .map(|t| {
-            let mut tool = Tool::new(t["name"].as_str().unwrap());
+        .filter_map(|t| {
+            let name = t["name"].as_str()?;
+            let mut tool = Tool::new(name);
             if let Some(desc) = t["description"].as_str() {
                 tool = tool.with_description(desc);
             }
             if let Some(schema) = t.get("inputSchema") {
                 tool = tool.with_schema(schema.clone());
             }
-            tool
+            Some(tool)
         })
         .collect();
 
