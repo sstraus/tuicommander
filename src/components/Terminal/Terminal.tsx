@@ -26,6 +26,7 @@ import { kittySequenceForKey } from "./kittyKeyboard";
 import { getAwaitingInputSound } from "./awaitingInputSound";
 import { searchTerminalBuffer } from "../../utils/terminalSearch";
 import { ScrollTracker, ViewportLock } from "./scrollTracker";
+import { WebglLifecycle } from "./webglLifecycle";
 import { continuationRowsAfterSuggest, isSuggestBlock } from "./suggestOverlay";
 import { detectAgentForTerminal } from "../../hooks/useAgentPolling";
 import s from "./Terminal.module.css";
@@ -344,42 +345,15 @@ export const Terminal: Component<TerminalProps> = (props) => {
   // Kitty keyboard protocol: current flags for this session (0 = disabled)
   let kittyFlags = 0;
 
-  // WebGL addon — retained so we can clear its atlas on demand and recreate
-  // it after context loss. The addon exposes events that let us react to
-  // actual atlas stress instead of rebuilding on a fixed timer.
-  let webglAddon: WebglAddon | undefined;
+  // WebGL addon lifecycle — atlas stress detection, context loss recovery,
+  // and adaptive threshold scaling. See webglLifecycle.ts for details.
+  const webglLife = new WebglLifecycle(() => new WebglAddon());
 
   // Render observer for suggest/intent row overlays — disposed on cleanup
   let renderObserverCleanup: (() => void) | null = null;
   // Scrollbar visibility fix — forces the vertical scrollbar visible when
   // scrollback overflows, even without prior user interaction. Disposed on cleanup.
   let scrollbarFixCleanup: (() => void) | null = null;
-  // Wheel-at-top detector that opens the DOM scrollback overlay. Disposed on unmount.
-  // Throttle counter for atlas cleanup triggered by onAddTextureAtlasCanvas.
-  // Pages are added when the packer runs out of room for new glyphs, so a
-  // burst of additions is a real signal of stress (e.g. large diverse output).
-  // Thresholds are adaptive: large fonts fill atlas pages ~4× faster (a 512×512
-  // page holds ~600 glyphs at 14px but only ~150 at 21px), so we lower the
-  // page threshold and cooldown proportionally to catch corruption before it
-  // becomes visible.
-  let atlasPagesSinceCleanup = 0;
-  let atlasLastCleanupMs = 0;
-  const ATLAS_BASE_FONT = 14;
-  const ATLAS_BASE_MIN_PAGES = 3;
-  const ATLAS_BASE_MIN_INTERVAL_MS = 30_000;
-  /** Current effective thresholds — recalculated on every fontSize change. */
-  let atlasCleanupMinPages = ATLAS_BASE_MIN_PAGES;
-  let atlasCleanupMinIntervalMs = ATLAS_BASE_MIN_INTERVAL_MS;
-
-  /** Recalculate atlas cleanup thresholds based on current font size.
-   *  At 2× the base font, pages hold ¼ as many glyphs → threshold drops to 1
-   *  page and cooldown drops to ~8s. */
-  const updateAtlasThresholds = (fontSize: number) => {
-    // ratio > 1 when font is larger than base → atlas fills faster
-    const ratio = Math.max(1, fontSize / ATLAS_BASE_FONT);
-    atlasCleanupMinPages = Math.max(1, Math.round(ATLAS_BASE_MIN_PAGES / ratio));
-    atlasCleanupMinIntervalMs = Math.max(5_000, Math.round(ATLAS_BASE_MIN_INTERVAL_MS / ratio));
-  };
 
   // Buffer for PTY output arriving before terminal.open()
   let outputBuffer: string[] = [];
@@ -977,69 +951,17 @@ export const Terminal: Component<TerminalProps> = (props) => {
   /** Fully rebuild the WebGL renderer by disposing the current addon and
    *  instantiating a new one. Deferred via queueMicrotask so it is safe to
    *  call from inside an addon callback (e.g. onAddTextureAtlasCanvas) —
-   *  the current event handler finishes before dispose runs.
-   *
-   *  clearTextureAtlas() alone only wipes the glyph cache; it does not
-   *  reset the atlas packer's internal layout or the underlying WebGL
-   *  textures, so structural corruption (post-sleep texture loss,
-   *  packer state drift after diverse-unicode bursts) survives a clear.
-   *  A full addon recreate rebuilds every renderer resource while leaving
-   *  the xterm core buffer, scroll position, and selection intact. */
+   *  the current event handler finishes before dispose runs. */
   const rebuildAtlas = () => {
-    if (!terminal || !webglAddon) return;
-    const old = webglAddon;
-    webglAddon = undefined;
+    if (!terminal || !webglLife.addon) return;
+    webglLife.dispose();
     queueMicrotask(() => {
-      try {
-        old.dispose();
-      } catch {
-        // Addon may already be disposed (e.g. context loss race) — ignore.
-      }
-      if (terminal && !webglAddon) {
-        webglAddon = createWebglAddon();
+      if (terminal && !webglLife.addon) {
+        webglLife.attach(terminal);
       }
     });
   };
-
-  /** Instantiate WebglAddon and wire its lifecycle events.
-   *  - onContextLoss: recreate the addon so WebGL rendering survives sleep/resume.
-   *    Without recreation the terminal silently falls back to the DOM renderer.
-   *  - onAddTextureAtlasCanvas: pages are added when the packer runs out of room
-   *    for new glyphs. A burst of additions signals real atlas stress — we
-   *    respond with a full renderer rebuild (clearTextureAtlas alone does not
-   *    recover from structural packer corruption). */
-  const createWebglAddon = (): WebglAddon | undefined => {
-    if (!terminal) return undefined;
-    try {
-      const addon = new WebglAddon();
-      addon.onContextLoss(() => {
-        addon.dispose();
-        if (webglAddon === addon) webglAddon = undefined;
-        // Recreate on next microtask so dispose finishes first
-        queueMicrotask(() => {
-          if (terminal && !webglAddon) {
-            webglAddon = createWebglAddon();
-          }
-        });
-      });
-      addon.onAddTextureAtlasCanvas(() => {
-        atlasPagesSinceCleanup++;
-        const now = performance.now();
-        if (
-          atlasPagesSinceCleanup >= atlasCleanupMinPages &&
-          now - atlasLastCleanupMs > atlasCleanupMinIntervalMs
-        ) {
-          atlasPagesSinceCleanup = 0;
-          atlasLastCleanupMs = now;
-          rebuildAtlas();
-        }
-      });
-      terminal.loadAddon(addon);
-      return addon;
-    } catch {
-      return undefined;
-    }
-  };
+  webglLife.onRebuild = rebuildAtlas;
 
   let terminalOpened = false;
   let resizeObserver: ResizeObserver | undefined;
@@ -1054,7 +976,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     w.__terms[props.id] = () => terminal;
 
     // Set initial atlas thresholds based on configured font size
-    updateAtlasThresholds(settingsStore.state.defaultFontSize);
+    webglLife.updateThresholds(settingsStore.state.defaultFontSize);
 
     terminal = new XTerm({
       scrollback: 10000,
@@ -1372,7 +1294,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     if (props.onOpenFilePath) {
       // Matches paths starting with /, ./, ../, or relative paths containing / with known extensions.
       // Optional :line or :line:col suffix.
-      const CODING_EXT = "rs|ts|tsx|js|jsx|mjs|cjs|py|go|java|kt|kts|swift|c|h|cpp|hpp|cc|cs|rb|php|lua|zig|nim|ex|exs|erl|hs|ml|mli|fs|fsx|scala|clj|cljs|r|R|jl|dart|v|sv|vhdl|sol|move|css|scss|sass|less|html|htm|vue|svelte|astro|json|jsonc|json5|yaml|yml|toml|ini|cfg|conf|env|xml|plist|csv|tsv|sql|graphql|gql|proto|thrift|avsc|md|mdx|txt|rst|tex|adoc|org|sh|bash|zsh|fish|ps1|psm1|bat|cmd|dockerfile|containerfile|tf|tfvars|hcl|nix|cmake|make|mk|gradle|sbt|cabal|gemspec|podspec|lock|sum|mod|workspace|editorconfig|gitignore|gitattributes|dockerignore|eslintrc|prettierrc|babelrc|nvmrc|tool-versions";
+      const CODING_EXT = "rs|ts|tsx|js|jsx|mjs|cjs|py|go|java|kt|kts|swift|c|h|cpp|hpp|cc|cs|rb|php|lua|zig|nim|ex|exs|erl|hs|ml|mli|fs|fsx|scala|clj|cljs|r|R|jl|dart|v|sv|vhdl|sol|move|css|scss|sass|less|html|htm|vue|svelte|astro|json|jsonc|json5|yaml|yml|toml|ini|cfg|conf|env|xml|plist|csv|tsv|sql|graphql|gql|proto|thrift|avsc|md|mdx|txt|rst|tex|adoc|org|sh|bash|zsh|fish|ps1|psm1|bat|cmd|dockerfile|containerfile|tf|tfvars|hcl|nix|cmake|make|mk|gradle|sbt|cabal|gemspec|podspec|lock|sum|mod|workspace|editorconfig|gitignore|gitattributes|dockerignore|eslintrc|prettierrc|babelrc|nvmrc|tool-versions|pdf|png|jpg|jpeg|gif|webp|svg|avif|ico|bmp|mp4|webm|mov|ogg|mp3|wav|flac|aac|m4a|log";
       const filePathRegex = new RegExp(
         `(?:^|[\\s"'\`(\\[{])` +                                    // boundary
         `((?:~/|/|\\.\\.?/|[\\w@.-]+/)` +                            // path start: ~/, /, ./, ../, or word/
@@ -1520,7 +1442,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
     // Load WebGL renderer for 3-5x rendering performance over canvas.
     // DOM renderer remains as fallback if WebGL init fails.
-    webglAddon = createWebglAddon();
+    webglLife.attach(terminal);
 
     // Update tab title from shell OSC 0/2 escape sequences (e.g. user@host:~/path)
     // OSC titles take priority over status-line parsing
@@ -1900,7 +1822,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     const size = perTerminalSize ?? defaultSize;
     terminal.options.fontSize = size;
     terminal.options.lineHeight = snapLineHeight(size);
-    updateAtlasThresholds(size);
+    webglLife.updateThresholds(size);
     doFit();
   });
 
