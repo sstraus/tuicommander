@@ -938,9 +938,10 @@ const App: Component = () => {
         const effectiveRepo = filePath === absolutePath ? "" : repoPath;
         const effectiveRoot = filePath === absolutePath ? "" : fsRoot;
 
-        if (absolutePath.endsWith(".md") || absolutePath.endsWith(".mdx")) {
+        const target = classifyFile(filePath);
+        if (target === "markdown") {
           mdTabsStore.add(effectiveRepo, filePath, effectiveRoot || undefined);
-        } else if (absolutePath.endsWith(".html") || absolutePath.endsWith(".htm")) {
+        } else if (target === "preview") {
           mdTabsStore.addHtmlPreview(effectiveRepo, filePath, effectiveRoot || undefined);
         } else {
           editorTabsStore.add(effectiveRoot || effectiveRepo, filePath);
