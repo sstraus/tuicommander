@@ -104,6 +104,20 @@
   flex-shrink: 0;
 }
 
+.projectCheckbox {
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+
+.filteredBadge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(224, 108, 117, 0.15);
+  color: #e06c75;
+  white-space: nowrap;
+}
+
 .empty {
   padding: 24px 16px;
   text-align: center;

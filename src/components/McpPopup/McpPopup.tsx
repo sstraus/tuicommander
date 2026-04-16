@@ -59,6 +59,15 @@ export const McpPopup: Component<{ onOpenSettings: (tab: string) => void }> = (p
     return server?.enabled ?? true;
   };
 
+  /** Whether a per-project allowlist is active */
+  const hasProjectScope = () => mcpPopupStore.state.projectAllowlist !== null;
+
+  /** Whether a server is globally enabled but filtered out by project allowlist */
+  const isProjectFiltered = (name: string): boolean => {
+    if (!hasProjectScope()) return false;
+    return isEnabled(name) && !mcpPopupStore.effectiveEnabledForRepo(name);
+  };
+
   const handleOverlayClick = (e: MouseEvent) => {
     if (e.target === overlayRef) mcpPopupStore.close();
   };
@@ -104,11 +113,17 @@ export const McpPopup: Component<{ onOpenSettings: (tab: string) => void }> = (p
                     <span
                       class={s.statusDot}
                       style={{
-                        background: enabled()
+                        background: enabled() && !isProjectFiltered(server.name)
                           ? STATUS_COLORS[st()?.status ?? "disabled"] ?? "#5c6370"
                           : "#5c6370",
                       }}
-                      title={enabled() ? (st()?.status?.replace("_", " ") ?? "unknown") : "disabled"}
+                      title={
+                        isProjectFiltered(server.name)
+                          ? "disabled for this project"
+                          : enabled()
+                            ? (st()?.status?.replace("_", " ") ?? "unknown")
+                            : "disabled"
+                      }
                     />
                     <div class={s.info}>
                       <span
@@ -123,9 +138,25 @@ export const McpPopup: Component<{ onOpenSettings: (tab: string) => void }> = (p
                         {server.transport.type.toUpperCase()}
                       </span>
                     </div>
+                    <Show when={isProjectFiltered(server.name)}>
+                      <span class={s.filteredBadge} data-testid="project-filtered" title="Disabled for this project">
+                        project: off
+                      </span>
+                    </Show>
                     <span class={s.tools}>
                       {enabled() ? `${st()?.tool_count ?? 0} tools` : "off"}
                     </span>
+                    <Show when={hasProjectScope()}>
+                      <input
+                        type="checkbox"
+                        class={s.projectCheckbox}
+                        data-testid="project-toggle"
+                        checked={mcpPopupStore.effectiveEnabledForRepo(server.name)}
+                        title={`Toggle for this project`}
+                        onChange={() => mcpPopupStore.toggleServerForProject(server.name)}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </Show>
                     <input
                       type="checkbox"
                       class={s.checkbox}
