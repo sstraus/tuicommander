@@ -303,7 +303,7 @@ pub(crate) async fn start_agent_loop(
 pub(crate) fn cancel_agent_loop(session_id: &str) -> Result<(), String> {
     let entry = ACTIVE_AGENTS.get(session_id)
         .ok_or_else(|| format!("No active agent on session {session_id}"))?;
-    entry.cancel.store(true, Ordering::Relaxed);
+    entry.cancel.store(true, Ordering::Release);
     *entry.state.write() = AgentState::Cancelled;
     Ok(())
 }
@@ -405,7 +405,7 @@ async fn run_loop(
 
     for iteration in 0..MAX_ITERATIONS {
         // Check cancellation
-        if cancel.load(Ordering::Relaxed) {
+        if cancel.load(Ordering::Acquire) {
             return Ok("cancelled".into());
         }
 
@@ -421,7 +421,7 @@ async fn run_loop(
                 _ = pause_notify.notified() => {}
                 _ = tokio::time::sleep(Duration::from_millis(100)) => {}
             }
-            if cancel.load(Ordering::Relaxed) {
+            if cancel.load(Ordering::Acquire) {
                 return Ok("cancelled".into());
             }
         }
@@ -436,7 +436,7 @@ async fn run_loop(
                 wait_ms: wait.as_millis() as u64,
             });
             tokio::time::sleep(wait).await;
-            if cancel.load(Ordering::Relaxed) {
+            if cancel.load(Ordering::Acquire) {
                 return Ok("cancelled".into());
             }
         }
@@ -494,7 +494,7 @@ async fn run_loop(
                     }
                 }
                 _ = tokio::time::sleep(Duration::from_millis(50)) => {
-                    if cancel.load(Ordering::Relaxed) {
+                    if cancel.load(Ordering::Acquire) {
                         return Ok("cancelled".into());
                     }
                 }
@@ -521,7 +521,7 @@ async fn run_loop(
                     wait_ms: wait.as_millis() as u64,
                 });
                 tokio::time::sleep(wait).await;
-                if cancel.load(Ordering::Relaxed) {
+                if cancel.load(Ordering::Acquire) {
                     return Ok("cancelled".into());
                 }
             }
@@ -561,7 +561,7 @@ async fn run_loop(
                 let approved = tokio::select! {
                     res = rx => res.unwrap_or(false),
                     _ = async {
-                        while !cancel.load(Ordering::Relaxed) {
+                        while !cancel.load(Ordering::Acquire) {
                             tokio::time::sleep(Duration::from_millis(100)).await;
                         }
                     } => false,
@@ -569,7 +569,7 @@ async fn run_loop(
 
                 *approval_tx.lock() = None;
 
-                if cancel.load(Ordering::Relaxed) {
+                if cancel.load(Ordering::Acquire) {
                     return Ok("cancelled".into());
                 }
 

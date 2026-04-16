@@ -451,12 +451,16 @@ const PERSIST_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
 /// Runs on the tokio runtime and lives for the process lifetime.
 pub fn spawn_persist_task(state: std::sync::Arc<crate::state::AppState>) {
     tokio::spawn(async move {
-        load_all(&state);
+        {
+            let s = state.clone();
+            let _ = tokio::task::spawn_blocking(move || load_all(&s)).await;
+        }
         let mut ticker = tokio::time::interval(PERSIST_INTERVAL);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             ticker.tick().await;
-            flush_dirty(&state);
+            let s = state.clone();
+            let _ = tokio::task::spawn_blocking(move || flush_dirty(&s)).await;
         }
     });
 }
