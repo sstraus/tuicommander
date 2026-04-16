@@ -38,6 +38,7 @@ lazy_static::lazy_static! {
 
 /// Handle to a running agent loop — used for pause/resume/cancel.
 pub(crate) struct AgentHandle {
+    pub owner_session_id: String,
     pub cancel: Arc<AtomicBool>,
     pub state: Arc<RwLock<AgentState>>,
     pub pause_notify: Arc<Notify>,
@@ -253,6 +254,7 @@ pub(crate) async fn start_agent_loop(
 
     let approval_tx: Arc<Mutex<Option<oneshot::Sender<bool>>>> = Arc::new(Mutex::new(None));
     let handle = AgentHandle {
+        owner_session_id: session_id.clone(),
         cancel: cancel.clone(),
         state: agent_state.clone(),
         pause_notify: pause_notify.clone(),
@@ -755,6 +757,7 @@ mod tests {
         let cancel = Arc::new(AtomicBool::new(false));
         let (tx, _) = broadcast::channel(16);
         ACTIVE_AGENTS.insert(sid.to_string(), AgentHandle {
+            owner_session_id: sid.to_string(),
             cancel,
             state: Arc::new(RwLock::new(AgentState::Running)),
             pause_notify: Arc::new(Notify::new()),
@@ -865,6 +868,7 @@ mod tests {
         let (tx, _) = broadcast::channel(16);
         let atx = Arc::new(Mutex::new(None));
         ACTIVE_AGENTS.insert(sid.to_string(), AgentHandle {
+            owner_session_id: sid.to_string(),
             cancel,
             state: Arc::new(RwLock::new(AgentState::Running)),
             pause_notify: Arc::new(Notify::new()),
@@ -884,6 +888,7 @@ mod tests {
         let (otx, orx) = oneshot::channel::<bool>();
         let atx = Arc::new(Mutex::new(Some(otx)));
         ACTIVE_AGENTS.insert(sid.to_string(), AgentHandle {
+            owner_session_id: sid.to_string(),
             cancel,
             state: Arc::new(RwLock::new(AgentState::Running)),
             pause_notify: Arc::new(Notify::new()),

@@ -1218,6 +1218,15 @@ async fn dispatch_inner(
     args: &Value,
     skip_safety: bool,
 ) -> ToolResult {
+    if matches!(fn_name, "send_input" | "send_key") {
+        if let Some(target) = args["session_id"].as_str() {
+            if target != session_id {
+                return ToolResult::err(format!(
+                    "Permission denied: agent bound to session {session_id} cannot write to {target}"
+                ));
+            }
+        }
+    }
     match fn_name {
         "read_screen" => exec_read_screen(state, args),
         "send_input" => exec_send_input_inner(state, args, skip_safety),
@@ -2348,5 +2357,45 @@ mod tests {
         assert!(trunc);
         assert!(out.contains("truncated"));
         assert!(out.len() < long.len());
+    }
+
+    // ── Cross-session identity binding ────────────────────────
+
+    #[tokio::test]
+    async fn cross_session_send_input_rejected() {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let args = serde_json::json!({
+            "session_id": "session-B",
+            "command": "echo hello"
+        });
+        let result = dispatch_inner(&state, "session-A", "send_input", &args, false).await;
+        assert!(!result.success);
+        assert!(result.output.contains("Permission denied"));
+        assert!(result.output.contains("session-A"));
+        assert!(result.output.contains("session-B"));
+    }
+
+    #[tokio::test]
+    async fn cross_session_send_key_rejected() {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let args = serde_json::json!({
+            "session_id": "session-B",
+            "key": "ctrl-c"
+        });
+        let result = dispatch_inner(&state, "session-A", "send_key", &args, false).await;
+        assert!(!result.success);
+        assert!(result.output.contains("Permission denied"));
+    }
+
+    #[tokio::test]
+    async fn same_session_send_input_not_rejected() {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let args = serde_json::json!({
+            "session_id": "session-A",
+            "command": "echo hello"
+        });
+        let result = dispatch_inner(&state, "session-A", "send_input", &args, false).await;
+        // May fail for other reasons (no PTY) but NOT for permission denied
+        assert!(!result.output.contains("Permission denied"));
     }
 }
