@@ -235,6 +235,13 @@ const SHELL_IDLE_MS: u64 = 500;
 /// Combined with the 2s frontend debounce, this gives ~4.5s total hold.
 const AGENT_IDLE_MS: u64 = 2500;
 
+/// Maximum time active_sub_tasks can block idle transition (30s).
+/// If the parser sets active_sub_tasks > 0 but the agent exits or the
+/// mode-line disappears without emitting count=0, the terminal would stay
+/// busy forever. After this timeout with no real output, we force-clear
+/// the stale counter and allow idle transition.
+const SUBTASK_STALE_MS: u64 = 30_000;
+
 /// AtomicU8 encoding for shell_states DashMap.
 pub(crate) const SHELL_NULL: u8 = 0;
 pub(crate) const SHELL_BUSY: u8 = 1;
@@ -731,8 +738,20 @@ fn should_transition_idle(state: &crate::state::AppState, session_id: &str) -> b
     if elapsed < threshold {
         return false;
     }
-    let sub_tasks = session.map(|s| s.active_sub_tasks).unwrap_or(0);
-    sub_tasks == 0
+    let sub_tasks = session.as_ref().map(|s| s.active_sub_tasks).unwrap_or(0);
+    if sub_tasks == 0 {
+        return true;
+    }
+    // Sub-tasks are active but no output for SUBTASK_STALE_MS — the mode-line
+    // disappeared without emitting count=0 (agent exited, user cleared, etc.).
+    // Force-clear the stale counter so we don't stay busy forever.
+    if elapsed >= SUBTASK_STALE_MS {
+        if let Some(mut entry) = state.session_states.get_mut(session_id) {
+            entry.active_sub_tasks = 0;
+        }
+        return true;
+    }
+    false
 }
 
 /// Emit a ShellState parsed event via both event bus and Tauri IPC.
@@ -4759,7 +4778,32 @@ mod tests {
         state.last_output_ms.insert(sid.to_string(), AtomicU64::new(now - 600));
 
         assert!(!should_transition_idle(&state, sid),
-            "should NOT transition idle when active_sub_tasks > 0");
+            "should NOT transition idle when active_sub_tasks > 0 and elapsed < SUBTASK_STALE_MS");
+    }
+
+    #[test]
+    fn test_shell_state_idle_stale_subtasks_force_cleared() {
+        use std::sync::atomic::{AtomicU8, AtomicU64};
+        let state = crate::state::tests_support::make_test_app_state();
+        let sid = "test-session";
+        state.shell_states.insert(sid.to_string(), AtomicU8::new(SHELL_BUSY));
+
+        state.session_states.insert(sid.to_string(), crate::state::SessionState {
+            active_sub_tasks: 2,
+            ..Default::default()
+        });
+
+        // Set last output to 31s ago (> SUBTASK_STALE_MS)
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap().as_millis() as u64;
+        state.last_output_ms.insert(sid.to_string(), AtomicU64::new(now - 31_000));
+
+        assert!(should_transition_idle(&state, sid),
+            "should transition idle when active_sub_tasks > 0 but elapsed >= SUBTASK_STALE_MS");
+        // Verify the stale counter was force-cleared
+        let sub = state.session_states.get(sid).map(|s| s.active_sub_tasks).unwrap_or(999);
+        assert_eq!(sub, 0, "active_sub_tasks should be force-cleared to 0");
     }
 
     #[test]
