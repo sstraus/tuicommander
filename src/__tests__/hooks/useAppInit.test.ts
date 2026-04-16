@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import "../mocks/tauri";
+import { mockInvoke } from "../mocks/tauri";
 import { listen } from "@tauri-apps/api/event";
 import { makeTerminal } from "../helpers/store";
 import { terminalsStore } from "../../stores/terminals";
@@ -499,6 +500,77 @@ describe("initApp", () => {
     expect(deps.refreshAllBranchStats).toHaveBeenCalledTimes(2);
 
     vi.useRealTimers();
+  });
+
+  describe("scoped cache invalidation", () => {
+    function captureRepoAndHeadChanged() {
+      const listenMock = vi.mocked(listen);
+      let repoChangedCb: ((event: { payload: { repo_path: string } }) => void) | null = null;
+      let headChangedCb: ((event: { payload: { repo_path: string; branch: string } }) => void) | null = null;
+      listenMock.mockImplementation(((event: string, handler: (event: { payload: unknown }) => void) => {
+        if (event === "repo-changed") repoChangedCb = handler as typeof repoChangedCb;
+        if (event === "head-changed") headChangedCb = handler as typeof headChangedCb;
+        return Promise.resolve(vi.fn());
+      }) as unknown as typeof listen);
+      return {
+        getRepoChanged: () => repoChangedCb,
+        getHeadChanged: () => headChangedCb,
+      };
+    }
+
+    beforeEach(() => {
+      mockInvoke.mockClear();
+    });
+
+    it("repo-changed calls clear_repo_caches with repo path, not clear_caches", async () => {
+      vi.useFakeTimers();
+      const { getRepoChanged } = captureRepoAndHeadChanged();
+      const deps = createMockDeps();
+      await initApp(deps);
+
+      mockInvoke.mockClear();
+      getRepoChanged()!({ payload: { repo_path: "/my/repo" } });
+
+      // Should call scoped invalidation
+      expect(mockInvoke).toHaveBeenCalledWith("clear_repo_caches", { path: "/my/repo" });
+      // Should NOT call the global clear_caches
+      expect(mockInvoke).not.toHaveBeenCalledWith("clear_caches");
+
+      vi.useRealTimers();
+    });
+
+    it("head-changed calls clear_repo_caches with repo path, not clear_caches", async () => {
+      const { getHeadChanged } = captureRepoAndHeadChanged();
+      repositoriesStore.add({ path: "/my/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/my/repo", "main", { worktreePath: null });
+      repositoriesStore.setActiveBranch("/my/repo", "main");
+
+      const deps = createMockDeps();
+      await initApp(deps);
+
+      mockInvoke.mockClear();
+      getHeadChanged()!({ payload: { repo_path: "/my/repo", branch: "feature" } });
+
+      expect(mockInvoke).toHaveBeenCalledWith("clear_repo_caches", { path: "/my/repo" });
+      expect(mockInvoke).not.toHaveBeenCalledWith("clear_caches");
+    });
+
+    it("repo-changed scopes invalidation to the specific repo that changed", async () => {
+      vi.useFakeTimers();
+      const { getRepoChanged } = captureRepoAndHeadChanged();
+      const deps = createMockDeps();
+      await initApp(deps);
+
+      mockInvoke.mockClear();
+      getRepoChanged()!({ payload: { repo_path: "/repo-a" } });
+      getRepoChanged()!({ payload: { repo_path: "/repo-b" } });
+
+      // Each repo gets its own scoped invalidation call
+      expect(mockInvoke).toHaveBeenCalledWith("clear_repo_caches", { path: "/repo-a" });
+      expect(mockInvoke).toHaveBeenCalledWith("clear_repo_caches", { path: "/repo-b" });
+
+      vi.useRealTimers();
+    });
   });
 
   describe("head-changed event", () => {

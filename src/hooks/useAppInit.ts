@@ -209,9 +209,9 @@ export async function initApp(deps: AppInitDeps) {
       repositoriesStore.setActiveBranch(repo_path, branch);
     }
 
-    // Invalidate caches so next poll fetches fresh data
-    invoke("clear_caches").catch((err) =>
-      appLogger.debug("app", "Failed to clear caches", err),
+    // Invalidate caches for this repo so next poll fetches fresh data
+    invoke("clear_repo_caches", { path: repo_path }).catch((err) =>
+      appLogger.debug("app", "Failed to clear repo caches", err),
     );
   }).catch((err) =>
     appLogger.error("app", "Failed to register head-changed listener", err),
@@ -228,9 +228,9 @@ export async function initApp(deps: AppInitDeps) {
   let activeRefresh: Promise<void> | null = null;
   listen<{ repo_path: string }>("repo-changed", (event) => {
     const { repo_path } = event.payload;
-    // Invalidate caches so panels fetch fresh data
-    invoke("clear_caches").catch((err) =>
-      appLogger.debug("app", "Failed to clear caches", err),
+    // Invalidate caches for this repo so panels fetch fresh data
+    invoke("clear_repo_caches", { path: repo_path }).catch((err) =>
+      appLogger.debug("app", "Failed to clear repo caches", err),
     );
     // Reload .tuic.json (may have changed)
     repoSettingsStore.loadLocalConfig(repo_path).catch(() => {});

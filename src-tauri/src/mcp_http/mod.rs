@@ -479,6 +479,7 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/config/repositories", get(config_routes::get_repositories).put(config_routes::put_repositories))
         .route("/config/pane-layout", get(config_routes::get_pane_layout).put(config_routes::put_pane_layout))
         .route("/config/clear-caches", post(config_routes::clear_caches))
+        .route("/config/clear-repo-caches", post(config_routes::clear_repo_caches))
         .route("/config/repo-local-config", get(config_routes::get_repo_local_config))
         .route("/config/prompt-library", get(config_routes::get_prompt_library).put(config_routes::put_prompt_library))
         // Logs

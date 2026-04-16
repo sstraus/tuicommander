@@ -249,6 +249,7 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 
   // --- Config: caches ---
   clear_caches: { map: () => ({ method: "POST", path: "/config/clear-caches" }) },
+  clear_repo_caches: { map: (a) => ({ method: "POST", path: `/config/clear-repo-caches`, body: { path: a.path } }) },
 
   // --- Config: repo local config (.tuic.json) ---
   load_repo_local_config: {

@@ -160,6 +160,16 @@ pub(super) async fn clear_caches(State(state): State<Arc<AppState>>) -> impl Int
     Json(serde_json::json!({"ok": true}))
 }
 
+pub(super) async fn clear_repo_caches(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    if let Some(path) = body.get("path").and_then(|v| v.as_str()) {
+        state.invalidate_repo_caches(path);
+    }
+    Json(serde_json::json!({"ok": true}))
+}
+
 pub(super) async fn get_repo_local_config(Query(q): Query<PathQuery>) -> impl IntoResponse {
     Json(crate::config::load_repo_local_config_from_path(std::path::Path::new(&q.path)))
 }

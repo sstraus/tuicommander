@@ -184,6 +184,12 @@ fn clear_caches(state: State<'_, Arc<AppState>>) {
     state.clear_caches();
 }
 
+/// Clear git/GitHub caches for a specific repo path
+#[tauri::command]
+fn clear_repo_caches(state: State<'_, Arc<AppState>>, path: String) {
+    state.invalidate_repo_caches(&path);
+}
+
 /// One IPv4 address found on a network interface.
 #[derive(serde::Serialize)]
 struct LocalIpEntry {
@@ -1167,6 +1173,7 @@ pub fn run() {
             worktree::remove_orphan_worktree,
             worktree::run_setup_script,
             clear_caches,
+            clear_repo_caches,
             get_local_ip,
             get_local_ips,
             updater::check_update_channel,
