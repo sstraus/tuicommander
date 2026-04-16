@@ -92,6 +92,16 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
     }
   });
 
+  // Auto-reset to general when the current tab vanishes (e.g. AI Chat flag
+  // toggled off while AI Chat tab is active). Without this, the body would
+  // also disappear (per the Show guard above) but the nav would have no
+  // highlight. (#1376-7333)
+  createEffect(() => {
+    if (activeTab() === "ai-chat" && !settingsStore.isAiChatEnabled()) {
+      setActiveTab("general");
+    }
+  });
+
   /** Repo path if a repo nav item is currently active, null otherwise */
   const activeRepoPath = (): string | null => {
     const tab = activeTab();
@@ -183,7 +193,7 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
       <Show when={activeTab() === "agents"}>
         <AgentsTab />
       </Show>
-      <Show when={activeTab() === "ai-chat"}>
+      <Show when={activeTab() === "ai-chat" && settingsStore.isAiChatEnabled()}>
         <AiChatTab />
       </Show>
     </SettingsShell>
