@@ -330,11 +330,30 @@ impl UpstreamRegistry {
     ///
     /// Tool filter (allow / deny patterns) is applied per upstream config.
     pub(crate) fn aggregated_tools(&self) -> Vec<Value> {
+        self.aggregated_tools_for_repo(None)
+    }
+
+    /// Like [`aggregated_tools`] but optionally restricted to a per-repo
+    /// allowlist of upstream names (`mcp_upstreams` from repo settings).
+    ///
+    /// When `allowed_upstreams` is `None`, all globally-enabled upstreams are
+    /// returned (current behavior). When `Some(&[...])`, only upstreams whose
+    /// name appears in the list are included.
+    pub(crate) fn aggregated_tools_for_repo(
+        &self,
+        allowed_upstreams: Option<&[String]>,
+    ) -> Vec<Value> {
         let mut result = Vec::new();
         for entry_ref in self.entries.iter() {
             let entry = entry_ref.value();
             if *entry.status.read() != UpstreamStatus::Ready {
                 continue;
+            }
+            // Per-repo upstream allowlist filter
+            if let Some(allowed) = allowed_upstreams {
+                if !allowed.iter().any(|a| a == &entry.config.name) {
+                    continue;
+                }
             }
             let tools = entry.tools.read();
             for tool in tools.iter() {
@@ -371,7 +390,28 @@ impl UpstreamRegistry {
         prefixed_name: &str,
         args: Value,
     ) -> Result<Value, String> {
+        self.proxy_tool_call_for_repo(prefixed_name, args, None).await
+    }
+
+    /// Like [`proxy_tool_call`] but optionally restricted to a per-repo
+    /// allowlist. When `allowed_upstreams` is `Some`, rejects calls to
+    /// upstreams not in the list.
+    pub(crate) async fn proxy_tool_call_for_repo(
+        &self,
+        prefixed_name: &str,
+        args: Value,
+        allowed_upstreams: Option<&[String]>,
+    ) -> Result<Value, String> {
         let (upstream_name, tool_name) = split_prefixed_name(prefixed_name)?;
+
+        // Per-repo upstream allowlist: reject calls to upstreams not enabled for this project
+        if let Some(allowed) = allowed_upstreams {
+            if !allowed.iter().any(|a| a == upstream_name) {
+                return Err(format!(
+                    "Upstream '{upstream_name}' is not enabled for this project"
+                ));
+            }
+        }
 
         let entry = self
             .entries
@@ -1596,5 +1636,77 @@ mod tests {
         let mut names = registry.upstream_names();
         names.sort();
         assert_eq!(names, vec!["a", "b"]);
+    }
+
+    // -----------------------------------------------------------------------
+    // aggregated_tools_for_repo — per-project upstream filtering
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn aggregated_tools_for_repo_filters_by_allowlist() {
+        let registry = UpstreamRegistry::new();
+        let (n1, e1) = ready_entry("server-a", vec![make_tool_def("tool_a")]);
+        let (n2, e2) = ready_entry("server-b", vec![make_tool_def("tool_b")]);
+        registry.entries.insert(n1, e1);
+        registry.entries.insert(n2, e2);
+
+        let allowed = vec!["server-a".to_string()];
+        let tools = registry.aggregated_tools_for_repo(Some(&allowed));
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0]["name"], "server-a__tool_a");
+    }
+
+    #[test]
+    fn aggregated_tools_for_repo_none_returns_all() {
+        let registry = UpstreamRegistry::new();
+        let (n1, e1) = ready_entry("server-a", vec![make_tool_def("tool_a")]);
+        let (n2, e2) = ready_entry("server-b", vec![make_tool_def("tool_b")]);
+        registry.entries.insert(n1, e1);
+        registry.entries.insert(n2, e2);
+
+        let tools = registry.aggregated_tools_for_repo(None);
+        assert_eq!(tools.len(), 2);
+    }
+
+    #[test]
+    fn aggregated_tools_for_repo_empty_allowlist_returns_none() {
+        let registry = UpstreamRegistry::new();
+        let (n1, e1) = ready_entry("server-a", vec![make_tool_def("tool_a")]);
+        registry.entries.insert(n1, e1);
+
+        let allowed: Vec<String> = vec![];
+        let tools = registry.aggregated_tools_for_repo(Some(&allowed));
+        assert!(tools.is_empty());
+    }
+
+    #[tokio::test]
+    async fn proxy_tool_call_for_repo_rejects_disabled_upstream() {
+        let registry = UpstreamRegistry::new();
+        let (name, entry) = ready_entry("blocked-server", vec![make_tool_def("some_tool")]);
+        registry.entries.insert(name, entry);
+
+        let allowed = vec!["other-server".to_string()];
+        let err = registry
+            .proxy_tool_call_for_repo("blocked-server__some_tool", serde_json::json!({}), Some(&allowed))
+            .await
+            .expect_err("should reject upstream not in allowlist");
+        assert!(err.contains("not enabled"), "expected 'not enabled' message, got: {err}");
+    }
+
+    #[tokio::test]
+    async fn proxy_tool_call_for_repo_none_allows_all() {
+        let registry = UpstreamRegistry::new();
+        let (name, entry) = ready_entry("any-server", vec![make_tool_def("some_tool")]);
+        registry.entries.insert(name, entry);
+
+        // With None allowlist, should NOT reject (will fail at actual call since
+        // there's no real upstream, but it should not be a filter error)
+        let result = registry
+            .proxy_tool_call_for_repo("any-server__some_tool", serde_json::json!({}), None)
+            .await;
+        // Either Ok (unlikely without real server) or Err that's NOT about filtering
+        if let Err(e) = result {
+            assert!(!e.contains("not enabled"), "should not be filtered: {e}");
+        }
     }
 }
