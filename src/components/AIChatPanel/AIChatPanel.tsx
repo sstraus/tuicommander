@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal, createEffect, onCleanup } from "solid-js";
+import { Component, For, Show, createSignal, createEffect, createMemo, onCleanup } from "solid-js";
 import { aiChatStore } from "../../stores/aiChatStore";
 import { aiAgentStore, type ToolCallEntry } from "../../stores/aiAgentStore";
 import { terminalsStore } from "../../stores/terminals";
@@ -83,7 +83,7 @@ const IconPlay = () => (
 const ToolCallCard: Component<{ entry: ToolCallEntry }> = (props) => {
   const [expanded, setExpanded] = createSignal(false);
   const statusClass = () => {
-    if (!props.entry.result) return s.toolCallPending;
+    if (props.entry.status === "pending") return s.toolCallPending;
     return props.entry.result.success ? s.toolCallSuccess : s.toolCallFailure;
   };
 
@@ -92,16 +92,16 @@ const ToolCallCard: Component<{ entry: ToolCallEntry }> = (props) => {
       <div class={s.toolCallHeader} onClick={() => setExpanded(!expanded())}>
         <span class={cx(s.toolCallStatusDot, statusClass())} />
         <span class={s.toolCallName}>{props.entry.toolName}</span>
-        <Show when={props.entry.duration}>
-          <span class={s.toolCallDuration}>{props.entry.duration}ms</span>
+        <Show when={props.entry.status === "done"}>
+          <span class={s.toolCallDuration}>{(props.entry as ToolCallEntry & { status: "done" }).duration}ms</span>
         </Show>
       </div>
       <Show when={expanded()}>
         <div class={s.toolCallBody}>
           <div>Args: {JSON.stringify(props.entry.args, null, 2)}</div>
-          <Show when={props.entry.result}>
+          <Show when={props.entry.status === "done"}>
             <div>
-              Result ({props.entry.result!.success ? "ok" : "error"}): {props.entry.result!.output}
+              Result ({(props.entry as ToolCallEntry & { status: "done" }).result.success ? "ok" : "error"}): {(props.entry as ToolCallEntry & { status: "done" }).result.output}
             </div>
           </Show>
         </div>
@@ -155,7 +155,7 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
   };
 
   // ── Terminal list for dropdown ──────────────────────────────────────────
-  const terminalList = () => {
+  const terminalList = createMemo(() => {
     const ids = terminalsStore.getIds();
     return ids.map((id) => {
       const t = terminalsStore.get(id);
@@ -165,7 +165,7 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
         name: t?.name ?? id,
       };
     });
-  };
+  });
 
   const handleTerminalChange = (e: Event) => {
     const value = (e.target as HTMLSelectElement).value;

@@ -15,18 +15,32 @@ import { appLogger } from "./appLogger";
 
 export type AgentState = "running" | "paused" | "completed" | "cancelled" | "error" | "idle";
 
-export interface ToolCallEntry {
-  toolName: string;
-  args: Record<string, unknown>;
-  result?: { success: boolean; output: string };
-  startedAt: number;
-  duration?: number;
-}
+export type ToolCallEntry =
+  | { status: "pending"; toolName: string; args: Record<string, unknown>; startedAt: number }
+  | { status: "done"; toolName: string; args: Record<string, unknown>; startedAt: number; result: { success: boolean; output: string }; duration: number };
 
 export interface PendingApproval {
   sessionId: string;
   command: string;
   reason: string;
+}
+
+// Discriminated union for backend events
+type AgentEvent =
+  | { type: "started"; session_id: string }
+  | { type: "thinking"; session_id: string; iteration: number }
+  | { type: "text_chunk"; session_id: string; text: string }
+  | { type: "tool_call"; session_id: string; tool_name: string; args: Record<string, unknown> }
+  | { type: "tool_result"; session_id: string; tool_name: string; success: boolean; output: string }
+  | { type: "needs_approval"; session_id: string; tool_name: string; command: string; reason: string }
+  | { type: "paused"; session_id: string }
+  | { type: "resumed"; session_id: string }
+  | { type: "rate_limited"; session_id: string; wait_ms: number }
+  | { type: "error"; session_id: string; message: string }
+  | { type: "completed"; session_id: string; iterations: number; reason: string };
+
+function isAgentEvent(v: unknown): v is AgentEvent {
+  return typeof v === "object" && v !== null && "type" in v && typeof (v as { type: unknown }).type === "string";
 }
 
 // ---------------------------------------------------------------------------
@@ -130,24 +144,27 @@ async function approveAction(sessionId: string, approved: boolean): Promise<void
 // ---------------------------------------------------------------------------
 
 /** Process an AgentLoopEvent from the backend. */
-function processEvent(event: { type: string; [key: string]: unknown }): void {
+function processEvent(raw: unknown): void {
+  if (!isAgentEvent(raw)) return;
+  const event = raw;
   switch (event.type) {
     case "started":
       setAgentState("running");
       break;
 
     case "thinking":
-      setCurrentIteration(event.iteration as number);
+      setCurrentIteration(event.iteration);
       break;
 
     case "text_chunk":
-      setTextChunks((prev) => prev + (event.text as string));
+      setTextChunks((prev) => prev + event.text);
       break;
 
     case "tool_call": {
       const entry: ToolCallEntry = {
-        toolName: event.tool_name as string,
-        args: event.args as Record<string, unknown>,
+        status: "pending",
+        toolName: event.tool_name,
+        args: event.args,
         startedAt: Date.now(),
       };
       setToolCalls((prev) => [...prev, entry]);
@@ -157,15 +174,12 @@ function processEvent(event: { type: string; [key: string]: unknown }): void {
     case "tool_result": {
       setToolCalls((prev) => {
         const updated = [...prev];
-        // Find the last matching tool call without a result
         for (let i = updated.length - 1; i >= 0; i--) {
-          if (updated[i].toolName === (event.tool_name as string) && !updated[i].result) {
+          if (updated[i].toolName === event.tool_name && updated[i].status === "pending") {
             updated[i] = {
               ...updated[i],
-              result: {
-                success: event.success as boolean,
-                output: event.output as string,
-              },
+              status: "done",
+              result: { success: event.success, output: event.output },
               duration: Date.now() - updated[i].startedAt,
             };
             break;
@@ -178,9 +192,9 @@ function processEvent(event: { type: string; [key: string]: unknown }): void {
 
     case "needs_approval":
       setPendingApproval({
-        sessionId: event.session_id as string,
-        command: event.command as string,
-        reason: event.reason as string,
+        sessionId: event.session_id,
+        command: event.command,
+        reason: event.reason,
       });
       break;
 
@@ -193,21 +207,20 @@ function processEvent(event: { type: string; [key: string]: unknown }): void {
       break;
 
     case "rate_limited":
-      // Keep running state — just log
       appLogger.info("ai-agent", `Rate limited, waiting ${event.wait_ms}ms`);
       break;
 
     case "error":
       batch(() => {
         setAgentState("error");
-        setAgentError(event.message as string);
+        setAgentError(event.message);
       });
       break;
 
     case "completed":
       batch(() => {
         setAgentState("completed");
-        setCompletionReason(event.reason as string);
+        setCompletionReason(event.reason);
       });
       break;
   }

@@ -86,17 +86,20 @@ export const SessionKnowledgeBar: Component<{ sessionId: string | null }> = (pro
     }, REFRESH_DEBOUNCE_MS);
   };
 
-  // Refresh when session changes; then subscribe to pty-parsed events for that session.
   createEffect(() => {
     const sid = props.sessionId;
+    let active = true;
     void fetchSummary();
     if (!sid) return;
 
+    const safeSchedule = () => { if (active) scheduleRefresh(); };
+
     const unlistenPromise = listen(`pty-parsed-${sid}`, () => {
-      scheduleRefresh();
+      safeSchedule();
     });
 
     onCleanup(() => {
+      active = false;
       if (refreshTimer) {
         clearTimeout(refreshTimer);
         refreshTimer = null;
