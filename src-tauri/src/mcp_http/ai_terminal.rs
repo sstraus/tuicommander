@@ -241,7 +241,10 @@ async fn confirm_external_write(
             .blocking_show()
     })
     .await
-    .unwrap_or(false)
+    .unwrap_or_else(|e| {
+        tracing::warn!(tool_name, error = %e, "confirm_external_write JoinError, denying");
+        false
+    })
 }
 
 #[cfg(test)]

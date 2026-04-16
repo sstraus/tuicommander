@@ -80,6 +80,8 @@ async function cancelAgent(sessionId: string): Promise<void> {
     await invoke("cancel_agent_loop", { sessionId });
     setAgentState("cancelled");
   } catch (e) {
+    setAgentState("error");
+    setAgentError(String(e));
     appLogger.warn("ai-agent", "cancel_agent_loop failed", { error: String(e) });
   }
 }
@@ -91,6 +93,8 @@ async function pauseAgent(sessionId: string): Promise<void> {
     await invoke("pause_agent_loop", { sessionId });
     setAgentState("paused");
   } catch (e) {
+    setAgentState("error");
+    setAgentError(String(e));
     appLogger.warn("ai-agent", "pause_agent_loop failed", { error: String(e) });
   }
 }
@@ -102,6 +106,8 @@ async function resumeAgent(sessionId: string): Promise<void> {
     await invoke("resume_agent_loop", { sessionId });
     setAgentState("running");
   } catch (e) {
+    setAgentState("error");
+    setAgentError(String(e));
     appLogger.warn("ai-agent", "resume_agent_loop failed", { error: String(e) });
   }
 }
@@ -113,6 +119,8 @@ async function approveAction(sessionId: string, approved: boolean): Promise<void
     await invoke("approve_agent_action", { sessionId, approved });
     setPendingApproval(null);
   } catch (e) {
+    setAgentState("error");
+    setAgentError(String(e));
     appLogger.warn("ai-agent", "approve_agent_action failed", { error: String(e) });
   }
 }

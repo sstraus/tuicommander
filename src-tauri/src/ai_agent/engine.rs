@@ -288,6 +288,7 @@ pub(crate) async fn start_agent_loop(
                 });
             }
             Err(e) => {
+                tracing::error!(session_id = %sid, error = %e, "Agent loop failed");
                 *agent_state.write() = AgentState::Error;
                 let _ = event_tx.send(AgentLoopEvent::Error {
                     session_id: sid.clone(),
@@ -406,13 +407,13 @@ async fn run_loop(
     let deadline = tokio::time::Instant::now() + LOOP_TIMEOUT;
 
     for iteration in 0..MAX_ITERATIONS {
-        // Check cancellation
         if cancel.load(Ordering::Acquire) {
+            tracing::info!(session_id, "Agent loop cancelled");
             return Ok("cancelled".into());
         }
 
-        // Check timeout
         if tokio::time::Instant::now() >= deadline {
+            tracing::warn!(session_id, "Agent loop timed out");
             return Ok("timeout".into());
         }
 
@@ -428,11 +429,12 @@ async fn run_loop(
             }
         }
 
-        // Rate limiting
         if let Err(wait) = rate_limiter.check() {
             if wait == Duration::ZERO {
+                tracing::warn!(session_id, "LLM session rate limit reached");
                 return Ok("session_rate_limit".into());
             }
+            tracing::debug!(session_id, wait_ms = wait.as_millis() as u64, "LLM rate limit, waiting");
             let _ = event_tx.send(AgentLoopEvent::RateLimited {
                 session_id: session_id.clone(),
                 wait_ms: wait.as_millis() as u64,
@@ -489,6 +491,7 @@ async fn run_loop(
                             break;
                         }
                         Some(Err(e)) => {
+                            tracing::error!(session_id, iteration, error = %e, "LLM stream error");
                             return Err(format!("Stream error at iteration {iteration}: {e}"));
                         }
                         None => break,
@@ -503,8 +506,8 @@ async fn run_loop(
             }
         }
 
-        // No tool calls → model is done
         if tool_calls.is_empty() {
+            tracing::info!(session_id, iteration, "Agent completed (end_turn)");
             return Ok("end_turn".into());
         }
 
@@ -513,11 +516,12 @@ async fn run_loop(
 
         // Execute tool calls
         for tc in &tool_calls {
-            // Tool dispatch rate limiting
             if let Err(wait) = tool_limiter.check() {
                 if wait == Duration::ZERO {
+                    tracing::warn!(session_id, "Tool dispatch session limit reached");
                     return Ok("tool_dispatch_session_limit".into());
                 }
+                tracing::debug!(session_id, wait_ms = wait.as_millis() as u64, "Tool dispatch rate limit, waiting");
                 let _ = event_tx.send(AgentLoopEvent::RateLimited {
                     session_id: session_id.clone(),
                     wait_ms: wait.as_millis() as u64,
@@ -532,6 +536,7 @@ async fn run_loop(
             // Repetition detection
             let sig = format!("{}:{}", tc.fn_name, tc.fn_arguments);
             if repetition.record(&sig) {
+                tracing::warn!(session_id, tool = %tc.fn_name, "Repetition detected, stopping");
                 return Ok(format!("repetition_detected: {}", tc.fn_name));
             }
 
@@ -542,6 +547,7 @@ async fn run_loop(
                 args: redacted_args,
             });
 
+            tracing::debug!(session_id, tool = %tc.fn_name, "Dispatching tool");
             let mut result = tools::dispatch(&state, &session_id, &tc.fn_name, &tc.fn_arguments).await;
 
             // Approval flow: pause for user confirmation, then re-dispatch
@@ -598,6 +604,7 @@ async fn run_loop(
         }
     }
 
+    tracing::warn!(session_id, "Agent hit max iterations");
     Ok("max_iterations".into())
 }
 

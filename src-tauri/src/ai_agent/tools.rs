@@ -478,13 +478,15 @@ fn exec_get_state(state: &AppState, args: &Value) -> ToolResult {
         None => return ToolResult::err("Missing session_id"),
     };
 
-    let ss = state.session_states.get(session_id)
-        .map(|entry| serde_json::to_value(entry.value()).ok())
-        .flatten();
-
-    match ss {
-        Some(v) => ToolResult::ok(v.to_string()),
-        None => ToolResult::err(format!("No state for session: {session_id}")),
+    let Some(entry) = state.session_states.get(session_id) else {
+        return ToolResult::err(format!("No state for session: {session_id}"));
+    };
+    match serde_json::to_value(entry.value()) {
+        Ok(v) => ToolResult::ok(v.to_string()),
+        Err(e) => {
+            tracing::warn!(session_id, error = %e, "Failed to serialize session state");
+            ToolResult::err(format!("Failed to serialize state: {e}"))
+        }
     }
 }
 
