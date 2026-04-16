@@ -252,9 +252,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tool_definitions_returns_six_with_prefix() {
+    fn tool_definitions_returns_all_with_prefix() {
         let defs = tool_definitions();
-        assert_eq!(defs.len(), 6);
+        assert_eq!(defs.len(), AI_TERMINAL_TOOL_NAMES.len());
         for d in &defs {
             let name = d["name"].as_str().unwrap();
             assert!(name.starts_with("ai_terminal_"), "{name} missing prefix");
@@ -277,13 +277,19 @@ mod tests {
     }
 
     #[test]
-    fn write_tools_are_send_input_and_send_key_only() {
+    fn write_tools_classified_correctly() {
         assert!(is_write_tool(SEND_INPUT));
         assert!(is_write_tool(SEND_KEY));
+        assert!(is_write_tool(WRITE_FILE));
+        assert!(is_write_tool(EDIT_FILE));
+        assert!(is_write_tool(RUN_COMMAND));
         assert!(!is_write_tool(READ_SCREEN));
         assert!(!is_write_tool(WAIT_FOR));
         assert!(!is_write_tool(GET_STATE));
         assert!(!is_write_tool(GET_CONTEXT));
+        assert!(!is_write_tool(READ_FILE));
+        assert!(!is_write_tool(LIST_FILES));
+        assert!(!is_write_tool(SEARCH_FILES));
     }
 
     #[test]
@@ -298,16 +304,59 @@ mod tests {
     }
 
     #[test]
-    fn write_tool_rejected_when_agent_loop_active() {
-        // Without a real AppState/AppHandle, we can only assert the
-        // gate logic via the public `is_write_tool`/`is_ai_terminal_tool`
-        // surface. End-to-end rejection is covered by integration tests.
-        // This test guards the invariant that exactly two tools route
-        // through the confirm + ACTIVE_AGENTS gate.
+    fn write_tools_match_expected_set() {
         let writes: Vec<&&str> = AI_TERMINAL_TOOL_NAMES
             .iter()
             .filter(|n| is_write_tool(n))
             .collect();
-        assert_eq!(writes.len(), 2);
+        assert_eq!(writes.len(), 5);
+        assert!(is_write_tool(SEND_INPUT));
+        assert!(is_write_tool(SEND_KEY));
+        assert!(is_write_tool(WRITE_FILE));
+        assert!(is_write_tool(EDIT_FILE));
+        assert!(is_write_tool(RUN_COMMAND));
+    }
+
+    #[tokio::test]
+    async fn handle_rejects_write_when_agent_active() {
+        use std::sync::Arc;
+        use std::sync::atomic::AtomicBool;
+        use parking_lot::{Mutex, RwLock};
+        use tokio::sync::{broadcast, Notify};
+        use crate::ai_agent::engine::{ACTIVE_AGENTS, AgentHandle, AgentState};
+
+        let sid = "mcp-guard-test-session";
+        let (tx, _rx) = broadcast::channel(4);
+        ACTIVE_AGENTS.insert(sid.to_string(), AgentHandle {
+            owner_session_id: sid.to_string(),
+            cancel: Arc::new(AtomicBool::new(false)),
+            state: Arc::new(RwLock::new(AgentState::Running)),
+            pause_notify: Arc::new(Notify::new()),
+            event_tx: tx,
+            approval_tx: Arc::new(Mutex::new(None)),
+        });
+
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let args = serde_json::json!({"session_id": sid, "command": "echo hi"});
+
+        let result = handle(&state, SEND_INPUT, &args).await;
+        assert_eq!(
+            result["error"].as_str().unwrap(),
+            "Session is controlled by an active agent loop"
+        );
+
+        let result2 = handle(&state, SEND_KEY, &args).await;
+        assert_eq!(
+            result2["error"].as_str().unwrap(),
+            "Session is controlled by an active agent loop"
+        );
+
+        // read_screen should NOT be blocked
+        let read_result = handle(&state, READ_SCREEN, &args).await;
+        assert!(read_result.get("error").map_or(true, |e| {
+            e.as_str().unwrap() != "Session is controlled by an active agent loop"
+        }));
+
+        ACTIVE_AGENTS.remove(sid);
     }
 }

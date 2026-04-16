@@ -1449,6 +1449,34 @@ mod tests {
         assert_eq!(redact_secrets(input), input);
     }
 
+    #[test]
+    fn redact_empty_string() {
+        assert_eq!(redact_secrets(""), "");
+    }
+
+    #[test]
+    fn redact_unicode_surrounding_secret() {
+        let input = "日本語 sk-abc123def456ghi789jkl012mno345 中文";
+        let output = redact_secrets(input);
+        assert!(output.contains("[REDACTED]"));
+        assert!(output.contains("日本語"));
+        assert!(output.contains("中文"));
+    }
+
+    #[test]
+    fn redact_large_input_no_panic() {
+        let safe = "x".repeat(100_000);
+        assert_eq!(redact_secrets(&safe), safe);
+    }
+
+    #[test]
+    fn redact_multiple_secrets_same_line() {
+        let input = "KEY1=sk-aaabbbccc111222333444555 KEY2=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn";
+        let output = redact_secrets(input);
+        assert!(!output.contains("sk-aaa"));
+        assert!(!output.contains("ghp_"));
+    }
+
     // ── map_key ────────────────────────────────────────────────
 
     #[test]

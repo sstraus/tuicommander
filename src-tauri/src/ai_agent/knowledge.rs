@@ -702,6 +702,34 @@ mod osc133_tests {
             vec![Osc133Marker::C, Osc133Marker::D(0), Osc133Marker::A]
         );
     }
+
+    #[test]
+    fn unicode_surrounding_markers() {
+        let s = "λ函数\x1b]133;C\x07日本語\x1b]133;D;0\x07";
+        assert_eq!(
+            scan_osc133(s),
+            vec![Osc133Marker::C, Osc133Marker::D(0)]
+        );
+    }
+
+    #[test]
+    fn large_input_no_panic() {
+        let mut s = "x".repeat(100_000);
+        s.push_str("\x1b]133;D;42\x07");
+        assert_eq!(scan_osc133(&s), vec![Osc133Marker::D(42)]);
+    }
+
+    #[test]
+    fn d_exit_code_overflow_ignored() {
+        let s = "\x1b]133;D;999999999999\x07";
+        assert_eq!(scan_osc133(s), vec![]);
+    }
+
+    #[test]
+    fn empty_d_payload_ignored() {
+        let s = "\x1b]133;D;\x07";
+        assert_eq!(scan_osc133(s), vec![]);
+    }
 }
 
 #[cfg(test)]
