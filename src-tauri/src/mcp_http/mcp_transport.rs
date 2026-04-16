@@ -452,7 +452,19 @@ fn meta_tool_definitions() -> serde_json::Value {
 /// Otherwise (default), returns native tools filtered by `disabled_native_tools`,
 /// merged with upstream proxy tools. Upstream tools are omitted when no
 /// upstreams are Ready.
-fn merged_tool_definitions(state: &Arc<AppState>) -> serde_json::Value {
+/// Resolve an MCP session's repo_path → per-repo `mcp_upstreams` allowlist.
+///
+/// Returns `None` when the session has no repo_path or the repo has no
+/// custom upstream allowlist (meaning: inherit all globally-enabled upstreams).
+fn resolve_allowed_upstreams(state: &Arc<AppState>, mcp_session_id: Option<&str>) -> Option<Vec<String>> {
+    let repo_path = mcp_session_id
+        .and_then(|sid| state.mcp_sessions.get(sid))
+        .and_then(|meta| meta.repo_path.clone())?;
+    let repo_settings = crate::config::load_repo_settings();
+    repo_settings.repos.get(&repo_path).and_then(|entry| entry.mcp_upstreams.clone())
+}
+
+fn merged_tool_definitions(state: &Arc<AppState>, mcp_session_id: Option<&str>) -> serde_json::Value {
     if state.config.read().collapse_tools {
         return meta_tool_definitions();
     }
@@ -469,7 +481,10 @@ fn merged_tool_definitions(state: &Arc<AppState>) -> serde_json::Value {
         })
         .collect();
 
-    let upstream_tools = state.mcp_upstream_registry.aggregated_tools();
+    let allowed = resolve_allowed_upstreams(state, mcp_session_id);
+    let upstream_tools = state.mcp_upstream_registry.aggregated_tools_for_repo(
+        allowed.as_deref(),
+    );
     tools.extend(upstream_tools);
 
     serde_json::Value::Array(tools)
@@ -656,9 +671,10 @@ async fn handle_call_tool(
 
     let is_upstream = tool_name.contains("__");
     if is_upstream {
+        let allowed = resolve_allowed_upstreams(state, mcp_session_id);
         match state
             .mcp_upstream_registry
-            .proxy_tool_call(&tool_name, tool_args)
+            .proxy_tool_call_for_repo(&tool_name, tool_args, allowed.as_deref())
             .await
         {
             Ok(v) => v,
@@ -2200,7 +2216,8 @@ pub(super) async fn mcp_post(
         }
 
         "tools/list" => {
-            let tools = merged_tool_definitions(&state);
+            let list_session_id = headers.get(MCP_SESSION_HEADER).and_then(|v| v.to_str().ok());
+            let tools = merged_tool_definitions(&state, list_session_id);
             let response = serde_json::json!({
                 "jsonrpc": "2.0",
                 "id": id,
@@ -2265,8 +2282,9 @@ pub(super) async fn mcp_post(
 
             // Route upstream-prefixed tools ({upstream}__{tool}) via the proxy registry.
             // Native tools (no "__") go through the sync handler via spawn_blocking.
+            let allowed = resolve_allowed_upstreams(&state, session_id_str.as_deref());
             let (result, is_error) = if tool_name.contains("__") {
-                match state.mcp_upstream_registry.proxy_tool_call(&tool_name, args.clone()).await {
+                match state.mcp_upstream_registry.proxy_tool_call_for_repo(&tool_name, args.clone(), allowed.as_deref()).await {
                     Ok(v) => (v, false),
                     Err(e) => (serde_json::json!({"error": e}), true),
                 }
@@ -3204,7 +3222,7 @@ mod tests {
         let state = test_state();
         assert!(!state.config.read().collapse_tools);
 
-        let merged = merged_tool_definitions(&state);
+        let merged = merged_tool_definitions(&state, None);
         let names = tool_names(&merged);
 
         let native = tool_names(&native_tool_definitions());
@@ -3220,7 +3238,7 @@ mod tests {
         let state = test_state();
         state.config.write().collapse_tools = true;
 
-        let merged = merged_tool_definitions(&state);
+        let merged = merged_tool_definitions(&state, None);
         let names = tool_names(&merged);
 
         assert_eq!(names.len(), 3);
@@ -3238,12 +3256,12 @@ mod tests {
     fn collapse_tools_payload_size_meets_reduction_target() {
         let state = test_state();
 
-        let baseline = serde_json::to_vec(&merged_tool_definitions(&state))
+        let baseline = serde_json::to_vec(&merged_tool_definitions(&state, None))
             .expect("serialize baseline")
             .len();
 
         state.config.write().collapse_tools = true;
-        let collapsed = serde_json::to_vec(&merged_tool_definitions(&state))
+        let collapsed = serde_json::to_vec(&merged_tool_definitions(&state, None))
             .expect("serialize collapsed")
             .len();
 
@@ -3266,7 +3284,7 @@ mod tests {
         state.config.write().collapse_tools = true;
         state.config.write().disabled_native_tools = vec!["session".to_string()];
 
-        let merged = merged_tool_definitions(&state);
+        let merged = merged_tool_definitions(&state, None);
         assert_eq!(tool_names(&merged).len(), 3);
     }
 

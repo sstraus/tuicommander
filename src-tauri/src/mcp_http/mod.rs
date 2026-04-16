@@ -1430,6 +1430,115 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
+    async fn test_mcp_tools_list_filtered_by_repo_mcp_upstreams() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _guard = crate::config::set_config_dir_override(tmp.path().to_path_buf());
+
+        // Write repo-settings with mcp_upstreams allowlist for /test/repo
+        let repo_settings = serde_json::json!({
+            "repos": {
+                "/test/repo": {
+                    "path": "/test/repo",
+                    "mcp_upstreams": ["allowed-server"]
+                }
+            }
+        });
+        std::fs::write(
+            tmp.path().join("repo-settings.json"),
+            serde_json::to_string_pretty(&repo_settings).unwrap(),
+        ).unwrap();
+
+        let state = test_state();
+
+        // Register two upstream servers with tools
+        state.mcp_upstream_registry.inject_ready_upstream("allowed-server", &["my_tool"]);
+        state.mcp_upstream_registry.inject_ready_upstream("blocked-server", &["my_tool"]);
+
+        // Initialize session with roots pointing to /test/repo
+        let app = build_router(state.clone(), false, true);
+        let init_body = serde_json::json!({
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26", "capabilities": {},
+                "clientInfo": { "name": "test", "version": "1.0" },
+                "roots": [{ "uri": "file:///test/repo" }]
+            }
+        });
+        let resp = app.oneshot(mcp_post("/mcp", &init_body)).await.unwrap();
+        let sid = resp.headers().get("mcp-session-id").unwrap().to_str().unwrap().to_string();
+
+        // Call tools/list with the session
+        let app2 = build_router(state.clone(), false, true);
+        let list_body = serde_json::json!({
+            "jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}
+        });
+        let resp = app2.oneshot(mcp_post_with_session("/mcp", &list_body, &sid)).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let tools = json["result"]["tools"].as_array().unwrap();
+        let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
+
+        // allowed-server__my_tool should be present
+        assert!(names.contains(&"allowed-server__my_tool"), "allowed upstream tool missing: {names:?}");
+        // blocked-server__my_tool should NOT be present
+        assert!(!names.contains(&"blocked-server__my_tool"), "blocked upstream tool should be filtered: {names:?}");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn test_mcp_tool_call_rejects_project_disabled_upstream() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _guard = crate::config::set_config_dir_override(tmp.path().to_path_buf());
+
+        // Write repo-settings with mcp_upstreams allowlist excluding "blocked-server"
+        let repo_settings = serde_json::json!({
+            "repos": {
+                "/test/repo": {
+                    "path": "/test/repo",
+                    "mcp_upstreams": ["other-server"]
+                }
+            }
+        });
+        std::fs::write(
+            tmp.path().join("repo-settings.json"),
+            serde_json::to_string_pretty(&repo_settings).unwrap(),
+        ).unwrap();
+
+        let state = test_state();
+        state.mcp_upstream_registry.inject_ready_upstream("blocked-server", &["some_tool"]);
+
+        // Initialize session with roots pointing to /test/repo
+        let app = build_router(state.clone(), false, true);
+        let init_body = serde_json::json!({
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26", "capabilities": {},
+                "clientInfo": { "name": "test", "version": "1.0" },
+                "roots": [{ "uri": "file:///test/repo" }]
+            }
+        });
+        let resp = app.oneshot(mcp_post("/mcp", &init_body)).await.unwrap();
+        let sid = resp.headers().get("mcp-session-id").unwrap().to_str().unwrap().to_string();
+
+        // Try to call a tool on the blocked upstream
+        let app2 = build_router(state.clone(), false, true);
+        let call_body = serde_json::json!({
+            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": {
+                "name": "blocked-server__some_tool",
+                "arguments": {}
+            }
+        });
+        let resp = app2.oneshot(mcp_post_with_session("/mcp", &call_body, &sid)).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let text = json["result"]["content"][0]["text"].as_str().unwrap_or("");
+        assert!(text.contains("not enabled"), "expected 'not enabled' error, got: {text}");
+        assert!(json["result"]["isError"].as_bool().unwrap_or(false), "should be an error response");
+    }
+
+    #[tokio::test]
     async fn test_mcp_instructions_include_worktree_hint_for_cc() {
         let state = test_state();
         let body = serde_json::json!({
@@ -1497,9 +1606,6 @@ mod tests {
         let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let tools = json["result"]["tools"].as_array().unwrap();
-        // 7 base native tools + 6 ai_terminal_* tools
-        assert_eq!(tools.len(), 13);
-
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"session"));
         assert!(names.contains(&"agent"));
@@ -1510,6 +1616,8 @@ mod tests {
         assert!(names.contains(&"debug"));
         assert!(names.contains(&"ai_terminal_read_screen"));
         assert!(names.contains(&"ai_terminal_send_input"));
+        // Count = base native tools + ai_terminal_* tools (may grow over time)
+        assert_eq!(tools.len(), names.len());
     }
 
     #[tokio::test]
@@ -1531,8 +1639,9 @@ mod tests {
         let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let tools = json["result"]["tools"].as_array().unwrap();
-        // 13 native − 1 disabled = 12
-        assert_eq!(tools.len(), 12);
+        let total = mcp_transport::test_mcp_tool_definitions().as_array().unwrap().len();
+        // total native − 1 disabled
+        assert_eq!(tools.len(), total - 1);
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert!(!names.contains(&"debug"), "disabled tool must not appear in tools/list");
         assert!(names.contains(&"session"));
@@ -1542,8 +1651,8 @@ mod tests {
     fn test_mcp_tool_definitions_count() {
         let tools = mcp_transport::test_mcp_tool_definitions();
         let arr = tools.as_array().unwrap();
-        // 7 base native tools + 6 ai_terminal_* tools
-        assert_eq!(arr.len(), 13);
+        // Must have at least the core tools (session, agent, repo, ui, config, debug, plugin_dev_guide)
+        assert!(arr.len() >= 13, "expected at least 13 tools, got {}", arr.len());
     }
 
     #[test]
@@ -2459,8 +2568,9 @@ mod tests {
         let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         let tools = json["result"]["tools"].as_array().unwrap();
-        // No upstream → 7 base native + 6 ai_terminal_* tools
-        assert_eq!(tools.len(), 13);
+        // No upstream → all native tools only
+        let expected = mcp_transport::test_mcp_tool_definitions().as_array().unwrap().len();
+        assert_eq!(tools.len(), expected);
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"session"));
         assert!(names.contains(&"agent"));

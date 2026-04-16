@@ -234,6 +234,33 @@ impl UpstreamRegistry {
         }
     }
 
+    /// Insert a fake Ready upstream with the given tools. Test-only.
+    #[cfg(test)]
+    pub(crate) fn inject_ready_upstream(&self, name: &str, tool_names: &[&str]) {
+        use crate::mcp_proxy::http_client::{HttpMcpClient, UpstreamToolDef};
+        let config = UpstreamMcpServer {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: name.to_string(),
+            transport: UpstreamTransport::Http { url: format!("http://127.0.0.1:1/{name}") },
+            enabled: true,
+            timeout_secs: 10,
+            tool_filter: None,
+            auth: None,
+        };
+        let client = HttpMcpClient::new(name.to_string(), format!("http://127.0.0.1:1/{name}"), 10);
+        let entry = Arc::new(UpstreamEntry::new(config, UpstreamClient::Http(tokio::sync::RwLock::new(client))));
+        *entry.tools.write() = tool_names.iter().map(|tn| UpstreamToolDef {
+            original_name: tn.to_string(),
+            definition: serde_json::json!({
+                "name": tn,
+                "description": "test tool",
+                "inputSchema": { "type": "object", "properties": {} }
+            }),
+        }).collect();
+        *entry.status.write() = UpstreamStatus::Ready;
+        self.entries.insert(name.to_string(), entry);
+    }
+
     /// Wire the event bus so status changes emit SSE events.
     pub(crate) fn set_event_bus(&self, bus: tokio::sync::broadcast::Sender<crate::state::AppEvent>) {
         *self.event_bus.write() = Some(bus);
