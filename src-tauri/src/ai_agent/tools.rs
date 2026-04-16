@@ -147,6 +147,32 @@ pub fn tool_definitions() -> Value {
                 },
                 "required": ["file_path", "old_string", "new_string"]
             }
+        },
+        {
+            "name": "list_files",
+            "description": "List files inside the session's sandbox matching a glob pattern. Returns up to 500 entries and a truncation flag. Use `path` to anchor the glob at a subdirectory (defaults to the sandbox root).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pattern": { "type": "string", "description": "Glob pattern (e.g. `src/**/*.rs`)" },
+                    "path": { "type": "string", "description": "Subdirectory under the sandbox to anchor the glob (default: sandbox root)" }
+                },
+                "required": ["pattern"]
+            }
+        },
+        {
+            "name": "search_files",
+            "description": "Regex search across files in the session's sandbox. Honors .gitignore via the `ignore` crate. Returns up to 50 matches with configurable context lines and per-file match counts.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pattern": { "type": "string", "description": "Regular expression to search for" },
+                    "path": { "type": "string", "description": "Subdirectory under the sandbox to search (default: sandbox root)" },
+                    "glob": { "type": "string", "description": "Optional file glob filter (e.g. `*.rs`)" },
+                    "context_lines": { "type": "integer", "description": "Lines of context before and after each match (default 2, max 10)", "default": 2 }
+                },
+                "required": ["pattern"]
+            }
         }
     ])
 }
@@ -687,6 +713,232 @@ fn exec_edit_file(state: &AppState, session_id: &str, args: &Value) -> ToolResul
     )
 }
 
+/// Max entries returned by `list_files` before truncating.
+const LIST_FILES_MAX: usize = 500;
+/// Max matches returned by `search_files` before truncating.
+const SEARCH_MAX_MATCHES: usize = 50;
+/// Upper bound for `context_lines` in `search_files`.
+const SEARCH_MAX_CONTEXT: usize = 10;
+
+/// Resolve an optional subdirectory path against the sandbox.
+/// Empty / unset defaults to the sandbox root.
+fn resolve_sandbox_subdir(sandbox: &FileSandbox, path: Option<&str>) -> Result<std::path::PathBuf, String> {
+    match path {
+        None | Some("") | Some(".") => Ok(sandbox.root().to_path_buf()),
+        Some(p) => sandbox.resolve(p),
+    }
+}
+
+/// `list_files`: glob-pattern listing inside the sandbox.
+fn exec_list_files(state: &AppState, session_id: &str, args: &Value) -> ToolResult {
+    let Some(pattern) = args["pattern"].as_str() else {
+        return missing_arg("pattern");
+    };
+    if pattern.split('/').any(|c| c == "..") {
+        return ToolResult::err("pattern must not contain `..` components".to_string());
+    }
+    let subdir = args["path"].as_str();
+
+    let sandbox = match get_sandbox(state, session_id) {
+        Ok(s) => s,
+        Err(e) => return ToolResult::err(e),
+    };
+    let anchor = match resolve_sandbox_subdir(&sandbox, subdir) {
+        Ok(p) => p,
+        Err(e) => return ToolResult::err(e),
+    };
+
+    // Anchor the glob on the resolved subdirectory; absolute patterns are
+    // left as-is but still checked against the sandbox below.
+    let full_pattern = if std::path::Path::new(pattern).is_absolute() {
+        pattern.to_string()
+    } else {
+        anchor.join(pattern).to_string_lossy().into_owned()
+    };
+
+    let entries = match glob::glob(&full_pattern) {
+        Ok(it) => it,
+        Err(e) => return ToolResult::err(format!("invalid glob: {e}")),
+    };
+
+    let root = sandbox.root().to_path_buf();
+    let mut out: Vec<Value> = Vec::new();
+    let mut total: usize = 0;
+    let mut truncated = false;
+
+    for entry in entries {
+        let path = match entry {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        // Enforce sandbox: globs can escape with `..` inside the pattern.
+        // Require canonicalize to succeed — without it, a literal `..`
+        // component would make `starts_with(root)` pass despite escaping.
+        let canon = match path.canonicalize() {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        if !canon.starts_with(&root) {
+            continue;
+        }
+        total += 1;
+        if out.len() >= LIST_FILES_MAX {
+            truncated = true;
+            continue;
+        }
+        let rel = canon.strip_prefix(&root).unwrap_or(&canon);
+        let kind = if canon.is_dir() {
+            "dir"
+        } else if canon.is_file() {
+            "file"
+        } else {
+            "other"
+        };
+        out.push(json!({
+            "path": rel.to_string_lossy(),
+            "type": kind,
+        }));
+    }
+
+    ToolResult::ok(
+        json!({
+            "entries": out,
+            "total": total,
+            "truncated": truncated,
+        })
+        .to_string(),
+    )
+}
+
+/// `search_files`: .gitignore-aware regex search with per-match context.
+fn exec_search_files(state: &AppState, session_id: &str, args: &Value) -> ToolResult {
+    let Some(pattern) = args["pattern"].as_str() else {
+        return missing_arg("pattern");
+    };
+    let subdir = args["path"].as_str();
+    let file_glob = args["glob"].as_str();
+    let context_lines = args["context_lines"]
+        .as_u64()
+        .map(|v| v as usize)
+        .unwrap_or(2)
+        .min(SEARCH_MAX_CONTEXT);
+
+    let sandbox = match get_sandbox(state, session_id) {
+        Ok(s) => s,
+        Err(e) => return ToolResult::err(e),
+    };
+    let anchor = match resolve_sandbox_subdir(&sandbox, subdir) {
+        Ok(p) => p,
+        Err(e) => return ToolResult::err(e),
+    };
+
+    let re = match regex::Regex::new(pattern) {
+        Ok(r) => r,
+        Err(e) => return ToolResult::err(format!("invalid regex: {e}")),
+    };
+
+    let mut walk_builder = ignore::WalkBuilder::new(&anchor);
+    walk_builder.hidden(false).git_ignore(true).git_global(true).git_exclude(true);
+    if let Some(g) = file_glob {
+        let mut overrides = ignore::overrides::OverrideBuilder::new(&anchor);
+        if let Err(e) = overrides.add(g) {
+            return ToolResult::err(format!("invalid glob filter: {e}"));
+        }
+        match overrides.build() {
+            Ok(ov) => {
+                walk_builder.overrides(ov);
+            }
+            Err(e) => return ToolResult::err(format!("invalid glob filter: {e}")),
+        }
+    }
+
+    let root = sandbox.root().to_path_buf();
+    let mut matches: Vec<Value> = Vec::new();
+    let mut files_with_matches: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut total_matches: usize = 0;
+    let mut truncated = false;
+
+    'walk: for dent in walk_builder.build() {
+        let dent = match dent {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+        if !dent.file_type().map(|t| t.is_file()).unwrap_or(false) {
+            continue;
+        }
+        let path = dent.path();
+        let canon = match path.canonicalize() {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        if !canon.starts_with(&root) {
+            continue;
+        }
+        if FileSandbox::is_binary(&canon) {
+            continue;
+        }
+        let meta = match std::fs::metadata(&canon) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if meta.len() > MAX_FILE_BYTES {
+            continue;
+        }
+        let content = match std::fs::read_to_string(&canon) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let lines: Vec<&str> = content.lines().collect();
+        let rel = canon
+            .strip_prefix(&root)
+            .unwrap_or(&canon)
+            .to_string_lossy()
+            .into_owned();
+
+        for (idx, line) in lines.iter().enumerate() {
+            if !re.is_match(line) {
+                continue;
+            }
+            total_matches += 1;
+            files_with_matches.insert(rel.clone());
+            if matches.len() >= SEARCH_MAX_MATCHES {
+                truncated = true;
+                continue;
+            }
+            let before_start = idx.saturating_sub(context_lines);
+            let after_end = (idx + 1 + context_lines).min(lines.len());
+            let context_before: Vec<String> = lines[before_start..idx]
+                .iter()
+                .map(|s| redact_secrets(s))
+                .collect();
+            let context_after: Vec<String> = lines[idx + 1..after_end]
+                .iter()
+                .map(|s| redact_secrets(s))
+                .collect();
+            matches.push(json!({
+                "file": rel,
+                "line": idx + 1,
+                "content": redact_secrets(line),
+                "context_before": context_before,
+                "context_after": context_after,
+            }));
+            if truncated && total_matches > SEARCH_MAX_MATCHES * 4 {
+                break 'walk;
+            }
+        }
+    }
+
+    ToolResult::ok(
+        json!({
+            "matches": matches,
+            "total_matches": total_matches,
+            "truncated": truncated,
+            "files_with_matches": files_with_matches.into_iter().collect::<Vec<_>>(),
+        })
+        .to_string(),
+    )
+}
+
 // ── Dispatch ──────────────────────────────────────────────────
 
 /// Dispatch a tool call by function name.
@@ -712,6 +964,8 @@ pub async fn dispatch(
         "read_file" => exec_read_file(state, session_id, args),
         "write_file" => exec_write_file(state, session_id, args),
         "edit_file" => exec_edit_file(state, session_id, args),
+        "list_files" => exec_list_files(state, session_id, args),
+        "search_files" => exec_search_files(state, session_id, args),
         other => ToolResult::err(format!("Unknown tool: {other}")),
     }
 }
@@ -731,12 +985,13 @@ mod tests {
         "get_context",
     ];
     const FILESYSTEM_TOOLS: &[&str] = &["read_file", "write_file", "edit_file"];
+    const FILESYSTEM_SEARCH_TOOLS: &[&str] = &["list_files", "search_files"];
 
     #[test]
-    fn definitions_returns_9_tools() {
+    fn definitions_returns_11_tools() {
         let defs = tool_definitions();
         let arr = defs.as_array().unwrap();
-        assert_eq!(arr.len(), 9);
+        assert_eq!(arr.len(), 11);
     }
 
     #[test]
@@ -771,8 +1026,24 @@ mod tests {
                 "read_file",
                 "write_file",
                 "edit_file",
+                "list_files",
+                "search_files",
             ]
         );
+    }
+
+    #[test]
+    fn filesystem_search_tools_require_pattern() {
+        let defs = tool_definitions();
+        for tool in defs.as_array().unwrap() {
+            let name = tool["name"].as_str().unwrap();
+            if !FILESYSTEM_SEARCH_TOOLS.contains(&name) {
+                continue;
+            }
+            let required = tool["inputSchema"]["required"].as_array().unwrap();
+            let has_pattern = required.iter().any(|v| v == "pattern");
+            assert!(has_pattern, "search tool {name} must require pattern");
+        }
     }
 
     #[test]
@@ -1348,5 +1619,215 @@ mod tests {
             let r = dispatch(&state, "s1", name, &args).await;
             assert!(!r.output.contains("Unknown tool"), "tool {name} did not route");
         }
+    }
+
+    // ── list_files ─────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn list_files_requires_sandbox() {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let r = dispatch(&state, "none", "list_files", &json!({ "pattern": "*" })).await;
+        assert!(!r.success);
+        assert!(r.output.contains("No filesystem sandbox"));
+    }
+
+    #[tokio::test]
+    async fn list_files_missing_pattern() {
+        let (_d, state) = fs_test_state("s1");
+        let r = dispatch(&state, "s1", "list_files", &json!({})).await;
+        assert!(!r.success);
+        assert!(r.output.contains("pattern"));
+    }
+
+    #[tokio::test]
+    async fn list_files_matches_glob() {
+        let (dir, state) = fs_test_state("s1");
+        std::fs::write(dir.path().join("a.rs"), "").unwrap();
+        std::fs::write(dir.path().join("b.rs"), "").unwrap();
+        std::fs::write(dir.path().join("c.txt"), "").unwrap();
+        let r = dispatch(&state, "s1", "list_files", &json!({ "pattern": "*.rs" })).await;
+        assert!(r.success, "{}", r.output);
+        let parsed: Value = serde_json::from_str(&r.output).unwrap();
+        let entries = parsed["entries"].as_array().unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(parsed["total"], 2);
+        assert_eq!(parsed["truncated"], false);
+        let paths: Vec<&str> = entries.iter().map(|e| e["path"].as_str().unwrap()).collect();
+        assert!(paths.iter().any(|p| p.ends_with("a.rs")));
+        assert!(paths.iter().any(|p| p.ends_with("b.rs")));
+        assert!(!paths.iter().any(|p| p.ends_with("c.txt")));
+    }
+
+    #[tokio::test]
+    async fn list_files_recursive_glob() {
+        let (dir, state) = fs_test_state("s1");
+        std::fs::create_dir_all(dir.path().join("sub/nested")).unwrap();
+        std::fs::write(dir.path().join("sub/a.rs"), "").unwrap();
+        std::fs::write(dir.path().join("sub/nested/b.rs"), "").unwrap();
+        let r = dispatch(&state, "s1", "list_files", &json!({ "pattern": "**/*.rs" })).await;
+        assert!(r.success, "{}", r.output);
+        let parsed: Value = serde_json::from_str(&r.output).unwrap();
+        assert_eq!(parsed["total"], 2);
+    }
+
+    #[tokio::test]
+    async fn list_files_reports_dir_vs_file() {
+        let (dir, state) = fs_test_state("s1");
+        std::fs::create_dir_all(dir.path().join("a_dir")).unwrap();
+        std::fs::write(dir.path().join("a_file"), "").unwrap();
+        let r = dispatch(&state, "s1", "list_files", &json!({ "pattern": "a_*" })).await;
+        assert!(r.success, "{}", r.output);
+        let parsed: Value = serde_json::from_str(&r.output).unwrap();
+        let entries = parsed["entries"].as_array().unwrap();
+        assert!(entries.iter().any(|e| e["type"] == "dir"));
+        assert!(entries.iter().any(|e| e["type"] == "file"));
+    }
+
+    #[tokio::test]
+    async fn list_files_rejects_invalid_glob() {
+        let (_d, state) = fs_test_state("s1");
+        let r = dispatch(&state, "s1", "list_files", &json!({ "pattern": "[unterminated" })).await;
+        assert!(!r.success);
+        assert!(r.output.contains("invalid glob"));
+    }
+
+    #[tokio::test]
+    async fn list_files_rejects_dotdot_pattern() {
+        let (_d, state) = fs_test_state("s1");
+        let r = dispatch(&state, "s1", "list_files", &json!({ "pattern": "../*" })).await;
+        assert!(!r.success);
+        assert!(r.output.contains(".."));
+    }
+
+    // ── search_files ───────────────────────────────────────────
+
+    #[tokio::test]
+    async fn search_files_requires_sandbox() {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let r = dispatch(&state, "none", "search_files", &json!({ "pattern": "x" })).await;
+        assert!(!r.success);
+        assert!(r.output.contains("No filesystem sandbox"));
+    }
+
+    #[tokio::test]
+    async fn search_files_missing_pattern() {
+        let (_d, state) = fs_test_state("s1");
+        let r = dispatch(&state, "s1", "search_files", &json!({})).await;
+        assert!(!r.success);
+        assert!(r.output.contains("pattern"));
+    }
+
+    #[tokio::test]
+    async fn search_files_finds_matches_with_context() {
+        let (dir, state) = fs_test_state("s1");
+        std::fs::write(
+            dir.path().join("a.rs"),
+            "line1\nline2\nneedle here\nline4\nline5\n",
+        )
+        .unwrap();
+        let r = dispatch(
+            &state,
+            "s1",
+            "search_files",
+            &json!({ "pattern": "needle", "context_lines": 1 }),
+        )
+        .await;
+        assert!(r.success, "{}", r.output);
+        let parsed: Value = serde_json::from_str(&r.output).unwrap();
+        let matches = parsed["matches"].as_array().unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0]["line"], 3);
+        assert_eq!(matches[0]["context_before"].as_array().unwrap().len(), 1);
+        assert_eq!(matches[0]["context_after"].as_array().unwrap().len(), 1);
+        assert_eq!(parsed["total_matches"], 1);
+    }
+
+    #[tokio::test]
+    async fn search_files_rejects_invalid_regex() {
+        let (_d, state) = fs_test_state("s1");
+        let r = dispatch(
+            &state,
+            "s1",
+            "search_files",
+            &json!({ "pattern": "(unclosed" }),
+        )
+        .await;
+        assert!(!r.success);
+        assert!(r.output.contains("invalid regex"));
+    }
+
+    #[tokio::test]
+    async fn search_files_truncates_at_50() {
+        let (dir, state) = fs_test_state("s1");
+        let body: String = (0..60).map(|_| "needle\n").collect();
+        std::fs::write(dir.path().join("a.txt"), body).unwrap();
+        let r = dispatch(&state, "s1", "search_files", &json!({ "pattern": "needle" })).await;
+        assert!(r.success, "{}", r.output);
+        let parsed: Value = serde_json::from_str(&r.output).unwrap();
+        assert_eq!(parsed["matches"].as_array().unwrap().len(), 50);
+        assert_eq!(parsed["total_matches"], 60);
+        assert_eq!(parsed["truncated"], true);
+    }
+
+    #[tokio::test]
+    async fn search_files_respects_gitignore() {
+        let (dir, state) = fs_test_state("s1");
+        // Need a git dir for the ignore crate to honor .gitignore fully;
+        // WalkBuilder respects .gitignore when present in an ancestor.
+        std::fs::write(dir.path().join(".gitignore"), "ignored.txt\n").unwrap();
+        std::fs::write(dir.path().join("ignored.txt"), "needle\n").unwrap();
+        std::fs::write(dir.path().join("visible.txt"), "needle\n").unwrap();
+        // Init a git repo so ignore respects .gitignore.
+        std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+        let r = dispatch(&state, "s1", "search_files", &json!({ "pattern": "needle" })).await;
+        assert!(r.success, "{}", r.output);
+        let parsed: Value = serde_json::from_str(&r.output).unwrap();
+        let files = parsed["files_with_matches"].as_array().unwrap();
+        assert!(files.iter().any(|f| f.as_str().unwrap().ends_with("visible.txt")));
+        assert!(!files.iter().any(|f| f.as_str().unwrap().ends_with("ignored.txt")));
+    }
+
+    #[tokio::test]
+    async fn search_files_glob_filter() {
+        let (dir, state) = fs_test_state("s1");
+        std::fs::write(dir.path().join("a.rs"), "needle\n").unwrap();
+        std::fs::write(dir.path().join("b.txt"), "needle\n").unwrap();
+        let r = dispatch(
+            &state,
+            "s1",
+            "search_files",
+            &json!({ "pattern": "needle", "glob": "*.rs" }),
+        )
+        .await;
+        assert!(r.success, "{}", r.output);
+        let parsed: Value = serde_json::from_str(&r.output).unwrap();
+        let files = parsed["files_with_matches"].as_array().unwrap();
+        assert_eq!(files.len(), 1);
+        assert!(files[0].as_str().unwrap().ends_with("a.rs"));
+    }
+
+    #[tokio::test]
+    async fn search_files_skips_binary() {
+        let (dir, state) = fs_test_state("s1");
+        std::fs::write(dir.path().join("bin"), [0xff, 0xfe, 0xff, 0xfe]).unwrap();
+        std::fs::write(dir.path().join("a.txt"), "needle\n").unwrap();
+        let r = dispatch(&state, "s1", "search_files", &json!({ "pattern": "needle" })).await;
+        assert!(r.success, "{}", r.output);
+        let parsed: Value = serde_json::from_str(&r.output).unwrap();
+        assert_eq!(parsed["total_matches"], 1);
+    }
+
+    #[tokio::test]
+    async fn search_files_redacts_secrets() {
+        let (dir, state) = fs_test_state("s1");
+        std::fs::write(
+            dir.path().join("a.txt"),
+            "api=sk-abc123def456ghi789jkl012mno345\n",
+        )
+        .unwrap();
+        let r = dispatch(&state, "s1", "search_files", &json!({ "pattern": "api" })).await;
+        assert!(r.success, "{}", r.output);
+        assert!(r.output.contains("[REDACTED]"));
+        assert!(!r.output.contains("sk-abc"));
     }
 }
