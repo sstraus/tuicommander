@@ -1386,6 +1386,50 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_mcp_initialize_with_roots_populates_repo_path() {
+        let state = test_state();
+        let app = build_router(state.clone(), false, true);
+        let body = serde_json::json!({
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26", "capabilities": {},
+                "clientInfo": { "name": "claude-code", "version": "2.0" },
+                "roots": [{ "uri": "file:///home/user/project" }]
+            }
+        });
+        let resp = app.oneshot(mcp_post("/mcp", &body)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let sid = resp.headers().get("mcp-session-id").unwrap().to_str().unwrap().to_string();
+        let meta = state.mcp_sessions.get(&sid).expect("session should be stored");
+        assert_eq!(
+            meta.repo_path.as_deref(),
+            Some("/home/user/project"),
+            "repo_path should be extracted from roots[0].uri"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_mcp_initialize_without_roots_leaves_repo_path_none() {
+        let state = test_state();
+        let app = build_router(state.clone(), false, true);
+        let body = serde_json::json!({
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26", "capabilities": {},
+                "clientInfo": { "name": "test", "version": "1.0" }
+            }
+        });
+        let resp = app.oneshot(mcp_post("/mcp", &body)).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let sid = resp.headers().get("mcp-session-id").unwrap().to_str().unwrap().to_string();
+        let meta = state.mcp_sessions.get(&sid).expect("session should be stored");
+        assert_eq!(
+            meta.repo_path, None,
+            "repo_path should be None when initialize has no roots"
+        );
+    }
+
+    #[tokio::test]
     async fn test_mcp_instructions_include_worktree_hint_for_cc() {
         let state = test_state();
         let body = serde_json::json!({
@@ -1422,6 +1466,7 @@ mod tests {
             created_at: std::time::Instant::now(),
             is_claude_code: false,
             has_sse_stream: false,
+            repo_path: None,
         });
         let app = build_router(state.clone(), false, true);
         let mut req = Request::delete("/mcp")
@@ -2436,6 +2481,7 @@ mod tests {
             created_at: std::time::Instant::now(),
             is_claude_code: false,
             has_sse_stream: false,
+            repo_path: None,
         });
 
         let app = build_router(state, false, true);
@@ -2463,6 +2509,7 @@ mod tests {
             created_at: std::time::Instant::now(),
             is_claude_code: false,
             has_sse_stream: false,
+            repo_path: None,
         });
         let app = build_router(state, false, true);
         let body = serde_json::json!({

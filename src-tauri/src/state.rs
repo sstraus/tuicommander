@@ -766,6 +766,9 @@ pub struct McpSessionMeta {
     pub is_claude_code: bool,
     /// Whether this session has an active SSE stream (GET /mcp connected)
     pub has_sse_stream: bool,
+    /// Repo path extracted from MCP initialize `roots[0].uri` (file:// URI → absolute path).
+    /// Used by downstream per-project filtering to scope tool access.
+    pub repo_path: Option<String>,
 }
 
 /// A registered peer agent in the inter-agent messaging system.

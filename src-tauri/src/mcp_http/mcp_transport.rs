@@ -2147,10 +2147,27 @@ pub(super) async fn mcp_post(
             let session_id = Uuid::new_v4().to_string();
             let client_name = body["params"]["clientInfo"]["name"].as_str();
             let is_claude_code = detect_claude_code_client(client_name);
+
+            // Extract repo_path from MCP initialize roots[0].uri (file:// URI)
+            let repo_path = body["params"]["roots"]
+                .as_array()
+                .and_then(|roots| roots.first())
+                .and_then(|root| root["uri"].as_str())
+                .and_then(|uri| uri.strip_prefix("file://"))
+                .map(|path| {
+                    // Resolve to a known repo path (repo_watchers keys are active repos)
+                    let path = path.to_string();
+                    state.repo_watchers.iter()
+                        .map(|entry| entry.key().clone())
+                        .find(|repo| path.starts_with(repo.as_str()))
+                        .unwrap_or(path)
+                });
+
             state.mcp_sessions.insert(session_id.clone(), crate::state::McpSessionMeta {
                 created_at: std::time::Instant::now(),
                 is_claude_code,
                 has_sse_stream: false,
+                repo_path,
             });
             let instructions = build_mcp_instructions(&state, client_name);
 
@@ -2222,6 +2239,7 @@ pub(super) async fn mcp_post(
                             created_at: std::time::Instant::now(),
                             is_claude_code: recovered_cc,
                             has_sse_stream: false,
+                            repo_path: None,
                         });
                         true
                     }
@@ -2308,6 +2326,7 @@ pub(super) async fn mcp_get(
                 created_at: std::time::Instant::now(),
                 is_claude_code: is_cc_ua,
                 has_sse_stream: false,
+                repo_path: None,
             });
         }
         // Mark this session as having an active SSE stream
