@@ -16,7 +16,20 @@ pub(crate) async fn start_agent_loop(
     goal: String,
 ) -> Result<String, String> {
     let state = Arc::clone(&state);
-    let _rx = engine::start_agent_loop(state, session_id.clone(), goal).await?;
+    let app_handle = state.app_handle.read().clone();
+    let mut rx = engine::start_agent_loop(state, session_id.clone(), goal).await?;
+
+    // Bridge broadcast events to Tauri's emit system so the frontend can
+    // subscribe via `listen("agent-loop-event", ...)`.
+    if let Some(handle) = app_handle {
+        tokio::spawn(async move {
+            use tauri::Emitter;
+            while let Ok(event) = rx.recv().await {
+                let _ = handle.emit("agent-loop-event", &event);
+            }
+        });
+    }
+
     Ok(format!("Agent started on session {session_id}"))
 }
 

@@ -98,6 +98,7 @@ import { useWorktreeSwitchPrompt } from "./hooks/useWorktreeSwitchPrompt";
 import { useCiHeal } from "./hooks/useCiHeal";
 import { useSmartPrompts } from "./hooks/useSmartPrompts";
 import { registerAiChatContextActions } from "./components/AIChatPanel/contextMenuActions";
+import { aiAgentStore } from "./stores/aiAgentStore";
 import { applyAppTheme, applyFontFamily } from "./themes";
 import { createLongPressHandlerFromHotkey } from "./hooks/useLongPressHotkey";
 import { sendCommand, getShellFamily } from "./utils/sendCommand";
@@ -395,6 +396,15 @@ const App: Component = () => {
   // Stop GitHub polling on component teardown — registered at body level so
   // SolidJS can track it synchronously (onCleanup inside async onMount is unreliable).
   onCleanup(() => githubStore.stopPolling());
+
+  // Bridge agent-loop-event from Tauri to the reactive store.
+  {
+    let unlisten: (() => void) | undefined;
+    listen<{ type: string; [key: string]: unknown }>("agent-loop-event", (event) => {
+      aiAgentStore.processEvent(event.payload);
+    }).then((fn) => { unlisten = fn; });
+    onCleanup(() => unlisten?.());
+  }
 
   // Notification sounds are now played natively via Rust (rodio) —
   // no Web Audio warmup needed.
@@ -1132,6 +1142,7 @@ const App: Component = () => {
     scrollPageUp: terminalLifecycle.scrollPageUp,
     scrollPageDown: terminalLifecycle.scrollPageDown,
     toggleZoomPane: splitPanes.toggleZoomPane,
+    toggleFocusMode: uiStore.toggleFocusMode,
     closeActivePane: splitPanes.closeActivePane,
     terminalIds: terminalLifecycle.terminalIds,
     handleTerminalSelect: terminalLifecycle.handleTerminalSelect,
@@ -1629,7 +1640,10 @@ const App: Component = () => {
   }
 
   return (
-    <div id="app" classList={{ "sidebar-hidden": !uiStore.state.sidebarVisible }}>
+    <div id="app" classList={{
+      "sidebar-hidden": !uiStore.state.sidebarVisible,
+      "focus-mode": uiStore.state.focusMode,
+    }}>
       <MobileViewBanner />
       {/* Toolbar - drag region spanning full width */}
       <Toolbar
