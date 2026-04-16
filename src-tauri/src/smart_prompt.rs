@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::process::Output;
 use std::time::Duration;
 use tokio::process::Command;
 use tokio::time::timeout;
@@ -31,6 +32,24 @@ fn apply_clean_env(cmd: &mut Command, extra: Option<&HashMap<String, String>>) {
         for (k, v) in vars {
             cmd.env(k, v);
         }
+    }
+}
+
+/// Build a diagnostic error from a failed process output.
+/// Prefers stderr; falls back to truncated stdout so the caller sees *something*
+/// when the child writes its error to the wrong stream.
+fn format_process_error(output: &Output) -> String {
+    let code = output.status.code().unwrap_or(-1);
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if !stderr.is_empty() {
+        return stderr;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if stdout.is_empty() {
+        format!("Process exited with code {code}")
+    } else {
+        let truncated: String = stdout.chars().take(500).collect();
+        format!("Process exited with code {code}: {truncated}")
     }
 }
 
@@ -85,15 +104,7 @@ pub(crate) async fn execute_headless_prompt(
             if output.status.success() {
                 Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
             } else {
-                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                Err(if stderr.is_empty() {
-                    format!(
-                        "Process exited with code {}",
-                        output.status.code().unwrap_or(-1)
-                    )
-                } else {
-                    stderr
-                })
+                Err(format_process_error(&output))
             }
         }
         Ok(Err(e)) => Err(format!("Process error: {e}")),
@@ -140,15 +151,7 @@ pub(crate) async fn execute_shell_script(
             if output.status.success() {
                 Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
             } else {
-                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                Err(if stderr.is_empty() {
-                    format!(
-                        "Process exited with code {}",
-                        output.status.code().unwrap_or(-1)
-                    )
-                } else {
-                    stderr
-                })
+                Err(format_process_error(&output))
             }
         }
         Ok(Err(e)) => Err(format!("Process error: {e}")),

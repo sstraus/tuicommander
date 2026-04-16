@@ -328,7 +328,6 @@ mod tests {
         let sid = "mcp-guard-test-session";
         let (tx, _rx) = broadcast::channel(4);
         ACTIVE_AGENTS.insert(sid.to_string(), AgentHandle {
-            owner_session_id: sid.to_string(),
             cancel: Arc::new(AtomicBool::new(false)),
             state: Arc::new(RwLock::new(AgentState::Running)),
             pause_notify: Arc::new(Notify::new()),

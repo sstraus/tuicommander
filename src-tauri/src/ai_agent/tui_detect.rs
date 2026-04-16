@@ -72,13 +72,6 @@ impl TerminalMode {
         matches!(self, TerminalMode::FullscreenTui { .. })
     }
 
-    /// Returns the current alt-buffer nesting depth.
-    pub fn depth(&self) -> u8 {
-        match self {
-            TerminalMode::Shell => 0,
-            TerminalMode::FullscreenTui { depth, .. } => *depth,
-        }
-    }
 }
 
 /// Known TUI application signatures matched against visible screen rows.
@@ -155,8 +148,7 @@ mod tests {
     #[test]
     fn nested_alt_increments_depth() {
         let mode = TerminalMode::Shell.on_alt_enter().on_alt_enter();
-        assert_eq!(mode.depth(), 2);
-        assert!(mode.is_fullscreen());
+        assert!(matches!(mode, TerminalMode::FullscreenTui { depth: 2, .. }));
     }
 
     #[test]
@@ -165,8 +157,7 @@ mod tests {
             .on_alt_enter()
             .on_alt_enter()
             .on_alt_exit();
-        assert_eq!(mode.depth(), 1);
-        assert!(mode.is_fullscreen());
+        assert!(matches!(mode, TerminalMode::FullscreenTui { depth: 1, .. }));
     }
 
     #[test]
@@ -190,7 +181,7 @@ mod tests {
         for _ in 0..300 {
             mode = mode.on_alt_enter();
         }
-        assert_eq!(mode.depth(), 255);
+        assert!(matches!(mode, TerminalMode::FullscreenTui { depth: 255, .. }));
     }
 
     #[test]
