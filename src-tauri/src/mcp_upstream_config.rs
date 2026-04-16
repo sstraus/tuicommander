@@ -275,6 +275,38 @@ pub(crate) async fn save_mcp_upstreams(
     Ok(())
 }
 
+/// Set per-project upstream MCP allowlist. `None` clears the override
+/// (inherits all globally-enabled servers). Persists to repo-settings.json
+/// and emits a tool-list refresh so connected MCP clients see the change.
+#[tauri::command]
+pub(crate) fn set_project_mcp_upstreams(
+    repo_path: String,
+    upstream_names: Option<Vec<String>>,
+    state: tauri::State<'_, std::sync::Arc<crate::state::AppState>>,
+) -> Result<(), String> {
+    set_project_mcp_upstreams_inner(&state, &repo_path, upstream_names)
+}
+
+/// Testable inner function (no Tauri state wrapper).
+pub(crate) fn set_project_mcp_upstreams_inner(
+    state: &crate::state::AppState,
+    repo_path: &str,
+    upstream_names: Option<Vec<String>>,
+) -> Result<(), String> {
+    let mut settings = crate::config::load_repo_settings();
+    let entry = settings.repos.entry(repo_path.to_string()).or_insert_with(|| {
+        crate::config::RepoSettingsEntry {
+            path: repo_path.to_string(),
+            ..Default::default()
+        }
+    });
+    entry.mcp_upstreams = upstream_names;
+    crate::config::save_repo_settings(settings)?;
+    // Notify connected MCP clients that the tool list may have changed
+    let _ = state.mcp_tools_changed.send(());
+    Ok(())
+}
+
 /// Reconnect a single upstream by name (disconnect + connect).
 ///
 /// Useful when credentials change or the upstream is temporarily unreachable.
@@ -921,5 +953,58 @@ mod tests {
         let content = std::fs::read_to_string(&path).unwrap();
         let loaded: UpstreamMcpConfig = serde_json::from_str(&content).unwrap();
         assert_eq!(config, loaded);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn set_project_mcp_upstreams_persists_and_emits_signal() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _guard = crate::config::set_config_dir_override(tmp.path().to_path_buf());
+
+        let state = crate::state::tests_support::make_test_app_state();
+        let mut rx = state.mcp_tools_changed.subscribe();
+
+        // Set allowlist
+        set_project_mcp_upstreams_inner(
+            &state,
+            "/test/repo",
+            Some(vec!["server-a".to_string(), "server-b".to_string()]),
+        ).unwrap();
+
+        // Verify persisted
+        let settings = crate::config::load_repo_settings();
+        let entry = settings.repos.get("/test/repo").expect("entry should exist");
+        assert_eq!(
+            entry.mcp_upstreams,
+            Some(vec!["server-a".to_string(), "server-b".to_string()])
+        );
+
+        // Verify signal emitted
+        assert!(rx.try_recv().is_ok(), "mcp_tools_changed should have been emitted");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn set_project_mcp_upstreams_none_clears_override() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _guard = crate::config::set_config_dir_override(tmp.path().to_path_buf());
+
+        let state = crate::state::tests_support::make_test_app_state();
+
+        // Set then clear
+        set_project_mcp_upstreams_inner(
+            &state,
+            "/test/repo",
+            Some(vec!["server-a".to_string()]),
+        ).unwrap();
+        set_project_mcp_upstreams_inner(
+            &state,
+            "/test/repo",
+            None,
+        ).unwrap();
+
+        let settings = crate::config::load_repo_settings();
+        let entry = settings.repos.get("/test/repo").expect("entry should exist");
+        assert_eq!(entry.mcp_upstreams, None, "None should clear the override");
     }
 }

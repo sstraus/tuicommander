@@ -1211,6 +1211,7 @@ pub fn run() {
             config::load_repo_local_config,
             mcp_upstream_config::load_mcp_upstreams,
             mcp_upstream_config::save_mcp_upstreams,
+            mcp_upstream_config::set_project_mcp_upstreams,
             mcp_upstream_config::reconnect_mcp_upstream,
             mcp_upstream_config::get_mcp_upstream_status,
             mcp_upstream_credentials::save_mcp_upstream_credential,
