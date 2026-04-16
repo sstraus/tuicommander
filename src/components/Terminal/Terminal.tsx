@@ -1631,6 +1631,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     scrollToTop: () => terminal?.scrollToTop(),
     scrollToBottom: () => terminal?.scrollToBottom(),
     scrollPages: (pages: number) => terminal?.scrollPages(pages),
+    getSelection: () => terminal?.getSelection() ?? "",
     getBufferLines: (startLine: number, endLine: number) => {
       if (!terminal) return [];
       const buf = terminal.buffer.active;
