@@ -101,6 +101,56 @@ impl SafetyChecker for RegexSafetyChecker {
     }
 }
 
+impl RegexSafetyChecker {
+    /// Evaluate a file path before write/edit operations.
+    /// Read-only ops (read_file, list_files, search_files) skip this check
+    /// entirely — the sandbox is the boundary for reads.
+    pub fn evaluate_file_write(&self, path: &str) -> SafetyVerdict {
+        use std::path::Path;
+
+        let p = Path::new(path);
+        let components: Vec<&str> = p
+            .components()
+            .filter_map(|c| c.as_os_str().to_str())
+            .collect();
+
+        // Defense in depth: block `..` traversal (sandbox should already catch).
+        if components.iter().any(|c| *c == "..") {
+            return SafetyVerdict::Block {
+                reason: "path contains `..` — traversal not allowed".to_string(),
+            };
+        }
+
+        let file_name = p
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+        let file_name_lower = file_name.to_lowercase();
+        let path_lower = path.to_lowercase();
+
+        // Sensitive file patterns → NeedsApproval
+        let sensitive_patterns: &[(&dyn Fn(&str, &str, &[&str]) -> bool, &str)] = &[
+            (&|_p, f, _c| f.starts_with(".env"), ".env file"),
+            (&|_p, _f, c| c.iter().any(|s| *s == ".ssh"), ".ssh directory"),
+            (&|_p, f, _c| f == ".bashrc" || f == ".zshrc" || f == ".profile" || f == ".bash_profile", "shell config"),
+            (&|p, _f, _c| p.contains("credentials") || p.contains("credential"), "credentials file"),
+            (&|p, _f, _c| p.contains("secret"), "secrets file"),
+            (&|_p, f, _c| f == "cargo.toml" || f == "package.json", "dependency manifest"),
+            (&|_p, f, _c| f.ends_with(".lock"), "lock file"),
+        ];
+
+        for (check, reason) in sensitive_patterns {
+            if check(&path_lower, &file_name_lower, &components) {
+                return SafetyVerdict::NeedsApproval {
+                    reason: format!("writing to sensitive path: {reason}"),
+                };
+            }
+        }
+
+        SafetyVerdict::Allow
+    }
+}
+
 /// Format a rejection verdict as structured JSON for LLM consumption.
 pub fn format_rejection(verdict: &SafetyVerdict) -> Option<String> {
     match verdict {
@@ -331,5 +381,95 @@ mod tests {
     #[test]
     fn empty_command_is_safe() {
         assert_eq!(checker().evaluate(""), SafetyVerdict::Allow);
+    }
+
+    // ── evaluate_file_write ───────────────────────────────────
+
+    #[test]
+    fn write_env_needs_approval() {
+        let v = checker().evaluate_file_write(".env");
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
+    }
+
+    #[test]
+    fn write_env_local_needs_approval() {
+        let v = checker().evaluate_file_write(".env.local");
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
+    }
+
+    #[test]
+    fn write_env_production_needs_approval() {
+        let v = checker().evaluate_file_write("config/.env.production");
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
+    }
+
+    #[test]
+    fn write_ssh_needs_approval() {
+        let v = checker().evaluate_file_write(".ssh/authorized_keys");
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
+    }
+
+    #[test]
+    fn write_bashrc_needs_approval() {
+        let v = checker().evaluate_file_write(".bashrc");
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
+    }
+
+    #[test]
+    fn write_zshrc_needs_approval() {
+        let v = checker().evaluate_file_write(".zshrc");
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
+    }
+
+    #[test]
+    fn write_credentials_needs_approval() {
+        let v = checker().evaluate_file_write("config/credentials.json");
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
+    }
+
+    #[test]
+    fn write_secrets_needs_approval() {
+        let v = checker().evaluate_file_write("deploy/secrets.yaml");
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
+    }
+
+    #[test]
+    fn write_cargo_toml_needs_approval() {
+        let v = checker().evaluate_file_write("Cargo.toml");
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
+    }
+
+    #[test]
+    fn write_package_json_needs_approval() {
+        let v = checker().evaluate_file_write("package.json");
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
+    }
+
+    #[test]
+    fn write_lock_file_needs_approval() {
+        let v = checker().evaluate_file_write("Cargo.lock");
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
+    }
+
+    #[test]
+    fn write_dotdot_blocked() {
+        let v = checker().evaluate_file_write("../outside.txt");
+        assert!(matches!(v, SafetyVerdict::Block { .. }));
+    }
+
+    #[test]
+    fn write_normal_file_allowed() {
+        assert_eq!(
+            checker().evaluate_file_write("src/main.rs"),
+            SafetyVerdict::Allow
+        );
+    }
+
+    #[test]
+    fn write_nested_source_allowed() {
+        assert_eq!(
+            checker().evaluate_file_write("src/utils/helper.ts"),
+            SafetyVerdict::Allow
+        );
     }
 }

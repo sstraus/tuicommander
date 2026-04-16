@@ -587,6 +587,12 @@ fn exec_write_file(state: &AppState, session_id: &str, args: &Value) -> ToolResu
         return missing_arg("content");
     };
 
+    let checker = RegexSafetyChecker::new();
+    let verdict = checker.evaluate_file_write(file_path);
+    if let Some(msg) = super::safety::format_rejection(&verdict) {
+        return ToolResult::err(msg);
+    }
+
     let sandbox = match get_sandbox(state, session_id) {
         Ok(s) => s,
         Err(e) => return ToolResult::err(e),
@@ -640,6 +646,12 @@ fn exec_edit_file(state: &AppState, session_id: &str, args: &Value) -> ToolResul
         return missing_arg("new_string");
     };
     let replace_all = args["replace_all"].as_bool().unwrap_or(false);
+
+    let checker = RegexSafetyChecker::new();
+    let verdict = checker.evaluate_file_write(file_path);
+    if let Some(msg) = super::safety::format_rejection(&verdict) {
+        return ToolResult::err(msg);
+    }
 
     if old_string.is_empty() {
         return ToolResult::err("old_string must not be empty".to_string());

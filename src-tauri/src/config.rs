@@ -390,6 +390,9 @@ pub(crate) struct AppConfig {
     /// Default issue filter mode: "assigned", "created", "mentioned", "all", or "disabled"
     #[serde(default = "default_issue_filter")]
     pub(crate) issue_filter: String,
+    /// Master toggle for experimental features
+    #[serde(default)]
+    pub(crate) experimental_features_enabled: bool,
 }
 
 fn default_language() -> String {
@@ -484,7 +487,14 @@ impl Default for AppConfig {
             global_hotkey: None,
             collapse_tools: false,
             issue_filter: default_issue_filter(),
+            experimental_features_enabled: false,
         }
+    }
+}
+
+impl AppConfig {
+    pub(crate) fn is_experimental_enabled(&self, sub_flag: bool) -> bool {
+        self.experimental_features_enabled && sub_flag
     }
 }
 
@@ -1224,6 +1234,7 @@ mod tests {
             bell_style: "visual".to_string(),
             collapse_tools: true,
             issue_filter: "assigned".to_string(),
+            experimental_features_enabled: false,
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
         assert_eq!(loaded.shell.as_deref(), Some("/bin/zsh"));
@@ -1282,6 +1293,7 @@ mod tests {
         assert!(!loaded.lan_auth_bypass);
         assert!(loaded.intent_tab_title); // defaults to true
         assert!(loaded.suggest_followups); // defaults to true
+        assert!(!loaded.experimental_features_enabled);
     }
 
     #[test]
@@ -1980,6 +1992,17 @@ mod tests {
         // Verify the real file was copied normally
         assert!(!dest.join("real.txt").symlink_metadata().unwrap().file_type().is_symlink());
         assert_eq!(fs::read_to_string(dest.join("real.txt")).unwrap(), "hello");
+    }
+
+    #[test]
+    fn is_experimental_enabled_gates_on_parent() {
+        let mut cfg = AppConfig::default();
+        assert!(!cfg.is_experimental_enabled(true));
+        assert!(!cfg.is_experimental_enabled(false));
+
+        cfg.experimental_features_enabled = true;
+        assert!(cfg.is_experimental_enabled(true));
+        assert!(!cfg.is_experimental_enabled(false));
     }
 
 }
