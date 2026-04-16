@@ -182,6 +182,12 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
       transform: (data) => (data as { agent: string | null }).agent,
     }),
   },
+  get_session_shell_family: {
+    map: (args) => ({
+      method: "GET",
+      path: `/sessions/${args.sessionId}/shell-family`,
+    }),
+  },
 
   // --- Orchestrator ---
   get_orchestrator_stats: { map: () => ({ method: "GET", path: "/stats" }) },

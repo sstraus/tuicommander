@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { rpc } from "../transport";
 import { isWindows } from "../platform";
 import { appLogger } from "../stores/appLogger";
 
@@ -17,7 +17,7 @@ export async function getShellFamily(sessionId: string): Promise<ShellFamily> {
   const cached = shellFamilyCache.get(sessionId);
   if (cached) return cached;
   try {
-    const family = await invoke<ShellFamily | null>("get_session_shell_family", { sessionId });
+    const family = await rpc<ShellFamily | null>("get_session_shell_family", { sessionId });
     const resolved: ShellFamily = family ?? "unknown";
     shellFamilyCache.set(sessionId, resolved);
     return resolved;
