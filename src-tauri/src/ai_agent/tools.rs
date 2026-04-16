@@ -222,9 +222,11 @@ pub fn redact_secrets(text: &str) -> String {
             Regex::new(r"AKIA[A-Z0-9]{16}").unwrap(),
             Regex::new(r"ghp_[A-Za-z0-9]{36,}").unwrap(),
             Regex::new(r"gho_[A-Za-z0-9]{36,}").unwrap(),
+            Regex::new(r"github_pat_[A-Za-z0-9_]{82,}").unwrap(),
             Regex::new(r"xoxb-[A-Za-z0-9\-]+").unwrap(),
             Regex::new(r"ya29\.[A-Za-z0-9_-]+").unwrap(),
-            // PEM private keys
+            // PEM private keys (header + body)
+            Regex::new(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----").unwrap(),
             Regex::new(r"-----BEGIN [A-Z ]*PRIVATE KEY-----").unwrap(),
             // Bearer tokens
             Regex::new(r"Bearer\s+[A-Za-z0-9_\-.]+").unwrap(),
@@ -232,6 +234,8 @@ pub fn redact_secrets(text: &str) -> String {
             Regex::new(r"(?i)(postgres|mysql|mongodb|redis)://[^\s@]+@[^\s]+").unwrap(),
             // Generic DATABASE_URL value
             Regex::new(r"DATABASE_URL=[^\s]+").unwrap(),
+            // High-entropy hex tokens (40+ chars of hex)
+            Regex::new(r"\b[0-9a-fA-F]{40,}\b").unwrap(),
         ]
     });
 
@@ -1403,6 +1407,29 @@ mod tests {
     fn redact_google_oauth() {
         let input = "token: ya29.a0AfH6SMBx_long_token_here";
         let output = redact_secrets(input);
+        assert!(output.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn redact_github_pat() {
+        let pat = format!("github_pat_{}", "A".repeat(82));
+        let output = redact_secrets(&format!("token: {pat}"));
+        assert!(output.contains("[REDACTED]"));
+        assert!(!output.contains("github_pat_"));
+    }
+
+    #[test]
+    fn redact_pem_body() {
+        let input = "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA\nbase64data\n-----END RSA PRIVATE KEY-----";
+        let output = redact_secrets(input);
+        assert!(output.contains("[REDACTED]"));
+        assert!(!output.contains("MIIEpAIBAAKCAQEA"));
+    }
+
+    #[test]
+    fn redact_high_entropy_hex() {
+        let hex = "a".repeat(40);
+        let output = redact_secrets(&format!("commit {hex}"));
         assert!(output.contains("[REDACTED]"));
     }
 

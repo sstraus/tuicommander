@@ -211,6 +211,28 @@ fn build_system_prompt(session_id: &str) -> String {
     )
 }
 
+// ── JSON value redaction ─────────────────────────────────────
+
+/// Recursively apply `redact_secrets` to all string values in a JSON value.
+fn redact_json_values(val: &serde_json::Value) -> serde_json::Value {
+    match val {
+        serde_json::Value::String(s) => {
+            serde_json::Value::String(tools::redact_secrets(s))
+        }
+        serde_json::Value::Object(map) => {
+            let redacted: serde_json::Map<String, serde_json::Value> = map
+                .iter()
+                .map(|(k, v)| (k.clone(), redact_json_values(v)))
+                .collect();
+            serde_json::Value::Object(redacted)
+        }
+        serde_json::Value::Array(arr) => {
+            serde_json::Value::Array(arr.iter().map(redact_json_values).collect())
+        }
+        other => other.clone(),
+    }
+}
+
 // ── Core loop ─────────────────────────────────────────────────
 
 /// Start the agent loop for a session. Returns error if already active.
@@ -506,10 +528,11 @@ async fn run_loop(
                 return Ok(format!("repetition_detected: {}", tc.fn_name));
             }
 
+            let redacted_args = redact_json_values(&tc.fn_arguments);
             let _ = event_tx.send(AgentLoopEvent::ToolCall {
                 session_id: session_id.clone(),
                 tool_name: tc.fn_name.clone(),
-                args: tc.fn_arguments.clone(),
+                args: redacted_args,
             });
 
             let mut result = tools::dispatch(&state, &session_id, &tc.fn_name, &tc.fn_arguments).await;
@@ -867,5 +890,38 @@ mod tests {
         sender.send(true).unwrap();
         assert!(orx.await.unwrap());
         ACTIVE_AGENTS.remove(sid);
+    }
+
+    // ── redact_json_values ────────────────────────────────────
+
+    #[test]
+    fn redact_json_string_value() {
+        let val = json!({"key": "sk-abcdefghijklmnopqrstuvwxyz12345"});
+        let redacted = redact_json_values(&val);
+        assert!(redacted["key"].as_str().unwrap().contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn redact_json_nested() {
+        let val = json!({"outer": {"inner": "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijk0"}});
+        let redacted = redact_json_values(&val);
+        let inner = redacted["outer"]["inner"].as_str().unwrap();
+        assert!(inner.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn redact_json_array() {
+        let val = json!(["safe text", "Bearer secret-token-value"]);
+        let redacted = redact_json_values(&val);
+        assert!(redacted[1].as_str().unwrap().contains("[REDACTED]"));
+        assert_eq!(redacted[0].as_str().unwrap(), "safe text");
+    }
+
+    #[test]
+    fn redact_json_preserves_non_string() {
+        let val = json!({"count": 42, "active": true});
+        let redacted = redact_json_values(&val);
+        assert_eq!(redacted["count"], 42);
+        assert_eq!(redacted["active"], true);
     }
 }
