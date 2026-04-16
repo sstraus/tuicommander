@@ -168,6 +168,14 @@ function processEvent(event: { type: string; [key: string]: unknown }): void {
       break;
     }
 
+    case "needs_approval":
+      setPendingApproval({
+        sessionId: event.session_id as string,
+        command: event.command as string,
+        reason: event.reason as string,
+      });
+      break;
+
     case "paused":
       setAgentState("paused");
       break;

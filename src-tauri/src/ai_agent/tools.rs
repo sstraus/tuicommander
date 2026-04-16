@@ -19,15 +19,33 @@ const READ_FILE_MAX_LINES: usize = 2000;
 pub struct ToolResult {
     pub success: bool,
     pub output: String,
+    /// When true, the engine should pause for user approval before re-executing.
+    #[serde(skip)]
+    pub needs_approval: bool,
+    #[serde(skip)]
+    pub approval_reason: Option<String>,
+    #[serde(skip)]
+    pub approval_command: Option<String>,
 }
 
 impl ToolResult {
     pub fn ok(output: impl Into<String>) -> Self {
-        Self { success: true, output: output.into() }
+        Self { success: true, output: output.into(), needs_approval: false, approval_reason: None, approval_command: None }
     }
 
     pub fn err(output: impl Into<String>) -> Self {
-        Self { success: false, output: output.into() }
+        Self { success: false, output: output.into(), needs_approval: false, approval_reason: None, approval_command: None }
+    }
+
+    pub fn approval(reason: impl Into<String>, command: impl Into<String>) -> Self {
+        let reason = reason.into();
+        Self {
+            success: false,
+            output: format!("Needs approval: {reason}"),
+            needs_approval: true,
+            approval_reason: Some(reason),
+            approval_command: Some(command.into()),
+        }
     }
 }
 
@@ -322,6 +340,10 @@ fn exec_read_screen(state: &AppState, args: &Value) -> ToolResult {
 
 /// Execute `send_input`: send a command with safety check.
 fn exec_send_input(state: &AppState, args: &Value) -> ToolResult {
+    exec_send_input_inner(state, args, false)
+}
+
+fn exec_send_input_inner(state: &AppState, args: &Value, skip_safety: bool) -> ToolResult {
     let session_id = match args["session_id"].as_str() {
         Some(s) => s,
         None => return ToolResult::err("Missing session_id"),
@@ -331,13 +353,17 @@ fn exec_send_input(state: &AppState, args: &Value) -> ToolResult {
         None => return ToolResult::err("Missing command"),
     };
 
-    // Safety check
-    let checker = RegexSafetyChecker::new();
-    match checker.evaluate(command) {
-        SafetyVerdict::Allow => {}
-        verdict => {
-            let rejection = super::safety::format_rejection(&verdict).unwrap_or_default();
-            return ToolResult::err(rejection);
+    if !skip_safety {
+        let checker = RegexSafetyChecker::new();
+        match checker.evaluate(command) {
+            SafetyVerdict::Allow => {}
+            SafetyVerdict::NeedsApproval { reason } => {
+                return ToolResult::approval(reason, command);
+            }
+            verdict => {
+                let rejection = super::safety::format_rejection(&verdict).unwrap_or_default();
+                return ToolResult::err(rejection);
+            }
         }
     }
 
@@ -349,6 +375,10 @@ fn exec_send_input(state: &AppState, args: &Value) -> ToolResult {
 
 /// Execute `send_key`: send a special key with safety check.
 fn exec_send_key(state: &AppState, args: &Value) -> ToolResult {
+    exec_send_key_inner(state, args, false)
+}
+
+fn exec_send_key_inner(state: &AppState, args: &Value, skip_safety: bool) -> ToolResult {
     let session_id = match args["session_id"].as_str() {
         Some(s) => s,
         None => return ToolResult::err("Missing session_id"),
@@ -363,14 +393,14 @@ fn exec_send_key(state: &AppState, args: &Value) -> ToolResult {
         Err(e) => return ToolResult::err(e),
     };
 
-    // Safety check for special keys
-    if let Some(sk) = safe_key {
-        if sk.risk() == KeyRisk::High {
-            return ToolResult::err(json!({
-                "status": "needs_approval",
-                "reason": format!("{key_name} is high-risk (may terminate shell)"),
-                "action": "Ask the user for confirmation before sending this key."
-            }).to_string());
+    if !skip_safety {
+        if let Some(sk) = safe_key {
+            if sk.risk() == KeyRisk::High {
+                return ToolResult::approval(
+                    format!("{key_name} is high-risk (may terminate shell)"),
+                    format!("send_key:{key_name}"),
+                );
+            }
         }
     }
 
@@ -580,6 +610,10 @@ fn exec_read_file(state: &AppState, session_id: &str, args: &Value) -> ToolResul
 
 /// `write_file`: atomic full overwrite (tmp+rename) inside the sandbox.
 fn exec_write_file(state: &AppState, session_id: &str, args: &Value) -> ToolResult {
+    exec_write_file_inner(state, session_id, args, false)
+}
+
+fn exec_write_file_inner(state: &AppState, session_id: &str, args: &Value, skip_safety: bool) -> ToolResult {
     let Some(file_path) = args["file_path"].as_str() else {
         return missing_arg("file_path");
     };
@@ -587,10 +621,19 @@ fn exec_write_file(state: &AppState, session_id: &str, args: &Value) -> ToolResu
         return missing_arg("content");
     };
 
-    let checker = RegexSafetyChecker::new();
-    let verdict = checker.evaluate_file_write(file_path);
-    if let Some(msg) = super::safety::format_rejection(&verdict) {
-        return ToolResult::err(msg);
+    if !skip_safety {
+        let checker = RegexSafetyChecker::new();
+        let verdict = checker.evaluate_file_write(file_path);
+        match &verdict {
+            SafetyVerdict::NeedsApproval { reason } => {
+                return ToolResult::approval(reason, format!("write_file:{file_path}"));
+            }
+            SafetyVerdict::Block { .. } => {
+                let msg = super::safety::format_rejection(&verdict).unwrap();
+                return ToolResult::err(msg);
+            }
+            SafetyVerdict::Allow => {}
+        }
     }
 
     let sandbox = match get_sandbox(state, session_id) {
@@ -636,6 +679,10 @@ fn exec_write_file(state: &AppState, session_id: &str, args: &Value) -> ToolResu
 
 /// `edit_file`: string-exact search-and-replace with uniqueness enforcement.
 fn exec_edit_file(state: &AppState, session_id: &str, args: &Value) -> ToolResult {
+    exec_edit_file_inner(state, session_id, args, false)
+}
+
+fn exec_edit_file_inner(state: &AppState, session_id: &str, args: &Value, skip_safety: bool) -> ToolResult {
     let Some(file_path) = args["file_path"].as_str() else {
         return missing_arg("file_path");
     };
@@ -647,10 +694,19 @@ fn exec_edit_file(state: &AppState, session_id: &str, args: &Value) -> ToolResul
     };
     let replace_all = args["replace_all"].as_bool().unwrap_or(false);
 
-    let checker = RegexSafetyChecker::new();
-    let verdict = checker.evaluate_file_write(file_path);
-    if let Some(msg) = super::safety::format_rejection(&verdict) {
-        return ToolResult::err(msg);
+    if !skip_safety {
+        let checker = RegexSafetyChecker::new();
+        let verdict = checker.evaluate_file_write(file_path);
+        match &verdict {
+            SafetyVerdict::NeedsApproval { reason } => {
+                return ToolResult::approval(reason, format!("edit_file:{file_path}"));
+            }
+            SafetyVerdict::Block { .. } => {
+                let msg = super::safety::format_rejection(&verdict).unwrap();
+                return ToolResult::err(msg);
+            }
+            SafetyVerdict::Allow => {}
+        }
     }
 
     if old_string.is_empty() {
@@ -988,6 +1044,10 @@ fn truncate_output(s: &str) -> (String, bool) {
 
 /// `run_command`: sandboxed shell command execution with captured output.
 async fn exec_run_command(state: &AppState, session_id: &str, args: &Value) -> ToolResult {
+    exec_run_command_inner(state, session_id, args, false).await
+}
+
+async fn exec_run_command_inner(state: &AppState, session_id: &str, args: &Value, skip_safety: bool) -> ToolResult {
     let Some(command) = args["command"].as_str() else {
         return missing_arg("command");
     };
@@ -1001,18 +1061,19 @@ async fn exec_run_command(state: &AppState, session_id: &str, args: &Value) -> T
         .min(RUN_COMMAND_MAX_TIMEOUT_MS);
     let cwd_arg = args["cwd"].as_str();
 
-    let checker = RegexSafetyChecker::new();
-    let verdict = checker.evaluate(command);
-    match &verdict {
-        SafetyVerdict::Block { .. } => {
-            let msg = super::safety::format_rejection(&verdict).unwrap();
-            return ToolResult::err(msg);
+    if !skip_safety {
+        let checker = RegexSafetyChecker::new();
+        let verdict = checker.evaluate(command);
+        match &verdict {
+            SafetyVerdict::Block { .. } => {
+                let msg = super::safety::format_rejection(&verdict).unwrap();
+                return ToolResult::err(msg);
+            }
+            SafetyVerdict::NeedsApproval { reason } => {
+                return ToolResult::approval(reason, command);
+            }
+            SafetyVerdict::Allow => {}
         }
-        SafetyVerdict::NeedsApproval { .. } => {
-            let msg = super::safety::format_rejection(&verdict).unwrap();
-            return ToolResult::err(msg);
-        }
-        SafetyVerdict::Allow => {}
     }
 
     let sandbox = match get_sandbox(state, session_id) {
@@ -1133,19 +1194,39 @@ pub async fn dispatch(
     fn_name: &str,
     args: &Value,
 ) -> ToolResult {
+    dispatch_inner(state, session_id, fn_name, args, false).await
+}
+
+/// Re-dispatch a tool call after the user approved it — skips safety checks.
+pub async fn dispatch_approved(
+    state: &Arc<AppState>,
+    session_id: &str,
+    fn_name: &str,
+    args: &Value,
+) -> ToolResult {
+    dispatch_inner(state, session_id, fn_name, args, true).await
+}
+
+async fn dispatch_inner(
+    state: &Arc<AppState>,
+    session_id: &str,
+    fn_name: &str,
+    args: &Value,
+    skip_safety: bool,
+) -> ToolResult {
     match fn_name {
         "read_screen" => exec_read_screen(state, args),
-        "send_input" => exec_send_input(state, args),
-        "send_key" => exec_send_key(state, args),
+        "send_input" => exec_send_input_inner(state, args, skip_safety),
+        "send_key" => exec_send_key_inner(state, args, skip_safety),
         "wait_for" => exec_wait_for(state, args).await,
         "get_state" => exec_get_state(state, args),
         "get_context" => exec_get_context(state, args),
         "read_file" => exec_read_file(state, session_id, args),
-        "write_file" => exec_write_file(state, session_id, args),
-        "edit_file" => exec_edit_file(state, session_id, args),
+        "write_file" => exec_write_file_inner(state, session_id, args, skip_safety),
+        "edit_file" => exec_edit_file_inner(state, session_id, args, skip_safety),
         "list_files" => exec_list_files(state, session_id, args),
         "search_files" => exec_search_files(state, session_id, args),
-        "run_command" => exec_run_command(state, session_id, args).await,
+        "run_command" => exec_run_command_inner(state, session_id, args, skip_safety).await,
         other => ToolResult::err(format!("Unknown tool: {other}")),
     }
 }
@@ -1422,18 +1503,65 @@ mod tests {
             "command": "rm -rf /tmp/build"
         })).await;
         assert!(!result.success);
-        assert!(result.output.contains("needs_approval"));
+        assert!(result.needs_approval);
+        assert!(result.approval_reason.is_some());
+        assert_eq!(result.approval_command.as_deref(), Some("rm -rf /tmp/build"));
     }
 
     #[tokio::test]
-    async fn dispatch_send_key_blocks_ctrl_d() {
+    async fn dispatch_send_key_needs_approval_for_ctrl_d() {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
         let result = dispatch(&state, "test", "send_key", &json!({
             "session_id": "test",
             "key": "ctrl-d"
         })).await;
         assert!(!result.success);
-        assert!(result.output.contains("needs_approval"));
+        assert!(result.needs_approval);
+        assert!(result.approval_reason.unwrap().contains("high-risk"));
+    }
+
+    #[tokio::test]
+    async fn dispatch_approved_bypasses_safety() {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        // Normal dispatch returns needs_approval
+        let result = dispatch(&state, "test", "send_input", &json!({
+            "session_id": "test",
+            "command": "rm -rf /tmp/build"
+        })).await;
+        assert!(result.needs_approval);
+        // Approved dispatch skips safety (will fail on missing session, not safety)
+        let result = dispatch_approved(&state, "test", "send_input", &json!({
+            "session_id": "test",
+            "command": "rm -rf /tmp/build"
+        })).await;
+        assert!(!result.needs_approval);
+        assert!(!result.success); // fails because session doesn't exist, not safety
+        assert!(result.output.contains("Session not found"));
+    }
+
+    #[test]
+    fn tool_result_approval_constructor() {
+        let r = ToolResult::approval("destructive command", "rm -rf /");
+        assert!(!r.success);
+        assert!(r.needs_approval);
+        assert_eq!(r.approval_reason.as_deref(), Some("destructive command"));
+        assert_eq!(r.approval_command.as_deref(), Some("rm -rf /"));
+        assert!(r.output.contains("Needs approval"));
+    }
+
+    #[test]
+    fn tool_result_ok_not_approval() {
+        let r = ToolResult::ok("done");
+        assert!(r.success);
+        assert!(!r.needs_approval);
+        assert!(r.approval_reason.is_none());
+    }
+
+    #[test]
+    fn tool_result_err_not_approval() {
+        let r = ToolResult::err("failed");
+        assert!(!r.success);
+        assert!(!r.needs_approval);
     }
 
     #[tokio::test]

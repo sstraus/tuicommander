@@ -83,18 +83,19 @@ pub(crate) async fn agent_loop_status(
     }
 }
 
-/// Approve a pending destructive command from the agent.
-/// (Placeholder — will be wired to an approval channel in the engine.)
+/// Approve or reject a pending destructive command from the agent.
+/// Resolves the oneshot channel that the engine is blocking on.
 #[tauri::command]
 pub(crate) async fn approve_agent_action(
     session_id: String,
     approved: bool,
 ) -> Result<String, String> {
-    if !ACTIVE_AGENTS.contains_key(&session_id) {
-        return Err(format!("No active agent on session {session_id}"));
-    }
-    // TODO: Wire to approval oneshot channel in engine when NeedsApproval
-    // flow is implemented end-to-end.
+    let entry = ACTIVE_AGENTS.get(&session_id)
+        .ok_or_else(|| format!("No active agent on session {session_id}"))?;
+    let tx = entry.approval_tx.lock().take()
+        .ok_or_else(|| format!("No pending approval on session {session_id}"))?;
+    tx.send(approved)
+        .map_err(|_| format!("Approval channel closed for session {session_id}"))?;
     Ok(format!(
         "Action {} for session {session_id}",
         if approved { "approved" } else { "rejected" }

@@ -12,7 +12,7 @@ use std::time::Duration;
 use dashmap::DashMap;
 use parking_lot::{Mutex, RwLock};
 use serde::Serialize;
-use tokio::sync::{broadcast, Notify};
+use tokio::sync::{broadcast, oneshot, Notify};
 
 use crate::state::AppState;
 use super::tools;
@@ -40,6 +40,9 @@ pub(crate) struct AgentHandle {
     pub state: Arc<RwLock<AgentState>>,
     pub pause_notify: Arc<Notify>,
     pub event_tx: broadcast::Sender<AgentLoopEvent>,
+    /// Oneshot sender for pending approval — set when NeedsApproval fires,
+    /// consumed by approve_agent_action.
+    pub approval_tx: Arc<Mutex<Option<oneshot::Sender<bool>>>>,
 }
 
 // ── Agent state ───────────────────────────────────────────────
@@ -64,6 +67,7 @@ pub enum AgentLoopEvent {
     TextChunk { session_id: String, text: String },
     ToolCall { session_id: String, tool_name: String, args: serde_json::Value },
     ToolResult { session_id: String, tool_name: String, success: bool, output: String },
+    NeedsApproval { session_id: String, tool_name: String, command: String, reason: String },
     Paused { session_id: String },
     Resumed { session_id: String },
     RateLimited { session_id: String, wait_ms: u64 },
@@ -221,11 +225,13 @@ pub(crate) async fn start_agent_loop(
     let pause_notify = Arc::new(Notify::new());
     let (event_tx, event_rx) = broadcast::channel(256);
 
+    let approval_tx: Arc<Mutex<Option<oneshot::Sender<bool>>>> = Arc::new(Mutex::new(None));
     let handle = AgentHandle {
         cancel: cancel.clone(),
         state: agent_state.clone(),
         pause_notify: pause_notify.clone(),
         event_tx: event_tx.clone(),
+        approval_tx: approval_tx.clone(),
     };
     ACTIVE_AGENTS.insert(session_id.clone(), handle);
 
@@ -240,6 +246,7 @@ pub(crate) async fn start_agent_loop(
             agent_state.clone(),
             pause_notify,
             event_tx.clone(),
+            approval_tx,
         )
         .await;
 
@@ -307,6 +314,7 @@ async fn run_loop(
     agent_state: Arc<RwLock<AgentState>>,
     pause_notify: Arc<Notify>,
     event_tx: broadcast::Sender<AgentLoopEvent>,
+    approval_tx: Arc<Mutex<Option<oneshot::Sender<bool>>>>,
 ) -> Result<String, String> {
     use futures_util::StreamExt;
     use genai::chat::{
@@ -483,7 +491,45 @@ async fn run_loop(
                 args: tc.fn_arguments.clone(),
             });
 
-            let result = tools::dispatch(&state, &session_id, &tc.fn_name, &tc.fn_arguments).await;
+            let mut result = tools::dispatch(&state, &session_id, &tc.fn_name, &tc.fn_arguments).await;
+
+            // Approval flow: pause for user confirmation, then re-dispatch
+            if result.needs_approval {
+                let reason = result.approval_reason.clone().unwrap_or_default();
+                let command = result.approval_command.clone().unwrap_or_default();
+
+                let _ = event_tx.send(AgentLoopEvent::NeedsApproval {
+                    session_id: session_id.clone(),
+                    tool_name: tc.fn_name.clone(),
+                    command: command.clone(),
+                    reason: reason.clone(),
+                });
+
+                let (tx, rx) = oneshot::channel();
+                *approval_tx.lock() = Some(tx);
+
+                // Wait for approval or cancellation
+                let approved = tokio::select! {
+                    res = rx => res.unwrap_or(false),
+                    _ = async {
+                        while !cancel.load(Ordering::Relaxed) {
+                            tokio::time::sleep(Duration::from_millis(100)).await;
+                        }
+                    } => false,
+                };
+
+                *approval_tx.lock() = None;
+
+                if cancel.load(Ordering::Relaxed) {
+                    return Ok("cancelled".into());
+                }
+
+                if approved {
+                    result = tools::dispatch_approved(&state, &session_id, &tc.fn_name, &tc.fn_arguments).await;
+                } else {
+                    result = tools::ToolResult::err(format!("User rejected: {reason}"));
+                }
+            }
 
             let _ = event_tx.send(AgentLoopEvent::ToolResult {
                 session_id: session_id.clone(),
@@ -650,6 +696,7 @@ mod tests {
             state: Arc::new(RwLock::new(AgentState::Running)),
             pause_notify: Arc::new(Notify::new()),
             event_tx: tx,
+            approval_tx: Arc::new(Mutex::new(None)),
         });
         assert!(ACTIVE_AGENTS.contains_key(sid));
         // Cleanup
@@ -688,5 +735,102 @@ mod tests {
         assert!(MAX_IDENTICAL_CALLS >= 2);
         assert!(RATE_LIMIT_PER_MINUTE > 0);
         assert!(RATE_LIMIT_PER_SESSION > RATE_LIMIT_PER_MINUTE);
+    }
+
+    // ── Approval channel ──────────────────────────────────────
+
+    #[test]
+    fn approval_tx_starts_none() {
+        let atx: Arc<Mutex<Option<oneshot::Sender<bool>>>> = Arc::new(Mutex::new(None));
+        assert!(atx.lock().is_none());
+    }
+
+    #[tokio::test]
+    async fn approval_channel_approve_path() {
+        let (tx, rx) = oneshot::channel::<bool>();
+        let atx: Arc<Mutex<Option<oneshot::Sender<bool>>>> = Arc::new(Mutex::new(Some(tx)));
+        // Simulate approve_agent_action
+        let sender = atx.lock().take().unwrap();
+        sender.send(true).unwrap();
+        assert!(rx.await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn approval_channel_reject_path() {
+        let (tx, rx) = oneshot::channel::<bool>();
+        let atx: Arc<Mutex<Option<oneshot::Sender<bool>>>> = Arc::new(Mutex::new(Some(tx)));
+        let sender = atx.lock().take().unwrap();
+        sender.send(false).unwrap();
+        assert!(!rx.await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn approval_channel_dropped_sender_returns_false() {
+        let (tx, rx) = oneshot::channel::<bool>();
+        drop(tx);
+        assert!(rx.await.is_err());
+    }
+
+    #[test]
+    fn approval_handle_take_clears() {
+        let (tx, _rx) = oneshot::channel::<bool>();
+        let atx: Arc<Mutex<Option<oneshot::Sender<bool>>>> = Arc::new(Mutex::new(Some(tx)));
+        let taken = atx.lock().take();
+        assert!(taken.is_some());
+        assert!(atx.lock().is_none());
+    }
+
+    #[test]
+    fn needs_approval_event_serializes() {
+        let evt = AgentLoopEvent::NeedsApproval {
+            session_id: "s1".into(),
+            tool_name: "send_input".into(),
+            command: "rm -rf /tmp".into(),
+            reason: "destructive command".into(),
+        };
+        let json = serde_json::to_string(&evt).unwrap();
+        assert!(json.contains("\"type\":\"needs_approval\""));
+        assert!(json.contains("\"tool_name\":\"send_input\""));
+        assert!(json.contains("\"command\":\"rm -rf /tmp\""));
+        assert!(json.contains("\"reason\":\"destructive command\""));
+    }
+
+    #[test]
+    fn approve_action_no_pending_errors() {
+        let sid = "test-no-pending";
+        let cancel = Arc::new(AtomicBool::new(false));
+        let (tx, _) = broadcast::channel(16);
+        let atx = Arc::new(Mutex::new(None));
+        ACTIVE_AGENTS.insert(sid.to_string(), AgentHandle {
+            cancel,
+            state: Arc::new(RwLock::new(AgentState::Running)),
+            pause_notify: Arc::new(Notify::new()),
+            event_tx: tx,
+            approval_tx: atx.clone(),
+        });
+        // No pending approval — take returns None
+        assert!(atx.lock().take().is_none());
+        ACTIVE_AGENTS.remove(sid);
+    }
+
+    #[tokio::test]
+    async fn approve_action_resolves_channel() {
+        let sid = "test-approve-resolve";
+        let cancel = Arc::new(AtomicBool::new(false));
+        let (etx, _) = broadcast::channel(16);
+        let (otx, orx) = oneshot::channel::<bool>();
+        let atx = Arc::new(Mutex::new(Some(otx)));
+        ACTIVE_AGENTS.insert(sid.to_string(), AgentHandle {
+            cancel,
+            state: Arc::new(RwLock::new(AgentState::Running)),
+            pause_notify: Arc::new(Notify::new()),
+            event_tx: etx,
+            approval_tx: atx.clone(),
+        });
+        // Simulate approve_agent_action
+        let sender = atx.lock().take().unwrap();
+        sender.send(true).unwrap();
+        assert!(orx.await.unwrap());
+        ACTIVE_AGENTS.remove(sid);
     }
 }
