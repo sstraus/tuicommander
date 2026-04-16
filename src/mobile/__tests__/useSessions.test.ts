@@ -10,8 +10,12 @@ vi.mock("../../transport", () => ({
   rpc: vi.fn(),
 }));
 
+const listenHandlers = new Map<string, (event: { payload: unknown }) => void>();
 vi.mock("../../invoke", () => ({
-  listen: vi.fn(() => Promise.resolve(() => {})),
+  listen: vi.fn((event: string, handler: (event: { payload: unknown }) => void) => {
+    listenHandlers.set(event, handler);
+    return Promise.resolve(() => { listenHandlers.delete(event); });
+  }),
 }));
 
 vi.mock("../../stores/appLogger", () => ({
@@ -356,6 +360,124 @@ describe("useSessions — refreshing signal", () => {
     await Promise.resolve();
 
     expect(questionCount()).toBe(2);
+
+    dispose();
+  });
+
+  it("pty-parsed SSE with shell-state updates session in-place", async () => {
+    const initialD = deferred<SessionInfo[]>();
+    mockRpc.mockReturnValue(initialD.promise as Promise<never>);
+
+    let sessions: () => SessionInfo[] = () => [];
+
+    const dispose = createRoot((dispose) => {
+      const hook = useSessions();
+      sessions = hook.sessions;
+      return dispose;
+    });
+
+    initialD.resolve([
+      makeSession("s1", {
+        state: {
+          awaiting_input: false,
+          rate_limited: false,
+          shell_state: "busy",
+          last_activity_ms: Date.now(),
+        },
+      }),
+    ]);
+    await initialD.promise;
+    await Promise.resolve();
+
+    expect(sessions()[0].state?.shell_state).toBe("busy");
+
+    const handler = listenHandlers.get("pty-parsed");
+    expect(handler).toBeDefined();
+
+    handler!({
+      payload: {
+        session_id: "s1",
+        parsed: { type: "shell-state", state: "idle" },
+      },
+    });
+
+    expect(sessions()[0].state?.shell_state).toBe("idle");
+
+    dispose();
+  });
+
+  it("pty-parsed SSE ignores non-shell-state events", async () => {
+    const initialD = deferred<SessionInfo[]>();
+    mockRpc.mockReturnValue(initialD.promise as Promise<never>);
+
+    let sessions: () => SessionInfo[] = () => [];
+
+    const dispose = createRoot((dispose) => {
+      const hook = useSessions();
+      sessions = hook.sessions;
+      return dispose;
+    });
+
+    initialD.resolve([
+      makeSession("s1", {
+        state: {
+          awaiting_input: false,
+          rate_limited: false,
+          shell_state: "busy",
+          last_activity_ms: Date.now(),
+        },
+      }),
+    ]);
+    await initialD.promise;
+    await Promise.resolve();
+
+    const handler = listenHandlers.get("pty-parsed");
+    handler!({
+      payload: {
+        session_id: "s1",
+        parsed: { type: "question", text: "Continue?" },
+      },
+    });
+
+    expect(sessions()[0].state?.shell_state).toBe("busy");
+
+    dispose();
+  });
+
+  it("pty-parsed SSE ignores unknown session IDs", async () => {
+    const initialD = deferred<SessionInfo[]>();
+    mockRpc.mockReturnValue(initialD.promise as Promise<never>);
+
+    let sessions: () => SessionInfo[] = () => [];
+
+    const dispose = createRoot((dispose) => {
+      const hook = useSessions();
+      sessions = hook.sessions;
+      return dispose;
+    });
+
+    initialD.resolve([
+      makeSession("s1", {
+        state: {
+          awaiting_input: false,
+          rate_limited: false,
+          shell_state: "busy",
+          last_activity_ms: Date.now(),
+        },
+      }),
+    ]);
+    await initialD.promise;
+    await Promise.resolve();
+
+    const handler = listenHandlers.get("pty-parsed");
+    handler!({
+      payload: {
+        session_id: "unknown",
+        parsed: { type: "shell-state", state: "idle" },
+      },
+    });
+
+    expect(sessions()[0].state?.shell_state).toBe("busy");
 
     dispose();
   });

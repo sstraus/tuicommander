@@ -4,9 +4,9 @@ import type { SessionStatus } from "../components/StatusBadge";
 import { deriveStatus } from "./deriveStatus";
 
 /** How long "busy" holds after raw status leaves busy.
- * Longer than desktop (2s) because PWA polls state every 3s instead of
- * receiving real-time events — 4s covers a full poll cycle with margin. */
-const BUSY_HOLD_MS = 4000;
+ * Matches desktop (2s) — SSE push for shell-state makes real-time updates
+ * available without waiting for the 3s poll cycle. */
+const BUSY_HOLD_MS = 2000;
 
 /**
  * Wraps deriveStatus with a busy-hold debounce: once a session enters "busy",

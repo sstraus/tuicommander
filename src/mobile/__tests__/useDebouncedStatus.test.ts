@@ -58,7 +58,7 @@ describe("useDebouncedStatus", () => {
     dispose();
   });
 
-  it("holds busy for 4s after transition to idle", () => {
+  it("holds busy for 2s after transition to idle", () => {
     let status!: () => string;
     let set!: (s: SessionInfo) => void;
     const dispose = createRoot((d) => {
@@ -72,11 +72,11 @@ describe("useDebouncedStatus", () => {
     set(makeSession({ shell_state: "idle" }));
     expect(status()).toBe("busy"); // Still in hold
 
-    vi.advanceTimersByTime(3000);
-    expect(status()).toBe("busy"); // Still holding (covers one poll cycle)
+    vi.advanceTimersByTime(1500);
+    expect(status()).toBe("busy"); // Still holding
 
-    vi.advanceTimersByTime(1000);
-    expect(status()).toBe("idle"); // Hold expired at 4s
+    vi.advanceTimersByTime(500);
+    expect(status()).toBe("idle"); // Hold expired at 2s
 
     dispose();
   });

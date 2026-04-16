@@ -110,9 +110,27 @@ export function useSessions() {
     () => fetchSessions(),
   );
 
+  // SSE subscription for shell-state changes — updates session in-place
+  // without a full refetch, eliminating the 3s polling delay for idle/busy transitions.
+  const unlistenPtyParsed = listen<{ session_id: string; parsed: { type: string; state?: string } }>(
+    "pty-parsed",
+    (event) => {
+      const { session_id, parsed } = event.payload;
+      if (parsed.type !== "shell-state" || !parsed.state) return;
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.session_id === session_id && s.state
+            ? { ...s, state: { ...s.state, shell_state: parsed.state } }
+            : s,
+        ),
+      );
+    },
+  );
+
   onCleanup(() => {
     unlistenCreated.then((fn) => fn()).catch(() => {});
     unlistenClosed.then((fn) => fn()).catch(() => {});
+    unlistenPtyParsed.then((fn) => fn()).catch(() => {});
   });
 
   /** Force an immediate refresh (sets refreshing=true while in-flight) */
