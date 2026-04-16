@@ -2148,6 +2148,19 @@ fn handle_notify(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Val
 
 const MCP_SESSION_HEADER: &str = "mcp-session-id";
 
+/// Resolve a filesystem path to one of the known repo roots, picking the longest
+/// matching prefix that respects path-component boundaries (so `/foo/bar` does
+/// not match `/foo/bar-other`). Falls back to the original path when no repo
+/// matches. (#1373-6e2f)
+fn resolve_repo_for_path(path: &str, known: &[String]) -> String {
+    known
+        .iter()
+        .filter(|repo| path == repo.as_str() || path.starts_with(&format!("{repo}/")))
+        .max_by_key(|repo| repo.len())
+        .cloned()
+        .unwrap_or_else(|| path.to_string())
+}
+
 /// POST /mcp — Handle all MCP JSON-RPC requests via Streamable HTTP
 pub(super) async fn mcp_post(
     State(state): State<Arc<AppState>>,
@@ -2171,12 +2184,10 @@ pub(super) async fn mcp_post(
                 .and_then(|root| root["uri"].as_str())
                 .and_then(|uri| uri.strip_prefix("file://"))
                 .map(|path| {
-                    // Resolve to a known repo path (repo_watchers keys are active repos)
-                    let path = path.to_string();
-                    state.repo_watchers.iter()
+                    let known: Vec<String> = state.repo_watchers.iter()
                         .map(|entry| entry.key().clone())
-                        .find(|repo| path.starts_with(repo.as_str()))
-                        .unwrap_or(path)
+                        .collect();
+                    resolve_repo_for_path(path, &known)
                 });
 
             state.mcp_sessions.insert(session_id.clone(), crate::state::McpSessionMeta {
@@ -4827,5 +4838,61 @@ mod tests {
             result["error"].as_str().map_or(false, |e| e.contains("not registered")),
             "inbox call from unregistered MCP session must error: {result}"
         );
+    }
+
+    // resolve_repo_for_path: regression tests for #1373-6e2f.
+    // Without boundary-aware matching, `/foo/bar-other` would resolve to `/foo/bar`.
+    // Without longest-match, a nested repo `/foo/bar/sub` would resolve to its parent.
+
+    #[test]
+    fn resolve_repo_exact_match() {
+        let known = vec!["/foo/bar".to_string()];
+        assert_eq!(resolve_repo_for_path("/foo/bar", &known), "/foo/bar");
+    }
+
+    #[test]
+    fn resolve_repo_subpath_match() {
+        let known = vec!["/foo/bar".to_string()];
+        assert_eq!(
+            resolve_repo_for_path("/foo/bar/src/main.rs", &known),
+            "/foo/bar"
+        );
+    }
+
+    #[test]
+    fn resolve_repo_no_match_returns_input() {
+        let known = vec!["/foo/bar".to_string()];
+        assert_eq!(resolve_repo_for_path("/baz/qux", &known), "/baz/qux");
+    }
+
+    #[test]
+    fn resolve_repo_does_not_match_sibling_with_shared_prefix() {
+        // Without the boundary check, `/foo/bar-other/x` would resolve to `/foo/bar`.
+        let known = vec!["/foo/bar".to_string(), "/foo/bar-other".to_string()];
+        assert_eq!(
+            resolve_repo_for_path("/foo/bar-other/x", &known),
+            "/foo/bar-other"
+        );
+    }
+
+    #[test]
+    fn resolve_repo_picks_longest_for_nested_repos() {
+        // Nested repo: a path under `/foo/bar/sub` must resolve to the inner repo.
+        let known = vec!["/foo/bar".to_string(), "/foo/bar/sub".to_string()];
+        assert_eq!(
+            resolve_repo_for_path("/foo/bar/sub/file.rs", &known),
+            "/foo/bar/sub"
+        );
+        // Reverse insertion order should not change the result.
+        let known_rev = vec!["/foo/bar/sub".to_string(), "/foo/bar".to_string()];
+        assert_eq!(
+            resolve_repo_for_path("/foo/bar/sub/file.rs", &known_rev),
+            "/foo/bar/sub"
+        );
+    }
+
+    #[test]
+    fn resolve_repo_empty_known_returns_input() {
+        assert_eq!(resolve_repo_for_path("/foo/bar", &[]), "/foo/bar");
     }
 }
