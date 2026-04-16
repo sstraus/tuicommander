@@ -12,6 +12,21 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: mockListen,
 }));
 
+/** Mock repoSettingsStore — controls activeRepoPath and effective mcpUpstreams */
+const mockRepoSettingsState = {
+  activeRepoPath: null as string | null,
+  settings: {} as Record<string, unknown>,
+  localConfigs: {} as Record<string, unknown>,
+};
+const mockRepoSettingsGetEffective = vi.fn().mockReturnValue(undefined);
+
+vi.mock("../../stores/repoSettings", () => ({
+  repoSettingsStore: {
+    state: mockRepoSettingsState,
+    getEffective: mockRepoSettingsGetEffective,
+  },
+}));
+
 const MOCK_CONFIG = {
   servers: [
     {
@@ -45,12 +60,22 @@ describe("mcpPopupStore", () => {
     vi.resetModules();
     mockInvoke.mockReset().mockResolvedValue(undefined);
     mockListen.mockReset().mockResolvedValue(() => {});
+    mockRepoSettingsGetEffective.mockReset().mockReturnValue(undefined);
+    mockRepoSettingsState.activeRepoPath = null;
+    mockRepoSettingsState.settings = {};
+    mockRepoSettingsState.localConfigs = {};
 
     vi.doMock("@tauri-apps/api/core", () => ({
       invoke: mockInvoke,
     }));
     vi.doMock("@tauri-apps/api/event", () => ({
       listen: mockListen,
+    }));
+    vi.doMock("../../stores/repoSettings", () => ({
+      repoSettingsStore: {
+        state: mockRepoSettingsState,
+        getEffective: mockRepoSettingsGetEffective,
+      },
     }));
 
     store = (await import("../../stores/mcpPopup")).mcpPopupStore;
@@ -300,6 +325,318 @@ describe("mcpPopupStore", () => {
         );
 
         expect(typeof unlisten).toBe("function");
+      });
+    });
+  });
+
+  describe("effectiveEnabledForRepo", () => {
+    it("returns true when globally enabled and no repo allowlist (null)", async () => {
+      await testInScopeAsync(async () => {
+        mockInvoke.mockImplementation((cmd: string) => {
+          if (cmd === "load_mcp_upstreams") return Promise.resolve(MOCK_CONFIG);
+          if (cmd === "get_mcp_upstream_status") return Promise.resolve(MOCK_STATUS);
+          return Promise.resolve(undefined);
+        });
+
+        await store.loadConfig();
+
+        // No active repo — global-only mode
+        expect(store.effectiveEnabledForRepo("alpha")).toBe(true);
+      });
+    });
+
+    it("returns false when globally enabled but project-disabled", async () => {
+      await testInScopeAsync(async () => {
+        mockInvoke.mockImplementation((cmd: string) => {
+          if (cmd === "load_mcp_upstreams") return Promise.resolve(MOCK_CONFIG);
+          if (cmd === "get_mcp_upstream_status") return Promise.resolve(MOCK_STATUS);
+          return Promise.resolve(undefined);
+        });
+
+        // Active repo with allowlist that excludes "alpha"
+        mockRepoSettingsState.activeRepoPath = "/test/repo";
+        mockRepoSettingsGetEffective.mockReturnValue({
+          mcpUpstreams: ["beta"],
+        });
+
+        await store.loadConfig();
+
+        // alpha is globally enabled but NOT in the project allowlist
+        expect(store.effectiveEnabledForRepo("alpha")).toBe(false);
+        // beta is globally disabled — still false (global disabled wins)
+        expect(store.effectiveEnabledForRepo("beta")).toBe(false);
+      });
+    });
+
+    it("returns true when globally enabled and in project allowlist", async () => {
+      await testInScopeAsync(async () => {
+        mockInvoke.mockImplementation((cmd: string) => {
+          if (cmd === "load_mcp_upstreams") return Promise.resolve(MOCK_CONFIG);
+          if (cmd === "get_mcp_upstream_status") return Promise.resolve(MOCK_STATUS);
+          return Promise.resolve(undefined);
+        });
+
+        mockRepoSettingsState.activeRepoPath = "/test/repo";
+        mockRepoSettingsGetEffective.mockReturnValue({
+          mcpUpstreams: ["alpha", "beta"],
+        });
+
+        await store.loadConfig();
+
+        expect(store.effectiveEnabledForRepo("alpha")).toBe(true);
+      });
+    });
+
+    it("returns false for globally disabled server even if in project allowlist", async () => {
+      await testInScopeAsync(async () => {
+        mockInvoke.mockImplementation((cmd: string) => {
+          if (cmd === "load_mcp_upstreams") return Promise.resolve(MOCK_CONFIG);
+          if (cmd === "get_mcp_upstream_status") return Promise.resolve(MOCK_STATUS);
+          return Promise.resolve(undefined);
+        });
+
+        mockRepoSettingsState.activeRepoPath = "/test/repo";
+        mockRepoSettingsGetEffective.mockReturnValue({
+          mcpUpstreams: ["beta"],
+        });
+
+        await store.loadConfig();
+
+        // beta is globally disabled — project allowlist doesn't override global disable
+        expect(store.effectiveEnabledForRepo("beta")).toBe(false);
+      });
+    });
+
+    it("handles null activeRepoPath (global-only mode)", async () => {
+      await testInScopeAsync(async () => {
+        mockInvoke.mockImplementation((cmd: string) => {
+          if (cmd === "load_mcp_upstreams") return Promise.resolve(MOCK_CONFIG);
+          if (cmd === "get_mcp_upstream_status") return Promise.resolve(MOCK_STATUS);
+          return Promise.resolve(undefined);
+        });
+
+        mockRepoSettingsState.activeRepoPath = null;
+
+        await store.loadConfig();
+
+        // No repo → just global enabled state
+        expect(store.effectiveEnabledForRepo("alpha")).toBe(true);
+        expect(store.effectiveEnabledForRepo("beta")).toBe(false);
+      });
+    });
+  });
+
+  describe("toggleServerForProject", () => {
+    it("calls set_project_mcp_upstreams to add server — collapses to null when all enabled", async () => {
+      await testInScopeAsync(async () => {
+        mockInvoke.mockImplementation((cmd: string) => {
+          if (cmd === "load_mcp_upstreams") return Promise.resolve(MOCK_CONFIG);
+          if (cmd === "get_mcp_upstream_status") return Promise.resolve(MOCK_STATUS);
+          if (cmd === "set_project_mcp_upstreams") return Promise.resolve(undefined);
+          return Promise.resolve(undefined);
+        });
+
+        mockRepoSettingsState.activeRepoPath = "/test/repo";
+        // Currently alpha is excluded from allowlist — only beta allowed
+        mockRepoSettingsGetEffective.mockReturnValue({
+          mcpUpstreams: ["beta"],
+        });
+
+        await store.loadConfig();
+        // Adding alpha back → all servers enabled → collapses to null (no restriction)
+        await store.toggleServerForProject("alpha");
+
+        const call = mockInvoke.mock.calls.find(
+          (c: unknown[]) => c[0] === "set_project_mcp_upstreams",
+        );
+        expect(call).toBeDefined();
+        const args = call![1] as { repoPath: string; upstreamNames: string[] | null };
+        expect(args.repoPath).toBe("/test/repo");
+        expect(args.upstreamNames).toBeNull();
+      });
+    });
+
+    it("calls set_project_mcp_upstreams to add server without collapsing when not all enabled", async () => {
+      await testInScopeAsync(async () => {
+        const threeServerConfig = {
+          servers: [
+            ...MOCK_CONFIG.servers,
+            { id: "id-gamma", name: "gamma", transport: { type: "http", url: "http://localhost:9090/mcp" }, enabled: true, timeout_secs: 30 },
+          ],
+        };
+
+        mockInvoke.mockImplementation((cmd: string) => {
+          if (cmd === "load_mcp_upstreams") return Promise.resolve(threeServerConfig);
+          if (cmd === "get_mcp_upstream_status") return Promise.resolve(MOCK_STATUS);
+          if (cmd === "set_project_mcp_upstreams") return Promise.resolve(undefined);
+          return Promise.resolve(undefined);
+        });
+
+        mockRepoSettingsState.activeRepoPath = "/test/repo";
+        // Only beta allowed — alpha and gamma excluded
+        mockRepoSettingsGetEffective.mockReturnValue({
+          mcpUpstreams: ["beta"],
+        });
+
+        await store.loadConfig();
+        // Add alpha → ["beta", "alpha"] — still missing gamma, so no collapse
+        await store.toggleServerForProject("alpha");
+
+        const call = mockInvoke.mock.calls.find(
+          (c: unknown[]) => c[0] === "set_project_mcp_upstreams",
+        );
+        expect(call).toBeDefined();
+        const args = call![1] as { repoPath: string; upstreamNames: string[] | null };
+        expect(args.repoPath).toBe("/test/repo");
+        expect(args.upstreamNames).toContain("alpha");
+        expect(args.upstreamNames).toContain("beta");
+        expect(args.upstreamNames).not.toContain("gamma");
+      });
+    });
+
+    it("calls set_project_mcp_upstreams to remove server from allowlist", async () => {
+      await testInScopeAsync(async () => {
+        mockInvoke.mockImplementation((cmd: string) => {
+          if (cmd === "load_mcp_upstreams") return Promise.resolve(MOCK_CONFIG);
+          if (cmd === "get_mcp_upstream_status") return Promise.resolve(MOCK_STATUS);
+          if (cmd === "set_project_mcp_upstreams") return Promise.resolve(undefined);
+          return Promise.resolve(undefined);
+        });
+
+        mockRepoSettingsState.activeRepoPath = "/test/repo";
+        // Currently both are in allowlist
+        mockRepoSettingsGetEffective.mockReturnValue({
+          mcpUpstreams: ["alpha", "beta"],
+        });
+
+        await store.loadConfig();
+        await store.toggleServerForProject("alpha");
+
+        const call = mockInvoke.mock.calls.find(
+          (c: unknown[]) => c[0] === "set_project_mcp_upstreams",
+        );
+        expect(call).toBeDefined();
+        const args = call![1] as { repoPath: string; upstreamNames: string[] | null };
+        expect(args.repoPath).toBe("/test/repo");
+        // alpha should be removed
+        expect(args.upstreamNames).not.toContain("alpha");
+        expect(args.upstreamNames).toContain("beta");
+      });
+    });
+
+    it("sets allowlist to null when toggling on with null allowlist (first project toggle)", async () => {
+      await testInScopeAsync(async () => {
+        mockInvoke.mockImplementation((cmd: string) => {
+          if (cmd === "load_mcp_upstreams") return Promise.resolve(MOCK_CONFIG);
+          if (cmd === "get_mcp_upstream_status") return Promise.resolve(MOCK_STATUS);
+          if (cmd === "set_project_mcp_upstreams") return Promise.resolve(undefined);
+          return Promise.resolve(undefined);
+        });
+
+        mockRepoSettingsState.activeRepoPath = "/test/repo";
+        // No allowlist yet — null means "all servers"
+        mockRepoSettingsGetEffective.mockReturnValue({
+          mcpUpstreams: null,
+        });
+
+        await store.loadConfig();
+        // Toggling alpha OFF when allowlist is null → create allowlist with all EXCEPT alpha
+        await store.toggleServerForProject("alpha");
+
+        const call = mockInvoke.mock.calls.find(
+          (c: unknown[]) => c[0] === "set_project_mcp_upstreams",
+        );
+        expect(call).toBeDefined();
+        const args = call![1] as { repoPath: string; upstreamNames: string[] | null };
+        expect(args.repoPath).toBe("/test/repo");
+        // All server names except alpha
+        expect(args.upstreamNames).not.toContain("alpha");
+        expect(args.upstreamNames).toContain("beta");
+      });
+    });
+
+    it("does nothing when no active repo", async () => {
+      await testInScopeAsync(async () => {
+        mockInvoke.mockImplementation((cmd: string) => {
+          if (cmd === "load_mcp_upstreams") return Promise.resolve(MOCK_CONFIG);
+          if (cmd === "get_mcp_upstream_status") return Promise.resolve(MOCK_STATUS);
+          return Promise.resolve(undefined);
+        });
+
+        mockRepoSettingsState.activeRepoPath = null;
+
+        await store.loadConfig();
+        await store.toggleServerForProject("alpha");
+
+        const calls = mockInvoke.mock.calls.filter(
+          (c: unknown[]) => c[0] === "set_project_mcp_upstreams",
+        );
+        expect(calls).toHaveLength(0);
+      });
+    });
+
+    it("sets null when removing last restriction restores full access", async () => {
+      await testInScopeAsync(async () => {
+        mockInvoke.mockImplementation((cmd: string) => {
+          if (cmd === "load_mcp_upstreams") return Promise.resolve(MOCK_CONFIG);
+          if (cmd === "get_mcp_upstream_status") return Promise.resolve(MOCK_STATUS);
+          if (cmd === "set_project_mcp_upstreams") return Promise.resolve(undefined);
+          return Promise.resolve(undefined);
+        });
+
+        mockRepoSettingsState.activeRepoPath = "/test/repo";
+        // Only beta is excluded — allowlist has just alpha
+        mockRepoSettingsGetEffective.mockReturnValue({
+          mcpUpstreams: ["alpha"],
+        });
+
+        await store.loadConfig();
+        // Toggling beta ON → all servers enabled → set null (no restriction)
+        await store.toggleServerForProject("beta");
+
+        const call = mockInvoke.mock.calls.find(
+          (c: unknown[]) => c[0] === "set_project_mcp_upstreams",
+        );
+        expect(call).toBeDefined();
+        const args = call![1] as { repoPath: string; upstreamNames: string[] | null };
+        // All server names in allowlist = no restriction needed → null
+        expect(args.upstreamNames).toBeNull();
+      });
+    });
+  });
+
+  describe("projectAllowlist", () => {
+    it("returns null when no active repo", async () => {
+      await testInScopeAsync(async () => {
+        mockInvoke.mockImplementation((cmd: string) => {
+          if (cmd === "load_mcp_upstreams") return Promise.resolve(MOCK_CONFIG);
+          if (cmd === "get_mcp_upstream_status") return Promise.resolve(MOCK_STATUS);
+          return Promise.resolve(undefined);
+        });
+
+        mockRepoSettingsState.activeRepoPath = null;
+        await store.loadConfig();
+
+        expect(store.state.projectAllowlist).toBeNull();
+      });
+    });
+
+    it("reflects effective mcpUpstreams for active repo", async () => {
+      await testInScopeAsync(async () => {
+        mockInvoke.mockImplementation((cmd: string) => {
+          if (cmd === "load_mcp_upstreams") return Promise.resolve(MOCK_CONFIG);
+          if (cmd === "get_mcp_upstream_status") return Promise.resolve(MOCK_STATUS);
+          return Promise.resolve(undefined);
+        });
+
+        mockRepoSettingsState.activeRepoPath = "/test/repo";
+        mockRepoSettingsGetEffective.mockReturnValue({
+          mcpUpstreams: ["alpha"],
+        });
+
+        await store.loadConfig();
+
+        expect(store.state.projectAllowlist).toEqual(["alpha"]);
       });
     });
   });
