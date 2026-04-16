@@ -559,6 +559,10 @@ function createSettingsStore() {
     getIdeName(): string {
       return IDE_NAMES[state.ide] || IDE_NAMES[DEFAULTS.ide];
     },
+
+    isAiChatEnabled(): boolean {
+      return state.experimentalFeaturesEnabled && state.aiChatEnabled;
+    },
   };
 
   return { state, ...actions };

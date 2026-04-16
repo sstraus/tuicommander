@@ -8,6 +8,7 @@ import type { ActionName } from "../keybindingDefaults";
 import { keybindingsStore } from "../stores/keybindings";
 import { comboToDisplay } from "../utils/hotkey";
 import type { ShortcutHandlers } from "../hooks/useKeyboardShortcuts";
+import { settingsStore } from "../stores/settings";
 
 export interface ActionEntry {
   id: string;  // ActionName for static entries, or dynamic IDs like "switch-repo:/path"
@@ -72,6 +73,7 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
   "scroll-page-up": { label: "Scroll page up", category: "Terminal" },
   "scroll-page-down": { label: "Scroll page down", category: "Terminal" },
   "zoom-pane": { label: "Maximize/restore pane", category: "Split Panes" },
+  "toggle-focus-mode": { label: "Toggle focus mode", category: "Panels" },
   "prompt-library": { label: "Prompt Library", category: "Navigation" },
 
   "open-file": { label: "Open file…", category: "File" },
@@ -136,6 +138,7 @@ export function getActionEntries(handlers: ShortcutHandlers): ActionEntry[] {
     "scroll-page-up": handlers.scrollPageUp,
     "scroll-page-down": handlers.scrollPageDown,
     "zoom-pane": handlers.toggleZoomPane,
+    "toggle-focus-mode": handlers.toggleFocusMode,
     "prompt-library": handlers.togglePromptLibrary,
     "open-file": handlers.openFile,
     "new-file": handlers.newFile,
@@ -151,6 +154,7 @@ export function getActionEntries(handlers: ShortcutHandlers): ActionEntry[] {
   for (const [actionId, meta] of Object.entries(ACTION_META)) {
     if (!meta) continue;
     if (seen.has(actionId)) continue;
+    if (actionId === "toggle-ai-chat" && !settingsStore.isAiChatEnabled()) continue;
     const handler = handlerMap[actionId as ActionName];
     if (!handler) continue;
 

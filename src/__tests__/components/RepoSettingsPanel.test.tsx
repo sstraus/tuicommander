@@ -7,6 +7,7 @@ vi.mock("../../stores/settings", () => ({
     state: { ide: "vscode", font: "JetBrains Mono", defaultFontSize: 12 },
     setIde: vi.fn(),
     setFont: vi.fn(),
+    isAiChatEnabled: vi.fn().mockReturnValue(false),
   },
   IDE_NAMES: { vscode: "VS Code" },
   FONT_FAMILIES: { "JetBrains Mono": "JetBrains Mono" },

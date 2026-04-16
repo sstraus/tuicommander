@@ -22,6 +22,7 @@ import {
   RepoScriptsTab,
 } from "./tabs";
 import { t } from "../../i18n";
+import { settingsStore } from "../../stores/settings";
 import s from "./Settings.module.css";
 
 /** Context for initial selection when opening the panel */
@@ -36,7 +37,7 @@ export interface SettingsPanelProps {
   context?: SettingsContext;
 }
 
-const GLOBAL_TABS: SettingsShellTab[] = [
+const BASE_GLOBAL_TABS: SettingsShellTab[] = [
   { key: "general", label: t("settings.general", "General") },
   { key: "appearance", label: t("settings.appearance", "Appearance") },
   { key: "notifications", label: t("settings.notifications", "Notifications") },
@@ -45,8 +46,14 @@ const GLOBAL_TABS: SettingsShellTab[] = [
   { key: "services", label: t("settings.services", "Services") },
   { key: "plugins", label: t("settings.plugins", "Plugins") },
   { key: "agents", label: t("settings.agents", "Agents") },
-  { key: "ai-chat", label: "AI Chat" },
 ];
+
+function getGlobalTabs(): SettingsShellTab[] {
+  if (settingsStore.isAiChatEnabled()) {
+    return [...BASE_GLOBAL_TABS, { key: "ai-chat", label: "AI Chat" }];
+  }
+  return BASE_GLOBAL_TABS;
+}
 
 function defaultTab(ctx: SettingsContext): string {
   if (ctx.kind === "repo") return `repo:${ctx.repoPath}`;
@@ -59,7 +66,7 @@ function buildNavItems(): SettingsShellTab[] {
     .map((path) => repositoriesStore.state.repositories[path])
     .filter(Boolean);
 
-  const items: SettingsShellTab[] = [...GLOBAL_TABS];
+  const items: SettingsShellTab[] = [...getGlobalTabs()];
 
   if (repos.length > 0) {
     items.push({ key: "__sep__", label: "─" });

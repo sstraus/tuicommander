@@ -4,6 +4,7 @@ import { makeTerminal } from "../helpers/store";
 import { terminalsStore } from "../../stores/terminals";
 import { paneLayoutStore, resetGroupCounter } from "../../stores/paneLayout";
 import { useKeyboardShortcuts, type ShortcutHandlers } from "../../hooks/useKeyboardShortcuts";
+import { settingsStore } from "../../stores/settings";
 
 function resetStores() {
   for (const id of terminalsStore.getIds()) {
@@ -55,6 +56,7 @@ function createMockHandlers(): ShortcutHandlers {
     scrollPageUp: vi.fn(),
     scrollPageDown: vi.fn(),
     toggleZoomPane: vi.fn(),
+    toggleFocusMode: vi.fn(),
     closeActivePane: vi.fn(),
     togglePromptLibrary: vi.fn(),
     toggleDiffScroll: vi.fn(),
@@ -233,8 +235,16 @@ describe("useKeyboardShortcuts", () => {
 
     it("Cmd+Alt+A toggles AI chat panel (option-modified key → å)", () => {
       // On macOS, Cmd+Alt+A produces e.key="å" — combo must still resolve via e.code
+      settingsStore.setExperimentalFeaturesEnabled(true);
+      settingsStore.setAiChatEnabled(true);
       fireKeydown("å", { metaKey: true, altKey: true, code: "KeyA" });
       expect(handlers.toggleAiChatPanel).toHaveBeenCalled();
+    });
+
+    it("Cmd+Alt+A does nothing when AI chat is disabled", () => {
+      settingsStore.setExperimentalFeaturesEnabled(false);
+      fireKeydown("å", { metaKey: true, altKey: true, code: "KeyA" });
+      expect(handlers.toggleAiChatPanel).not.toHaveBeenCalled();
     });
 
     it("Cmd+E toggles file browser panel", () => {
@@ -245,6 +255,17 @@ describe("useKeyboardShortcuts", () => {
     it("Cmd+Shift+D toggles git ops panel", () => {
       fireKeydown("D", { metaKey: true, shiftKey: true });
       expect(handlers.toggleGitOpsPanel).toHaveBeenCalled();
+    });
+
+    it("Cmd+Alt+Enter toggles focus mode", () => {
+      fireKeydown("Enter", { metaKey: true, altKey: true });
+      expect(handlers.toggleFocusMode).toHaveBeenCalled();
+    });
+
+    it("Cmd+Shift+Enter does NOT trigger focus mode (reserved for zoom-pane)", () => {
+      fireKeydown("Enter", { metaKey: true, shiftKey: true });
+      expect(handlers.toggleFocusMode).not.toHaveBeenCalled();
+      expect(handlers.toggleZoomPane).toHaveBeenCalled();
     });
   });
 

@@ -7,6 +7,7 @@ import { normalizeCombo } from "../keybindingDefaults";
 import type { ActionName } from "../keybindingDefaults";
 import { pluginRegistry } from "../plugins/pluginRegistry";
 import { isTauri } from "../transport";
+import { settingsStore } from "../stores/settings";
 
 /**
  * Normalized combos that are reserved by browsers and should not be intercepted
@@ -68,6 +69,7 @@ export interface ShortcutHandlers {
   scrollPageUp: () => void;
   scrollPageDown: () => void;
   toggleZoomPane: () => void;
+  toggleFocusMode: () => void;
   closeActivePane?: () => void;
   togglePromptLibrary: () => void;
   toggleDiffScroll: () => void;
@@ -187,7 +189,7 @@ function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean
     case "quick-branch-switch": handlers.toggleBranchSwitcher(); return true;
     case "toggle-error-log": handlers.toggleErrorLog(); return true;
     case "toggle-branches-tab": handlers.toggleBranchesTab(); return true;
-    case "toggle-ai-chat": handlers.toggleAiChatPanel(); return true;
+    case "toggle-ai-chat": if (settingsStore.isAiChatEnabled()) handlers.toggleAiChatPanel(); return true;
     case "toggle-mcp-popup": handlers.toggleMcpPopup(); return true;
     case "clear-scrollback": handlers.clearScrollback(); return true;
     case "scroll-to-top": handlers.scrollToTop(); return true;
@@ -195,6 +197,7 @@ function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean
     case "scroll-page-up": handlers.scrollPageUp(); return true;
     case "scroll-page-down": handlers.scrollPageDown(); return true;
     case "zoom-pane": handlers.toggleZoomPane(); return true;
+    case "toggle-focus-mode": handlers.toggleFocusMode(); return true;
     case "prompt-library": handlers.togglePromptLibrary(); return true;
     case "toggle-diff-scroll": handlers.toggleDiffScroll(); return true;
     case "toggle-global-workspace": handlers.toggleGlobalWorkspace(); return true;

@@ -8,6 +8,7 @@ import { useGitHub } from "../../hooks/useGitHub";
 import { rateLimitStore } from "../../stores/ratelimit";
 import { statusBarTicker } from "../../stores/statusBarTicker";
 import { TickerArea } from "./TickerArea";
+import { settingsStore } from "../../stores/settings";
 import { formatWaitTime } from "../../rate-limit";
 import { dictationStore } from "../../stores/dictation";
 import { notesStore } from "../../stores/notes";
@@ -292,9 +293,11 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 7H7v2H5v2h2v2h2v-2h2V9H9V7zm7 2h4v2h-4V9zm0 4h4v2h-4v-2zM5 19h14v2H5v-2zM5 3h14v2H5V3z"/></svg>
         </button>
 
-        <button class="toggle-btn" onClick={() => props.onToggleAiChat?.()} title={`AI Chat (${getModifierSymbol()}⌥A)`} style={{ position: "relative" }}>
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M3 2a2 2 0 00-2 2v6a2 2 0 002 2h1v2.5L7.5 12H13a2 2 0 002-2V4a2 2 0 00-2-2H3z"/></svg>
-        </button>
+        <Show when={settingsStore.isAiChatEnabled()}>
+          <button class="toggle-btn" onClick={() => props.onToggleAiChat?.()} title={`AI Chat (${getModifierSymbol()}⌥A)`} style={{ position: "relative" }}>
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M3 2a2 2 0 00-2 2v6a2 2 0 002 2h1v2.5L7.5 12H13a2 2 0 002-2V4a2 2 0 00-2-2H3z"/></svg>
+          </button>
+        </Show>
 
         {/* Mic button - hold to talk (rightmost) */}
         <Show when={dictationStore.state.enabled}>

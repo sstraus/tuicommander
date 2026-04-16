@@ -1,4 +1,4 @@
-import { Component } from "solid-js";
+import { Component, Show } from "solid-js";
 import { FileBrowserPanel } from "./FileBrowserPanel";
 import { MarkdownPanel } from "./MarkdownPanel";
 import { NotesPanel } from "./NotesPanel";
@@ -7,6 +7,7 @@ import { AIChatPanel } from "./AIChatPanel";
 import { uiStore } from "../stores/ui";
 import { terminalsStore } from "../stores/terminals";
 import { globalWorkspaceStore } from "../stores/globalWorkspace";
+import { settingsStore } from "../stores/settings";
 
 export interface PanelOrchestratorProps {
   repoPath: string | null;
@@ -54,10 +55,12 @@ export const PanelOrchestrator: Component<PanelOrchestratorProps> = (props) => {
         requestedTab={uiStore.state.gitPanelRequestedTab}
       />
 
-      <AIChatPanel
-        visible={uiStore.state.aiChatPanelVisible}
-        onClose={() => uiStore.toggleAiChatPanel()}
-      />
+      <Show when={settingsStore.isAiChatEnabled()}>
+        <AIChatPanel
+          visible={uiStore.state.aiChatPanelVisible}
+          onClose={() => uiStore.toggleAiChatPanel()}
+        />
+      </Show>
     </>
   );
 };

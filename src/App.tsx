@@ -389,8 +389,17 @@ const App: Component = () => {
     onCleanup(() => disposables.forEach((d) => d.dispose()));
   });
 
-  // Register AI Chat context menu actions ("Explain with AI", "Fix this error")
-  const aiChatDisposables = registerAiChatContextActions();
+  // Register AI Chat context menu actions (reactive — tracks feature flag)
+  let aiChatDisposables: Array<{ dispose(): void }> = [];
+  createEffect(() => {
+    aiChatDisposables.forEach((d) => d.dispose());
+    aiChatDisposables = [];
+    if (settingsStore.isAiChatEnabled()) {
+      aiChatDisposables = registerAiChatContextActions();
+    } else {
+      uiStore.setAiChatPanelVisible(false);
+    }
+  });
   onCleanup(() => aiChatDisposables.forEach((d) => d.dispose()));
 
   // Stop GitHub polling on component teardown — registered at body level so
