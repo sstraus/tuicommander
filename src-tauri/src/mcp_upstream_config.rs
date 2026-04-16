@@ -191,11 +191,10 @@ pub(crate) fn validate_upstream_config(
         }
 
         // Auth-specific validation
-        if let Some(UpstreamAuth::OAuth2 { client_id, .. }) = &server.auth {
-            if client_id.is_empty() {
+        if let Some(UpstreamAuth::OAuth2 { client_id, .. }) = &server.auth
+            && client_id.is_empty() {
                 errors.push(UpstreamConfigError::EmptyOAuthClientId(server.id.clone()));
             }
-        }
     }
 
     errors

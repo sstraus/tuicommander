@@ -1,6 +1,9 @@
 use serde::Serialize;
 use std::sync::LazyLock;
 
+/// Closure that checks whether a file write is sensitive, given (path_lower, filename_lower, components).
+type SensitiveFileCheck = dyn Fn(&str, &str, &[&str]) -> bool;
+
 static SAFETY_CHECKER: LazyLock<RegexSafetyChecker> = LazyLock::new(RegexSafetyChecker::compile);
 
 /// Risk level for special key presses in a terminal context.
@@ -45,8 +48,6 @@ pub enum SafetyVerdict {
     /// Command is blocked outright.
     Block { reason: String },
 }
-
-/// Trait for evaluating command safety before PTY execution.
 
 /// Split a command string on shell metacharacters (;, &&, ||, |, newlines)
 /// and expand $(...) / backtick subshells, returning individual sub-commands
@@ -228,7 +229,7 @@ impl RegexSafetyChecker {
             .collect();
 
         // Defense in depth: block `..` traversal (sandbox should already catch).
-        if components.iter().any(|c| *c == "..") {
+        if components.contains(&"..") {
             return SafetyVerdict::Block {
                 reason: "path contains `..` — traversal not allowed".to_string(),
             };
@@ -242,9 +243,9 @@ impl RegexSafetyChecker {
         let path_lower = path.to_lowercase();
 
         // Sensitive file patterns → NeedsApproval
-        let sensitive_patterns: &[(&dyn Fn(&str, &str, &[&str]) -> bool, &str)] = &[
+        let sensitive_patterns: &[(&SensitiveFileCheck, &str)] = &[
             (&|_p, f, _c| f.starts_with(".env"), ".env file"),
-            (&|_p, _f, c| c.iter().any(|s| *s == ".ssh"), ".ssh directory"),
+            (&|_p, _f, c| c.contains(&".ssh"), ".ssh directory"),
             (&|_p, f, _c| f == ".bashrc" || f == ".zshrc" || f == ".profile" || f == ".bash_profile", "shell config"),
             (&|p, _f, _c| p.contains("credentials") || p.contains("credential"), "credentials file"),
             (&|p, _f, _c| p.contains("secret"), "secrets file"),

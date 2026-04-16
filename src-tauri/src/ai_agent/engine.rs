@@ -236,11 +236,13 @@ pub(crate) async fn start_agent_loop(
             state,
             sid.clone(),
             user_goal,
-            cancel,
-            agent_state.clone(),
-            pause_notify,
-            event_tx.clone(),
-            approval_tx,
+            LoopHandles {
+                cancel,
+                agent_state: agent_state.clone(),
+                pause_notify,
+                event_tx: event_tx.clone(),
+                approval_tx,
+            },
         )
         .await;
 
@@ -299,17 +301,23 @@ pub(crate) fn resume_agent_loop(session_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// The actual ReAct loop.
-async fn run_loop(
-    state: Arc<AppState>,
-    session_id: String,
-    user_goal: String,
+/// Coordination handles shared between the spawner and the loop.
+struct LoopHandles {
     cancel: Arc<AtomicBool>,
     agent_state: Arc<RwLock<AgentState>>,
     pause_notify: Arc<Notify>,
     event_tx: broadcast::Sender<AgentLoopEvent>,
     approval_tx: Arc<Mutex<Option<oneshot::Sender<bool>>>>,
+}
+
+/// The actual ReAct loop.
+async fn run_loop(
+    state: Arc<AppState>,
+    session_id: String,
+    user_goal: String,
+    h: LoopHandles,
 ) -> Result<String, String> {
+    let LoopHandles { cancel, agent_state, pause_notify, event_tx, approval_tx } = h;
     use futures_util::StreamExt;
     use genai::chat::{
         ChatMessage, ChatOptions, ChatRequest, ChatStreamEvent as GenaiStreamEvent,

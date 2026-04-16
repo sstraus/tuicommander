@@ -72,13 +72,12 @@ impl AiChatConfig {
 
     /// Derive the effective base_url for the provider.
     pub fn effective_base_url(&self) -> Option<String> {
-        if let Some(url) = &self.base_url {
-            if !url.is_empty() {
+        if let Some(url) = &self.base_url
+            && !url.is_empty() {
                 // genai concatenates base_url + "chat/completions" — trailing slash required
                 let url = if url.ends_with('/') { url.clone() } else { format!("{url}/") };
                 return Some(url);
             }
-        }
         // Default URLs for known providers that need one
         match self.provider.as_str() {
             "ollama" => Some("http://localhost:11434/v1/".to_string()),

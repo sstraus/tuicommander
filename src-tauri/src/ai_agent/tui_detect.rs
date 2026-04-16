@@ -3,8 +3,10 @@ use serde::{Deserialize, Serialize};
 /// Describes the current terminal mode — plain shell vs fullscreen TUI app.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "mode")]
+#[derive(Default)]
 pub enum TerminalMode {
     /// Normal shell prompt — no alternate screen active.
+    #[default]
     Shell,
     /// A fullscreen TUI application is running in the alternate screen buffer.
     FullscreenTui {
@@ -16,11 +18,6 @@ pub enum TerminalMode {
     },
 }
 
-impl Default for TerminalMode {
-    fn default() -> Self {
-        TerminalMode::Shell
-    }
-}
 
 impl TerminalMode {
     /// Process an alternate screen buffer enter (ESC[?1049h).

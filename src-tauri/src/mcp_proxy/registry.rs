@@ -377,11 +377,10 @@ impl UpstreamRegistry {
                 continue;
             }
             // Per-repo upstream allowlist filter
-            if let Some(allowed) = allowed_upstreams {
-                if !allowed.iter().any(|a| a == &entry.config.name) {
+            if let Some(allowed) = allowed_upstreams
+                && !allowed.iter().any(|a| a == &entry.config.name) {
                     continue;
                 }
-            }
             let tools = entry.tools.read();
             for tool in tools.iter() {
                 if !apply_filter(&tool.original_name, &entry.config) {
@@ -412,6 +411,7 @@ impl UpstreamRegistry {
     /// Route a `{upstream_name}__{tool_name}` call to the correct upstream.
     ///
     /// Returns the upstream's response or an error string.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) async fn proxy_tool_call(
         &self,
         prefixed_name: &str,
@@ -432,13 +432,12 @@ impl UpstreamRegistry {
         let (upstream_name, tool_name) = split_prefixed_name(prefixed_name)?;
 
         // Per-repo upstream allowlist: reject calls to upstreams not enabled for this project
-        if let Some(allowed) = allowed_upstreams {
-            if !allowed.iter().any(|a| a == upstream_name) {
+        if let Some(allowed) = allowed_upstreams
+            && !allowed.iter().any(|a| a == upstream_name) {
                 return Err(format!(
                     "Upstream '{upstream_name}' is not enabled for this project"
                 ));
             }
-        }
 
         let entry = self
             .entries

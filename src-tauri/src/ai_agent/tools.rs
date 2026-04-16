@@ -387,16 +387,14 @@ fn exec_send_key_inner(state: &AppState, args: &Value, skip_safety: bool) -> Too
         Err(e) => return ToolResult::err(e),
     };
 
-    if !skip_safety {
-        if let Some(sk) = safe_key {
-            if sk.risk() == KeyRisk::High {
+    if !skip_safety
+        && let Some(sk) = safe_key
+            && sk.risk() == KeyRisk::High {
                 return ToolResult::approval(
                     format!("{key_name} is high-risk (may terminate shell)"),
                     format!("send_key:{key_name}"),
                 );
             }
-        }
-    }
 
     match raw_pty_write(state, session_id, seq.as_bytes()) {
         Ok(()) => ToolResult::ok(format!("Sent key: {key_name}")),
@@ -443,11 +441,10 @@ async fn exec_wait_for(state: &Arc<AppState>, args: &Value) -> ToolResult {
             vt.screen_rows().join("\n")
         };
 
-        if let Some(ref re) = compiled {
-            if let Some(m) = re.find(&current) {
+        if let Some(ref re) = compiled
+            && let Some(m) = re.find(&current) {
                 return ToolResult::ok(redact_secrets(m.as_str()));
             }
-        }
 
         if current != last_content {
             last_content = current;
@@ -534,7 +531,7 @@ fn exec_read_file(state: &AppState, session_id: &str, args: &Value) -> ToolResul
     };
     let offset = args["offset"].as_u64().unwrap_or(0) as usize;
     let requested_limit = args["limit"].as_u64().map(|v| v as usize).unwrap_or(READ_FILE_DEFAULT_LINES);
-    let limit = requested_limit.min(READ_FILE_MAX_LINES).max(1);
+    let limit = requested_limit.clamp(1, READ_FILE_MAX_LINES);
 
     let sandbox = match get_sandbox(state, session_id) {
         Ok(s) => s,
@@ -1199,15 +1196,13 @@ async fn dispatch_inner(
     args: &Value,
     skip_safety: bool,
 ) -> ToolResult {
-    if matches!(fn_name, "send_input" | "send_key") {
-        if let Some(target) = args["session_id"].as_str() {
-            if target != session_id {
+    if matches!(fn_name, "send_input" | "send_key")
+        && let Some(target) = args["session_id"].as_str()
+            && target != session_id {
                 return ToolResult::err(format!(
                     "Permission denied: agent bound to session {session_id} cannot write to {target}"
                 ));
             }
-        }
-    }
     match fn_name {
         "read_screen" => exec_read_screen(state, args),
         "send_input" => exec_send_input_inner(state, args, skip_safety),

@@ -186,13 +186,12 @@ pub(crate) async fn handle(
     };
 
     if is_write_tool(name) {
-        if let Some(sid) = args["session_id"].as_str() {
-            if crate::ai_agent::engine::ACTIVE_AGENTS.contains_key(sid) {
+        if let Some(sid) = args["session_id"].as_str()
+            && crate::ai_agent::engine::ACTIVE_AGENTS.contains_key(sid) {
                 return serde_json::json!({
                     "error": "Session is controlled by an active agent loop"
                 });
             }
-        }
         if !confirm_external_write(state, name, args).await {
             return serde_json::json!({"error": "User declined the action"});
         }

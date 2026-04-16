@@ -147,13 +147,10 @@ impl TokenManager {
         // Double-check: re-read from keyring in case another caller refreshed
         if let Ok(Some(cred)) =
             crate::mcp_upstream_credentials::read_stored_credential(&self.upstream_name)
-        {
-            if let crate::mcp_upstream_credentials::StoredCredential::Oauth2(ref fresh) = cred {
-                if is_token_valid(fresh) {
+            && let crate::mcp_upstream_credentials::StoredCredential::Oauth2(ref fresh) = cred
+                && is_token_valid(fresh) {
                     return Ok(Some(fresh.clone()));
                 }
-            }
-        }
 
         // Still expired — perform refresh
         let http_client = reqwest::Client::new();
