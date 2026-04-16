@@ -147,6 +147,40 @@ export const GeneralTab: Component = () => {
         </Show>
       </div>
 
+      <h3>{t("general.heading.experimental", "Experimental Features")}</h3>
+
+      <div class={s.group}>
+        <p class={s.hint} style={{ color: "var(--warning, #e5c07b)" }}>
+          {t("general.hint.experimentalWarning", "These features are under active development and may be unstable.")}
+        </p>
+        <div class={s.toggle}>
+          <input
+            type="checkbox"
+            checked={settingsStore.state.experimentalFeaturesEnabled}
+            onChange={(e) => settingsStore.setExperimentalFeaturesEnabled(e.currentTarget.checked)}
+          />
+          <span>{t("general.toggle.experimentalFeatures", "Enable experimental features")}</span>
+        </div>
+        <p class={s.hint}>
+          {t("general.hint.experimentalFeatures", "Opt in to features under active development. Individual options appear below when enabled.")}
+        </p>
+      </div>
+
+      <Show when={settingsStore.state.experimentalFeaturesEnabled}>
+        <div class={s.group}>
+          <div class={s.toggle}>
+            <input
+              type="checkbox"
+              checked={settingsStore.state.aiChatEnabled}
+              onChange={(e) => settingsStore.setAiChatEnabled(e.currentTarget.checked)}
+            />
+            <span>{t("general.toggle.aiChat", "AI Chat")}</span>
+          </div>
+          <p class={s.hint}>
+            {t("general.hint.aiChat", "Enable the AI Chat panel, keyboard shortcut, and command palette entry.")}
+          </p>
+        </div>
+      </Show>
 
     </div>
   );

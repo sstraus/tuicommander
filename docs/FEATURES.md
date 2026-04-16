@@ -3,7 +3,7 @@
 > Canonical feature inventory. Update this file when adding, changing, or removing features.
 > See [AGENTS.md](../AGENTS.md) for the maintenance requirement.
 
-**Version:** 0.9.8 | **Last verified:** 2026-03-31
+**Version:** 1.0.5 | **Last verified:** 2026-04-15
 
 ---
 
@@ -580,6 +580,34 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - **Limits**: 64 KB max message size, 100 messages per inbox (FIFO eviction), optional project filtering for `list_peers`
 - TUICommander acts as the messaging hub — no external daemon needed
 
+### 6.14 AI Chat Panel (`Cmd+Alt+A`)
+- Conversational AI companion docked on the right, streaming markdown with syntax-highlighted code blocks. Every code block has *Run* (sends to the attached terminal via `sendCommand()`), *Copy*, and *Insert* actions
+- Multi-provider: **Ollama** (local, auto-detected on `localhost:11434` with live model list), **Anthropic**, **OpenAI**, **OpenRouter**, custom OpenAI-compatible endpoint. Provider abstraction via `genai` crate
+- Per-turn terminal context: last `context_lines` rows from `VtLogBuffer` (ANSI-stripped, alt-screen suppressed), `SessionState`, recent `ParsedEvent`s, git branch/diff. Attach / detach / auto-attach terminal via header dropdown
+- API keys stored in OS keyring (service `tuicommander-ai-chat`, user `api-key`) — masked with eye-toggle in Settings
+- Streaming via Tauri `Channel<ChatStreamEvent>` (`chunk`/`end`/`error`); cancellable mid-stream
+- Conversation persistence: save / load / delete with in-memory cap of 100 messages per conversation. Files at `<config_dir>/ai-chat-conversations/<id>.json`
+- Terminal context menu: *Send selection to AI Chat*, *Explain this error*. Toolbar toggle + hotkey
+- Full user guide: [`docs/user-guide/ai-chat.md`](user-guide/ai-chat.md)
+
+### 6.15 AI Agent Loop (ReAct)
+- Autonomous loop that observes and acts in a terminal. Same panel as AI Chat, mode toggle in the header
+- **Six tools** exposed to the model: `read_screen`, `send_input`, `send_key`, `wait_for` (regex or stability), `get_state`, `get_context`
+- **Safety gates** via the `SafetyChecker` trait — three verdicts: `Allow`, `NeedsApproval { reason }`, `Block { reason }`. Destructive commands (`rm -rf`, `git reset --hard`, `git push --force`, `DROP TABLE`, `dd of=`, …) surface a pending-approval card; hard-coded blocks refuse patterns like `rm -rf /`
+- **Pause / resume / cancel** between iterations with clean state transitions. Tool-call cards collapse/expand in the panel. Conversation schema v2 persists tool-call records alongside messages
+- **Session knowledge store** (Level 3): command outcomes (exit code, duration, CWD, classification, output snippet), auto-correlated error→fix pairs, CWD history, `tui_apps_seen`, terminal mode. Injected into the agent system prompt as a compact markdown summary
+- **OSC 133 semantic prompts** feed exact exit codes when the shell supports them; a silence-timer fallback records `Inferred` outcomes otherwise. Persisted to `<config_dir>/agent-knowledge/<session_id>.json` with a 2 s debounced flush
+- **SessionKnowledgeBar** — collapsible footer under the panel showing live command count, last 5 outcomes with kind badges, recent errors with inferred `error_type`, TUI mode indicator
+- **TUI app detection** via alternate-screen tracking (`ESC[?1049h`/`l`). `TerminalMode::FullscreenTui { app_hint, depth }` is set when the terminal enters vim/htop/lazygit/less/tmux/…; the agent adapts (prefers `send_key` + `wait_for` over line-oriented `send_input`)
+- **External MCP surface** — same six tools exposed as `ai_terminal_read_screen`, `ai_terminal_send_input`, `ai_terminal_send_key`, `ai_terminal_wait_for`, `ai_terminal_get_state`, `ai_terminal_get_context`. Input operations always require user confirmation and are rejected while the internal agent loop is active on the target session
+
+### 6.16 ChoicePrompt Detection
+- New `ParsedEvent::ChoicePrompt { title, options, dismiss_key, amend_key }` recognises Claude-Code-style numbered confirmation menus (footer matches `Esc to cancel · Tab to amend`)
+- Options parsed by regex with optional cursor marker (`❯`, `›`, `>`). Title heuristics require `?` or a verb prefix (`proceed`, `confirm`, `do you want`, …) to avoid matching Markdown numbered lists. Minimum two options
+- Destructive labels (`no`, `cancel`, `reject`, `abort`, `deny`, `don't`) flagged for styling
+- Piped into `SessionState.choice_prompt`; dispatched to plugins via `pluginRegistry.dispatchStructuredEvent("choice-prompt", …)`; rendered as PWA overlay
+- Single-key replies routed through `sendPtyKey()` (`src/utils/sendCommand.ts`) — never `text + \r`. Desktop listener plays a warning sound when the prompt arrives on an inactive tab
+
 ---
 
 ## 7. Git Integration
@@ -912,6 +940,7 @@ Variables are resolved from the Rust backend (`resolve_context_variables`) and f
 - Power management: prevent sleep when busy
 - Updates: auto-check, check now
 - Git integration: auto-show PR popover
+- Experimental Features: master toggle + per-feature sub-flags (AI Chat)
 - Repository defaults: base branch, file handling, setup/run scripts, worktree defaults (storage strategy, prompt on create, etc.)
 
 ### 11.2 Appearance
@@ -1088,6 +1117,14 @@ All data persisted to platform config directory via Rust:
 | `Alt+←/→` | Navigate vertical panes |
 | `Alt+↑/↓` | Navigate horizontal panes |
 | `Cmd+Shift+Enter` | Maximize / restore active pane |
+| `Cmd+Alt+Enter` | Focus mode (hide sidebar, tab bar, panels) |
+
+### AI
+| Shortcut | Action |
+|----------|--------|
+| `Cmd+Alt+A` | Toggle AI Chat panel (`toggle-ai-chat`) |
+| `Cmd+Enter` (panel focused) | Send message |
+| `Esc` (panel focused) | Cancel in-flight stream |
 
 ### Panels
 | Shortcut | Action |
@@ -1433,6 +1470,17 @@ TUICommander aggregates upstream MCP servers and exposes them through its own `/
 - Bearer tokens stored in OS keyring (Keychain / Credential Manager / Secret Service)
 - Config file (`mcp-upstreams.json`) never contains secrets
 - Per-upstream credential lookup at call time
+- OAuth 2.1 token sets persisted as structured JSON in the keyring (`{"type": "oauth2", "access_token", "refresh_token", "expires_at"}`)
+
+### 19.8.1 OAuth 2.1 Upstream Authentication
+- Full RFC 9728 (Protected Resource Metadata) + RFC 8414 (Authorization Server Discovery) flow with PKCE S256
+- `UpstreamAuth::OAuth2 { client_id, scopes, authorization_endpoint?, token_endpoint? }` joins `Bearer` as a credential type; endpoints auto-discovered from the resource server's `WWW-Authenticate` challenge when omitted
+- Completion via native deep link `tuic://oauth-callback?code=…&state=…` — callbacks never touch the WebView console
+- `TokenManager` shared across every `HttpMcpClient` refresh path with a per-upstream semaphore that defeats thundering-herd refresh. 60 s expiry margin; `None expires_at` treated as valid
+- `UpstreamError::NeedsOAuth { www_authenticate }` transitions the registry to `needs_auth`; Services tab shows an *Authorize* button
+- Auto-triggered OAuth is gated behind explicit user consent; the confirm dialog surfaces the Authorization Server origin to defend against AS mix-up
+- Status values extended: `authenticating` ("Awaiting authorization…") + `needs_auth`
+- Tauri commands: `start_mcp_upstream_oauth`, `mcp_oauth_callback`, `cancel_mcp_upstream_oauth`
 
 ### 19.9 Environment Sanitization (stdio)
 - Parent environment is cleared before spawning to prevent credential leakage

@@ -2,6 +2,13 @@
 
 Features to test when TUICommander is more usable.
 
+## Experimental Feature Flags
+- [ ] Settings > General: "Experimental Features" section visible at bottom
+- [ ] Master toggle defaults to OFF for fresh config
+- [ ] Enabling master toggle reveals AI Chat sub-flag
+- [ ] Disabling master toggle hides sub-flags but preserves their values
+- [ ] Toggle persists across app restart (check config.json)
+
 ## AI Chat (Level 1)
 - [ ] Settings > AI Chat tab: provider dropdown shows Ollama/Anthropic/OpenAI/OpenRouter/Custom
 - [ ] Ollama selected + running: green dot, model list populated from /api/tags

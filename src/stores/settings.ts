@@ -37,6 +37,8 @@ interface RustAppConfig {
   bell_style: string;
   global_hotkey: string | null;
   issue_filter?: string;
+  experimental_features_enabled?: boolean;
+  ai_chat_enabled?: boolean;
 }
 
 // Default values
@@ -248,6 +250,8 @@ interface SettingsStoreState {
   bellStyle: "none" | "visual" | "sound" | "both";
   globalHotkey: string | null;
   issueFilter: IssueFilterMode;
+  experimentalFeaturesEnabled: boolean;
+  aiChatEnabled: boolean;
 }
 
 const SAVE_DEBOUNCE_MS = 500;
@@ -277,6 +281,8 @@ function createSettingsStore() {
     bellStyle: "visual",
     globalHotkey: null,
     issueFilter: "assigned",
+    experimentalFeaturesEnabled: false,
+    aiChatEnabled: false,
   });
 
   // Shadow copy of the last loaded config — preserves fields not tracked in SolidJS store
@@ -311,6 +317,8 @@ function createSettingsStore() {
       bell_style: state.bellStyle,
       global_hotkey: state.globalHotkey,
       issue_filter: state.issueFilter,
+      experimental_features_enabled: state.experimentalFeaturesEnabled,
+      ai_chat_enabled: state.aiChatEnabled,
       session_token_duration_secs: baseConfig?.session_token_duration_secs ?? 86400,
       mcp_server_enabled: baseConfig?.mcp_server_enabled ?? true,
     };
@@ -370,6 +378,8 @@ function createSettingsStore() {
         setState("suggestFollowups", config.suggest_followups ?? true);
         setState("globalHotkey", config.global_hotkey ?? null);
         setState("issueFilter", validateIssueFilter(config.issue_filter || null));
+        setState("experimentalFeaturesEnabled", config.experimental_features_enabled ?? false);
+        setState("aiChatEnabled", config.ai_chat_enabled ?? false);
       } catch (err) {
         appLogger.error("config", "Failed to hydrate settings", err);
       }
@@ -507,6 +517,16 @@ function createSettingsStore() {
     /** Set terminal bell style */
     setBellStyle(style: SettingsStoreState["bellStyle"]): void {
       setState("bellStyle", style);
+      save();
+    },
+
+    setExperimentalFeaturesEnabled(enabled: boolean): void {
+      setState("experimentalFeaturesEnabled", enabled);
+      save();
+    },
+
+    setAiChatEnabled(enabled: boolean): void {
+      setState("aiChatEnabled", enabled);
       save();
     },
 

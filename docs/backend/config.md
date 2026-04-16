@@ -57,6 +57,8 @@ pub fn save_json_config<T: Serialize>(filename: &str, config: &T) -> Result<(), 
 | `relay_enabled` | `bool` | `false` | Cloud relay for mobile access |
 | `suggest_followups` | `bool` | `true` | Show `suggest:` follow-up actions |
 | `issue_filter` | `Option<String>` | `"assigned"` | GitHub Issues filter: "assigned", "created", "mentioned", "all", "disabled" |
+| `experimental_features_enabled` | `bool` | `false` | Master toggle for experimental features |
+| `ai_chat_enabled` | `bool` | `false` | Sub-flag: enable AI Chat panel and shortcuts (requires `experimental_features_enabled`) |
 | `auto_show_pr_popover` | `bool` | `false` | Auto-show PR popover when switching to a branch with a PR |
 | `update_channel` | `String` | `"stable"` | Update channel: "stable" or "nightly" |
 
@@ -188,6 +190,22 @@ struct AgentsConfig {
 ```
 
 **Commands:** `load_agents_config()`, `save_agents_config(config)`
+
+### AI Chat Config (`ai-chat-config.json`)
+
+**Type:** `AiChatConfig`
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `provider` | `String` | `"ollama"` | Provider: `"ollama"`, `"anthropic"`, `"openai"`, `"openrouter"`, `"custom"` |
+| `model` | `String` | provider-specific | Model name (free text; settings tab suggests per provider) |
+| `base_url` | `Option<String>` | provider-specific | Pre-filled per provider, editable. Ollama default: `http://localhost:11434/v1/` |
+| `temperature` | `f32` | `0.7` | Sampling temperature passed through to provider |
+| `context_lines` | `u32` | `150` | Maximum `VtLogBuffer` lines injected into each turn's context |
+
+**Commands:** `load_ai_chat_config()`, `save_ai_chat_config(config)`
+
+API keys are stored in the OS keyring — service `tuicommander-ai-chat`, user `api-key` — via `save_ai_chat_api_key` / `delete_ai_chat_api_key`. Saved conversations live in `<config_dir>/ai-chat-conversations/<id>.json`.
 
 ### Dictation Config (`dictation-config.json`)
 
