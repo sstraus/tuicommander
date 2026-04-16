@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import "../mocks/tauri";
+import { mockInvoke } from "../mocks/tauri";
 import { open } from "@tauri-apps/plugin-dialog";
 import { makeTerminal } from "../helpers/store";
 import { terminalsStore } from "../../stores/terminals";
@@ -463,6 +463,23 @@ describe("useGitOperations", () => {
       await gitOps.handleRemoveRepo("/repo");
 
       expect(repositoriesStore.get("/repo")).toBeDefined();
+    });
+
+    it("calls stop_repo_watcher with the removed repo path (story 1372-1e58)", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "My Repo" });
+
+      await gitOps.handleRemoveRepo("/repo");
+
+      expect(mockInvoke).toHaveBeenCalledWith("stop_repo_watcher", { repoPath: "/repo" });
+    });
+
+    it("does not call stop_repo_watcher when user cancels", async () => {
+      mockDialogs.confirmRemoveRepo.mockResolvedValue(false);
+      repositoriesStore.add({ path: "/repo", displayName: "My Repo" });
+
+      await gitOps.handleRemoveRepo("/repo");
+
+      expect(mockInvoke).not.toHaveBeenCalledWith("stop_repo_watcher", expect.anything());
     });
   });
 

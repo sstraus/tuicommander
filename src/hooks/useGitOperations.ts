@@ -716,6 +716,10 @@ export function useGitOperations(deps: GitOperationsDeps) {
       }
     }
 
+    invoke("stop_repo_watcher", { repoPath }).catch((err) =>
+      appLogger.warn("app", `RepoWatcher failed to stop for ${repoPath}`, err),
+    );
+
     repositoriesStore.remove(repoPath);
     repoSettingsStore.remove(repoPath);
 
