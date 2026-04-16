@@ -205,6 +205,29 @@ ParsedEvent::ShellState {
 
 Emitted by the reader thread on real-output→busy and idle transitions. The frontend consumes this instead of deriving busy/idle from raw PTY data. See `docs/backend/pty.md` for idle detection details.
 
+### ChoicePrompt
+
+Numbered confirmation / multiple-choice menu rendered by Claude-Code-style footers (`Esc to cancel · Tab to amend`):
+
+```rust
+ParsedEvent::ChoicePrompt {
+    title: String,                 // The question above the options
+    options: Vec<ChoiceOption>,    // { index, label, destructive }
+    dismiss_key: Option<String>,   // e.g. "cancel"
+    amend_key: Option<String>,     // e.g. "amend"
+}
+```
+
+**Detection:**
+- **Footer match** extracts `dismiss_key` / `amend_key` from `Esc to <word>` / `Tab to <word>` (or locale equivalents).
+- **Option regex** `^\s*(?:[❯›>]\s*)?(\d+)[.)]\s+(.+?)\s*$` — numbered items, optional cursor marker (`❯`, `›`, `>`).
+- **Title heuristics** walk up past blank rows and require either a `?` suffix or a verb prefix (`do you want`, `proceed`, `continue`, `should i`, `confirm`, `apply`, `allow`) to avoid matching Markdown numbered lists.
+- **Minimum two options** required to reduce false positives.
+
+**Destructive flag:** labels matching `"no"`, `"cancel"`, `"reject"`, `"abort"`, `"deny"`, or the prefixes `"don't"` / `"do not"` are flagged so the PWA overlay and plugins can style them as destructive.
+
+**Flow:** the payload is stored on `SessionState.choice_prompt` and dispatched via `pluginRegistry.dispatchStructuredEvent("choice-prompt", …)`. Cleared on user input, scroll, or PTY exit. Single-key replies should go through `sendPtyKey()` in `src/utils/sendCommand.ts`, never raw `text + \r`.
+
 ### SlashMenu
 
 Slash command menu detected from VT100 screen rows:

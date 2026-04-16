@@ -212,6 +212,49 @@ Shells that emit OSC 7 (`\x1b]7;file://hostname/path\x07`) report the current wo
 
 Additionally, `CLAUDECODE` is removed from the environment (`env_remove`) to prevent nested-session detection when TUICommander itself runs inside a Claude Code session.
 
+## Ctrl-U Prefix Handling
+
+Single-key PTY writes that should clear the current input line prepend `\x15` (Ctrl-U) on POSIX shells. The selection is **shell-family aware**, not host-platform aware: the detected shell (`bash`/`zsh`/`fish` → POSIX, `powershell`/`cmd` → Windows) drives the choice. Mixing PowerShell on macOS or a POSIX shell via WSL/MSYS now behaves correctly. Native Windows shells skip the prefix entirely to avoid inserting a literal `^U`.
+
+Frontend input helpers route through `src/utils/sendCommand.ts`:
+- `sendCommand(fn, text)` — full command: `Ctrl-U` (family-gated) + text + `\r`. Handles Ink raw-mode split writes.
+- `sendPtyKey(fn, key)` — pass-through single key/escape sequence. No prefix, no trailing CR. Use for `ChoicePrompt` option keys, TUI app navigation, and any raw-stdin interaction.
+
+Never write `text + "\r"` directly to a PTY — see `AGENTS.md`.
+
+## OSC 133 Semantic Prompts
+
+When the shell emits OSC 133 markers (modern bash/zsh/fish with the integration enabled), the reader records clean command lifecycles into the per-session knowledge store:
+
+| Marker | Meaning |
+|--------|---------|
+| `OSC 133;A` | Prompt start — delimits a new prompt line |
+| `OSC 133;B` | Command start — the user has pressed Enter, command is about to run |
+| `OSC 133;C` | Command output start |
+| `OSC 133;D[;exit_code]` | Command completed with the given exit code |
+
+`ChunkProcessor.record_osc133_outcomes` consumes the markers and writes a `CommandOutcome { command, cwd, exit_code, classification, duration_ms, output_snippet }` into the session knowledge store. Classification is one of `Success`, `Error { error_type }`, `TuiLaunched { app_name }`, `Timeout`, `UserCancelled`, `Inferred`. `error_type` is inferred from the output snippet (e.g. `rust-error-borrow`, `npm-missing-module`, `python-traceback`).
+
+**Fallback:** when OSC 133 is absent (plain shells, remote sessions), the silence timer still records an `Inferred` outcome so the AI agent loop has *something* to learn from. The `has_osc133_integration` flag on `AppState` tracks per-session whether real markers have been seen.
+
+Persistence lives at `<config_dir>/agent-knowledge/<session_id>.json`. A 2 s debounced background task (`spawn_persist_task`) flushes `knowledge_dirty` sessions to disk. `load_all` rehydrates stores on app start.
+
+## TUI Application Detection
+
+`src-tauri/src/ai_agent/tui_detect.rs` tracks alternate-screen enter (`ESC[?1049h`) and leave (`ESC[?1049l`) to classify the terminal as:
+
+```rust
+enum TerminalMode {
+    Shell,
+    FullscreenTui { app_hint: Option<String>, depth: u8 },
+}
+```
+
+`depth` is a counter for nested alt-screen pushes (e.g. `less` invoked from inside `vim`). Known app hints — matched heuristically from nearby screen rows — include `vim`, `nvim`, `htop`, `btop`, `lazygit`, `less`, `tmux`, `claude`, and others. The mode is surfaced on `SessionState.terminal_mode` and used by:
+- `ai_terminal_get_context` — tells the model it's in a TUI so it prefers `send_key` + `wait_for` over line-oriented `send_input`.
+- `SessionKnowledgeBar` — renders a `TUI` badge and accumulates `tui_apps_seen`.
+- The agent safety layer — blocks Ctrl-U prefix injection while a TUI app is in the foreground.
+
 ## Silence-Based Question Detection
 
 The reader thread tracks output silence to detect unanswered agent prompts. When the terminal stops producing output for 10 seconds after a line ending with `?` is detected, the session is treated as waiting for input. This complements the instant pattern-based detection in the output parser and catches generic questions that would cause too many false positives if detected immediately (e.g., streaming fragments like "ad?", "swap?").

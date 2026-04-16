@@ -1,7 +1,7 @@
 # TUICommander Specification
 
 **Version:** 1.0.5
-**Last Updated:** 2026-04-12
+**Last Updated:** 2026-04-15
 
 ## Overview
 
@@ -308,6 +308,13 @@ All stores persist to localStorage:
 - [x] Notes/Ideas: image paste support (Ctrl+V), thumbnails, send absolute paths to terminal
 - [x] Inter-Agent Messaging (`messaging` MCP tool: register, list_peers, send, inbox with channel push + polling fallback)
 - [x] Smart Prompts (24 built-in AI prompts with context variable resolution, inject/headless/API execution, toolbar dropdown, SmartButtonStrip, Command Palette integration, direct LLM API mode via genai crate)
+- [x] AI Chat panel (`Cmd+Alt+A`) — streaming conversational AI with terminal context injection, multi-provider (Ollama/Anthropic/OpenAI/OpenRouter), conversation persistence, OS-keyring API keys
+- [x] AI Agent loop (ReAct) — 6 tools (read_screen/send_input/send_key/wait_for/get_state/get_context), pause/resume, destructive-command approval gate, tool-call cards
+- [x] Session knowledge store — per-session command outcomes, error→fix pairs, CWD history, TUI apps seen; fed by OSC 133 with silence-timer fallback; persisted with 2s debounce
+- [x] TUI app detection — alternate-screen tracking classifies terminal as Shell or FullscreenTui with app hint (vim/htop/lazygit/…)
+- [x] `ai_terminal_*` MCP tools — external agent surface (Claude Code, Cursor) driving TUICommander terminals with user-confirmation gates
+- [x] ChoicePrompt parser variant — numbered confirmation menu detection with destructive-label flagging, PWA overlay, `sendPtyKey()` helper
+- [x] MCP OAuth 2.1 — RFC 9728 + RFC 8414 PKCE flow for upstream MCP servers, `tuic://oauth-callback` deep link, shared `TokenManager` with thundering-herd-safe refresh
 
 ### Completed (Voice Dictation)
 - [x] Local Whisper inference via whisper-rs (Metal GPU acceleration)

@@ -245,6 +245,66 @@ This works around Claude Code's inability to change its working directory mid-se
 
 Non-Claude Code MCP clients do not receive this field.
 
+## OAuth 2.1 Upstream Authentication
+
+When an upstream MCP server requires OAuth instead of a static Bearer token, TUICommander runs a full RFC 9728 (Protected Resource Metadata) + RFC 8414 (Authorization Server Discovery) flow with PKCE S256.
+
+### Configuration
+
+`UpstreamMcpServer.auth` is an enum:
+
+```rust
+enum UpstreamAuth {
+    Bearer  { token: String },
+    OAuth2  {
+        client_id: String,
+        scopes: Vec<String>,
+        authorization_endpoint: Option<String>,  // None → discover
+        token_endpoint: Option<String>,          // None → discover
+    },
+}
+```
+
+Missing endpoints trigger metadata discovery: the proxy issues an unauthenticated probe, follows the `WWW-Authenticate: Bearer resource_metadata=<url>` challenge to fetch `ProtectedResourceMetadata`, then resolves the authorization server's `.well-known/oauth-authorization-server` (falling back to OIDC `.well-known/openid-configuration` when required).
+
+### Error → flow transition
+
+`src-tauri/src/mcp_proxy/http_client.rs` emits a typed error:
+
+```rust
+enum UpstreamError {
+    NeedsOAuth { www_authenticate: String },
+    AuthFailed,
+    Other(String),
+}
+```
+
+A `NeedsOAuth` on any request transitions the upstream registry to `needs_auth`. The Services tab in Settings surfaces an *Authorize* button that calls `start_mcp_upstream_oauth`. Auto-triggered OAuth is gated behind explicit user consent (the confirm dialog shows the AS origin so the user can refuse an Authorization Server mix-up attempt).
+
+### Flow
+
+1. **Start** — `start_mcp_upstream_oauth(name)` generates a PKCE verifier/challenge (S256), mints an opaque `state`, records the pending flow in a DashMap keyed by state, sets upstream status to `authenticating`, and returns the authorization URL + AS origin.
+2. **Consent UI** — The frontend opens the URL via `tauri-plugin-opener` after user approval. The status bar and Services tab show "Awaiting authorization…".
+3. **Callback** — The AS redirects to `tuic://oauth-callback?code=…&state=…`. The OS routes the deep link to the desktop app (`src-tauri/src/mcp_oauth/mod.rs` — `DEEP_LINK_SCHEME = "tuic://oauth-callback"`). The deep-link handler calls `mcp_oauth_callback(code, oauth_state)`.
+4. **Exchange** — `TokenManager` posts code + PKCE verifier to the token endpoint, receives `{ access_token, refresh_token?, expires_in? }`, serializes into `OAuthTokenSet`, persists to the OS keyring (`mcp_upstream_credentials.rs` — structured JSON format with `"type": "oauth2"`), and transitions upstream to `connecting`.
+5. **Refresh** — `TokenManager` is shared across every `HttpMcpClient` refresh path (unified per upstream); a semaphore serializes concurrent refresh attempts to defeat thundering-herd. `expires_at` uses a 60 s margin; `None` means "no known expiry — do not treat as expired".
+
+### Cancel
+
+`cancel_mcp_upstream_oauth(name)` drops the pending flow entry and resets the upstream status to whatever it was before the attempt (`disconnected` / `failed` / `ready`).
+
+### Deep-link scheme
+
+| Scheme | Purpose |
+|--------|---------|
+| `tuic://oauth-callback?code=…&state=…` | OAuth 2.1 authorization code return path for upstream MCP servers |
+
+Registered at boot via Tauri's single-instance + deep-link plugins. The frontend listener routes callbacks to `mcp_oauth_callback` without exposing the code to the WebView console.
+
+### Threat model
+
+OAuth callbacks arrive exclusively through the OS-level `tuic://` deep link — not over the network. There is no adversary position from which a remote attacker can probe the pending-flow map, so state comparison uses a direct DashMap lookup (no constant-time compare). The localhost dev callback server (used only in development) binds `127.0.0.1` with a random port; it is never exposed in production builds.
+
 ## Inter-Agent Messaging
 
 The `agent` tool's messaging actions (`register`, `list_peers`, `send`, `inbox`) enable coordination between multiple AI agents connected to TUICommander.
