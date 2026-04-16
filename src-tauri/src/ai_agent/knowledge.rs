@@ -460,18 +460,42 @@ const PERSIST_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// Spawn the background task that flushes dirty session knowledge to disk.
 /// Runs on the tokio runtime and lives for the process lifetime.
+/// Run a blocking task and surface any JoinError (panic / cancellation) via
+/// `tracing::error!`. Without this, the only signal of a panicked
+/// background flush is that disk writes silently stop. (#1379-01bd)
+async fn run_blocking_logged<F, R>(task_name: &'static str, f: F) -> Option<R>
+where
+    F: FnOnce() -> R + Send + 'static,
+    R: Send + 'static,
+{
+    match tokio::task::spawn_blocking(f).await {
+        Ok(r) => Some(r),
+        Err(e) => {
+            tracing::error!(
+                source = "knowledge",
+                task = task_name,
+                error = %e,
+                "knowledge background task failed (panicked or was cancelled)"
+            );
+            None
+        }
+    }
+}
+
 pub fn spawn_persist_task(state: std::sync::Arc<crate::state::AppState>) {
     tokio::spawn(async move {
         {
             let s = state.clone();
-            let _ = tokio::task::spawn_blocking(move || load_all(&s)).await;
+            run_blocking_logged("load_all", move || load_all(&s)).await;
         }
         let mut ticker = tokio::time::interval(PERSIST_INTERVAL);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             ticker.tick().await;
             let s = state.clone();
-            let _ = tokio::task::spawn_blocking(move || flush_dirty(&s)).await;
+            // A panic here would otherwise silently stop all persistence;
+            // log it and keep ticking — the next tick spawns a fresh task.
+            run_blocking_logged("flush_dirty", move || flush_dirty(&s)).await;
         }
     });
 }
@@ -611,6 +635,25 @@ mod persist_tests {
              after final flush — writer made {writes} writes",
             on_disk.commands.len()
         );
+    }
+
+    /// #1379-01bd: a panic inside spawn_blocking must not silently stop
+    /// background persistence. The helper returns None and the caller can
+    /// keep looping; tracing::error! is emitted for observability.
+    #[tokio::test]
+    async fn run_blocking_logged_returns_none_on_panic() {
+        // Panicking closure — must not propagate, must yield None.
+        let result: Option<()> = run_blocking_logged("test_panic", || {
+            panic!("simulated background flush panic");
+        })
+        .await;
+        assert!(result.is_none(), "panic must surface as None, not propagate");
+    }
+
+    #[tokio::test]
+    async fn run_blocking_logged_returns_value_on_success() {
+        let result = run_blocking_logged("test_ok", || 42).await;
+        assert_eq!(result, Some(42));
     }
 
     #[test]
