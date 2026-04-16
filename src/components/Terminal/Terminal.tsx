@@ -782,15 +782,29 @@ export const Terminal: Component<TerminalProps> = (props) => {
   };
 
   /** Fully rebuild the WebGL renderer by disposing the current addon and
-   *  instantiating a new one. Deferred via queueMicrotask so it is safe to
-   *  call from inside an addon callback (e.g. onAddTextureAtlasCanvas) —
-   *  the current event handler finishes before dispose runs. */
+   *  instantiating a new one. Both dispose AND reattach are deferred via
+   *  queueMicrotask so this is safe to call from inside an addon callback
+   *  (e.g. onAddTextureAtlasCanvas fires mid-frame while xterm iterates
+   *  cells — disposing synchronously leaves xterm's render loop touching
+   *  a nulled _glyphRenderer and throws "undefined is not an object
+   *  (evaluating 'this._glyphRenderer.value.updateCell')"). A rebuilding
+   *  flag coalesces re-entrant triggers into a single rebuild. */
+  let rebuildInFlight = false;
   const rebuildAtlas = () => {
-    if (!terminal || !webglLife.addon) return;
-    webglLife.dispose();
+    // Note: don't gate on webglLife.addon — onContextLoss already cleared it,
+    // and we still need to recreate the addon. dispose() is a no-op when addon
+    // is undefined, so this is safe for both atlas-stress and context-loss paths.
+    // (#1370-563b)
+    if (!terminal || rebuildInFlight) return;
+    rebuildInFlight = true;
     queueMicrotask(() => {
-      if (terminal && !webglLife.addon) {
-        webglLife.attach(terminal);
+      try {
+        if (terminal) {
+          webglLife.dispose();
+          webglLife.attach(terminal);
+        }
+      } finally {
+        rebuildInFlight = false;
       }
     });
   };
