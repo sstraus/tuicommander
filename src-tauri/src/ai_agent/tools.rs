@@ -173,6 +173,19 @@ pub fn tool_definitions() -> Value {
                 },
                 "required": ["pattern"]
             }
+        },
+        {
+            "name": "run_command",
+            "description": "Run a shell command inside the session's sandbox and capture stdout/stderr. The command runs via `sh -c` with a sanitized environment. Destructive commands are blocked by the safety checker. Output is truncated at 30K chars (head+tail) and secrets are redacted.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "command": { "type": "string", "description": "Shell command to execute" },
+                    "timeout_ms": { "type": "integer", "description": "Timeout in milliseconds (default 120000, max 600000)", "default": 120000 },
+                    "cwd": { "type": "string", "description": "Working directory relative to sandbox root (default: sandbox root)" }
+                },
+                "required": ["command"]
+            }
         }
     ])
 }
@@ -713,6 +726,13 @@ fn exec_edit_file(state: &AppState, session_id: &str, args: &Value) -> ToolResul
     )
 }
 
+/// Default timeout for `run_command` (2 min).
+const RUN_COMMAND_DEFAULT_TIMEOUT_MS: u64 = 120_000;
+/// Max timeout for `run_command` (10 min).
+const RUN_COMMAND_MAX_TIMEOUT_MS: u64 = 600_000;
+/// Output cap for `run_command`: head + tail window (30K chars).
+const RUN_COMMAND_OUTPUT_CAP: usize = 30_000;
+
 /// Max entries returned by `list_files` before truncating.
 const LIST_FILES_MAX: usize = 500;
 /// Max matches returned by `search_files` before truncating.
@@ -939,6 +959,153 @@ fn exec_search_files(state: &AppState, session_id: &str, args: &Value) -> ToolRe
     )
 }
 
+/// Truncate output to `RUN_COMMAND_OUTPUT_CAP` using head+tail windows.
+fn truncate_output(s: &str) -> (String, bool) {
+    if s.len() <= RUN_COMMAND_OUTPUT_CAP {
+        return (s.to_string(), false);
+    }
+    let half = RUN_COMMAND_OUTPUT_CAP / 2;
+    let head = &s[..half];
+    let tail = &s[s.len() - half..];
+    let truncated = format!(
+        "{head}\n\n[... truncated: {} total chars, showing first {half} + last {half} ...]\n\n{tail}",
+        s.len()
+    );
+    (truncated, true)
+}
+
+/// `run_command`: sandboxed shell command execution with captured output.
+async fn exec_run_command(state: &AppState, session_id: &str, args: &Value) -> ToolResult {
+    let Some(command) = args["command"].as_str() else {
+        return missing_arg("command");
+    };
+    if command.trim().is_empty() {
+        return ToolResult::err("command must not be empty");
+    }
+
+    let timeout_ms = args["timeout_ms"]
+        .as_u64()
+        .unwrap_or(RUN_COMMAND_DEFAULT_TIMEOUT_MS)
+        .min(RUN_COMMAND_MAX_TIMEOUT_MS);
+    let cwd_arg = args["cwd"].as_str();
+
+    let checker = RegexSafetyChecker::new();
+    let verdict = checker.evaluate(command);
+    match &verdict {
+        SafetyVerdict::Block { .. } => {
+            let msg = super::safety::format_rejection(&verdict).unwrap();
+            return ToolResult::err(msg);
+        }
+        SafetyVerdict::NeedsApproval { .. } => {
+            let msg = super::safety::format_rejection(&verdict).unwrap();
+            return ToolResult::err(msg);
+        }
+        SafetyVerdict::Allow => {}
+    }
+
+    let sandbox = match get_sandbox(state, session_id) {
+        Ok(s) => s,
+        Err(e) => return ToolResult::err(e),
+    };
+    let cwd = match resolve_sandbox_subdir(&sandbox, cwd_arg) {
+        Ok(p) => p,
+        Err(e) => return ToolResult::err(e),
+    };
+    if !cwd.is_dir() {
+        return ToolResult::err(format!("cwd is not a directory: {}", cwd.display()));
+    }
+
+    let home = sandbox.root().to_string_lossy().into_owned();
+    let cwd_display = cwd.display().to_string();
+    let lang = std::env::var("LANG").unwrap_or_else(|_| "en_US.UTF-8".into());
+    let start = std::time::Instant::now();
+
+    let mut child = match tokio::process::Command::new("sh")
+        .arg("-c")
+        .arg(command)
+        .current_dir(&cwd)
+        .env_clear()
+        .env("PATH", "/usr/local/bin:/usr/bin:/bin")
+        .env("HOME", &home)
+        .env("TERM", "xterm-256color")
+        .env("LANG", &lang)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .process_group(0)
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => return ToolResult::err(format!("spawn failed: {e}")),
+    };
+
+    // Take ownership of pipes, then spawn concurrent read tasks.
+    let stdout_pipe = child.stdout.take();
+    let stderr_pipe = child.stderr.take();
+
+    let stdout_task = tokio::spawn(async move {
+        use tokio::io::AsyncReadExt;
+        let Some(mut pipe) = stdout_pipe else { return Vec::new() };
+        let mut buf = Vec::new();
+        let _ = pipe.read_to_end(&mut buf).await;
+        buf
+    });
+    let stderr_task = tokio::spawn(async move {
+        use tokio::io::AsyncReadExt;
+        let Some(mut pipe) = stderr_pipe else { return Vec::new() };
+        let mut buf = Vec::new();
+        let _ = pipe.read_to_end(&mut buf).await;
+        buf
+    });
+
+    let timeout_dur = std::time::Duration::from_millis(timeout_ms);
+    let wait_result = tokio::time::timeout(timeout_dur, child.wait()).await;
+    let duration_ms = start.elapsed().as_millis() as u64;
+
+    match wait_result {
+        Ok(Ok(status)) => {
+            let stdout_buf = stdout_task.await.unwrap_or_default();
+            let stderr_buf = stderr_task.await.unwrap_or_default();
+            let raw_stdout = String::from_utf8_lossy(&stdout_buf).into_owned();
+            let raw_stderr = String::from_utf8_lossy(&stderr_buf).into_owned();
+            let (stdout, stdout_truncated) = truncate_output(&redact_secrets(&raw_stdout));
+            let (stderr, stderr_truncated) = truncate_output(&redact_secrets(&raw_stderr));
+            let exit_code = status.code().unwrap_or(-1);
+
+            ToolResult::ok(
+                json!({
+                    "exit_code": exit_code,
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "truncated": stdout_truncated || stderr_truncated,
+                    "duration_ms": duration_ms,
+                    "cwd": cwd_display,
+                })
+                .to_string(),
+            )
+        }
+        Ok(Err(e)) => ToolResult::err(format!("process error: {e}")),
+        Err(_) => {
+            // Timeout — kill the process group.
+            #[cfg(unix)]
+            if let Some(pid) = child.id() {
+                unsafe { libc::killpg(pid as i32, libc::SIGKILL); }
+            }
+            #[cfg(not(unix))]
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+
+            ToolResult::err(
+                json!({
+                    "error": "timeout",
+                    "timeout_ms": timeout_ms,
+                    "duration_ms": duration_ms,
+                })
+                .to_string(),
+            )
+        }
+    }
+}
+
 // ── Dispatch ──────────────────────────────────────────────────
 
 /// Dispatch a tool call by function name.
@@ -966,6 +1133,7 @@ pub async fn dispatch(
         "edit_file" => exec_edit_file(state, session_id, args),
         "list_files" => exec_list_files(state, session_id, args),
         "search_files" => exec_search_files(state, session_id, args),
+        "run_command" => exec_run_command(state, session_id, args).await,
         other => ToolResult::err(format!("Unknown tool: {other}")),
     }
 }
@@ -988,10 +1156,10 @@ mod tests {
     const FILESYSTEM_SEARCH_TOOLS: &[&str] = &["list_files", "search_files"];
 
     #[test]
-    fn definitions_returns_11_tools() {
+    fn definitions_returns_12_tools() {
         let defs = tool_definitions();
         let arr = defs.as_array().unwrap();
-        assert_eq!(arr.len(), 11);
+        assert_eq!(arr.len(), 12);
     }
 
     #[test]
@@ -1028,6 +1196,7 @@ mod tests {
                 "edit_file",
                 "list_files",
                 "search_files",
+                "run_command",
             ]
         );
     }
@@ -1829,5 +1998,186 @@ mod tests {
         assert!(r.success, "{}", r.output);
         assert!(r.output.contains("[REDACTED]"));
         assert!(!r.output.contains("sk-abc"));
+    }
+
+    // ── run_command ────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn run_command_requires_sandbox() {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let r = dispatch(&state, "none", "run_command", &json!({ "command": "echo hi" })).await;
+        assert!(!r.success);
+        assert!(r.output.contains("No filesystem sandbox"));
+    }
+
+    #[tokio::test]
+    async fn run_command_missing_command() {
+        let (_d, state) = fs_test_state("s1");
+        let r = dispatch(&state, "s1", "run_command", &json!({})).await;
+        assert!(!r.success);
+        assert!(r.output.contains("command"));
+    }
+
+    #[tokio::test]
+    async fn run_command_rejects_empty_command() {
+        let (_d, state) = fs_test_state("s1");
+        let r = dispatch(&state, "s1", "run_command", &json!({ "command": "  " })).await;
+        assert!(!r.success);
+        assert!(r.output.contains("empty"));
+    }
+
+    #[tokio::test]
+    async fn run_command_captures_stdout() {
+        let (_d, state) = fs_test_state("s1");
+        let r = dispatch(&state, "s1", "run_command", &json!({ "command": "echo hello_world" })).await;
+        assert!(r.success, "{}", r.output);
+        let parsed: Value = serde_json::from_str(&r.output).unwrap();
+        assert_eq!(parsed["exit_code"], 0);
+        assert!(parsed["stdout"].as_str().unwrap().contains("hello_world"));
+        assert_eq!(parsed["truncated"], false);
+    }
+
+    #[tokio::test]
+    async fn run_command_captures_stderr() {
+        let (_d, state) = fs_test_state("s1");
+        let r = dispatch(
+            &state,
+            "s1",
+            "run_command",
+            &json!({ "command": "echo err_msg >&2" }),
+        )
+        .await;
+        assert!(r.success, "{}", r.output);
+        let parsed: Value = serde_json::from_str(&r.output).unwrap();
+        assert!(parsed["stderr"].as_str().unwrap().contains("err_msg"));
+    }
+
+    #[tokio::test]
+    async fn run_command_returns_exit_code() {
+        let (_d, state) = fs_test_state("s1");
+        let r = dispatch(&state, "s1", "run_command", &json!({ "command": "exit 42" })).await;
+        assert!(r.success, "{}", r.output);
+        let parsed: Value = serde_json::from_str(&r.output).unwrap();
+        assert_eq!(parsed["exit_code"], 42);
+    }
+
+    #[tokio::test]
+    async fn run_command_uses_sandbox_root_as_cwd() {
+        let (dir, state) = fs_test_state("s1");
+        let r = dispatch(&state, "s1", "run_command", &json!({ "command": "pwd" })).await;
+        assert!(r.success, "{}", r.output);
+        let parsed: Value = serde_json::from_str(&r.output).unwrap();
+        let stdout = parsed["stdout"].as_str().unwrap().trim();
+        let expected = dir.path().canonicalize().unwrap();
+        assert_eq!(stdout, expected.to_str().unwrap());
+    }
+
+    #[tokio::test]
+    async fn run_command_respects_cwd() {
+        let (dir, state) = fs_test_state("s1");
+        std::fs::create_dir_all(dir.path().join("sub")).unwrap();
+        let r = dispatch(
+            &state,
+            "s1",
+            "run_command",
+            &json!({ "command": "pwd", "cwd": "sub" }),
+        )
+        .await;
+        assert!(r.success, "{}", r.output);
+        let parsed: Value = serde_json::from_str(&r.output).unwrap();
+        assert!(parsed["stdout"].as_str().unwrap().contains("sub"));
+    }
+
+    #[tokio::test]
+    async fn run_command_blocks_destructive() {
+        let (_d, state) = fs_test_state("s1");
+        let r = dispatch(
+            &state,
+            "s1",
+            "run_command",
+            &json!({ "command": "sudo rm -rf /" }),
+        )
+        .await;
+        assert!(!r.success);
+    }
+
+    #[tokio::test]
+    async fn run_command_timeout_kills_process() {
+        let (_d, state) = fs_test_state("s1");
+        let r = dispatch(
+            &state,
+            "s1",
+            "run_command",
+            &json!({ "command": "sleep 60", "timeout_ms": 500 }),
+        )
+        .await;
+        assert!(!r.success);
+        assert!(r.output.contains("timeout"));
+    }
+
+    #[tokio::test]
+    async fn run_command_sanitized_env() {
+        let (_d, state) = fs_test_state("s1");
+        let r = dispatch(
+            &state,
+            "s1",
+            "run_command",
+            &json!({ "command": "env | sort" }),
+        )
+        .await;
+        assert!(r.success, "{}", r.output);
+        let parsed: Value = serde_json::from_str(&r.output).unwrap();
+        let stdout = parsed["stdout"].as_str().unwrap();
+        assert!(stdout.contains("PATH="));
+        assert!(stdout.contains("HOME="));
+        assert!(stdout.contains("TERM=xterm-256color"));
+        assert!(!stdout.contains("SECRET"));
+    }
+
+    #[tokio::test]
+    async fn run_command_redacts_secrets() {
+        let (_d, state) = fs_test_state("s1");
+        let r = dispatch(
+            &state,
+            "s1",
+            "run_command",
+            &json!({ "command": "echo sk-abc123def456ghi789jkl012mno345" }),
+        )
+        .await;
+        assert!(r.success, "{}", r.output);
+        assert!(r.output.contains("[REDACTED]"));
+        assert!(!r.output.contains("sk-abc"));
+    }
+
+    #[tokio::test]
+    async fn run_command_truncates_large_output() {
+        let (_d, state) = fs_test_state("s1");
+        let r = dispatch(
+            &state,
+            "s1",
+            "run_command",
+            &json!({ "command": "yes aaaa | head -20000" }),
+        )
+        .await;
+        assert!(r.success, "{}", r.output);
+        let parsed: Value = serde_json::from_str(&r.output).unwrap();
+        assert_eq!(parsed["truncated"], true);
+        assert!(parsed["stdout"].as_str().unwrap().contains("truncated"));
+    }
+
+    #[test]
+    fn truncate_output_short_passes_through() {
+        let (out, trunc) = truncate_output("short");
+        assert_eq!(out, "short");
+        assert!(!trunc);
+    }
+
+    #[test]
+    fn truncate_output_long_head_tail() {
+        let long: String = "x".repeat(40_000);
+        let (out, trunc) = truncate_output(&long);
+        assert!(trunc);
+        assert!(out.contains("truncated"));
+        assert!(out.len() < long.len());
     }
 }
