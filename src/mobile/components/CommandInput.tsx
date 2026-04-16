@@ -5,7 +5,7 @@ import { sendPtyKey } from "../../utils/sendCommand";
 import { retryWrite } from "../utils/retryWrite";
 import { SlashMenuOverlay } from "./SlashMenuOverlay";
 import { ChoicePromptOverlay } from "./ChoicePromptOverlay";
-import { isSendGuardActive, classifyEcho } from "./syncGuards";
+import { isPostSendGuardActive, isSupersetEcho } from "./syncGuards";
 import type { SlashMenuItem, ChoicePrompt } from "../useSessions";
 import styles from "./CommandInput.module.css";
 
@@ -28,18 +28,14 @@ interface CommandInputProps {
 export function CommandInput(props: CommandInputProps) {
   const [value, setValue] = createSignal("");
   let textareaEl: HTMLTextAreaElement | undefined;
-  let lastSendAt = 0;
-  // What we last sent to PTY — used to compute deltas
+  // What we last sent to PTY — used to compute deltas and to gate which
+  // PTY echoes we accept (only strict extensions — see sync effect below).
   let syncedText = "";
-  // Number of write_pty RPCs awaiting response. While > 0, incoming
-  // ptyInputLine is echo of our own writes — don't update syncedText.
-  // When 0, the terminal is driving (autocomplete, history nav, tab
-  // completion) and syncedText must accept the PTY value.
-  let pendingWrites = 0;
-  // Timestamp when pendingWrites last dropped to 0. Used by classifyEcho
-  // to reject stale echoes that arrive after RPCs resolved but before the
-  // WebSocket echo catches up.
-  let lastWriteSettledAt = 0;
+  // Timestamp of the last Enter (send()). Within POST_SEND_GUARD_MS, all
+  // incoming ptyInputLine updates are ignored to prevent a lagging echo of
+  // the just-sent command from flashing back into the cleared textarea
+  // before the shell advances the prompt.
+  let lastSendAt = 0;
 
   createEffect(() => {
     const pv = props.prefillValue;
@@ -53,30 +49,19 @@ export function CommandInput(props: CommandInputProps) {
     }
   });
 
-  // PTY input line sync. Three layers of protection against stale echoes:
-  // 1. Send guard (1s post-Enter) — suppresses prompt-clear noise
-  // 2. pendingWrites > 0 — our writes are still in-flight, display-only
-  // 3. classifyEcho — after writes settle, rejects stale prefixes and
-  //    holds unrelated text during a 300ms grace window (superset echoes
-  //    like tab completion are accepted immediately)
+  // PTY → textarea sync. The PWA textarea is the source of truth for user
+  // input; we stream deltas to the PTY via syncDelta(). Two gates:
+  //   1. Post-send guard — within POST_SEND_GUARD_MS of Enter, ignore every
+  //      PTY echo (suppresses the ghost flash of the just-sent command).
+  //   2. Strict-extension rule — outside the guard, accept a PTY update
+  //      only if it extends syncedText (tab completion / autocomplete).
+  // Everything else (prompt redraws, lagging echoes over slow links,
+  // history-nav replacements) is ignored so the textarea can't be clobbered.
   createEffect(() => {
-    const il = props.ptyInputLine;
-    if (isSendGuardActive(Date.now(), lastSendAt)) return;
-    const text = il ?? "";
-    if (text === syncedText) return; // exact echo — skip entirely
-
-    if (pendingWrites > 0) {
-      // Writes in-flight — display only, don't touch syncedText
-      setValue(text);
-      if (textareaEl) { textareaEl.value = text; autoResize(); }
-      return;
-    }
-
-    // pendingWrites === 0 — use smart echo classification
-    const verdict = classifyEcho(text, syncedText, Date.now(), lastWriteSettledAt);
-    if (verdict === "reject") return; // stale prefix — ignore entirely
-    if (verdict === "accept") syncedText = text;
-    // "display-only" and "accept" both update the display
+    const text = props.ptyInputLine ?? "";
+    if (isPostSendGuardActive(Date.now(), lastSendAt)) return;
+    if (!isSupersetEcho(text, syncedText)) return;
+    syncedText = text;
     setValue(text);
     if (textareaEl) { textareaEl.value = text; autoResize(); }
   });
@@ -88,25 +73,10 @@ export function CommandInput(props: CommandInputProps) {
   }
 
   function writePty(data: string) {
-    pendingWrites++;
-    // Safety: if the rpc promise never settles (transport tear-down races
-    // where neither resolve nor reject fires before the 30s fetch timeout),
-    // pendingWrites would stay elevated forever and block input sync. A 5s
-    // watchdog decrements once even if the rpc is still in flight.
-    let decremented = false;
-    const dec = () => {
-      if (!decremented) {
-        decremented = true;
-        pendingWrites--;
-        if (pendingWrites === 0) lastWriteSettledAt = Date.now();
-      }
-    };
-    const watchdog = window.setTimeout(dec, 5000);
     rpc("write_pty", { sessionId: props.sessionId, data })
       .catch((err: unknown) => {
         appLogger.warn("network", "Failed to write to PTY", { error: err });
-      })
-      .finally(() => { window.clearTimeout(watchdog); dec(); });
+      });
   }
 
   /** Send character deltas to PTY so the remote input stays in sync. */
