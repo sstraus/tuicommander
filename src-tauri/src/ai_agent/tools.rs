@@ -211,37 +211,50 @@ pub fn tool_definitions() -> Value {
 // ── Secret redaction ──────────────────────────────────────────
 
 /// Redact known secret patterns from terminal output.
+///
+/// The bare-hex catch-all (`\b[0-9a-fA-F]{40,}\b`) used to redact every
+/// git SHA-1, lockfile hash, and package checksum it saw. Now hex is only
+/// redacted when preceded by a secret-context word (`token=`, `secret:`,
+/// `password=`, etc.), so `git log/show/diff`, `Cargo.lock`, and
+/// `package-lock.json` round-trip verbatim. (#1369-f051)
 pub fn redact_secrets(text: &str) -> String {
     use regex::Regex;
     use std::sync::LazyLock;
 
-    static PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
+    static PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
         vec![
             // API keys / tokens
-            Regex::new(r"sk-[A-Za-z0-9_-]{20,}").unwrap(),
-            Regex::new(r"AKIA[A-Z0-9]{16}").unwrap(),
-            Regex::new(r"ghp_[A-Za-z0-9]{36,}").unwrap(),
-            Regex::new(r"gho_[A-Za-z0-9]{36,}").unwrap(),
-            Regex::new(r"github_pat_[A-Za-z0-9_]{82,}").unwrap(),
-            Regex::new(r"xoxb-[A-Za-z0-9\-]+").unwrap(),
-            Regex::new(r"ya29\.[A-Za-z0-9_-]+").unwrap(),
+            (Regex::new(r"sk-[A-Za-z0-9_-]{20,}").unwrap(), "[REDACTED]"),
+            (Regex::new(r"AKIA[A-Z0-9]{16}").unwrap(), "[REDACTED]"),
+            (Regex::new(r"ghp_[A-Za-z0-9]{36,}").unwrap(), "[REDACTED]"),
+            (Regex::new(r"gho_[A-Za-z0-9]{36,}").unwrap(), "[REDACTED]"),
+            (Regex::new(r"github_pat_[A-Za-z0-9_]{82,}").unwrap(), "[REDACTED]"),
+            (Regex::new(r"xoxb-[A-Za-z0-9\-]+").unwrap(), "[REDACTED]"),
+            (Regex::new(r"ya29\.[A-Za-z0-9_-]+").unwrap(), "[REDACTED]"),
             // PEM private keys (header + body)
-            Regex::new(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----").unwrap(),
-            Regex::new(r"-----BEGIN [A-Z ]*PRIVATE KEY-----").unwrap(),
+            (Regex::new(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----").unwrap(), "[REDACTED]"),
+            (Regex::new(r"-----BEGIN [A-Z ]*PRIVATE KEY-----").unwrap(), "[REDACTED]"),
             // Bearer tokens
-            Regex::new(r"Bearer\s+[A-Za-z0-9_\-.]+").unwrap(),
+            (Regex::new(r"Bearer\s+[A-Za-z0-9_\-.]+").unwrap(), "[REDACTED]"),
             // Database URLs with credentials
-            Regex::new(r"(?i)(postgres|mysql|mongodb|redis)://[^\s@]+@[^\s]+").unwrap(),
+            (Regex::new(r"(?i)(postgres|mysql|mongodb|redis)://[^\s@]+@[^\s]+").unwrap(), "[REDACTED]"),
             // Generic DATABASE_URL value
-            Regex::new(r"DATABASE_URL=[^\s]+").unwrap(),
-            // High-entropy hex tokens (40+ chars of hex)
-            Regex::new(r"\b[0-9a-fA-F]{40,}\b").unwrap(),
+            (Regex::new(r"DATABASE_URL=[^\s]+").unwrap(), "[REDACTED]"),
+            // Context-bound hex tokens — preserve git SHAs / lockfile checksums.
+            // Only redact when preceded by a secret-context word + separator.
+            (
+                Regex::new(
+                    r"(?i)((?:token|secret|api[_-]?key|password|passwd|authorization|bearer|session[_-]?id|credential|signature)[\s]*[:=][\s]*)[0-9a-fA-F]{40,}\b",
+                )
+                .unwrap(),
+                "${1}[REDACTED]",
+            ),
         ]
     });
 
     let mut result = text.to_owned();
-    for pattern in PATTERNS.iter() {
-        result = pattern.replace_all(&result, "[REDACTED]").to_string();
+    for (pattern, replacement) in PATTERNS.iter() {
+        result = pattern.replace_all(&result, *replacement).to_string();
     }
     result
 }
@@ -1411,11 +1424,39 @@ mod tests {
         assert!(!output.contains("MIIEpAIBAAKCAQEA"));
     }
 
+    /// Hex preceded by a secret-context word still gets redacted.
     #[test]
-    fn redact_high_entropy_hex() {
+    fn redact_hex_with_secret_context() {
         let hex = "a".repeat(40);
-        let output = redact_secrets(&format!("commit {hex}"));
-        assert!(output.contains("[REDACTED]"));
+        let output = redact_secrets(&format!("token={hex}"));
+        assert!(output.contains("[REDACTED]"), "got: {output}");
+        assert!(output.starts_with("token="), "context word must be preserved: {output}");
+
+        let output = redact_secrets(&format!("api_key: {hex}"));
+        assert!(output.contains("[REDACTED]"), "got: {output}");
+    }
+
+    /// Regression for #1369-f051: bare 40-hex strings (git SHAs, lockfile hashes)
+    /// must NOT be redacted. The old `\b[0-9a-fA-F]{40,}\b` catch-all mangled
+    /// `git log/show/diff` and Cargo.lock / package-lock.json output.
+    #[test]
+    fn preserves_git_sha_and_lockfile_hashes() {
+        // git log line — SHA-1 (40 hex)
+        let git_log = "commit 1a3b5c7d9e0f1234567890abcdef1234567890ab\nAuthor: Boss";
+        assert_eq!(redact_secrets(git_log), git_log);
+
+        // git show / diff — full SHA in "index" line
+        let diff = "index abcdef1234567890abcdef1234567890abcdef12..fedcba0987654321fedcba0987654321fedcba09 100644";
+        assert_eq!(redact_secrets(diff), diff);
+
+        // Cargo.lock — SHA-256 checksum (64 hex)
+        let cargo_lock = r#"checksum = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef""#;
+        assert_eq!(redact_secrets(cargo_lock), cargo_lock);
+
+        // package-lock.json — SHA-512 integrity hash (128 hex)
+        let pnpm_hash = "b".repeat(128);
+        let pkg_lock = format!(r#""integrity": "sha512-{pnpm_hash}=""#);
+        assert_eq!(redact_secrets(&pkg_lock), pkg_lock);
     }
 
     #[test]
