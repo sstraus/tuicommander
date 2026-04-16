@@ -372,6 +372,19 @@ fn parse_d_exit_code(payload: &[u8]) -> Option<i32> {
 // Persistence
 // ---------------------------------------------------------------------------
 
+/// Validate that `s` is safe to use as a filename stem (no path traversal).
+/// Allows alphanumeric, `-`, `_` only. Rejects empty, `..`, `/`, `\`, etc.
+pub(crate) fn validate_file_stem(s: &str) -> Result<(), String> {
+    if s.is_empty() {
+        return Err("ID must not be empty".into());
+    }
+    if s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        Ok(())
+    } else {
+        Err(format!("Invalid ID: contains illegal characters: {s:?}"))
+    }
+}
+
 const SESSIONS_DIR: &str = "ai-sessions";
 
 fn sessions_dir() -> Result<std::path::PathBuf, String> {
@@ -384,6 +397,7 @@ fn sessions_dir() -> Result<std::path::PathBuf, String> {
 }
 
 pub fn persist(session_id: &str, knowledge: &SessionKnowledge) -> Result<(), String> {
+    validate_file_stem(session_id)?;
     let dir = sessions_dir()?;
     let path = dir.join(format!("{session_id}.json"));
     let data = serde_json::to_string_pretty(knowledge)
@@ -392,6 +406,7 @@ pub fn persist(session_id: &str, knowledge: &SessionKnowledge) -> Result<(), Str
 }
 
 pub fn load(session_id: &str) -> Option<SessionKnowledge> {
+    validate_file_stem(session_id).ok()?;
     let dir = sessions_dir().ok()?;
     let path = dir.join(format!("{session_id}.json"));
     let data = std::fs::read_to_string(&path).ok()?;
@@ -983,5 +998,68 @@ mod tests {
         let stored = &k.commands[0].output_snippet;
         assert!(!stored.contains("SYSTEM:"));
         assert!(stored.contains("normal output"));
+    }
+
+    // ── validate_file_stem ────────────────────────────────────
+
+    #[test]
+    fn valid_alphanumeric_stem() {
+        assert!(validate_file_stem("abc-123_def").is_ok());
+    }
+
+    #[test]
+    fn valid_uuid_stem() {
+        assert!(validate_file_stem("550e8400-e29b-41d4-a716-446655440000").is_ok());
+    }
+
+    #[test]
+    fn reject_dotdot_traversal() {
+        assert!(validate_file_stem("../secret").is_err());
+    }
+
+    #[test]
+    fn reject_absolute_path() {
+        assert!(validate_file_stem("/etc/passwd").is_err());
+    }
+
+    #[test]
+    fn reject_empty_string() {
+        assert!(validate_file_stem("").is_err());
+    }
+
+    #[test]
+    fn reject_unicode() {
+        assert!(validate_file_stem("café").is_err());
+    }
+
+    #[test]
+    fn reject_dots() {
+        assert!(validate_file_stem("..").is_err());
+    }
+
+    #[test]
+    fn reject_slash() {
+        assert!(validate_file_stem("a/b").is_err());
+    }
+
+    #[test]
+    fn reject_backslash() {
+        assert!(validate_file_stem("a\\b").is_err());
+    }
+
+    #[test]
+    fn reject_spaces() {
+        assert!(validate_file_stem("a b").is_err());
+    }
+
+    #[test]
+    fn persist_rejects_traversal() {
+        let k = SessionKnowledge::new();
+        assert!(persist("../evil", &k).is_err());
+    }
+
+    #[test]
+    fn load_rejects_traversal() {
+        assert!(load("../ai-chat").is_none());
     }
 }

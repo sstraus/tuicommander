@@ -382,6 +382,7 @@ pub(crate) fn list_conversations() -> Result<Vec<ConversationMeta>, String> {
 
 #[tauri::command]
 pub(crate) fn load_conversation(id: String) -> Result<Conversation, String> {
+    crate::ai_agent::knowledge::validate_file_stem(&id)?;
     let dir = conversations_dir()?;
     let path = dir.join(format!("{id}.json"));
     let data = std::fs::read_to_string(&path)
@@ -394,6 +395,7 @@ pub(crate) fn load_conversation(id: String) -> Result<Conversation, String> {
 
 #[tauri::command]
 pub(crate) fn save_conversation(conversation: Conversation) -> Result<(), String> {
+    crate::ai_agent::knowledge::validate_file_stem(&conversation.meta.id)?;
     let dir = conversations_dir()?;
     let path = dir.join(format!("{}.json", conversation.meta.id));
     let data = serde_json::to_string_pretty(&conversation)
@@ -404,6 +406,7 @@ pub(crate) fn save_conversation(conversation: Conversation) -> Result<(), String
 
 #[tauri::command]
 pub(crate) fn delete_conversation(id: String) -> Result<(), String> {
+    crate::ai_agent::knowledge::validate_file_stem(&id)?;
     let dir = conversations_dir()?;
     let path = dir.join(format!("{id}.json"));
     if path.exists() {
