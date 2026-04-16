@@ -50,6 +50,9 @@ competitor-analysis
 marketing
 issues-to-monitor.md
 
+# Rust build artifacts
+src-tauri/target/
+
 # Sidecar binaries (built during cargo tauri build)
 src-tauri/binaries/tuic-bridge-*
 docs/research/

@@ -298,6 +298,7 @@ function renderBoard(storyList, filters) {
     cursor: grab;
     touch-action: none;
     user-select: none;
+    -webkit-user-select: none;
   }
   .card.dragging { opacity: 0.4; }
   .drag-ghost {
@@ -417,9 +418,9 @@ function renderBoard(storyList, filters) {
     window.parent.postMessage({ type: "filter-change", search: searchInput.value }, "*");
   });
 
-  // ── Pointer-based Drag and Drop ──
-  // HTML5 DnD doesn't work in sandboxed iframes (no allow-same-origin).
-  // Pointer events on document level with movement threshold to distinguish clicks from drags.
+  // ── Drag and Drop ──
+  // Uses mouse events on document with a movement threshold to
+  // distinguish clicks from drags.
   const DRAG_THRESHOLD = 5;
   let drag = null;
 

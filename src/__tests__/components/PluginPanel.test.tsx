@@ -162,11 +162,11 @@ describe("PluginPanel", () => {
     expect(iframe).not.toBeNull();
   });
 
-  it("renders iframe with sandbox allow-scripts", () => {
+  it("renders iframe with sandbox allow-scripts allow-same-origin", () => {
     const tab = makeTab();
     const { container } = render(() => <PluginPanel tab={tab} />);
     const iframe = container.querySelector("iframe");
-    expect(iframe?.getAttribute("sandbox")).toBe("allow-scripts");
+    expect(iframe?.getAttribute("sandbox")).toBe("allow-scripts allow-same-origin");
   });
 
   describe("URL mode — SDK handshake", () => {
