@@ -109,6 +109,52 @@ describe("invoke in-flight dedup", () => {
     expect(await p2).toEqual([]);
   });
 
+  // Regression for #1377-9e24: ensure each git read command is in DEDUP_COMMANDS
+  // so that repo-changed fan-out doesn't spawn N parallel git processes.
+  it.each([
+    "get_diff_stats",
+    "get_changed_files",
+    "get_file_diff",
+    "get_git_branches",
+    "get_merged_branches",
+    "get_recent_commits",
+    "get_remote_url",
+  ])("%s is dedupable", async (cmd) => {
+    let resolveFirst!: (val: unknown) => void;
+    mockTauriInvoke.mockImplementationOnce(
+      () => new Promise((r) => { resolveFirst = r; }),
+    );
+
+    const args = { path: "/repo" };
+    const p1 = invoke(cmd, args);
+    const p2 = invoke(cmd, args);
+
+    expect(mockTauriInvoke).toHaveBeenCalledTimes(1);
+
+    resolveFirst("ok");
+    expect(await p1).toBe("ok");
+    expect(await p2).toBe("ok");
+  });
+
+  it("get_file_diff dedups by file+scope+untracked tuple", async () => {
+    mockTauriInvoke
+      .mockResolvedValueOnce("diff-a-staged")
+      .mockResolvedValueOnce("diff-a-unstaged")
+      .mockResolvedValueOnce("diff-b-staged");
+
+    const a = invoke("get_file_diff", { path: "/r", file: "a.ts", scope: "staged", untracked: false });
+    const b = invoke("get_file_diff", { path: "/r", file: "a.ts", scope: "staged", untracked: false });
+    const c = invoke("get_file_diff", { path: "/r", file: "a.ts", scope: "unstaged", untracked: false });
+    const d = invoke("get_file_diff", { path: "/r", file: "b.ts", scope: "staged", untracked: false });
+
+    // a/b dedupe; c, d are distinct keys → 3 underlying calls
+    expect(mockTauriInvoke).toHaveBeenCalledTimes(3);
+    expect(await a).toBe("diff-a-staged");
+    expect(await b).toBe("diff-a-staged");
+    expect(await c).toBe("diff-a-unstaged");
+    expect(await d).toBe("diff-b-staged");
+  });
+
   it("after settle, a new call creates a fresh promise", async () => {
     mockTauriInvoke.mockResolvedValueOnce("first").mockResolvedValueOnce("second");
 
