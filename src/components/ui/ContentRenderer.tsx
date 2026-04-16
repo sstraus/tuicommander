@@ -6,10 +6,14 @@ import { stripAnsi } from "../../utils/stripAnsi";
 import { appLogger } from "../../stores/appLogger";
 import { applyTweakHighlights } from "../../utils/tweakComments";
 
-export interface MarkdownRendererProps {
+/** File extensions that can be previewed inline when clicked as relative links.
+ *  .md files open in a markdown tab; all others open in the file preview tab. */
+const PREVIEWABLE_RE = /\.(md|pdf|html?|png|jpe?g|gif|webp|svg|avif|ico|bmp|mp4|webm|mov|ogg|mp3|wav|flac|aac|m4a|txt|json|csv|log|xml|ya?ml|toml|ini|cfg|conf)$/i;
+
+export interface ContentRendererProps {
   content: string;
   emptyMessage?: string;
-  /** Called when a relative .md link is clicked (href passed as argument) */
+  /** Called when a relative file link is clicked (href passed as argument) */
   onLinkClick?: (href: string) => void;
   /** Called when a GFM task-list checkbox is clicked (source line number, new mark: " ", "x", or "~") */
   onCheckboxToggle?: (sourceLine: number, mark: " " | "x" | "~") => void;
@@ -73,10 +77,10 @@ function buildCheckboxLineMap(source: string): number[] {
   return map;
 }
 
-export const MarkdownRenderer: Component<MarkdownRendererProps> = (props) => {
+export const ContentRenderer: Component<ContentRendererProps> = (props) => {
   // Memoize processed markdown to avoid re-parsing on every render
   const processedContent = createMemo(() => {
-    const raw = stripAnsi(props.content);
+    const raw = stripAnsi(props.content ?? "");
     try {
       // 1. Convert [~] to [ ] so marked renders them as standard GFM task-list items.
       //    Track which source lines had tilde for indeterminate styling later.
@@ -130,7 +134,7 @@ export const MarkdownRenderer: Component<MarkdownRendererProps> = (props) => {
     }
   });
 
-  const isEmpty = createMemo(() => props.content.trim() === "");
+  const isEmpty = createMemo(() => (props.content ?? "").trim() === "");
 
   const handleClick = (e: MouseEvent) => {
     const target = e.target as HTMLElement;
@@ -159,12 +163,12 @@ export const MarkdownRenderer: Component<MarkdownRendererProps> = (props) => {
       return;
     }
 
-    // Relative .md link navigation
+    // Relative file link navigation
     if (!props.onLinkClick) return;
     const anchor = target.closest("a");
     if (!anchor) return;
     const href = anchor.getAttribute("href");
-    if (href && href.endsWith(".md") && !href.startsWith("http")) {
+    if (href && !href.startsWith("http") && PREVIEWABLE_RE.test(href)) {
       e.preventDefault();
       props.onLinkClick(href);
     }

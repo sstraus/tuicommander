@@ -5,7 +5,7 @@ import { terminalsStore } from "../../stores/terminals";
 import { paneLayoutStore } from "../../stores/paneLayout";
 import { editorTabsStore } from "../../stores/editorTabs";
 import { mdTabsStore } from "../../stores/mdTabs";
-import { classifyDroppedFile } from "../../hooks/useFileDrop";
+import { classifyFile } from "../../utils/filePreview";
 import { FileIcon } from "../FileBrowserPanel/FileIcon";
 import type { ActionEntry } from "../../actions/actionRegistry";
 import type { ContentMatch, DirEntry } from "../../types/fs";
@@ -112,8 +112,11 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
 
   /** Open file in the appropriate tab based on extension */
   const openFile = (repoPath: string, filePath: string, line?: number) => {
-    if (classifyDroppedFile(filePath) === "markdown") {
+    const target = classifyFile(filePath);
+    if (target === "markdown") {
       mdTabsStore.add(repoPath, filePath);
+    } else if (target === "preview" && line === undefined) {
+      mdTabsStore.addHtmlPreview(repoPath, filePath);
     } else {
       editorTabsStore.add(repoPath, filePath, line);
     }

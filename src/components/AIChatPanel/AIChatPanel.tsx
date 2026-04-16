@@ -2,7 +2,7 @@ import { Component, For, Show, createSignal, createEffect, createMemo, onCleanup
 import { aiChatStore } from "../../stores/aiChatStore";
 import { aiAgentStore, type ToolCallEntry } from "../../stores/aiAgentStore";
 import { terminalsStore } from "../../stores/terminals";
-import { MarkdownRenderer } from "../ui/MarkdownRenderer";
+import { ContentRenderer } from "../ui/ContentRenderer";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 import { sendCommand, getShellFamily } from "../../utils/sendCommand";
 import { appLogger } from "../../stores/appLogger";
@@ -459,7 +459,7 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
                       requestAnimationFrame(() => enhanceCodeBlocks(el, ac.signal));
                     }}
                   >
-                    <MarkdownRenderer content={msg.content} />
+                    <ContentRenderer content={msg.content} />
                   </div>
                 }
               >

@@ -1,5 +1,5 @@
 import { Component, createEffect, createSignal, Show, onMount, onCleanup } from "solid-js";
-import { MarkdownRenderer } from "../ui";
+import { ContentRenderer } from "../ui";
 import { appLogger } from "../../stores/appLogger";
 import { ContextMenu, createContextMenu } from "../ContextMenu";
 import { useRepository } from "../../hooks/useRepository";
@@ -235,7 +235,11 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
       ? ft.filePath.slice(0, ft.filePath.lastIndexOf("/"))
       : "";
     const resolved = currentDir ? `${currentDir}/${href}` : href;
-    mdTabsStore.add(ft.repoPath, resolved, ft.fsRoot);
+    if (href.endsWith(".md")) {
+      mdTabsStore.add(ft.repoPath, resolved, ft.fsRoot);
+    } else {
+      mdTabsStore.addHtmlPreview(ft.repoPath, resolved, ft.fsRoot);
+    }
   };
 
   /** Write the updated markdown source back to disk and refresh displayed content. */
@@ -379,7 +383,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
       />
 
       <div class={s.content}>
-        <MarkdownRenderer
+        <ContentRenderer
           content={content()}
           baseDir={baseDir()}
           onLinkClick={handleMdLink}

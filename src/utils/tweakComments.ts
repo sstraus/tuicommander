@@ -183,7 +183,7 @@ export function generateTweakCommentId(): string {
 /**
  * Set the checkbox on the given source line to the specified mark.
  * `sourceLine` is the 0-based line number in the raw markdown source,
- * injected as `data-source-line` by the MarkdownRenderer preprocessor.
+ * injected as `data-source-line` by the ContentRenderer preprocessor.
  * `mark` is one of: `" "` (unchecked), `"x"` (checked), `"~"` (in-progress).
  */
 export function toggleCheckbox(source: string, sourceLine: number, mark: " " | "x" | "~"): string {

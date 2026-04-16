@@ -12,8 +12,8 @@ export type { StatusBadgeProps, BadgeVariant, BranchBadgeProps, PrBadgeProps, Ci
 export { DiffViewer } from "./DiffViewer";
 export type { DiffViewerProps } from "./DiffViewer";
 
-export { MarkdownRenderer } from "./MarkdownRenderer";
-export type { MarkdownRendererProps } from "./MarkdownRenderer";
+export { ContentRenderer } from "./ContentRenderer";
+export type { ContentRendererProps } from "./ContentRenderer";
 
 export { PromptOption } from "./PromptOption";
 export type { PromptOptionProps } from "./PromptOption";

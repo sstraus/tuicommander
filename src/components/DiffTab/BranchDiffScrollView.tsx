@@ -5,7 +5,7 @@ import { mdTabsStore } from "../../stores/mdTabs";
 import { uiStore, type DiffViewMode } from "../../stores/ui";
 import { repositoriesStore } from "../../stores/repositories";
 import { useRepository } from "../../hooks/useRepository";
-import { classifyDroppedFile } from "../../hooks/useFileDrop";
+import { classifyFile } from "../../utils/filePreview";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
 import s from "../PrDiffTab/PrDiffTab.module.css";
@@ -19,8 +19,11 @@ const FileSection: Component<{ file: DiffFileSection; baseMode: DiffViewMode; re
   const [collapsed, setCollapsed] = createSignal(false);
 
   const openFile = () => {
-    if (classifyDroppedFile(props.file.path) === "markdown") {
+    const target = classifyFile(props.file.path);
+    if (target === "markdown") {
       mdTabsStore.add(props.repoPath, props.file.path);
+    } else if (target === "preview") {
+      mdTabsStore.addHtmlPreview(props.repoPath, props.file.path);
     } else {
       editorTabsStore.add(props.repoPath, props.file.path);
     }

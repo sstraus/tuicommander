@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent } from "@solidjs/testing-library";
-import { MarkdownRenderer, stripEventHandlers } from "../../components/ui/MarkdownRenderer";
+import { ContentRenderer, stripEventHandlers } from "../../components/ui/ContentRenderer";
 import { stripAnsi } from "../../utils/stripAnsi";
 
 describe("stripAnsi", () => {
@@ -37,10 +37,10 @@ describe("stripEventHandlers", () => {
   });
 });
 
-describe("MarkdownRenderer", () => {
+describe("ContentRenderer", () => {
   it("renders markdown content as HTML", () => {
     const { container } = render(() => (
-      <MarkdownRenderer content="# Hello" />
+      <ContentRenderer content="# Hello" />
     ));
     const content = container.querySelector("#markdown-content");
     expect(content).not.toBeNull();
@@ -50,7 +50,7 @@ describe("MarkdownRenderer", () => {
 
   it("shows empty message when content is empty", () => {
     const { container } = render(() => (
-      <MarkdownRenderer content="" />
+      <ContentRenderer content="" />
     ));
     const p = container.querySelector("#markdown-content p");
     expect(p).not.toBeNull();
@@ -59,7 +59,7 @@ describe("MarkdownRenderer", () => {
 
   it("shows custom empty message", () => {
     const { container } = render(() => (
-      <MarkdownRenderer content="  " emptyMessage="Nothing here" />
+      <ContentRenderer content="  " emptyMessage="Nothing here" />
     ));
     const p = container.querySelector("#markdown-content p");
     expect(p!.textContent).toBe("Nothing here");
@@ -68,7 +68,7 @@ describe("MarkdownRenderer", () => {
   it("sanitizes HTML to prevent XSS", () => {
     const malicious = '# Title\n\n<script>alert("xss")</script>\n\n<img src=x onerror="alert(1)">';
     const { container } = render(() => (
-      <MarkdownRenderer content={malicious} />
+      <ContentRenderer content={malicious} />
     ));
     const content = container.querySelector("#markdown-content");
     // Script tags must be stripped
@@ -82,7 +82,7 @@ describe("MarkdownRenderer", () => {
   it("strips ANSI codes before rendering markdown", () => {
     const raw = "\x1B[31m# Red Title\x1B[0m";
     const { container } = render(() => (
-      <MarkdownRenderer content={raw} />
+      <ContentRenderer content={raw} />
     ));
     const content = container.querySelector("#markdown-content");
     expect(content!.textContent).toContain("Red Title");
@@ -93,7 +93,7 @@ describe("MarkdownRenderer", () => {
   it("calls onLinkClick with href when .md link is clicked", () => {
     const onLinkClick = vi.fn();
     const { container } = render(() => (
-      <MarkdownRenderer
+      <ContentRenderer
         content="See [readme](docs/README.md) for details"
         onLinkClick={onLinkClick}
       />
@@ -107,7 +107,7 @@ describe("MarkdownRenderer", () => {
   it("does not call onLinkClick for non-.md links", () => {
     const onLinkClick = vi.fn();
     const { container } = render(() => (
-      <MarkdownRenderer
+      <ContentRenderer
         content="See [site](https://example.com) for details"
         onLinkClick={onLinkClick}
       />
@@ -120,7 +120,7 @@ describe("MarkdownRenderer", () => {
 
   it("does not intercept .md links when onLinkClick is not provided", () => {
     const { container } = render(() => (
-      <MarkdownRenderer content="See [readme](docs/README.md) for details" />
+      <ContentRenderer content="See [readme](docs/README.md) for details" />
     ));
     const link = container.querySelector('a[href="docs/README.md"]') as HTMLAnchorElement;
     expect(link).not.toBeNull();
@@ -131,7 +131,7 @@ describe("MarkdownRenderer", () => {
   describe("GFM task-list checkboxes", () => {
     it("renders checkboxes as enabled input elements with data-source-line", () => {
       const md = "- [ ] First\n- [x] Second\n- [ ] Third";
-      const { container } = render(() => <MarkdownRenderer content={md} />);
+      const { container } = render(() => <ContentRenderer content={md} />);
       const checkboxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
       expect(checkboxes.length).toBe(3);
       // All should be enabled (disabled removed)
@@ -144,7 +144,7 @@ describe("MarkdownRenderer", () => {
 
     it("marks checked boxes correctly", () => {
       const md = "- [ ] Unchecked\n- [x] Checked";
-      const { container } = render(() => <MarkdownRenderer content={md} />);
+      const { container } = render(() => <ContentRenderer content={md} />);
       const checkboxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
       expect(checkboxes[0].checked).toBe(false);
       expect(checkboxes[1].checked).toBe(true);
@@ -158,7 +158,7 @@ describe("MarkdownRenderer", () => {
         "```",                   // line 3
         "- [ ] Another task",   // line 4 → sourceLine 4
       ].join("\n");
-      const { container } = render(() => <MarkdownRenderer content={md} />);
+      const { container } = render(() => <ContentRenderer content={md} />);
       const checkboxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
       expect(checkboxes.length).toBe(2);
       expect(checkboxes[0].dataset.sourceLine).toBe("0");
@@ -169,7 +169,7 @@ describe("MarkdownRenderer", () => {
       const onToggle = vi.fn();
       const md = "- [ ] First\n- [x] Second";
       const { container } = render(() => (
-        <MarkdownRenderer content={md} onCheckboxToggle={onToggle} />
+        <ContentRenderer content={md} onCheckboxToggle={onToggle} />
       ));
       const checkboxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
       // Click unchecked → should request "x"
@@ -179,7 +179,7 @@ describe("MarkdownRenderer", () => {
 
     it("renders [~] as indeterminate checkbox with sentinel attribute", () => {
       const md = "- [ ] Normal\n- [~] In progress";
-      const { container } = render(() => <MarkdownRenderer content={md} />);
+      const { container } = render(() => <ContentRenderer content={md} />);
       const checkboxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
       expect(checkboxes.length).toBe(2);
       // First should not have the sentinel
@@ -190,7 +190,7 @@ describe("MarkdownRenderer", () => {
 
     it("handles mixed content: headings, text, and checkboxes", () => {
       const md = "# Plan\n\nSome text.\n\n- [ ] Task A\n- [x] Task B\n\nMore text.";
-      const { container } = render(() => <MarkdownRenderer content={md} />);
+      const { container } = render(() => <ContentRenderer content={md} />);
       const checkboxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
       expect(checkboxes.length).toBe(2);
       expect(checkboxes[0].dataset.sourceLine).toBe("4");
@@ -199,7 +199,7 @@ describe("MarkdownRenderer", () => {
 
     it("handles nested checkboxes", () => {
       const md = "- [ ] Parent\n  - [ ] Child\n  - [x] Done child";
-      const { container } = render(() => <MarkdownRenderer content={md} />);
+      const { container } = render(() => <ContentRenderer content={md} />);
       const checkboxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
       expect(checkboxes.length).toBe(3);
       expect(checkboxes[0].dataset.sourceLine).toBe("0");
