@@ -387,9 +387,14 @@ async fn run_loop(
 
     let chat_options = ChatOptions::default().with_capture_tool_calls(true);
 
-    // Build initial request
+    // Build initial request with optional session knowledge
+    let mut system_prompt = build_system_prompt(&session_id);
+    if let Some(knowledge) = super::context::build_knowledge_section(&state, &session_id) {
+        system_prompt.push_str("\n\n");
+        system_prompt.push_str(&knowledge);
+    }
     let mut chat_req = ChatRequest::default()
-        .with_system(build_system_prompt(&session_id))
+        .with_system(system_prompt)
         .with_tools(genai_tools.clone())
         .append_message(ChatMessage::user(user_goal));
 
@@ -923,5 +928,58 @@ mod tests {
         let redacted = redact_json_values(&val);
         assert_eq!(redacted["count"], 42);
         assert_eq!(redacted["active"], true);
+    }
+
+    // ── Knowledge injection ───────────────────────────────────
+
+    #[test]
+    fn system_prompt_appends_knowledge_when_present() {
+        use crate::ai_agent::knowledge::{CommandOutcome, OutcomeClass};
+        use crate::state::tests_support::make_test_app_state;
+
+        let state = make_test_app_state();
+        let sid = "test-knowledge-inject";
+
+        state.record_outcome(
+            sid,
+            CommandOutcome {
+                timestamp: 1,
+                command: "cargo build".into(),
+                cwd: "/project".into(),
+                exit_code: Some(1),
+                output_snippet: "error[E0308]: mismatched types".into(),
+                classification: OutcomeClass::Error {
+                    error_type: "rust_compilation".into(),
+                },
+                duration_ms: 500,
+            },
+        );
+
+        let mut system_prompt = build_system_prompt(sid);
+        if let Some(knowledge) = crate::ai_agent::context::build_knowledge_section(&state, sid) {
+            system_prompt.push_str("\n\n");
+            system_prompt.push_str(&knowledge);
+        }
+
+        assert!(system_prompt.contains(sid));
+        assert!(system_prompt.contains("Session Knowledge"));
+        assert!(system_prompt.contains("cargo build"));
+    }
+
+    #[test]
+    fn system_prompt_unchanged_without_knowledge() {
+        use crate::state::tests_support::make_test_app_state;
+
+        let state = make_test_app_state();
+        let sid = "test-no-knowledge";
+
+        let base = build_system_prompt(sid);
+        let mut system_prompt = build_system_prompt(sid);
+        if let Some(knowledge) = crate::ai_agent::context::build_knowledge_section(&state, sid) {
+            system_prompt.push_str("\n\n");
+            system_prompt.push_str(&knowledge);
+        }
+
+        assert_eq!(system_prompt, base);
     }
 }
