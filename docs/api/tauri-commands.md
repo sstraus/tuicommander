@@ -164,6 +164,27 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `discover_agent_session` | `session_id, agent_type, cwd` | `Option<String>` | Discover agent session UUID from filesystem for session-aware resume |
 | `verify_agent_session` | `agent_type, session_id, cwd` | `bool` | Verify if a specific agent session file exists on disk (for TUIC_SESSION resume) |
 
+## AI Chat (`ai_chat.rs`)
+
+Conversational AI companion with terminal context injection. See [`docs/user-guide/ai-chat.md`](../user-guide/ai-chat.md) for the feature overview.
+
+| Command | Args | Returns | Description |
+|---------|------|---------|-------------|
+| `load_ai_chat_config` | -- | `AiChatConfig` | Load provider / model / base URL / temperature / `context_lines` from `ai-chat-config.json` |
+| `save_ai_chat_config` | `config` | `()` | Persist chat config |
+| `has_ai_chat_api_key` | -- | `bool` | Whether an API key is stored in the OS keyring for the current provider |
+| `save_ai_chat_api_key` | `key: String` | `()` | Store API key in OS keyring (service `tuicommander-ai-chat`, user `api-key`) |
+| `delete_ai_chat_api_key` | -- | `()` | Remove stored API key |
+| `check_ollama_status` | -- | `OllamaStatus` | Probe `GET /api/tags` on the configured base URL (default `http://localhost:11434/v1/`); returns reachable + model list |
+| `test_ai_chat_connection` | -- | `String` | Validate API key + base URL with a minimal completion request |
+| `list_conversations` | -- | `Vec<ConversationMeta>` | List persisted conversations (id, title, updated_at, message count) |
+| `load_conversation` | `id: String` | `Conversation` | Load a saved conversation body |
+| `save_conversation` | `conversation: Conversation` | `()` | Persist a conversation to `ai-chat-conversations/<id>.json` |
+| `delete_conversation` | `id: String` | `()` | Remove a saved conversation (idempotent) |
+| `new_conversation_id` | -- | `String` | Mint a fresh conversation UUID |
+| `stream_ai_chat` | `session_id, messages, chat_id, on_event: Channel<ChatStreamEvent>` | `()` | Stream a turn. Events: `chunk { text }`, `end`, `error { message }`, `tool_call` / `tool_result` (agent mode). Context assembly pulls `VtLogBuffer` (capped at `context_lines`), `SessionState`, recent `ParsedEvent`s, git context |
+| `cancel_ai_chat` | `chat_id: String` | `()` | Cancel an in-flight stream (idempotent) |
+
 ## AI Agent Loop (`ai_agent/commands.rs`)
 
 ReAct-style agent loop driving a terminal session with `ai_terminal_*` tools,
@@ -179,6 +200,42 @@ plus a Tauri-side query for the per-session knowledge store.
 | `approve_agent_action` | `session_id, approved` | `String` | Approve or reject the pending destructive command the agent wants to run. Errors if no agent is active. |
 | `get_session_knowledge` | `session_id` | `SessionKnowledgeSummary` | Lightweight summary for the `SessionKnowledgeBar` UI: commands count, last 5 outcomes with kind badges, recent errors with `error_type`, TUI mode indicator, TUI apps seen. Returns an empty summary when the session has no recorded knowledge yet. |
 
+### Agent Tools (`ai_agent/tools.rs`)
+
+12 tools available to the ReAct agent loop and exposed via MCP as `ai_terminal_*`:
+
+**Terminal tools** (require `session_id`):
+
+| Tool | Args | Description |
+|------|------|-------------|
+| `read_screen` | `session_id, lines?` | Read visible terminal text (default 50 lines). Secrets redacted. |
+| `send_input` | `session_id, command` | Send a text command to the PTY (Ctrl-U prefix + \\r). |
+| `send_key` | `session_id, key` | Send a special key (enter, tab, ctrl+c, escape, arrows). |
+| `wait_for` | `session_id, pattern?, timeout_ms?, stability_ms?` | Wait for regex match or screen stability. |
+| `get_state` | `session_id` | Structured session metadata (shell_state, cwd, terminal_mode). |
+| `get_context` | `session_id` | Compact ~500-char context summary. |
+
+**Filesystem tools** (sandboxed per session via `FileSandbox`):
+
+| Tool | Args | Description |
+|------|------|-------------|
+| `read_file` | `file_path, offset?, limit?` | Paginated file read (default 200, max 2000 lines). Binary/10MB rejected. Secrets redacted. |
+| `write_file` | `file_path, content` | Atomic create/overwrite (tmp+rename). Sensitive paths flagged. |
+| `edit_file` | `file_path, old_string, new_string, replace_all?` | Search-and-replace. Must be unique unless replace_all=true. |
+| `list_files` | `pattern, path?` | Glob match (e.g. `src/**/*.rs`). Max 500 entries. |
+| `search_files` | `pattern, path?, glob?, context_lines?` | Regex search, .gitignore-aware. Max 50 matches with context. |
+| `run_command` | `command, timeout_ms?, cwd?` | Shell command with captured stdout/stderr. Safety-checked. Env sanitized. |
+
+## MCP OAuth 2.1 (`mcp_oauth/commands.rs`)
+
+OAuth 2.1 authorization for upstream MCP servers. Full RFC 9728 (Protected Resource Metadata) + RFC 8414 (Authorization Server Discovery) flow with PKCE S256. Completion via the `tuic://oauth-callback` deep link.
+
+| Command | Args | Returns | Description |
+|---------|------|---------|-------------|
+| `start_mcp_upstream_oauth` | `name: String` | `StartOAuthResponse` | Begin an OAuth flow for the named upstream. Transitions status to `authenticating`, returns the authorization URL + AS origin for the consent dialog. PKCE challenge is generated and stored per pending flow |
+| `mcp_oauth_callback` | `code: String, oauth_state: String` | `()` | Consume the `tuic://oauth-callback?code=…&state=…` deep link. Exchanges the code for tokens, persists `OAuthTokenSet` to the OS keyring, transitions upstream to `connecting` |
+| `cancel_mcp_upstream_oauth` | `name: String` | `()` | Abort an in-flight OAuth flow. Drops the pending entry and resets upstream status |
+
 ## MCP Upstream Proxy (`mcp_upstream_config.rs`, `mcp_upstream_credentials.rs`)
 
 Commands for managing upstream MCP servers proxied through TUICommander's `/mcp` endpoint.
@@ -188,7 +245,7 @@ Commands for managing upstream MCP servers proxied through TUICommander's `/mcp`
 | `load_mcp_upstreams` | -- | `UpstreamMcpConfig` | Load upstream config from `mcp-upstreams.json` |
 | `save_mcp_upstreams` | `config: UpstreamMcpConfig` | `()` | Validate, persist, and hot-reload upstream config. Errors if validation fails |
 | `reconnect_mcp_upstream` | `name: String` | `()` | Disconnect and reconnect a single upstream by name. Useful after credential changes or transient failures |
-| `get_mcp_upstream_status` | -- | `Vec<UpstreamStatus>` | Get live status of all upstream MCP servers |
+| `get_mcp_upstream_status` | -- | `Vec<UpstreamStatus>` | Get live status of all upstream MCP servers. Status values: `connecting`, `ready`, `circuit_open`, `disabled`, `failed`, `authenticating`, `needs_auth` |
 | `save_mcp_upstream_credential` | `name: String, token: String` | `()` | Store a Bearer token for an upstream in the OS keyring |
 | `delete_mcp_upstream_credential` | `name: String` | `()` | Remove a Bearer token from the OS keyring (idempotent) |
 

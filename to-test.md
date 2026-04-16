@@ -46,6 +46,18 @@ Features to test when TUICommander is more usable.
 - [ ] `ai_terminal_get_state` reflects current shell_state/cwd/terminal_mode/agent_type
 - [ ] `ai_terminal_get_context` returns compact ~500-char summary aligned with SessionKnowledge.build_context_summary
 
+## AI Agent — Filesystem Tools (1325-1331)
+- [ ] `ai_terminal_read_file` returns line-numbered content; respects offset/limit; rejects binary and >10MB; secrets redacted
+- [ ] `ai_terminal_write_file` creates a new file; overwrites existing; confirm dialog appears for MCP callers
+- [ ] `ai_terminal_write_file` to `.env` or `Cargo.toml` triggers "sensitive path" rejection
+- [ ] `ai_terminal_edit_file` replaces unique occurrence; rejects non-unique without replace_all; confirm dialog for MCP
+- [ ] `ai_terminal_list_files` matches glob patterns (e.g. `**/*.rs`); reports dir vs file type; max 500
+- [ ] `ai_terminal_search_files` finds regex matches with context; respects .gitignore; max 50 matches
+- [ ] `ai_terminal_run_command` captures stdout/stderr; sanitized env (only PATH/HOME/TERM/LANG); safety blocks sudo; confirm dialog for MCP
+- [ ] `ai_terminal_run_command` with 500ms timeout kills the process cleanly
+- [ ] Filesystem tools only work within the session's sandbox root — `../` traversal rejected
+- [ ] Agent system prompt now documents all 12 tools with when-to-use guidance
+
 ## AI Agent — Session Knowledge (1305/1306/1307/1309)
 - [ ] OSC 133 shell (with `shell-integration.sh` sourced): running a command populates SessionKnowledgeBar with a Success/Error row and exit code
 - [ ] Shell without OSC 133: busy→idle transition populates an `inferred` outcome row (no exit code, empty command text)
@@ -680,6 +692,14 @@ Features to test when TUICommander is more usable.
 - [ ] MCP tool: `github` action `issues` returns issues for repo
 - [ ] Compact mode (`[data-compact]`): issue items render with reduced padding
 - [ ] SmartButtonStrip: margin-left removal doesn't misalign across different placements (changes-tab, sidebar, prompt-drawer)
+
+## Focus Mode (Cmd+Alt+Enter)
+- [ ] Cmd+Alt+Enter hides sidebar, tab bar, and any open side panel (AI chat, git, markdown, notes, file browser)
+- [ ] Toolbar (title bar) and StatusBar remain visible and functional
+- [ ] Cmd+Alt+Enter again restores the previous layout (panel state preserved — the same panel that was open reappears)
+- [ ] Setting `toggle-focus-mode` combo via KeyboardShortcuts tab changes the active hotkey
+- [ ] Focus mode does NOT persist across restart (session-only)
+- [ ] Does not collide with Cmd+Shift+Enter (zoom-pane) — both work independently
 
 ## Mobile iPad Fixes
 - [ ] iPad: OutputView scrolls with touch drag (finger swipe up/down)

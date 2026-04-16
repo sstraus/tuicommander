@@ -114,8 +114,11 @@ OSC 133 outcome capture, or the `ai_terminal_*` MCP tools:
 
 | File | What to update |
 |------|----------------|
-| `src-tauri/src/ai_agent/engine.rs` | ReAct loop, approval flow, ACTIVE_AGENTS registry |
-| `src-tauri/src/ai_agent/tools.rs` | Tool dispatch (`ai_terminal_*` handlers) |
+| `src-tauri/src/ai_agent/engine.rs` | ReAct loop, approval flow, ACTIVE_AGENTS registry, system prompt |
+| `src-tauri/src/ai_agent/tools.rs` | Tool dispatch: 6 terminal + 6 filesystem tools |
+| `src-tauri/src/ai_agent/safety.rs` | SafetyChecker: command safety + file-write sensitive path rules |
+| `src-tauri/src/ai_agent/sandbox.rs` | FileSandbox: path jail for filesystem tools (canonicalize + starts_with) |
+| `src-tauri/src/mcp_http/ai_terminal.rs` | MCP exposure of all 12 `ai_terminal_*` tools; write-tool confirmation |
 | `src-tauri/src/ai_agent/knowledge.rs` | CommandOutcome, SessionKnowledge, OSC 133 scanner, persist/load/spawn_persist_task |
 | `src-tauri/src/ai_agent/context.rs` | Session-knowledge injection into agent system prompt |
 | `src-tauri/src/ai_agent/tui_detect.rs` | TerminalMode heuristics (Shell vs FullscreenTui) |
