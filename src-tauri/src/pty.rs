@@ -716,19 +716,43 @@ fn try_shell_transition(
     }
 }
 
+/// Decision from `should_transition_idle`.
+///
+/// `force_cleared_subtasks` is true only on the stale-subtask recovery path —
+/// callers must emit `ActiveSubtasks { count: 0 }` so the frontend store and
+/// notification gate reset (story 1366-2b3e/H1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct IdleDecision {
+    should_transition: bool,
+    force_cleared_subtasks: bool,
+}
+
+impl IdleDecision {
+    const NO: Self = Self { should_transition: false, force_cleared_subtasks: false };
+    const YES: Self = Self { should_transition: true, force_cleared_subtasks: false };
+}
+
 /// Check whether the session should transition to idle (busy → idle).
 /// Conditions: last real output > threshold ago AND no active sub-tasks.
 /// Agent sessions use a longer threshold (AGENT_IDLE_MS) because AI agents
 /// produce output in bursts with natural thinking pauses between them.
-fn should_transition_idle(state: &crate::state::AppState, session_id: &str) -> bool {
+fn should_transition_idle(state: &crate::state::AppState, session_id: &str) -> IdleDecision {
     let last_ms = state.last_output_ms.get(session_id)
         .map(|ts| ts.load(std::sync::atomic::Ordering::Relaxed))
         .unwrap_or(0);
     if last_ms == 0 {
-        return false;
+        return IdleDecision::NO;
     }
-    let session = state.session_states.get(session_id);
-    let is_agent = session.as_ref().map(|s| s.agent_type.is_some()).unwrap_or(false);
+    // Read snapshot in a scoped block so the DashMap shard read-lock is
+    // released before we take a write-lock below — same shard would otherwise
+    // deadlock the runtime in the force-clear branch.
+    let (is_agent, sub_tasks) = {
+        let session = state.session_states.get(session_id);
+        (
+            session.as_ref().map(|s| s.agent_type.is_some()).unwrap_or(false),
+            session.as_ref().map(|s| s.active_sub_tasks).unwrap_or(0),
+        )
+    };
     let threshold = if is_agent { AGENT_IDLE_MS } else { SHELL_IDLE_MS };
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -736,11 +760,10 @@ fn should_transition_idle(state: &crate::state::AppState, session_id: &str) -> b
         .as_millis() as u64;
     let elapsed = now.saturating_sub(last_ms);
     if elapsed < threshold {
-        return false;
+        return IdleDecision::NO;
     }
-    let sub_tasks = session.as_ref().map(|s| s.active_sub_tasks).unwrap_or(0);
     if sub_tasks == 0 {
-        return true;
+        return IdleDecision::YES;
     }
     // Sub-tasks are active but no output for SUBTASK_STALE_MS — the mode-line
     // disappeared without emitting count=0 (agent exited, user cleared, etc.).
@@ -749,9 +772,9 @@ fn should_transition_idle(state: &crate::state::AppState, session_id: &str) -> b
         if let Some(mut entry) = state.session_states.get_mut(session_id) {
             entry.active_sub_tasks = 0;
         }
-        return true;
+        return IdleDecision { should_transition: true, force_cleared_subtasks: true };
     }
-    false
+    IdleDecision::NO
 }
 
 /// Emit a ShellState parsed event via both event bus and Tauri IPC.
@@ -762,6 +785,31 @@ fn emit_shell_state(
     shell_state: &str,
 ) {
     let parsed = ParsedEvent::ShellState { state: shell_state.to_string() };
+    if let Ok(json) = serde_json::to_value(&parsed) {
+        let _ = state.event_bus.send(crate::state::AppEvent::PtyParsed {
+            session_id: session_id.to_string(),
+            parsed: json,
+        });
+    }
+    if let Some(app) = app {
+        let _ = app.emit(
+            &format!("pty-parsed-{session_id}"),
+            &parsed,
+        );
+    }
+}
+
+/// Emit an ActiveSubtasks parsed event via both event bus and Tauri IPC.
+/// Used by the stale-subtasks recovery path to keep the frontend store in
+/// sync after `should_transition_idle` force-clears the in-memory counter.
+fn emit_active_subtasks(
+    state: &crate::state::AppState,
+    app: Option<&tauri::AppHandle>,
+    session_id: &str,
+    count: u32,
+    task_type: &str,
+) {
+    let parsed = ParsedEvent::ActiveSubtasks { count, task_type: task_type.to_string() };
     if let Ok(json) = serde_json::to_value(&parsed) {
         let _ = state.event_bus.send(crate::state::AppEvent::PtyParsed {
             session_id: session_id.to_string(),
@@ -853,11 +901,22 @@ fn spawn_silence_timer(
             // fresh in the reader, so this won't fire while a spinner is active.
             if let Some(atom) = state.shell_states.get(&session_id)
                 && atom.load(std::sync::atomic::Ordering::Acquire) == SHELL_BUSY
-                && should_transition_idle(&state, &session_id)
-                && try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE, true)
             {
-                emit_shell_state(&state, app.as_ref(), &session_id, "idle");
-                record_inferred_outcome_if_no_osc133(&state, &session_id);
+                let decision = should_transition_idle(&state, &session_id);
+                if decision.should_transition
+                    && try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE, true)
+                {
+                    if decision.force_cleared_subtasks {
+                        // Story 1366-2b3e/H1: the stale-recovery path inside
+                        // should_transition_idle reset active_sub_tasks in-memory
+                        // but the frontend store only learns from this stream.
+                        // Without an explicit count=0 emission, the UI keeps a
+                        // non-zero badge and notifications stay suppressed.
+                        emit_active_subtasks(&state, app.as_ref(), &session_id, 0, "");
+                    }
+                    emit_shell_state(&state, app.as_ref(), &session_id, "idle");
+                    record_inferred_outcome_if_no_osc133(&state, &session_id);
+                }
             }
 
             // Update startup grace state (checks if output has settled).
@@ -4753,7 +4812,7 @@ mod tests {
             .unwrap().as_millis() as u64;
         state.last_output_ms.insert(sid.to_string(), AtomicU64::new(now - 600));
 
-        assert!(should_transition_idle(&state, sid),
+        assert!(should_transition_idle(&state, sid).should_transition,
             "should be ready to transition idle (600ms elapsed, no sub-tasks)");
         assert!(try_shell_transition(&state, sid, SHELL_BUSY, SHELL_IDLE, true),
             "should transition busy → idle");
@@ -4777,7 +4836,7 @@ mod tests {
             .unwrap().as_millis() as u64;
         state.last_output_ms.insert(sid.to_string(), AtomicU64::new(now - 600));
 
-        assert!(!should_transition_idle(&state, sid),
+        assert!(!should_transition_idle(&state, sid).should_transition,
             "should NOT transition idle when active_sub_tasks > 0 and elapsed < SUBTASK_STALE_MS");
     }
 
@@ -4799,11 +4858,72 @@ mod tests {
             .unwrap().as_millis() as u64;
         state.last_output_ms.insert(sid.to_string(), AtomicU64::new(now - 31_000));
 
-        assert!(should_transition_idle(&state, sid),
+        assert!(should_transition_idle(&state, sid).should_transition,
             "should transition idle when active_sub_tasks > 0 but elapsed >= SUBTASK_STALE_MS");
         // Verify the stale counter was force-cleared
         let sub = state.session_states.get(sid).map(|s| s.active_sub_tasks).unwrap_or(999);
         assert_eq!(sub, 0, "active_sub_tasks should be force-cleared to 0");
+    }
+
+    /// Story 1366-2b3e/H1: when the stale-subtasks recovery path force-clears
+    /// the in-memory counter, the caller must emit ActiveSubtasks{count:0}
+    /// so the frontend store and notification gate also reset.
+    #[test]
+    fn test_force_cleared_subtasks_signal_propagates() {
+        use std::sync::atomic::{AtomicU8, AtomicU64};
+        let state = crate::state::tests_support::make_test_app_state();
+        let sid = "test-session";
+        state.shell_states.insert(sid.to_string(), AtomicU8::new(SHELL_BUSY));
+        state.session_states.insert(sid.to_string(), crate::state::SessionState {
+            active_sub_tasks: 3,
+            ..Default::default()
+        });
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap().as_millis() as u64;
+        state.last_output_ms.insert(sid.to_string(), AtomicU64::new(now - 31_000));
+
+        let decision = should_transition_idle(&state, sid);
+        assert!(decision.should_transition, "stale path must transition idle");
+        assert!(decision.force_cleared_subtasks,
+            "stale path must signal force-clear so caller emits count=0");
+
+        // Subscribe BEFORE emitting so the broadcast is captured.
+        let mut rx = state.event_bus.subscribe();
+        emit_active_subtasks(&state, None, sid, 0, "");
+
+        let event = rx.try_recv().expect("event bus must receive PtyParsed");
+        match event {
+            crate::state::AppEvent::PtyParsed { session_id, parsed } => {
+                assert_eq!(session_id, sid);
+                let kind = parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                assert_eq!(kind, "active-subtasks", "wrong event variant: {parsed}");
+                let count = parsed.get("count").and_then(|v| v.as_u64()).unwrap_or(999);
+                assert_eq!(count, 0, "count must be 0 to clear the badge");
+            }
+            other => panic!("unexpected event variant: {other:?}"),
+        }
+    }
+
+    /// Inverse: the normal idle path (no sub-tasks at all) must NOT signal
+    /// force_cleared_subtasks — otherwise we would emit redundant count=0
+    /// events on every healthy busy→idle.
+    #[test]
+    fn test_normal_idle_does_not_signal_force_clear() {
+        use std::sync::atomic::{AtomicU8, AtomicU64};
+        let state = crate::state::tests_support::make_test_app_state();
+        let sid = "test-session";
+        state.shell_states.insert(sid.to_string(), AtomicU8::new(SHELL_BUSY));
+        state.session_states.insert(sid.to_string(), crate::state::SessionState::default());
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap().as_millis() as u64;
+        state.last_output_ms.insert(sid.to_string(), AtomicU64::new(now - 600));
+
+        let decision = should_transition_idle(&state, sid);
+        assert!(decision.should_transition);
+        assert!(!decision.force_cleared_subtasks,
+            "no-sub-tasks idle must not request a redundant count=0 emission");
     }
 
     #[test]
@@ -4825,7 +4945,7 @@ mod tests {
             .unwrap().as_millis() as u64;
         state.last_output_ms.insert(sid.to_string(), AtomicU64::new(now - 600));
 
-        assert!(!should_transition_idle(&state, sid),
+        assert!(!should_transition_idle(&state, sid).should_transition,
             "agent session should NOT transition idle at 600ms (under AGENT_IDLE_MS)");
     }
 
@@ -4848,7 +4968,7 @@ mod tests {
             .unwrap().as_millis() as u64;
         state.last_output_ms.insert(sid.to_string(), AtomicU64::new(now - 3000));
 
-        assert!(should_transition_idle(&state, sid),
+        assert!(should_transition_idle(&state, sid).should_transition,
             "agent session SHOULD transition idle after agent threshold");
     }
 
@@ -4865,7 +4985,7 @@ mod tests {
             .unwrap().as_millis() as u64;
         state.last_output_ms.insert(sid.to_string(), AtomicU64::new(now - 200));
 
-        assert!(!should_transition_idle(&state, sid),
+        assert!(!should_transition_idle(&state, sid).should_transition,
             "should NOT transition idle when only 200ms elapsed");
     }
 
@@ -4944,7 +5064,7 @@ mod tests {
         silence.on_chunk(false, None, false, false, false); // chunk just arrived
 
         // should_transition_idle says yes (based on last_output_ms alone)
-        assert!(should_transition_idle(&state, sid),
+        assert!(should_transition_idle(&state, sid).should_transition,
             "should_transition_idle sees stale last_output_ms");
         // But has_recent_chunks blocks the backup timer (recent chunk activity)
         assert!(silence.has_recent_chunks(),
