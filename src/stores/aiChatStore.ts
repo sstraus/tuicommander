@@ -65,6 +65,10 @@ function addAssistantMessage(content: string): void {
   addMessage("assistant", content);
 }
 
+function addSystemMessage(content: string): void {
+  addMessage("system", content);
+}
+
 function clearHistory(): void {
   batch(() => {
     setMessages([]);
@@ -208,6 +212,7 @@ export const aiChatStore = {
   // Actions
   addUserMessage,
   addAssistantMessage,
+  addSystemMessage,
   clearHistory,
   setStreaming,
   appendStreamChunk,
