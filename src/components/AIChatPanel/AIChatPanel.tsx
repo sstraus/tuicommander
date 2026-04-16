@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal, createEffect } from "solid-js";
+import { Component, For, Show, createSignal, createEffect, onCleanup } from "solid-js";
 import { aiChatStore } from "../../stores/aiChatStore";
 import { aiAgentStore, type ToolCallEntry } from "../../stores/aiAgentStore";
 import { terminalsStore } from "../../stores/terminals";
@@ -199,12 +199,12 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
       appLogger.warn("ai-chat", "Cannot run code: terminal ref not found", { sessionId });
       return;
     }
+    const resolvedRef = termRef;
     const shellFamily = await getShellFamily(sessionId);
-    // Send each line as a separate command for multi-line code blocks
     const lines = code.trim().split("\n");
     for (const line of lines) {
       await sendCommand(
-        (data: string) => { termRef!.write(data); return Promise.resolve(); },
+        (data: string) => { resolvedRef.write(data); return Promise.resolve(); },
         line,
         agentType,
         shellFamily,
@@ -213,15 +213,17 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
   };
 
   // ── Code block enhancement: inject Copy + Run buttons ──────────────────
-  const enhanceCodeBlocks = (container: HTMLDivElement) => {
+  const enhanceCodeBlocks = (container: HTMLDivElement, signal: AbortSignal) => {
     const pres = container.querySelectorAll("pre");
     for (const pre of pres) {
-      // Skip if already enhanced
       if (pre.parentElement?.classList.contains(s.codeBlockWrapper)) continue;
+
+      const parent = pre.parentElement;
+      if (!parent) continue;
 
       const wrapper = document.createElement("div");
       wrapper.className = s.codeBlockWrapper;
-      pre.parentElement!.insertBefore(wrapper, pre);
+      parent.insertBefore(wrapper, pre);
       wrapper.appendChild(pre);
 
       const actions = document.createElement("div");
@@ -243,7 +245,7 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
             copyBtn.classList.remove(s.codeActionBtnCopied);
           }, 1500);
         }
-      });
+      }, { signal });
       actions.appendChild(copyBtn);
 
       // Run button
@@ -253,8 +255,10 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
       runBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M4 2.5l8 4.5-8 4.5z"/></svg>`;
       runBtn.addEventListener("click", () => {
         const text = extractCodeText(pre);
-        runCodeInTerminal(text);
-      });
+        void runCodeInTerminal(text).catch((e) =>
+          appLogger.warn("ai-chat", "Run code failed", { error: String(e) }),
+        );
+      }, { signal });
       actions.appendChild(runBtn);
 
       wrapper.appendChild(actions);
@@ -312,11 +316,13 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
               if (st === "running" || st === "paused") {
                 aiAgentStore.cancelAgent(sid);
               } else {
-                // Prompt for goal via the input
                 const text = inputText().trim();
                 if (text) {
                   aiAgentStore.startAgent(sid, text);
                   setInputText("");
+                } else {
+                  aiChatStore.addSystemMessage("Type a goal in the text box, then click the robot to start agent mode.");
+                  textareaRef?.focus();
                 }
               }
             }}
@@ -448,8 +454,9 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
                   <div
                     class={s.assistantMsg}
                     ref={(el) => {
-                      // Enhance code blocks after the markdown renders
-                      requestAnimationFrame(() => enhanceCodeBlocks(el));
+                      const ac = new AbortController();
+                      onCleanup(() => ac.abort());
+                      requestAnimationFrame(() => enhanceCodeBlocks(el, ac.signal));
                     }}
                   >
                     <MarkdownRenderer content={msg.content} />
