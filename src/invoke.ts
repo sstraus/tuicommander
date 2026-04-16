@@ -26,8 +26,67 @@ function getHttpInvoke(): Promise<InvokeFn> {
   });
 }
 
+// ---------------------------------------------------------------------------
+// In-flight dedup — coalesces concurrent identical read-only calls into a
+// single Tauri IPC round-trip. Without this, 20 components reacting to
+// "repo-changed" spawn 20 parallel git processes for the same repo.
+// Browser mode already dedupes in transport.ts via isIdempotentRpc.
+// ---------------------------------------------------------------------------
+
+const _inflight = new Map<string, Promise<unknown>>();
+
+/** Exposed for tests only — do not use in production code. */
+export const _inflight_TEST_ONLY = _inflight;
+
+/** Read-only Tauri commands safe to deduplicate. Mutations (stage, discard,
+ *  commit, push) are never deduped — even identical args may have side effects. */
+const DEDUP_COMMANDS = new Set([
+  "get_repo_summary",
+  "get_repo_structure",
+  "get_repo_diff_stats",
+  "get_repo_info",
+  "get_git_diff",
+  "get_github_status",
+  "get_repo_pr_statuses",
+  "check_github_circuit",
+  "get_shell_state",
+  "get_last_prompt",
+  "load_config",
+  "load_agents_config",
+  "load_llm_api_config",
+  "load_keybindings",
+  "load_notification_config",
+  "load_notes",
+  "load_activity",
+  "load_pane_layout",
+  "load_repo_local_config",
+  "load_mcp_upstreams",
+  "get_mcp_upstream_status",
+  "get_dictation_config",
+  "get_dictation_status",
+  "list_audio_devices",
+  "get_model_info",
+  "fetch_plugin_registry",
+  "list_user_plugins",
+  "check_has_custom_settings",
+  "resolve_terminal_path",
+  "stat_path",
+  "search_files",
+  "list_directory",
+  "get_claude_usage_api",
+]);
+
 export function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (isTauri()) {
+    if (DEDUP_COMMANDS.has(cmd)) {
+      const key = args !== undefined ? `${cmd}:${JSON.stringify(args)}` : cmd;
+      const existing = _inflight.get(key) as Promise<T> | undefined;
+      if (existing) return existing;
+      const promise = (args !== undefined ? tauriInvoke<T>(cmd, args) : tauriInvoke<T>(cmd))
+        .finally(() => _inflight.delete(key));
+      _inflight.set(key, promise as Promise<unknown>);
+      return promise;
+    }
     return args !== undefined ? tauriInvoke<T>(cmd, args) : tauriInvoke<T>(cmd);
   }
   if (_httpInvoke) return _httpInvoke<T>(cmd, args);
