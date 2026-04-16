@@ -340,6 +340,9 @@ pub(crate) struct AppConfig {
     /// Agent types disabled by the user (won't appear in sidebar "Add Agent" menu)
     #[serde(default)]
     pub(crate) disabled_agents: Vec<String>,
+    /// Agent types whose MCP bridge config is disabled (ensure_mcp_configs skips these)
+    #[serde(default)]
+    pub(crate) disabled_mcp_agents: Vec<String>,
     /// Native MCP tool names disabled by the user (excluded from tools/list response)
     #[serde(default)]
     pub(crate) disabled_native_tools: Vec<String>,
@@ -473,6 +476,7 @@ impl Default for AppConfig {
             ipv6_enabled: false,
             lan_auth_bypass: false,
             disabled_agents: Vec::new(),
+            disabled_mcp_agents: Vec::new(),
             disabled_native_tools: vec!["config".to_string(), "debug".to_string()],
             intent_tab_title: true,
             suggest_followups: true,
@@ -496,6 +500,7 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
+    #[allow(dead_code)]
     pub(crate) fn is_experimental_enabled(&self, sub_flag: bool) -> bool {
         self.experimental_features_enabled && sub_flag
     }
@@ -1221,6 +1226,7 @@ mod tests {
             ipv6_enabled: true,
             lan_auth_bypass: true,
             disabled_agents: vec!["codex".to_string()],
+            disabled_mcp_agents: vec!["windsurf".to_string()],
             disabled_native_tools: vec!["plugin_dev_guide".to_string()],
             intent_tab_title: false,
             suggest_followups: false,

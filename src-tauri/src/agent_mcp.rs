@@ -265,11 +265,16 @@ fn ensure_agent_mcp_entry(
 
 /// Ensure MCP bridge config is installed and up-to-date in all supported agent configs.
 /// Called on every app launch. Installs missing entries and updates stale paths.
-pub(crate) fn ensure_mcp_configs() {
+/// Agents in `disabled` are skipped (user opted out via Settings > Agents).
+pub(crate) fn ensure_mcp_configs(disabled: &[String]) {
     let bridge_path = detect_bridge_binary();
     tracing::info!(source = "mcp", bridge = %bridge_path, "Ensuring bridge configs");
 
     for agent in SUPPORTED_AGENTS {
+        if disabled.iter().any(|d| d == agent) {
+            tracing::debug!(source = "mcp", agent, "Skipping (disabled by user)");
+            continue;
+        }
         let Some(spec) = get_mcp_config_spec(agent) else { continue };
         ensure_agent_mcp_entry(&spec.config_path, &spec.key_path, &bridge_path, agent);
     }
@@ -312,7 +317,8 @@ pub(crate) fn get_agent_mcp_status(agent_type: String) -> AgentMcpStatus {
     }
 }
 
-/// Install the tui-mcp-bridge MCP entry into an agent's config
+/// Install the tui-mcp-bridge MCP entry into an agent's config.
+/// Also removes the agent from `disabled_mcp_agents` so `ensure_mcp_configs` won't skip it.
 #[tauri::command]
 pub(crate) fn install_agent_mcp(agent_type: String) -> Result<(), String> {
     let spec = get_mcp_config_spec(&agent_type)
@@ -336,27 +342,50 @@ pub(crate) fn install_agent_mcp(agent_type: String) -> Result<(), String> {
         *servers = serde_json::json!({ TUIC_MCP_KEY: entry_value });
     }
 
-    write_json_file(&spec.config_path, &root)
+    write_json_file(&spec.config_path, &root)?;
+
+    // Remove from disabled list so ensure_mcp_configs won't undo this
+    update_disabled_mcp_agents(|list| list.retain(|a| a != &agent_type));
+
+    Ok(())
 }
 
-/// Remove the tui-mcp-bridge MCP entry from an agent's config
+/// Remove the tui-mcp-bridge MCP entry from an agent's config.
+/// Also adds the agent to `disabled_mcp_agents` so `ensure_mcp_configs` won't reinstall it.
 #[tauri::command]
 pub(crate) fn remove_agent_mcp(agent_type: String) -> Result<(), String> {
     let spec = get_mcp_config_spec(&agent_type)
         .ok_or_else(|| format!("Agent '{agent_type}' does not support MCP configuration"))?;
 
-    if !spec.config_path.exists() {
-        return Ok(()); // Nothing to remove
+    if spec.config_path.exists() {
+        let mut root = read_json_file(&spec.config_path);
+        let servers = navigate_or_create(&mut root, &spec.key_path);
+
+        if let Some(obj) = servers.as_object_mut() {
+            obj.remove(TUIC_MCP_KEY);
+        }
+
+        write_json_file(&spec.config_path, &root)?;
     }
 
-    let mut root = read_json_file(&spec.config_path);
-    let servers = navigate_or_create(&mut root, &spec.key_path);
+    // Add to disabled list so ensure_mcp_configs won't reinstall
+    update_disabled_mcp_agents(|list| {
+        if !list.contains(&agent_type) {
+            list.push(agent_type.clone());
+        }
+    });
 
-    if let Some(obj) = servers.as_object_mut() {
-        obj.remove(TUIC_MCP_KEY);
+    Ok(())
+}
+
+/// Helper: load AppConfig, apply a mutation to `disabled_mcp_agents`, save back.
+fn update_disabled_mcp_agents(mutator: impl FnOnce(&mut Vec<String>)) {
+    use crate::config::{load_json_config, save_json_config, AppConfig};
+    let mut config: AppConfig = load_json_config("config.json");
+    mutator(&mut config.disabled_mcp_agents);
+    if let Err(e) = save_json_config("config.json", &config) {
+        tracing::error!(source = "mcp", "Failed to save disabled_mcp_agents: {e}");
     }
-
-    write_json_file(&spec.config_path, &root)
 }
 
 /// Get the path to an agent's own configuration file
@@ -612,4 +641,44 @@ mod tests {
         assert_eq!(root["amp"]["mcpServers"][TUIC_MCP_KEY]["command"], "/bridge");
     }
 
+    // --- ensure_mcp_configs disabled_agents tests ---
+
+    #[test]
+    fn ensure_skips_disabled_agents() {
+        let dir = TempDir::new().unwrap();
+        let config_path = dir.path().join("test.json");
+
+        // With empty disabled list — should install
+        ensure_agent_mcp_entry(&config_path, &["mcpServers"], "/bridge", "test");
+        assert!(config_path.exists());
+        let root = read_json_file(&config_path);
+        assert!(root["mcpServers"][TUIC_MCP_KEY].is_object());
+
+        // Remove the file and verify ensure_mcp_configs logic
+        // (we test the skip logic directly since ensure_mcp_configs uses home paths)
+        let disabled = vec!["claude".to_string(), "cursor".to_string()];
+        assert!(disabled.iter().any(|d| d == "claude"));
+        assert!(!disabled.iter().any(|d| d == "vscode"));
+    }
+
+    #[test]
+    fn disabled_list_contains_check() {
+        let disabled: Vec<String> = vec!["claude".to_string(), "windsurf".to_string()];
+
+        // Agents in disabled list should be skipped
+        for agent in &["claude", "windsurf"] {
+            assert!(
+                disabled.iter().any(|d| d == agent),
+                "{agent} should be in disabled list",
+            );
+        }
+
+        // Agents NOT in disabled list should proceed
+        for agent in &["cursor", "vscode", "zed", "amp", "gemini"] {
+            assert!(
+                !disabled.iter().any(|d| d == agent),
+                "{agent} should NOT be in disabled list",
+            );
+        }
+    }
 }

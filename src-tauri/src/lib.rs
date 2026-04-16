@@ -911,7 +911,8 @@ pub fn run() {
 
     // Ensure MCP bridge config is installed and up-to-date in all agent configs.
     // Runs every launch: installs missing entries and updates stale paths.
-    agent_mcp::ensure_mcp_configs();
+    // Skips agents the user explicitly disabled via Settings > Agents.
+    agent_mcp::ensure_mcp_configs(&config.disabled_mcp_agents);
 
     // Start relay client if configured
     if config.relay_enabled {
