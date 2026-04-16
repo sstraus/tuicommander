@@ -213,6 +213,11 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
     if (!props.repoPath) return;
     try {
       await invoke("git_discard_files", { path: props.repoPath, files: [filePath] });
+      // git restore only touches the working tree (not .git/index) for tracked
+      // modified files, so repo_watcher routes via WORKING_TREE_DEBOUNCE
+      // (1500ms) instead of GIT_STATE_DEBOUNCE (500ms). Bump revision so the
+      // UI updates immediately. (#1378-ce1c)
+      repositoriesStore.bumpRevision(props.repoPath);
     } catch (err) {
       appLogger.error("git", `Failed to discard ${filePath}`, err);
     }
@@ -249,6 +254,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
     if (files.length === 0) return;
     try {
       await invoke("git_discard_files", { path: props.repoPath, files });
+      repositoriesStore.bumpRevision(props.repoPath); // see discardFile (#1378-ce1c)
     } catch (err) {
       appLogger.error("git", "Failed to discard all files", err);
     }
@@ -337,6 +343,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
     try {
       await invoke("git_discard_files", { path: props.repoPath, files });
       setSelectedKeys(new Set<string>());
+      repositoriesStore.bumpRevision(props.repoPath); // see discardFile (#1378-ce1c)
     } catch (err) {
       appLogger.error("git", "Failed to discard selected files", err);
     }
