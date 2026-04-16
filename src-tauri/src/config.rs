@@ -393,6 +393,9 @@ pub(crate) struct AppConfig {
     /// Master toggle for experimental features
     #[serde(default)]
     pub(crate) experimental_features_enabled: bool,
+    /// Sub-flag: AI Chat panel, shortcuts, and palette entry
+    #[serde(default)]
+    pub(crate) ai_chat_enabled: bool,
 }
 
 fn default_language() -> String {
@@ -488,6 +491,7 @@ impl Default for AppConfig {
             collapse_tools: false,
             issue_filter: default_issue_filter(),
             experimental_features_enabled: false,
+            ai_chat_enabled: false,
         }
     }
 }
@@ -1235,6 +1239,7 @@ mod tests {
             collapse_tools: true,
             issue_filter: "assigned".to_string(),
             experimental_features_enabled: false,
+            ai_chat_enabled: false,
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
         assert_eq!(loaded.shell.as_deref(), Some("/bin/zsh"));

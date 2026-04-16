@@ -25,6 +25,8 @@ const MAX_IDENTICAL_CALLS: usize = 3;
 const RATE_WINDOW: Duration = Duration::from_secs(60);
 const RATE_LIMIT_PER_MINUTE: usize = 30;
 const RATE_LIMIT_PER_SESSION: usize = 200;
+const TOOL_DISPATCH_LIMIT_PER_MINUTE: usize = 60;
+const TOOL_DISPATCH_LIMIT_PER_SESSION: usize = 500;
 
 // ── Active agents registry ────────────────────────────────────
 
@@ -80,13 +82,17 @@ pub enum AgentLoopEvent {
 struct RateLimiter {
     window: VecDeque<tokio::time::Instant>,
     total: usize,
+    per_minute: usize,
+    per_session: usize,
 }
 
 impl RateLimiter {
-    fn new() -> Self {
+    fn new(per_minute: usize, per_session: usize) -> Self {
         Self {
             window: VecDeque::new(),
             total: 0,
+            per_minute,
+            per_session,
         }
     }
 
@@ -94,12 +100,10 @@ impl RateLimiter {
     fn check(&mut self) -> Result<(), Duration> {
         let now = tokio::time::Instant::now();
 
-        // Session limit
-        if self.total >= RATE_LIMIT_PER_SESSION {
-            return Err(Duration::ZERO); // permanent for this session
+        if self.total >= self.per_session {
+            return Err(Duration::ZERO);
         }
 
-        // Sliding window
         while let Some(&front) = self.window.front() {
             if now.duration_since(front) > RATE_WINDOW {
                 self.window.pop_front();
@@ -108,7 +112,7 @@ impl RateLimiter {
             }
         }
 
-        if self.window.len() >= RATE_LIMIT_PER_MINUTE {
+        if self.window.len() >= self.per_minute {
             let oldest = self.window.front().unwrap();
             let wait = RATE_WINDOW - now.duration_since(*oldest);
             return Err(wait);
@@ -367,7 +371,8 @@ async fn run_loop(
         .with_tools(genai_tools.clone())
         .append_message(ChatMessage::user(user_goal));
 
-    let mut rate_limiter = RateLimiter::new();
+    let mut rate_limiter = RateLimiter::new(RATE_LIMIT_PER_MINUTE, RATE_LIMIT_PER_SESSION);
+    let mut tool_limiter = RateLimiter::new(TOOL_DISPATCH_LIMIT_PER_MINUTE, TOOL_DISPATCH_LIMIT_PER_SESSION);
     let mut repetition = RepetitionDetector::new();
     let deadline = tokio::time::Instant::now() + LOOP_TIMEOUT;
 
@@ -479,6 +484,22 @@ async fn run_loop(
 
         // Execute tool calls
         for tc in &tool_calls {
+            // Tool dispatch rate limiting
+            if let Err(wait) = tool_limiter.check() {
+                if wait == Duration::ZERO {
+                    return Ok("tool_dispatch_session_limit".into());
+                }
+                let _ = event_tx.send(AgentLoopEvent::RateLimited {
+                    session_id: session_id.clone(),
+                    wait_ms: wait.as_millis() as u64,
+                });
+                tokio::time::sleep(wait).await;
+                if cancel.load(Ordering::Relaxed) {
+                    return Ok("cancelled".into());
+                }
+            }
+            tool_limiter.record();
+
             // Repetition detection
             let sig = format!("{}:{}", tc.fn_name, tc.fn_arguments);
             if repetition.record(&sig) {
@@ -559,13 +580,13 @@ mod tests {
 
     #[test]
     fn rate_limiter_allows_initial_call() {
-        let mut rl = RateLimiter::new();
+        let mut rl = RateLimiter::new(RATE_LIMIT_PER_MINUTE, RATE_LIMIT_PER_SESSION);
         assert!(rl.check().is_ok());
     }
 
     #[test]
     fn rate_limiter_blocks_after_burst() {
-        let mut rl = RateLimiter::new();
+        let mut rl = RateLimiter::new(RATE_LIMIT_PER_MINUTE, RATE_LIMIT_PER_SESSION);
         for _ in 0..RATE_LIMIT_PER_MINUTE {
             rl.check().unwrap();
             rl.record();
@@ -575,10 +596,24 @@ mod tests {
 
     #[test]
     fn rate_limiter_session_limit() {
-        let mut rl = RateLimiter::new();
+        let mut rl = RateLimiter::new(RATE_LIMIT_PER_MINUTE, RATE_LIMIT_PER_SESSION);
         rl.total = RATE_LIMIT_PER_SESSION;
         let err = rl.check().unwrap_err();
         assert_eq!(err, Duration::ZERO);
+    }
+
+    #[test]
+    fn tool_dispatch_limiter_separate_from_llm() {
+        let mut llm = RateLimiter::new(RATE_LIMIT_PER_MINUTE, RATE_LIMIT_PER_SESSION);
+        let mut tool = RateLimiter::new(TOOL_DISPATCH_LIMIT_PER_MINUTE, TOOL_DISPATCH_LIMIT_PER_SESSION);
+        // Tool limiter allows more per minute than LLM limiter
+        assert!(TOOL_DISPATCH_LIMIT_PER_MINUTE > RATE_LIMIT_PER_MINUTE);
+        for _ in 0..RATE_LIMIT_PER_MINUTE {
+            llm.record();
+            tool.record();
+        }
+        assert!(llm.check().is_err());
+        assert!(tool.check().is_ok());
     }
 
     // ── RepetitionDetector ─────────────────────────────────────

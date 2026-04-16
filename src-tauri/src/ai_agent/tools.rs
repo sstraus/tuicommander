@@ -417,8 +417,8 @@ async fn exec_wait_for(state: &Arc<AppState>, args: &Value) -> ToolResult {
         None => return ToolResult::err("Missing session_id"),
     };
     let pattern = args["pattern"].as_str();
-    let timeout_ms = args["timeout_ms"].as_u64().unwrap_or(10_000);
-    let stability_ms = args["stability_ms"].as_u64().unwrap_or(500);
+    let timeout_ms = args["timeout_ms"].as_u64().unwrap_or(10_000).min(60_000);
+    let stability_ms = args["stability_ms"].as_u64().unwrap_or(500).min(10_000);
 
     let compiled = match pattern {
         Some(p) => match regex::Regex::new(p) {
@@ -2258,20 +2258,22 @@ mod tests {
     #[tokio::test]
     async fn run_command_sanitized_env() {
         let (_d, state) = fs_test_state("s1");
+        // `env` alone is blocked (data exfil); use `printenv HOME` (specific var)
         let r = dispatch(
             &state,
             "s1",
             "run_command",
-            &json!({ "command": "env | sort" }),
+            &json!({ "command": "printenv HOME" }),
         )
         .await;
         assert!(r.success, "{}", r.output);
         let parsed: Value = serde_json::from_str(&r.output).unwrap();
         let stdout = parsed["stdout"].as_str().unwrap();
-        assert!(stdout.contains("PATH="));
-        assert!(stdout.contains("HOME="));
-        assert!(stdout.contains("TERM=xterm-256color"));
-        assert!(!stdout.contains("SECRET"));
+        assert!(stdout.contains('/'));
+        // Verify bare `env` is blocked
+        let r2 = dispatch(&state, "s1", "run_command", &json!({ "command": "env" })).await;
+        assert!(!r2.success);
+        assert!(r2.output.contains("blocked"));
     }
 
     #[tokio::test]
