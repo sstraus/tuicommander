@@ -20,9 +20,16 @@ const SEND_KEY: &str = "ai_terminal_send_key";
 const WAIT_FOR: &str = "ai_terminal_wait_for";
 const GET_STATE: &str = "ai_terminal_get_state";
 const GET_CONTEXT: &str = "ai_terminal_get_context";
+const READ_FILE: &str = "ai_terminal_read_file";
+const WRITE_FILE: &str = "ai_terminal_write_file";
+const EDIT_FILE: &str = "ai_terminal_edit_file";
+const LIST_FILES: &str = "ai_terminal_list_files";
+const SEARCH_FILES: &str = "ai_terminal_search_files";
+const RUN_COMMAND: &str = "ai_terminal_run_command";
 
-pub(crate) const AI_TERMINAL_TOOL_NAMES: [&str; 6] = [
+pub(crate) const AI_TERMINAL_TOOL_NAMES: [&str; 12] = [
     READ_SCREEN, SEND_INPUT, SEND_KEY, WAIT_FOR, GET_STATE, GET_CONTEXT,
+    READ_FILE, WRITE_FILE, EDIT_FILE, LIST_FILES, SEARCH_FILES, RUN_COMMAND,
 ];
 
 pub(crate) fn is_ai_terminal_tool(name: &str) -> bool {
@@ -82,6 +89,66 @@ pub(crate) fn tool_definitions() -> Vec<serde_json::Value> {
                 "session_id": { "type": "string" }
             }, "required": ["session_id"] }
         }),
+        json!({
+            "name": READ_FILE,
+            "description": "Read a text file from the session's sandboxed repo. Paginated (default 200 lines, max 2000). Binary files and files >10MB rejected. Secrets redacted.",
+            "inputSchema": { "type": "object", "properties": {
+                "session_id": { "type": "string" },
+                "file_path": { "type": "string" },
+                "offset": { "type": "integer" },
+                "limit": { "type": "integer" }
+            }, "required": ["session_id", "file_path"] }
+        }),
+        json!({
+            "name": WRITE_FILE,
+            "description": "Create or overwrite a text file. ALWAYS prompts the user for confirmation. Atomic via tmp+rename.",
+            "inputSchema": { "type": "object", "properties": {
+                "session_id": { "type": "string" },
+                "file_path": { "type": "string" },
+                "content": { "type": "string" }
+            }, "required": ["session_id", "file_path", "content"] }
+        }),
+        json!({
+            "name": EDIT_FILE,
+            "description": "Surgical search-and-replace on a file. ALWAYS prompts the user for confirmation. old_string must be unique unless replace_all=true.",
+            "inputSchema": { "type": "object", "properties": {
+                "session_id": { "type": "string" },
+                "file_path": { "type": "string" },
+                "old_string": { "type": "string" },
+                "new_string": { "type": "string" },
+                "replace_all": { "type": "boolean" }
+            }, "required": ["session_id", "file_path", "old_string", "new_string"] }
+        }),
+        json!({
+            "name": LIST_FILES,
+            "description": "List files matching a glob pattern inside the session's sandbox. Max 500 entries.",
+            "inputSchema": { "type": "object", "properties": {
+                "session_id": { "type": "string" },
+                "pattern": { "type": "string" },
+                "path": { "type": "string" }
+            }, "required": ["session_id", "pattern"] }
+        }),
+        json!({
+            "name": SEARCH_FILES,
+            "description": "Regex search across files in the session's sandbox. Honors .gitignore. Max 50 matches with context lines.",
+            "inputSchema": { "type": "object", "properties": {
+                "session_id": { "type": "string" },
+                "pattern": { "type": "string" },
+                "path": { "type": "string" },
+                "glob": { "type": "string" },
+                "context_lines": { "type": "integer" }
+            }, "required": ["session_id", "pattern"] }
+        }),
+        json!({
+            "name": RUN_COMMAND,
+            "description": "Run a shell command and capture stdout/stderr. ALWAYS prompts the user for confirmation. Destructive commands are blocked. Default timeout 2min, max 10min.",
+            "inputSchema": { "type": "object", "properties": {
+                "session_id": { "type": "string" },
+                "command": { "type": "string" },
+                "timeout_ms": { "type": "integer" },
+                "cwd": { "type": "string" }
+            }, "required": ["session_id", "command"] }
+        }),
     ]
 }
 
@@ -93,12 +160,18 @@ fn strip_prefix(name: &str) -> Option<&'static str> {
         WAIT_FOR => "wait_for",
         GET_STATE => "get_state",
         GET_CONTEXT => "get_context",
+        READ_FILE => "read_file",
+        WRITE_FILE => "write_file",
+        EDIT_FILE => "edit_file",
+        LIST_FILES => "list_files",
+        SEARCH_FILES => "search_files",
+        RUN_COMMAND => "run_command",
         _ => return None,
     })
 }
 
 fn is_write_tool(name: &str) -> bool {
-    matches!(name, SEND_INPUT | SEND_KEY)
+    matches!(name, SEND_INPUT | SEND_KEY | WRITE_FILE | EDIT_FILE | RUN_COMMAND)
 }
 
 /// Dispatch an `ai_terminal_*` MCP tool call from an external client.
@@ -144,10 +217,13 @@ async fn confirm_external_write(
         return false;
     };
     let title = format!("External MCP request: {tool_name}");
-    let summary = if tool_name == SEND_INPUT {
-        format!("Send command: {}", args["command"].as_str().unwrap_or(""))
-    } else {
-        format!("Send key: {}", args["key"].as_str().unwrap_or(""))
+    let summary = match tool_name {
+        SEND_INPUT => format!("Send command: {}", args["command"].as_str().unwrap_or("")),
+        SEND_KEY => format!("Send key: {}", args["key"].as_str().unwrap_or("")),
+        WRITE_FILE => format!("Write file: {}", args["file_path"].as_str().unwrap_or("")),
+        EDIT_FILE => format!("Edit file: {}", args["file_path"].as_str().unwrap_or("")),
+        RUN_COMMAND => format!("Run command: {}", args["command"].as_str().unwrap_or("")),
+        _ => format!("Action: {tool_name}"),
     };
     let message = format!(
         "Session: {}\n\n{}",

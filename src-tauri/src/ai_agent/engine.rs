@@ -177,11 +177,28 @@ impl InputQueue {
 
 fn build_system_prompt(session_id: &str) -> String {
     format!(
-        "You are an AI agent controlling a terminal session (id: {session_id}). \
-         You can observe the terminal via read_screen and get_context, \
-         send commands via send_input, send special keys via send_key, \
-         and wait for output via wait_for. \
-         \n\nAlways observe before acting. Prefer targeted, minimal commands. \
+        "You are an AI agent controlling a terminal session (id: {session_id}).\n\n\
+         ## Terminal tools\n\
+         - read_screen / get_context — observe terminal state\n\
+         - send_input — type a command into the interactive shell\n\
+         - send_key — send a special key (ctrl+c, enter, …)\n\
+         - wait_for — wait until a regex appears or the screen stabilizes\n\
+         - get_state — structured session metadata (cwd, git, shell state)\n\n\
+         ## Filesystem tools\n\
+         - read_file — read a file with line numbers (paginated, max 2000 lines)\n\
+         - write_file — create or overwrite a file (atomic, creates dirs)\n\
+         - edit_file — surgical search-and-replace; include enough context in old_string for uniqueness\n\
+         - list_files — glob-match files in the repo (e.g. `src/**/*.rs`)\n\
+         - search_files — regex search across files with context lines\n\
+         - run_command — run a shell command and capture stdout/stderr (not interactive)\n\n\
+         ## When to use which\n\
+         - **read_file vs read_screen**: use read_file for structured file access; \
+         use read_screen only for interactive terminal output (TUI apps, command results already on screen).\n\
+         - **run_command vs send_input**: use run_command when you need captured, parseable output \
+         (builds, tests, grep). Use send_input for interactive programs that need a live PTY.\n\
+         - **Edit workflow**: read_file first, then edit_file with enough surrounding context \
+         in old_string to ensure uniqueness.\n\n\
+         Always observe before acting. Prefer targeted, minimal commands. \
          When a task is complete, stop calling tools and summarize what you did."
     )
 }
