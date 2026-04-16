@@ -165,7 +165,8 @@ export function useGitOperations(deps: GitOperationsDeps) {
   };
 
   const refreshAllBranchStats = async () => {
-    await Promise.all(repositoriesStore.getPaths().map(async (repoPath) => {
+    // Skip parked repos — they should stay dormant. (#1358-caf5)
+    await Promise.all(repositoriesStore.getActivePaths().map(async (repoPath) => {
       const gen = (refreshGeneration.get(repoPath) ?? 0) + 1;
       refreshGeneration.set(repoPath, gen);
 

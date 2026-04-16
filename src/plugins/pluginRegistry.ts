@@ -226,7 +226,9 @@ function createPluginRegistry() {
       },
 
       getRepos(): RepoListEntry[] {
-        return repositoriesStore.getPaths().map((path) => {
+        // Plugins should not see parked repos — they're considered dormant
+        // from the SDK's point of view. (#1358-caf5)
+        return repositoriesStore.getActivePaths().map((path) => {
           const repo = repositoriesStore.get(path);
           return { path, displayName: repo?.displayName ?? path };
         });

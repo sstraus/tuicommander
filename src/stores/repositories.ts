@@ -514,9 +514,21 @@ function createRepositoriesStore() {
       return state.activeRepoPath ? state.repositories[state.activeRepoPath] : undefined;
     },
 
-    /** Get all repository paths */
+    /** Get all repository paths (includes parked — use for persistence,
+     *  path-resolution, and snapshot operations). */
     getPaths(): string[] {
       return Object.keys(state.repositories);
+    },
+
+    /** Get repository paths that should receive active scan/poll/refresh
+     *  work (excludes parked repos). Use this for any "fan out across all
+     *  repos" loop where parked repos should stay dormant — git stats
+     *  refresh, GitHub PR/issue polling, plugin SDK enumeration, etc.
+     *  (#1358-caf5) */
+    getActivePaths(): string[] {
+      return Object.keys(state.repositories).filter(
+        (p) => !state.repositories[p]?.parked,
+      );
     },
 
     /** Reorder repositories in the sidebar */
@@ -530,11 +542,17 @@ function createRepositoriesStore() {
       save();
     },
 
-    /** Park or unpark a repository (hide from sidebar, recallable via popover) */
+    /** Park or unpark a repository (hide from sidebar, recallable via popover).
+     *  Tears down the Rust file watcher when parked and re-creates it when
+     *  unparked so parked repos stay fully dormant. (#1358-caf5) */
     setPark(path: string, parked: boolean): void {
       if (!state.repositories[path]) return;
       setState("repositories", path, "parked", parked);
       save();
+      const cmd = parked ? "stop_repo_watcher" : "start_repo_watcher";
+      invoke(cmd, { repoPath: path }).catch((err) => {
+        appLogger.warn("store", `${cmd} failed for ${path}`, err);
+      });
     },
 
     /** Get all parked repositories */

@@ -897,6 +897,50 @@ describe("repositoriesStore", () => {
       });
     });
 
+    // #1358-caf5: scan/poll loops must use getActivePaths so parked repos
+    // stay fully dormant (no git refresh, no PR polling, no plugin scans).
+    it("getActivePaths() returns all paths when none are parked", () => {
+      testInScope(() => {
+        store.add({ path: "/a", displayName: "A" });
+        store.add({ path: "/b", displayName: "B" });
+        expect(store.getActivePaths().sort()).toEqual(["/a", "/b"]);
+      });
+    });
+
+    it("getActivePaths() excludes parked repos (vs getPaths which keeps them)", () => {
+      testInScope(() => {
+        store.add({ path: "/a", displayName: "A" });
+        store.add({ path: "/b", displayName: "B" });
+        store.add({ path: "/c", displayName: "C" });
+        store.setPark("/b", true);
+        expect(store.getActivePaths().sort()).toEqual(["/a", "/c"]);
+        // getPaths still returns parked entries (persistence/path-resolution
+        // callers must keep seeing them).
+        expect(store.getPaths().sort()).toEqual(["/a", "/b", "/c"]);
+      });
+    });
+
+    it("setPark(true) calls stop_repo_watcher; setPark(false) calls start_repo_watcher", () => {
+      testInScope(() => {
+        store.add({ path: "/repo", displayName: "test" });
+        mockInvoke.mockClear();
+        store.setPark("/repo", true);
+        expect(
+          mockInvoke.mock.calls.some(
+            ([cmd, args]) => cmd === "stop_repo_watcher" && (args as { repoPath: string }).repoPath === "/repo",
+          ),
+        ).toBe(true);
+
+        mockInvoke.mockClear();
+        store.setPark("/repo", false);
+        expect(
+          mockInvoke.mock.calls.some(
+            ([cmd, args]) => cmd === "start_repo_watcher" && (args as { repoPath: string }).repoPath === "/repo",
+          ),
+        ).toBe(true);
+      });
+    });
+
     it("getGroupedLayout() excludes parked repos from groups and ungrouped", () => {
       testInScope(() => {
         store.add({ path: "/a", displayName: "A" });

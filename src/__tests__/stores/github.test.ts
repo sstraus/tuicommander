@@ -21,6 +21,9 @@ describe("githubStore", () => {
     vi.doMock("../../stores/repositories", () => ({
       repositoriesStore: {
         getPaths: mockGetPaths,
+        // pollAll/pollIssues now use getActivePaths to skip parked repos.
+        // Tests don't exercise parking — alias to getPaths. (#1358-caf5)
+        getActivePaths: mockGetPaths,
       },
     }));
 
@@ -517,6 +520,7 @@ describe("githubStore", () => {
       vi.doMock("../../stores/repositories", () => ({
         repositoriesStore: {
           getPaths: mockGetPaths,
+          getActivePaths: mockGetPaths,
         },
       }));
       store = (await import("../../stores/github")).githubStore;

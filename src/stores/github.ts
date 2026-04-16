@@ -286,11 +286,12 @@ function createGitHubStore() {
     }
   }
 
-  /** Poll issues for all repos using batched GraphQL call */
+  /** Poll issues for all repos using batched GraphQL call.
+   *  Skips parked repos — they stay dormant. (#1358-caf5) */
   async function pollIssues(): Promise<void> {
     const filter = settingsStore.state.issueFilter;
     if (filter === "disabled") return;
-    const paths = repositoriesStore.getPaths();
+    const paths = repositoriesStore.getActivePaths();
     if (paths.length === 0) return;
 
     try {
@@ -326,9 +327,10 @@ function createGitHubStore() {
   }
 
   /** Poll all repos using a single batched GraphQL call.
-   *  Falls back to per-repo individual calls if the batch fails. */
+   *  Falls back to per-repo individual calls if the batch fails.
+   *  Skips parked repos — they stay dormant. (#1358-caf5) */
   async function pollAll(): Promise<void> {
-    const paths = repositoriesStore.getPaths();
+    const paths = repositoriesStore.getActivePaths();
     if (paths.length === 0) return;
 
     // Check circuit breaker upfront to avoid wasted IPC calls
