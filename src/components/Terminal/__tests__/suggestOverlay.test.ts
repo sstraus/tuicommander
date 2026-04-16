@@ -64,6 +64,27 @@ describe("continuationRowsAfterSuggest", () => {
     expect(continuationRowsAfterSuggest(0, 2, get)).toEqual([]);
   });
 
+  // #1380-3b9c: when the new suggest's first `|` lands on a wrapped
+  // continuation row (narrow terminal, long first item), the prior
+  // SUGGEST_RE check would have missed it and continued swallowing rows.
+  it("stops at a new suggest anchor whose pipes are on a wrapped row", () => {
+    const get = rows([
+      ["suggest: A | B | C", false], // anchor
+      ["suggest: long first item that the terminal wrapped before", false], // new anchor, no pipe yet
+      ["the pipe arrives | 2) second item | 3) third item", true],
+    ]);
+    expect(continuationRowsAfterSuggest(0, 3, get)).toEqual([]);
+  });
+
+  it("stops at a new suggest anchor with bullet prefix and no pipe on first row", () => {
+    const get = rows([
+      ["suggest: A | B | C", false], // anchor
+      ["● suggest: another that wraps the pipe onto the next row", false], // new anchor with bullet
+      ["| 2) second", true],
+    ]);
+    expect(continuationRowsAfterSuggest(0, 3, get)).toEqual([]);
+  });
+
   it("stops at a new INTENT_RE row", () => {
     const get = rows([
       ["suggest: A | B", false], // anchor

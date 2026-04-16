@@ -10,6 +10,12 @@ export interface RowSnapshot {
 const SUGGEST_RE = /suggest:\s+.+\|/;
 const SUGGEST_ANCHOR_RE = /^[\s●⏺]*suggest:\s+\S/;
 const INTENT_RE = /^intent:\s+\S/;
+/** Match a NEW `suggest:` anchor for stop-detection during a continuation
+ *  walk. Does NOT require `|` on the same row — the Rust parser allows the
+ *  first `|` to arrive on a wrapped continuation line, so a row like
+ *  `suggest: long item that wraps...` (with the pipe on the next row) is
+ *  still a new block boundary and the walk MUST stop here. (#1380-3b9c) */
+const SUGGEST_STOP_RE = /^[\t ]*(?:[●⏺][\t ]+)?suggest:\s+\S/;
 
 /**
  * Given a suggest anchor row at `anchorIndex`, return the 0-based indexes of
@@ -42,7 +48,7 @@ export function continuationRowsAfterSuggest(
   for (let i = anchorIndex + 1; i < totalRows; i++) {
     const row = getRow(i);
     if (!row) break;
-    if (SUGGEST_RE.test(row.text) || INTENT_RE.test(row.text)) break;
+    if (SUGGEST_STOP_RE.test(row.text) || INTENT_RE.test(row.text)) break;
     if (row.isWrapped) {
       hidden.push(i);
       hadWrapped = true;
