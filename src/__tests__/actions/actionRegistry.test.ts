@@ -45,6 +45,7 @@ function createMockHandlers(): ShortcutHandlers {
     scrollPageUp: vi.fn(),
     scrollPageDown: vi.fn(),
     toggleZoomPane: vi.fn(),
+    toggleFocusMode: vi.fn(),
     togglePromptLibrary: vi.fn(),
     toggleDiffScroll: vi.fn(),
     toggleGlobalWorkspace: vi.fn(),
@@ -86,6 +87,16 @@ describe("actionRegistry", () => {
       expect(ids).toContain("toggle-sidebar");
       expect(ids).toContain("command-palette");
       expect(ids).toContain("quick-branch-switch");
+      expect(ids).toContain("toggle-focus-mode");
+    });
+
+    it("toggle-focus-mode executes toggleFocusMode handler", () => {
+      const handlers = createMockHandlers();
+      const localEntries = getActionEntries(handlers);
+      const entry = localEntries.find((e) => e.id === "toggle-focus-mode");
+      expect(entry).toBeDefined();
+      entry?.execute();
+      expect(handlers.toggleFocusMode).toHaveBeenCalledOnce();
     });
 
     it("quick-branch-switch has correct category", () => {

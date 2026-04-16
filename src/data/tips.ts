@@ -319,4 +319,9 @@ export const TIPS: Tip[] = [
     description: "TUICommander runs natively on Windows with WSL — shell arguments, environment, and CWD paths are translated automatically.",
     shortcut: null,
   },
+  {
+    feature: "Focus Mode",
+    description: "Hide the sidebar, tab bar, and side panels to maximize the active tab. Toolbar and status bar stay visible. Press again to restore.",
+    shortcut: `${mod}+Alt+Enter`,
+  },
 ];

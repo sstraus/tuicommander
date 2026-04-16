@@ -55,6 +55,34 @@ describe("uiStore", () => {
     });
   });
 
+  describe("focusMode", () => {
+    it("defaults to false", () => {
+      testInScope(() => {
+        expect(store.state.focusMode).toBe(false);
+      });
+    });
+
+    it("toggleFocusMode toggles value", () => {
+      testInScope(() => {
+        store.toggleFocusMode();
+        expect(store.state.focusMode).toBe(true);
+        store.toggleFocusMode();
+        expect(store.state.focusMode).toBe(false);
+      });
+    });
+
+    it("does not persist focusMode to backend (session-only)", () => {
+      testInScope(() => {
+        mockInvoke.mockClear();
+        store.toggleFocusMode();
+        const calls = mockInvoke.mock.calls.filter(
+          (c) => c[0] === "save_ui_prefs",
+        );
+        expect(calls).toHaveLength(0);
+      });
+    });
+  });
+
   describe("fileBrowserExternalRoot", () => {
     it("defaults to null", () => {
       testInScope(() => {

@@ -97,6 +97,7 @@ Font size range: 8px to 32px, step 2px per action.
 | `Alt+↑` / `Alt+↓` | Navigate panes (horizontal split) |
 | `Cmd+W` | Close active pane (collapses to single) |
 | `Cmd+Shift+Enter` | Maximize / restore active pane |
+| `Cmd+Alt+Enter` | Focus mode — hide sidebar, tab bar, and all side panels (keeps toolbar + status bar) |
 
 ## Panels
 
@@ -269,6 +270,7 @@ Hold to record, release to transcribe and inject text into active terminal.
 | `scroll-page-up` | `Shift+PageUp` | Scroll page up |
 | `scroll-page-down` | `Shift+PageDown` | Scroll page down |
 | `zoom-pane` | `Cmd+Shift+Enter` | Maximize/restore pane |
+| `toggle-focus-mode` | `Cmd+Alt+Enter` | Focus mode — hide sidebar/tab bar/panels |
 | `toggle-file-browser-content-search` | `Cmd+Shift+F` | File content search |
 | `toggle-diff-scroll` | `Cmd+Shift+G` | Diff scroll view |
 | `toggle-global-workspace` | `Cmd+Shift+X` | Toggle global workspace |

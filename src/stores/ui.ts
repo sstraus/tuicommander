@@ -27,6 +27,11 @@ interface UIStoreState {
   // Sidebar visibility
   sidebarVisible: boolean;
 
+  /** Focus mode: hides sidebar, tab bar and side panels to maximize the active
+   *  tab's content area. Toolbar and StatusBar stay visible. Session-only
+   *  (not persisted) — toggled via Cmd+Alt+Enter. */
+  focusMode: boolean;
+
   // Sidebar width
   sidebarWidth: number;
 
@@ -74,6 +79,7 @@ function clampWidth(v: number): number {
 function createUIStore() {
   const [state, setState] = createStore<UIStoreState>({
     sidebarVisible: true,
+    focusMode: false,
     sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
     markdownPanelVisible: false,
     notesPanelVisible: false,
@@ -329,6 +335,11 @@ function createUIStore() {
       saveUIPrefs();
     },
 
+    // Focus mode (session-only, not persisted)
+    toggleFocusMode(): void {
+      setState("focusMode", (v) => !v);
+    },
+
     setSidebarVisible(visible: boolean): void {
       setState("sidebarVisible", visible);
       saveUIPrefs();
@@ -398,6 +409,7 @@ registerDebugSnapshot("ui", () => {
   const s = uiStore.state;
   return {
     sidebarVisible: s.sidebarVisible,
+    focusMode: s.focusMode,
     sidebarWidth: s.sidebarWidth,
     markdownPanelVisible: s.markdownPanelVisible,
     notesPanelVisible: s.notesPanelVisible,

@@ -9,6 +9,19 @@
   pointer-events: none;
 }
 
+/* Focus mode (Cmd+Alt+Enter): maximize active tab content.
+ * Hides sidebar, tab bar, and all side panels. Toolbar and StatusBar stay
+ * visible so Boss can still see repo/branch/session state and exit the mode. */
+#app.focus-mode #sidebar,
+#app.focus-mode #tab-bar,
+#app.focus-mode #ai-chat-panel,
+#app.focus-mode #git-panel,
+#app.focus-mode #markdown-panel,
+#app.focus-mode #notes-panel,
+#app.focus-mode #file-browser-panel {
+  display: none !important;
+}
+
 /* Main Content */
 #main {
   flex: 1;
