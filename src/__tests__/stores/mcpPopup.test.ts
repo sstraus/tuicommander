@@ -20,10 +20,13 @@ const mockRepoSettingsState = {
 };
 const mockRepoSettingsGetEffective = vi.fn().mockReturnValue(undefined);
 
+const mockRepoSettingsUpdate = vi.fn();
+
 vi.mock("../../stores/repoSettings", () => ({
   repoSettingsStore: {
     state: mockRepoSettingsState,
     getEffective: mockRepoSettingsGetEffective,
+    update: mockRepoSettingsUpdate,
   },
 }));
 
@@ -61,6 +64,7 @@ describe("mcpPopupStore", () => {
     mockInvoke.mockReset().mockResolvedValue(undefined);
     mockListen.mockReset().mockResolvedValue(() => {});
     mockRepoSettingsGetEffective.mockReset().mockReturnValue(undefined);
+    mockRepoSettingsUpdate.mockReset();
     mockRepoSettingsState.activeRepoPath = null;
     mockRepoSettingsState.settings = {};
     mockRepoSettingsState.localConfigs = {};
@@ -75,6 +79,7 @@ describe("mcpPopupStore", () => {
       repoSettingsStore: {
         state: mockRepoSettingsState,
         getEffective: mockRepoSettingsGetEffective,
+        update: mockRepoSettingsUpdate,
       },
     }));
 
@@ -572,6 +577,62 @@ describe("mcpPopupStore", () => {
           (c: unknown[]) => c[0] === "set_project_mcp_upstreams",
         );
         expect(calls).toHaveLength(0);
+      });
+    });
+
+    it("story 1367-7fb0: effectiveEnabledForRepo reflects toggle without reload", async () => {
+      await testInScopeAsync(async () => {
+        mockInvoke.mockImplementation((cmd: string) => {
+          if (cmd === "load_mcp_upstreams") return Promise.resolve(MOCK_CONFIG);
+          if (cmd === "get_mcp_upstream_status") return Promise.resolve(MOCK_STATUS);
+          if (cmd === "set_project_mcp_upstreams") return Promise.resolve(undefined);
+          return Promise.resolve(undefined);
+        });
+
+        mockRepoSettingsState.activeRepoPath = "/test/repo";
+        // Pretend repoSettings has an entry for this repo
+        mockRepoSettingsState.settings = { "/test/repo": { mcpUpstreams: ["beta"] } };
+        // Allowlist excludes "alpha"
+        mockRepoSettingsGetEffective.mockReturnValue({ mcpUpstreams: ["beta"] });
+
+        await store.loadConfig();
+        expect(store.effectiveEnabledForRepo("alpha")).toBe(false);
+
+        // Toggle alpha back on → both servers in allowlist → collapses to null
+        await store.toggleServerForProject("alpha");
+
+        // Critical assertion (the regression): without reload, the checkbox state must flip
+        expect(store.state.projectAllowlist).toBeNull();
+        expect(store.effectiveEnabledForRepo("alpha")).toBe(true);
+
+        // And repoSettingsStore was kept in sync for other consumers
+        expect(mockRepoSettingsUpdate).toHaveBeenCalledWith(
+          "/test/repo",
+          { mcpUpstreams: null },
+        );
+      });
+    });
+
+    it("story 1367-7fb0: skips repoSettingsStore.update when no settings entry exists", async () => {
+      await testInScopeAsync(async () => {
+        mockInvoke.mockImplementation((cmd: string) => {
+          if (cmd === "load_mcp_upstreams") return Promise.resolve(MOCK_CONFIG);
+          if (cmd === "get_mcp_upstream_status") return Promise.resolve(MOCK_STATUS);
+          if (cmd === "set_project_mcp_upstreams") return Promise.resolve(undefined);
+          return Promise.resolve(undefined);
+        });
+
+        mockRepoSettingsState.activeRepoPath = "/test/repo";
+        mockRepoSettingsState.settings = {}; // no entry for this repo
+        mockRepoSettingsGetEffective.mockReturnValue({ mcpUpstreams: null });
+
+        await store.loadConfig();
+        await store.toggleServerForProject("alpha");
+
+        // popup state still updates, but repoSettingsStore.update is skipped
+        // (would no-op anyway, but avoids the implicit early return masking real failures)
+        expect(mockRepoSettingsUpdate).not.toHaveBeenCalled();
+        expect(store.state.projectAllowlist).not.toContain("alpha");
       });
     });
 

@@ -120,12 +120,16 @@ function createMcpPopupStore() {
     /**
      * Effective enabled state for a server in the context of the active repo.
      * A server is effective-enabled when: globally enabled AND (no project allowlist OR in allowlist).
+     *
+     * Reads from `state.projectAllowlist` (the popup's reactive snapshot) instead
+     * of repoSettingsStore so the checkbox updates immediately after toggleServerForProject —
+     * repoSettingsStore.mcpUpstreams isn't refreshed by set_project_mcp_upstreams (#1367-7fb0/H2).
      */
     effectiveEnabledForRepo(name: string): boolean {
       const server = state.servers.find((s) => s.name === name);
       if (!server?.enabled) return false;
 
-      const allowlist = resolveProjectAllowlist();
+      const allowlist = state.projectAllowlist;
       if (allowlist === null) return true;
       return allowlist.includes(name);
     },
@@ -164,6 +168,11 @@ function createMcpPopupStore() {
           upstreamNames: newAllowlist,
         });
         setState("projectAllowlist", newAllowlist);
+        // Keep repoSettingsStore in sync so other consumers (settings panel,
+        // getEffective fallback path) observe the same value without a reload.
+        if (repoSettingsStore.state.settings[repoPath]) {
+          repoSettingsStore.update(repoPath, { mcpUpstreams: newAllowlist });
+        }
       } catch (err) {
         appLogger.error("mcp", `toggleServerForProject failed for ${name}`, err);
       }
