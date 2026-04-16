@@ -33,7 +33,8 @@ App.tsx (central orchestrator)
 │   ├── PrDiffTab/            # PR diff viewer tab
 │   ├── CodeEditorPanel/      # CodeMirror 6 code editor tab
 │   ├── MarkdownPanel/        # Markdown file browser
-│   │   └── MarkdownRenderer  # Markdown to HTML (DOMPurify), interactive checkboxes, tweak highlights
+│   │   └── ContentRenderer  # Markdown to HTML (DOMPurify), interactive checkboxes, tweak highlights
+│   ├── HtmlPreviewTab/       # Multi-format preview tab (HTML, PDF, images, video, audio, text)
 │   ├── MarkdownTab/          # Individual markdown file tab (checkbox toggle, tweak comments, search)
 │   ├── NotesPanel/           # Ideas/notes panel with edit, send, delete
 │   ├── FileBrowserPanel/     # File tree browser with content search
@@ -223,7 +224,7 @@ Native SolidJS component (not a plugin) showing Claude API usage data. Displayed
 | `CiRing` | SVG circular CI status indicator with proportional segments |
 | `DiffViewer` | Syntax-highlighted unified diff renderer |
 | `Dropdown` | Reusable dropdown select component |
-| `MarkdownRenderer` | Safe markdown-to-HTML rendering with DOMPurify sanitization |
+| `ContentRenderer` | Safe markdown-to-HTML rendering with DOMPurify sanitization, interactive checkboxes, tweak highlights |
 | `PanelResizeHandle` | Draggable resize handle for panel boundaries |
 | `PromptOption` | Agent prompt multiple-choice option |
 | `StatusBadge` | Git status badges (clean/dirty/conflict) |

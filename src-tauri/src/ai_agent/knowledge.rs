@@ -17,9 +17,10 @@ const SNIPPET_MAX_LEN: usize = 2000;
 
 /// Sanitize an output_snippet from OSC 133 data before storing or injecting
 /// into the agent system prompt. Strips potential prompt-injection markers:
-/// - Lines starting with SYSTEM:, ASSISTANT:, [INST], <<SYS>>, etc.
-/// - Triple backtick fences (could close a code block and inject prose)
-/// - Bracket markers like [/INST], </s>, <<SYS>>
+///   - Lines starting with SYSTEM:, ASSISTANT:, [INST], <<SYS>>, etc.
+///   - Triple backtick fences (could close a code block and inject prose)
+///   - Bracket markers like [/INST], </s>, <<SYS>>
+///
 /// Then truncates to SNIPPET_MAX_LEN.
 pub fn sanitize_snippet(raw: &str) -> String {
     use regex::Regex;
@@ -439,14 +440,9 @@ pub fn load_all(state: &crate::state::AppState) {
         if path.extension().and_then(|e| e.to_str()) != Some("json") {
             continue;
         }
-        if let Ok(meta) = path.metadata() {
-            if let Ok(modified) = meta.modified() {
-                if modified < cutoff {
-                    let _ = std::fs::remove_file(&path);
-                    continue;
-                }
-            }
-        }
+        if let Ok(meta) = path.metadata()
+            && let Ok(modified) = meta.modified()
+                && modified < cutoff { let _ = std::fs::remove_file(&path); continue; }
         let Some(sid) = path.file_stem().and_then(|s| s.to_str()) else {
             continue;
         };

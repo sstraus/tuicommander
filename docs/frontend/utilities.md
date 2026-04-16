@@ -58,6 +58,19 @@ findOrphanTerminals(terminalIds: string[], branchTerminalMap: Record<string, str
 
 Finds terminals that exist in the store but aren't associated with any branch. Used for cleanup.
 
+## File Preview (`filePreview.ts`)
+
+```typescript
+classifyFile(filePath: string): FileOpenTarget
+```
+
+Routes a file path to one of three open targets based on extension:
+- `"markdown"` — `.md`, `.mdx`
+- `"preview"` — documents (PDF, HTML), images (PNG, JPG, GIF, WebP, SVG, AVIF, ICO, BMP), video (MP4, WebM, MOV, OGG), audio (MP3, WAV, FLAC, AAC, M4A), text/data (TXT, JSON, CSV, LOG, XML, YAML, TOML, INI, CFG, CONF)
+- `"editor"` — everything else
+
+Used by `App.tsx` (clickable paths, Command Palette), `useFileDrop.ts` (drag & drop), and `HtmlPreviewTab` (preview routing).
+
 ## Shell Utilities (`shell.ts`)
 
 | Function | Description |

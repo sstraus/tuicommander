@@ -106,7 +106,7 @@ When modifying AI Chat panel, settings, context menu actions, or streaming backe
 | `src/stores/ui.ts` | `aiChatPanelVisible` + `aiChatPanelWidth` signals |
 | `src/keybindingDefaults.ts` | `toggle-ai-chat` hotkey |
 | `docs/FEATURES.md` | AI Chat feature section |
-| `docs/user-guide/ai-chat.md` | User-facing guide (create when needed) |
+| `docs/user-guide/ai-chat.md` | User-facing AI Chat guide |
 
 ### AI Agent (ReAct loop, knowledge store, MCP terminal tools)
 When modifying the AI agent loop engine, tool dispatch, session knowledge store,
@@ -227,7 +227,8 @@ When adding or changing `tuic://` schemes:
 | `docs/frontend/hooks.md` | Custom hooks |
 | `docs/frontend/stores.md` | SolidJS stores |
 | `docs/frontend/transport.md` | Tauri/HTTP dual-mode transport |
-| `docs/user-guide/*.md` | User-facing guides (13 files) |
+| `docs/frontend/utilities.md` | Utility function reference |
+| `docs/user-guide/*.md` | User-facing guides (14 files) |
 | **Code-embedded docs** | |
 | `src-tauri/src/mcp_http/plugin_docs.rs` | AI-optimized plugin reference (`PLUGIN_DOCS` const) |
 | `src/actions/actionRegistry.ts` | ACTION_META → auto-populates HelpPanel + Command Palette |

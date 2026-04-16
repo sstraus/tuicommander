@@ -65,7 +65,7 @@
 ### 1.7 Clickable File Paths
 - File paths in terminal output are auto-detected and become clickable links
 - Paths validated against filesystem before activation (Rust `resolve_terminal_path`)
-- `.md`/`.mdx` → opens in Markdown panel; `.html`/`.htm` → opens in internal HTML preview tab (with "Open in browser" button); all other code files → opens in the built-in code editor
+- `.md`/`.mdx` → opens in Markdown panel; preview-capable files (HTML, PDF, images, video, audio, plain text/data) → open in the Preview tab (section 3.15); all other code files → open in the built-in code editor
 - `file://` URLs are recognized in addition to plain paths — the prefix is stripped and the path resolved like any other
 - Supports `:line` and `:line:col` suffixes for precise navigation
 - Recognized extensions: rs, ts, tsx, js, jsx, py, go, java, kt, swift, c, cpp, cs, rb, php, lua, zig, css, scss, html, vue, svelte, json, yaml, toml, sql, graphql, tf, sh, dockerfile, and more
@@ -106,7 +106,7 @@
 - Drag files from Finder/Explorer onto the terminal area or any panel
 - Uses Tauri's native `onDragDropEvent` API (not HTML5 File API — Tauri webviews do not expose file paths via HTML5)
 - **Active PTY session:** dropped file paths are forwarded directly to the terminal as text (enables Claude Code image drops and similar workflows)
-- **No active PTY session:** `.md`/`.mdx` files open in Markdown viewer, all other files open in Code Editor
+- **No active PTY session:** `.md`/`.mdx` files open in Markdown viewer, preview-capable files open in the Preview tab (section 3.15), all other files open in Code Editor
 - Multiple files can be dropped at once
 - Visual overlay with dashed border appears during drag hover
 - Global `dragover`/`drop` `preventDefault` prevents the Tauri webview from treating drops as browser navigation (which would replace the UI with a white screen)
@@ -370,6 +370,27 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
 - Directory watcher: monitors `plans/` directory for new plan files created externally
 - Mutually exclusive with Markdown, Diff, and File Browser panels
 - Panel width and visibility persist across restarts via `UIPrefsConfig`
+
+### 3.15 Preview Tab
+- Multi-format file previewer opened from clickable file paths, drag & drop, File Browser, or Command Palette
+- File routing handled by `classifyFile()` in `src/utils/filePreview.ts`
+- Supported formats:
+  - **HTML** — rendered in sandboxed iframe with "Open in browser" button
+  - **PDF** — rendered via asset protocol in embedded iframe
+  - **Images** — PNG, JPG/JPEG, GIF, WebP, SVG, AVIF, ICO, BMP — rendered as `<img>` via asset protocol
+  - **Video** — MP4, WebM, OGG, MOV — rendered as `<video>` with native controls
+  - **Audio** — MP3, WAV, FLAC, AAC, M4A — rendered as `<audio>` with native controls
+  - **Text / data** — TXT, JSON, CSV, LOG, XML, YAML, TOML, INI, CFG, CONF — raw text in a `<pre>` block
+- Header bar shows shortened file path with "Open in browser" / "Open externally" button
+- File content auto-refreshes on repository revision bumps (git change detection)
+- Uses Tauri's `convertFileSrc()` asset protocol for binary files, `read_external_file` IPC for text content
+- CSP allows `asset:` and `http://asset.localhost` in `frame-src` and `media-src`
+
+### 3.16 Focus Mode (`Cmd+Alt+Enter`)
+- Hides sidebar, tab bar, and all side panels to maximize the active tab's content area
+- Toolbar and status bar remain visible for repo/branch state and mode exit
+- Session-only (not persisted across restarts)
+- Toggle again to restore the previous layout
 
 ---
 
