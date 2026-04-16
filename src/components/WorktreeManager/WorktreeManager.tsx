@@ -67,8 +67,10 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
       setOrphanRows([]);
       return;
     }
-    const repos = repositoriesStore.getOrderedRepos();
-    // Subscribe to revision signals so orphan detection re-runs on repo changes
+    const allRepos = repositoriesStore.getOrderedRepos();
+    const repoFilter = worktreeManagerStore.state.repoFilter;
+    // Only subscribe to revisions for repos we're displaying
+    const repos = repoFilter ? allRepos.filter((r) => r.path === repoFilter) : allRepos;
     for (const repo of repos) repositoriesStore.getRevision(repo.path);
 
     let cancelled = false;
@@ -105,11 +107,14 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
     }
   }
 
-  // All worktrees (unfiltered). Subscribes to revision signals so it re-runs on repo changes.
+  // All worktrees (unfiltered). Subscribes to revision signals scoped to visible repos.
   const allWorktrees = createMemo<WorktreeRow[]>(() => {
     if (!isOpen()) return [];
     const repos = repositoriesStore.getOrderedRepos();
-    for (const repo of repos) repositoriesStore.getRevision(repo.path);
+    const repoFilter = worktreeManagerStore.state.repoFilter;
+    // Only subscribe to revisions for repos we're displaying — avoids re-runs when unrelated repos change
+    const subscribedRepos = repoFilter ? repos.filter((r) => r.path === repoFilter) : repos;
+    for (const repo of subscribedRepos) repositoriesStore.getRevision(repo.path);
     const rows: WorktreeRow[] = [];
 
     for (const repo of repos) {

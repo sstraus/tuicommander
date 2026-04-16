@@ -663,6 +663,55 @@ describe("WorktreeManager", () => {
     });
   });
 
+  describe("scoped revision subscriptions", () => {
+    it("only calls detect_orphan_worktrees for filtered repo when repoFilter is set", async () => {
+      repositoriesStore.add({ path: "/repo-a", displayName: "A" });
+      repositoriesStore.setBranch("/repo-a", "main", { worktreePath: "/repo-a" });
+      repositoriesStore.add({ path: "/repo-b", displayName: "B" });
+      repositoriesStore.setBranch("/repo-b", "dev", { worktreePath: "/repo-b" });
+
+      vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+        if (cmd === "detect_orphan_worktrees") return [];
+        return undefined;
+      });
+
+      worktreeManagerStore.open();
+      worktreeManagerStore.setRepoFilter("/repo-a");
+      render(() => <WorktreeManager />);
+
+      await vi.waitFor(() => {
+        expect(invoke).toHaveBeenCalledWith("detect_orphan_worktrees", { repoPath: "/repo-a" });
+      });
+
+      // repo-b should NOT have been checked for orphans
+      const repoBCalls = vi.mocked(invoke).mock.calls.filter(
+        (c) => c[0] === "detect_orphan_worktrees" && (c[1] as { repoPath: string })?.repoPath === "/repo-b",
+      );
+      expect(repoBCalls).toHaveLength(0);
+    });
+
+    it("detects orphans for all repos when no repoFilter is set", async () => {
+      repositoriesStore.add({ path: "/repo-a", displayName: "A" });
+      repositoriesStore.setBranch("/repo-a", "main", { worktreePath: "/repo-a" });
+      repositoriesStore.add({ path: "/repo-b", displayName: "B" });
+      repositoriesStore.setBranch("/repo-b", "dev", { worktreePath: "/repo-b" });
+
+      vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+        if (cmd === "detect_orphan_worktrees") return [];
+        return undefined;
+      });
+
+      worktreeManagerStore.open();
+      // No repoFilter set
+      render(() => <WorktreeManager />);
+
+      await vi.waitFor(() => {
+        expect(invoke).toHaveBeenCalledWith("detect_orphan_worktrees", { repoPath: "/repo-a" });
+        expect(invoke).toHaveBeenCalledWith("detect_orphan_worktrees", { repoPath: "/repo-b" });
+      });
+    });
+  });
+
   describe("filter edge cases", () => {
     it("shows empty state when filter combination matches nothing", () => {
       repositoriesStore.add({ path: "/repo-a", displayName: "Alpha" });
