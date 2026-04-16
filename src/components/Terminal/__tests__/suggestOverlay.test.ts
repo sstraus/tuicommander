@@ -101,6 +101,40 @@ describe("continuationRowsAfterSuggest", () => {
     ]);
     expect(continuationRowsAfterSuggest(0, 2, get)).toEqual([]);
   });
+
+  it("hides a pipeless tail after a wrap chain when the suggest has 2+ pipes", () => {
+    // Bug: a long suggest wraps, and the last fragment lands on a non-wrapped
+    // row without a pipe. Without the fix, this tail row leaks through.
+    const get = rows([
+      ["suggest: 1) Do something | 2) Another thing |", false], // anchor (2 pipes)
+      [" 3) Yet another thing that is also very long", true],   // wrapped
+      ["keeps going", false],                                    // pipeless tail — should be hidden
+      ["$ ", false],                                             // shell prompt — must NOT be hidden
+    ]);
+    expect(continuationRowsAfterSuggest(0, 4, get)).toEqual([1, 2]);
+  });
+
+  it("does not hide a pipeless tail when the suggest has only 1 pipe (2 items)", () => {
+    // Short 2-item suggests should NOT grab unrelated prose that follows.
+    const get = rows([
+      ["suggest: A | B", false],    // anchor (1 pipe)
+      ["unrelated text", false],     // not a tail — must NOT be hidden
+    ]);
+    expect(continuationRowsAfterSuggest(0, 2, get)).toEqual([]);
+  });
+
+  it("hides pipeless tail after wrapped rows end", () => {
+    // Suggest wraps across 3 xterm rows; the tail of the 3rd item
+    // starts a new non-wrapped row without any pipe character.
+    const get = rows([
+      ["suggest: 1) First option here | 2) Second option he", false], // anchor
+      ["re | 3) Third option that is extremely long and wrap", true],  // wrapped
+      ["s onto yet another row", true],                                // wrapped
+      ["and finishes here", false],                                    // pipeless tail
+      ["$ ", false],                                                   // prompt
+    ]);
+    expect(continuationRowsAfterSuggest(0, 5, get)).toEqual([1, 2, 3]);
+  });
 });
 
 describe("isSuggestBlock", () => {

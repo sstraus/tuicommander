@@ -541,12 +541,15 @@ export const Terminal: Component<TerminalProps> = (props) => {
             const t = terminalsStore.get(props.id);
             if (t?.shellState === "idle") {
               if (!t.suggestDismissed) {
+                appLogger.debug("terminal", `[Suggest] ${props.id} → direct (idle, not dismissed) items=${parsed.items.length}`);
                 terminalsStore.setSuggestedActions(props.id, parsed.items);
+              } else {
+                appLogger.debug("terminal", `[Suggest] ${props.id} → dropped (idle but dismissed)`);
               }
             } else {
+              appLogger.debug("terminal", `[Suggest] ${props.id} → pending (shellState=${t?.shellState}) items=${parsed.items.length}`);
               terminalsStore.update(props.id, { pendingSuggest: parsed.items });
             }
-            // Suggest row hiding handled by installRenderObserver
           }
           break;
         case "shell-state": {
@@ -566,6 +569,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
             const pendingT = terminalsStore.get(props.id);
             const hasPending = !!pendingT?.pendingSuggest?.length;
             const initCmd = pendingT?.pendingInitCommand;
+            if (hasPending) {
+              appLogger.debug("terminal", `[Suggest] ${props.id} → promoting ${pendingT!.pendingSuggest!.length} pending items on idle`);
+            }
             // Merge shellState + pendingSuggest promotion + initCommand clear into one write
             terminalsStore.update(props.id, {
               shellState: parsed.state,

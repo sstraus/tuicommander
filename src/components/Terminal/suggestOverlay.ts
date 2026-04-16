@@ -34,15 +34,31 @@ export function continuationRowsAfterSuggest(
 ): number[] {
   const hidden: number[] = [];
   let pipeTailUsed = false;
+  let hadWrapped = false;
+  // Count pipes across anchor + hidden rows to decide whether a pipeless tail
+  // is safe to consume (mirrors Rust `joined_tail` logic in parse_suggest).
+  const anchor = getRow(anchorIndex);
+  let pipeCount = anchor ? (anchor.text.match(/\|/g) || []).length : 0;
   for (let i = anchorIndex + 1; i < totalRows; i++) {
     const row = getRow(i);
     if (!row) break;
     if (SUGGEST_RE.test(row.text) || INTENT_RE.test(row.text)) break;
     if (row.isWrapped) {
       hidden.push(i);
+      hadWrapped = true;
+      pipeCount += (row.text.match(/\|/g) || []).length;
       continue;
     }
     if (!pipeTailUsed && row.text.includes("|")) {
+      hidden.push(i);
+      pipeTailUsed = true;
+      continue;
+    }
+    // Allow one pipeless tail ONLY after a wrap chain when the accumulated
+    // suggest already has 2+ pipes (3+ items). Without hadWrapped, this
+    // would swallow unrelated prose on the line right after a single-row
+    // suggest like "suggest: A | B | C".
+    if (!pipeTailUsed && hadWrapped && pipeCount >= 2) {
       hidden.push(i);
       pipeTailUsed = true;
       continue;
