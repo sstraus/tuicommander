@@ -339,7 +339,7 @@ pub(crate) async fn test_ai_chat_connection() -> Result<String, String> {
 // extensions sit next to the agent code. L1 keeps the same import path.
 #[cfg_attr(not(test), allow(unused_imports))]
 pub(crate) use crate::ai_agent::conversation::{
-    migrate_to_current, ChatMessage, Conversation, ConversationMeta,
+    ChatMessage, Conversation, ConversationMeta,
 };
 
 const CONVERSATIONS_DIR: &str = "ai-chat-conversations";
@@ -392,9 +392,8 @@ pub(crate) fn load_conversation(id: String) -> Result<Conversation, String> {
     let path = dir.join(format!("{id}.json"));
     let data = std::fs::read_to_string(&path)
         .map_err(|_| format!("Conversation not found: {id}"))?;
-    let mut conv: Conversation = serde_json::from_str(&data)
+    let conv: Conversation = serde_json::from_str(&data)
         .map_err(|e| format!("Failed to parse conversation: {e}"))?;
-    migrate_to_current(&mut conv);
     Ok(conv)
 }
 

@@ -7,8 +7,11 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Current schema version. Bumped when the on-disk shape changes.
-pub const CURRENT_SCHEMA_VERSION: u32 = 2;
+/// Current schema version constant — only referenced by tests that verify
+/// round-trip serialization. Production load relies on `default_schema_version`
+/// for serde defaults; no runtime migration is needed (v1→v2 is a no-op).
+#[cfg(test)]
+pub(crate) const CURRENT_SCHEMA_VERSION: u32 = 2;
 
 fn default_schema_version() -> u32 {
     1
@@ -107,16 +110,6 @@ impl Conversation {
     }
 }
 
-/// In-place migration to `CURRENT_SCHEMA_VERSION`. No-op when already current.
-///
-/// v1 → v2: schema_version is bumped. Tool-call fields are already `None` via
-/// serde defaults, so no message rewriting is needed.
-pub(crate) fn migrate_to_current(conv: &mut Conversation) {
-    if conv.schema_version < CURRENT_SCHEMA_VERSION {
-        conv.schema_version = CURRENT_SCHEMA_VERSION;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -136,36 +129,6 @@ mod tests {
         assert_eq!(conv.messages.len(), 1);
         assert!(conv.messages[0].tool_calls.is_none());
         assert!(conv.messages[0].tool_use_id.is_none());
-    }
-
-    #[test]
-    fn migrate_bumps_v1_to_current() {
-        let mut conv = Conversation {
-            meta: ConversationMeta {
-                id: "x".into(), title: "x".into(), session_id: None,
-                created: 0, updated: 0, message_count: 0,
-                provider: String::new(), model: String::new(),
-            },
-            messages: vec![ChatMessage::text("user", "hi", 0)],
-            schema_version: 1,
-        };
-        migrate_to_current(&mut conv);
-        assert_eq!(conv.schema_version, CURRENT_SCHEMA_VERSION);
-    }
-
-    #[test]
-    fn migrate_is_idempotent_at_current() {
-        let mut conv = Conversation {
-            meta: ConversationMeta {
-                id: "x".into(), title: "x".into(), session_id: None,
-                created: 0, updated: 0, message_count: 0,
-                provider: String::new(), model: String::new(),
-            },
-            messages: vec![],
-            schema_version: CURRENT_SCHEMA_VERSION,
-        };
-        migrate_to_current(&mut conv);
-        assert_eq!(conv.schema_version, CURRENT_SCHEMA_VERSION);
     }
 
     #[test]

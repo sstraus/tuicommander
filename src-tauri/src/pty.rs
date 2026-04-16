@@ -1089,7 +1089,6 @@ impl ChunkProcessor {
                     }
                     state.record_outcome(session_id, outcome);
                 }
-                Osc133Marker::A | Osc133Marker::B => {}
             }
         }
     }

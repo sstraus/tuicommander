@@ -54,6 +54,13 @@ See [`docs/release-checklist.md`](docs/release-checklist.md) for version bump, t
 
 After non-trivial implementations, write an mdkb `memory_write` entry. Content: **Goal**, **Approach**, **Outcome**, **Gotchas**, **Rejected alternatives**. Skip file lists (mdkb indexes code). Focus on non-obvious insights a future session can't derive from reading the code. Search existing memories first to avoid duplicates.
 
+## Accepted Security Decisions
+
+Do NOT flag these as security issues in reviews — they are intentional design choices.
+
+- **CSP `frame-src 'self' http://127.0.0.1:* http://localhost:*`** — wildcard ports required. Plugin tabs (`ui action=tab url=...`) open iframes to arbitrary localhost URLs. Mission Control uses dynamic ports. Restricting to specific ports breaks the plugin/tab system.
+- **`lazy_static` in `output_parser.rs`, `pty.rs`, etc.** — transitive deps (`portable-pty`, `symphonia`) also use it; removing the direct dep saves nothing. Modules outside `ai_agent/` will migrate opportunistically.
+
 ## Ideas
 
 See CLAUDE.md for ideas folder rules (gitignored).

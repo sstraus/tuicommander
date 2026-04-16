@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::state::AppState;
-use super::engine::{self, ACTIVE_AGENTS, AgentState};
+use super::engine::{self, ACTIVE_AGENTS};
 use super::knowledge::{OutcomeClass, SessionKnowledge};
 use super::tui_detect::TerminalMode;
 

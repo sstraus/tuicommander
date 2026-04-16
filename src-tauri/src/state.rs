@@ -971,29 +971,24 @@ pub struct AppState {
     /// Per-session command outcome + error/fix knowledge store.
     /// Populated by pty.rs OSC 133 hooks and SessionState transitions.
     /// Consumed by the agent loop for context injection.
-    #[allow(dead_code)]
     pub(crate) session_knowledge:
         DashMap<String, Mutex<crate::ai_agent::knowledge::SessionKnowledge>>,
     /// Sessions with unpersisted knowledge changes. Flushed to disk every 2s
     /// by the background knowledge-persist task.
-    #[allow(dead_code)]
     pub(crate) knowledge_dirty: DashMap<String, ()>,
     /// Sessions whose shell has emitted at least one OSC 133 marker. Presence
     /// here suppresses the Inferred-outcome fallback, since the shell-integration
     /// path is authoritative once wired.
-    #[allow(dead_code)]
     pub(crate) has_osc133_integration: DashMap<String, ()>,
     /// Per-session filesystem sandbox for the L2 agent's file/shell tools.
     /// Keyed by session_id. Populated when the agent loop starts, rooted at the
     /// session's git repo root or CWD. See `ai_agent::sandbox::FileSandbox`.
-    #[allow(dead_code)]
     pub(crate) file_sandboxes: DashMap<String, crate::ai_agent::sandbox::FileSandbox>,
 }
 
 impl AppState {
     /// Record a command outcome into this session's knowledge store and mark it
     /// dirty for the background persister. Creates the entry on first use.
-    #[allow(dead_code)]
     pub(crate) fn record_outcome(
         &self,
         session_id: &str,

@@ -342,11 +342,6 @@ fn exec_read_screen(state: &AppState, args: &Value) -> ToolResult {
     ToolResult::ok(output)
 }
 
-/// Execute `send_input`: send a command with safety check.
-fn exec_send_input(state: &AppState, args: &Value) -> ToolResult {
-    exec_send_input_inner(state, args, false)
-}
-
 fn exec_send_input_inner(state: &AppState, args: &Value, skip_safety: bool) -> ToolResult {
     let session_id = match args["session_id"].as_str() {
         Some(s) => s,
@@ -375,11 +370,6 @@ fn exec_send_input_inner(state: &AppState, args: &Value, skip_safety: bool) -> T
         Ok(()) => ToolResult::ok(format!("Sent: {command}")),
         Err(e) => ToolResult::err(e),
     }
-}
-
-/// Execute `send_key`: send a special key with safety check.
-fn exec_send_key(state: &AppState, args: &Value) -> ToolResult {
-    exec_send_key_inner(state, args, false)
 }
 
 fn exec_send_key_inner(state: &AppState, args: &Value, skip_safety: bool) -> ToolResult {
@@ -680,11 +670,6 @@ fn exec_write_file_inner(state: &AppState, session_id: &str, args: &Value, skip_
         })
         .to_string(),
     )
-}
-
-/// `edit_file`: string-exact search-and-replace with uniqueness enforcement.
-fn exec_edit_file(state: &AppState, session_id: &str, args: &Value) -> ToolResult {
-    exec_edit_file_inner(state, session_id, args, false)
 }
 
 fn exec_edit_file_inner(state: &AppState, session_id: &str, args: &Value, skip_safety: bool) -> ToolResult {
@@ -1045,11 +1030,6 @@ fn truncate_output(s: &str) -> (String, bool) {
         s.len()
     );
     (truncated, true)
-}
-
-/// `run_command`: sandboxed shell command execution with captured output.
-async fn exec_run_command(state: &AppState, session_id: &str, args: &Value) -> ToolResult {
-    exec_run_command_inner(state, session_id, args, false).await
 }
 
 async fn exec_run_command_inner(state: &AppState, session_id: &str, args: &Value, skip_safety: bool) -> ToolResult {

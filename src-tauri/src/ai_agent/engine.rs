@@ -30,15 +30,11 @@ const TOOL_DISPATCH_LIMIT_PER_SESSION: usize = 500;
 
 // ── Active agents registry ────────────────────────────────────
 
-lazy_static::lazy_static! {
-    /// Global map of session_id → active agent handle.
-    /// Prevents duplicate loops on the same session.
-    pub(crate) static ref ACTIVE_AGENTS: DashMap<String, AgentHandle> = DashMap::new();
-}
+pub(crate) static ACTIVE_AGENTS: std::sync::LazyLock<DashMap<String, AgentHandle>> =
+    std::sync::LazyLock::new(DashMap::new);
 
 /// Handle to a running agent loop — used for pause/resume/cancel.
 pub(crate) struct AgentHandle {
-    pub owner_session_id: String,
     pub cancel: Arc<AtomicBool>,
     pub state: Arc<RwLock<AgentState>>,
     pub pause_notify: Arc<Notify>,
@@ -75,7 +71,7 @@ pub enum AgentLoopEvent {
     Resumed { session_id: String },
     RateLimited { session_id: String, wait_ms: u64 },
     Error { session_id: String, message: String },
-    Completed { session_id: String, iterations: usize, reason: String },
+    Completed { session_id: String, reason: String },
 }
 
 // ── Rate limiter ──────────────────────────────────────────────
@@ -114,7 +110,7 @@ impl RateLimiter {
         }
 
         if self.window.len() >= self.per_minute {
-            let oldest = self.window.front().unwrap();
+            let oldest = self.window.front().expect("window non-empty after len check");
             let wait = RATE_WINDOW - now.duration_since(*oldest);
             return Err(wait);
         }
@@ -150,35 +146,6 @@ impl RepetitionDetector {
 
         self.recent_calls.len() == MAX_IDENTICAL_CALLS
             && self.recent_calls.iter().all(|s| s == signature)
-    }
-}
-
-// ── Input queue ───────────────────────────────────────────────
-
-/// Buffers user input while the agent is controlling the session.
-/// Flushed between tool calls.
-pub(crate) struct InputQueue {
-    queue: Mutex<Vec<String>>,
-}
-
-impl InputQueue {
-    pub(crate) fn new() -> Self {
-        Self {
-            queue: Mutex::new(Vec::new()),
-        }
-    }
-
-    pub(crate) fn push(&self, input: String) {
-        self.queue.lock().push(input);
-    }
-
-    fn drain(&self) -> Vec<String> {
-        let mut q = self.queue.lock();
-        std::mem::take(&mut *q)
-    }
-
-    fn is_empty(&self) -> bool {
-        self.queue.lock().is_empty()
     }
 }
 
@@ -254,7 +221,6 @@ pub(crate) async fn start_agent_loop(
 
     let approval_tx: Arc<Mutex<Option<oneshot::Sender<bool>>>> = Arc::new(Mutex::new(None));
     let handle = AgentHandle {
-        owner_session_id: session_id.clone(),
         cancel: cancel.clone(),
         state: agent_state.clone(),
         pause_notify: pause_notify.clone(),
@@ -283,7 +249,6 @@ pub(crate) async fn start_agent_loop(
                 *agent_state.write() = AgentState::Completed;
                 let _ = event_tx.send(AgentLoopEvent::Completed {
                     session_id: sid.clone(),
-                    iterations: 0, // logged inside run_loop
                     reason,
                 });
             }
@@ -681,28 +646,6 @@ mod tests {
         // Only two — not yet a repetition
     }
 
-    // ── InputQueue ─────────────────────────────────────────────
-
-    #[test]
-    fn input_queue_push_and_drain() {
-        let q = InputQueue::new();
-        assert!(q.is_empty());
-        q.push("hello".into());
-        q.push("world".into());
-        assert!(!q.is_empty());
-        let items = q.drain();
-        assert_eq!(items, vec!["hello", "world"]);
-        assert!(q.is_empty());
-    }
-
-    #[test]
-    fn input_queue_drain_is_empty_after() {
-        let q = InputQueue::new();
-        q.push("x".into());
-        q.drain();
-        assert_eq!(q.drain().len(), 0);
-    }
-
     // ── AgentState ─────────────────────────────────────────────
 
     #[test]
@@ -739,12 +682,11 @@ mod tests {
     fn event_completed_serializes() {
         let evt = AgentLoopEvent::Completed {
             session_id: "s1".into(),
-            iterations: 5,
             reason: "end_turn".into(),
         };
         let json = serde_json::to_string(&evt).unwrap();
         assert!(json.contains("\"type\":\"completed\""));
-        assert!(json.contains("\"iterations\":5"));
+        assert!(json.contains("\"reason\":\"end_turn\""));
     }
 
     #[test]
@@ -765,7 +707,7 @@ mod tests {
         let cancel = Arc::new(AtomicBool::new(false));
         let (tx, _) = broadcast::channel(16);
         ACTIVE_AGENTS.insert(sid.to_string(), AgentHandle {
-            owner_session_id: sid.to_string(),
+
             cancel,
             state: Arc::new(RwLock::new(AgentState::Running)),
             pause_notify: Arc::new(Notify::new()),
@@ -876,7 +818,7 @@ mod tests {
         let (tx, _) = broadcast::channel(16);
         let atx = Arc::new(Mutex::new(None));
         ACTIVE_AGENTS.insert(sid.to_string(), AgentHandle {
-            owner_session_id: sid.to_string(),
+
             cancel,
             state: Arc::new(RwLock::new(AgentState::Running)),
             pause_notify: Arc::new(Notify::new()),
@@ -896,7 +838,7 @@ mod tests {
         let (otx, orx) = oneshot::channel::<bool>();
         let atx = Arc::new(Mutex::new(Some(otx)));
         ACTIVE_AGENTS.insert(sid.to_string(), AgentHandle {
-            owner_session_id: sid.to_string(),
+
             cancel,
             state: Arc::new(RwLock::new(AgentState::Running)),
             pause_notify: Arc::new(Notify::new()),

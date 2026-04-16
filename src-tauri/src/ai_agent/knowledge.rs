@@ -6,8 +6,6 @@
 //! emits `CommandOutcome` records on OSC 133 `D` markers (or shell-state
 //! transitions for shells without integration) is added separately.
 
-#![allow(dead_code)]
-
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use serde::{Deserialize, Serialize};
@@ -296,13 +294,10 @@ const NETWORK: &[&str] = &[
 
 /// FinalTerm-style OSC 133 command-block markers emitted by our shell
 /// integration scripts. `C` fires immediately before command execution,
-/// `D(code)` right after with the exit code. `A`/`B` bracket the prompt
-/// itself and are not currently consumed by the agent loop but are parsed
-/// so the scanner stays faithful to the wire format.
+/// `D(code)` right after with the exit code. `A`/`B` (prompt brackets)
+/// are skipped by the scanner since nothing consumes them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Osc133Marker {
-    A,
-    B,
     C,
     D(i32),
 }
@@ -315,7 +310,7 @@ pub fn scan_osc133(data: &str) -> Vec<Osc133Marker> {
     let bytes = data.as_bytes();
     let mut out = Vec::new();
     let mut i = 0;
-    while let Some(pos) = find_subsequence(&bytes[i..], PREFIX.as_bytes()) {
+    while let Some(pos) = bytes[i..].windows(PREFIX.len()).position(|w| w == PREFIX.as_bytes()) {
         let start = i + pos + PREFIX.len();
         if start >= bytes.len() {
             break;
@@ -327,8 +322,6 @@ pub fn scan_osc133(data: &str) -> Vec<Osc133Marker> {
             None => break,
         };
         match kind_byte {
-            b'A' => out.push(Osc133Marker::A),
-            b'B' => out.push(Osc133Marker::B),
             b'C' => out.push(Osc133Marker::C),
             b'D' => {
                 let payload = &bytes[after_kind..payload_end];
@@ -341,10 +334,6 @@ pub fn scan_osc133(data: &str) -> Vec<Osc133Marker> {
         i = end;
     }
     out
-}
-
-fn find_subsequence(hay: &[u8], needle: &[u8]) -> Option<usize> {
-    hay.windows(needle.len()).position(|w| w == needle)
 }
 
 /// Returns (payload_end, sequence_end) where payload_end excludes the
@@ -669,12 +658,9 @@ mod osc133_tests {
     }
 
     #[test]
-    fn scans_a_and_b_markers() {
+    fn skips_a_and_b_markers() {
         let s = "\x1b]133;A\x07prompt$\x1b]133;B\x07";
-        assert_eq!(
-            scan_osc133(s),
-            vec![Osc133Marker::A, Osc133Marker::B]
-        );
+        assert_eq!(scan_osc133(s), vec![]);
     }
 
     #[test]
@@ -699,7 +685,7 @@ mod osc133_tests {
         let s = "before\x1b]133;C\x07cmd\x1b]133;D;0\x07after\x1b]133;A\x07";
         assert_eq!(
             scan_osc133(s),
-            vec![Osc133Marker::C, Osc133Marker::D(0), Osc133Marker::A]
+            vec![Osc133Marker::C, Osc133Marker::D(0)]
         );
     }
 

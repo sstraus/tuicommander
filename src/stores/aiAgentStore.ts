@@ -52,7 +52,6 @@ const [currentIteration, setCurrentIteration] = createSignal(0);
 const [toolCalls, setToolCalls] = createSignal<ToolCallEntry[]>([]);
 const [textChunks, setTextChunks] = createSignal("");
 const [pendingApproval, setPendingApproval] = createSignal<PendingApproval | null>(null);
-const [queuedInputCount, setQueuedInputCount] = createSignal(0);
 const [agentError, setAgentError] = createSignal<string | null>(null);
 const [completionReason, setCompletionReason] = createSignal<string | null>(null);
 
@@ -71,7 +70,6 @@ async function startAgent(sessionId: string, goal: string): Promise<void> {
     setAgentError(null);
     setCompletionReason(null);
     setCurrentIteration(0);
-    setQueuedInputCount(0);
     setPendingApproval(null);
   });
 
@@ -235,7 +233,6 @@ function reset(): void {
     setAgentError(null);
     setCompletionReason(null);
     setCurrentIteration(0);
-    setQueuedInputCount(0);
     setPendingApproval(null);
   });
 }
@@ -251,7 +248,6 @@ export const aiAgentStore = {
   toolCalls,
   textChunks,
   pendingApproval,
-  queuedInputCount,
   agentError,
   completionReason,
 
@@ -263,7 +259,4 @@ export const aiAgentStore = {
   approveAction,
   processEvent,
   reset,
-
-  // Direct setters for external integration
-  setQueuedInputCount,
 };
