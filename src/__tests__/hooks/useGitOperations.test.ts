@@ -2124,4 +2124,22 @@ describe("useGitOperations", () => {
       expect(main?.terminals).toContain(id);
     });
   });
+
+  describe("handleRemoveRepo — settings cleanup", () => {
+    it("removes repo settings (including mcp_upstreams) when repo is removed", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "main", {});
+      repoSettingsStore.getOrCreate("/repo", "Repo");
+      repoSettingsStore.update("/repo", { mcpUpstreams: ["alpha", "beta"] });
+
+      // Verify settings exist before removal
+      expect(repoSettingsStore.get("/repo")).toBeDefined();
+      expect(repoSettingsStore.get("/repo")?.mcpUpstreams).toEqual(["alpha", "beta"]);
+
+      await gitOps.handleRemoveRepo("/repo");
+
+      // Repo settings should be cleaned up
+      expect(repoSettingsStore.get("/repo")).toBeUndefined();
+    });
+  });
 });

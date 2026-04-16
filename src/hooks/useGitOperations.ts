@@ -717,6 +717,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
     }
 
     repositoriesStore.remove(repoPath);
+    repoSettingsStore.remove(repoPath);
 
     if (currentRepoPath() === repoPath) {
       setCurrentRepoPath(undefined);
