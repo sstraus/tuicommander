@@ -30,6 +30,7 @@ import { WebglLifecycle } from "./webglLifecycle";
 import { installScrollbarVisibilityFix } from "./scrollbarFix";
 import { installRenderObserver } from "./renderObserver";
 import { FlowController } from "./flowControl";
+import { installLinkProvider } from "./linkProvider";
 import { detectAgentForTerminal } from "../../hooks/useAgentPolling";
 import s from "./Terminal.module.css";
 
@@ -1118,120 +1119,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
     // Register link provider for file paths (clickable to open in IDE or MD viewer)
     if (props.onOpenFilePath) {
-      // Matches paths starting with /, ./, ../, or relative paths containing / with known extensions.
-      // Optional :line or :line:col suffix.
-      const CODING_EXT = "rs|ts|tsx|js|jsx|mjs|cjs|py|go|java|kt|kts|swift|c|h|cpp|hpp|cc|cs|rb|php|lua|zig|nim|ex|exs|erl|hs|ml|mli|fs|fsx|scala|clj|cljs|r|R|jl|dart|v|sv|vhdl|sol|move|css|scss|sass|less|html|htm|vue|svelte|astro|json|jsonc|json5|yaml|yml|toml|ini|cfg|conf|env|xml|plist|csv|tsv|sql|graphql|gql|proto|thrift|avsc|md|mdx|txt|rst|tex|adoc|org|sh|bash|zsh|fish|ps1|psm1|bat|cmd|dockerfile|containerfile|tf|tfvars|hcl|nix|cmake|make|mk|gradle|sbt|cabal|gemspec|podspec|lock|sum|mod|workspace|editorconfig|gitignore|gitattributes|dockerignore|eslintrc|prettierrc|babelrc|nvmrc|tool-versions|pdf|png|jpg|jpeg|gif|webp|svg|avif|ico|bmp|mp4|webm|mov|ogg|mp3|wav|flac|aac|m4a|log";
-      const filePathRegex = new RegExp(
-        `(?:^|[\\s"'\`(\\[{])` +                                    // boundary
-        `((?:~/|/|\\.\\.?/|[\\w@.-]+/)` +                            // path start: ~/, /, ./, ../, or word/
-        `[\\w./@-]*` +                                               // middle segments
-        `\\.(?:${CODING_EXT})` +                                     // .ext
-        `(?::\\d+(?::\\d+)?)?)` +                                    // optional :line:col
-        `(?=[\\s"'\`),;.!?:\\]}>]|$)`,                                // boundary (incl. sentence-ending punctuation)
-        "g",
-      );
-      // file:// URLs — capture group 1 is the absolute path (without the `file://` prefix).
-      // Accepts `file:///abs/path` (standard) and bare `file://abs/path`.
-      const fileUrlRegex = /\bfile:\/\/(\/[^\s"'`<>()[\]{}]+)/g;
-
-      const onOpenFilePath = props.onOpenFilePath; // capture for closure
-
-      // Cache resolved links per line to avoid flicker from async IPC on every mouse move.
-      // Key: "lineNumber:lineText", value: resolved ILink[] or undefined.
-      // Capped at 200 entries; cleared wholesale when full (lines rarely re-hover after scroll).
-      const linkCache = new Map<string, import("@xterm/xterm").ILink[] | undefined>();
-      const cacheSet = (key: string, val: import("@xterm/xterm").ILink[] | undefined) => {
-        if (linkCache.size >= 200) linkCache.clear();
-        linkCache.set(key, val);
-      };
-
-      terminal.registerLinkProvider({
-        provideLinks(bufferLineNumber: number, callback: (links: import("@xterm/xterm").ILink[] | undefined) => void) {
-          const bufLine = terminal!.buffer.active.getLine(bufferLineNumber - 1);
-          if (!bufLine) { callback(undefined); return; }
-          const lineText = bufLine.translateToString();
-
-          const cacheKey = `${bufferLineNumber}:${lineText}`;
-          if (linkCache.has(cacheKey)) {
-            callback(linkCache.get(cacheKey));
-            return;
-          }
-
-          // Matches store the full span to highlight (`text`) and the path to resolve
-          // via IPC (`candidate`). For plain paths these coincide; for `file://` URLs
-          // the span covers the whole URL while the candidate is the stripped path.
-          const matches: { text: string; candidate: string; index: number }[] = [];
-          let match: RegExpExecArray | null;
-          filePathRegex.lastIndex = 0;
-          while ((match = filePathRegex.exec(lineText)) !== null) {
-            const idx = lineText.indexOf(match[1], match.index);
-            matches.push({ text: match[1], candidate: match[1], index: idx });
-          }
-          // Also match `file://` URLs — the default WebLinksAddon only handles http(s)/ws/ftp,
-          // and the plain-path regex above won't match because `file://` supplies a `/` as the
-          // boundary char, which is not in its boundary class.
-          fileUrlRegex.lastIndex = 0;
-          while ((match = fileUrlRegex.exec(lineText)) !== null) {
-            matches.push({ text: match[0], candidate: match[1], index: match.index });
-          }
-          if (matches.length === 0) {
-            cacheSet(cacheKey, undefined);
-            callback(undefined);
-            return;
-          }
-
-          // Get cwd from the terminal's PTY session
-          const termData = terminalsStore.get(props.id);
-          const cwd = termData?.cwd || "";
-
-          // Validate all candidates via Rust IPC
-          Promise.all(
-            matches.map(async (m) => {
-              try {
-                const resolved = await invoke<{ absolute_path: string; is_directory: boolean } | null>(
-                  "resolve_terminal_path",
-                  { cwd, candidate: m.candidate },
-                );
-                return resolved ? { ...m, resolved } : null;
-              } catch {
-                return null;
-              }
-            }),
-          ).then((results) => {
-            const links: import("@xterm/xterm").ILink[] = [];
-            for (const r of results) {
-              if (!r) continue;
-              const startCol = r.index + 1; // 1-based
-              // Parse line:col from the candidate text
-              let line: number | undefined;
-              let col: number | undefined;
-              const lineColMatch = r.candidate.match(/:(\d+)(?::(\d+))?$/);
-              if (lineColMatch) {
-                line = parseInt(lineColMatch[1], 10);
-                if (lineColMatch[2]) col = parseInt(lineColMatch[2], 10);
-              }
-              links.push({
-                range: {
-                  start: { x: startCol, y: bufferLineNumber },
-                  end: { x: startCol + r.text.length - 1, y: bufferLineNumber },
-                },
-                text: r.text,
-                activate: (event: MouseEvent) => {
-                  if (event.button !== 0) return; // only activate on left-click
-                  onOpenFilePath(r.resolved.absolute_path, line, col);
-                },
-              });
-            }
-            const result = links.length > 0 ? links : undefined;
-            cacheSet(cacheKey, result);
-            callback(result);
-          }).catch(() => {
-            // Ensure xterm always gets its callback even on failure
-            cacheSet(cacheKey, undefined);
-            callback(undefined);
-          });
-        },
-      });
+      installLinkProvider(terminal, props.id, props.onOpenFilePath);
     }
 
     terminal.open(containerRef);
