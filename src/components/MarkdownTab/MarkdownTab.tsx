@@ -22,6 +22,7 @@ import type { SearchOptions } from "../shared/DomSearchEngine";
 import { SearchBar } from "../shared/SearchBar";
 import { t } from "../../i18n";
 import { shortenHomePath } from "../../platform";
+import { classifyFile } from "../../utils/filePreview";
 import e from "../shared/editor-header.module.css";
 import s from "./MarkdownTab.module.css";
 
@@ -235,10 +236,13 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
       ? ft.filePath.slice(0, ft.filePath.lastIndexOf("/"))
       : "";
     const resolved = currentDir ? `${currentDir}/${href}` : href;
-    if (href.endsWith(".md")) {
+    const target = classifyFile(resolved);
+    if (target === "markdown") {
       mdTabsStore.add(ft.repoPath, resolved, ft.fsRoot);
-    } else {
+    } else if (target === "preview") {
       mdTabsStore.addHtmlPreview(ft.repoPath, resolved, ft.fsRoot);
+    } else {
+      editorTabsStore.add(ft.fsRoot || ft.repoPath, resolved);
     }
   };
 
