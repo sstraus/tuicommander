@@ -26,7 +26,7 @@ import { kittySequenceForKey } from "./kittyKeyboard";
 import { getAwaitingInputSound } from "./awaitingInputSound";
 import { searchTerminalBuffer } from "../../utils/terminalSearch";
 import { ScrollTracker, ViewportLock } from "./scrollTracker";
-import { continuationRowsAfterSuggest } from "./suggestOverlay";
+import { continuationRowsAfterSuggest, isSuggestBlock } from "./suggestOverlay";
 import { detectAgentForTerminal } from "../../hooks/useAgentPolling";
 import s from "./Terminal.module.css";
 
@@ -119,8 +119,8 @@ export function cleanOscTitle(title: string): string {
   return cleaned;
 }
 
-/** Regex to identify suggest rows in xterm buffer text */
-const SUGGEST_RE = /suggest:\s+.+\|/;
+/** Regex to identify suggest rows in xterm buffer text (column-0 anchor) */
+const SUGGEST_ANCHOR_RE = /^[\s●⏺]*suggest:\s+\S/;
 /** Regex to identify intent rows in xterm buffer text */
 const INTENT_RE = /^[\s●⏺]*intent:\s+/;
 
@@ -228,17 +228,18 @@ function installRenderObserver(
       if (!line) continue;
       const text = line.translateToString(true);
 
-      if (SUGGEST_RE.test(text)) {
+      const getRowSnapshot = (i: number) => {
+        const ln = buf.getLine(viewportY + i);
+        if (!ln) return null;
+        return { text: ln.translateToString(true), isWrapped: ln.isWrapped };
+      };
+      if (SUGGEST_ANCHOR_RE.test(text) && isSuggestBlock(row, rows, getRowSnapshot)) {
         const top = row * cellH;
         html += `<div style="position:absolute;left:0;right:0;top:${top}px;height:${cellH}px;background:${bg}"></div>`;
         // Delegate the bounded continuation scan to the pure helper so
         // Makefile/table/diff rows that merely contain `|` aren't swallowed
         // by an unbounded pipe-tail consumer (story 1276-a3c2).
-        const hiddenRows = continuationRowsAfterSuggest(row, rows, (i) => {
-          const ln = buf.getLine(viewportY + i);
-          if (!ln) return null;
-          return { text: ln.translateToString(true), isWrapped: ln.isWrapped };
-        });
+        const hiddenRows = continuationRowsAfterSuggest(row, rows, getRowSnapshot);
         for (const contRow of hiddenRows) {
           html += `<div style="position:absolute;left:0;right:0;top:${contRow * cellH}px;height:${cellH}px;background:${bg}"></div>`;
         }

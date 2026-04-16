@@ -8,6 +8,7 @@ export interface RowSnapshot {
  *  avoids pulling the full Terminal module into unit tests. Must stay in
  *  sync with the patterns used in Terminal.tsx. */
 const SUGGEST_RE = /suggest:\s+.+\|/;
+const SUGGEST_ANCHOR_RE = /^[\s●⏺]*suggest:\s+\S/;
 const INTENT_RE = /^intent:\s+\S/;
 
 /**
@@ -49,4 +50,37 @@ export function continuationRowsAfterSuggest(
     break;
   }
   return hidden;
+}
+
+/**
+ * Determine whether the row at `anchorIndex` is the start of a suggest block.
+ *
+ * When the terminal is wide enough, `suggest: A | B | C` fits on one line and
+ * the simple `SUGGEST_RE` (requires `|` on the same row) matches.  On narrow
+ * terminals the pipe may be pushed onto a wrapped continuation row.  This
+ * function handles both cases by checking wrapped rows for a `|` when the
+ * anchor contains `suggest:` but no pipe.
+ */
+export function isSuggestBlock(
+  anchorIndex: number,
+  totalRows: number,
+  getRow: (i: number) => RowSnapshot | null,
+): boolean {
+  const row = getRow(anchorIndex);
+  if (!row) return false;
+
+  // Must at least look like a suggest anchor at column 0
+  if (!SUGGEST_ANCHOR_RE.test(row.text)) return false;
+
+  // Fast path: pipe on same line — classic case
+  if (row.text.includes("|")) return true;
+
+  // Check wrapped continuation rows for a pipe separator
+  for (let i = anchorIndex + 1; i < totalRows; i++) {
+    const next = getRow(i);
+    if (!next || !next.isWrapped) break;
+    if (next.text.includes("|")) return true;
+  }
+
+  return false;
 }

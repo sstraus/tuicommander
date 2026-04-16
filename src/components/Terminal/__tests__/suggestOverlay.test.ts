@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   continuationRowsAfterSuggest,
+  isSuggestBlock,
   type RowSnapshot,
 } from "../suggestOverlay";
 
@@ -99,5 +100,54 @@ describe("continuationRowsAfterSuggest", () => {
       ["plain prose here", false],
     ]);
     expect(continuationRowsAfterSuggest(0, 2, get)).toEqual([]);
+  });
+});
+
+describe("isSuggestBlock", () => {
+  it("returns true for normal suggest with pipe on same line", () => {
+    const get = rows([
+      ["suggest: A | B | C", false],
+    ]);
+    expect(isSuggestBlock(0, 1, get)).toBe(true);
+  });
+
+  it("returns true when pipe is on a wrapped continuation row", () => {
+    const get = rows([
+      ["suggest: 1) Testa il popup con Shift+Cmd+I su un upstream r", false],
+      ["eale | 2) Continua con la story 1324-0319 (clippy cleanup) ", true],
+      ["| 3) Crea una PR per questi cambiamenti", true],
+    ]);
+    expect(isSuggestBlock(0, 3, get)).toBe(true);
+  });
+
+  it("returns false for prose starting with suggest: but no pipe anywhere", () => {
+    const get = rows([
+      ["suggest: we should refactor the codebase", false],
+      ["to improve performance and readability", true],
+    ]);
+    expect(isSuggestBlock(0, 2, get)).toBe(false);
+  });
+
+  it("returns false for a row that does not start with suggest:", () => {
+    const get = rows([
+      ["I suggest: we try something else | maybe", false],
+    ]);
+    expect(isSuggestBlock(0, 1, get)).toBe(false);
+  });
+
+  it("returns true with Ink bullet prefix", () => {
+    const get = rows([
+      ["● suggest: Run tests | Check logs", false],
+    ]);
+    expect(isSuggestBlock(0, 1, get)).toBe(true);
+  });
+
+  it("returns false when row is not the anchor index", () => {
+    const get = rows([
+      ["unrelated row", false],
+      ["suggest: A | B", false],
+    ]);
+    // row 0 is not a suggest anchor
+    expect(isSuggestBlock(0, 2, get)).toBe(false);
   });
 });
