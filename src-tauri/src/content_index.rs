@@ -147,7 +147,7 @@ impl ContentIndex {
 
             processed += 1;
             if let Some(t) = throttle
-                && processed % THROTTLE_CHECKPOINT_INTERVAL == 0
+                && processed.is_multiple_of(THROTTLE_CHECKPOINT_INTERVAL)
             {
                 t.checkpoint();
             }
