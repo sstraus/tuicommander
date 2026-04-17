@@ -2,6 +2,7 @@ pub mod commands;
 pub mod context;
 pub mod conversation;
 pub mod engine;
+pub mod enrichment;
 pub mod knowledge;
 pub mod safety;
 pub mod sandbox;

@@ -2,6 +2,7 @@ import { Component, For, Show, createSignal, createEffect, onCleanup } from "sol
 import { invoke, listen } from "../../invoke";
 import { cx } from "../../utils";
 import { appLogger } from "../../stores/appLogger";
+import { uiStore } from "../../stores/ui";
 import s from "./SessionKnowledgeBar.module.css";
 
 interface OutcomeSummary {
@@ -109,24 +110,34 @@ export const SessionKnowledgeBar: Component<{ sessionId: string | null }> = (pro
 
   return (
     <div class={cx(s.bar, !props.sessionId && s.hidden)}>
-      <button
-        type="button"
-        class={s.summaryRow}
-        onClick={() => setExpanded(!expanded())}
-        title="Session knowledge"
-      >
-        <span class={s.caret}>{expanded() ? "▾" : "▸"}</span>
-        <span class={s.label}>knowledge</span>
-        <span class={s.count}>{summary().commands_count} cmds</span>
-        <Show when={summary().recent_errors.length > 0}>
-          <span class={cx(s.count, s.errCount)}>
-            {summary().recent_errors.length} recent err
-          </span>
-        </Show>
-        <Show when={summary().tui_mode}>
-          <span class={cx(s.count, s.tuiMode)}>tui: {summary().tui_mode}</span>
-        </Show>
-      </button>
+      <div class={s.summaryRow}>
+        <button
+          type="button"
+          class={s.summaryToggle}
+          onClick={() => setExpanded(!expanded())}
+          title="Session knowledge"
+        >
+          <span class={s.caret}>{expanded() ? "▾" : "▸"}</span>
+          <span class={s.label}>knowledge</span>
+          <span class={s.count}>{summary().commands_count} cmds</span>
+          <Show when={summary().recent_errors.length > 0}>
+            <span class={cx(s.count, s.errCount)}>
+              {summary().recent_errors.length} recent err
+            </span>
+          </Show>
+          <Show when={summary().tui_mode}>
+            <span class={cx(s.count, s.tuiMode)}>tui: {summary().tui_mode}</span>
+          </Show>
+        </button>
+        <button
+          type="button"
+          class={s.historyBtn}
+          title="Browse saved knowledge sessions"
+          onClick={() => uiStore.setKnowledgeHistoryOverlayVisible(true)}
+        >
+          history
+        </button>
+      </div>
 
       <Show when={expanded() && summary().commands_count > 0}>
         <div class={s.details}>

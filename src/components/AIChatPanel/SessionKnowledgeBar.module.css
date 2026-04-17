@@ -13,16 +13,26 @@
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 6px 10px;
+  padding: 4px 10px;
+  color: var(--fg-secondary);
+}
+
+.summaryToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0;
   background: none;
   border: none;
-  color: var(--fg-secondary);
+  color: inherit;
   cursor: pointer;
   text-align: left;
   font: inherit;
 }
 
-.summaryRow:hover {
+.summaryToggle:hover {
   background: var(--bg-hover);
 }
 
@@ -126,4 +136,23 @@
 .exit {
   color: var(--fg-tertiary);
   font-family: var(--font-mono);
+}
+
+.historyBtn {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg-secondary);
+  font: inherit;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.historyBtn:hover {
+  color: var(--fg-primary);
+  background: var(--bg-hover);
 }

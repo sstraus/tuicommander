@@ -897,6 +897,10 @@ pub fn run() {
                 // Start session-knowledge debounced persister (flushes dirty sessions every 2s).
                 crate::ai_agent::knowledge::spawn_persist_task(boot_registry_state.clone());
 
+                // Start AI block enrichment worker (drains the opt-in queue populated
+                // at OSC 133 D markers). No-op unless the user enables the setting.
+                crate::ai_agent::enrichment::spawn_worker(boot_registry_state.clone());
+
                 // Auto-connect saved upstream MCP servers on boot
                 crate::mcp_upstream_config::auto_connect_saved_upstreams(&boot_registry_state).await;
 
@@ -1301,6 +1305,8 @@ pub fn run() {
             ai_agent::commands::agent_loop_status,
             ai_agent::commands::approve_agent_action,
             ai_agent::commands::get_session_knowledge,
+            ai_agent::commands::list_knowledge_sessions,
+            ai_agent::commands::get_knowledge_session_detail,
             repo_watcher::start_repo_watcher,
             repo_watcher::stop_repo_watcher,
             dir_watcher::start_dir_watcher,

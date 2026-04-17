@@ -183,6 +183,210 @@ fn outcome_summary(c: &super::knowledge::CommandOutcome) -> OutcomeSummary {
     }
 }
 
+/// One row of the knowledge history list. Compact enough to paginate hundreds
+/// without loading every session's full command list.
+#[derive(serde::Serialize, Clone, Debug)]
+pub(crate) struct SessionListEntry {
+    pub session_id: String,
+    /// Timestamp of the most recent recorded outcome (or file mtime if the
+    /// session never ran a command).
+    pub last_activity: u64,
+    pub commands_count: usize,
+    pub errors_count: usize,
+    pub last_cwd: Option<String>,
+    pub tui_apps_seen: Vec<String>,
+}
+
+#[derive(serde::Deserialize, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct KnowledgeListFilter {
+    #[serde(default)]
+    pub text: Option<String>,
+    #[serde(default)]
+    pub has_errors: Option<bool>,
+    /// UNIX seconds — lower bound on last_activity (inclusive).
+    #[serde(default)]
+    pub since: Option<u64>,
+}
+
+/// List persisted sessions sorted by most recent activity. Scans
+/// `ai-sessions/` on every call (no in-memory index yet) — acceptable up
+/// to a few hundred files; upgrade path is a sidecar index if this becomes
+/// a bottleneck.
+#[tauri::command]
+pub(crate) async fn list_knowledge_sessions(
+    filter: Option<KnowledgeListFilter>,
+    limit: Option<usize>,
+) -> Result<Vec<SessionListEntry>, String> {
+    let filter = filter.unwrap_or_default();
+    let limit = limit.unwrap_or(100).min(500);
+    let rows = tokio::task::spawn_blocking(move || scan_sessions(&filter, limit))
+        .await
+        .map_err(|e| format!("list task join error: {e}"))??;
+    Ok(rows)
+}
+
+fn scan_sessions(filter: &KnowledgeListFilter, limit: usize) -> Result<Vec<SessionListEntry>, String> {
+    use crate::ai_agent::knowledge as kb;
+    let dir = crate::config::config_dir().join("ai-sessions");
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Ok(Vec::new());
+    };
+    let needle = filter
+        .text
+        .as_deref()
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty());
+    let mut rows: Vec<SessionListEntry> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let Some(sid) = path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let Some(k) = kb::load(sid) else { continue };
+        let commands_count = k.commands.len();
+        let errors_count = k
+            .commands
+            .iter()
+            .filter(|c| matches!(c.classification, OutcomeClass::Error { .. }))
+            .count();
+        if filter.has_errors == Some(true) && errors_count == 0 {
+            continue;
+        }
+        let last_activity = k
+            .commands
+            .iter()
+            .map(|c| c.timestamp)
+            .max()
+            .unwrap_or_else(|| {
+                entry
+                    .metadata()
+                    .ok()
+                    .and_then(|m| m.modified().ok())
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0)
+            });
+        if let Some(since) = filter.since
+            && last_activity < since
+        {
+            continue;
+        }
+        if let Some(n) = &needle {
+            let hit = k.commands.iter().any(|c| {
+                c.command.to_lowercase().contains(n)
+                    || c.output_snippet.to_lowercase().contains(n)
+                    || c.semantic_intent
+                        .as_deref()
+                        .is_some_and(|s| s.to_lowercase().contains(n))
+                    || match &c.classification {
+                        OutcomeClass::Error { error_type } => error_type.to_lowercase().contains(n),
+                        _ => false,
+                    }
+            });
+            if !hit {
+                continue;
+            }
+        }
+        let last_cwd = k.cwd_history.front().map(|(p, _)| p.clone());
+        let mut apps: Vec<String> = k.tui_apps_seen.iter().cloned().collect();
+        apps.sort();
+        rows.push(SessionListEntry {
+            session_id: sid.to_string(),
+            last_activity,
+            commands_count,
+            errors_count,
+            last_cwd,
+            tui_apps_seen: apps,
+        });
+    }
+    rows.sort_by(|a, b| b.last_activity.cmp(&a.last_activity));
+    rows.truncate(limit);
+    Ok(rows)
+}
+
+/// Detail of one command in the full-history view. Mirrors `CommandOutcome`
+/// but with `kind`/`error_type` pre-extracted so the frontend does not need
+/// to pattern-match on the tagged enum.
+#[derive(serde::Serialize, Clone, Debug)]
+pub(crate) struct HistoryCommand {
+    pub id: u64,
+    pub timestamp: u64,
+    pub command: String,
+    pub cwd: String,
+    pub exit_code: Option<i32>,
+    pub output_snippet: String,
+    pub duration_ms: u64,
+    pub kind: String,
+    pub error_type: Option<String>,
+    pub semantic_intent: Option<String>,
+}
+
+#[derive(serde::Serialize, Clone, Debug)]
+pub(crate) struct SessionDetail {
+    pub session_id: String,
+    pub commands: Vec<HistoryCommand>,
+    pub tui_apps_seen: Vec<String>,
+    pub cwd_history: Vec<(String, u64)>,
+}
+
+/// Load the full command history for one session. Reads from disk if the
+/// session is not currently active — covers the "inspect last week's
+/// session" case from the story.
+#[tauri::command]
+pub(crate) async fn get_knowledge_session_detail(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+) -> Result<Option<SessionDetail>, String> {
+    if let Some(entry) = state.session_knowledge.get(&session_id) {
+        let k = entry.lock();
+        return Ok(Some(to_detail(&session_id, &k)));
+    }
+    let sid_load = session_id.clone();
+    let loaded = tokio::task::spawn_blocking(move || crate::ai_agent::knowledge::load(&sid_load))
+        .await
+        .map_err(|e| format!("load task join error: {e}"))?;
+    Ok(loaded.map(|k| to_detail(&session_id, &k)))
+}
+
+fn to_detail(session_id: &str, k: &SessionKnowledge) -> SessionDetail {
+    let commands = k.commands.iter().map(history_command).collect();
+    let mut apps: Vec<String> = k.tui_apps_seen.iter().cloned().collect();
+    apps.sort();
+    SessionDetail {
+        session_id: session_id.to_string(),
+        commands,
+        tui_apps_seen: apps,
+        cwd_history: k.cwd_history.iter().cloned().collect(),
+    }
+}
+
+fn history_command(c: &super::knowledge::CommandOutcome) -> HistoryCommand {
+    let (kind, error_type) = match &c.classification {
+        OutcomeClass::Success => ("success", None),
+        OutcomeClass::Error { error_type } => ("error", Some(error_type.clone())),
+        OutcomeClass::TuiLaunched { .. } => ("tui_launched", None),
+        OutcomeClass::Timeout => ("timeout", None),
+        OutcomeClass::UserCancelled => ("user_cancelled", None),
+        OutcomeClass::Inferred => ("inferred", None),
+    };
+    HistoryCommand {
+        id: c.id,
+        timestamp: c.timestamp,
+        command: c.command.clone(),
+        cwd: c.cwd.clone(),
+        exit_code: c.exit_code,
+        output_snippet: c.output_snippet.clone(),
+        duration_ms: c.duration_ms,
+        kind: kind.to_string(),
+        error_type,
+        semantic_intent: c.semantic_intent.clone(),
+    }
+}
+
 /// Return a frontend-friendly summary of the session's accumulated knowledge.
 /// Returns an empty summary if no commands have been recorded yet.
 #[tauri::command]
@@ -269,6 +473,8 @@ mod tests {
                     }
                 },
                 duration_ms: 1,
+                id: 0,
+                semantic_intent: None,
             });
         }
         let s = SessionKnowledgeSummary::from_knowledge("s1", &k);

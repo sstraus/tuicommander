@@ -52,6 +52,8 @@ mod tests {
             output_snippet: String::new(),
             classification: class,
             duration_ms: 0,
+            id: 0,
+            semantic_intent: None,
         }
     }
 

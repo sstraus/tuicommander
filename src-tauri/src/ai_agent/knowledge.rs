@@ -48,7 +48,7 @@ pub fn sanitize_snippet(raw: &str) -> String {
 }
 
 /// On-disk format version. Bumped when the JSON shape changes.
-pub const KNOWLEDGE_SCHEMA_VERSION: u32 = 1;
+pub const KNOWLEDGE_SCHEMA_VERSION: u32 = 2;
 
 /// Cap on stored commands per session. FIFO eviction beyond this.
 pub const MAX_COMMANDS: usize = 2000;
@@ -80,6 +80,14 @@ pub struct CommandOutcome {
     pub output_snippet: String,
     pub classification: OutcomeClass,
     pub duration_ms: u64,
+    /// Monotonic id within the session — assigned by `SessionKnowledge::record`.
+    /// Lets async enrichers reference this outcome without positional indexing.
+    #[serde(default)]
+    pub id: u64,
+    /// AI-generated one-line goal (opt-in via experimental_ai_block_enrichment).
+    /// `None` = not yet enriched or enrichment disabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantic_intent: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -93,10 +101,16 @@ pub struct SessionKnowledge {
     /// (path, timestamp), most recent first.
     pub cwd_history: VecDeque<(String, u64)>,
     pub terminal_mode: TerminalMode,
+    /// Counter for assigning unique outcome ids. Bumped on each `record`.
+    #[serde(default)]
+    pub next_outcome_id: u64,
 }
 
 fn default_schema_version() -> u32 {
-    KNOWLEDGE_SCHEMA_VERSION
+    // Legacy files on disk predate the schema_version field; treat them as
+    // v1. Fresh sessions created via `SessionKnowledge::new()` stamp the
+    // current `KNOWLEDGE_SCHEMA_VERSION`.
+    1
 }
 
 impl SessionKnowledge {
@@ -108,13 +122,28 @@ impl SessionKnowledge {
             tui_apps_seen: HashSet::new(),
             cwd_history: VecDeque::new(),
             terminal_mode: TerminalMode::Shell,
+            next_outcome_id: 0,
+        }
+    }
+
+    /// Set the semantic_intent on a previously recorded outcome.
+    /// Used by the async enrichment worker. Returns `true` on hit.
+    pub fn set_semantic_intent(&mut self, id: u64, intent: String) -> bool {
+        if let Some(o) = self.commands.iter_mut().find(|o| o.id == id) {
+            o.semantic_intent = Some(intent);
+            true
+        } else {
+            false
         }
     }
 
     /// Record a command outcome. Updates cwd history, TUI app set, and
     /// auto-correlates an error→fix pair when this success follows a
     /// recent failure within `FIX_CORRELATION_WINDOW` commands.
-    pub fn record(&mut self, mut outcome: CommandOutcome) {
+    ///
+    /// Returns the monotonic id assigned to the stored outcome so async
+    /// enrichers can later target it via `set_semantic_intent`.
+    pub fn record(&mut self, mut outcome: CommandOutcome) -> u64 {
         // CWD history: dedup adjacent entries.
         if self
             .cwd_history
@@ -158,10 +187,14 @@ impl SessionKnowledge {
         outcome.output_snippet = sanitize_snippet(&outcome.output_snippet);
         outcome.command = crate::ai_agent::tools::redact_secrets(&outcome.command);
         outcome.output_snippet = crate::ai_agent::tools::redact_secrets(&outcome.output_snippet);
+        let assigned_id = self.next_outcome_id;
+        outcome.id = assigned_id;
+        self.next_outcome_id = self.next_outcome_id.wrapping_add(1);
         self.commands.push_back(outcome);
         while self.commands.len() > MAX_COMMANDS {
             self.commands.pop_front();
         }
+        assigned_id
     }
 
     /// Compact text for LLM context (commands run, recent errors, cwd
@@ -549,6 +582,8 @@ mod persist_tests {
             output_snippet: String::new(),
             classification: OutcomeClass::Success,
             duration_ms: 42,
+            id: 0,
+            semantic_intent: None,
         }
     }
 
@@ -728,6 +763,8 @@ mod persist_tests {
                     error_type: "rust_compilation".into(),
                 },
                 duration_ms: 500,
+                id: 0,
+                semantic_intent: None,
             },
         );
         state.record_outcome(
@@ -740,6 +777,8 @@ mod persist_tests {
                 output_snippet: String::new(),
                 classification: OutcomeClass::Success,
                 duration_ms: 400,
+                id: 0,
+                semantic_intent: None,
             },
         );
 
@@ -861,6 +900,8 @@ mod tests {
             output_snippet: String::new(),
             classification: class,
             duration_ms: 100,
+            id: 0,
+            semantic_intent: None,
         }
     }
 

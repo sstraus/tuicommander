@@ -18,6 +18,7 @@ import { TerminalArea } from "./components/TerminalArea";
 import { PanelOrchestrator } from "./components/PanelOrchestrator";
 import { editorTabsStore } from "./stores/editorTabs";
 import { PromptOverlay } from "./components/PromptOverlay";
+import { KnowledgeHistoryOverlay } from "./components/KnowledgeHistory/KnowledgeHistoryOverlay";
 import { PromptDrawer } from "./components/PromptDrawer";
 import type { SettingsContext } from "./components/SettingsPanel";
 const SettingsPanel = lazy(() => import("./components/SettingsPanel").then(m => ({ default: m.SettingsPanel })));
@@ -99,6 +100,7 @@ import { useWorktreeSwitchPrompt } from "./hooks/useWorktreeSwitchPrompt";
 import { useCiHeal } from "./hooks/useCiHeal";
 import { useSmartPrompts } from "./hooks/useSmartPrompts";
 import { registerAiChatContextActions } from "./components/AIChatPanel/contextMenuActions";
+import { aiChatStore } from "./stores/aiChatStore";
 import { aiAgentStore } from "./stores/aiAgentStore";
 import { applyAppTheme, applyFontFamily } from "./themes";
 import { createLongPressHandlerFromHotkey } from "./hooks/useLongPressHotkey";
@@ -407,6 +409,7 @@ const App: Component = () => {
     aiChatDisposables = [];
     if (settingsStore.isAiChatEnabled()) {
       aiChatDisposables = registerAiChatContextActions();
+      void aiChatStore.initFromDisk();
     } else if (uiStore.state.aiChatPanelVisible) {
       uiStore.setAiChatPanelVisible(false);
     }
@@ -1821,6 +1824,9 @@ const App: Component = () => {
 
       {/* Prompt overlay */}
       <PromptOverlay />
+
+      {/* AI knowledge history overlay */}
+      <KnowledgeHistoryOverlay />
 
       {/* Dictation streaming toast — shows partial transcription */}
       <DictationToast />

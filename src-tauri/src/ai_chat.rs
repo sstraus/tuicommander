@@ -39,6 +39,11 @@ pub(crate) struct AiChatConfig {
     /// Max terminal context lines injected per turn
     #[serde(default = "default_context_lines")]
     pub context_lines: u32,
+    /// Opt-in: enrich completed OSC 133 command blocks with a one-line
+    /// semantic_intent via a cheap LLM call. Off by default — costs tokens
+    /// and leaks command output to the configured provider.
+    #[serde(default)]
+    pub experimental_ai_block_enrichment: bool,
 }
 
 fn default_provider() -> String {
@@ -61,6 +66,7 @@ impl Default for AiChatConfig {
             base_url: None,
             temperature: default_temperature(),
             context_lines: default_context_lines(),
+            experimental_ai_block_enrichment: false,
         }
     }
 }
@@ -516,10 +522,16 @@ struct TerminalContext {
     agent_type: Option<String>,
     agent_intent: Option<String>,
     awaiting_input: bool,
+    /// Current terminal mode (Shell vs FullscreenTui with app hint + depth).
+    /// When a TUI (vim, lazygit, htop, …) is in the alternate screen buffer,
+    /// the model must prefer key-level input (q, ctrl+c) over shell commands.
+    terminal_mode: Option<crate::ai_agent::tui_detect::TerminalMode>,
 }
 
 impl TerminalContext {
     fn to_system_section(&self) -> String {
+        use crate::ai_agent::tui_detect::TerminalMode;
+
         let mut s = String::with_capacity(self.terminal_output.len() + 256);
         s.push_str("## Terminal Context\n\n");
 
@@ -537,6 +549,14 @@ impl TerminalContext {
         }
         if self.awaiting_input {
             s.push_str("**Status:** Awaiting user input\n");
+        }
+        if let Some(TerminalMode::FullscreenTui { app_hint, depth }) = &self.terminal_mode {
+            let hint = app_hint.as_deref().unwrap_or("unknown");
+            s.push_str(&format!(
+                "**Terminal mode:** fullscreen TUI (app: {hint}, depth: {depth}) — \
+                 suggest keystrokes (e.g. `q`, `:q`, `ctrl+c`) instead of shell commands; \
+                 shell commands will not be interpreted until the TUI exits.\n"
+            ));
         }
 
         if !self.terminal_output.is_empty() {
@@ -565,6 +585,7 @@ fn assemble_terminal_context(
         ctx.agent_type = ss.agent_type;
         ctx.agent_intent = ss.agent_intent;
         ctx.awaiting_input = ss.awaiting_input;
+        ctx.terminal_mode = ss.terminal_mode;
     }
 
     // CWD from PtySession
@@ -589,8 +610,9 @@ fn assemble_terminal_context(
             }
         }
         // Also include current screen rows for the freshest state
+        let screen_rows: Vec<String> = buf.screen_rows().into_iter().collect();
         if output.is_empty() {
-            for row in buf.screen_rows() {
+            for row in &screen_rows {
                 let trimmed = row.trim_end();
                 if !trimmed.is_empty() {
                     output.push_str(trimmed);
@@ -599,6 +621,20 @@ fn assemble_terminal_context(
             }
         }
         ctx.terminal_output = truncate_terminal_output(&output, DEFAULT_CONTEXT_BUDGET);
+
+        // Enrich TUI mode with app_hint from visible screen if PTY hasn't
+        // identified one yet (e.g. vim, lazygit, htop detected by signature).
+        if let Some(crate::ai_agent::tui_detect::TerminalMode::FullscreenTui {
+            app_hint: None,
+            depth,
+        }) = ctx.terminal_mode.clone()
+            && let Some(app) = crate::ai_agent::tui_detect::detect_app_from_rows(&screen_rows)
+        {
+            ctx.terminal_mode = Some(crate::ai_agent::tui_detect::TerminalMode::FullscreenTui {
+                app_hint: Some(app.to_string()),
+                depth,
+            });
+        }
     }
 
     ctx
@@ -903,6 +939,7 @@ mod tests {
             base_url: None,
             temperature: 0.5,
             context_lines: 200,
+            experimental_ai_block_enrichment: false,
         };
         let json = serde_json::to_string(&config).unwrap();
         let loaded: AiChatConfig = serde_json::from_str(&json).unwrap();
@@ -921,6 +958,7 @@ mod tests {
             base_url: Some("https://my-llm.internal/v1/".to_string()),
             temperature: 0.3,
             context_lines: 100,
+            experimental_ai_block_enrichment: false,
         };
         let json = serde_json::to_string(&config).unwrap();
         let loaded: AiChatConfig = serde_json::from_str(&json).unwrap();
@@ -1233,6 +1271,7 @@ mod tests {
             agent_type: Some("claude-code".to_string()),
             agent_intent: Some("fixing build errors".to_string()),
             awaiting_input: false,
+            terminal_mode: None,
         };
         let section = ctx.to_system_section();
         assert!(section.contains("**Shell state:** idle"));
@@ -1250,6 +1289,23 @@ mod tests {
         let section = ctx.to_system_section();
         assert!(section.contains("## Terminal Context"));
         assert!(!section.contains("```")); // no code block when no output
+    }
+
+    #[test]
+    fn terminal_context_tui_mode_appears_in_system_section() {
+        use crate::ai_agent::tui_detect::TerminalMode;
+        let ctx = TerminalContext {
+            terminal_mode: Some(TerminalMode::FullscreenTui {
+                app_hint: Some("vim".to_string()),
+                depth: 1,
+            }),
+            ..Default::default()
+        };
+        let section = ctx.to_system_section();
+        assert!(section.contains("fullscreen TUI"));
+        assert!(section.contains("vim"));
+        assert!(section.contains("depth: 1"));
+        assert!(section.contains("keystrokes"));
     }
 
     #[test]

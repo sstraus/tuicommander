@@ -996,13 +996,14 @@ impl AppState {
         &self,
         session_id: &str,
         outcome: crate::ai_agent::knowledge::CommandOutcome,
-    ) {
+    ) -> u64 {
         let entry = self
             .session_knowledge
             .entry(session_id.to_string())
             .or_insert_with(|| Mutex::new(crate::ai_agent::knowledge::SessionKnowledge::new()));
-        entry.lock().record(outcome);
+        let id = entry.lock().record(outcome);
         self.knowledge_dirty.insert(session_id.to_string(), ());
+        id
     }
 }
 

@@ -130,6 +130,7 @@ Input tools are refused while the internal agent loop is active on that session,
 | Temperature | `ai-chat-config.json` | Default `0.7` |
 | Context lines | `ai-chat-config.json` | Default `150`. Raise for richer context, lower for smaller prompts. |
 | API key | OS keyring (`tuicommander-ai-chat` / `api-key`) | Masked with eye-toggle. "Test connection" validates the key + base URL. |
+| Experimental: enrich command blocks | `ai-chat-config.json` (`experimental_ai_block_enrichment`) | Default off. When on, each completed OSC 133 block is sent to the provider for a one-line `semantic_intent`. Rate-limited to ~10/min, silent on failure. |
 
 ## Keyboard shortcuts
 

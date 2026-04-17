@@ -14,6 +14,7 @@ interface AiChatConfig {
   base_url?: string | null;
   temperature: number;
   context_lines: number;
+  experimental_ai_block_enrichment: boolean;
 }
 
 interface OllamaModel {
@@ -61,6 +62,7 @@ export const AiChatTab: Component = () => {
   const [baseUrl, setBaseUrl] = createSignal("");
   const [temperature, setTemperature] = createSignal(0.7);
   const [contextLines, setContextLines] = createSignal(150);
+  const [blockEnrichment, setBlockEnrichment] = createSignal(false);
 
   // API key state
   const [apiKey, setApiKey] = createSignal("");
@@ -88,6 +90,7 @@ export const AiChatTab: Component = () => {
     base_url: baseUrl() || null,
     temperature: temperature(),
     context_lines: contextLines(),
+    experimental_ai_block_enrichment: blockEnrichment(),
   });
 
   const saveConfig = () => {
@@ -110,6 +113,7 @@ export const AiChatTab: Component = () => {
       setBaseUrl(config.base_url || "");
       setTemperature(config.temperature ?? 0.7);
       setContextLines(config.context_lines ?? 150);
+      setBlockEnrichment(config.experimental_ai_block_enrichment ?? false);
     } catch (e) {
       appLogger.warn("config", "Failed to load AI Chat config", e);
     }
@@ -177,6 +181,11 @@ export const AiChatTab: Component = () => {
 
   const handleContextLinesChange = (value: number) => {
     setContextLines(value);
+    saveConfig();
+  };
+
+  const handleBlockEnrichmentChange = (value: boolean) => {
+    setBlockEnrichment(value);
     saveConfig();
   };
 
@@ -474,6 +483,26 @@ export const AiChatTab: Component = () => {
         </div>
         <p class={s.hint}>
           Controls randomness of responses (0.0 = deterministic, 1.0 = creative)
+        </p>
+      </div>
+
+      {/* ── Experimental ── */}
+      <h3>Experimental</h3>
+
+      <div class={s.group}>
+        <label>
+          <input
+            type="checkbox"
+            checked={blockEnrichment()}
+            onChange={(e) => handleBlockEnrichmentChange(e.currentTarget.checked)}
+          />
+          {" "}Enrich command blocks with AI metadata
+        </label>
+        <p class={s.hint}>
+          After each shell command completes, send its command line and a short
+          output tail to the configured provider to derive a one-line intent.
+          Rate-limited to ~10/min. Disabled by default — leaks command output
+          to the provider and consumes tokens.
         </p>
       </div>
 
