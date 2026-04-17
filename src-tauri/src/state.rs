@@ -1273,7 +1273,10 @@ impl AppState {
                                     .map(|t| t.to_string());
                             }
                             "status-line" => {
-                                // Agent is working — clear error/rate-limit/suggest/menu/question
+                                // Agent is working — clear error/rate-limit/suggest/question.
+                                // Keep slash_menu_items — the agent's status line can tick
+                                // while the user is still interacting with the slash menu, and
+                                // wiping it here causes the PWA overlay to flash off.
                                 s.awaiting_input = false;
                                 s.question_text = None;
                                 s.question_confident = false;
@@ -1282,7 +1285,6 @@ impl AppState {
                                 s.rate_limit_set_ms = 0;
                                 s.last_error = None;
                                 s.suggested_actions = None;
-                                s.slash_menu_items = None;
                                 s.choice_prompt = None;
                                 // Only update current_task + activity timestamp when task changes.
                                 // Spinner rotations (same task name) are suppressed to avoid

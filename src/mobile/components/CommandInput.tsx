@@ -105,10 +105,13 @@ export function CommandInput(props: CommandInputProps) {
   }
 
   function handleSlashSelect(command: string) {
-    // Dismiss the agent's slash menu then type the selected command
-    // Replace current text with selected command using delta sync
-    // (backspaces to delete, then type new text — works in any mode)
-    const text = command + " ";
+    // Preserve any prefix typed before the slash (e.g. "ciao /he" → "ciao /help ").
+    // Without this, a mid-line slash selection would wipe the prefix in the PWA
+    // while the agent's buffer still holds it — the two sides diverge.
+    const current = textareaEl?.value ?? value();
+    const slashIdx = current.lastIndexOf("/");
+    const prefix = slashIdx >= 0 ? current.slice(0, slashIdx) : "";
+    const text = prefix + command + " ";
     setValue(text);
     syncDelta(text);
     if (textareaEl) {
@@ -172,7 +175,7 @@ export function CommandInput(props: CommandInputProps) {
     }
   }
 
-  const showDropup = () => value().startsWith("/") && (props.slashItems?.length ?? 0) > 0;
+  const showDropup = () => value().includes("/") && (props.slashItems?.length ?? 0) > 0;
   const showChoicePrompt = () => !!props.choicePrompt;
 
   async function handleChoiceSelect(key: string) {
