@@ -199,7 +199,9 @@
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-dropdown);
   z-index: 100;
-  overflow: hidden;
+  max-height: calc(100vh - 60px);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .emptyState {
