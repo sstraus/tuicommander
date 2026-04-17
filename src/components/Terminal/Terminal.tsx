@@ -46,6 +46,7 @@ type ParsedEvent =
   | { type: "plan-file"; path: string }
   | { type: "user-input"; content: string }
   | { type: "api-error"; pattern_name: string; matched_text: string; error_kind: string }
+  | { type: "tool-error"; matched_text: string }
   | { type: "intent"; text: string; title?: string }
   | { type: "suggest"; items: string[] }
   | { type: "slash-menu"; items: Array<{ command: string; description: string; highlighted: boolean }> }
@@ -520,6 +521,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
               appLogger.warn("terminal", `[AutoRetry] ${label}: exhausted ${RETRY_DELAYS.length} retries, manual intervention needed`);
             }
           }
+          break;
+        }
+        case "tool-error": {
+          const matched = parsed.matched_text;
+          appLogger.error("terminal", `[ToolError] ${props.id} matched="${matched}"`);
+          terminalsStore.setAwaitingInput(props.id, "error");
+          notificationsStore.playError();
           break;
         }
         case "intent":

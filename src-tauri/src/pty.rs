@@ -202,6 +202,12 @@ const SILENCE_QUESTION_THRESHOLD: std::time::Duration = std::time::Duration::fro
 /// Anything beyond this threshold means the agent continued working — not waiting.
 const STALE_QUESTION_CHUNKS: u32 = 10;
 
+/// How long the agent must be silent after printing a tool-error line before
+/// we treat it as a turn-ending error (fire `playError()`). Shorter than the
+/// question threshold because tool errors are typically followed by immediate
+/// turn end (no retry) — 5s is enough to rule out a same-chunk recovery.
+const SILENCE_TOOL_ERROR_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// How often the timer thread wakes up to check for silence.
 const SILENCE_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
@@ -452,6 +458,12 @@ pub(crate) struct SilenceState {
     /// Settled = output paused for STARTUP_SETTLE_SILENCE seconds, or
     /// STARTUP_GRACE_MAX has elapsed since creation.
     pub(crate) startup_settled: bool,
+    /// The last `Error: Exit code N` line seen, awaiting silence verification.
+    /// Cleared if real output (non-chrome, non-error) arrives — that means the
+    /// agent recovered and the error is not turn-ending.
+    pending_tool_error: Option<String>,
+    /// Whether a ToolError event has already been emitted for the current pending error.
+    tool_error_already_emitted: bool,
 }
 
 impl SilenceState {
@@ -468,6 +480,8 @@ impl SilenceState {
             last_emitted_text: None,
             created_at: std::time::Instant::now(),
             startup_settled: false,
+            pending_tool_error: None,
+            tool_error_already_emitted: false,
         }
     }
 
@@ -642,6 +656,46 @@ impl SilenceState {
     pub(crate) fn clear_stale_question(&mut self) {
         self.pending_question_line = None;
         self.question_already_emitted = true;
+    }
+
+    /// Register an `Error: Exit code N` line seen in visible output. The silence
+    /// timer will emit a ToolError event if the session goes idle without any
+    /// real-output chunk clearing the candidate (= agent did not recover).
+    pub(crate) fn mark_tool_error_candidate(&mut self, line: String) {
+        if self.tool_error_already_emitted
+            && self.pending_tool_error.as_deref() == Some(&line)
+        {
+            return;
+        }
+        self.pending_tool_error = Some(line);
+        self.tool_error_already_emitted = false;
+    }
+
+    /// Called on every real-output chunk that is NOT an error line. Clears the
+    /// pending tool-error candidate: if the agent produced real output after an
+    /// error, it recovered (e.g. retry) and the error is not turn-ending.
+    pub(crate) fn clear_tool_error_on_recovery(&mut self) {
+        self.pending_tool_error = None;
+        self.tool_error_already_emitted = false;
+    }
+
+    /// Called by the timer thread. Returns the error text if the silence
+    /// threshold has been reached and we haven't emitted yet. Semantics mirror
+    /// `check_silence` but use the shorter tool-error threshold.
+    pub(crate) fn check_tool_error(&mut self) -> Option<String> {
+        if self.tool_error_already_emitted {
+            return None;
+        }
+        if self.is_spinner_active() {
+            return None;
+        }
+        if let Some(ref line) = self.pending_tool_error
+            && self.last_output_at.elapsed() >= SILENCE_TOOL_ERROR_THRESHOLD
+        {
+            self.tool_error_already_emitted = true;
+            return Some(line.clone());
+        }
+        None
     }
 
     /// Returns true if the session has been silent long enough and the spinner
@@ -925,6 +979,24 @@ fn spawn_silence_timer(
                 sl.check_startup_settle();
                 if sl.is_startup_grace() {
                     continue; // Still in startup burst — suppress question detection
+                }
+            }
+
+            // Tool-error turn-end: `Error: Exit code N` + silence = fire playError.
+            // Checked before question detection — a tool error is not a question.
+            if let Some(text) = silence.lock().check_tool_error() {
+                let parsed = ParsedEvent::ToolError { matched_text: text };
+                if let Ok(json) = serde_json::to_value(&parsed) {
+                    let _ = event_bus.send(crate::state::AppEvent::PtyParsed {
+                        session_id: session_id.clone(),
+                        parsed: json,
+                    });
+                }
+                if let Some(ref app) = app {
+                    let _ = app.emit(
+                        &format!("pty-parsed-{session_id}"),
+                        &parsed,
+                    );
                 }
             }
 
@@ -1560,6 +1632,26 @@ impl ChunkProcessor {
         {
             let mut sl = silence.lock();
             sl.on_chunk(regex_found_question, last_q_line, has_status_line, chrome_only, suggest_only);
+
+            // Tool-error detection: scan visible rows for `Error: Exit code N`.
+            // Fires playError() via silence_timer when followed only by chrome
+            // until SILENCE_TOOL_ERROR_THRESHOLD elapses (= turn ended on error).
+            lazy_static::lazy_static! {
+                static ref TOOL_ERROR_RE: regex::Regex =
+                    regex::Regex::new(r"Error:\s*Exit code\s+\d+").unwrap();
+            }
+            let mut error_line: Option<String> = None;
+            for row in changed_rows.iter() {
+                if TOOL_ERROR_RE.is_match(&row.text) {
+                    error_line = Some(row.text.trim().to_string());
+                }
+            }
+            if let Some(line) = error_line {
+                sl.mark_tool_error_candidate(line);
+            } else if !chrome_only {
+                // Real output without an error line → agent recovered/continued.
+                sl.clear_tool_error_on_recovery();
+            }
         }
 
         // Stamp last_output_ms for real output and for active spinner repaints.
@@ -3441,6 +3533,56 @@ mod tests {
     fn test_silence_state_no_pending_returns_none() {
         let mut s = SilenceState::new();
         assert!(s.check_silence().is_none());
+    }
+
+    #[test]
+    fn test_tool_error_no_candidate_returns_none() {
+        let mut s = SilenceState::new();
+        assert!(s.check_tool_error().is_none());
+    }
+
+    #[test]
+    fn test_tool_error_fires_after_silence_threshold() {
+        let mut s = SilenceState::new();
+        s.mark_tool_error_candidate("Error: Exit code 128".to_string());
+        // Force last_output_at past the threshold to simulate silence.
+        s.last_output_at = std::time::Instant::now()
+            - SILENCE_TOOL_ERROR_THRESHOLD
+            - std::time::Duration::from_millis(100);
+        assert_eq!(
+            s.check_tool_error(),
+            Some("Error: Exit code 128".to_string())
+        );
+        // Dedup: second call returns None (already emitted).
+        assert!(s.check_tool_error().is_none());
+    }
+
+    #[test]
+    fn test_tool_error_recovery_clears_candidate() {
+        let mut s = SilenceState::new();
+        s.mark_tool_error_candidate("Error: Exit code 1".to_string());
+        s.clear_tool_error_on_recovery();
+        s.last_output_at = std::time::Instant::now()
+            - SILENCE_TOOL_ERROR_THRESHOLD
+            - std::time::Duration::from_millis(100);
+        assert!(
+            s.check_tool_error().is_none(),
+            "recovery must clear pending tool error"
+        );
+    }
+
+    #[test]
+    fn test_tool_error_suppressed_while_spinner_active() {
+        let mut s = SilenceState::new();
+        s.mark_tool_error_candidate("Error: Exit code 2".to_string());
+        s.last_status_line_at = Some(std::time::Instant::now());
+        s.last_output_at = std::time::Instant::now()
+            - SILENCE_TOOL_ERROR_THRESHOLD
+            - std::time::Duration::from_millis(100);
+        assert!(
+            s.check_tool_error().is_none(),
+            "spinner active means agent still working — no notification"
+        );
     }
 
     #[test]

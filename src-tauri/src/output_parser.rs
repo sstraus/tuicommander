@@ -66,6 +66,13 @@ pub enum ParsedEvent {
         matched_text: String,
         error_kind: String, // "server", "auth", "unknown"
     },
+    /// Tool-error turn end: agent printed `Error: Exit code N` and the session
+    /// went idle (only chrome chunks) without recovering. Fires `playError()`
+    /// on the frontend. Emitted by the silence timer in pty.rs, not by parser.
+    #[serde(rename = "tool-error")]
+    ToolError {
+        matched_text: String,
+    },
     /// Agent-declared intent: what the LLM is currently working on.
     /// Emitted via `intent: <text>` or `intent: <text> (<tab title>)` at column 0.
     #[serde(rename = "intent")]
@@ -1172,13 +1179,19 @@ fn parse_suggest_with_line(clean: &str, agent_active: bool) -> Option<(ParsedEve
     // Skip past the newline that `$` matched before.
     let remainder = clean[match_end..].strip_prefix('\n').unwrap_or(&clean[match_end..]);
     let mut full = first_line.to_string();
-    let mut joined_tail = false; // allow at most one pipeless tail line
+    let mut pipe_count = first_line.matches('|').count();
+    let mut tail_started = false;
     for line in remainder.lines() {
         let trimmed = line.trim();
+        // Empty line ends the suggest block — Claude Code separates suggest
+        // from following content (status spinner, prompt, prose) with a blank.
         if trimmed.is_empty() {
             break;
         }
-        // Stop at lines that look like a new token (intent:, suggest:, etc.)
+        // Stop at lines that look like a new token or a shell prompt. The
+        // static glyphs (●, ⏺, ❯, etc.) are enumerated here; animated spinner
+        // glyphs vary per agent and per frame, so they delegate to
+        // `chrome::is_spinner_row`.
         if trimmed.starts_with("intent:")
             || trimmed.starts_with("suggest:")
             || trimmed.starts_with("●")
@@ -1186,23 +1199,29 @@ fn parse_suggest_with_line(clean: &str, agent_active: bool) -> Option<(ParsedEve
             || trimmed.starts_with("❯")
             || trimmed.starts_with(">")
             || trimmed.starts_with("›")
+            || trimmed.starts_with('*')
+            || trimmed.starts_with('$')
+            || trimmed.starts_with('#')
+            || crate::chrome::is_spinner_row(trimmed)
         {
             break;
         }
         if trimmed.contains('|') {
             // Continuation with pipe — part of the pipe-separated list.
+            // A pipe row after a pipeless tail row is unusual; treat the prior
+            // tail as terminating and stop here.
+            if tail_started { break; }
+            pipe_count += trimmed.matches('|').count();
             full.push(' ');
             full.push_str(trimmed);
-        } else if !joined_tail
-            && (full.matches('|').count() >= 2 || full.len() >= 40)
-        {
-            // One pipeless tail allowed when the suggest is already clearly
-            // complete (3+ items → 2+ pipes) or long enough to have wrapped
-            // on a narrow terminal. Short 2-item suggests followed by
-            // unrelated prose must NOT grab it.
+        } else if pipe_count >= 2 || full.len() >= 40 {
+            // Pipeless tails (last item wrapped onto subsequent rows). Allow
+            // multiple consecutive tail rows — Claude Code wraps long final
+            // items across several physical rows on narrow terminals. We rely
+            // on the empty/token/spinner terminators above to bound this walk.
             full.push(' ');
             full.push_str(trimmed);
-            joined_tail = true;
+            tail_started = true;
         } else {
             break;
         }
@@ -3179,10 +3198,12 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     }
 
     #[test]
-    fn test_suggest_wrap_tail_stops_at_second_pipeless_line() {
-        // Only ONE tail continuation without `|` is allowed — a second pipeless
-        // line is unrelated output and must not be joined.
-        let input = "suggest: 1) First long option text here | 2) Second long option text here | 3) Third option that wraps to the next\ntail of third\nunrelated output on another line";
+    fn test_suggest_wrap_tail_stops_at_terminator() {
+        // Pipeless tails are joined until a strong terminator (empty line,
+        // token boundary, status spinner `*`, shell prompt `$`/`#`).
+        // Claude Code always emits a blank line before the status spinner,
+        // so prose-after-suggest is never adjacent in practice.
+        let input = "suggest: 1) First long option text here | 2) Second long option text here | 3) Third option that wraps to the next\ntail of third\n\nunrelated output on another line";
         let items = parse_suggest(input, true);
         let items = match items {
             Some(ParsedEvent::Suggest { items }) => items,
@@ -3190,6 +3211,53 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         };
         assert_eq!(items.len(), 3);
         assert_eq!(items[2], "3) Third option that wraps to the next tail of third");
+    }
+
+    #[test]
+    fn test_suggest_wrap_tail_multiline_joins_all() {
+        // Reported bug: long final item wraps across multiple physical rows
+        // (no `|` in any of them). Single-tail-only logic dropped trailing
+        // words like "app", showing them as orphans in the terminal.
+        let input = "suggest: 1) A | 2) B | 3) Questo cambia completamente la diagnosi del fix.\napp\n\n* Cooked for 3m 30s";
+        let items = parse_suggest(input, true);
+        let items = match items {
+            Some(ParsedEvent::Suggest { items }) => items,
+            _ => panic!("should parse"),
+        };
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[2], "3) Questo cambia completamente la diagnosi del fix. app");
+    }
+
+    #[test]
+    fn test_suggest_wrap_tail_stops_at_status_spinner() {
+        // CC status line `* Cooked for ...` immediately after a tail row
+        // must terminate the walk even without an empty line buffer.
+        let input = "suggest: 1) A | 2) B | 3) Long item that wraps and lands on next row\nrest of item three\n* Cooked for 3m 30s";
+        let items = parse_suggest(input, true);
+        let items = match items {
+            Some(ParsedEvent::Suggest { items }) => items,
+            _ => panic!("should parse"),
+        };
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[2], "3) Long item that wraps and lands on next row rest of item three");
+    }
+
+    #[test]
+    fn test_suggest_wrap_tail_stops_at_cc_dingbat_spinner() {
+        // Reported bug: CC uses `✻` (U+273B) as one of its spinner frames.
+        // Previous ASCII-only `*` guard missed it and chip 3 absorbed the
+        // status row, showing as "Tag release v1.1.0 ✻ Cogitated for 2m 32s".
+        // Note: the empty row between suggest and status is often absent in
+        // `joined` (parse_clean_lines skips unchanged rows), so relying on an
+        // empty-line terminator alone is insufficient.
+        let input = "suggest: 1) Riavvio la sessione | 2) Aggiungo uno stub | 3) Tag release\nv1.1.0\n\u{273B} Cogitated for 2m 32s";
+        let items = parse_suggest(input, true);
+        let items = match items {
+            Some(ParsedEvent::Suggest { items }) => items,
+            _ => panic!("should parse"),
+        };
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[2], "3) Tag release v1.1.0");
     }
 
     #[test]
