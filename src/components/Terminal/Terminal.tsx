@@ -25,7 +25,7 @@ import { parseOsc7Url } from "../../utils/osc7";
 import { kittySequenceForKey } from "./kittyKeyboard";
 import { getAwaitingInputSound } from "./awaitingInputSound";
 import { searchTerminalBuffer } from "../../utils/terminalSearch";
-import { ScrollTracker, ViewportLock } from "./scrollTracker";
+import { ScrollTracker, ViewportLock, ScrollFloor } from "./scrollTracker";
 import { WebglLifecycle } from "./webglLifecycle";
 import { installScrollbarVisibilityFix } from "./scrollbarFix";
 import { installRenderObserver } from "./renderObserver";
@@ -217,6 +217,12 @@ export const Terminal: Component<TerminalProps> = (props) => {
   // re-entrancy without any DOM reads. See scrollTracker.ts for details.
   const scrollTracker = new ScrollTracker();
   const viewportLock = new ViewportLock();
+  const scrollFloor = new ScrollFloor();
+  // Set true for the duration of a Shift+wheel gesture so the user can
+  // temporarily bypass the frame-boundary clamp and inspect old scrollback.
+  let scrollFloorBypass = false;
+  let scrollFloorBypassTimer: number | undefined;
+  let scrollFloorWheelCleanup: (() => void) | null = null;
 
   /** Fit terminal to container, preserving scroll position across reflows. */
   const doFit = () => {
@@ -308,6 +314,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
   /** Process a chunk of PTY output — write to terminal or buffer if not ready/visible */
   const handlePtyData = (rawData: string) => {
     const data = rawData;
+    scrollFloor.scanChunk(data);
     if (terminal) {
       // Dispatch to plugins for all terminals — background tabs may have
       // plugin-relevant output (e.g. agent detection, error tracking)
@@ -1254,7 +1261,20 @@ export const Terminal: Component<TerminalProps> = (props) => {
     replayBuffer();
 
     terminal.onScroll(() => {
-      scrollTracker.onScroll(terminal!.buffer.active);
+      const buf = terminal!.buffer.active;
+      // Frame-boundary clamp: block scrolling above the start of the most
+      // recent agent redraw. User holds Shift+wheel to bypass for one gesture.
+      if (buf.type === "normal" && !scrollFloorBypass) {
+        const floor = scrollFloor.getFloor(buf.baseY);
+        if (floor > 0 && buf.viewportY < floor) {
+          // Don't suppressNextScroll — the follow-up event dispatched by
+          // scrollToLine carries the post-clamp viewportY and must reach
+          // scrollTracker/viewportLock to keep their state in sync.
+          terminal!.scrollToLine(floor);
+          return;
+        }
+      }
+      scrollTracker.onScroll(buf);
       viewportLock.update(scrollTracker.isAtBottom);
     });
 
@@ -1264,7 +1284,21 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // emitted by the deferred renderer paint are classified correctly.
     terminal.onRender(() => {
       viewportLock.renderComplete();
+      scrollFloor.onRender(terminal!.buffer.active);
     });
+
+    // Shift+wheel on the terminal viewport bypasses the scrollFloor clamp
+    // for ~400 ms so power users can inspect history below the latest frame.
+    const onWheelBypass = (e: WheelEvent) => {
+      if (!e.shiftKey) return;
+      scrollFloorBypass = true;
+      clearTimeout(scrollFloorBypassTimer);
+      scrollFloorBypassTimer = window.setTimeout(() => {
+        scrollFloorBypass = false;
+      }, 400);
+    };
+    containerRef?.addEventListener("wheel", onWheelBypass, { capture: true, passive: true });
+    scrollFloorWheelCleanup = () => containerRef?.removeEventListener("wheel", onWheelBypass, { capture: true });
 
 
     resizeObserver = new ResizeObserver(() => {
@@ -1613,6 +1647,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
     renderObserverCleanup?.();
     scrollbarFixCleanup?.();
     viewportLock.dispose();
+    scrollFloorWheelCleanup?.();
+    clearTimeout(scrollFloorBypassTimer);
+    scrollFloor.reset();
     terminal?.dispose();
   });
 

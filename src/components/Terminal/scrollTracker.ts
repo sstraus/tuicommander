@@ -110,6 +110,59 @@ export class ScrollTracker {
   }
 }
 
+/**
+ * Clamps the scroll range to the start of the most recent "frame" — a redraw
+ * boundary marked by the agent emitting cursor-home + clear-screen
+ * (`ESC[H` + `ESC[2J` in either order).
+ *
+ * Agents like Claude Code 2.1.109 run in normal-buffer mode and redraw by
+ * re-emitting the full TUI frame on every tick, pushing prior frames into
+ * scrollback. Stripping `ESC[3J` accumulates 20+ duplicate banners. Rather
+ * than fighting the PTY, this component captures the baseY at each frame
+ * boundary and blocks the user's scroll from going above it — the duplicate
+ * history stays in memory but becomes unreachable.
+ *
+ * Floor is an absolute xterm buffer line, monotonically non-decreasing for
+ * a single session. When xterm's scrollback eviction shifts lines down past
+ * `baseY`, `getFloor(baseY)` resets to 0 until the next boundary repopulates.
+ */
+/** Cursor-home variants: ESC[H, ESC[;H, ESC[1;1H, ESC[1f, … */
+const CURSOR_HOME_RE = /\x1b\[[0-9;]*[Hf]/;
+
+export class ScrollFloor {
+  private floor = 0;
+  private pendingBoundary = false;
+
+  /** Scan a PTY chunk for a frame-boundary marker. Cheap fast-path first. */
+  scanChunk(data: string): void {
+    if (!data.includes("\x1b[2J")) return;
+    if (!CURSOR_HOME_RE.test(data)) return;
+    this.pendingBoundary = true;
+  }
+
+  /** Capture current baseY as the new floor after a write+render, if a
+   *  boundary was seen. Skipped in alternate buffer (vim/nano own the
+   *  viewport there). */
+  onRender(buf: BufferSnapshot): void {
+    if (!this.pendingBoundary) return;
+    this.pendingBoundary = false;
+    if (buf.type !== "normal") return;
+    this.floor = buf.baseY;
+  }
+
+  /** Get the floor for the current buffer. Auto-resets when xterm's
+   *  scrollback eviction has shifted the stored line past `baseY`. */
+  getFloor(baseY: number): number {
+    if (this.floor > baseY) this.floor = 0;
+    return this.floor;
+  }
+
+  reset(): void {
+    this.floor = 0;
+    this.pendingBoundary = false;
+  }
+}
+
 /** Optional diagnostic logger — called with event name + details.
  *  Used to trace scroll-jump bugs. Terminal.tsx wires this to appLogger. */
 export type ViewportLockLogger = (event: string, details: Record<string, unknown>) => void;

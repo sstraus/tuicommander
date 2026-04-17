@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ScrollTracker, ViewportLock, type BufferSnapshot } from "../../components/Terminal/scrollTracker";
+import { ScrollTracker, ViewportLock, ScrollFloor, type BufferSnapshot } from "../../components/Terminal/scrollTracker";
 
 /** Helper: create a normal-buffer snapshot */
 function snap(viewportY: number, baseY: number, type = "normal"): BufferSnapshot {
@@ -567,6 +567,104 @@ describe("ViewportLock", () => {
       lock.update(false);
       lock.dispose();
       lock.dispose(); // should not throw
+    });
+  });
+});
+
+describe("ScrollFloor", () => {
+  describe("scanChunk", () => {
+    it("detects ESC[H + ESC[2J in the same chunk", () => {
+      const f = new ScrollFloor();
+      f.scanChunk("\x1b[H\x1b[2Jbanner");
+      f.onRender(snap(0, 500));
+      expect(f.getFloor(500)).toBe(500);
+    });
+
+    it("detects ESC[2J + ESC[H (reverse order)", () => {
+      const f = new ScrollFloor();
+      f.scanChunk("\x1b[2J\x1b[Hframe");
+      f.onRender(snap(0, 500));
+      expect(f.getFloor(500)).toBe(500);
+    });
+
+    it("detects ESC[1;1H + ESC[2J variant", () => {
+      const f = new ScrollFloor();
+      f.scanChunk("\x1b[1;1H\x1b[2J");
+      f.onRender(snap(0, 300));
+      expect(f.getFloor(300)).toBe(300);
+    });
+
+    it("ignores chunks with clear-screen but no cursor-home", () => {
+      const f = new ScrollFloor();
+      f.scanChunk("\x1b[2Jjust a clear");
+      f.onRender(snap(0, 500));
+      expect(f.getFloor(500)).toBe(0);
+    });
+
+    it("ignores chunks with cursor-home but no clear", () => {
+      const f = new ScrollFloor();
+      f.scanChunk("\x1b[Hjust home");
+      f.onRender(snap(0, 500));
+      expect(f.getFloor(500)).toBe(0);
+    });
+
+    it("does not update floor in alternate buffer", () => {
+      const f = new ScrollFloor();
+      f.scanChunk("\x1b[H\x1b[2J");
+      f.onRender(snap(0, 300, "alternate"));
+      expect(f.getFloor(300)).toBe(0);
+    });
+  });
+
+  describe("onRender", () => {
+    it("is a no-op without a preceding boundary scan", () => {
+      const f = new ScrollFloor();
+      f.onRender(snap(0, 500));
+      expect(f.getFloor(500)).toBe(0);
+    });
+
+    it("consumes pendingBoundary so repeated onRender does not shift the floor", () => {
+      const f = new ScrollFloor();
+      f.scanChunk("\x1b[H\x1b[2J");
+      f.onRender(snap(0, 500));
+      expect(f.getFloor(500)).toBe(500);
+      // Buffer grew without a new boundary — floor must stay at 500
+      f.onRender(snap(0, 600));
+      expect(f.getFloor(600)).toBe(500);
+    });
+
+    it("moves the floor forward on each new boundary", () => {
+      const f = new ScrollFloor();
+      f.scanChunk("\x1b[H\x1b[2J");
+      f.onRender(snap(0, 100));
+      expect(f.getFloor(100)).toBe(100);
+      f.scanChunk("\x1b[H\x1b[2J");
+      f.onRender(snap(0, 400));
+      expect(f.getFloor(400)).toBe(400);
+    });
+  });
+
+  describe("getFloor", () => {
+    it("auto-resets when floor exceeds baseY (scrollback eviction)", () => {
+      const f = new ScrollFloor();
+      f.scanChunk("\x1b[H\x1b[2J");
+      f.onRender(snap(0, 9000));
+      expect(f.getFloor(9000)).toBe(9000);
+      // xterm evicted lines, baseY shrank below stored floor
+      expect(f.getFloor(500)).toBe(0);
+    });
+  });
+
+  describe("reset", () => {
+    it("clears floor and pending state", () => {
+      const f = new ScrollFloor();
+      f.scanChunk("\x1b[H\x1b[2J");
+      f.onRender(snap(0, 500));
+      f.reset();
+      expect(f.getFloor(500)).toBe(0);
+      // pendingBoundary was cleared — next render without a new scan is a no-op
+      f.onRender(snap(0, 600));
+      expect(f.getFloor(600)).toBe(0);
     });
   });
 });
