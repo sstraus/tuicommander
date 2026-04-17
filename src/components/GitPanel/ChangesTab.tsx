@@ -8,6 +8,7 @@ import { appLogger } from "../../stores/appLogger";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { ContextMenu, createContextMenu, type ContextMenuItem } from "../ContextMenu";
 import { SmartButtonStrip } from "../SmartButtonStrip/SmartButtonStrip";
+import { fileContextSmartMenuItem } from "../../utils/promptContext";
 import { cx, globToRegex } from "../../utils";
 import type { CommitLogEntry, WorkingTreeStatus } from "./types";
 import s from "./ChangesTab.module.css";
@@ -130,7 +131,8 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
   let successTimeout: ReturnType<typeof setTimeout> | undefined;
   let commitTextareaRef: HTMLTextAreaElement | undefined;
 
-  const { canExecute: canExecPrompt, executeSmartPrompt } = useSmartPrompts();
+  const smartPrompts = useSmartPrompts();
+  const { canExecute: canExecPrompt, executeSmartPrompt } = smartPrompts;
   const [generating, setGenerating] = createSignal(false);
 
   // Listen for generated commit messages from headless smart prompts
@@ -393,6 +395,19 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
         }});
       }
     }
+
+    // Smart prompts with placement="file-context" — only when right-clicked a single file.
+    if (effectiveSelection.size === 1) {
+      const repoRoot = props.repoPath;
+      const abs = repoRoot ? `${repoRoot}/${file.path}` : file.path;
+      const smartItem = fileContextSmartMenuItem(
+        { absPath: abs, repoRoot, isDir: false },
+        smartPrompts,
+        { separator: true },
+      );
+      if (smartItem) items.push(smartItem);
+    }
+
     return items;
   }
 

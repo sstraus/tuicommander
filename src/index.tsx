@@ -91,14 +91,18 @@ if (!import.meta.env.DEV) {
 }
 
 // Prevent the webview from navigating to dropped files (causes white screen
-// in browser fallback mode). In Tauri mode with dragDropEnabled: true these
-// events never fire — the OS-level handler in useFileDrop intercepts first.
+// in browser fallback mode). In Tauri mode with dragDropEnabled: true the
+// OS-level handler emits via `onDragDropEvent` — webview drag events still
+// fire here though, so suppression is still needed to block default navigation.
 document.addEventListener("dragover", (e) => {
   e.preventDefault();
 });
 document.addEventListener("drop", (e) => {
   e.preventDefault();
 });
+
+// Register Tauri drag-drop listener + modifier key tracking (fire-and-forget).
+import("./stores/dragDrop").then(({ initDragDrop }) => initDragDrop());
 
 // Intercept external link clicks and open them in the system browser.
 // Without this, Tauri shows a scary "WARNING: This link could potentially be

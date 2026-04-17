@@ -832,6 +832,7 @@ pub fn run() {
         mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
         tool_search_index: Arc::new(parking_lot::RwLock::new(crate::tool_search::ToolSearchIndex::build(&[]))),
         content_indices: DashMap::new(),
+        indexer_throttle: Arc::new(crate::content_index::IndexerThrottle::new()),
         slash_mode: DashMap::new(),
         last_output_ms: DashMap::new(),
         shell_states: DashMap::new(),
@@ -1050,13 +1051,36 @@ pub fn run() {
             // Uses raw notify::RecommendedWatcher — registration is instant on
             // macOS (FSEvents) and Windows (ReadDirectoryChangesW), no walkdir scan.
             let repos_json = config::load_repositories();
+            let mut known_repo_paths: Vec<String> = Vec::new();
             if let Some(repos) = repos_json.get("repos").and_then(|r| r.as_object()) {
                 let handle = app.handle().clone();
                 for repo_path in repos.keys() {
+                    known_repo_paths.push(repo_path.clone());
                     if let Err(e) = repo_watcher::start_watching(repo_path, Some(&handle), app_state) {
                         app_logger::log_via_state(app_state, "warn", "app", &format!("[RepoWatcher] Failed to watch {repo_path}: {e}"));
                     }
                 }
+            }
+
+            // Pre-warm content indices for known repos: one at a time, after a
+            // short delay, so boot UI stays responsive and the cooperative
+            // throttle in `ContentIndex::build_with_throttle` keeps CPU gentle.
+            if !known_repo_paths.is_empty() {
+                let state_for_prewarm = Arc::clone(app_state);
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    for repo in known_repo_paths {
+                        // `ensure_index` is sync + spawns its own blocking task.
+                        // Awaiting JoinHandle here would require threading; instead
+                        // we serialize by waiting until the index flips to ready.
+                        let index_arc = crate::content_index::ensure_index(&state_for_prewarm, &repo);
+                        // Poll until this repo's build completes before starting the next.
+                        while !index_arc.read().is_ready() {
+                            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                        }
+                    }
+                    tracing::info!("content index pre-warm complete");
+                });
             }
 
             Ok(())
@@ -1294,6 +1318,7 @@ pub fn run() {
             fs::delete_path,
             fs::rename_path,
             fs::copy_path,
+            fs::fs_transfer_paths,
             fs::add_to_gitignore,
             plugins::list_user_plugins,
             plugins::get_plugin_readme_path,

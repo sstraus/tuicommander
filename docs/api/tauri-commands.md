@@ -355,6 +355,7 @@ Uses incremental parsing with a file-size-based cache (`claude-usage-cache.json`
 | `delete_path` | `path` | `()` | Delete file or directory |
 | `rename_path` | `src, dest` | `()` | Rename/move path |
 | `copy_path` | `src, dest` | `()` | Copy file or directory |
+| `fs_transfer_paths` | `destDir, paths, mode ("move"\|"copy"), allowRecursive` | `TransferResult { moved, skipped, errors, needs_confirm }` | Move/copy OS paths into a destination directory. Skips silently on name conflicts; returns `needs_confirm=true` (no-op) when a source is a directory and `allowRecursive=false`. Used by the drag-drop handler when dropping files onto a folder in the file browser. |
 | `add_to_gitignore` | `path, pattern` | `()` | Add pattern to .gitignore |
 | `search_files` | `path, query` | `Vec<SearchResult>` | Search files by name in directory |
 | `search_content` | `repoPath, query, caseSensitive?, useRegex?, wholeWord?, limit?` | `()` | Full-text content search; streams results progressively via `content-search-batch` events. Binary files and files >1 MB are skipped. Supports cancellation. |

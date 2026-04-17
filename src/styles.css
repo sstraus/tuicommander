@@ -153,6 +153,14 @@
   pointer-events: none;
 }
 
+/* Highlight applied (via JS) to the folder row under a Tauri drag-drop cursor.
+   Matches elements with data-drop-target="folder" during a drag session. */
+.drop-target-hover[data-drop-target="folder"] {
+  background: rgba(80, 160, 255, 0.18) !important;
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
 .file-drop-overlay-content {
   display: flex;
   flex-direction: column;

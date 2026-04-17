@@ -110,6 +110,26 @@ fn validate_path_for_creation(repo_path: &str, relative: &str) -> Result<(PathBu
     Ok((canonical_repo, canonical_target))
 }
 
+/// Directory names that are always excluded from repo walks — VCS internals and
+/// heavy build/cache outputs that are useless to search and often bypass `.gitignore`
+/// (missing, incomplete, or outside-of-git).
+pub(crate) const ALWAYS_EXCLUDED_DIRS: &[&str] = &[
+    ".git", ".hg", ".svn", ".jj",
+    "node_modules", "target", "dist", "build", "out",
+    ".next", ".nuxt", ".svelte-kit", ".turbo", ".parcel-cache",
+    ".cache", ".venv", "venv", "__pycache__",
+];
+
+/// Returns `true` when the entry is a directory whose name matches one of
+/// `ALWAYS_EXCLUDED_DIRS`. Used with `ignore::WalkBuilder::filter_entry`.
+pub(crate) fn is_always_excluded_dir(entry: &ignore::DirEntry) -> bool {
+    if !entry.file_type().is_some_and(|ft| ft.is_dir()) {
+        return false;
+    }
+    let name = entry.file_name();
+    ALWAYS_EXCLUDED_DIRS.iter().any(|d| name == std::ffi::OsStr::new(d))
+}
+
 /// Parse `git status --porcelain -z` output into a map of relative_path -> status string.
 pub(crate) fn parse_git_status(repo_path: &str, subdir: &str) -> std::collections::HashMap<String, String> {
     let mut statuses = std::collections::HashMap::new();
@@ -358,10 +378,12 @@ pub(crate) fn list_directory_impl(repo_path: String, subdir: String) -> Result<V
 /// Respects .gitignore natively via the `ignore` crate (no subprocess).
 #[tauri::command]
 pub async fn search_files(
+    app_state: tauri::State<'_, std::sync::Arc<crate::state::AppState>>,
     repo_path: String,
     query: String,
     limit: Option<usize>,
 ) -> Result<Vec<DirEntry>, String> {
+    let _guard = app_state.indexer_throttle.begin_search();
     search_files_impl(repo_path, query, limit)
 }
 
@@ -395,8 +417,14 @@ pub async fn search_content(
     // Ensure content index exists for this repo (triggers background build if needed)
     let index_arc = crate::content_index::ensure_index(&app_state, &repo_path);
 
+    // Guard: signal indexers to pause while this search runs. Moved into the
+    // blocking closure so its lifetime spans the entire search, not just this
+    // async prelude.
+    let throttle_guard = app_state.indexer_throttle.begin_search();
+
     // Run search in blocking thread
     tauri::async_runtime::spawn_blocking(move || {
+        let _throttle_guard = throttle_guard;
         match search_content_indexed(
             &index_arc, repo_path, query, case_sensitive, use_regex, whole_word, limit,
         ) {
@@ -584,6 +612,7 @@ pub(crate) fn search_files_impl(
         .git_ignore(true)
         .git_global(true)
         .git_exclude(true)
+        .filter_entry(|e| !is_always_excluded_dir(e))
         .build();
 
     for entry in walker {
@@ -709,6 +738,7 @@ pub(crate) fn search_content_impl(
         .git_ignore(true)
         .git_global(true)
         .git_exclude(true)
+        .filter_entry(|e| !is_always_excluded_dir(e))
         .build();
 
     'walk: for entry in walker {
@@ -970,6 +1000,177 @@ pub fn copy_path(
         .map_err(|e| format!("Failed to copy file: {e}"))?;
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// fs_transfer_paths — drag-drop move/copy from OS filesystem into a target dir.
+// ---------------------------------------------------------------------------
+
+/// Mode for `fs_transfer_paths`.
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TransferMode {
+    Move,
+    Copy,
+}
+
+/// Result payload for `fs_transfer_paths`.
+#[derive(Debug, Clone, Serialize)]
+pub struct TransferResult {
+    /// Number of top-level paths successfully transferred.
+    pub moved: u32,
+    /// Number of top-level paths skipped because the destination name exists.
+    pub skipped: u32,
+    /// Per-source error messages encountered during transfer.
+    pub errors: Vec<String>,
+    /// True when at least one source is a directory and `allow_recursive=false`.
+    /// In that case no files were touched — the caller must re-invoke with
+    /// `allow_recursive=true` after confirming with the user.
+    pub needs_confirm: bool,
+}
+
+/// Recursively copy a directory tree. Fails fast on any error.
+fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let ft = entry.file_type()?;
+        let dst_path = dst.join(entry.file_name());
+        if ft.is_dir() {
+            copy_dir_recursive(&entry.path(), &dst_path)?;
+        } else if ft.is_symlink() {
+            // Best-effort: dereference symlinks (same as Finder "copy" default).
+            std::fs::copy(entry.path(), &dst_path)?;
+        } else {
+            std::fs::copy(entry.path(), &dst_path)?;
+        }
+    }
+    Ok(())
+}
+
+/// Move or copy absolute OS paths into a destination directory.
+///
+/// Conflict handling: if `dest_dir/<basename>` already exists, that source is
+/// skipped silently (counted in `skipped`). No overwrite, no rename.
+///
+/// Directory handling: when `allow_recursive=false` and any source is a
+/// directory, the function performs no filesystem operations and returns
+/// `needs_confirm=true`. When `allow_recursive=true`, directories are moved
+/// via rename (or copy+remove on cross-device) or copied recursively.
+#[tauri::command]
+pub fn fs_transfer_paths(
+    dest_dir: String,
+    paths: Vec<String>,
+    mode: TransferMode,
+    allow_recursive: bool,
+) -> Result<TransferResult, String> {
+    let dest = PathBuf::from(&dest_dir);
+    let canonical_dest = dest
+        .canonicalize()
+        .map_err(|e| format!("Invalid destination '{dest_dir}': {e}"))?;
+    if !canonical_dest.is_dir() {
+        return Err(format!("Destination '{dest_dir}' is not a directory"));
+    }
+
+    // First pass: if any source is a directory and recursion not authorized,
+    // bail out without touching anything.
+    if !allow_recursive {
+        for p in &paths {
+            let src = PathBuf::from(p);
+            if src.is_dir() {
+                return Ok(TransferResult {
+                    moved: 0,
+                    skipped: 0,
+                    errors: Vec::new(),
+                    needs_confirm: true,
+                });
+            }
+        }
+    }
+
+    let mut moved = 0u32;
+    let mut skipped = 0u32;
+    let mut errors: Vec<String> = Vec::new();
+
+    for src_raw in &paths {
+        let src = PathBuf::from(src_raw);
+        let Some(file_name) = src.file_name() else {
+            errors.push(format!("Invalid source path: '{src_raw}'"));
+            continue;
+        };
+        let dst_path = canonical_dest.join(file_name);
+
+        // Silent skip on name conflict.
+        if dst_path.exists() {
+            skipped += 1;
+            continue;
+        }
+
+        // Prevent moving into self/subdir (e.g., drop /a/b onto /a/b/c).
+        if let Ok(src_canon) = src.canonicalize()
+            && canonical_dest.starts_with(&src_canon)
+        {
+            errors.push(format!(
+                "Cannot transfer '{}' into its own subdirectory",
+                src.display()
+            ));
+            continue;
+        }
+
+        let is_dir = src.is_dir();
+        let op_result = match mode {
+            TransferMode::Move => {
+                match std::fs::rename(&src, &dst_path) {
+                    Ok(()) => Ok(()),
+                    Err(e) if e.raw_os_error() == Some(libc_cross_device()) => {
+                        // Cross-device: fall back to copy + remove.
+                        let copy_result = if is_dir {
+                            copy_dir_recursive(&src, &dst_path)
+                        } else {
+                            std::fs::copy(&src, &dst_path).map(|_| ())
+                        };
+                        copy_result.and_then(|_| {
+                            if is_dir {
+                                std::fs::remove_dir_all(&src)
+                            } else {
+                                std::fs::remove_file(&src)
+                            }
+                        })
+                    }
+                    Err(e) => Err(e),
+                }
+            }
+            TransferMode::Copy => {
+                if is_dir {
+                    copy_dir_recursive(&src, &dst_path)
+                } else {
+                    std::fs::copy(&src, &dst_path).map(|_| ())
+                }
+            }
+        };
+
+        match op_result {
+            Ok(()) => moved += 1,
+            Err(e) => errors.push(format!("{}: {e}", src.display())),
+        }
+    }
+
+    Ok(TransferResult {
+        moved,
+        skipped,
+        errors,
+        needs_confirm: false,
+    })
+}
+
+/// Platform-specific EXDEV errno ("cross-device link").
+#[cfg(unix)]
+fn libc_cross_device() -> i32 {
+    18 // EXDEV on Linux/macOS
+}
+#[cfg(windows)]
+fn libc_cross_device() -> i32 {
+    17 // ERROR_NOT_SAME_DEVICE
 }
 
 /// Result of resolving a terminal path candidate.
@@ -1475,6 +1676,48 @@ mod tests {
     }
 
     #[test]
+    fn test_search_files_excludes_always_excluded_dirs() {
+        let dir = setup_test_repo();
+        let repo_path = dir.path().to_string_lossy().to_string();
+
+        // Simulate .git internals and common heavy dirs (NOT in .gitignore)
+        for sub in [".git/objects", "node_modules/foo", "target/debug", "dist"] {
+            fs::create_dir_all(dir.path().join(sub)).unwrap();
+            fs::write(dir.path().join(sub).join("needle.txt"), "needle").unwrap();
+        }
+
+        let results = search_files_impl(repo_path, "needle".to_string(), None).unwrap();
+        assert!(
+            results.is_empty(),
+            "Should not traverse .git/node_modules/target/dist, got: {:?}",
+            results.iter().map(|e| &e.path).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_search_content_excludes_always_excluded_dirs() {
+        let dir = setup_test_repo();
+        let repo_path = dir.path().to_string_lossy().to_string();
+
+        for sub in [".git/objects", "node_modules/foo", "target/debug", "dist"] {
+            fs::create_dir_all(dir.path().join(sub)).unwrap();
+            fs::write(dir.path().join(sub).join("haystack.txt"), "needle in haystack").unwrap();
+        }
+
+        let result = search_content_impl(repo_path, "needle".to_string(), true, false, false, None).unwrap();
+        assert!(
+            result.matches.iter().all(|m| {
+                !m.path.starts_with(".git/")
+                    && !m.path.starts_with("node_modules/")
+                    && !m.path.starts_with("target/")
+                    && !m.path.starts_with("dist/")
+            }),
+            "Should not match inside excluded dirs, got: {:?}",
+            result.matches.iter().map(|m| &m.path).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn test_search_files_limit() {
         let dir = setup_test_repo();
         let repo_path = dir.path().to_string_lossy().to_string();
@@ -1915,5 +2158,210 @@ mod tests {
             "symlink-based escape must be rejected, got {:?}",
             result
         );
+    }
+
+    // --- fs_transfer_paths tests ---
+
+    #[test]
+    fn transfer_move_file_succeeds() {
+        let src_dir = TempDir::new().unwrap();
+        let dst_dir = TempDir::new().unwrap();
+        let src_file = src_dir.path().join("a.txt");
+        fs::write(&src_file, "hello").unwrap();
+
+        let res = fs_transfer_paths(
+            dst_dir.path().to_string_lossy().to_string(),
+            vec![src_file.to_string_lossy().to_string()],
+            TransferMode::Move,
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(res.moved, 1);
+        assert_eq!(res.skipped, 0);
+        assert!(res.errors.is_empty(), "errors: {:?}", res.errors);
+        assert!(!res.needs_confirm);
+        assert!(!src_file.exists(), "source should be gone after move");
+        assert_eq!(fs::read_to_string(dst_dir.path().join("a.txt")).unwrap(), "hello");
+    }
+
+    #[test]
+    fn transfer_copy_file_succeeds() {
+        let src_dir = TempDir::new().unwrap();
+        let dst_dir = TempDir::new().unwrap();
+        let src_file = src_dir.path().join("a.txt");
+        fs::write(&src_file, "hello").unwrap();
+
+        let res = fs_transfer_paths(
+            dst_dir.path().to_string_lossy().to_string(),
+            vec![src_file.to_string_lossy().to_string()],
+            TransferMode::Copy,
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(res.moved, 1);
+        assert!(src_file.exists(), "source should still exist after copy");
+        assert_eq!(fs::read_to_string(dst_dir.path().join("a.txt")).unwrap(), "hello");
+    }
+
+    #[test]
+    fn transfer_skips_on_name_conflict() {
+        let src_dir = TempDir::new().unwrap();
+        let dst_dir = TempDir::new().unwrap();
+        let src_file = src_dir.path().join("a.txt");
+        fs::write(&src_file, "new").unwrap();
+        // Pre-existing file with same name in destination
+        fs::write(dst_dir.path().join("a.txt"), "old").unwrap();
+
+        let res = fs_transfer_paths(
+            dst_dir.path().to_string_lossy().to_string(),
+            vec![src_file.to_string_lossy().to_string()],
+            TransferMode::Move,
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(res.moved, 0);
+        assert_eq!(res.skipped, 1);
+        assert!(src_file.exists(), "source should NOT be moved when skipped");
+        assert_eq!(
+            fs::read_to_string(dst_dir.path().join("a.txt")).unwrap(),
+            "old",
+            "destination content must be preserved"
+        );
+    }
+
+    #[test]
+    fn transfer_requires_confirm_for_directory() {
+        let src_dir = TempDir::new().unwrap();
+        let dst_dir = TempDir::new().unwrap();
+        let src_subdir = src_dir.path().join("folder");
+        fs::create_dir(&src_subdir).unwrap();
+        fs::write(src_subdir.join("inside.txt"), "x").unwrap();
+
+        let res = fs_transfer_paths(
+            dst_dir.path().to_string_lossy().to_string(),
+            vec![src_subdir.to_string_lossy().to_string()],
+            TransferMode::Copy,
+            false,
+        )
+        .unwrap();
+
+        assert!(res.needs_confirm, "dir without allow_recursive must request confirm");
+        assert_eq!(res.moved, 0);
+        assert!(
+            !dst_dir.path().join("folder").exists(),
+            "no fs changes must happen when confirm required"
+        );
+    }
+
+    #[test]
+    fn transfer_copies_directory_recursively_when_allowed() {
+        let src_dir = TempDir::new().unwrap();
+        let dst_dir = TempDir::new().unwrap();
+        let src_subdir = src_dir.path().join("folder");
+        fs::create_dir(&src_subdir).unwrap();
+        fs::write(src_subdir.join("a.txt"), "1").unwrap();
+        fs::create_dir(src_subdir.join("nested")).unwrap();
+        fs::write(src_subdir.join("nested/b.txt"), "2").unwrap();
+
+        let res = fs_transfer_paths(
+            dst_dir.path().to_string_lossy().to_string(),
+            vec![src_subdir.to_string_lossy().to_string()],
+            TransferMode::Copy,
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(res.moved, 1);
+        assert!(res.errors.is_empty(), "errors: {:?}", res.errors);
+        assert_eq!(fs::read_to_string(dst_dir.path().join("folder/a.txt")).unwrap(), "1");
+        assert_eq!(
+            fs::read_to_string(dst_dir.path().join("folder/nested/b.txt")).unwrap(),
+            "2"
+        );
+        assert!(src_subdir.exists(), "copy must not remove source");
+    }
+
+    #[test]
+    fn transfer_moves_directory_when_allowed() {
+        let src_dir = TempDir::new().unwrap();
+        let dst_dir = TempDir::new().unwrap();
+        let src_subdir = src_dir.path().join("folder");
+        fs::create_dir(&src_subdir).unwrap();
+        fs::write(src_subdir.join("a.txt"), "1").unwrap();
+
+        let res = fs_transfer_paths(
+            dst_dir.path().to_string_lossy().to_string(),
+            vec![src_subdir.to_string_lossy().to_string()],
+            TransferMode::Move,
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(res.moved, 1);
+        assert!(!src_subdir.exists(), "source must be gone after move");
+        assert!(dst_dir.path().join("folder/a.txt").exists());
+    }
+
+    #[test]
+    fn transfer_rejects_move_into_own_subdir() {
+        let base = TempDir::new().unwrap();
+        let parent = base.path().join("parent");
+        fs::create_dir(&parent).unwrap();
+        let child = parent.join("child");
+        fs::create_dir(&child).unwrap();
+
+        let res = fs_transfer_paths(
+            child.to_string_lossy().to_string(),
+            vec![parent.to_string_lossy().to_string()],
+            TransferMode::Move,
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(res.moved, 0);
+        assert_eq!(res.errors.len(), 1, "got errors: {:?}", res.errors);
+        assert!(parent.exists(), "source must remain untouched on self-nest error");
+    }
+
+    #[test]
+    fn transfer_rejects_invalid_destination() {
+        let nowhere = "/definitely/not/a/real/path/xyzzy";
+        let res = fs_transfer_paths(
+            nowhere.to_string(),
+            vec!["/tmp/ignored".to_string()],
+            TransferMode::Copy,
+            false,
+        );
+        assert!(res.is_err(), "non-existent destination must error");
+    }
+
+    #[test]
+    fn transfer_mixed_files_aggregates_counts() {
+        let src_dir = TempDir::new().unwrap();
+        let dst_dir = TempDir::new().unwrap();
+        let a = src_dir.path().join("a.txt");
+        let b = src_dir.path().join("b.txt");
+        fs::write(&a, "a").unwrap();
+        fs::write(&b, "b").unwrap();
+        // Conflict on b only
+        fs::write(dst_dir.path().join("b.txt"), "existing").unwrap();
+
+        let res = fs_transfer_paths(
+            dst_dir.path().to_string_lossy().to_string(),
+            vec![
+                a.to_string_lossy().to_string(),
+                b.to_string_lossy().to_string(),
+            ],
+            TransferMode::Copy,
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(res.moved, 1);
+        assert_eq!(res.skipped, 1);
+        assert!(res.errors.is_empty());
     }
 }

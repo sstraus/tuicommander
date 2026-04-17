@@ -225,6 +225,16 @@ const App: Component = () => {
   const repo = useRepository();
   const dialogs = useConfirmDialog();
 
+  // Drop on folder: when source is a directory, we pause to ask for confirmation.
+  const [pendingFolderDrop, setPendingFolderDrop] = createSignal<
+    import("./hooks/useFileDrop").FolderDropRequest | null
+  >(null);
+  onMount(() => {
+    import("./hooks/useFileDrop").then(({ setFolderDropConfirmHandler }) => {
+      setFolderDropConfirmHandler((req) => setPendingFolderDrop(req));
+    });
+  });
+
   // Redirect keyboard input from sidebar to terminal
   useKeyboardRedirect(true);
 
@@ -1977,6 +1987,29 @@ const App: Component = () => {
         kind={dialogs.dialogState()?.kind}
         onClose={dialogs.handleClose}
         onConfirm={dialogs.handleConfirm}
+      />
+
+      {/* Folder-drop recursive transfer confirmation */}
+      <ConfirmDialog
+        visible={pendingFolderDrop() !== null}
+        title={pendingFolderDrop()?.mode === "copy" ? "Copy folder(s)?" : "Move folder(s)?"}
+        message={(() => {
+          const req = pendingFolderDrop();
+          if (!req) return "";
+          const count = req.paths.length;
+          const verb = req.mode === "copy" ? "copy" : "move";
+          const items = count === 1 ? "1 item" : `${count} items`;
+          return `About to recursively ${verb} ${items} into ${req.destDir}. Existing files with the same name will be skipped.`;
+        })()}
+        confirmLabel={pendingFolderDrop()?.mode === "copy" ? "Copy" : "Move"}
+        onClose={() => setPendingFolderDrop(null)}
+        onConfirm={async () => {
+          const req = pendingFolderDrop();
+          setPendingFolderDrop(null);
+          if (!req) return;
+          const { confirmFolderDrop } = await import("./hooks/useFileDrop");
+          await confirmFolderDrop(req);
+        }}
       />
 
       {/* Update download progress dialog */}

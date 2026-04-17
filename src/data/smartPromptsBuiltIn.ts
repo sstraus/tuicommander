@@ -36,6 +36,13 @@ export const VARIABLE_DESCRIPTIONS: Record<string, string> = {
   issue_assignees: "Comma-separated assignee usernames",
   issue_milestone: "Issue milestone name",
   issue_comments_count: "Number of comments on the issue",
+  // File context (populated by placement="file-context" hosts)
+  file_path: "Absolute path of the selected file or folder",
+  file_rel_path: "Path relative to the repository root",
+  file_name: "Basename of the file (e.g. foo.ts)",
+  file_ext: "File extension including the dot (e.g. .ts)",
+  file_dir: "Parent directory absolute path",
+  file_is_dir: "'true' if the target is a folder, else 'false'",
 };
 
 /** Shared defaults for all built-in smart prompts */
@@ -313,6 +320,44 @@ export const SMART_PROMPTS_BUILTIN: SavedPrompt[] = [
     "shield",
     ["toolbar"],
     "Perform a security review of the uncommitted changes. Check for:\n- Injection vulnerabilities (SQL, command, XSS)\n- Credential exposure\n- Unsafe deserialization\n- Missing input validation\n- Dependency vulnerabilities\n\n{changed_files}",
+    ["code"],
+  ),
+
+  // ── File Context ─────────────────────────────────────────────────
+  builtin(
+    "smart-file-explain",
+    "Explain This File",
+    "Summarize what this file does, its exports, and how it fits in the codebase",
+    "explain",
+    ["file-context"],
+    "Read {file_rel_path} and explain: (1) its primary responsibility in one sentence, (2) the public API / exports, (3) how it integrates with the rest of the codebase (who calls it, what it depends on). Be concise — no preamble.",
+    ["code", "investigation"],
+  ),
+  builtin(
+    "smart-file-review",
+    "Review This File",
+    "Targeted code review of a single file for bugs, quality, and security",
+    "magnifier",
+    ["file-context"],
+    "Review {file_rel_path} for bugs, security issues, performance problems, and code quality. Flag specific lines and suggest concrete fixes. Skip trivial style nits.",
+    ["review"],
+  ),
+  builtin(
+    "smart-file-tests",
+    "Write Tests for This File",
+    "Generate comprehensive tests for the selected file with edge cases",
+    "test",
+    ["file-context"],
+    "Write comprehensive tests for {file_rel_path}. Cover happy paths, edge cases, and error conditions. Follow the existing test patterns and framework already used in this project — detect them before writing.",
+    ["ci"],
+  ),
+  builtin(
+    "smart-file-refactor",
+    "Suggest Refactoring",
+    "Analyze this file and propose concrete refactoring opportunities",
+    "refactor",
+    ["file-context"],
+    "Analyze {file_rel_path} and suggest refactoring opportunities. Focus on reducing duplication, improving naming, extracting helpers, and simplifying complex logic. Be concrete — cite line numbers.",
     ["code"],
   ),
 ];

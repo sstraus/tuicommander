@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 /// MCP config lookup result
@@ -17,14 +18,16 @@ struct McpConfigSpec {
     key_path: Vec<&'static str>,
 }
 
-/// Our MCP server entry injected into agent configs
+/// Our MCP server entry injected into agent configs.
+/// `args` and `env` are always serialized (even if empty) — some Claude Code
+/// versions reject stdio entries whose `args`/`env` are missing or `null`.
 #[derive(Serialize, Deserialize)]
 struct TuicMcpEntry {
     #[serde(rename = "type", default = "default_stdio_type")]
     transport_type: String,
     command: String,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     args: Vec<String>,
+    env: BTreeMap<String, String>,
 }
 
 fn default_stdio_type() -> String {
@@ -210,19 +213,32 @@ fn ensure_agent_mcp_entry(
     agent_label: &str,
 ) -> bool {
     let root = read_json_file(config_path);
-    let existing_command = navigate(&root, key_path)
+    let existing_entry = navigate(&root, key_path)
         .and_then(|v| v.as_object())
-        .and_then(|obj| obj.get(TUIC_MCP_KEY))
+        .and_then(|obj| obj.get(TUIC_MCP_KEY));
+    let existing_command = existing_entry
         .and_then(|entry| entry.get("command"))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
+    // Claude Code rejects stdio entries where `args`/`env` are null or missing.
+    // If either is not a proper array/object, we rewrite the entry.
+    let fields_malformed = existing_entry
+        .map(|entry| {
+            let args_ok = entry.get("args").map(|v| v.is_array()).unwrap_or(false);
+            let env_ok = entry.get("env").map(|v| v.is_object()).unwrap_or(false);
+            !(args_ok && env_ok)
+        })
+        .unwrap_or(false);
 
-    match existing_command {
-        Some(ref cmd) if cmd == bridge_path => {
+    match &existing_command {
+        Some(cmd) if cmd == bridge_path && !fields_malformed => {
             // Already correct — no write needed
             return false;
         }
-        Some(ref old) => {
+        Some(old) if fields_malformed => {
+            tracing::info!(source = "mcp", agent = %agent_label, "Repairing entry (args/env missing or null) for {old}");
+        }
+        Some(old) => {
             tracing::info!(source = "mcp", agent = %agent_label, "Updating path: {old} → {bridge_path}");
         }
         None => {
@@ -234,6 +250,7 @@ fn ensure_agent_mcp_entry(
         transport_type: "stdio".to_string(),
         command: bridge_path.to_string(),
         args: vec![],
+        env: BTreeMap::new(),
     };
     let entry_value = match serde_json::to_value(&entry) {
         Ok(v) => v,
@@ -332,6 +349,7 @@ pub(crate) fn install_agent_mcp(
         transport_type: "stdio".to_string(),
         command: bridge_path,
         args: vec![],
+        env: BTreeMap::new(),
     };
     let entry_value = serde_json::to_value(&entry)
         .map_err(|e| format!("Failed to serialize MCP entry: {e}"))?;
@@ -445,6 +463,7 @@ mod tests {
             transport_type: "stdio".to_string(),
             command: "/usr/local/bin/tui-mcp-bridge".to_string(),
             args: vec![],
+            env: BTreeMap::new(),
         };
         let entry_value = serde_json::to_value(&entry).unwrap();
         let servers = navigate_or_create(&mut root, &["mcpServers"]);
@@ -485,6 +504,7 @@ mod tests {
             transport_type: "stdio".to_string(),
             command: "tui-mcp-bridge".to_string(),
             args: vec![],
+            env: BTreeMap::new(),
         };
         let entry_value = serde_json::to_value(&entry).unwrap();
         let servers = navigate_or_create(&mut root, &["mcpServers"]);
@@ -618,6 +638,49 @@ mod tests {
 
         let mtime_after = std::fs::metadata(&config_path).unwrap().modified().unwrap();
         assert_eq!(mtime_before, mtime_after, "file should not have been modified");
+    }
+
+    #[test]
+    fn ensure_writes_args_and_env_as_empty_collections() {
+        let dir = TempDir::new().unwrap();
+        let config_path = dir.path().join("test.json");
+
+        ensure_agent_mcp_entry(&config_path, &["mcpServers"], "/bridge", "test");
+
+        let root = read_json_file(&config_path);
+        let entry = &root["mcpServers"][TUIC_MCP_KEY];
+        assert!(entry["args"].is_array(), "args must be an array, got {:?}", entry["args"]);
+        assert_eq!(entry["args"].as_array().unwrap().len(), 0);
+        assert!(entry["env"].is_object(), "env must be an object, got {:?}", entry["env"]);
+        assert_eq!(entry["env"].as_object().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn ensure_repairs_entry_with_null_args_and_env() {
+        let dir = TempDir::new().unwrap();
+        let config_path = dir.path().join("test.json");
+
+        // Write an entry shaped like Claude Code's rejected form: args/env are null
+        let initial = serde_json::json!({
+            "mcpServers": {
+                TUIC_MCP_KEY: {
+                    "type": "stdio",
+                    "command": "/bridge",
+                    "args": null,
+                    "env": null,
+                }
+            }
+        });
+        write_json_file(&config_path, &initial).unwrap();
+
+        // Same command, but malformed fields → must rewrite
+        let wrote = ensure_agent_mcp_entry(&config_path, &["mcpServers"], "/bridge", "test");
+        assert!(wrote, "should rewrite when args/env are null");
+
+        let root = read_json_file(&config_path);
+        let entry = &root["mcpServers"][TUIC_MCP_KEY];
+        assert!(entry["args"].is_array());
+        assert!(entry["env"].is_object());
     }
 
     #[test]

@@ -15,6 +15,8 @@ import { getStatusClass, formatSize } from "./fileUtils";
 import { FileIcon } from "./FileIcon";
 import { uiStore } from "../../stores/ui";
 import { t } from "../../i18n";
+import { useSmartPrompts } from "../../hooks/useSmartPrompts";
+import { fileContextSmartMenuItem } from "../../utils/promptContext";
 import { cx } from "../../utils";
 import type { DirEntry, ContentMatch } from "../../types/fs";
 import type { ContentSearchOptions } from "../../hooks/useFileBrowser";
@@ -84,6 +86,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
    */
   const root = () => uiStore.state.fileBrowserExternalRoot || props.fsRoot || props.repoPath;
   const contextMenu = createContextMenu();
+  const smartPrompts = useSmartPrompts();
 
   // Rename dialog state
   const [renameDialogVisible, setRenameDialogVisible] = createSignal(false);
@@ -92,6 +95,13 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   // Delete confirmation dialog state
   const [deleteDialogVisible, setDeleteDialogVisible] = createSignal(false);
   const [deleteTarget, setDeleteTarget] = createSignal<DirEntry | null>(null);
+
+  // New folder / new file dialog state
+  type CreateKind = "folder" | "file";
+  const [createDialogVisible, setCreateDialogVisible] = createSignal(false);
+  const [createKind, setCreateKind] = createSignal<CreateKind>("folder");
+  /** Parent dir the new item is created in, relative to root(). "" = root. */
+  const [createParent, setCreateParent] = createSignal<string>("");
 
   // File clipboard state for copy/cut/paste
   const [clipboard, setClipboard] = createSignal<{ entry: DirEntry; mode: "copy" | "cut" } | null>(null);
@@ -452,6 +462,70 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     }
   };
 
+  /** Compute the parent dir (relative to root) for creating a new item next to `entry`.
+   *  If entry is a folder → create inside it; if file → create as a sibling. */
+  const parentDirFor = (entry: DirEntry | null): string => {
+    if (!entry) return currentSubdir() === "." ? "" : currentSubdir();
+    if (entry.is_dir) return entry.path;
+    const idx = entry.path.lastIndexOf("/");
+    return idx >= 0 ? entry.path.slice(0, idx) : "";
+  };
+
+  const openCreateDialog = (kind: CreateKind, parent: string) => {
+    setCreateKind(kind);
+    setCreateParent(parent);
+    setCreateDialogVisible(true);
+  };
+
+  const handleCreateConfirm = async (name: string) => {
+    const fsRoot = root();
+    if (!fsRoot || !name.trim()) return;
+    const parent = createParent();
+    const relPath = parent ? `${parent}/${name.trim()}` : name.trim();
+    try {
+      if (createKind() === "folder") {
+        await fb.createDirectory(fsRoot, relPath);
+      } else {
+        await fb.writeFile(fsRoot, relPath, "");
+      }
+      refresh();
+    } catch (err) {
+      appLogger.error("app", `Failed to create ${createKind()}`, err);
+    }
+  };
+
+  const handleDuplicate = async (entry: DirEntry) => {
+    if (!root()) return;
+    // Build "name copy" / "name copy.ext" style suffix
+    const idx = entry.name.lastIndexOf(".");
+    const hasExt = !entry.is_dir && idx > 0;
+    const base = hasExt ? entry.name.slice(0, idx) : entry.name;
+    const ext = hasExt ? entry.name.slice(idx) : "";
+    const parent = entry.path.lastIndexOf("/") >= 0
+      ? entry.path.slice(0, entry.path.lastIndexOf("/"))
+      : "";
+    const dupName = `${base} copy${ext}`;
+    const dupPath = parent ? `${parent}/${dupName}` : dupName;
+    try {
+      await fb.copyPath(root()!, entry.path, dupPath);
+      refresh();
+    } catch (err) {
+      appLogger.error("app", "Failed to duplicate", err);
+    }
+  };
+
+  const handleRevealInOS = async (entry: DirEntry) => {
+    const fsRoot = root();
+    if (!fsRoot) return;
+    const abs = entry.path.startsWith("/") ? entry.path : `${fsRoot}/${entry.path}`;
+    try {
+      const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
+      await revealItemInDir(abs);
+    } catch (err) {
+      appLogger.error("app", "Failed to reveal in file manager", err);
+    }
+  };
+
   const handleAddToGitignore = async (entry: DirEntry) => {
     if (!root()) return;
     const pattern = entry.is_dir ? `${entry.path}/` : entry.path;
@@ -520,6 +594,27 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     const mod = getModifierSymbol();
     const items: ContextMenuItem[] = [];
 
+    // Smart prompts with placement="file-context" — appear first when any exist.
+    const fsRoot = root() ?? "";
+    const abs = entry.path.startsWith("/") ? entry.path : `${fsRoot}/${entry.path}`;
+    const smartItem = fileContextSmartMenuItem(
+      { absPath: abs, repoRoot: fsRoot, isDir: entry.is_dir },
+      smartPrompts,
+      { separator: true },
+    );
+    if (smartItem) items.push(smartItem);
+
+    const parentForNew = parentDirFor(entry);
+    items.push({
+      label: t("fileBrowser.newFolder", "New Folder\u2026"),
+      action: () => openCreateDialog("folder", parentForNew),
+    });
+    items.push({
+      label: t("fileBrowser.newFile", "New File\u2026"),
+      action: () => openCreateDialog("file", parentForNew),
+      separator: true,
+    });
+
     items.push({
       label: t("fileBrowser.copyPath", "Copy Path"),
       action: () => handleCopyPath(entry),
@@ -562,6 +657,11 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     }
 
     items.push({
+      label: t("fileBrowser.duplicate", "Duplicate"),
+      action: () => handleDuplicate(entry),
+    });
+
+    items.push({
       label: t("fileBrowser.rename", "Rename\u2026"),
       action: () => handleRename(entry),
     });
@@ -569,6 +669,12 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
     items.push({
       label: t("fileBrowser.delete", "Delete"),
       action: () => handleDelete(entry),
+      separator: true,
+    });
+
+    items.push({
+      label: t("fileBrowser.revealInOS", "Reveal in File Manager"),
+      action: () => handleRevealInOS(entry),
     });
 
     items.push({
@@ -938,6 +1044,8 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
               <For each={filteredEntries()}>
                 {(entry, index) => {
                   const isSearch = !!searchQuery().trim();
+                  const absPath = () =>
+                    entry.path.startsWith("/") ? entry.path : `${root() ?? ""}/${entry.path}`;
                   return (
                     <div
                       class={cx(
@@ -947,6 +1055,8 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
                         entry.is_ignored && s.entryIgnored,
                         clipboard()?.mode === "cut" && clipboard()?.entry.path === entry.path && s.entryCut,
                       )}
+                      data-drop-target={entry.is_dir ? "folder" : undefined}
+                      data-abs-path={entry.is_dir ? absPath() : undefined}
                       onClick={() => {
                         setSelectedIndex(index());
                         handleEntryClick(entry);
@@ -999,6 +1109,20 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
         kind="warning"
         onClose={() => setDeleteDialogVisible(false)}
         onConfirm={confirmDelete}
+      />
+
+      {/* Create new folder / file dialog */}
+      <PromptDialog
+        visible={createDialogVisible()}
+        title={createKind() === "folder"
+          ? t("fileBrowser.newFolderTitle", "New Folder")
+          : t("fileBrowser.newFileTitle", "New File")}
+        placeholder={createKind() === "folder"
+          ? t("fileBrowser.newFolderPlaceholder", "Folder name")
+          : t("fileBrowser.newFilePlaceholder", "File name")}
+        confirmLabel={t("fileBrowser.create", "Create")}
+        onClose={() => setCreateDialogVisible(false)}
+        onConfirm={handleCreateConfirm}
       />
     </div>
   );

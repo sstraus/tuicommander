@@ -16,6 +16,8 @@ import { cx } from "../../utils";
 import { contextMenuActionsStore } from "../../stores/contextMenuActionsStore";
 import { markInternalDragStart, markInternalDragEnd } from "../../hooks/useFileDrop";
 import { globalWorkspaceStore } from "../../stores/globalWorkspace";
+import { useSmartPrompts } from "../../hooks/useSmartPrompts";
+import { fileContextSmartMenuItem } from "../../utils/promptContext";
 import type { ContextMenuItem } from "../ContextMenu/ContextMenu";
 import s from "./TabBar.module.css";
 
@@ -88,6 +90,20 @@ export const TabBar: Component<TabBarProps> = (props) => {
   const [dragOverSide, setDragOverSide] = createSignal<"left" | "right" | null>(null);
   const [draggingId, setDraggingId] = createSignal<string | null>(null);
   const [editingId, setEditingId] = createSignal<string | null>(null);
+  const smartPrompts = useSmartPrompts();
+
+  /** Append a Smart Prompts submenu to a tab context menu if any file-context
+   *  prompts exist. Mutates `items` in-place. */
+  const pushFileContextItem = (items: ContextMenuItem[], filePath: string | undefined) => {
+    if (!filePath) return;
+    const repoRoot = repositoriesStore.getActive()?.path ?? null;
+    const item = fileContextSmartMenuItem(
+      { absPath: filePath, repoRoot, isDir: false },
+      smartPrompts,
+      { separator: true },
+    );
+    if (item) items.push(item);
+  };
 
   // Context menu for tabs
   const tabMenu = createContextMenu();
@@ -129,7 +145,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
       const ids = visibleDiffIds();
       const idx = ids.indexOf(id);
       const isPinned = tab?.pinned ?? false;
-      return [
+      const diffItems: ContextMenuItem[] = [
         { label: t("tabBar.copyPath", "Copy Path"), action: () => { if (tab?.filePath) navigator.clipboard.writeText(shortenHomePath(tab.filePath)).catch((err) => appLogger.error("app", "Failed to copy path", err)); } },
         { label: isPinned ? t("tabBar.unpinTab", "Unpin Tab") : t("tabBar.pinTab", "Pin Tab"), action: () => diffTabsStore.setPinned(id, !isPinned) },
         { label: "", separator: true, action: () => {} },
@@ -137,6 +153,8 @@ export const TabBar: Component<TabBarProps> = (props) => {
         { label: t("tabBar.closeOthers", "Close Other Tabs"), action: () => props.onCloseOthers(id), disabled: ids.length <= 1 },
         { label: t("tabBar.closeRight", "Close Tabs to the Right"), action: () => props.onCloseToRight(id), disabled: idx >= ids.length - 1 },
       ];
+      pushFileContextItem(diffItems, tab?.filePath);
+      return diffItems;
     }
 
     if (id.startsWith("md-")) {
@@ -145,7 +163,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
       const idx = ids.indexOf(id);
       const isPinned = tab?.pinned ?? false;
       const hasPath = tab?.type === "file" && tab.filePath;
-      return [
+      const mdItems: ContextMenuItem[] = [
         ...(hasPath ? [{ label: t("tabBar.copyPath", "Copy Path"), action: () => { navigator.clipboard.writeText(shortenHomePath(tab.filePath)).catch((err) => appLogger.error("app", "Failed to copy path", err)); } }] : []),
         { label: isPinned ? t("tabBar.unpinTab", "Unpin Tab") : t("tabBar.pinTab", "Pin Tab"), action: () => mdTabsStore.setPinned(id, !isPinned) },
         { label: t("tabBar.print", "Print…"), action: () => window.print() },
@@ -154,6 +172,8 @@ export const TabBar: Component<TabBarProps> = (props) => {
         { label: t("tabBar.closeOthers", "Close Other Tabs"), action: () => props.onCloseOthers(id), disabled: ids.length <= 1 },
         { label: t("tabBar.closeRight", "Close Tabs to the Right"), action: () => props.onCloseToRight(id), disabled: idx >= ids.length - 1 },
       ];
+      pushFileContextItem(mdItems, hasPath ? tab.filePath : undefined);
+      return mdItems;
     }
 
     if (id.startsWith("edit-")) {
@@ -161,7 +181,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
       const ids = visibleEditIds();
       const idx = ids.indexOf(id);
       const isPinned = tab?.pinned ?? false;
-      return [
+      const editItems: ContextMenuItem[] = [
         { label: t("tabBar.copyPath", "Copy Path"), action: () => { if (tab?.filePath) navigator.clipboard.writeText(shortenHomePath(tab.filePath)).catch((err) => appLogger.error("app", "Failed to copy path", err)); } },
         { label: isPinned ? t("tabBar.unpinTab", "Unpin Tab") : t("tabBar.pinTab", "Pin Tab"), action: () => editorTabsStore.setPinned(id, !isPinned) },
         { label: "", separator: true, action: () => {} },
@@ -169,6 +189,8 @@ export const TabBar: Component<TabBarProps> = (props) => {
         { label: t("tabBar.closeOthers", "Close Other Tabs"), action: () => props.onCloseOthers(id), disabled: ids.length <= 1 },
         { label: t("tabBar.closeRight", "Close Tabs to the Right"), action: () => props.onCloseToRight(id), disabled: idx >= ids.length - 1 },
       ];
+      pushFileContextItem(editItems, tab?.filePath);
+      return editItems;
     }
 
     // Terminal tab

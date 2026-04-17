@@ -12,7 +12,7 @@ import sp from "./SmartPromptsTab.module.css";
 
 // All placements for the checkbox grid
 const ALL_PLACEMENTS: SmartPlacement[] = [
-  "toolbar", "git-changes", "git-branches", "pr-popover", "issue-popover", "terminal-context", "command-palette",
+  "toolbar", "git-changes", "git-branches", "pr-popover", "issue-popover", "terminal-context", "command-palette", "file-context",
 ];
 
 // Categories extracted from smart prompt tags
@@ -62,6 +62,13 @@ const CONTEXT_VARIABLES: VarDef[] = [
   // Terminal
   { name: "agent_type", description: "Detected agent (claude, codex...)", group: "Terminal" },
   { name: "cwd", description: "Terminal working directory", group: "Terminal" },
+  // File (populated for placement="file-context" hosts)
+  { name: "file_path", description: "Absolute path of selected file/folder", group: "File" },
+  { name: "file_rel_path", description: "Path relative to repo root", group: "File" },
+  { name: "file_name", description: "Basename (foo.ts)", group: "File" },
+  { name: "file_ext", description: "Extension including dot (.ts)", group: "File" },
+  { name: "file_dir", description: "Parent directory absolute path", group: "File" },
+  { name: "file_is_dir", description: "'true' if a folder, else 'false'", group: "File" },
 ];
 
 /** Variables whose runtime value is controlled by repository contents

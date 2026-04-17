@@ -49,6 +49,9 @@ export const TreeNode: Component<TreeNodeProps> = (props) => {
     }
   };
 
+  const absPath = () =>
+    props.entry.path.startsWith("/") ? props.entry.path : `${props.fsRoot}/${props.entry.path}`;
+
   return (
     <>
       <div
@@ -56,6 +59,8 @@ export const TreeNode: Component<TreeNodeProps> = (props) => {
         style={{ "padding-left": `${8 + props.depth * 16}px` }}
         onClick={handleClick}
         onContextMenu={(e) => props.onContextMenu(e, props.entry)}
+        data-drop-target={props.entry.is_dir ? "folder" : undefined}
+        data-abs-path={props.entry.is_dir ? absPath() : undefined}
       >
         <Show when={props.entry.is_dir}>
           <svg
