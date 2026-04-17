@@ -151,6 +151,16 @@ impl RepetitionDetector {
 
 // ── System prompt ─────────────────────────────────────────────
 
+/// Concatenate the static base prompt with an optional knowledge section
+/// (separated by a blank line). Kept as a single function so initial-build
+/// and per-iteration refresh produce byte-identical output.
+fn compose_system_prompt(base: &str, knowledge: Option<&str>) -> String {
+    match knowledge {
+        Some(k) => format!("{base}\n\n{k}"),
+        None => base.to_string(),
+    }
+}
+
 fn build_system_prompt(session_id: &str) -> String {
     format!(
         "You are an AI agent controlling a terminal session (id: {session_id}).\n\n\
@@ -364,14 +374,15 @@ async fn run_loop(
 
     let chat_options = ChatOptions::default().with_capture_tool_calls(true);
 
-    // Build initial request with optional session knowledge
-    let mut system_prompt = build_system_prompt(&session_id);
-    if let Some(knowledge) = super::context::build_knowledge_section(&state, &session_id) {
-        system_prompt.push_str("\n\n");
-        system_prompt.push_str(&knowledge);
-    }
+    // Base system prompt is constant per session; knowledge is appended and
+    // refreshed every iteration so tool calls that mutate session knowledge
+    // (mid-loop writes, terminal_mode flips, command outcomes) are reflected
+    // in subsequent LLM turns instead of being frozen at iteration 0.
+    let base_system_prompt = build_system_prompt(&session_id);
+    let mut last_knowledge: Option<String> =
+        super::context::build_knowledge_section(&state, &session_id);
     let mut chat_req = ChatRequest::default()
-        .with_system(system_prompt)
+        .with_system(compose_system_prompt(&base_system_prompt, last_knowledge.as_deref()))
         .with_tools(genai_tools.clone())
         .append_message(ChatMessage::user(user_goal));
 
@@ -389,6 +400,19 @@ async fn run_loop(
         if tokio::time::Instant::now() >= deadline {
             tracing::warn!(session_id, "Agent loop timed out");
             return Ok("timeout".into());
+        }
+
+        // Refresh knowledge section every iteration: tool calls executed at
+        // the end of the previous iteration may have updated SessionKnowledge
+        // (cwd, command outcomes, TUI mode). Only re-write the system prompt
+        // when content actually changed to avoid pointless allocations.
+        if iteration > 0 {
+            let current = super::context::build_knowledge_section(&state, &session_id);
+            if current != last_knowledge {
+                chat_req.system =
+                    Some(compose_system_prompt(&base_system_prompt, current.as_deref()));
+                last_knowledge = current;
+            }
         }
 
         // Check pause
@@ -918,11 +942,9 @@ mod tests {
             },
         );
 
-        let mut system_prompt = build_system_prompt(sid);
-        if let Some(knowledge) = crate::ai_agent::context::build_knowledge_section(&state, sid) {
-            system_prompt.push_str("\n\n");
-            system_prompt.push_str(&knowledge);
-        }
+        let base = build_system_prompt(sid);
+        let knowledge = crate::ai_agent::context::build_knowledge_section(&state, sid);
+        let system_prompt = compose_system_prompt(&base, knowledge.as_deref());
 
         assert!(system_prompt.contains(sid));
         assert!(system_prompt.contains("Session Knowledge"));
@@ -937,12 +959,58 @@ mod tests {
         let sid = "test-no-knowledge";
 
         let base = build_system_prompt(sid);
-        let mut system_prompt = build_system_prompt(sid);
-        if let Some(knowledge) = crate::ai_agent::context::build_knowledge_section(&state, sid) {
-            system_prompt.push_str("\n\n");
-            system_prompt.push_str(&knowledge);
-        }
+        let knowledge = crate::ai_agent::context::build_knowledge_section(&state, sid);
+        let system_prompt = compose_system_prompt(&base, knowledge.as_deref());
 
         assert_eq!(system_prompt, base);
+    }
+
+    // #1384-0dca: knowledge mutated mid-loop must be reflected in subsequent
+    // iterations' system prompt. Mirrors the change-detection block in
+    // `run_loop` (refresh only when the rendered section differs).
+    #[test]
+    fn system_prompt_refreshes_when_knowledge_mutates_between_iterations() {
+        use crate::ai_agent::knowledge::{CommandOutcome, OutcomeClass};
+        use crate::state::tests_support::make_test_app_state;
+
+        let state = make_test_app_state();
+        let sid = "test-knowledge-refresh";
+        let base = build_system_prompt(sid);
+
+        // Iteration 0: no knowledge yet → base prompt only.
+        let mut last = crate::ai_agent::context::build_knowledge_section(&state, sid);
+        let prompt_iter0 = compose_system_prompt(&base, last.as_deref());
+        assert_eq!(prompt_iter0, base, "iter 0 should equal base when no knowledge");
+        assert!(last.is_none());
+
+        // Tool call mid-loop records a command outcome (Error so it surfaces
+        // in `build_context_summary`'s Recent Errors section).
+        state.record_outcome(
+            sid,
+            CommandOutcome {
+                timestamp: 1,
+                command: "npm run build".into(),
+                cwd: "/repo".into(),
+                exit_code: Some(1),
+                output_snippet: "TypeError: foo".into(),
+                classification: OutcomeClass::Error {
+                    error_type: "node_runtime".into(),
+                },
+                duration_ms: 10,
+            },
+        );
+
+        // Iteration 1: refresh detects the diff and rebuilds the prompt.
+        let current = crate::ai_agent::context::build_knowledge_section(&state, sid);
+        assert_ne!(current, last, "knowledge must differ after record_outcome");
+        let prompt_iter1 = compose_system_prompt(&base, current.as_deref());
+        assert_ne!(prompt_iter1, prompt_iter0, "iter 1 prompt must change");
+        assert!(prompt_iter1.contains("npm run build"));
+        assert!(prompt_iter1.contains("Session Knowledge"));
+        last = current;
+
+        // Iteration 2: no further change → no rebuild needed.
+        let still_current = crate::ai_agent::context::build_knowledge_section(&state, sid);
+        assert_eq!(still_current, last, "stable knowledge must compare equal");
     }
 }
