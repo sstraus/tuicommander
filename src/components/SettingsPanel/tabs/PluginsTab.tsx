@@ -294,7 +294,14 @@ const BrowseRow: Component<{ entry: RegistryEntry }> = (props) => {
 // ---------------------------------------------------------------------------
 
 export const PluginsTab: Component<{ onClose?: () => void }> = (props) => {
-  const plugins = () => pluginStore.getAll();
+  const plugins = () => {
+    const all = pluginStore.getAll();
+    const name = (p: PluginState) => (p.manifest?.name ?? p.id).toLowerCase();
+    return [...all].sort((a, b) => {
+      if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
+      return name(a).localeCompare(name(b));
+    });
+  };
   const [installing, setInstalling] = createSignal(false);
   const [fileInstallError, setFileInstallError] = createSignal<string | null>(null);
   const [activeSubTab, setActiveSubTab] = createSignal<"installed" | "browse">("installed");
