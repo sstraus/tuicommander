@@ -625,6 +625,11 @@ impl UpstreamRegistry {
         }
         // HTTP clients don't hold persistent connections — nothing to clean up.
 
+        // The aggregated tool list just shrank — notify MCP clients so they
+        // refresh their cached schemas (otherwise CC keeps offering tools from
+        // a server we just toggled off).
+        self.emit_status_change(name, "disconnected");
+
         Ok(())
     }
 
@@ -1434,6 +1439,28 @@ mod tests {
         assert!(registry.status("toremove").is_some());
         registry.disconnect_upstream("toremove").unwrap();
         assert!(registry.status("toremove").is_none());
+    }
+
+    #[tokio::test]
+    async fn disconnect_emits_tools_changed_signal() {
+        // Regression: toggling an upstream off in McpPopup must invalidate the
+        // MCP client's cached tool list. The signal is what the SSE
+        // `notifications/tools/list_changed` stream is wired to.
+        let registry = UpstreamRegistry::new();
+        let (tx, mut rx) = tokio::sync::broadcast::channel::<()>(4);
+        registry.set_mcp_tools_tx(tx);
+
+        let cfg = http_server_config_disabled("toggle-off", "http://127.0.0.1:1/mcp");
+        registry.connect_upstream(cfg, None).await.unwrap();
+        // connect of a disabled upstream skips initialize and emits no signal
+        assert!(rx.try_recv().is_err(), "no signal expected from disabled connect");
+
+        registry.disconnect_upstream("toggle-off").unwrap();
+
+        assert!(
+            rx.try_recv().is_ok(),
+            "disconnect_upstream must emit mcp_tools_changed so connected MCP clients refresh"
+        );
     }
 
     // -----------------------------------------------------------------------
