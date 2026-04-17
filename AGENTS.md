@@ -60,6 +60,7 @@ Do NOT flag these as security issues in reviews — they are intentional design 
 
 - **CSP `frame-src 'self' http://127.0.0.1:* http://localhost:*`** — wildcard ports required. Plugin tabs (`ui action=tab url=...`) open iframes to arbitrary localhost URLs. Mission Control uses dynamic ports. Restricting to specific ports breaks the plugin/tab system.
 - **`lazy_static` in `output_parser.rs`, `pty.rs`, etc.** — transitive deps (`portable-pty`, `symphonia`) also use it; removing the direct dep saves nothing. Modules outside `ai_agent/` will migrate opportunistically.
+- **`opener:allow-open-path` scope `"**"` in `src-tauri/capabilities/default.json`** — the FileBrowser "Open with default app" action must work for any file the user can already see in a registered repo (arbitrary absolute paths across macOS/Windows/Linux, including mounted volumes and `/tmp`). Narrower globs like `$HOME/**` would break external drives and network mounts. The reachable surface is bounded by the frontend UI (only paths surfaced through the repo browser reach this code path) and the OS default-app handler — not by the Tauri ACL.
 
 ## Ideas
 

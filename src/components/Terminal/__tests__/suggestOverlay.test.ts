@@ -156,6 +156,52 @@ describe("continuationRowsAfterSuggest", () => {
     ]);
     expect(continuationRowsAfterSuggest(0, 5, get)).toEqual([1, 2, 3]);
   });
+
+  it("hides multiple consecutive pipeless tail rows after wrap chain", () => {
+    // Reported bug: long final item wraps across multiple physical rows.
+    // The single-tail-only rule left trailing words ("app") visible.
+    const get = rows([
+      ["suggest: 1) A | 2) B | 3) Questo cambia completamente la d", false],
+      ["iagnosi del fix.", true],                                      // wrapped
+      ["app", false],                                                  // pipeless tail #2
+      ["* Cooked for 3m 30s", false],                                  // status — terminator
+    ]);
+    expect(continuationRowsAfterSuggest(0, 4, get)).toEqual([1, 2]);
+  });
+
+  it("stops pipeless tail walk at a status spinner row", () => {
+    const get = rows([
+      ["suggest: 1) A | 2) B | 3) C with long tail", false],
+      ["wrapped tail", true],
+      ["* Cooking...", false], // status spinner — terminator
+      ["app", false],          // must NOT be hidden (after terminator)
+    ]);
+    expect(continuationRowsAfterSuggest(0, 4, get)).toEqual([1]);
+  });
+
+  it("stops tail walk at a pipe row that arrives after a pipeless tail", () => {
+    // After a pipeless tail has been consumed, a later pipe-bearing row is
+    // unrelated content (Makefile, table, etc.) and must terminate the walk,
+    // even when the prior tail was valid. Guards the `if (pipeTailStarted)
+    // break` branch in the pipe-row handler.
+    const get = rows([
+      ["suggest: 1) A | 2) B | 3) C with wrap", false], // anchor (2 pipes)
+      ["wrapped tail", true],                            // wrapped row
+      ["pipeless tail", false],                          // pipeless tail #1 — accept
+      ["all: clean | build | test", false],              // pipe row after tail — must NOT be hidden
+    ]);
+    expect(continuationRowsAfterSuggest(0, 4, get)).toEqual([1, 2]);
+  });
+
+  it("stops pipeless tail walk at an empty row", () => {
+    const get = rows([
+      ["suggest: 1) A | 2) B | 3) C wraps", false],
+      ["onto next", true],
+      ["", false],   // empty terminator
+      ["leftover", false], // must NOT be hidden
+    ]);
+    expect(continuationRowsAfterSuggest(0, 4, get)).toEqual([1]);
+  });
 });
 
 describe("isSuggestBlock", () => {

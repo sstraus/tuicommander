@@ -174,12 +174,26 @@ Seven native tools, organized by domain. Two (`config`, `debug`) are hidden by d
 
 The `disabled_native_tools` config key accepts an array of tool names to hide from `tools/list`. Default: `["config", "debug"]`.
 
+#### `ui` tool — `tab` URL schemes
+
+The `url` param of `action=tab` supports three schemes:
+
+| Scheme | Behaviour |
+|--------|-----------|
+| `http(s)://` / `file://` | Loaded in a sandboxed iframe |
+| `tuic://edit/<path>?line=N` | Opens a native code-editor tab at the given file and line. Absolute paths require a `//` prefix: `tuic://edit//Users/x/file.rs?line=42`. Relative paths resolve against the active repo root. |
+| `tuic://open/<path>` | Opens a native markdown/preview tab |
+
+Custom URL schemes (`vscode://`, `x-devonthink://`, etc.) do **not** work inside iframes and must not be used with `action=tab`.
+
 ### MCP Tools: `ai_terminal_*` (external agent surface)
 
 Six tools exposed to external MCP clients (e.g. Claude Code, Cursor) that let a
 remote AI agent observe and interact with a TUICommander terminal. All input
 operations (`send_input`, `send_key`) require user confirmation and are
 rejected while an internal agent loop is active on the target session.
+
+**Gated by `ai_terminal_mcp_enabled` config flag (default `false`).** When the flag is off, these tools are hidden from `tools/list` (via `filtered_native_tools`) and calls are rejected at dispatch time. Enable in `config.json` or Settings > Services. Note: no live-reload — a connected client may see a stale tools snapshot until it reconnects or `notifications/tools/list_changed` fires.
 
 | Tool | Params | Description |
 |------|--------|-------------|

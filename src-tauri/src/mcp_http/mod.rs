@@ -44,6 +44,13 @@ fn validate_terminal_size(rows: u16, cols: u16) -> Result<(), String> {
 
 /// Core path validation logic shared by HTTP and MCP handlers.
 /// Rejects empty paths, null bytes, relative traversals, and non-absolute paths.
+///
+/// This is a syntactic filter, not a canonical one: it does not resolve
+/// symlinks or `.` segments, and the `..` check is a substring match (so
+/// paths containing `..` in legitimate filenames are also rejected). Callers
+/// that must enforce a containment boundary (e.g. "within a registered
+/// repo") are responsible for that check themselves — see
+/// `fs_routes::is_within_repo_roots`.
 fn validate_path_string(path: &str) -> Result<(), String> {
     if path.is_empty() {
         return Err("path is required".to_string());
@@ -944,6 +951,7 @@ mod tests {
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
             tool_search_index: std::sync::Arc::new(parking_lot::RwLock::new(crate::tool_search::ToolSearchIndex::build(&[]))),
             content_indices: DashMap::new(),
+            indexer_throttle: std::sync::Arc::new(crate::content_index::IndexerThrottle::default()),
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
             shell_states: DashMap::new(),
@@ -1591,6 +1599,7 @@ mod tests {
     #[tokio::test]
     async fn test_mcp_tools_list() {
         let state = test_state();
+        state.config.write().ai_terminal_mcp_enabled = true;
         let app = build_router(state, false, true);
         let body = serde_json::json!({
             "jsonrpc": "2.0",
@@ -1624,6 +1633,7 @@ mod tests {
     async fn test_mcp_tools_list_respects_disabled_native_tools() {
         let state = test_state();
         state.config.write().disabled_native_tools = vec!["debug".to_string()];
+        state.config.write().ai_terminal_mcp_enabled = true;
         let app = build_router(state, false, true);
         let body = serde_json::json!({
             "jsonrpc": "2.0",
@@ -2558,6 +2568,7 @@ mod tests {
     #[tokio::test]
     async fn test_tools_list_no_upstream_returns_native_only() {
         let state = test_state();
+        state.config.write().ai_terminal_mcp_enabled = true;
         let app = build_router(state, false, true);
         let body = serde_json::json!({
             "jsonrpc": "2.0", "id": 1,

@@ -12,10 +12,59 @@ use bm25::{Language, SearchEngineBuilder, SearchResult};
 use ignore::WalkBuilder;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, SystemTime};
 
 /// Maximum file size to index (1 MB).
 const MAX_FILE_SIZE: u64 = 1_048_576;
+
+/// Files processed between throttle checkpoints during index build.
+const THROTTLE_CHECKPOINT_INTERVAL: usize = 50;
+/// Poll interval while an indexer is paused waiting for searches to finish.
+const THROTTLE_SEARCH_POLL: Duration = Duration::from_millis(100);
+
+/// Cooperative throttle that yields CPU during index builds and pauses
+/// indexing while user-initiated searches are in flight.
+#[derive(Default)]
+pub struct IndexerThrottle {
+    search_active: AtomicUsize,
+}
+
+/// RAII guard: increments the active-search counter on creation, decrements on drop.
+/// Acquire at the top of every search handler so indexers step aside. Owns an
+/// `Arc` so the guard is `'static` and can cross `spawn_blocking` boundaries.
+#[must_use = "throttle guard must be held for the duration of the search"]
+pub struct SearchGuard {
+    throttle: Arc<IndexerThrottle>,
+}
+
+impl Drop for SearchGuard {
+    fn drop(&mut self) {
+        self.throttle.search_active.fetch_sub(1, Ordering::Release);
+    }
+}
+
+impl IndexerThrottle {
+    /// Mark a search as active for the lifetime of the returned guard.
+    pub fn begin_search(self: &Arc<Self>) -> SearchGuard {
+        // AcqRel pairs with the `load(Acquire)` in `checkpoint` so the
+        // increment is published to indexer threads before they resume.
+        self.search_active.fetch_add(1, Ordering::AcqRel);
+        SearchGuard {
+            throttle: Arc::clone(self),
+        }
+    }
+
+    /// Called from the indexer loop every `THROTTLE_CHECKPOINT_INTERVAL` files.
+    /// Blocks (via `thread::sleep`) while any search is active. Yielding is
+    /// the OS scheduler's job when no searches are running.
+    pub fn checkpoint(&self) {
+        while self.search_active.load(Ordering::Acquire) > 0 {
+            std::thread::sleep(THROTTLE_SEARCH_POLL);
+        }
+    }
+}
 
 /// A single indexed file entry.
 #[derive(Debug, Clone)]
@@ -63,9 +112,12 @@ impl ContentIndex {
 
     /// Build (or rebuild) the full index by walking the repo.
     ///
-    /// This is I/O-heavy and should be called from `spawn_blocking`.
-    /// Respects .gitignore, skips binary files and files > 1 MB.
-    pub fn build(repo_root: PathBuf) -> Self {
+    /// This is I/O-heavy and should be called from `spawn_blocking`. Respects
+    /// .gitignore, skips binary files and files > 1 MB. When `throttle` is
+    /// provided, the walker yields cooperatively every `THROTTLE_CHECKPOINT_INTERVAL`
+    /// files and pauses entirely while a search is active. Pass `None` for
+    /// tests or one-shot builds where throttling is irrelevant.
+    pub fn build(repo_root: PathBuf, throttle: Option<&IndexerThrottle>) -> Self {
         let canonical = repo_root
             .canonicalize()
             .unwrap_or_else(|_| repo_root.clone());
@@ -79,13 +131,10 @@ impl ContentIndex {
             .git_ignore(true)
             .git_global(true)
             .git_exclude(true)
-            .filter_entry(|entry| {
-                // Never descend into .git directories
-                !(entry.file_type().is_some_and(|ft| ft.is_dir())
-                    && entry.file_name() == ".git")
-            })
+            .filter_entry(|e| !crate::fs::is_always_excluded_dir(e))
             .build();
 
+        let mut processed: usize = 0;
         for entry in walker {
             let entry = match entry {
                 Ok(e) => e,
@@ -94,6 +143,13 @@ impl ContentIndex {
 
             if !entry.file_type().is_some_and(|ft| ft.is_file()) {
                 continue;
+            }
+
+            processed += 1;
+            if let Some(t) = throttle
+                && processed % THROTTLE_CHECKPOINT_INTERVAL == 0
+            {
+                t.checkpoint();
             }
 
             let metadata = match entry.metadata() {
@@ -187,7 +243,21 @@ impl ContentIndex {
 // Background index builder — subscribes to RepoChanged events
 // ---------------------------------------------------------------------------
 
-use std::sync::Arc;
+/// Spawn a blocking index build and log any panic in the Tokio blocking pool.
+/// Without this supervisor the `JoinHandle` would be dropped, silently
+/// swallowing panics (e.g. allocation failure, poisoned locks) and leaving
+/// the index in a stale/empty state with no diagnostic.
+fn spawn_build<F>(repo: String, build_fn: F)
+where
+    F: FnOnce() + Send + 'static,
+{
+    let handle = tokio::task::spawn_blocking(build_fn);
+    tokio::spawn(async move {
+        if let Err(e) = handle.await {
+            tracing::error!(repo = %repo, error = ?e, "content index build task panicked");
+        }
+    });
+}
 
 /// Ensure a content index exists for the given repo, building it in background
 /// if needed. Returns immediately — callers should check `is_ready()`.
@@ -210,9 +280,13 @@ pub fn ensure_index(
 
     let index_ref = Arc::clone(&index);
     let repo = repo_path.to_string();
-    // Low-priority: spawn_blocking uses the Tokio blocking pool
-    tokio::task::spawn_blocking(move || {
-        let built = ContentIndex::build(PathBuf::from(&repo));
+    let throttle = Arc::clone(&state.indexer_throttle);
+    let repo_for_log = repo.clone();
+    // Low-priority: spawn_blocking uses the Tokio blocking pool.
+    // Cooperative yielding via `throttle` keeps CPU usage gentle and
+    // pauses indexing while the user is running a search.
+    spawn_build(repo_for_log, move || {
+        let built = ContentIndex::build(PathBuf::from(&repo), Some(&throttle));
         *index_ref.write() = built;
         tracing::info!(repo = %repo, "content index built");
     });
@@ -222,10 +296,7 @@ pub fn ensure_index(
 
 /// Rebuild the content index for a repo (called on RepoChanged events).
 /// Runs in background, does not block.
-pub fn rebuild_index(
-    state: &Arc<crate::state::AppState>,
-    repo_path: &str,
-) {
+pub fn rebuild_index(state: &Arc<crate::state::AppState>, repo_path: &str) {
     let index = if let Some(existing) = state.content_indices.get(repo_path) {
         Arc::clone(existing.value())
     } else {
@@ -234,8 +305,10 @@ pub fn rebuild_index(
     };
 
     let repo = repo_path.to_string();
-    tokio::task::spawn_blocking(move || {
-        let built = ContentIndex::build(PathBuf::from(&repo));
+    let throttle = Arc::clone(&state.indexer_throttle);
+    let repo_for_log = repo.clone();
+    spawn_build(repo_for_log, move || {
+        let built = ContentIndex::build(PathBuf::from(&repo), Some(&throttle));
         *index.write() = built;
         tracing::debug!(repo = %repo, "content index rebuilt");
     });
@@ -251,11 +324,16 @@ pub fn spawn_content_index_updater(state: Arc<crate::state::AppState>) {
                 Ok(crate::state::AppEvent::RepoChanged { repo_path }) => {
                     rebuild_index(&state, &repo_path);
                 }
+                Ok(other) => {
+                    // Other AppEvent variants intentionally ignored by the
+                    // content_index updater — trace so new variants are
+                    // visible in debug builds.
+                    tracing::trace!(source = "content_index", ?other, "ignored event");
+                }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                     tracing::warn!(source = "content_index", lagged = n, "event bus lagged");
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-                _ => {} // ignore other events
             }
         }
     });
@@ -300,7 +378,7 @@ mod tests {
     #[test]
     fn build_indexes_text_files() {
         let repo = make_test_repo();
-        let index = ContentIndex::build(repo.path().to_path_buf());
+        let index = ContentIndex::build(repo.path().to_path_buf(), None);
 
         assert!(index.is_ready());
         assert_eq!(index.len(), 5); // main.rs, lib.rs, search.rs, README.md, src/utils.rs
@@ -309,7 +387,7 @@ mod tests {
     #[test]
     fn search_finds_relevant_file() {
         let repo = make_test_repo();
-        let index = ContentIndex::build(repo.path().to_path_buf());
+        let index = ContentIndex::build(repo.path().to_path_buf(), None);
 
         let results = index.search("BM25 search implementation", 5);
         assert!(!results.is_empty());
@@ -319,7 +397,7 @@ mod tests {
     #[test]
     fn search_ranks_by_relevance() {
         let repo = make_test_repo();
-        let index = ContentIndex::build(repo.path().to_path_buf());
+        let index = ContentIndex::build(repo.path().to_path_buf(), None);
 
         // "println hello" should rank main.rs first
         let results = index.search("println hello", 5);
@@ -330,7 +408,7 @@ mod tests {
     #[test]
     fn search_empty_query_returns_nothing() {
         let repo = make_test_repo();
-        let index = ContentIndex::build(repo.path().to_path_buf());
+        let index = ContentIndex::build(repo.path().to_path_buf(), None);
 
         assert!(index.search("", 5).is_empty());
         assert!(index.search("   ", 5).is_empty());
@@ -352,7 +430,7 @@ mod tests {
         // Binary file: contains null bytes
         fs::write(root.join("binary.bin"), b"\x00\x01\x02\x03").unwrap();
 
-        let index = ContentIndex::build(root.to_path_buf());
+        let index = ContentIndex::build(root.to_path_buf(), None);
         assert_eq!(index.len(), 1); // only text.rs
     }
 
@@ -366,7 +444,7 @@ mod tests {
         let large = "x".repeat(MAX_FILE_SIZE as usize + 1);
         fs::write(root.join("large.txt"), large).unwrap();
 
-        let index = ContentIndex::build(root.to_path_buf());
+        let index = ContentIndex::build(root.to_path_buf(), None);
         assert_eq!(index.len(), 1); // only small.rs
     }
 
@@ -376,7 +454,7 @@ mod tests {
         let root = dir.path();
         fs::write(root.join("test.rs"), "fn test() {}").unwrap();
 
-        let index = ContentIndex::build(root.to_path_buf());
+        let index = ContentIndex::build(root.to_path_buf(), None);
         let abs = index.absolute_path("test.rs");
         assert!(abs.ends_with("test.rs"));
         assert!(abs.is_absolute());
@@ -385,7 +463,7 @@ mod tests {
     #[test]
     fn search_finds_file_in_subdirectory() {
         let repo = make_test_repo();
-        let index = ContentIndex::build(repo.path().to_path_buf());
+        let index = ContentIndex::build(repo.path().to_path_buf(), None);
 
         let results = index.search("format_result to_uppercase", 5);
         assert!(!results.is_empty());
@@ -403,7 +481,7 @@ mod tests {
         fs::write(root.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
         fs::write(root.join(".git/objects/pack.txt"), "pack data here").unwrap();
 
-        let index = ContentIndex::build(root.to_path_buf());
+        let index = ContentIndex::build(root.to_path_buf(), None);
         assert_eq!(index.len(), 1); // only real.rs
         assert!(index.search("pack data", 5).is_empty());
     }
@@ -422,7 +500,7 @@ mod tests {
             fs::write(root.join(format!("file_{i}.rs")), content).unwrap();
         }
 
-        let index = ContentIndex::build(root.to_path_buf());
+        let index = ContentIndex::build(root.to_path_buf(), None);
         assert_eq!(index.len(), 200);
 
         // Warm up

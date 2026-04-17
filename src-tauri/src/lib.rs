@@ -832,7 +832,7 @@ pub fn run() {
         mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
         tool_search_index: Arc::new(parking_lot::RwLock::new(crate::tool_search::ToolSearchIndex::build(&[]))),
         content_indices: DashMap::new(),
-        indexer_throttle: Arc::new(crate::content_index::IndexerThrottle::new()),
+        indexer_throttle: Arc::new(crate::content_index::IndexerThrottle::default()),
         slash_mode: DashMap::new(),
         last_output_ms: DashMap::new(),
         shell_states: DashMap::new(),

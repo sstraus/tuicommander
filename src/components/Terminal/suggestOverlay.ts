@@ -15,21 +15,23 @@ const INTENT_RE = /^intent:\s+\S/;
  *  `suggest: long item that wraps...` (with the pipe on the next row) is
  *  still a new block boundary and the walk MUST stop here. (#1380-3b9c) */
 const SUGGEST_STOP_RE = /^[\t ]*(?:[●⏺][\t ]+)?suggest:\s+\S/;
+/** Status spinner / shell prompt row: a strong terminator for the conceal
+ *  walk even when no blank line separates it from the wrapped tail. */
+const TERMINATOR_RE = /^[\t ]*[*$#❯>›●⏺]/;
 
 /**
  * Given a suggest anchor row at `anchorIndex`, return the 0-based indexes of
  * subsequent rows that should be visually hidden as continuations of the
  * same suggest block.
  *
- * Rules (mirrors Rust `parse_suggest`'s bounded joined_tail):
- *  1. xterm-wrapped rows (`isWrapped === true`) are always hidden — they are
- *     the continuation of the same logical line.
- *  2. After the wrap chain ends, at most *one* non-wrapped row is hidden,
- *     and only if it still contains a `|` separator (a pipe-tail the terminal
- *     renderer flushed onto its own logical line).
- *  3. A new `suggest:` or `intent:` anchor stops the walk immediately.
+ * Rules (mirror Rust `parse_suggest_with_line`'s tail walk):
+ *  1. xterm-wrapped rows (`isWrapped === true`) are always hidden.
+ *  2. After the wrap chain ends, hide consecutive non-wrapped rows as
+ *     pipeless tails when the suggest already has 2+ pipes (3+ items),
+ *     until a terminator row (empty / new token / status spinner / prompt).
+ *  3. A new `suggest:`, `intent:`, or terminator row stops the walk.
  *
- * Without this bound, the overlay would swallow arbitrary Makefile/table/diff
+ * Without these bounds, the overlay would swallow arbitrary Makefile/table/diff
  * rows that happen to contain pipes (story 1276-a3c2).
  */
 export function continuationRowsAfterSuggest(
@@ -38,10 +40,10 @@ export function continuationRowsAfterSuggest(
   getRow: (i: number) => RowSnapshot | null,
 ): number[] {
   const hidden: number[] = [];
-  let pipeTailUsed = false;
+  let pipeTailStarted = false;
   let hadWrapped = false;
   // Count pipes across anchor + hidden rows to decide whether a pipeless tail
-  // is safe to consume (mirrors Rust `joined_tail` logic in parse_suggest).
+  // is safe to consume (mirrors Rust tail-join logic in parse_suggest).
   const anchor = getRow(anchorIndex);
   let pipeCount = anchor ? (anchor.text.match(/\|/g) || []).length : 0;
   for (let i = anchorIndex + 1; i < totalRows; i++) {
@@ -54,18 +56,26 @@ export function continuationRowsAfterSuggest(
       pipeCount += (row.text.match(/\|/g) || []).length;
       continue;
     }
-    if (!pipeTailUsed && row.text.includes("|")) {
+    // Empty row terminates the block (matches Rust parser).
+    if (row.text.trim() === "") break;
+    // Strong terminators that appear right after the wrap chain.
+    if (TERMINATOR_RE.test(row.text)) break;
+    if (row.text.includes("|")) {
+      // Pipe rows are valid continuations only as the FIRST tail row
+      // (post-wrap pipe-flushed continuation). After the tail walk has
+      // started, another pipe row is unrelated content (Makefile, etc.)
+      // and must terminate (story 1276-a3c2).
+      if (pipeTailStarted) break;
       hidden.push(i);
-      pipeTailUsed = true;
+      pipeTailStarted = true;
       continue;
     }
-    // Allow one pipeless tail ONLY after a wrap chain when the accumulated
-    // suggest already has 2+ pipes (3+ items). Without hadWrapped, this
-    // would swallow unrelated prose on the line right after a single-row
-    // suggest like "suggest: A | B | C".
-    if (!pipeTailUsed && hadWrapped && pipeCount >= 2) {
+    // Pipeless tail rows: hide them when the suggest is clearly complete
+    // (wrapped + 2+ pipes already counted). Multiple consecutive pipeless
+    // rows are accepted — long final items can wrap across several lines.
+    if (hadWrapped && pipeCount >= 2) {
       hidden.push(i);
-      pipeTailUsed = true;
+      pipeTailStarted = true;
       continue;
     }
     break;

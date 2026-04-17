@@ -174,6 +174,18 @@ fn is_write_tool(name: &str) -> bool {
     matches!(name, SEND_INPUT | SEND_KEY | WRITE_FILE | EDIT_FILE | RUN_COMMAND)
 }
 
+/// Tools that require a per-session filesystem sandbox. For these we must
+/// verify the sandbox exists BEFORE prompting the user — otherwise the popup
+/// fires, the user approves, and dispatch immediately returns
+/// "No filesystem sandbox". Reads are checked here too so external callers get
+/// the same fail-fast diagnostic without any UI noise.
+fn requires_sandbox(name: &str) -> bool {
+    matches!(
+        name,
+        READ_FILE | WRITE_FILE | EDIT_FILE | LIST_FILES | SEARCH_FILES | RUN_COMMAND
+    )
+}
+
 /// Dispatch an `ai_terminal_*` MCP tool call from an external client.
 pub(crate) async fn handle(
     state: &Arc<AppState>,
@@ -184,6 +196,25 @@ pub(crate) async fn handle(
         Some(s) => s,
         None => return serde_json::json!({"error": format!("Unknown ai_terminal tool: {name}")}),
     };
+
+    // Fail fast BEFORE any UI confirmation when the target session has no
+    // filesystem sandbox. Previously the approval popup fired first, and
+    // dispatch then returned "No filesystem sandbox" regardless of the user's
+    // choice — pure UI noise for an operation that could never succeed.
+    if requires_sandbox(name) {
+        let Some(sid) = args["session_id"].as_str() else {
+            return serde_json::json!({
+                "error": "Missing required argument: session_id"
+            });
+        };
+        if !state.file_sandboxes.contains_key(sid) {
+            // Generic message: echoing the caller-supplied id turns this path
+            // into an enumeration oracle for valid session IDs.
+            return serde_json::json!({
+                "error": "No filesystem sandbox for the requested session"
+            });
+        }
+    }
 
     if is_write_tool(name) {
         if let Some(sid) = args["session_id"].as_str()

@@ -24,7 +24,31 @@ type ChatStreamEvent =
   | { event: "end"; data: { fullText: string } }
   | { event: "error"; data: { message: string } };
 
+// Backend conversation types (mirror ai_agent::conversation)
+interface BackendChatMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
+  timestamp: number;
+}
+interface BackendConversationMeta {
+  id: string;
+  title: string;
+  session_id?: string | null;
+  created: number;
+  updated: number;
+  message_count: number;
+  provider?: string;
+  model?: string;
+}
+interface BackendConversation {
+  meta: BackendConversationMeta;
+  messages: BackendChatMessage[];
+  schema_version?: number;
+}
+
 const MAX_MESSAGES = 100;
+const ACTIVE_ID_KEY = "ai-chat-active-id";
+const PERSIST_DEBOUNCE_MS = 500;
 
 // ---------------------------------------------------------------------------
 // Signals
@@ -42,6 +66,23 @@ function generateChatId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
+function readActiveId(): string | null {
+  try {
+    return globalThis.localStorage?.getItem(ACTIVE_ID_KEY) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function writeActiveId(id: string | null): void {
+  try {
+    if (id) globalThis.localStorage?.setItem(ACTIVE_ID_KEY, id);
+    else globalThis.localStorage?.removeItem(ACTIVE_ID_KEY);
+  } catch {
+    // localStorage unavailable (SSR/tests) — best effort only
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Message management
 // ---------------------------------------------------------------------------
@@ -55,6 +96,7 @@ function addMessage(role: AiChatMessage["role"], content: string): void {
     }
     return next;
   });
+  schedulePersist();
 }
 
 function addUserMessage(content: string): void {
@@ -70,12 +112,123 @@ function addSystemMessage(content: string): void {
 }
 
 function clearHistory(): void {
+  // Cancel any pending debounced persist so it cannot race the wipe below
+  // and rewrite the old file under oldId after delete_conversation succeeds.
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
   batch(() => {
     setMessages([]);
     setStreamingText("");
     setIsStreaming(false);
     setError(null);
   });
+  // Wipe disk copy + rotate to a fresh chatId so next message starts a new file.
+  const oldId = chatId();
+  void (async () => {
+    if (!isTauri()) return;
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("delete_conversation", { id: oldId });
+      const newId = await invoke<string>("new_conversation_id");
+      setChatId(newId);
+      writeActiveId(newId);
+    } catch (e) {
+      appLogger.warn("ai-chat", "clearHistory: backend wipe failed", { error: String(e) });
+    }
+  })();
+}
+
+// ---------------------------------------------------------------------------
+// Persistence (debounced autosave + init load)
+// ---------------------------------------------------------------------------
+
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+let initialized = false;
+
+function schedulePersist(): void {
+  if (!isTauri()) return;
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    void persistNow();
+  }, PERSIST_DEBOUNCE_MS);
+}
+
+async function persistNow(): Promise<void> {
+  if (!isTauri()) return;
+  const msgs = messages();
+  if (msgs.length === 0) return; // nothing to persist yet — avoid empty files
+  try {
+    const id = chatId();
+    const now = Date.now();
+    // Title = first user message, trimmed. Falls back to "New chat".
+    const firstUser = msgs.find((m) => m.role === "user");
+    const title = firstUser
+      ? firstUser.content.slice(0, 60).replace(/\s+/g, " ").trim()
+      : "New chat";
+    const conv: BackendConversation = {
+      meta: {
+        id,
+        title: title || "New chat",
+        session_id: attachedSessionId(),
+        created: msgs[0]?.timestamp ?? now,
+        updated: now,
+        message_count: msgs.length,
+      },
+      messages: msgs.map((m) => ({
+        role: m.role,
+        content: m.content,
+        timestamp: m.timestamp,
+      })),
+      schema_version: 1,
+    };
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("save_conversation", { conversation: conv });
+  } catch (e) {
+    appLogger.warn("ai-chat", "persistNow failed", { error: String(e) });
+  }
+}
+
+/** Load active conversation from disk or create a fresh id. Idempotent. */
+async function initFromDisk(): Promise<void> {
+  if (initialized) return;
+  initialized = true;
+  if (!isTauri()) return;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const savedId = readActiveId();
+    if (savedId) {
+      try {
+        const conv = await invoke<BackendConversation>("load_conversation", { id: savedId });
+        batch(() => {
+          setChatId(conv.meta.id);
+          setMessages(
+            conv.messages
+              .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "system")
+              .map((m) => ({
+                role: m.role as AiChatMessage["role"],
+                content: m.content,
+                timestamp: m.timestamp,
+              }))
+              .slice(-MAX_MESSAGES),
+          );
+          setStreamingText("");
+          setIsStreaming(false);
+          setError(null);
+        });
+        return;
+      } catch (e) {
+        appLogger.info("ai-chat", "saved conversation not found, starting new", { id: savedId, error: String(e) });
+      }
+    }
+    const newId = await invoke<string>("new_conversation_id");
+    setChatId(newId);
+    writeActiveId(newId);
+  } catch (e) {
+    appLogger.warn("ai-chat", "initFromDisk failed", { error: String(e) });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -192,7 +345,9 @@ function autoAttach(sessionId: string): void {
 // ---------------------------------------------------------------------------
 
 function resetChatId(): void {
-  setChatId(generateChatId());
+  const newId = generateChatId();
+  setChatId(newId);
+  writeActiveId(newId);
 }
 
 // ---------------------------------------------------------------------------
@@ -225,4 +380,8 @@ export const aiChatStore = {
   setPinned,
   setError,
   resetChatId,
+
+  // Persistence
+  initFromDisk,
+  persistNow,
 };

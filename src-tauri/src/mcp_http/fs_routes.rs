@@ -6,14 +6,31 @@ use axum::Json;
 use super::types::*;
 use super::{err_500, json_result, validate_repo_path};
 
+// `list_directory_http` intentionally omits `State` + `indexer_throttle`: the
+// underlying `fs::list_directory_impl` is a single `read_dir` + sort, which
+// completes in microseconds on non-pathological directories and does not walk
+// recursively. The throttle exists to keep *long* blocking walks (search,
+// content grep, BM25 indexing) off the Tokio executor.
 pub(super) async fn list_directory_http(Query(q): Query<FsDirQuery>) -> Response {
     if let Err(e) = validate_repo_path(&q.repo_path) { return e.into_response(); }
     json_result(crate::fs::list_directory_impl(q.repo_path, q.subdir.unwrap_or_default()))
 }
 
-pub(super) async fn search_files_http(Query(q): Query<FsSearchQuery>) -> Response {
+pub(super) async fn search_files_http(
+    axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::state::AppState>>,
+    Query(q): Query<FsSearchQuery>,
+) -> Response {
     if let Err(e) = validate_repo_path(&q.repo_path) { return e.into_response(); }
-    json_result(crate::fs::search_files_impl(q.repo_path, q.query, q.limit))
+    // `search_files_impl` is a synchronous `WalkBuilder` traversal and can
+    // block for hundreds of ms on large repos — move off the Tokio executor.
+    let guard = state.indexer_throttle.begin_search();
+    let result = tokio::task::spawn_blocking(move || {
+        let _g = guard; // hold across the walk; dropped when closure returns
+        crate::fs::search_files_impl(q.repo_path, q.query, q.limit)
+    })
+    .await
+    .unwrap_or_else(|e| Err(format!("search task panicked: {e}")));
+    json_result(result)
 }
 
 pub(super) async fn search_content_http(
@@ -25,9 +42,11 @@ pub(super) async fn search_content_http(
     let whole_word = q.whole_word.unwrap_or(false);
     let case_sensitive = q.case_sensitive.unwrap_or(false);
 
-    // Use BM25 index when available and applicable
+    // Use BM25 index when available and applicable. Guard is held for the
+    // duration of the in-memory query (fast, stays on the executor).
     let can_use_index = !use_regex && !whole_word && !q.query.is_empty();
     if can_use_index {
+        let _guard = state.indexer_throttle.begin_search();
         let index_arc = crate::content_index::ensure_index(&state, &q.repo_path);
         let index = index_arc.read();
         if index.is_ready() {
@@ -37,10 +56,17 @@ pub(super) async fn search_content_http(
         }
     }
 
-    // Fallback to full grep
-    json_result(crate::fs::search_content_impl(
-        q.repo_path, q.query, case_sensitive, use_regex, whole_word, q.limit,
-    ))
+    // Fallback to full grep — blocks on WalkBuilder, offload to blocking pool.
+    let guard = state.indexer_throttle.begin_search();
+    let result = tokio::task::spawn_blocking(move || {
+        let _g = guard;
+        crate::fs::search_content_impl(
+            q.repo_path, q.query, case_sensitive, use_regex, whole_word, q.limit,
+        )
+    })
+    .await
+    .unwrap_or_else(|e| Err(format!("search task panicked: {e}")));
+    json_result(result)
 }
 
 pub(super) async fn fs_read_file_http(Query(q): Query<FsFileQuery>) -> Response {

@@ -899,6 +899,9 @@ pub struct AppState {
     /// Per-repo BM25 content index for sub-millisecond file content search.
     /// Built in background on first search or repo load, rebuilt on `RepoChanged`.
     pub(crate) content_indices: DashMap<String, Arc<parking_lot::RwLock<crate::content_index::ContentIndex>>>,
+    /// Cooperative CPU throttle for content-index builders. Search handlers
+    /// acquire a guard here so indexers pause and yield priority to the user.
+    pub(crate) indexer_throttle: Arc<crate::content_index::IndexerThrottle>,
     /// Per-session slash command mode (true when input starts with `/`).
     /// Used to suppress false-positive slash menu detection on PTY output.
     pub(crate) slash_mode: DashMap<String, std::sync::atomic::AtomicBool>,
@@ -2034,6 +2037,7 @@ pub(crate) mod tests_support {
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
             tool_search_index: Arc::new(parking_lot::RwLock::new(crate::tool_search::ToolSearchIndex::build(&[]))),
             content_indices: DashMap::new(),
+            indexer_throttle: Arc::new(crate::content_index::IndexerThrottle::default()),
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
             shell_states: DashMap::new(),
@@ -2483,6 +2487,7 @@ mod tests {
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
             tool_search_index: Arc::new(parking_lot::RwLock::new(crate::tool_search::ToolSearchIndex::build(&[]))),
             content_indices: DashMap::new(),
+            indexer_throttle: Arc::new(crate::content_index::IndexerThrottle::default()),
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
             shell_states: DashMap::new(),

@@ -59,6 +59,7 @@ pub fn save_json_config<T: Serialize>(filename: &str, config: &T) -> Result<(), 
 | `issue_filter` | `Option<String>` | `"assigned"` | GitHub Issues filter: "assigned", "created", "mentioned", "all", "disabled" |
 | `experimental_features_enabled` | `bool` | `false` | Master toggle for experimental features |
 | `ai_chat_enabled` | `bool` | `false` | Sub-flag: enable AI Chat panel and shortcuts (requires `experimental_features_enabled`) |
+| `ai_terminal_mcp_enabled` | `bool` | `false` | Expose `ai_terminal_*` tools to external MCP clients. Off by default — see [`mcp-http.md`](mcp-http.md#mcp-tools-ai_terminal_-external-agent-surface) |
 | `auto_show_pr_popover` | `bool` | `false` | Auto-show PR popover when switching to a branch with a PR |
 | `update_channel` | `String` | `"stable"` | Update channel: "stable" or "nightly" |
 

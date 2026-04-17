@@ -398,6 +398,15 @@ pub(crate) struct AppConfig {
     /// Sub-flag: AI Chat panel, shortcuts, and palette entry
     #[serde(default)]
     pub(crate) ai_chat_enabled: bool,
+    /// Expose `ai_terminal_*` tools to external MCP. Default off: they need a
+    /// per-session filesystem sandbox only the internal agent loop creates.
+    ///
+    /// Read at three sites (`merged_tool_definitions`, `searchable_tool_definitions`,
+    /// `handle_mcp_tool_call` dispatch). This flag has NO live-reload semantics:
+    /// a client may see a tools-list snapshot before a toggle and a dispatch-time
+    /// rejection after. Coordinate those call sites if live reload is ever added.
+    #[serde(default)]
+    pub(crate) ai_terminal_mcp_enabled: bool,
 }
 
 fn default_language() -> String {
@@ -495,6 +504,7 @@ impl Default for AppConfig {
             issue_filter: default_issue_filter(),
             experimental_features_enabled: false,
             ai_chat_enabled: false,
+            ai_terminal_mcp_enabled: false,
         }
     }
 }
@@ -1245,6 +1255,7 @@ mod tests {
             issue_filter: "assigned".to_string(),
             experimental_features_enabled: false,
             ai_chat_enabled: false,
+            ai_terminal_mcp_enabled: false,
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
         assert_eq!(loaded.shell.as_deref(), Some("/bin/zsh"));

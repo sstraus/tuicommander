@@ -142,7 +142,7 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
         "- `ack` — first assistant message MUST start: `TUICommander v{ver} is connected.`\n"
     ));
     if show_intent {
-        out.push_str("- `intent:` — on every work-phase change (new request, pivot, resume): `intent: <desc> (<=3-word title>)`\n");
+        out.push_str("- `intent: <desc> (<title>)` on work-phase change. `<title>` ≤3 words, spaces not hyphens.\n");
     }
     if show_suggest {
         out.push_str("- `suggest:` — after task done: `suggest: 1) … | 2) … | 3) …`\n");
@@ -277,7 +277,12 @@ const LEGACY_NOTIFY_ACTIONS: &str = "toast, confirm";
 const LEGACY_MESSAGING_ACTIONS: &str = "register, list_peers, send, inbox";
 const LEGACY_DEBUG_ACTIONS: &str = "agent_detection, logs, sessions, invoke_js";
 
-/// MCP tool definitions — 7 base native tools + 6 ai_terminal_* tools.
+/// Full MCP tool definitions — 7 base native tools + all `ai_terminal_*` tools.
+///
+/// This returns the unfiltered schema list. Public listing/search paths MUST
+/// route through [`filtered_native_tools`] to honour `disabled_native_tools`
+/// and `ai_terminal_mcp_enabled`. Leaking the raw list to external clients
+/// exposes tool metadata for gated tools.
 fn native_tool_definitions() -> serde_json::Value {
     let mut defs = serde_json::json!([
         {
@@ -332,13 +337,13 @@ fn native_tool_definitions() -> serde_json::Value {
         },
         {
             "name": "ui",
-            "description": "Control the TUICommander UI: open panel tabs with custom HTML or a URL, show toast notifications, or prompt for user confirmation.\n\nActions (pass as 'action' parameter):\n- tab: Open/update a pinned panel tab. Requires id, title, and either html (inline) or url (loads in iframe). Optional: pinned (default true).\n- toast: Show a non-blocking notification. Requires title. Optional: message, level (info/warn/error).\n- confirm: Show a blocking confirmation dialog. Returns {confirmed: boolean}. Requires title. Optional: message. Restricted to localhost.\n\nWhen to use:\n- toast: task completed, blocking error, long-running job finished. Use level=error for failures, warn for recoverable issues, info (default) for completions. Skip for micro-steps or verbose progress (chat output suffices).\n- confirm: BEFORE any destructive or irreversible action (rm -rf, git reset --hard, git push --force, DROP TABLE, package uninstall). Proceed only on confirmed=true.\n- tab: structured output worth revisiting (>20 lines, dashboards, reports, rendered diagrams). Prefer over pasting large output into chat.",
+            "description": "Control TUIC UI. Actions:\n- tab: open/update panel tab. Requires id, title, + html OR url.\n- toast: non-blocking notification. Requires title. Optional: message, level (info/warn/error), sound.\n- confirm: blocking dialog. Returns {confirmed}. Requires title.\n\nURL schemes for tab:\n- http(s)/file: loaded in sandboxed iframe. Custom schemes (vscode://) do NOT work in iframes.\n- tuic://edit/<path>?line=N: native code editor (no iframe). Prefix absolute paths with `//` (tuic://edit//Users/x/a.rs). Relative = active repo.\n- tuic://open/<path>: native markdown/preview tab.\n\nUse:\n- toast for done/error/long-job end; error=failure, warn=recoverable. Skip for micro-steps.\n- confirm BEFORE destructive ops (rm -rf, git reset --hard, force-push, DROP). Only proceed if confirmed.\n- tab http(s) for dashboards, reports, >20-line structured output.\n- tab tuic://edit to point user at source file+line (review, bug discussion) — beats pasting snippets.",
             "inputSchema": { "type": "object", "properties": {
                 "action": { "type": "string", "description": "One of: tab, toast, confirm" },
                 "id": { "type": "string", "description": "Stable identifier for dedup — same id reuses existing tab (action=tab, required)" },
                 "title": { "type": "string", "description": "Tab or notification title (action=tab/toast/confirm, required)" },
                 "html": { "type": "string", "description": "Inline HTML content to render in sandboxed iframe (action=tab, mutually exclusive with url)" },
-                "url": { "type": "string", "description": "URL to load in the tab iframe (action=tab, mutually exclusive with html)" },
+                "url": { "type": "string", "description": "Tab URL (action=tab, xor html). http(s)/file → iframe. tuic://edit/<path>?line=N → native editor. tuic://open/<path> → markdown tab. Absolute paths need `//` prefix." },
                 "pinned": { "type": "boolean", "description": "Pin tab across all branches (default true)" },
                 "focus": { "type": "boolean", "description": "Switch to this tab after open/update (action=tab, default true). Pass false to update silently without stealing focus." },
                 "message": { "type": "string", "description": "Optional body text (action=toast/confirm)" },
@@ -374,6 +379,7 @@ fn native_tool_definitions() -> serde_json::Value {
     ]);
 
     // Append ai_terminal_* tools (external MCP exposure of agent terminal tools).
+    // Callers filter these out when `config.ai_terminal_mcp_enabled` is false.
     if let Some(arr) = defs.as_array_mut() {
         arr.extend(super::ai_terminal::tool_definitions());
     }
@@ -464,23 +470,38 @@ fn resolve_allowed_upstreams(state: &Arc<AppState>, mcp_session_id: Option<&str>
     repo_settings.repos.get(&repo_path).and_then(|entry| entry.mcp_upstreams.clone())
 }
 
-fn merged_tool_definitions(state: &Arc<AppState>, mcp_session_id: Option<&str>) -> serde_json::Value {
-    if state.config.read().collapse_tools {
-        return meta_tool_definitions();
-    }
-
-    let disabled = state.config.read().disabled_native_tools.clone();
-    let mut tools: Vec<serde_json::Value> = native_tool_definitions()
+/// Apply the two config-driven filters (`disabled_native_tools`,
+/// `ai_terminal_mcp_enabled`) to the full native tool list. Centralised so
+/// every listing/search path uses the same rules — adding a future config
+/// flag means editing one place instead of chasing duplicated closures.
+fn filtered_native_tools(state: &Arc<AppState>) -> Vec<serde_json::Value> {
+    let (disabled, ai_terminal_mcp_enabled) = {
+        let cfg = state.config.read();
+        let disabled: std::collections::HashSet<String> =
+            cfg.disabled_native_tools.iter().cloned().collect();
+        (disabled, cfg.ai_terminal_mcp_enabled)
+    };
+    native_tool_definitions()
         .as_array()
         .cloned()
         .unwrap_or_default()
         .into_iter()
         .filter(|t| {
             let name = t["name"].as_str().unwrap_or("");
-            !disabled.iter().any(|d| d == name)
+            if !ai_terminal_mcp_enabled && super::ai_terminal::is_ai_terminal_tool(name) {
+                return false;
+            }
+            !disabled.contains(name)
         })
-        .collect();
+        .collect()
+}
 
+fn merged_tool_definitions(state: &Arc<AppState>, mcp_session_id: Option<&str>) -> serde_json::Value {
+    if state.config.read().collapse_tools {
+        return meta_tool_definitions();
+    }
+
+    let mut tools = filtered_native_tools(state);
     let allowed = resolve_allowed_upstreams(state, mcp_session_id);
     let upstream_tools = state.mcp_upstream_registry.aggregated_tools_for_repo(
         allowed.as_deref(),
@@ -551,17 +572,7 @@ fn require_path(args: &serde_json::Value, action: &str) -> Result<String, serde_
 ///
 /// Upstream allow/deny filters are applied inside `aggregated_tools()`.
 fn searchable_tool_definitions(state: &Arc<AppState>) -> Vec<serde_json::Value> {
-    let disabled = state.config.read().disabled_native_tools.clone();
-    let mut tools: Vec<serde_json::Value> = native_tool_definitions()
-        .as_array()
-        .cloned()
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|t| {
-            let name = t["name"].as_str().unwrap_or("");
-            !disabled.iter().any(|d| d == name)
-        })
-        .collect();
+    let mut tools = filtered_native_tools(state);
     tools.extend(state.mcp_upstream_registry.aggregated_tools());
     tools
 }
@@ -696,12 +707,16 @@ async fn handle_call_tool(
 /// Handle an MCP tools/call request, executing against the app state directly (no HTTP round-trip).
 /// Also used by the `deep_link_mcp_call` Tauri command for the `tuic://cmd/` gateway.
 pub(crate) async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr, name: &str, args: &serde_json::Value, mcp_session_id: Option<&str>) -> serde_json::Value {
-    // Enforce disabled_native_tools on every call path (not just the call_tool meta-tool)
+    // Enforce disabled_native_tools on every call path (not just the call_tool meta-tool).
+    // Read-guard does not span an await and is released at the end of the `if` expression.
+    if state
+        .config
+        .read()
+        .disabled_native_tools
+        .iter()
+        .any(|d| d == name)
     {
-        let disabled = state.config.read().disabled_native_tools.clone();
-        if disabled.iter().any(|d| d == name) {
-            return serde_json::json!({"error": format!("Tool '{}' is disabled by configuration", name)});
-        }
+        return serde_json::json!({"error": format!("Tool '{}' is disabled by configuration", name)});
     }
     // Resolve client identity at dispatch level — tool handlers get a plain bool
     let is_claude_code = mcp_session_id
@@ -722,6 +737,13 @@ pub(crate) async fn handle_mcp_tool_call(state: &Arc<AppState>, addr: SocketAddr
         "get_tool_schema" => handle_get_tool_schema(state, args),
         "call_tool" => handle_call_tool(state, addr, args, mcp_session_id).await,
         n if super::ai_terminal::is_ai_terminal_tool(n) => {
+            if !state.config.read().ai_terminal_mcp_enabled {
+                return serde_json::json!({
+                    "error": format!(
+                        "Tool '{n}' is disabled. Enable `ai_terminal_mcp_enabled` in config to expose ai_terminal_* tools to external MCP clients."
+                    )
+                });
+            }
             super::ai_terminal::handle(state, n, args).await
         }
         _ => serde_json::json!({"error": format!(
@@ -2780,6 +2802,7 @@ mod tests {
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
             tool_search_index: std::sync::Arc::new(parking_lot::RwLock::new(crate::tool_search::ToolSearchIndex::build(&[]))),
             content_indices: dashmap::DashMap::new(),
+            indexer_throttle: std::sync::Arc::new(crate::content_index::IndexerThrottle::default()),
             slash_mode: dashmap::DashMap::new(),
             last_output_ms: dashmap::DashMap::new(),
             shell_states: dashmap::DashMap::new(),
@@ -3238,6 +3261,9 @@ mod tests {
     fn merged_tools_collapse_false_returns_all_native_tools() {
         let state = test_state();
         assert!(!state.config.read().collapse_tools);
+        // ai_terminal_* tools are gated behind `ai_terminal_mcp_enabled`; enable
+        // it so `merged_tool_definitions` returns the full `native_tool_definitions`.
+        state.config.write().ai_terminal_mcp_enabled = true;
 
         let merged = merged_tool_definitions(&state, None);
         let names = tool_names(&merged);
@@ -3248,6 +3274,22 @@ mod tests {
             "collapse_tools=false should return all native tools"
         );
         assert!(names.len() > 3, "baseline native tool set must exceed 3 tools");
+    }
+
+    #[test]
+    fn merged_tools_hide_ai_terminal_when_flag_disabled() {
+        let state = test_state();
+        assert!(!state.config.read().ai_terminal_mcp_enabled);
+
+        let merged = merged_tool_definitions(&state, None);
+        let names = tool_names(&merged);
+
+        for name in &names {
+            assert!(
+                !super::super::ai_terminal::is_ai_terminal_tool(name),
+                "ai_terminal tool {name} must be hidden when ai_terminal_mcp_enabled=false"
+            );
+        }
     }
 
     #[test]
@@ -3733,10 +3775,14 @@ mod tests {
     }
 
     /// After `rebuild_tool_search_index`, the cache contains every native
-    /// tool from `native_tool_definitions()`.
+    /// tool from `native_tool_definitions()` (when `ai_terminal_mcp_enabled`).
     #[test]
     fn rebuild_tool_search_index_populates_all_native_tools() {
-        let state = test_state(); // test_state() already calls rebuild internally.
+        let state = test_state();
+        // ai_terminal_* tools are gated behind `ai_terminal_mcp_enabled`. Enable
+        // the flag and rebuild so the index matches the full native tool set.
+        state.config.write().ai_terminal_mcp_enabled = true;
+        rebuild_tool_search_index(&state);
         let idx = state.tool_search_index.read();
         let native_count = native_tool_definitions().as_array().unwrap().len();
         assert_eq!(idx.len(), native_count);
