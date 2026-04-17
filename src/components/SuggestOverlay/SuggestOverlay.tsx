@@ -1,4 +1,4 @@
-import { Component, For, onCleanup, onMount } from "solid-js";
+import { Component, For, createEffect, onCleanup, onMount } from "solid-js";
 import styles from "./SuggestOverlay.module.css";
 
 interface SuggestOverlayProps {
@@ -8,12 +8,18 @@ interface SuggestOverlayProps {
 }
 
 const DISMISS_TIMEOUT_MS = 30_000;
+/** Preferred chip font size — matches --font-sm. Tried first. */
+const MAX_CHIP_FONT_PX = 14;
+/** Floor font size; below this chips become unreadable. */
+const MIN_CHIP_FONT_PX = 11;
 
 /** Strip leading "N) " or "N. " numbering that duplicates the shortcut badge. */
 const stripNumberPrefix = (text: string): string => text.replace(/^\d+[).]\s*/, "");
 
 const SuggestOverlay: Component<SuggestOverlayProps> = (props) => {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let overlayEl: HTMLDivElement | undefined;
+  let resizeObserver: ResizeObserver | undefined;
 
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
@@ -35,18 +41,64 @@ const SuggestOverlay: Component<SuggestOverlayProps> = (props) => {
     }
   };
 
+  /** Measure the widest chip and, if it overflows the container, shrink the
+   *  chip font-size uniformly until it fits or we hit MIN_CHIP_FONT_PX.
+   *  All chips share one --chip-font-size variable so the overlay stays
+   *  visually consistent. */
+  function fitChips() {
+    if (!overlayEl) return;
+    // Reset to preferred size before measuring.
+    overlayEl.style.setProperty("--chip-font-size", `${MAX_CHIP_FONT_PX}px`);
+
+    const chips = overlayEl.querySelectorAll<HTMLElement>("button");
+    if (chips.length === 0) return;
+
+    // Available width = overlay content box width (excluding its padding).
+    const style = window.getComputedStyle(overlayEl);
+    const padL = parseFloat(style.paddingLeft) || 0;
+    const padR = parseFloat(style.paddingRight) || 0;
+    const available = overlayEl.clientWidth - padL - padR;
+    if (available <= 0) return;
+
+    // Widest chip at the current (max) font size.
+    let widest = 0;
+    chips.forEach((chip) => {
+      if (chip.scrollWidth > widest) widest = chip.scrollWidth;
+    });
+    if (widest <= available) return; // already fits, keep max size
+
+    // Proportional downscale. scrollWidth scales roughly linearly with font-size
+    // (padding is constant, but text dominates for long chips). Start from the
+    // ratio estimate, then clamp into [MIN, MAX] and round down.
+    const estimated = Math.floor(MAX_CHIP_FONT_PX * (available / widest));
+    const target = Math.max(MIN_CHIP_FONT_PX, Math.min(MAX_CHIP_FONT_PX, estimated));
+    overlayEl.style.setProperty("--chip-font-size", `${target}px`);
+  }
+
   onMount(() => {
     document.addEventListener("keydown", handleKeyDown, true);
     timer = setTimeout(() => props.onDismiss(), DISMISS_TIMEOUT_MS);
+    if (overlayEl && typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(() => fitChips());
+      resizeObserver.observe(overlayEl);
+    }
+  });
+
+  // Re-measure whenever the items list changes.
+  createEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+    props.items; // track
+    queueMicrotask(fitChips);
   });
 
   onCleanup(() => {
     document.removeEventListener("keydown", handleKeyDown, true);
     if (timer) clearTimeout(timer);
+    if (resizeObserver) resizeObserver.disconnect();
   });
 
   return (
-    <div class={styles.overlay}>
+    <div class={styles.overlay} ref={overlayEl}>
       <For each={props.items}>
         {(item, index) => (
           <button class={styles.chip} onClick={() => props.onSelect(item)}>

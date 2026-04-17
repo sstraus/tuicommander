@@ -1,4 +1,8 @@
 .overlay {
+  /* --chip-font-size is set at runtime by SuggestOverlay.tsx. It starts at
+   * the preferred size (var(--font-sm)) and is scaled down when the longest
+   * chip would overflow the available width. Floor: 11px. */
+  --chip-font-size: var(--font-sm);
   position: absolute;
   bottom: 28px;
   left: 50%;
@@ -40,7 +44,7 @@
   align-items: center;
   gap: 8px;
   font-family: var(--font-ui);
-  font-size: var(--font-sm);
+  font-size: var(--chip-font-size);
   padding: 8px 16px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
@@ -48,7 +52,7 @@
   color: var(--fg-primary);
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.1s ease, border-color 0.1s ease;
+  transition: background 0.1s ease, border-color 0.1s ease, font-size 0.08s ease;
 }
 
 .chip:hover {
