@@ -103,7 +103,17 @@ As the agent runs, the `SessionKnowledgeBar` footer shows live telemetry:
 
 OSC 133 semantic prompts (`OSC 133;A/B/C/D`) feed accurate exit codes when the shell supports them (modern `bash`/`zsh`/`fish` with the integration enabled). Without OSC 133, the PTY silence timer records an `Inferred` outcome so the loop still learns.
 
-Knowledge persists to `<config_dir>/agent-knowledge/<session_id>.json` with a 2 s debounced background flush. Reopening a session rehydrates the store.
+Knowledge persists to `<config_dir>/ai-sessions/<session_id>.json` with a 2 s debounced background flush. Reopening a session rehydrates the store.
+
+### Knowledge history overlay
+
+Click **History** next to the `SessionKnowledgeBar` to open a two-pane browser over every persisted session on disk — not just the currently active one. Useful for "find the command that fixed the build error last week":
+
+- **Sessions list** (left) — sorted by most recent activity, showing command count, error count, and last CWD.
+- **Detail pane** (right) — one card per command with kind badge, timestamp, exit code, duration, CWD, output snippet, and a **copy** button.
+- **Filters** — debounced full-text search (matches command, output, inferred `error_type`, and `semantic_intent`), `errors only` checkbox, date window (`24h` / `7d` / `30d` / `all`).
+
+Esc closes. Backed by the `list_knowledge_sessions` + `get_knowledge_session_detail` Tauri commands.
 
 ## External MCP surface (`ai_terminal_*` tools)
 
@@ -147,7 +157,7 @@ Input tools are refused while the internal agent loop is active on that session,
 |------|---------|
 | `<config_dir>/ai-chat-config.json` | Provider, model, base URL, temperature, context budget |
 | `<config_dir>/ai-chat-conversations/<id>.json` | Saved conversation bodies |
-| `<config_dir>/agent-knowledge/<session_id>.json` | Per-session knowledge store |
+| `<config_dir>/ai-sessions/<session_id>.json` | Per-session knowledge store (browsable from the History overlay) |
 | OS keyring (`tuicommander-ai-chat` / `api-key`) | Provider API key |
 
 ## See also

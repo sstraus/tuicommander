@@ -199,6 +199,8 @@ plus a Tauri-side query for the per-session knowledge store.
 | `agent_loop_status` | `session_id` | `{ active: bool, state: AgentState?, session_id }` | Query whether an agent is active and its current state (`running`/`paused`/`pending_approval`). |
 | `approve_agent_action` | `session_id, approved` | `String` | Approve or reject the pending destructive command the agent wants to run. Errors if no agent is active. |
 | `get_session_knowledge` | `session_id` | `SessionKnowledgeSummary` | Lightweight summary for the `SessionKnowledgeBar` UI: commands count, last 5 outcomes with kind badges, recent errors with `error_type`, TUI mode indicator, TUI apps seen. Returns an empty summary when the session has no recorded knowledge yet. |
+| `list_knowledge_sessions` | `filter?: { text?, hasErrors?, since? }, limit?` | `SessionListEntry[]` | Scan persisted `ai-sessions/` and list sessions sorted by most recent activity. Filter by text (matches command/output/intent/error_type), errors-only, or UNIX-seconds `since` lower bound. `limit` clamps at 500 (default 100). |
+| `get_knowledge_session_detail` | `session_id` | `SessionDetail?` | Full command history for one session — reads the in-memory store when active, falls back to disk otherwise. `HistoryCommand` rows include pre-extracted `kind`/`error_type` and the opt-in `semantic_intent`. |
 
 ### Agent Tools (`ai_agent/tools.rs`)
 
