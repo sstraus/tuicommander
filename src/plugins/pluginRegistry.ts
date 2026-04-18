@@ -387,6 +387,15 @@ function createPluginRegistry() {
         );
       },
 
+      async readSessionOutput(sessionId: string, maxLines?: number): Promise<string> {
+        requireCapability(pluginId, capabilities, "pty:read");
+        return invoke<string>("plugin_read_session_output", {
+          sessionId,
+          maxLines: maxLines ?? null,
+          pluginId,
+        });
+      },
+
       registerDashboard(options): Disposable {
         return track(
           dashboardRegistry.register({

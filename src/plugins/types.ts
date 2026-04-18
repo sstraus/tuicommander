@@ -282,6 +282,7 @@ export interface FsChangeEvent {
 /** Known capability strings for external plugins */
 export type PluginCapability =
   | "pty:write"
+  | "pty:read"
   | "ui:markdown"
   | "ui:sound"
   | "invoke:read_file"
@@ -551,6 +552,16 @@ export interface PluginHost {
    * Requires "pty:write" capability.
    */
   sendAgentInput(sessionId: string, text: string): Promise<void>;
+
+  /**
+   * Read the VT100-decoded contents of a PTY session: the last N scrollback
+   * lines concatenated with the current visible screen rows, joined by
+   * newlines. For alternate-screen agents (Claude Code, Codex), scrollback
+   * is empty and only the screen is returned.
+   * Requires "pty:read" capability.
+   * @param maxLines - max lines of scrollback to prepend (default 200, max 2000)
+   */
+  readSessionOutput(sessionId: string, maxLines?: number): Promise<string>;
 
   /**
    * Register a dashboard entry point for this plugin.

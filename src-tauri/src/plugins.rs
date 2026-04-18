@@ -131,6 +131,7 @@ const BLOCKED_BINARY_PREFIXES: &[&str] = &[
 /// Known capability strings. Anything outside this set is rejected.
 const KNOWN_CAPABILITIES: &[&str] = &[
     "pty:write",
+    "pty:read",
     "ui:markdown",
     "ui:sound",
     "invoke:read_file",

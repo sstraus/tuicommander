@@ -34,6 +34,7 @@ pub(crate) mod plugin_credentials;
 pub(crate) mod plugin_exec;
 pub(crate) mod plugin_fs;
 pub(crate) mod plugin_http;
+pub(crate) mod plugin_pty;
 pub(crate) mod plugins;
 pub(crate) mod prompt;
 pub(crate) mod smart_prompt;
@@ -1346,6 +1347,7 @@ pub fn run() {
             plugin_fs::plugin_unwatch,
             plugin_http::plugin_http_fetch,
             plugin_http::fetch_tab_html,
+            plugin_pty::plugin_read_session_output,
             plugin_exec::plugin_exec_cli,
             plugin_credentials::plugin_read_credential,
             registry::fetch_plugin_registry,
