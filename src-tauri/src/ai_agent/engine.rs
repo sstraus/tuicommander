@@ -213,11 +213,20 @@ fn redact_json_values(val: &serde_json::Value) -> serde_json::Value {
 
 // ── Core loop ─────────────────────────────────────────────────
 
+/// Provider/model/key bundle passed into the agent loop. Constructed by the
+/// caller (Tauri command layer) so the engine stays decoupled from the
+/// `ai_chat` config and keyring code paths.
+pub(crate) struct LlmRuntime {
+    pub config: crate::llm_api::LlmApiConfig,
+    pub api_key: String,
+}
+
 /// Start the agent loop for a session. Returns error if already active.
 pub(crate) async fn start_agent_loop(
     state: Arc<AppState>,
     session_id: String,
     user_goal: String,
+    runtime: LlmRuntime,
 ) -> Result<broadcast::Receiver<AgentLoopEvent>, String> {
     // Reject duplicate
     if ACTIVE_AGENTS.contains_key(&session_id) {
@@ -246,6 +255,7 @@ pub(crate) async fn start_agent_loop(
             state,
             sid.clone(),
             user_goal,
+            runtime,
             LoopHandles {
                 cancel,
                 agent_state: agent_state.clone(),
@@ -325,6 +335,7 @@ async fn run_loop(
     state: Arc<AppState>,
     session_id: String,
     user_goal: String,
+    runtime: LlmRuntime,
     h: LoopHandles,
 ) -> Result<String, String> {
     let LoopHandles { cancel, agent_state, pause_notify, event_tx, approval_tx } = h;
@@ -338,19 +349,8 @@ async fn run_loop(
         session_id: session_id.clone(),
     });
 
-    // Build LLM client
-    let config: crate::ai_chat::AiChatConfig = crate::config::load_json_config(crate::ai_chat::CONFIG_FILE);
-    let api_key = if config.provider == "ollama" {
-        crate::ai_chat::read_api_key()?.unwrap_or_else(|| "ollama".to_string())
-    } else {
-        crate::ai_chat::read_api_key()?
-            .ok_or_else(|| "No API key stored — add one in Settings > AI Chat".to_string())?
-    };
-    let llm_config = crate::llm_api::LlmApiConfig {
-        provider: config.provider.clone(),
-        model: config.model.clone(),
-        base_url: config.effective_base_url(),
-    };
+    let LlmRuntime { config: llm_config, api_key } = runtime;
+    let model = llm_config.model.clone();
     let client = crate::llm_api::build_client(&llm_config, &api_key);
 
     // Build tools for genai
@@ -451,7 +451,7 @@ async fn run_loop(
 
         // Stream the LLM turn
         let stream_resp = client
-            .exec_chat_stream(&config.model, chat_req.clone(), Some(&chat_options))
+            .exec_chat_stream(&model, chat_req.clone(), Some(&chat_options))
             .await
             .map_err(|e| format!("LLM stream error: {e}"))?;
 

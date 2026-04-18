@@ -60,6 +60,16 @@ const IconPin = () => (
   </svg>
 );
 
+// SVG strings for imperative DOM injection (codeBlock Copy/Run buttons live
+// inside markdown-parsed HTML, so they're constructed via createElement rather
+// than JSX). Content is fully static — no interpolation, safe via innerHTML.
+const SVG_COPY =
+  '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="4" y="4" width="7" height="7" rx="1"/><path d="M3 10V3h7"/></svg>';
+const SVG_COPIED =
+  '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7l3 3 5-5"/></svg>';
+const SVG_RUN =
+  '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M4 2.5l8 4.5-8 4.5z"/></svg>';
+
 const IconRobot = () => (
   <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
     <path d="M7 1a.75.75 0 01.75.75V3h1.5A2.25 2.25 0 0111.5 5.25v4.5A2.25 2.25 0 019.25 12h-4.5A2.25 2.25 0 012.5 9.75v-4.5A2.25 2.25 0 014.75 3h1.5V1.75A.75.75 0 017 1zM5 6.5a.75.75 0 100 1.5.75.75 0 000-1.5zm4 0a.75.75 0 100 1.5.75.75 0 000-1.5zM5.5 9a.5.5 0 000 1h3a.5.5 0 000-1h-3z" />
@@ -233,15 +243,15 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
       const copyBtn = document.createElement("button");
       copyBtn.className = s.codeActionBtn;
       copyBtn.title = "Copy code";
-      copyBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="4" y="4" width="7" height="7" rx="1"/><path d="M3 10V3h7"/></svg>`;
+      copyBtn.innerHTML = SVG_COPY;
       copyBtn.addEventListener("click", async () => {
         const text = extractCodeText(pre);
         const ok = await copyToClipboard(text);
         if (ok) {
-          copyBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7l3 3 5-5"/></svg>`;
+          copyBtn.innerHTML = SVG_COPIED;
           copyBtn.classList.add(s.codeActionBtnCopied);
           setTimeout(() => {
-            copyBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="4" y="4" width="7" height="7" rx="1"/><path d="M3 10V3h7"/></svg>`;
+            copyBtn.innerHTML = SVG_COPY;
             copyBtn.classList.remove(s.codeActionBtnCopied);
           }, 1500);
         }
@@ -252,7 +262,7 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
       const runBtn = document.createElement("button");
       runBtn.className = s.codeActionBtn;
       runBtn.title = "Run in terminal";
-      runBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M4 2.5l8 4.5-8 4.5z"/></svg>`;
+      runBtn.innerHTML = SVG_RUN;
       runBtn.addEventListener("click", () => {
         const text = extractCodeText(pre);
         void runCodeInTerminal(text).catch((e) =>

@@ -94,7 +94,10 @@ fn split_shell_commands(input: &str) -> Vec<String> {
                 i += 1;
             }
             '$' if i + 1 < len && chars[i + 1] == '(' => {
-                // Extract subshell content
+                // Extract subshell content, then recurse so nested $(...)
+                // / `...` / chained `;`/`&&` inside the subshell are
+                // evaluated independently (otherwise `echo $(echo $(sudo x))`
+                // would be evaluated as a single non-matching command).
                 let start = i + 2;
                 let mut depth = 1;
                 let mut j = start;
@@ -104,10 +107,7 @@ fn split_shell_commands(input: &str) -> Vec<String> {
                     j += 1;
                 }
                 let inner: String = chars[start..j.saturating_sub(1)].iter().collect();
-                let trimmed = inner.trim().to_string();
-                if !trimmed.is_empty() {
-                    commands.push(trimmed);
-                }
+                commands.extend(split_shell_commands(&inner));
                 current.push_str("$(...)");
                 i = j;
             }
@@ -115,10 +115,7 @@ fn split_shell_commands(input: &str) -> Vec<String> {
                 let start = i + 1;
                 let end = chars[start..].iter().position(|&c| c == '`').map(|p| start + p).unwrap_or(len);
                 let inner: String = chars[start..end].iter().collect();
-                let trimmed = inner.trim().to_string();
-                if !trimmed.is_empty() {
-                    commands.push(trimmed);
-                }
+                commands.extend(split_shell_commands(&inner));
                 current.push_str("`...`");
                 i = if end < len { end + 1 } else { len };
             }
@@ -760,5 +757,139 @@ mod tests {
             checker().evaluate_file_write("src/utils/helper.ts"),
             SafetyVerdict::Allow
         );
+    }
+
+    // ── Evasion attempts (TEST-3) ─────────────────────────────
+    //
+    // These tests pin down behaviour for adversarial inputs. The intent is
+    // defence in depth: even if a specific pattern slips through, the
+    // structured-split + per-sub-command evaluation should still catch the
+    // inner destructive call.
+
+    #[test]
+    fn sudo_nested_double_subshell_blocked() {
+        let v = checker().evaluate("echo $(echo $(sudo whoami))");
+        assert!(matches!(v, SafetyVerdict::Block { .. }));
+    }
+
+    #[test]
+    fn rm_rf_with_tabs_needs_approval() {
+        let v = checker().evaluate("rm\t-rf\t/tmp/stuff");
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
+    }
+
+    #[test]
+    fn rm_rf_with_many_spaces_needs_approval() {
+        let v = checker().evaluate("rm     -rf     /tmp/stuff");
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
+    }
+
+    #[test]
+    fn rm_rf_leading_whitespace_needs_approval() {
+        let v = checker().evaluate("  rm -rf /tmp/stuff");
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
+    }
+
+    #[test]
+    fn destructive_after_conditional_or() {
+        let v = checker().evaluate("false || rm -rf /tmp/x");
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
+    }
+
+    #[test]
+    fn destructive_inside_backtick_subshell() {
+        let v = checker().evaluate("echo `rm -rf /tmp/x`");
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
+    }
+
+    #[test]
+    fn multiple_destructive_worst_wins() {
+        // NeedsApproval + Block → Block (worst wins)
+        let v = checker().evaluate("rm -rf /tmp && sudo whoami");
+        assert!(matches!(v, SafetyVerdict::Block { .. }));
+    }
+
+    #[test]
+    fn chained_destructive_all_caught() {
+        // Each sub-command is evaluated independently
+        let v = checker().evaluate("git reset --hard; rm -rf .; git clean -fd");
+        assert!(matches!(
+            v,
+            SafetyVerdict::NeedsApproval { .. } | SafetyVerdict::Block { .. }
+        ));
+    }
+
+    #[test]
+    fn redos_guard_pathological_pattern() {
+        // Many repeated `-r` flags should not explode the regex engine
+        let input = format!("rm {}", "-r ".repeat(500));
+        let start = std::time::Instant::now();
+        let _ = checker().evaluate(&input);
+        assert!(
+            start.elapsed() < std::time::Duration::from_millis(200),
+            "evaluate took too long — possible ReDoS"
+        );
+    }
+
+    #[test]
+    fn redos_guard_many_subshells() {
+        let input = "echo ".to_string() + &"$(echo ".repeat(50) + "x" + &")".repeat(50);
+        let start = std::time::Instant::now();
+        let _ = checker().evaluate(&input);
+        assert!(
+            start.elapsed() < std::time::Duration::from_millis(200),
+            "evaluate took too long on nested subshells"
+        );
+    }
+
+    #[test]
+    fn write_dev_inside_pipe_needs_approval() {
+        let v = checker().evaluate("cat /dev/urandom | head -c 1M > /dev/sda");
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
+    }
+
+    #[test]
+    fn git_push_force_with_lease_followed_by_branch() {
+        let v = checker().evaluate("git push --force-with-lease origin feature/x");
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
+    }
+
+    #[test]
+    fn cat_etc_shadow_blocked() {
+        let v = checker().evaluate("cat /etc/shadow");
+        assert!(matches!(v, SafetyVerdict::Block { .. }));
+    }
+
+    #[test]
+    fn mixed_newline_and_semicolon_evaluates_all() {
+        let v = checker().evaluate("ls\necho ok; rm -rf /tmp/x\ncat file");
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
+    }
+
+    #[test]
+    fn empty_subshell_does_not_panic() {
+        let _ = checker().evaluate("echo $()");
+        let _ = checker().evaluate("echo ``");
+    }
+
+    #[test]
+    fn unclosed_subshell_does_not_panic() {
+        let _ = checker().evaluate("echo $(sudo whoami");
+        let _ = checker().evaluate("echo `sudo whoami");
+    }
+
+    #[test]
+    fn write_file_with_leading_slash_sensitive() {
+        let v = checker().evaluate_file_write("/etc/passwd");
+        // Not in the sensitive list by exact name, but `/etc/` absolute path
+        // still reaches here — behaviour: Allow (sandbox rejects it earlier).
+        // Pin the behaviour so a later "tighten list" change notices.
+        assert_eq!(v, SafetyVerdict::Allow);
+    }
+
+    #[test]
+    fn write_dotdot_nested_blocked() {
+        let v = checker().evaluate_file_write("src/../../../etc/passwd");
+        assert!(matches!(v, SafetyVerdict::Block { .. }));
     }
 }

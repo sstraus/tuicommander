@@ -4,9 +4,29 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::state::AppState;
-use super::engine::{self, ACTIVE_AGENTS};
+use super::engine::{self, ACTIVE_AGENTS, LlmRuntime};
 use super::knowledge::{OutcomeClass, SessionKnowledge};
 use super::tui_detect::TerminalMode;
+
+/// Build the LLM runtime (provider/model/base_url/api key) that the agent
+/// loop uses. Lives here — at the Tauri command boundary — so `engine.rs`
+/// stays decoupled from `ai_chat` config and keyring I/O.
+fn build_llm_runtime() -> Result<LlmRuntime, String> {
+    let chat_config: crate::ai_chat::AiChatConfig =
+        crate::config::load_json_config(crate::ai_chat::CONFIG_FILE);
+    let api_key = if chat_config.provider == "ollama" {
+        crate::ai_chat::read_api_key()?.unwrap_or_else(|| "ollama".to_string())
+    } else {
+        crate::ai_chat::read_api_key()?
+            .ok_or_else(|| "No API key stored — add one in Settings > AI Chat".to_string())?
+    };
+    let config = crate::llm_api::LlmApiConfig {
+        provider: chat_config.provider.clone(),
+        model: chat_config.model.clone(),
+        base_url: chat_config.effective_base_url(),
+    };
+    Ok(LlmRuntime { config, api_key })
+}
 
 /// Start an agent loop on a terminal session.
 #[tauri::command]
@@ -17,7 +37,9 @@ pub(crate) async fn start_agent_loop(
 ) -> Result<String, String> {
     let state = Arc::clone(&state);
     let app_handle = state.app_handle.read().clone();
-    let mut rx = engine::start_agent_loop(state, session_id.clone(), goal).await?;
+    let runtime = build_llm_runtime()?;
+    let mut rx =
+        engine::start_agent_loop(state, session_id.clone(), goal, runtime).await?;
 
     // Bridge broadcast events to Tauri's emit system so the frontend can
     // subscribe via `listen("agent-loop-event", ...)`.
