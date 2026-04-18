@@ -181,6 +181,11 @@ function createTerminalsStore() {
     } else if (next === "idle" && prev !== "busy") {
       // Direct null→idle (e.g. Rust sync on tab switch) — mark startup complete
       reachedIdleSet.add(id);
+    } else if (next === null && state.terminals[id]?.awaitingInput) {
+      // Process exit (shellState reset to null) — clear any stuck error/question
+      // badge so the next session doesn't inherit stale state from the last child.
+      setState("terminals", id, "awaitingInput", null);
+      setState("terminals", id, "awaitingInputConfident", false);
     } else if (next !== "busy" && prev === "busy") {
       // First idle marks shell startup as complete
       if (next === "idle") reachedIdleSet.add(id);

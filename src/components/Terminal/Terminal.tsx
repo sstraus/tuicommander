@@ -488,6 +488,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
           planFileNotified = false;
           // Clear suggest bar, pending buffer, and mark dismissed
           terminalsStore.update(props.id, { suggestDismissed: true, suggestedActions: null, pendingSuggest: null, activeSubTasks: 0 });
+          // User resumed typing — clear any stale error/question badge. See comment
+          // in stores/terminals.ts handleShellStateChange: error state should be
+          // cleared on explicit agent activity, user-input, or process exit.
+          terminalsStore.clearAwaitingInput(props.id);
           invoke<string | null>("get_last_prompt", { sessionId: targetSessionId }).then((prompt) => {
             if (prompt !== null) terminalsStore.setLastPrompt(props.id, prompt);
           }).catch(() => {});
