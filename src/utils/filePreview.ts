@@ -11,8 +11,6 @@ const PREVIEW_EXTS = new Set([
   "mp4", "webm", "mov", "ogg",
   // Audio
   "mp3", "wav", "flac", "aac", "m4a",
-  // Text / data
-  "txt", "json", "csv", "log", "xml", "yaml", "yml", "toml", "ini", "cfg", "conf",
 ]);
 
 /** Extract lowercase extension from a file path (without the dot). */
