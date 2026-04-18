@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-04-18
+
 ### Added
 - **AI Chat knowledge history overlay** (`#1387-e745`) — Two-pane modal browser for persisted `SessionKnowledge`: sessions list (sorted by most recent activity) + per-command detail pane. Debounced full-text search matches command, output snippet, inferred `error_type`, and opt-in `semantic_intent`. Filters: errors-only checkbox, date window (24h / 7d / 30d / all). Per-command card shows kind badge, timestamp, CWD, exit code, duration, output snippet, and a copy-command button. Launched from a "History" button next to the `SessionKnowledgeBar`; Esc closes. Backed by two Tauri commands: `list_knowledge_sessions(filter?, limit?)` and `get_knowledge_session_detail(session_id)` — served from the in-memory store when active and from disk (`<config_dir>/ai-sessions/`) otherwise.
 - **Experimental AI block enrichment** (`#1389-b547`) — Opt-in Settings flag (`experimental_ai_block_enrichment`, default off). When enabled, every completed OSC 133 D block is enqueued to a bounded `mpsc` worker that asks the active AI Chat provider for a one-line `semantic_intent` and writes it back to the `CommandOutcome`. `CommandOutcome` gains a stable `id: u64` (dense per session) so the worker can target the exact record. Per-minute rate limit (~10/min), silent drop on full queue or disabled setting — never blocks the PTY path. Intent lines surface in the knowledge history overlay.
