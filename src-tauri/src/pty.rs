@@ -3245,7 +3245,19 @@ pub(crate) fn get_session_foreground_process(
     // this sync, sessions started by running `claude` inside a plain shell
     // (as opposed to via the /agent spawn route) never enable plain-prefix
     // parsing, so intents never rename the tab.
+    //
+    // Sticky: only set on Some, never clear on None. Foreground-pgid sampling
+    // is inherently flaky during subprocess transitions — when claude spawns a
+    // short-lived grandchild (git, sed, rg) the pgid leader briefly points to
+    // that unrecognized binary and classify_agent returns None. Writing that
+    // None back would flip agent_active off and drop the very next
+    // `suggest:`/`intent:` token even though claude is still the live agent.
+    // Frontend useAgentPolling.ts applies the same stickiness (streak +
+    // source=idle) on its store mirror; backend must match or the parser
+    // gates off while the UI still shows the agent active. Session teardown
+    // clears session_states entirely, so no explicit reset is needed here.
     if let Some(mut entry) = state.session_states.get_mut(&session_id)
+        && detected.is_some()
         && entry.agent_type != detected
     {
         entry.agent_type = detected.clone();
