@@ -1088,8 +1088,8 @@ async fn exec_run_command_inner(state: &AppState, session_id: &str, args: &Value
     let lang = std::env::var("LANG").unwrap_or_else(|_| "en_US.UTF-8".into());
     let start = std::time::Instant::now();
 
-    let mut child = match tokio::process::Command::new("sh")
-        .arg("-c")
+    let mut cmd = tokio::process::Command::new("sh");
+    cmd.arg("-c")
         .arg(command)
         .current_dir(&cwd)
         .env_clear()
@@ -1098,9 +1098,10 @@ async fn exec_run_command_inner(state: &AppState, session_id: &str, args: &Value
         .env("TERM", "xterm-256color")
         .env("LANG", &lang)
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .process_group(0)
-        .spawn()
+        .stderr(std::process::Stdio::piped());
+    #[cfg(unix)]
+    cmd.process_group(0);
+    let mut child = match cmd.spawn()
     {
         Ok(c) => c,
         Err(e) => return ToolResult::err(format!("spawn failed: {e}")),
