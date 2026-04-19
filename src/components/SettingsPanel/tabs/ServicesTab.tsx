@@ -7,6 +7,14 @@ import { t } from "../../../i18n";
 import { cx } from "../../../utils";
 import s from "../Settings.module.css";
 
+/** Pure helper: should the Authorize button be shown for this server+status? */
+export function shouldShowAuthorize(
+  authType: string | undefined,
+  status: string | undefined,
+): boolean {
+  return authType === "oauth2" || status === "needs_auth" || status === "authenticating";
+}
+
 interface StartOAuthResponse {
   authorization_url: string;
   state: string;
@@ -801,11 +809,6 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
     if (!/^[a-z0-9_-]+$/.test(name)) { setError("Name must be lowercase letters, digits, hyphens, or underscores only"); return; }
     if (f.transportType === "http" && !f.url.trim()) { setError("URL is required for HTTP transport"); return; }
     if (f.transportType === "stdio" && !f.command.trim()) { setError("Command is required for stdio transport"); return; }
-    if (f.transportType === "http" && f.authMethod === "oauth2" && !f.oauthClientId.trim()) {
-      setError("Client ID is required for OAuth 2.1 authentication");
-      return;
-    }
-
     const transport: UpstreamTransport = f.transportType === "http"
       ? { type: "http", url: f.url.trim() }
       : {
@@ -823,7 +826,7 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
       timeout_secs: f.timeout,
     };
 
-    if (f.transportType === "http" && f.authMethod === "oauth2") {
+    if (f.transportType === "http" && f.authMethod === "oauth2" && f.oauthClientId.trim()) {
       const scopes = f.oauthScopes.trim()
         ? f.oauthScopes.trim().split(/[\s,]+/).filter(Boolean)
         : undefined;
@@ -905,18 +908,13 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
       ? { type: "http", url: f.url.trim() }
       : { type: "stdio", command: f.command.trim(), args: f.args.trim() ? f.args.trim().split(/\s+/) : [], ...(f.cwd.trim() ? { cwd: f.cwd.trim() } : {}) };
 
-    if (f.transportType === "http" && f.authMethod === "oauth2" && !f.oauthClientId.trim()) {
-      setError("Client ID is required for OAuth 2.1 authentication");
-      return;
-    }
-
     const updated: UpstreamMcpServer = {
       ...server,
       transport,
       timeout_secs: f.timeout,
     };
 
-    if (f.transportType === "http" && f.authMethod === "oauth2") {
+    if (f.transportType === "http" && f.authMethod === "oauth2" && f.oauthClientId.trim()) {
       const scopes = f.oauthScopes.trim()
         ? f.oauthScopes.trim().split(/[\s,]+/).filter(Boolean)
         : undefined;
@@ -1032,7 +1030,7 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
                 <input
                   type="text"
                   class={s.input}
-                  placeholder="OAuth client ID (required)"
+                  placeholder="Leave blank to auto-register"
                   value={form().oauthClientId}
                   onInput={e => setForm(f => ({ ...f, oauthClientId: e.currentTarget.value }))}
                 />
@@ -1184,8 +1182,8 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
                     <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293z"/>
                   </svg>
                 </button>
-                {/* Authorize (OAuth only) */}
-                <Show when={server.auth?.type === "oauth2"}>
+                {/* Authorize — show for explicit OAuth2 config OR when server auto-detected needs_auth (DCR case) */}
+                <Show when={server.auth?.type === "oauth2" || st()?.status === "needs_auth" || st()?.status === "authenticating"}>
                   <Show
                     when={st()?.status === "authenticating"}
                     fallback={
@@ -1275,7 +1273,7 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
                         <div>
                           <label style={{ "font-size": "12px", color: "var(--text-dimmed)" }}>OAuth client ID</label>
                           <input type="text" class={s.input}
-                            placeholder="Required"
+                            placeholder="Leave blank to auto-register"
                             value={editForm().oauthClientId}
                             onInput={e => setEditForm(f => ({ ...f, oauthClientId: e.currentTarget.value }))} />
                         </div>
@@ -1325,8 +1323,11 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
                       <button class={s.copyBtn} onClick={() => saveEdit(server)} disabled={saving()}>
                         {saving() ? "Saving…" : "Save"}
                       </button>
-                      <button class={s.copyBtn} onClick={() => setEditingId(null)}>Cancel</button>
+                      <button class={s.copyBtn} onClick={() => { setEditingId(null); setError(""); }}>Cancel</button>
                     </div>
+                    <Show when={error()}>
+                      <p class={s.hint} style={{ color: "var(--error, #e06c75)", margin: "4px 0 0" }}>{error()}</p>
+                    </Show>
                   </div>
                 </div>
               </Show>
