@@ -169,16 +169,19 @@ impl OAuthFlowManager {
             .await
             .map_err(|e| anyhow!("OAuth semaphore closed: {e}"))?;
 
-        // Resolve endpoints. If both overrides are present, skip discovery.
-        let (authorization_endpoint, token_endpoint) =
+        // Resolve endpoints (and scopes when not pre-configured).
+        let (authorization_endpoint, token_endpoint, discovered_scopes) =
             match (authz_override.clone(), token_override.clone()) {
-                (Some(a), Some(t)) => (a, t),
-                _ => self.resolve_endpoints(server_url).await?,
+                (Some(a), Some(t)) => (a, t, vec![]),
+                _ => self.resolve_discovery(server_url).await?,
             };
 
         // Use the override as final if provided (fill missing from discovery).
         let authorization_endpoint = authz_override.unwrap_or(authorization_endpoint);
         let token_endpoint = token_override.unwrap_or(token_endpoint);
+
+        // Auto-detect scopes from discovery when not explicitly configured.
+        let scopes = if scopes.is_empty() { discovered_scopes } else { scopes };
 
         // Generate PKCE + state nonce.
         let pkce = TokenManager::generate_pkce();
@@ -322,8 +325,9 @@ impl OAuthFlowManager {
         })
     }
 
-    /// Resolve authorization and token endpoints via RFC 9728 + 8414 discovery.
-    async fn resolve_endpoints(&self, server_url: &str) -> Result<(String, String)> {
+    /// Resolve authorization endpoint, token endpoint, and scopes via RFC 9728 + 8414 discovery.
+    /// Returns `(authorization_endpoint, token_endpoint, scopes)`.
+    async fn resolve_discovery(&self, server_url: &str) -> Result<(String, String, Vec<String>)> {
         let pr_meta = discover_protected_resource(&self.http_client, server_url).await?;
         let issuer = pr_meta
             .authorization_servers
@@ -333,7 +337,8 @@ impl OAuthFlowManager {
         // domain differs from the resource's (unless both are loopback).
         check_issuer_matches_resource(server_url, issuer)?;
         let as_meta = discover_auth_server(&self.http_client, issuer).await?;
-        Ok((as_meta.authorization_endpoint, as_meta.token_endpoint))
+        let scopes = resolve_scopes(&pr_meta, &as_meta);
+        Ok((as_meta.authorization_endpoint, as_meta.token_endpoint, scopes))
     }
 }
 
@@ -407,6 +412,27 @@ fn check_issuer_matches_resource(server_url: &str, issuer_url: &str) -> Result<(
         );
     }
     Ok(())
+}
+
+/// Resolve OAuth scopes from discovery metadata.
+///
+/// Priority: PR metadata `scopes_supported` → AS metadata `scopes_supported` → empty.
+/// An empty `scopes_supported` list in PR metadata is treated as absent (falls through).
+fn resolve_scopes(
+    pr_meta: &crate::mcp_oauth::discovery::ProtectedResourceMetadata,
+    as_meta: &crate::mcp_oauth::discovery::AuthServerMetadata,
+) -> Vec<String> {
+    if let Some(scopes) = &pr_meta.scopes_supported
+        && !scopes.is_empty()
+    {
+        return scopes.clone();
+    }
+    if let Some(scopes) = &as_meta.scopes_supported
+        && !scopes.is_empty()
+    {
+        return scopes.clone();
+    }
+    vec![]
 }
 
 /// Generate a 32-byte cryptographically random `state` nonce, URL-safe
@@ -522,6 +548,84 @@ mod tests {
         let err = check_issuer_matches_resource("not a url", "https://auth.example.com")
             .unwrap_err();
         assert!(err.to_string().contains("server_url"));
+    }
+
+    // -- resolve_scopes --
+
+    use crate::mcp_oauth::discovery::{AuthServerMetadata, ProtectedResourceMetadata};
+
+    fn pr_meta_with_scopes(scopes: &[&str]) -> ProtectedResourceMetadata {
+        ProtectedResourceMetadata {
+            resource: "https://api.example.com".into(),
+            authorization_servers: vec!["https://auth.example.com".into()],
+            scopes_supported: Some(scopes.iter().map(|s| s.to_string()).collect()),
+        }
+    }
+
+    fn pr_meta_no_scopes() -> ProtectedResourceMetadata {
+        ProtectedResourceMetadata {
+            resource: "https://api.example.com".into(),
+            authorization_servers: vec!["https://auth.example.com".into()],
+            scopes_supported: None,
+        }
+    }
+
+    fn as_meta_with_scopes(scopes: &[&str]) -> AuthServerMetadata {
+        AuthServerMetadata {
+            issuer: "https://auth.example.com".into(),
+            authorization_endpoint: "https://auth.example.com/authorize".into(),
+            token_endpoint: "https://auth.example.com/token".into(),
+            registration_endpoint: None,
+            scopes_supported: Some(scopes.iter().map(|s| s.to_string()).collect()),
+            code_challenge_methods_supported: None,
+        }
+    }
+
+    fn as_meta_no_scopes() -> AuthServerMetadata {
+        AuthServerMetadata {
+            issuer: "https://auth.example.com".into(),
+            authorization_endpoint: "https://auth.example.com/authorize".into(),
+            token_endpoint: "https://auth.example.com/token".into(),
+            registration_endpoint: None,
+            scopes_supported: None,
+            code_challenge_methods_supported: None,
+        }
+    }
+
+    #[test]
+    fn resolve_scopes_prefers_pr_metadata() {
+        let pr = pr_meta_with_scopes(&["pr-scope-a", "pr-scope-b"]);
+        let as_ = as_meta_with_scopes(&["as-scope"]);
+        let scopes = resolve_scopes(&pr, &as_);
+        assert_eq!(scopes, vec!["pr-scope-a", "pr-scope-b"]);
+    }
+
+    #[test]
+    fn resolve_scopes_falls_back_to_as_when_pr_has_none() {
+        let pr = pr_meta_no_scopes();
+        let as_ = as_meta_with_scopes(&["as-read", "as-write"]);
+        let scopes = resolve_scopes(&pr, &as_);
+        assert_eq!(scopes, vec!["as-read", "as-write"]);
+    }
+
+    #[test]
+    fn resolve_scopes_returns_empty_when_both_missing() {
+        let pr = pr_meta_no_scopes();
+        let as_ = as_meta_no_scopes();
+        let scopes = resolve_scopes(&pr, &as_);
+        assert!(scopes.is_empty());
+    }
+
+    #[test]
+    fn resolve_scopes_falls_back_to_as_when_pr_scopes_empty_vec() {
+        let pr = ProtectedResourceMetadata {
+            resource: "https://api.example.com".into(),
+            authorization_servers: vec!["https://auth.example.com".into()],
+            scopes_supported: Some(vec![]),
+        };
+        let as_ = as_meta_with_scopes(&["fallback-scope"]);
+        let scopes = resolve_scopes(&pr, &as_);
+        assert_eq!(scopes, vec!["fallback-scope"]);
     }
 
     // -- start_flow --
