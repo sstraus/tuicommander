@@ -14,7 +14,7 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::mcp_oauth::dcr::{register_client, DcrRequest};
-use crate::mcp_oauth::discovery::{discover_auth_server, discover_protected_resource};
+use crate::mcp_oauth::discovery::{discover_auth_server, discover_auth_server_relaxed, discover_protected_resource};
 use crate::mcp_upstream_config::UpstreamAuth;
 use crate::state::AppState;
 
@@ -56,59 +56,81 @@ pub(crate) async fn start_mcp_upstream_oauth(
 
     let redirect_uri = super::OAUTH_REDIRECT_URI.to_string();
 
-    // If no auth config, attempt DCR (RFC 7591) to obtain a client_id.
-    let auth = match existing_auth {
-        Some(a) => a,
-        None => {
-            let http_client = reqwest::Client::new();
-            let pr_meta = discover_protected_resource(&http_client, &server_url)
-                .await
-                .map_err(|e| format!("OAuth discovery failed for '{name}': {e}"))?;
-            let as_url = &pr_meta.authorization_servers[0];
-            let as_meta = discover_auth_server(&http_client, as_url)
-                .await
-                .map_err(|e| format!("AS discovery failed for '{name}': {e}"))?;
+    // Everything after set_authenticating is fallible — rollback on error so
+    // the UI returns to "needs_auth" (retryable) instead of stuck on "authenticating".
+    let result = async {
+        // If no auth config, attempt DCR (RFC 7591) to obtain a client_id.
+        let auth = match existing_auth {
+            Some(a) => a,
+            None => {
+                let http_client = reqwest::Client::new();
 
-            let reg_endpoint = as_meta.registration_endpoint.ok_or_else(|| {
-                format!(
-                    "Upstream '{name}' requires OAuth but has no client_id configured \
-                     and the authorization server does not support Dynamic Client Registration. \
-                     Please configure a client_id manually."
-                )
-            })?;
+                // Try RFC 9728 (Protected Resource Metadata) first; fall back
+                // to RFC 8414 on the resource server's origin when unavailable
+                // (e.g. Atlassian exposes only /.well-known/oauth-authorization-server).
+                let as_meta = if let Ok(pr_meta) = discover_protected_resource(&http_client, &server_url).await {
+                    let as_url = &pr_meta.authorization_servers[0];
+                    discover_auth_server(&http_client, as_url)
+                        .await
+                        .map_err(|e| format!("AS discovery failed for '{name}': {e}"))?
+                } else {
+                    let origin = url::Url::parse(&server_url)
+                        .map_err(|e| format!("Invalid server URL '{server_url}': {e}"))?
+                        .origin()
+                        .unicode_serialization();
+                    discover_auth_server_relaxed(&http_client, &origin)
+                        .await
+                        .map_err(|e| format!(
+                            "OAuth discovery failed for '{name}': no RFC 9728 metadata \
+                             and RFC 8414 fallback on {origin} also failed: {e}"
+                        ))?
+                };
 
-            let dcr_req = DcrRequest::for_tuicommander(&redirect_uri, None);
-            let dcr_resp = register_client(&http_client, &reg_endpoint, &dcr_req)
-                .await
-                .map_err(|e| format!("Dynamic Client Registration failed for '{name}': {e}"))?;
+                let reg_endpoint = as_meta.registration_endpoint.ok_or_else(|| {
+                    format!(
+                        "Upstream '{name}' requires OAuth but has no client_id configured \
+                         and the authorization server does not support Dynamic Client Registration. \
+                         Please configure a client_id manually."
+                    )
+                })?;
 
-            let auth = UpstreamAuth::OAuth2 {
-                client_id: dcr_resp.client_id,
-                scopes: vec![],
-                authorization_endpoint: None,
-                token_endpoint: None,
-            };
+                let dcr_req = DcrRequest::for_tuicommander(&redirect_uri, None);
+                let dcr_resp = register_client(&http_client, &reg_endpoint, &dcr_req)
+                    .await
+                    .map_err(|e| format!("Dynamic Client Registration failed for '{name}': {e}"))?;
 
-            if let Err(e) = crate::mcp_upstream_config::update_upstream_auth(&name, auth.clone()) {
-                tracing::warn!(source = "mcp_oauth", %name, "Failed to persist DCR client_id: {e}");
+                let auth = UpstreamAuth::OAuth2 {
+                    client_id: dcr_resp.client_id,
+                    scopes: vec![],
+                    authorization_endpoint: Some(as_meta.authorization_endpoint.clone()),
+                    token_endpoint: Some(as_meta.token_endpoint.clone()),
+                };
+
+                if let Err(e) = crate::mcp_upstream_config::update_upstream_auth(&name, auth.clone()) {
+                    tracing::warn!(source = "mcp_oauth", %name, "Failed to persist DCR client_id: {e}");
+                }
+
+                auth
             }
+        };
 
-            auth
-        }
-    };
+        let outcome = flow_mgr
+            .start_flow(&name, &server_url, &auth, &redirect_uri)
+            .await
+            .map_err(|e| e.to_string())?;
 
-    let outcome = flow_mgr
-        .start_flow(&name, &server_url, &auth, &redirect_uri)
-        .await
-        .map_err(|e| e.to_string())?;
+        registry.emit_oauth_start(&name, &outcome.authorization_url);
 
-    // Emit the event so other listeners (e.g. the settings panel) can react.
-    registry.emit_oauth_start(&name, &outcome.authorization_url);
+        Ok::<_, String>(StartOAuthResponse {
+            authorization_url: outcome.authorization_url,
+            state: outcome.state,
+        })
+    }.await;
 
-    Ok(StartOAuthResponse {
-        authorization_url: outcome.authorization_url,
-        state: outcome.state,
-    })
+    if result.is_err() {
+        registry.rollback_authenticating(&name);
+    }
+    result
 }
 
 /// Finalize the OAuth flow after the browser redirects back with `code` and

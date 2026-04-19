@@ -101,6 +101,24 @@ pub(crate) async fn discover_auth_server(
     client: &reqwest::Client,
     issuer_url: &str,
 ) -> Result<AuthServerMetadata> {
+    discover_auth_server_inner(client, issuer_url, true).await
+}
+
+/// Variant that skips the issuer-match check — used when discovering the AS
+/// from the resource server's origin as a fallback (the AS may live on a
+/// different subdomain, e.g. `cf.mcp.atlassian.com` vs `mcp.atlassian.com`).
+pub(crate) async fn discover_auth_server_relaxed(
+    client: &reqwest::Client,
+    base_url: &str,
+) -> Result<AuthServerMetadata> {
+    discover_auth_server_inner(client, base_url, false).await
+}
+
+async fn discover_auth_server_inner(
+    client: &reqwest::Client,
+    issuer_url: &str,
+    strict_issuer: bool,
+) -> Result<AuthServerMetadata> {
     // Reject non-HTTPS issuers before any network I/O. A compromised resource
     // server could otherwise point `authorization_servers` at an attacker-
     // controlled http:// endpoint; the previous check only validated the
@@ -151,13 +169,15 @@ pub(crate) async fn discover_auth_server(
     };
 
     // Issuer validation (prevents mix-up attack)
-    let expected_issuer = base.to_string();
-    if meta.issuer != expected_issuer {
-        bail!(
-            "Issuer mismatch: expected \"{expected_issuer}\", got \"{}\". \
-             This may indicate an authorization server mix-up attack.",
-            meta.issuer
-        );
+    if strict_issuer {
+        let expected_issuer = base.to_string();
+        if meta.issuer != expected_issuer {
+            bail!(
+                "Issuer mismatch: expected \"{expected_issuer}\", got \"{}\". \
+                 This may indicate an authorization server mix-up attack.",
+                meta.issuer
+            );
+        }
     }
 
     // HTTPS enforcement for endpoints (localhost exempt for dev)

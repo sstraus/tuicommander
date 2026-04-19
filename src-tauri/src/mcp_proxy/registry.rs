@@ -314,6 +314,21 @@ impl UpstreamRegistry {
         }
     }
 
+    /// Transition an upstream from `Authenticating` back to `NeedsAuth` when
+    /// the OAuth setup (DCR / discovery) fails before reaching the browser.
+    /// Lets the user retry rather than landing on a terminal `Failed` state.
+    pub(crate) fn rollback_authenticating(&self, name: &str) {
+        if let Some(entry) = self.entries.get(name) {
+            let mut status = entry.status.write();
+            if *status != UpstreamStatus::Authenticating {
+                return;
+            }
+            *status = UpstreamStatus::NeedsAuth;
+            drop(status);
+            self.emit_status_change(name, "needs_auth");
+        }
+    }
+
     /// Emit an `McpOAuthStart` event — called by the Tauri command layer
     /// once `start_flow` has returned an authorization URL for the frontend
     /// to open in the user's browser.

@@ -25,7 +25,10 @@ async function startAuthorizeFlow(name: string): Promise<void> {
   try {
     resp = await rpc<StartOAuthResponse>("start_mcp_upstream_oauth", { name });
   } catch (e) {
-    appLogger.warn("network", `start_mcp_upstream_oauth failed: ${String(e)}`);
+    const msg = String(e);
+    appLogger.warn("network", `start_mcp_upstream_oauth failed: ${msg}`);
+    const { message } = await import("@tauri-apps/plugin-dialog");
+    await message(msg, { title: `Authorization failed for "${name}"`, kind: "error" });
     return;
   }
 
@@ -876,7 +879,7 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
       case "ready": return "Connected";
       case "connecting": return "Connecting…";
       case "authenticating": return "Awaiting authorization…";
-      case "needs_auth": return "Authorization required — click Authorize";
+      case "needs_auth": return "Authorize to connect";
       case "circuit_open": return "Retrying…";
       case "failed": return "Failed";
       case "disabled": return "Disabled";
@@ -1172,16 +1175,6 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
                   </Show>
                 </div>
                 {/* Action buttons — never shrink */}
-                <button
-                  class={s.copyBtn}
-                  style={{ "flex-shrink": 0 }}
-                  title="Edit"
-                  onClick={() => isEditing() ? setEditingId(null) : startEdit(server)}
-                >
-                  <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293z"/>
-                  </svg>
-                </button>
                 {/* Authorize — show for explicit OAuth2 config OR when server auto-detected needs_auth (DCR case) */}
                 <Show when={server.auth?.type === "oauth2" || st()?.status === "needs_auth" || st()?.status === "authenticating"}>
                   <Show
@@ -1190,6 +1183,8 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
                       <button
                         class={s.copyBtn}
                         style={{
+                          width: "auto",
+                          padding: "0 10px",
                           "flex-shrink": 0,
                           color: st()?.status === "needs_auth" ? "var(--warning, #e5c07b)" : "var(--info, #61afef)",
                           "font-weight": st()?.status === "needs_auth" ? "600" : undefined,
@@ -1205,7 +1200,7 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
                   >
                     <button
                       class={s.copyBtn}
-                      style={{ "flex-shrink": 0, color: "var(--warning, #e5c07b)" }}
+                      style={{ width: "auto", padding: "0 10px", "flex-shrink": 0, color: "var(--warning, #e5c07b)" }}
                       title="Cancel authorization"
                       onClick={() => rpc("cancel_mcp_upstream_oauth", { name: server.name }).catch(e => appLogger.warn("network", String(e)))}
                     >
@@ -1213,6 +1208,16 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
                     </button>
                   </Show>
                 </Show>
+                <button
+                  class={s.copyBtn}
+                  style={{ "flex-shrink": 0 }}
+                  title="Edit"
+                  onClick={() => isEditing() ? setEditingId(null) : startEdit(server)}
+                >
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293z"/>
+                  </svg>
+                </button>
                 {/* Reconnect */}
                 <button
                   class={s.copyBtn}
