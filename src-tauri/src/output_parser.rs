@@ -409,9 +409,11 @@ impl OutputParser {
             }
         }
 
-        // Reset dedup state on user-input (new agent cycle may produce new errors/suggestions)
+        // Reset dedup state on user-input (new agent cycle may produce new errors/suggestions).
+        // Keep `last_suggest_items` intact: the old suggest text is still visible on screen
+        // and changed-row detection will re-parse it after the input scrolls the viewport.
+        // Resetting the dedup cache would cause stale chips to reappear on the next idle.
         if events.iter().any(|e| matches!(e, ParsedEvent::UserInput { .. })) {
-            self.last_suggest_items = None;
             self.last_api_error_match = None;
             self.pending_suggest_line = None;
             self.pending_suggest_at = None;
