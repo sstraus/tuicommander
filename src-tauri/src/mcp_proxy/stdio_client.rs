@@ -713,4 +713,73 @@ done
         let client = StdioMcpClient::from_upstream_config("test".to_string(), &transport);
         assert!(client.is_none());
     }
+
+    #[test]
+    fn rpc_skips_interleaved_notifications() {
+        // Server sends a notification after initialized and before the
+        // tools/list response — rpc() must skip it and return the correct response.
+        let script = r#"#!/bin/sh
+while IFS= read -r line; do
+    method=$(echo "$line" | sed 's/.*"method":"\([^"]*\)".*/\1/')
+    id=$(echo "$line" | sed 's/.*"id":\([0-9]*\).*/\1/')
+    case "$method" in
+        initialize)
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-03-26","capabilities":{"tools":{}},"serverInfo":{"name":"test","version":"1.0"}}}\n' "$id"
+            ;;
+        notifications/initialized)
+            # Emit a server notification (no id) — this used to cause "0 tools"
+            printf '{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}\n'
+            ;;
+        tools/list)
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"tools":[{"name":"alpha","description":"A","inputSchema":{"type":"object"}},{"name":"beta","description":"B","inputSchema":{"type":"object"}}]}}\n' "$id"
+            ;;
+        tools/call)
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"ok"}],"isError":false}}\n' "$id"
+            ;;
+    esac
+done
+"#;
+        let config = make_config_for_echo_server(script);
+        let mut client = StdioMcpClient::new(config);
+        let tools = client.spawn_and_initialize().unwrap();
+
+        assert_eq!(tools.len(), 2);
+        assert_eq!(tools[0].original_name, "alpha");
+        assert_eq!(tools[1].original_name, "beta");
+        client.shutdown();
+    }
+
+    #[test]
+    fn rpc_skips_multiple_notifications() {
+        // Server sends 3 notifications before the tools/list response.
+        let script = r#"#!/bin/sh
+while IFS= read -r line; do
+    method=$(echo "$line" | sed 's/.*"method":"\([^"]*\)".*/\1/')
+    id=$(echo "$line" | sed 's/.*"id":\([0-9]*\).*/\1/')
+    case "$method" in
+        initialize)
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-03-26","capabilities":{"tools":{}},"serverInfo":{"name":"test","version":"1.0"}}}\n' "$id"
+            ;;
+        notifications/initialized)
+            printf '{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}\n'
+            printf '{"jsonrpc":"2.0","method":"notifications/progress","params":{"token":"abc"}}\n'
+            printf '{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"info","data":"starting"}}\n'
+            ;;
+        tools/list)
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"tools":[{"name":"gamma","description":"G","inputSchema":{"type":"object"}}]}}\n' "$id"
+            ;;
+        tools/call)
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"ok"}],"isError":false}}\n' "$id"
+            ;;
+    esac
+done
+"#;
+        let config = make_config_for_echo_server(script);
+        let mut client = StdioMcpClient::new(config);
+        let tools = client.spawn_and_initialize().unwrap();
+
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0].original_name, "gamma");
+        client.shutdown();
+    }
 }
