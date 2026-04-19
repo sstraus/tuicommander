@@ -876,7 +876,7 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
       case "ready": return "Connected";
       case "connecting": return "Connecting…";
       case "authenticating": return "Awaiting authorization…";
-      case "needs_auth": return "Authorization required";
+      case "needs_auth": return "Authorization required — click Authorize";
       case "circuit_open": return "Retrying…";
       case "failed": return "Failed";
       case "disabled": return "Disabled";
