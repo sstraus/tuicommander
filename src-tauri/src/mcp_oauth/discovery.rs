@@ -44,6 +44,9 @@ pub(crate) struct AuthServerMetadata {
     /// PKCE code challenge methods supported.
     #[serde(default)]
     pub(crate) code_challenge_methods_supported: Option<Vec<String>>,
+    /// RFC 7591 Dynamic Client Registration endpoint (optional).
+    #[serde(default)]
+    pub(crate) registration_endpoint: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -160,6 +163,9 @@ pub(crate) async fn discover_auth_server(
     // HTTPS enforcement for endpoints (localhost exempt for dev)
     validate_endpoint_https(&meta.authorization_endpoint, "authorization_endpoint")?;
     validate_endpoint_https(&meta.token_endpoint, "token_endpoint")?;
+    if let Some(ref reg) = meta.registration_endpoint {
+        validate_endpoint_https(reg, "registration_endpoint")?;
+    }
 
     Ok(meta)
 }
@@ -634,6 +640,88 @@ mod tests {
         assert_ne!(
             registrable_domain("https://api.example.com"),
             registrable_domain("https://attacker.example.org"),
+        );
+    }
+
+    // -- registration_endpoint --
+
+    #[tokio::test]
+    async fn discover_auth_server_parses_registration_endpoint() {
+        let mut server = mockito::Server::new_async().await;
+        let issuer = server.url();
+        server
+            .mock("GET", "/.well-known/oauth-authorization-server")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "issuer": &issuer,
+                    "authorization_endpoint": "https://auth.example.com/authorize",
+                    "token_endpoint": "https://auth.example.com/token",
+                    "registration_endpoint": "https://auth.example.com/register"
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let client = reqwest::Client::new();
+        let meta = discover_auth_server(&client, &issuer).await.unwrap();
+        assert_eq!(
+            meta.registration_endpoint,
+            Some("https://auth.example.com/register".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn discover_auth_server_registration_endpoint_none_when_missing() {
+        let mut server = mockito::Server::new_async().await;
+        let issuer = server.url();
+        server
+            .mock("GET", "/.well-known/oauth-authorization-server")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "issuer": &issuer,
+                    "authorization_endpoint": "https://auth.example.com/authorize",
+                    "token_endpoint": "https://auth.example.com/token"
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let client = reqwest::Client::new();
+        let meta = discover_auth_server(&client, &issuer).await.unwrap();
+        assert_eq!(meta.registration_endpoint, None);
+    }
+
+    #[tokio::test]
+    async fn discover_auth_server_rejects_http_registration_endpoint() {
+        let mut server = mockito::Server::new_async().await;
+        let issuer = server.url();
+        server
+            .mock("GET", "/.well-known/oauth-authorization-server")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "issuer": &issuer,
+                    "authorization_endpoint": "https://auth.example.com/authorize",
+                    "token_endpoint": "https://auth.example.com/token",
+                    "registration_endpoint": "http://insecure.example.com/register"
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let client = reqwest::Client::new();
+        let err = discover_auth_server(&client, &issuer).await.unwrap_err();
+        assert!(
+            err.to_string().contains("HTTPS"),
+            "should reject non-HTTPS registration_endpoint, got: {err}"
         );
     }
 
