@@ -210,6 +210,10 @@ function createMdTabsStore() {
         (tab) => tab.type === "plugin-panel" && (tab as PluginPanelTab).pluginId === pluginId && tab.title === title,
       ) as PluginPanelTab | undefined;
       if (existing) {
+        // Refresh html so plugin updates (e.g. after hot-reload or
+        // re-open) replace stale content instead of silently keeping
+        // the previous render.
+        base._setState("tabs", existing.id, "html" as keyof MdTabData, html as MdTabData[keyof MdTabData]);
         base.setActive(existing.id);
 
         return existing.id;

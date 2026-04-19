@@ -91,6 +91,20 @@ function createPluginRegistry() {
   // Agent-type filtering
   // -------------------------------------------------------------------------
 
+  // Fast lookup for paused plugins — avoids reactive store access in hot paths
+  const pausedPlugins = new Set<string>();
+
+  /** Returns true if a plugin is temporarily paused. */
+  function isPluginPaused(pluginId: string): boolean {
+    return pausedPlugins.has(pluginId);
+  }
+
+  /** Update the paused set (called from pluginStore.setPaused). */
+  function setPluginPaused(pluginId: string, paused: boolean): void {
+    if (paused) pausedPlugins.add(pluginId);
+    else pausedPlugins.delete(pluginId);
+  }
+
   /** Returns true if a plugin should receive events from a given session. */
   function pluginMatchesSession(pluginId: string, sessionId: string): boolean {
     const entry = plugins.get(pluginId);
@@ -159,7 +173,7 @@ function createPluginRegistry() {
       // -- Tier 1: Activity Center + watchers + providers --
 
       registerSection(section) {
-        return track(activityStore.registerSection(section));
+        return track(activityStore.registerSection({ ...section, pluginId }));
       },
 
       registerOutputWatcher(watcher: OutputWatcher): Disposable {
@@ -371,11 +385,13 @@ function createPluginRegistry() {
       },
 
       async writePty(sessionId: string, data: string): Promise<void> {
+        if (isPluginPaused(pluginId)) return;
         requireCapability(pluginId, capabilities, "pty:write");
         await invoke("write_pty", { sessionId, data });
       },
 
       async sendAgentInput(sessionId: string, text: string): Promise<void> {
+        if (isPluginPaused(pluginId)) return;
         requireCapability(pluginId, capabilities, "pty:write");
         const agentType = terminalsStore.getAgentTypeForSession(sessionId);
         const shellFamily = await getShellFamily(sessionId);
@@ -738,6 +754,7 @@ function createPluginRegistry() {
    */
   function dispatchLine(cleanLine: string, sessionId: string): void {
     for (const { pluginId, watcher } of outputWatchers) {
+      if (isPluginPaused(pluginId)) continue;
       if (!pluginMatchesSession(pluginId, sessionId)) continue;
       const { pattern, onMatch } = watcher;
       // Reset global regex state before each test to avoid position carry-over
@@ -788,6 +805,7 @@ function createPluginRegistry() {
     const handlers = structuredHandlers.get(type);
     if (!handlers) return;
     for (const { pluginId, handler } of handlers) {
+      if (isPluginPaused(pluginId)) continue;
       if (!pluginMatchesSession(pluginId, sessionId)) continue;
       queueMicrotask(() => {
         try {
@@ -807,9 +825,17 @@ function createPluginRegistry() {
     dispatchStructuredEvent("session-closed", {}, sessionId);
   }
 
-  /** Notify all state change listeners of a terminal/branch state change */
-  function notifyStateChange(event: StateChangeEvent): void {
+  // Reentrancy guard for notifyStateChange: if a listener callback triggers
+  // another state change synchronously (e.g. writes to a reactive store that
+  // a caller effect tracks), naive dispatch would recurse and freeze the main
+  // thread. We detect re-entry, defer nested events to a microtask, and log
+  // the offending plugin so the root cause is visible.
+  let dispatching = false;
+  const pendingEvents: StateChangeEvent[] = [];
+
+  function dispatchNow(event: StateChangeEvent): void {
     for (const { pluginId, callback } of stateChangeListeners) {
+      if (isPluginPaused(pluginId)) continue;
       if (event.sessionId && !pluginMatchesSession(pluginId, event.sessionId)) continue;
       try {
         callback(event);
@@ -817,6 +843,30 @@ function createPluginRegistry() {
         const msg = err instanceof Error ? err.message : String(err);
         appLogger.error("plugin", `State change listener threw: ${msg}`, err);
       }
+    }
+  }
+
+  /** Notify all state change listeners of a terminal/branch state change */
+  function notifyStateChange(event: StateChangeEvent): void {
+    if (dispatching) {
+      appLogger.warn(
+        "plugin",
+        `notifyStateChange re-entered while dispatching (type=${event.type}); deferring to microtask`,
+      );
+      pendingEvents.push(event);
+      return;
+    }
+    dispatching = true;
+    try {
+      dispatchNow(event);
+    } finally {
+      dispatching = false;
+    }
+    if (pendingEvents.length > 0) {
+      const drain = pendingEvents.splice(0, pendingEvents.length);
+      queueMicrotask(() => {
+        for (const e of drain) notifyStateChange(e);
+      });
     }
   }
 
@@ -881,7 +931,7 @@ function createPluginRegistry() {
 
   return {
     register, unregister, processRawOutput, dispatchLine, dispatchStructuredEvent,
-    notifyStateChange, removeSession, clear,
+    notifyStateChange, removeSession, clear, setPluginPaused,
     handlePanelMessage, registerPanelSendChannel, unregisterPanelSendChannel,
     invokePluginCommand,
   };

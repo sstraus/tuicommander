@@ -1,4 +1,4 @@
-import { Component, createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import { Component, createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { PluginPanelTab } from "../../stores/mdTabs";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
 import { PLUGIN_BASE_CSS } from "./pluginBaseStyles";
@@ -112,8 +112,11 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
 
   /**
    * Force a reload of the plugin iframe. URL-mode reassigns `src` to itself
-   * (which WebKit/Chromium treat as a navigation), srcdoc-mode clears and
-   * re-injects the content after a frame so Solid notices the change.
+   * (which WebKit/Chromium treat as a navigation), srcdoc-mode bumps the
+   * `reloadKey` signal driving a keyed `<Show>` so Solid unmounts/remounts
+   * the iframe element — the most reliable way to re-parse srcdoc without
+   * races (previous setSrcdoc("") → rAF → setSrcdoc(x) approach could leave
+   * the iframe permanently blank if the two writes got coalesced).
    */
   const reloadIframe = () => {
     if (!iframeRef) return;
@@ -121,9 +124,7 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
       const cur = iframeRef.src;
       iframeRef.src = cur;
     } else {
-      const cur = srcdoc();
-      setSrcdoc("");
-      requestAnimationFrame(() => setSrcdoc(cur));
+      setReloadKey((k) => k + 1);
     }
   };
 
@@ -350,6 +351,8 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
   });
 
   const [srcdoc, setSrcdoc] = createSignal<string>("");
+  /** Bumped on reload — drives keyed <Show> to remount the iframe element. */
+  const [reloadKey, setReloadKey] = createSignal<number>(1);
 
   // Inline HTML mode: inject theme vars, base styles, and SDK into srcdoc.
   // URL mode: load directly via src= so the page keeps its own CSP
@@ -370,6 +373,9 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
   return (
     <div
       ref={containerRef}
+      data-focus-target="plugin-iframe"
+      data-tab-id={props.tab.id}
+      tabIndex={-1}
       style={{
         width: "100%",
         height: "100%",
@@ -396,13 +402,19 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
            CSP into srcdoc iframes and CSP3 silently blocks ALL inline scripts
            when source-list entries coexist with 'unsafe-inline'. Without
            allow-same-origin every plugin's JS is dead (no D&D, no filters,
-           no SDK). Plugins are user-installed, same trust as VS Code exts. */
-        <iframe
-          ref={iframeRef}
-          sandbox="allow-scripts allow-same-origin"
-          srcdoc={srcdoc()}
-          style={iframeStyle}
-        />
+           no SDK). Plugins are user-installed, same trust as VS Code exts.
+
+           Keyed <Show> on reloadKey() forces Solid to unmount/remount the
+           iframe element on reload — avoids the srcdoc write races that
+           can leave it blank. */
+        <Show when={reloadKey()} keyed>
+          <iframe
+            ref={iframeRef}
+            sandbox="allow-scripts allow-same-origin"
+            srcdoc={srcdoc()}
+            style={iframeStyle}
+          />
+        </Show>
       )}
       <ContextMenu
         visible={menu.visible()}

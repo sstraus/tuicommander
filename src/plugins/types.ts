@@ -34,6 +34,8 @@ export interface ActivitySection {
   canDismissAll: boolean;
   /** When true, section is only shown in its dedicated panel, not in the toolbar activity popover */
   panelOnly?: boolean;
+  /** Plugin that owns this section (set automatically by the registry) */
+  pluginId?: string;
 }
 
 /**
@@ -195,10 +197,16 @@ export interface TerminalStateSnapshot {
 
 /** Event payload for terminal/branch state changes */
 export interface StateChangeEvent {
-  type: "agent-started" | "agent-stopped" | "branch-changed" | "shell-state-changed" | "awaiting-input-changed";
+  type:
+    | "agent-started"
+    | "agent-stopped"
+    | "branch-changed"
+    | "repo-changed"
+    | "shell-state-changed"
+    | "awaiting-input-changed";
   sessionId: string | null;
   terminalId: string;
-  /** For branch-changed: the new branch name */
+  /** For branch-changed: the new branch name. For repo-changed: the new repo path (or null). */
   detail?: string;
 }
 

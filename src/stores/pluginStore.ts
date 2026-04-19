@@ -24,6 +24,8 @@ export interface PluginState {
   enabled: boolean;
   /** Whether the plugin is currently loaded (onload succeeded) */
   loaded: boolean;
+  /** Temporarily paused — stays loaded but events are not dispatched (transient, not persisted) */
+  paused: boolean;
   /** Last error message if loading failed */
   error: string | null;
   /** Per-plugin log instance */
@@ -77,6 +79,7 @@ function createPluginStore() {
           builtIn: opts.builtIn ?? false,
           enabled: opts.enabled ?? true,
           loaded: opts.loaded ?? false,
+          paused: false,
           error: opts.error ?? null,
           logger,
         };
@@ -142,6 +145,20 @@ function createPluginStore() {
   // IPC wrappers — UI components call these instead of invoke() directly
   // -------------------------------------------------------------------------
 
+  /** Temporarily pause/resume a plugin (transient, not persisted). */
+  function setPaused(id: string, paused: boolean): void {
+    setState(
+      produce((s) => {
+        const plugin = s.plugins.find((p) => p.id === id);
+        if (plugin) plugin.paused = paused;
+      }),
+    );
+    // Sync to registry's fast Set for hot-path dispatch gating
+    import("../plugins/pluginRegistry").then(({ pluginRegistry }) => {
+      pluginRegistry.setPluginPaused(id, paused);
+    });
+  }
+
   /** Toggle a plugin enabled/disabled. Delegates to pluginLoader.setPluginEnabled. */
   async function setEnabled(id: string, enabled: boolean): Promise<void> {
     // Lazy import to avoid circular dependency (pluginLoader imports pluginStore)
@@ -180,6 +197,7 @@ function createPluginStore() {
     getAll,
     clear,
     setEnabled,
+    setPaused,
     uninstall,
     installFromUrl,
     installFromZip,

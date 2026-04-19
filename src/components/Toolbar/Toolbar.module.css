@@ -355,6 +355,35 @@
   color: var(--fg-primary);
 }
 
+.sectionActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pluginToggle {
+  background: none;
+  border: none;
+  color: var(--success);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+
+.pluginToggle:hover {
+  opacity: 1;
+  background: var(--bg-highlight);
+}
+
+.pluginToggleOff {
+  color: var(--fg-muted);
+  opacity: 0.5;
+}
+
 .activityItem {
   display: flex;
   align-items: center;

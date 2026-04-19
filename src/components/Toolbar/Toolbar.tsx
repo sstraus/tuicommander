@@ -15,6 +15,7 @@ import { SmartPromptsDropdown } from "../SmartPromptsDropdown/SmartPromptsDropdo
 import { t } from "../../i18n";
 import { cx } from "../../utils";
 import type { ActivityItem } from "../../plugins/types";
+import { pluginStore } from "../../stores/pluginStore";
 import type { PrNotification } from "../../stores/prNotifications";
 import s from "./Toolbar.module.css";
 
@@ -324,18 +325,39 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                 <For each={activitySections()}>
                   {(section) => {
                     const sectionItems = () => activityStore.getForSection(section.id, repositoriesStore.state.activeRepoPath ?? undefined);
+                    const sectionPluginId = () => section.pluginId;
+                    const sectionPlugin = () => sectionPluginId() ? pluginStore.getPlugin(sectionPluginId()!) : undefined;
+                    const isExternal = () => { const p = sectionPlugin(); return p && !p.builtIn; };
                     return (
                       <Show when={sectionItems().length > 0}>
                         <div class={s.sectionHeader}>
                           <span class={s.sectionLabel}>{section.label}</span>
-                          <Show when={section.canDismissAll}>
-                            <button
-                              class={s.activityDismissAll}
-                              onClick={() => activityStore.dismissSection(section.id)}
-                            >
-                              {t("toolbar.dismissAll", "Dismiss All")}
-                            </button>
-                          </Show>
+                          <div class={s.sectionActions}>
+                            <Show when={isExternal() && sectionPlugin()}>
+                              <button
+                                class={cx(s.pluginToggle, sectionPlugin()!.paused && s.pluginToggleOff)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const p = sectionPlugin()!;
+                                  pluginStore.setPaused(p.id, !p.paused);
+                                }}
+                                title={sectionPlugin()!.paused ? "Resume plugin" : "Pause plugin"}
+                              >
+                                {sectionPlugin()!.paused
+                                  ? <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M4 2l10 6-10 6z"/></svg>
+                                  : <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="M3 2h3v12H3zm7 0h3v12h-3z"/></svg>
+                                }
+                              </button>
+                            </Show>
+                            <Show when={section.canDismissAll}>
+                              <button
+                                class={s.activityDismissAll}
+                                onClick={() => activityStore.dismissSection(section.id)}
+                              >
+                                {t("toolbar.dismissAll", "Dismiss All")}
+                              </button>
+                            </Show>
+                          </div>
                         </div>
                         <For each={sectionItems()}>
                           {(item) => (
