@@ -168,7 +168,7 @@ impl UpstreamMetrics {
 /// The stdio variant uses `Arc<std::sync::Mutex<…>>` so that the Arc can be
 /// cloned into `spawn_blocking` closures without any unsafe lifetime extension.
 pub(crate) enum UpstreamClient {
-    Http(tokio::sync::RwLock<HttpMcpClient>),
+    Http(Box<tokio::sync::RwLock<HttpMcpClient>>),
     Stdio(Arc<std::sync::Mutex<StdioMcpClient>>),
 }
 
@@ -179,6 +179,8 @@ pub(crate) struct UpstreamEntry {
     /// Cached tool list (set on successful initialize / health-check).
     pub(crate) tools: parking_lot::RwLock<Vec<UpstreamToolDef>>,
     pub(crate) metrics: UpstreamMetrics,
+    /// Last error message (for diagnostics in the UI).
+    pub(crate) last_error: parking_lot::RwLock<Option<String>>,
     client: UpstreamClient,
     cb: CircuitBreaker,
 }
@@ -195,6 +197,7 @@ impl UpstreamEntry {
             status: parking_lot::RwLock::new(status),
             tools: parking_lot::RwLock::new(Vec::new()),
             metrics: UpstreamMetrics::new(),
+            last_error: parking_lot::RwLock::new(None),
             client,
             cb: CircuitBreaker::new(),
         }
@@ -247,8 +250,8 @@ impl UpstreamRegistry {
             tool_filter: None,
             auth: None,
         };
-        let client = HttpMcpClient::new(name.to_string(), format!("http://127.0.0.1:1/{name}"), 10);
-        let entry = Arc::new(UpstreamEntry::new(config, UpstreamClient::Http(tokio::sync::RwLock::new(client))));
+        let client = HttpMcpClient::new(name.to_string(), format!("http://127.0.0.1:1/{name}"), 10, false);
+        let entry = Arc::new(UpstreamEntry::new(config, UpstreamClient::Http(Box::new(tokio::sync::RwLock::new(client)))));
         *entry.tools.write() = tool_names.iter().map(|tn| UpstreamToolDef {
             original_name: tn.to_string(),
             definition: serde_json::json!({
@@ -546,14 +549,32 @@ impl UpstreamRegistry {
 
     /// Called by the OAuth command layer once tokens have been successfully
     /// exchanged and persisted. Transitions the upstream back to `Connecting`
-    /// and spawns [`initialize_entry`] to resume the handshake.
+    /// and spawns [`initialize_entry_with_oauth`] to resume the handshake.
+    ///
+    /// If the upstream is not in the live registry (e.g. app was restarted
+    /// after the config was saved but before the entry was loaded), it is
+    /// loaded from disk and connected first.
     #[allow(dead_code)] // invoked from Tauri command layer (#1198)
     pub(crate) async fn on_oauth_complete(&self, upstream_name: &str) -> Result<(), String> {
-        let entry = self
-            .entries
-            .get(upstream_name)
-            .ok_or_else(|| format!("Unknown upstream '{upstream_name}'"))?;
-        let entry = Arc::clone(entry.value());
+        if !self.entries.contains_key(upstream_name) {
+            tracing::warn!(
+                source = "mcp_registry",
+                name = upstream_name,
+                "on_oauth_complete: entry not in registry, loading from config"
+            );
+            let config: crate::mcp_upstream_config::UpstreamMcpConfig =
+                crate::config::load_json_config(crate::mcp_upstream_config::UPSTREAMS_FILE);
+            let server = config
+                .servers
+                .into_iter()
+                .find(|s| s.name == upstream_name)
+                .ok_or_else(|| format!("Upstream '{upstream_name}' not found in config or registry"))?;
+            self.connect_upstream(server, None).await?;
+            // connect_upstream spawns initialize which will pick up the OAuth token
+            return Ok(());
+        }
+
+        let entry = Arc::clone(self.entries.get(upstream_name).unwrap().value());
 
         *entry.status.write() = UpstreamStatus::Connecting;
         self.emit_status_change(upstream_name, "connecting");
@@ -581,6 +602,7 @@ impl UpstreamRegistry {
         self_port: Option<u16>,
     ) -> Result<(), String> {
         let name = config.name.clone();
+        tracing::info!(source = "mcp_registry", %name, enabled = config.enabled, "connect_upstream called");
 
         if self.entries.contains_key(&name) {
             return Err(format!("Upstream '{name}' already registered"));
@@ -696,6 +718,7 @@ impl UpstreamRegistry {
                 "tool_count": tools_read.len(),
                 "tools": tool_names,
                 "metrics": e.metrics.snapshot(),
+                "last_error": *e.last_error.read(),
             })
         }).collect();
         serde_json::json!({ "upstreams": upstreams })
@@ -747,10 +770,9 @@ impl UpstreamRegistry {
                     && old_server.transport != new_server.transport
                     && new_server.auth == old_server.auth
                     && old_server.auth.is_some()
+                    && let Err(e) = crate::mcp_upstream_config::clear_upstream_auth(&new_server.name)
                 {
-                    if let Err(e) = crate::mcp_upstream_config::clear_upstream_auth(&new_server.name) {
-                        tracing::warn!(source = "mcp_registry", name = %new_server.name, "Failed to clear stale auth: {e}");
-                    }
+                    tracing::warn!(source = "mcp_registry", name = %new_server.name, "Failed to clear stale auth: {e}");
                 }
                 let _ = self.disconnect_upstream(&old_server.name);
             }
@@ -808,9 +830,10 @@ fn build_client(name: &str, config: &UpstreamMcpServer) -> Result<UpstreamClient
                 name.to_string(),
                 &config.transport,
                 config.timeout_secs,
+                config.auth.is_some(),
             )
             .ok_or_else(|| format!("Failed to build HTTP client for '{name}'"))?;
-            Ok(UpstreamClient::Http(tokio::sync::RwLock::new(client)))
+            Ok(UpstreamClient::Http(Box::new(tokio::sync::RwLock::new(client))))
         }
         UpstreamTransport::Stdio { .. } => {
             let client = StdioMcpClient::from_upstream_config(name.to_string(), &config.transport)
@@ -966,9 +989,11 @@ async fn initialize_entry_with_oauth(
 
     let status_str = match result {
         Ok(tools) => {
+            let tool_count = tools.len();
             *entry.tools.write() = tools;
             *entry.status.write() = UpstreamStatus::Ready;
-            tracing::info!(source = "mcp_registry", %name, "Initialized (Ready)");
+            *entry.last_error.write() = None;
+            tracing::info!(source = "mcp_registry", %name, tool_count, "Initialized (Ready)");
             "ready"
         }
         Err(UpstreamError::NeedsOAuth { .. }) => {
@@ -977,12 +1002,14 @@ async fn initialize_entry_with_oauth(
                 %name,
                 "Upstream requires OAuth authentication — awaiting user consent"
             );
+            *entry.last_error.write() = None;
             let _ = flow_mgr; // flow is only started after user click, never here
             mark_entry_needs_auth(entry, name, bus);
             return;
         }
         Err(e) => {
             let e_str = e.to_string();
+            *entry.last_error.write() = Some(e_str.clone());
             let exhausted = entry.cb.record_failure();
             if exhausted {
                 tracing::error!(source = "mcp_registry", %name, "Failed permanently: {e_str}");
@@ -1247,8 +1274,8 @@ mod tests {
     fn ready_entry(name: &str, tools: Vec<UpstreamToolDef>) -> (String, Arc<UpstreamEntry>) {
         let config = http_server_config(name, "http://example.com/mcp");
         // Build a dummy HTTP client (won't be called in aggregation tests)
-        let client = HttpMcpClient::new(name.to_string(), "http://example.com/mcp".to_string(), 10);
-        let entry = Arc::new(UpstreamEntry::new(config, UpstreamClient::Http(tokio::sync::RwLock::new(client))));
+        let client = HttpMcpClient::new(name.to_string(), "http://example.com/mcp".to_string(), 10, false);
+        let entry = Arc::new(UpstreamEntry::new(config, UpstreamClient::Http(Box::new(tokio::sync::RwLock::new(client)))));
         *entry.tools.write() = tools;
         *entry.status.write() = UpstreamStatus::Ready;
         (name.to_string(), entry)
@@ -1314,8 +1341,8 @@ mod tests {
         let registry = UpstreamRegistry::new();
         let config = config_with_filter(FilterMode::Deny, &["secret_*"]);
         let name = config.name.clone(); // "test"
-        let client = HttpMcpClient::new(name.clone(), "http://x/mcp".to_string(), 10);
-        let entry = Arc::new(UpstreamEntry::new(config, UpstreamClient::Http(tokio::sync::RwLock::new(client))));
+        let client = HttpMcpClient::new(name.clone(), "http://x/mcp".to_string(), 10, false);
+        let entry = Arc::new(UpstreamEntry::new(config, UpstreamClient::Http(Box::new(tokio::sync::RwLock::new(client)))));
         *entry.tools.write() = vec![make_tool_def("secret_key"), make_tool_def("safe_read")];
         *entry.status.write() = UpstreamStatus::Ready;
         registry.entries.insert(name.clone(), entry);
@@ -1338,10 +1365,10 @@ mod tests {
         let registry = UpstreamRegistry::new();
         let config = config_with_filter(FilterMode::Deny, &["secret_*"]);
         let name = config.name.clone();
-        let client = HttpMcpClient::new(name.clone(), "http://x/mcp".to_string(), 10);
+        let client = HttpMcpClient::new(name.clone(), "http://x/mcp".to_string(), 10, false);
         let entry = Arc::new(UpstreamEntry::new(
             config,
-            UpstreamClient::Http(tokio::sync::RwLock::new(client)),
+            UpstreamClient::Http(Box::new(tokio::sync::RwLock::new(client))),
         ));
         *entry.tools.write() = vec![make_tool_def("secret_key"), make_tool_def("safe_read")];
         *entry.status.write() = UpstreamStatus::Ready;

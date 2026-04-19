@@ -135,6 +135,9 @@ pub(crate) struct OAuthTokenSet {
     pub(crate) token_endpoint: String,
     /// OAuth client ID used during the flow.
     pub(crate) client_id: String,
+    /// OAuth client secret for confidential clients (DCR-obtained or manual).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) client_secret: Option<String>,
     /// Space-separated scopes granted by the AS.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) scope: Option<String>,
@@ -431,6 +434,7 @@ mod tests {
             expires_at: Some(1_700_000_000),
             token_endpoint: "https://auth.example.com/token".to_string(),
             client_id: "tuic-client-abc".to_string(),
+            client_secret: None,
             scope: Some("read write".to_string()),
             resource: Some("https://api.example.com".to_string()),
         }
@@ -464,6 +468,7 @@ mod tests {
             expires_at: None,
             token_endpoint: "https://auth.example.com/token".to_string(),
             client_id: "client".to_string(),
+            client_secret: None,
             scope: None,
             resource: None,
         };

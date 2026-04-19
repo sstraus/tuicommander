@@ -17,7 +17,7 @@ pub(crate) struct DcrRequest {
 #[derive(Debug, Deserialize)]
 pub(crate) struct DcrResponse {
     pub client_id: String,
-    #[allow(dead_code)]
+    pub client_secret: Option<String>,
     pub client_id_issued_at: Option<u64>,
 }
 
@@ -51,29 +51,19 @@ pub(crate) async fn register_client(
     let status = resp.status();
 
     if status == reqwest::StatusCode::CREATED || status == reqwest::StatusCode::OK {
-        #[derive(Deserialize)]
-        struct RawDcrResponse {
-            client_id: String,
-            client_id_issued_at: Option<u64>,
-            #[allow(dead_code)]
-            client_secret: Option<String>,
-        }
-
-        let raw: RawDcrResponse = resp
+        let dcr_resp: DcrResponse = resp
             .json()
             .await
             .context("Failed to parse DCR response JSON")?;
 
-        if raw.client_secret.is_some() {
-            tracing::warn!(
-                "DCR endpoint returned client_secret for public client — ignoring"
+        if dcr_resp.client_secret.is_some() {
+            tracing::info!(
+                target: "mcp_oauth",
+                "DCR endpoint returned client_secret — confidential client"
             );
         }
 
-        Ok(DcrResponse {
-            client_id: raw.client_id,
-            client_id_issued_at: raw.client_id_issued_at,
-        })
+        Ok(dcr_resp)
     } else if status == reqwest::StatusCode::BAD_REQUEST {
         let body = resp.text().await.unwrap_or_default();
         bail!("DCR registration rejected (400): {body}");
@@ -87,7 +77,7 @@ mod tests {
     use super::*;
 
     fn test_request() -> DcrRequest {
-        DcrRequest::for_tuicommander("tuic://oauth-callback", None)
+        DcrRequest::for_tuicommander("http://127.0.0.1:9999/oauth/callback", None)
     }
 
     #[tokio::test]
@@ -119,7 +109,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn register_client_ignores_client_secret() {
+    async fn register_client_captures_client_secret() {
         let mut server = mockito::Server::new_async().await;
         server
             .mock("POST", "/register")
@@ -128,7 +118,7 @@ mod tests {
             .with_body(
                 serde_json::json!({
                     "client_id": "abc-123",
-                    "client_secret": "should-be-ignored"
+                    "client_secret": "secret-456"
                 })
                 .to_string(),
             )
@@ -142,6 +132,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(resp.client_id, "abc-123");
+        assert_eq!(resp.client_secret, Some("secret-456".into()));
     }
 
     #[tokio::test]

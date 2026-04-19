@@ -1,18 +1,20 @@
 //! Tauri commands that bridge the frontend and the OAuth flow orchestrator.
 //!
-//! Two commands are exposed:
+//! Commands exposed:
 //!
 //! - [`start_mcp_upstream_oauth`] — kicks off a flow for a named upstream
-//!   (status → `Authenticating`, `McpOAuthStart` event emitted, browser URL
-//!   returned so the frontend can open it via `tauri-plugin-opener`).
-//! - [`mcp_oauth_callback`] — invoked by the deep-link handler with the
-//!   authorization `code` and `state` from the browser redirect. Exchanges
-//!   the code, persists tokens, and resumes the upstream via
-//!   [`UpstreamRegistry::on_oauth_complete`].
+//!   (status → `Authenticating`, starts a localhost callback server, emits
+//!   `McpOAuthStart` event, and returns the browser URL so the frontend can
+//!   open it via `tauri-plugin-opener`). The callback server handles the
+//!   authorization response autonomously — no deep-link handler needed.
+//! - [`mcp_oauth_callback`] — manual fallback invoked by the deep-link
+//!   handler with the authorization `code` and `state`.
+//! - [`cancel_mcp_upstream_oauth`] — cancels an in-progress flow.
 
 use std::sync::Arc;
 use tauri::State;
 
+use crate::mcp_oauth::callback_server;
 use crate::mcp_oauth::dcr::{register_client, DcrRequest};
 use crate::mcp_oauth::discovery::{discover_auth_server, discover_auth_server_relaxed, discover_protected_resource};
 use crate::mcp_upstream_config::UpstreamAuth;
@@ -28,6 +30,11 @@ pub(crate) struct StartOAuthResponse {
 
 /// Start the OAuth flow for the given upstream. Returns the authorization URL
 /// the frontend must open in the user's browser.
+///
+/// Internally starts a localhost HTTP callback server on a random port. The
+/// browser redirects to `http://127.0.0.1:{port}/oauth/callback` after the
+/// user grants consent. The callback server completes the token exchange and
+/// resumes the upstream connection automatically.
 #[tauri::command]
 pub(crate) async fn start_mcp_upstream_oauth(
     state: State<'_, Arc<AppState>>,
@@ -35,6 +42,26 @@ pub(crate) async fn start_mcp_upstream_oauth(
 ) -> Result<StartOAuthResponse, String> {
     let registry = state.mcp_upstream_registry.clone();
     let flow_mgr = state.oauth_flow_manager.clone();
+
+    // Ensure the upstream is in the live registry (it might be missing if
+    // the app was restarted after the config was saved but before the entry
+    // was loaded, or if it was added while the app was running via a
+    // different code path).
+    if registry.entry(&name).is_none() {
+        tracing::warn!(source = "mcp_oauth", %name, "upstream not in registry, loading from config");
+        let config: crate::mcp_upstream_config::UpstreamMcpConfig =
+            crate::config::load_json_config(crate::mcp_upstream_config::UPSTREAMS_FILE);
+        let server = config
+            .servers
+            .into_iter()
+            .find(|s| s.name == name)
+            .ok_or_else(|| format!("Upstream '{name}' not found in config or registry"))?;
+        registry.connect_upstream(server, None).await.map_err(|e| {
+            format!("Failed to register upstream '{name}' from config: {e}")
+        })?;
+        // Give the initialize task a moment to run and detect NeedsOAuth
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
 
     // Pull the upstream's config and transition it to Authenticating.
     let (server_url, existing_auth) = {
@@ -54,7 +81,15 @@ pub(crate) async fn start_mcp_upstream_oauth(
         (server_url, auth)
     };
 
-    let redirect_uri = super::OAUTH_REDIRECT_URI.to_string();
+    // Start the localhost callback server — the redirect_uri is dynamic
+    // based on the OS-assigned port.
+    let cb_server = callback_server::spawn(flow_mgr.clone(), registry.clone())
+        .await
+        .map_err(|e| {
+            registry.rollback_authenticating(&name);
+            format!("Failed to start OAuth callback server: {e}")
+        })?;
+    let redirect_uri = callback_server::redirect_uri(cb_server.port);
 
     // Everything after set_authenticating is fallible — rollback on error so
     // the UI returns to "needs_auth" (retryable) instead of stuck on "authenticating".
@@ -101,6 +136,7 @@ pub(crate) async fn start_mcp_upstream_oauth(
 
                 let auth = UpstreamAuth::OAuth2 {
                     client_id: dcr_resp.client_id,
+                    client_secret: dcr_resp.client_secret,
                     scopes: vec![],
                     authorization_endpoint: Some(as_meta.authorization_endpoint.clone()),
                     token_endpoint: Some(as_meta.token_endpoint.clone()),
@@ -120,6 +156,23 @@ pub(crate) async fn start_mcp_upstream_oauth(
             .map_err(|e| e.to_string())?;
 
         registry.emit_oauth_start(&name, &outcome.authorization_url);
+
+        // Keep the callback server alive until the flow completes or times out.
+        // The server handle is moved into a background task — dropping it would
+        // shut down the listener before the browser can redirect back.
+        let flow_mgr_bg = flow_mgr.clone();
+        let state_nonce = outcome.state.clone();
+        tokio::spawn(async move {
+            let _keep_alive = cb_server;
+            // Wait until the flow is consumed (complete or cancel) or 5 min timeout.
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
+            for _ in 0..150 {
+                interval.tick().await;
+                if flow_mgr_bg.upstream_name_for_state(&state_nonce).is_none() {
+                    break;
+                }
+            }
+        });
 
         Ok::<_, String>(StartOAuthResponse {
             authorization_url: outcome.authorization_url,

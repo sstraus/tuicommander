@@ -8,21 +8,15 @@
 //!    config override), generates a PKCE S256 challenge and a cryptographically
 //!    random `state` nonce, inserts a [`PendingFlow`], and returns the
 //!    authorization URL for the caller to open in the browser.
-//! 2. [`OAuthFlowManager::complete_flow`]: called from the deep-link handler
-//!    (or the dev-mode localhost callback server). Looks up the pending flow
-//!    by keyed `state`, calls [`TokenManager::exchange_code`], and returns the
-//!    resulting [`OAuthTokenSet`]. See that method's docs for the threat
-//!    model that justifies skipping constant-time comparison here.
+//! 2. [`OAuthFlowManager::complete_flow`]: called from the localhost callback
+//!    server (see [`super::callback_server`]). Looks up the pending flow by
+//!    keyed `state`, calls [`TokenManager::exchange_code`], and returns the
+//!    resulting [`OAuthTokenSet`].
 //! 3. [`OAuthFlowManager::cancel_flow`]: removes a pending flow (e.g. on user
 //!    cancellation or upstream transition to `Failed`).
 //!
 //! A background task started via [`OAuthFlowManager::spawn_cleanup_task`]
 //! periodically removes expired pending flows (default 5 minutes).
-//!
-//! In development (`#[cfg(debug_assertions)]`), use
-//! [`DevCallbackServer::spawn`] to start an ephemeral localhost axum server
-//! that receives the authorization response when deep links are unavailable
-//! (Tauri dev mode).
 
 use anyhow::{anyhow, bail, Result};
 use dashmap::DashMap;
@@ -56,12 +50,14 @@ struct PendingFlow {
     state: String,
     /// PKCE verifier used when exchanging the code.
     pkce_verifier: String,
-    /// Redirect URI used in the authorization request (tuic:// or localhost).
+    /// Redirect URI used in the authorization request (localhost callback server).
     redirect_uri: String,
     /// Resolved token endpoint.
     token_endpoint: String,
     /// OAuth client ID.
     client_id: String,
+    /// OAuth client secret (confidential clients only).
+    client_secret: Option<String>,
     /// Optional RFC 8707 resource indicator.
     resource: Option<String>,
     /// When this flow was created (for timeout cleanup).
@@ -128,6 +124,11 @@ impl OAuthFlowManager {
         self.pending.len()
     }
 
+    /// Look up the upstream name for a given state nonce without consuming the flow.
+    pub(crate) fn upstream_name_for_state(&self, state: &str) -> Option<String> {
+        self.pending.get(state).map(|e| e.upstream_name.clone())
+    }
+
     /// Start a new OAuth flow.
     ///
     /// Acquires the shared auth semaphore (blocks if another flow is active),
@@ -144,14 +145,16 @@ impl OAuthFlowManager {
         redirect_uri: &str,
     ) -> Result<StartFlowOutcome> {
         // Extract OAuth2 fields (only OAuth2 variant starts a flow).
-        let (client_id, scopes, authz_override, token_override) = match auth {
+        let (client_id, client_secret, scopes, authz_override, token_override) = match auth {
             UpstreamAuth::OAuth2 {
                 client_id,
+                client_secret,
                 scopes,
                 authorization_endpoint,
                 token_endpoint,
             } => (
                 client_id.clone(),
+                client_secret.clone(),
                 scopes.clone(),
                 authorization_endpoint.clone(),
                 token_endpoint.clone(),
@@ -206,6 +209,7 @@ impl OAuthFlowManager {
             redirect_uri: redirect_uri.to_string(),
             token_endpoint,
             client_id,
+            client_secret,
             resource: Some(server_url.to_string()),
             created_at: Instant::now(),
         };
@@ -223,14 +227,9 @@ impl OAuthFlowManager {
     /// callback. On success, the access/refresh tokens are saved to the
     /// keyring and returned.
     ///
-    /// Threat model: this runs in a desktop Tauri app. The `state` parameter
-    /// arrives via an OS-routed `tuic://` deep link, not over the network —
-    /// there is no remote attacker who can probe the `pending` map with
-    /// timing oracles. The miss branch below already returns `Err` in
-    /// variable time, so any extra constant-time equality check on the hit
-    /// branch would be a no-op (a `DashMap::remove(key)` hit proves
-    /// `flow.state == state` by `String`'s `PartialEq`). We therefore rely on
-    /// the keyed lookup alone for state binding.
+    /// Threat model: the `state` parameter arrives via a localhost-only HTTP
+    /// callback server (127.0.0.1, OS-assigned port). There is no remote
+    /// attacker who can probe the `pending` map with timing oracles.
     pub(crate) async fn complete_flow(
         &self,
         state: &str,
@@ -253,6 +252,7 @@ impl OAuthFlowManager {
         let token_mgr = TokenManager::new(
             flow.upstream_name.clone(),
             flow.client_id.clone(),
+            flow.client_secret.clone(),
             flow.token_endpoint.clone(),
             flow.resource.clone(),
         );
@@ -454,6 +454,7 @@ mod tests {
     fn oauth2_config() -> UpstreamAuth {
         UpstreamAuth::OAuth2 {
             client_id: "test-client".into(),
+            client_secret: None,
             scopes: vec!["read".into(), "write".into()],
             authorization_endpoint: Some("https://auth.example.com/authorize".into()),
             token_endpoint: Some("https://auth.example.com/token".into()),
@@ -485,7 +486,7 @@ mod tests {
         let url = build_authorization_url(
             "https://auth.example.com/authorize",
             "client-1",
-            "tuic://oauth-callback",
+            "http://127.0.0.1:9999/oauth/callback",
             &["read".into(), "write".into()],
             "state-xyz",
             &pkce,
@@ -498,7 +499,7 @@ mod tests {
         assert!(url.contains("code_challenge=abc"));
         assert!(url.contains("code_challenge_method=S256"));
         assert!(url.contains("resource="));
-        assert!(url.contains("redirect_uri=tuic"));
+        assert!(url.contains("redirect_uri=http"));
     }
 
     // -- AS mix-up defence (#1268-40e8) --
@@ -634,7 +635,7 @@ mod tests {
     async fn start_flow_returns_url_with_state() {
         let m = mgr();
         let out = m
-            .start_flow("test", "https://api.example.com", &oauth2_config(), "tuic://oauth-callback")
+            .start_flow("test", "https://api.example.com", &oauth2_config(), "http://127.0.0.1:9999/oauth/callback")
             .await
             .unwrap();
         assert!(out.authorization_url.starts_with("https://auth.example.com/authorize?"));
@@ -650,7 +651,7 @@ mod tests {
                 "test",
                 "https://api.example.com",
                 &UpstreamAuth::Bearer { token: "x".into() },
-                "tuic://cb",
+                "http://127.0.0.1:9999/oauth/callback",
             )
             .await
             .unwrap_err();
@@ -663,13 +664,13 @@ mod tests {
         // releases (cancel or complete).
         let m = Arc::new(mgr());
         let _out1 = m
-            .start_flow("a", "https://api.example.com", &oauth2_config(), "tuic://cb")
+            .start_flow("a", "https://api.example.com", &oauth2_config(), "http://127.0.0.1:9999/oauth/callback")
             .await
             .unwrap();
         // Second call must not resolve while first holds the permit.
         let m2 = m.clone();
         let pending = tokio::spawn(async move {
-            m2.start_flow("b", "https://api.example.com", &oauth2_config(), "tuic://cb")
+            m2.start_flow("b", "https://api.example.com", &oauth2_config(), "http://127.0.0.1:9999/oauth/callback")
                 .await
         });
         // Give the pending task a chance to run.
@@ -709,7 +710,7 @@ mod tests {
             Duration::from_millis(1),
         );
         let out = m
-            .start_flow("test", "https://api.example.com", &oauth2_config(), "tuic://cb")
+            .start_flow("test", "https://api.example.com", &oauth2_config(), "http://127.0.0.1:9999/oauth/callback")
             .await
             .unwrap();
         tokio::time::sleep(Duration::from_millis(20)).await;
@@ -723,7 +724,7 @@ mod tests {
     async fn cancel_flow_removes_pending_and_releases_permit() {
         let m = mgr();
         let out = m
-            .start_flow("test", "https://api.example.com", &oauth2_config(), "tuic://cb")
+            .start_flow("test", "https://api.example.com", &oauth2_config(), "http://127.0.0.1:9999/oauth/callback")
             .await
             .unwrap();
         assert_eq!(m.pending_count(), 1);
@@ -732,7 +733,7 @@ mod tests {
         // Semaphore is now free — a new flow should start immediately.
         let _out2 = tokio::time::timeout(
             Duration::from_millis(200),
-            m.start_flow("test2", "https://api.example.com", &oauth2_config(), "tuic://cb"),
+            m.start_flow("test2", "https://api.example.com", &oauth2_config(), "http://127.0.0.1:9999/oauth/callback"),
         )
         .await
         .expect("second flow timed out");
@@ -751,15 +752,15 @@ mod tests {
             DEFAULT_FLOW_TIMEOUT,
         ));
         let _a = m
-            .start_flow("srv-a", "https://api.example.com", &oauth2_config(), "tuic://cb")
+            .start_flow("srv-a", "https://api.example.com", &oauth2_config(), "http://127.0.0.1:9999/oauth/callback")
             .await
             .unwrap();
         let _b1 = m
-            .start_flow("srv-b", "https://api.example.com", &oauth2_config(), "tuic://cb")
+            .start_flow("srv-b", "https://api.example.com", &oauth2_config(), "http://127.0.0.1:9999/oauth/callback")
             .await
             .unwrap();
         let _b2 = m
-            .start_flow("srv-b", "https://api.example.com", &oauth2_config(), "tuic://cb")
+            .start_flow("srv-b", "https://api.example.com", &oauth2_config(), "http://127.0.0.1:9999/oauth/callback")
             .await
             .unwrap();
         assert_eq!(m.pending_count(), 3);
@@ -776,7 +777,7 @@ mod tests {
             Duration::from_millis(1),
         );
         let _a = m
-            .start_flow("test", "https://api.example.com", &oauth2_config(), "tuic://cb")
+            .start_flow("test", "https://api.example.com", &oauth2_config(), "http://127.0.0.1:9999/oauth/callback")
             .await
             .unwrap();
         assert_eq!(m.pending_count(), 1);
@@ -790,7 +791,7 @@ mod tests {
     async fn cleanup_expired_keeps_fresh_flows() {
         let m = mgr();
         let _a = m
-            .start_flow("test", "https://api.example.com", &oauth2_config(), "tuic://cb")
+            .start_flow("test", "https://api.example.com", &oauth2_config(), "http://127.0.0.1:9999/oauth/callback")
             .await
             .unwrap();
         let n = m.cleanup_expired();
@@ -799,129 +800,3 @@ mod tests {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Dev-mode callback server (debug builds only)
-// ---------------------------------------------------------------------------
-
-#[cfg(debug_assertions)]
-pub(crate) mod dev_server {
-    //! Ephemeral localhost HTTP server to receive the OAuth authorization
-    //! callback when deep links are unavailable (e.g. `tauri dev`).
-    //!
-    //! Binds to `127.0.0.1:0` (OS-assigned port), serves a single
-    //! `/oauth/callback` endpoint, and forwards the captured `(state, code)`
-    //! to the supplied [`OAuthFlowManager`]. The server shuts down after the
-    //! first callback.
-
-    use super::*;
-    use axum::extract::Query;
-    use axum::response::{Html, IntoResponse};
-    use axum::routing::get;
-    use axum::Router;
-    use serde::Deserialize;
-    use std::net::SocketAddr;
-
-    #[derive(Debug, Deserialize)]
-    struct CallbackParams {
-        code: Option<String>,
-        state: Option<String>,
-        error: Option<String>,
-        error_description: Option<String>,
-    }
-
-    /// Handle returned by [`spawn`] — drop to stop the server.
-    pub(crate) struct DevCallbackServer {
-        pub(crate) port: u16,
-        /// Triggers graceful shutdown when sent.
-        #[allow(dead_code)]
-        shutdown_tx: tokio::sync::oneshot::Sender<()>,
-        /// Receives the completed [`OAuthTokenSet`] (or error message).
-        pub(crate) result_rx: tokio::sync::oneshot::Receiver<Result<(String, OAuthTokenSet)>>,
-    }
-
-    /// Spawn the dev callback server. Returns the assigned port and a handle
-    /// to receive the exchange result.
-    pub(crate) async fn spawn(manager: Arc<OAuthFlowManager>) -> Result<DevCallbackServer> {
-        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
-        let (result_tx, result_rx) = tokio::sync::oneshot::channel::<Result<(String, OAuthTokenSet)>>();
-        let result_tx = Arc::new(tokio::sync::Mutex::new(Some(result_tx)));
-
-        // Fires when the single callback has been handled — lets the server
-        // shut down immediately instead of waiting for the DevCallbackServer
-        // handle to be dropped.
-        let done_notify = Arc::new(tokio::sync::Notify::new());
-
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
-        let port = listener.local_addr()?.port();
-
-        let mgr_clone = manager.clone();
-        let result_tx_clone = result_tx.clone();
-        let done_notify_clone = done_notify.clone();
-        let app = Router::new().route(
-            "/oauth/callback",
-            get(move |Query(params): Query<CallbackParams>| {
-                let mgr = mgr_clone.clone();
-                let tx_slot = result_tx_clone.clone();
-                let done = done_notify_clone.clone();
-                async move {
-                    let outcome = handle_callback(mgr, params).await;
-                    let html = match &outcome {
-                        Ok(_) => "<html><body><h1>Authentication complete</h1>\
-                            <p>You can close this tab.</p></body></html>",
-                        Err(_) => "<html><body><h1>Authentication failed</h1>\
-                            <p>Check the TUIC logs for details.</p></body></html>",
-                    };
-                    // Deliver the result to the caller (first write wins), then
-                    // signal the server to shut down.
-                    if let Some(tx) = tx_slot.lock().await.take() {
-                        let _ = tx.send(outcome);
-                        done.notify_one();
-                    }
-                    Html(html).into_response()
-                }
-            }),
-        );
-
-        tokio::spawn(async move {
-            let server = axum::serve(
-                listener,
-                app.into_make_service_with_connect_info::<SocketAddr>(),
-            )
-            .with_graceful_shutdown(async move {
-                tokio::select! {
-                    _ = shutdown_rx => {}
-                    _ = done_notify.notified() => {}
-                }
-            });
-            if let Err(e) = server.await {
-                tracing::warn!(target: "mcp_oauth", error = %e, "dev callback server exited");
-            }
-        });
-
-        Ok(DevCallbackServer {
-            port,
-            shutdown_tx,
-            result_rx,
-        })
-    }
-
-    async fn handle_callback(
-        manager: Arc<OAuthFlowManager>,
-        params: CallbackParams,
-    ) -> Result<(String, OAuthTokenSet)> {
-        if let Some(err) = params.error {
-            bail!(
-                "Authorization server returned error: {} ({})",
-                err,
-                params.error_description.unwrap_or_default()
-            );
-        }
-        let code = params
-            .code
-            .ok_or_else(|| anyhow!("Missing 'code' parameter in callback"))?;
-        let state = params
-            .state
-            .ok_or_else(|| anyhow!("Missing 'state' parameter in callback"))?;
-        manager.complete_flow(&state, &code).await
-    }
-}

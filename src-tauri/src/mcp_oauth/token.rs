@@ -27,6 +27,8 @@ pub(crate) struct TokenManager {
     upstream_name: String,
     /// OAuth client ID.
     client_id: String,
+    /// OAuth client secret (confidential clients only).
+    client_secret: Option<String>,
     /// Token endpoint URL.
     token_endpoint: String,
     /// RFC 8707 resource indicator (the upstream's URL).
@@ -49,12 +51,14 @@ impl TokenManager {
     pub(crate) fn new(
         upstream_name: String,
         client_id: String,
+        client_secret: Option<String>,
         token_endpoint: String,
         resource: Option<String>,
     ) -> Self {
         Self {
             upstream_name,
             client_id,
+            client_secret,
             token_endpoint,
             resource,
             refresh_lock: Arc::new(Mutex::new(())),
@@ -89,6 +93,10 @@ impl TokenManager {
             ("redirect_uri", redirect_uri),
             ("code_verifier", code_verifier),
         ];
+
+        if let Some(ref secret) = self.client_secret {
+            params.push(("client_secret", secret));
+        }
 
         let resource_val;
         if let Some(ref res) = self.resource {
@@ -160,6 +168,10 @@ impl TokenManager {
             ("client_id", self.client_id.as_str()),
         ];
 
+        if let Some(ref secret) = self.client_secret {
+            params.push(("client_secret", secret.as_str()));
+        }
+
         let resource_val;
         if let Some(ref res) = self.resource {
             resource_val = res.clone();
@@ -211,6 +223,7 @@ impl TokenManager {
             expires_at,
             token_endpoint: self.token_endpoint.clone(),
             client_id: self.client_id.clone(),
+            client_secret: self.client_secret.clone(),
             scope: resp.scope,
             resource: self.resource.clone(),
         }
@@ -263,6 +276,7 @@ mod tests {
         let mgr = TokenManager::new(
             "test".into(),
             "client-1".into(),
+            None,
             "https://auth.example.com/token".into(),
             Some("https://api.example.com".into()),
         );
@@ -287,6 +301,7 @@ mod tests {
         let mgr = TokenManager::new(
             "test".into(),
             "client-1".into(),
+            None,
             "https://auth.example.com/token".into(),
             None,
         );
@@ -316,6 +331,7 @@ mod tests {
         let mgr = TokenManager::new(
             "test-exchange".into(),
             "client".into(),
+            None,
             format!("{}/token", server.url()),
             None,
         );
@@ -355,6 +371,7 @@ mod tests {
         let mgr = TokenManager::new(
             "test-exchange-happy".into(),
             "my-client".into(),
+            None,
             format!("{}/token", server.url()),
             None,
         );
@@ -395,6 +412,7 @@ mod tests {
         let mgr = TokenManager::new(
             "test-resource".into(),
             "client".into(),
+            None,
             format!("{}/token", server.url()),
             Some("https://api.example.com".into()),
         );
@@ -407,10 +425,49 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn exchange_code_includes_client_secret_for_confidential_client() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/token")
+            .match_body(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("grant_type".into(), "authorization_code".into()),
+                mockito::Matcher::UrlEncoded("client_id".into(), "conf-client".into()),
+                mockito::Matcher::UrlEncoded("client_secret".into(), "s3cret".into()),
+            ]))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "access_token": "at-confidential",
+                    "token_type": "Bearer"
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let mgr = TokenManager::new(
+            "test-confidential".into(),
+            "conf-client".into(),
+            Some("s3cret".into()),
+            format!("{}/token", server.url()),
+            None,
+        );
+        let set = mgr
+            .exchange_code("code", "verifier", "http://127.0.0.1:9999/oauth/callback")
+            .await
+            .expect("exchange_code should succeed for confidential client");
+        assert_eq!(set.access_token, "at-confidential");
+        assert_eq!(set.client_secret, Some("s3cret".into()));
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
     async fn refresh_if_needed_skips_when_valid() {
         let mgr = TokenManager::new(
             "test-refresh-skip".into(),
             "client".into(),
+            None,
             "https://unused/token".into(),
             None,
         );
@@ -424,6 +481,7 @@ mod tests {
             expires_at: Some(now + 300), // 5 min from now
             token_endpoint: "https://unused/token".into(),
             client_id: "client".into(),
+            client_secret: None,
             scope: None,
             resource: None,
         };
@@ -441,6 +499,7 @@ mod tests {
         let mgr = TokenManager::new(
             "test-refresh-none-expiry".into(),
             "client".into(),
+            None,
             "https://unused/token".into(),
             None,
         );
@@ -450,6 +509,7 @@ mod tests {
             expires_at: None,
             token_endpoint: "https://unused/token".into(),
             client_id: "client".into(),
+            client_secret: None,
             scope: None,
             resource: None,
         };
@@ -466,6 +526,7 @@ mod tests {
         let mgr = TokenManager::new(
             "test-refresh-notoken".into(),
             "client".into(),
+            None,
             "https://unused/token".into(),
             None,
         );
@@ -475,6 +536,7 @@ mod tests {
             expires_at: Some(100), // long expired
             token_endpoint: "https://unused/token".into(),
             client_id: "client".into(),
+            client_secret: None,
             scope: None,
             resource: None,
         };
@@ -516,6 +578,7 @@ mod tests {
         let mgr = Arc::new(TokenManager::new(
             "test-concurrent-refresh".into(),
             "client".into(),
+            None,
             format!("{}/token", server.url()),
             None,
         ));
@@ -526,6 +589,7 @@ mod tests {
             expires_at: Some(0),
             token_endpoint: format!("{}/token", server.url()),
             client_id: "client".into(),
+            client_secret: None,
             scope: None,
             resource: None,
         };

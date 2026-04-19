@@ -86,6 +86,9 @@ pub(crate) enum UpstreamAuth {
     /// OAuth 2.1 with PKCE (RFC 9449 / RFC 8707).
     OAuth2 {
         client_id: String,
+        /// Confidential clients (e.g. from DCR) have a secret; public clients omit it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        client_secret: Option<String>,
         #[serde(default)]
         scopes: Vec<String>,
         /// Override discovered authorization endpoint.
@@ -232,7 +235,14 @@ pub(crate) async fn auto_connect_saved_upstreams(state: &crate::state::AppState)
     }
 
     let registry = &state.mcp_upstream_registry;
+    tracing::info!(
+        source = "mcp_upstream",
+        count = config.servers.len(),
+        names = ?config.servers.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(),
+        "Boot-time auto-connect starting"
+    );
     for server in config.servers {
+        tracing::info!(source = "mcp_upstream", name = %server.name, "Connecting upstream...");
         if let Err(e) = registry.connect_upstream(server.clone(), Some(self_port)).await {
             tracing::warn!(source = "mcp_upstream", name = %server.name, "Boot-time connect failed: {e}");
         }
@@ -511,6 +521,7 @@ mod tests {
         let mut server = http_server("oauth", "https://remote:443/mcp");
         server.auth = Some(UpstreamAuth::OAuth2 {
             client_id: "my-app".to_string(),
+            client_secret: None,
             scopes: vec!["read".to_string(), "write".to_string()],
             authorization_endpoint: Some("https://auth.example.com/authorize".to_string()),
             token_endpoint: Some("https://auth.example.com/token".to_string()),
@@ -531,6 +542,7 @@ mod tests {
         let mut server = http_server("oauth-min", "https://remote:443/mcp");
         server.auth = Some(UpstreamAuth::OAuth2 {
             client_id: "my-app".to_string(),
+            client_secret: None,
             scopes: vec![],
             authorization_endpoint: None,
             token_endpoint: None,
@@ -568,6 +580,7 @@ mod tests {
         let mut server = http_server("bad-oauth", "https://remote:443/mcp");
         server.auth = Some(UpstreamAuth::OAuth2 {
             client_id: String::new(),
+            client_secret: None,
             scopes: vec![],
             authorization_endpoint: None,
             token_endpoint: None,
@@ -585,6 +598,7 @@ mod tests {
         let mut server = http_server("good-oauth", "https://remote:443/mcp");
         server.auth = Some(UpstreamAuth::OAuth2 {
             client_id: "my-app".to_string(),
+            client_secret: None,
             scopes: vec!["read".to_string()],
             authorization_endpoint: None,
             token_endpoint: None,
@@ -998,6 +1012,7 @@ mod tests {
         // Write OAuth auth to beta
         let new_auth = UpstreamAuth::OAuth2 {
             client_id: "dcr-obtained-id".into(),
+            client_secret: None,
             scopes: vec![],
             authorization_endpoint: None,
             token_endpoint: None,
@@ -1028,6 +1043,7 @@ mod tests {
 
         let auth = UpstreamAuth::OAuth2 {
             client_id: "x".into(),
+            client_secret: None,
             scopes: vec![],
             authorization_endpoint: None,
             token_endpoint: None,
@@ -1046,6 +1062,7 @@ mod tests {
         let mut server = http_server("delta", "https://d.example.com/mcp");
         server.auth = Some(UpstreamAuth::OAuth2 {
             client_id: "stale-id".into(),
+            client_secret: None,
             scopes: vec![],
             authorization_endpoint: None,
             token_endpoint: None,
@@ -1069,6 +1086,7 @@ mod tests {
         let mut server = http_server("gamma", "https://g.example.com/mcp");
         server.auth = Some(UpstreamAuth::OAuth2 {
             client_id: "old-id".into(),
+            client_secret: None,
             scopes: vec!["read".into()],
             authorization_endpoint: None,
             token_endpoint: None,
@@ -1078,6 +1096,7 @@ mod tests {
 
         let new_auth = UpstreamAuth::OAuth2 {
             client_id: "new-id".into(),
+            client_secret: None,
             scopes: vec![],
             authorization_endpoint: None,
             token_endpoint: None,
