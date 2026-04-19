@@ -138,7 +138,7 @@ fn is_in_trusted_dir(path: &std::path::Path) -> bool {
 
 /// Validate that a working directory path is safe (absolute, exists, within home).
 fn validate_cwd(cwd: &str) -> Result<std::path::PathBuf, String> {
-    let path = std::path::PathBuf::from(cwd);
+    let path = std::path::PathBuf::from(crate::cli::expand_tilde(cwd));
     if !path.is_absolute() {
         return Err("Working directory must be an absolute path".into());
     }

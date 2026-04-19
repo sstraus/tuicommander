@@ -128,7 +128,8 @@ pub(crate) fn build_shell_command(shell: &str) -> CommandBuilder {
 
 /// Resolve the shell to use: explicit override > env default > platform default.
 pub(crate) fn resolve_shell(override_shell: Option<String>) -> String {
-    override_shell.unwrap_or_else(default_shell)
+    let shell = override_shell.unwrap_or_else(default_shell);
+    crate::cli::expand_tilde(&shell)
 }
 
 /// Which family of shell is running inside a PTY.
@@ -2559,9 +2560,9 @@ pub(crate) async fn create_pty(
         let mut cmd = build_shell_command(&shell);
 
         if let Some(ref cwd) = config.cwd {
-            // Translate Windows drive-letter paths to /mnt/ for WSL shells
+            let cwd = crate::cli::expand_tilde(cwd);
             if is_wsl_shell(&shell) {
-                cmd.cwd(windows_to_wsl_path(cwd));
+                cmd.cwd(windows_to_wsl_path(&cwd));
             } else {
                 cmd.cwd(cwd);
             }

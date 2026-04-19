@@ -1096,6 +1096,7 @@ fn run_script_in_dir(script: &str, cwd: &Path) -> Result<(), String> {
 /// The script is passed to `sh -c` (Unix) or `cmd /C` (Windows).
 #[tauri::command]
 pub(crate) fn run_setup_script(script: String, cwd: String) -> Result<serde_json::Value, String> {
+    let cwd = crate::cli::expand_tilde(&cwd);
     let cwd_path = Path::new(&cwd);
     if !cwd_path.exists() {
         return Err(format!("Working directory does not exist: {cwd}"));

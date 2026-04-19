@@ -217,7 +217,7 @@ pub(super) async fn spawn_agent_session(
     }
 
     if let Some(ref cwd) = body.cwd {
-        cmd.cwd(cwd);
+        cmd.cwd(crate::cli::expand_tilde(cwd));
     }
 
     let child = match pair.slave.spawn_command(cmd) {

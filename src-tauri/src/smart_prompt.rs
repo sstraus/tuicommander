@@ -75,6 +75,9 @@ pub(crate) async fn execute_headless_prompt(
     }
 
     let needs_stdin = stdin_content.is_some();
+    let command = crate::cli::expand_tilde(&command);
+    let args: Vec<String> = args.iter().map(|a| crate::cli::expand_tilde(a)).collect();
+    let repo_path = crate::cli::expand_tilde(&repo_path);
     let mut cmd = Command::new(&command);
     cmd.args(&args)
         .current_dir(&repo_path)
@@ -128,6 +131,7 @@ pub(crate) async fn execute_shell_script(
     let shell = if cfg!(target_os = "windows") { "cmd" } else { "sh" };
     let shell_flag = if cfg!(target_os = "windows") { "/C" } else { "-c" };
 
+    let repo_path = crate::cli::expand_tilde(&repo_path);
     let mut cmd = Command::new(shell);
     cmd.arg(shell_flag)
         .arg(&script_content)

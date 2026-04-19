@@ -58,7 +58,7 @@ fn validate_within_home(raw: &str) -> Result<PathBuf, String> {
         return Err("Path is empty".into());
     }
 
-    let path = PathBuf::from(raw);
+    let path = PathBuf::from(crate::cli::expand_tilde(raw));
     if !path.is_absolute() {
         return Err("Path must be absolute".into());
     }

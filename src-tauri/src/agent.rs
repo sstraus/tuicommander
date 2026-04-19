@@ -526,14 +526,15 @@ pub(crate) async fn spawn_agent(
 ) -> Result<String, String> {
     // Determine binary path - use provided path, detect by type, or fall back to claude
     let binary_path = if let Some(ref path) = agent_config.binary_path {
-        let p = std::path::Path::new(path);
+        let expanded = crate::cli::expand_tilde(path);
+        let p = std::path::Path::new(&expanded);
         if !p.is_absolute() {
             return Err("binary_path must be an absolute path".to_string());
         }
         if !p.is_file() {
             return Err("binary_path does not point to an existing file".to_string());
         }
-        path.clone()
+        expanded
     } else if let Some(ref agent_type) = agent_config.agent_type {
         let detection = detect_agent_binary(agent_type.clone());
         detection.path.ok_or_else(|| {
@@ -583,11 +584,10 @@ pub(crate) async fn spawn_agent(
         cmd.arg(&agent_config.prompt);
     }
 
-    // Set working directory
     if let Some(ref cwd) = agent_config.cwd {
-        cmd.cwd(cwd);
-    } else if let Some(cwd) = pty_config.cwd {
-        cmd.cwd(cwd);
+        cmd.cwd(crate::cli::expand_tilde(cwd));
+    } else if let Some(ref cwd) = pty_config.cwd {
+        cmd.cwd(crate::cli::expand_tilde(cwd));
     }
 
     // Inject env flags (feature flags configured in Settings → Agents)

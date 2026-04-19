@@ -1426,7 +1426,7 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
                 if let Some(model) = args["model"].as_str() { cmd.arg("--model"); cmd.arg(model); }
                 cmd.arg(&effective_prompt);
             }
-            if let Some(cwd) = args["cwd"].as_str() { cmd.cwd(cwd); }
+            if let Some(cwd) = args["cwd"].as_str() { cmd.cwd(crate::cli::expand_tilde(cwd)); }
 
             let child = match pair.slave.spawn_command(cmd) {
                 Ok(c) => c,
@@ -2782,6 +2782,7 @@ mod tests {
             github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
             github_viewer_login: parking_lot::RwLock::new(None),
             server_shutdown: parking_lot::Mutex::new(None),
+            ipc_started: std::sync::atomic::AtomicBool::new(false),
             session_token: parking_lot::RwLock::new(uuid::Uuid::new_v4().to_string()),
             app_handle: parking_lot::RwLock::new(None),
             plugin_watchers: dashmap::DashMap::new(),

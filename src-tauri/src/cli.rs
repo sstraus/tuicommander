@@ -117,6 +117,18 @@ pub(crate) fn apply_no_window(_cmd: &mut std::process::Command) {
     }
 }
 
+/// Expand a leading `~` or `~/` to `$HOME`. `std::process::Command` and
+/// `std::fs` APIs do not invoke a shell, so tilde is treated as a literal
+/// character and the OS returns ENOENT.
+pub(crate) fn expand_tilde(path: &str) -> String {
+    if path == "~" || path.starts_with("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return format!("{}{}", home, &path[1..]);
+        }
+    }
+    path.to_string()
+}
+
 /// Check if a CLI tool exists on PATH or in well-known directories.
 pub(crate) fn has_cli(name: &str) -> bool {
     let checker = if cfg!(target_os = "windows") {
@@ -200,5 +212,20 @@ mod tests {
         let first = resolve_cli("nonexistent_cached_test_abc");
         let second = resolve_cli("nonexistent_cached_test_abc");
         assert_eq!(first, second);
+    }
+
+    #[test]
+    fn test_expand_tilde_home_prefix() {
+        let home = std::env::var("HOME").unwrap();
+        assert_eq!(expand_tilde("~/foo/bar"), format!("{home}/foo/bar"));
+        assert_eq!(expand_tilde("~"), home);
+    }
+
+    #[test]
+    fn test_expand_tilde_no_op() {
+        assert_eq!(expand_tilde("/usr/bin/git"), "/usr/bin/git");
+        assert_eq!(expand_tilde("relative/path"), "relative/path");
+        assert_eq!(expand_tilde("~other_user/dir"), "~other_user/dir");
+        assert_eq!(expand_tilde(""), "");
     }
 }

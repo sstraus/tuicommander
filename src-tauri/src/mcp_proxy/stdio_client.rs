@@ -13,16 +13,7 @@ use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
 use std::time::{Duration, Instant};
 
-/// Expand a leading `~` or `~/` to `$HOME`. `std::process::Command` does not
-/// invoke a shell, so tilde is passed literally and the OS returns ENOENT.
-fn expand_tilde(path: &str) -> String {
-    if path == "~" || path.starts_with("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return format!("{}{}", home, &path[1..]);
-        }
-    }
-    path.to_string()
-}
+use crate::cli::expand_tilde;
 
 const MIN_RESPAWN_INTERVAL: Duration = Duration::from_secs(5);
 

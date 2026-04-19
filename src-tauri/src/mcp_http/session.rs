@@ -319,8 +319,9 @@ pub(super) fn spawn_pty_session(
 
     let mut cmd = build_shell_command(&shell);
     if let Some(ref dir) = cwd {
+        let dir = crate::cli::expand_tilde(dir);
         if is_wsl_shell(&shell) {
-            cmd.cwd(windows_to_wsl_path(dir));
+            cmd.cwd(windows_to_wsl_path(&dir));
         } else {
             cmd.cwd(dir);
         }
