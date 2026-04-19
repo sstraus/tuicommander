@@ -208,6 +208,20 @@ const STALE_QUESTION_CHUNKS: u32 = 10;
 /// turn end (no retry) — 5s is enough to rule out a same-chunk recovery.
 const SILENCE_TOOL_ERROR_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// Detect a turn-ending tool-failure line like Claude Code's
+/// `⎿  Error: Exit code 1`. Anchored to line-start with only non-letter,
+/// non-quote prefix characters (whitespace, box-drawing glyphs) so source
+/// code or markdown that merely quotes the literal `"Error: Exit code N"`
+/// does NOT match — avoids false-positive red notifications when the user's
+/// own pty.rs tests are displayed in a terminal.
+fn is_tool_error_line(line: &str) -> bool {
+    lazy_static::lazy_static! {
+        static ref TOOL_ERROR_RE: regex::Regex =
+            regex::Regex::new(r#"^[^A-Za-z"]*Error:\s*Exit code\s+\d+"#).unwrap();
+    }
+    TOOL_ERROR_RE.is_match(line)
+}
+
 /// How often the timer thread wakes up to check for silence.
 const SILENCE_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
@@ -462,8 +476,23 @@ pub(crate) struct SilenceState {
     /// Cleared if real output (non-chrome, non-error) arrives — that means the
     /// agent recovered and the error is not turn-ending.
     pending_tool_error: Option<String>,
-    /// Whether a ToolError event has already been emitted for the current pending error.
-    tool_error_already_emitted: bool,
+    /// Error lines already surfaced via `ToolError` in the current "input epoch"
+    /// (since the last user line submit / session start). Persists across
+    /// `clear_tool_error_on_recovery` so that scroll-induced reappearances of
+    /// the same error in `changed_rows` do not re-fire the notification.
+    /// Cleared on explicit user input so a recurring failure in a later turn
+    /// can notify again.
+    surfaced_tool_errors: std::collections::HashSet<String>,
+    /// Parsed `suggest:` items awaiting silence-based flush. The parser detects
+    /// the token synchronously with output, but we hold the event here until
+    /// `check_suggest` confirms the turn has ended (`SILENCE_SUGGEST_THRESHOLD`
+    /// elapsed since the last real output chunk). Eliminates the frontend
+    /// `pendingSuggest` race: the event never reaches the UI before idle.
+    pending_suggest_items: Option<Vec<String>>,
+    /// Timestamp when `pending_suggest_items` was parked. Currently for
+    /// diagnostics only — the flush decision is driven by `last_output_at`,
+    /// not the park time.
+    pending_suggest_at: Option<std::time::Instant>,
 }
 
 impl SilenceState {
@@ -481,7 +510,9 @@ impl SilenceState {
             created_at: std::time::Instant::now(),
             startup_settled: false,
             pending_tool_error: None,
-            tool_error_already_emitted: false,
+            surfaced_tool_errors: std::collections::HashSet::new(),
+            pending_suggest_items: None,
+            pending_suggest_at: None,
         }
     }
 
@@ -661,41 +692,89 @@ impl SilenceState {
     /// Register an `Error: Exit code N` line seen in visible output. The silence
     /// timer will emit a ToolError event if the session goes idle without any
     /// real-output chunk clearing the candidate (= agent did not recover).
+    ///
+    /// Idempotent across scroll-induced re-appearances: if this exact line has
+    /// already surfaced in the current input epoch, we drop it. Without this,
+    /// Ink-based TUIs (Claude Code, Codex) cause `changed_rows` to include the
+    /// old error line every time the viewport scrolls, re-arming the candidate
+    /// and re-firing the red notification long after the user has resumed.
     pub(crate) fn mark_tool_error_candidate(&mut self, line: String) {
-        if self.tool_error_already_emitted
-            && self.pending_tool_error.as_deref() == Some(&line)
-        {
+        if self.surfaced_tool_errors.contains(&line) {
+            return;
+        }
+        if self.pending_tool_error.as_deref() == Some(&line) {
             return;
         }
         self.pending_tool_error = Some(line);
-        self.tool_error_already_emitted = false;
     }
 
     /// Called on every real-output chunk that is NOT an error line. Clears the
     /// pending tool-error candidate: if the agent produced real output after an
     /// error, it recovered (e.g. retry) and the error is not turn-ending.
+    ///
+    /// Does NOT reset `surfaced_tool_errors` — recovery is a transient backend
+    /// signal; the user-facing "I've already told you about this error" state
+    /// must survive it and only reset on explicit user input.
     pub(crate) fn clear_tool_error_on_recovery(&mut self) {
         self.pending_tool_error = None;
-        self.tool_error_already_emitted = false;
+    }
+
+    /// Clear the "already surfaced" memory so the next occurrence of any error
+    /// line — including one we've already fired — can notify again. Called
+    /// from `write_pty` when the user submits a line (or Ctrl+C), mirroring
+    /// the api-error dedup reset in `OutputParser::parse_clean_lines`.
+    pub(crate) fn reset_tool_error_memory(&mut self) {
+        self.pending_tool_error = None;
+        self.surfaced_tool_errors.clear();
     }
 
     /// Called by the timer thread. Returns the error text if the silence
     /// threshold has been reached and we haven't emitted yet. Semantics mirror
     /// `check_silence` but use the shorter tool-error threshold.
     pub(crate) fn check_tool_error(&mut self) -> Option<String> {
-        if self.tool_error_already_emitted {
-            return None;
-        }
         if self.is_spinner_active() {
             return None;
         }
-        if let Some(ref line) = self.pending_tool_error
-            && self.last_output_at.elapsed() >= SILENCE_TOOL_ERROR_THRESHOLD
-        {
-            self.tool_error_already_emitted = true;
-            return Some(line.clone());
+        let should_fire = self
+            .pending_tool_error
+            .is_some()
+            && self.last_output_at.elapsed() >= SILENCE_TOOL_ERROR_THRESHOLD;
+        if !should_fire {
+            return None;
         }
-        None
+        let line = self.pending_tool_error.take()?;
+        self.surfaced_tool_errors.insert(line.clone());
+        Some(line)
+    }
+
+    /// Park `suggest:` items parsed from output. The silence timer will flush
+    /// them to the frontend once the shell state transitions to idle — this
+    /// is the single source of truth for "turn ended". A newer set overwrites
+    /// an older pending set: if the agent updates its suggestions mid-turn,
+    /// we deliver the latest.
+    pub(crate) fn mark_suggest_candidate(&mut self, items: Vec<String>) {
+        if items.is_empty() {
+            return;
+        }
+        self.pending_suggest_items = Some(items);
+        self.pending_suggest_at = Some(std::time::Instant::now());
+    }
+
+    /// Drain parked suggest items. No gates — trust the caller to invoke only
+    /// when the shell state is IDLE (the silence timer does exactly that).
+    /// Returns the items once and clears the park slot; a second call returns
+    /// `None` until new items are parked.
+    pub(crate) fn drain_pending_suggest(&mut self) -> Option<Vec<String>> {
+        self.pending_suggest_at = None;
+        self.pending_suggest_items.take()
+    }
+
+    /// Drop any parked suggest on user input. Parallels `reset_tool_error_memory`:
+    /// the user is engaging again, so stale suggestions from the previous turn
+    /// must not fire after a new input cycle starts.
+    pub(crate) fn reset_suggest_memory(&mut self) {
+        self.pending_suggest_items = None;
+        self.pending_suggest_at = None;
     }
 
     /// Returns true if the session has been silent long enough and the spinner
@@ -889,10 +968,13 @@ fn record_inferred_outcome_if_no_osc133(state: &AppState, session_id: &str) {
     if state.has_osc133_integration.contains_key(session_id) {
         return;
     }
+    // try_lock to avoid blocking the timer thread if write_pty holds
+    // the session lock. Inferred outcomes are best-effort — missing cwd
+    // for one record is acceptable vs risking contention.
     let cwd = state
         .sessions
         .get(session_id)
-        .and_then(|s| s.lock().cwd.clone())
+        .and_then(|s| s.try_lock().and_then(|s| s.cwd.clone()))
         .unwrap_or_default();
     let output_snippet = state
         .vt_log_buffers
@@ -902,7 +984,10 @@ fn record_inferred_outcome_if_no_osc133(state: &AppState, session_id: &str) {
             buf.screen_rows().join("\n")
         })
         .unwrap_or_default();
-    let tail_start = output_snippet.len().saturating_sub(500);
+    let mut tail_start = output_snippet.len().saturating_sub(500);
+    while tail_start > 0 && !output_snippet.is_char_boundary(tail_start) {
+        tail_start += 1;
+    }
     let output_snippet = output_snippet[tail_start..].to_string();
 
     let outcome = CommandOutcome {
@@ -988,6 +1073,32 @@ fn spawn_silence_timer(
             // Checked before question detection — a tool error is not a question.
             if let Some(text) = silence.lock().check_tool_error() {
                 let parsed = ParsedEvent::ToolError { matched_text: text };
+                if let Ok(json) = serde_json::to_value(&parsed) {
+                    let _ = event_bus.send(crate::state::AppEvent::PtyParsed {
+                        session_id: session_id.clone(),
+                        parsed: json,
+                    });
+                }
+                if let Some(ref app) = app {
+                    let _ = app.emit(
+                        &format!("pty-parsed-{session_id}"),
+                        &parsed,
+                    );
+                }
+            }
+
+            // Suggest turn-end: drain parked `suggest:` items once the shell
+            // has transitioned to IDLE. The reader parks them at parse time
+            // (see write_pty's emit loop); gating the drain on shell_state ==
+            // IDLE makes the frontend's `pendingSuggest` race impossible —
+            // the event physically cannot reach the UI before idle.
+            let shell_is_idle = state.shell_states.get(&session_id)
+                .map(|atom| atom.load(std::sync::atomic::Ordering::Acquire) == SHELL_IDLE)
+                .unwrap_or(false);
+            if shell_is_idle
+                && let Some(items) = silence.lock().drain_pending_suggest()
+            {
+                let parsed = ParsedEvent::Suggest { items };
                 if let Ok(json) = serde_json::to_value(&parsed) {
                     let _ = event_bus.send(crate::state::AppEvent::PtyParsed {
                         session_id: session_id.clone(),
@@ -1194,11 +1305,10 @@ impl ChunkProcessor {
                         .take()
                         .map(|t| t.elapsed().as_millis() as u64)
                         .unwrap_or(0);
-                    let cwd = state
-                        .sessions
-                        .get(session_id)
-                        .and_then(|s| s.lock().cwd.clone())
-                        .unwrap_or_default();
+                    // Use cached cwd — avoids sessions.lock() in the reader
+                    // thread (deadlock with write_pty holding that lock during
+                    // blocking kernel write).
+                    let cwd = self.session_cwd.clone().unwrap_or_default();
                     let output_snippet = state
                         .vt_log_buffers
                         .get(session_id)
@@ -1207,7 +1317,10 @@ impl ChunkProcessor {
                             buf.screen_rows().join("\n")
                         })
                         .unwrap_or_default();
-                    let tail_start = output_snippet.len().saturating_sub(500);
+                    let mut tail_start = output_snippet.len().saturating_sub(500);
+                    while tail_start > 0 && !output_snippet.is_char_boundary(tail_start) {
+                        tail_start += 1;
+                    }
                     let output_snippet = output_snippet[tail_start..].to_string();
 
                     let classification = if exit_code == 0 {
@@ -1522,6 +1635,16 @@ impl ChunkProcessor {
                 continue;
             }
 
+            // Suggest: park in SilenceState and defer emission until silence
+            // confirms the turn has ended. The frontend used to buffer these
+            // events in `pendingSuggest` to compensate for suggest arriving
+            // before `shell-state: idle`; gating the emission backend-side
+            // removes the race and simplifies the Terminal event handler.
+            if let ParsedEvent::Suggest { items } = event {
+                silence.lock().mark_suggest_candidate(items.clone());
+                continue;
+            }
+
             // Dedup status-line: skip if task_name hasn't changed
             if let ParsedEvent::StatusLine { task_name, .. } = event {
                 if self.last_status_task.as_deref() == Some(task_name.as_str()) {
@@ -1644,16 +1767,13 @@ impl ChunkProcessor {
             let mut sl = silence.lock();
             sl.on_chunk(regex_found_question, last_q_line, has_status_line, chrome_only, suggest_only);
 
-            // Tool-error detection: scan visible rows for `Error: Exit code N`.
+            // Tool-error detection: scan visible rows for `Error: Exit code N`
+            // emitted by Claude Code / Codex at the end of a failing tool call.
             // Fires playError() via silence_timer when followed only by chrome
             // until SILENCE_TOOL_ERROR_THRESHOLD elapses (= turn ended on error).
-            lazy_static::lazy_static! {
-                static ref TOOL_ERROR_RE: regex::Regex =
-                    regex::Regex::new(r"Error:\s*Exit code\s+\d+").unwrap();
-            }
             let mut error_line: Option<String> = None;
             for row in changed_rows.iter() {
-                if TOOL_ERROR_RE.is_match(&row.text) {
+                if is_tool_error_line(&row.text) {
                     error_line = Some(row.text.trim().to_string());
                 }
             }
@@ -1739,10 +1859,17 @@ fn process_kitty_actions(
             KittyAction::Query => {
                 let flags = ks.current_flags();
                 let response = format!("\x1b[?{}u", flags);
+                // try_lock: MUST NOT block the reader thread — blocking here
+                // while write_pty holds the lock causes a circular deadlock
+                // (reader blocked → kernel buffer fills → write_pty blocks on write).
                 if let Some(sess) = state.sessions.get(session_id) {
-                    let mut sess = sess.lock();
-                    let _ = sess.writer.write_all(response.as_bytes());
-                    let _ = sess.writer.flush();
+                    if let Some(mut s) = sess.try_lock() {
+                        let _ = s.writer.write_all(response.as_bytes());
+                        let _ = s.writer.flush();
+                    } else {
+                        tracing::debug!(session_id = %session_id,
+                            "kitty query response dropped — session lock contended");
+                    }
                 }
             }
         }
@@ -2191,6 +2318,8 @@ pub(crate) fn spawn_reader_thread(
     );
 
     std::thread::spawn(move || {
+        let sid_for_panic = session_id.clone();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let mut buf = [0u8; 65536];
         let mut utf8_buf = Utf8ReadBuffer::new();
         let mut esc_buf = EscapeAwareBuffer::new();
@@ -2215,22 +2344,9 @@ pub(crate) fn spawn_reader_thread(
                     process_kitty_actions(&kitty_actions, &session_id, &state, Some(&app));
 
                     if let Some(processed) = processor.process_chunk(&data, &silence, &session_id, &state, Some(&app)) {
-                        // Colorize intent / conceal suggest tokens, buffering incomplete
-                        // tokens across streaming chunks to prevent cosmetic flash.
-                        // Plain-prefix format only processed when an agent is detected.
                         if let Some(xterm_data) = processor.transform_xterm(processed) {
-                            // DISABLED (2026-04-15): clamp_cursor_up causes scrollback
-                            // proliferation — Ink's large ESC[nA gets clamped to viewport
-                            // height, so the cursor can't reach the top of the previous
-                            // frame and each redraw appends a near-duplicate block.
-                            // Original intent: prevent scroll-jump-to-top (CC #33367).
-                            // TODO: remove entirely in May 2026 if no scroll-jump regression.
                             let clamped_data = xterm_data;
 
-                            // Detect anomalous ANSI sequences for scroll-jump diagnostics.
-                            // Skip when: alternate buffer (fullscreen apps), or an Ink agent
-                            // is active in normal buffer — ESC[H is standard Ink rendering
-                            // (~15×/sec) and logging it floods the log channel.
                             let agent_active = state.session_states.get(&session_id)
                                 .map(|s| s.agent_type.is_some())
                                 .unwrap_or(false);
@@ -2300,6 +2416,17 @@ pub(crate) fn spawn_reader_thread(
         }));
 
         mark_session_exited(&session_id, &state);
+        })); // end catch_unwind
+        if let Err(panic_info) = result {
+            let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                s.to_string()
+            } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "unknown panic payload".to_string()
+            };
+            tracing::error!(session_id = %sid_for_panic, "READER THREAD PANICKED: {msg}");
+        }
     });
 }
 
@@ -2690,15 +2817,25 @@ pub(crate) async fn write_pty(
     let app = app.clone();
     tokio::task::spawn_blocking(move || {
     if let Some(entry) = state.sessions.get(&session_id) {
-        let mut session = entry.lock();
-        session
-            .writer
-            .write_all(data.as_bytes())
-            .map_err(|e| format!("Failed to write to PTY: {e}"))?;
-        session
-            .writer
-            .flush()
-            .map_err(|e| format!("Failed to flush PTY: {e}"))?;
+        tracing::trace!(session_id = %session_id, data_len = data.len(), "write_pty");
+        let t0 = std::time::Instant::now();
+        {
+            let mut session = entry.lock();
+            let lock_ms = t0.elapsed().as_millis();
+            session
+                .writer
+                .write_all(data.as_bytes())
+                .map_err(|e| format!("Failed to write to PTY: {e}"))?;
+            session
+                .writer
+                .flush()
+                .map_err(|e| format!("Failed to flush PTY: {e}"))?;
+            let total_ms = t0.elapsed().as_millis();
+            if total_ms > 100 {
+                tracing::warn!(session_id = %session_id, lock_ms = %lock_ms, total_ms = %total_ms,
+                    data_len = %data.len(), "write_pty SLOW — lock or write blocked");
+            }
+        }
 
         // Feed input through the line buffer to reconstruct user-typed lines
         let input_entry = state
@@ -2744,6 +2881,18 @@ pub(crate) async fn write_pty(
                     line_submitted = true;
                 }
             }
+        }
+
+        // On any line submit (Enter or Ctrl+C) reset the tool-error dedup
+        // memory: the user is explicitly engaging again, so a recurrence of
+        // the same failure in a later turn must be allowed to notify.
+        // Mirrors `OutputParser`'s reset of `last_api_error_match` on UserInput.
+        if line_submitted
+            && let Some(ss) = state.silence_states.get(&session_id)
+        {
+            let mut sl = ss.lock();
+            sl.reset_tool_error_memory();
+            sl.reset_suggest_memory();
         }
 
         // Track slash command mode: true when the input buffer starts with /
@@ -2856,6 +3005,7 @@ pub(crate) fn pause_pty(state: State<'_, Arc<AppState>>, session_id: String) -> 
         .ok_or_else(|| format!("Session not found: {session_id}"))?;
     entry.lock().paused.store(true, Ordering::Relaxed);
     state.metrics.pauses_triggered.fetch_add(1, Ordering::Relaxed);
+    tracing::debug!(session_id = %session_id, "PTY reader paused (flow control)");
     Ok(())
 }
 
@@ -2866,6 +3016,7 @@ pub(crate) fn resume_pty(state: State<'_, Arc<AppState>>, session_id: String) ->
         .get(&session_id)
         .ok_or_else(|| format!("Session not found: {session_id}"))?;
     entry.lock().paused.store(false, Ordering::Relaxed);
+    tracing::debug!(session_id = %session_id, "PTY reader resumed (flow control)");
     Ok(())
 }
 
@@ -3592,6 +3743,205 @@ mod tests {
             s.check_tool_error().is_none(),
             "recovery must clear pending tool error"
         );
+    }
+
+    #[test]
+    fn test_tool_error_does_not_refire_same_line_after_recovery() {
+        // Reproduces the scroll-induced re-fire bug: once an error has been
+        // surfaced, scrolling the Ink TUI viewport re-introduces the error line
+        // in `changed_rows`. `clear_tool_error_on_recovery` must NOT re-enable
+        // notification for a line the user already saw.
+        let mut s = SilenceState::new();
+        s.mark_tool_error_candidate("Error: Exit code 1".to_string());
+        s.last_output_at = std::time::Instant::now()
+            - SILENCE_TOOL_ERROR_THRESHOLD
+            - std::time::Duration::from_millis(100);
+        assert_eq!(
+            s.check_tool_error(),
+            Some("Error: Exit code 1".to_string()),
+            "first occurrence must fire"
+        );
+
+        // Agent produced real output → recovery.
+        s.clear_tool_error_on_recovery();
+
+        // Viewport scrolls, same error line reappears in changed_rows.
+        s.mark_tool_error_candidate("Error: Exit code 1".to_string());
+        s.last_output_at = std::time::Instant::now()
+            - SILENCE_TOOL_ERROR_THRESHOLD
+            - std::time::Duration::from_millis(100);
+        assert!(
+            s.check_tool_error().is_none(),
+            "same error line must not refire after recovery (scroll-induced)"
+        );
+    }
+
+    #[test]
+    fn test_tool_error_different_line_fires_after_first() {
+        let mut s = SilenceState::new();
+        s.mark_tool_error_candidate("Error: Exit code 1".to_string());
+        s.last_output_at = std::time::Instant::now()
+            - SILENCE_TOOL_ERROR_THRESHOLD
+            - std::time::Duration::from_millis(100);
+        let _ = s.check_tool_error();
+        s.clear_tool_error_on_recovery();
+
+        // A different error appears in a later turn — must still fire.
+        s.mark_tool_error_candidate("Error: Exit code 128".to_string());
+        s.last_output_at = std::time::Instant::now()
+            - SILENCE_TOOL_ERROR_THRESHOLD
+            - std::time::Duration::from_millis(100);
+        assert_eq!(
+            s.check_tool_error(),
+            Some("Error: Exit code 128".to_string()),
+            "distinct error text must not be suppressed by prior surface"
+        );
+    }
+
+    #[test]
+    fn test_tool_error_refires_after_memory_reset() {
+        // After the user submits a line (explicit re-engagement), a recurrence
+        // of the same failure in a new turn must notify again.
+        let mut s = SilenceState::new();
+        s.mark_tool_error_candidate("Error: Exit code 1".to_string());
+        s.last_output_at = std::time::Instant::now()
+            - SILENCE_TOOL_ERROR_THRESHOLD
+            - std::time::Duration::from_millis(100);
+        assert!(s.check_tool_error().is_some());
+
+        s.reset_tool_error_memory();
+
+        s.mark_tool_error_candidate("Error: Exit code 1".to_string());
+        s.last_output_at = std::time::Instant::now()
+            - SILENCE_TOOL_ERROR_THRESHOLD
+            - std::time::Duration::from_millis(100);
+        assert_eq!(
+            s.check_tool_error(),
+            Some("Error: Exit code 1".to_string()),
+            "after user input, same error text must be allowed to notify again"
+        );
+    }
+
+    #[test]
+    fn test_tool_error_mark_is_idempotent_while_pending() {
+        let mut s = SilenceState::new();
+        s.mark_tool_error_candidate("Error: Exit code 1".to_string());
+        // Second mark for the same line while still pending → no-op.
+        s.mark_tool_error_candidate("Error: Exit code 1".to_string());
+        s.last_output_at = std::time::Instant::now()
+            - SILENCE_TOOL_ERROR_THRESHOLD
+            - std::time::Duration::from_millis(100);
+        assert_eq!(
+            s.check_tool_error(),
+            Some("Error: Exit code 1".to_string())
+        );
+    }
+
+    // --- is_tool_error_line tests ---
+
+    #[test]
+    fn test_tool_error_matches_claude_code_format() {
+        // Claude Code prefixes tool-result rows with `⎿ `.
+        assert!(is_tool_error_line("⎿  Error: Exit code 1"));
+        assert!(is_tool_error_line("  ⎿  Error: Exit code 127"));
+    }
+
+    #[test]
+    fn test_tool_error_matches_bare_format() {
+        assert!(is_tool_error_line("Error: Exit code 1"));
+        assert!(is_tool_error_line("  Error: Exit code 128"));
+    }
+
+    #[test]
+    fn test_tool_error_rejects_source_code_literal() {
+        // Exact string that triggered the false-positive in Boss's session:
+        // the test file's own content displayed in a terminal armed a red
+        // notification because the unanchored regex matched inside a string
+        // literal. These must never fire.
+        assert!(!is_tool_error_line(
+            r#"s.mark_tool_error_candidate("Error: Exit code 2".to_string());"#
+        ));
+        assert!(!is_tool_error_line(
+            r#"assert_eq!(s.check_tool_error(), Some("Error: Exit code 1".to_string()));"#
+        ));
+        assert!(!is_tool_error_line(
+            r#"3895          s.mark_tool_error_candidate("Error: Exit code 2".to_string"#
+        ));
+    }
+
+    #[test]
+    fn test_tool_error_rejects_markdown_mention() {
+        // Commit messages, docs, release notes that quote the error text.
+        assert!(!is_tool_error_line(
+            r#"fix: resolve "Error: Exit code 1" in claude tool pipeline"#
+        ));
+    }
+
+    #[test]
+    fn test_tool_error_allows_box_drawing_variations() {
+        // Other box-drawing chars Claude uses for tool-call hierarchy rows.
+        assert!(is_tool_error_line("╰  Error: Exit code 2"));
+        assert!(is_tool_error_line("│  Error: Exit code 5"));
+    }
+
+    // --- Suggest backend-gating tests ---
+
+    #[test]
+    fn test_suggest_drain_returns_parked_items() {
+        let mut s = SilenceState::new();
+        s.mark_suggest_candidate(vec!["alpha".to_string(), "beta".to_string()]);
+        assert_eq!(
+            s.drain_pending_suggest(),
+            Some(vec!["alpha".to_string(), "beta".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_suggest_drain_consumes_items() {
+        let mut s = SilenceState::new();
+        s.mark_suggest_candidate(vec!["a".to_string()]);
+        let _ = s.drain_pending_suggest();
+        assert!(
+            s.drain_pending_suggest().is_none(),
+            "second drain must return None — single-shot semantics"
+        );
+    }
+
+    #[test]
+    fn test_suggest_drain_none_when_nothing_parked() {
+        let mut s = SilenceState::new();
+        assert!(s.drain_pending_suggest().is_none());
+    }
+
+    #[test]
+    fn test_suggest_newer_items_overwrite_older() {
+        let mut s = SilenceState::new();
+        s.mark_suggest_candidate(vec!["old".to_string()]);
+        s.mark_suggest_candidate(vec!["new1".to_string(), "new2".to_string()]);
+        assert_eq!(
+            s.drain_pending_suggest(),
+            Some(vec!["new1".to_string(), "new2".to_string()]),
+            "latest parked set must win (agent updated suggestions mid-turn)"
+        );
+    }
+
+    #[test]
+    fn test_suggest_reset_on_user_input() {
+        let mut s = SilenceState::new();
+        s.mark_suggest_candidate(vec!["stale".to_string()]);
+        s.reset_suggest_memory();
+        assert!(
+            s.drain_pending_suggest().is_none(),
+            "user input must drop pending suggest so it doesn't fire across turns"
+        );
+    }
+
+    #[test]
+    fn test_suggest_empty_items_ignored() {
+        let mut s = SilenceState::new();
+        s.mark_suggest_candidate(vec![]);
+        assert!(s.pending_suggest_items.is_none(), "empty items must not park");
+        assert!(s.drain_pending_suggest().is_none());
     }
 
     #[test]

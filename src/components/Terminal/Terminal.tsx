@@ -487,7 +487,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
         case "user-input":
           planFileNotified = false;
           // Clear suggest bar, pending buffer, and mark dismissed
-          terminalsStore.update(props.id, { suggestDismissed: true, suggestedActions: null, pendingSuggest: null, activeSubTasks: 0 });
+          terminalsStore.update(props.id, { suggestDismissed: true, suggestedActions: null, activeSubTasks: 0 });
           // User resumed typing — clear any stale error/question badge. See comment
           // in stores/terminals.ts handleShellStateChange: error state should be
           // cleared on explicit agent activity, user-input, or process exit.
@@ -549,45 +549,37 @@ export const Terminal: Component<TerminalProps> = (props) => {
           // Intent/suggest row overlays handled by installRenderObserver
           break;
         case "suggest":
+          // Backend guarantees `suggest` events only arrive once the shell has
+          // transitioned to IDLE (see `drain_pending_suggest` in pty.rs, gated
+          // on `SHELL_IDLE`). No frontend buffering needed: if the user hasn't
+          // dismissed the previous cycle's chips, show the new set directly.
           if (settingsStore.state.suggestFollowups && parsed.items?.length) {
             const t = terminalsStore.get(props.id);
-            if (t?.shellState === "idle") {
-              if (!t.suggestDismissed) {
-                appLogger.debug("terminal", `[Suggest] ${props.id} → direct (idle, not dismissed) items=${parsed.items.length}`);
-                terminalsStore.setSuggestedActions(props.id, parsed.items);
-              } else {
-                appLogger.debug("terminal", `[Suggest] ${props.id} → dropped (idle but dismissed)`);
-              }
-            } else {
-              appLogger.debug("terminal", `[Suggest] ${props.id} → pending (shellState=${t?.shellState}) items=${parsed.items.length}`);
-              terminalsStore.update(props.id, { pendingSuggest: parsed.items });
+            if (t && !t.suggestDismissed) {
+              terminalsStore.setSuggestedActions(props.id, parsed.items);
+            } else if (t?.suggestDismissed) {
+              appLogger.debug("terminal", `[Suggest] ${props.id} → dropped (dismissed)`);
             }
           }
           break;
         case "shell-state": {
           if (parsed.state !== "idle") {
-            // Shell goes busy: set state + clear stale suggest bar and pending from
-            // previous cycle in a single write. Reset dismissed so the suggest emitted
-            // at the END of this cycle can show.
+            // Shell goes busy: clear stale suggest from previous cycle and reset
+            // `suggestDismissed` so the next turn's suggestions (delivered by
+            // the backend once shell returns to idle) can show.
             terminalsStore.update(props.id, {
               shellState: parsed.state,
               suggestedActions: null,
               suggestDismissed: false,
-              pendingSuggest: null,
             });
           }
           if (parsed.state === "idle") {
-            // Show pending suggest buffered during the just-completed busy cycle
+            // Idle arrives first; any parked `suggest:` items follow on a later
+            // silence-timer tick (backend-gated). No promotion logic needed here.
             const pendingT = terminalsStore.get(props.id);
-            const hasPending = !!pendingT?.pendingSuggest?.length;
             const initCmd = pendingT?.pendingInitCommand;
-            if (hasPending) {
-              appLogger.debug("terminal", `[Suggest] ${props.id} → promoting ${pendingT!.pendingSuggest!.length} pending items on idle`);
-            }
-            // Merge shellState + pendingSuggest promotion + initCommand clear into one write
             terminalsStore.update(props.id, {
               shellState: parsed.state,
-              ...(hasPending ? { suggestedActions: pendingT!.pendingSuggest, pendingSuggest: null } : {}),
               ...(initCmd ? { pendingInitCommand: null } : {}),
             });
             if (initCmd && targetSessionId) {
@@ -1309,20 +1301,24 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
     terminal.onData(async (data) => {
       if (sessionId) {
-        // Focus report sequences (CSI I / CSI O) from DECSET 1004 fire on
-        // tab/window focus changes — not user input. Still forward to PTY
-        // (CC needs them) but don't clear awaitingInput.
         const isFocusReport = data === "\x1b[I" || data === "\x1b[O";
         if (!isFocusReport) {
           if (terminalsStore.get(props.id)?.awaitingInput) {
             terminalsStore.clearAwaitingInput(props.id);
           }
         }
+        const t0 = performance.now();
         try {
           await pty.write(sessionId, data);
+          const elapsed = performance.now() - t0;
+          if (elapsed > 500) {
+            appLogger.warn("terminal", `pty.write SLOW: ${Math.round(elapsed)}ms`, { sessionId, dataLen: data.length });
+          }
         } catch (err) {
           appLogger.error("terminal", "Failed to write to PTY", err);
         }
+      } else {
+        appLogger.warn("terminal", `onData fired with null sessionId (${props.id})`);
       }
     });
 
@@ -1571,6 +1567,33 @@ export const Terminal: Component<TerminalProps> = (props) => {
     doFit();
   });
 
+  // When a foreground TUI agent exits (agentType Some → null), some agents
+  // (e.g. claude-code on double-Ctrl+C) fail to emit `\e[?1049l` to leave the
+  // alt-screen buffer, leaving xterm stuck on the agent's last frame while the
+  // shell runs beneath. Inject the exit sequences + show cursor + reset attrs
+  // so the primary buffer is restored deterministically. No-op if alt-screen
+  // was already exited cleanly by the agent.
+  //
+  // DEFERRED (2026-04-19) — layer 2: in rare cases (observed once on claude-code double
+  // Ctrl+C + blocking stop hook) the agent also leaves the PTY termios in raw
+  // mode with ICANON off, and zsh's ZLE wedges — it prints PROMPT_EOL_MARK (%)
+  // then fails to draw the actual prompt and emits zero bytes forever (not
+  // even echo for subsequent keystrokes). Only kill + respawn recovers. Fix
+  // would be a backend `tcsetattr(master_fd, sane)` on the agent→shell
+  // transition using `session.master.as_raw_fd()` + `nix::sys::termios`. Not
+  // wired yet — needs a reliable repro; frontend xterm.write() below doesn't
+  // help this case because xterm is a separate consumer of the PTY output
+  // stream and the issue is on the shell side.
+  let lastAgentType: string | null = null;
+  createEffect(() => {
+    const curr = terminalsStore.get(props.id)?.agentType ?? null;
+    if (lastAgentType !== null && curr === null && terminal) {
+      terminal.write("\x1b[?1049l\x1b[?1047l\x1b[?47l\x1b[?25h\x1b[0m");
+      appLogger.debug("terminal", `[Recovery] ${props.id} wrote alt-screen exit after agent "${lastAgentType}" → null`);
+    }
+    lastAgentType = curr;
+  });
+
   // Handle font family + theme changes (global settings)
   // Preload via CSS Font Loading API before applying — canvas/WebGL renderers
   // cannot trigger @font-face loading on their own.
@@ -1690,7 +1713,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
   };
 
   return (
-    <div class={s.wrapper} data-terminal-id={props.id}>
+    <div class={s.wrapper} data-terminal-id={props.id} data-focus-target="terminal">
       <TerminalSearch
         visible={searchVisible()}
         searchAddon={searchAddon()}
