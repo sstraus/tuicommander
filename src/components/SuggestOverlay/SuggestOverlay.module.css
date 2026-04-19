@@ -43,6 +43,8 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  max-width: min(40ch, 22vw);
   font-family: var(--font-ui);
   font-size: var(--chip-font-size);
   padding: 8px 16px;
@@ -53,6 +55,13 @@
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.1s ease, border-color 0.1s ease, font-size 0.08s ease;
+}
+
+.chipLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chip:hover {

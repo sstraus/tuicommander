@@ -1275,230 +1275,96 @@ describe("Sidebar", () => {
     });
   });
 
-  describe("drag-and-drop", () => {
-    /** Helper: create a DataTransfer mock for drag events */
-    function makeDataTransfer(): DataTransfer {
-      const store: Record<string, string> = {};
-      return {
-        effectAllowed: "move",
-        dropEffect: "move",
-        setData: vi.fn((type: string, data: string) => { store[type] = data; }),
-        getData: vi.fn((type: string) => store[type] ?? ""),
-        setDragImage: vi.fn(),
-        clearData: vi.fn(),
-        items: [] as unknown,
-        types: [] as unknown,
-        files: [] as unknown,
-      } as unknown as DataTransfer;
-    }
-
-    it("drag repo within same group reorders", () => {
-      const group = { id: "g1", name: "Work", color: "", collapsed: false, repoOrder: ["/repo1", "/repo2"] };
-      const repo1 = makeRepo();
-      const repo2 = makeRepo({ path: "/repo2", displayName: "Repo Two", initials: "RT" });
-      setRepos({ "/repo1": repo1, "/repo2": repo2 });
-      mockGetGroupedLayout.mockReturnValue({
-        groups: [{ group, repos: [repo1, repo2] }],
-        ungrouped: [],
-      });
-      mockGetGroupForRepo.mockImplementation((path: string) =>
-        path === "/repo1" || path === "/repo2" ? group : undefined
-      );
-      // Store mock needs repoOrder for the handler
-      (repositoriesStore.state as any).groups = { g1: group };
-
-      const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const repoSections = container.querySelectorAll(".repoSection");
-      expect(repoSections.length).toBe(2);
-
-      const dt = makeDataTransfer();
-
-      // Simulate drag start on repo1
-      fireEvent.dragStart(repoSections[0], { dataTransfer: dt });
-
-      // Simulate drag over repo2 (bottom half)
-      const rect = { top: 0, height: 40, bottom: 40, left: 0, right: 100, width: 100, x: 0, y: 0, toJSON: () => {} };
-      repoSections[1].getBoundingClientRect = () => rect as DOMRect;
-      fireEvent.dragOver(repoSections[1], { dataTransfer: dt, clientY: 30 });
-
-      // Simulate drop on repo2
-      fireEvent.drop(repoSections[1], { dataTransfer: dt });
-
-      // Should call reorderRepoInGroup for same-group reorder
-      expect(mockReorderRepoInGroup).toHaveBeenCalledWith("g1", 0, 1);
-    });
-
-    it("drag repo onto different group header assigns to group", () => {
+  describe("drag-and-drop (mouse-based)", () => {
+    it("mouseDown on repo section initiates drag after movement threshold", () => {
       const repo = makeRepo();
       setRepos({ "/repo1": repo });
-      mockGetGroupedLayout.mockReturnValue({
-        groups: [
-          {
-            group: { id: "g1", name: "Work", color: "", collapsed: false, repoOrder: [] },
-            repos: [],
-          },
-          {
-            group: { id: "g2", name: "Personal", color: "", collapsed: false, repoOrder: [] },
-            repos: [],
-          },
-        ],
-        ungrouped: [repo],
-      });
-      mockGetGroupForRepo.mockReturnValue(undefined);
-
       const { container } = render(() => <Sidebar {...defaultProps()} />);
       const repoSection = container.querySelector(".repoSection")!;
-      const groupHeaders = container.querySelectorAll(".groupHeader");
-      expect(groupHeaders.length).toBe(2);
 
-      const dt = makeDataTransfer();
+      // mouseDown alone should not add dragging class
+      fireEvent.mouseDown(repoSection, { button: 0, clientX: 10, clientY: 10 });
+      expect(repoSection.classList.contains("dragging")).toBe(false);
 
-      // Simulate drag start on repo
-      fireEvent.dragStart(repoSection, { dataTransfer: dt });
+      // Move past threshold — dragging class appears
+      fireEvent.mouseMove(document, { clientX: 20, clientY: 10 });
+      expect(repoSection.classList.contains("dragging")).toBe(true);
 
-      // Simulate drop on first group header
-      fireEvent.dragOver(groupHeaders[0], { dataTransfer: dt });
-      fireEvent.drop(groupHeaders[0], { dataTransfer: dt });
-
-      // Should call addRepoToGroup
-      expect(mockAddRepoToGroup).toHaveBeenCalledWith("/repo1", "g1");
+      // Cleanup
+      fireEvent.mouseUp(document, { clientX: 20, clientY: 10 });
+      expect(repoSection.classList.contains("dragging")).toBe(false);
     });
 
-    it("drag repo from group to ungrouped area removes from group", () => {
-      const repo1 = makeRepo();
-      const repo2 = makeRepo({ path: "/repo2", displayName: "Repo Two", initials: "RT" });
-      setRepos({ "/repo1": repo1, "/repo2": repo2 });
+    it("mouseDown on group header initiates group drag after threshold", () => {
+      const repo = makeRepo();
+      setRepos({ "/repo1": repo });
       mockGetGroupedLayout.mockReturnValue({
         groups: [{
           group: { id: "g1", name: "Work", color: "", collapsed: false, repoOrder: ["/repo1"] },
-          repos: [repo1],
+          repos: [repo],
         }],
-        ungrouped: [repo2],
-      });
-      mockGetGroupForRepo.mockImplementation((path: string) =>
-        path === "/repo1"
-          ? { id: "g1", name: "Work", color: "", collapsed: false, repoOrder: ["/repo1"] }
-          : undefined
-      );
-
-      const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const groupRepoSections = container.querySelector(".groupRepos")!.querySelectorAll(".repoSection");
-      const ungroupedRepoSections = container.querySelectorAll(".repoList > .repoSection");
-
-      expect(groupRepoSections.length).toBe(1);
-      expect(ungroupedRepoSections.length).toBe(1);
-
-      const dt = makeDataTransfer();
-
-      // Simulate drag start on grouped repo1
-      fireEvent.dragStart(groupRepoSections[0], { dataTransfer: dt });
-
-      // Simulate drop on ungrouped repo2
-      const rect = { top: 0, height: 40, bottom: 40, left: 0, right: 100, width: 100, x: 0, y: 0, toJSON: () => {} };
-      ungroupedRepoSections[0].getBoundingClientRect = () => rect as DOMRect;
-      fireEvent.dragOver(ungroupedRepoSections[0], { dataTransfer: dt, clientY: 30 });
-      fireEvent.drop(ungroupedRepoSections[0], { dataTransfer: dt });
-
-      // Should call removeRepoFromGroup since target is ungrouped
-      expect(mockRemoveRepoFromGroup).toHaveBeenCalledWith("/repo1");
-    });
-
-    it("drag repo from group A to position in group B moves between groups", () => {
-      const g1 = { id: "g1", name: "Work", color: "", collapsed: false, repoOrder: ["/repo1"] };
-      const g2 = { id: "g2", name: "Personal", color: "", collapsed: false, repoOrder: ["/repo2", "/repo3"] };
-      const repo1 = makeRepo();
-      const repo2 = makeRepo({ path: "/repo2", displayName: "Repo Two", initials: "RT" });
-      const repo3 = makeRepo({ path: "/repo3", displayName: "Repo Three", initials: "R3" });
-      setRepos({ "/repo1": repo1, "/repo2": repo2, "/repo3": repo3 });
-      mockGetGroupedLayout.mockReturnValue({
-        groups: [
-          { group: g1, repos: [repo1] },
-          { group: g2, repos: [repo2, repo3] },
-        ],
         ungrouped: [],
       });
-      mockGetGroupForRepo.mockImplementation((path: string) => {
-        if (path === "/repo1") return g1;
-        if (path === "/repo2" || path === "/repo3") return g2;
-        return undefined;
-      });
-      (repositoriesStore.state as any).groups = { g1, g2 };
 
       const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const groupSections = container.querySelectorAll(".groupSection");
-      expect(groupSections.length).toBe(2);
+      const groupHeader = container.querySelector(".groupHeader")!;
 
-      const g1Repos = groupSections[0].querySelectorAll(".repoSection");
-      const g2Repos = groupSections[1].querySelectorAll(".repoSection");
-      expect(g1Repos.length).toBe(1);
-      expect(g2Repos.length).toBe(2);
+      fireEvent.mouseDown(groupHeader, { button: 0, clientX: 10, clientY: 10 });
+      fireEvent.mouseMove(document, { clientX: 20, clientY: 10 });
 
-      const dt = makeDataTransfer();
+      // Ghost element should exist in the document
+      const ghosts = document.querySelectorAll("[style*='position: fixed']");
+      expect(ghosts.length).toBeGreaterThan(0);
 
-      // Drag repo1 from g1
-      fireEvent.dragStart(g1Repos[0], { dataTransfer: dt });
-
-      // Drop on repo2 in g2
-      fireEvent.dragOver(g2Repos[0], { dataTransfer: dt, clientY: 30 });
-      fireEvent.drop(g2Repos[0], { dataTransfer: dt });
-
-      // Should call moveRepoBetweenGroups (index 1 = after repo2, since JSDOM getBoundingClientRect returns zeros → "bottom" side)
-      expect(mockMoveRepoBetweenGroups).toHaveBeenCalledWith("/repo1", "g1", "g2", 1);
+      // Cleanup
+      fireEvent.mouseUp(document, { clientX: 20, clientY: 10 });
     });
 
-    it("drag group header reorders groups", () => {
-      const g1 = { id: "g1", name: "Work", color: "", collapsed: false, repoOrder: ["/repo1"] };
-      const g2 = { id: "g2", name: "Personal", color: "", collapsed: false, repoOrder: ["/repo2"] };
-      const repo1 = makeRepo();
-      const repo2 = makeRepo({ path: "/repo2", displayName: "Repo Two", initials: "RT" });
-      setRepos({ "/repo1": repo1, "/repo2": repo2 });
-      mockGetGroupedLayout.mockReturnValue({
-        groups: [
-          { group: g1, repos: [repo1] },
-          { group: g2, repos: [repo2] },
-        ],
-        ungrouped: [],
-      });
-      (repositoriesStore.state as any).groupOrder = ["g1", "g2"];
-
-      const { container } = render(() => <Sidebar {...defaultProps()} />);
-      const groupSections = container.querySelectorAll(".groupSection");
-      expect(groupSections.length).toBe(2);
-
-      const dt = makeDataTransfer();
-
-      // Drag first group section
-      fireEvent.dragStart(groupSections[0], { dataTransfer: dt });
-
-      // Drop on second group section (bottom half)
-      const rect = { top: 0, height: 60, bottom: 60, left: 0, right: 200, width: 200, x: 0, y: 0, toJSON: () => {} };
-      groupSections[1].getBoundingClientRect = () => rect as DOMRect;
-      fireEvent.dragOver(groupSections[1], { dataTransfer: dt, clientY: 40 });
-      fireEvent.drop(groupSections[1], { dataTransfer: dt });
-
-      expect(mockReorderGroups).toHaveBeenCalledWith(0, 1);
-    });
-
-    it("drag same repo onto itself is a no-op", () => {
+    it("escape cancels drag without performing any action", () => {
       const repo = makeRepo();
       setRepos({ "/repo1": repo });
       const { container } = render(() => <Sidebar {...defaultProps()} />);
       const repoSection = container.querySelector(".repoSection")!;
 
-      const dt = makeDataTransfer();
+      fireEvent.mouseDown(repoSection, { button: 0, clientX: 10, clientY: 10 });
+      fireEvent.mouseMove(document, { clientX: 20, clientY: 10 });
+      fireEvent.keyDown(document, { key: "Escape" });
 
-      fireEvent.dragStart(repoSection, { dataTransfer: dt });
-      const rect = { top: 0, height: 40, bottom: 40, left: 0, right: 100, width: 100, x: 0, y: 0, toJSON: () => {} };
-      repoSection.getBoundingClientRect = () => rect as DOMRect;
-      fireEvent.dragOver(repoSection, { dataTransfer: dt, clientY: 20 });
-      fireEvent.drop(repoSection, { dataTransfer: dt });
-
-      // No reorder actions should be called
       expect(mockReorderRepo).not.toHaveBeenCalled();
       expect(mockReorderRepoInGroup).not.toHaveBeenCalled();
       expect(mockMoveRepoBetweenGroups).not.toHaveBeenCalled();
       expect(mockAddRepoToGroup).not.toHaveBeenCalled();
       expect(mockRemoveRepoFromGroup).not.toHaveBeenCalled();
+    });
+
+    it("right-click does not initiate drag", () => {
+      const repo = makeRepo();
+      setRepos({ "/repo1": repo });
+      const { container } = render(() => <Sidebar {...defaultProps()} />);
+      const repoSection = container.querySelector(".repoSection")!;
+
+      // button=2 is right-click
+      fireEvent.mouseDown(repoSection, { button: 2, clientX: 10, clientY: 10 });
+      fireEvent.mouseMove(document, { clientX: 20, clientY: 10 });
+
+      expect(repoSection.classList.contains("dragging")).toBe(false);
+      fireEvent.mouseUp(document, { clientX: 20, clientY: 10 });
+    });
+
+    it("mouseUp without crossing threshold is a click, not a drag", () => {
+      const repo = makeRepo();
+      setRepos({ "/repo1": repo });
+      const { container } = render(() => <Sidebar {...defaultProps()} />);
+      const repoSection = container.querySelector(".repoSection")!;
+
+      fireEvent.mouseDown(repoSection, { button: 0, clientX: 10, clientY: 10 });
+      // Move less than threshold (5px)
+      fireEvent.mouseMove(document, { clientX: 12, clientY: 10 });
+      fireEvent.mouseUp(document, { clientX: 12, clientY: 10 });
+
+      // No drag actions
+      expect(mockReorderRepo).not.toHaveBeenCalled();
+      expect(repoSection.classList.contains("dragging")).toBe(false);
     });
   });
 

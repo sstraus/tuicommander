@@ -121,10 +121,10 @@ pub(crate) fn apply_no_window(_cmd: &mut std::process::Command) {
 /// `std::fs` APIs do not invoke a shell, so tilde is treated as a literal
 /// character and the OS returns ENOENT.
 pub(crate) fn expand_tilde(path: &str) -> String {
-    if path == "~" || path.starts_with("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return format!("{}{}", home, &path[1..]);
-        }
+    if (path == "~" || path.starts_with("~/"))
+        && let Ok(home) = std::env::var("HOME")
+    {
+        return format!("{}{}", home, &path[1..]);
     }
     path.to_string()
 }

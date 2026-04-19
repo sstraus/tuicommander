@@ -64,13 +64,12 @@ export interface TerminalData {
   tuicSession: string | null; // Stable tab UUID — injected as TUIC_SESSION env var, persists across restarts
   suggestedActions: string[] | null; // Follow-up suggestions from suggest: token
   suggestDismissed: boolean; // true after user dismissed/selected/typed — resets on shell-state:idle
-  pendingSuggest: string[] | null; // Buffered suggest during busy — shown on idle transition
   commandBlocks: CommandBlock[]; // Completed command blocks from OSC 133
   activeBlock: CommandBlock | null; // Current in-progress block (A received, D not yet)
 }
 
 /** Fields auto-populated with defaults when creating a terminal — callers only provide the remaining fields. */
-type TerminalCreateData = Omit<TerminalData, "id" | "activity" | "unseen" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "pendingInitCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "currentTask" | "activeSubTasks" | "isRemote" | "agentSessionId" | "tuicSession" | "suggestedActions" | "suggestDismissed" | "pendingSuggest" | "awaitingInputConfident" | "commandBlocks" | "activeBlock"> & { tuicSession?: string | null; isRemote?: boolean; agentType?: AgentType | null; agentSessionId?: string | null };
+type TerminalCreateData = Omit<TerminalData, "id" | "activity" | "unseen" | "progress" | "shellState" | "nameIsCustom" | "agentType" | "pendingResumeCommand" | "pendingInitCommand" | "usageLimit" | "lastDataAt" | "lastPrompt" | "agentIntent" | "currentTask" | "activeSubTasks" | "isRemote" | "agentSessionId" | "tuicSession" | "suggestedActions" | "suggestDismissed" | "awaitingInputConfident" | "commandBlocks" | "activeBlock"> & { tuicSession?: string | null; isRemote?: boolean; agentType?: AgentType | null; agentSessionId?: string | null };
 
 /** Terminal component ref interface */
 export interface TerminalRef {
@@ -248,14 +247,14 @@ function createTerminalsStore() {
     add(data: TerminalCreateData): string {
       const id = `term-${state.counter + 1}`;
       setState("counter", (c) => c + 1);
-      setState("terminals", id, { id, activity: false, unseen: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, activeSubTasks: 0, isRemote: false, agentSessionId: null, tuicSession: null, suggestedActions: null, suggestDismissed: false, pendingSuggest: null, awaitingInputConfident: false, commandBlocks: [], activeBlock: null, ...data });
+      setState("terminals", id, { id, activity: false, unseen: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, activeSubTasks: 0, isRemote: false, agentSessionId: null, tuicSession: null, suggestedActions: null, suggestDismissed: false, awaitingInputConfident: false, commandBlocks: [], activeBlock: null, ...data });
       if (data.sessionId) sessionToTerminal.set(data.sessionId, id);
       return id;
     },
 
     /** Register a terminal with a specific ID (used by floating windows to reconnect to existing PTY sessions) */
     register(id: string, data: TerminalCreateData): void {
-      setState("terminals", id, { id, activity: false, unseen: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, activeSubTasks: 0, isRemote: false, agentSessionId: null, tuicSession: null, suggestedActions: null, suggestDismissed: false, pendingSuggest: null, awaitingInputConfident: false, commandBlocks: [], activeBlock: null, ...data });
+      setState("terminals", id, { id, activity: false, unseen: false, progress: null, shellState: null, nameIsCustom: false, agentType: null, pendingResumeCommand: null, pendingInitCommand: null, usageLimit: null, lastDataAt: null, lastPrompt: null, agentIntent: null, currentTask: null, activeSubTasks: 0, isRemote: false, agentSessionId: null, tuicSession: null, suggestedActions: null, suggestDismissed: false, awaitingInputConfident: false, commandBlocks: [], activeBlock: null, ...data });
       if (data.sessionId) sessionToTerminal.set(data.sessionId, id);
     },
 

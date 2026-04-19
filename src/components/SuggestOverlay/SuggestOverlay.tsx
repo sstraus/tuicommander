@@ -20,6 +20,27 @@ const SuggestOverlay: Component<SuggestOverlayProps> = (props) => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let overlayEl: HTMLDivElement | undefined;
   let resizeObserver: ResizeObserver | undefined;
+  // Remaining dismiss budget; decrements while window focused, pauses when blurred/hidden.
+  let remainingMs = DISMISS_TIMEOUT_MS;
+  let startedAt = 0;
+
+  const startTimer = () => {
+    if (timer || remainingMs <= 0) return;
+    startedAt = Date.now();
+    timer = setTimeout(() => props.onDismiss(), remainingMs);
+  };
+  const pauseTimer = () => {
+    if (!timer) return;
+    clearTimeout(timer);
+    timer = undefined;
+    remainingMs = Math.max(0, remainingMs - (Date.now() - startedAt));
+  };
+  const onVisibilityChange = () => {
+    if (document.hidden) pauseTimer();
+    else startTimer();
+  };
+  const onWindowBlur = () => pauseTimer();
+  const onWindowFocus = () => startTimer();
 
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Escape") {
@@ -65,7 +86,13 @@ const SuggestOverlay: Component<SuggestOverlayProps> = (props) => {
 
   onMount(() => {
     document.addEventListener("keydown", handleKeyDown, true);
-    timer = setTimeout(() => props.onDismiss(), DISMISS_TIMEOUT_MS);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("blur", onWindowBlur);
+    window.addEventListener("focus", onWindowFocus);
+    // Only arm the timer if the window is currently focused/visible; otherwise
+    // the user opened the overlay in the background and we'd dismiss it before
+    // they ever see it.
+    if (!document.hidden && document.hasFocus()) startTimer();
     if (overlayEl && typeof ResizeObserver !== "undefined") {
       resizeObserver = new ResizeObserver(() => fitChips());
       resizeObserver.observe(overlayEl);
@@ -81,6 +108,9 @@ const SuggestOverlay: Component<SuggestOverlayProps> = (props) => {
 
   onCleanup(() => {
     document.removeEventListener("keydown", handleKeyDown, true);
+    document.removeEventListener("visibilitychange", onVisibilityChange);
+    window.removeEventListener("blur", onWindowBlur);
+    window.removeEventListener("focus", onWindowFocus);
     if (timer) clearTimeout(timer);
     if (resizeObserver) resizeObserver.disconnect();
   });
@@ -88,14 +118,17 @@ const SuggestOverlay: Component<SuggestOverlayProps> = (props) => {
   return (
     <div class={styles.overlay} ref={overlayEl}>
       <For each={props.items}>
-        {(item, index) => (
-          <button class={styles.chip} onClick={() => props.onSelect(item)}>
-            <span class={styles.shortcut} data-shortcut>
-              {index() + 1}
-            </span>
-            {stripNumberPrefix(item)}
-          </button>
-        )}
+        {(item, index) => {
+          const label = stripNumberPrefix(item);
+          return (
+            <button class={styles.chip} onClick={() => props.onSelect(item)} title={label}>
+              <span class={styles.shortcut} data-shortcut>
+                {index() + 1}
+              </span>
+              <span class={styles.chipLabel}>{label}</span>
+            </button>
+          );
+        }}
       </For>
       <button class={styles.closeBtn} onClick={() => props.onDismiss()} title="Dismiss (Esc)">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="12" height="12" fill="currentColor">

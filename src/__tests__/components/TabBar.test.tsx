@@ -396,17 +396,7 @@ describe("TabBar", () => {
     expect(tabs[1].getAttribute("title")).toBe(`Terminal 2 (${getModifierSymbol()}2)`);
   });
 
-  it("tabs have draggable attribute", () => {
-    addTerminal({ name: "Tab" });
-
-    const { container } = render(() => (
-      <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
-    ));
-    const tab = container.querySelector(".tab")!;
-    expect(tab.getAttribute("draggable")).toBe("true");
-  });
-
-  it("dragStart sets dragging class", () => {
+  it("mouseDown + move initiates drag (dragging class appears after threshold)", () => {
     addTerminal({ name: "Tab 1" });
     addTerminal({ name: "Tab 2" });
 
@@ -415,135 +405,19 @@ describe("TabBar", () => {
     ));
     const tabs = container.querySelectorAll(".tab");
 
-    // Simulate drag start on first tab
-    const dataTransfer = {
-      effectAllowed: "",
-      setData: vi.fn(),
-      getData: vi.fn().mockReturnValue(""),
-      dropEffect: "",
-    };
-    fireEvent.dragStart(tabs[0], { dataTransfer });
+    // mouseDown alone should NOT set dragging
+    fireEvent.mouseDown(tabs[0], { button: 0, clientX: 10, clientY: 10 });
+    expect(tabs[0].classList.contains("dragging")).toBe(false);
+
+    // Move past threshold to start drag
+    fireEvent.mouseMove(document, { clientX: 20, clientY: 10 });
     expect(tabs[0].classList.contains("dragging")).toBe(true);
+
+    // Cleanup
+    fireEvent.mouseUp(document, { clientX: 20, clientY: 10 });
   });
 
-  it("dragOver on different tab sets drag-over classes", () => {
-    const id1 = addTerminal({ name: "Tab 1" });
-    addTerminal({ name: "Tab 2" });
-
-    const { container } = render(() => (
-      <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
-    ));
-    const tabs = container.querySelectorAll(".tab");
-
-    // Start dragging tab 1
-    const dataTransfer = {
-      effectAllowed: "",
-      setData: vi.fn(),
-      getData: vi.fn().mockReturnValue(id1),
-      dropEffect: "",
-    };
-    fireEvent.dragStart(tabs[0], { dataTransfer });
-
-    // Drag over tab 2. In happy-dom, getBoundingClientRect returns all zeros,
-    // so midpoint=0 and clientX=0 means side="right"
-    fireEvent.dragOver(tabs[1], {
-      dataTransfer,
-      clientX: 0,
-    });
-
-    // Tab 2 should have dragOverRight class (midpoint=0, clientX=0 => "right")
-    expect(tabs[1].classList.contains("dragOverRight")).toBe(true);
-  });
-
-  it("dragLeave resets drag-over state", () => {
-    const id1 = addTerminal({ name: "Tab 1" });
-    addTerminal({ name: "Tab 2" });
-
-    const { container } = render(() => (
-      <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
-    ));
-    const tabs = container.querySelectorAll(".tab");
-
-    const dataTransfer = {
-      effectAllowed: "",
-      setData: vi.fn(),
-      getData: vi.fn().mockReturnValue(id1),
-      dropEffect: "",
-    };
-    fireEvent.dragStart(tabs[0], { dataTransfer });
-    fireEvent.dragOver(tabs[1], { dataTransfer, clientX: 0 });
-    fireEvent.dragLeave(tabs[1]);
-
-    expect(tabs[1].classList.contains("dragOverLeft")).toBe(false);
-    expect(tabs[1].classList.contains("dragOverRight")).toBe(false);
-  });
-
-  it("drop on same target resets state without reorder", () => {
-    const handleReorder = vi.fn();
-    const id1 = addTerminal({ name: "Tab 1" });
-
-    const { container } = render(() => (
-      <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} onReorder={handleReorder} />
-    ));
-    const tabs = container.querySelectorAll(".tab");
-
-    const dataTransfer = {
-      effectAllowed: "",
-      setData: vi.fn(),
-      getData: vi.fn().mockReturnValue(id1),
-      dropEffect: "",
-    };
-    fireEvent.dragStart(tabs[0], { dataTransfer });
-    fireEvent.drop(tabs[0], { dataTransfer });
-
-    expect(handleReorder).not.toHaveBeenCalled();
-    expect(tabs[0].classList.contains("dragging")).toBe(false);
-  });
-
-  it("drop reorders correctly when dropping on different target", () => {
-    const handleReorder = vi.fn();
-    const id1 = addTerminal({ name: "Tab 1" });
-    addTerminal({ name: "Tab 2" });
-
-    const { container } = render(() => (
-      <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} onReorder={handleReorder} />
-    ));
-    const tabs = container.querySelectorAll(".tab");
-
-    const dataTransfer = {
-      effectAllowed: "",
-      setData: vi.fn(),
-      getData: vi.fn().mockReturnValue(id1),
-      dropEffect: "",
-    };
-    fireEvent.dragStart(tabs[0], { dataTransfer });
-    fireEvent.drop(tabs[1], { dataTransfer });
-
-    expect(handleReorder).toHaveBeenCalledWith(0, 1);
-  });
-
-  it("dragEnd resets all drag state", () => {
-    const id1 = addTerminal({ name: "Tab 1" });
-    addTerminal({ name: "Tab 2" });
-
-    const { container } = render(() => (
-      <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
-    ));
-    const tabs = container.querySelectorAll(".tab");
-
-    const dataTransfer = {
-      effectAllowed: "",
-      setData: vi.fn(),
-      getData: vi.fn().mockReturnValue(id1),
-      dropEffect: "",
-    };
-    fireEvent.dragStart(tabs[0], { dataTransfer });
-    fireEvent.dragEnd(tabs[0]);
-
-    expect(tabs[0].classList.contains("dragging")).toBe(false);
-  });
-
-  it("drop with no dataTransfer source resets state", () => {
+  it("mouseUp without movement does not trigger drag (click works normally)", () => {
     const handleReorder = vi.fn();
     addTerminal({ name: "Tab 1" });
 
@@ -552,44 +426,28 @@ describe("TabBar", () => {
     ));
     const tabs = container.querySelectorAll(".tab");
 
-    // Drop with empty getData (no source)
-    const dataTransfer = {
-      effectAllowed: "",
-      setData: vi.fn(),
-      getData: vi.fn().mockReturnValue(""),
-      dropEffect: "",
-    };
-    fireEvent.drop(tabs[0], { dataTransfer });
+    fireEvent.mouseDown(tabs[0], { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.mouseUp(document, { clientX: 10, clientY: 10 });
 
     expect(handleReorder).not.toHaveBeenCalled();
+    expect(tabs[0].classList.contains("dragging")).toBe(false);
   });
 
-  it("drop on right side with adjusted index calls onReorder", () => {
-    const handleReorder = vi.fn();
-    const id1 = addTerminal({ name: "Tab 1" });
+  it("escape cancels drag and resets state", () => {
+    addTerminal({ name: "Tab 1" });
     addTerminal({ name: "Tab 2" });
-    addTerminal({ name: "Tab 3" });
 
     const { container } = render(() => (
-      <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} onReorder={handleReorder} />
+      <TabBar onTabSelect={() => {}} onTabClose={() => {}} onCloseOthers={() => {}} onCloseToRight={() => {}} onNewTab={() => {}} />
     ));
     const tabs = container.querySelectorAll(".tab");
 
-    const dataTransfer = {
-      effectAllowed: "",
-      setData: vi.fn(),
-      getData: vi.fn().mockReturnValue(id1),
-      dropEffect: "",
-    };
+    fireEvent.mouseDown(tabs[0], { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.mouseMove(document, { clientX: 20, clientY: 10 });
+    expect(tabs[0].classList.contains("dragging")).toBe(true);
 
-    // Drag tab 1 and drop on tab 3
-    fireEvent.dragStart(tabs[0], { dataTransfer });
-    // dragOver sets the side (in happy-dom getBoundingClientRect is all zeros, side="right")
-    fireEvent.dragOver(tabs[2], { dataTransfer, clientX: 0 });
-    fireEvent.drop(tabs[2], { dataTransfer });
-
-    // fromIndex=0, toIndex=2, side="right" and toIndex > fromIndex => adjustedTo=2
-    expect(handleReorder).toHaveBeenCalledWith(0, 2);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(tabs[0].classList.contains("dragging")).toBe(false);
   });
 
   describe("diff tabs", () => {

@@ -497,6 +497,40 @@ describe("PluginHost — Tier 2 read-only state", () => {
     expect(disposable).not.toBeNull();
     expect(typeof disposable!.dispose).toBe("function");
   });
+
+  it("breaks synchronous reentrancy in notifyStateChange — caller returns without freezing", async () => {
+    // A listener that re-triggers notifyStateChange from inside its own callback
+    // must not cause unbounded sync recursion (the bug class that freezes the UI).
+    let depth = 0;
+    let maxSyncDepth = 0;
+    let totalCalls = 0;
+
+    pluginRegistry.register(makePlugin("p1", (host) => {
+      host.onStateChange((event) => {
+        totalCalls++;
+        depth++;
+        maxSyncDepth = Math.max(maxSyncDepth, depth);
+        if (totalCalls < 5 && event.type === "agent-started") {
+          // Re-enter — without the guard this would blow the stack synchronously.
+          pluginRegistry.notifyStateChange({
+            type: "agent-started", sessionId: "s", terminalId: "t",
+          });
+        }
+        depth--;
+      });
+    }));
+
+    pluginRegistry.notifyStateChange({ type: "agent-started", sessionId: "s", terminalId: "t" });
+
+    // First call runs synchronously; nested calls are deferred — so max sync
+    // depth must be 1 regardless of how many re-entries the listener requested.
+    expect(maxSyncDepth).toBe(1);
+    expect(totalCalls).toBe(1);
+
+    // Drain the deferred microtask queue until the listener stops re-entering.
+    for (let i = 0; i < 10 && totalCalls < 5; i++) await flushMicrotasks();
+    expect(totalCalls).toBe(5);
+  });
 });
 
 // ---------------------------------------------------------------------------

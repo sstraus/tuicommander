@@ -1,5 +1,4 @@
 import { Component, For, Show, createSignal, onCleanup, createEffect } from "solid-js";
-import { Portal } from "solid-js/web";
 import { cx } from "../../utils";
 import s from "./ContextMenu.module.css";
 
@@ -180,22 +179,20 @@ export const ContextMenu: Component<ContextMenuProps> = (props) => {
 
   return (
     <Show when={props.visible}>
-      <Portal>
-        <div
-          ref={menuRef}
-          class={s.menu}
-          onClick={(e) => e.stopPropagation()}
-          style={{
-            left: `${props.x}px`,
-            top: `${props.y}px`,
-            opacity: "0",
-          }}
-        >
-          <For each={props.items}>
-            {(item) => <MenuItem item={item} onClose={props.onClose} />}
-          </For>
-        </div>
-      </Portal>
+      <div
+        ref={menuRef}
+        class={s.menu}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          left: `${props.x}px`,
+          top: `${props.y}px`,
+          opacity: "0",
+        }}
+      >
+        <For each={props.items}>
+          {(item) => <MenuItem item={item} onClose={props.onClose} />}
+        </For>
+      </div>
     </Show>
   );
 };

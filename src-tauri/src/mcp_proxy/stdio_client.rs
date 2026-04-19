@@ -394,7 +394,7 @@ impl StdioMcpClient {
         for _ in 0..MAX_SKIP {
             let msg = self.read_line()?;
             match msg.get("id") {
-                Some(resp_id) if resp_id.as_u64() == Some(id as u64) => return Ok(msg),
+                Some(resp_id) if resp_id.as_u64() == Some(id) => return Ok(msg),
                 Some(_) => {
                     tracing::debug!(
                         upstream = %self.config.name,

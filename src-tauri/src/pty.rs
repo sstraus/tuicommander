@@ -2344,28 +2344,28 @@ pub(crate) fn spawn_reader_thread(
 
                     process_kitty_actions(&kitty_actions, &session_id, &state, Some(&app));
 
-                    if let Some(processed) = processor.process_chunk(&data, &silence, &session_id, &state, Some(&app)) {
-                        if let Some(xterm_data) = processor.transform_xterm(processed) {
-                            let clamped_data = xterm_data;
+                    if let Some(processed) = processor.process_chunk(&data, &silence, &session_id, &state, Some(&app))
+                        && let Some(xterm_data) = processor.transform_xterm(processed)
+                    {
+                        let clamped_data = xterm_data;
 
-                            let agent_active = state.session_states.get(&session_id)
-                                .map(|s| s.agent_type.is_some())
-                                .unwrap_or(false);
-                            if !processor.in_alt_buffer && !agent_active && clamped_data.as_bytes().contains(&0x1b) {
-                                let anomalies = detect_anomalous_sequences(&clamped_data);
-                                for label in &anomalies {
-                                    tracing::warn!(source = "terminal", session_id = %session_id, "Anomalous ANSI sequence: {label}");
-                                }
+                        let agent_active = state.session_states.get(&session_id)
+                            .map(|s| s.agent_type.is_some())
+                            .unwrap_or(false);
+                        if !processor.in_alt_buffer && !agent_active && clamped_data.as_bytes().contains(&0x1b) {
+                            let anomalies = detect_anomalous_sequences(&clamped_data);
+                            for label in &anomalies {
+                                tracing::warn!(source = "terminal", session_id = %session_id, "Anomalous ANSI sequence: {label}");
                             }
-
-                            let _ = app.emit(
-                                &format!("pty-output-{session_id}"),
-                                PtyOutput {
-                                    session_id: session_id.clone(),
-                                    data: clamped_data,
-                                },
-                            );
                         }
+
+                        let _ = app.emit(
+                            &format!("pty-output-{session_id}"),
+                            PtyOutput {
+                                session_id: session_id.clone(),
+                                data: clamped_data,
+                            },
+                        );
                     }
                 }
                 Err(e) => {

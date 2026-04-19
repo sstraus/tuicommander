@@ -23,7 +23,7 @@ export const UpdateProgressDialog: Component = () => {
                 <path d="M8 16A8 8 0 1 1 8 0a8 8 0 0 1 0 16zm1-11H7v4H5l3 3 3-3H9V5z"/>
               </svg>
             </span>
-            <h4>Updating to v{version()}</h4>
+            <h4>{error() ? "Update failed" : `Updating to v${version()}`}</h4>
           </div>
           <div class={d.body}>
             <Show when={!error()} fallback={
