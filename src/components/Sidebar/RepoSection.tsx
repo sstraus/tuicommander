@@ -212,13 +212,11 @@ export const BranchItem: Component<{
   const handleDoubleClick = (e: MouseEvent) => {
     e.stopPropagation();
     if (props.branch.isMain || props.branch.isShell) {
-      // Saved terminals will be restored by handleBranchSelect (fired from the
-      // click event that precedes dblclick). Don't add a duplicate terminal.
       if (props.branch.savedTerminals?.length) return;
       props.onAddTerminal();
-      return;
+    } else {
+      props.onRename();
     }
-    props.onRename();
   };
 
   const handleCopyPath = async () => {
@@ -411,10 +409,7 @@ export const RepoSection: Component<{
   onSwitchBranch: (branchName: string) => void;
   switchBranchList: () => string[];
   currentBranch: () => string;
-  onDragStart: (e: DragEvent) => void;
-  onDragOver: (e: DragEvent) => void;
-  onDrop: (e: DragEvent) => void;
-  onDragEnd: () => void;
+  onMouseDrag: (e: MouseEvent) => void;
 }> = (props) => {
   const repoMenu = createContextMenu();
   const [groupPromptVisible, setGroupPromptVisible] = createSignal(false);
@@ -523,11 +518,8 @@ export const RepoSection: Component<{
   return (
     <div
       class={cx(s.repoSection, props.repo.collapsed && s.collapsed, props.isDragging && s.dragging, props.dragOverClass)}
-      draggable={true}
-      onDragStart={(e) => { e.stopPropagation(); props.onDragStart(e); }}
-      onDragOver={(e) => { e.stopPropagation(); props.onDragOver(e); }}
-      onDrop={(e) => { e.stopPropagation(); props.onDrop(e); }}
-      onDragEnd={props.onDragEnd}
+      data-sidebar-repo={props.repo.path}
+      onMouseDown={(e) => props.onMouseDrag(e)}
     >
       {/* Repo header */}
       <div class={s.repoHeader} onClick={props.onToggle} onContextMenu={repoMenu.open}>

@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import { repositoriesStore } from "../../stores/repositories";
-import { markInternalDragStart, markInternalDragEnd } from "../../hooks/useFileDrop";
+import { initMouseDrag } from "../../hooks/useMouseDrag";
 
 export type DragPayload =
   | { type: "repo"; path: string; fromGroupId: string | null }
@@ -19,7 +19,6 @@ export function useSidebarDragDrop() {
   };
 
   const resetDragState = () => {
-    markInternalDragEnd();
     setDragPayload(null);
     setDragOverRepoPath(null);
     setDragOverSide(null);
@@ -27,50 +26,78 @@ export function useSidebarDragDrop() {
     setDragOverGroupSide(null);
   };
 
-  const handleRepoDragStart = (e: DragEvent, path: string) => {
-    if (!e.dataTransfer) return;
-    markInternalDragStart();
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", `repo:${path}`);
-    try {
-      const el = e.currentTarget as HTMLElement;
-      e.dataTransfer.setDragImage(el, el.offsetWidth / 2, el.offsetHeight / 2);
-    } catch { /* not supported in all envs */ }
-    const fromGroup = repositoriesStore.getGroupForRepo(path);
-    setDragPayload({ type: "repo", path, fromGroupId: fromGroup?.id ?? null });
-  };
+  const updateHover = (x: number, y: number, payload: DragPayload) => {
+    const el = document.elementFromPoint(x, y);
+    const repoEl = el?.closest("[data-sidebar-repo]") as HTMLElement | null;
+    const groupEl = el?.closest("[data-sidebar-group]") as HTMLElement | null;
 
-  const handleRepoDragOver = (e: DragEvent, path: string) => {
-    e.preventDefault();
-    if (!e.dataTransfer) return;
-    e.dataTransfer.dropEffect = "move";
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const midpoint = rect.top + rect.height / 2;
-    setDragOverRepoPath(path);
-    setDragOverSide(e.clientY < midpoint ? "top" : "bottom");
-    // Clear group-level hover when hovering a repo
-    setDragOverGroupId(null);
-    setDragOverGroupSide(null);
-  };
-
-  const handleRepoDrop = (e: DragEvent, targetPath: string) => {
-    e.preventDefault();
-    const payload = dragPayload();
-    if (!payload || payload.type !== "repo" || payload.path === targetPath) {
-      resetDragState();
-      return;
+    if (repoEl) {
+      const path = repoEl.dataset.sidebarRepo!;
+      if (payload.type === "repo" && path === payload.path) {
+        setDragOverRepoPath(null);
+        setDragOverSide(null);
+        return;
+      }
+      const rect = repoEl.getBoundingClientRect();
+      setDragOverRepoPath(path);
+      setDragOverSide(y < rect.top + rect.height / 2 ? "top" : "bottom");
+      setDragOverGroupId(null);
+      setDragOverGroupSide(null);
+    } else if (groupEl) {
+      const gid = groupEl.dataset.sidebarGroup!;
+      if (payload.type === "group" && gid === payload.groupId) {
+        setDragOverGroupId(null);
+        setDragOverGroupSide(null);
+        return;
+      }
+      const rect = groupEl.getBoundingClientRect();
+      setDragOverGroupId(gid);
+      setDragOverGroupSide(y < rect.top + rect.height / 2 ? "top" : "bottom");
+      setDragOverRepoPath(null);
+      setDragOverSide(null);
+    } else {
+      setDragOverRepoPath(null);
+      setDragOverSide(null);
+      setDragOverGroupId(null);
+      setDragOverGroupSide(null);
     }
+  };
 
+  const performDrop = (x: number, y: number, payload: DragPayload) => {
+    const el = document.elementFromPoint(x, y);
+    const repoEl = el?.closest("[data-sidebar-repo]") as HTMLElement | null;
+    const groupEl = el?.closest("[data-sidebar-group]") as HTMLElement | null;
+
+    if (repoEl && payload.type === "repo") {
+      const targetPath = repoEl.dataset.sidebarRepo!;
+      if (targetPath !== payload.path) {
+        const rect = repoEl.getBoundingClientRect();
+        const side = y < rect.top + rect.height / 2 ? "top" : "bottom";
+        doRepoDrop(payload, targetPath, side);
+      }
+    } else if (groupEl) {
+      const targetGroupId = groupEl.dataset.sidebarGroup!;
+      if (payload.type === "group") {
+        if (targetGroupId !== payload.groupId) {
+          const rect = groupEl.getBoundingClientRect();
+          const side = y < rect.top + rect.height / 2 ? "top" : "bottom";
+          doGroupDrop(payload, targetGroupId, side);
+        }
+      } else if (payload.type === "repo") {
+        repositoriesStore.addRepoToGroup(payload.path, targetGroupId);
+      }
+    }
+    resetDragState();
+  };
+
+  const doRepoDrop = (payload: DragPayload & { type: "repo" }, targetPath: string, side: "top" | "bottom") => {
     const sourcePath = payload.path;
     const sourceGroupId = payload.fromGroupId;
     const targetGroup = repositoriesStore.getGroupForRepo(targetPath);
     const targetGroupId = targetGroup?.id ?? null;
-    const side = dragOverSide();
 
     if (sourceGroupId === targetGroupId) {
-      // Same context (same group or both ungrouped) — reorder
       if (sourceGroupId) {
-        // Reorder within group
         const group = repositoriesStore.state.groups[sourceGroupId];
         if (group) {
           const fromIndex = group.repoOrder.indexOf(sourcePath);
@@ -86,7 +113,6 @@ export function useSidebarDragDrop() {
           }
         }
       } else {
-        // Reorder within ungrouped
         const order = repositoriesStore.state.repoOrder;
         const fromIndex = order.indexOf(sourcePath);
         const toIndex = order.indexOf(targetPath);
@@ -101,80 +127,56 @@ export function useSidebarDragDrop() {
         }
       }
     } else if (targetGroupId === null) {
-      // Dragged from group to ungrouped area — remove from group
       repositoriesStore.removeRepoFromGroup(sourcePath);
     } else {
-      // Dragged to different group
       if (sourceGroupId) {
-        // Between two groups — preserves insert position
         const targetGroupObj = repositoriesStore.state.groups[targetGroupId];
         const targetIndex = targetGroupObj ? targetGroupObj.repoOrder.indexOf(targetPath) : 0;
         let insertIndex = targetIndex;
         if (side === "bottom") insertIndex = targetIndex + 1;
         repositoriesStore.moveRepoBetweenGroups(sourcePath, sourceGroupId, targetGroupId, insertIndex);
       } else {
-        // From ungrouped into a group
         repositoriesStore.addRepoToGroup(sourcePath, targetGroupId);
       }
     }
-
-    resetDragState();
   };
 
-  // --- Group-level drag handlers ---
-  const handleGroupDragStart = (e: DragEvent, groupId: string) => {
-    if (!e.dataTransfer) return;
-    markInternalDragStart();
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", `group:${groupId}`);
-    try {
-      const el = e.currentTarget as HTMLElement;
-      e.dataTransfer.setDragImage(el, el.offsetWidth / 2, el.offsetHeight / 2);
-    } catch { /* not supported in all envs */ }
-    setDragPayload({ type: "group", groupId });
-  };
-
-  const handleGroupDragOver = (e: DragEvent, groupId: string) => {
-    e.preventDefault();
-    if (!e.dataTransfer) return;
-    e.dataTransfer.dropEffect = "move";
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const midpoint = rect.top + rect.height / 2;
-    setDragOverGroupId(groupId);
-    setDragOverGroupSide(e.clientY < midpoint ? "top" : "bottom");
-  };
-
-  const handleGroupDrop = (e: DragEvent, targetGroupId: string) => {
-    e.preventDefault();
-    const payload = dragPayload();
-    if (!payload) {
-      resetDragState();
-      return;
-    }
-
-    if (payload.type === "group") {
-      // Group-to-group reorder
-      if (payload.groupId !== targetGroupId) {
-        const order = repositoriesStore.state.groupOrder;
-        const fromIndex = order.indexOf(payload.groupId);
-        const toIndex = order.indexOf(targetGroupId);
-        if (fromIndex !== -1 && toIndex !== -1) {
-          let adjustedTo = toIndex;
-          const side = dragOverGroupSide();
-          if (side === "top" && fromIndex < toIndex) adjustedTo = toIndex - 1;
-          else if (side === "bottom" && fromIndex > toIndex) adjustedTo = toIndex + 1;
-          const clampedTo = Math.max(0, Math.min(adjustedTo, order.length - 1));
-          if (fromIndex !== clampedTo) {
-            repositoriesStore.reorderGroups(fromIndex, clampedTo);
-          }
-        }
+  const doGroupDrop = (payload: DragPayload & { type: "group" }, targetGroupId: string, side: "top" | "bottom") => {
+    const order = repositoriesStore.state.groupOrder;
+    const fromIndex = order.indexOf(payload.groupId);
+    const toIndex = order.indexOf(targetGroupId);
+    if (fromIndex !== -1 && toIndex !== -1) {
+      let adjustedTo = toIndex;
+      if (side === "top" && fromIndex < toIndex) adjustedTo = toIndex - 1;
+      else if (side === "bottom" && fromIndex > toIndex) adjustedTo = toIndex + 1;
+      const clampedTo = Math.max(0, Math.min(adjustedTo, order.length - 1));
+      if (fromIndex !== clampedTo) {
+        repositoriesStore.reorderGroups(fromIndex, clampedTo);
       }
-    } else if (payload.type === "repo") {
-      // Repo dropped on group header — assign to group
-      repositoriesStore.addRepoToGroup(payload.path, targetGroupId);
     }
+  };
 
-    resetDragState();
+  // Mouse-based drag for repos
+  const handleRepoMouseDrag = (e: MouseEvent, path: string) => {
+    const fromGroup = repositoriesStore.getGroupForRepo(path);
+    const payload: DragPayload = { type: "repo", path, fromGroupId: fromGroup?.id ?? null };
+    initMouseDrag(e, e.currentTarget as HTMLElement, {
+      onStart: () => setDragPayload(payload),
+      onMove: (x, y) => updateHover(x, y, payload),
+      onDrop: (x, y) => performDrop(x, y, payload),
+      onCancel: () => resetDragState(),
+    });
+  };
+
+  // Mouse-based drag for groups
+  const handleGroupMouseDrag = (e: MouseEvent, groupId: string) => {
+    const payload: DragPayload = { type: "group", groupId };
+    initMouseDrag(e, e.currentTarget as HTMLElement, {
+      onStart: () => setDragPayload(payload),
+      onMove: (x, y) => updateHover(x, y, payload),
+      onDrop: (x, y) => performDrop(x, y, payload),
+      onCancel: () => resetDragState(),
+    });
   };
 
   return {
@@ -185,11 +187,7 @@ export function useSidebarDragDrop() {
     dragOverGroupId,
     dragOverGroupSide,
     resetDragState,
-    handleRepoDragStart,
-    handleRepoDragOver,
-    handleRepoDrop,
-    handleGroupDragStart,
-    handleGroupDragOver,
-    handleGroupDrop,
+    handleRepoMouseDrag,
+    handleGroupMouseDrag,
   };
 }

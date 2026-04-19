@@ -219,10 +219,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
         onSwitchBranch={(branch) => props.onSwitchBranch?.(repo.path, branch)}
         switchBranchList={() => props.switchBranchLists?.[repo.path] ?? []}
         currentBranch={() => props.currentBranches?.[repo.path] ?? ""}
-        onDragStart={(e) => drag.handleRepoDragStart(e, repo.path)}
-        onDragOver={(e) => drag.handleRepoDragOver(e, repo.path)}
-        onDrop={(e) => drag.handleRepoDrop(e, repo.path)}
-        onDragEnd={drag.resetDragState}
+        onMouseDrag={(e) => drag.handleRepoMouseDrag(e, repo.path)}
       />
     );
   };
@@ -242,12 +239,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                   repos={entry.repos}
                   onRename={handleGroupRename}
                   onColorChange={handleGroupColorChange}
-                  onDragStart={(e) => drag.handleGroupDragStart(e, entry.group.id)}
-                  onDragOver={(e) => drag.handleGroupDragOver(e, entry.group.id)}
-                  onDrop={(e) => drag.handleGroupDrop(e, entry.group.id)}
-                  onDragEnd={drag.resetDragState}
-                  onHeaderDragOver={(e) => drag.handleGroupDragOver(e, entry.group.id)}
-                  onHeaderDrop={(e) => drag.handleGroupDrop(e, entry.group.id)}
+                  onMouseDrag={(e) => drag.handleGroupMouseDrag(e, entry.group.id)}
                   dragOverClass={
                     drag.dragOverGroupId() === entry.group.id && drag.dragPayload()?.type !== "repo"
                       ? DRAG_CLASSES[drag.dragOverGroupSide() ?? ""] ?? undefined

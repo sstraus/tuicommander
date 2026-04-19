@@ -256,14 +256,40 @@
 }
 
 .dragOverTop {
-  box-shadow: inset 0 2px 0 var(--accent);
+  position: relative;
+}
+.dragOverTop::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+  z-index: 10;
+  pointer-events: none;
 }
 
 .dragOverBottom {
-  box-shadow: inset 0 -2px 0 var(--accent);
+  position: relative;
+}
+.dragOverBottom::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+  z-index: 10;
+  pointer-events: none;
 }
 
 .dragOverTarget {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-radius: 4px;
 }
 
 /* ── Group sections ── */

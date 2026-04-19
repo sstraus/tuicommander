@@ -384,21 +384,15 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
     activateInPaneGroup(id, "terminal");
   };
 
-  /** Activate or adopt a tab into a pane group when split is on */
-  const activateInPaneGroup = (id: string, type: "terminal" | "markdown" | "diff" | "editor") => {
+  /** Activate a tab inside its pane group when split is on.
+   *  Orphan tabs (not in any group) are left alone — they render
+   *  full-screen via the flat rendering path in TerminalArea. */
+  const activateInPaneGroup = (id: string, _type: "terminal" | "markdown" | "diff" | "editor") => {
     if (!paneLayoutStore.isSplit()) return;
     const groupId = paneLayoutStore.getGroupForTab(id);
     if (groupId) {
       paneLayoutStore.setActiveGroup(groupId);
       paneLayoutStore.setActiveTab(groupId, id);
-    } else {
-      // Orphan tab — adopt into active group
-      const activeGroupId = paneLayoutStore.state.activeGroupId;
-      if (activeGroupId) {
-        paneLayoutStore.addTab(activeGroupId, { id, type });
-      } else {
-        appLogger.warn("app", "activateInPaneGroup: no active group to adopt orphan tab", { id, type });
-      }
     }
   };
 

@@ -1,5 +1,5 @@
 import { Component, For, Show, Switch, Match, createMemo, createSignal } from "solid-js";
-import { paneLayoutStore, type PaneNode, type PaneBranch, type PaneLeaf, type PaneTab, type PaneTabType, MIN_PANE_RATIO } from "../../stores/paneLayout";
+import { paneLayoutStore, type PaneNode, type PaneBranch, type PaneLeaf, type PaneTab, MIN_PANE_RATIO } from "../../stores/paneLayout";
 import { Terminal } from "../Terminal";
 import { DiffTab } from "../DiffTab";
 import { MdTabContent } from "../shared/MdTabContent";
@@ -13,8 +13,8 @@ import { repoSettingsStore } from "../../stores/repoSettings";
 import { globalWorkspaceStore } from "../../stores/globalWorkspace";
 import { ContextMenu, createContextMenu, type ContextMenuItem } from "../ContextMenu/ContextMenu";
 import { getRepoColor } from "../../utils/repoColor";
-import { markInternalDragStart, markInternalDragEnd } from "../../hooks/useFileDrop";
-import { appLogger } from "../../stores/appLogger";
+import { initMouseDrag } from "../../hooks/useMouseDrag";
+import { findPaneGroupAtPoint } from "../../stores/dragDrop";
 import { GlobeIcon } from "../GlobeIcon";
 import "./PaneTree.css";
 
@@ -246,36 +246,13 @@ const PaneGroupView: Component<{
     }
   };
 
-  /** Handle drop of a pane-tab onto this group (from mini bar, main TabBar, or content area) */
-  const handlePaneDrop = (e: DragEvent) => {
-    e.preventDefault();
-    const data = e.dataTransfer?.getData("application/pane-tab");
-    if (!data) return;
-    let parsed: { tabId: string; fromGroupId: string | null; type: PaneTabType };
-    try {
-      parsed = JSON.parse(data);
-    } catch {
-      appLogger.warn("app", "handlePaneDrop: invalid pane-tab drag payload");
-      return;
-    }
-    const { tabId, fromGroupId, type } = parsed;
-    if (fromGroupId === props.groupId) return; // drop onto own group — no-op
-    if (fromGroupId) {
-      paneLayoutStore.moveTab(fromGroupId, props.groupId, tabId);
-    } else {
-      // Orphan tab dragged from main TabBar — adopt into this group
-      paneLayoutStore.addTab(props.groupId, { id: tabId, type: type ?? "terminal" });
-    }
-    // Follow the dropped tab: the destination group becomes active so the
-    // focus ring (pane-group-active) moves with the user's action instead
-    // of staying on the source pane.
-    paneLayoutStore.setActiveGroup(props.groupId);
-  };
 
   return (
     <div
       class="pane-group"
       classList={{ "pane-group-active": isActive() }}
+      data-drop-target="pane"
+      data-group-id={props.groupId}
       onClick={handleGroupClick}
       onContextMenu={handleGroupClick}
     >
@@ -283,25 +260,25 @@ const PaneGroupView: Component<{
       <Show when={showTabBar()}>
         <div
           class="pane-tab-bar"
-          onDragOver={(e) => { e.preventDefault(); e.dataTransfer!.dropEffect = "move"; }}
-          onDrop={handlePaneDrop}
         >
           <For each={aliveTabs()}>
             {(tab) => (
               <button
                 class={`pane-tab ${tabColorClass(tab)}`}
                 classList={{ "pane-tab-active": tab.id === group()?.activeTabId }}
-                draggable={true}
-                onDragStart={(e) => {
-                  markInternalDragStart();
-                  e.dataTransfer!.setData("application/pane-tab", JSON.stringify({
-                    tabId: tab.id,
-                    fromGroupId: props.groupId,
-                    type: tab.type,
-                  }));
-                  e.dataTransfer!.effectAllowed = "move";
+                onMouseDown={(e) => {
+                  if (e.button !== 0) return;
+                  initMouseDrag(e, e.currentTarget as HTMLElement, {
+                    onMove: () => {},
+                    onDrop: (x, y) => {
+                      const targetGroup = findPaneGroupAtPoint(x, y);
+                      if (targetGroup && targetGroup !== props.groupId) {
+                        paneLayoutStore.moveTab(props.groupId, targetGroup, tab.id);
+                        paneLayoutStore.setActiveGroup(targetGroup);
+                      }
+                    },
+                  });
                 }}
-                onDragEnd={() => markInternalDragEnd()}
                 onClick={() => {
                   paneLayoutStore.setActiveTab(props.groupId, tab.id);
                   if (tab.type === "terminal") {
@@ -358,8 +335,6 @@ const PaneGroupView: Component<{
            imperative state (xterm/WebGL) that must persist across tab switches. */}
       <div
         class="pane-content"
-        onDragOver={(e) => { e.preventDefault(); e.dataTransfer!.dropEffect = "move"; }}
-        onDrop={handlePaneDrop}
       >
         <Show when={aliveTabs().length > 0} fallback={
           <PanePlaceholder onNewTerminal={() => props.onNewTerminal?.(props.groupId)} />

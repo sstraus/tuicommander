@@ -94,6 +94,24 @@ export async function initDragDrop(): Promise<void> {
     const webview = getCurrentWebview();
     await webview.onDragDropEvent((event) => {
       const payload = event.payload;
+
+      // Internal drag (tab/pane/sidebar move) — only handle hover highlight,
+      // don't treat as file drop. The actual move happens via dragend fallback.
+      if (isInternalDrag()) {
+        if ((payload.type === "enter" || payload.type === "over") && payload.position) {
+          const dpr = window.devicePixelRatio || 1;
+          _lastDragCssPosition = { x: payload.position.x / dpr, y: payload.position.y / dpr };
+          if (_pendingInternalDrag) updatePaneDropHover(payload.position.x, payload.position.y);
+        } else if (payload.type === "drop" && payload.position) {
+          const dpr = window.devicePixelRatio || 1;
+          _lastDragCssPosition = { x: payload.position.x / dpr, y: payload.position.y / dpr };
+          if (_pendingInternalDrag) clearPaneDropHover();
+        } else if (payload.type === "leave") {
+          if (_pendingInternalDrag) clearPaneDropHover();
+        }
+        return;
+      }
+
       // Tauri v2 payload shapes: { type: "enter"|"over"|"drop"|"leave", paths?, position? }
       if (payload.type === "enter" || payload.type === "over") {
         setIsOverWindow(true);
@@ -118,4 +136,108 @@ export async function initDragDrop(): Promise<void> {
 /** Clear the stored payload after it has been processed by a drop handler. */
 export function clearDropPayload(): void {
   setDropPayload(null);
+}
+
+// ---- Internal drag counter ----
+// Tracks whether a drag originated inside the webview (tab reorder, sidebar,
+// etc.) vs an OS file drop. Used by useFileDrop to suppress the overlay
+// and by the Tauri event handler to skip file-drop processing.
+
+let internalDragCount = 0;
+export function markInternalDragStart(): void { internalDragCount++; }
+export function markInternalDragEnd(): void { internalDragCount = Math.max(0, internalDragCount - 1); }
+export function isInternalDrag(): boolean { return internalDragCount > 0; }
+
+// ---- Internal drag tracking (Tauri dragDropEnabled=true workaround) ----
+//
+// When dragDropEnabled is true, Tauri intercepts ALL native drag events —
+// including those originating within the webview (HTML5 DnD for tab reorder,
+// cross-pane moves, sidebar drag). The HTML5 `drop` event may never fire on
+// the target DOM element. We work around this by:
+//   1. Storing the drag payload on dragstart (which always fires)
+//   2. Using dragend (which always fires) to hit-test and perform the move
+//   3. Using Tauri's "over" event for visual feedback on the target pane
+
+export interface InternalDragPayload {
+  tabId: string;
+  fromGroupId: string | null;
+  type: string;
+}
+
+let _pendingInternalDrag: InternalDragPayload | null = null;
+let _internalDragHandled = false;
+let _lastDragCssPosition: { x: number; y: number } | null = null;
+
+export function setInternalDragPayload(payload: InternalDragPayload): void {
+  _pendingInternalDrag = payload;
+  _internalDragHandled = false;
+}
+
+export function markInternalDragHandled(): void {
+  _internalDragHandled = true;
+}
+
+export function getInternalDragPayload(): InternalDragPayload | null {
+  return _pendingInternalDrag;
+}
+
+export function wasInternalDragHandled(): boolean {
+  return _internalDragHandled;
+}
+
+export function clearInternalDragState(): void {
+  _pendingInternalDrag = null;
+  _internalDragHandled = false;
+  _lastDragCssPosition = null;
+  clearPaneDropHover();
+}
+
+/** Last known CSS-pixel position during an internal drag (from Tauri events). */
+export function getLastDragPosition(): { x: number; y: number } | null {
+  return _lastDragCssPosition;
+}
+
+/** Element currently highlighted as a pane drop target during internal drags. */
+let highlightedPaneEl: HTMLElement | null = null;
+const PANE_DROP_HOVER_CLASS = "pane-drop-hover";
+
+export function updatePaneDropHover(physicalX: number, physicalY: number): void {
+  const dpr = window.devicePixelRatio || 1;
+  const el = document.elementFromPoint(physicalX / dpr, physicalY / dpr);
+  let cur: Element | null = el;
+  let target: HTMLElement | null = null;
+  while (cur) {
+    if ((cur as HTMLElement).dataset?.dropTarget === "pane") {
+      target = cur as HTMLElement;
+      break;
+    }
+    cur = cur.parentElement;
+  }
+  // Don't highlight the source pane
+  if (target && _pendingInternalDrag?.fromGroupId === target.dataset.groupId) {
+    target = null;
+  }
+  if (target === highlightedPaneEl) return;
+  if (highlightedPaneEl) highlightedPaneEl.classList.remove(PANE_DROP_HOVER_CLASS);
+  highlightedPaneEl = target;
+  if (highlightedPaneEl) highlightedPaneEl.classList.add(PANE_DROP_HOVER_CLASS);
+}
+
+export function clearPaneDropHover(): void {
+  if (highlightedPaneEl) {
+    highlightedPaneEl.classList.remove(PANE_DROP_HOVER_CLASS);
+    highlightedPaneEl = null;
+  }
+}
+
+/** Find pane group ID at CSS pixel coordinates. */
+export function findPaneGroupAtPoint(x: number, y: number): string | null {
+  const el = document.elementFromPoint(x, y);
+  let cur: Element | null = el;
+  while (cur) {
+    const dt = (cur as HTMLElement).dataset;
+    if (dt?.dropTarget === "pane") return dt.groupId ?? null;
+    cur = cur.parentElement;
+  }
+  return null;
 }

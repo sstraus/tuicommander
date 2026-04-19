@@ -14,7 +14,8 @@ import { GlobeIcon } from "../GlobeIcon";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
 import { contextMenuActionsStore } from "../../stores/contextMenuActionsStore";
-import { markInternalDragStart, markInternalDragEnd } from "../../hooks/useFileDrop";
+import { initMouseDrag } from "../../hooks/useMouseDrag";
+import { findPaneGroupAtPoint } from "../../stores/dragDrop";
 import { globalWorkspaceStore } from "../../stores/globalWorkspace";
 import { useSmartPrompts } from "../../hooks/useSmartPrompts";
 import { fileContextSmartMenuItem } from "../../utils/promptContext";
@@ -352,79 +353,63 @@ export const TabBar: Component<TabBarProps> = (props) => {
     mdTabsStore.evictNonPinnedPluginPanelsForOtherRepos(current);
   });
 
-  const handleDragStart = (e: DragEvent, id: string, tabType: "terminal" | "markdown" | "diff" | "editor" = "terminal") => {
-    if (!e.dataTransfer) return;
-    markInternalDragStart();
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", id);
-    // Also set pane-tab format so PaneTree drop targets accept this drag
-    if (paneLayoutStore.isSplit()) {
-      const fromGroupId = paneLayoutStore.getGroupForTab(id);
-      e.dataTransfer.setData("application/pane-tab", JSON.stringify({
-        tabId: id,
-        fromGroupId: fromGroupId ?? null,
-        type: tabType,
-      }));
-    }
-    // Use the tab element itself as drag image to suppress macOS green plus icon
-    try {
-      const el = e.currentTarget as HTMLElement;
-      e.dataTransfer.setDragImage(el, el.offsetWidth / 2, el.offsetHeight / 2);
-    } catch { /* happy-dom doesn't implement setDragImage */ }
-    setDraggingId(id);
-  };
-
-  const handleDragOver = (e: DragEvent, id: string) => {
-    e.preventDefault();
-    if (!e.dataTransfer) return;
-    e.dataTransfer.dropEffect = "move";
-
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const midpoint = rect.left + rect.width / 2;
-    const side = e.clientX < midpoint ? "left" : "right";
-
-    setDragOverId(id);
-    setDragOverSide(side);
-  };
-
-  const handleDragLeave = () => {
-    setDragOverId(null);
-    setDragOverSide(null);
-  };
-
-  const handleDrop = (e: DragEvent, targetId: string) => {
-    e.preventDefault();
-    const sourceId = e.dataTransfer?.getData("text/plain");
-    if (!sourceId || sourceId === targetId) {
-      resetDragState();
-      return;
-    }
-
-    const ids = activeTerminals();
-    const fromIndex = ids.indexOf(sourceId);
-    const toIndex = ids.indexOf(targetId);
-
-    if (fromIndex !== -1 && toIndex !== -1 && fromIndex !== toIndex) {
-      // Adjust target index based on drop side when available
-      let adjustedTo = toIndex;
-      const side = dragOverSide();
-      if (side === "left" && fromIndex < toIndex) {
-        adjustedTo = toIndex - 1;
-      } else if (side === "right" && fromIndex > toIndex) {
-        adjustedTo = toIndex + 1;
-      }
-      const clampedTo = Math.max(0, Math.min(adjustedTo, ids.length - 1));
-      if (fromIndex !== clampedTo) {
-        props.onReorder?.(fromIndex, clampedTo);
-      }
-    }
-
-    resetDragState();
-  };
-
-  const handleDragEnd = () => {
-    markInternalDragEnd();
-    resetDragState();
+  // Mouse-based drag — replaces HTML5 DnD which conflicts with Tauri dragDropEnabled=true
+  const handleMouseDrag = (e: MouseEvent, id: string, _tabType: "terminal" | "markdown" | "diff" | "editor" = "terminal") => {
+    initMouseDrag(e, e.currentTarget as HTMLElement, {
+      onStart: () => setDraggingId(id),
+      onMove: (x, y) => {
+        const el = document.elementFromPoint(x, y);
+        const tabEl = el?.closest("[data-tab-id]") as HTMLElement | null;
+        if (tabEl && tabEl.dataset.tabId !== id) {
+          const rect = tabEl.getBoundingClientRect();
+          setDragOverId(tabEl.dataset.tabId!);
+          setDragOverSide(x < rect.left + rect.width / 2 ? "left" : "right");
+        } else {
+          setDragOverId(null);
+          setDragOverSide(null);
+        }
+      },
+      onDrop: (x, y) => {
+        const sourceId = id;
+        // 1. Cross-pane move (split mode)
+        if (paneLayoutStore.isSplit()) {
+          const targetGroup = findPaneGroupAtPoint(x, y);
+          if (targetGroup) {
+            const fromGroup = paneLayoutStore.getGroupForTab(sourceId);
+            if (fromGroup && fromGroup !== targetGroup) {
+              paneLayoutStore.moveTab(fromGroup, targetGroup, sourceId);
+              paneLayoutStore.setActiveGroup(targetGroup);
+              resetDragState();
+              return;
+            }
+          }
+        }
+        // 2. Tab reorder
+        const el = document.elementFromPoint(x, y);
+        const tabEl = el?.closest("[data-tab-id]") as HTMLElement | null;
+        if (tabEl) {
+          const targetId = tabEl.dataset.tabId!;
+          if (targetId !== sourceId) {
+            const ids = activeTerminals();
+            const fromIndex = ids.indexOf(sourceId);
+            const toIndex = ids.indexOf(targetId);
+            if (fromIndex !== -1 && toIndex !== -1) {
+              const rect = tabEl.getBoundingClientRect();
+              const side = x < rect.left + rect.width / 2 ? "left" : "right";
+              let adjustedTo = toIndex;
+              if (side === "left" && fromIndex < toIndex) adjustedTo--;
+              else if (side === "right" && fromIndex > toIndex) adjustedTo++;
+              const clampedTo = Math.max(0, Math.min(adjustedTo, ids.length - 1));
+              if (fromIndex !== clampedTo) {
+                props.onReorder?.(fromIndex, clampedTo);
+              }
+            }
+          }
+        }
+        resetDragState();
+      },
+      onCancel: () => resetDragState(),
+    });
   };
 
   const resetDragState = () => {
@@ -590,18 +575,14 @@ export const TabBar: Component<TabBarProps> = (props) => {
                   isDragOver() && dragOverSide() === "left" && s.dragOverLeft,
                   isDragOver() && dragOverSide() === "right" && s.dragOverRight,
                 )}
+                data-tab-id={id}
                 onClick={() => props.onTabSelect(id)}
                 onAuxClick={(e) => {
                   if (e.button === 1) handleCloseTab(e);
                 }}
                 onContextMenu={(e) => openTabContextMenu(e, id)}
                 title={`Terminal ${index() + 1} (${getModifierSymbol()}${index() + 1})`}
-                draggable={!isEditing()}
-                onDragStart={(e) => handleDragStart(e, id)}
-                onDragOver={(e) => handleDragOver(e, id)}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e, id)}
-                onDragEnd={handleDragEnd}
+                onMouseDown={(e) => !isEditing() && handleMouseDrag(e, id)}
                 onMouseEnter={() => setHovered(true)}
                 onMouseLeave={() => setHovered(false)}
                 onDblClick={(e) => {
@@ -685,6 +666,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
             <Show when={diffTab()}>
               <div
                 class={cx(s.tab, s.diffTab, isActive() && s.active)}
+                data-tab-id={id}
                 onClick={() => {
                   diffTabsStore.setActive(id);
                   props.onTabSelect(id);
@@ -692,8 +674,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
                 onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); diffTabsStore.remove(id); props.onTabClose(id); } }}
                 onContextMenu={(e) => openTabContextMenu(e, id)}
                 title={diffTab()?.filePath}
-                draggable={true}
-                onDragStart={(e) => handleDragStart(e, id, "diff")}
+                onMouseDown={(e) => handleMouseDrag(e, id, "diff")}
               >
                 <span class={s.tabIcon}>
                   {diffTab()?.filePath
@@ -735,6 +716,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
             <Show when={mdTab()}>
               <div
                 class={cx(s.tab, mdTab()?.type === "file" ? s.mdTab : mdTab()?.type === "pr-diff" ? s.diffTab : s.panelTab, isActive() && s.active)}
+                data-tab-id={id}
                 onClick={() => {
                   mdTabsStore.setActive(id);
                   props.onTabSelect(id);
@@ -742,8 +724,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
                 onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); mdTabsStore.remove(id); props.onTabClose(id); } }}
                 onContextMenu={(e) => openTabContextMenu(e, id)}
                 title={(() => { const tab = mdTab(); return tab?.type === "file" ? tab.filePath : tab?.type === "pr-diff" ? `PR #${tab.prNumber}: ${tab.prTitle}` : tab?.title; })()}
-                draggable={true}
-                onDragStart={(e) => handleDragStart(e, id, "markdown")}
+                onMouseDown={(e) => handleMouseDrag(e, id, "markdown")}
               >
                 <span class={s.tabIcon}>
                   {mdTab()?.type === "pr-diff" ? (
@@ -786,6 +767,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
             <Show when={editTab()}>
               <div
                 class={cx(s.tab, s.editTab, isActive() && s.active)}
+                data-tab-id={id}
                 onClick={() => {
                   editorTabsStore.setActive(id);
                   props.onTabSelect(id);
@@ -793,8 +775,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
                 onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); props.onTabClose(id); } }}
                 onContextMenu={(e) => openTabContextMenu(e, id)}
                 title={editTab()?.filePath}
-                draggable={true}
-                onDragStart={(e) => handleDragStart(e, id, "editor")}
+                onMouseDown={(e) => handleMouseDrag(e, id, "editor")}
               >
                 <span class={s.tabIcon}>
                   {editTab()?.isDirty

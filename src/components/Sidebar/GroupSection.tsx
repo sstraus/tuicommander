@@ -13,12 +13,7 @@ export const GroupSection: Component<{
   repos: RepositoryState[];
   onRename: (groupId: string) => void;
   onColorChange: (groupId: string) => void;
-  onDragStart?: (e: DragEvent) => void;
-  onDragOver?: (e: DragEvent) => void;
-  onDrop?: (e: DragEvent) => void;
-  onDragEnd?: () => void;
-  onHeaderDragOver?: (e: DragEvent) => void;
-  onHeaderDrop?: (e: DragEvent) => void;
+  onMouseDrag?: (e: MouseEvent) => void;
   dragOverClass?: string;
   children: JSX.Element;
 }> = (props) => {
@@ -33,18 +28,13 @@ export const GroupSection: Component<{
   return (
     <div
       class={cx(s.groupSection, props.dragOverClass)}
-      draggable={true}
-      onDragStart={props.onDragStart}
-      onDragOver={props.onDragOver}
-      onDrop={props.onDrop}
-      onDragEnd={props.onDragEnd}
+      data-sidebar-group={props.group.id}
     >
       <div
         class={s.groupHeader}
         onClick={() => repositoriesStore.toggleGroupCollapsed(props.group.id)}
         onContextMenu={groupMenu.open}
-        onDragOver={(e: DragEvent) => { e.stopPropagation(); props.onHeaderDragOver?.(e); }}
-        onDrop={(e: DragEvent) => { e.stopPropagation(); props.onHeaderDrop?.(e); }}
+        onMouseDown={(e) => props.onMouseDrag?.(e)}
       >
         <Show when={props.group.color}>
           <span class={s.groupColorDot} style={{ background: props.group.color }} />

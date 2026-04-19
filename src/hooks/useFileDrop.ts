@@ -5,19 +5,19 @@ import { repositoriesStore } from "../stores/repositories";
 import { terminalsStore } from "../stores/terminals";
 import { appLogger } from "../stores/appLogger";
 import { toastsStore } from "../stores/toasts";
-import { dragDropStore, clearDropPayload } from "../stores/dragDrop";
+import {
+  dragDropStore,
+  clearDropPayload,
+  markInternalDragStart,
+  markInternalDragEnd,
+  isInternalDrag,
+} from "../stores/dragDrop";
 import { rpc, isTauri } from "../transport";
 import { invoke } from "../invoke";
 import { classifyFile } from "../utils/filePreview";
 
-/**
- * Global flag to suppress the file-drop overlay during internal drags
- * (tab reorder, sidebar repo drag, task queue drag, etc.).
- * Internal drag handlers set this to true on dragstart and false on dragend.
- */
-let internalDragCount = 0;
-export function markInternalDragStart(): void { internalDragCount++; }
-export function markInternalDragEnd(): void { internalDragCount = Math.max(0, internalDragCount - 1); }
+// Re-export for existing callsites that import from useFileDrop
+export { markInternalDragStart, markInternalDragEnd, isInternalDrag };
 
 /** Classify a file path for opening — delegates to shared utility.
  *  @deprecated Use classifyFile from utils/filePreview instead */
@@ -252,7 +252,7 @@ export function useFileDrop() {
   const hasFiles = (e: DragEvent) => e.dataTransfer?.types?.includes("Files") ?? false;
 
   const onDragOver = (e: DragEvent) => {
-    if (!hasFiles(e) || internalDragCount > 0) return;
+    if (!hasFiles(e) || isInternalDrag()) return;
     e.preventDefault();
     if (!isDragging()) setIsDragging(true);
   };
