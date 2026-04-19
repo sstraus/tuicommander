@@ -102,13 +102,22 @@ pub(crate) struct HttpMcpClient {
     /// across `refresh_token_if_needed` and `force_refresh` is what keeps
     /// concurrent 401-retry paths from triggering parallel refresh requests.
     token_manager: OnceCell<Arc<TokenManager>>,
+    /// Whether this upstream has auth configured (bearer or OAuth). When false,
+    /// `resolve_bearer` skips the keychain entirely — avoids macOS permission
+    /// popups for upstreams that don't need credentials.
+    has_auth: bool,
+    /// Cached bearer token resolved from the keyring during `initialize()`.
+    /// Avoids hitting the OS keychain on every health check / tool call —
+    /// macOS prompts for keychain access each time otherwise.
+    /// Invalidated on 401 → `force_refresh()`.
+    cached_bearer: std::sync::Mutex<Option<String>>,
 }
 
 impl HttpMcpClient {
     /// Create a new HTTP MCP client.
     ///
     /// `timeout_secs` is the per-request timeout (0 = no timeout).
-    pub(crate) fn new(name: String, url: String, timeout_secs: u32) -> Self {
+    pub(crate) fn new(name: String, url: String, timeout_secs: u32, has_auth: bool) -> Self {
         let timeout = if timeout_secs > 0 {
             Some(Duration::from_secs(timeout_secs as u64))
         } else {
@@ -132,6 +141,8 @@ impl HttpMcpClient {
             name,
             session_id: None,
             token_manager: OnceCell::new(),
+            has_auth,
+            cached_bearer: std::sync::Mutex::new(None),
         }
     }
 
@@ -140,10 +151,11 @@ impl HttpMcpClient {
         name: String,
         transport: &UpstreamTransport,
         timeout_secs: u32,
+        has_auth: bool,
     ) -> Option<Self> {
         match transport {
             UpstreamTransport::Http { url } => {
-                Some(Self::new(name, url.clone(), timeout_secs))
+                Some(Self::new(name, url.clone(), timeout_secs, has_auth))
             }
             UpstreamTransport::Stdio { .. } => None,
         }
@@ -157,6 +169,25 @@ impl HttpMcpClient {
     ///   expiry, calls [`TokenManager::refresh_if_needed`] and returns the
     ///   refreshed access token.
     async fn resolve_bearer(&self) -> Result<Option<String>, UpstreamError> {
+        if !self.has_auth {
+            return Ok(None);
+        }
+        {
+            let guard = self.cached_bearer.lock().unwrap();
+            if let Some(ref cached) = *guard {
+                return Ok(Some(cached.clone()));
+            }
+        }
+        let token = self.resolve_bearer_from_keyring().await?;
+        if let Some(ref t) = token {
+            *self.cached_bearer.lock().unwrap() = Some(t.clone());
+        }
+        Ok(token)
+    }
+
+    /// Read the bearer token from the OS keyring (expensive on macOS — triggers
+    /// a security prompt unless the user has granted "Always Allow").
+    async fn resolve_bearer_from_keyring(&self) -> Result<Option<String>, UpstreamError> {
         let cred = read_stored_credential(&self.name)
             .map_err(|e| UpstreamError::Other(format!("keyring read failed: {e}")))?;
         let Some(cred) = cred else { return Ok(None) };
@@ -208,6 +239,7 @@ impl HttpMcpClient {
                 Arc::new(TokenManager::new(
                     self.name.clone(),
                     set.client_id.clone(),
+                    set.client_secret.clone(),
                     set.token_endpoint.clone(),
                     resource,
                 ))
@@ -219,14 +251,22 @@ impl HttpMcpClient {
     /// Force a refresh regardless of current validity (used after a 401 on
     /// an OAuth credential to recover from server-side token revocation).
     async fn force_refresh(&self) -> Result<Option<OAuthTokenSet>, UpstreamError> {
+        if !self.has_auth {
+            return Ok(None);
+        }
+        // Invalidate cache so the next resolve_bearer re-reads from keyring.
+        *self.cached_bearer.lock().unwrap() = None;
         let cred = read_stored_credential(&self.name)
             .map_err(|e| UpstreamError::Other(format!("keyring read failed: {e}")))?;
         let Some(StoredCredential::Oauth2(mut set)) = cred else {
             return Ok(None);
         };
-        // Mark the token as expired so refresh_if_needed doesn't short-circuit.
         set.expires_at = Some(0);
-        self.refresh_token_if_needed(&set).await
+        let refreshed = self.refresh_token_if_needed(&set).await?;
+        if let Some(ref new_set) = refreshed {
+            *self.cached_bearer.lock().unwrap() = Some(new_set.access_token.clone());
+        }
+        Ok(refreshed)
     }
 
     /// Perform the MCP initialize handshake.
@@ -280,6 +320,13 @@ impl HttpMcpClient {
             ))
         })?;
 
+        tracing::debug!(
+            upstream = %self.name,
+            session_id = ?self.session_id,
+            "initialize response: {}",
+            serde_json::to_string(&_init_resp).unwrap_or_default()
+        );
+
         // Fire-and-forget: notifications/initialized
         let _ = self
             .rpc_raw("notifications/initialized", serde_json::json!({}), auth_token.as_deref())
@@ -298,10 +345,23 @@ impl HttpMcpClient {
             .rpc("tools/list", serde_json::json!({}), auth_token)
             .await?;
 
-        let tools_arr = resp_value["result"]["tools"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default();
+        tracing::debug!(
+            upstream = %self.name,
+            "tools/list raw response: {}",
+            serde_json::to_string(&resp_value).unwrap_or_default()
+        );
+
+        let tools_arr = match resp_value["result"]["tools"].as_array() {
+            Some(arr) => arr.clone(),
+            None => {
+                tracing::warn!(
+                    upstream = %self.name,
+                    "tools/list response missing result.tools — got: {}",
+                    serde_json::to_string(&resp_value).unwrap_or_default()
+                );
+                Vec::new()
+            }
+        };
 
         let tools = tools_arr
             .into_iter()
@@ -641,7 +701,7 @@ mod tests {
         let state = MockState::default();
         let url = spawn_mock_server(state).await;
 
-        let mut client = HttpMcpClient::new("test".to_string(), url, 10);
+        let mut client = HttpMcpClient::new("test".to_string(), url, 10, false);
         assert!(!client.is_connected());
 
         let tools = client.initialize().await.unwrap();
@@ -656,7 +716,7 @@ mod tests {
         state.fail_initialize.store(true, std::sync::atomic::Ordering::SeqCst);
         let url = spawn_mock_server(state).await;
 
-        let mut client = HttpMcpClient::new("test".to_string(), url, 10);
+        let mut client = HttpMcpClient::new("test".to_string(), url, 10, false);
         let result = client.initialize().await;
         let err = result.unwrap_err();
         assert!(matches!(err, UpstreamError::Other(_)));
@@ -668,7 +728,7 @@ mod tests {
         let state = MockState::default();
         let url = spawn_mock_server(state).await;
 
-        let mut client = HttpMcpClient::new("test".to_string(), url, 10);
+        let mut client = HttpMcpClient::new("test".to_string(), url, 10, false);
         client.initialize().await.unwrap();
 
         let result = client
@@ -685,7 +745,7 @@ mod tests {
         let state = MockState::default();
         let url = spawn_mock_server(state).await;
 
-        let mut client = HttpMcpClient::new("test".to_string(), url, 10);
+        let mut client = HttpMcpClient::new("test".to_string(), url, 10, false);
         client.initialize().await.unwrap();
 
         let result = client.health_check().await;
@@ -695,7 +755,7 @@ mod tests {
     #[tokio::test]
     async fn health_check_fails_when_not_initialized() {
         let client =
-            HttpMcpClient::new("test".to_string(), "http://127.0.0.1:1/mcp".to_string(), 2);
+            HttpMcpClient::new("test".to_string(), "http://127.0.0.1:1/mcp".to_string(), 2, false);
         let result = client.health_check().await;
         assert!(result.is_err());
     }
@@ -705,7 +765,7 @@ mod tests {
         let transport = crate::mcp_upstream_config::UpstreamTransport::Http {
             url: "http://localhost:8080/mcp".to_string(),
         };
-        let client = HttpMcpClient::from_config("test".to_string(), &transport, 30);
+        let client = HttpMcpClient::from_config("test".to_string(), &transport, 30, false);
         assert!(client.is_some());
     }
 
@@ -717,7 +777,7 @@ mod tests {
             env: std::collections::HashMap::new(),
             cwd: None,
         };
-        let client = HttpMcpClient::from_config("test".to_string(), &transport, 30);
+        let client = HttpMcpClient::from_config("test".to_string(), &transport, 30, false);
         assert!(client.is_none());
     }
 
@@ -731,7 +791,7 @@ mod tests {
             .store(true, std::sync::atomic::Ordering::SeqCst);
         let url = spawn_mock_server(state).await;
 
-        let mut client = HttpMcpClient::new("test-401-oauth".to_string(), url, 5);
+        let mut client = HttpMcpClient::new("test-401-oauth".to_string(), url, 5, true);
         let err = client.initialize().await.unwrap_err();
         match err {
             UpstreamError::NeedsOAuth { www_authenticate } => {
@@ -752,7 +812,7 @@ mod tests {
             .store(true, std::sync::atomic::Ordering::SeqCst);
         let url = spawn_mock_server(state).await;
 
-        let mut client = HttpMcpClient::new("test-401-plain".to_string(), url, 5);
+        let mut client = HttpMcpClient::new("test-401-plain".to_string(), url, 5, true);
         let err = client.initialize().await.unwrap_err();
         assert!(
             matches!(err, UpstreamError::AuthFailed),
@@ -767,7 +827,7 @@ mod tests {
         let state = MockState::default();
         let url = spawn_mock_server(state.clone()).await;
 
-        let mut client = HttpMcpClient::new("test-calltool-401".to_string(), url, 5);
+        let mut client = HttpMcpClient::new("test-calltool-401".to_string(), url, 5, true);
         client.initialize().await.unwrap();
 
         state

@@ -251,10 +251,17 @@ impl StdioMcpClient {
 
         // Fetch tool list
         let tools_resp = self.rpc("tools/list", serde_json::json!({}))?;
-        let tools_arr = tools_resp["result"]["tools"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default();
+        let tools_arr = match tools_resp["result"]["tools"].as_array() {
+            Some(arr) => arr.clone(),
+            None => {
+                tracing::warn!(
+                    upstream = %self.config.name,
+                    "tools/list response missing result.tools — got: {}",
+                    serde_json::to_string(&tools_resp).unwrap_or_default()
+                );
+                Vec::new()
+            }
+        };
 
         let tools = tools_arr
             .into_iter()
@@ -363,7 +370,8 @@ impl StdioMcpClient {
         }
     }
 
-    /// Send a JSON-RPC request and read the response.
+    /// Send a JSON-RPC request and read the response, matching by `id`.
+    /// Server notifications (messages without an `id` field) are skipped.
     fn rpc(&mut self, method: &str, params: Value) -> Result<Value, String> {
         self.request_id += 1;
         let id = self.request_id;
@@ -376,7 +384,33 @@ impl StdioMcpClient {
         });
 
         self.write_line(&body)?;
-        self.read_line()
+
+        // Loop until we get a response with matching id — skip notifications
+        // and log messages the server may send in between.
+        const MAX_SKIP: usize = 64;
+        for _ in 0..MAX_SKIP {
+            let msg = self.read_line()?;
+            match msg.get("id") {
+                Some(resp_id) if resp_id.as_u64() == Some(id as u64) => return Ok(msg),
+                Some(_) => {
+                    tracing::debug!(
+                        upstream = %self.config.name,
+                        "Skipping response with mismatched id (expected {id}): {msg}"
+                    );
+                }
+                None => {
+                    tracing::debug!(
+                        upstream = %self.config.name,
+                        "Skipping server notification while waiting for id {id}: {msg}"
+                    );
+                }
+            }
+        }
+
+        Err(format!(
+            "Upstream '{}': no response with id {id} after {MAX_SKIP} messages",
+            self.config.name
+        ))
     }
 
     /// Send a notification (no response expected).
