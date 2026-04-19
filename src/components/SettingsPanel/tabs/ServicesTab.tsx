@@ -106,6 +106,7 @@ interface UpstreamStatusEntry {
   tool_count: number;
   tools: string[];
   metrics: { call_count: number; error_count: number; last_latency_ms: number };
+  last_error?: string | null;
 }
 
 /** Static definition of native TUIC tools exposed via MCP */
@@ -764,6 +765,7 @@ function emptyForm() {
     timeout: 30,
     authMethod: "bearer" as "bearer" | "oauth2",
     oauthClientId: "",
+    oauthClientSecret: "",
     oauthScopes: "",
   };
 }
@@ -833,9 +835,11 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
       const scopes = f.oauthScopes.trim()
         ? f.oauthScopes.trim().split(/[\s,]+/).filter(Boolean)
         : undefined;
+      const secret = f.oauthClientSecret.trim() || undefined;
       server.auth = {
         type: "oauth2",
         client_id: f.oauthClientId.trim(),
+        ...(secret ? { client_secret: secret } : {}),
         ...(scopes && scopes.length ? { scopes } : {}),
       };
     }
@@ -901,6 +905,7 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
       timeout: server.timeout_secs,
       authMethod: isOAuth ? "oauth2" : "bearer",
       oauthClientId: isOAuth ? (server.auth as { client_id: string }).client_id : "",
+      oauthClientSecret: isOAuth ? ((server.auth as { client_secret?: string }).client_secret ?? "") : "",
       oauthScopes: isOAuth ? ((server.auth as { scopes?: string[] }).scopes?.join(" ") ?? "") : "",
     });
   }
@@ -921,12 +926,17 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
       const scopes = f.oauthScopes.trim()
         ? f.oauthScopes.trim().split(/[\s,]+/).filter(Boolean)
         : undefined;
+      const secret = f.oauthClientSecret.trim() || undefined;
+      const existingOAuth = server.auth?.type === "oauth2" ? server.auth as { authorization_endpoint?: string; token_endpoint?: string } : undefined;
       updated.auth = {
-        type: "oauth2",
+        type: "oauth2" as const,
         client_id: f.oauthClientId.trim(),
+        ...(secret ? { client_secret: secret } : {}),
         ...(scopes && scopes.length ? { scopes } : {}),
+        ...(existingOAuth?.authorization_endpoint ? { authorization_endpoint: existingOAuth.authorization_endpoint } : {}),
+        ...(existingOAuth?.token_endpoint ? { token_endpoint: existingOAuth.token_endpoint } : {}),
       };
-    } else {
+    } else if (f.authMethod === "bearer") {
       delete updated.auth;
     }
 
@@ -1033,9 +1043,16 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
                 <input
                   type="text"
                   class={s.input}
-                  placeholder="Leave blank to auto-register"
+                  placeholder="Client ID (leave blank to auto-register)"
                   value={form().oauthClientId}
                   onInput={e => setForm(f => ({ ...f, oauthClientId: e.currentTarget.value }))}
+                />
+                <input
+                  type="password"
+                  class={s.input}
+                  placeholder="Client Secret (optional, for confidential clients)"
+                  value={form().oauthClientSecret}
+                  onInput={e => setForm(f => ({ ...f, oauthClientSecret: e.currentTarget.value }))}
                 />
                 <input
                   type="text"
@@ -1281,6 +1298,13 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
                             placeholder="Leave blank to auto-register"
                             value={editForm().oauthClientId}
                             onInput={e => setEditForm(f => ({ ...f, oauthClientId: e.currentTarget.value }))} />
+                        </div>
+                        <div>
+                          <label style={{ "font-size": "12px", color: "var(--text-dimmed)" }}>Client Secret</label>
+                          <input type="password" class={s.input}
+                            placeholder="Optional, for confidential clients"
+                            value={editForm().oauthClientSecret}
+                            onInput={e => setEditForm(f => ({ ...f, oauthClientSecret: e.currentTarget.value }))} />
                         </div>
                         <div>
                           <label style={{ "font-size": "12px", color: "var(--text-dimmed)" }}>Scopes</label>

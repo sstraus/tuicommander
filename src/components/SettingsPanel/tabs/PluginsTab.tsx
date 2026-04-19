@@ -293,15 +293,21 @@ const BrowseRow: Component<{ entry: RegistryEntry }> = (props) => {
 // Main tab
 // ---------------------------------------------------------------------------
 
+/**
+ * Sort plugins for the Installed list: built-in first, then enabled,
+ * then alphabetically by display name.
+ */
+export function sortPlugins(plugins: readonly PluginState[]): PluginState[] {
+  const name = (p: PluginState) => (p.manifest?.name ?? p.id).toLowerCase();
+  return [...plugins].sort((a, b) => {
+    if (a.builtIn !== b.builtIn) return a.builtIn ? -1 : 1;
+    if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
+    return name(a).localeCompare(name(b));
+  });
+}
+
 export const PluginsTab: Component<{ onClose?: () => void }> = (props) => {
-  const plugins = () => {
-    const all = pluginStore.getAll();
-    const name = (p: PluginState) => (p.manifest?.name ?? p.id).toLowerCase();
-    return [...all].sort((a, b) => {
-      if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
-      return name(a).localeCompare(name(b));
-    });
-  };
+  const plugins = () => sortPlugins(pluginStore.getAll());
   const [installing, setInstalling] = createSignal(false);
   const [fileInstallError, setFileInstallError] = createSignal<string | null>(null);
   const [activeSubTab, setActiveSubTab] = createSignal<"installed" | "browse">("installed");
