@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Claude Wakeup plugin** — Agent-scoped external plugin (`plugins/claude-wakeup/`) that wakes Claude Code when it stalls without asking a question. Sends a verification prompt after 20 s of idle, detects "done" replies via busy-cycle duration (short <8 s = done, long ≥8 s = continued), disarms until next user turn. Typing suppression: every busy→idle transition resets the idle clock, preventing false wakes during keystroke-generated shell-state blips. Max 3 wakes per stall, 12 per session. Markdown stats dashboard. Configurable thresholds via `data/config.json`.
+
+### Fixed
+- **MCP stdio proxy "0 tools"** — `StdioMcpClient.rpc()` now matches JSON-RPC responses by `id`, skipping server notifications emitted between request and response. Previously a single interleaved notification (e.g. `notifications/tools/list_changed`) would be consumed as the `tools/list` response, silently yielding 0 tools.
+- **macOS keychain prompt spam** — `HttpMcpClient` now caches the resolved bearer token in memory after the first keyring read. Health checks (every 60s) and tool calls reuse the cache instead of hitting the OS keychain each time. Cache is invalidated on 401 and re-populated after token refresh.
+- **Tilde expansion in all user-supplied paths** — `std::process::Command` and `std::fs` do not expand `~`; paths like `~/bin/mdkb` failed with ENOENT. Added `crate::cli::expand_tilde()` and applied it in 11 sites: MCP stdio client (command, args, cwd), PTY (shell, cwd), agent spawn (binary_path, cwd), headless prompts (command, args, repo_path), shell scripts (repo_path), MCP HTTP session/agent/transport (cwd), worktree setup scripts (cwd), plugin exec (cwd validation), and plugin filesystem (path validation).
+- **Silent "0 tools" diagnostic** — Both stdio and HTTP MCP clients now log `warn!` when `tools/list` response is missing `result.tools`, instead of silently returning an empty tool list via `unwrap_or_default()`.
+
+### Added (tests)
+- **Claude Wakeup unit tests** — 18 tests covering `canWake` state machine, typing-resets-lastIdleAt (the main false-wake bug), done detection via busy-cycle duration, and re-arm after disarm logic.
+- **Stdio RPC id-matching tests** — Two tests verifying that `rpc()` correctly skips interleaved server notifications (1 and 3 notifications) and returns the matching `tools/list` response.
+- **`expand_tilde` unit tests** — Tests for `~/path` expansion and no-op cases (absolute paths, relative paths, `~other_user`).
+
 ## [1.0.6] - 2026-04-18
 
 ### Added

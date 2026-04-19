@@ -259,6 +259,32 @@ This works around Claude Code's inability to change its working directory mid-se
 
 Non-Claude Code MCP clients do not receive this field.
 
+## Upstream MCP Proxy
+
+TUICommander can proxy upstream MCP servers (stdio or HTTP) and aggregate their tools into its own `tools/list` response. Configuration lives in `mcp-servers.json`.
+
+### Stdio transport
+
+`StdioMcpClient` spawns a child process and communicates via newline-delimited JSON-RPC over stdin/stdout. The handshake is: `initialize` → `notifications/initialized` → `tools/list`.
+
+**RPC id-matching.** The `rpc()` method matches responses by JSON-RPC `id`, skipping any server notifications (messages without an `id` field) that arrive between request and response. This prevents silent "0 tools" when a server emits `notifications/tools/list_changed` or log messages during the handshake.
+
+**Tilde expansion.** All user-supplied paths (`command`, `args`, `cwd`) are expanded via `crate::cli::expand_tilde()` before being passed to `std::process::Command`. This applies globally across the codebase — PTY, agent spawn, headless prompts, worktree scripts, plugin exec, and file validation all expand `~` to `$HOME`.
+
+### HTTP transport
+
+`HttpMcpClient` communicates via Streamable HTTP (POST to the server URL, `mcp-session-id` header for session affinity).
+
+**Bearer token caching.** The resolved bearer token (from OS keyring) is cached in memory after the first `resolve_bearer()` call. Subsequent calls (health checks every 60s, tool calls) use the cache. The cache is invalidated on 401 → `force_refresh()` and re-populated after a successful token refresh. This eliminates repeated macOS keychain permission prompts.
+
+### Health checker
+
+A background task runs every 60s (`HEALTH_CHECK_INTERVAL`) and calls `tools/list` on every `Ready` upstream. Failures feed a circuit breaker (3 consecutive failures → backoff starting at 1s, capped at 60s, max 5 retries before permanent `Failed`). Recovery from `CircuitOpen`, `Connecting`, or `Failed` is attempted on each tick.
+
+### Diagnostics
+
+Both transports log `warn!` when `tools/list` returns a response without `result.tools` — making "0 tools" diagnosable instead of silent.
+
 ## OAuth 2.1 Upstream Authentication
 
 When an upstream MCP server requires OAuth instead of a static Bearer token, TUICommander runs a full RFC 9728 (Protected Resource Metadata) + RFC 8414 (Authorization Server Discovery) flow with PKCE S256.
