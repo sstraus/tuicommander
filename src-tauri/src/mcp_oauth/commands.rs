@@ -89,8 +89,9 @@ pub(crate) async fn start_mcp_upstream_oauth(
                 token_endpoint: None,
             };
 
-            // DEFERRED (2026-04-19) — persist DCR client_id to mcp-upstreams.json.
-            // Step 4 (1396-dc11) adds update_upstream_auth() write-back path.
+            if let Err(e) = crate::mcp_upstream_config::update_upstream_auth(&name, auth.clone()) {
+                tracing::warn!(source = "mcp_oauth", %name, "Failed to persist DCR client_id: {e}");
+            }
 
             auth
         }

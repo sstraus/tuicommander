@@ -274,6 +274,30 @@ pub(crate) async fn save_mcp_upstreams(
     Ok(())
 }
 
+/// Persist a DCR-obtained (or manually set) auth config for a single upstream.
+/// Loads the config file, patches the matching entry, and writes it back
+/// atomically. Other upstreams are left untouched.
+pub(crate) fn update_upstream_auth(name: &str, auth: UpstreamAuth) -> Result<(), String> {
+    set_upstream_auth(name, Some(auth))
+}
+
+/// Clear persisted auth for a single upstream (e.g. when transport URL changes
+/// and a DCR-obtained client_id is stale).
+pub(crate) fn clear_upstream_auth(name: &str) -> Result<(), String> {
+    set_upstream_auth(name, None)
+}
+
+fn set_upstream_auth(name: &str, auth: Option<UpstreamAuth>) -> Result<(), String> {
+    let mut config: UpstreamMcpConfig = load_json_config(UPSTREAMS_FILE);
+    let entry = config
+        .servers
+        .iter_mut()
+        .find(|s| s.name == name)
+        .ok_or_else(|| format!("Upstream '{name}' not found in {UPSTREAMS_FILE}"))?;
+    entry.auth = auth;
+    save_json_config(UPSTREAMS_FILE, &config)
+}
+
 /// Set per-project upstream MCP allowlist. `None` clears the override
 /// (inherits all globally-enabled servers). Persists to repo-settings.json
 /// and emits a tool-list refresh so connected MCP clients see the change.
@@ -952,6 +976,117 @@ mod tests {
         let content = std::fs::read_to_string(&path).unwrap();
         let loaded: UpstreamMcpConfig = serde_json::from_str(&content).unwrap();
         assert_eq!(config, loaded);
+    }
+
+    // -- update_upstream_auth --
+
+    #[test]
+    #[serial_test::serial]
+    fn update_upstream_auth_writes_auth_without_affecting_other_upstreams() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _guard = crate::config::set_config_dir_override(tmp.path().to_path_buf());
+
+        // Seed two upstreams — one with existing auth, one without
+        let mut server_a = http_server("alpha", "https://a.example.com/mcp");
+        server_a.auth = Some(UpstreamAuth::Bearer { token: "old-tok".into() });
+        let server_b = http_server("beta", "https://b.example.com/mcp");
+        let config = UpstreamMcpConfig {
+            servers: vec![server_a, server_b.clone()],
+        };
+        save_json_config(UPSTREAMS_FILE, &config).unwrap();
+
+        // Write OAuth auth to beta
+        let new_auth = UpstreamAuth::OAuth2 {
+            client_id: "dcr-obtained-id".into(),
+            scopes: vec![],
+            authorization_endpoint: None,
+            token_endpoint: None,
+        };
+        update_upstream_auth("beta", new_auth.clone()).unwrap();
+
+        // Reload and verify
+        let reloaded: UpstreamMcpConfig = load_json_config(UPSTREAMS_FILE);
+        let alpha = reloaded.servers.iter().find(|s| s.name == "alpha").unwrap();
+        let beta = reloaded.servers.iter().find(|s| s.name == "beta").unwrap();
+
+        // alpha's auth must be untouched
+        assert!(matches!(alpha.auth, Some(UpstreamAuth::Bearer { .. })));
+        // beta must have the new OAuth2 auth
+        assert_eq!(beta.auth, Some(new_auth));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn update_upstream_auth_returns_err_for_unknown_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _guard = crate::config::set_config_dir_override(tmp.path().to_path_buf());
+
+        let config = UpstreamMcpConfig {
+            servers: vec![http_server("alpha", "https://a.example.com/mcp")],
+        };
+        save_json_config(UPSTREAMS_FILE, &config).unwrap();
+
+        let auth = UpstreamAuth::OAuth2 {
+            client_id: "x".into(),
+            scopes: vec![],
+            authorization_endpoint: None,
+            token_endpoint: None,
+        };
+        let result = update_upstream_auth("nonexistent", auth);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn clear_upstream_auth_removes_auth() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _guard = crate::config::set_config_dir_override(tmp.path().to_path_buf());
+
+        let mut server = http_server("delta", "https://d.example.com/mcp");
+        server.auth = Some(UpstreamAuth::OAuth2 {
+            client_id: "stale-id".into(),
+            scopes: vec![],
+            authorization_endpoint: None,
+            token_endpoint: None,
+        });
+        let config = UpstreamMcpConfig { servers: vec![server] };
+        save_json_config(UPSTREAMS_FILE, &config).unwrap();
+
+        clear_upstream_auth("delta").unwrap();
+
+        let reloaded: UpstreamMcpConfig = load_json_config(UPSTREAMS_FILE);
+        let delta = reloaded.servers.iter().find(|s| s.name == "delta").unwrap();
+        assert!(delta.auth.is_none());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn update_upstream_auth_overwrites_existing_auth() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _guard = crate::config::set_config_dir_override(tmp.path().to_path_buf());
+
+        let mut server = http_server("gamma", "https://g.example.com/mcp");
+        server.auth = Some(UpstreamAuth::OAuth2 {
+            client_id: "old-id".into(),
+            scopes: vec!["read".into()],
+            authorization_endpoint: None,
+            token_endpoint: None,
+        });
+        let config = UpstreamMcpConfig { servers: vec![server] };
+        save_json_config(UPSTREAMS_FILE, &config).unwrap();
+
+        let new_auth = UpstreamAuth::OAuth2 {
+            client_id: "new-id".into(),
+            scopes: vec![],
+            authorization_endpoint: None,
+            token_endpoint: None,
+        };
+        update_upstream_auth("gamma", new_auth.clone()).unwrap();
+
+        let reloaded: UpstreamMcpConfig = load_json_config(UPSTREAMS_FILE);
+        let gamma = reloaded.servers.iter().find(|s| s.name == "gamma").unwrap();
+        assert_eq!(gamma.auth, Some(new_auth));
     }
 
     #[test]
