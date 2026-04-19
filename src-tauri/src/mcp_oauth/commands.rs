@@ -13,6 +13,9 @@
 use std::sync::Arc;
 use tauri::State;
 
+use crate::mcp_oauth::dcr::{register_client, DcrRequest};
+use crate::mcp_oauth::discovery::{discover_auth_server, discover_protected_resource};
+use crate::mcp_upstream_config::UpstreamAuth;
 use crate::state::AppState;
 
 /// Output of [`start_mcp_upstream_oauth`] — the frontend opens
@@ -34,7 +37,7 @@ pub(crate) async fn start_mcp_upstream_oauth(
     let flow_mgr = state.oauth_flow_manager.clone();
 
     // Pull the upstream's config and transition it to Authenticating.
-    let (server_url, auth) = {
+    let (server_url, existing_auth) = {
         let entry = registry
             .entry(&name)
             .ok_or_else(|| format!("Unknown upstream '{name}'"))?;
@@ -46,17 +49,53 @@ pub(crate) async fn start_mcp_upstream_oauth(
                 ));
             }
         };
-        let auth = entry
-            .config
-            .auth
-            .clone()
-            .ok_or_else(|| format!("Upstream '{name}' has no auth configuration"))?;
+        let auth = entry.config.auth.clone();
         registry.set_authenticating(&name);
         (server_url, auth)
     };
 
-    // `tuic://` is the deep-link the OS hands back to the running Tauri app.
     let redirect_uri = super::OAUTH_REDIRECT_URI.to_string();
+
+    // If no auth config, attempt DCR (RFC 7591) to obtain a client_id.
+    let auth = match existing_auth {
+        Some(a) => a,
+        None => {
+            let http_client = reqwest::Client::new();
+            let pr_meta = discover_protected_resource(&http_client, &server_url)
+                .await
+                .map_err(|e| format!("OAuth discovery failed for '{name}': {e}"))?;
+            let as_url = &pr_meta.authorization_servers[0];
+            let as_meta = discover_auth_server(&http_client, as_url)
+                .await
+                .map_err(|e| format!("AS discovery failed for '{name}': {e}"))?;
+
+            let reg_endpoint = as_meta.registration_endpoint.ok_or_else(|| {
+                format!(
+                    "Upstream '{name}' requires OAuth but has no client_id configured \
+                     and the authorization server does not support Dynamic Client Registration. \
+                     Please configure a client_id manually."
+                )
+            })?;
+
+            let dcr_req = DcrRequest::for_tuicommander(&redirect_uri, None);
+            let dcr_resp = register_client(&http_client, &reg_endpoint, &dcr_req)
+                .await
+                .map_err(|e| format!("Dynamic Client Registration failed for '{name}': {e}"))?;
+
+            let auth = UpstreamAuth::OAuth2 {
+                client_id: dcr_resp.client_id,
+                scopes: vec![],
+                authorization_endpoint: None,
+                token_endpoint: None,
+            };
+
+            // DEFERRED (2026-04-19) — persist DCR client_id to mcp-upstreams.json.
+            // Step 4 (1396-dc11) adds update_upstream_auth() write-back path.
+
+            auth
+        }
+    };
+
     let outcome = flow_mgr
         .start_flow(&name, &server_url, &auth, &redirect_uri)
         .await
