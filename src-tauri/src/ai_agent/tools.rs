@@ -1085,22 +1085,36 @@ async fn exec_run_command_inner(state: &AppState, session_id: &str, args: &Value
 
     let home = sandbox.root().to_string_lossy().into_owned();
     let cwd_display = cwd.display().to_string();
-    let lang = std::env::var("LANG").unwrap_or_else(|_| "en_US.UTF-8".into());
     let start = std::time::Instant::now();
 
-    let mut cmd = tokio::process::Command::new("sh");
-    cmd.arg("-c")
-        .arg(command)
-        .current_dir(&cwd)
-        .env_clear()
-        .env("PATH", "/usr/local/bin:/usr/bin:/bin")
-        .env("HOME", &home)
-        .env("TERM", "xterm-256color")
-        .env("LANG", &lang)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
+    let mut cmd;
     #[cfg(unix)]
-    cmd.process_group(0);
+    {
+        let lang = std::env::var("LANG").unwrap_or_else(|_| "en_US.UTF-8".into());
+        cmd = tokio::process::Command::new("sh");
+        cmd.arg("-c")
+            .arg(command)
+            .current_dir(&cwd)
+            .env_clear()
+            .env("PATH", "/usr/local/bin:/usr/bin:/bin")
+            .env("HOME", &home)
+            .env("TERM", "xterm-256color")
+            .env("LANG", &lang)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .process_group(0);
+    }
+    #[cfg(windows)]
+    {
+        cmd = tokio::process::Command::new("cmd.exe");
+        cmd.arg("/C")
+            .arg(command)
+            .current_dir(&cwd)
+            .env("USERPROFILE", &home)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        crate::cli::apply_no_window(cmd.as_std_mut());
+    }
     let mut child = match cmd.spawn()
     {
         Ok(c) => c,
