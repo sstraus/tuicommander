@@ -305,6 +305,7 @@ export const NotesPanel: Component<NotesPanelProps> = (props) => {
         </Show>
         <textarea
           ref={textareaRef}
+          data-focus-target="notes"
           class={s.input}
           rows={5}
           placeholder={editingId()

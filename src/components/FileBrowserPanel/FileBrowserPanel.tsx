@@ -809,6 +809,8 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
         <input
           type="text"
           class={p.searchInput}
+          data-focus-target="file-browser-search"
+          data-repo-path={props.repoPath ?? ""}
           placeholder={searchMode() === "filename"
             ? t("fileBrowser.search", "Search files\u2026 (*, ** wildcards)")
             : t("fileBrowser.searchContent", "Search in file contents\u2026")}

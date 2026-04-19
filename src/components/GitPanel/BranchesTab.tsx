@@ -955,6 +955,8 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
       <div class={s.searchBar}>
         <input
           ref={searchInputRef}
+          data-focus-target="git-branches-search"
+          data-repo-path={props.repoPath ?? ""}
           class={s.searchInput}
           type="text"
           placeholder="Filter branches... (/ to focus)"

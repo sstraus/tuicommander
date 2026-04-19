@@ -107,109 +107,119 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
           )}
         </Show>
 
-        {/* Flat rendering — active when NOT in split mode */}
-        <Show when={!paneLayoutStore.isSplit()}>
-          {/* Terminal panes */}
-          <For each={terminalsStore.getIds()}>
-            {(id) => {
-              const terminal = terminalsStore.get(id);
-              const isDetached = () => terminalsStore.isDetached(id);
+        {/* Flat rendering — shown when NOT in split mode, OR for orphan tabs
+             (active but not assigned to any pane group) that overlay the split */}
+        {(() => {
+          const split = () => paneLayoutStore.isSplit();
+          const isOrphan = (id: string) => split() && !paneLayoutStore.getGroupForTab(id);
+          const shouldShow = (id: string, isActive: boolean) =>
+            isActive && (!split() || isOrphan(id));
 
-              const metaHotkeys = createMemo(() => {
-                const path = repositoriesStore.getRepoPathForTerminal(id);
-                if (!path) return undefined;
-                return repoSettingsStore.getEffective(path)?.terminalMetaHotkeys;
-              });
+          return (
+            <>
+              {/* Terminal panes */}
+              <For each={terminalsStore.getIds()}>
+                {(id) => {
+                  const terminal = terminalsStore.get(id);
+                  const isDetached = () => terminalsStore.isDetached(id);
 
-              return (
-                <div
-                  class="terminal-pane"
-                  classList={{
-                    active: terminalsStore.state.activeId === id && !isDetached(),
-                    detached: isDetached(),
-                  }}
-                  style={isDetached() ? { display: "none" } : undefined}
-                >
-                  <Terminal
-                    id={id}
-                    cwd={terminal?.cwd || null}
-                    onFocus={props.onTerminalFocus}
-                    onSessionCreated={() => {}}
-                    onOpenFilePath={props.onOpenFilePath}
-                    metaHotkeys={metaHotkeys()}
-                    onCwdChange={props.onCwdChange}
-                  />
-                </div>
-              );
-            }}
-          </For>
+                  const metaHotkeys = createMemo(() => {
+                    const path = repositoriesStore.getRepoPathForTerminal(id);
+                    if (!path) return undefined;
+                    return repoSettingsStore.getEffective(path)?.terminalMetaHotkeys;
+                  });
 
-          {/* Diff tabs */}
-          <For each={diffTabsStore.getIds()}>
-            {(id) => {
-              const diffTab = diffTabsStore.get(id);
-              return (
-                <div
-                  class="terminal-pane diff-pane"
-                  classList={{ active: diffTabsStore.state.activeId === id }}
-                  onContextMenu={(e) => e.stopPropagation()}
-                >
-                  {diffTab && (
-                    <DiffTab
-                      tabId={id}
-                      repoPath={diffTab.repoPath}
-                      filePath={diffTab.filePath}
-                      scope={diffTab.scope}
-                      untracked={diffTab.untracked}
-                      onClose={() => props.onCloseTab(id)}
-                    />
-                  )}
-                </div>
-              );
-            }}
-          </For>
+                  return (
+                    <div
+                      class="terminal-pane"
+                      classList={{
+                        active: shouldShow(id, terminalsStore.state.activeId === id && !isDetached()),
+                        detached: isDetached(),
+                      }}
+                      style={isDetached() ? { display: "none" } : undefined}
+                    >
+                      <Terminal
+                        id={id}
+                        cwd={terminal?.cwd || null}
+                        onFocus={props.onTerminalFocus}
+                        onSessionCreated={() => {}}
+                        onOpenFilePath={props.onOpenFilePath}
+                        metaHotkeys={metaHotkeys()}
+                        onCwdChange={props.onCwdChange}
+                      />
+                    </div>
+                  );
+                }}
+              </For>
 
-          {/* Markdown tabs */}
-          <For each={mdTabsStore.getIds()}>
-            {(id) => {
-              const mdTab = mdTabsStore.get(id);
-              return (
-                <div
-                  class="terminal-pane md-pane"
-                  classList={{ active: mdTabsStore.state.activeId === id }}
-                  onContextMenu={(e) => e.stopPropagation()}
-                >
-                  {mdTab && <MdTabContent tab={mdTab} onClose={() => props.onCloseTab(id)} />}
-                </div>
-              );
-            }}
-          </For>
+              {/* Diff tabs */}
+              <For each={diffTabsStore.getIds()}>
+                {(id) => {
+                  const diffTab = diffTabsStore.get(id);
+                  return (
+                    <div
+                      class="terminal-pane diff-pane"
+                      classList={{ active: shouldShow(id, diffTabsStore.state.activeId === id) }}
+                      onContextMenu={(e) => e.stopPropagation()}
+                    >
+                      {diffTab && (
+                        <DiffTab
+                          tabId={id}
+                          repoPath={diffTab.repoPath}
+                          filePath={diffTab.filePath}
+                          scope={diffTab.scope}
+                          untracked={diffTab.untracked}
+                          onClose={() => props.onCloseTab(id)}
+                        />
+                      )}
+                    </div>
+                  );
+                }}
+              </For>
 
-          {/* Editor tabs */}
-          <For each={editorTabsStore.getIds()}>
-            {(id) => {
-              const editTab = editorTabsStore.get(id);
-              return (
-                <div
-                  class="terminal-pane edit-pane"
-                  classList={{ active: editorTabsStore.state.activeId === id }}
-                  onContextMenu={(e) => e.stopPropagation()}
-                >
-                  {editTab && (
-                    <CodeEditorTab
-                      id={id}
-                      repoPath={editTab.repoPath}
-                      filePath={editTab.filePath}
-                      initialLine={editTab.initialLine}
-                      externalEditable={editTab.externalEditable}
-                      onClose={() => props.onCloseTab(id)}
-                    />
-                  )}
-                </div>
-              );
-            }}
-          </For>
-        </Show>
+              {/* Markdown tabs */}
+              <For each={mdTabsStore.getIds()}>
+                {(id) => {
+                  const mdTab = mdTabsStore.get(id);
+                  return (
+                    <div
+                      class="terminal-pane md-pane"
+                      classList={{ active: shouldShow(id, mdTabsStore.state.activeId === id) }}
+                      onContextMenu={(e) => e.stopPropagation()}
+                    >
+                      {mdTab && <MdTabContent tab={mdTab} onClose={() => props.onCloseTab(id)} />}
+                    </div>
+                  );
+                }}
+              </For>
+
+              {/* Editor tabs */}
+              <For each={editorTabsStore.getIds()}>
+                {(id) => {
+                  const editTab = editorTabsStore.get(id);
+                  return (
+                    <div
+                      class="terminal-pane edit-pane"
+                      classList={{ active: shouldShow(id, editorTabsStore.state.activeId === id) }}
+                      onContextMenu={(e) => e.stopPropagation()}
+                    >
+                      {editTab && (
+                        <CodeEditorTab
+                          id={id}
+                          repoPath={editTab.repoPath}
+                          filePath={editTab.filePath}
+                          initialLine={editTab.initialLine}
+                          externalEditable={editTab.externalEditable}
+                          onClose={() => props.onCloseTab(id)}
+                        />
+                      )}
+                    </div>
+                  );
+                }}
+              </For>
+            </>
+          );
+        })()}
 
         {/* Suggest follow-up actions overlay — inside #terminal-panes for correct centering.
              Timer lives in the overlay: 30s after becoming visible → auto-dismiss.

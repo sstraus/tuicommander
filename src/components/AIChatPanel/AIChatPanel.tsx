@@ -504,6 +504,7 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
       <div class={s.inputArea}>
         <textarea
           ref={textareaRef}
+          data-focus-target="ai-chat"
           class={s.textarea}
           rows={1}
           placeholder={aiChatStore.attachedSessionId()

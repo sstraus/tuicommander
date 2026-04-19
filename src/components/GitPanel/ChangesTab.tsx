@@ -681,6 +681,8 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
           <div class={s.textareaRow}>
             <textarea
               class={s.commitTextarea}
+              data-focus-target="git-commit"
+              data-repo-path={props.repoPath ?? ""}
               placeholder="Commit message..."
               value={commitMsg()}
               onInput={(e) => {

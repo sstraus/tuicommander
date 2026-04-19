@@ -77,6 +77,7 @@ import { contextMenuActionsStore } from "./stores/contextMenuActionsStore";
 import { globalWorkspaceStore } from "./stores/globalWorkspace";
 import { paneLayoutKey } from "./stores/savedPaneLayouts";
 import { initPlugins } from "./plugins";
+import { pluginRegistry } from "./plugins/pluginRegistry";
 import { usePty } from "./hooks/usePty";
 import { useRepository, tccDeniedPaths, markTccAlertShown } from "./hooks/useRepository";
 import { useKeyboardRedirect } from "./hooks/useKeyboardRedirect";
@@ -94,6 +95,7 @@ import { buildAgentLaunchCommand } from "./utils/agentSession";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { initApp } from "./hooks/useAppInit";
 import { useFocusRestore } from "./hooks/useFocusRestore";
+import { useFocusTracker } from "./hooks/useFocusTracker";
 import { startAutoFetch } from "./hooks/useAutoFetch";
 import { useAutoDeleteBranch } from "./hooks/useAutoDeleteBranch";
 import { useWorktreeSwitchPrompt } from "./hooks/useWorktreeSwitchPrompt";
@@ -243,6 +245,10 @@ const App: Component = () => {
   // Centralized focus restore: when any dialog/overlay closes (DOM removed),
   // focus returns to the active terminal automatically.
   useFocusRestore();
+
+  // Remember last-focused element per-repo + globally, and restore it on
+  // repo switch / window focus regain.
+  useFocusTracker();
 
   const terminalLifecycle = useTerminalLifecycle({
     pty,
@@ -524,6 +530,17 @@ const App: Component = () => {
   }, { defer: true }));
   createEffect(on(() => terminalsStore.state.activeId, (id) => {
     if (id) { diffTabsStore.setActive(null); mdTabsStore.setActive(null); editorTabsStore.setActive(null); }
+  }, { defer: true }));
+
+  // Notify plugins when the active repository changes so globally-pinned
+  // plugin panels (e.g. Stories Kanban) can reload their content.
+  createEffect(on(() => repositoriesStore.state.activeRepoPath, (repoPath) => {
+    pluginRegistry.notifyStateChange({
+      type: "repo-changed",
+      sessionId: null,
+      terminalId: "",
+      detail: repoPath ?? undefined,
+    });
   }, { defer: true }));
 
   // Persist the currently-active terminal to its owning branch on every change,

@@ -347,7 +347,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
   };
 
   return (
-    <div ref={wrapperRef} class={s.wrapper} tabIndex={-1}>
+    <div ref={wrapperRef} class={s.wrapper} tabIndex={-1} data-focus-target="md-tab" data-tab-id={props.tab.id}>
       <div class={e.header} onContextMenu={handleHeaderContextMenu}>
         <span class={e.filename} title={displayPath()}>
           {displayPath()}
