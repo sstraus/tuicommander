@@ -13,6 +13,17 @@ use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
 use std::time::{Duration, Instant};
 
+/// Expand a leading `~` or `~/` to `$HOME`. `std::process::Command` does not
+/// invoke a shell, so tilde is passed literally and the OS returns ENOENT.
+fn expand_tilde(path: &str) -> String {
+    if path == "~" || path.starts_with("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return format!("{}{}", home, &path[1..]);
+        }
+    }
+    path.to_string()
+}
+
 const MIN_RESPAWN_INTERVAL: Duration = Duration::from_secs(5);
 
 /// Config for a stdio-based upstream MCP server.
@@ -97,8 +108,10 @@ impl StdioMcpClient {
         // We clear the parent env to prevent credential leakage (ANTHROPIC_API_KEY,
         // AWS_SECRET_ACCESS_KEY, etc.) to potentially untrusted MCP server processes,
         // then re-add only the variables needed for normal operation.
-        let mut cmd = std::process::Command::new(&self.config.command);
-        cmd.args(&self.config.args)
+        let command = expand_tilde(&self.config.command);
+        let args: Vec<String> = self.config.args.iter().map(|a| expand_tilde(a)).collect();
+        let mut cmd = std::process::Command::new(&command);
+        cmd.args(&args)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped());
 
@@ -171,15 +184,14 @@ impl StdioMcpClient {
             cmd.env(k, v);
         }
 
-        // Set working directory if configured (e.g. mdkb uses cwd as project root)
         if let Some(ref cwd) = self.config.cwd {
-            cmd.current_dir(cwd);
+            cmd.current_dir(expand_tilde(cwd));
         }
 
         let mut child = cmd.spawn().map_err(|e| {
             format!(
                 "Upstream '{}': failed to spawn '{}': {e}",
-                self.config.name, self.config.command
+                self.config.name, command
             )
         })?;
 
