@@ -1336,19 +1336,21 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
             // Resolve agent binary — run config name takes priority, then literal agent type
             let agents_cfg = crate::config::load_agents_config();
             let (binary_path, resolved) = if let Some(path) = args["binary_path"].as_str() {
-                let p = std::path::Path::new(path);
+                let expanded = crate::cli::expand_tilde(path);
+                let p = std::path::Path::new(&expanded);
                 if !p.is_absolute() {
                     return serde_json::json!({"error": "binary_path must be an absolute path"});
                 }
                 if !p.is_file() {
                     return serde_json::json!({"error": "binary_path does not point to an existing file"});
                 }
-                (path.to_string(), None)
+                (expanded, None)
             } else {
                 let agent_type_raw = args["agent_type"].as_str().unwrap_or("claude");
                 let rc = resolve_run_config(agent_type_raw, &agents_cfg);
-                let bin = rc.command.as_deref().unwrap_or(&rc.agent_type);
-                let detection = crate::agent::detect_agent_binary(bin.to_string());
+                let bin_raw = rc.command.as_deref().unwrap_or(&rc.agent_type);
+                let bin = crate::cli::expand_tilde(bin_raw);
+                let detection = crate::agent::detect_agent_binary(bin.clone());
                 match detection.path {
                     Some(p) => (p, Some(rc)),
                     None => return serde_json::json!({"error": format!("Agent binary '{}' not found", bin)}),
