@@ -622,105 +622,115 @@ pub async fn start_server(
 ) {
     let config = state.config.read().clone();
 
-    // Register shutdown channel so save_config can restart server
+    // Register shutdown channel so save_config can restart server. Only the
+    // TCP listener + TLS renewal task listen to this signal: IPC listeners
+    // (Unix socket / named pipe), the MCP session reaper, and the upstream
+    // health checker persist across restarts and ignore shutdown.
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
     *state.server_shutdown.lock() = Some(shutdown_tx);
 
-    // Spawn MCP session reaper: evicts stale protocol sessions every 60s (1h TTL)
-    let reaper_state = state.clone();
-    let reaper_handle = tokio::spawn(async move {
-        const MCP_SESSION_TTL: std::time::Duration = std::time::Duration::from_secs(3600);
-        loop {
-            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-            let now = std::time::Instant::now();
-            let reaped: Vec<String> = reaper_state.mcp_sessions.iter()
-                .filter(|e| now.duration_since(e.value().created_at) >= MCP_SESSION_TTL)
-                .map(|e| e.key().clone())
-                .collect();
-            for sid in &reaped {
-                reaper_state.mcp_sessions.remove(sid);
-                // Clean up peer agents whose MCP session was reaped — emit events
-                let removed: Vec<String> = reaper_state.peer_agents.iter()
-                    .filter(|e| e.value().mcp_session_id == *sid)
+    // One-time IPC + background-task initialisation. Guards against re-spawn
+    // on `restart_server`, which would leak a new reaper/health-checker each
+    // time and (before this fix) tear down the Unix socket for ~200ms — long
+    // enough to trip the MCP bridge's 3-failure/9s health threshold and
+    // disconnect Claude Code on every `save_config` / Tailscale state change.
+    let first_start = !state
+        .ipc_started
+        .swap(true, std::sync::atomic::Ordering::AcqRel);
+
+    if first_start {
+        // Spawn MCP session reaper: evicts stale protocol sessions every 60s (1h TTL)
+        let reaper_state = state.clone();
+        tokio::spawn(async move {
+            const MCP_SESSION_TTL: std::time::Duration = std::time::Duration::from_secs(3600);
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                let now = std::time::Instant::now();
+                let reaped: Vec<String> = reaper_state.mcp_sessions.iter()
+                    .filter(|e| now.duration_since(e.value().created_at) >= MCP_SESSION_TTL)
                     .map(|e| e.key().clone())
                     .collect();
-                for tuic in &removed {
-                    reaper_state.peer_agents.remove(tuic);
-                    let _ = reaper_state.event_bus.send(crate::state::AppEvent::PeerUnregistered {
-                        tuic_session: tuic.clone(),
-                    });
+                for sid in &reaped {
+                    reaper_state.mcp_sessions.remove(sid);
+                    // Clean up peer agents whose MCP session was reaped — emit events
+                    let removed: Vec<String> = reaper_state.peer_agents.iter()
+                        .filter(|e| e.value().mcp_session_id == *sid)
+                        .map(|e| e.key().clone())
+                        .collect();
+                    for tuic in &removed {
+                        reaper_state.peer_agents.remove(tuic);
+                        let _ = reaper_state.event_bus.send(crate::state::AppEvent::PeerUnregistered {
+                            tuic_session: tuic.clone(),
+                        });
+                    }
+                }
+                // Evict orphaned inboxes for peers that no longer exist
+                if !reaped.is_empty() {
+                    let known_tuic: std::collections::HashSet<String> = reaper_state.peer_agents.iter()
+                        .map(|e| e.key().clone()).collect();
+                    reaper_state.agent_inbox.retain(|tuic, _| known_tuic.contains(tuic));
                 }
             }
-            // Evict orphaned inboxes for peers that no longer exist
-            if !reaped.is_empty() {
-                let known_tuic: std::collections::HashSet<String> = reaper_state.peer_agents.iter()
-                    .map(|e| e.key().clone()).collect();
-                reaper_state.agent_inbox.retain(|tuic, _| known_tuic.contains(tuic));
-            }
-        }
-    });
+        });
 
-    // Spawn upstream health checker: pings Ready upstreams every 60s
-    crate::mcp_proxy::registry::UpstreamRegistry::spawn_health_checker(
-        Arc::clone(&state.mcp_upstream_registry),
-    );
+        // Spawn upstream health checker: pings Ready upstreams every 60s
+        crate::mcp_proxy::registry::UpstreamRegistry::spawn_health_checker(
+            Arc::clone(&state.mcp_upstream_registry),
+        );
 
-    // --- Unix socket listener (always on, no auth) ---
-    #[cfg(unix)]
-    let socket_handle = {
-        let sock = resolve_socket_path();
-
-        if let Some(parent) = sock.parent()
-            && let Err(e) = std::fs::create_dir_all(parent)
+        // --- Unix socket listener (always on, no auth) ---
+        #[cfg(unix)]
         {
-            tracing::warn!(source = "mcp_http", path = %parent.display(), "Failed to create socket parent dir: {e}");
-        }
+            let sock = resolve_socket_path();
 
-        // Bind the socket. Remove stale file first (left by a crashed previous run).
-        // resolve_socket_path() already verified the primary socket is not live,
-        // so remove_file here only cleans up stale/dead sockets.
-        const MAX_BIND_ATTEMPTS: u8 = 3;
-        async fn bind_unix_socket(sock: &std::path::Path) -> Result<tokio::net::UnixListener, std::io::Error> {
-            let mut last_err = std::io::Error::other("no bind attempts");
-            for attempt in 0..MAX_BIND_ATTEMPTS {
-                let _ = std::fs::remove_file(sock);
-                match tokio::net::UnixListener::bind(sock) {
-                    Ok(uds) => return Ok(uds),
-                    Err(e) => {
-                        tracing::warn!(source = "mcp_http", attempt, path = %sock.display(), "Unix socket bind failed: {e}");
-                        last_err = e;
-                        if attempt + 1 < MAX_BIND_ATTEMPTS {
-                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            if let Some(parent) = sock.parent()
+                && let Err(e) = std::fs::create_dir_all(parent)
+            {
+                tracing::warn!(source = "mcp_http", path = %parent.display(), "Failed to create socket parent dir: {e}");
+            }
+
+            // Bind the socket. Remove stale file first (left by a crashed previous run).
+            // resolve_socket_path() already verified the primary socket is not live,
+            // so remove_file here only cleans up stale/dead sockets.
+            const MAX_BIND_ATTEMPTS: u8 = 3;
+            async fn bind_unix_socket(sock: &std::path::Path) -> Result<tokio::net::UnixListener, std::io::Error> {
+                let mut last_err = std::io::Error::other("no bind attempts");
+                for attempt in 0..MAX_BIND_ATTEMPTS {
+                    let _ = std::fs::remove_file(sock);
+                    match tokio::net::UnixListener::bind(sock) {
+                        Ok(uds) => return Ok(uds),
+                        Err(e) => {
+                            tracing::warn!(source = "mcp_http", attempt, path = %sock.display(), "Unix socket bind failed: {e}");
+                            last_err = e;
+                            if attempt + 1 < MAX_BIND_ATTEMPTS {
+                                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                            }
                         }
                     }
                 }
+                Err(last_err)
             }
-            Err(last_err)
-        }
 
-        match bind_unix_socket(&sock).await {
-            Err(e) => {
-                tracing::error!(source = "mcp_http", path = %sock.display(), "Failed to bind Unix socket after retries: {e}");
-                None
-            }
-            Ok(initial_uds) => {
-                tracing::info!(source = "mcp_http", path = %sock.display(), "Unix socket listening");
-                // Record which socket we actually bound so shutdown cleans up the right file.
-                *state.bound_socket_path.write() = sock.clone();
-                // Watchdog task: if axum::serve() returns (crash or abort), log it.
-                // On graceful shutdown h.abort() is called — the task exits cleanly,
-                // and the explicit remove_file below handles cleanup.
-                Some(tokio::spawn({
-                    let state = state.clone();
-                    async move {
+            match bind_unix_socket(&sock).await {
+                Err(e) => {
+                    tracing::error!(source = "mcp_http", path = %sock.display(), "Failed to bind Unix socket after retries: {e}");
+                }
+                Ok(initial_uds) => {
+                    tracing::info!(source = "mcp_http", path = %sock.display(), "Unix socket listening");
+                    *state.bound_socket_path.write() = sock.clone();
+                    // Watchdog task: if axum::serve() returns unexpectedly, rebind
+                    // and restart. No shutdown signal — this task runs until the
+                    // process exits.
+                    let watchdog_state = state.clone();
+                    tokio::spawn(async move {
                         let mut uds = initial_uds;
                         loop {
-                            let app = build_router(state.clone(), false, mcp_enabled);
+                            let app = build_router(watchdog_state.clone(), false, mcp_enabled);
                             let app = app.layer(axum::middleware::from_fn(inject_localhost_connect_info));
                             if let Err(e) = axum::serve(uds, app.into_make_service()).await {
                                 tracing::error!(source = "mcp_http", "Unix socket server error: {e}");
                             } else {
-                                // Clean exit (abort signal) — stop the watchdog.
+                                // Clean exit (should not happen now — nobody aborts us).
                                 break;
                             }
                             // Unexpected exit — rebind and restart.
@@ -737,32 +747,31 @@ pub async fn start_server(
                                 }
                             }
                         }
-                    }
-                }))
+                    });
+                }
             }
         }
-    };
 
-    // --- Windows named pipe listener (always on, no auth) ---
-    #[cfg(windows)]
-    let pipe_handle = {
-        match NamedPipeListener::new() {
-            Ok(pipe) => {
-                tracing::info!(source = "mcp_http", pipe = PIPE_NAME, "Named pipe listening");
-                let app = build_router(state.clone(), false, mcp_enabled);
-                let app = app.layer(axum::middleware::from_fn(inject_localhost_connect_info));
-                Some(tokio::spawn(async move {
-                    if let Err(e) = axum::serve(pipe, app.into_make_service()).await {
-                        tracing::error!(source = "mcp_http", "Named pipe server error: {e}");
-                    }
-                }))
-            }
-            Err(e) => {
-                tracing::error!(source = "mcp_http", pipe = PIPE_NAME, "Failed to create named pipe: {e}");
-                None
+        // --- Windows named pipe listener (always on, no auth) ---
+        #[cfg(windows)]
+        {
+            match NamedPipeListener::new() {
+                Ok(pipe) => {
+                    tracing::info!(source = "mcp_http", pipe = PIPE_NAME, "Named pipe listening");
+                    let app = build_router(state.clone(), false, mcp_enabled);
+                    let app = app.layer(axum::middleware::from_fn(inject_localhost_connect_info));
+                    tokio::spawn(async move {
+                        if let Err(e) = axum::serve(pipe, app.into_make_service()).await {
+                            tracing::error!(source = "mcp_http", "Named pipe server error: {e}");
+                        }
+                    });
+                }
+                Err(e) => {
+                    tracing::error!(source = "mcp_http", pipe = PIPE_NAME, "Failed to create named pipe: {e}");
+                }
             }
         }
-    };
+    }
 
     // --- TCP listener (only for remote access with auth) ---
     // Supports dual-protocol (HTTP+HTTPS on same port) when TLS cert is available.
@@ -851,30 +860,15 @@ pub async fn start_server(
     // Wait for shutdown signal
     let _ = shutdown_rx.await;
 
-    // Abort listeners
-    #[cfg(unix)]
-    if let Some(h) = socket_handle {
-        h.abort();
-    }
-    #[cfg(windows)]
-    if let Some(h) = pipe_handle {
-        h.abort();
-    }
+    // Abort only TCP-bound listeners — IPC listeners, reaper, and health
+    // checker persist across restarts. Socket-file cleanup is deferred to the
+    // next process start's `bind_unix_socket`, which already removes stale
+    // files before binding.
     if let Some(h) = tcp_handle {
         h.abort();
     }
     if let Some(h) = renewal_handle {
         h.abort();
-    }
-    reaper_handle.abort();
-
-    // Cleanup the socket file we actually bound (may be mcp.sock or mcp-{pid}.sock).
-    #[cfg(unix)]
-    {
-        let bound = state.bound_socket_path.read().clone();
-        if !bound.as_os_str().is_empty() {
-            let _ = std::fs::remove_file(&bound);
-        }
     }
 }
 
@@ -931,6 +925,7 @@ mod tests {
             github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
             github_viewer_login: parking_lot::RwLock::new(None),
             server_shutdown: parking_lot::Mutex::new(None),
+            ipc_started: std::sync::atomic::AtomicBool::new(false),
             session_token: parking_lot::RwLock::new(uuid::Uuid::new_v4().to_string()),
             app_handle: parking_lot::RwLock::new(None),
             plugin_watchers: DashMap::new(),

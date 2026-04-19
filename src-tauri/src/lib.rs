@@ -813,6 +813,7 @@ pub fn run() {
         github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
         github_viewer_login: parking_lot::RwLock::new(None),
         server_shutdown: parking_lot::Mutex::new(None),
+        ipc_started: std::sync::atomic::AtomicBool::new(false),
         session_token: parking_lot::RwLock::new(config.session_token.clone()),
         app_handle: parking_lot::RwLock::new(None),
         plugin_watchers: DashMap::new(),

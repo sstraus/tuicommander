@@ -841,8 +841,18 @@ pub struct AppState {
     pub(crate) github_circuit_breaker: crate::github::GitHubCircuitBreaker,
     /// Cached GitHub viewer login (authenticated user) for issue filtering.
     pub(crate) github_viewer_login: parking_lot::RwLock<Option<String>>,
-    /// Shutdown sender for the HTTP server — send () to gracefully stop it
+    /// Shutdown sender for the HTTP server — send () to gracefully stop it.
+    /// Only the TCP listener + TLS renewal task listen to this signal now;
+    /// IPC listeners (Unix socket / named pipe) and the session reaper live
+    /// for the whole app lifetime regardless of TCP restarts.
     pub(crate) server_shutdown: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    /// One-shot guard: IPC listeners (Unix socket / named pipe), MCP session
+    /// reaper, and upstream health checker are spawned the first time
+    /// `start_server` runs and persist across restarts. Prevents a ~200ms
+    /// socket-rebind window on `save_config` / TLS state changes that was
+    /// tripping the MCP bridge's 3-failure / 9s health threshold and flipping
+    /// it offline.
+    pub(crate) ipc_started: std::sync::atomic::AtomicBool,
     /// Random session token for browser cookie auth — regenerated on each server start.
     /// Browsers auto-send cookies in fetch(), unlike stored Basic Auth credentials.
     /// Behind RwLock so it can be regenerated at runtime (invalidating all sessions).
@@ -2014,6 +2024,7 @@ pub(crate) mod tests_support {
             github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
             github_viewer_login: parking_lot::RwLock::new(None),
             server_shutdown: parking_lot::Mutex::new(None),
+            ipc_started: std::sync::atomic::AtomicBool::new(false),
             session_token: parking_lot::RwLock::new(String::from("test-token")),
             app_handle: parking_lot::RwLock::new(None),
             plugin_watchers: dashmap::DashMap::new(),
@@ -2464,6 +2475,7 @@ mod tests {
             github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
             github_viewer_login: parking_lot::RwLock::new(None),
             server_shutdown: parking_lot::Mutex::new(None),
+            ipc_started: std::sync::atomic::AtomicBool::new(false),
             session_token: parking_lot::RwLock::new(String::from("test-token")),
             app_handle: parking_lot::RwLock::new(None),
             plugin_watchers: dashmap::DashMap::new(),
