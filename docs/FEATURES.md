@@ -1344,6 +1344,20 @@ See `examples/plugins/` for reference implementations:
 - `claude-status` — Agent-scoped plugin (`agentTypes: ["claude"]`) tracking usage and rate limits
 - `wiz-stories-kanban` — Kanban board panel for file-based stories with drag-and-drop, filters, and work log timeline
 
+### 17.7 Claude Wakeup Plugin
+Agent-scoped plugin (`agentTypes: ["claude"]`) that wakes Claude Code when it stalls without asking a question. Ships in `plugins/claude-wakeup/`.
+
+- **Idle detection:** After 20 s of shell idle with no pending question, no active sub-tasks, and no choice prompt, sends a verification message to the agent
+- **Typing suppression:** Every busy→idle transition resets the idle clock, so keystroke-generated shell-state blips prevent false wakes
+- **Done detection (primary):** Watches the busy-cycle duration after a wake — short cycle (<8 s) = agent acknowledged ("done"), long cycle (≥8 s) = agent continued working
+- **Done detection (secondary):** OutputWatcher fast-path for agents that emit a clean `done` line
+- **Disarm/re-arm:** Disarms after confirmed done; re-arms only when the user gives new input after the disarm timestamp and the agent works >10 s
+- **Limits:** Max 3 wakes per stall, max 12 per session lifetime
+- **Dashboard:** Markdown stats panel with wake counts, done rate, active session state, and history
+- **Pause/Resume:** Via Activity Center toggle (transient, not persisted)
+- **Configuration:** `data/config.json` — `idleThresholdMs`, `maxWakes`, `maxWakesEver`, `doneMaxBusyMs`, `checkIntervalMs`, `minBusyDurationMs`, `questionStaleMs`, `pendingTimeoutMs`
+- **Capabilities:** `pty:write`, `pty:read`, `ui:ticker`, `ui:markdown`
+
 ## 18. Mobile Companion UI
 
 Phone-optimized progressive web app for monitoring AI agents remotely. Separate SolidJS entry point (`src/mobile/`) served by the existing HTTP server at `/mobile`.
