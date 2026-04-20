@@ -164,3 +164,89 @@ describe("aiChatStore persistence (1385-87c6)", () => {
     expect(userMsg?.content).toBe("");
   });
 });
+
+describe("aiChatStore persistence — per-terminal (1407-56ca)", () => {
+  let store: typeof import("../../stores/aiChatStore").aiChatStore;
+
+  beforeEach(async () => {
+    vi.useFakeTimers();
+    vi.resetModules();
+    mockInvoke.mockReset();
+    globalThis.localStorage?.clear();
+    store = (await import("../../stores/aiChatStore")).aiChatStore;
+    mockInvoke.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("schedulePersist for terminal A fires A's data even after switching to terminal B", async () => {
+    store.setActiveTerminal("termA");
+    store.addAssistantMessage("hello from A");
+    // Timer for A is now scheduled. Switch to B before it fires.
+    store.setActiveTerminal("termB");
+    store.addAssistantMessage("hello from B");
+
+    await vi.advanceTimersByTimeAsync(600);
+
+    const saves = mockInvoke.mock.calls.filter((c) => c[0] === "save_conversation");
+    // Both timers fire — one for A, one for B
+    expect(saves.length).toBe(2);
+    const contents = saves.map(
+      (c) => (c[1]?.conversation?.messages as Array<{ content: string }>)?.[0]?.content,
+    );
+    expect(contents).toContain("hello from A");
+    expect(contents).toContain("hello from B");
+  });
+
+  it("two terminals persist with independent session_id in meta", async () => {
+    store.setActiveTerminal("termA");
+    store.attachTerminal("sess-A");
+    store.addAssistantMessage("A message");
+
+    store.setActiveTerminal("termB");
+    store.attachTerminal("sess-B");
+    store.addAssistantMessage("B message");
+
+    await vi.advanceTimersByTimeAsync(600);
+
+    const saves = mockInvoke.mock.calls.filter((c) => c[0] === "save_conversation");
+    expect(saves.length).toBe(2);
+    const sessionIds = saves.map((c) => c[1]?.conversation?.meta?.session_id as string);
+    expect(sessionIds).toContain("sess-A");
+    expect(sessionIds).toContain("sess-B");
+  });
+
+  it("initFromDisk(tuicSession) loads conversation filtered by session_id via list_conversations", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "list_conversations") {
+        return Promise.resolve([
+          { id: "conv-old", title: "old", session_id: "sess-X", created: 1, updated: 1, message_count: 1 },
+          { id: "conv-new", title: "new", session_id: "sess-X", created: 2, updated: 5, message_count: 2 },
+          { id: "conv-other", title: "other", session_id: "sess-Y", created: 3, updated: 3, message_count: 1 },
+        ]);
+      }
+      if (cmd === "load_conversation") {
+        return Promise.resolve({
+          meta: { id: "conv-new", title: "new", session_id: "sess-X", created: 2, updated: 5, message_count: 2 },
+          messages: [
+            { role: "user", content: "hi", timestamp: 2 },
+            { role: "assistant", content: "hello", timestamp: 3 },
+          ],
+          schema_version: 1,
+        });
+      }
+      return Promise.resolve();
+    });
+
+    store.setActiveTerminal("termX");
+    await store.initFromDisk("sess-X");
+
+    expect(store.messages().length).toBe(2);
+    expect(store.chatId()).toBe("conv-new");
+    // Should have loaded the most-recent match (updated=5), not the old one
+    const loadCalls = mockInvoke.mock.calls.filter((c) => c[0] === "load_conversation");
+    expect(loadCalls[0]?.[1]).toEqual({ id: "conv-new" });
+  });
+});

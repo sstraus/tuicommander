@@ -180,7 +180,8 @@ function writeActiveId(id: string | null): void {
 // ---------------------------------------------------------------------------
 
 function addMessage(role: AiChatMessage["role"], content: string): void {
-  const s = activeChat();
+  const key = activeChatKey();
+  const s = getOrCreate(key);
   s.setMessages((prev) => {
     const msg: AiChatMessage = { role, content, timestamp: Date.now() };
     const next = [...prev, msg];
@@ -189,7 +190,7 @@ function addMessage(role: AiChatMessage["role"], content: string): void {
     }
     return next;
   });
-  schedulePersist();
+  schedulePersist(key);
 }
 
 function addUserMessage(content: string): void {
@@ -235,19 +236,20 @@ function clearHistory(): void {
 // Persistence (debounced autosave + init load)
 // ---------------------------------------------------------------------------
 
-function schedulePersist(): void {
+function schedulePersist(key?: string): void {
   if (!isTauri()) return;
-  const s = activeChat();
+  const resolvedKey = key ?? activeChatKey();
+  const s = getOrCreate(resolvedKey);
   if (s.persistTimer) clearTimeout(s.persistTimer);
   s.persistTimer = setTimeout(() => {
     s.persistTimer = null;
-    void persistNow();
+    void persistNow(resolvedKey);
   }, PERSIST_DEBOUNCE_MS);
 }
 
-async function persistNow(): Promise<void> {
+async function persistNow(key?: string): Promise<void> {
   if (!isTauri()) return;
-  const s = activeChat();
+  const s = getOrCreate(key ?? activeChatKey());
   const msgs = s.messages();
   if (msgs.length === 0) return;
   try {
@@ -280,14 +282,55 @@ async function persistNow(): Promise<void> {
   }
 }
 
-/** Load active conversation from disk or create a fresh id. Idempotent per terminal. */
-async function initFromDisk(): Promise<void> {
+/** Load active conversation from disk or create a fresh id. Idempotent per terminal.
+ *  With tuicSession: filters list_conversations by session_id, loads most recent match.
+ *  Without tuicSession: legacy path — uses ACTIVE_ID_KEY from localStorage. */
+async function initFromDisk(tuicSession?: string): Promise<void> {
   const s = activeChat();
   if (s.initialized) return;
   s.initialized = true;
   if (!isTauri()) return;
   try {
     const { invoke } = await import("@tauri-apps/api/core");
+
+    if (tuicSession) {
+      // Per-terminal path: find most recent conversation for this session
+      try {
+        const metas = await invoke<BackendConversationMeta[]>("list_conversations");
+        const matches = metas.filter((m) => m.session_id === tuicSession);
+        const match = matches.reduce<BackendConversationMeta | undefined>(
+          (best, m) => (!best || m.updated > best.updated ? m : best),
+          undefined,
+        );
+        if (match) {
+          const conv = await invoke<BackendConversation>("load_conversation", { id: match.id });
+          batch(() => {
+            s.setChatId(conv.meta.id);
+            s.setMessages(
+              conv.messages
+                .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "system")
+                .map((m) => ({
+                  role: m.role as AiChatMessage["role"],
+                  content: m.content ?? "",
+                  timestamp: m.timestamp,
+                }))
+                .slice(-MAX_MESSAGES),
+            );
+            s.setStreamingText("");
+            s.setIsStreaming(false);
+            s.setError(null);
+          });
+          return;
+        }
+      } catch (e) {
+        appLogger.info("ai-chat", "no saved conversation for session, starting new", { tuicSession, error: String(e) });
+      }
+      const newId = await invoke<string>("new_conversation_id");
+      s.setChatId(newId);
+      return;
+    }
+
+    // Legacy path: global ACTIVE_ID_KEY
     const savedId = readActiveId();
     if (savedId) {
       try {
