@@ -154,3 +154,59 @@ describe("aiChatStore", () => {
     expect(second).not.toBe(first);
   });
 });
+
+describe("aiChatStore — per-terminal state (1406-c679)", () => {
+  beforeEach(() => {
+    // Reset to default terminal between tests
+    aiChatStore.setActiveTerminal("__default__");
+    aiChatStore.clearHistory();
+    vi.clearAllMocks();
+  });
+
+  it("getOrCreate returns independent state for different keys", () => {
+    const stateA = aiChatStore.getOrCreate("termA");
+    const stateB = aiChatStore.getOrCreate("termB");
+    expect(stateA).not.toBe(stateB);
+  });
+
+  it("messages() reflects the active terminal only", () => {
+    aiChatStore.setActiveTerminal("termA");
+    aiChatStore.addUserMessage("hello from A");
+
+    aiChatStore.setActiveTerminal("termB");
+    expect(aiChatStore.messages()).toEqual([]);
+
+    aiChatStore.setActiveTerminal("termA");
+    expect(aiChatStore.messages()).toHaveLength(1);
+    expect(aiChatStore.messages()[0]?.content).toBe("hello from A");
+  });
+
+  it("isStreaming() is independent per terminal", () => {
+    aiChatStore.setActiveTerminal("termA");
+    aiChatStore.setStreaming(true);
+
+    aiChatStore.setActiveTerminal("termB");
+    expect(aiChatStore.isStreaming()).toBe(false);
+
+    aiChatStore.setActiveTerminal("termA");
+    expect(aiChatStore.isStreaming()).toBe(true);
+  });
+
+  it("error() is independent per terminal", () => {
+    aiChatStore.setActiveTerminal("termA");
+    aiChatStore.setError("termA error");
+
+    aiChatStore.setActiveTerminal("termB");
+    expect(aiChatStore.error()).toBeNull();
+  });
+
+  it("activeChat() returns the PerTerminalChatState for the active terminal", () => {
+    aiChatStore.setActiveTerminal("termX");
+    const state = aiChatStore.activeChat();
+    expect(typeof state.messages).toBe("function");
+    expect(typeof state.isStreaming).toBe("function");
+    expect(typeof state.streamingText).toBe("function");
+    expect(typeof state.error).toBe("function");
+    expect(typeof state.chatId).toBe("function");
+  });
+});

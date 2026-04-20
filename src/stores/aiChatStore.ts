@@ -1,11 +1,16 @@
 /**
  * AI Chat store — manages chat messages, streaming state, and terminal attachment.
  *
+ * Per-terminal architecture: each terminal tab gets its own PerTerminalChatState
+ * keyed by tuicSession. The top-level exports (messages, isStreaming, etc.) proxy
+ * through activeChat() so all existing callers remain unchanged.
+ *
  * Drives the AI Chat panel UI. Invokes `stream_ai_chat` / `cancel_ai_chat`
  * Tauri commands and accumulates chunks via `Channel` IPC.
  */
 
 import { createSignal, batch } from "solid-js";
+import type { Accessor, Setter } from "solid-js";
 import { isTauri } from "../transport";
 import { appLogger } from "./appLogger";
 
@@ -46,25 +51,112 @@ interface BackendConversation {
   schema_version?: number;
 }
 
+/** Reactive state for a single terminal's chat session. */
+export interface PerTerminalChatState {
+  messages: Accessor<AiChatMessage[]>;
+  setMessages: Setter<AiChatMessage[]>;
+  isStreaming: Accessor<boolean>;
+  setIsStreaming: Setter<boolean>;
+  streamingText: Accessor<string>;
+  setStreamingText: Setter<string>;
+  error: Accessor<string | null>;
+  setError: Setter<string | null>;
+  chatId: Accessor<string>;
+  setChatId: Setter<string>;
+  attachedSessionId: Accessor<string | null>;
+  setAttachedSessionId: Setter<string | null>;
+  persistTimer: ReturnType<typeof setTimeout> | null;
+  initialized: boolean;
+}
+
 const MAX_MESSAGES = 100;
 const ACTIVE_ID_KEY = "ai-chat-active-id";
 const PERSIST_DEBOUNCE_MS = 500;
+const DEFAULT_KEY = "__default__";
 
 // ---------------------------------------------------------------------------
-// Signals
+// Per-terminal state map
 // ---------------------------------------------------------------------------
 
-const [messages, setMessages] = createSignal<AiChatMessage[]>([]);
-const [isStreaming, setIsStreaming] = createSignal(false);
-const [streamingText, setStreamingText] = createSignal("");
-const [error, setError] = createSignal<string | null>(null);
-const [attachedSessionId, setAttachedSessionId] = createSignal<string | null>(null);
+const chatStateMap = new Map<string, PerTerminalChatState>();
+const [activeChatKey, setActiveChatKey] = createSignal<string>(DEFAULT_KEY);
+
+// pinned is global (applies to the attachment behavior, not per-terminal)
 const [pinned, setPinned] = createSignal(false);
-const [chatId, setChatId] = createSignal(generateChatId());
 
 function generateChatId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 }
+
+function createChatState(): PerTerminalChatState {
+  const [messages, setMessages] = createSignal<AiChatMessage[]>([]);
+  const [isStreaming, setIsStreaming] = createSignal(false);
+  const [streamingText, setStreamingText] = createSignal("");
+  const [error, setError] = createSignal<string | null>(null);
+  const [chatId, setChatId] = createSignal(generateChatId());
+  const [attachedSessionId, setAttachedSessionId] = createSignal<string | null>(null);
+  return {
+    messages,
+    setMessages,
+    isStreaming,
+    setIsStreaming,
+    streamingText,
+    setStreamingText,
+    error,
+    setError,
+    chatId,
+    setChatId,
+    attachedSessionId,
+    setAttachedSessionId,
+    persistTimer: null,
+    initialized: false,
+  };
+}
+
+function getOrCreate(key: string): PerTerminalChatState {
+  let state = chatStateMap.get(key);
+  if (!state) {
+    state = createChatState();
+    chatStateMap.set(key, state);
+  }
+  return state;
+}
+
+function activeChat(): PerTerminalChatState {
+  return getOrCreate(activeChatKey());
+}
+
+/** Switch the active terminal. Steps 5+ will resolve terminalId → tuicSession. */
+function setActiveTerminal(key: string): void {
+  setActiveChatKey(key);
+}
+
+// ---------------------------------------------------------------------------
+// Convenience accessors — proxy through activeChat() for reactivity
+// ---------------------------------------------------------------------------
+
+function messages(): AiChatMessage[] {
+  return activeChat().messages();
+}
+function isStreaming(): boolean {
+  return activeChat().isStreaming();
+}
+function streamingText(): string {
+  return activeChat().streamingText();
+}
+function error(): string | null {
+  return activeChat().error();
+}
+function chatId(): string {
+  return activeChat().chatId();
+}
+function attachedSessionId(): string | null {
+  return activeChat().attachedSessionId();
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 function readActiveId(): string | null {
   try {
@@ -88,7 +180,8 @@ function writeActiveId(id: string | null): void {
 // ---------------------------------------------------------------------------
 
 function addMessage(role: AiChatMessage["role"], content: string): void {
-  setMessages((prev) => {
+  const s = activeChat();
+  s.setMessages((prev) => {
     const msg: AiChatMessage = { role, content, timestamp: Date.now() };
     const next = [...prev, msg];
     if (next.length > MAX_MESSAGES) {
@@ -112,27 +205,25 @@ function addSystemMessage(content: string): void {
 }
 
 function clearHistory(): void {
-  // Cancel any pending debounced persist so it cannot race the wipe below
-  // and rewrite the old file under oldId after delete_conversation succeeds.
-  if (persistTimer) {
-    clearTimeout(persistTimer);
-    persistTimer = null;
+  const s = activeChat();
+  if (s.persistTimer) {
+    clearTimeout(s.persistTimer);
+    s.persistTimer = null;
   }
   batch(() => {
-    setMessages([]);
-    setStreamingText("");
-    setIsStreaming(false);
-    setError(null);
+    s.setMessages([]);
+    s.setStreamingText("");
+    s.setIsStreaming(false);
+    s.setError(null);
   });
-  // Wipe disk copy + rotate to a fresh chatId so next message starts a new file.
-  const oldId = chatId();
+  const oldId = s.chatId();
   void (async () => {
     if (!isTauri()) return;
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("delete_conversation", { id: oldId });
       const newId = await invoke<string>("new_conversation_id");
-      setChatId(newId);
+      s.setChatId(newId);
       writeActiveId(newId);
     } catch (e) {
       appLogger.warn("ai-chat", "clearHistory: backend wipe failed", { error: String(e) });
@@ -144,26 +235,24 @@ function clearHistory(): void {
 // Persistence (debounced autosave + init load)
 // ---------------------------------------------------------------------------
 
-let persistTimer: ReturnType<typeof setTimeout> | null = null;
-let initialized = false;
-
 function schedulePersist(): void {
   if (!isTauri()) return;
-  if (persistTimer) clearTimeout(persistTimer);
-  persistTimer = setTimeout(() => {
-    persistTimer = null;
+  const s = activeChat();
+  if (s.persistTimer) clearTimeout(s.persistTimer);
+  s.persistTimer = setTimeout(() => {
+    s.persistTimer = null;
     void persistNow();
   }, PERSIST_DEBOUNCE_MS);
 }
 
 async function persistNow(): Promise<void> {
   if (!isTauri()) return;
-  const msgs = messages();
-  if (msgs.length === 0) return; // nothing to persist yet — avoid empty files
+  const s = activeChat();
+  const msgs = s.messages();
+  if (msgs.length === 0) return;
   try {
-    const id = chatId();
+    const id = s.chatId();
     const now = Date.now();
-    // Title = first user message, trimmed. Falls back to "New chat".
     const firstUser = msgs.find((m) => m.role === "user");
     const title = firstUser
       ? firstUser.content.slice(0, 60).replace(/\s+/g, " ").trim()
@@ -172,7 +261,7 @@ async function persistNow(): Promise<void> {
       meta: {
         id,
         title: title || "New chat",
-        session_id: attachedSessionId(),
+        session_id: s.attachedSessionId(),
         created: msgs[0]?.timestamp ?? now,
         updated: now,
         message_count: msgs.length,
@@ -191,10 +280,11 @@ async function persistNow(): Promise<void> {
   }
 }
 
-/** Load active conversation from disk or create a fresh id. Idempotent. */
+/** Load active conversation from disk or create a fresh id. Idempotent per terminal. */
 async function initFromDisk(): Promise<void> {
-  if (initialized) return;
-  initialized = true;
+  const s = activeChat();
+  if (s.initialized) return;
+  s.initialized = true;
   if (!isTauri()) return;
   try {
     const { invoke } = await import("@tauri-apps/api/core");
@@ -203,8 +293,8 @@ async function initFromDisk(): Promise<void> {
       try {
         const conv = await invoke<BackendConversation>("load_conversation", { id: savedId });
         batch(() => {
-          setChatId(conv.meta.id);
-          setMessages(
+          s.setChatId(conv.meta.id);
+          s.setMessages(
             conv.messages
               .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "system")
               .map((m) => ({
@@ -214,9 +304,9 @@ async function initFromDisk(): Promise<void> {
               }))
               .slice(-MAX_MESSAGES),
           );
-          setStreamingText("");
-          setIsStreaming(false);
-          setError(null);
+          s.setStreamingText("");
+          s.setIsStreaming(false);
+          s.setError(null);
         });
         return;
       } catch (e) {
@@ -224,7 +314,7 @@ async function initFromDisk(): Promise<void> {
       }
     }
     const newId = await invoke<string>("new_conversation_id");
-    setChatId(newId);
+    s.setChatId(newId);
     writeActiveId(newId);
   } catch (e) {
     appLogger.warn("ai-chat", "initFromDisk failed", { error: String(e) });
@@ -236,17 +326,18 @@ async function initFromDisk(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 function setStreaming(v: boolean): void {
-  setIsStreaming(v);
+  activeChat().setIsStreaming(v);
 }
 
 function appendStreamChunk(text: string): void {
-  setStreamingText((prev) => prev + text);
+  activeChat().setStreamingText((prev) => prev + text);
 }
 
 function finalizeStream(fullText: string): void {
+  const s = activeChat();
   batch(() => {
-    setIsStreaming(false);
-    setStreamingText("");
+    s.setIsStreaming(false);
+    s.setStreamingText("");
     addAssistantMessage(fullText);
   });
 }
@@ -254,26 +345,26 @@ function finalizeStream(fullText: string): void {
 /** Send a message and start streaming the AI response. */
 async function sendMessage(text: string): Promise<void> {
   if (!isTauri()) return;
-  if (isStreaming()) return;
+  const s = activeChat();
+  if (s.isStreaming()) return;
 
-  const sessionId = attachedSessionId();
+  const sessionId = s.attachedSessionId();
   if (!sessionId) {
-    setError("No terminal attached — focus a terminal first");
+    s.setError("No terminal attached — focus a terminal first");
     return;
   }
 
   addUserMessage(text);
-  setError(null);
-  setIsStreaming(true);
-  setStreamingText("");
+  s.setError(null);
+  s.setIsStreaming(true);
+  s.setStreamingText("");
 
-  // Build message history for the backend
-  const history = messages().map((m) => ({
+  const history = s.messages().map((m) => ({
     role: m.role,
     content: m.content,
   }));
 
-  const currentChatId = chatId();
+  const currentChatId = s.chatId();
 
   try {
     const { invoke, Channel } = await import("@tauri-apps/api/core");
@@ -288,9 +379,9 @@ async function sendMessage(text: string): Promise<void> {
           break;
         case "error":
           batch(() => {
-            setIsStreaming(false);
-            setStreamingText("");
-            setError(msg.data.message);
+            s.setIsStreaming(false);
+            s.setStreamingText("");
+            s.setError(msg.data.message);
           });
           break;
       }
@@ -304,9 +395,9 @@ async function sendMessage(text: string): Promise<void> {
     });
   } catch (e) {
     batch(() => {
-      setIsStreaming(false);
-      setStreamingText("");
-      setError(String(e));
+      s.setIsStreaming(false);
+      s.setStreamingText("");
+      s.setError(String(e));
     });
     appLogger.warn("ai-chat", "stream_ai_chat failed", { error: String(e) });
   }
@@ -314,10 +405,11 @@ async function sendMessage(text: string): Promise<void> {
 
 /** Cancel the in-flight stream. */
 async function cancelStream(): Promise<void> {
-  if (!isStreaming()) return;
+  const s = activeChat();
+  if (!s.isStreaming()) return;
   try {
     const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("cancel_ai_chat", { chatId: chatId() });
+    await invoke("cancel_ai_chat", { chatId: s.chatId() });
   } catch (e) {
     appLogger.warn("ai-chat", "cancel_ai_chat failed", { error: String(e) });
   }
@@ -328,16 +420,16 @@ async function cancelStream(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 function attachTerminal(sessionId: string): void {
-  setAttachedSessionId(sessionId);
+  activeChat().setAttachedSessionId(sessionId);
 }
 
 function detachTerminal(): void {
-  setAttachedSessionId(null);
+  activeChat().setAttachedSessionId(null);
 }
 
 function autoAttach(sessionId: string): void {
   if (pinned()) return;
-  setAttachedSessionId(sessionId);
+  activeChat().setAttachedSessionId(sessionId);
 }
 
 // ---------------------------------------------------------------------------
@@ -346,8 +438,12 @@ function autoAttach(sessionId: string): void {
 
 function resetChatId(): void {
   const newId = generateChatId();
-  setChatId(newId);
+  activeChat().setChatId(newId);
   writeActiveId(newId);
+}
+
+function setError(e: string | null): void {
+  activeChat().setError(e);
 }
 
 // ---------------------------------------------------------------------------
@@ -355,7 +451,12 @@ function resetChatId(): void {
 // ---------------------------------------------------------------------------
 
 export const aiChatStore = {
-  // Reactive getters
+  // Per-terminal API (new in 1406-c679)
+  activeChat,
+  getOrCreate,
+  setActiveTerminal,
+
+  // Reactive getters (proxy through activeChat)
   messages,
   isStreaming,
   streamingText,
