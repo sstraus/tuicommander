@@ -1577,7 +1577,6 @@ mod tests {
         let state = test_state();
         let now = std::time::Instant::now();
         state.mcp_sessions.insert("test-sid".to_string(), crate::state::McpSessionMeta {
-            created_at: now,
             last_activity: now,
             is_claude_code: false,
             has_sse_stream: false,
@@ -2598,7 +2597,6 @@ mod tests {
         // Inject a session so the session_valid check passes
         let now = std::time::Instant::now();
         state.mcp_sessions.insert("test-sid-proxy".to_string(), crate::state::McpSessionMeta {
-            created_at: now,
             last_activity: now,
             is_claude_code: false,
             has_sse_stream: false,
@@ -2628,7 +2626,6 @@ mod tests {
         let state = test_state();
         let now = std::time::Instant::now();
         state.mcp_sessions.insert("test-sid-native".to_string(), crate::state::McpSessionMeta {
-            created_at: now,
             last_activity: now,
             is_claude_code: false,
             has_sse_stream: false,

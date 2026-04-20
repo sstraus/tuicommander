@@ -308,23 +308,7 @@ impl HttpMcpClient {
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string());
 
-        let status = resp.status();
-        if status == reqwest::StatusCode::UNAUTHORIZED {
-            return Err(classify_401(&resp));
-        }
-        if !resp.status().is_success() {
-            return Err(UpstreamError::Other(format!(
-                "Upstream '{}' initialize returned {status}",
-                self.name
-            )));
-        }
-
-        let _init_resp: Value = resp.json().await.map_err(|e| {
-            UpstreamError::Other(format!(
-                "Upstream '{}' invalid initialize response: {e}",
-                self.name
-            ))
-        })?;
+        let _init_resp = self.decode_response(resp).await?;
 
         tracing::debug!(
             upstream = %self.name,
@@ -463,6 +447,9 @@ impl HttpMcpClient {
     }
 
     /// Decode a reqwest Response into JSON or classify error status.
+    ///
+    /// Handles both `application/json` and `text/event-stream` (SSE) responses.
+    /// For SSE, extracts the last `data:` line containing a JSON-RPC message.
     async fn decode_response(&self, resp: reqwest::Response) -> Result<Value, UpstreamError> {
         let status = resp.status();
         if status == reqwest::StatusCode::UNAUTHORIZED {
@@ -474,9 +461,31 @@ impl HttpMcpClient {
                 self.name
             )));
         }
-        resp.json::<Value>().await.map_err(|e| {
-            UpstreamError::Other(format!("Upstream '{}' invalid JSON response: {e}", self.name))
-        })
+
+        let is_sse = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|ct| ct.contains("text/event-stream"));
+
+        if is_sse {
+            let body = resp.text().await.map_err(|e| {
+                UpstreamError::Other(format!("Upstream '{}' SSE read error: {e}", self.name))
+            })?;
+            parse_sse_json(&body).ok_or_else(|| {
+                UpstreamError::Other(format!(
+                    "Upstream '{}' SSE response contained no valid JSON data line",
+                    self.name
+                ))
+            })
+        } else {
+            resp.json::<Value>().await.map_err(|e| {
+                UpstreamError::Other(format!(
+                    "Upstream '{}' invalid JSON response: {e}",
+                    self.name
+                ))
+            })
+        }
     }
 
     /// Build and send a POST with optional bearer auth and session header.
@@ -525,7 +534,6 @@ impl HttpMcpClient {
     ) -> Result<Value, UpstreamError> {
         let body = serde_json::json!({
             "jsonrpc": "2.0",
-            "id": 1,
             "method": method,
             "params": params
         });
@@ -536,9 +544,7 @@ impl HttpMcpClient {
         if resp.status() == reqwest::StatusCode::ACCEPTED {
             return Ok(serde_json::json!({}));
         }
-        resp.json::<Value>().await.map_err(|e| {
-            UpstreamError::Other(format!("Upstream '{}' {method} invalid response: {e}", self.name))
-        })
+        self.decode_response(resp).await
     }
 }
 
@@ -561,6 +567,39 @@ fn classify_401(resp: &reqwest::Response) -> UpstreamError {
         }
         _ => UpstreamError::AuthFailed,
     }
+}
+
+/// Extract the last JSON-RPC message from an SSE body.
+///
+/// SSE format: lines starting with `data:` contain the payload.
+/// Multiple `data:` lines before a blank line are concatenated (per spec).
+/// We take the last complete JSON object found since earlier ones may be
+/// progress notifications.
+fn parse_sse_json(body: &str) -> Option<Value> {
+    let mut last_value: Option<Value> = None;
+    let mut current_data = String::new();
+
+    for line in body.lines() {
+        if let Some(data) = line.strip_prefix("data:") {
+            let data = data.trim_start();
+            if !current_data.is_empty() {
+                current_data.push('\n');
+            }
+            current_data.push_str(data);
+        } else if line.is_empty() && !current_data.is_empty() {
+            if let Ok(val) = serde_json::from_str::<Value>(&current_data) {
+                last_value = Some(val);
+            }
+            current_data.clear();
+        }
+    }
+    // Handle trailing data without final blank line
+    if !current_data.is_empty()
+        && let Ok(val) = serde_json::from_str::<Value>(&current_data)
+    {
+        last_value = Some(val);
+    }
+    last_value
 }
 
 // ---------------------------------------------------------------------------
@@ -890,5 +929,42 @@ mod tests {
     fn upstream_error_from_string_is_other() {
         let e: UpstreamError = String::from("x").into();
         assert!(matches!(e, UpstreamError::Other(_)));
+    }
+
+    #[test]
+    fn parse_sse_json_single_data_line() {
+        let body = "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[]}}\n\n";
+        let val = parse_sse_json(body).unwrap();
+        assert_eq!(val["result"]["tools"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn parse_sse_json_multiple_events_returns_last() {
+        let body = concat!(
+            "data: {\"jsonrpc\":\"2.0\",\"method\":\"progress\"}\n\n",
+            "data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[{\"name\":\"foo\"}]}}\n\n",
+        );
+        let val = parse_sse_json(body).unwrap();
+        assert_eq!(val["result"]["tools"][0]["name"], "foo");
+    }
+
+    #[test]
+    fn parse_sse_json_no_trailing_blank_line() {
+        let body = "data: {\"ok\":true}";
+        let val = parse_sse_json(body).unwrap();
+        assert_eq!(val["ok"], true);
+    }
+
+    #[test]
+    fn parse_sse_json_empty_body() {
+        assert!(parse_sse_json("").is_none());
+        assert!(parse_sse_json("event: message\n\n").is_none());
+    }
+
+    #[test]
+    fn parse_sse_json_multiline_data() {
+        let body = "data: {\"a\":\n\ndata: {\"b\":1}\n\n";
+        let val = parse_sse_json(body).unwrap();
+        assert_eq!(val["b"], 1);
     }
 }

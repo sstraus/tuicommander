@@ -127,20 +127,6 @@ describe("aiChatStore", () => {
     expect(aiChatStore.attachedSessionId()).toBeNull();
   });
 
-  it("pinned prevents auto-attach from overriding", () => {
-    aiChatStore.attachTerminal("sess-1");
-    aiChatStore.setPinned(true);
-    aiChatStore.autoAttach("sess-2");
-    expect(aiChatStore.attachedSessionId()).toBe("sess-1");
-  });
-
-  it("autoAttach updates when not pinned", () => {
-    aiChatStore.attachTerminal("sess-1");
-    aiChatStore.setPinned(false);
-    aiChatStore.autoAttach("sess-2");
-    expect(aiChatStore.attachedSessionId()).toBe("sess-2");
-  });
-
   // -- Chat ID --
 
   it("chatId starts as non-empty string", () => {

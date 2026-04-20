@@ -2227,7 +2227,6 @@ pub(super) async fn mcp_post(
 
             let now = std::time::Instant::now();
             state.mcp_sessions.insert(session_id.clone(), crate::state::McpSessionMeta {
-                created_at: now,
                 last_activity: now,
                 is_claude_code,
                 has_sse_stream: false,
@@ -2265,10 +2264,10 @@ pub(super) async fn mcp_post(
 
         "tools/list" => {
             let list_session_id = headers.get(MCP_SESSION_HEADER).and_then(|v| v.to_str().ok());
-            if let Some(sid) = list_session_id {
-                if let Some(mut meta) = state.mcp_sessions.get_mut(sid) {
-                    meta.last_activity = std::time::Instant::now();
-                }
+            if let Some(sid) = list_session_id
+                && let Some(mut meta) = state.mcp_sessions.get_mut(sid)
+            {
+                meta.last_activity = std::time::Instant::now();
             }
             let tools = merged_tool_definitions(&state, list_session_id);
             let response = serde_json::json!({
@@ -2308,7 +2307,6 @@ pub(super) async fn mcp_post(
                         );
                         let now = std::time::Instant::now();
                         state.mcp_sessions.insert(sid.to_string(), crate::state::McpSessionMeta {
-                            created_at: now,
                             last_activity: now,
                             is_claude_code: recovered_cc,
                             has_sse_stream: false,
@@ -2398,7 +2396,6 @@ pub(super) async fn mcp_get(
             );
             let now = std::time::Instant::now();
             state.mcp_sessions.insert(sid.to_string(), crate::state::McpSessionMeta {
-                created_at: now,
                 last_activity: now,
                 is_claude_code: is_cc_ua,
                 has_sse_stream: false,

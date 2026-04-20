@@ -39,36 +39,7 @@ describe("aiChatStore persistence (1385-87c6)", () => {
     vi.useRealTimers();
   });
 
-  it("initFromDisk loads a saved conversation into messages()", async () => {
-    globalThis.localStorage.setItem("ai-chat-active-id", "abc-123");
-    mockInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "load_conversation") {
-        return Promise.resolve({
-          meta: {
-            id: "abc-123",
-            title: "t",
-            created: 1,
-            updated: 2,
-            message_count: 2,
-          },
-          messages: [
-            { role: "user", content: "hi", timestamp: 1 },
-            { role: "assistant", content: "hello", timestamp: 2 },
-          ],
-          schema_version: 1,
-        });
-      }
-      return Promise.resolve();
-    });
-
-    await store.initFromDisk();
-    expect(store.messages().length).toBe(2);
-    expect(store.messages()[0]?.role).toBe("user");
-    expect(store.messages()[1]?.content).toBe("hello");
-    expect(store.chatId()).toBe("abc-123");
-  });
-
-  it("initFromDisk falls back to new_conversation_id when no saved id", async () => {
+  it("initFromDisk assigns a new conversation id when no tuicSession", async () => {
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === "new_conversation_id") return Promise.resolve("fresh-id");
       return Promise.resolve();
@@ -76,7 +47,6 @@ describe("aiChatStore persistence (1385-87c6)", () => {
 
     await store.initFromDisk();
     expect(store.chatId()).toBe("fresh-id");
-    expect(globalThis.localStorage.getItem("ai-chat-active-id")).toBe("fresh-id");
   });
 
   it("addAssistantMessage triggers a debounced save_conversation invoke", async () => {
@@ -120,11 +90,13 @@ describe("aiChatStore persistence (1385-87c6)", () => {
   });
 
   it("initFromDisk loads messages with missing content as empty string (1405-3464)", async () => {
-    globalThis.localStorage.setItem("ai-chat-active-id", "corrupt-123");
     mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "list_conversations") {
+        return Promise.resolve([{ id: "corrupt-123", title: "t", session_id: "sess-corrupt", created: 1, updated: 2, message_count: 2 }]);
+      }
       if (cmd === "load_conversation") {
         return Promise.resolve({
-          meta: { id: "corrupt-123", title: "t", created: 1, updated: 2, message_count: 2 },
+          meta: { id: "corrupt-123", title: "t", session_id: "sess-corrupt", created: 1, updated: 2, message_count: 2 },
           messages: [
             { role: "user", content: "hello", timestamp: 1 },
             { role: "assistant", timestamp: 2 }, // missing content
@@ -135,17 +107,19 @@ describe("aiChatStore persistence (1385-87c6)", () => {
       return Promise.resolve();
     });
 
-    await store.initFromDisk();
+    await store.initFromDisk("sess-corrupt");
     expect(store.messages().length).toBe(2);
     expect(store.messages()[1]?.content).toBe("");
   });
 
   it("round-trip: message with empty content persists without serde error (1405-3464)", async () => {
-    globalThis.localStorage.setItem("ai-chat-active-id", "rt-123");
     mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "list_conversations") {
+        return Promise.resolve([{ id: "rt-123", title: "t", session_id: "sess-rt", created: 1, updated: 2, message_count: 1 }]);
+      }
       if (cmd === "load_conversation") {
         return Promise.resolve({
-          meta: { id: "rt-123", title: "t", created: 1, updated: 2, message_count: 1 },
+          meta: { id: "rt-123", title: "t", session_id: "sess-rt", created: 1, updated: 2, message_count: 1 },
           messages: [{ role: "user", timestamp: 1 }], // missing content
           schema_version: 1,
         });
@@ -153,7 +127,7 @@ describe("aiChatStore persistence (1385-87c6)", () => {
       return Promise.resolve();
     });
 
-    await store.initFromDisk();
+    await store.initFromDisk("sess-rt");
     // Trigger persist — should call save_conversation with content: ""
     store.addAssistantMessage("reply");
     await vi.advanceTimersByTimeAsync(600);

@@ -1108,10 +1108,10 @@ async fn run_health_checks(registry: &UpstreamRegistry) {
                     } else if old_count != new_count {
                         tracing::info!(source = "mcp_registry", %name, "Tool list refreshed: {old_count} → {new_count}");
                     }
-                    if needs_recovery || old_count != new_count {
-                        if let Some(ref tx) = tools_tx {
-                            let _ = tx.send(());
-                        }
+                    if (needs_recovery || old_count != new_count)
+                        && let Some(ref tx) = tools_tx
+                    {
+                        let _ = tx.send(());
                     }
                 }
                 Err(UpstreamError::NeedsOAuth { .. }) => {

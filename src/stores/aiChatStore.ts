@@ -70,7 +70,6 @@ export interface PerTerminalChatState {
 }
 
 const MAX_MESSAGES = 100;
-const ACTIVE_ID_KEY = "ai-chat-active-id";
 const PERSIST_DEBOUNCE_MS = 500;
 const DEFAULT_KEY = "__default__";
 
@@ -80,9 +79,6 @@ const DEFAULT_KEY = "__default__";
 
 const chatStateMap = new Map<string, PerTerminalChatState>();
 const [activeChatKey, setActiveChatKey] = createSignal<string>(DEFAULT_KEY);
-
-// pinned is global (applies to the attachment behavior, not per-terminal)
-const [pinned, setPinned] = createSignal(false);
 
 function generateChatId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -155,27 +151,6 @@ function attachedSessionId(): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function readActiveId(): string | null {
-  try {
-    return globalThis.localStorage?.getItem(ACTIVE_ID_KEY) ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function writeActiveId(id: string | null): void {
-  try {
-    if (id) globalThis.localStorage?.setItem(ACTIVE_ID_KEY, id);
-    else globalThis.localStorage?.removeItem(ACTIVE_ID_KEY);
-  } catch {
-    // localStorage unavailable (SSR/tests) — best effort only
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Message management
 // ---------------------------------------------------------------------------
 
@@ -225,7 +200,6 @@ function clearHistory(): void {
       await invoke("delete_conversation", { id: oldId });
       const newId = await invoke<string>("new_conversation_id");
       s.setChatId(newId);
-      writeActiveId(newId);
     } catch (e) {
       appLogger.warn("ai-chat", "clearHistory: backend wipe failed", { error: String(e) });
     }
@@ -330,35 +304,8 @@ async function initFromDisk(tuicSession?: string): Promise<void> {
       return;
     }
 
-    // Legacy path: global ACTIVE_ID_KEY
-    const savedId = readActiveId();
-    if (savedId) {
-      try {
-        const conv = await invoke<BackendConversation>("load_conversation", { id: savedId });
-        batch(() => {
-          s.setChatId(conv.meta.id);
-          s.setMessages(
-            conv.messages
-              .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "system")
-              .map((m) => ({
-                role: m.role as AiChatMessage["role"],
-                content: m.content ?? "",
-                timestamp: m.timestamp,
-              }))
-              .slice(-MAX_MESSAGES),
-          );
-          s.setStreamingText("");
-          s.setIsStreaming(false);
-          s.setError(null);
-        });
-        return;
-      } catch (e) {
-        appLogger.info("ai-chat", "saved conversation not found, starting new", { id: savedId, error: String(e) });
-      }
-    }
     const newId = await invoke<string>("new_conversation_id");
     s.setChatId(newId);
-    writeActiveId(newId);
   } catch (e) {
     appLogger.warn("ai-chat", "initFromDisk failed", { error: String(e) });
   }
@@ -513,11 +460,6 @@ function detachTerminal(): void {
   activeChat().setAttachedSessionId(null);
 }
 
-function autoAttach(sessionId: string): void {
-  if (pinned()) return;
-  activeChat().setAttachedSessionId(sessionId);
-}
-
 // ---------------------------------------------------------------------------
 // Chat ID
 // ---------------------------------------------------------------------------
@@ -525,7 +467,6 @@ function autoAttach(sessionId: string): void {
 function resetChatId(): void {
   const newId = generateChatId();
   activeChat().setChatId(newId);
-  writeActiveId(newId);
 }
 
 function setError(e: string | null): void {
@@ -593,7 +534,6 @@ export const aiChatStore = {
   streamingText,
   error,
   attachedSessionId,
-  pinned,
   chatId,
 
   // Actions
@@ -608,8 +548,6 @@ export const aiChatStore = {
   cancelStream,
   attachTerminal,
   detachTerminal,
-  autoAttach,
-  setPinned,
   setError,
   resetChatId,
 
