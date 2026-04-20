@@ -1,5 +1,5 @@
 import { Component, For, Show, createSignal, createEffect, createMemo, onCleanup } from "solid-js";
-import { aiChatStore } from "../../stores/aiChatStore";
+import { aiChatStore, type ConversationMeta } from "../../stores/aiChatStore";
 import { aiAgentStore, type ToolCallEntry } from "../../stores/aiAgentStore";
 import { terminalsStore } from "../../stores/terminals";
 import { ContentRenderer } from "../ui/ContentRenderer";
@@ -71,6 +71,13 @@ const SVG_COPIED =
 const SVG_RUN =
   '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M4 2.5l8 4.5-8 4.5z"/></svg>';
 
+const IconHistory = () => (
+  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
+    <circle cx="7" cy="7" r="5.5" />
+    <path d="M7 4v3.5l2 1.5" stroke-linecap="round" />
+  </svg>
+);
+
 const IconRobot = () => (
   <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
     <path d="M7 1a.75.75 0 01.75.75V3h1.5A2.25 2.25 0 0111.5 5.25v4.5A2.25 2.25 0 019.25 12h-4.5A2.25 2.25 0 012.5 9.75v-4.5A2.25 2.25 0 014.75 3h1.5V1.75A.75.75 0 017 1zM5 6.5a.75.75 0 100 1.5.75.75 0 000-1.5zm4 0a.75.75 0 100 1.5.75.75 0 000-1.5zM5.5 9a.5.5 0 000 1h3a.5.5 0 000-1h-3z" />
@@ -125,6 +132,29 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
   const [inputText, setInputText] = createSignal("");
   let messageListRef: HTMLDivElement | undefined;
   let textareaRef: HTMLTextAreaElement | undefined;
+
+  const [showHistory, setShowHistory] = createSignal(false);
+  const [historyList, setHistoryList] = createSignal<ConversationMeta[]>([]);
+
+  const openHistory = () => {
+    void aiChatStore.listAllConversations().then(setHistoryList);
+    setShowHistory(true);
+  };
+
+  const resolveSessionName = (sessionId?: string | null): string => {
+    if (!sessionId) return "";
+    const ids = terminalsStore.getIds();
+    for (const id of ids) {
+      const t = terminalsStore.get(id);
+      if (t?.tuicSession === sessionId || t?.sessionId === sessionId) return t.name ?? sessionId;
+    }
+    return sessionId.slice(0, 8);
+  };
+
+  const handleLoadConversation = async (id: string) => {
+    await aiChatStore.loadConversation(id);
+    setShowHistory(false);
+  };
 
   // Active terminal derived from terminalsStore (null when non-terminal tab focused)
   const activeSessionId = useActiveSessionId();
@@ -318,6 +348,13 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
             <IconRobot />
           </button>
           <button
+            class={cx(s.headerBtn, showHistory() && s.headerBtnActive)}
+            onClick={() => (showHistory() ? setShowHistory(false) : openHistory())}
+            title="Conversation history"
+          >
+            <IconHistory />
+          </button>
+          <button
             class={s.headerBtn}
             onClick={() => aiChatStore.clearHistory()}
             title="Clear conversation"
@@ -414,8 +451,32 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
         )}
       </Show>
 
+      {/* ── History panel ───────────────────────────────────── */}
+      <Show when={showHistory()}>
+        <div class={s.historyPanel}>
+          <div class={s.historyHeader}>All conversations</div>
+          <Show when={historyList().length === 0}>
+            <div class={s.historyEmpty}>No conversations saved yet</div>
+          </Show>
+          <For each={historyList()}>
+            {(conv) => (
+              <button class={s.historyItem} onClick={() => void handleLoadConversation(conv.id)}>
+                <span class={s.historyTitle}>{conv.title || "Untitled"}</span>
+                <span class={s.historyMeta}>
+                  <Show when={resolveSessionName(conv.session_id)}>
+                    <span class={s.historySession}>{resolveSessionName(conv.session_id)}</span>
+                  </Show>
+                  <span class={s.historyCount}>{conv.message_count} msgs</span>
+                  <span class={s.historyDate}>{new Date(conv.updated * 1000).toLocaleDateString()}</span>
+                </span>
+              </button>
+            )}
+          </For>
+        </div>
+      </Show>
+
       {/* ── Message list ────────────────────────────────────── */}
-      <div class={s.messageList} ref={messageListRef}>
+      <div class={cx(s.messageList, showHistory() && s.hidden)} ref={messageListRef}>
         <Show
           when={aiChatStore.messages().length > 0 || aiChatStore.isStreaming()}
           fallback={

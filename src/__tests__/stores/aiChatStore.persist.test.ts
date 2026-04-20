@@ -393,3 +393,89 @@ describe("aiChatStore persistence — per-terminal (1407-56ca)", () => {
     expect(loadCalls[0]?.[1]).toEqual({ id: "conv-new" });
   });
 });
+
+describe("aiChatStore history panel (1412-ae57)", () => {
+  let store: typeof import("../../stores/aiChatStore").aiChatStore;
+
+  beforeEach(async () => {
+    vi.useFakeTimers();
+    vi.resetModules();
+    mockInvoke.mockReset();
+    globalThis.localStorage?.clear();
+    store = (await import("../../stores/aiChatStore")).aiChatStore;
+    mockInvoke.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("listAllConversations returns all conversations from backend", async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "list_conversations") {
+        return Promise.resolve([
+          { id: "c1", title: "First chat", session_id: "s1", created: 1, updated: 1, message_count: 1 },
+          { id: "c2", title: "Second chat", session_id: "s2", created: 2, updated: 2, message_count: 3 },
+        ]);
+      }
+      return Promise.resolve();
+    });
+
+    const convs = await store.listAllConversations();
+    expect(convs).toHaveLength(2);
+    expect(convs[0]?.id).toBe("c1");
+    expect(convs[1]?.title).toBe("Second chat");
+    const listCalls = mockInvoke.mock.calls.filter((c) => c[0] === "list_conversations");
+    expect(listCalls.length).toBe(1);
+  });
+
+  it("loadConversation replaces active terminal messages with loaded conversation", async () => {
+    store.addUserMessage("old message");
+    expect(store.messages()).toHaveLength(1);
+
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "load_conversation") {
+        return Promise.resolve({
+          meta: { id: "past-conv", title: "Past", created: 1, updated: 2, message_count: 2 },
+          messages: [
+            { role: "user", content: "hello", timestamp: 1 },
+            { role: "assistant", content: "hi", timestamp: 2 },
+          ],
+          schema_version: 1,
+        });
+      }
+      return Promise.resolve();
+    });
+
+    await store.loadConversation("past-conv");
+    expect(store.messages()).toHaveLength(2);
+    expect(store.messages()[0]?.content).toBe("hello");
+    expect(store.messages()[1]?.content).toBe("hi");
+    expect(store.chatId()).toBe("past-conv");
+    expect(store.isStreaming()).toBe(false);
+  });
+
+  it("loadConversation does not affect other terminal states", async () => {
+    store.setActiveTerminal("T1");
+    store.addUserMessage("T1 message");
+
+    store.setActiveTerminal("T2");
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "load_conversation") {
+        return Promise.resolve({
+          meta: { id: "loaded-conv", title: "Loaded", created: 1, updated: 1, message_count: 1 },
+          messages: [{ role: "user", content: "loaded", timestamp: 1 }],
+          schema_version: 1,
+        });
+      }
+      return Promise.resolve();
+    });
+    await store.loadConversation("loaded-conv");
+
+    expect(store.messages()).toHaveLength(1);
+
+    store.setActiveTerminal("T1");
+    expect(store.messages()).toHaveLength(1);
+    expect(store.messages()[0]?.content).toBe("T1 message");
+  });
+});

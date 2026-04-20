@@ -495,3 +495,79 @@
   border-radius: 8px;
   padding: 0 4px;
 }
+
+/* ── History panel ──────────────────────────────────── */
+.historyPanel {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 0;
+  background: var(--bg-primary);
+}
+
+.historyHeader {
+  padding: 4px 16px 8px;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--fg-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.historyEmpty {
+  padding: 16px;
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+}
+
+.historyItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 16px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--fg-primary);
+  font-family: var(--font-ui);
+  font-size: var(--font-sm);
+}
+
+.historyItem:hover {
+  background: var(--bg-hover);
+}
+
+.historyTitle {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.historyMeta {
+  display: flex;
+  gap: 8px;
+  font-size: var(--font-xs);
+  color: var(--fg-secondary);
+}
+
+.historySession {
+  color: var(--accent);
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.historyCount {
+  color: var(--fg-muted);
+}
+
+.historyDate {
+  color: var(--fg-muted);
+  margin-left: auto;
+}

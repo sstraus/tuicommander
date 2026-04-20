@@ -533,6 +533,50 @@ function setError(e: string | null): void {
 }
 
 // ---------------------------------------------------------------------------
+// History
+// ---------------------------------------------------------------------------
+
+export type ConversationMeta = BackendConversationMeta;
+
+async function listAllConversations(): Promise<ConversationMeta[]> {
+  if (!isTauri()) return [];
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return await invoke<BackendConversationMeta[]>("list_conversations");
+  } catch (e) {
+    appLogger.warn("ai-chat", "listAllConversations failed", { error: String(e) });
+    return [];
+  }
+}
+
+async function loadConversation(id: string): Promise<void> {
+  if (!isTauri()) return;
+  const s = activeChat();
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const conv = await invoke<BackendConversation>("load_conversation", { id });
+    batch(() => {
+      s.setChatId(conv.meta.id);
+      s.setMessages(
+        conv.messages
+          .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "system")
+          .map((m) => ({
+            role: m.role as AiChatMessage["role"],
+            content: m.content ?? "",
+            timestamp: m.timestamp,
+          }))
+          .slice(-MAX_MESSAGES),
+      );
+      s.setStreamingText("");
+      s.setIsStreaming(false);
+      s.setError(null);
+    });
+  } catch (e) {
+    appLogger.warn("ai-chat", "loadConversation failed", { id, error: String(e) });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Export
 // ---------------------------------------------------------------------------
 
@@ -572,4 +616,8 @@ export const aiChatStore = {
   // Persistence
   initFromDisk,
   persistNow,
+
+  // History
+  listAllConversations,
+  loadConversation,
 };
