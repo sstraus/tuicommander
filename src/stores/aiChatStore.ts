@@ -24,9 +24,18 @@ export interface AiChatMessage {
   timestamp: number;
 }
 
+interface ChatUsage {
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  cachedTokens?: number;
+  cacheCreationTokens?: number;
+  costUsd?: number;
+}
+
 type ChatStreamEvent =
   | { event: "chunk"; data: { text: string } }
-  | { event: "end"; data: { fullText: string } }
+  | { event: "end"; data: { fullText: string; usage?: ChatUsage } }
   | { event: "error"; data: { message: string } };
 
 // Backend conversation types (mirror ai_agent::conversation)
@@ -63,8 +72,8 @@ export interface PerTerminalChatState {
   setError: Setter<string | null>;
   chatId: Accessor<string>;
   setChatId: Setter<string>;
-  attachedSessionId: Accessor<string | null>;
-  setAttachedSessionId: Setter<string | null>;
+  sessionUsage: Accessor<ChatUsage | null>;
+  setSessionUsage: Setter<ChatUsage | null>;
   persistTimer: ReturnType<typeof setTimeout> | null;
   initialized: boolean;
 }
@@ -90,7 +99,7 @@ function createChatState(): PerTerminalChatState {
   const [streamingText, setStreamingText] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
   const [chatId, setChatId] = createSignal(generateChatId());
-  const [attachedSessionId, setAttachedSessionId] = createSignal<string | null>(null);
+  const [sessionUsage, setSessionUsage] = createSignal<ChatUsage | null>(null);
   return {
     messages,
     setMessages,
@@ -102,8 +111,8 @@ function createChatState(): PerTerminalChatState {
     setError,
     chatId,
     setChatId,
-    attachedSessionId,
-    setAttachedSessionId,
+    sessionUsage,
+    setSessionUsage,
     persistTimer: null,
     initialized: false,
   };
@@ -146,8 +155,8 @@ function error(): string | null {
 function chatId(): string {
   return activeChat().chatId();
 }
-function attachedSessionId(): string | null {
-  return activeChat().attachedSessionId();
+function sessionUsage(): ChatUsage | null {
+  return activeChat().sessionUsage();
 }
 
 // ---------------------------------------------------------------------------
@@ -180,6 +189,21 @@ function addSystemMessage(content: string): void {
   addMessage("system", content);
 }
 
+function accumulateUsage(usage: ChatUsage): void {
+  const s = activeChat();
+  s.setSessionUsage((prev) => ({
+    promptTokens: (prev?.promptTokens ?? 0) + (usage.promptTokens ?? 0),
+    completionTokens: (prev?.completionTokens ?? 0) + (usage.completionTokens ?? 0),
+    totalTokens: (prev?.totalTokens ?? 0) + (usage.totalTokens ?? 0),
+    cachedTokens: (prev?.cachedTokens ?? 0) + (usage.cachedTokens ?? 0),
+    cacheCreationTokens: (prev?.cacheCreationTokens ?? 0) + (usage.cacheCreationTokens ?? 0),
+    costUsd:
+      usage.costUsd != null
+        ? (prev?.costUsd ?? 0) + usage.costUsd
+        : prev?.costUsd,
+  }));
+}
+
 function clearHistory(): void {
   const s = activeChat();
   if (s.persistTimer) {
@@ -191,6 +215,7 @@ function clearHistory(): void {
     s.setStreamingText("");
     s.setIsStreaming(false);
     s.setError(null);
+    s.setSessionUsage(null);
   });
   const oldId = s.chatId();
   void (async () => {
@@ -223,7 +248,8 @@ function schedulePersist(key?: string): void {
 
 async function persistNow(key?: string): Promise<void> {
   if (!isTauri()) return;
-  const s = getOrCreate(key ?? activeChatKey());
+  const resolvedKey = key ?? activeChatKey();
+  const s = getOrCreate(resolvedKey);
   const msgs = s.messages();
   if (msgs.length === 0) return;
   try {
@@ -237,7 +263,7 @@ async function persistNow(key?: string): Promise<void> {
       meta: {
         id,
         title: title || "New chat",
-        session_id: s.attachedSessionId(),
+        session_id: resolvedKey === DEFAULT_KEY ? null : resolvedKey,
         created: msgs[0]?.timestamp ?? now,
         updated: now,
         message_count: msgs.length,
@@ -332,13 +358,16 @@ function finalizeStream(fullText: string): void {
   });
 }
 
-/** Send a message and start streaming the AI response. */
-async function sendMessage(text: string): Promise<void> {
+/** Send a message and start streaming the AI response.
+ *  `sessionId` is the PTY session id (from `terminalsStore.get(activeId)?.sessionId`),
+ *  which the Rust backend uses to key into `AppState.sessions`. Distinct from the
+ *  chat key (tuicSession) — that's stable across PTY respawns and keys conversation
+ *  history. Caller supplies sessionId reactively so we don't duplicate state here. */
+async function sendMessage(text: string, sessionId: string | null): Promise<void> {
   if (!isTauri()) return;
   const s = activeChat();
   if (s.isStreaming()) return;
 
-  const sessionId = s.attachedSessionId();
   if (!sessionId) {
     s.setError("No terminal attached — focus a terminal first");
     return;
@@ -366,7 +395,18 @@ async function sendMessage(text: string): Promise<void> {
         case "chunk":
           s.setStreamingText((prev) => prev + msg.data.text);
           break;
-        case "end":
+        case "end": {
+          const usage = msg.data.usage;
+          if (usage) {
+            const parts: string[] = [];
+            if (usage.promptTokens != null) parts.push(`prompt=${usage.promptTokens}`);
+            if (usage.completionTokens != null) parts.push(`completion=${usage.completionTokens}`);
+            if (usage.cachedTokens != null) parts.push(`cached=${usage.cachedTokens}`);
+            if (usage.cacheCreationTokens != null) parts.push(`cache_created=${usage.cacheCreationTokens}`);
+            if (usage.costUsd != null) parts.push(`cost=$${usage.costUsd.toFixed(4)}`);
+            appLogger.info("ai-chat", `usage: ${parts.join(", ")}`);
+            accumulateUsage(usage);
+          }
           batch(() => {
             s.setIsStreaming(false);
             s.setStreamingText("");
@@ -378,6 +418,7 @@ async function sendMessage(text: string): Promise<void> {
           });
           schedulePersist(activeChatKey());
           break;
+        }
         case "error":
           batch(() => {
             s.setIsStreaming(false);
@@ -446,18 +487,6 @@ async function cancelStream(): Promise<void> {
   } catch (e) {
     appLogger.warn("ai-chat", "cancel_ai_chat failed", { error: String(e) });
   }
-}
-
-// ---------------------------------------------------------------------------
-// Terminal attachment
-// ---------------------------------------------------------------------------
-
-function attachTerminal(sessionId: string): void {
-  activeChat().setAttachedSessionId(sessionId);
-}
-
-function detachTerminal(): void {
-  activeChat().setAttachedSessionId(null);
 }
 
 // ---------------------------------------------------------------------------
@@ -533,11 +562,12 @@ export const aiChatStore = {
   isStreaming,
   streamingText,
   error,
-  attachedSessionId,
   chatId,
+  sessionUsage,
 
   // Actions
   addUserMessage,
+  accumulateUsage,
   addAssistantMessage,
   addSystemMessage,
   clearHistory,
@@ -546,8 +576,6 @@ export const aiChatStore = {
   finalizeStream,
   sendMessage,
   cancelStream,
-  attachTerminal,
-  detachTerminal,
   setError,
   resetChatId,
 

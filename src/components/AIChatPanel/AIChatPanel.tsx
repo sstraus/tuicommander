@@ -133,6 +133,7 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
   let messageListRef: HTMLDivElement | undefined;
   let textareaRef: HTMLTextAreaElement | undefined;
 
+  const [agentMode, setAgentMode] = createSignal(false);
   const [showHistory, setShowHistory] = createSignal(false);
   const [historyList, setHistoryList] = createSignal<ConversationMeta[]>([]);
 
@@ -184,8 +185,18 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
   // ── Send message ───────────────────────────────────────────────────────
   const handleSend = () => {
     const text = inputText().trim();
-    if (!text || aiChatStore.isStreaming() || isFrozen()) return;
-    aiChatStore.sendMessage(text);
+    if (!text || isFrozen()) return;
+    const sid = activeSessionId();
+
+    if (agentMode()) {
+      const st = aiAgentStore.agentState();
+      if (st === "running" || st === "paused") return;
+      if (sid) aiAgentStore.startAgent(sid, text);
+    } else {
+      if (aiChatStore.isStreaming()) return;
+      aiChatStore.sendMessage(text, sid);
+    }
+
     setInputText("");
     if (textareaRef) {
       textareaRef.style.height = "auto";
@@ -298,7 +309,7 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
     const lastUser = [...msgs].reverse().find((m) => m.role === "user");
     if (lastUser) {
       aiChatStore.setError(null);
-      aiChatStore.sendMessage(lastUser.content);
+      aiChatStore.sendMessage(lastUser.content, activeSessionId());
     }
   };
 
@@ -321,29 +332,9 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
         </div>
         <div class={s.headerActions}>
           <button
-            class={cx(s.headerBtn, (aiAgentStore.agentState() === "running" || aiAgentStore.agentState() === "paused") && s.headerBtnActive)}
-            onClick={() => {
-              const sid = activeSessionId();
-              if (!sid) return;
-              const st = aiAgentStore.agentState();
-              if (st === "running" || st === "paused") {
-                aiAgentStore.cancelAgent(sid);
-              } else {
-                const text = inputText().trim();
-                if (text) {
-                  aiAgentStore.startAgent(sid, text);
-                  setInputText("");
-                } else {
-                  aiChatStore.addSystemMessage("Type a goal in the text box, then click the robot to start agent mode.");
-                  textareaRef?.focus();
-                }
-              }
-            }}
-            title={
-              aiAgentStore.agentState() === "running" || aiAgentStore.agentState() === "paused"
-                ? "Stop agent"
-                : "Start agent mode (type goal first)"
-            }
+            class={cx(s.headerBtn, agentMode() && s.headerBtnActive)}
+            onClick={() => setAgentMode((v) => !v)}
+            title={agentMode() ? "Switch to chat mode" : "Switch to agent mode"}
           >
             <IconRobot />
           </button>
@@ -505,9 +496,11 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
             )}
           </For>
 
-          {/* Streaming text: raw <pre>, NOT markdown */}
+          {/* Streaming text: render as markdown so formatting is progressive */}
           <Show when={aiChatStore.isStreaming() && aiChatStore.streamingText()}>
-            <pre class={s.streamingMsg}>{aiChatStore.streamingText()}</pre>
+            <div class={s.assistantMsg}>
+              <ContentRenderer content={aiChatStore.streamingText()!} />
+            </div>
           </Show>
 
           {/* Agent tool call cards */}
@@ -519,7 +512,9 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
 
           {/* Agent text output */}
           <Show when={aiAgentStore.textChunks()}>
-            <pre class={s.streamingMsg}>{aiAgentStore.textChunks()}</pre>
+            <div class={s.assistantMsg}>
+              <ContentRenderer content={aiAgentStore.textChunks()!} />
+            </div>
           </Show>
         </Show>
       </div>
@@ -539,7 +534,7 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
           data-focus-target="ai-chat"
           class={s.textarea}
           rows={1}
-          placeholder={isFrozen() ? "Focus a terminal first..." : "Ask about your terminal... (Enter to send)"}
+          placeholder={isFrozen() ? "Focus a terminal first..." : agentMode() ? "Describe a goal for the agent..." : "Ask about your terminal... (Enter to send)"}
           value={inputText()}
           onInput={(e) => {
             setInputText(e.currentTarget.value);
@@ -554,7 +549,7 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
             <button
               class={s.sendBtn}
               onClick={handleSend}
-              disabled={!inputText().trim() || aiChatStore.isStreaming() || isFrozen()}
+              disabled={!inputText().trim() || aiChatStore.isStreaming() || isFrozen() || (agentMode() && (aiAgentStore.agentState() === "running" || aiAgentStore.agentState() === "paused"))}
               title="Send (Enter)"
             >
               <IconSend />
@@ -570,6 +565,33 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
           </button>
         </Show>
       </div>
+
+      {/* ── Usage footer ────────────────────────────────────── */}
+      <Show when={aiChatStore.sessionUsage()}>
+        {(usage) => {
+          const prompt = () => usage().promptTokens ?? 0;
+          const completion = () => usage().completionTokens ?? 0;
+          const cached = () => usage().cachedTokens ?? 0;
+          const total = () => prompt() + completion();
+          const cachedPct = () => (total() > 0 ? Math.round((cached() / total()) * 100) : 0);
+          const cost = () => usage().costUsd;
+          return (
+            <div class={s.usageFooter}>
+              <span title="Prompt tokens">↑{prompt().toLocaleString()}</span>
+              <span title="Completion tokens">↓{completion().toLocaleString()}</span>
+              <span>tok</span>
+              <Show when={cost() != null}>
+                <span>·</span>
+                <span title="Estimated cost">${cost()!.toFixed(4)}</span>
+              </Show>
+              <Show when={cached() > 0}>
+                <span>·</span>
+                <span title="Cache hit rate">{cachedPct()}% cached</span>
+              </Show>
+            </div>
+          );
+        }}
+      </Show>
     </div>
   );
 };

@@ -110,23 +110,6 @@ describe("aiChatStore", () => {
     expect(aiChatStore.error()).toBeNull();
   });
 
-  // -- Terminal attachment --
-
-  it("attachedSessionId starts as null", () => {
-    expect(aiChatStore.attachedSessionId()).toBeNull();
-  });
-
-  it("attachTerminal sets the session id", () => {
-    aiChatStore.attachTerminal("sess-42");
-    expect(aiChatStore.attachedSessionId()).toBe("sess-42");
-  });
-
-  it("detachTerminal clears the session id", () => {
-    aiChatStore.attachTerminal("sess-42");
-    aiChatStore.detachTerminal();
-    expect(aiChatStore.attachedSessionId()).toBeNull();
-  });
-
   // -- Chat ID --
 
   it("chatId starts as non-empty string", () => {
@@ -138,6 +121,57 @@ describe("aiChatStore", () => {
     aiChatStore.resetChatId();
     const second = aiChatStore.chatId();
     expect(second).not.toBe(first);
+  });
+});
+
+describe("aiChatStore — session usage accumulator (1415-239d)", () => {
+  beforeEach(() => {
+    aiChatStore.setActiveTerminal("__default__");
+    aiChatStore.clearHistory();
+    vi.clearAllMocks();
+  });
+
+  it("sessionUsage starts as null", () => {
+    expect(aiChatStore.sessionUsage()).toBeNull();
+  });
+
+  it("accumulateUsage sums tokens across calls", () => {
+    aiChatStore.accumulateUsage({ promptTokens: 100, completionTokens: 50, totalTokens: 150 });
+    aiChatStore.accumulateUsage({ promptTokens: 200, completionTokens: 80, totalTokens: 280 });
+    const u = aiChatStore.sessionUsage();
+    expect(u?.promptTokens).toBe(300);
+    expect(u?.completionTokens).toBe(130);
+  });
+
+  it("accumulateUsage sums cost_usd", () => {
+    aiChatStore.accumulateUsage({ promptTokens: 100, completionTokens: 50, costUsd: 0.001 });
+    aiChatStore.accumulateUsage({ promptTokens: 100, completionTokens: 50, costUsd: 0.002 });
+    const u = aiChatStore.sessionUsage();
+    expect(u?.costUsd).toBeCloseTo(0.003);
+  });
+
+  it("accumulateUsage accumulates cachedTokens", () => {
+    aiChatStore.accumulateUsage({ promptTokens: 500, completionTokens: 100, cachedTokens: 300 });
+    aiChatStore.accumulateUsage({ promptTokens: 200, completionTokens: 50, cachedTokens: 100 });
+    const u = aiChatStore.sessionUsage();
+    expect(u?.cachedTokens).toBe(400);
+  });
+
+  it("clearHistory resets sessionUsage", () => {
+    aiChatStore.accumulateUsage({ promptTokens: 100, completionTokens: 50 });
+    aiChatStore.clearHistory();
+    expect(aiChatStore.sessionUsage()).toBeNull();
+  });
+
+  it("sessionUsage is independent per terminal", () => {
+    aiChatStore.setActiveTerminal("termA");
+    aiChatStore.accumulateUsage({ promptTokens: 100, completionTokens: 50 });
+
+    aiChatStore.setActiveTerminal("termB");
+    expect(aiChatStore.sessionUsage()).toBeNull();
+
+    aiChatStore.setActiveTerminal("termA");
+    expect(aiChatStore.sessionUsage()?.promptTokens).toBe(100);
   });
 });
 

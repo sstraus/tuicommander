@@ -151,6 +151,33 @@
   line-height: 1.5;
 }
 
+.assistantMsg :global(#markdown-content) {
+  padding: 0;
+  font-size: inherit;
+}
+
+.assistantMsg :global(#markdown-content pre) {
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  word-break: break-all;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+}
+
+.assistantMsg :global(#markdown-content code) {
+  border-radius: var(--radius-sm);
+}
+
+.assistantMsg :global(#markdown-content p) {
+  margin-bottom: 8px;
+}
+
+.assistantMsg :global(#markdown-content p:last-child) {
+  margin-bottom: 0;
+}
+
 .streamingMsg {
   align-self: flex-start;
   width: 100%;
@@ -570,4 +597,18 @@
 .historyDate {
   color: var(--fg-muted);
   margin-left: auto;
+}
+
+/* ── Usage footer ───────────────────────────────────────── */
+.usageFooter {
+  padding: 3px 16px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+  color: var(--fg-muted);
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-family: var(--font-mono);
+  line-height: 1.4;
 }

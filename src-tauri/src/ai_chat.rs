@@ -438,6 +438,74 @@ pub(crate) struct ChatUsage {
     pub cached_tokens: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cache_creation_tokens: Option<i32>,
+    /// Estimated cost in USD, calculated from pricing table. None if model is unknown.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
+}
+
+/// Per-million-token pricing: (input_usd, output_usd, cached_input_usd).
+/// Cached input price = standard input * cache_discount (typically 0.10 for Anthropic, 0.50 for OpenAI).
+struct ModelPricing {
+    input_per_m: f64,
+    output_per_m: f64,
+    cached_input_per_m: f64,
+}
+
+fn model_pricing(model: &str) -> Option<ModelPricing> {
+    // Match by prefix to handle version suffixes (e.g. claude-sonnet-4-5-20241022)
+    let m = model.to_lowercase();
+    // Anthropic
+    if m.contains("claude-opus-4") || m.contains("claude-opus-5") {
+        return Some(ModelPricing { input_per_m: 15.0, output_per_m: 75.0, cached_input_per_m: 1.50 });
+    }
+    if m.contains("claude-sonnet-4") || m.contains("claude-3-7-sonnet") || m.contains("claude-3-5-sonnet") || m.contains("claude-sonnet-4-5") {
+        return Some(ModelPricing { input_per_m: 3.0, output_per_m: 15.0, cached_input_per_m: 0.30 });
+    }
+    if m.contains("claude-3-5-haiku") || m.contains("claude-haiku-4") {
+        return Some(ModelPricing { input_per_m: 0.80, output_per_m: 4.0, cached_input_per_m: 0.08 });
+    }
+    if m.contains("claude-3-opus") {
+        return Some(ModelPricing { input_per_m: 15.0, output_per_m: 75.0, cached_input_per_m: 1.50 });
+    }
+    if m.contains("claude-3-haiku") {
+        return Some(ModelPricing { input_per_m: 0.25, output_per_m: 1.25, cached_input_per_m: 0.03 });
+    }
+    // OpenAI
+    if m.contains("gpt-4o-mini") {
+        return Some(ModelPricing { input_per_m: 0.15, output_per_m: 0.60, cached_input_per_m: 0.075 });
+    }
+    if m.contains("gpt-4o") {
+        return Some(ModelPricing { input_per_m: 2.50, output_per_m: 10.0, cached_input_per_m: 1.25 });
+    }
+    if m.contains("gpt-4-turbo") || m.contains("gpt-4-1106") || m.contains("gpt-4-0125") {
+        return Some(ModelPricing { input_per_m: 10.0, output_per_m: 30.0, cached_input_per_m: 5.0 });
+    }
+    if m.contains("o3-mini") || m.contains("o1-mini") {
+        return Some(ModelPricing { input_per_m: 1.10, output_per_m: 4.40, cached_input_per_m: 0.55 });
+    }
+    if m.contains("o1") || m.contains("o3") {
+        return Some(ModelPricing { input_per_m: 15.0, output_per_m: 60.0, cached_input_per_m: 7.50 });
+    }
+    None
+}
+
+/// Estimate cost in USD for a completion. Returns None if the model is not in the pricing table.
+pub(crate) fn estimate_cost_usd(
+    model: &str,
+    prompt_tokens: Option<i32>,
+    completion_tokens: Option<i32>,
+    cached_tokens: Option<i32>,
+) -> Option<f64> {
+    let pricing = model_pricing(model)?;
+    let prompt = prompt_tokens.unwrap_or(0) as f64;
+    let completion = completion_tokens.unwrap_or(0) as f64;
+    let cached = cached_tokens.unwrap_or(0) as f64;
+    let uncached_input = (prompt - cached).max(0.0);
+    let cost = (uncached_input * pricing.input_per_m
+        + cached * pricing.cached_input_per_m
+        + completion * pricing.output_per_m)
+        / 1_000_000.0;
+    Some(cost)
 }
 
 /// Events sent to the frontend via `tauri::ipc::Channel`.
@@ -875,6 +943,7 @@ async fn stream_with_batching(
                                     "AI chat usage"
                                 );
                             }
+                            let cost_usd = estimate_cost_usd(model, u.prompt_tokens, u.completion_tokens, cached);
                             ChatUsage {
                                 prompt_tokens: u.prompt_tokens,
                                 completion_tokens: u.completion_tokens,
@@ -884,6 +953,7 @@ async fn stream_with_batching(
                                 },
                                 cached_tokens: cached,
                                 cache_creation_tokens: cache_creation,
+                                cost_usd,
                             }
                         });
                         let _ = on_event.send(ChatStreamEvent::End { full_text, usage });
@@ -1327,6 +1397,7 @@ mod tests {
                 total_tokens: Some(150),
                 cached_tokens: Some(80),
                 cache_creation_tokens: None,
+                cost_usd: None,
             }),
         };
         let json = serde_json::to_string(&event).unwrap();
@@ -1422,5 +1493,44 @@ mod tests {
         let msg: StreamChatMessage = serde_json::from_str(json).unwrap();
         assert_eq!(msg.role, "user");
         assert_eq!(msg.content, "explain this error");
+    }
+
+    // -- Cost estimation --
+
+    #[test]
+    fn estimate_cost_known_anthropic_model() {
+        // claude-sonnet-4-5: $3.00/$15.00 per 1M tokens
+        let cost = estimate_cost_usd("claude-sonnet-4-5-20241022", Some(1000), Some(500), None);
+        let expected = (1000.0 * 3.0 + 500.0 * 15.0) / 1_000_000.0;
+        assert!((cost.unwrap() - expected).abs() < 1e-9, "cost={:?}", cost);
+    }
+
+    #[test]
+    fn estimate_cost_with_cached_tokens_reduces_input_cost() {
+        // claude-sonnet: $3.00/$15.00 input/output, cached input = $0.30 (10%)
+        let cost_no_cache = estimate_cost_usd("claude-sonnet-4-5-20241022", Some(1000), Some(500), None);
+        // 800 cached of 1000 prompt — cached at 10%, uncached at 100%
+        let cost_cached = estimate_cost_usd("claude-sonnet-4-5-20241022", Some(1000), Some(500), Some(800));
+        assert!(cost_cached.unwrap() < cost_no_cache.unwrap(), "cached should be cheaper");
+    }
+
+    #[test]
+    fn estimate_cost_unknown_model_returns_none() {
+        let cost = estimate_cost_usd("unknown-model-xyz", Some(1000), Some(500), None);
+        assert!(cost.is_none());
+    }
+
+    #[test]
+    fn estimate_cost_serializes_in_usage() {
+        let usage = ChatUsage {
+            prompt_tokens: Some(100),
+            completion_tokens: Some(50),
+            total_tokens: Some(150),
+            cached_tokens: None,
+            cache_creation_tokens: None,
+            cost_usd: Some(0.001),
+        };
+        let json = serde_json::to_string(&usage).unwrap();
+        assert!(json.contains(r#""costUsd":0.001"#), "json: {json}");
     }
 }
