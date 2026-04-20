@@ -119,6 +119,8 @@ pub enum ParsedEvent {
     #[serde(rename = "shell-state")]
     ShellState {
         state: String, // "busy" | "idle"
+        #[serde(skip_serializing_if = "Option::is_none")]
+        agent_type: Option<String>,
     },
 }
 

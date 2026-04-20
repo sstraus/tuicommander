@@ -918,7 +918,9 @@ fn emit_shell_state(
     session_id: &str,
     shell_state: &str,
 ) {
-    let parsed = ParsedEvent::ShellState { state: shell_state.to_string() };
+    let agent_type = state.session_states.get(session_id)
+        .and_then(|s| s.agent_type.clone());
+    let parsed = ParsedEvent::ShellState { state: shell_state.to_string(), agent_type };
     if let Ok(json) = serde_json::to_value(&parsed) {
         let _ = state.event_bus.send(crate::state::AppEvent::PtyParsed {
             session_id: session_id.to_string(),
