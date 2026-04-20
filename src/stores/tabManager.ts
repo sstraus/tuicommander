@@ -27,6 +27,8 @@ export interface TabStoreState<T extends BaseTab> {
   tabs: Record<string, T>;
   activeId: string | null;
   counter: number;
+  /** Explicit display order for drag-reorder. Populated by _addTab; reorderByIds splices it. */
+  _order: string[];
 }
 
 /**
@@ -47,6 +49,7 @@ export function createTabManager<T extends BaseTab>(storeName: string = "unknown
     tabs: {} as Record<string, T>,
     activeId: null,
     counter: 0,
+    _order: [],
   });
 
   return {
@@ -59,6 +62,7 @@ export function createTabManager<T extends BaseTab>(storeName: string = "unknown
     _addTab(tab: T): string {
       setState("tabs", tab.id, tab);
       setState("activeId", tab.id);
+      setState("_order", (o) => [...o, tab.id]);
       onTabAdded?.(tab.id, storeName);
       return tab.id;
     },
@@ -73,6 +77,7 @@ export function createTabManager<T extends BaseTab>(storeName: string = "unknown
       setState(
         produce((s) => {
           delete s.tabs[id];
+          s._order = s._order.filter((oid) => oid !== id);
           if (s.activeId === id) {
             const remaining = Object.keys(s.tabs);
             s.activeId = remaining.length > 0 ? remaining[remaining.length - 1] : null;
@@ -86,7 +91,7 @@ export function createTabManager<T extends BaseTab>(storeName: string = "unknown
     },
 
     clearAll(): void {
-      setState({ tabs: {} as Record<string, T>, activeId: null, counter: state.counter });
+      setState({ tabs: {} as Record<string, T>, activeId: null, counter: state.counter, _order: [] });
     },
 
     get(id: string): T | undefined {
@@ -114,18 +119,39 @@ export function createTabManager<T extends BaseTab>(storeName: string = "unknown
       }
     },
 
-    /** Get tab IDs visible for the given branch key (pinned + matching branch + unscoped) */
+    /** Get tab IDs visible for the given branch key (pinned + matching branch + unscoped).
+     *  Respects user-defined drag order (_order array) when present. */
     getVisibleIds(currentBranchKey: string | null): string[] {
-      return Object.keys(state.tabs).filter((id) => {
+      const isVisible = (id: string): boolean => {
         const tab = state.tabs[id];
-        // Repo-scoped: only visible when branchKey belongs to this repo
+        if (!tab) return false;
         if (tab.repoPath) {
           if (!currentBranchKey || !currentBranchKey.startsWith(tab.repoPath + "|")) return false;
         }
         if (tab.pinned) return true;
-        if (!tab.branchKey) return true; // unscoped tabs (backward compat / global)
+        if (!tab.branchKey) return true;
         return tab.branchKey === currentBranchKey;
-      });
+      };
+      // Ordered tabs first (those tracked in _order), then any remainder
+      const inOrder = state._order.filter(isVisible);
+      const inOrderSet = new Set(inOrder);
+      const remainder = Object.keys(state.tabs).filter((id) => !inOrderSet.has(id) && isVisible(id));
+      return [...inOrder, ...remainder];
+    },
+
+    /** Move sourceId immediately before or after targetId in the display order. No-op on bad IDs. */
+    reorderByIds(sourceId: string, targetId: string, side: "before" | "after"): void {
+      if (sourceId === targetId) return;
+      setState(
+        produce((s) => {
+          const src = s._order.indexOf(sourceId);
+          const tgt = s._order.indexOf(targetId);
+          if (src === -1 || tgt === -1) return;
+          s._order.splice(src, 1);
+          const newTgt = s._order.indexOf(targetId);
+          s._order.splice(side === "before" ? newTgt : newTgt + 1, 0, sourceId);
+        }),
+      );
     },
 
     /** Clear tabs matching a predicate */

@@ -120,6 +120,7 @@ function createMdTabsStore() {
     getActive: base.getActive,
     getCount: base.getCount,
     setPinned: base.setPinned,
+    reorderByIds: base.reorderByIds,
 
     /** Add a file-based markdown tab (or return existing if same file already open).
      *  `fsRoot` overrides the filesystem root for I/O (e.g. worktree path). */
