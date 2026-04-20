@@ -532,6 +532,25 @@ const App: Component = () => {
     if (id) { diffTabsStore.setActive(null); mdTabsStore.setActive(null); editorTabsStore.setActive(null); }
   }, { defer: true }));
 
+  // Wire terminal tab switches → aiChatStore per-terminal context
+  createEffect(on(() => terminalsStore.state.activeId, (id) => {
+    if (!id) return;
+    const term = terminalsStore.get(id);
+    const key = term?.tuicSession ?? id;
+    aiChatStore.setActiveTerminal(key);
+    void aiChatStore.initFromDisk(term?.tuicSession ?? undefined);
+  }, { defer: true }));
+
+  // Wire terminal close → aiChatStore cleanup
+  {
+    const dispose = terminalsStore.onRemove((id) => {
+      const term = terminalsStore.get(id);
+      const key = term?.tuicSession ?? id;
+      void aiChatStore.onTerminalClose(key);
+    });
+    onCleanup(dispose);
+  }
+
   // Notify plugins when the active repository changes so globally-pinned
   // plugin panels (e.g. Stories Kanban) can reload their content.
   createEffect(on(() => repositoriesStore.state.activeRepoPath, (repoPath) => {

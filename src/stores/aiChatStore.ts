@@ -457,6 +457,38 @@ async function sendMessage(text: string): Promise<void> {
   }
 }
 
+/** Called when a terminal tab is closed. Cancels stream, persists partial, frees memory. */
+async function onTerminalClose(key: string): Promise<void> {
+  const s = chatStateMap.get(key);
+  if (!s) return;
+
+  // Cancel persist debounce timer — we'll persist synchronously below if needed
+  if (s.persistTimer) {
+    clearTimeout(s.persistTimer);
+    s.persistTimer = null;
+  }
+
+  // Cancel in-flight stream
+  if (s.isStreaming() && isTauri()) {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("cancel_ai_chat", { chatId: s.chatId() });
+    } catch (e) {
+      appLogger.warn("ai-chat", "onTerminalClose: cancel_ai_chat failed", { error: String(e) });
+    }
+  }
+
+  // Persist partial state before freeing (persistNow while key is still in map)
+  if (s.messages().length > 0) {
+    await persistNow(key);
+  }
+
+  // Free in-memory state
+  chatStateMap.delete(key);
+  // DEFERRED (2026-04-20) — tuicSession null window: if a message was queued before
+  // tuicSession was assigned, it may be lost here. Needs a reliable repro; wire in Step 5.
+}
+
 /** Cancel the in-flight stream. */
 async function cancelStream(): Promise<void> {
   const s = activeChat();
@@ -509,6 +541,7 @@ export const aiChatStore = {
   activeChat,
   getOrCreate,
   setActiveTerminal,
+  onTerminalClose,
 
   // Reactive getters (proxy through activeChat)
   messages,

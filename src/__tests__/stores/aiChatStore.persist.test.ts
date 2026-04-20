@@ -166,6 +166,66 @@ describe("aiChatStore persistence (1385-87c6)", () => {
   });
 });
 
+describe("aiChatStore terminal lifecycle (1410-1be8)", () => {
+  let store: typeof import("../../stores/aiChatStore").aiChatStore;
+
+  beforeEach(async () => {
+    vi.useFakeTimers();
+    vi.resetModules();
+    mockInvoke.mockReset();
+    globalThis.localStorage?.clear();
+    store = (await import("../../stores/aiChatStore")).aiChatStore;
+    mockInvoke.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("onTerminalClose cancels in-flight stream and frees memory", async () => {
+    store.setActiveTerminal("T1");
+    store.attachTerminal("sess-T1");
+    await store.sendMessage("hello");
+
+    // T1 is streaming; close it
+    await store.onTerminalClose("T1");
+
+    const cancelCalls = mockInvoke.mock.calls.filter((c) => c[0] === "cancel_ai_chat");
+    expect(cancelCalls.length).toBe(1);
+
+    // State should be freed — getOrCreate returns a fresh empty state
+    const state = store.getOrCreate("T1");
+    expect(state.messages()).toEqual([]);
+    expect(state.isStreaming()).toBe(false);
+  });
+
+  it("onTerminalClose while idle frees memory without cancel_ai_chat", async () => {
+    store.setActiveTerminal("T1");
+    store.addUserMessage("hello");
+
+    await store.onTerminalClose("T1");
+
+    const cancelCalls = mockInvoke.mock.calls.filter((c) => c[0] === "cancel_ai_chat");
+    expect(cancelCalls.length).toBe(0);
+
+    // Memory freed
+    const state = store.getOrCreate("T1");
+    expect(state.messages()).toEqual([]);
+  });
+
+  it("onTerminalClose persists partial messages before freeing", async () => {
+    store.setActiveTerminal("T1");
+    store.addUserMessage("partial question");
+    store.appendStreamChunk("partial ans");
+
+    await store.onTerminalClose("T1");
+
+    await vi.advanceTimersByTimeAsync(600);
+    const saves = mockInvoke.mock.calls.filter((c) => c[0] === "save_conversation");
+    expect(saves.length).toBe(1);
+  });
+});
+
 describe("aiChatStore streaming — per-terminal (1408-a8d8)", () => {
   let store: typeof import("../../stores/aiChatStore").aiChatStore;
   // Capture Channel instances by chatId so we can fire callbacks manually
