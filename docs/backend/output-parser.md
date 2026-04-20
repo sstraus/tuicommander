@@ -282,7 +282,7 @@ The `strip_ansi()` function pre-processes CUF (Cursor Forward, `\x1b[nC`) escape
 | Claude Code | `·`/`✢`/`✳`/`✶`/`✻`/`✽`/`*` + ellipsis | `✢Reading files… (12s)` or `· Considering…` |
 | Aider | Knight Rider scanner `░█` / `█░` + task text | `░█        Waiting for claude-3-5-sonnet` |
 | Aider | Token report `Tokens:` prefix | `Tokens: 5.2k sent, 1.3k received.` |
-| Codex CLI | Bullet `•`/`◦` + task + parenthesized time | `• Working (5s • esc to interrupt)` |
+| Codex CLI | Bullet `•`/`◦` + task + parenthesized time | `• Working (4m 55s • esc to interrupt)` |
 | Copilot CLI | `∴`/`●`/`○` + task + dots/ellipsis | `∴ Thinking…` or `● Read file...` |
 | Gemini CLI | Braille spinner `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` + phrase | `⠋ Analyzing your codebase` |
 | Amazon Q | Braille spinner + task + ASCII dots | `⠹ Thinking...` |

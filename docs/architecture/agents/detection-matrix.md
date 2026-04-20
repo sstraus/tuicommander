@@ -10,8 +10,8 @@ agent is considered fully supported.
 
 | Property | Claude Code | Codex CLI | Gemini CLI | Aider | OpenCode |
 |----------|------------|-----------|------------|-------|----------|
-| **Version tested** | v2.1.81 | v0.116.0 | v0.34.0 | v0.86.2 | v1.2.20 |
-| **Date tested** | 2026-03-21 | 2026-03-21 | 2026-03-22 | 2026-03-22 | 2026-03-22 |
+| **Version tested** | v2.1.81 | v0.116.0+ (re-verified) | v0.34.0 | v0.86.2 | v1.2.20 |
+| **Date tested** | 2026-03-21 | 2026-04-19 | 2026-03-22 | 2026-03-22 | 2026-03-22 |
 | **Rendering engine** | Ink (React) | Ink (React) | Ink-like (Node.js) | Python rich + readline | Bubble Tea (Go) |
 | **Cursor positioning** | Relative (`\033[NA]`) | Absolute (`\033[r;cH`) | Relative (`\033[1A]`) | Sequential (no cursor) | Absolute (`\033[r;cH`) |
 | **Scroll mechanism** | `\r\n` padding | Scroll regions (`\033[n;mr]`) | `\r\n` padding | Normal scroll | Full-screen redraw |
@@ -77,11 +77,12 @@ agent is considered fully supported.
 | Property | Claude Code | Codex CLI | Gemini CLI | Aider | OpenCode |
 |----------|------------|-----------|------------|-------|----------|
 | **Output prefix** | `⏺` (white/green/red) | `•` (U+2022) | `✦` (U+2726, purple) | None (blue text) | None (inline in panel) |
-| **Tool call display** | `⏺` + verb | `•` + description | `╭───╮ ✓ ToolName ╰───╯` box | None | `→` read / `←` write |
+| **Tool call display** | `⏺` + verb | `• Ran <cmd>` (shell), `• Called` + `└ fn()` (MCP) | `╭───╮ ✓ ToolName ╰───╯` box | None | `→` read / `←` write |
 | **Warning prefix** | N/A | `⚠` (U+26A0) | N/A | Orange text | N/A |
-| **Error indicator** | `⏺` (red) | `✗` | `✦` + error text | Red text | `┃ Error:` inline |
+| **Error indicator** | `⏺` (red) | `✗` or `• …hook (failed)` | `✦` + error text | Red text | `┃ Error:` inline |
 | **Interrupt marker** | N/A | `■` | Not observed | `^C` | `esc interrupt` hint |
-| **Tool result** | `⎿` (U+23BF) | `└` or inline | Inside `╭───╮` box | Inline | `▣` completion marker |
+| **Tool result** | `⎿` (U+23BF) | `└` (U+2514) tree connector | Inside `╭───╮` box | Inline | `▣` completion marker |
+| **Truncation** | `… +N lines` | `… +N lines (ctrl + t to view transcript)` | Not observed | Not observed | Not observed |
 
 ---
 

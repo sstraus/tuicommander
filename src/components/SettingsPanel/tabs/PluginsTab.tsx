@@ -15,7 +15,7 @@ import type { LogEntry } from "../../../plugins/pluginLogger";
 import s from "../Settings.module.css";
 import ps from "./PluginsTab.module.css";
 
-const PLUGIN_DOCS_URL = "https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md";
+const PLUGIN_DOCS_URL = "https://tuicommander.com/docs/plugins";
 
 // ---------------------------------------------------------------------------
 // Sub-components

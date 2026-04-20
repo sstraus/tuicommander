@@ -3,7 +3,7 @@
 Agent-specific layout reference for Codex CLI (OpenAI).
 See [agent-ui-analysis.md](../agent-ui-analysis.md) for shared concepts.
 
-**Observed version**: v0.116.0 (2026-03-21)
+**Observed version**: v0.116.0 → latest (2026-04-19)
 **Rendering engine**: Ink (React for terminals)
 **Rendering approach**: ANSI absolute positioning (`\033[row;colH`) + scroll regions
 
@@ -48,7 +48,7 @@ Codex uses a fundamentally different approach from Claude Code:
   gpt-5.4 high · 100% left · ~/Gits/personal/tuicommander
 ```
 
-### After tool execution
+### After tool execution (simple file create)
 ```
 › create a file called /tmp/codex-test.txt with "hello"
 • Creating /tmp/codex-test.txt with the requested contents.
@@ -59,6 +59,52 @@ Codex uses a fundamentally different approach from Claude Code:
 › Summarize recent commits
   gpt-5.4 high · 98% left · ~/Gits/personal/tuicommander
 ```
+
+### After tool execution (shell commands + MCP calls, 2026-04-19)
+```
+• PreToolUse hook (failed)
+  error: hook exited with code 127
+• Ran git status --short
+  └ ?? .gitignore
+    ?? .serena/
+    … +2 lines (ctrl + t to view transcript)
+    ?? StepsWidgetDemo/
+    ?? project.yml
+• PostToolUse hook (failed)
+  error: hook exited with code 127
+• Ran xcodegen generate
+  └ ⚙️  Generating plists...
+    ⚙️  Generating project...
+    ⚙️  Writing project...
+    Created project at /Users/.../StepsWidgetDemo.xcodeproj
+• Ran xcodebuild -project StepsWidgetDemo.xcodeproj -scheme StepsWidgetDemo ...
+  └ 2026-04-19 22:27:42.803 xcodebuild[67191:4346310]  DVTFilePathFSEvents: ...
+    … +109 lines (ctrl + t to view transcript)
+    ** BUILD SUCCEEDED **
+• Waited for background terminal
+──────────────────────────────────────────────────────────────────────────────
+• Il progetto compila. Prima di chiudere salvo ...
+• Called
+  └ serena.write_memory({"memory_name":"project_overview","content":"..."})
+    Memory project_overview written.
+• Working (4m 55s • esc to interrupt)
+› Improve documentation in @filename
+  gpt-5.4 high · ~/Gits/personal/steps
+```
+
+**Tool display patterns (v0.116.0+):**
+
+| Pattern | Meaning |
+|---------|---------|
+| `• Ran <command>` | Shell command execution |
+| `• Called` + `└ <fn>(...)` | MCP/function call with args on next line |
+| `• Added <path> (+N -M)` | File created/modified with diff stats |
+| `• Creating <path>` | File operation in progress |
+| `• Waited for background terminal` | Background job completed |
+| `• PreToolUse hook (failed)` | Hook error (with `error:` detail below) |
+| `• PostToolUse hook (failed)` | Hook error (with `error:` detail below) |
+| `… +N lines (ctrl + t to view transcript)` | Truncated output (N lines hidden) |
+| `└` (U+2514) | Tree connector for tool output/results |
 
 ### After interrupt (Escape)
 ```
@@ -107,9 +153,13 @@ Single line below the prompt area, always present:
 
 ```
   gpt-5.4 high · 100% left · ~/Gits/personal/tuicommander
+  gpt-5.4 high · ~/Gits/personal/steps
 ```
 
-Format: `  <model> <effort> · <quota>% left · <directory>`
+Format: `  <model> <effort> · [<quota>% left ·] <directory>`
+
+The quota segment (`N% left`) is optional — observed absent in some sessions
+(possibly when quota is unlimited or when using API keys without usage tracking).
 
 Rendered in dim (`\033[2m`) with normal background (not dark bg).
 

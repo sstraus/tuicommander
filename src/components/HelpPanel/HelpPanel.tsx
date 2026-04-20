@@ -6,7 +6,7 @@ import { UiLegend } from "./UiLegend";
 import s from "./HelpPanel.module.css";
 
 const GITHUB_URL = "https://github.com/sstraus/tuicommander";
-const DOCS_URL = "https://github.com/sstraus/tuicommander/tree/main/docs/user-guide";
+const DOCS_URL = "https://tuicommander.com/docs/";
 const WEBSITE_URL = "https://tuicommander.com";
 
 export interface HelpPanelProps {
