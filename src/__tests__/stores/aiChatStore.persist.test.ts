@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+
 // Mock @tauri-apps/api/core — aiChatStore dynamic-imports invoke from here.
 const mockInvoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({
@@ -162,6 +163,88 @@ describe("aiChatStore persistence (1385-87c6)", () => {
     const msgs = saves[0]?.[1]?.conversation?.messages as Array<{ role: string; content: string }>;
     const userMsg = msgs.find((m) => m.role === "user");
     expect(userMsg?.content).toBe("");
+  });
+});
+
+describe("aiChatStore streaming — per-terminal (1408-a8d8)", () => {
+  let store: typeof import("../../stores/aiChatStore").aiChatStore;
+  // Capture Channel instances by chatId so we can fire callbacks manually
+  const channels: Map<string, { onmessage: ((msg: unknown) => void) | null }> = new Map();
+
+  beforeEach(async () => {
+    vi.useFakeTimers();
+    vi.resetModules();
+    mockInvoke.mockReset();
+    channels.clear();
+    globalThis.localStorage?.clear();
+
+    mockInvoke.mockImplementation((cmd: string, args?: Record<string, unknown>) => {
+      if (cmd === "stream_ai_chat") {
+        // Capture the channel by chatId
+        const ch = args?.["onEvent"] as { onmessage: ((msg: unknown) => void) | null };
+        if (ch && args?.["chatId"]) channels.set(args["chatId"] as string, ch);
+        return Promise.resolve();
+      }
+      if (cmd === "new_conversation_id") return Promise.resolve("new-id");
+      return Promise.resolve();
+    });
+
+    store = (await import("../../stores/aiChatStore")).aiChatStore;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("chunk from T1 stream updates T1 streamingText, not T2 (1408-a8d8)", async () => {
+    // Start stream on T1 (await so channel is registered before we switch)
+    store.setActiveTerminal("T1");
+    store.attachTerminal("sess-T1");
+    await store.sendMessage("hello from T1");
+    const t1ChatId = store.chatId();
+
+    // Switch to T2 — T1 channel callback still targets T1
+    store.setActiveTerminal("T2");
+    store.attachTerminal("sess-T2");
+    await store.sendMessage("hello from T2");
+    const t2ChatId = store.chatId();
+    expect(t1ChatId).not.toBe(t2ChatId);
+
+    // Fire chunk for T1's channel
+    const ch1 = channels.get(t1ChatId);
+    expect(ch1).toBeDefined();
+    ch1!.onmessage?.({ event: "chunk", data: { text: "T1 chunk" } });
+
+    // T1 should have streaming text, T2 should not
+    store.setActiveTerminal("T1");
+    expect(store.streamingText()).toBe("T1 chunk");
+    store.setActiveTerminal("T2");
+    expect(store.streamingText()).toBe("");
+  });
+
+  it("end event for T1 finalizes T1 messages, T2 unaffected (1408-a8d8)", async () => {
+    store.setActiveTerminal("T1");
+    store.attachTerminal("sess-T1");
+    await store.sendMessage("q");
+    const t1ChatId = store.chatId();
+
+    store.setActiveTerminal("T2");
+    store.attachTerminal("sess-T2");
+    await store.sendMessage("q2");
+
+    // End T1 stream while T2 is active
+    const ch1 = channels.get(t1ChatId);
+    expect(ch1).toBeDefined();
+    ch1!.onmessage?.({ event: "end", data: { fullText: "T1 response" } });
+
+    store.setActiveTerminal("T1");
+    expect(store.isStreaming()).toBe(false);
+    const msgs = store.messages();
+    expect(msgs[msgs.length - 1]?.content).toBe("T1 response");
+
+    // T2 should still be streaming
+    store.setActiveTerminal("T2");
+    expect(store.isStreaming()).toBe(true);
   });
 });
 

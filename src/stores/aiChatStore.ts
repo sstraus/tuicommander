@@ -413,12 +413,23 @@ async function sendMessage(text: string): Promise<void> {
     const { invoke, Channel } = await import("@tauri-apps/api/core");
     const onEvent = new Channel<ChatStreamEvent>();
     onEvent.onmessage = (msg: ChatStreamEvent) => {
+      // Use captured `s` — not activeChat() — so callbacks always route to
+      // the terminal that initiated this stream, regardless of tab switches.
       switch (msg.event) {
         case "chunk":
-          appendStreamChunk(msg.data.text);
+          s.setStreamingText((prev) => prev + msg.data.text);
           break;
         case "end":
-          finalizeStream(msg.data.fullText);
+          batch(() => {
+            s.setIsStreaming(false);
+            s.setStreamingText("");
+            s.setMessages((prev) => {
+              const msg2: AiChatMessage = { role: "assistant", content: msg.data.fullText, timestamp: Date.now() };
+              const next = [...prev, msg2];
+              return next.length > MAX_MESSAGES ? next.slice(next.length - MAX_MESSAGES) : next;
+            });
+          });
+          schedulePersist(activeChatKey());
           break;
         case "error":
           batch(() => {
