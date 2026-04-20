@@ -903,9 +903,6 @@ pub fn run() {
                 // at OSC 133 D markers). No-op unless the user enables the setting.
                 crate::ai_agent::enrichment::spawn_worker(boot_registry_state.clone());
 
-                // Auto-connect saved upstream MCP servers on boot
-                crate::mcp_upstream_config::auto_connect_saved_upstreams(&boot_registry_state).await;
-
                 // Detect Tailscale and provision TLS cert (async, doesn't block window render)
                 let tls_config = if remote_enabled {
                     let ts_state = tokio::task::spawn_blocking(tailscale::detect).await
@@ -917,7 +914,14 @@ pub fn run() {
                     None
                 };
 
+                // Bind the IPC socket BEFORE upstream auto-connect so the MCP
+                // bridge is reachable as soon as possible. Upstream connections
+                // can be slow (network timeouts, OAuth) and must not delay socket
+                // availability — that causes "MCP disconnected" in Claude Code.
                 mcp_http::start_server(mcp_state, true, remote_enabled, tls_config).await;
+
+                // Auto-connect saved upstream MCP servers (after socket is live)
+                crate::mcp_upstream_config::auto_connect_saved_upstreams(&boot_registry_state).await;
             });
         });
     }

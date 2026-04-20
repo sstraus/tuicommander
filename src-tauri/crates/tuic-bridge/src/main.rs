@@ -117,8 +117,11 @@ async fn connect_ipc() -> Result<IpcStream, String> {
         let dir = config_dir();
         let primary = dir.join("mcp.sock");
 
-        // Try primary socket first
-        if let Ok(stream) = tokio::net::UnixStream::connect(&primary).await {
+        // Try primary socket first (with timeout to avoid hanging on stale sockets)
+        if let Ok(Ok(stream)) = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            tokio::net::UnixStream::connect(&primary),
+        ).await {
             return Ok(IpcStream::Unix(stream));
         }
 
@@ -128,7 +131,10 @@ async fn connect_ipc() -> Result<IpcStream, String> {
                 let name = entry.file_name();
                 let Some(name_str) = name.to_str() else { continue };
                 if name_str.starts_with("mcp-") && name_str.ends_with(".sock") {
-                    if let Ok(stream) = tokio::net::UnixStream::connect(&entry.path()).await {
+                    if let Ok(Ok(stream)) = tokio::time::timeout(
+                        std::time::Duration::from_secs(3),
+                        tokio::net::UnixStream::connect(&entry.path()),
+                    ).await {
                         return Ok(IpcStream::Unix(stream));
                     }
                 }
@@ -192,8 +198,14 @@ async fn post_mcp(body: &str, session_id: Option<&str>) -> Result<(String, Optio
     // Read the response first, then shutdown.  Calling shutdown() before read
     // signals EOF to the server, which may drop the connection before responding.
     let mut buf = Vec::new();
-    // Read until Connection: close triggers server-side EOF
-    stream.read_to_end(&mut buf).await.map_err(|e| format!("read: {e}"))?;
+    // Read until Connection: close triggers server-side EOF.
+    // Timeout prevents indefinite hang if the server accepts but never responds.
+    tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        stream.read_to_end(&mut buf),
+    ).await
+        .map_err(|_| "read: timed out after 10s".to_string())?
+        .map_err(|e| format!("read: {e}"))?;
     let raw = String::from_utf8_lossy(&buf);
 
     // Split headers from body
