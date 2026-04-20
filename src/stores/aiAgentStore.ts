@@ -64,6 +64,8 @@ export interface PerTerminalAgentState {
   setAgentError: Setter<string | null>;
   completionReason: Accessor<string | null>;
   setCompletionReason: Setter<string | null>;
+  unrestricted: Accessor<boolean>;
+  setUnrestricted: Setter<boolean>;
 }
 
 const DEFAULT_KEY = "__default__";
@@ -79,6 +81,7 @@ function createAgentState(): PerTerminalAgentState {
   const [pendingApproval, setPendingApproval] = createSignal<PendingApproval | null>(null);
   const [agentError, setAgentError] = createSignal<string | null>(null);
   const [completionReason, setCompletionReason] = createSignal<string | null>(null);
+  const [unrestricted, setUnrestricted] = createSignal(false);
   return {
     agentState, setAgentState,
     currentIteration, setCurrentIteration,
@@ -87,6 +90,7 @@ function createAgentState(): PerTerminalAgentState {
     pendingApproval, setPendingApproval,
     agentError, setAgentError,
     completionReason, setCompletionReason,
+    unrestricted, setUnrestricted,
   };
 }
 
@@ -118,12 +122,14 @@ function textChunks(): string { return activeAgent().textChunks(); }
 function pendingApproval(): PendingApproval | null { return activeAgent().pendingApproval(); }
 function agentError(): string | null { return activeAgent().agentError(); }
 function completionReason(): string | null { return activeAgent().completionReason(); }
+function unrestricted(): boolean { return activeAgent().unrestricted(); }
+function setUnrestricted(value: boolean): void { activeAgent().setUnrestricted(value); }
 
 // ---------------------------------------------------------------------------
 // Agent control
 // ---------------------------------------------------------------------------
 
-async function startAgent(sessionId: string, goal: string): Promise<void> {
+async function startAgent(sessionId: string, goal: string, unrestricted?: boolean): Promise<void> {
   if (!isTauri()) return;
   const s = activeAgent();
   if (s.agentState() === "running" || s.agentState() === "paused") return;
@@ -140,7 +146,7 @@ async function startAgent(sessionId: string, goal: string): Promise<void> {
 
   try {
     const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("start_agent_loop", { sessionId, goal });
+    await invoke("start_agent_loop", { sessionId, goal, unrestricted: unrestricted ?? false });
   } catch (e) {
     batch(() => {
       s.setAgentState("error");
@@ -326,6 +332,8 @@ export const aiAgentStore = {
   pendingApproval,
   agentError,
   completionReason,
+  unrestricted,
+  setUnrestricted,
 
   // Actions
   startAgent,

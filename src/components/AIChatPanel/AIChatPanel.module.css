@@ -50,6 +50,10 @@
   color: var(--accent);
 }
 
+.headerBtnDanger {
+  color: var(--error);
+}
+
 .attachIndicator {
   display: flex;
   align-items: center;
@@ -391,6 +395,18 @@
 
 .agentBannerBtnDanger:hover {
   background: color-mix(in srgb, var(--error) 15%, transparent);
+}
+
+.unrestrictedBanner {
+  background: color-mix(in srgb, var(--error) 15%, transparent);
+  border-bottom: 1px solid var(--error);
+  color: var(--error);
+  font-size: var(--font-xs);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 3px 12px;
+  text-align: center;
 }
 
 /* ── Tool call cards ───────────────────────────────────── */

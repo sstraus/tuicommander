@@ -97,6 +97,13 @@ const IconPlay = () => (
   </svg>
 );
 
+const IconUnlock = () => (
+  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
+    <rect x="2.5" y="6" width="9" height="6.5" rx="1" />
+    <path d="M5 6V4a2 2 0 014 0" stroke-linecap="round" />
+  </svg>
+);
+
 /** Collapsible tool call card */
 const ToolCallCard: Component<{ entry: ToolCallEntry }> = (props) => {
   const [expanded, setExpanded] = createSignal(false);
@@ -135,6 +142,7 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
 
   const [agentMode, setAgentMode] = createSignal(false);
   const [showHistory, setShowHistory] = createSignal(false);
+  const [showUnrestrictedConfirm, setShowUnrestrictedConfirm] = createSignal(false);
   const [historyList, setHistoryList] = createSignal<ConversationMeta[]>([]);
 
   const openHistory = () => {
@@ -191,7 +199,7 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
     if (agentMode()) {
       const st = aiAgentStore.agentState();
       if (st === "running" || st === "paused") return;
-      if (sid) aiAgentStore.startAgent(sid, text);
+      if (sid) aiAgentStore.startAgent(sid, text, aiAgentStore.unrestricted());
     } else {
       if (aiChatStore.isStreaming()) return;
       aiChatStore.sendMessage(text, sid);
@@ -331,6 +339,21 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
           </Show>
         </div>
         <div class={s.headerActions}>
+          <Show when={agentMode()}>
+            <button
+              class={cx(s.headerBtn, aiAgentStore.unrestricted() && s.headerBtnDanger)}
+              onClick={() => {
+                if (aiAgentStore.unrestricted()) {
+                  aiAgentStore.setUnrestricted(false);
+                } else {
+                  setShowUnrestrictedConfirm(true);
+                }
+              }}
+              title={aiAgentStore.unrestricted() ? "Disable unrestricted mode" : "Enable unrestricted mode (no approval prompts)"}
+            >
+              <IconUnlock />
+            </button>
+          </Show>
           <button
             class={cx(s.headerBtn, agentMode() && s.headerBtnActive)}
             onClick={() => setAgentMode((v) => !v)}
@@ -364,6 +387,42 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
           <span class={s.errorText}>{aiChatStore.error()}</span>
           <button class={s.retryBtn} onClick={handleRetry}>Retry</button>
         </div>
+      </Show>
+
+      {/* ── Unrestricted confirmation dialog ─────────────── */}
+      <Show when={showUnrestrictedConfirm()}>
+        <div class={s.approvalCard}>
+          <div class={s.approvalText}>
+            <strong>Enable unrestricted mode?</strong>
+            <br />
+            <span style={{ "font-size": "var(--font-xs)", color: "var(--fg-secondary)" }}>
+              The agent will skip all approval prompts and operate without sandbox restrictions.
+              Only use on repos you fully trust.
+            </span>
+          </div>
+          <div class={s.approvalActions}>
+            <button
+              class={cx(s.approvalBtn, s.denyBtn)}
+              onClick={() => {
+                aiAgentStore.setUnrestricted(true);
+                setShowUnrestrictedConfirm(false);
+              }}
+            >
+              Enable
+            </button>
+            <button
+              class={cx(s.approvalBtn, s.approveBtn)}
+              onClick={() => setShowUnrestrictedConfirm(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </Show>
+
+      {/* ── Unrestricted banner ───────────────────────────── */}
+      <Show when={aiAgentStore.unrestricted()}>
+        <div class={s.unrestrictedBanner}>UNRESTRICTED</div>
       </Show>
 
       {/* ── Agent banner ──────────────────────────────────── */}
