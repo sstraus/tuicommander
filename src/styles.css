@@ -199,6 +199,7 @@
 
 .terminal-pane.active {
   display: block;
+  z-index: 20;
 }
 
 /* Split pane overrides — both panes visible with flex sizing */
