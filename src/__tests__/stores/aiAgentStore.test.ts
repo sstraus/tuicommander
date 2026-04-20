@@ -135,6 +135,61 @@ describe("aiAgentStore", () => {
     });
   });
 
+  describe("per-terminal agent state (1409-e641)", () => {
+    beforeEach(() => {
+      aiAgentStore.setActiveTerminal("__default__");
+      aiAgentStore.reset();
+    });
+
+    it("getOrCreate returns independent state for different keys", () => {
+      const stateA = aiAgentStore.getOrCreate("termA");
+      const stateB = aiAgentStore.getOrCreate("termB");
+      expect(stateA).not.toBe(stateB);
+    });
+
+    it("agentState() reflects the active terminal only", () => {
+      aiAgentStore.setActiveTerminal("T1");
+      aiAgentStore.processEvent({ type: "started", session_id: "s1" });
+      expect(aiAgentStore.agentState()).toBe("running");
+
+      aiAgentStore.setActiveTerminal("T2");
+      expect(aiAgentStore.agentState()).toBe("idle");
+    });
+
+    it("toolCalls() is independent per terminal", () => {
+      aiAgentStore.setActiveTerminal("T1");
+      aiAgentStore.processEvent({ type: "tool_call", session_id: "s1", tool_name: "bash", args: {} });
+
+      aiAgentStore.setActiveTerminal("T2");
+      expect(aiAgentStore.toolCalls()).toEqual([]);
+
+      aiAgentStore.setActiveTerminal("T1");
+      expect(aiAgentStore.toolCalls()).toHaveLength(1);
+    });
+
+    it("activeAgent() returns the PerTerminalAgentState for the active terminal", () => {
+      aiAgentStore.setActiveTerminal("termX");
+      const state = aiAgentStore.activeAgent();
+      expect(typeof state.agentState).toBe("function");
+      expect(typeof state.toolCalls).toBe("function");
+    });
+
+    it("reset() clears only the active terminal state", () => {
+      aiAgentStore.setActiveTerminal("T1");
+      aiAgentStore.processEvent({ type: "started", session_id: "s1" });
+
+      aiAgentStore.setActiveTerminal("T2");
+      aiAgentStore.processEvent({ type: "started", session_id: "s2" });
+
+      aiAgentStore.setActiveTerminal("T1");
+      aiAgentStore.reset();
+      expect(aiAgentStore.agentState()).toBe("idle");
+
+      aiAgentStore.setActiveTerminal("T2");
+      expect(aiAgentStore.agentState()).toBe("running");
+    });
+  });
+
   describe("ignores unknown events", () => {
     it("does not crash on unknown event type", () => {
       aiAgentStore.processEvent({ type: "unknown_future_event" });

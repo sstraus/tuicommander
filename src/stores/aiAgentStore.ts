@@ -1,11 +1,16 @@
 /**
  * AI Agent store — manages agent loop state, events, and tool call history.
  *
+ * Per-terminal architecture: each terminal gets its own PerTerminalAgentState
+ * keyed by terminal key (tuicSession or id). Existing exports proxy through
+ * activeAgent() so all 21 callers remain unchanged.
+ *
  * Thin projection of AgentLoopEvent from the Rust backend.
  * Drives agent mode UI: toggle, tool call cards, confirmation, pause/resume.
  */
 
 import { createSignal, batch } from "solid-js";
+import type { Accessor, Setter } from "solid-js";
 import { isTauri } from "../transport";
 import { appLogger } from "./appLogger";
 
@@ -43,17 +48,76 @@ function isAgentEvent(v: unknown): v is AgentEvent {
   return typeof v === "object" && v !== null && "type" in v && typeof (v as { type: unknown }).type === "string";
 }
 
+/** Reactive state for a single terminal's agent session. */
+export interface PerTerminalAgentState {
+  agentState: Accessor<AgentState>;
+  setAgentState: Setter<AgentState>;
+  currentIteration: Accessor<number>;
+  setCurrentIteration: Setter<number>;
+  toolCalls: Accessor<ToolCallEntry[]>;
+  setToolCalls: Setter<ToolCallEntry[]>;
+  textChunks: Accessor<string>;
+  setTextChunks: Setter<string>;
+  pendingApproval: Accessor<PendingApproval | null>;
+  setPendingApproval: Setter<PendingApproval | null>;
+  agentError: Accessor<string | null>;
+  setAgentError: Setter<string | null>;
+  completionReason: Accessor<string | null>;
+  setCompletionReason: Setter<string | null>;
+}
+
+const DEFAULT_KEY = "__default__";
+
+const agentStateMap = new Map<string, PerTerminalAgentState>();
+const [activeAgentKey, setActiveAgentKey] = createSignal<string>(DEFAULT_KEY);
+
+function createAgentState(): PerTerminalAgentState {
+  const [agentState, setAgentState] = createSignal<AgentState>("idle");
+  const [currentIteration, setCurrentIteration] = createSignal(0);
+  const [toolCalls, setToolCalls] = createSignal<ToolCallEntry[]>([]);
+  const [textChunks, setTextChunks] = createSignal("");
+  const [pendingApproval, setPendingApproval] = createSignal<PendingApproval | null>(null);
+  const [agentError, setAgentError] = createSignal<string | null>(null);
+  const [completionReason, setCompletionReason] = createSignal<string | null>(null);
+  return {
+    agentState, setAgentState,
+    currentIteration, setCurrentIteration,
+    toolCalls, setToolCalls,
+    textChunks, setTextChunks,
+    pendingApproval, setPendingApproval,
+    agentError, setAgentError,
+    completionReason, setCompletionReason,
+  };
+}
+
+function getOrCreate(key: string): PerTerminalAgentState {
+  let state = agentStateMap.get(key);
+  if (!state) {
+    state = createAgentState();
+    agentStateMap.set(key, state);
+  }
+  return state;
+}
+
+function activeAgent(): PerTerminalAgentState {
+  return getOrCreate(activeAgentKey());
+}
+
+function setActiveTerminal(key: string): void {
+  setActiveAgentKey(key);
+}
+
 // ---------------------------------------------------------------------------
-// Signals
+// Convenience accessors — proxy through activeAgent()
 // ---------------------------------------------------------------------------
 
-const [agentState, setAgentState] = createSignal<AgentState>("idle");
-const [currentIteration, setCurrentIteration] = createSignal(0);
-const [toolCalls, setToolCalls] = createSignal<ToolCallEntry[]>([]);
-const [textChunks, setTextChunks] = createSignal("");
-const [pendingApproval, setPendingApproval] = createSignal<PendingApproval | null>(null);
-const [agentError, setAgentError] = createSignal<string | null>(null);
-const [completionReason, setCompletionReason] = createSignal<string | null>(null);
+function agentState(): AgentState { return activeAgent().agentState(); }
+function currentIteration(): number { return activeAgent().currentIteration(); }
+function toolCalls(): ToolCallEntry[] { return activeAgent().toolCalls(); }
+function textChunks(): string { return activeAgent().textChunks(); }
+function pendingApproval(): PendingApproval | null { return activeAgent().pendingApproval(); }
+function agentError(): string | null { return activeAgent().agentError(); }
+function completionReason(): string | null { return activeAgent().completionReason(); }
 
 // ---------------------------------------------------------------------------
 // Agent control
@@ -61,16 +125,17 @@ const [completionReason, setCompletionReason] = createSignal<string | null>(null
 
 async function startAgent(sessionId: string, goal: string): Promise<void> {
   if (!isTauri()) return;
-  if (agentState() === "running" || agentState() === "paused") return;
+  const s = activeAgent();
+  if (s.agentState() === "running" || s.agentState() === "paused") return;
 
   batch(() => {
-    setAgentState("running");
-    setToolCalls([]);
-    setTextChunks("");
-    setAgentError(null);
-    setCompletionReason(null);
-    setCurrentIteration(0);
-    setPendingApproval(null);
+    s.setAgentState("running");
+    s.setToolCalls([]);
+    s.setTextChunks("");
+    s.setAgentError(null);
+    s.setCompletionReason(null);
+    s.setCurrentIteration(0);
+    s.setPendingApproval(null);
   });
 
   try {
@@ -78,8 +143,8 @@ async function startAgent(sessionId: string, goal: string): Promise<void> {
     await invoke("start_agent_loop", { sessionId, goal });
   } catch (e) {
     batch(() => {
-      setAgentState("error");
-      setAgentError(String(e));
+      s.setAgentState("error");
+      s.setAgentError(String(e));
     });
     appLogger.warn("ai-agent", "start_agent_loop failed", { error: String(e) });
   }
@@ -87,75 +152,80 @@ async function startAgent(sessionId: string, goal: string): Promise<void> {
 
 async function cancelAgent(sessionId: string): Promise<void> {
   if (!isTauri()) return;
+  const s = activeAgent();
   try {
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke("cancel_agent_loop", { sessionId });
-    setAgentState("cancelled");
+    s.setAgentState("cancelled");
   } catch (e) {
-    setAgentState("error");
-    setAgentError(String(e));
+    s.setAgentState("error");
+    s.setAgentError(String(e));
     appLogger.warn("ai-agent", "cancel_agent_loop failed", { error: String(e) });
   }
 }
 
 async function pauseAgent(sessionId: string): Promise<void> {
   if (!isTauri()) return;
+  const s = activeAgent();
   try {
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke("pause_agent_loop", { sessionId });
-    setAgentState("paused");
+    s.setAgentState("paused");
   } catch (e) {
-    setAgentState("error");
-    setAgentError(String(e));
+    s.setAgentState("error");
+    s.setAgentError(String(e));
     appLogger.warn("ai-agent", "pause_agent_loop failed", { error: String(e) });
   }
 }
 
 async function resumeAgent(sessionId: string): Promise<void> {
   if (!isTauri()) return;
+  const s = activeAgent();
   try {
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke("resume_agent_loop", { sessionId });
-    setAgentState("running");
+    s.setAgentState("running");
   } catch (e) {
-    setAgentState("error");
-    setAgentError(String(e));
+    s.setAgentState("error");
+    s.setAgentError(String(e));
     appLogger.warn("ai-agent", "resume_agent_loop failed", { error: String(e) });
   }
 }
 
 async function approveAction(sessionId: string, approved: boolean): Promise<void> {
   if (!isTauri()) return;
+  const s = activeAgent();
   try {
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke("approve_agent_action", { sessionId, approved });
-    setPendingApproval(null);
+    s.setPendingApproval(null);
   } catch (e) {
-    setAgentState("error");
-    setAgentError(String(e));
+    s.setAgentState("error");
+    s.setAgentError(String(e));
     appLogger.warn("ai-agent", "approve_agent_action failed", { error: String(e) });
   }
 }
 
 // ---------------------------------------------------------------------------
-// Event processing (called from Tauri event listener)
+// Event processing — routes to active terminal's state
 // ---------------------------------------------------------------------------
 
 /** Process an AgentLoopEvent from the backend. */
 function processEvent(raw: unknown): void {
   if (!isAgentEvent(raw)) return;
+  const s = activeAgent();
   const event = raw;
   switch (event.type) {
     case "started":
-      setAgentState("running");
+      s.setAgentState("running");
       break;
 
     case "thinking":
-      setCurrentIteration(event.iteration);
+      s.setCurrentIteration(event.iteration);
       break;
 
     case "text_chunk":
-      setTextChunks((prev) => prev + event.text);
+      s.setTextChunks((prev) => prev + event.text);
       break;
 
     case "tool_call": {
@@ -165,12 +235,12 @@ function processEvent(raw: unknown): void {
         args: event.args,
         startedAt: Date.now(),
       };
-      setToolCalls((prev) => [...prev, entry]);
+      s.setToolCalls((prev) => [...prev, entry]);
       break;
     }
 
     case "tool_result": {
-      setToolCalls((prev) => {
+      s.setToolCalls((prev) => {
         const updated = [...prev];
         for (let i = updated.length - 1; i >= 0; i--) {
           if (updated[i].toolName === event.tool_name && updated[i].status === "pending") {
@@ -189,7 +259,7 @@ function processEvent(raw: unknown): void {
     }
 
     case "needs_approval":
-      setPendingApproval({
+      s.setPendingApproval({
         sessionId: event.session_id,
         command: event.command,
         reason: event.reason,
@@ -197,11 +267,11 @@ function processEvent(raw: unknown): void {
       break;
 
     case "paused":
-      setAgentState("paused");
+      s.setAgentState("paused");
       break;
 
     case "resumed":
-      setAgentState("running");
+      s.setAgentState("running");
       break;
 
     case "rate_limited":
@@ -210,30 +280,31 @@ function processEvent(raw: unknown): void {
 
     case "error":
       batch(() => {
-        setAgentState("error");
-        setAgentError(event.message);
+        s.setAgentState("error");
+        s.setAgentError(event.message);
       });
       break;
 
     case "completed":
       batch(() => {
-        setAgentState("completed");
-        setCompletionReason(event.reason);
+        s.setAgentState("completed");
+        s.setCompletionReason(event.reason);
       });
       break;
   }
 }
 
-/** Reset store to idle state. */
+/** Reset active terminal's agent state to idle. */
 function reset(): void {
+  const s = activeAgent();
   batch(() => {
-    setAgentState("idle");
-    setToolCalls([]);
-    setTextChunks("");
-    setAgentError(null);
-    setCompletionReason(null);
-    setCurrentIteration(0);
-    setPendingApproval(null);
+    s.setAgentState("idle");
+    s.setToolCalls([]);
+    s.setTextChunks("");
+    s.setAgentError(null);
+    s.setCompletionReason(null);
+    s.setCurrentIteration(0);
+    s.setPendingApproval(null);
   });
 }
 
@@ -242,7 +313,12 @@ function reset(): void {
 // ---------------------------------------------------------------------------
 
 export const aiAgentStore = {
-  // Reactive getters
+  // Per-terminal API (new in 1409-e641)
+  activeAgent,
+  getOrCreate,
+  setActiveTerminal,
+
+  // Reactive getters (proxy through activeAgent)
   agentState,
   currentIteration,
   toolCalls,
