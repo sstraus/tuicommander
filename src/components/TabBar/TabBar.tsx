@@ -386,6 +386,17 @@ export const TabBar: Component<TabBarProps> = (props) => {
               resetDragState();
               return;
             }
+            if (!fromGroup) {
+              // Orphan tab (created before split) — assign to drop target
+              const type = terminalsStore.get(sourceId) ? "terminal" as const
+                : diffTabsStore.get(sourceId) ? "diff" as const
+                : editorTabsStore.get(sourceId) ? "editor" as const
+                : "markdown" as const;
+              paneLayoutStore.addTab(targetGroup, { id: sourceId, type });
+              paneLayoutStore.setActiveGroup(targetGroup);
+              resetDragState();
+              return;
+            }
           }
         }
         // 2. Tab reorder
