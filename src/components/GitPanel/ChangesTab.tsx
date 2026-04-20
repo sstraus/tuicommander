@@ -396,6 +396,22 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
       }
     }
 
+    // Add to .gitignore
+    if (effectiveSelection.size === 1) {
+      items.push({ separator: true, label: "", action: () => {} });
+      items.push({
+        label: "Add to .gitignore",
+        action: async () => {
+          if (!props.repoPath) return;
+          try {
+            await invoke("add_to_gitignore", { repoPath: props.repoPath, pattern: file.path });
+          } catch (err) {
+            appLogger.error("git", "Failed to add to .gitignore", err);
+          }
+        },
+      });
+    }
+
     // Smart prompts with placement="file-context" — only when right-clicked a single file.
     if (effectiveSelection.size === 1) {
       const repoRoot = props.repoPath;
