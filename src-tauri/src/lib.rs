@@ -40,6 +40,7 @@ pub(crate) mod prompt;
 pub(crate) mod smart_prompt;
 pub(crate) mod llm_api;
 pub(crate) mod ai_chat;
+pub(crate) mod keyring_cache;
 pub(crate) mod registry;
 pub(crate) mod pty;
 pub(crate) mod relay_client;

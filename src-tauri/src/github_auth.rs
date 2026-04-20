@@ -510,40 +510,21 @@ pub(crate) fn resolve_token_with_source() -> (Option<String>, TokenSource) {
 // Keyring helpers
 // ---------------------------------------------------------------------------
 
-/// Read the stored OAuth token from the OS keyring.
+/// Read the stored OAuth token from the OS keyring (cached in-memory).
 /// Returns `None` if no token is stored (not an error).
 pub(crate) fn read_github_oauth_token() -> Result<Option<String>, String> {
-    let entry = keyring::Entry::new(SERVICE_NAME, KEYRING_KEY)
-        .map_err(|e| format!("Failed to create keyring entry: {e}"))?;
-
-    match entry.get_password() {
-        Ok(token) => Ok(Some(token)),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(format!("Failed to read GitHub OAuth token: {e}")),
-    }
+    crate::keyring_cache::get(SERVICE_NAME, KEYRING_KEY)
 }
 
-/// Store an OAuth token in the OS keyring.
+/// Store an OAuth token in the OS keyring (write-through cache).
 pub(crate) fn save_github_oauth_token(token: &str) -> Result<(), String> {
-    let entry = keyring::Entry::new(SERVICE_NAME, KEYRING_KEY)
-        .map_err(|e| format!("Failed to create keyring entry: {e}"))?;
-
-    entry
-        .set_password(token)
-        .map_err(|e| format!("Failed to save GitHub OAuth token: {e}"))
+    crate::keyring_cache::set(SERVICE_NAME, KEYRING_KEY, token)
 }
 
-/// Delete the OAuth token from the OS keyring.
+/// Delete the OAuth token from the OS keyring (write-through cache).
 /// Returns Ok(()) even if no token existed (idempotent).
 pub(crate) fn delete_github_oauth_token() -> Result<(), String> {
-    let entry = keyring::Entry::new(SERVICE_NAME, KEYRING_KEY)
-        .map_err(|e| format!("Failed to create keyring entry: {e}"))?;
-
-    match entry.delete_credential() {
-        Ok(()) => Ok(()),
-        Err(keyring::Error::NoEntry) => Ok(()), // Already gone — idempotent
-        Err(e) => Err(format!("Failed to delete GitHub OAuth token: {e}")),
-    }
+    crate::keyring_cache::delete(SERVICE_NAME, KEYRING_KEY)
 }
 
 // ---------------------------------------------------------------------------

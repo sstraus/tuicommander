@@ -41,31 +41,15 @@ impl LlmApiConfig {
 // ---------------------------------------------------------------------------
 
 fn read_api_key() -> Result<Option<String>, String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
-        .map_err(|e| format!("Failed to create keyring entry: {e}"))?;
-    match entry.get_password() {
-        Ok(key) => Ok(Some(key)),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(format!("Failed to read LLM API key: {e}")),
-    }
+    crate::keyring_cache::get(KEYRING_SERVICE, KEYRING_USER)
 }
 
 fn save_api_key(key: &str) -> Result<(), String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
-        .map_err(|e| format!("Failed to create keyring entry: {e}"))?;
-    entry
-        .set_password(key)
-        .map_err(|e| format!("Failed to save LLM API key: {e}"))
+    crate::keyring_cache::set(KEYRING_SERVICE, KEYRING_USER, key)
 }
 
 fn delete_api_key() -> Result<(), String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
-        .map_err(|e| format!("Failed to create keyring entry: {e}"))?;
-    match entry.delete_credential() {
-        Ok(()) => Ok(()),
-        Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(format!("Failed to delete LLM API key: {e}")),
-    }
+    crate::keyring_cache::delete(KEYRING_SERVICE, KEYRING_USER)
 }
 
 // ---------------------------------------------------------------------------

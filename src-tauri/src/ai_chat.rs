@@ -98,30 +98,15 @@ impl AiChatConfig {
 // ---------------------------------------------------------------------------
 
 pub(crate) fn read_api_key() -> Result<Option<String>, String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
-        .map_err(|e| format!("Failed to create keyring entry: {e}"))?;
-    match entry.get_password() {
-        Ok(key) => Ok(Some(key.trim().to_string())),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(format!("Failed to read AI Chat API key: {e}")),
-    }
+    crate::keyring_cache::get(KEYRING_SERVICE, KEYRING_USER)
 }
 
 fn store_api_key(key: &str) -> Result<(), String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
-        .map_err(|e| format!("Failed to create keyring entry: {e}"))?;
-    entry
-        .set_password(key)
-        .map_err(|e| format!("Failed to save AI Chat API key: {e}"))
+    crate::keyring_cache::set(KEYRING_SERVICE, KEYRING_USER, key)
 }
 
 fn remove_api_key() -> Result<(), String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
-        .map_err(|e| format!("Failed to create keyring entry: {e}"))?;
-    match entry.delete_credential() {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(format!("Failed to delete AI Chat API key: {e}")),
-    }
+    crate::keyring_cache::delete(KEYRING_SERVICE, KEYRING_USER)
 }
 
 // ---------------------------------------------------------------------------
@@ -439,12 +424,33 @@ pub(crate) fn new_conversation_id() -> String {
 // Streaming chat types
 // ---------------------------------------------------------------------------
 
+/// Token usage summary sent to the frontend at stream end.
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ChatUsage {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_tokens: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completion_tokens: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_tokens: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cached_tokens: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_creation_tokens: Option<i32>,
+}
+
 /// Events sent to the frontend via `tauri::ipc::Channel`.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
 pub(crate) enum ChatStreamEvent {
     Chunk { text: String },
-    End { full_text: String },
+    #[serde(rename_all = "camelCase")]
+    End {
+        full_text: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        usage: Option<ChatUsage>,
+    },
     Error { message: String },
 }
 
@@ -641,11 +647,17 @@ fn assemble_terminal_context(
 }
 
 const SYSTEM_PROMPT_PREFIX: &str = "\
-You are a helpful terminal assistant embedded in TUICommander. \
-You can see the user's terminal output and help them understand errors, \
-debug issues, explain commands, and suggest next steps. \
-Be concise and practical. When suggesting commands, use fenced code blocks. \
-Do not repeat terminal output back unless highlighting a specific line.";
+You are a terminal assistant embedded in TUICommander. \
+You can see the user's terminal output. Be concise and practical.\n\
+CRITICAL RULES FOR CODE BLOCKS:\n\
+- Every fenced code block gets a ▶ Run button the user clicks to execute it.\n\
+- Put EXACTLY ONE command per code block. Never combine multiple commands in one block.\n\
+- Never put alternative commands in the same block. Each alternative gets its own block.\n\
+- Never put comments (lines starting with #) inside code blocks.\n\
+- Do NOT explain what a command does unless the user asks.\n\
+- Do NOT ask for confirmation. Do NOT ask \"do you want to run this?\".\n\
+- Do NOT offer alternatives unless the user asks. Pick the best command and give it.\n\
+- Do not repeat terminal output back unless highlighting a specific line.";
 
 fn build_system_prompt(ctx: &TerminalContext) -> String {
     let mut prompt = String::with_capacity(SYSTEM_PROMPT_PREFIX.len() + 256);
@@ -718,7 +730,7 @@ pub(crate) async fn stream_ai_chat(
         system_prompt.push_str(&section);
     }
 
-    // Build genai request
+    // Build genai request with cache control
     let llm_config = llm_api::LlmApiConfig {
         provider: config.provider.clone(),
         model: config.model.clone(),
@@ -726,18 +738,38 @@ pub(crate) async fn stream_ai_chat(
     };
     let client = llm_api::build_client(&llm_config, &api_key);
 
-    use genai::chat::{ChatMessage as GenaiMessage, ChatRequest};
-    let mut chat_req = ChatRequest::default().with_system(system_prompt);
+    use genai::chat::{CacheControl, ChatMessage as GenaiMessage, ChatOptions, ChatRequest, MessageOptions};
 
-    for msg in &messages {
+    // System prompt gets cache hint — it's stable across turns
+    let system_msg = GenaiMessage::system(&system_prompt)
+        .with_options(MessageOptions::from(CacheControl::Ephemeral));
+    let mut chat_req = ChatRequest::default().append_message(system_msg);
+
+    for (i, msg) in messages.iter().enumerate() {
+        let is_last_user = i == messages.len() - 1 && msg.role == "user";
         match msg.role.as_str() {
-            "user" => chat_req = chat_req.append_message(GenaiMessage::user(&msg.content)),
+            "user" => {
+                let m = GenaiMessage::user(&msg.content);
+                // Mark the last user message as cache breakpoint so the
+                // growing conversation prefix stays cacheable.
+                chat_req = if is_last_user {
+                    chat_req.append_message(
+                        m.with_options(MessageOptions::from(CacheControl::Ephemeral)),
+                    )
+                } else {
+                    chat_req.append_message(m)
+                };
+            }
             "assistant" => {
                 chat_req = chat_req.append_message(GenaiMessage::assistant(&msg.content))
             }
             _ => {}
         }
     }
+
+    let chat_options = ChatOptions::default()
+        .with_capture_usage(true)
+        .with_temperature(config.temperature.into());
 
     // Set up cancellation
     let cancelled = Arc::new(AtomicBool::new(false));
@@ -751,6 +783,7 @@ pub(crate) async fn stream_ai_chat(
         client,
         &config.model,
         chat_req,
+        chat_options,
         &on_event,
         &cancelled,
     )
@@ -776,6 +809,7 @@ async fn stream_with_batching(
     client: genai::Client,
     model: &str,
     chat_req: genai::chat::ChatRequest,
+    chat_options: genai::chat::ChatOptions,
     on_event: &tauri::ipc::Channel<ChatStreamEvent>,
     cancelled: &AtomicBool,
 ) -> Result<(), String> {
@@ -783,7 +817,7 @@ async fn stream_with_batching(
     use genai::chat::ChatStreamEvent as GenaiStreamEvent;
 
     let stream_resp = client
-        .exec_chat_stream(model, chat_req, None)
+        .exec_chat_stream(model, chat_req, Some(&chat_options))
         .await
         .map_err(|e| format!("Failed to start stream: {e}"))?;
 
@@ -800,7 +834,7 @@ async fn stream_with_batching(
                 let _ = on_event.send(ChatStreamEvent::Chunk { text: batch_buf.clone() });
                 full_text.push_str(&batch_buf);
             }
-            let _ = on_event.send(ChatStreamEvent::End { full_text });
+            let _ = on_event.send(ChatStreamEvent::End { full_text, usage: None });
             return Ok(());
         }
 
@@ -817,12 +851,42 @@ async fn stream_with_batching(
                     Some(Ok(GenaiStreamEvent::Chunk(chunk))) => {
                         batch_buf.push_str(&chunk.content);
                     }
-                    Some(Ok(GenaiStreamEvent::End(_))) => {
+                    Some(Ok(GenaiStreamEvent::End(end))) => {
                         if !batch_buf.is_empty() {
                             let _ = on_event.send(ChatStreamEvent::Chunk { text: batch_buf.clone() });
                             full_text.push_str(&batch_buf);
                         }
-                        let _ = on_event.send(ChatStreamEvent::End { full_text });
+                        let usage = end.captured_usage.map(|u| {
+                            let details = u.prompt_tokens_details.as_ref();
+                            let cached = details.and_then(|d| d.cached_tokens);
+                            let cache_creation = details.and_then(|d| d.cache_creation_tokens);
+                            if cached.is_some() || cache_creation.is_some() {
+                                tracing::info!(
+                                    prompt = u.prompt_tokens,
+                                    completion = u.completion_tokens,
+                                    cached = cached,
+                                    cache_creation = cache_creation,
+                                    "AI chat usage (cache active)"
+                                );
+                            } else {
+                                tracing::debug!(
+                                    prompt = u.prompt_tokens,
+                                    completion = u.completion_tokens,
+                                    "AI chat usage"
+                                );
+                            }
+                            ChatUsage {
+                                prompt_tokens: u.prompt_tokens,
+                                completion_tokens: u.completion_tokens,
+                                total_tokens: match (u.prompt_tokens, u.completion_tokens) {
+                                    (Some(p), Some(c)) => Some(p + c),
+                                    _ => None,
+                                },
+                                cached_tokens: cached,
+                                cache_creation_tokens: cache_creation,
+                            }
+                        });
+                        let _ = on_event.send(ChatStreamEvent::End { full_text, usage });
                         return Ok(());
                     }
                     Some(Err(e)) => {
@@ -837,7 +901,7 @@ async fn stream_with_batching(
                             let _ = on_event.send(ChatStreamEvent::Chunk { text: batch_buf.clone() });
                             full_text.push_str(&batch_buf);
                         }
-                        let _ = on_event.send(ChatStreamEvent::End { full_text });
+                        let _ = on_event.send(ChatStreamEvent::End { full_text, usage: None });
                         return Ok(());
                     }
                     _ => {} // Start, ReasoningChunk, etc.
@@ -1246,10 +1310,29 @@ mod tests {
 
     #[test]
     fn chat_stream_event_end_serializes() {
-        let event = ChatStreamEvent::End { full_text: "full response".to_string() };
+        let event = ChatStreamEvent::End { full_text: "full response".to_string(), usage: None };
         let json = serde_json::to_string(&event).unwrap();
         assert!(json.contains(r#""event":"end""#), "json: {json}");
+        assert!(json.contains(r#""fullText""#), "field must be camelCase: {json}");
         assert!(json.contains("full response"), "json: {json}");
+    }
+
+    #[test]
+    fn chat_stream_event_end_with_usage_serializes() {
+        let event = ChatStreamEvent::End {
+            full_text: "ok".to_string(),
+            usage: Some(ChatUsage {
+                prompt_tokens: Some(100),
+                completion_tokens: Some(50),
+                total_tokens: Some(150),
+                cached_tokens: Some(80),
+                cache_creation_tokens: None,
+            }),
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains(r#""cachedTokens":80"#), "cachedTokens camelCase: {json}");
+        assert!(json.contains(r#""promptTokens":100"#), "promptTokens camelCase: {json}");
+        assert!(!json.contains("cacheCreationTokens"), "None fields should be skipped: {json}");
     }
 
     #[test]
@@ -1326,7 +1409,7 @@ mod tests {
             ..Default::default()
         };
         let prompt = build_system_prompt(&ctx);
-        assert!(prompt.starts_with("You are a helpful terminal assistant"));
+        assert!(prompt.starts_with("You are a terminal assistant"));
         assert!(prompt.contains("## Terminal Context"));
         assert!(prompt.contains("file.rs"));
     }

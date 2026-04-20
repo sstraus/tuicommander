@@ -263,16 +263,7 @@ fn validate_keyring_name(name: &str) -> Result<(), String> {
 pub(crate) fn read_upstream_credential(upstream_name: &str) -> Result<Option<String>, String> {
     #[cfg(test)]
     ensure_mock_keyring();
-    let entry = keyring::Entry::new(SERVICE_NAME, upstream_name)
-        .map_err(|e| format!("Failed to create keyring entry: {e}"))?;
-
-    match entry.get_password() {
-        Ok(password) => Ok(Some(password)),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(format!(
-            "Failed to read credential for upstream '{upstream_name}': {e}"
-        )),
-    }
+    crate::keyring_cache::get(SERVICE_NAME, upstream_name)
 }
 
 /// Store a credential for an upstream MCP server.
@@ -282,12 +273,7 @@ pub(crate) fn save_upstream_credential(
 ) -> Result<(), String> {
     #[cfg(test)]
     ensure_mock_keyring();
-    let entry = keyring::Entry::new(SERVICE_NAME, upstream_name)
-        .map_err(|e| format!("Failed to create keyring entry: {e}"))?;
-
-    entry
-        .set_password(token)
-        .map_err(|e| format!("Failed to save credential for upstream '{upstream_name}': {e}"))
+    crate::keyring_cache::set(SERVICE_NAME, upstream_name, token)
 }
 
 /// Delete a credential for an upstream MCP server.
@@ -295,16 +281,7 @@ pub(crate) fn save_upstream_credential(
 pub(crate) fn delete_upstream_credential(upstream_name: &str) -> Result<(), String> {
     #[cfg(test)]
     ensure_mock_keyring();
-    let entry = keyring::Entry::new(SERVICE_NAME, upstream_name)
-        .map_err(|e| format!("Failed to create keyring entry: {e}"))?;
-
-    match entry.delete_credential() {
-        Ok(()) => Ok(()),
-        Err(keyring::Error::NoEntry) => Ok(()), // Already gone — idempotent
-        Err(e) => Err(format!(
-            "Failed to delete credential for upstream '{upstream_name}': {e}"
-        )),
-    }
+    crate::keyring_cache::delete(SERVICE_NAME, upstream_name)
 }
 
 // ---------------------------------------------------------------------------

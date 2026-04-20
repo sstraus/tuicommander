@@ -1804,10 +1804,10 @@ impl ChunkProcessor {
             ts.store(now, std::sync::atomic::Ordering::Relaxed);
         }
 
-        // Shell state: reader only transitions → BUSY on real output.
+        // Shell state: reader transitions → BUSY on real output OR active spinner.
         // Idle transitions are handled exclusively by the silence timer to
         // eliminate the two-path race that caused 15+ fix/revert cycles.
-        if !chrome_only && !silence.lock().is_resize_grace()
+        if (!chrome_only || has_spinner) && !silence.lock().is_resize_grace()
             && let Some(atom) = state.shell_states.get(session_id)
         {
             let prev = atom.load(std::sync::atomic::Ordering::Acquire);
@@ -4367,6 +4367,34 @@ mod tests {
         let rows = make_rows(&["\u{273B} Cogitated 3m 48s"]);
         assert!(!compute_chrome_only(&rows, true, false, true),
             "chrome with pending question should NOT be chrome_only");
+    }
+
+    // --- Spinner → busy gate tests (mirrors process_chunk transition logic) ---
+
+    /// The busy transition gate `(!chrome_only || has_spinner)` must be true
+    /// when changed_rows contain an active spinner, even when chrome_only is true.
+    #[test]
+    fn test_spinner_only_chunk_can_trigger_busy() {
+        let rows = make_rows(&["\u{2022} Working (1m 31s \u{2022} esc to interrupt)"]);
+        let chrome_only = compute_chrome_only(&rows, false, false, false);
+        let has_spinner = chrome_only
+            && rows.iter().any(|r| crate::chrome::is_spinner_row(&r.text));
+        assert!(chrome_only, "Codex spinner is chrome_only");
+        assert!(has_spinner, "Codex spinner is detected as spinner");
+        assert!(!chrome_only || has_spinner,
+            "spinner-only chunk must pass the busy transition gate");
+    }
+
+    #[test]
+    fn test_static_chrome_cannot_trigger_busy() {
+        let rows = make_rows(&["\u{23F5}\u{23F5} auto mode"]);
+        let chrome_only = compute_chrome_only(&rows, false, false, false);
+        let has_spinner = chrome_only
+            && rows.iter().any(|r| crate::chrome::is_spinner_row(&r.text));
+        assert!(chrome_only, "mode-line is chrome_only");
+        assert!(!has_spinner, "mode-line is NOT a spinner");
+        assert!(chrome_only && !has_spinner,
+            "static chrome must NOT pass the busy transition gate");
     }
 
     // --- Staleness counter tests ---
