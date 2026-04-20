@@ -486,7 +486,9 @@ impl HttpMcpClient {
         auth_token: Option<&str>,
         session_id: Option<&str>,
     ) -> Result<reqwest::Response, UpstreamError> {
-        let mut req = self.client.post(&self.url).json(body);
+        let mut req = self.client.post(&self.url)
+            .header(reqwest::header::ACCEPT, "application/json, text/event-stream")
+            .json(body);
         if let Some(sid) = session_id {
             req = req.header(MCP_SESSION_HEADER, sid);
         }
