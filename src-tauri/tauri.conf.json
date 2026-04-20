@@ -31,7 +31,7 @@
     ],
     "security": {
       "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' plugin:; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: http://asset.localhost; connect-src 'self' ipc: tauri:; frame-src 'self' asset: http://asset.localhost http://127.0.0.1:* http://localhost:*; media-src 'self' asset: http://asset.localhost",
-      "dangerousDisableAssetCspModification": ["style-src"],
+      "dangerousDisableAssetCspModification": ["style-src", "script-src"],
       "assetProtocol": {
         "enable": true,
         "scope": ["$APPDATA/**", "$APPDATA/**/*", "$HOME/**", "/**"]
