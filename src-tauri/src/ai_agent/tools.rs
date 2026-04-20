@@ -216,6 +216,30 @@ pub fn tool_definitions() -> Value {
                 },
                 "required": ["command"]
             }
+        },
+        {
+            "name": "search_tools",
+            "description": "Discover upstream MCP tools (e.g. Jira, GitHub, Slack) registered with TUICommander. Returns tool names and descriptions. Use before calling call_tool to find the exact prefixed name (format: upstream__tool_name).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "Optional substring filter on tool name or description" },
+                    "limit": { "type": "integer", "description": "Max results to return (default 20)", "default": 20 }
+                },
+                "required": []
+            }
+        },
+        {
+            "name": "call_tool",
+            "description": "Call an upstream MCP tool by its prefixed name (format: upstream__tool_name, e.g. jira__create_issue). Use search_tools to discover available tools and their argument schemas. Output truncated at 30K chars.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tool_name": { "type": "string", "description": "Prefixed tool name in upstream__tool_name format" },
+                    "args": { "type": "object", "description": "Arguments to pass to the upstream tool" }
+                },
+                "required": ["tool_name"]
+            }
         }
     ])
 }
@@ -545,6 +569,47 @@ fn get_sandbox(state: &AppState, session_id: &str) -> Result<FileSandbox, String
     Err(format!("No filesystem sandbox for session: {session_id}"))
 }
 
+fn is_session_unrestricted(state: &AppState, session_id: &str) -> bool {
+    state.unrestricted_sessions.contains_key(session_id)
+}
+
+/// Resolve a file path for reading. In unrestricted mode the path is used as-is;
+/// in standard mode it is validated against the sandbox jail.
+fn resolve_file_path(sandbox: &FileSandbox, path: &str, unrestricted: bool) -> Result<std::path::PathBuf, String> {
+    if unrestricted {
+        Ok(std::path::PathBuf::from(path))
+    } else {
+        sandbox.resolve(path)
+    }
+}
+
+/// Resolve a file path for writing. In unrestricted mode parent dirs are created
+/// as needed; in standard mode the path is validated against the sandbox jail.
+fn resolve_file_path_for_write(sandbox: &FileSandbox, path: &str, unrestricted: bool) -> Result<std::path::PathBuf, String> {
+    if unrestricted {
+        let p = std::path::PathBuf::from(path);
+        if let Some(parent) = p.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("create_dir_all failed: {e}"))?;
+        }
+        Ok(p)
+    } else {
+        sandbox.resolve_for_write(path)
+    }
+}
+
+/// Resolve an optional subdirectory. In unrestricted mode the path is used as-is
+/// (defaulting to sandbox root); in standard mode it is validated against the jail.
+fn resolve_subdir(sandbox: &FileSandbox, path: Option<&str>, unrestricted: bool) -> Result<std::path::PathBuf, String> {
+    if unrestricted {
+        match path {
+            None | Some("") | Some(".") => Ok(sandbox.root().to_path_buf()),
+            Some(p) => Ok(std::path::PathBuf::from(p)),
+        }
+    } else {
+        resolve_sandbox_subdir(sandbox, path)
+    }
+}
+
 fn missing_arg(name: &str) -> ToolResult {
     ToolResult::err(format!("Missing argument: {name}"))
 }
@@ -562,7 +627,8 @@ fn exec_read_file(state: &AppState, session_id: &str, args: &Value) -> ToolResul
         Ok(s) => s,
         Err(e) => return ToolResult::err(e),
     };
-    let resolved = match sandbox.resolve(file_path) {
+    let unrestricted = is_session_unrestricted(state, session_id);
+    let resolved = match resolve_file_path(&sandbox, file_path, unrestricted) {
         Ok(p) => p,
         Err(e) => return ToolResult::err(e),
     };
@@ -657,7 +723,8 @@ fn exec_write_file_inner(state: &AppState, session_id: &str, args: &Value, skip_
         Ok(s) => s,
         Err(e) => return ToolResult::err(e),
     };
-    let resolved = match sandbox.resolve_for_write(file_path) {
+    let unrestricted = is_session_unrestricted(state, session_id);
+    let resolved = match resolve_file_path_for_write(&sandbox, file_path, unrestricted) {
         Ok(p) => p,
         Err(e) => return ToolResult::err(e),
     };
@@ -732,7 +799,8 @@ fn exec_edit_file_inner(state: &AppState, session_id: &str, args: &Value, skip_s
         Ok(s) => s,
         Err(e) => return ToolResult::err(e),
     };
-    let resolved = match sandbox.resolve(file_path) {
+    let unrestricted = is_session_unrestricted(state, session_id);
+    let resolved = match resolve_file_path(&sandbox, file_path, unrestricted) {
         Ok(p) => p,
         Err(e) => return ToolResult::err(e),
     };
@@ -843,7 +911,8 @@ fn exec_list_files(state: &AppState, session_id: &str, args: &Value) -> ToolResu
         Ok(s) => s,
         Err(e) => return ToolResult::err(e),
     };
-    let anchor = match resolve_sandbox_subdir(&sandbox, subdir) {
+    let unrestricted = is_session_unrestricted(state, session_id);
+    let anchor = match resolve_subdir(&sandbox, subdir, unrestricted) {
         Ok(p) => p,
         Err(e) => return ToolResult::err(e),
     };
@@ -927,7 +996,8 @@ fn exec_search_files(state: &AppState, session_id: &str, args: &Value) -> ToolRe
         Ok(s) => s,
         Err(e) => return ToolResult::err(e),
     };
-    let anchor = match resolve_sandbox_subdir(&sandbox, subdir) {
+    let unrestricted = is_session_unrestricted(state, session_id);
+    let anchor = match resolve_subdir(&sandbox, subdir, unrestricted) {
         Ok(p) => p,
         Err(e) => return ToolResult::err(e),
     };
@@ -1120,6 +1190,52 @@ fn extract_bm25_snippet(path: &std::path::Path, query_words: &[String]) -> Strin
     lines[start..end].join("\n")
 }
 
+// ── search_tools ───────────────────────────────────────────────
+
+fn exec_search_tools(state: &AppState, args: &Value) -> ToolResult {
+    let query = args["query"].as_str().map(|s| s.to_lowercase());
+    let limit = args["limit"].as_u64().unwrap_or(20).min(100) as usize;
+
+    let all_tools = state.mcp_upstream_registry.aggregated_tools();
+    let descriptors: Vec<Value> = all_tools
+        .into_iter()
+        .filter(|tool| {
+            let Some(q) = &query else { return true };
+            let name = tool["name"].as_str().unwrap_or("").to_lowercase();
+            let desc = tool["description"].as_str().unwrap_or("").to_lowercase();
+            name.contains(q.as_str()) || desc.contains(q.as_str())
+        })
+        .take(limit)
+        .map(|tool| {
+            json!({
+                "name": tool["name"],
+                "description": tool["description"],
+            })
+        })
+        .collect();
+
+    let count = descriptors.len();
+    ToolResult::ok(json!({ "tools": descriptors, "count": count }).to_string())
+}
+
+// ── call_tool ──────────────────────────────────────────────────
+
+async fn exec_call_tool(state: &AppState, args: &Value) -> ToolResult {
+    let Some(tool_name) = args["tool_name"].as_str().filter(|s| !s.is_empty()) else {
+        return missing_arg("tool_name");
+    };
+    let call_args = if args["args"].is_null() { json!({}) } else { args["args"].clone() };
+
+    match state.mcp_upstream_registry.proxy_tool_call(tool_name, call_args).await {
+        Ok(result) => {
+            let raw = result.to_string();
+            let (output, _truncated) = truncate_output(&raw);
+            ToolResult::ok(output)
+        }
+        Err(e) => ToolResult::err(e),
+    }
+}
+
 /// Truncate output to `RUN_COMMAND_OUTPUT_CAP` using head+tail windows.
 fn truncate_output(s: &str) -> (String, bool) {
     if s.len() <= RUN_COMMAND_OUTPUT_CAP {
@@ -1168,7 +1284,8 @@ async fn exec_run_command_inner(state: &AppState, session_id: &str, args: &Value
         Ok(s) => s,
         Err(e) => return ToolResult::err(e),
     };
-    let cwd = match resolve_sandbox_subdir(&sandbox, cwd_arg) {
+    let unrestricted = is_session_unrestricted(state, session_id);
+    let cwd = match resolve_subdir(&sandbox, cwd_arg, unrestricted) {
         Ok(p) => p,
         Err(e) => return ToolResult::err(e),
     };
@@ -1338,6 +1455,8 @@ async fn dispatch_inner(
         "search_files" => exec_search_files(state, session_id, args),
         "search_code" => exec_search_code(state, session_id, args),
         "run_command" => exec_run_command_inner(state, session_id, args, skip_safety).await,
+        "search_tools" => exec_search_tools(state, args),
+        "call_tool" => exec_call_tool(state, args).await,
         other => ToolResult::err(format!("Unknown tool: {other}")),
     }
 }
@@ -1360,10 +1479,10 @@ mod tests {
     const FILESYSTEM_SEARCH_TOOLS: &[&str] = &["list_files", "search_files"];
 
     #[test]
-    fn definitions_returns_13_tools() {
+    fn definitions_returns_15_tools() {
         let defs = tool_definitions();
         let arr = defs.as_array().unwrap();
-        assert_eq!(arr.len(), 13);
+        assert_eq!(arr.len(), 15);
     }
 
     #[test]
@@ -1402,6 +1521,8 @@ mod tests {
                 "search_files",
                 "search_code",
                 "run_command",
+                "search_tools",
+                "call_tool",
             ]
         );
     }
@@ -2623,5 +2744,46 @@ mod tests {
         let parsed: Value = serde_json::from_str(&r.output).unwrap();
         assert_eq!(parsed["results"].as_array().unwrap().len(), 0);
         assert!(parsed["note"].as_str().is_some());
+    }
+
+    // ── search_tools ───────────────────────────────────────────
+
+    #[tokio::test]
+    async fn search_tools_returns_empty_when_no_upstreams() {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let r = dispatch(&state, "s1", "search_tools", &json!({})).await;
+        assert!(r.success, "{}", r.output);
+        let parsed: Value = serde_json::from_str(&r.output).unwrap();
+        let tools = parsed["tools"].as_array().unwrap();
+        assert_eq!(tools.len(), 0);
+        assert_eq!(parsed["count"], 0);
+    }
+
+    #[tokio::test]
+    async fn search_tools_response_has_required_fields() {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let r = dispatch(&state, "s1", "search_tools", &json!({ "query": "jira", "limit": 5 })).await;
+        assert!(r.success, "{}", r.output);
+        let parsed: Value = serde_json::from_str(&r.output).unwrap();
+        assert!(parsed["tools"].is_array());
+        assert!(parsed["count"].is_number());
+    }
+
+    // ── call_tool ──────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn call_tool_missing_tool_name_returns_error() {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let r = dispatch(&state, "s1", "call_tool", &json!({})).await;
+        assert!(!r.success);
+        assert!(r.output.contains("tool_name"));
+    }
+
+    #[tokio::test]
+    async fn call_tool_unknown_upstream_returns_error() {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let r = dispatch(&state, "s1", "call_tool", &json!({ "tool_name": "no_such__tool" })).await;
+        assert!(!r.success);
+        assert!(!r.output.contains("Unknown tool:"), "should route call_tool, not fall through to unknown-tool handler");
     }
 }
