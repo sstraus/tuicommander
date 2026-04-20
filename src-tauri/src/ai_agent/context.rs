@@ -9,6 +9,20 @@ use crate::state::AppState;
 
 const TUI_WARNING: &str = "> ⚠️ Terminal is in fullscreen TUI mode — key sends may not reach the shell. Prefer `read_screen` + explicit keys (e.g. `q`, `ctrl+c`) over shell commands.";
 
+/// Returns a cross-session memory section for injection into the agent's
+/// system prompt, or `None` when no relevant prior-session data exists.
+/// Scans all sessions whose cwd history overlaps the current session's repo root.
+pub fn build_cross_session_section(state: &AppState, session_id: &str) -> Option<String> {
+    let sandbox = state.file_sandboxes.get(session_id)?;
+    let repo_path = sandbox.root().to_string_lossy().to_string();
+    super::knowledge::summarize_for_repo(
+        &state.session_knowledge,
+        &repo_path,
+        session_id,
+        8_000,
+    )
+}
+
 /// Returns a markdown-formatted knowledge section for injection into the
 /// agent's system prompt, or `None` when no knowledge has been recorded.
 pub fn build_knowledge_section(state: &AppState, session_id: &str) -> Option<String> {

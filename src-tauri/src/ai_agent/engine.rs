@@ -151,14 +151,25 @@ impl RepetitionDetector {
 
 // ── System prompt ─────────────────────────────────────────────
 
-/// Concatenate the static base prompt with an optional knowledge section
-/// (separated by a blank line). Kept as a single function so initial-build
-/// and per-iteration refresh produce byte-identical output.
-fn compose_system_prompt(base: &str, knowledge: Option<&str>) -> String {
-    match knowledge {
-        Some(k) => format!("{base}\n\n{k}"),
-        None => base.to_string(),
+/// Concatenate the static base prompt with optional cross-session memory and
+/// per-session knowledge sections (each separated by a blank line).
+/// `cross_session` is injected once at session start and never refreshed.
+/// `knowledge` is refreshed every iteration.
+fn compose_system_prompt(
+    base: &str,
+    cross_session: Option<&str>,
+    knowledge: Option<&str>,
+) -> String {
+    let mut out = base.to_string();
+    if let Some(cs) = cross_session {
+        out.push_str("\n\n");
+        out.push_str(cs);
     }
+    if let Some(k) = knowledge {
+        out.push_str("\n\n");
+        out.push_str(k);
+    }
+    out
 }
 
 fn build_system_prompt(session_id: &str) -> String {
@@ -221,12 +232,25 @@ pub(crate) struct LlmRuntime {
     pub api_key: String,
 }
 
+/// Trust level for an agent session. Controls safety gate behavior.
+/// Standard: all verdicts enforced (NeedsApproval pauses for user).
+/// Unrestricted: NeedsApproval auto-approved; Block verdicts remain hard-blocked;
+///               filesystem sandbox disabled. Per-session, not persisted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum TrustLevel {
+    #[default]
+    Standard,
+    Unrestricted,
+}
+
 /// Start the agent loop for a session. Returns error if already active.
 pub(crate) async fn start_agent_loop(
     state: Arc<AppState>,
     session_id: String,
     user_goal: String,
     runtime: LlmRuntime,
+    trust_level: TrustLevel,
 ) -> Result<broadcast::Receiver<AgentLoopEvent>, String> {
     // Reject duplicate
     if ACTIVE_AGENTS.contains_key(&session_id) {
@@ -248,14 +272,19 @@ pub(crate) async fn start_agent_loop(
     };
     ACTIVE_AGENTS.insert(session_id.clone(), handle);
 
+    if trust_level == TrustLevel::Unrestricted {
+        state.unrestricted_sessions.insert(session_id.clone(), ());
+    }
+
     // Spawn the loop
     let sid = session_id.clone();
     tokio::spawn(async move {
         let result = run_loop(
-            state,
+            state.clone(),
             sid.clone(),
             user_goal,
             runtime,
+            trust_level,
             LoopHandles {
                 cancel,
                 agent_state: agent_state.clone(),
@@ -265,6 +294,8 @@ pub(crate) async fn start_agent_loop(
             },
         )
         .await;
+
+        state.unrestricted_sessions.remove(&sid);
 
         match result {
             Ok(reason) => {
@@ -336,6 +367,7 @@ async fn run_loop(
     session_id: String,
     user_goal: String,
     runtime: LlmRuntime,
+    trust_level: TrustLevel,
     h: LoopHandles,
 ) -> Result<String, String> {
     let LoopHandles { cancel, agent_state, pause_notify, event_tx, approval_tx } = h;
@@ -378,11 +410,18 @@ async fn run_loop(
     // refreshed every iteration so tool calls that mutate session knowledge
     // (mid-loop writes, terminal_mode flips, command outcomes) are reflected
     // in subsequent LLM turns instead of being frozen at iteration 0.
+    // Cross-session memory is injected once at start — prior-session data is static.
     let base_system_prompt = build_system_prompt(&session_id);
+    let cross_session: Option<String> =
+        super::context::build_cross_session_section(&state, &session_id);
     let mut last_knowledge: Option<String> =
         super::context::build_knowledge_section(&state, &session_id);
     let mut chat_req = ChatRequest::default()
-        .with_system(compose_system_prompt(&base_system_prompt, last_knowledge.as_deref()))
+        .with_system(compose_system_prompt(
+            &base_system_prompt,
+            cross_session.as_deref(),
+            last_knowledge.as_deref(),
+        ))
         .with_tools(genai_tools.clone())
         .append_message(ChatMessage::user(user_goal));
 
@@ -409,8 +448,11 @@ async fn run_loop(
         if iteration > 0 {
             let current = super::context::build_knowledge_section(&state, &session_id);
             if current != last_knowledge {
-                chat_req.system =
-                    Some(compose_system_prompt(&base_system_prompt, current.as_deref()));
+                chat_req.system = Some(compose_system_prompt(
+                    &base_system_prompt,
+                    cross_session.as_deref(),
+                    current.as_deref(),
+                ));
                 last_knowledge = current;
             }
         }
@@ -548,41 +590,46 @@ async fn run_loop(
             tracing::debug!(session_id, tool = %tc.fn_name, "Dispatching tool");
             let mut result = tools::dispatch(&state, &session_id, &tc.fn_name, &tc.fn_arguments).await;
 
-            // Approval flow: pause for user confirmation, then re-dispatch
+            // Approval flow: auto-approve when Unrestricted, else pause for user
             if result.needs_approval {
                 let reason = result.approval_reason.clone().unwrap_or_default();
                 let command = result.approval_command.clone().unwrap_or_default();
 
-                let _ = event_tx.send(AgentLoopEvent::NeedsApproval {
-                    session_id: session_id.clone(),
-                    tool_name: tc.fn_name.clone(),
-                    command: command.clone(),
-                    reason: reason.clone(),
-                });
-
-                let (tx, rx) = oneshot::channel();
-                *approval_tx.lock() = Some(tx);
-
-                // Wait for approval or cancellation
-                let approved = tokio::select! {
-                    res = rx => res.unwrap_or(false),
-                    _ = async {
-                        while !cancel.load(Ordering::Acquire) {
-                            tokio::time::sleep(Duration::from_millis(100)).await;
-                        }
-                    } => false,
-                };
-
-                *approval_tx.lock() = None;
-
-                if cancel.load(Ordering::Acquire) {
-                    return Ok("cancelled".into());
-                }
-
-                if approved {
+                if trust_level == TrustLevel::Unrestricted {
+                    tracing::debug!(session_id, tool = %tc.fn_name, "Unrestricted: auto-approving NeedsApproval");
                     result = tools::dispatch_approved(&state, &session_id, &tc.fn_name, &tc.fn_arguments).await;
                 } else {
-                    result = tools::ToolResult::err(format!("User rejected: {reason}"));
+                    let _ = event_tx.send(AgentLoopEvent::NeedsApproval {
+                        session_id: session_id.clone(),
+                        tool_name: tc.fn_name.clone(),
+                        command: command.clone(),
+                        reason: reason.clone(),
+                    });
+
+                    let (tx, rx) = oneshot::channel();
+                    *approval_tx.lock() = Some(tx);
+
+                    // Wait for approval or cancellation
+                    let approved = tokio::select! {
+                        res = rx => res.unwrap_or(false),
+                        _ = async {
+                            while !cancel.load(Ordering::Acquire) {
+                                tokio::time::sleep(Duration::from_millis(100)).await;
+                            }
+                        } => false,
+                    };
+
+                    *approval_tx.lock() = None;
+
+                    if cancel.load(Ordering::Acquire) {
+                        return Ok("cancelled".into());
+                    }
+
+                    if approved {
+                        result = tools::dispatch_approved(&state, &session_id, &tc.fn_name, &tc.fn_arguments).await;
+                    } else {
+                        result = tools::ToolResult::err(format!("User rejected: {reason}"));
+                    }
                 }
             }
 
@@ -946,7 +993,7 @@ mod tests {
 
         let base = build_system_prompt(sid);
         let knowledge = crate::ai_agent::context::build_knowledge_section(&state, sid);
-        let system_prompt = compose_system_prompt(&base, knowledge.as_deref());
+        let system_prompt = compose_system_prompt(&base, None, knowledge.as_deref());
 
         assert!(system_prompt.contains(sid));
         assert!(system_prompt.contains("Session Knowledge"));
@@ -962,7 +1009,7 @@ mod tests {
 
         let base = build_system_prompt(sid);
         let knowledge = crate::ai_agent::context::build_knowledge_section(&state, sid);
-        let system_prompt = compose_system_prompt(&base, knowledge.as_deref());
+        let system_prompt = compose_system_prompt(&base, None, knowledge.as_deref());
 
         assert_eq!(system_prompt, base);
     }
@@ -981,7 +1028,7 @@ mod tests {
 
         // Iteration 0: no knowledge yet → base prompt only.
         let mut last = crate::ai_agent::context::build_knowledge_section(&state, sid);
-        let prompt_iter0 = compose_system_prompt(&base, last.as_deref());
+        let prompt_iter0 = compose_system_prompt(&base, None, last.as_deref());
         assert_eq!(prompt_iter0, base, "iter 0 should equal base when no knowledge");
         assert!(last.is_none());
 
@@ -1007,7 +1054,7 @@ mod tests {
         // Iteration 1: refresh detects the diff and rebuilds the prompt.
         let current = crate::ai_agent::context::build_knowledge_section(&state, sid);
         assert_ne!(current, last, "knowledge must differ after record_outcome");
-        let prompt_iter1 = compose_system_prompt(&base, current.as_deref());
+        let prompt_iter1 = compose_system_prompt(&base, None, current.as_deref());
         assert_ne!(prompt_iter1, prompt_iter0, "iter 1 prompt must change");
         assert!(prompt_iter1.contains("npm run build"));
         assert!(prompt_iter1.contains("Session Knowledge"));
@@ -1016,5 +1063,30 @@ mod tests {
         // Iteration 2: no further change → no rebuild needed.
         let still_current = crate::ai_agent::context::build_knowledge_section(&state, sid);
         assert_eq!(still_current, last, "stable knowledge must compare equal");
+    }
+
+    // ── TrustLevel ────────────────────────────────────────────
+
+    #[test]
+    fn trust_level_default_is_standard() {
+        assert_eq!(TrustLevel::default(), TrustLevel::Standard);
+    }
+
+    #[test]
+    fn trust_level_serializes() {
+        let s = serde_json::to_string(&TrustLevel::Standard).unwrap();
+        let u = serde_json::to_string(&TrustLevel::Unrestricted).unwrap();
+        assert_eq!(s, r#""standard""#);
+        assert_eq!(u, r#""unrestricted""#);
+    }
+
+    #[test]
+    fn unrestricted_sessions_registered_and_cleaned_up() {
+        let state = crate::state::tests_support::make_test_app_state();
+        let sid = "test-unrestricted";
+        state.unrestricted_sessions.insert(sid.to_string(), ());
+        assert!(state.unrestricted_sessions.contains_key(sid));
+        state.unrestricted_sessions.remove(sid);
+        assert!(!state.unrestricted_sessions.contains_key(sid));
     }
 }
