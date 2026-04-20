@@ -760,8 +760,10 @@ impl SessionMetrics {
 /// Stored per session_id so tool handlers can check client identity at call time.
 #[derive(Debug, Clone)]
 pub struct McpSessionMeta {
-    /// When the session was created (for TTL reaping)
+    /// When the session was created
     pub created_at: Instant,
+    /// Last time the session was used (any request); reaper checks this, not created_at
+    pub last_activity: Instant,
     /// Whether the client identified as Claude Code (or tuic-bridge) at initialize time
     pub is_claude_code: bool,
     /// Whether this session has an active SSE stream (GET /mcp connected)

@@ -647,10 +647,11 @@ pub async fn start_server(
                 tokio::time::sleep(std::time::Duration::from_secs(60)).await;
                 let now = std::time::Instant::now();
                 let reaped: Vec<String> = reaper_state.mcp_sessions.iter()
-                    .filter(|e| now.duration_since(e.value().created_at) >= MCP_SESSION_TTL)
+                    .filter(|e| now.duration_since(e.value().last_activity) >= MCP_SESSION_TTL)
                     .map(|e| e.key().clone())
                     .collect();
                 for sid in &reaped {
+                    tracing::warn!("MCP session reaped (idle ≥1h): {sid}");
                     reaper_state.mcp_sessions.remove(sid);
                     // Clean up peer agents whose MCP session was reaped — emit events
                     let removed: Vec<String> = reaper_state.peer_agents.iter()
@@ -1574,8 +1575,10 @@ mod tests {
     #[tokio::test]
     async fn test_mcp_delete_session() {
         let state = test_state();
+        let now = std::time::Instant::now();
         state.mcp_sessions.insert("test-sid".to_string(), crate::state::McpSessionMeta {
-            created_at: std::time::Instant::now(),
+            created_at: now,
+            last_activity: now,
             is_claude_code: false,
             has_sse_stream: false,
             repo_path: None,
@@ -2593,8 +2596,10 @@ mod tests {
     async fn test_tools_call_upstream_prefix_returns_error_when_no_upstream() {
         let state = test_state();
         // Inject a session so the session_valid check passes
+        let now = std::time::Instant::now();
         state.mcp_sessions.insert("test-sid-proxy".to_string(), crate::state::McpSessionMeta {
-            created_at: std::time::Instant::now(),
+            created_at: now,
+            last_activity: now,
             is_claude_code: false,
             has_sse_stream: false,
             repo_path: None,
@@ -2621,8 +2626,10 @@ mod tests {
     #[tokio::test]
     async fn test_native_tool_call_still_works_after_wiring() {
         let state = test_state();
+        let now = std::time::Instant::now();
         state.mcp_sessions.insert("test-sid-native".to_string(), crate::state::McpSessionMeta {
-            created_at: std::time::Instant::now(),
+            created_at: now,
+            last_activity: now,
             is_claude_code: false,
             has_sse_stream: false,
             repo_path: None,

@@ -2225,8 +2225,10 @@ pub(super) async fn mcp_post(
                     resolve_repo_for_path(path, &known)
                 });
 
+            let now = std::time::Instant::now();
             state.mcp_sessions.insert(session_id.clone(), crate::state::McpSessionMeta {
-                created_at: std::time::Instant::now(),
+                created_at: now,
+                last_activity: now,
                 is_claude_code,
                 has_sse_stream: false,
                 repo_path,
@@ -2263,6 +2265,11 @@ pub(super) async fn mcp_post(
 
         "tools/list" => {
             let list_session_id = headers.get(MCP_SESSION_HEADER).and_then(|v| v.to_str().ok());
+            if let Some(sid) = list_session_id {
+                if let Some(mut meta) = state.mcp_sessions.get_mut(sid) {
+                    meta.last_activity = std::time::Instant::now();
+                }
+            }
             let tools = merged_tool_definitions(&state, list_session_id);
             let response = serde_json::json!({
                 "jsonrpc": "2.0",
@@ -2287,7 +2294,8 @@ pub(super) async fn mcp_post(
                 .get(MCP_SESSION_HEADER)
                 .and_then(|v| v.to_str().ok())
                 .map(|sid| {
-                    if state.mcp_sessions.contains_key(sid) {
+                    if let Some(mut meta) = state.mcp_sessions.get_mut(sid) {
+                        meta.last_activity = std::time::Instant::now();
                         true
                     } else {
                         // Auto-recover: re-register the stale session ID. We don't have
@@ -2298,8 +2306,10 @@ pub(super) async fn mcp_post(
                             "MCP session auto-recovered (stale session_id: {sid}); \
                              is_claude_code={recovered_cc} (from User-Agent)"
                         );
+                        let now = std::time::Instant::now();
                         state.mcp_sessions.insert(sid.to_string(), crate::state::McpSessionMeta {
-                            created_at: std::time::Instant::now(),
+                            created_at: now,
+                            last_activity: now,
                             is_claude_code: recovered_cc,
                             has_sse_stream: false,
                             repo_path: None,
@@ -2386,8 +2396,10 @@ pub(super) async fn mcp_get(
                 "MCP SSE session auto-recovered (stale session_id: {sid}); \
                  is_claude_code={is_cc_ua} (from User-Agent)"
             );
+            let now = std::time::Instant::now();
             state.mcp_sessions.insert(sid.to_string(), crate::state::McpSessionMeta {
-                created_at: std::time::Instant::now(),
+                created_at: now,
+                last_activity: now,
                 is_claude_code: is_cc_ua,
                 has_sse_stream: false,
                 repo_path: None,

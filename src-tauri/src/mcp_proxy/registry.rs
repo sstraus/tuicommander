@@ -582,8 +582,9 @@ impl UpstreamRegistry {
         let name = upstream_name.to_string();
         let bus_snapshot = self.event_bus.read().clone();
         let flow_snapshot = self.oauth_flow();
+        let tools_tx_snapshot = self.mcp_tools_tx.read().clone();
         tokio::spawn(async move {
-            initialize_entry_with_oauth(&entry, &name, bus_snapshot.as_ref(), flow_snapshot).await;
+            initialize_entry_with_oauth(&entry, &name, bus_snapshot.as_ref(), flow_snapshot, tools_tx_snapshot.as_ref()).await;
         });
         Ok(())
     }
@@ -634,12 +635,14 @@ impl UpstreamRegistry {
         let name_clone = name.clone();
         let bus_snapshot = self.event_bus.read().clone();
         let flow_snapshot = self.oauth_flow();
+        let tools_tx_snapshot = self.mcp_tools_tx.read().clone();
         tokio::spawn(async move {
             initialize_entry_with_oauth(
                 &entry_clone,
                 &name_clone,
                 bus_snapshot.as_ref(),
                 flow_snapshot,
+                tools_tx_snapshot.as_ref(),
             )
             .await;
         });
@@ -969,6 +972,7 @@ async fn initialize_entry_with_oauth(
     name: &str,
     bus: Option<&tokio::sync::broadcast::Sender<crate::state::AppEvent>>,
     flow_mgr: Option<Arc<crate::mcp_oauth::flow::OAuthFlowManager>>,
+    tools_tx: Option<&tokio::sync::broadcast::Sender<()>>,
 ) {
     let result: Result<Vec<UpstreamToolDef>, UpstreamError> = match &entry.client {
         UpstreamClient::Http(rwlock) => {
@@ -1043,6 +1047,9 @@ async fn initialize_entry_with_oauth(
             status: status_str.to_string(),
         });
     }
+    if let Some(tx) = tools_tx {
+        let _ = tx.send(());
+    }
 }
 
 /// Run health checks on Ready and recoverable CircuitOpen upstreams.
@@ -1050,6 +1057,7 @@ async fn run_health_checks(registry: &UpstreamRegistry) {
     // Snapshot the bus once so each spawned task gets a clone without holding the lock.
     let bus_snapshot = registry.event_bus.read().clone();
     let flow_snapshot = registry.oauth_flow();
+    let tools_tx_snapshot = registry.mcp_tools_tx.read().clone();
 
     for entry_ref in registry.entries.iter() {
         let status = entry_ref.status.read().clone();
@@ -1071,11 +1079,12 @@ async fn run_health_checks(registry: &UpstreamRegistry) {
         let name = entry_ref.key().clone();
         let bus = bus_snapshot.clone();
         let flow = flow_snapshot.clone();
+        let tools_tx = tools_tx_snapshot.clone();
         let needs_recovery = status != UpstreamStatus::Ready;
         tokio::spawn(async move {
             // For stuck Connecting entries, re-run full initialization
             if status == UpstreamStatus::Connecting {
-                initialize_entry_with_oauth(&entry, &name, bus.as_ref(), flow).await;
+                initialize_entry_with_oauth(&entry, &name, bus.as_ref(), flow, tools_tx.as_ref()).await;
                 return;
             }
 
@@ -1098,6 +1107,11 @@ async fn run_health_checks(registry: &UpstreamRegistry) {
                         }
                     } else if old_count != new_count {
                         tracing::info!(source = "mcp_registry", %name, "Tool list refreshed: {old_count} → {new_count}");
+                    }
+                    if needs_recovery || old_count != new_count {
+                        if let Some(ref tx) = tools_tx {
+                            let _ = tx.send(());
+                        }
                     }
                 }
                 Err(UpstreamError::NeedsOAuth { .. }) => {
@@ -1136,6 +1150,9 @@ async fn run_health_checks(registry: &UpstreamRegistry) {
                             name: name.clone(),
                             status: status_str.to_string(),
                         });
+                    }
+                    if let Some(ref tx) = tools_tx {
+                        let _ = tx.send(());
                     }
                 }
             }
