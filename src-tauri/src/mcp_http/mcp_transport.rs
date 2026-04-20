@@ -151,21 +151,11 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
 
     // ── Tools ────────────────────────────────────────────────────────
     if state.config.read().collapse_tools {
-        // Lazy tool loading (Speakeasy pattern): the client only sees three
-        // meta-tools. Describe the discovery flow and what domains are reachable
-        // so the model can form the right query for search_tools.
-        out.push_str("## Tools — Lazy Discovery\n\n");
-        out.push_str("This server exposes three meta-tools. Use them to discover and invoke the full tool set on demand:\n\n");
-        out.push_str("1. **`search_tools`** — BM25 search over the full tool corpus. Pass a natural-language `query` describing what you want to do. Returns ranked `{name, summary}` entries.\n");
-        out.push_str("2. **`get_tool_schema`** — Given an exact `tool_name` from search, returns the full tool definition with inputSchema.\n");
-        out.push_str("3. **`call_tool`** — Dispatch a named tool. Pass `tool_name` + `arguments` object.\n\n");
-        out.push_str("**Flow:** `search_tools(query=\"…\")` → pick a name → `get_tool_schema(tool_name=…)` → `call_tool(tool_name=…, arguments={…})`.\n\n");
-        out.push_str("**Domains available:** terminal pane sessions (tmux replacement), AI agent orchestration + messaging, repos/GitHub PRs/worktrees, UI tabs + notifications, plugin authoring reference, app config, diagnostics");
-        let upstream_count = state.mcp_upstream_registry.aggregated_tools().len();
-        if upstream_count > 0 {
-            out.push_str(&format!(", plus {upstream_count} upstream tool(s) from connected MCP servers"));
-        }
-        out.push_str(".\n\n");
+        // Speakeasy mode: discovery flow and domain context live in the
+        // meta-tool descriptions, NOT here, so they don't compete with
+        // protocol markers for the model's attention at turn 1.
+        out.push_str("## Tools\n\n");
+        out.push_str("Tool discovery and invocation via `search_tools` / `get_tool_schema` / `call_tool` — see their descriptions for usage.\n\n");
         out.push_str("**Worktrees:** never `git worktree add/remove` — always use `repo action=worktree_create` / `worktree_remove` so TUIC tracks the worktree and can spawn a PTY inside.\n\n");
     } else {
         out.push_str("## Tools\n\n");
@@ -409,11 +399,32 @@ pub(crate) const META_TOOL_NAMES: [&str; 3] = ["search_tools", "get_tool_schema"
 /// the full native + upstream list. The model uses `search_tools` to discover
 /// relevant tools by natural language, `get_tool_schema` to fetch the full
 /// input schema for one, and `call_tool` to execute it.
-fn meta_tool_definitions() -> serde_json::Value {
+///
+/// Domain context and discovery flow are embedded in the tool descriptions
+/// (not in server instructions) so they don't compete with protocol markers
+/// for the model's attention at turn 1.
+fn meta_tool_definitions(state: &Arc<AppState>) -> serde_json::Value {
+    let upstream_count = state.mcp_upstream_registry.aggregated_tools().len();
+    let upstream_suffix = if upstream_count > 0 {
+        format!(", plus {upstream_count} upstream tool(s) from connected MCP servers")
+    } else {
+        String::new()
+    };
+
+    let search_desc = format!(
+        "Find relevant TUICommander tools by natural-language query. Returns a BM25-ranked \
+         list of tool names + one-line summaries. Use this before calling any tool to discover \
+         what is available, then call `get_tool_schema` for the full input schema of the tool \
+         you want to use.\n\n\
+         Domains available: terminal pane sessions (tmux replacement), AI agent orchestration + \
+         messaging, repos/GitHub PRs/worktrees, UI tabs + notifications, plugin authoring \
+         reference, app config, diagnostics{upstream_suffix}."
+    );
+
     serde_json::json!([
         {
             "name": "search_tools",
-            "description": "Find relevant TUICommander tools by natural-language query. Returns a BM25-ranked list of tool names + one-line summaries. Use this before calling any tool to discover what is available, then call `get_tool_schema` for the full input schema of the tool you want to use.",
+            "description": search_desc,
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -436,7 +447,7 @@ fn meta_tool_definitions() -> serde_json::Value {
         },
         {
             "name": "call_tool",
-            "description": "Invoke a TUICommander tool by name with arguments. Dispatches to native tools (session, agent, repo, ui, plugin_dev_guide, config, knowledge, debug) or upstream-proxied tools (`{upstream}__{tool}`). The arguments object must match the tool's inputSchema — fetch it via `get_tool_schema` first.",
+            "description": "Invoke a TUICommander tool by name with arguments. Dispatches to native tools or upstream-proxied tools (`{upstream}__{tool}`). The arguments object must match the tool's inputSchema — fetch it via `get_tool_schema` first.\n\nFlow: `search_tools(query=\"…\")` → pick a name → `get_tool_schema(tool_name=…)` → `call_tool(tool_name=…, arguments={…})`.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -498,7 +509,7 @@ fn filtered_native_tools(state: &Arc<AppState>) -> Vec<serde_json::Value> {
 
 fn merged_tool_definitions(state: &Arc<AppState>, mcp_session_id: Option<&str>) -> serde_json::Value {
     if state.config.read().collapse_tools {
-        return meta_tool_definitions();
+        return meta_tool_definitions(state);
     }
 
     let mut tools = filtered_native_tools(state);
@@ -3154,7 +3165,8 @@ mod tests {
 
     #[test]
     fn meta_tool_definitions_returns_exactly_three_tools_with_expected_names() {
-        let defs = meta_tool_definitions();
+        let state = test_state();
+        let defs = meta_tool_definitions(&state);
         let names = tool_names(&defs);
         assert_eq!(names.len(), 3, "meta_tool_definitions must return 3 tools");
         assert_eq!(names, vec!["search_tools", "get_tool_schema", "call_tool"]);
@@ -3175,7 +3187,8 @@ mod tests {
 
     #[test]
     fn meta_tool_names_constant_matches_definitions() {
-        let defs = meta_tool_definitions();
+        let state = test_state();
+        let defs = meta_tool_definitions(&state);
         let names = tool_names(&defs);
         let expected: Vec<String> = META_TOOL_NAMES.iter().map(|s| s.to_string()).collect();
         assert_eq!(names, expected);
@@ -3709,18 +3722,12 @@ mod tests {
         state.config.write().collapse_tools = true;
         let out = build_mcp_instructions(&state, None);
 
-        // Lazy discovery section replaces the concrete tools table.
-        assert!(out.contains("## Tools — Lazy Discovery"), "expected lazy discovery header");
+        // Slim section referencing meta-tools (detail lives in tool descriptions).
+        assert!(out.contains("## Tools"), "expected tools header");
         assert!(out.contains("`search_tools`"), "must mention search_tools");
         assert!(out.contains("`get_tool_schema`"), "must mention get_tool_schema");
         assert!(out.contains("`call_tool`"), "must mention call_tool");
-        // The search→schema→call flow must be explicit.
-        assert!(out.contains("search_tools(query"), "must show search_tools usage");
-        assert!(out.contains("get_tool_schema(tool_name"), "must show get_tool_schema usage");
-        assert!(out.contains("call_tool(tool_name"), "must show call_tool usage");
-        // Domain summary so the model can form a query.
-        assert!(out.contains("terminal pane sessions"));
-        assert!(out.contains("worktree"));
+        assert!(out.contains("worktree"), "must mention worktree caveat");
         // The concrete tools list and legacy workflow must NOT appear — those
         // reference tool names the model cannot invoke directly in collapse mode.
         assert!(!out.contains("- `session` ("), "tools list must be suppressed in collapse mode");
