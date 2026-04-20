@@ -307,7 +307,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
   /** Process a chunk of PTY output — write to terminal or buffer if not ready/visible */
   const handlePtyData = (rawData: string) => {
-    const data = rawData;
+    // Strip ESC[3J (clear scrollback) only when user is scrolled up, to preserve
+    // their viewport position. When at bottom, let it through to keep scrollback clean.
+    const data = viewportLock.isLocked && rawData.includes("\x1b[3J")
+      ? rawData.replaceAll("\x1b[3J", "")
+      : rawData;
     if (terminal) {
       // Dispatch to plugins for all terminals — background tabs may have
       // plugin-relevant output (e.g. agent detection, error tracking)

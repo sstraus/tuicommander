@@ -265,16 +265,20 @@ describe("ViewportLock", () => {
       lock.dispose();
     });
 
-    it("update(true) during write disengages immediately", () => {
+    it("update(true) during write does NOT disengage (Layer 1 guard)", () => {
       const { lock, setBuffer } = createLockHarness();
       setBuffer({ viewportY: 50, baseY: 100, type: "normal" });
       lock.update(false);
 
       lock.writeStart();
-      lock.update(true); // writeInProgress must NOT block disengage
-      expect(lock.isLocked).toBe(false);
+      lock.update(true); // writeInProgress blocks disengage (ESC[3J path)
+      expect(lock.isLocked).toBe(true);
 
       lock.writeEnd();
+      lock.renderComplete();
+      // After write+render complete, disengage works
+      lock.update(true);
+      expect(lock.isLocked).toBe(false);
       lock.dispose();
     });
   });

@@ -186,6 +186,9 @@ export class ViewportLock {
   update(isAtBottom: boolean): void {
     const shouldLock = !isAtBottom;
     if (shouldLock === this.locked) return;
+    // During write/render, xterm can transiently report at-bottom (e.g. ESC[3J
+    // clears scrollback → baseY=viewportY=0). Don't disengage in that window.
+    if (!shouldLock && (this.writeInProgress || this.pendingRender)) return;
     this.locked = shouldLock;
     this.logger?.(shouldLock ? "engage" : "disengage", {
       anchorLine: this.anchorLine,
