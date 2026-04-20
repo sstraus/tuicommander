@@ -1101,6 +1101,7 @@ pub fn run() {
             pty::create_pty_with_worktree,
             pty::list_worktrees,
             pty::write_pty,
+            pty::get_input_buffer_content,
             pty::resize_pty,
             pty::pause_pty,
             pty::resume_pty,

@@ -2922,6 +2922,20 @@ pub(crate) async fn write_pty(
     .map_err(|e| format!("Task join error: {e}"))?
 }
 
+/// Return the current content of the input line buffer for a PTY session.
+/// Empty string when the user has not started typing.
+#[tauri::command]
+pub(crate) fn get_input_buffer_content(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+) -> String {
+    state
+        .input_buffers
+        .get(&session_id)
+        .map(|entry| entry.lock().content())
+        .unwrap_or_default()
+}
+
 /// Get the last relevant user prompt (>= 10 words) for a PTY session.
 #[tauri::command]
 pub(crate) fn get_last_prompt(
