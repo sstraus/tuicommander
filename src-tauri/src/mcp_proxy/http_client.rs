@@ -146,6 +146,12 @@ impl HttpMcpClient {
         }
     }
 
+    /// Enable auth on this client (e.g. after an OAuth flow completes for an
+    /// upstream that was initially configured without explicit `auth`).
+    pub(crate) fn enable_auth(&mut self) {
+        self.has_auth = true;
+    }
+
     /// Build from an `UpstreamMcpServer` config (only Http transport).
     pub(crate) fn from_config(
         name: String,

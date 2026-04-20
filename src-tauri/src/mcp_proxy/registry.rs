@@ -973,6 +973,17 @@ async fn initialize_entry_with_oauth(
     let result: Result<Vec<UpstreamToolDef>, UpstreamError> = match &entry.client {
         UpstreamClient::Http(rwlock) => {
             let mut guard = rwlock.write().await;
+            // If an OAuth token exists in the keyring (e.g. from a just-completed
+            // flow), ensure the client knows to include it. The client may have
+            // been built with has_auth=false when the upstream config had no
+            // explicit `auth` section (OAuth was discovered via 401 challenge).
+            if crate::mcp_upstream_credentials::read_stored_credential(name)
+                .ok()
+                .flatten()
+                .is_some()
+            {
+                guard.enable_auth();
+            }
             guard.initialize().await
         }
         UpstreamClient::Stdio(mutex) => {
