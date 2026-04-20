@@ -89,6 +89,27 @@
   border-color: var(--accent);
 }
 
+.terminalName {
+  font-size: var(--font-xs);
+  color: var(--fg-secondary);
+  padding: 1px 6px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.frozenBanner {
+  padding: 4px 16px;
+  font-size: var(--font-xs);
+  color: var(--fg-secondary);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  text-align: center;
+}
+
 /* ── Messages ───────────────────────────────────────────── */
 .messageList {
   flex: 1;

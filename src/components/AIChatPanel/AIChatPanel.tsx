@@ -11,6 +11,14 @@ import p from "../shared/panel.module.css";
 import s from "./AIChatPanel.module.css";
 import { SessionKnowledgeBar } from "./SessionKnowledgeBar";
 
+/** Session ID of the currently active terminal tab (null when no terminal is focused). */
+function useActiveSessionId() {
+  return createMemo(() => {
+    const id = terminalsStore.state.activeId;
+    return id ? (terminalsStore.get(id)?.sessionId ?? null) : null;
+  });
+}
+
 export interface AIChatPanelProps {
   visible: boolean;
   onClose: () => void;
@@ -50,13 +58,6 @@ const IconTrash = () => (
   <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
     <path d="M2.5 4h9M5 4V2.5h4V4M3.5 4v7.5a1 1 0 001 1h5a1 1 0 001-1V4" />
     <path d="M5.5 6.5v3M8.5 6.5v3" />
-  </svg>
-);
-
-const IconPin = () => (
-  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
-    <path d="M7 1.5v5M4.5 6.5h5l-1 4h-3z" />
-    <path d="M7 10.5v2" />
   </svg>
 );
 
@@ -125,6 +126,14 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
   let messageListRef: HTMLDivElement | undefined;
   let textareaRef: HTMLTextAreaElement | undefined;
 
+  // Active terminal derived from terminalsStore (null when non-terminal tab focused)
+  const activeSessionId = useActiveSessionId();
+  const isFrozen = createMemo(() => !terminalsStore.state.activeId);
+  const activeTerminalName = createMemo(() => {
+    const id = terminalsStore.state.activeId;
+    return id ? (terminalsStore.get(id)?.name ?? null) : null;
+  });
+
   // ── Auto-scroll on new messages / streaming chunks ──────────────────────
   createEffect(() => {
     // Subscribe to reactive dependencies
@@ -145,7 +154,7 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
   // ── Send message ───────────────────────────────────────────────────────
   const handleSend = () => {
     const text = inputText().trim();
-    if (!text || aiChatStore.isStreaming()) return;
+    if (!text || aiChatStore.isStreaming() || isFrozen()) return;
     aiChatStore.sendMessage(text);
     setInputText("");
     if (textareaRef) {
@@ -154,41 +163,19 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
   };
 
   const handleKeyDown = (e: KeyboardEvent) => {
-    // Cmd+Enter (Mac) or Ctrl+Enter sends
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+    if (e.key === "Enter") {
+      if (e.metaKey || e.ctrlKey || e.shiftKey) {
+        // Cmd/Ctrl/Shift+Enter = newline (default behavior)
+        return;
+      }
       e.preventDefault();
       handleSend();
-      return;
-    }
-    // Shift+Enter = newline (default behavior)
-    // Plain Enter = newline (default behavior)
-  };
-
-  // ── Terminal list for dropdown ──────────────────────────────────────────
-  const terminalList = createMemo(() => {
-    const ids = terminalsStore.getIds();
-    return ids.map((id) => {
-      const t = terminalsStore.get(id);
-      return {
-        id,
-        sessionId: t?.sessionId ?? null,
-        name: t?.name ?? id,
-      };
-    });
-  });
-
-  const handleTerminalChange = (e: Event) => {
-    const value = (e.target as HTMLSelectElement).value;
-    if (value === "__none__") {
-      aiChatStore.detachTerminal();
-    } else {
-      aiChatStore.attachTerminal(value);
     }
   };
 
-  // ── Run code in attached terminal ──────────────────────────────────────
+  // ── Run code in active terminal ────────────────────────────────────────
   const runCodeInTerminal = async (code: string) => {
-    const sessionId = aiChatStore.attachedSessionId();
+    const sessionId = activeSessionId();
     if (!sessionId) {
       appLogger.warn("ai-chat", "Cannot run code: no terminal attached");
       return;
@@ -298,29 +285,15 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
             </svg>
             AI Chat
           </span>
-          <div class={s.attachIndicator}>
-            <span class={cx(s.statusDot, aiChatStore.attachedSessionId() ? s.statusDotAttached : s.statusDotDetached)} />
-            <select
-              class={s.terminalSelect}
-              value={aiChatStore.attachedSessionId() ?? "__none__"}
-              onChange={handleTerminalChange}
-            >
-              <option value="__none__">No terminal</option>
-              <For each={terminalList()}>
-                {(term) => (
-                  <Show when={term.sessionId}>
-                    <option value={term.sessionId!}>{term.name}</option>
-                  </Show>
-                )}
-              </For>
-            </select>
-          </div>
+          <Show when={activeTerminalName()}>
+            {(name) => <span class={s.terminalName}>{name()}</span>}
+          </Show>
         </div>
         <div class={s.headerActions}>
           <button
             class={cx(s.headerBtn, (aiAgentStore.agentState() === "running" || aiAgentStore.agentState() === "paused") && s.headerBtnActive)}
             onClick={() => {
-              const sid = aiChatStore.attachedSessionId();
+              const sid = activeSessionId();
               if (!sid) return;
               const st = aiAgentStore.agentState();
               if (st === "running" || st === "paused") {
@@ -343,13 +316,6 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
             }
           >
             <IconRobot />
-          </button>
-          <button
-            class={cx(s.headerBtn, aiChatStore.pinned() && s.headerBtnActive)}
-            onClick={() => aiChatStore.setPinned(!aiChatStore.pinned())}
-            title={aiChatStore.pinned() ? "Unpin (allow auto-attach)" : "Pin terminal (prevent auto-attach)"}
-          >
-            <IconPin />
           </button>
           <button
             class={s.headerBtn}
@@ -386,7 +352,7 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
             <button
               class={s.agentBannerBtn}
               onClick={() => {
-                const sid = aiChatStore.attachedSessionId();
+                const sid = activeSessionId();
                 if (sid) aiAgentStore.pauseAgent(sid);
               }}
               title="Pause agent"
@@ -398,7 +364,7 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
             <button
               class={s.agentBannerBtn}
               onClick={() => {
-                const sid = aiChatStore.attachedSessionId();
+                const sid = activeSessionId();
                 if (sid) aiAgentStore.resumeAgent(sid);
               }}
               title="Resume agent"
@@ -409,7 +375,7 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
           <button
             class={cx(s.agentBannerBtn, s.agentBannerBtnDanger)}
             onClick={() => {
-              const sid = aiChatStore.attachedSessionId();
+              const sid = activeSessionId();
               if (sid) aiAgentStore.cancelAgent(sid);
             }}
             title="Stop agent"
@@ -498,7 +464,12 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
       </div>
 
       {/* ── Session knowledge footer ────────────────────────── */}
-      <SessionKnowledgeBar sessionId={aiChatStore.attachedSessionId()} />
+      <SessionKnowledgeBar sessionId={activeSessionId()} />
+
+      {/* ── Frozen overlay ──────────────────────────────────── */}
+      <Show when={isFrozen()}>
+        <div class={s.frozenBanner}>No terminal focused — chat is read-only</div>
+      </Show>
 
       {/* ── Input area ──────────────────────────────────────── */}
       <div class={s.inputArea}>
@@ -507,16 +478,14 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
           data-focus-target="ai-chat"
           class={s.textarea}
           rows={1}
-          placeholder={aiChatStore.attachedSessionId()
-            ? "Ask about your terminal... (Cmd+Enter to send)"
-            : "Focus a terminal first..."}
+          placeholder={isFrozen() ? "Focus a terminal first..." : "Ask about your terminal... (Enter to send)"}
           value={inputText()}
           onInput={(e) => {
             setInputText(e.currentTarget.value);
             autoResize();
           }}
           onKeyDown={handleKeyDown}
-          disabled={!aiChatStore.attachedSessionId()}
+          disabled={isFrozen()}
         />
         <Show
           when={aiChatStore.isStreaming()}
@@ -524,8 +493,8 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
             <button
               class={s.sendBtn}
               onClick={handleSend}
-              disabled={!inputText().trim() || aiChatStore.isStreaming() || !aiChatStore.attachedSessionId()}
-              title="Send (Cmd+Enter)"
+              disabled={!inputText().trim() || aiChatStore.isStreaming() || isFrozen()}
+              title="Send (Enter)"
             >
               <IconSend />
             </button>
