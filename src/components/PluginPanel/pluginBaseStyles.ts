@@ -129,10 +129,9 @@ input[type="checkbox"] {
   border: 1px solid var(--border, #3e3e42);
   border-radius: 4px;
   padding: 8px;
-  transition: transform 0.1s, box-shadow 0.1s;
+  transition: box-shadow 0.1s;
 }
 .card:hover {
-  transform: translateY(-1px);
   box-shadow: 0 2px 6px rgba(0,0,0,0.3);
 }
 

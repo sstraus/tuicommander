@@ -458,6 +458,7 @@ function renderBoard(storyList, filters) {
     user-select: none;
     -webkit-user-select: none;
   }
+  .card:hover { transform: none; }
   .card.dragging { opacity: 0.4; }
   .drag-ghost {
     position: fixed;
