@@ -209,7 +209,7 @@ async function initFromDisk(): Promise<void> {
               .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "system")
               .map((m) => ({
                 role: m.role as AiChatMessage["role"],
-                content: m.content,
+                content: m.content ?? "",
                 timestamp: m.timestamp,
               }))
               .slice(-MAX_MESSAGES),

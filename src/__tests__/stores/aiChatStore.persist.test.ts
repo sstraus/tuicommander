@@ -117,4 +117,50 @@ describe("aiChatStore persistence (1385-87c6)", () => {
     expect(deletes[0]?.[1]).toEqual({ id: prevId });
     expect(store.chatId()).toBe("next-id");
   });
+
+  it("initFromDisk loads messages with missing content as empty string (1405-3464)", async () => {
+    globalThis.localStorage.setItem("ai-chat-active-id", "corrupt-123");
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "load_conversation") {
+        return Promise.resolve({
+          meta: { id: "corrupt-123", title: "t", created: 1, updated: 2, message_count: 2 },
+          messages: [
+            { role: "user", content: "hello", timestamp: 1 },
+            { role: "assistant", timestamp: 2 }, // missing content
+          ],
+          schema_version: 1,
+        });
+      }
+      return Promise.resolve();
+    });
+
+    await store.initFromDisk();
+    expect(store.messages().length).toBe(2);
+    expect(store.messages()[1]?.content).toBe("");
+  });
+
+  it("round-trip: message with empty content persists without serde error (1405-3464)", async () => {
+    globalThis.localStorage.setItem("ai-chat-active-id", "rt-123");
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "load_conversation") {
+        return Promise.resolve({
+          meta: { id: "rt-123", title: "t", created: 1, updated: 2, message_count: 1 },
+          messages: [{ role: "user", timestamp: 1 }], // missing content
+          schema_version: 1,
+        });
+      }
+      return Promise.resolve();
+    });
+
+    await store.initFromDisk();
+    // Trigger persist — should call save_conversation with content: ""
+    store.addAssistantMessage("reply");
+    await vi.advanceTimersByTimeAsync(600);
+
+    const saves = mockInvoke.mock.calls.filter((c) => c[0] === "save_conversation");
+    expect(saves.length).toBe(1);
+    const msgs = saves[0]?.[1]?.conversation?.messages as Array<{ role: string; content: string }>;
+    const userMsg = msgs.find((m) => m.role === "user");
+    expect(userMsg?.content).toBe("");
+  });
 });

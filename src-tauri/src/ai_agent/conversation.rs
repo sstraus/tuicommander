@@ -34,6 +34,7 @@ pub(crate) struct ToolCallRecord {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct ChatMessage {
     pub role: String, // "user" | "assistant" | "system" | "tool"
+    #[serde(default)]
     pub content: String,
     #[serde(default)]
     pub timestamp: u64, // unix millis
