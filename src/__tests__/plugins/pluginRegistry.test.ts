@@ -639,6 +639,15 @@ describe("PluginHost — Tier 3 capability gating", () => {
     await expect(host!.sendAgentInput("s1", "hello")).resolves.toBeUndefined();
   });
 
+  it("sendAgentInput is a no-op when session has no active agent", async () => {
+    const { invoke: mockInvoke } = await import("../../invoke");
+    (mockInvoke as ReturnType<typeof vi.fn>).mockClear();
+    let host: PluginHost | null = null;
+    pluginRegistry.register(makePlugin("builtin", (h) => { host = h; }));
+    await host!.sendAgentInput("no-agent-session", "wake up");
+    expect(mockInvoke).not.toHaveBeenCalledWith("write_pty", expect.anything());
+  });
+
   it("external plugin without pty:write throws PluginCapabilityError on sendAgentInput", async () => {
     let host: PluginHost | null = null;
     await pluginRegistry.register(

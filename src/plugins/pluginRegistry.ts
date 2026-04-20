@@ -394,6 +394,10 @@ function createPluginRegistry() {
         if (isPluginPaused(pluginId)) return;
         requireCapability(pluginId, capabilities, "pty:write");
         const agentType = terminalsStore.getAgentTypeForSession(sessionId);
+        if (!agentType) {
+          appLogger.warn("plugin", `[${pluginId}] sendAgentInput blocked — no active agent in session ${sessionId.slice(0, 8)}`);
+          return;
+        }
         const shellFamily = await getShellFamily(sessionId);
         await sendCommand(
           (data) => invoke("write_pty", { sessionId, data }),
