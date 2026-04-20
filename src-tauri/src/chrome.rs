@@ -484,6 +484,52 @@ mod tests {
         assert!(is_chrome_row("Enter to select · Tab/Arrow keys to navigate · Esc to cancel"));
     }
 
+    // Codex tool call patterns (captured 2026-04-19) — must NOT be chrome
+    #[test]
+    fn codex_ran_command_not_chrome() {
+        assert!(!is_chrome_row("• Ran git status --short"));
+    }
+
+    #[test]
+    fn codex_ran_long_command_not_chrome() {
+        assert!(!is_chrome_row("• Ran xcodebuild -project StepsWidgetDemo.xcodeproj -scheme StepsWidgetDemo -destination 'generic/platform=iOS'"));
+    }
+
+    #[test]
+    fn codex_called_not_chrome() {
+        assert!(!is_chrome_row("• Called"));
+    }
+
+    #[test]
+    fn codex_waited_not_chrome() {
+        assert!(!is_chrome_row("• Waited for background terminal"));
+    }
+
+    #[test]
+    fn codex_hook_failed_not_chrome() {
+        assert!(!is_chrome_row("• PreToolUse hook (failed)"));
+    }
+
+    #[test]
+    fn codex_post_hook_failed_not_chrome() {
+        assert!(!is_chrome_row("• PostToolUse hook (failed)"));
+    }
+
+    #[test]
+    fn codex_response_text_not_chrome() {
+        assert!(!is_chrome_row("• Il progetto compila. Prima di chiudere salvo anche la memoria di onboarding."));
+    }
+
+    #[test]
+    fn codex_tree_connector_not_chrome() {
+        assert!(!is_chrome_row("  └ ?? .gitignore"));
+    }
+
+    #[test]
+    fn codex_truncation_indicator_not_chrome() {
+        assert!(!is_chrome_row("    … +109 lines (ctrl + t to view transcript)"));
+    }
+
     // Codex separator between tool output and summary
     #[test]
     fn codex_tool_separator() {
@@ -537,6 +583,20 @@ mod tests {
             "  gpt-5.4 high · 100% left · ~/Gits/personal/tuicommander",
         ];
         assert_eq!(find_chrome_cutoff(&rows), Some(1));
+    }
+
+    #[test]
+    fn cutoff_codex_no_quota() {
+        // Codex without quota segment in status line (observed 2026-04-19)
+        let rows: Vec<&str> = vec![
+            "• Called",
+            "  \u{2514} serena.write_memory({\"memory_name\":\"done_checklist\"})",
+            "    Memory done_checklist written.",
+            "• Working (4m 55s \u{2022} esc to interrupt)",
+            "\u{203A} Improve documentation in @filename",
+            "  gpt-5.4 high \u{00B7} ~/Gits/personal/steps",
+        ];
+        assert_eq!(find_chrome_cutoff(&rows), Some(4));
     }
 
     #[test]

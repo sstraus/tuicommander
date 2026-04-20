@@ -133,6 +133,7 @@ function createTerminalsStore() {
   const busyDurationMap = new Map<string, number>();
   const cooldownTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const busyToIdleCallbacks: Array<(id: string, durationMs: number) => void> = [];
+  const idleToBusyCallbacks: Array<(id: string) => void> = [];
   const onRemoveCallbacks: Array<(id: string) => void> = [];
   // Tracks which terminals have completed their initial shell startup (reached idle at least once).
   // Used to distinguish "busy from .zshrc startup" from "busy from a user-launched process".
@@ -166,6 +167,7 @@ function createTerminalsStore() {
       setState("debouncedBusy", id, true);
       if (!hadCooldown) {
         busySinceMap.set(id, Date.now());
+        for (const cb of idleToBusyCallbacks) cb(id);
       }
       busyDurationMap.delete(id);
       // Error state is NOT cleared here: API errors are persistent and should only
@@ -524,6 +526,16 @@ function createTerminalsStore() {
       return () => {
         const idx = busyToIdleCallbacks.indexOf(callback);
         if (idx >= 0) busyToIdleCallbacks.splice(idx, 1);
+      };
+    },
+
+    /** Register a callback fired when a terminal transitions from idle to busy (debounced).
+     *  Only fires on genuine new busy cycles — not cooldown re-entries. */
+    onIdleToBusy(callback: (id: string) => void): () => void {
+      idleToBusyCallbacks.push(callback);
+      return () => {
+        const idx = idleToBusyCallbacks.indexOf(callback);
+        if (idx >= 0) idleToBusyCallbacks.splice(idx, 1);
       };
     },
 

@@ -415,7 +415,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
         case "status-line": {
           retryCount = 0;
           const awState = terminalsStore.get(props.id)?.awaitingInput;
-          const clearAw = awState && awState !== "error" && awState !== "question";
+          const clearAw = awState && awState !== "question";
           if (clearAw) {
             appLogger.debug("terminal", `clearAwaitingInput(${props.id}) was "${awState}" → null`);
           }
@@ -531,7 +531,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
           const matched = parsed.matched_text;
           appLogger.error("terminal", `[ToolError] ${props.id} matched="${matched}"`);
           terminalsStore.setAwaitingInput(props.id, "error");
-          notificationsStore.playError();
           break;
         }
         case "intent":

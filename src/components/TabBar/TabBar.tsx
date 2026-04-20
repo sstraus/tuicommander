@@ -284,16 +284,20 @@ export const TabBar: Component<TabBarProps> = (props) => {
     prevTerminalIds = ids;
 
     // Diagnostic: detect when TabBar shows 0 terminals but the store has some
-    if (ids.length === 0 && terminalsStore.getIds().length > 0 && !repositoriesStore.state.branchSwitching) {
+    // that belong to the current branch (ignore terminals from other repos/branches)
+    if (ids.length === 0 && !repositoriesStore.state.branchSwitching) {
       const activeRepoPath = repositoriesStore.state.activeRepoPath;
       const repo = activeRepoPath ? repositoriesStore.state.repositories[activeRepoPath] : null;
-      appLogger.warn("app", "TabBar: activeTerminals empty but store has terminals", {
-        storeIds: terminalsStore.getIds(),
-        activeRepoPath,
-        activeBranch: repo?.activeBranch ?? null,
-        branchTerminals: repo?.activeBranch ? repo.branches[repo.activeBranch]?.terminals : null,
-        activeId: terminalsStore.state.activeId,
-      });
+      const activeBranch = repo?.activeBranch;
+      const branchTerminals = activeBranch ? repo!.branches[activeBranch]?.terminals : null;
+      if (branchTerminals && branchTerminals.length > 0) {
+        appLogger.warn("app", "TabBar: activeTerminals empty but branch has terminals", {
+          branchTerminals,
+          activeRepoPath,
+          activeBranch,
+          activeId: terminalsStore.state.activeId,
+        });
+      }
     }
 
     // In split mode, reorder tabs to match the spatial pane layout (DFS order)

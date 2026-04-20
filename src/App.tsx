@@ -634,8 +634,18 @@ const App: Component = () => {
       deferredCompletionTimers.set(id, setTimeout(fireCompletion, 800));
     }
   });
+  const unsubIdleToBusy = terminalsStore.onIdleToBusy((id) => {
+    const timer = deferredCompletionTimers.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      deferredCompletionTimers.delete(id);
+      appLogger.debug("terminal", `[Notify] ${id} deferred completion CANCELLED — terminal went busy`);
+    }
+  });
+
   onCleanup(() => {
     unsubBusyToIdle();
+    unsubIdleToBusy();
     for (const timer of deferredCompletionTimers.values()) clearTimeout(timer);
     deferredCompletionTimers.clear();
   });

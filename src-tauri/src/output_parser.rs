@@ -756,9 +756,9 @@ fn parse_status_line(clean: &str) -> Option<ParsedEvent> {
         // Format: "∴ Thinking…" or "● Read file..." or "○ Verify..."
         static ref COPILOT_STATUS_RE: regex::Regex =
             regex::Regex::new(r"^\s*[\u{2234}\u{25CF}\u{25CB}]\s+([^.…\n]+)(?:\.{2,3}|…)").unwrap();
-        // Time info
+        // Time info — captures compound times like "4m 55s" or "1m32s"
         static ref TIME_RE: regex::Regex =
-            regex::Regex::new(r"\((\d+[smh])").unwrap();
+            regex::Regex::new(r"\((\d+[smh](?:\s*\d+[smh])*)").unwrap();
         // Token info
         static ref TOKEN_RE: regex::Regex =
             regex::Regex::new(r"(?i)(\d+(?:[.,]\d+)?k?\s*tokens)").unwrap();
@@ -1653,7 +1653,7 @@ mod tests {
         match &events[0] {
             ParsedEvent::StatusLine { task_name, time_info, token_info, .. } => {
                 assert_eq!(task_name, "Updating verification document");
-                assert_eq!(time_info.as_deref(), Some("5m"));
+                assert_eq!(time_info.as_deref(), Some("5m1s"));
                 assert!(token_info.is_some());
             }
             _ => panic!("Expected StatusLine event, got {:?}", events[0]),
@@ -1727,6 +1727,21 @@ mod tests {
             ParsedEvent::StatusLine { task_name, time_info, .. } => {
                 assert_eq!(task_name, "Working");
                 assert_eq!(time_info.as_deref(), Some("5s"));
+            }
+            _ => panic!("Expected StatusLine, got {:?}", events[0]),
+        }
+    }
+
+    #[test]
+    fn test_status_line_codex_compound_time() {
+        // Codex CLI with compound time: "• Working (4m 55s • esc to interrupt)"
+        let mut parser = OutputParser::new();
+        let events = parser.parse("\u{2022} Working (4m 55s \u{2022} esc to interrupt)");
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ParsedEvent::StatusLine { task_name, time_info, .. } => {
+                assert_eq!(task_name, "Working");
+                assert_eq!(time_info.as_deref(), Some("4m 55s"));
             }
             _ => panic!("Expected StatusLine, got {:?}", events[0]),
         }
