@@ -1656,6 +1656,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
     writeln: (data: string) => terminal?.writeln(data),
     input: (data: string) => terminal?.input(data, true),
     clear: () => terminal?.clear(),
+    refresh: () => {
+      rebuildAtlas();
+      if (terminal) {
+        fitAddon?.fit();
+        terminal.refresh(0, terminal.rows - 1);
+      }
+    },
     focus: () => terminal?.focus(),
     getSessionId: () => sessionId,
     openSearch: () => setSearchVisible(true),

@@ -78,6 +78,7 @@ export interface TerminalRef {
   writeln: (data: string) => void;
   input: (data: string) => void;
   clear: () => void;
+  refresh: () => void;
   focus: () => void;
   getSessionId: () => string | null;
   openSearch: () => void;

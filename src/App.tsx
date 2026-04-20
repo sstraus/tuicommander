@@ -1188,6 +1188,7 @@ const App: Component = () => {
     reopenClosedTab: terminalLifecycle.reopenClosedTab,
     navigateTab: terminalLifecycle.navigateTab,
     clearTerminal: terminalLifecycle.clearTerminal,
+    refreshTerminal: terminalLifecycle.refreshTerminal,
     clearScrollback: terminalLifecycle.clearScrollback,
     scrollToTop: terminalLifecycle.scrollToTop,
     scrollToBottom: terminalLifecycle.scrollToBottom,

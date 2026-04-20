@@ -40,6 +40,7 @@ export interface ShortcutHandlers {
   reopenClosedTab: () => void;
   navigateTab: (direction: "prev" | "next") => void;
   clearTerminal: () => void;
+  refreshTerminal: () => void;
   terminalIds: () => string[];
   handleTerminalSelect: (id: string) => void;
   handleSplit: (direction: "vertical" | "horizontal") => void;

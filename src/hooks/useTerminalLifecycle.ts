@@ -331,6 +331,13 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
     }
   };
 
+  const refreshTerminal = () => {
+    const active = terminalsStore.getActive();
+    if (active?.ref) {
+      active.ref.refresh();
+    }
+  };
+
   const clearScrollback = () => {
     const active = terminalsStore.getActive();
     if (active?.ref) {
@@ -460,6 +467,7 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
     reopenClosedTab,
     navigateTab,
     clearTerminal,
+    refreshTerminal,
     clearScrollback,
     scrollToTop,
     scrollToBottom,
