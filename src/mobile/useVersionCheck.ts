@@ -16,6 +16,7 @@ export function useVersionCheck() {
   let consecutiveFailures = 0;
 
   const clientHash: string = typeof __BUILD_GIT_HASH__ !== "undefined" ? __BUILD_GIT_HASH__ : "";
+  const isDev = import.meta.env.DEV;
 
   async function check() {
     try {
@@ -25,7 +26,7 @@ export function useVersionCheck() {
       setServerDown(false);
       const data = await resp.json() as { version: string; git_hash: string };
       const serverHash = data.git_hash;
-      if (!serverHash || !clientHash) return;
+      if (!serverHash || !clientHash || isDev) return;
       if (serverHash !== clientHash) {
         appLogger.info("app", `Update available: ${clientHash} → ${serverHash}`);
         setUpdateAvailable(true);
