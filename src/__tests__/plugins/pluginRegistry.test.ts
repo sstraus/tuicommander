@@ -935,6 +935,24 @@ describe("PluginHost — Tier 4 scoped invoke", () => {
     await expect(host!.invoke("read_file", { path: "/repo", file: "README.md" }))
       .resolves.toBeUndefined();
   });
+
+  it("get_input_buffer_content requires pty:read (not invoke:*)", async () => {
+    let hostNoCap: PluginHost | null = null;
+    await pluginRegistry.register(
+      makePlugin("no-pty", (h) => { hostNoCap = h; }),
+      [],
+    );
+    await expect(hostNoCap!.invoke("get_input_buffer_content", { sessionId: "s1" }))
+      .rejects.toThrow(PluginCapabilityError);
+
+    let hostWithCap: PluginHost | null = null;
+    await pluginRegistry.register(
+      makePlugin("with-pty", (h) => { hostWithCap = h; }),
+      ["pty:read"],
+    );
+    await expect(hostWithCap!.invoke("get_input_buffer_content", { sessionId: "s1" }))
+      .resolves.toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------

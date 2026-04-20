@@ -314,6 +314,7 @@ const status = JSON.parse(raw);
 | `read_plugin_data` | `{ plugin_id: string, path: string }` | `string` | none |
 | `write_plugin_data` | `{ plugin_id: string, path: string, content: string }` | `void` | none |
 | `delete_plugin_data` | `{ plugin_id: string, path: string }` | `void` | none |
+| `get_input_buffer_content` | `{ sessionId: string }` | `string` | `pty:read` |
 
 Plugin data sandboxed per-plugin (no capability required):
 ```javascript

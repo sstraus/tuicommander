@@ -649,8 +649,12 @@ function createPluginRegistry() {
           throw new Error(`Plugin "${pluginId}": command "${cmd}" is not in the invoke whitelist`);
         }
         // Check capability for scoped invoke commands
-        const capKey = `invoke:${cmd}` as PluginCapability;
-        if (capabilities !== null && cmd !== "read_plugin_data" && cmd !== "write_plugin_data" && cmd !== "delete_plugin_data") {
+        const NO_CAP_COMMANDS = ["read_plugin_data", "write_plugin_data", "delete_plugin_data"];
+        const CAP_OVERRIDES: Record<string, PluginCapability> = {
+          get_input_buffer_content: "pty:read",
+        };
+        if (capabilities !== null && !NO_CAP_COMMANDS.includes(cmd)) {
+          const capKey = CAP_OVERRIDES[cmd] ?? (`invoke:${cmd}` as PluginCapability);
           requireCapability(pluginId, capabilities, capKey);
         }
         return invoke<T>(cmd, args);

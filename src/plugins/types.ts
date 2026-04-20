@@ -411,6 +411,7 @@ export const INVOKE_WHITELIST: readonly string[] = [
   "read_plugin_data",
   "write_plugin_data",
   "delete_plugin_data",
+  "get_input_buffer_content",
 ];
 
 /**

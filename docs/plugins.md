@@ -997,6 +997,7 @@ Invokes a whitelisted Tauri command. Non-whitelisted commands throw immediately.
 | `read_plugin_data` | `{ plugin_id: string, path: string }` | `string` | none (always allowed) |
 | `write_plugin_data` | `{ plugin_id: string, path: string, content: string }` | `void` | none (always allowed) |
 | `delete_plugin_data` | `{ plugin_id: string, path: string }` | `void` | none (always allowed) |
+| `get_input_buffer_content` | `{ sessionId: string }` | `string` | `pty:read` |
 
 **Plugin data storage** is sandboxed to `~/.config/tuicommander/plugins/{id}/data/`. No capability required — every plugin can store its own data.
 
