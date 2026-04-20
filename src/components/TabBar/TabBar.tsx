@@ -394,19 +394,25 @@ export const TabBar: Component<TabBarProps> = (props) => {
         if (tabEl) {
           const targetId = tabEl.dataset.tabId!;
           if (targetId !== sourceId) {
-            const ids = activeTerminals();
-            const fromIndex = ids.indexOf(sourceId);
-            const toIndex = ids.indexOf(targetId);
+            const termIds = activeTerminals();
+            const fromIndex = termIds.indexOf(sourceId);
+            const toIndex = termIds.indexOf(targetId);
             if (fromIndex !== -1 && toIndex !== -1) {
+              // Terminal → terminal reorder
               const rect = tabEl.getBoundingClientRect();
               const side = x < rect.left + rect.width / 2 ? "left" : "right";
               let adjustedTo = toIndex;
               if (side === "left" && fromIndex < toIndex) adjustedTo--;
               else if (side === "right" && fromIndex > toIndex) adjustedTo++;
-              const clampedTo = Math.max(0, Math.min(adjustedTo, ids.length - 1));
+              const clampedTo = Math.max(0, Math.min(adjustedTo, termIds.length - 1));
               if (fromIndex !== clampedTo) {
                 props.onReorder?.(fromIndex, clampedTo);
               }
+            } else if (visibleMdIds().includes(sourceId) && visibleMdIds().includes(targetId)) {
+              // Non-terminal (diff/markdown/plugin-panel) → same-type reorder
+              const rect = tabEl.getBoundingClientRect();
+              const side = x < rect.left + rect.width / 2 ? "before" : "after";
+              mdTabsStore.reorderByIds(sourceId, targetId, side);
             }
           }
         }
