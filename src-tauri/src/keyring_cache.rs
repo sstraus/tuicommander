@@ -6,15 +6,18 @@
 //! (service, user) pair unless the cache is explicitly invalidated.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
-static CACHE: Mutex<Option<HashMap<(String, String), Option<String>>>> = Mutex::new(None);
+type CacheMap = HashMap<(String, String), Option<String>>;
+type CacheGuard<'a> = MutexGuard<'a, Option<CacheMap>>;
 
-fn cache_map() -> std::sync::MutexGuard<'static, Option<HashMap<(String, String), Option<String>>>> {
+static CACHE: Mutex<Option<CacheMap>> = Mutex::new(None);
+
+fn cache_map() -> CacheGuard<'static> {
     CACHE.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-fn ensure_map(guard: &mut std::sync::MutexGuard<'_, Option<HashMap<(String, String), Option<String>>>>) {
+fn ensure_map(guard: &mut CacheGuard<'_>) {
     if guard.is_none() {
         **guard = Some(HashMap::new());
     }

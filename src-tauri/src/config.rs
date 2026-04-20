@@ -6,18 +6,28 @@ use std::path::PathBuf;
 #[cfg(test)]
 static CONFIG_DIR_OVERRIDE: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
 
-/// Override the config directory for testing. Returns a guard that restores the
-/// original value when dropped.
+/// Global serialization lock for tests that call `set_config_dir_override`.
+/// Held for the lifetime of the returned guard so tests in different modules
+/// do not race on the shared `CONFIG_DIR_OVERRIDE` global.
+#[cfg(test)]
+static CONFIG_DIR_EXCLUSIVE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Override the config directory for testing. Returns a guard that holds the
+/// global `CONFIG_DIR_EXCLUSIVE` lock and restores the original value on drop.
+/// All callers across all test modules are automatically serialized.
 #[cfg(test)]
 pub(crate) fn set_config_dir_override(dir: PathBuf) -> impl Drop {
+    let lock = CONFIG_DIR_EXCLUSIVE.lock().unwrap_or_else(|e| e.into_inner());
     *CONFIG_DIR_OVERRIDE.lock().unwrap() = Some(dir);
-    struct Guard;
+    struct Guard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
     impl Drop for Guard {
         fn drop(&mut self) {
             *CONFIG_DIR_OVERRIDE.lock().unwrap() = None;
         }
     }
-    Guard
+    Guard { _lock: lock }
 }
 
 /// Get the config directory using platform-appropriate location.

@@ -193,6 +193,18 @@ pub fn tool_definitions() -> Value {
             }
         },
         {
+            "name": "search_code",
+            "description": "Semantic BM25 search across all files in the repo. Returns ranked files with a snippet from the most relevant section. Use for discovering which files relate to a concept or feature. Follow up with read_file or search_files for exact matches.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "Natural language or keyword query (e.g. 'authentication middleware', 'rate limit', 'file sandbox')" },
+                    "limit": { "type": "integer", "description": "Max results to return (default 10, max 20)", "default": 10 }
+                },
+                "required": ["query"]
+            }
+        },
+        {
             "name": "run_command",
             "description": "Run a shell command inside the session's sandbox and capture stdout/stderr. The command runs via `sh -c` with a sanitized environment. Destructive commands are blocked by the safety checker. Output is truncated at 30K chars (head+tail) and secrets are redacted.",
             "inputSchema": {
@@ -1027,6 +1039,87 @@ fn exec_search_files(state: &AppState, session_id: &str, args: &Value) -> ToolRe
     )
 }
 
+// ── search_code ────────────────────────────────────────────────
+
+/// Max results returned by `search_code`.
+const SEARCH_CODE_MAX_RESULTS: usize = 20;
+
+fn exec_search_code(state: &Arc<AppState>, session_id: &str, args: &Value) -> ToolResult {
+    let Some(query) = args["query"].as_str().filter(|q| !q.trim().is_empty()) else {
+        return missing_arg("query");
+    };
+    let limit = args["limit"]
+        .as_u64()
+        .map(|v| v as usize)
+        .unwrap_or(10)
+        .min(SEARCH_CODE_MAX_RESULTS);
+
+    let sandbox = match get_sandbox(state, session_id) {
+        Ok(s) => s,
+        Err(e) => return ToolResult::err(e),
+    };
+
+    let repo_root = sandbox.root().to_string_lossy().to_string();
+    let index_arc = crate::content_index::ensure_index(state, &repo_root);
+    let _guard = state.indexer_throttle.begin_search();
+
+    let results = {
+        let idx = index_arc.read();
+        if !idx.is_ready() {
+            return ToolResult::ok(
+                json!({ "results": [], "note": "Index building in background, retry in a moment" })
+                    .to_string(),
+            );
+        }
+        idx.search(query, limit)
+    };
+
+    let query_words: Vec<String> = query
+        .split_whitespace()
+        .map(|w| w.to_lowercase())
+        .collect();
+
+    let out: Vec<Value> = results
+        .into_iter()
+        .map(|ranked| {
+            let abs = index_arc.read().absolute_path(&ranked.rel_path);
+            let snippet = extract_bm25_snippet(&abs, &query_words);
+            json!({
+                "path": ranked.rel_path,
+                "score": ranked.score,
+                "snippet": snippet,
+            })
+        })
+        .collect();
+
+    ToolResult::ok(json!({ "results": out }).to_string())
+}
+
+/// Read `path` and return a 3-line window around the line with the most query-word hits.
+fn extract_bm25_snippet(path: &std::path::Path, query_words: &[String]) -> String {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return String::new();
+    };
+    let lines: Vec<&str> = content.lines().collect();
+    if lines.is_empty() {
+        return String::new();
+    }
+    let best = lines
+        .iter()
+        .enumerate()
+        .map(|(i, line)| {
+            let lower = line.to_lowercase();
+            let hits = query_words.iter().filter(|w| lower.contains(w.as_str())).count();
+            (i, hits)
+        })
+        .max_by_key(|(_, hits)| *hits)
+        .map(|(i, _)| i)
+        .unwrap_or(0);
+    let start = best.saturating_sub(1);
+    let end = (best + 2).min(lines.len());
+    lines[start..end].join("\n")
+}
+
 /// Truncate output to `RUN_COMMAND_OUTPUT_CAP` using head+tail windows.
 fn truncate_output(s: &str) -> (String, bool) {
     if s.len() <= RUN_COMMAND_OUTPUT_CAP {
@@ -1243,6 +1336,7 @@ async fn dispatch_inner(
         "edit_file" => exec_edit_file_inner(state, session_id, args, skip_safety),
         "list_files" => exec_list_files(state, session_id, args),
         "search_files" => exec_search_files(state, session_id, args),
+        "search_code" => exec_search_code(state, session_id, args),
         "run_command" => exec_run_command_inner(state, session_id, args, skip_safety).await,
         other => ToolResult::err(format!("Unknown tool: {other}")),
     }
@@ -1266,10 +1360,10 @@ mod tests {
     const FILESYSTEM_SEARCH_TOOLS: &[&str] = &["list_files", "search_files"];
 
     #[test]
-    fn definitions_returns_12_tools() {
+    fn definitions_returns_13_tools() {
         let defs = tool_definitions();
         let arr = defs.as_array().unwrap();
-        assert_eq!(arr.len(), 12);
+        assert_eq!(arr.len(), 13);
     }
 
     #[test]
@@ -1306,6 +1400,7 @@ mod tests {
                 "edit_file",
                 "list_files",
                 "search_files",
+                "search_code",
                 "run_command",
             ]
         );
@@ -2457,5 +2552,76 @@ mod tests {
         let result = dispatch_inner(&state, "session-A", "send_input", &args, false).await;
         // May fail for other reasons (no PTY) but NOT for permission denied
         assert!(!result.output.contains("Permission denied"));
+    }
+
+    // ── search_code ────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn search_code_requires_sandbox() {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let r = dispatch(&state, "none", "search_code", &json!({ "query": "authentication" })).await;
+        assert!(!r.success);
+        assert!(r.output.contains("No filesystem sandbox"));
+    }
+
+    #[tokio::test]
+    async fn search_code_missing_query() {
+        let (_d, state) = fs_test_state("s1");
+        let r = dispatch(&state, "s1", "search_code", &json!({})).await;
+        assert!(!r.success);
+        assert!(r.output.contains("query"));
+    }
+
+    #[tokio::test]
+    async fn search_code_returns_ranked_results_with_snippet() {
+        let (dir, state) = fs_test_state("s1");
+        let repo_root = dir.path().to_path_buf();
+        std::fs::write(
+            repo_root.join("auth.rs"),
+            "// authentication module\npub fn authenticate(token: &str) -> bool {\n    !token.is_empty()\n}\n",
+        )
+        .unwrap();
+        std::fs::write(repo_root.join("other.rs"), "fn unrelated() {}\n").unwrap();
+
+        // Build index synchronously and insert into state.
+        // Use canonicalized path — FileSandbox::new canonicalizes, so the lookup key must match.
+        let canonical_root = repo_root.canonicalize().unwrap();
+        let index = crate::content_index::ContentIndex::build(canonical_root.clone(), None);
+        let index_arc = Arc::new(parking_lot::RwLock::new(index));
+        state
+            .content_indices
+            .insert(canonical_root.to_string_lossy().to_string(), index_arc);
+
+        let r = dispatch(&state, "s1", "search_code", &json!({ "query": "authentication" })).await;
+        assert!(r.success, "{}", r.output);
+        let parsed: Value = serde_json::from_str(&r.output).unwrap();
+        let results = parsed["results"].as_array().unwrap();
+        assert!(!results.is_empty(), "expected at least one result");
+        assert!(
+            results[0]["path"].as_str().unwrap().contains("auth.rs"),
+            "auth.rs should rank highest for 'authentication'"
+        );
+        assert!(results[0]["score"].as_f64().unwrap() > 0.0);
+        assert!(!results[0]["snippet"].as_str().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn search_code_not_ready_returns_empty_with_note() {
+        let (dir, state) = fs_test_state("s1");
+        let repo_root = dir.path().to_path_buf();
+
+        // Insert an empty (not-yet-built) index
+        let index_arc = Arc::new(parking_lot::RwLock::new(
+            crate::content_index::ContentIndex::empty(repo_root.clone()),
+        ));
+        state
+            .content_indices
+            .insert(repo_root.to_string_lossy().to_string(), index_arc);
+
+        let r = dispatch(&state, "s1", "search_code", &json!({ "query": "anything" })).await;
+        assert!(r.success, "{}", r.output);
+        let parsed: Value = serde_json::from_str(&r.output).unwrap();
+        assert_eq!(parsed["results"].as_array().unwrap().len(), 0);
+        assert!(parsed["note"].as_str().is_some());
     }
 }
