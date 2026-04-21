@@ -42,6 +42,7 @@ interface UIStoreState {
   gitPanelVisible: boolean;
 
   aiChatPanelVisible: boolean;
+  aiChatDetached: boolean;
 
   // Knowledge history overlay — ephemeral, not persisted. Full-screen modal
   // opened from SessionKnowledgeBar's "History" button.
@@ -90,6 +91,7 @@ function createUIStore() {
     fileBrowserPanelVisible: false,
     gitPanelVisible: false,
     aiChatPanelVisible: false,
+    aiChatDetached: false,
     knowledgeHistoryOverlayVisible: false,
     gitPanelRequestedTab: null,
     markdownPanelWidth: MARKDOWN_PANEL_DEFAULT_WIDTH,
@@ -315,6 +317,10 @@ function createUIStore() {
     setAiChatPanelWidth(width: number): void {
       setState("aiChatPanelWidth", width);
       saveUIPrefs();
+    },
+
+    setAiChatDetached(detached: boolean): void {
+      setState("aiChatDetached", detached);
     },
 
     setKnowledgeHistoryOverlayVisible(visible: boolean): void {

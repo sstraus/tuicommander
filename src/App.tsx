@@ -447,6 +447,15 @@ const App: Component = () => {
     onCleanup(() => unlisten?.());
   }
 
+  // Reset detached flag when the AI Chat panel window is closed.
+  {
+    let unlisten: (() => void) | undefined;
+    listen<string>("ai-chat-window-closed", () => {
+      uiStore.setAiChatDetached(false);
+    }).then((fn) => { unlisten = fn; });
+    onCleanup(() => unlisten?.());
+  }
+
   // Notification sounds are now played natively via Rust (rodio) —
   // no Web Audio warmup needed.
 

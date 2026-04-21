@@ -77,10 +77,18 @@ vi.mock("../../utils/sendCommand", () => ({
   getShellFamily: vi.fn(() => "posix"),
 }));
 
+vi.mock("../../stores/ui", () => ({
+  uiStore: {
+    state: { aiChatDetached: false },
+    setAiChatDetached: vi.fn(),
+  },
+}));
+
 vi.mock("../../transport", () => ({
   isTauri: () => true,
 }));
 
+import { invoke } from "@tauri-apps/api/core";
 import { AIChatPanel } from "../../components/AIChatPanel/AIChatPanel";
 
 describe("AIChatPanel lifecycle", () => {
@@ -106,5 +114,20 @@ describe("AIChatPanel lifecycle", () => {
     });
     unmount();
     expect(mockUnsubscribe).toHaveBeenCalled();
+  });
+
+  it("renders detach button in main window mode", () => {
+    const { container } = render(() => <AIChatPanel visible={true} onClose={() => {}} />);
+    const detachBtn = container.querySelector('button[title="Detach into separate window"]');
+    expect(detachBtn).not.toBeNull();
+  });
+
+  it("detach button invokes open_ai_chat_window command", async () => {
+    const { container } = render(() => <AIChatPanel visible={true} onClose={() => {}} />);
+    const detachBtn = container.querySelector('button[title="Detach into separate window"]') as HTMLButtonElement;
+    detachBtn.click();
+    await vi.waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("open_ai_chat_window", { chatId: "chat-abc123" });
+    });
   });
 });
