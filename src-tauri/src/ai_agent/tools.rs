@@ -317,6 +317,25 @@ pub fn redact_secrets(text: &str) -> String {
                 .unwrap(),
                 "${1}[REDACTED]",
             ),
+            // .env key=value: variable names that contain secret-context words.
+            // Matches STRIPE_SECRET_KEY=…, DB_PASSWORD=…, MY_SECRET_TOKEN=… etc.
+            // Does NOT match DATABASE_HOST, PATH, PORT.
+            (
+                Regex::new(
+                    r"(?i)([A-Z_0-9]*(?:SECRET|PASSWORD|PASSWD|TOKEN|API_KEY|PRIVATE_KEY|CREDENTIAL)[A-Z_0-9]*\s*=\s*)\S+",
+                )
+                .unwrap(),
+                "${1}[REDACTED]",
+            ),
+            // High-entropy values for variable names ending in _KEY, _SECRET, _TOKEN.
+            // Catches STRIPE_API_KEY=rk_live_... even without 'SECRET' in the name.
+            (
+                Regex::new(
+                    r"(?i)([A-Z_0-9]+_(?:KEY|SECRET|TOKEN)\s*=\s*)[A-Za-z0-9+/=_\-]{20,}",
+                )
+                .unwrap(),
+                "${1}[REDACTED]",
+            ),
         ]
     });
 
@@ -605,12 +624,15 @@ fn is_session_unrestricted(state: &AppState, session_id: &str) -> bool {
     state.unrestricted_sessions.contains_key(session_id)
 }
 
-/// Resolve a file path for reading. In unrestricted mode the path is used as-is;
-/// in standard mode it is validated against the sandbox jail.
-fn resolve_file_path(sandbox: &FileSandbox, path: &str, unrestricted: bool) -> Result<std::path::PathBuf, String> {
-    if unrestricted {
-        Ok(std::path::PathBuf::from(path))
+/// Resolve a file path for reading. Absolute paths are used as-is (unrestricted);
+/// relative paths are always anchored to the sandbox root so `read_file("src/main.rs")`
+/// works naturally. The sandbox jail is bypassed for reads — only writes are sandboxed.
+fn resolve_file_path(sandbox: &FileSandbox, path: &str, _unrestricted: bool) -> Result<std::path::PathBuf, String> {
+    let p = std::path::Path::new(path);
+    if p.is_absolute() {
+        Ok(p.to_path_buf())
     } else {
+        // Relative paths anchor to sandbox root, same as sandboxed behavior.
         sandbox.resolve(path)
     }
 }
@@ -642,16 +664,19 @@ fn resolve_file_path_for_write(sandbox: &FileSandbox, path: &str, unrestricted: 
     }
 }
 
-/// Resolve an optional subdirectory. In unrestricted mode the path is used as-is
-/// (defaulting to sandbox root); in standard mode it is validated against the jail.
-fn resolve_subdir(sandbox: &FileSandbox, path: Option<&str>, unrestricted: bool) -> Result<std::path::PathBuf, String> {
-    if unrestricted {
-        match path {
-            None | Some("") | Some(".") => Ok(sandbox.root().to_path_buf()),
-            Some(p) => Ok(std::path::PathBuf::from(p)),
+/// Resolve an optional subdirectory for read ops. Absolute paths are allowed
+/// anywhere; relative paths and empty/omitted paths default to the sandbox root.
+fn resolve_subdir(sandbox: &FileSandbox, path: Option<&str>, _unrestricted: bool) -> Result<std::path::PathBuf, String> {
+    match path {
+        None | Some("") | Some(".") => Ok(sandbox.root().to_path_buf()),
+        Some(p) => {
+            let pb = std::path::Path::new(p);
+            if pb.is_absolute() {
+                Ok(pb.to_path_buf())
+            } else {
+                resolve_sandbox_subdir(sandbox, Some(p))
+            }
         }
-    } else {
-        resolve_sandbox_subdir(sandbox, path)
     }
 }
 
@@ -1824,6 +1849,51 @@ mod tests {
         assert!(!output.contains("ghp_"));
     }
 
+    // ── .env key=value redaction ──────────────────────────────
+
+    #[test]
+    fn redact_stripe_secret_key() {
+        let input = "STRIPE_SECRET_KEY=rk_live_abc123def456ghi789";
+        let output = redact_secrets(input);
+        assert!(!output.contains("rk_live_"), "secret value leaked: {output}");
+        assert!(output.contains("STRIPE_SECRET_KEY="), "key name lost: {output}");
+    }
+
+    #[test]
+    fn redact_db_password() {
+        let input = "DB_PASSWORD=hunter2";
+        let output = redact_secrets(input);
+        assert!(!output.contains("hunter2"), "secret value leaked: {output}");
+        assert!(output.contains("DB_PASSWORD="), "key name lost: {output}");
+    }
+
+    #[test]
+    fn redact_my_secret_token() {
+        let input = "MY_SECRET_TOKEN=abc123def456ghi789";
+        let output = redact_secrets(input);
+        assert!(!output.contains("abc123def456"), "secret value leaked: {output}");
+        assert!(output.contains("MY_SECRET_TOKEN="), "key name lost: {output}");
+    }
+
+    #[test]
+    fn no_redact_database_host() {
+        let input = "DATABASE_HOST=localhost";
+        assert_eq!(redact_secrets(input), input, "non-secret var was incorrectly redacted");
+    }
+
+    #[test]
+    fn no_redact_path_var() {
+        let input = "PATH=/usr/bin:/usr/local/bin";
+        assert_eq!(redact_secrets(input), input, "PATH was incorrectly redacted");
+    }
+
+    #[test]
+    fn redact_api_key_long_value() {
+        let input = "STRIPE_API_KEY=REDACTED_TEST_STRIPE_KEY_00000000000000";
+        let output = redact_secrets(input);
+        assert!(!output.contains("sk_live_"), "secret value leaked: {output}");
+    }
+
     // ── map_key ────────────────────────────────────────────────
 
     #[test]
@@ -1897,14 +1967,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn dispatch_send_input_blocks_sudo() {
+    async fn dispatch_send_input_sudo_needs_approval() {
+        // sudo moved from Block to NeedsApproval in the local-trust-boundary model.
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
         let result = dispatch(&state, "test", "send_input", &json!({
             "session_id": "test",
             "command": "sudo rm -rf /"
         })).await;
         assert!(!result.success);
-        assert!(result.output.contains("blocked"));
+        assert!(result.needs_approval, "expected needs_approval: {:?}", result);
     }
 
     #[tokio::test]
@@ -2670,7 +2741,7 @@ mod tests {
     #[tokio::test]
     async fn run_command_sanitized_env() {
         let (_d, state) = fs_test_state("s1");
-        // `env` alone is blocked (data exfil); use `printenv HOME` (specific var)
+        // `printenv HOME` returns the home directory path.
         let r = dispatch(
             &state,
             "s1",
@@ -2682,10 +2753,9 @@ mod tests {
         let parsed: Value = serde_json::from_str(&r.output).unwrap();
         let stdout = parsed["stdout"].as_str().unwrap();
         assert!(stdout.contains('/'));
-        // Verify bare `env` is blocked
+        // bare `env` is now allowed (local-trust-boundary model); verify it succeeds.
         let r2 = dispatch(&state, "s1", "run_command", &json!({ "command": "env" })).await;
-        assert!(!r2.success);
-        assert!(r2.output.contains("blocked"));
+        assert!(r2.success, "bare env should be allowed: {}", r2.output);
     }
 
     #[tokio::test]
