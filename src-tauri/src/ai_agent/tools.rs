@@ -1889,7 +1889,7 @@ mod tests {
 
     #[test]
     fn redact_api_key_long_value() {
-        let input = "STRIPE_API_KEY=REDACTED_TEST_STRIPE_KEY_00000000000000";
+        let input = "STRIPE_API_KEY=sk_live_ABCDEFGHIJKLMNOPQRSTUVWXYZabcde";
         let output = redact_secrets(input);
         assert!(!output.contains("sk_live_"), "secret value leaked: {output}");
     }
