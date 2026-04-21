@@ -1,8 +1,8 @@
 /** Supported agent types */
-export type AgentType = "claude" | "gemini" | "opencode" | "aider" | "codex" | "amp" | "cursor" | "warp" | "droid" | "git" | "api";
+export type AgentType = "claude" | "gemini" | "opencode" | "aider" | "codex" | "amp" | "cursor" | "warp" | "goose" | "droid" | "git" | "api";
 
 /** Runtime array for validating backend strings against AgentType */
-export const AGENT_TYPES: readonly AgentType[] = ["claude", "gemini", "opencode", "aider", "codex", "amp", "cursor", "warp", "droid", "git", "api"] as const;
+export const AGENT_TYPES: readonly AgentType[] = ["claude", "gemini", "opencode", "aider", "codex", "amp", "cursor", "warp", "goose", "droid", "git", "api"] as const;
 
 /** Session discovery config for agents that persist sessions as local files */
 export interface SessionDiscoveryConfig {
@@ -305,6 +305,37 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
       prompt: [],
     },
   },
+  goose: {
+    type: "goose",
+    name: "Goose",
+    binary: "goose",
+    description: "Block's open-source AI coding agent",
+    defaultHeadlessTemplate: "goose run \"{prompt}\"",
+    resumeCommand: "goose session --resume",
+    sessionDiscovery: { resumeWithId: (id) => `goose session --resume --name ${id}` },
+    spawnArgs: (prompt, options = {}) => {
+      const args: string[] = ["session"];
+      if (options.model) args.push("--model", options.model);
+      args.push(prompt);
+      return args;
+    },
+    outputFormat: "text",
+    detectPatterns: {
+      rateLimit: [
+        /rate.?limit/i,
+        /429/,
+        /too many requests/i,
+      ],
+      completion: [],
+      error: [
+        /error:/i,
+        /failed:/i,
+      ],
+      prompt: [
+        /\[y\/n\]/i,
+      ],
+    },
+  },
   droid: {
     type: "droid",
     name: "Droid",
@@ -407,6 +438,7 @@ export const MCP_SUPPORT: Record<AgentType, boolean> = {
   amp: true,
   cursor: true,
   warp: false,
+  goose: true,
   droid: false,
   git: false,
   api: false,
@@ -422,6 +454,7 @@ export const AGENT_DISPLAY: Record<AgentType, { icon: string; color: string }> =
   amp: { icon: "A", color: "#ff5543" },
   cursor: { icon: "C", color: "#000000" },
   warp: { icon: "W", color: "#01a4ff" },
+  goose: { icon: "G", color: "#f59e0b" },
   droid: { icon: "D", color: "#f97316" },
   git: { icon: "G", color: "#f05032" },
   api: { icon: "⚡", color: "#06b6d4" },

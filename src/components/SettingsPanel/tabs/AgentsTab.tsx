@@ -17,7 +17,7 @@ import s from "../Settings.module.css";
 import a from "./AgentsTab.module.css";
 
 // All agent types — sorted dynamically by availability then name
-const ALL_AGENT_TYPES: AgentType[] = ["claude", "cursor", "gemini", "amp", "codex", "aider", "opencode", "warp", "droid"];
+const ALL_AGENT_TYPES: AgentType[] = ["claude", "cursor", "gemini", "amp", "codex", "aider", "opencode", "goose", "warp", "droid"];
 
 /**
  * Build the set of lowercased run-config names across all agent groups,

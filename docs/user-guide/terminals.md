@@ -209,7 +209,7 @@ When an agent asks a question, the tab indicator changes and a notification soun
 
 ### Session Restore
 
-When you restart TUICommander and a terminal had an active agent session, a clickable banner appears: "Agent session was active — click to resume." Clicking the banner sends the agent's resume command. Press **Escape** or click the **x** button to dismiss the banner without resuming.
+On restart, only terminals that had an active agent session are restored — plain shell tabs are discarded and a fresh terminal is spawned. For restored agent tabs, a clickable banner appears: "Agent session was active — click to resume." Clicking the banner sends the agent's resume command. Press **Escape** or click the **x** button to dismiss the banner without resuming.
 
 ### OSC 8 Hyperlinks
 

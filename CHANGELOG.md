@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Auto-inject session binding for Claude Code and Goose** — Shell integration (zsh, bash, fish) wraps `claude` and `goose` commands with functions that transparently inject session identifiers (`--session-id $TUIC_SESSION` for Claude, `--name $TUIC_SESSION` for Goose `session`/`run` subcommands), ensuring deterministic 1:1 tab↔session mapping. Wrappers are bypassed when the user explicitly passes session/resume flags.
+- **Goose CLI agent support** — Full integration for Block's Goose CLI: foreground process detection, status line spinner parsing (`(Ctrl+C to interrupt)` pattern), session-aware resume via `--name`, MCP client identification, Settings panel entry, and agent icon/badge.
 - **Claude Wakeup plugin** — Agent-scoped external plugin (`plugins/claude-wakeup/`) that wakes Claude Code when it stalls without asking a question. Sends a verification prompt after 20 s of idle, detects "done" replies via busy-cycle duration (short <8 s = done, long ≥8 s = continued), disarms until next user turn. Typing suppression: every busy→idle transition resets the idle clock, preventing false wakes during keystroke-generated shell-state blips. Max 3 wakes per stall, 12 per session. Markdown stats dashboard. Configurable thresholds via `data/config.json`.
 - **Agent cron scheduler** — Time-triggered agent tasks with cron expressions. Define jobs (cron + goal) in Settings > AI Chat > Scheduler. Persisted to `ai-cron.json`, ticks every 30 s. Tauri commands: `load_scheduler_config`, `save_scheduler_config`.
 - **Agent model overrides per task phase** — Route different models to different tool phases (`plan`, `search`, `read`, `write`) in the AI Agent loop. Configure in Settings > AI Chat. Stored as `agent_model_overrides` in `ai-chat-config.json`.
@@ -23,7 +25,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`get_input_buffer_content` Tauri command** — Read the terminal input line buffer; whitelisted for plugins with `pty:read` capability.
 - **Keyring warm-up** — Bearer tokens cached in memory after first keyring read, eliminating repeated macOS Keychain prompts.
 
+### Changed
+- **Session restore filters plain shell tabs** — On restart, only terminals with an active agent session (`agentType` set) are restored. Plain shell tabs are discarded and a fresh terminal is spawned, eliminating ghost tabs that couldn't resume anything.
+
 ### Fixed
+- **AI Chat message list compression** — Chat panel content was visually compressing instead of scrolling when many messages were present. Fixed with `min-height: 0` on the flex container and `flex-shrink: 0` on children.
+- **15 Clippy errors from Rust 1.95** — Fixed `unnecessary_sort_by` (→ `sort_by_key` with `Reverse`), `collapsible_match` (→ match guards), and `collapsible_if` (→ `&&` chains) across 10 files.
+- **Cmd+modifier+Enter sending `\r` to PTY** — Prevented Cmd+Shift+Enter and Cmd+Alt+Enter from injecting carriage returns into the terminal.
 - **MCP stdio proxy "0 tools"** — `StdioMcpClient.rpc()` now matches JSON-RPC responses by `id`, skipping server notifications emitted between request and response. Previously a single interleaved notification (e.g. `notifications/tools/list_changed`) would be consumed as the `tools/list` response, silently yielding 0 tools.
 - **macOS keychain prompt spam** — `HttpMcpClient` now caches the resolved bearer token in memory after the first keyring read. Health checks (every 60s) and tool calls reuse the cache instead of hitting the OS keychain each time. Cache is invalidated on 401 and re-populated after token refresh.
 - **Tilde expansion in all user-supplied paths** — `std::process::Command` and `std::fs` do not expand `~`; paths like `~/bin/mdkb` failed with ENOENT. Added `crate::cli::expand_tilde()` and applied it in 11 sites: MCP stdio client (command, args, cwd), PTY (shell, cwd), agent spawn (binary_path, cwd), headless prompts (command, args, repo_path), shell scripts (repo_path), MCP HTTP session/agent/transport (cwd), worktree setup scripts (cwd), plugin exec (cwd validation), and plugin filesystem (path validation).

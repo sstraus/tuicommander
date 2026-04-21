@@ -11,6 +11,7 @@
 //! | claude | `~/.claude/projects/<cwd-slug>/<UUID>.jsonl`| UUID filename stem|
 //! | gemini | `~/.gemini/tmp/<hash>/chats/session-*.json` | JSON `sessionId` field |
 //! | codex  | `~/.codex/sessions/YYYY/MM/DD/rollout-*-<UUID>.jsonl` | UUID in filename |
+//! | goose  | SQLite `~/Library/Application Support/Block/goose/sessions/sessions.db` | name field (TUIC_SESSION) |
 
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -19,7 +20,7 @@ use std::time::SystemTime;
 /// unclaimed session, or `None` if none can be found.
 ///
 /// # Parameters
-/// - `agent_type`: one of `"claude"`, `"gemini"`, `"codex"`
+/// - `agent_type`: one of `"claude"`, `"gemini"`, `"codex"`, `"goose"`
 /// - `cwd`: the terminal's working directory (used to compute project-scoped paths)
 /// - `claimed_ids`: session IDs already assigned to other terminals — excluded from results
 #[tauri::command]
@@ -32,6 +33,9 @@ pub(crate) fn discover_agent_session(
         "claude" => discover_claude_session(&cwd, &claimed_ids),
         "gemini" => discover_gemini_session(&cwd, &claimed_ids),
         "codex" => discover_codex_session(&claimed_ids),
+        // Goose stores sessions in SQLite — no filesystem discovery.
+        // Shell wrapper injects --name $TUIC_SESSION for deterministic binding.
+        "goose" => None,
         _ => None,
     }
 }
@@ -230,6 +234,7 @@ pub(crate) fn verify_agent_session(
         "claude" => verify_claude_session(&session_id, &cwd),
         "gemini" => verify_gemini_session(&session_id, &cwd),
         "codex" => verify_codex_session(&session_id),
+        "goose" => verify_goose_session(),
         _ => false,
     }
 }
@@ -305,6 +310,19 @@ fn codex_session_exists(dir: &std::path::Path, target_id: &str) -> bool {
         }
     }
     false
+}
+
+// ─── Goose ────────────────────────────────────────────────────────────────────
+
+/// Goose stores sessions in SQLite — we can't query it without a dependency.
+/// Optimistic check: return true if the sessions DB file exists, meaning the
+/// user has used Goose. The resume command handles missing sessions gracefully.
+fn verify_goose_session() -> bool {
+    goose_db_path().map(|p| p.exists()).unwrap_or(false)
+}
+
+fn goose_db_path() -> Option<PathBuf> {
+    dirs::data_dir().map(|d| d.join("Block").join("goose").join("sessions").join("sessions.db"))
 }
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────

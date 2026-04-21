@@ -721,6 +721,7 @@ fn parse_status_line(clean: &str) -> Option<ParsedEvent> {
     //   0xE2 = lead byte for braille U+2800, dingbat asterisks U+2720-273F,
     //          block elements ░█, bullets •◦, ∴ (U+2234), ● (U+25CF), ○ (U+25CB)
     if !clean.contains('*') && !clean.contains("[Running]") && !clean.contains("Tokens:")
+        && !clean.contains("Ctrl+C")
         && !clean.as_bytes().contains(&0xe2)
         && !clean.as_bytes().contains(&0xc2)
     {
@@ -754,6 +755,10 @@ fn parse_status_line(clean: &str) -> Option<ParsedEvent> {
         // Requires parenthesized time suffix to avoid false positives from markdown bullets.
         static ref CODEX_BULLET_RE: regex::Regex =
             regex::Regex::new(r"^\s*[\u{2022}\u{25E6}]\s+(\w[^(]*?)\s*\(\d+[smh]").unwrap();
+        // Goose CLI spinner: "Honking thoughtfully...  (Ctrl+C to interrupt)"
+        // Random whimsical messages followed by "..." and "(Ctrl+C to interrupt)" suffix.
+        static ref GOOSE_SPINNER_RE: regex::Regex =
+            regex::Regex::new(r"^\s*([A-Z][^.…\n]{2,}?)\.{2,3}\s+\(Ctrl\+C to interrupt\)").unwrap();
         // Copilot CLI indicators: ∴ (U+2234 thinking), ● (U+25CF active), ○ (U+25CB queued)
         // Format: "∴ Thinking…" or "● Read file..." or "○ Verify..."
         static ref COPILOT_STATUS_RE: regex::Regex =
@@ -783,6 +788,7 @@ fn parse_status_line(clean: &str) -> Option<ParsedEvent> {
             &RUNNING_STATUS_RE,
             &AIDER_TOKENS_RE,
             &AIDER_SPINNER_RE,
+            &GOOSE_SPINNER_RE,
             &COPILOT_STATUS_RE,
             &CODEX_BULLET_RE,
             &SPINNER_STATUS_RE,
@@ -940,6 +946,10 @@ fn parse_question(clean: &str) -> Option<ParsedEvent> {
     lazy_static::lazy_static! {
         static ref INK_FOOTER_RE: regex::Regex =
             regex::Regex::new(r"Enter to select").unwrap();
+        // cliclack interactive prompt: "◆  Do you allow this tool call?"
+        // ◆ (U+25C6) is the cliclack prompt marker — ultra-specific, no false positives.
+        static ref CLICLACK_PROMPT_RE: regex::Regex =
+            regex::Regex::new(r"^\s*\u{25C6}\s+(.+)").unwrap();
     }
     for line in clean.lines() {
         let trimmed = line.trim();
@@ -948,6 +958,15 @@ fn parse_question(clean: &str) -> Option<ParsedEvent> {
                 prompt_text: trimmed.to_string(),
                 confident: true,
             });
+        }
+        if let Some(caps) = CLICLACK_PROMPT_RE.captures(line) {
+            let text = caps[1].trim();
+            if text.len() >= 5 {
+                return Some(ParsedEvent::Question {
+                    prompt_text: text.to_string(),
+                    confident: true,
+                });
+            }
         }
     }
     None
@@ -1759,6 +1778,34 @@ mod tests {
             ParsedEvent::StatusLine { task_name, time_info, .. } => {
                 assert_eq!(task_name, "Working");
                 assert_eq!(time_info.as_deref(), Some("12s"));
+            }
+            _ => panic!("Expected StatusLine, got {:?}", events[0]),
+        }
+    }
+
+    #[test]
+    fn test_status_line_goose_spinner() {
+        // Goose CLI: "Honking thoughtfully...  (Ctrl+C to interrupt)"
+        let mut parser = OutputParser::new();
+        let events = parser.parse("Honking thoughtfully...  (Ctrl+C to interrupt)");
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ParsedEvent::StatusLine { task_name, .. } => {
+                assert_eq!(task_name, "Honking thoughtfully");
+            }
+            _ => panic!("Expected StatusLine, got {:?}", events[0]),
+        }
+    }
+
+    #[test]
+    fn test_status_line_goose_thinking() {
+        // Goose CLI fallback: "Thinking...  (Ctrl+C to interrupt)"
+        let mut parser = OutputParser::new();
+        let events = parser.parse("Thinking...  (Ctrl+C to interrupt)");
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ParsedEvent::StatusLine { task_name, .. } => {
+                assert_eq!(task_name, "Thinking");
             }
             _ => panic!("Expected StatusLine, got {:?}", events[0]),
         }
@@ -4083,6 +4130,36 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         let input = "Do you want to proceed?";
         let evt = parse_question(input);
         assert!(evt.is_none(), "Regular questions use silence detector, not parse_question");
+    }
+
+    #[test]
+    fn test_cliclack_prompt_detected_as_question() {
+        // Goose uses cliclack prompts: "◆  Do you allow this tool call?"
+        let input = "\u{25C6}  Goose would like to call the above tool, do you allow?";
+        let evt = parse_question(input);
+        assert!(evt.is_some(), "cliclack prompt should be detected");
+        match evt.unwrap() {
+            ParsedEvent::Question { prompt_text, confident } => {
+                assert!(prompt_text.contains("do you allow"));
+                assert!(confident);
+            }
+            _ => panic!("Expected Question"),
+        }
+    }
+
+    #[test]
+    fn test_cliclack_compact_confirmation() {
+        let input = "  \u{25C6}  Are you sure you want to compact this conversation?";
+        let evt = parse_question(input);
+        assert!(evt.is_some(), "cliclack confirm should be detected");
+    }
+
+    #[test]
+    fn test_cliclack_short_text_ignored() {
+        // Very short text after ◆ should be ignored (likely not a real prompt)
+        let input = "\u{25C6}  hi";
+        let evt = parse_question(input);
+        assert!(evt.is_none(), "Short cliclack text should be ignored");
     }
 
     // --- parse_choice_prompt fixture-driven golden tests ---

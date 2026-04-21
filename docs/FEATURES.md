@@ -13,7 +13,7 @@
 - Up to 50 concurrent PTY sessions (configurable in Rust `MAX_SESSIONS`)
 - Each tab runs an independent pseudo-terminal with the user's shell
 - Terminals are never unmounted — hidden tabs stay alive with full scroll history
-- Session persistence across app restarts (lazy restore on branch click)
+- Session persistence across app restarts (lazy restore on branch click); only agent tabs are restored — plain shell tabs are discarded and a fresh terminal is spawned instead
 - Agent session restore shows a clickable banner ("Agent session was active — click to resume") instead of auto-injecting the resume command; Space/Enter resumes, other keys dismiss
 - Foreground process detection (macOS: `libproc`, Windows: `CreateToolhelp32Snapshot`)
 - PTY environment: `TERM=xterm-256color`, `COLORTERM=truecolor`, `LANG=en_US.UTF-8`
@@ -477,6 +477,7 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
 | Codex CLI | `codex` | `codex resume <uuid>` (session-aware) / `codex resume --last` (fallback) |
 | Amp | `amp` | `amp threads continue` |
 | Cursor Agent | `cursor-agent` | `cursor-agent resume` |
+| Goose | `goose` | `goose session --resume --name <uuid>` (session-aware) / `goose session --resume` (fallback) |
 | Warp Oz | `oz` | — |
 | Droid (Factory) | `droid` | — |
 | Git (background) | `git` | — |
@@ -487,20 +488,23 @@ When an agent is detected running in a terminal, TUICommander automatically disc
 - **Claude Code** — Sessions stored as `~/.claude/projects/<slug>/<uuid>.jsonl`; UUID from filename
 - **Gemini CLI** — Sessions stored in `~/.gemini/tmp/<hash>/chats/session-*.json`; `sessionId` field from JSON
 - **Codex CLI** — Sessions stored in `~/.codex/sessions/YYYY/MM/DD/rollout-*-<UUID>.jsonl`; UUID from filename
+- **Goose** — Sessions stored in SQLite (`~/Library/Application Support/Block/goose/sessions/sessions.db`); shell wrapper injects `--name $TUIC_SESSION` for deterministic binding, resume by name
 
 Discovery runs once per terminal on `null→agent` transition. Multiple concurrent agents are handled via a `claimed_ids` deduplication list. On agent exit, the stored session ID is cleared to allow re-discovery on next launch.
 
 ### 6.1.2 TUIC_SESSION Environment Variable
 Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSION` environment variable in the PTY shell. This UUID persists across app restarts and enables:
 
-- **Manual session binding**: `claude --session-id $TUIC_SESSION` to start a session bound to this tab
+- **Automatic session binding**: Shell integration injects wrapper functions that transparently bind agent sessions to the current tab (zsh, bash, fish):
+  - **Claude Code**: `claude()` adds `--session-id $TUIC_SESSION`; bypassed when `--session-id`, `--resume`, or `--continue` are explicit
+  - **Goose**: `goose()` adds `--name $TUIC_SESSION` to `session` and `run` subcommands; bypassed when `--name`, `-n`, `--resume`, or `-r` are explicit
 - **Automatic resume**: On restore, TUICommander verifies if the session file exists on disk (`verify_agent_session`) before using `--resume $TUIC_SESSION`
 - **UI spawn coherence**: When spawning agents via the context menu, `TUIC_SESSION` is used as `--session-id` automatically
 - **Custom scripts**: `$TUIC_SESSION` is available as a stable key for any tab-specific state
 
 ### 6.2 Agent Detection
 - Auto-detection from terminal output patterns
-- Multi-agent status line detection via regex patterns anchored to line start: Claude Code (`*`/`✢`/`·` + task text + `...`/`…`), `[Running] Task` format, Aider (Knight Rider scanner `░█` + token reports), Codex CLI (`•`/`◦` bullet spinner with time suffix), Copilot CLI (`∴`/`●`/`○` indicators), Gemini CLI (braille dots `⠋⠙⠹...`)
+- Multi-agent status line detection via regex patterns anchored to line start: Claude Code (`*`/`✢`/`·` + task text + `...`/`…`), `[Running] Task` format, Aider (Knight Rider scanner `░█` + token reports), Codex CLI (`•`/`◦` bullet spinner with time suffix), Goose (`<message>... (Ctrl+C to interrupt)`), Copilot CLI (`∴`/`●`/`○` indicators), Gemini CLI (braille dots `⠋⠙⠹...`)
 - Status lines rejected when they appear in diff output, code listings, or block comments
 - Brand SVG logos for each agent (fallback to capital letter)
 - Agent badge in status bar showing active agent

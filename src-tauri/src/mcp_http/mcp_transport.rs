@@ -53,6 +53,8 @@ fn resolve_agent_type(client_name: Option<&str>) -> Option<&'static str> {
         Some("aider")
     } else if name.contains("amp") {
         Some("amp")
+    } else if name.contains("goose") {
+        Some("goose")
     } else {
         None
     }

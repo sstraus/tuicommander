@@ -35,7 +35,7 @@ Constraints:
 - `minAppVersion` must be <= current app version (current: 0.3.x)
 - `capabilities`: subset of `pty:write`, `pty:read`, `ui:markdown`, `ui:sound`, `ui:panel`, `ui:ticker`, `ui:context-menu`, `ui:sidebar`, `ui:file-icons`, `net:http`, `credentials:read`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`, `fs:write`, `fs:rename`, `exec:cli`, `git:read`
 - `allowedUrls`: URL patterns for `net:http` (supports `*` wildcard for path prefix matching)
-- `agentTypes`: optional array of agent type strings. When set, output watchers and structured event handlers only fire for terminals running a matching agent. Omit or use `[]` for universal plugins. Valid values: `claude`, `gemini`, `opencode`, `aider`, `codex`, `amp`, `cursor`, `warp`, `droid`, `git`.
+- `agentTypes`: optional array of agent type strings. When set, output watchers and structured event handlers only fire for terminals running a matching agent. Omit or use `[]` for universal plugins. Valid values: `claude`, `gemini`, `opencode`, `aider`, `codex`, `amp`, `cursor`, `warp`, `goose`, `droid`, `git`.
 - `binaries`: optional array of CLI binary names this plugin may execute via `exec:cli` (e.g. `["rtk", "mdkb"]`). The on-disk manifest is the source of truth — binaries not declared here are rejected.
 - Module default export must have `id`, `onload(host)`, `onunload()`
 

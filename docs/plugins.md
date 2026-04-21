@@ -1091,6 +1091,7 @@ TUICommander polls the foreground process of each terminal's PTY every 3 seconds
 | `amp` | `"amp"` |
 | `cursor-agent` | `"cursor"` |
 | `oz` | `"warp"` |
+| `goose` | `"goose"` |
 | `droid` | `"droid"` |
 | `git` | `"git"` |
 | (anything else) | `null` (plain shell) |

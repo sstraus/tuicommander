@@ -104,21 +104,29 @@ Every terminal tab has a stable UUID that persists across app restarts. This UUI
 
 ### Use Cases
 
-**Start a Claude Code session bound to this tab:**
+**Automatic session binding (Claude Code):**
+
+Shell integration automatically injects `--session-id $TUIC_SESSION` into every `claude` invocation via a shell function wrapper. You don't need to pass it manually — just type `claude` and the session is bound to this tab. The wrapper is bypassed when you explicitly pass `--session-id`, `--resume`, or `--continue`.
 
 ```bash
-claude --session-id $TUIC_SESSION
+# These are equivalent — the wrapper handles it transparently:
+claude                              # wrapper adds --session-id $TUIC_SESSION
+claude --session-id $TUIC_SESSION   # explicit, wrapper bypassed
 ```
 
 Claude Code stores the session locally. When you restart TUICommander and switch to this branch, the session resumes automatically via `claude --resume <uuid>`.
 
-**Resume a specific session (manual):**
+**Automatic session binding (Goose):**
+
+Shell integration injects `--name $TUIC_SESSION` into `goose session` and `goose run` subcommands. The wrapper is bypassed when you explicitly pass `--name`, `-n`, `--resume`, or `-r`.
 
 ```bash
-claude --resume $TUIC_SESSION
+# These are equivalent:
+goose session "fix the bug"                               # wrapper adds --name $TUIC_SESSION
+goose session --name $TUIC_SESSION "fix the bug"          # explicit, wrapper bypassed
 ```
 
-**Gemini CLI session binding:**
+**Gemini CLI session binding (manual):**
 
 ```bash
 gemini --resume $TUIC_SESSION
@@ -133,11 +141,10 @@ echo "Last run: $(date)" > "/tmp/tuic-$TUIC_SESSION.log"
 
 ### Automatic Resume
 
-When TUICommander restores saved terminals after a restart, it checks whether the agent session file exists on disk before deciding the resume strategy:
+When TUICommander restores saved terminals after a restart, only tabs that had an active agent session (`agentType` set) are restored. Plain shell tabs are discarded and a fresh terminal is spawned instead. For agent tabs, TUICommander checks whether the session file exists on disk before deciding the resume strategy:
 
 1. **Verified session** — If `$TUIC_SESSION` maps to an existing session file (e.g. `~/.claude/projects/…/<uuid>.jsonl`), the agent resumes with `--resume <uuid>`
 2. **No session file** — Falls back to the agent's default resume behavior (e.g. `claude --continue` for the last session)
-3. **No agent detected** — Tab opens a plain shell; `$TUIC_SESSION` is still available for manual use
 
 ### UI Agent Spawn
 

@@ -36,6 +36,16 @@ if [[ -n "$TUIC_SESSION" ]]; then
     done
     command claude --session-id "$TUIC_SESSION" "$@"
   }
+  # Auto-inject --name for Goose so tab↔session mapping is deterministic
+  goose() {
+    local a; for a in "$@"; do
+      case "$a" in --name|-n|--resume|-r) command goose "$@"; return;; esac
+    done
+    case "$1" in
+      session|run) command goose "$1" --name "$TUIC_SESSION" "${@:2}";;
+      *) command goose "$@";;
+    esac
+  }
 fi
 "#;
 
@@ -69,6 +79,16 @@ if [[ -n "$TUIC_SESSION" ]]; then
     done
     command claude --session-id "$TUIC_SESSION" "$@"
   }
+  # Auto-inject --name for Goose so tab↔session mapping is deterministic
+  goose() {
+    local a; for a in "$@"; do
+      case "$a" in --name|-n|--resume|-r) command goose "$@"; return;; esac
+    done
+    case "$1" in
+      session|run) command goose "$1" --name "$TUIC_SESSION" "${@:2}";;
+      *) command goose "$@";;
+    esac
+  }
 fi
 "#;
 
@@ -97,6 +117,22 @@ if set -q TUIC_SESSION
       end
     end
     command claude --session-id $TUIC_SESSION $argv
+  end
+  # Auto-inject --name for Goose so tab↔session mapping is deterministic
+  function goose --wraps goose
+    for a in $argv
+      switch $a
+        case --name -n --resume -r
+          command goose $argv
+          return
+      end
+    end
+    switch $argv[1]
+      case session run
+        command goose $argv[1] --name $TUIC_SESSION $argv[2..]
+      case '*'
+        command goose $argv
+    end
   end
 end
 "#;

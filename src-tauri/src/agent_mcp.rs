@@ -92,7 +92,8 @@ fn get_mcp_config_spec(agent_type: &str) -> Option<McpConfigSpec> {
             key_path: vec!["mcpServers"],
         }),
         // Agents that don't support MCP config files
-        "aider" | "warp" | "opencode" | "codex" | "droid" => None,
+        // Goose uses YAML config — auto-install not supported (JSON-only)
+        "aider" | "warp" | "opencode" | "codex" | "droid" | "goose" => None,
         _ => None,
     }
 }
@@ -106,6 +107,7 @@ fn get_agent_settings_path(agent_type: &str) -> Option<PathBuf> {
         "aider" => Some(h.join(".aider.conf.yml")),
         "gemini" => Some(h.join(".gemini/settings.json")),
         "codex" => Some(h.join(".codex/config.toml")),
+        "goose" => dirs::config_dir().map(|d| d.join("Block/goose/config.yaml")),
         "amp" => Some(h.join(".config/amp/settings.json")),
         "zed" => Some(h.join(".config/zed/settings.json")),
         "vscode" => Some(vscode_user_dir().join("settings.json")),

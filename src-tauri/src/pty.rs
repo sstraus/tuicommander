@@ -3473,6 +3473,7 @@ pub(crate) fn classify_agent(process_name: &str) -> Option<&'static str> {
         "amp" => Some("amp"),
         "cursor-agent" => Some("cursor"),
         "oz" => Some("warp"),
+        "goose" => Some("goose"),
         _ => None,
     }
 }
@@ -3721,6 +3722,11 @@ mod tests {
     #[test]
     fn test_classify_agent_opencode() {
         assert_eq!(classify_agent("opencode"), Some("opencode"));
+    }
+
+    #[test]
+    fn test_classify_agent_goose() {
+        assert_eq!(classify_agent("goose"), Some("goose"));
     }
 
     #[test]
