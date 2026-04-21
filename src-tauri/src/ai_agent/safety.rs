@@ -161,13 +161,15 @@ impl RegexSafetyChecker {
             (regex::Regex::new(r"(?i)\bdd\s+.*of=/dev/").unwrap(), "dd to device"),
             (regex::Regex::new(r"\bchmod\s+777\b").unwrap(), "world-writable permissions"),
             (regex::Regex::new(r"\bchown\s+-R\b").unwrap(), "recursive ownership change"),
+            // sudo — elevated privileges need human confirmation
+            (regex::Regex::new(r"(?:^|\s)\s*sudo\b").unwrap(), "sudo: elevated privileges"),
+            // reading SSH keys sends private key material to the LLM API
+            (regex::Regex::new(r"\bcat\s+.*\.ssh/").unwrap(), "reading SSH key (content sent to LLM API)"),
         ];
 
         let blocked = vec![
-            (regex::Regex::new(r"(?:^|\s)\s*sudo\b").unwrap(), "sudo is not allowed in agent context"),
-            // Data exfiltration: reading secrets
-            (regex::Regex::new(r"\bcat\s+.*(?:\.ssh/|\.env\b|/etc/shadow)").unwrap(), "reading sensitive file"),
-            (regex::Regex::new(r"(?:^|\s)\s*(?:env|printenv|set)\s*$").unwrap(), "dumping environment variables"),
+            // /etc/shadow is unreadable without sudo anyway; no legitimate agent use
+            (regex::Regex::new(r"\bcat\s+.*(?:/etc/shadow)").unwrap(), "reading /etc/shadow"),
         ];
 
         Self { needs_approval, blocked }
@@ -246,8 +248,8 @@ impl RegexSafetyChecker {
             (&|_p, f, _c| f == ".bashrc" || f == ".zshrc" || f == ".profile" || f == ".bash_profile", "shell config"),
             (&|p, _f, _c| p.contains("credentials") || p.contains("credential"), "credentials file"),
             (&|p, _f, _c| p.contains("secret"), "secrets file"),
-            (&|_p, f, _c| f == "cargo.toml" || f == "package.json", "dependency manifest"),
-            (&|_p, f, _c| f.ends_with(".lock"), "lock file"),
+            // Cargo.toml, package.json, lock files: agents routinely manage
+            // dependencies — allowing these avoids constant approval prompts.
         ];
 
         for (check, reason) in sensitive_patterns {
@@ -391,30 +393,41 @@ mod tests {
         assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
     }
 
-    // ── Blocked commands ───────────────────────────────────────
+    // ── sudo → NeedsApproval (not Block) ──────────────────────
 
     #[test]
-    fn blocked_sudo() {
+    fn sudo_needs_approval() {
         let v = checker().evaluate("sudo rm -rf /");
-        assert!(matches!(v, SafetyVerdict::Block { .. }));
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
     }
 
     #[test]
-    fn blocked_sudo_after_chain() {
+    fn sudo_needs_approval_with_correct_reason() {
+        let v = checker().evaluate("sudo apt install foo");
+        match v {
+            SafetyVerdict::NeedsApproval { reason } => {
+                assert!(reason.contains("elevated privileges"), "unexpected reason: {reason}");
+            }
+            other => panic!("expected NeedsApproval, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn sudo_after_chain_needs_approval() {
         let v = checker().evaluate("echo hi && sudo apt install foo");
-        assert!(matches!(v, SafetyVerdict::Block { .. }));
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
     }
 
     #[test]
-    fn blocked_sudo_after_pipe() {
+    fn sudo_after_pipe_needs_approval() {
         let v = checker().evaluate("cat file | sudo tee /etc/config");
-        assert!(matches!(v, SafetyVerdict::Block { .. }));
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
     }
 
     #[test]
-    fn blocked_sudo_after_semicolon() {
+    fn sudo_after_semicolon_needs_approval() {
         let v = checker().evaluate("cd /tmp; sudo chmod 777 /");
-        assert!(matches!(v, SafetyVerdict::Block { .. }));
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
     }
 
     // ── SafeKey risk levels ────────────────────────────────────
@@ -527,21 +540,22 @@ mod tests {
     // ── Shell metachar splitting ──────────────────────────────
 
     #[test]
-    fn sudo_in_chain_blocked() {
+    fn sudo_in_chain_needs_approval() {
         let v = checker().evaluate("ls && sudo rm -rf /");
-        assert!(matches!(v, SafetyVerdict::Block { .. }));
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
     }
 
     #[test]
-    fn sudo_in_subshell_blocked() {
+    fn sudo_in_subshell_needs_approval() {
+        // cat /etc/shadow is Block; sudo inside subshell is NeedsApproval — Block wins
         let v = checker().evaluate("echo $(sudo cat /etc/shadow)");
         assert!(matches!(v, SafetyVerdict::Block { .. }));
     }
 
     #[test]
-    fn sudo_in_backticks_blocked() {
+    fn sudo_in_backticks_needs_approval() {
         let v = checker().evaluate("echo `sudo whoami`");
-        assert!(matches!(v, SafetyVerdict::Block { .. }));
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
     }
 
     #[test]
@@ -556,30 +570,38 @@ mod tests {
         assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
     }
 
-    // ── Data exfiltration blocks ──────────────────────────────
+    // ── SSH key reads → NeedsApproval; .env/env → Allow ─────
 
     #[test]
-    fn cat_ssh_key_blocked() {
+    fn cat_ssh_key_needs_approval() {
         let v = checker().evaluate("cat ~/.ssh/id_rsa");
-        assert!(matches!(v, SafetyVerdict::Block { .. }));
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
     }
 
     #[test]
-    fn cat_env_file_blocked() {
-        let v = checker().evaluate("cat .env");
-        assert!(matches!(v, SafetyVerdict::Block { .. }));
+    fn cat_ssh_needs_approval_with_api_reason() {
+        let v = checker().evaluate("cat ~/.ssh/id_ed25519");
+        match v {
+            SafetyVerdict::NeedsApproval { reason } => {
+                assert!(reason.contains("LLM API"), "unexpected reason: {reason}");
+            }
+            other => panic!("expected NeedsApproval, got {other:?}"),
+        }
     }
 
     #[test]
-    fn bare_env_blocked() {
-        let v = checker().evaluate("env");
-        assert!(matches!(v, SafetyVerdict::Block { .. }));
+    fn cat_env_file_allowed() {
+        assert_eq!(checker().evaluate("cat .env"), SafetyVerdict::Allow);
     }
 
     #[test]
-    fn bare_printenv_blocked() {
-        let v = checker().evaluate("printenv");
-        assert!(matches!(v, SafetyVerdict::Block { .. }));
+    fn env_bare_allowed() {
+        assert_eq!(checker().evaluate("env"), SafetyVerdict::Allow);
+    }
+
+    #[test]
+    fn printenv_bare_allowed() {
+        assert_eq!(checker().evaluate("printenv"), SafetyVerdict::Allow);
     }
 
     #[test]
@@ -720,21 +742,18 @@ mod tests {
     }
 
     #[test]
-    fn write_cargo_toml_needs_approval() {
-        let v = checker().evaluate_file_write("Cargo.toml");
-        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
+    fn cargo_toml_write_allowed() {
+        assert_eq!(checker().evaluate_file_write("Cargo.toml"), SafetyVerdict::Allow);
     }
 
     #[test]
-    fn write_package_json_needs_approval() {
-        let v = checker().evaluate_file_write("package.json");
-        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
+    fn package_json_write_allowed() {
+        assert_eq!(checker().evaluate_file_write("package.json"), SafetyVerdict::Allow);
     }
 
     #[test]
-    fn write_lock_file_needs_approval() {
-        let v = checker().evaluate_file_write("Cargo.lock");
-        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
+    fn lock_file_write_allowed() {
+        assert_eq!(checker().evaluate_file_write("Cargo.lock"), SafetyVerdict::Allow);
     }
 
     #[test]
@@ -767,9 +786,9 @@ mod tests {
     // inner destructive call.
 
     #[test]
-    fn sudo_nested_double_subshell_blocked() {
+    fn sudo_nested_double_subshell_needs_approval() {
         let v = checker().evaluate("echo $(echo $(sudo whoami))");
-        assert!(matches!(v, SafetyVerdict::Block { .. }));
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
     }
 
     #[test]
@@ -804,8 +823,15 @@ mod tests {
 
     #[test]
     fn multiple_destructive_worst_wins() {
-        // NeedsApproval + Block → Block (worst wins)
+        // NeedsApproval + NeedsApproval → NeedsApproval (sudo is no longer Block)
         let v = checker().evaluate("rm -rf /tmp && sudo whoami");
+        assert!(matches!(v, SafetyVerdict::NeedsApproval { .. }));
+    }
+
+    #[test]
+    fn shadow_read_still_blocks() {
+        // /etc/shadow remains outright blocked (no legitimate agent use)
+        let v = checker().evaluate("cat /etc/shadow");
         assert!(matches!(v, SafetyVerdict::Block { .. }));
     }
 
