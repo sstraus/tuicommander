@@ -150,6 +150,11 @@ describe("useKeyboardShortcuts", () => {
       fireKeydown("l", { metaKey: true });
       expect(handlers.clearTerminal).toHaveBeenCalled();
     });
+
+    it("Cmd+Shift+L refreshes terminal (atlas rebuild)", () => {
+      fireKeydown("l", { metaKey: true, shiftKey: true });
+      expect(handlers.refreshTerminal).toHaveBeenCalled();
+    });
   });
 
   describe("tab navigation", () => {

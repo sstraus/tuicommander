@@ -165,6 +165,7 @@ function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean
     }
     case "reopen-closed-tab": handlers.reopenClosedTab(); return true;
     case "clear-terminal": handlers.clearTerminal(); return true;
+    case "refresh-terminal": handlers.refreshTerminal(); return true;
 
     // Split panes
     case "split-vertical": handlers.handleSplit("vertical"); return true;
