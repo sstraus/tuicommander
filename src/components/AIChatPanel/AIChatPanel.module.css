@@ -117,11 +117,16 @@
 /* ── Messages ───────────────────────────────────────────── */
 .messageList {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 12px 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.messageList > * {
+  flex-shrink: 0;
 }
 
 .emptyState {
