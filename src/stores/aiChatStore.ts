@@ -629,7 +629,7 @@ async function subscribeToRegistry(targetChatId: string): Promise<void> {
     );
 
     // Apply snapshot synchronously
-    applyRegistryEvent(s, { kind: "snapshot", ...result.snapshot });
+    applyRegistryEvent(s, result.snapshot);
 
     // Flush buffered events in order
     ready = true;

@@ -18,7 +18,7 @@ export const DetachedPlaceholder: Component<DetachedPlaceholderProps> = (props) 
         await detached.destroy();
       }
     } catch (e) {
-      appLogger.warn("detached-placeholder", "Failed to close detached window", { error: String(e) });
+      appLogger.warn("ai-chat", "Failed to close detached window", { error: String(e) });
     }
     uiStore.setAiChatDetached(false);
   };
