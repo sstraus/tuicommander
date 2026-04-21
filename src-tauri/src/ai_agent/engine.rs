@@ -665,6 +665,49 @@ async fn run_loop(
     Ok("max_iterations".into())
 }
 
+// ---------------------------------------------------------------------------
+// Tool phase classification — routes tool calls to cost-appropriate models
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum ToolPhase {
+    Plan,
+    Search,
+    Read,
+    Write,
+}
+
+fn classify_phase(tool_names: &[&str]) -> ToolPhase {
+    let mut has_write = false;
+    let mut has_search = false;
+    let mut has_read = false;
+    for &name in tool_names {
+        match name {
+            "write_file" | "edit_file" | "send_input" | "run_command" | "spawn_session" => has_write = true,
+            "search_files" | "search_code" | "list_files" | "search_tools" => has_search = true,
+            "read_screen" | "read_file" | "get_state" | "get_context"
+            | "list_sessions" | "get_agent_status" => has_read = true,
+            _ => {}
+        }
+    }
+    if has_write { ToolPhase::Write }
+    else if has_search { ToolPhase::Search }
+    else if has_read { ToolPhase::Read }
+    else { ToolPhase::Plan }
+}
+
+fn select_model_for_phase<'a>(
+    base: &'a str,
+    overrides: &'a std::collections::HashMap<ToolPhase, String>,
+    phase: ToolPhase,
+) -> &'a str {
+    match overrides.get(&phase) {
+        Some(m) => m.as_str(),
+        None => base,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1100,5 +1143,79 @@ mod tests {
         assert!(state.unrestricted_sessions.contains_key(sid));
         state.unrestricted_sessions.remove(sid);
         assert!(!state.unrestricted_sessions.contains_key(sid));
+    }
+
+    // ── ToolPhase & model selection ──────────────────────────────
+
+    #[test]
+    fn tool_phase_serializes() {
+        assert_eq!(serde_json::to_string(&ToolPhase::Plan).unwrap(), r#""plan""#);
+        assert_eq!(serde_json::to_string(&ToolPhase::Search).unwrap(), r#""search""#);
+        assert_eq!(serde_json::to_string(&ToolPhase::Read).unwrap(), r#""read""#);
+        assert_eq!(serde_json::to_string(&ToolPhase::Write).unwrap(), r#""write""#);
+    }
+
+    #[test]
+    fn classify_phase_no_tools_is_plan() {
+        assert_eq!(classify_phase(&[]), ToolPhase::Plan);
+    }
+
+    #[test]
+    fn classify_phase_read_tools() {
+        assert_eq!(classify_phase(&["read_screen"]), ToolPhase::Read);
+        assert_eq!(classify_phase(&["read_file"]), ToolPhase::Read);
+        assert_eq!(classify_phase(&["get_state"]), ToolPhase::Read);
+        assert_eq!(classify_phase(&["get_context"]), ToolPhase::Read);
+        assert_eq!(classify_phase(&["list_sessions"]), ToolPhase::Read);
+        assert_eq!(classify_phase(&["get_agent_status"]), ToolPhase::Read);
+    }
+
+    #[test]
+    fn classify_phase_search_tools() {
+        assert_eq!(classify_phase(&["search_files"]), ToolPhase::Search);
+        assert_eq!(classify_phase(&["search_code"]), ToolPhase::Search);
+        assert_eq!(classify_phase(&["list_files"]), ToolPhase::Search);
+        assert_eq!(classify_phase(&["search_tools"]), ToolPhase::Search);
+    }
+
+    #[test]
+    fn classify_phase_write_tools() {
+        assert_eq!(classify_phase(&["write_file"]), ToolPhase::Write);
+        assert_eq!(classify_phase(&["edit_file"]), ToolPhase::Write);
+        assert_eq!(classify_phase(&["send_input"]), ToolPhase::Write);
+        assert_eq!(classify_phase(&["run_command"]), ToolPhase::Write);
+        assert_eq!(classify_phase(&["spawn_session"]), ToolPhase::Write);
+    }
+
+    #[test]
+    fn classify_phase_mixed_prefers_write() {
+        assert_eq!(classify_phase(&["read_file", "edit_file"]), ToolPhase::Write);
+        assert_eq!(classify_phase(&["search_files", "send_input"]), ToolPhase::Write);
+    }
+
+    #[test]
+    fn classify_phase_mixed_read_search_prefers_search() {
+        assert_eq!(classify_phase(&["read_screen", "search_files"]), ToolPhase::Search);
+    }
+
+    #[test]
+    fn select_model_no_overrides_returns_default() {
+        let base = "anthropic/claude-sonnet-4-5";
+        let overrides = std::collections::HashMap::new();
+        assert_eq!(select_model_for_phase(base, &overrides, ToolPhase::Plan), base);
+        assert_eq!(select_model_for_phase(base, &overrides, ToolPhase::Write), base);
+    }
+
+    #[test]
+    fn select_model_with_override() {
+        let base = "anthropic/claude-sonnet-4-5";
+        let mut overrides = std::collections::HashMap::new();
+        overrides.insert(ToolPhase::Search, "anthropic/claude-haiku-3-5".to_string());
+        overrides.insert(ToolPhase::Read, "anthropic/claude-haiku-3-5".to_string());
+
+        assert_eq!(select_model_for_phase(base, &overrides, ToolPhase::Search), "anthropic/claude-haiku-3-5");
+        assert_eq!(select_model_for_phase(base, &overrides, ToolPhase::Read), "anthropic/claude-haiku-3-5");
+        assert_eq!(select_model_for_phase(base, &overrides, ToolPhase::Write), base);
+        assert_eq!(select_model_for_phase(base, &overrides, ToolPhase::Plan), base);
     }
 }
