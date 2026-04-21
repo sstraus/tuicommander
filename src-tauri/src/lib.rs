@@ -1325,6 +1325,7 @@ pub fn run() {
             ai_chat_registry::chat_detach_terminal,
             ai_chat_registry::chat_clear,
             ai_chat_registry::chat_set_pinned,
+            ai_chat_registry::chat_push_message,
             ai_agent::commands::start_agent_loop,
             ai_agent::commands::cancel_agent_loop,
             ai_agent::commands::pause_agent_loop,

@@ -373,6 +373,27 @@ pub(crate) async fn chat_set_pinned(
     Ok(())
 }
 
+#[tauri::command]
+pub(crate) async fn chat_push_message(
+    registry: tauri::State<'_, ChatRegistry>,
+    chat_id: String,
+    role: String,
+    content: String,
+) -> Result<(), String> {
+    validate_id(&chat_id)?;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let msg = ChatMessage {
+        role,
+        content,
+        timestamp: ts,
+    };
+    registry.append_message(&chat_id, msg).await;
+    Ok(())
+}
+
 // Expose ConversationState fields for update closures in other modules
 impl ConversationState {
     pub fn set_streaming(&mut self, streaming: bool) {

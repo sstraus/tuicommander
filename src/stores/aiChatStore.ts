@@ -60,6 +60,26 @@ interface BackendConversation {
   schema_version?: number;
 }
 
+/** Events from the Rust ChatRegistry, received via Channel subscription. */
+type RegistryChatEvent =
+  | { kind: "snapshot"; messages: RegistryMessage[]; isStreaming: boolean; streamingText: string; error: string | null; attachedSessionId: string | null; pinned: boolean }
+  | { kind: "chunk"; delta: string }
+  | { kind: "error"; message: string }
+  | { kind: "cleared" };
+
+interface RegistryMessage {
+  role: string;
+  content: string;
+  timestamp: number;
+}
+
+/** Tracks an active registry subscription for cross-window sync. */
+interface RegistrySubscription {
+  chatId: string;
+  subscriptionId: number;
+  cleanup: () => Promise<void>;
+}
+
 /** Reactive state for a single terminal's chat session. */
 export interface PerTerminalChatState {
   messages: Accessor<AiChatMessage[]>;
@@ -76,6 +96,7 @@ export interface PerTerminalChatState {
   setSessionUsage: Setter<ChatUsage | null>;
   persistTimer: ReturnType<typeof setTimeout> | null;
   initialized: boolean;
+  registrySubscription: RegistrySubscription | null;
 }
 
 const MAX_MESSAGES = 100;
@@ -115,6 +136,7 @@ function createChatState(): PerTerminalChatState {
     setSessionUsage,
     persistTimer: null,
     initialized: false,
+    registrySubscription: null,
   };
 }
 
@@ -429,6 +451,11 @@ async function sendMessage(text: string, sessionId: string | null): Promise<void
       }
     };
 
+    // Push user message to registry so other windows see it
+    invoke("chat_push_message", { chatId: currentChatId, role: "user", content: text }).catch((e: unknown) =>
+      appLogger.warn("ai-chat", "chat_push_message failed", { error: String(e) }),
+    );
+
     await invoke("stream_ai_chat", {
       sessionId,
       messages: history,
@@ -454,6 +481,12 @@ async function onTerminalClose(key: string): Promise<void> {
   if (s.persistTimer) {
     clearTimeout(s.persistTimer);
     s.persistTimer = null;
+  }
+
+  // Unsubscribe from registry
+  if (s.registrySubscription) {
+    await s.registrySubscription.cleanup();
+    s.registrySubscription = null;
   }
 
   // Cancel in-flight stream
@@ -500,6 +533,121 @@ function resetChatId(): void {
 
 function setError(e: string | null): void {
   activeChat().setError(e);
+}
+
+// ---------------------------------------------------------------------------
+// Registry subscription (cross-window sync)
+// ---------------------------------------------------------------------------
+
+function applyRegistryEvent(s: PerTerminalChatState, event: RegistryChatEvent): void {
+  switch (event.kind) {
+    case "snapshot":
+      batch(() => {
+        s.setMessages(
+          event.messages
+            .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "system")
+            .map((m) => ({
+              role: m.role as AiChatMessage["role"],
+              content: m.content,
+              timestamp: m.timestamp,
+            }))
+            .slice(-MAX_MESSAGES),
+        );
+        s.setIsStreaming(event.isStreaming);
+        s.setStreamingText(event.streamingText);
+        s.setError(event.error);
+      });
+      break;
+    case "chunk":
+      s.setStreamingText((prev) => prev + event.delta);
+      break;
+    case "error":
+      batch(() => {
+        s.setIsStreaming(false);
+        s.setStreamingText("");
+        s.setError(event.message);
+      });
+      break;
+    case "cleared":
+      batch(() => {
+        s.setMessages([]);
+        s.setIsStreaming(false);
+        s.setStreamingText("");
+        s.setError(null);
+      });
+      break;
+  }
+}
+
+/** Subscribe to the Rust ChatRegistry for a given chatId.
+ *  Uses the buffering pattern from the plan to avoid snapshot-vs-chunk race. */
+async function subscribeToRegistry(targetChatId: string): Promise<void> {
+  if (!isTauri()) return;
+  const s = activeChat();
+
+  // Unsubscribe existing if any
+  if (s.registrySubscription) {
+    await s.registrySubscription.cleanup();
+    s.registrySubscription = null;
+  }
+
+  try {
+    const { invoke, Channel } = await import("@tauri-apps/api/core");
+    const channel = new Channel<RegistryChatEvent>();
+
+    // Buffering: events arriving before snapshot is applied are queued
+    let buffered: RegistryChatEvent[] = [];
+    let ready = false;
+
+    channel.onmessage = (event: RegistryChatEvent) => {
+      if (!ready) {
+        buffered.push(event);
+      } else {
+        applyRegistryEvent(s, event);
+      }
+    };
+
+    const result = await invoke<{ subscriptionId: number; snapshot: RegistryChatEvent & { kind: "snapshot" } }>(
+      "chat_subscribe",
+      { chatId: targetChatId, onEvent: channel },
+    );
+
+    // Apply snapshot synchronously
+    applyRegistryEvent(s, { kind: "snapshot", ...result.snapshot });
+
+    // Flush buffered events in order
+    ready = true;
+    for (const event of buffered) {
+      applyRegistryEvent(s, event);
+    }
+    buffered = [];
+
+    const subId = result.subscriptionId;
+    s.registrySubscription = {
+      chatId: targetChatId,
+      subscriptionId: subId,
+      cleanup: async () => {
+        ready = false;
+        try {
+          await invoke("chat_unsubscribe", { chatId: targetChatId, subscriptionId: subId });
+        } catch (e) {
+          appLogger.warn("ai-chat", "chat_unsubscribe failed", { error: String(e) });
+        }
+      },
+    };
+    appLogger.info("ai-chat", `subscribed to registry: chatId=${targetChatId} subId=${subId}`);
+  } catch (e) {
+    appLogger.warn("ai-chat", "subscribeToRegistry failed", { error: String(e) });
+  }
+}
+
+/** Unsubscribe the active chat from the registry. */
+async function unsubscribeFromRegistry(): Promise<void> {
+  const s = activeChat();
+  if (s.registrySubscription) {
+    await s.registrySubscription.cleanup();
+    s.registrySubscription = null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -582,6 +730,10 @@ export const aiChatStore = {
   // Persistence
   initFromDisk,
   persistNow,
+
+  // Registry subscription (cross-window sync)
+  subscribeToRegistry,
+  unsubscribeFromRegistry,
 
   // History
   listAllConversations,
