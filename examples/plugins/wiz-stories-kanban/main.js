@@ -1116,19 +1116,12 @@ async function openKanban() {
 
   const html = await renderCurrentView();
 
-  // The host dedupes openPanel by pluginId+title and returns the existing
-  // handle without updating html — so when the panel is already mounted
-  // (e.g. after a repo switch), we must push new content via update().
-  if (panelHandle) {
-    panelHandle.update(html);
-  } else {
-    panelHandle = hostRef.openPanel({
-      id: "kanban-board",
-      title: "Stories Kanban",
-      html,
-      onMessage: handlePanelMessage,
-    });
-  }
+  panelHandle = hostRef.openPanel({
+    id: "kanban-board",
+    title: "Stories Kanban",
+    html,
+    onMessage: handlePanelMessage,
+  });
 
   await startWatching();
 }
