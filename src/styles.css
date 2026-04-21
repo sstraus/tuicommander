@@ -22,6 +22,22 @@
   display: none !important;
 }
 
+/* Panel mode: full-viewport single panel (detached AI Chat window) */
+#app.panel-mode {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+#app.panel-mode > * {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  border-left: none !important;
+}
+
 /* Main Content */
 #main {
   flex: 1;

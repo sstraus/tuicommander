@@ -531,6 +531,10 @@ function resetChatId(): void {
   activeChat().setChatId(newId);
 }
 
+function setChatId(id: string): void {
+  activeChat().setChatId(id);
+}
+
 function setError(e: string | null): void {
   activeChat().setError(e);
 }
@@ -726,6 +730,7 @@ export const aiChatStore = {
   cancelStream,
   setError,
   resetChatId,
+  setChatId,
 
   // Persistence
   initFromDisk,

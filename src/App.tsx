@@ -102,6 +102,7 @@ import { useWorktreeSwitchPrompt } from "./hooks/useWorktreeSwitchPrompt";
 import { useCiHeal } from "./hooks/useCiHeal";
 import { useSmartPrompts } from "./hooks/useSmartPrompts";
 import { registerAiChatContextActions } from "./components/AIChatPanel/contextMenuActions";
+import { AIChatPanel } from "./components/AIChatPanel/AIChatPanel";
 import { aiChatStore } from "./stores/aiChatStore";
 import { aiAgentStore } from "./stores/aiAgentStore";
 import { applyAppTheme, applyFontFamily } from "./themes";
@@ -122,6 +123,17 @@ const getMaxTabNameLength = () => settingsStore.state.maxTabNameLength;
 
 /** Detect secondary window mode via URL query param */
 const isSecondaryWindow = () => new URLSearchParams(window.location.search).get("mode") === "secondary";
+
+/** Detect detached panel mode via URL query param */
+function getPanelParams(): { isPanelMode: boolean; panelId: string | null; chatId: string | null } {
+  const params = new URLSearchParams(window.location.search);
+  const mode = params.get("mode");
+  return {
+    isPanelMode: mode === "panel",
+    panelId: params.get("panel"),
+    chatId: params.get("chatId"),
+  };
+}
 
 const App: Component = () => {
   const [statusInfo, _setStatusInfoRaw] = createSignal("Ready");
@@ -552,7 +564,7 @@ const App: Component = () => {
   }
 
   // Notify plugins when the active repository changes so globally-pinned
-  // plugin panels (e.g. Stories Kanban) can reload their content.
+  // plugin panels (e.g. Wiz Kanban) can reload their content.
   createEffect(on(() => repositoriesStore.state.activeRepoPath, (repoPath) => {
     pluginRegistry.notifyStateChange({
       type: "repo-changed",
@@ -1687,6 +1699,19 @@ const App: Component = () => {
     });
   });
 
+
+  // Detached panel mode: full-viewport single panel
+  const panelParams = getPanelParams();
+  if (panelParams.isPanelMode && panelParams.panelId === "ai-chat") {
+    if (panelParams.chatId) {
+      aiChatStore.setChatId(panelParams.chatId);
+    }
+    return (
+      <div id="app" class="panel-mode panel-ai-chat">
+        <AIChatPanel visible={true} onClose={() => window.close()} />
+      </div>
+    );
+  }
 
   // Secondary window: minimal pane-only layout
   if (isSecondaryWindow()) {
