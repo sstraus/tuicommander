@@ -54,6 +54,7 @@ A configurable OS-level shortcut to toggle TUICommander's visibility from any ap
 | `Cmd+R` | Run saved command |
 | `Cmd+Shift+R` | Edit and run command |
 | `Cmd+L` | Clear terminal |
+| `Cmd+Shift+L` | Refresh terminal (fix rendering glyphs) |
 | `Cmd+F` | Find in terminal / diff tab |
 | `Cmd+G` | Git Panel — Branches tab (or Find next match when search is open) |
 | `Enter` | Find next match (when search is open) |
@@ -237,6 +238,7 @@ Hold to record, release to transcribe and inject text into active terminal.
 | `close-terminal` | `Cmd+W` | Close terminal/pane |
 | `reopen-closed-tab` | `Cmd+Shift+T` | Reopen closed tab |
 | `clear-terminal` | `Cmd+L` | Clear terminal |
+| `refresh-terminal` | `Cmd+Shift+L` | Refresh terminal (fix glyphs) |
 | `run-command` | `Cmd+R` | Run saved command |
 | `edit-command` | `Cmd+Shift+R` | Edit and run command |
 | `split-vertical` | `Cmd+\` | Split vertically |
@@ -274,3 +276,4 @@ Hold to record, release to transcribe and inject text into active terminal.
 | `toggle-file-browser-content-search` | `Cmd+Shift+F` | File content search |
 | `toggle-diff-scroll` | `Cmd+Shift+G` | Diff scroll view |
 | `toggle-global-workspace` | `Cmd+Shift+X` | Toggle global workspace |
+| `toggle-ai-chat` | `Cmd+Alt+A` | Toggle AI Chat panel |

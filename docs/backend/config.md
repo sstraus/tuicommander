@@ -80,6 +80,40 @@ pub fn save_json_config<T: Serialize>(filename: &str, config: &T) -> Result<(), 
 
 **Commands:** `load_notification_config()`, `save_notification_config(config)`
 
+### AI Chat Config (`ai-chat-config.json`)
+
+**Type:** `AiChatConfig`
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `provider` | `String` | `"ollama"` | AI provider: `ollama`, `anthropic`, `openai`, `openrouter`, `custom` |
+| `model` | `String` | `""` | Model name |
+| `base_url` | `Option<String>` | per-provider | Endpoint base URL |
+| `temperature` | `f32` | `0.7` | Sampling temperature |
+| `context_lines` | `u32` | `150` | VtLogBuffer rows injected per turn |
+| `experimental_ai_block_enrichment` | `bool` | `false` | Enrich OSC 133 blocks with semantic intent |
+| `agent_model_overrides` | `Option<HashMap<ToolPhase, String>>` | `None` | Per-phase model routing. Keys: `plan`, `search`, `read`, `write` |
+
+**Commands:** `load_ai_chat_config()`, `save_ai_chat_config(config)`
+
+### Cron Scheduler Config (`ai-cron.json`)
+
+**Type:** `SchedulerConfig`
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `jobs` | `Vec<ScheduledJob>` | `[]` | List of scheduled agent jobs |
+
+Each `ScheduledJob`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `String` | Unique job identifier |
+| `cron_expr` | `String` | Cron expression (validated on save) |
+| `goal` | `String` | Agent goal to execute |
+
+**Commands:** `load_scheduler_config()`, `save_scheduler_config(config)`
+
 ### UI Preferences (`ui-prefs.json`)
 
 **Type:** `UIPrefsConfig`

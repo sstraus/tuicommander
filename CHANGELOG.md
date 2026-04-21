@@ -8,6 +8,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - **Claude Wakeup plugin** — Agent-scoped external plugin (`plugins/claude-wakeup/`) that wakes Claude Code when it stalls without asking a question. Sends a verification prompt after 20 s of idle, detects "done" replies via busy-cycle duration (short <8 s = done, long ≥8 s = continued), disarms until next user turn. Typing suppression: every busy→idle transition resets the idle clock, preventing false wakes during keystroke-generated shell-state blips. Max 3 wakes per stall, 12 per session. Markdown stats dashboard. Configurable thresholds via `data/config.json`.
+- **Agent cron scheduler** — Time-triggered agent tasks with cron expressions. Define jobs (cron + goal) in Settings > AI Chat > Scheduler. Persisted to `ai-cron.json`, ticks every 30 s. Tauri commands: `load_scheduler_config`, `save_scheduler_config`.
+- **Agent model overrides per task phase** — Route different models to different tool phases (`plan`, `search`, `read`, `write`) in the AI Agent loop. Configure in Settings > AI Chat. Stored as `agent_model_overrides` in `ai-chat-config.json`.
+- **PTY orchestration tools for multi-agent control** — Swarm agents can spawn, monitor, and coordinate PTY sessions via MCP `agent` and `session` tools.
+- **Cross-session memory injection** — `build_cross_session_section()` scans prior sessions in the same repo and injects a summarised memory block into the agent system prompt.
+- **`search_tools` / `call_tool` MCP bridge** — Speakeasy lazy-discovery meta-tools (`search_tools`, `get_tool_schema`, `call_tool`) replace the full tool list when `collapse_tools` is enabled, cutting MCP context from ~35k to ~500 tokens.
+- **Unsafe mode** — Lock icon in the AI Chat header toggles `TrustLevel::Unrestricted`, bypassing approval prompts and sandbox. Confirmation dialog + red header indicator.
+- **Agent cost tracking UI** — Live usage footer in AI Chat: prompt tokens (↑N), completion tokens (↓N), estimated cost ($X.XXXX), cache hit rate.
+- **`search_code` BM25 tool** — Semantic search over repo files via `content_index`, available as the 13th agent tool and via `ai_terminal_search_code` MCP.
+- **AI Chat conversation history panel** — Slide-in list of saved conversations with title, terminal name, message count, date. Click to load.
+- **AI Chat per-terminal state** — Each terminal maintains independent chat history, streaming state, and conversation ID (keyed by `tuicSession`). Frozen-state banner when no terminal is focused.
+- **Refresh terminal** (`Cmd+Shift+L`) — Rebuilds the terminal renderer to fix corrupted WebGL glyphs without clearing content.
+- **Tab drag reorder for all tab types** — Non-terminal tabs (diff, editor, markdown, plugin panels) can now be reordered via drag-and-drop.
+- **`get_input_buffer_content` Tauri command** — Read the terminal input line buffer; whitelisted for plugins with `pty:read` capability.
+- **Keyring warm-up** — Bearer tokens cached in memory after first keyring read, eliminating repeated macOS Keychain prompts.
 
 ### Fixed
 - **MCP stdio proxy "0 tools"** — `StdioMcpClient.rpc()` now matches JSON-RPC responses by `id`, skipping server notifications emitted between request and response. Previously a single interleaved notification (e.g. `notifications/tools/list_changed`) would be consumed as the `tools/list` response, silently yielding 0 tools.

@@ -40,6 +40,9 @@ Each supported agent has an expandable row showing detection status, version, an
 | **Run Configurations** | Custom launch configs (binary path, args, model, prompt) per agent. Add, set default, or delete configurations. A config named **"review"** enables the Review button in the PR Detail Popover — its args are interpolated with `{pr_number}`, `{branch}`, `{base_branch}`, `{repo}`, `{pr_url}`. |
 | **MCP Integration** | Install/remove TUICommander as MCP server for supported agents. Shows install status with a dot indicator. |
 | **Claude Usage Dashboard** | (Claude Code only) Toggle under Features when the Claude row is expanded. Enables rate limit monitoring, session analytics, token usage charts, activity heatmap, and per-project breakdowns. Usage data appears in the status bar agent badge and in a dedicated dashboard tab. |
+| **Agent Model Overrides** | Per-task-phase model routing for the AI Agent loop. Four phases: `plan`, `search`, `read`, `write`. Each phase can use a different model (e.g. a cheaper model for search, a stronger model for write). Configure in Settings > AI Chat. |
+| **Unsafe Mode** | When enabled, the agent skips all approval prompts and operates without sandbox restrictions (`TrustLevel::Unrestricted`). Toggle via the lock icon in the AI Chat panel header. A confirmation dialog warns before activating. The header turns red to indicate unrestricted operation. |
+| **Cron Scheduler** | Time-triggered agent tasks. Define cron expressions with goals in Settings > AI Chat > Scheduler. Jobs are persisted to `ai-cron.json` and tick every 30 s. |
 
 See [AI Agents](ai-agents.md) for details on agent detection, rate limits, and the usage dashboard.
 

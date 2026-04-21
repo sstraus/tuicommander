@@ -3,7 +3,7 @@
 > Canonical feature inventory. Update this file when adding, changing, or removing features.
 > See [AGENTS.md](../AGENTS.md) for the maintenance requirement.
 
-**Version:** 1.0.5 | **Last verified:** 2026-04-15
+**Version:** 1.0.6 | **Last verified:** 2026-04-21
 
 ---
 
@@ -25,7 +25,7 @@
 - Reopen last closed: `Cmd+Shift+T` (remembers last 10 closed tabs)
 - Switch: `Cmd+1` through `Cmd+9`, `Ctrl+Tab` / `Ctrl+Shift+Tab`
 - Rename: double-click tab name (inline editing)
-- Reorder: drag-and-drop with visual drop indicators
+- Reorder: drag-and-drop with visual drop indicators (works for all tab types: terminal, diff, editor, markdown, plugin panels)
 - Tab status dot (left of name): grey=idle, blue-pulse=busy, green=done, purple=unseen (completed while not viewed), orange-pulse=question (needs input), red-pulse=error
 - Tab type colors: red gradient=diff, blue gradient=editor, teal gradient=markdown, purple gradient=panel, amber gradient=remote PTY session
 - Remote PTY sessions (created via HTTP/MCP) show "PTY:" prefix and amber styling
@@ -119,7 +119,12 @@
 - Minimum 3 characters after prefix
 - Also accessible via the explicit "Search Terminals" command in the palette
 
-### 1.15 Terminal Bell
+### 1.15 Refresh Terminal (`Cmd+Shift+L`)
+- Rebuilds the terminal renderer to fix corrupted glyphs (WebGL atlas issues, font rendering artifacts)
+- Does not clear content or affect the PTY session — purely a visual refresh
+- Action name: `refresh-terminal`
+
+### 1.16 Terminal Bell
 - **Terminal Bell** — Configurable bell behavior when the terminal receives a BEL character (`\x07`). Four modes: `none` (silent), `visual` (screen flash animation), `sound` (plays the Info notification sound), `both` (flash + sound). Configure in Settings > Appearance.
 
 ---
@@ -604,16 +609,20 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 ### 6.14 AI Chat Panel (`Cmd+Alt+A`)
 - Conversational AI companion docked on the right, streaming markdown with syntax-highlighted code blocks. Every code block has *Run* (sends to the attached terminal via `sendCommand()`), *Copy*, and *Insert* actions
 - Multi-provider: **Ollama** (local, auto-detected on `localhost:11434` with live model list), **Anthropic**, **OpenAI**, **OpenRouter**, custom OpenAI-compatible endpoint. Provider abstraction via `genai` crate
-- Per-turn terminal context: last `context_lines` rows from `VtLogBuffer` (ANSI-stripped, alt-screen suppressed), `SessionState`, recent `ParsedEvent`s, git branch/diff. Attach / detach / auto-attach terminal via header dropdown
+- **Per-terminal state** — each terminal tab maintains its own independent chat history, streaming state, and conversation ID (keyed by `tuicSession`). The header shows the active terminal's name as a badge
+- **Frozen state** — when no terminal is focused (e.g. Git panel or settings active), a banner reads "No terminal focused — chat is read-only", input is disabled, and the send button is greyed out
+- Per-turn terminal context: last `context_lines` rows from `VtLogBuffer` (ANSI-stripped, alt-screen suppressed), `SessionState`, recent `ParsedEvent`s, git branch/diff. Terminal follows the focused tab automatically
 - API keys stored in OS keyring (service `tuicommander-ai-chat`, user `api-key`) — masked with eye-toggle in Settings
 - Streaming via Tauri `Channel<ChatStreamEvent>` (`chunk`/`end`/`error`); cancellable mid-stream
 - Conversation persistence: save / load / delete with in-memory cap of 100 messages per conversation. Files at `<config_dir>/ai-chat-conversations/<id>.json`
+- **Conversation history panel** — click the clock/history icon in the header to browse all saved conversations (title, terminal name, message count, date). Click a row to load it
+- **Usage footer** — live token counter at the bottom: prompt tokens (↑N), completion tokens (↓N), estimated cost ($X.XXXX), cache hit rate
 - Terminal context menu: *Send selection to AI Chat*, *Explain this error*. Toolbar toggle + hotkey
 - Full user guide: [`docs/user-guide/ai-chat.md`](user-guide/ai-chat.md)
 
 ### 6.15 AI Agent Loop (ReAct)
 - Autonomous loop that observes and acts in a terminal. Same panel as AI Chat, mode toggle in the header
-- **Six tools** exposed to the model: `read_screen`, `send_input`, `send_key`, `wait_for` (regex or stability), `get_state`, `get_context`
+- **Seven terminal tools**: `read_screen`, `send_input`, `send_key`, `wait_for` (regex or stability), `get_state`, `get_context` + **`search_code`** (BM25 semantic search over repo files via `content_index`)
 - **Safety gates** via the `SafetyChecker` trait — three verdicts: `Allow`, `NeedsApproval { reason }`, `Block { reason }`. Destructive commands (`rm -rf`, `git reset --hard`, `git push --force`, `DROP TABLE`, `dd of=`, …) surface a pending-approval card; hard-coded blocks refuse patterns like `rm -rf /`
 - **Pause / resume / cancel** between iterations with clean state transitions. Tool-call cards collapse/expand in the panel. Conversation schema v2 persists tool-call records alongside messages
 - **Session knowledge store** (Level 3): command outcomes (exit code, duration, CWD, classification, output snippet), auto-correlated error→fix pairs, CWD history, `tui_apps_seen`, terminal mode. Injected into the agent system prompt as a compact markdown summary
@@ -622,6 +631,10 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - **Experimental AI block enrichment** (opt-in, `Settings > AI Chat`) — after each completed OSC 133 D block, a bounded `mpsc` worker asks the active AI provider for a one-line `semantic_intent` and stamps it onto the `CommandOutcome` (identified by stable `id: u64`). Rate-limited ~10/min, silent drop on full queue, never blocks the PTY path
 - **TUI app detection** via alternate-screen tracking (`ESC[?1049h`/`l`). `TerminalMode::FullscreenTui { app_hint, depth }` is set when the terminal enters vim/htop/lazygit/less/tmux/…; the agent adapts (prefers `send_key` + `wait_for` over line-oriented `send_input`)
 - **External MCP surface** — same six tools exposed as `ai_terminal_read_screen`, `ai_terminal_send_input`, `ai_terminal_send_key`, `ai_terminal_wait_for`, `ai_terminal_get_state`, `ai_terminal_get_context`. Input operations always require user confirmation and are rejected while the internal agent loop is active on the target session
+- **Unsafe mode** — lock icon in the AI Chat header toggles unrestricted operation (`TrustLevel::Unrestricted`). Bypasses `SafetyChecker` approval and `FileSandbox` path jail. Confirmation dialog before activation; header turns red while active. Per-session, resets on loop end
+- **Agent model overrides** — per-task-phase model routing (`agent_model_overrides` in `ai-chat-config.json`). Four phases: `plan`, `search`, `read`, `write`. Each phase can use a different model to optimize cost/quality trade-offs
+- **Cross-session memory injection** — `build_cross_session_section()` scans all sessions whose CWD history overlaps the current session's repo root and injects a summarised memory block into the agent system prompt. The agent inherits knowledge from prior sessions in the same repo without manual intervention
+- **Cron scheduler** — time-triggered agent tasks defined in Settings > AI Chat > Scheduler. Cron expressions with goals, persisted to `<config_dir>/ai-cron.json`. Scheduler ticks every 30 s. Tauri commands: `load_scheduler_config`, `save_scheduler_config`
 
 ### 6.16 ChoicePrompt Detection
 - New `ParsedEvent::ChoicePrompt { title, options, dismiss_key, amend_key }` recognises Claude-Code-style numbered confirmation menus (footer matches `Esc to cancel · Tab to amend`)
@@ -1115,6 +1128,7 @@ All data persisted to platform config directory via Rust:
 | `Cmd+1`–`Cmd+9` | Switch to tab by number |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous tab |
 | `Cmd+L` | Clear terminal |
+| `Cmd+Shift+L` | Refresh terminal (fix glyphs) |
 | `Cmd+C` | Copy selection |
 | `Cmd+V` | Paste to terminal |
 | `Cmd+Home` | Scroll to top |
@@ -1284,7 +1298,7 @@ All data persisted to platform config directory via Rust:
 - Built-in plugins (TypeScript, compiled with app) and external plugins (JS, loaded at runtime)
 - Hot-reload: file changes in plugin directories trigger automatic re-import
 - Per-plugin error logging with ring buffer (500 entries)
-- Capability-gated access: `pty:write`, `ui:markdown`, `ui:sound`, `ui:panel`, `ui:ticker`, `ui:context-menu`, `ui:sidebar`, `ui:file-icons`, `net:http`, `credentials:read`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`, `fs:write`, `fs:rename`, `exec:cli`, `git:read`
+- Capability-gated access: `pty:write`, `pty:read`, `ui:markdown`, `ui:sound`, `ui:panel`, `ui:ticker`, `ui:context-menu`, `ui:sidebar`, `ui:file-icons`, `net:http`, `credentials:read`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`, `fs:write`, `fs:rename`, `exec:cli`, `git:read`
 - CLI execution API: sandboxed execution of whitelisted CLI binaries (`mdkb`) with timeout and size limits
 - Filesystem API: sandboxed read, write, rename, list, tail-read, and watch operations restricted to `$HOME`
 - HTTP API: outbound requests scoped to manifest-declared URL patterns (SSRF prevention)
@@ -1467,6 +1481,13 @@ TUICommander aggregates upstream MCP servers and exposes them through its own `/
 - Native TUIC tools (`session`, `git`, `agent`, `config`, `workspace`, `notify`, `plugin_dev_guide`) coexist with upstream tools
 - Tool routing: names containing `__` are routed to the upstream registry; all others handled natively
 
+### 19.1.1 Lazy Tool Discovery (`collapse_tools`)
+- When `collapse_tools: true` (Settings > Services > TUIC Tools > "Collapse tools"), the full tool list is replaced with 3 meta-tools: `search_tools`, `get_tool_schema`, `call_tool`
+- Cuts MCP context from ~35k tokens to ~500 tokens per agent turn; agent fetches schemas on demand via BM25-ranked search
+- BM25 index backed by `AppState::tool_search_index` (rebuilds automatically when the tool set changes)
+- Safety filters (`disabled_native_tools`, upstream allow/deny) enforced at both discovery and dispatch time — agents cannot bypass filters by calling `call_tool` directly
+- Toggling fires `notifications/tools/list_changed` so connected clients refresh
+
 ### 19.2 Tool Namespace
 - Upstream tools are prefixed: `{upstream_name}__{tool_name}`
 - Double underscore (`__`) is the routing discriminator — native tool names never contain it
@@ -1504,6 +1525,7 @@ TUICommander aggregates upstream MCP servers and exposes them through its own `/
 
 ### 19.8 Credential Management
 - Bearer tokens stored in OS keyring (Keychain / Credential Manager / Secret Service)
+- **Keyring warm-up** — resolved bearer token cached in memory after the first read. Health checks (every 60 s) and tool calls reuse the cache, invalidated on 401 and re-populated after token refresh. Eliminates repeated macOS Keychain permission prompts
 - Config file (`mcp-upstreams.json`) never contains secrets
 - Per-upstream credential lookup at call time
 - OAuth 2.1 token sets persisted as structured JSON in the keyring (`{"type": "oauth2", "access_token", "refresh_token", "expires_at"}`)

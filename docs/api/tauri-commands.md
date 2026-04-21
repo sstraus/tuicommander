@@ -26,6 +26,7 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `has_foreground_process` | `session_id: String` | `bool` | Checks if a non-shell foreground process is running |
 | `debug_agent_detection` | `session_id: String` | `AgentDiagnostics` | Returns diagnostic breakdown of agent detection pipeline |
 | `set_session_name` | `session_id, name` | `()` | Set custom display name for a session |
+| `get_input_buffer_content` | `session_id` | `String` | Get the current content of the input line buffer (what the user is typing). Used by plugins with `pty:read` capability. |
 
 ## Git Operations (`git.rs`)
 
@@ -192,7 +193,7 @@ plus a Tauri-side query for the per-session knowledge store.
 
 | Command | Args | Returns | Description |
 |---------|------|---------|-------------|
-| `start_agent_loop` | `session_id, goal` | `String` (status message) | Start a ReAct loop on the given terminal session with the given goal. Errors if an agent is already active for the session. |
+| `start_agent_loop` | `session_id, goal, unrestricted?: bool` | `String` (status message) | Start a ReAct loop on the given terminal session with the given goal. When `unrestricted=true`, sets `TrustLevel::Unrestricted` — bypasses sandbox and approval prompts. Errors if an agent is already active for the session. |
 | `cancel_agent_loop` | `session_id` | `String` | Cancel the active agent loop. Errors if no loop is active. |
 | `pause_agent_loop` | `session_id` | `String` | Pause the active agent loop between iterations. |
 | `resume_agent_loop` | `session_id` | `String` | Resume a paused agent loop. |
@@ -201,10 +202,12 @@ plus a Tauri-side query for the per-session knowledge store.
 | `get_session_knowledge` | `session_id` | `SessionKnowledgeSummary` | Lightweight summary for the `SessionKnowledgeBar` UI: commands count, last 5 outcomes with kind badges, recent errors with `error_type`, TUI mode indicator, TUI apps seen. Returns an empty summary when the session has no recorded knowledge yet. |
 | `list_knowledge_sessions` | `filter?: { text?, hasErrors?, since? }, limit?` | `SessionListEntry[]` | Scan persisted `ai-sessions/` and list sessions sorted by most recent activity. Filter by text (matches command/output/intent/error_type), errors-only, or UNIX-seconds `since` lower bound. `limit` clamps at 500 (default 100). |
 | `get_knowledge_session_detail` | `session_id` | `SessionDetail?` | Full command history for one session — reads the in-memory store when active, falls back to disk otherwise. `HistoryCommand` rows include pre-extracted `kind`/`error_type` and the opt-in `semantic_intent`. |
+| `load_scheduler_config` | -- | `SchedulerConfig` | Load cron scheduler config from `ai-cron.json`. Returns `{ jobs: ScheduledJob[] }` where each job has `id`, `cron_expr`, `goal`. |
+| `save_scheduler_config` | `config: SchedulerConfig` | `()` | Validate cron expressions and persist scheduler config. Errors if any expression is invalid. |
 
 ### Agent Tools (`ai_agent/tools.rs`)
 
-12 tools available to the ReAct agent loop and exposed via MCP as `ai_terminal_*`:
+13 tools available to the ReAct agent loop and exposed via MCP as `ai_terminal_*`:
 
 **Terminal tools** (require `session_id`):
 
@@ -226,6 +229,7 @@ plus a Tauri-side query for the per-session knowledge store.
 | `edit_file` | `file_path, old_string, new_string, replace_all?` | Search-and-replace. Must be unique unless replace_all=true. |
 | `list_files` | `pattern, path?` | Glob match (e.g. `src/**/*.rs`). Max 500 entries. |
 | `search_files` | `pattern, path?, glob?, context_lines?` | Regex search, .gitignore-aware. Max 50 matches with context. |
+| `search_code` | `query, path?, limit?` | BM25 semantic search over repo files via `AppState::content_index`. Returns ranked file paths with relevance scores. |
 | `run_command` | `command, timeout_ms?, cwd?` | Shell command with captured stdout/stderr. Safety-checked. Env sanitized. |
 
 ## MCP OAuth 2.1 (`mcp_oauth/commands.rs`)
@@ -468,3 +472,17 @@ Uses incremental parsing with a file-size-based cache (`claude-usage-cache.json`
 | `play_notification_sound` | `sound_type` | `()` | Play notification sound via Rust rodio (types: completion, question, error, info) |
 | `block_sleep` | -- | `()` | Prevent system sleep |
 | `unblock_sleep` | -- | `()` | Allow system sleep |
+
+## LLM API (`llm_api.rs`)
+
+Smart Prompts "API" execution mode — direct LLM calls for prompt-based automation (distinct from AI Chat keyring).
+
+| Command | Args | Returns | Description |
+|---------|------|---------|-------------|
+| `load_llm_api_config` | -- | `LlmApiConfig` | Load `llm-api.json` (provider, model, base_url) |
+| `save_llm_api_config` | `config: LlmApiConfig` | `()` | Persist LLM API config |
+| `has_llm_api_key` | -- | `bool` | Check if an API key exists in the keyring for `Credential::LlmApiKey` |
+| `save_llm_api_key` | `key: String` | `()` | Store the LLM API key in the OS keyring |
+| `delete_llm_api_key` | -- | `()` | Remove the LLM API key from the OS keyring |
+| `execute_api_prompt` | `system_prompt, content, timeout_ms?` | `String` | Execute a direct LLM call using the configured provider/model. Returns the model's response text. |
+| `test_llm_api` | -- | `String` | Validate connection to the configured LLM endpoint (sends a test prompt) |

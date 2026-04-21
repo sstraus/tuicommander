@@ -143,6 +143,47 @@ When TUICommander restores saved terminals after a restart, it checks whether th
 
 When you spawn an agent via the context menu or command palette, TUICommander automatically uses the tab's `TUIC_SESSION` as the `--session-id`. This ensures the spawned session is bound to the tab and will resume correctly on restart.
 
+## Unsafe Mode (Unrestricted)
+
+The AI Agent loop can run in **unrestricted mode**, bypassing the `SafetyChecker` approval flow and `FileSandbox` path jail. Toggle via the lock icon in the AI Chat panel header — a confirmation dialog warns that "The agent will skip all approval prompts and operate without sandbox restrictions" before activating. The header turns red to indicate the mode is active.
+
+Use this for trusted automation tasks where approval prompts would slow down the workflow (e.g. batch refactoring inside a known repo). Unrestricted mode is per-session and resets when the agent loop ends.
+
+## Agent Cost Tracking
+
+The AI Chat panel shows a live **usage footer** at the bottom of each conversation:
+
+- **Prompt tokens** (↑N) — input tokens sent to the provider
+- **Completion tokens** (↓N) — output tokens received
+- **Estimated cost** ($X.XXXX) — calculated from the provider's per-token pricing
+- **Cache hit rate** — percentage of prompt tokens served from cache (when the provider supports it)
+
+Costs are tracked per-session and reset when a new conversation starts.
+
+## Agent Model Overrides per Task Phase
+
+The agent loop can use different models for different tool phases, optimizing cost/quality trade-offs:
+
+| Phase | Description | Example model |
+|-------|-------------|---------------|
+| `plan` | Goal decomposition, next-step reasoning | Opus, GPT-4o |
+| `search` | `search_files`, `search_code`, `list_files` | Haiku, GPT-4o-mini |
+| `read` | `read_screen`, `read_file`, `get_state`, `get_context` | Haiku, GPT-4o-mini |
+| `write` | `send_input`, `send_key`, `write_file`, `edit_file`, `run_command` | Sonnet, GPT-4o |
+
+Configure in **Settings > AI Chat > Agent model overrides**. When no override is set for a phase, the default model is used.
+
+## Cron Scheduler
+
+Time-triggered agent tasks that run on a schedule. Define jobs in **Settings > AI Chat > Scheduler**:
+
+- **Cron expression** — standard cron syntax (e.g. `0 */2 * * *` for every 2 hours)
+- **Goal** — the agent goal to execute when the schedule fires
+
+Jobs are persisted to `<config_dir>/ai-cron.json`. The scheduler ticks every 30 seconds and launches agent loops on matching terminals. Cron expressions are validated before saving.
+
+Tauri commands: `load_scheduler_config`, `save_scheduler_config`.
+
 ## Sleep Prevention
 
 When agents are actively working, TUICommander can keep your machine awake:

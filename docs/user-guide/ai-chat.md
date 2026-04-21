@@ -51,14 +51,14 @@ Every turn the backend assembles a compact context from the currently-attached t
 - **Git context** — branch, short diff stats, staged file list (same variables Smart Prompts use).
 - **Session knowledge** (when the agent has been active) — compact markdown summary of recent command outcomes, error→fix pairs, TUI apps seen.
 
-Attach / detach the terminal via the dropdown at the top of the panel (or right-click → *Attach to AI Chat*). "Auto-attach" picks the focused terminal each turn.
+The panel follows the focused terminal automatically — the header shows the active terminal's name as a badge. When no terminal is focused (e.g. a Git or settings tab is active), the panel enters **frozen state**: a banner reads "No terminal focused — chat is read-only", the input placeholder changes to "Focus a terminal first…", and the send button is disabled. Focus any terminal tab to resume.
 
 ## Conversations
 
-- Each panel session gets a fresh `chatId` on open.
-- Save explicitly via the menu → `list_conversations` / `load_conversation` / `delete_conversation`.
+- **Per-terminal state** — each terminal tab maintains its own independent chat history, streaming state, and conversation ID (keyed by `tuicSession`). Switching tabs switches the conversation. Messages sent from a tab always target that tab's PTY session.
 - Hard cap: **100 messages** per conversation in memory; older messages are evicted FIFO. Saved conversations keep the full history on disk.
 - Streaming uses a Tauri `Channel<ChatStreamEvent>` — you see tokens as they arrive. Cancel mid-stream with the stop button or `cancel_ai_chat`.
+- **Conversation history panel** — click the clock/history icon in the header to open a slide-in list of all saved conversations. Each row shows the title, terminal session name, message count, and date. Click a row to load that conversation into the current terminal's chat.
 
 ## Run-this, copy, and actions
 
@@ -138,6 +138,7 @@ Input tools are refused while the internal agent loop is active on that session,
 | Model | `ai-chat-config.json` | Free-text; settings tab populates suggestions per provider |
 | Base URL | `ai-chat-config.json` | Pre-filled per provider, editable |
 | Temperature | `ai-chat-config.json` | Default `0.7` |
+| Agent model overrides | `ai-chat-config.json` (`agent_model_overrides`) | Per-task-phase model routing. Keys: `plan`, `search`, `read`, `write` (matching `ToolPhase`). Values: model name strings. When set, the agent loop selects the model based on the current tool phase instead of using a single model for all iterations. |
 | Context lines | `ai-chat-config.json` | Default `150`. Raise for richer context, lower for smaller prompts. |
 | API key | OS keyring (`tuicommander-ai-chat` / `api-key`) | Masked with eye-toggle. "Test connection" validates the key + base URL. |
 | Experimental: enrich command blocks | `ai-chat-config.json` (`experimental_ai_block_enrichment`) | Default off. When on, each completed OSC 133 block is sent to the provider for a one-line `semantic_intent`. Rate-limited to ~10/min, silent on failure. |

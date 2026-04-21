@@ -188,7 +188,7 @@ Custom URL schemes (`vscode://`, `x-devonthink://`, etc.) do **not** work inside
 
 ### MCP Tools: `ai_terminal_*` (external agent surface)
 
-Six tools exposed to external MCP clients (e.g. Claude Code, Cursor) that let a
+Six terminal tools plus one search tool exposed to external MCP clients (e.g. Claude Code, Cursor) that let a
 remote AI agent observe and interact with a TUICommander terminal. All input
 operations (`send_input`, `send_key`) require user confirmation and are
 rejected while an internal agent loop is active on the target session.
@@ -203,6 +203,7 @@ rejected while an internal agent loop is active on the target session.
 | `ai_terminal_wait_for` | `session_id`, `pattern?`, `timeout_ms?` (10000), `stability_ms?` (500) | Wait for a regex match or for the screen to stabilise. |
 | `ai_terminal_get_state` | `session_id` | Return structured `SessionState` (shell_state, cwd, terminal_mode, agent_type, …). |
 | `ai_terminal_get_context` | `session_id` | Compact ~500-char context summary (mode, recent CWDs, recent errors, known fixes, TUI apps). |
+| `ai_terminal_search_code` | `query`, `path?`, `limit?` | BM25 semantic search over repo files via `AppState::content_index`. Returns ranked file paths with relevance scores. Useful for codebase exploration without regex. |
 
 ### MCP Tool: `debug` — `invoke_js` and the Debug Registry
 

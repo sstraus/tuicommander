@@ -1030,6 +1030,7 @@ Capabilities gate access to Tier 3 and Tier 4 methods. Declare them in `manifest
 | Capability | Unlocks | Risk |
 |------------|---------|------|
 | `pty:write` | `host.writePty()`, `host.sendAgentInput()` | Can send input to terminals |
+| `pty:read` | `host.invoke("get_input_buffer_content", …)` | Can read the terminal input line buffer |
 | `ui:markdown` | `host.openMarkdownPanel()`, `host.openMarkdownFile()` | Can open panels and files in the UI |
 | `ui:sound` | `host.playNotificationSound(sound?)` | Can play sounds (question, error, completion, warning, info) |
 | `ui:panel` | `host.openPanel()` | Can render arbitrary HTML in sandboxed iframe |
