@@ -188,6 +188,18 @@ fn build_system_prompt(session_id: &str) -> String {
          - list_files — glob-match files in the repo (e.g. `src/**/*.rs`)\n\
          - search_files — regex search across files with context lines\n\
          - run_command — run a shell command and capture stdout/stderr (not interactive)\n\n\
+         ## Code search\n\
+         - search_code — BM25 semantic search across the codebase by query string\n\n\
+         ## MCP bridge\n\
+         - search_tools — discover available MCP upstream tools (by keyword)\n\
+         - call_tool — invoke an MCP upstream tool by name with arguments\n\n\
+         ## Multi-session orchestration (unrestricted mode only)\n\
+         - list_sessions — enumerate all active PTY sessions\n\
+         - spawn_session — create a new PTY tab (returns session_id)\n\
+         - get_agent_status — query another agent's state (running/paused/completed/etc.)\n\
+         In unrestricted mode, send_input/send_key/read_screen accept any session_id, \
+         enabling orchestration of other terminals (e.g. launching Claude Code in a new tab \
+         and driving it via send_input).\n\n\
          ## When to use which\n\
          - **read_file vs read_screen**: use read_file for structured file access; \
          use read_screen only for interactive terminal output (TUI apps, command results already on screen).\n\

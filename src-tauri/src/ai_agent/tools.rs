@@ -240,6 +240,38 @@ pub fn tool_definitions() -> Value {
                 },
                 "required": ["tool_name"]
             }
+        },
+        {
+            "name": "list_sessions",
+            "description": "List all active PTY sessions with their id, name, shell state, and agent type. Use to find targets for cross-session orchestration (send_input, read_screen to other sessions).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        },
+        {
+            "name": "spawn_session",
+            "description": "Create a new PTY terminal session. Returns the session_id of the new tab. Use to launch new agents (e.g. Claude Code) that you can then orchestrate via send_input/read_screen.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "cwd": { "type": "string", "description": "Working directory for the new session (default: current repo root)" },
+                    "name": { "type": "string", "description": "Display name for the new tab" }
+                },
+                "required": []
+            }
+        },
+        {
+            "name": "get_agent_status",
+            "description": "Query the status of an agent loop running in another session. Returns state (running/paused/completed/cancelled/error) or null if no agent is active.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "target_session_id": { "type": "string", "description": "Session ID to query" }
+                },
+                "required": ["target_session_id"]
+            }
         }
     ])
 }
@@ -1236,6 +1268,54 @@ async fn exec_call_tool(state: &AppState, args: &Value) -> ToolResult {
     }
 }
 
+// ── list_sessions ──────────────────────────────────────────────
+
+fn exec_list_sessions(state: &AppState) -> ToolResult {
+    let mut sessions: Vec<Value> = Vec::new();
+    for entry_ref in state.sessions.iter() {
+        let sid = entry_ref.key().clone();
+        let pty = entry_ref.value().lock();
+        let ss = state.session_states.get(&sid);
+        sessions.push(json!({
+            "session_id": sid,
+            "name": pty.display_name.as_deref().unwrap_or(""),
+            "cwd": pty.cwd.as_deref().unwrap_or(""),
+            "shell_state": ss.as_ref().and_then(|s| s.shell_state.as_deref()),
+            "agent_type": ss.as_ref().and_then(|s| s.agent_type.as_deref()),
+        }));
+    }
+    ToolResult::ok(json!({ "sessions": sessions, "count": sessions.len() }).to_string())
+}
+
+// ── spawn_session ──────────────────────────────────────────────
+
+async fn exec_spawn_session(state: &Arc<AppState>, session_id: &str, args: &Value) -> ToolResult {
+    let cwd = args["cwd"].as_str().map(|s| s.to_string()).or_else(|| {
+        state.file_sandboxes.get(session_id).map(|s| s.root().to_string_lossy().to_string())
+    });
+    let name = args["name"].as_str().map(|s| s.to_string());
+
+    match crate::pty::spawn_session_for_agent(state, cwd, name).await {
+        Ok(new_sid) => ToolResult::ok(json!({ "session_id": new_sid }).to_string()),
+        Err(e) => ToolResult::err(format!("Failed to spawn session: {e}")),
+    }
+}
+
+// ── get_agent_status ───────────────────────────────────────────
+
+fn exec_get_agent_status(args: &Value) -> ToolResult {
+    let Some(target) = args["target_session_id"].as_str() else {
+        return missing_arg("target_session_id");
+    };
+    match super::engine::ACTIVE_AGENTS.get(target) {
+        Some(handle) => {
+            let state = *handle.state.read();
+            ToolResult::ok(json!({ "session_id": target, "state": state }).to_string())
+        }
+        None => ToolResult::ok(json!({ "session_id": target, "state": null }).to_string()),
+    }
+}
+
 /// Truncate output to `RUN_COMMAND_OUTPUT_CAP` using head+tail windows.
 fn truncate_output(s: &str) -> (String, bool) {
     if s.len() <= RUN_COMMAND_OUTPUT_CAP {
@@ -1436,9 +1516,10 @@ async fn dispatch_inner(
 ) -> ToolResult {
     if matches!(fn_name, "send_input" | "send_key")
         && let Some(target) = args["session_id"].as_str()
-            && target != session_id {
+            && target != session_id
+            && !is_session_unrestricted(state, session_id) {
                 return ToolResult::err(format!(
-                    "Permission denied: agent bound to session {session_id} cannot write to {target}"
+                    "Permission denied: agent bound to session {session_id} cannot write to {target}. Enable unrestricted mode for cross-session control."
                 ));
             }
     match fn_name {
@@ -1457,6 +1538,9 @@ async fn dispatch_inner(
         "run_command" => exec_run_command_inner(state, session_id, args, skip_safety).await,
         "search_tools" => exec_search_tools(state, args),
         "call_tool" => exec_call_tool(state, args).await,
+        "list_sessions" => exec_list_sessions(state),
+        "spawn_session" => exec_spawn_session(state, session_id, args).await,
+        "get_agent_status" => exec_get_agent_status(args),
         other => ToolResult::err(format!("Unknown tool: {other}")),
     }
 }
@@ -1479,10 +1563,10 @@ mod tests {
     const FILESYSTEM_SEARCH_TOOLS: &[&str] = &["list_files", "search_files"];
 
     #[test]
-    fn definitions_returns_15_tools() {
+    fn definitions_returns_18_tools() {
         let defs = tool_definitions();
         let arr = defs.as_array().unwrap();
-        assert_eq!(arr.len(), 15);
+        assert_eq!(arr.len(), 18);
     }
 
     #[test]
@@ -1523,6 +1607,9 @@ mod tests {
                 "run_command",
                 "search_tools",
                 "call_tool",
+                "list_sessions",
+                "spawn_session",
+                "get_agent_status",
             ]
         );
     }

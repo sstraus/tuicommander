@@ -2654,6 +2654,104 @@ pub(crate) async fn create_pty(
     Ok(session_id)
 }
 
+/// Spawn a headless PTY session for agent orchestration (no Tauri command context).
+/// Extracts AppHandle from `state.app_handle` and creates a minimal session.
+pub(crate) async fn spawn_session_for_agent(
+    state: &Arc<AppState>,
+    cwd: Option<String>,
+    display_name: Option<String>,
+) -> Result<String, String> {
+    let app = state
+        .app_handle
+        .read()
+        .clone()
+        .ok_or_else(|| "AppHandle not available".to_string())?;
+
+    let session_id = Uuid::new_v4().to_string();
+    let pty_system = native_pty_system();
+    let rows: u16 = 24;
+    let cols: u16 = 80;
+
+    let pair = pty_system
+        .openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
+        .map_err(|e| format!("Failed to open PTY: {e}"))?;
+
+    let shell = resolve_shell(None);
+    let mut cmd = build_shell_command(&shell);
+
+    if let Some(ref dir) = cwd {
+        let expanded = crate::cli::expand_tilde(dir);
+        if is_wsl_shell(&shell) {
+            cmd.cwd(windows_to_wsl_path(&expanded));
+        } else {
+            cmd.cwd(expanded);
+        }
+    }
+
+    if let Ok(data_dir) = app.path().app_data_dir() {
+        crate::shell_integration::inject(&data_dir, &shell, &mut cmd);
+    }
+
+    let child = pair
+        .slave
+        .spawn_command(cmd)
+        .map_err(|e| format!("Failed to spawn shell: {e}"))?;
+
+    let writer = pair
+        .master
+        .take_writer()
+        .map_err(|e| format!("Failed to get PTY writer: {e}"))?;
+
+    let reader = pair
+        .master
+        .try_clone_reader()
+        .map_err(|e| format!("Failed to get PTY reader: {e}"))?;
+
+    let paused = Arc::new(AtomicBool::new(false));
+    state.sessions.insert(
+        session_id.clone(),
+        Mutex::new(PtySession {
+            writer,
+            master: pair.master,
+            _child: child,
+            paused: paused.clone(),
+            worktree: None,
+            cwd,
+            display_name,
+            shell: shell.clone(),
+        }),
+    );
+    state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
+    state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
+
+    state.output_buffers.insert(
+        session_id.clone(),
+        Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
+    );
+    state.vt_log_buffers.insert(
+        session_id.clone(),
+        Mutex::new(VtLogBuffer::new(rows, cols, VT_LOG_BUFFER_CAPACITY)),
+    );
+    state.last_output_ms.insert(session_id.clone(), AtomicU64::new(0));
+    state.terminal_rows.insert(session_id.clone(), std::sync::atomic::AtomicU16::new(rows));
+    state.session_states.insert(session_id.clone(), crate::state::SessionState::default());
+
+    let _ = state.event_bus.send(crate::state::AppEvent::SessionCreated {
+        session_id: session_id.clone(),
+        cwd: state.sessions.get(&session_id).and_then(|s| s.lock().cwd.clone()),
+        agent_type: None,
+    });
+    if let Some(ref a) = *state.app_handle.read() {
+        let _ = a.emit("session-created", serde_json::json!({
+            "session_id": session_id,
+        }));
+    }
+
+    spawn_reader_thread(reader, paused, session_id.clone(), app, state.clone());
+
+    Ok(session_id)
+}
+
 /// Create a PTY session with a dedicated git worktree
 #[tauri::command]
 pub(crate) async fn create_pty_with_worktree(
