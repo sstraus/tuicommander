@@ -380,9 +380,15 @@ export async function initApp(deps: AppInitDeps) {
 
         if (cmd === "open" && repoPath) {
           mdTabsStore.add(repoPath, relPath);
-        } else if (cmd === "edit" && repoPath) {
+        } else if (cmd === "edit") {
           const line = parseInt(parsed.searchParams.get("line") || "0", 10);
-          editorTabsStore.add(repoPath, relPath, line || undefined);
+          if (repoPath) {
+            editorTabsStore.add(repoPath, relPath, line || undefined);
+          } else if (filePath.startsWith("/")) {
+            editorTabsStore.add("__external__", filePath, line || undefined, { externalEditable: true });
+          } else {
+            appLogger.warn("app", `tuic://edit relative path without active repo: ${filePath}`);
+          }
         } else {
           appLogger.warn("app", `tuic:// unhandled: cmd=${cmd} path=${filePath} repo=${repoPath}`);
         }

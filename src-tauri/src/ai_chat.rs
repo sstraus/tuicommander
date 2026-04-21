@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::ai_chat_registry::ChatRegistry;
 use crate::config::{load_json_config, save_json_config};
 use crate::llm_api;
 use crate::state::AppState;
@@ -765,6 +766,7 @@ pub(crate) struct StreamChatMessage {
 #[tauri::command]
 pub(crate) async fn stream_ai_chat(
     state: tauri::State<'_, Arc<AppState>>,
+    registry: tauri::State<'_, ChatRegistry>,
     session_id: String,
     messages: Vec<StreamChatMessage>,
     chat_id: String,
@@ -772,10 +774,9 @@ pub(crate) async fn stream_ai_chat(
 ) -> Result<(), String> {
     let config: AiChatConfig = load_json_config(CONFIG_FILE);
     if !config.is_configured() {
-        let _ = on_event.send(ChatStreamEvent::Error {
-            message: "AI Chat not configured — set provider and model in Settings > AI Chat"
-                .to_string(),
-        });
+        let err_msg = "AI Chat not configured — set provider and model in Settings > AI Chat".to_string();
+        let _ = on_event.send(ChatStreamEvent::Error { message: err_msg.clone() });
+        registry.update_and_notify(&chat_id, |s| { s.set_error(Some(err_msg)); }).await;
         return Ok(());
     }
 
@@ -786,9 +787,9 @@ pub(crate) async fn stream_ai_chat(
         match read_api_key()? {
             Some(k) => k,
             None => {
-                let _ = on_event.send(ChatStreamEvent::Error {
-                    message: "No API key stored — add one in Settings > AI Chat".to_string(),
-                });
+                let err_msg = "No API key stored — add one in Settings > AI Chat".to_string();
+                let _ = on_event.send(ChatStreamEvent::Error { message: err_msg.clone() });
+                registry.update_and_notify(&chat_id, |s| { s.set_error(Some(err_msg)); }).await;
                 return Ok(());
             }
         }
@@ -850,6 +851,13 @@ pub(crate) async fn stream_ai_chat(
         active.insert(chat_id.clone(), cancelled.clone());
     }
 
+    // Mark streaming start in registry
+    registry.update_and_notify(&chat_id, |s| {
+        s.set_streaming(true);
+        s.set_streaming_text(String::new());
+        s.set_error(None);
+    }).await;
+
     // Stream
     let result = stream_with_batching(
         client,
@@ -858,6 +866,8 @@ pub(crate) async fn stream_ai_chat(
         chat_options,
         &on_event,
         &cancelled,
+        &registry,
+        &chat_id,
     )
     .await;
 
@@ -867,16 +877,40 @@ pub(crate) async fn stream_ai_chat(
         active.remove(&chat_id);
     }
 
-    if let Err(e) = result {
-        let _ = on_event.send(ChatStreamEvent::Error {
-            message: e.to_string(),
-        });
+    match &result {
+        Ok(full_text) => {
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            let msg = crate::ai_chat_registry::ChatMessage {
+                role: "assistant".to_string(),
+                content: full_text.clone(),
+                timestamp: ts,
+            };
+            registry.update_and_notify(&chat_id, |s| {
+                s.set_streaming(false);
+                s.set_streaming_text(String::new());
+                s.push_message(msg);
+            }).await;
+        }
+        Err(e) => {
+            let err_msg = e.clone();
+            let _ = on_event.send(ChatStreamEvent::Error {
+                message: err_msg.clone(),
+            });
+            registry.update_and_notify(&chat_id, |s| {
+                s.set_streaming(false);
+                s.set_error(Some(err_msg));
+            }).await;
+        }
     }
 
     Ok(())
 }
 
 /// Stream LLM response with ~50ms chunk batching to avoid IPC saturation.
+/// Returns the full response text on success.
 async fn stream_with_batching(
     client: genai::Client,
     model: &str,
@@ -884,7 +918,9 @@ async fn stream_with_batching(
     chat_options: genai::chat::ChatOptions,
     on_event: &tauri::ipc::Channel<ChatStreamEvent>,
     cancelled: &AtomicBool,
-) -> Result<(), String> {
+    registry: &ChatRegistry,
+    chat_id: &str,
+) -> Result<String, String> {
     use futures_util::StreamExt;
     use genai::chat::ChatStreamEvent as GenaiStreamEvent;
 
@@ -904,16 +940,18 @@ async fn stream_with_batching(
         if cancelled.load(Ordering::Relaxed) {
             if !batch_buf.is_empty() {
                 let _ = on_event.send(ChatStreamEvent::Chunk { text: batch_buf.clone() });
+                registry.append_streaming_chunk(chat_id, &batch_buf).await;
                 full_text.push_str(&batch_buf);
             }
-            let _ = on_event.send(ChatStreamEvent::End { full_text, usage: None });
-            return Ok(());
+            let _ = on_event.send(ChatStreamEvent::End { full_text: full_text.clone(), usage: None });
+            return Ok(full_text);
         }
 
         tokio::select! {
             _ = interval.tick() => {
                 if !batch_buf.is_empty() {
                     let _ = on_event.send(ChatStreamEvent::Chunk { text: batch_buf.clone() });
+                    registry.append_streaming_chunk(chat_id, &batch_buf).await;
                     full_text.push_str(&batch_buf);
                     batch_buf.clear();
                 }
@@ -926,6 +964,7 @@ async fn stream_with_batching(
                     Some(Ok(GenaiStreamEvent::End(end))) => {
                         if !batch_buf.is_empty() {
                             let _ = on_event.send(ChatStreamEvent::Chunk { text: batch_buf.clone() });
+                            registry.append_streaming_chunk(chat_id, &batch_buf).await;
                             full_text.push_str(&batch_buf);
                         }
                         let usage = end.captured_usage.map(|u| {
@@ -960,12 +999,13 @@ async fn stream_with_batching(
                                 cost_usd,
                             }
                         });
-                        let _ = on_event.send(ChatStreamEvent::End { full_text, usage });
-                        return Ok(());
+                        let _ = on_event.send(ChatStreamEvent::End { full_text: full_text.clone(), usage });
+                        return Ok(full_text);
                     }
                     Some(Err(e)) => {
                         if !batch_buf.is_empty() {
                             let _ = on_event.send(ChatStreamEvent::Chunk { text: batch_buf.clone() });
+                            registry.append_streaming_chunk(chat_id, &batch_buf).await;
                             full_text.push_str(&batch_buf);
                         }
                         return Err(format!("Stream error: {e}"));
@@ -973,10 +1013,11 @@ async fn stream_with_batching(
                     None => {
                         if !batch_buf.is_empty() {
                             let _ = on_event.send(ChatStreamEvent::Chunk { text: batch_buf.clone() });
+                            registry.append_streaming_chunk(chat_id, &batch_buf).await;
                             full_text.push_str(&batch_buf);
                         }
-                        let _ = on_event.send(ChatStreamEvent::End { full_text, usage: None });
-                        return Ok(());
+                        let _ = on_event.send(ChatStreamEvent::End { full_text: full_text.clone(), usage: None });
+                        return Ok(full_text);
                     }
                     _ => {} // Start, ReasoningChunk, etc.
                 }

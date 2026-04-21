@@ -40,6 +40,7 @@ pub(crate) mod prompt;
 pub(crate) mod smart_prompt;
 pub(crate) mod llm_api;
 pub(crate) mod ai_chat;
+pub(crate) mod ai_chat_registry;
 pub(crate) mod credentials;
 pub(crate) mod registry;
 pub(crate) mod pty;
@@ -1007,6 +1008,7 @@ pub fn run() {
                 .build(),
         )
         .manage(state)
+        .manage(ai_chat_registry::ChatRegistry::new())
         .manage(crate::fs::ContentSearchCancel(std::sync::Mutex::new(None)))
         .manage(dictation::DictationState::new())
         .manage(sleep_prevention::SleepBlocker::new())
@@ -1316,6 +1318,13 @@ pub fn run() {
             ai_chat::new_conversation_id,
             ai_chat::stream_ai_chat,
             ai_chat::cancel_ai_chat,
+            ai_chat_registry::chat_subscribe,
+            ai_chat_registry::chat_unsubscribe,
+            ai_chat_registry::chat_get_state,
+            ai_chat_registry::chat_attach_terminal,
+            ai_chat_registry::chat_detach_terminal,
+            ai_chat_registry::chat_clear,
+            ai_chat_registry::chat_set_pinned,
             ai_agent::commands::start_agent_loop,
             ai_agent::commands::cancel_agent_loop,
             ai_agent::commands::pause_agent_loop,
