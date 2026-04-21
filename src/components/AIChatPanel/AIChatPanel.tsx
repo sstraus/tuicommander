@@ -114,12 +114,48 @@ const IconUnlock = () => (
   </svg>
 );
 
+/** Fields stripped from the args display — internal plumbing the user doesn't need. */
+const TOOL_NOISE_FIELDS = new Set(["session_id", "timeout_ms"]);
+const TOOL_OUTPUT_TRUNCATE = 500;
+
 /** Collapsible tool call card */
 const ToolCallCard: Component<{ entry: ToolCallEntry }> = (props) => {
   const [expanded, setExpanded] = createSignal(false);
+  const [outputExpanded, setOutputExpanded] = createSignal(false);
+  const [copied, setCopied] = createSignal(false);
+
   const statusClass = () => {
     if (props.entry.status === "pending") return s.toolCallPending;
     return props.entry.result.success ? s.toolCallSuccess : s.toolCallFailure;
+  };
+
+  const filteredArgs = () => {
+    const args = props.entry.args;
+    if (!args || typeof args !== "object") return args;
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(args as Record<string, unknown>)) {
+      if (!TOOL_NOISE_FIELDS.has(k)) out[k] = v;
+    }
+    return out;
+  };
+
+  const doneEntry = () =>
+    props.entry.status === "done"
+      ? (props.entry as ToolCallEntry & { status: "done" })
+      : null;
+
+  const fullOutput = () => doneEntry()?.result.output ?? "";
+  const isLong = () => fullOutput().length > TOOL_OUTPUT_TRUNCATE;
+  const displayOutput = () =>
+    outputExpanded() || !isLong()
+      ? fullOutput()
+      : fullOutput().slice(0, TOOL_OUTPUT_TRUNCATE) + "…";
+
+  const handleCopy = () => {
+    void navigator.clipboard.writeText(fullOutput()).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
   };
 
   return (
@@ -128,16 +164,38 @@ const ToolCallCard: Component<{ entry: ToolCallEntry }> = (props) => {
         <span class={cx(s.toolCallStatusDot, statusClass())} />
         <span class={s.toolCallName}>{props.entry.toolName}</span>
         <Show when={props.entry.status === "done"}>
-          <span class={s.toolCallDuration}>{(props.entry as ToolCallEntry & { status: "done" }).duration}ms</span>
+          <span class={s.toolCallDuration}>{doneEntry()!.duration}ms</span>
         </Show>
       </div>
       <Show when={expanded()}>
         <div class={s.toolCallBody}>
-          <div>Args: {JSON.stringify(props.entry.args, null, 2)}</div>
-          <Show when={props.entry.status === "done"}>
-            <div>
-              Result ({(props.entry as ToolCallEntry & { status: "done" }).result.success ? "ok" : "error"}): {(props.entry as ToolCallEntry & { status: "done" }).result.output}
-            </div>
+          <div>Args: {JSON.stringify(filteredArgs(), null, 2)}</div>
+          <Show when={doneEntry()}>
+            {(entry) => (
+              <div>
+                <div class={s.toolCallResultHeader}>
+                  <span>Result ({entry().result.success ? "ok" : "error"}):</span>
+                  <button
+                    class={cx(s.toolCallCopyBtn, copied() ? s.toolCallCopyBtnCopied : "")}
+                    onClick={handleCopy}
+                    title="Copy result to clipboard"
+                  >
+                    {copied() ? "copied" : "copy"}
+                  </button>
+                </div>
+                <div class={s.toolCallOutput}>{displayOutput()}</div>
+                <Show when={isLong()}>
+                  <button
+                    class={s.toolCallExpandBtn}
+                    onClick={() => setOutputExpanded(!outputExpanded())}
+                  >
+                    {outputExpanded()
+                      ? "Show less"
+                      : `Show more (${fullOutput().length - TOOL_OUTPUT_TRUNCATE} more chars)`}
+                  </button>
+                </Show>
+              </div>
+            )}
           </Show>
         </div>
       </Show>

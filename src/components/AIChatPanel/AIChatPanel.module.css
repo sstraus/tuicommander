@@ -482,8 +482,55 @@
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--fg-secondary);
-  max-height: 120px;
+  max-height: 300px;
   overflow-y: auto;
+}
+
+.toolCallResultHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  margin-bottom: 2px;
+}
+
+.toolCallOutput {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.toolCallCopyBtn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  font-size: var(--font-xs);
+  font-family: var(--font-ui);
+  padding: 0 4px;
+  cursor: pointer;
+  line-height: 1.4;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.toolCallCopyBtn:hover {
+  color: var(--fg-primary);
+  border-color: var(--fg-secondary);
+}
+
+.toolCallCopyBtnCopied {
+  color: var(--success);
+  border-color: var(--success);
+}
+
+.toolCallExpandBtn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: var(--font-xs);
+  font-family: var(--font-mono);
+  padding: 2px 0;
+  cursor: pointer;
+  text-decoration: underline;
 }
 
 /* ── Approval prompt ───────────────────────────────────── */
