@@ -87,6 +87,37 @@ async fn open_secondary_window(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+async fn open_ai_chat_window(app: tauri::AppHandle, chat_id: String) -> Result<(), String> {
+    ai_chat_registry::validate_id_public(&chat_id)?;
+
+    let label = "ai-chat-panel";
+    if let Some(existing) = app.get_webview_window(label) {
+        existing.set_focus().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    let url = tauri::WebviewUrl::App(
+        format!("/?mode=panel&panel=ai-chat&chatId={chat_id}").into(),
+    );
+    let window = tauri::WebviewWindowBuilder::new(&app, label, url)
+        .title("AI Chat")
+        .inner_size(500.0, 700.0)
+        .min_inner_size(400.0, 400.0)
+        .build()
+        .map_err(|e| format!("Failed to create AI Chat window: {e}"))?;
+
+    let app_handle = app.clone();
+    let cid = chat_id.clone();
+    window.on_window_event(move |event| {
+        if let tauri::WindowEvent::Destroyed = event {
+            let _ = app_handle.emit("ai-chat-window-closed", &cid);
+        }
+    });
+
+    Ok(())
+}
+
 /// Ensure the window has valid dimensions and is positioned on a visible monitor.
 /// The window-state plugin can persist invalid state (e.g. width/height 0, or
 /// positions off-screen) which causes downstream failures like PTY garbage output.
@@ -1110,6 +1141,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             open_secondary_window,
+            open_ai_chat_window,
             pty::create_pty,
             pty::create_pty_with_worktree,
             pty::list_worktrees,

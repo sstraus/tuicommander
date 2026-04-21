@@ -35,6 +35,15 @@ Features to test when TUICommander is more usable.
 - [ ] Right-click terminal > "Fix this error": sends error analysis prompt
 - [ ] Selection >2000 chars truncated with "[... truncated]" marker
 
+## AI Chat — Detachable Panel (1388-9bda)
+- [ ] Detach button in AI Chat header opens separate window (500x700)
+- [ ] Second click on detach focuses existing window (no duplicate)
+- [ ] Detached window loads `/?mode=panel&panel=ai-chat&chatId=<id>` URL
+- [ ] Detached window receives streaming chunks from active conversation
+- [ ] Closing detached window emits `ai-chat-window-closed` event
+- [ ] Main window placeholder shown while panel is detached
+- [ ] Reattach restores panel in main window with conversation intact
+
 ## AI Agent — Level 2 Loop (1299/1300/1301/1302)
 - [ ] Start button in AI Chat header sends goal → agent banner appears with "running" + iter counter
 - [ ] Tool-call cards render in order for each `ai_terminal_*` the agent emits (read_screen, send_input, wait_for, get_state)

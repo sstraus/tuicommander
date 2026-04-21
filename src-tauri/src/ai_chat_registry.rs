@@ -278,6 +278,10 @@ impl ChatRegistry {
 // Tauri commands
 // ---------------------------------------------------------------------------
 
+pub(crate) fn validate_id_public(id: &str) -> Result<(), String> {
+    validate_id(id)
+}
+
 fn validate_id(id: &str) -> Result<(), String> {
     if id.is_empty() || id.len() > 64 {
         return Err("ID must be 1-64 characters".to_string());
