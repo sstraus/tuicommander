@@ -173,6 +173,15 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
     return id ? (terminalsStore.get(id)?.name ?? null) : null;
   });
 
+  // ── Registry subscription lifecycle ─────────────────────────────────────
+  createEffect(() => {
+    const id = aiChatStore.chatId();
+    void aiChatStore.subscribeToRegistry(id);
+  });
+  onCleanup(() => {
+    void aiChatStore.unsubscribeFromRegistry();
+  });
+
   // ── Auto-scroll on new messages / streaming chunks ──────────────────────
   createEffect(() => {
     // Subscribe to reactive dependencies
