@@ -905,6 +905,15 @@ pub fn run() {
                 // at OSC 133 D markers). No-op unless the user enables the setting.
                 crate::ai_agent::enrichment::spawn_worker(boot_registry_state.clone());
 
+                // Start cron scheduler for time-triggered agent tasks
+                {
+                    let sched_state = boot_registry_state.clone();
+                    tokio::spawn(async move {
+                        let scheduler = crate::ai_agent::scheduler::Scheduler::new(sched_state);
+                        scheduler.run().await;
+                    });
+                }
+
                 // Detect Tailscale and provision TLS cert (async, doesn't block window render)
                 let tls_config = if remote_enabled {
                     let ts_state = tokio::task::spawn_blocking(tailscale::detect).await
@@ -1316,6 +1325,8 @@ pub fn run() {
             ai_agent::commands::get_session_knowledge,
             ai_agent::commands::list_knowledge_sessions,
             ai_agent::commands::get_knowledge_session_detail,
+            ai_agent::commands::load_scheduler_config,
+            ai_agent::commands::save_scheduler_config,
             repo_watcher::start_repo_watcher,
             repo_watcher::stop_repo_watcher,
             dir_watcher::start_dir_watcher,

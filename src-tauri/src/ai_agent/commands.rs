@@ -11,6 +11,10 @@ use super::tui_detect::TerminalMode;
 /// Build the LLM runtime (provider/model/base_url/api key) that the agent
 /// loop uses. Lives here — at the Tauri command boundary — so `engine.rs`
 /// stays decoupled from `ai_chat` config and keyring I/O.
+pub(crate) fn build_llm_runtime_for_scheduler() -> Result<LlmRuntime, String> {
+    build_llm_runtime()
+}
+
 fn build_llm_runtime() -> Result<LlmRuntime, String> {
     let chat_config: crate::ai_chat::AiChatConfig =
         crate::config::load_json_config(crate::ai_chat::CONFIG_FILE);
@@ -415,6 +419,20 @@ fn history_command(c: &super::knowledge::CommandOutcome) -> HistoryCommand {
         error_type,
         semantic_intent: c.semantic_intent.clone(),
     }
+}
+
+// ── Scheduler commands ──────────────────────────────────────────
+
+#[tauri::command]
+pub(crate) fn load_scheduler_config() -> super::scheduler::SchedulerConfig {
+    super::scheduler::load_config()
+}
+
+#[tauri::command]
+pub(crate) fn save_scheduler_config(
+    config: super::scheduler::SchedulerConfig,
+) -> Result<(), String> {
+    super::scheduler::save_config(&config)
 }
 
 /// Return a frontend-friendly summary of the session's accumulated knowledge.

@@ -10,6 +10,19 @@ import s from "../Settings.module.css";
 
 type ToolPhase = "plan" | "search" | "read" | "write";
 
+interface ScheduledJob {
+  id: string;
+  cron_expr: string;
+  goal: string;
+  target_session?: string | null;
+  max_duration_secs: number;
+  enabled: boolean;
+}
+
+interface SchedulerConfig {
+  jobs: ScheduledJob[];
+}
+
 interface AiChatConfig {
   provider: string;
   model: string;
@@ -83,6 +96,11 @@ export const AiChatTab: Component = () => {
   const [testing, setTesting] = createSignal(false);
   const [testResult, setTestResult] = createSignal<{ ok: boolean; msg: string } | null>(null);
 
+  // Scheduler state
+  const [schedulerJobs, setSchedulerJobs] = createSignal<ScheduledJob[]>([]);
+  const [newCron, setNewCron] = createSignal("");
+  const [newGoal, setNewGoal] = createSignal("");
+
   // Debounce timer for auto-save
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -143,6 +161,14 @@ export const AiChatTab: Component = () => {
       setHasKey(exists);
     } catch (e) {
       appLogger.warn("config", "Failed to check AI Chat API key", e);
+    }
+
+    // Load scheduler config
+    try {
+      const sc = await invoke<SchedulerConfig>("load_scheduler_config");
+      setSchedulerJobs(sc.jobs);
+    } catch (e) {
+      appLogger.warn("config", "Failed to load scheduler config", e);
     }
   });
 
@@ -247,6 +273,48 @@ export const AiChatTab: Component = () => {
     } finally {
       setTesting(false);
     }
+  };
+
+  // ---------------------------------------------------------------------------
+  // Scheduler handlers
+  // ---------------------------------------------------------------------------
+
+  const saveScheduler = async (jobs: ScheduledJob[]) => {
+    try {
+      await invoke("save_scheduler_config", { config: { jobs } });
+      setSchedulerJobs(jobs);
+    } catch (e) {
+      appLogger.error("config", "Failed to save scheduler config", e);
+    }
+  };
+
+  const handleAddJob = async () => {
+    const cron = newCron().trim();
+    const goal = newGoal().trim();
+    if (!cron || !goal) return;
+    const id = `job-${Date.now().toString(36)}`;
+    const job: ScheduledJob = {
+      id,
+      cron_expr: cron,
+      goal,
+      target_session: null,
+      max_duration_secs: 300,
+      enabled: true,
+    };
+    await saveScheduler([...schedulerJobs(), job]);
+    setNewCron("");
+    setNewGoal("");
+  };
+
+  const handleToggleJob = async (id: string) => {
+    const jobs = schedulerJobs().map((j) =>
+      j.id === id ? { ...j, enabled: !j.enabled } : j,
+    );
+    await saveScheduler(jobs);
+  };
+
+  const handleRemoveJob = async (id: string) => {
+    await saveScheduler(schedulerJobs().filter((j) => j.id !== id));
   };
 
   // ---------------------------------------------------------------------------
@@ -537,6 +605,67 @@ export const AiChatTab: Component = () => {
           value={phaseWrite()}
           onInput={(e) => { setPhaseWrite(e.currentTarget.value); saveConfig(); }}
         />
+      </div>
+
+      {/* ── Scheduled Tasks ── */}
+      <h3>Scheduled Tasks</h3>
+
+      <div class={s.group}>
+        <p class={s.hint} style={{ "margin-bottom": "8px" }}>
+          Cron-triggered agent tasks. The agent runs with standard trust level
+          (destructive commands require approval).
+        </p>
+
+        <For each={schedulerJobs()}>
+          {(job) => (
+            <div class={s.schedulerRow}>
+              <label class={s.schedulerToggle}>
+                <input
+                  type="checkbox"
+                  checked={job.enabled}
+                  onChange={() => handleToggleJob(job.id)}
+                />
+              </label>
+              <code class={s.schedulerCron}>{job.cron_expr}</code>
+              <span class={s.schedulerGoal}>{job.goal}</span>
+              <button
+                class={s.schedulerRemove}
+                onClick={() => handleRemoveJob(job.id)}
+                title="Remove"
+              >
+                ×
+              </button>
+            </div>
+          )}
+        </For>
+
+        <div class={s.schedulerAdd}>
+          <input
+            type="text"
+            class={s.schedulerCronInput}
+            value={newCron()}
+            placeholder="0 0 * * * *"
+            onInput={(e) => setNewCron(e.currentTarget.value)}
+          />
+          <input
+            type="text"
+            class={s.schedulerGoalInput}
+            value={newGoal()}
+            placeholder="Goal (e.g. run tests and report)"
+            onInput={(e) => setNewGoal(e.currentTarget.value)}
+          />
+          <button
+            class={s.testBtn}
+            disabled={!newCron().trim() || !newGoal().trim()}
+            onClick={handleAddJob}
+          >
+            Add
+          </button>
+        </div>
+        <p class={s.hint}>
+          Cron format: sec min hour day month weekday (6 fields).
+          Example: <code>0 0 * * * *</code> = top of every hour.
+        </p>
       </div>
 
       {/* ── Experimental ── */}

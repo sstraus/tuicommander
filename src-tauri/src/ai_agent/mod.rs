@@ -6,5 +6,6 @@ pub mod enrichment;
 pub mod knowledge;
 pub mod safety;
 pub mod sandbox;
+pub mod scheduler;
 pub mod tools;
 pub mod tui_detect;

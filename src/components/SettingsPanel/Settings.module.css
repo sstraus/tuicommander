@@ -941,3 +941,64 @@
   opacity: 0.85;
 }
 
+/* ── Scheduler ── */
+
+.schedulerRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+}
+
+.schedulerToggle {
+  flex-shrink: 0;
+}
+
+.schedulerCron {
+  flex-shrink: 0;
+  font-size: var(--font-sm);
+  background: var(--bg-tertiary, var(--bg-primary));
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+.schedulerGoal {
+  flex: 1;
+  font-size: var(--font-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedulerRemove {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--fg-secondary);
+  cursor: pointer;
+  font-size: var(--font-lg);
+  line-height: 1;
+  padding: 0 4px;
+}
+
+.schedulerRemove:hover {
+  color: var(--error);
+}
+
+.schedulerAdd {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.schedulerCronInput {
+  width: 140px;
+  flex-shrink: 0;
+}
+
+.schedulerGoalInput {
+  flex: 1;
+}
+
