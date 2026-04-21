@@ -101,15 +101,16 @@ fn load(guard: &mut VaultGuard<'_>) -> Result<(), String> {
     #[cfg(test)]
     ensure_mock_keyring();
 
-    if let Some(json) = read_keyring_entry(KEYRING_SERVICE, KEYRING_USER)? {
-        let vault: Vault =
-            serde_json::from_str(&json).map_err(|e| format!("Failed to parse vault: {e}"))?;
-        **guard = Some(vault);
-        return Ok(());
-    }
+    let mut vault: Vault = match read_keyring_entry(KEYRING_SERVICE, KEYRING_USER)? {
+        Some(json) => {
+            serde_json::from_str(&json).map_err(|e| format!("Failed to parse vault: {e}"))?
+        }
+        None => HashMap::new(),
+    };
 
-    // Migrate known legacy entries
-    let mut vault = HashMap::new();
+    // Always sweep legacy entries — handles stragglers when vault was created
+    // before all legacy keys were migrated.
+    let mut migrated = false;
     for &(service, user) in LEGACY_ENTRIES {
         if let Ok(Some(value)) = read_keyring_entry(service, user) {
             let cred = match (service, user) {
@@ -118,12 +119,17 @@ fn load(guard: &mut VaultGuard<'_>) -> Result<(), String> {
                 ("tuicommander-github", "oauth-token") => Credential::GithubOauthToken,
                 _ => unreachable!(),
             };
-            vault.insert(cred.vault_key(), value);
+            vault.entry(cred.vault_key()).or_insert(value);
             delete_keyring_entry(service, user);
+            migrated = true;
         }
     }
-    if !vault.is_empty() {
-        persist(&vault)?;
+    if migrated || vault.is_empty() {
+        // Persist if we migrated anything, or create empty vault so next load
+        // skips the legacy sweep entirely (entries already deleted).
+        if !vault.is_empty() {
+            persist(&vault)?;
+        }
     }
     **guard = Some(vault);
     Ok(())
@@ -143,15 +149,18 @@ pub(crate) fn get(cred: Credential<'_>) -> Result<Option<String>, String> {
     }
     drop(guard);
 
-    // Lazy migration: try legacy individual entry (handles dynamic MCP keys)
-    if let Some((service, user)) = cred.legacy_entry() {
-        if let Some(value) = read_keyring_entry(service, user)? {
-            let mut guard = lock();
-            let vault = guard.as_mut().unwrap();
-            vault.insert(key, value.clone());
-            persist(vault)?;
-            delete_keyring_entry(service, user);
-            return Ok(Some(value));
+    // Lazy migration for dynamic keys only (MCP upstreams aren't in LEGACY_ENTRIES).
+    // Static credentials are swept in load() — no extra keychain prompts.
+    if matches!(cred, Credential::McpUpstream(_)) {
+        if let Some((service, user)) = cred.legacy_entry() {
+            if let Some(value) = read_keyring_entry(service, user)? {
+                let mut guard = lock();
+                let vault = guard.as_mut().unwrap();
+                vault.insert(key, value.clone());
+                persist(vault)?;
+                delete_keyring_entry(service, user);
+                return Ok(Some(value));
+            }
         }
     }
     Ok(None)
@@ -330,6 +339,40 @@ mod tests {
         );
         delete(Credential::McpUpstream("slack")).unwrap();
         assert_eq!(get(Credential::McpUpstream("slack")).unwrap(), None);
+    }
+
+    #[test]
+    fn legacy_straggler_migrated_when_vault_exists() {
+        reset_vault();
+        // Simulate: vault already exists with one key…
+        set(Credential::LlmApiKey, "llm-key").unwrap();
+        // …but a legacy entry was never migrated (written by older app version).
+        let legacy = keyring::Entry::new("tuicommander-ai-chat", "api-key").unwrap();
+        legacy.set_password("legacy-chat-key").unwrap();
+
+        // Force re-load so the sweep runs
+        reset_vault();
+        let result = get(Credential::AiChatApiKey).unwrap();
+        assert_eq!(result, Some("legacy-chat-key".to_string()));
+
+        // Legacy entry must be deleted after migration
+        assert!(matches!(legacy.get_password(), Err(keyring::Error::NoEntry)));
+    }
+
+    #[test]
+    fn legacy_sweep_does_not_overwrite_vault_value() {
+        reset_vault();
+        set(Credential::AiChatApiKey, "vault-key").unwrap();
+        // Plant a stale legacy entry
+        let legacy = keyring::Entry::new("tuicommander-ai-chat", "api-key").unwrap();
+        legacy.set_password("stale-legacy").unwrap();
+
+        reset_vault();
+        let result = get(Credential::AiChatApiKey).unwrap();
+        // Vault value wins (or_insert, not insert)
+        assert_eq!(result, Some("vault-key".to_string()));
+        // Legacy still cleaned up
+        assert!(matches!(legacy.get_password(), Err(keyring::Error::NoEntry)));
     }
 
     #[test]
