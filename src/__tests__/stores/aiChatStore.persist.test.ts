@@ -158,8 +158,7 @@ describe("aiChatStore terminal lifecycle (1410-1be8)", () => {
 
   it("onTerminalClose cancels in-flight stream and frees memory", async () => {
     store.setActiveTerminal("T1");
-    store.attachTerminal("sess-T1");
-    await store.sendMessage("hello");
+    await store.sendMessage("hello", "sess-T1");
 
     // T1 is streaming; close it
     await store.onTerminalClose("T1");
@@ -233,14 +232,12 @@ describe("aiChatStore streaming — per-terminal (1408-a8d8)", () => {
   it("chunk from T1 stream updates T1 streamingText, not T2 (1408-a8d8)", async () => {
     // Start stream on T1 (await so channel is registered before we switch)
     store.setActiveTerminal("T1");
-    store.attachTerminal("sess-T1");
-    await store.sendMessage("hello from T1");
+    await store.sendMessage("hello from T1", "sess-T1");
     const t1ChatId = store.chatId();
 
     // Switch to T2 — T1 channel callback still targets T1
     store.setActiveTerminal("T2");
-    store.attachTerminal("sess-T2");
-    await store.sendMessage("hello from T2");
+    await store.sendMessage("hello from T2", "sess-T2");
     const t2ChatId = store.chatId();
     expect(t1ChatId).not.toBe(t2ChatId);
 
@@ -258,13 +255,11 @@ describe("aiChatStore streaming — per-terminal (1408-a8d8)", () => {
 
   it("end event for T1 finalizes T1 messages, T2 unaffected (1408-a8d8)", async () => {
     store.setActiveTerminal("T1");
-    store.attachTerminal("sess-T1");
-    await store.sendMessage("q");
+    await store.sendMessage("q", "sess-T1");
     const t1ChatId = store.chatId();
 
     store.setActiveTerminal("T2");
-    store.attachTerminal("sess-T2");
-    await store.sendMessage("q2");
+    await store.sendMessage("q2", "sess-T2");
 
     // End T1 stream while T2 is active
     const ch1 = channels.get(t1ChatId);
@@ -319,11 +314,9 @@ describe("aiChatStore persistence — per-terminal (1407-56ca)", () => {
 
   it("two terminals persist with independent session_id in meta", async () => {
     store.setActiveTerminal("termA");
-    store.attachTerminal("sess-A");
     store.addAssistantMessage("A message");
 
     store.setActiveTerminal("termB");
-    store.attachTerminal("sess-B");
     store.addAssistantMessage("B message");
 
     await vi.advanceTimersByTimeAsync(600);
@@ -331,8 +324,9 @@ describe("aiChatStore persistence — per-terminal (1407-56ca)", () => {
     const saves = mockInvoke.mock.calls.filter((c) => c[0] === "save_conversation");
     expect(saves.length).toBe(2);
     const sessionIds = saves.map((c) => c[1]?.conversation?.meta?.session_id as string);
-    expect(sessionIds).toContain("sess-A");
-    expect(sessionIds).toContain("sess-B");
+    // session_id in meta = chat key (tuicSession) — stable across PTY respawns
+    expect(sessionIds).toContain("termA");
+    expect(sessionIds).toContain("termB");
   });
 
   it("initFromDisk(tuicSession) loads conversation filtered by session_id via list_conversations", async () => {

@@ -91,6 +91,7 @@ export function registerAiChatContextActions(): Array<{ dispose(): void }> {
         if (ctx.sessionId) switchToTerminalBySession(ctx.sessionId);
         aiChatStore.sendMessage(
           `Explain this terminal output:\n\n\`\`\`\n${text}\n\`\`\``,
+          ctx.sessionId ?? null,
         );
       },
     }),
@@ -113,6 +114,7 @@ export function registerAiChatContextActions(): Array<{ dispose(): void }> {
         if (ctx.sessionId) switchToTerminalBySession(ctx.sessionId);
         aiChatStore.sendMessage(
           `Analyze this terminal error and suggest a fix:\n\n\`\`\`\n${text}\n\`\`\`\n\nExplain: 1) What went wrong 2) The root cause 3) How to fix it`,
+          ctx.sessionId ?? null,
         );
       },
     }),

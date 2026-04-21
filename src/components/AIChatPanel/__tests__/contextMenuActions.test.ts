@@ -10,14 +10,17 @@ vi.mock("../../../stores/ui", () => ({
 
 vi.mock("../../../stores/aiChatStore", () => ({
   aiChatStore: {
-    attachTerminal: vi.fn(),
+    setActiveTerminal: vi.fn(),
     sendMessage: vi.fn(),
   },
 }));
 
 vi.mock("../../../stores/terminals", () => ({
   terminalsStore: {
-    state: { terminals: [] },
+    state: { terminals: {} },
+    getIds: () => [],
+    get: () => undefined,
+    setActive: vi.fn(),
   },
 }));
 
@@ -79,7 +82,7 @@ describe("registerAiChatContextActions", () => {
     expect(contextMenuActionsStore.getContextActions("terminal")).toHaveLength(0);
   });
 
-  it("explain action opens AI Chat panel and attaches terminal", () => {
+  it("explain action opens AI Chat panel and sends with sessionId", () => {
     // Provide a selection so the action has text to work with
     vi.spyOn(window, "getSelection").mockReturnValue({
       toString: () => "some selected output",
@@ -92,16 +95,17 @@ describe("registerAiChatContextActions", () => {
     explain.action({ target: "terminal", sessionId: "sess-1" });
 
     expect(uiStore.setAiChatPanelVisible).toHaveBeenCalledWith(true);
-    expect(aiChatStore.attachTerminal).toHaveBeenCalledWith("sess-1");
     expect(aiChatStore.sendMessage).toHaveBeenCalledWith(
       expect.stringContaining("Explain this terminal output"),
+      "sess-1",
     );
     expect(aiChatStore.sendMessage).toHaveBeenCalledWith(
       expect.stringContaining("some selected output"),
+      "sess-1",
     );
   });
 
-  it("fix-error action opens AI Chat panel and sends error prompt", () => {
+  it("fix-error action opens AI Chat panel and sends error prompt with sessionId", () => {
     vi.spyOn(window, "getSelection").mockReturnValue({
       toString: () => "Error: command not found",
     } as Selection);
@@ -113,12 +117,13 @@ describe("registerAiChatContextActions", () => {
     fixError.action({ target: "terminal", sessionId: "sess-2" });
 
     expect(uiStore.setAiChatPanelVisible).toHaveBeenCalledWith(true);
-    expect(aiChatStore.attachTerminal).toHaveBeenCalledWith("sess-2");
     expect(aiChatStore.sendMessage).toHaveBeenCalledWith(
       expect.stringContaining("Analyze this terminal error"),
+      "sess-2",
     );
     expect(aiChatStore.sendMessage).toHaveBeenCalledWith(
       expect.stringContaining("How to fix it"),
+      "sess-2",
     );
   });
 
