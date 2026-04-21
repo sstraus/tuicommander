@@ -43,6 +43,9 @@ Features to test when TUICommander is more usable.
 - [ ] Closing detached window emits `ai-chat-window-closed` event
 - [ ] Main window placeholder shown while panel is detached
 - [ ] Reattach restores panel in main window with conversation intact
+- [ ] Send message from main window → stream visible in detached window
+- [ ] Close detached window mid-stream → main panel resumes with partial text
+- [ ] Switch terminals in main window while detached → subscription updates chatId
 
 ## AI Agent — Level 2 Loop (1299/1300/1301/1302)
 - [ ] Start button in AI Chat header sends goal → agent banner appears with "running" + iter counter

@@ -622,6 +622,7 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - **Conversation history panel** — click the clock/history icon in the header to browse all saved conversations (title, terminal name, message count, date). Click a row to load it
 - **Usage footer** — live token counter at the bottom: prompt tokens (↑N), completion tokens (↓N), estimated cost ($X.XXXX), cache hit rate
 - Terminal context menu: *Send selection to AI Chat*, *Explain this error*. Toolbar toggle + hotkey
+- **Detachable panel** — click the detach icon in the header to pop the panel into a separate window (500×700). The main window shows a placeholder with "Bring back". Cross-window sync via a Rust-side `ChatRegistry` using `Channel<ChatEvent>` fan-out — streaming chunks, messages, and errors are projected in real-time to all subscribers. Closing the detached window automatically restores the panel
 - Full user guide: [`docs/user-guide/ai-chat.md`](user-guide/ai-chat.md)
 
 ### 6.15 AI Agent Loop (ReAct)
@@ -1360,7 +1361,7 @@ See `examples/plugins/` for reference implementations:
 - `repo-dashboard` — Read-only state and dynamic markdown
 - `report-watcher` — Generic report file watcher with markdown viewer
 - `claude-status` — Agent-scoped plugin (`agentTypes: ["claude"]`) tracking usage and rate limits
-- `wiz-stories-kanban` — Kanban board panel for file-based stories with drag-and-drop, filters, and work log timeline
+- `wiz-kanban` — Wiz framework plugin: kanban board for managing the workflow of plans, stories, and reviews with drag-and-drop
 
 ### 17.7 Claude Wakeup Plugin
 Agent-scoped plugin (`agentTypes: ["claude"]`) that wakes Claude Code when it stalls without asking a question. Ships in `plugins/claude-wakeup/`.

@@ -186,6 +186,22 @@ Conversational AI companion with terminal context injection. See [`docs/user-gui
 | `stream_ai_chat` | `session_id, messages, chat_id, on_event: Channel<ChatStreamEvent>` | `()` | Stream a turn. Events: `chunk { text }`, `end`, `error { message }`, `tool_call` / `tool_result` (agent mode). Context assembly pulls `VtLogBuffer` (capped at `context_lines`), `SessionState`, recent `ParsedEvent`s, git context |
 | `cancel_ai_chat` | `chat_id: String` | `()` | Cancel an in-flight stream (idempotent) |
 
+### Chat Registry (`ai_chat_registry.rs`)
+
+Cross-window state synchronization for the AI Chat panel. The registry is the Rust-side source of truth; frontends subscribe via `Channel<ChatEvent>` for real-time projection.
+
+| Command | Args | Returns | Description |
+|---------|------|---------|-------------|
+| `chat_subscribe` | `chat_id, on_event: Channel<ChatEvent>` | `{ subscriptionId, snapshot }` | Subscribe to a chat's state changes. Returns current snapshot + subscription ID. Events: `snapshot`, `chunk { delta }`, `error { message }`, `cleared` |
+| `chat_unsubscribe` | `chat_id, subscription_id` | `()` | Remove a subscriber (normal cleanup path) |
+| `chat_get_state` | `chat_id` | `ConversationStateSnapshot` | Read-only snapshot of a chat's current state |
+| `chat_push_message` | `chat_id, role, content` | `()` | Push a message to the registry and fan-out to subscribers |
+| `chat_clear` | `chat_id` | `()` | Clear conversation state and notify subscribers |
+| `chat_set_pinned` | `chat_id, pinned` | `()` | Set the pinned flag on a chat |
+| `chat_attach_terminal` | `chat_id, terminal_id` | `()` | Attach a terminal session to a chat |
+| `chat_detach_terminal` | `chat_id` | `()` | Detach the terminal from a chat |
+| `open_ai_chat_window` | `chat_id` | `()` | Open (or focus) a detached AI Chat panel window. URL: `/?mode=panel&panel=ai-chat&chatId=<id>`. Emits `ai-chat-window-closed` on destroy |
+
 ## AI Agent Loop (`ai_agent/commands.rs`)
 
 ReAct-style agent loop driving a terminal session with `ai_terminal_*` tools,

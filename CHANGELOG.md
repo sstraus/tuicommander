@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`search_code` BM25 tool** — Semantic search over repo files via `content_index`, available as the 13th agent tool and via `ai_terminal_search_code` MCP.
 - **AI Chat conversation history panel** — Slide-in list of saved conversations with title, terminal name, message count, date. Click to load.
 - **AI Chat per-terminal state** — Each terminal maintains independent chat history, streaming state, and conversation ID (keyed by `tuicSession`). Frozen-state banner when no terminal is focused.
+- **AI Chat detachable panel** — Detach the AI Chat panel into a separate Tauri window for multi-monitor workflows. Click the detach icon in the panel header to pop it out; the main window shows a placeholder with a "Bring back" button. Cross-window state sync via a Rust-side ChatRegistry using `Channel<ChatEvent>` fan-out (no `app.emit` for high-frequency data). The detached window shares the same conversation state — streaming chunks, messages, and errors are projected in real-time.
 - **Refresh terminal** (`Cmd+Shift+L`) — Rebuilds the terminal renderer to fix corrupted WebGL glyphs without clearing content.
 - **Tab drag reorder for all tab types** — Non-terminal tabs (diff, editor, markdown, plugin panels) can now be reordered via drag-and-drop.
 - **`get_input_buffer_content` Tauri command** — Read the terminal input line buffer; whitelisted for plugins with `pty:read` capability.
