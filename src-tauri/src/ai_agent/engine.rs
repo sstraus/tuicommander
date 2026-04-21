@@ -309,6 +309,7 @@ pub(crate) async fn start_agent_loop(
         .await;
 
         state.unrestricted_sessions.remove(&sid);
+        state.file_sandboxes.remove(&sid);
 
         match result {
             Ok(reason) => {

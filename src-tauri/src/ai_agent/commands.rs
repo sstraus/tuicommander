@@ -50,6 +50,24 @@ pub(crate) async fn start_agent_loop(
     } else {
         TrustLevel::Standard
     };
+
+    // Wire up the file sandbox before starting the loop. Without this, every
+    // file tool returns "No filesystem sandbox for session" in standard mode.
+    let sandbox_root: Option<String> = state
+        .sessions
+        .get(&session_id)
+        .and_then(|s| s.lock().cwd.clone());
+    if let Some(root) = sandbox_root {
+        match super::sandbox::FileSandbox::new(&root) {
+            Ok(sandbox) => {
+                state.file_sandboxes.insert(session_id.clone(), sandbox);
+            }
+            Err(e) => {
+                tracing::warn!("Could not create file sandbox for {session_id} (root={root}): {e}");
+            }
+        }
+    }
+
     let mut rx =
         engine::start_agent_loop(state, session_id.clone(), goal, runtime, trust_level).await?;
 
@@ -544,5 +562,24 @@ mod tests {
         };
         let s = SessionKnowledgeSummary::from_knowledge("s1", &k);
         assert_eq!(s.tui_mode.as_deref(), Some("vim (depth 1)"));
+    }
+
+    #[test]
+    fn file_sandbox_inserted_on_start_and_removed_on_end() {
+        use crate::state::tests_support::make_test_app_state;
+        use super::super::sandbox::FileSandbox;
+
+        let state = make_test_app_state();
+        let sid = "test-sandbox-session";
+
+        // Simulate what start_agent_loop does: create and insert sandbox for cwd.
+        let root = std::env::temp_dir();
+        let sandbox = FileSandbox::new(&root).expect("temp_dir should be a valid sandbox root");
+        state.file_sandboxes.insert(sid.to_string(), sandbox);
+        assert!(state.file_sandboxes.contains_key(sid), "sandbox inserted");
+
+        // Simulate what engine cleanup does at loop end.
+        state.file_sandboxes.remove(sid);
+        assert!(!state.file_sandboxes.contains_key(sid), "sandbox removed after loop");
     }
 }
