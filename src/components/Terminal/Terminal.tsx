@@ -1037,6 +1037,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
         }
       }
 
+      // Cmd+modifier+Enter: don't let xterm process (it sends \r to PTY).
+      // Return false so the event reaches the document-level keybinding handler.
+      if (event.metaKey && event.key === "Enter") return false;
+
       if (!isMacOS()) return true; // Windows/Linux: xterm handles Alt natively
       if (props.metaHotkeys === false) return true; // disabled for this repo
       if (event.metaKey || event.ctrlKey) return true; // Cmd+Alt or AltGr: pass through
