@@ -626,49 +626,49 @@ export function useGitOperations(deps: GitOperationsDeps) {
         }
       }
     } else if (branch?.savedTerminals && branch.savedTerminals.length > 0) {
-      // Capture old terminal IDs from the pane layout (branch.terminals is cleared on hydration)
-      const oldTerminalIds = paneLayoutStore.getTerminalTabIds();
-      // Lazy restore: create terminals from persisted session state
-      // First pass: create all terminals synchronously (instant UI)
-      const restoredIds: { id: string; terminal: (typeof branch.savedTerminals)[number] }[] = [];
-      for (const terminal of branch.savedTerminals) {
-        const id = terminalsStore.add({
-          sessionId: null,
-          fontSize: terminal.fontSize,
-          name: terminal.name,
-          cwd: terminal.cwd,
-          awaitingInput: null,
-          tuicSession: terminal.tuicSession ?? crypto.randomUUID(),
-          // Preserve agent identity across restore so plugins keyed on agentType
-          // (e.g. cache-keepalive filters agentTypes=["claude"]) don't miss the
-          // initial shell-state events before the polling agent detector runs.
-          agentType: terminal.agentType ?? null,
-          agentSessionId: terminal.agentSessionId ?? null,
-        });
-        repositoriesStore.addTerminalToBranch(repoPath, branchName, id);
-        restoredIds.push({ id, terminal });
-      }
-      // Clear savedTerminals for this branch (consume-once)
+      // Only restore agent tabs with resumable sessions — plain shell tabs
+      // have nothing meaningful to resume and would just be empty shells.
+      const restorableTerminals = branch.savedTerminals.filter((t) => t.agentType != null);
+      // Clear savedTerminals (consume-once) regardless of filter result
       repositoriesStore.setBranch(repoPath, branchName, { savedTerminals: [] });
-      if (restoredIds.length > 0) terminalsStore.setActive(restoredIds[0].id);
 
-      // Remap disk-restored layout terminal IDs to newly created IDs
-      const hasDiskLayout = paneLayoutStore.consumeRestoredFromDisk();
-      if (hasDiskLayout && oldTerminalIds.length > 0) {
-        const idMap = new Map<string, string>();
-        for (let i = 0; i < Math.min(oldTerminalIds.length, restoredIds.length); i++) {
-          idMap.set(oldTerminalIds[i], restoredIds[i].id);
+      if (restorableTerminals.length > 0) {
+        // Capture old terminal IDs from the pane layout (branch.terminals is cleared on hydration)
+        const oldTerminalIds = paneLayoutStore.getTerminalTabIds();
+        // Lazy restore: create terminals from persisted session state
+        // First pass: create all terminals synchronously (instant UI)
+        const restoredIds: { id: string; terminal: (typeof restorableTerminals)[number] }[] = [];
+        for (const terminal of restorableTerminals) {
+          const id = terminalsStore.add({
+            sessionId: null,
+            fontSize: terminal.fontSize,
+            name: terminal.name,
+            cwd: terminal.cwd,
+            awaitingInput: null,
+            tuicSession: terminal.tuicSession ?? crypto.randomUUID(),
+            agentType: terminal.agentType ?? null,
+            agentSessionId: terminal.agentSessionId ?? null,
+          });
+          repositoriesStore.addTerminalToBranch(repoPath, branchName, id);
+          restoredIds.push({ id, terminal });
         }
-        paneLayoutStore.remapTerminalIds(idMap);
-        appLogger.debug("terminal", `BranchSelect REMAP disk-restored paneLayout for ${branchName}`, { remapped: idMap.size });
-      } else {
-        paneLayoutStore.reset();
-      }
+        if (restoredIds.length > 0) terminalsStore.setActive(restoredIds[0].id);
 
-      // Second pass: verify resume commands in parallel (non-blocking)
-      const agentTerminals = restoredIds.filter((r) => r.terminal.agentType);
-      if (agentTerminals.length > 0) {
-        Promise.all(agentTerminals.map(async ({ id, terminal }) => {
+        // Remap disk-restored layout terminal IDs to newly created IDs
+        const hasDiskLayout = paneLayoutStore.consumeRestoredFromDisk();
+        if (hasDiskLayout && oldTerminalIds.length > 0) {
+          const idMap = new Map<string, string>();
+          for (let i = 0; i < Math.min(oldTerminalIds.length, restoredIds.length); i++) {
+            idMap.set(oldTerminalIds[i], restoredIds[i].id);
+          }
+          paneLayoutStore.remapTerminalIds(idMap);
+          appLogger.debug("terminal", `BranchSelect REMAP disk-restored paneLayout for ${branchName}`, { remapped: idMap.size });
+        } else {
+          paneLayoutStore.reset();
+        }
+
+        // Second pass: verify resume commands in parallel (non-blocking)
+        Promise.all(restoredIds.map(async ({ id, terminal }) => {
           const resumeCmd = await verifyAndBuildResumeCommand(
             terminal.agentType!,
             terminal.cwd,
@@ -679,6 +679,10 @@ export function useGitOperations(deps: GitOperationsDeps) {
             terminalsStore.update(id, { pendingResumeCommand: resumeCmd, agentSessionId: terminal.agentSessionId ?? null });
           }
         })).catch((e) => appLogger.warn("terminal", "Resume command verification failed", { error: String(e) }));
+      } else {
+        // All saved tabs were plain shells — spawn a fresh terminal
+        paneLayoutStore.reset();
+        await handleAddTerminalToBranch(repoPath, branchName);
       }
     } else if (!branch?.hadTerminals) {
       // First time selecting this branch — auto-spawn a terminal

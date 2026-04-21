@@ -145,8 +145,8 @@ describe("useGitOperations", () => {
         worktreePath: "/repo/wt",
         hadTerminals: true,
         savedTerminals: [
-          { name: "Terminal 1", cwd: "/repo/wt", fontSize: 14, agentType: null },
-          { name: "Agent", cwd: "/repo/wt", fontSize: 12, agentType: null },
+          { name: "Terminal 1", cwd: "/repo/wt", fontSize: 14, agentType: "claude" },
+          { name: "Agent", cwd: "/repo/wt", fontSize: 12, agentType: "claude" },
         ],
       });
 
@@ -160,13 +160,32 @@ describe("useGitOperations", () => {
       expect(terminalsStore.state.activeId).toBe(branch?.terminals[0]);
     });
 
+    it("skips plain shell tabs and spawns fresh terminal on restore", async () => {
+      repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+      repositoriesStore.setBranch("/repo", "feature", {
+        worktreePath: "/repo/wt",
+        hadTerminals: true,
+        savedTerminals: [
+          { name: "Shell 1", cwd: "/repo/wt", fontSize: 14, agentType: null },
+          { name: "Shell 2", cwd: "/repo/wt", fontSize: 12, agentType: null },
+        ],
+      });
+
+      await gitOps.handleBranchSelect("/repo", "feature");
+
+      const branch = repositoriesStore.get("/repo")?.branches["feature"];
+      // Plain shell tabs filtered out → fresh terminal spawned
+      expect(branch?.terminals.length).toBe(1);
+      expect(branch?.savedTerminals?.length).toBe(0);
+    });
+
     it("preserves terminal metadata during lazy restore", async () => {
       repositoriesStore.add({ path: "/repo", displayName: "Repo" });
       repositoriesStore.setBranch("/repo", "feature", {
         worktreePath: "/repo/wt",
         hadTerminals: true,
         savedTerminals: [
-          { name: "My Terminal", cwd: "/custom/path", fontSize: 16, agentType: null },
+          { name: "My Terminal", cwd: "/custom/path", fontSize: 16, agentType: "claude" },
         ],
       });
 
@@ -250,12 +269,10 @@ describe("useGitOperations", () => {
       await gitOps.handleBranchSelect("/repo", "feature");
 
       const branch = repositoriesStore.get("/repo")?.branches["feature"];
+      // Only the agent tab is restored (plain shell filtered out)
+      expect(branch?.terminals.length).toBe(1);
       const agentTerm = terminalsStore.get(branch!.terminals[0]);
-      const plainTerm = terminalsStore.get(branch!.terminals[1]);
-      // Agent terminal gets pendingResumeCommand for banner display
       expect(agentTerm?.pendingResumeCommand).toBe("claude --continue");
-      // Plain terminal does not
-      expect(plainTerm?.pendingResumeCommand).toBeNull();
     });
 
     it("does not restore savedTerminals when live terminals exist", async () => {

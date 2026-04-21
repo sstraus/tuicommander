@@ -28,6 +28,15 @@ __tuic_preexec() {
 }
 [[ " ${precmd_functions[*]} " == *" __tuic_precmd "* ]] || precmd_functions+=(__tuic_precmd)
 [[ " ${preexec_functions[*]} " == *" __tuic_preexec "* ]] || preexec_functions+=(__tuic_preexec)
+# Auto-inject --session-id for Claude Code so tab↔session mapping is deterministic
+if [[ -n "$TUIC_SESSION" ]]; then
+  claude() {
+    local a; for a in "$@"; do
+      case "$a" in --session-id|--resume|--continue) command claude "$@"; return;; esac
+    done
+    command claude --session-id "$TUIC_SESSION" "$@"
+  }
+fi
 "#;
 
 /// Bash shell integration script.
@@ -52,6 +61,15 @@ if [[ -z "$__tuic_installed" ]]; then
   PROMPT_COMMAND="__tuic_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
   trap '__tuic_preexec_trap' DEBUG
 fi
+# Auto-inject --session-id for Claude Code so tab↔session mapping is deterministic
+if [[ -n "$TUIC_SESSION" ]]; then
+  claude() {
+    local a; for a in "$@"; do
+      case "$a" in --session-id|--resume|--continue) command claude "$@"; return;; esac
+    done
+    command claude --session-id "$TUIC_SESSION" "$@"
+  }
+fi
 "#;
 
 /// Fish shell integration script.
@@ -67,6 +85,19 @@ end
 function __tuic_preexec --on-event fish_preexec
   printf '\e]133;C\a'
   set -g __tuic_cmd 1
+end
+# Auto-inject --session-id for Claude Code so tab↔session mapping is deterministic
+if set -q TUIC_SESSION
+  function claude --wraps claude
+    for a in $argv
+      switch $a
+        case --session-id --resume --continue
+          command claude $argv
+          return
+      end
+    end
+    command claude --session-id $TUIC_SESSION $argv
+  end
 end
 "#;
 
