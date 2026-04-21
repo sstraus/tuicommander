@@ -99,7 +99,7 @@ When modifying AI Chat panel, settings, context menu actions, or streaming backe
 | File | What to update |
 |------|----------------|
 | `src-tauri/src/ai_chat.rs` | Backend: config, streaming, context assembly, Ollama detection |
-| `src/stores/aiChatStore.ts` | Frontend store: messages, streaming state, terminal attachment |
+| `src/stores/aiChatStore.ts` | Frontend store: messages, streaming state (sessionId passed per-call, derived from focused terminal) |
 | `src/components/AIChatPanel/AIChatPanel.tsx` | Chat panel component |
 | `src/components/AIChatPanel/contextMenuActions.ts` | Terminal context menu integration |
 | `src/components/SettingsPanel/tabs/AiChatTab.tsx` | Settings panel section |
