@@ -1,11 +1,8 @@
 //! GitHub OAuth Device Flow authentication.
 //!
 //! Provides an alternative to environment variables and `gh` CLI for GitHub
-//! API authentication. The OAuth token is stored in the platform-specific
-//! secure credential store via the `keyring` crate:
-//! - macOS: Keychain
-//! - Windows: Credential Manager
-//! - Linux: keyutils / Secret Service
+//! API authentication. The OAuth token is stored in the unified credential
+//! vault (`credentials.rs`).
 
 use std::sync::Arc;
 

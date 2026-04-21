@@ -1,7 +1,7 @@
 //! LLM API integration for Smart Prompts "api" execution mode.
 //!
 //! Uses the `genai` crate for multi-provider chat completions.
-//! API keys are stored in the platform-specific secure store (OS keyring).
+//! API keys are stored in the unified credential vault (`credentials.rs`).
 //! Config (provider/model/base_url) stored in `llm-api.json`.
 
 use serde::{Deserialize, Serialize};

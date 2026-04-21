@@ -1,9 +1,8 @@
-//! AI Chat backend — config, keyring, Ollama detection, and streaming.
+//! AI Chat backend — config, credentials, Ollama detection, and streaming.
 //!
 //! Separate from `llm_api.rs` (Smart Prompts) so Chat and Smart Prompts
 //! can use different providers/models independently.
-//! Config stored in `ai-chat.json`; API key in OS keyring under a
-//! distinct service name.
+//! Config stored in `ai-chat.json`; API key in the unified credential vault.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
