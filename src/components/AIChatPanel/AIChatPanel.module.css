@@ -662,6 +662,12 @@
   color: var(--fg-muted);
 }
 
+.historyModel {
+  color: var(--fg-accent, #7cb8ff);
+  font-size: 10px;
+  opacity: 0.8;
+}
+
 .historyDate {
   color: var(--fg-muted);
   margin-left: auto;

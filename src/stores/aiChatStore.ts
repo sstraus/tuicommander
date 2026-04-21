@@ -281,6 +281,17 @@ async function persistNow(key?: string): Promise<void> {
     const title = firstUser
       ? firstUser.content.slice(0, 60).replace(/\s+/g, " ").trim()
       : "New chat";
+    const { invoke } = await import("@tauri-apps/api/core");
+    // Best-effort: read current provider/model — omit on failure rather than blocking save.
+    let provider: string | undefined;
+    let model: string | undefined;
+    try {
+      const cfg = await invoke<{ provider: string; model: string }>("load_ai_chat_config");
+      provider = cfg.provider || undefined;
+      model = cfg.model || undefined;
+    } catch {
+      // ignore
+    }
     const conv: BackendConversation = {
       meta: {
         id,
@@ -289,6 +300,8 @@ async function persistNow(key?: string): Promise<void> {
         created: msgs[0]?.timestamp ?? now,
         updated: now,
         message_count: msgs.length,
+        provider,
+        model,
       },
       messages: msgs.map((m) => ({
         role: m.role,
@@ -297,7 +310,6 @@ async function persistNow(key?: string): Promise<void> {
       })),
       schema_version: 1,
     };
-    const { invoke } = await import("@tauri-apps/api/core");
     await invoke("save_conversation", { conversation: conv });
   } catch (e) {
     appLogger.warn("ai-chat", "persistNow failed", { error: String(e) });

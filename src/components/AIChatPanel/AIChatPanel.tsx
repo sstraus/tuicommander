@@ -613,6 +613,9 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
                   <Show when={resolveSessionName(conv.session_id)}>
                     <span class={s.historySession}>{resolveSessionName(conv.session_id)}</span>
                   </Show>
+                  <Show when={conv.provider || conv.model}>
+                    <span class={s.historyModel}>{[conv.provider, conv.model].filter(Boolean).join(" / ")}</span>
+                  </Show>
                   <span class={s.historyCount}>{conv.message_count} msgs</span>
                   <span class={s.historyDate}>{new Date(conv.updated * 1000).toLocaleDateString()}</span>
                 </span>
