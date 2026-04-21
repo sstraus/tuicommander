@@ -8,6 +8,8 @@ import s from "../Settings.module.css";
 // Types matching Rust backend
 // ---------------------------------------------------------------------------
 
+type ToolPhase = "plan" | "search" | "read" | "write";
+
 interface AiChatConfig {
   provider: string;
   model: string;
@@ -15,6 +17,7 @@ interface AiChatConfig {
   temperature: number;
   context_lines: number;
   experimental_ai_block_enrichment: boolean;
+  agent_model_overrides?: Record<ToolPhase, string> | null;
 }
 
 interface OllamaModel {
@@ -63,6 +66,9 @@ export const AiChatTab: Component = () => {
   const [temperature, setTemperature] = createSignal(0.7);
   const [contextLines, setContextLines] = createSignal(150);
   const [blockEnrichment, setBlockEnrichment] = createSignal(false);
+  const [phaseSearch, setPhaseSearch] = createSignal("");
+  const [phaseRead, setPhaseRead] = createSignal("");
+  const [phaseWrite, setPhaseWrite] = createSignal("");
 
   // API key state
   const [apiKey, setApiKey] = createSignal("");
@@ -84,14 +90,21 @@ export const AiChatTab: Component = () => {
   // Config persistence
   // ---------------------------------------------------------------------------
 
-  const buildConfig = (): AiChatConfig => ({
-    provider: provider(),
-    model: model(),
-    base_url: baseUrl() || null,
-    temperature: temperature(),
-    context_lines: contextLines(),
-    experimental_ai_block_enrichment: blockEnrichment(),
-  });
+  const buildConfig = (): AiChatConfig => {
+    const overrides: Record<string, string> = {};
+    if (phaseSearch()) overrides.search = phaseSearch();
+    if (phaseRead()) overrides.read = phaseRead();
+    if (phaseWrite()) overrides.write = phaseWrite();
+    return {
+      provider: provider(),
+      model: model(),
+      base_url: baseUrl() || null,
+      temperature: temperature(),
+      context_lines: contextLines(),
+      experimental_ai_block_enrichment: blockEnrichment(),
+      agent_model_overrides: Object.keys(overrides).length > 0 ? overrides as Record<ToolPhase, string> : null,
+    };
+  };
 
   const saveConfig = () => {
     clearTimeout(saveTimer);
@@ -114,6 +127,12 @@ export const AiChatTab: Component = () => {
       setTemperature(config.temperature ?? 0.7);
       setContextLines(config.context_lines ?? 150);
       setBlockEnrichment(config.experimental_ai_block_enrichment ?? false);
+      const ov = config.agent_model_overrides;
+      if (ov) {
+        setPhaseSearch(ov.search || "");
+        setPhaseRead(ov.read || "");
+        setPhaseWrite(ov.write || "");
+      }
     } catch (e) {
       appLogger.warn("config", "Failed to load AI Chat config", e);
     }
@@ -484,6 +503,40 @@ export const AiChatTab: Component = () => {
         <p class={s.hint}>
           Controls randomness of responses (0.0 = deterministic, 1.0 = creative)
         </p>
+      </div>
+
+      {/* ── Agent Model Overrides ── */}
+      <h3>Agent Model Overrides</h3>
+
+      <div class={s.group}>
+        <p class={s.hint} style={{ "margin-bottom": "8px" }}>
+          Use a cheaper model for search/read iterations and the main model for
+          writes. Leave blank to use the default model for all phases.
+        </p>
+        <label>Search phase</label>
+        <input
+          class={s.input}
+          type="text"
+          placeholder={model() || "Same as default"}
+          value={phaseSearch()}
+          onInput={(e) => { setPhaseSearch(e.currentTarget.value); saveConfig(); }}
+        />
+        <label>Read phase</label>
+        <input
+          class={s.input}
+          type="text"
+          placeholder={model() || "Same as default"}
+          value={phaseRead()}
+          onInput={(e) => { setPhaseRead(e.currentTarget.value); saveConfig(); }}
+        />
+        <label>Write phase</label>
+        <input
+          class={s.input}
+          type="text"
+          placeholder={model() || "Same as default"}
+          value={phaseWrite()}
+          onInput={(e) => { setPhaseWrite(e.currentTarget.value); saveConfig(); }}
+        />
       </div>
 
       {/* ── Experimental ── */}
