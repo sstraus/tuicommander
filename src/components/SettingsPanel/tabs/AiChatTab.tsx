@@ -79,6 +79,7 @@ export const AiChatTab: Component = () => {
   const [temperature, setTemperature] = createSignal(0.7);
   const [contextLines, setContextLines] = createSignal(150);
   const [blockEnrichment, setBlockEnrichment] = createSignal(false);
+  const [phasePlan, setPhasePlan] = createSignal("");
   const [phaseSearch, setPhaseSearch] = createSignal("");
   const [phaseRead, setPhaseRead] = createSignal("");
   const [phaseWrite, setPhaseWrite] = createSignal("");
@@ -110,6 +111,7 @@ export const AiChatTab: Component = () => {
 
   const buildConfig = (): AiChatConfig => {
     const overrides: Record<string, string> = {};
+    if (phasePlan()) overrides.plan = phasePlan();
     if (phaseSearch()) overrides.search = phaseSearch();
     if (phaseRead()) overrides.read = phaseRead();
     if (phaseWrite()) overrides.write = phaseWrite();
@@ -147,6 +149,7 @@ export const AiChatTab: Component = () => {
       setBlockEnrichment(config.experimental_ai_block_enrichment ?? false);
       const ov = config.agent_model_overrides;
       if (ov) {
+        setPhasePlan(ov.plan || "");
         setPhaseSearch(ov.search || "");
         setPhaseRead(ov.read || "");
         setPhaseWrite(ov.write || "");
@@ -581,6 +584,14 @@ export const AiChatTab: Component = () => {
           Use a cheaper model for search/read iterations and the main model for
           writes. Leave blank to use the default model for all phases.
         </p>
+        <label>Plan phase</label>
+        <input
+          class={s.input}
+          type="text"
+          placeholder={model() || "Same as default"}
+          value={phasePlan()}
+          onInput={(e) => { setPhasePlan(e.currentTarget.value); saveConfig(); }}
+        />
         <label>Search phase</label>
         <input
           class={s.input}
