@@ -375,19 +375,45 @@ export const TabBar: Component<TabBarProps> = (props) => {
       },
       onDrop: (x, y) => {
         const sourceId = id;
-        // 1. Cross-pane move (split mode)
+        // 1. Tab reorder (highest priority — dragOverId from onMove is reliable)
+        const overId = dragOverId();
+        const overSide = dragOverSide();
+        if (overId && overId !== sourceId) {
+          const termIds = activeTerminals();
+          const fromIndex = termIds.indexOf(sourceId);
+          const toIndex = termIds.indexOf(overId);
+          if (fromIndex !== -1 && toIndex !== -1) {
+            let adjustedTo = toIndex;
+            if (overSide === "left" && fromIndex < toIndex) adjustedTo--;
+            else if (overSide === "right" && fromIndex > toIndex) adjustedTo++;
+            const clampedTo = Math.max(0, Math.min(adjustedTo, termIds.length - 1));
+            if (fromIndex !== clampedTo) {
+              props.onReorder?.(fromIndex, clampedTo);
+            }
+          } else if (visibleMdIds().includes(sourceId) && visibleMdIds().includes(overId)) {
+            const side = overSide === "left" ? "before" : "after";
+            mdTabsStore.reorderByIds(sourceId, overId, side);
+          }
+          resetDragState();
+          return;
+        }
+        // 2. Cross-pane move / assign orphan (split mode, dropped on pane area)
         if (paneLayoutStore.isSplit()) {
           const targetGroup = findPaneGroupAtPoint(x, y);
           if (targetGroup) {
             const fromGroup = paneLayoutStore.getGroupForTab(sourceId);
             if (fromGroup && fromGroup !== targetGroup) {
               paneLayoutStore.moveTab(fromGroup, targetGroup, sourceId);
-              paneLayoutStore.setActiveGroup(targetGroup);
+              const srcGroup = paneLayoutStore.state.groups[fromGroup];
+              if (srcGroup && srcGroup.tabs.length === 0) {
+                paneLayoutStore.reset();
+              } else {
+                paneLayoutStore.setActiveGroup(targetGroup);
+              }
               resetDragState();
               return;
             }
             if (!fromGroup) {
-              // Orphan tab (created before split) — assign to drop target
               const type = terminalsStore.get(sourceId) ? "terminal" as const
                 : diffTabsStore.get(sourceId) ? "diff" as const
                 : editorTabsStore.get(sourceId) ? "editor" as const
@@ -399,32 +425,17 @@ export const TabBar: Component<TabBarProps> = (props) => {
             }
           }
         }
-        // 2. Tab reorder
-        const el = document.elementFromPoint(x, y);
-        const tabEl = el?.closest("[data-tab-id]") as HTMLElement | null;
-        if (tabEl) {
-          const targetId = tabEl.dataset.tabId!;
-          if (targetId !== sourceId) {
-            const termIds = activeTerminals();
-            const fromIndex = termIds.indexOf(sourceId);
-            const toIndex = termIds.indexOf(targetId);
-            if (fromIndex !== -1 && toIndex !== -1) {
-              // Terminal → terminal reorder
-              const rect = tabEl.getBoundingClientRect();
-              const side = x < rect.left + rect.width / 2 ? "left" : "right";
-              let adjustedTo = toIndex;
-              if (side === "left" && fromIndex < toIndex) adjustedTo--;
-              else if (side === "right" && fromIndex > toIndex) adjustedTo++;
-              const clampedTo = Math.max(0, Math.min(adjustedTo, termIds.length - 1));
-              if (fromIndex !== clampedTo) {
-                props.onReorder?.(fromIndex, clampedTo);
-              }
-            } else if (visibleMdIds().includes(sourceId) && visibleMdIds().includes(targetId)) {
-              // Non-terminal (diff/markdown/plugin-panel) → same-type reorder
-              const rect = tabEl.getBoundingClientRect();
-              const side = x < rect.left + rect.width / 2 ? "before" : "after";
-              mdTabsStore.reorderByIds(sourceId, targetId, side);
+        // 3. Detach from split (dropped outside panes AND not on a tab)
+        if (paneLayoutStore.isSplit()) {
+          const fromGroup = paneLayoutStore.getGroupForTab(sourceId);
+          if (fromGroup) {
+            paneLayoutStore.removeTab(fromGroup, sourceId);
+            const groups = Object.values(paneLayoutStore.state.groups);
+            if (groups.some((g) => g.tabs.length === 0)) {
+              paneLayoutStore.reset();
             }
+            resetDragState();
+            return;
           }
         }
         resetDragState();

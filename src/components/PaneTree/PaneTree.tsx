@@ -274,7 +274,19 @@ const PaneGroupView: Component<{
                       const targetGroup = findPaneGroupAtPoint(x, y);
                       if (targetGroup && targetGroup !== props.groupId) {
                         paneLayoutStore.moveTab(props.groupId, targetGroup, tab.id);
-                        paneLayoutStore.setActiveGroup(targetGroup);
+                        const srcGroup = paneLayoutStore.state.groups[props.groupId];
+                        if (srcGroup && srcGroup.tabs.length === 0) {
+                          paneLayoutStore.reset();
+                        } else {
+                          paneLayoutStore.setActiveGroup(targetGroup);
+                        }
+                      } else if (!targetGroup) {
+                        // Dropped outside split area — detach
+                        paneLayoutStore.removeTab(props.groupId, tab.id);
+                        const groups = Object.values(paneLayoutStore.state.groups);
+                        if (groups.some((g) => g.tabs.length === 0)) {
+                          paneLayoutStore.reset();
+                        }
                       }
                     },
                   });

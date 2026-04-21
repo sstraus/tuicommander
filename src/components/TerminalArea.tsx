@@ -64,6 +64,17 @@ const SuggestOverlayContainer: Component = () => {
 export const TerminalArea: Component<TerminalAreaProps> = (props) => {
   const { isDragging, attachTo } = useFileDrop();
 
+  const hasActiveOrphan = createMemo(() => {
+    if (!paneLayoutStore.isSplit()) return false;
+    const ids = [
+      terminalsStore.state.activeId,
+      diffTabsStore.state.activeId,
+      mdTabsStore.state.activeId,
+      editorTabsStore.state.activeId,
+    ];
+    return ids.some((id) => id && !paneLayoutStore.getGroupForTab(id));
+  });
+
   // When a non-terminal tab becomes active, release focus from xterm's textarea.
   // On macOS WKWebView, wheel events follow focus rather than cursor position,
   // so xterm retains focus (even inside display:none) and captures wheel events.
@@ -93,17 +104,19 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
           </div>
         </Show>
 
-        {/* PaneTree renderer — active when split mode is on */}
+        {/* PaneTree renderer — hidden when an orphan tab overlays */}
         <Show when={paneLayoutStore.isSplit() && paneLayoutStore.getRoot()}>
           {(root) => (
-            <PaneNodeView
-              node={root()}
-              onCloseTab={props.onCloseTab}
-              onOpenFilePath={props.onOpenFilePath}
-              onTerminalFocus={props.onTerminalFocus}
-              onCwdChange={props.onCwdChange}
-              onNewTerminal={props.onNewTerminal}
-            />
+            <div style={{ visibility: hasActiveOrphan() ? "hidden" : "visible", display: "contents" }}>
+              <PaneNodeView
+                node={root()}
+                onCloseTab={props.onCloseTab}
+                onOpenFilePath={props.onOpenFilePath}
+                onTerminalFocus={props.onTerminalFocus}
+                onCwdChange={props.onCwdChange}
+                onNewTerminal={props.onNewTerminal}
+              />
+            </div>
           )}
         </Show>
 
