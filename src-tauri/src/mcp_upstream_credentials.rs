@@ -19,104 +19,7 @@
 
 use serde::{Deserialize, Serialize};
 
-const SERVICE_NAME: &str = "tuicommander-mcp";
-
-/// Install an in-memory persistent credential store once per test process, so
-/// no `cargo test` invocation ever prompts for macOS Keychain access or leaves
-/// stray credentials in the real OS vault. Called from every credential entry
-/// point below when built with `cfg(test)`; the `Once` guard means the first
-/// caller wins and subsequent calls are no-ops.
-///
-/// The upstream `keyring::mock` builder is not sufficient: it hands out a
-/// fresh, empty `MockCredential` on every `Entry::new` call, so write-then-
-/// read-in-another-entry (which is exactly what our OAuth refresh double-check
-/// pattern does) always misses. We wrap it with a process-local HashMap keyed
-/// by `(service, user)` so two `Entry::new` calls with the same key share state.
-#[cfg(test)]
-fn ensure_mock_keyring() {
-    use keyring::{
-        credential::{CredentialApi, CredentialBuilder, CredentialBuilderApi, CredentialPersistence},
-        Error,
-    };
-    use std::collections::HashMap;
-    use std::sync::{Mutex, Once, OnceLock};
-
-    type Store = Mutex<HashMap<(String, String), String>>;
-    fn store() -> &'static Store {
-        static STORE: OnceLock<Store> = OnceLock::new();
-        STORE.get_or_init(|| Mutex::new(HashMap::new()))
-    }
-
-    #[derive(Debug)]
-    struct InMemCredential {
-        key: (String, String),
-    }
-
-    impl CredentialApi for InMemCredential {
-        fn set_password(&self, password: &str) -> keyring::Result<()> {
-            store()
-                .lock()
-                .unwrap()
-                .insert(self.key.clone(), password.to_string());
-            Ok(())
-        }
-        fn set_secret(&self, secret: &[u8]) -> keyring::Result<()> {
-            let s = std::str::from_utf8(secret)
-                .map_err(|e| Error::BadEncoding(e.to_string().into_bytes()))?;
-            self.set_password(s)
-        }
-        fn get_password(&self) -> keyring::Result<String> {
-            store()
-                .lock()
-                .unwrap()
-                .get(&self.key)
-                .cloned()
-                .ok_or(Error::NoEntry)
-        }
-        fn get_secret(&self) -> keyring::Result<Vec<u8>> {
-            self.get_password().map(|s| s.into_bytes())
-        }
-        fn delete_credential(&self) -> keyring::Result<()> {
-            store()
-                .lock()
-                .unwrap()
-                .remove(&self.key)
-                .map(|_| ())
-                .ok_or(Error::NoEntry)
-        }
-        fn as_any(&self) -> &dyn std::any::Any {
-            self
-        }
-    }
-
-    #[derive(Debug)]
-    struct InMemBuilder;
-
-    impl CredentialBuilderApi for InMemBuilder {
-        fn build(
-            &self,
-            _target: Option<&str>,
-            service: &str,
-            user: &str,
-        ) -> keyring::Result<Box<keyring::credential::Credential>> {
-            Ok(Box::new(InMemCredential {
-                key: (service.to_string(), user.to_string()),
-            }))
-        }
-        fn as_any(&self) -> &dyn std::any::Any {
-            self
-        }
-        fn persistence(&self) -> CredentialPersistence {
-            CredentialPersistence::ProcessOnly
-        }
-    }
-
-    static ONCE: Once = Once::new();
-    ONCE.call_once(|| {
-        let builder: Box<CredentialBuilder> = Box::new(InMemBuilder);
-        keyring::set_default_credential_builder(builder);
-    });
-}
+use crate::credentials::Credential;
 
 // ---------------------------------------------------------------------------
 // Credential types
@@ -261,27 +164,18 @@ fn validate_keyring_name(name: &str) -> Result<(), String> {
 /// Read a credential for an upstream MCP server.
 /// Returns `None` if no credential is stored (not an error).
 pub(crate) fn read_upstream_credential(upstream_name: &str) -> Result<Option<String>, String> {
-    #[cfg(test)]
-    ensure_mock_keyring();
-    crate::keyring_cache::get(SERVICE_NAME, upstream_name)
+    crate::credentials::get(Credential::McpUpstream(upstream_name))
 }
 
-/// Store a credential for an upstream MCP server.
 pub(crate) fn save_upstream_credential(
     upstream_name: &str,
     token: &str,
 ) -> Result<(), String> {
-    #[cfg(test)]
-    ensure_mock_keyring();
-    crate::keyring_cache::set(SERVICE_NAME, upstream_name, token)
+    crate::credentials::set(Credential::McpUpstream(upstream_name), token)
 }
 
-/// Delete a credential for an upstream MCP server.
-/// Returns Ok(()) even if no credential existed (idempotent).
 pub(crate) fn delete_upstream_credential(upstream_name: &str) -> Result<(), String> {
-    #[cfg(test)]
-    ensure_mock_keyring();
-    crate::keyring_cache::delete(SERVICE_NAME, upstream_name)
+    crate::credentials::delete(Credential::McpUpstream(upstream_name))
 }
 
 // ---------------------------------------------------------------------------

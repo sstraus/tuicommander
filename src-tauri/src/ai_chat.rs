@@ -15,8 +15,7 @@ use crate::llm_api;
 use crate::state::AppState;
 
 pub(crate) const CONFIG_FILE: &str = "ai-chat.json";
-const KEYRING_SERVICE: &str = "tuicommander-ai-chat";
-const KEYRING_USER: &str = "api-key";
+use crate::credentials::Credential;
 
 // ---------------------------------------------------------------------------
 // Config
@@ -44,6 +43,11 @@ pub(crate) struct AiChatConfig {
     /// and leaks command output to the configured provider.
     #[serde(default)]
     pub experimental_ai_block_enrichment: bool,
+    /// Per-phase model overrides for agent mode. Keys are ToolPhase variants
+    /// (plan/search/read/write); values are model identifiers. Phases without
+    /// an override use the main `model` field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_model_overrides: Option<HashMap<crate::ai_agent::engine::ToolPhase, String>>,
 }
 
 fn default_provider() -> String {
@@ -67,6 +71,7 @@ impl Default for AiChatConfig {
             temperature: default_temperature(),
             context_lines: default_context_lines(),
             experimental_ai_block_enrichment: false,
+            agent_model_overrides: None,
         }
     }
 }
@@ -98,15 +103,15 @@ impl AiChatConfig {
 // ---------------------------------------------------------------------------
 
 pub(crate) fn read_api_key() -> Result<Option<String>, String> {
-    crate::keyring_cache::get(KEYRING_SERVICE, KEYRING_USER)
+    crate::credentials::get(Credential::AiChatApiKey)
 }
 
 fn store_api_key(key: &str) -> Result<(), String> {
-    crate::keyring_cache::set(KEYRING_SERVICE, KEYRING_USER, key)
+    crate::credentials::set(Credential::AiChatApiKey, key)
 }
 
 fn remove_api_key() -> Result<(), String> {
-    crate::keyring_cache::delete(KEYRING_SERVICE, KEYRING_USER)
+    crate::credentials::delete(Credential::AiChatApiKey)
 }
 
 // ---------------------------------------------------------------------------
@@ -1074,6 +1079,7 @@ mod tests {
             temperature: 0.5,
             context_lines: 200,
             experimental_ai_block_enrichment: false,
+            agent_model_overrides: None,
         };
         let json = serde_json::to_string(&config).unwrap();
         let loaded: AiChatConfig = serde_json::from_str(&json).unwrap();
@@ -1093,6 +1099,7 @@ mod tests {
             temperature: 0.3,
             context_lines: 100,
             experimental_ai_block_enrichment: false,
+            agent_model_overrides: None,
         };
         let json = serde_json::to_string(&config).unwrap();
         let loaded: AiChatConfig = serde_json::from_str(&json).unwrap();
@@ -1109,6 +1116,51 @@ mod tests {
         assert!(loaded.model.is_empty());
         assert!((loaded.temperature - 0.7).abs() < f32::EPSILON);
         assert_eq!(loaded.context_lines, 150);
+    }
+
+    #[test]
+    fn model_overrides_round_trip() {
+        let mut overrides = HashMap::new();
+        overrides.insert(
+            crate::ai_agent::engine::ToolPhase::Search,
+            "anthropic/claude-haiku-3-5".to_string(),
+        );
+        overrides.insert(
+            crate::ai_agent::engine::ToolPhase::Read,
+            "anthropic/claude-haiku-3-5".to_string(),
+        );
+        let config = AiChatConfig {
+            provider: "openrouter".to_string(),
+            model: "anthropic/claude-sonnet-4-5".to_string(),
+            agent_model_overrides: Some(overrides),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("agent_model_overrides"));
+        let loaded: AiChatConfig = serde_json::from_str(&json).unwrap();
+        let loaded_overrides = loaded.agent_model_overrides.unwrap();
+        assert_eq!(loaded_overrides.len(), 2);
+        assert_eq!(
+            loaded_overrides[&crate::ai_agent::engine::ToolPhase::Search],
+            "anthropic/claude-haiku-3-5"
+        );
+    }
+
+    #[test]
+    fn model_overrides_skipped_when_none() {
+        let config = AiChatConfig {
+            provider: "openai".to_string(),
+            model: "gpt-4o".to_string(),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(!json.contains("agent_model_overrides"));
+    }
+
+    #[test]
+    fn missing_overrides_deserialize_as_none() {
+        let loaded: AiChatConfig = serde_json::from_str("{}").unwrap();
+        assert!(loaded.agent_model_overrides.is_none());
     }
 
     #[test]

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::state::AppState;
-use super::engine::{self, ACTIVE_AGENTS, LlmRuntime};
+use super::engine::{self, ACTIVE_AGENTS, LlmRuntime, TrustLevel};
 use super::knowledge::{OutcomeClass, SessionKnowledge};
 use super::tui_detect::TerminalMode;
 
@@ -25,7 +25,8 @@ fn build_llm_runtime() -> Result<LlmRuntime, String> {
         model: chat_config.model.clone(),
         base_url: chat_config.effective_base_url(),
     };
-    Ok(LlmRuntime { config, api_key })
+    let model_overrides = chat_config.agent_model_overrides.clone().unwrap_or_default();
+    Ok(LlmRuntime { config, api_key, model_overrides })
 }
 
 /// Start an agent loop on a terminal session.
@@ -34,12 +35,19 @@ pub(crate) async fn start_agent_loop(
     state: State<'_, Arc<AppState>>,
     session_id: String,
     goal: String,
+    #[allow(unused_variables)]
+    unrestricted: Option<bool>,
 ) -> Result<String, String> {
     let state = Arc::clone(&state);
     let app_handle = state.app_handle.read().clone();
     let runtime = build_llm_runtime()?;
+    let trust_level = if unrestricted.unwrap_or(false) {
+        TrustLevel::Unrestricted
+    } else {
+        TrustLevel::Standard
+    };
     let mut rx =
-        engine::start_agent_loop(state, session_id.clone(), goal, runtime).await?;
+        engine::start_agent_loop(state, session_id.clone(), goal, runtime, trust_level).await?;
 
     // Bridge broadcast events to Tauri's emit system so the frontend can
     // subscribe via `listen("agent-loop-event", ...)`.

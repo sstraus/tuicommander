@@ -10,8 +10,7 @@ use std::time::Duration;
 use crate::config::{load_json_config, save_json_config};
 
 const CONFIG_FILE: &str = "llm-api.json";
-const KEYRING_SERVICE: &str = "tuicommander-llm-api";
-const KEYRING_USER: &str = "api-key";
+use crate::credentials::Credential;
 
 // ---------------------------------------------------------------------------
 // Config
@@ -41,15 +40,15 @@ impl LlmApiConfig {
 // ---------------------------------------------------------------------------
 
 fn read_api_key() -> Result<Option<String>, String> {
-    crate::keyring_cache::get(KEYRING_SERVICE, KEYRING_USER)
+    crate::credentials::get(Credential::LlmApiKey)
 }
 
 fn save_api_key(key: &str) -> Result<(), String> {
-    crate::keyring_cache::set(KEYRING_SERVICE, KEYRING_USER, key)
+    crate::credentials::set(Credential::LlmApiKey, key)
 }
 
 fn delete_api_key() -> Result<(), String> {
-    crate::keyring_cache::delete(KEYRING_SERVICE, KEYRING_USER)
+    crate::credentials::delete(Credential::LlmApiKey)
 }
 
 // ---------------------------------------------------------------------------

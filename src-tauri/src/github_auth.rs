@@ -14,8 +14,7 @@ use tauri::State;
 
 use crate::state::AppState;
 
-const SERVICE_NAME: &str = "tuicommander-github";
-const KEYRING_KEY: &str = "oauth-token";
+use crate::credentials::Credential;
 
 /// GitHub OAuth App client ID (public — not a secret).
 const CLIENT_ID: &str = "Ov23liN95BHKQDboVFRl";
@@ -513,18 +512,15 @@ pub(crate) fn resolve_token_with_source() -> (Option<String>, TokenSource) {
 /// Read the stored OAuth token from the OS keyring (cached in-memory).
 /// Returns `None` if no token is stored (not an error).
 pub(crate) fn read_github_oauth_token() -> Result<Option<String>, String> {
-    crate::keyring_cache::get(SERVICE_NAME, KEYRING_KEY)
+    crate::credentials::get(Credential::GithubOauthToken)
 }
 
-/// Store an OAuth token in the OS keyring (write-through cache).
 pub(crate) fn save_github_oauth_token(token: &str) -> Result<(), String> {
-    crate::keyring_cache::set(SERVICE_NAME, KEYRING_KEY, token)
+    crate::credentials::set(Credential::GithubOauthToken, token)
 }
 
-/// Delete the OAuth token from the OS keyring (write-through cache).
-/// Returns Ok(()) even if no token existed (idempotent).
 pub(crate) fn delete_github_oauth_token() -> Result<(), String> {
-    crate::keyring_cache::delete(SERVICE_NAME, KEYRING_KEY)
+    crate::credentials::delete(Credential::GithubOauthToken)
 }
 
 // ---------------------------------------------------------------------------

@@ -1000,6 +1000,9 @@ pub struct AppState {
     /// Keyed by session_id. Populated when the agent loop starts, rooted at the
     /// session's git repo root or CWD. See `ai_agent::sandbox::FileSandbox`.
     pub(crate) file_sandboxes: DashMap<String, crate::ai_agent::sandbox::FileSandbox>,
+    /// Sessions running in unrestricted (TrustLevel::Unrestricted) mode.
+    /// Present = unrestricted; absent = standard safety gates apply.
+    pub(crate) unrestricted_sessions: DashMap<String, ()>,
 }
 
 impl AppState {
@@ -2069,6 +2072,7 @@ pub(crate) mod tests_support {
             knowledge_dirty: DashMap::new(),
             has_osc133_integration: DashMap::new(),
             file_sandboxes: DashMap::new(),
+            unrestricted_sessions: DashMap::new(),
             #[cfg(unix)]
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
             tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),
@@ -2520,6 +2524,7 @@ mod tests {
             knowledge_dirty: DashMap::new(),
             has_osc133_integration: DashMap::new(),
             file_sandboxes: DashMap::new(),
+            unrestricted_sessions: DashMap::new(),
             #[cfg(unix)]
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
             tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),

@@ -242,6 +242,7 @@ fn redact_json_values(val: &serde_json::Value) -> serde_json::Value {
 pub(crate) struct LlmRuntime {
     pub config: crate::llm_api::LlmApiConfig,
     pub api_key: String,
+    pub model_overrides: std::collections::HashMap<ToolPhase, String>,
 }
 
 /// Trust level for an agent session. Controls safety gate behavior.
@@ -393,8 +394,8 @@ async fn run_loop(
         session_id: session_id.clone(),
     });
 
-    let LlmRuntime { config: llm_config, api_key } = runtime;
-    let model = llm_config.model.clone();
+    let LlmRuntime { config: llm_config, api_key, model_overrides } = runtime;
+    let base_model = llm_config.model.clone();
     let client = crate::llm_api::build_client(&llm_config, &api_key);
 
     // Build tools for genai
@@ -441,6 +442,7 @@ async fn run_loop(
     let mut tool_limiter = RateLimiter::new(TOOL_DISPATCH_LIMIT_PER_MINUTE, TOOL_DISPATCH_LIMIT_PER_SESSION);
     let mut repetition = RepetitionDetector::new();
     let deadline = tokio::time::Instant::now() + LOOP_TIMEOUT;
+    let mut last_tool_names: Vec<String> = Vec::new();
 
     for iteration in 0..MAX_ITERATIONS {
         if cancel.load(Ordering::Acquire) {
@@ -503,9 +505,13 @@ async fn run_loop(
             iteration,
         });
 
-        // Stream the LLM turn
+        // Select model based on last iteration's tool phase
+        let phase_refs: Vec<&str> = last_tool_names.iter().map(|s| s.as_str()).collect();
+        let phase = classify_phase(&phase_refs);
+        let model = select_model_for_phase(&base_model, &model_overrides, phase);
+
         let stream_resp = client
-            .exec_chat_stream(&model, chat_req.clone(), Some(&chat_options))
+            .exec_chat_stream(model, chat_req.clone(), Some(&chat_options))
             .await
             .map_err(|e| format!("LLM stream error: {e}"))?;
 
@@ -659,6 +665,8 @@ async fn run_loop(
             );
             chat_req = chat_req.append_message(tool_resp);
         }
+
+        last_tool_names = tool_calls.iter().map(|tc| tc.fn_name.clone()).collect();
     }
 
     tracing::warn!(session_id, "Agent hit max iterations");
@@ -684,7 +692,8 @@ fn classify_phase(tool_names: &[&str]) -> ToolPhase {
     let mut has_read = false;
     for &name in tool_names {
         match name {
-            "write_file" | "edit_file" | "send_input" | "run_command" | "spawn_session" => has_write = true,
+            "write_file" | "edit_file" | "send_input" | "send_key" | "run_command"
+            | "call_tool" | "spawn_session" => has_write = true,
             "search_files" | "search_code" | "list_files" | "search_tools" => has_search = true,
             "read_screen" | "read_file" | "get_state" | "get_context"
             | "list_sessions" | "get_agent_status" => has_read = true,

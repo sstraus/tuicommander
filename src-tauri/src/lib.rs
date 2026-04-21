@@ -40,7 +40,7 @@ pub(crate) mod prompt;
 pub(crate) mod smart_prompt;
 pub(crate) mod llm_api;
 pub(crate) mod ai_chat;
-pub(crate) mod keyring_cache;
+pub(crate) mod credentials;
 pub(crate) mod registry;
 pub(crate) mod pty;
 pub(crate) mod relay_client;
@@ -856,6 +856,7 @@ pub fn run() {
         knowledge_dirty: DashMap::new(),
         has_osc133_integration: DashMap::new(),
         file_sandboxes: DashMap::new(),
+        unrestricted_sessions: DashMap::new(),
         #[cfg(unix)]
         bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
         tailscale_state: parking_lot::RwLock::new(tailscale::TailscaleState::NotInstalled),
