@@ -615,8 +615,21 @@ fn resolve_file_path(sandbox: &FileSandbox, path: &str, unrestricted: bool) -> R
     }
 }
 
+/// Extra write roots allowed in standard mode: `/tmp` and its macOS canonical
+/// form `/private/tmp` (since `/tmp` is a symlink on macOS).
+fn extra_write_roots() -> Vec<std::path::PathBuf> {
+    let mut roots = vec![std::path::PathBuf::from("/tmp")];
+    if let Ok(canon) = std::path::Path::new("/tmp").canonicalize() {
+        if canon != std::path::Path::new("/tmp") {
+            roots.push(canon);
+        }
+    }
+    roots
+}
+
 /// Resolve a file path for writing. In unrestricted mode parent dirs are created
-/// as needed; in standard mode the path is validated against the sandbox jail.
+/// as needed; in standard mode the path is validated against the sandbox jail
+/// (writes to /tmp are also allowed in standard mode).
 fn resolve_file_path_for_write(sandbox: &FileSandbox, path: &str, unrestricted: bool) -> Result<std::path::PathBuf, String> {
     if unrestricted {
         let p = std::path::PathBuf::from(path);
@@ -625,7 +638,7 @@ fn resolve_file_path_for_write(sandbox: &FileSandbox, path: &str, unrestricted: 
         }
         Ok(p)
     } else {
-        sandbox.resolve_for_write(path)
+        sandbox.resolve_for_write_with_extra_roots(path, &extra_write_roots())
     }
 }
 
@@ -659,8 +672,8 @@ fn exec_read_file(state: &AppState, session_id: &str, args: &Value) -> ToolResul
         Ok(s) => s,
         Err(e) => return ToolResult::err(e),
     };
-    let unrestricted = is_session_unrestricted(state, session_id);
-    let resolved = match resolve_file_path(&sandbox, file_path, unrestricted) {
+    // Reads are unrestricted — developers legitimately need /etc/hosts, ~/.gitconfig, etc.
+    let resolved = match resolve_file_path(&sandbox, file_path, true) {
         Ok(p) => p,
         Err(e) => return ToolResult::err(e),
     };
@@ -943,8 +956,8 @@ fn exec_list_files(state: &AppState, session_id: &str, args: &Value) -> ToolResu
         Ok(s) => s,
         Err(e) => return ToolResult::err(e),
     };
-    let unrestricted = is_session_unrestricted(state, session_id);
-    let anchor = match resolve_subdir(&sandbox, subdir, unrestricted) {
+    // Reads are unrestricted — listing outside the repo root is legitimate.
+    let anchor = match resolve_subdir(&sandbox, subdir, true) {
         Ok(p) => p,
         Err(e) => return ToolResult::err(e),
     };
@@ -1028,8 +1041,8 @@ fn exec_search_files(state: &AppState, session_id: &str, args: &Value) -> ToolRe
         Ok(s) => s,
         Err(e) => return ToolResult::err(e),
     };
-    let unrestricted = is_session_unrestricted(state, session_id);
-    let anchor = match resolve_subdir(&sandbox, subdir, unrestricted) {
+    // Reads are unrestricted — searching outside the repo root is legitimate.
+    let anchor = match resolve_subdir(&sandbox, subdir, true) {
         Ok(p) => p,
         Err(e) => return ToolResult::err(e),
     };

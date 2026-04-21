@@ -106,6 +106,43 @@ impl FileSandbox {
         self.resolve(path)
     }
 
+    /// Resolve a path for write ops, accepting writes to additional roots
+    /// beyond the sandbox (e.g. `/tmp`). macOS `/tmp` symlinks to
+    /// `/private/tmp` after canonicalization — callers should include both.
+    pub fn resolve_for_write_with_extra_roots(
+        &self,
+        path: &str,
+        extra_roots: &[PathBuf],
+    ) -> Result<PathBuf, String> {
+        // Try the sandbox root first.
+        match self.resolve_for_write(path) {
+            Ok(p) => return Ok(p),
+            Err(sandbox_err) => {
+                // Check if the path falls under any of the extra roots.
+                let p = Path::new(path);
+                if !p.is_absolute() {
+                    return Err(sandbox_err);
+                }
+                // Canonicalize the parent (the target file may not exist yet).
+                let parent = p.parent().unwrap_or(p);
+                if let Ok(canon_parent) = parent.canonicalize() {
+                    for root in extra_roots {
+                        if canon_parent.starts_with(root) {
+                            // Create intermediate dirs and return resolved path.
+                            std::fs::create_dir_all(parent)
+                                .map_err(|e| format!("create_dir_all failed: {e}"))?;
+                            let file_name = p.file_name().ok_or_else(|| {
+                                format!("path has no file name: {}", p.display())
+                            })?;
+                            return Ok(canon_parent.join(file_name));
+                        }
+                    }
+                }
+                Err(sandbox_err)
+            }
+        }
+    }
+
     /// Heuristic binary-file detection: read up to 8KB and check for UTF-8
     /// decodability. Invalid UTF-8 ⇒ treat as binary. Read errors ⇒ false
     /// (let the caller surface the real error on the actual open).
@@ -308,5 +345,34 @@ mod tests {
     fn root_returns_canonicalized_path() {
         let (dir, sb) = sandbox();
         assert_eq!(sb.root(), dir.path().canonicalize().unwrap());
+    }
+
+    #[test]
+    fn resolve_for_write_with_extra_roots_allows_extra_root() {
+        let (dir, sb) = sandbox();
+        let extra = TempDir::new().unwrap();
+        let extra_roots = vec![extra.path().canonicalize().unwrap()];
+        let target = extra.path().join("output.txt");
+        let got = sb
+            .resolve_for_write_with_extra_roots(target.to_str().unwrap(), &extra_roots)
+            .unwrap();
+        assert_eq!(got, extra.path().canonicalize().unwrap().join("output.txt"));
+    }
+
+    #[test]
+    fn resolve_for_write_with_extra_roots_still_blocks_unrelated_paths() {
+        let (_dir, sb) = sandbox();
+        // /etc is not in sandbox or extra_roots
+        let result = sb.resolve_for_write_with_extra_roots("/etc/hosts", &[]);
+        assert!(result.is_err());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn tmp_canonicalizes_to_private_tmp_on_macos() {
+        // On macOS /tmp is a symlink to /private/tmp — the extra_write_roots
+        // helper must include the canonical form so writes to /tmp paths succeed.
+        let canon = std::path::Path::new("/tmp").canonicalize().unwrap();
+        assert_eq!(canon, std::path::Path::new("/private/tmp"));
     }
 }
