@@ -569,6 +569,20 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
         </div>
       </Show>
 
+      {/* ── Agent completion/error banner ─────────────────── */}
+      <Show when={["completed", "cancelled", "error"].includes(aiAgentStore.agentState())}>
+        <div class={cx(s.agentDoneBanner, aiAgentStore.agentState() === "error" && s.agentDoneBannerError)}>
+          <span class={s.agentBannerText}>
+            {aiAgentStore.agentState() === "completed"
+              ? `Agent done${aiAgentStore.completionReason() ? ` — ${aiAgentStore.completionReason()}` : ""}`
+              : aiAgentStore.agentState() === "cancelled"
+              ? "Agent cancelled"
+              : `Agent error: ${aiAgentStore.agentError() ?? "unknown error"}`}
+          </span>
+          <button class={s.agentBannerBtn} onClick={() => aiAgentStore.reset()} title="Dismiss">✕</button>
+        </div>
+      </Show>
+
       {/* ── Approval prompt ────────────────────────────────── */}
       <Show when={aiAgentStore.pendingApproval()}>
         {(approval) => (

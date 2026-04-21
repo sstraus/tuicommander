@@ -402,6 +402,23 @@
   background: color-mix(in srgb, var(--error) 15%, transparent);
 }
 
+.agentDoneBanner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  background: color-mix(in srgb, var(--fg-muted) 10%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--fg-muted) 20%, transparent);
+  font-size: var(--font-sm);
+  color: var(--fg-secondary);
+}
+
+.agentDoneBannerError {
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--error) 25%, transparent);
+  color: var(--error);
+}
+
 .unrestrictedBanner {
   background: color-mix(in srgb, var(--error) 15%, transparent);
   border-bottom: 1px solid var(--error);
