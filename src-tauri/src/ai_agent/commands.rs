@@ -337,7 +337,7 @@ fn scan_sessions(filter: &KnowledgeListFilter, limit: usize) -> Result<Vec<Sessi
             tui_apps_seen: apps,
         });
     }
-    rows.sort_by(|a, b| b.last_activity.cmp(&a.last_activity));
+    rows.sort_by_key(|a| std::cmp::Reverse(a.last_activity));
     rows.truncate(limit);
     Ok(rows)
 }

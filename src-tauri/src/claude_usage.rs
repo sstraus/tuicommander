@@ -1309,7 +1309,7 @@ pub async fn get_claude_project_list() -> Result<Vec<ProjectEntry>, String> {
         .collect();
 
     // Sort by session count descending
-    entries.sort_by(|a, b| b.session_count.cmp(&a.session_count));
+    entries.sort_by_key(|a| std::cmp::Reverse(a.session_count));
 
     Ok(entries)
 }

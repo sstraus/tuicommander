@@ -69,10 +69,6 @@ impl Scheduler {
         }
     }
 
-    pub fn stop_handle(&self) -> Arc<Notify> {
-        self.stop.clone()
-    }
-
     pub async fn run(&self) {
         let mut interval = tokio::time::interval(TICK_INTERVAL);
         loop {

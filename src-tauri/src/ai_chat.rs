@@ -375,7 +375,7 @@ pub(crate) fn list_conversations() -> Result<Vec<ConversationMeta>, String> {
             }
         }
     }
-    metas.sort_by(|a, b| b.updated.cmp(&a.updated));
+    metas.sort_by_key(|a| std::cmp::Reverse(a.updated));
     Ok(metas)
 }
 

@@ -264,17 +264,11 @@ impl InputLineBuffer {
         self.esc_state = EscState::Normal;
         // SS3 sequences: same navigation as CSI but in application mode
         match ch {
-            'C' => {
-                // Right arrow
-                if self.cursor < self.chars.len() {
-                    self.cursor += 1;
-                }
+            'C' if self.cursor < self.chars.len() => {
+                self.cursor += 1;
             }
-            'D' => {
-                // Left arrow
-                if self.cursor > 0 {
-                    self.cursor -= 1;
-                }
+            'D' if self.cursor > 0 => {
+                self.cursor -= 1;
             }
             'H' => {
                 // Home
@@ -339,10 +333,8 @@ impl InputLineBuffer {
                 let key = params.first().copied().unwrap_or(0);
                 match key {
                     1 => self.cursor = 0,               // Home (VT220)
-                    3 => {                               // Delete key
-                        if self.cursor < self.chars.len() {
-                            self.chars.remove(self.cursor);
-                        }
+                    3 if self.cursor < self.chars.len() => {
+                        self.chars.remove(self.cursor);
                     }
                     4 => self.cursor = self.chars.len(), // End (VT220)
                     _ => {} // Page Up/Down, Insert — ignore
@@ -359,11 +351,9 @@ impl InputLineBuffer {
                         self.cursor += 1;
                     }
                     // Backspace (127) with any modifier
-                    127 => {
-                        if self.cursor > 0 {
-                            self.cursor -= 1;
-                            self.chars.remove(self.cursor);
-                        }
+                    127 if self.cursor > 0 => {
+                        self.cursor -= 1;
+                        self.chars.remove(self.cursor);
                     }
                     // Escape (27) — ignore
                     27 => {}

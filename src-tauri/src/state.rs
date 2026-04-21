@@ -1268,16 +1268,11 @@ impl AppState {
                                         s.last_prompt = Some(content.to_string());
                                     }
                             }
-                            "rate-limit" => {
-                                // Only track rate limits on agent sessions.
-                                // Plain shell terminals can match rate-limit patterns
-                                // in their output but should never show the badge.
-                                if s.current_task.is_some() {
-                                    s.rate_limited = true;
-                                    s.retry_after_ms = parsed.get("retry_after_ms")
-                                        .and_then(|v| v.as_u64());
-                                    s.rate_limit_set_ms = now_ms;
-                                }
+                            "rate-limit" if s.current_task.is_some() => {
+                                s.rate_limited = true;
+                                s.retry_after_ms = parsed.get("retry_after_ms")
+                                    .and_then(|v| v.as_u64());
+                                s.rate_limit_set_ms = now_ms;
                             }
                             "usage-limit" => {
                                 s.usage_limit_pct = parsed.get("percentage")

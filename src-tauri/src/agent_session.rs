@@ -115,7 +115,7 @@ fn discover_gemini_session(_cwd: &str, claimed_ids: &[String]) -> Option<String>
     }
 
     // Sort newest first, return first unclaimed
-    candidates.sort_by(|a, b| b.0.cmp(&a.0));
+    candidates.sort_by_key(|a| std::cmp::Reverse(a.0));
     candidates
         .into_iter()
         .find(|(_, id)| !claimed_ids.contains(id))
@@ -174,7 +174,7 @@ fn discover_codex_session(claimed_ids: &[String]) -> Option<String> {
     collect_codex_files(&sessions_root, &mut candidates);
 
     // Sort newest first
-    candidates.sort_by(|a, b| b.0.cmp(&a.0));
+    candidates.sort_by_key(|a| std::cmp::Reverse(a.0));
 
     candidates
         .into_iter()
@@ -349,7 +349,7 @@ where
         })
         .collect();
 
-    candidates.sort_by(|a, b| b.0.cmp(&a.0));
+    candidates.sort_by_key(|a| std::cmp::Reverse(a.0));
 
     candidates
         .into_iter()

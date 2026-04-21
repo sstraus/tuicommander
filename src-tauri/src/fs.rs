@@ -674,7 +674,7 @@ pub(crate) fn search_files_impl(
     }
 
     // Sort by path for predictable results
-    results.sort_by(|a, b| a.path.to_lowercase().cmp(&b.path.to_lowercase()));
+    results.sort_by_key(|a| a.path.to_lowercase());
 
     Ok(results)
 }

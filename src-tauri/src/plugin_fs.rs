@@ -169,7 +169,7 @@ async fn plugin_list_directory_inner(
     }
 
     match sort_mode {
-        "mtime" => items.sort_by(|a, b| b.1.cmp(&a.1)),
+        "mtime" => items.sort_by_key(|a| std::cmp::Reverse(a.1)),
         _ => items.sort_by(|a, b| a.0.cmp(&b.0)),
     }
     Ok(items.into_iter().map(|(n, _)| n).collect())

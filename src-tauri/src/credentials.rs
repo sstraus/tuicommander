@@ -151,17 +151,16 @@ pub(crate) fn get(cred: Credential<'_>) -> Result<Option<String>, String> {
 
     // Lazy migration for dynamic keys only (MCP upstreams aren't in LEGACY_ENTRIES).
     // Static credentials are swept in load() — no extra keychain prompts.
-    if matches!(cred, Credential::McpUpstream(_)) {
-        if let Some((service, user)) = cred.legacy_entry() {
-            if let Some(value) = read_keyring_entry(service, user)? {
-                let mut guard = lock();
-                let vault = guard.as_mut().unwrap();
-                vault.insert(key, value.clone());
-                persist(vault)?;
-                delete_keyring_entry(service, user);
-                return Ok(Some(value));
-            }
-        }
+    if matches!(cred, Credential::McpUpstream(_))
+        && let Some((service, user)) = cred.legacy_entry()
+        && let Some(value) = read_keyring_entry(service, user)?
+    {
+        let mut guard = lock();
+        let vault = guard.as_mut().unwrap();
+        vault.insert(key, value.clone());
+        persist(vault)?;
+        delete_keyring_entry(service, user);
+        return Ok(Some(value));
     }
     Ok(None)
 }
