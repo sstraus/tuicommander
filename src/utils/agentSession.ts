@@ -6,15 +6,20 @@ import { rpc } from "../transport";
  *
  * Only Claude Code supports --session-id. For other agents the command is returned unchanged.
  * The command string may include a binary path and extra args (e.g. "claude --model opus").
+ *
+ * When `agentType` is provided, it takes precedence over the binary-name heuristic.
+ * This is important for custom commands (aliases, wrappers) like "C2" that don't
+ * contain "claude" in the name but still need --session-id injection.
  */
-export function buildAgentLaunchCommand(command: string, agentSessionId?: string | null): string {
+export function buildAgentLaunchCommand(command: string, agentSessionId?: string | null, agentType?: AgentType | null): string {
   if (!agentSessionId) return command;
 
-  // Only inject for claude — check if the binary name (last segment of path) starts with "claude"
   const parts = command.split(" ");
   const binary = parts[0];
   const binaryName = binary.split("/").pop() ?? "";
-  if (!binaryName.startsWith("claude")) return command;
+
+  const isClaude = agentType === "claude" || binaryName.startsWith("claude");
+  if (!isClaude) return command;
 
   // Insert --session-id right after the binary
   const rest = parts.slice(1);

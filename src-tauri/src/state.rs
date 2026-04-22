@@ -1454,6 +1454,12 @@ pub(crate) struct PtyConfig {
     /// Extra environment variables injected into the PTY process (e.g. agent feature flags).
     #[serde(default)]
     pub(crate) env: HashMap<String, String>,
+    /// Pre-set agent type for sessions that will launch a known agent (e.g. from
+    /// a run config). Enables intent/suggest parsing from the first output line,
+    /// even when the binary name doesn't match `classify_agent` (custom aliases,
+    /// symlinks, wrapper scripts).
+    #[serde(default)]
+    pub(crate) agent_type: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]

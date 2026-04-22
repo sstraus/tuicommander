@@ -531,12 +531,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
           }
           break;
         }
-        case "tool-error": {
-          const matched = parsed.matched_text;
-          appLogger.error("terminal", `[ToolError] ${props.id} matched="${matched}"`);
+        case "tool-error":
           terminalsStore.setAwaitingInput(props.id, "error");
           break;
-        }
         case "intent":
           retryCount = 0;
           terminalsStore.setAgentIntent(props.id, parsed.text);
@@ -586,7 +583,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
               ...(initCmd ? { pendingInitCommand: null } : {}),
             });
             if (initCmd && targetSessionId) {
-              pty.write(targetSessionId, initCmd + "\r").catch((e) =>
+              pty.sendCommand(targetSessionId, initCmd, null).catch((e) =>
                 appLogger.error("terminal", "Failed to write init command", { error: String(e) }),
               );
             }
@@ -755,6 +752,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
           cwd: props.cwd || null,
           tuic_session: termData?.tuicSession ?? null,
           env: agentConfigsStore.getEnvFlags("claude"),
+          agent_type: termData?.pendingInitCommand ? (termData.agentType ?? null) : null,
         });
         setCurrentSessionId(sessionId);
         if (sessionId) {
@@ -1715,7 +1713,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     const cmd = terminalsStore.get(props.id)?.pendingResumeCommand;
     if (cmd && sessionId) {
       terminalsStore.update(props.id, { pendingResumeCommand: null });
-      pty.write(sessionId, cmd + "\r").catch((e) => appLogger.error("terminal", "Failed to write resume command", { error: String(e) }));
+      pty.sendCommand(sessionId, cmd, null).catch((e) => appLogger.error("terminal", "Failed to write resume command", { error: String(e) }));
     }
   };
 

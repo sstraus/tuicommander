@@ -46,6 +46,9 @@ export interface PtyConfig {
   tuic_session?: string | null;
   /** Extra environment variables injected into the PTY process (e.g. agent feature flags). */
   env?: Record<string, string>;
+  /** Pre-set agent type for sessions launched from a run config. Enables intent
+   *  parsing from the start even when the binary name doesn't match classify_agent. */
+  agent_type?: string | null;
 }
 
 /** PTY exit event data */

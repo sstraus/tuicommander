@@ -729,7 +729,7 @@ const App: Component = () => {
     if (!active?.ref || !active.sessionId) return;
     // Use the tab's stable tuicSession UUID as --session-id so resume works via TUIC_SESSION
     const agentSessionId = active.tuicSession ?? (agentType === "claude" ? crypto.randomUUID() : null);
-    const finalCmd = buildAgentLaunchCommand(cmd, agentSessionId);
+    const finalCmd = buildAgentLaunchCommand(cmd, agentSessionId, agentType);
     // Shell family matters here: we're still at the user's shell prompt
     // (agent not running yet) so Ctrl-U must match the shell, not the agent.
     const shellFamily = await getShellFamily(active.sessionId);
@@ -799,12 +799,13 @@ const App: Component = () => {
           // Use the new tab's stable tuicSession UUID as --session-id
           const term = terminalsStore.get(termId);
           const agentSessionId = term?.tuicSession ?? (agent.type === "claude" ? crypto.randomUUID() : null);
-          const finalCmd = buildAgentLaunchCommand(cmd, agentSessionId);
+          const finalCmd = buildAgentLaunchCommand(cmd, agentSessionId, agent.type);
           terminalsStore.update(termId, {
             name: agentConfig.name,
             nameIsCustom: true,
             pendingInitCommand: finalCmd,
             agentSessionId,
+            agentType: agent.type,
           });
         }
       };
