@@ -1,4 +1,4 @@
-import { Component, For, Show, createMemo, createSignal, onMount } from "solid-js";
+import { Component, For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { AGENTS, AGENT_DISPLAY, MCP_SUPPORT, type AgentType, type AgentRunConfig } from "../../../agents";
 import { appLogger } from "../../../stores/appLogger";
 import { agentConfigsStore, llmApiStore } from "../../../stores/agentConfigs";
@@ -199,14 +199,20 @@ const AddConfigForm: Component<{
   );
 };
 
-/** Single run config row with inline env var editing */
+/** Single run config row with inline env var editing and config editing */
 const RunConfigRow: Component<{
   config: AgentRunConfig;
   index: number;
   agentType: AgentType;
 }> = (props) => {
-  const [editing, setEditing] = createSignal(false);
+  const [editingEnv, setEditingEnv] = createSignal(false);
+  const [editingConfig, setEditingConfig] = createSignal(false);
+  const [menuOpen, setMenuOpen] = createSignal(false);
   const [envVars, setEnvVars] = createSignal<Array<{ key: string; value: string }>>([]);
+  const [editName, setEditName] = createSignal("");
+  const [editCommand, setEditCommand] = createSignal("");
+  const [editArgs, setEditArgs] = createSignal("");
+  let menuRef: HTMLDivElement | undefined;
 
   const cmdPreview = () => {
     const parts = [props.config.command, ...props.config.args];
@@ -215,13 +221,47 @@ const RunConfigRow: Component<{
 
   const envCount = () => Object.keys(props.config.env).length;
 
-  const startEdit = () => {
-    // Start with the actual entries — no implicit blank row. Blank rows
-    // trigger the duplicate-key validator unnecessarily and obscure the
-    // "nothing to configure" state. Users add rows explicitly via +Add.
+  const startEnvEdit = () => {
     const entries = Object.entries(props.config.env).map(([key, value]) => ({ key, value }));
     setEnvVars(entries);
-    setEditing(true);
+    setEditingEnv(true);
+  };
+
+  const startConfigEdit = () => {
+    setEditName(props.config.name);
+    setEditCommand(props.config.command);
+    setEditArgs(props.config.args.join(" "));
+    setEditingConfig(true);
+    setMenuOpen(false);
+  };
+
+  const allExistingNames = createMemo(() =>
+    collectRunConfigNames(
+      ALL_AGENT_TYPES.map((t) => agentConfigsStore.getRunConfigs(t)),
+      props.config.name,
+    ),
+  );
+  const isDuplicateName = () => {
+    const n = editName().trim().toLowerCase();
+    return n.length > 0 && allExistingNames().has(n);
+  };
+
+  const saveConfig = async () => {
+    const n = editName().trim();
+    if (!n || isDuplicateName()) return;
+    const updated: AgentRunConfig = {
+      ...props.config,
+      name: n,
+      command: editCommand().trim() || props.config.command,
+      args: editArgs().trim() ? editArgs().trim().split(/\s+/) : [],
+    };
+    await agentConfigsStore.updateRunConfig(props.agentType, props.index, updated);
+    setEditingConfig(false);
+  };
+
+  const handleDelete = () => {
+    setMenuOpen(false);
+    agentConfigsStore.removeRunConfig(props.agentType, props.index);
   };
 
   const addEnvVar = () => setEnvVars([...envVars(), { key: "", value: "" }]);
@@ -236,8 +276,14 @@ const RunConfigRow: Component<{
   const saveEnv = async () => {
     if (duplicateEnvKeys().length > 0) return;
     await agentConfigsStore.updateRunConfigEnv(props.agentType, props.index, envVars());
-    setEditing(false);
+    setEditingEnv(false);
   };
+
+  const handleClickOutside = (e: MouseEvent) => {
+    if (menuRef && !menuRef.contains(e.target as Node)) setMenuOpen(false);
+  };
+  onMount(() => document.addEventListener("mousedown", handleClickOutside));
+  onCleanup(() => document.removeEventListener("mousedown", handleClickOutside));
 
   return (
     <div class={a.configRowWrap}>
@@ -253,7 +299,7 @@ const RunConfigRow: Component<{
         <div class={a.configActions}>
           <button
             class={a.smallBtn}
-            onClick={startEdit}
+            onClick={startEnvEdit}
             title="Edit environment variables"
           >
             Env
@@ -267,16 +313,63 @@ const RunConfigRow: Component<{
               Set Default
             </button>
           </Show>
-          <button
-            class={`${a.smallBtn} ${a.danger}`}
-            onClick={() => agentConfigsStore.removeRunConfig(props.agentType, props.index)}
-            title="Delete configuration"
-          >
-            Delete
-          </button>
+          <div class={a.menuWrap} ref={menuRef}>
+            <button
+              class={a.smallBtn}
+              onClick={() => setMenuOpen(!menuOpen())}
+              title="More actions"
+            >
+              ···
+            </button>
+            <Show when={menuOpen()}>
+              <div class={a.menuDropdown}>
+                <button class={a.menuItem} onClick={startConfigEdit}>Edit</button>
+                <button class={`${a.menuItem} ${a.danger}`} onClick={handleDelete}>Delete</button>
+              </div>
+            </Show>
+          </div>
         </div>
       </div>
-      <Show when={editing()}>
+      <Show when={editingConfig()}>
+        <div class={a.envEditPanel}>
+          <div class={a.envVarsHeader}>
+            <span class={a.envVarsLabel}>Edit Configuration</span>
+          </div>
+          <div class={a.formRow}>
+            <input
+              class={a.formInput}
+              classList={{ [a.inputError]: isDuplicateName() }}
+              placeholder="Configuration name"
+              value={editName()}
+              onInput={(e) => setEditName(e.currentTarget.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") saveConfig(); if (e.key === "Escape") setEditingConfig(false); }}
+            />
+          </div>
+          <Show when={isDuplicateName()}>
+            <div class={a.validationError}>Name "{editName().trim()}" already exists</div>
+          </Show>
+          <div class={a.formRow}>
+            <input
+              class={`${a.formInput} ${a.mono}`}
+              placeholder="Command (binary)"
+              value={editCommand()}
+              onInput={(e) => setEditCommand(e.currentTarget.value)}
+            />
+            <input
+              class={`${a.formInput} ${a.mono}`}
+              placeholder="Arguments (space-separated)"
+              value={editArgs()}
+              onInput={(e) => setEditArgs(e.currentTarget.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") saveConfig(); if (e.key === "Escape") setEditingConfig(false); }}
+            />
+          </div>
+          <div class={a.formRow}>
+            <button class={a.smallBtn} onClick={saveConfig} disabled={isDuplicateName() || !editName().trim()}>Save</button>
+            <button class={a.smallBtn} onClick={() => setEditingConfig(false)}>Cancel</button>
+          </div>
+        </div>
+      </Show>
+      <Show when={editingEnv()}>
         <div class={a.envEditPanel}>
           <div class={a.envVarsHeader}>
             <span class={a.envVarsLabel}>Environment Variables</span>
@@ -300,7 +393,7 @@ const RunConfigRow: Component<{
           </Show>
           <div class={a.formRow}>
             <button class={a.smallBtn} onClick={saveEnv} disabled={duplicateEnvKeys().length > 0}>Save</button>
-            <button class={a.smallBtn} onClick={() => setEditing(false)}>Cancel</button>
+            <button class={a.smallBtn} onClick={() => setEditingEnv(false)}>Cancel</button>
           </div>
         </div>
       </Show>

@@ -2641,7 +2641,11 @@ pub(crate) async fn create_pty(
     );
     state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
     state.terminal_rows.insert(session_id.clone(), std::sync::atomic::AtomicU16::new(rows));
-    state.session_states.insert(session_id.clone(), crate::state::SessionState::default());
+    let mut ss = crate::state::SessionState::default();
+    if config.agent_type.is_some() {
+        ss.agent_type = config.agent_type;
+    }
+    state.session_states.insert(session_id.clone(), ss);
 
     spawn_reader_thread(
         reader,
@@ -2869,7 +2873,11 @@ pub(crate) async fn create_pty_with_worktree(
     );
     state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
     state.terminal_rows.insert(session_id.clone(), std::sync::atomic::AtomicU16::new(pty_rows));
-    state.session_states.insert(session_id.clone(), crate::state::SessionState::default());
+    let mut ss = crate::state::SessionState::default();
+    if pty_config.agent_type.is_some() {
+        ss.agent_type = pty_config.agent_type;
+    }
+    state.session_states.insert(session_id.clone(), ss);
 
     spawn_reader_thread(
         reader,
@@ -3481,30 +3489,48 @@ pub(crate) fn classify_agent(process_name: &str) -> Option<&'static str> {
 /// Get the foreground process of a PTY session and classify it as a known agent.
 /// Returns the agent name (e.g. "claude") or None if the foreground process is
 /// not a recognized agent or the session doesn't exist.
+///
+/// When the foreground is a non-shell process that `classify_agent` doesn't
+/// recognise (custom aliases, symlinks, wrapper scripts like "C2"), falls back
+/// to the pre-set `session_states.agent_type` so run-config launches are
+/// detected correctly without hardcoding every possible alias.
 #[tauri::command]
 pub(crate) fn get_session_foreground_process(
     state: State<'_, Arc<AppState>>,
     session_id: String,
 ) -> Option<String> {
-    let detected: Option<String> = {
+    const SHELLS: &[&str] = &[
+        "zsh", "bash", "fish", "sh", "dash", "ksh", "csh", "tcsh",
+        "nushell", "nu", "powershell", "pwsh", "cmd",
+    ];
+
+    let (detected, fg_is_shell) = {
         let entry = state.sessions.get(&session_id)?;
         let session = entry.value().lock();
         #[cfg(not(windows))]
         {
             let pgid = session.master.process_group_leader()?;
             let name = process_name_from_pid(pgid as u32)?;
-            classify_agent(&name).map(|s| s.to_string())
+            let is_shell = SHELLS.contains(&name.as_str());
+            (classify_agent(&name).map(|s| s.to_string()), is_shell)
         }
         #[cfg(windows)]
         {
-            // On Windows, walk the process tree from the shell child to find the
-            // deepest descendant — the equivalent of the "foreground process".
             let child_pid = session._child.process_id()?;
             let leaf = deepest_descendant_pid(child_pid)?;
             let name = process_name_from_pid(leaf)?;
-            classify_agent(&name).map(|s| s.to_string())
+            let is_shell = SHELLS.contains(&name.as_str());
+            (classify_agent(&name).map(|s| s.to_string()), is_shell)
         }
     };
+
+    // Fallback: unrecognised non-shell foreground + pre-set agent type → use preset.
+    // Covers custom commands (aliases, symlinks, wrappers) from run configs.
+    let effective = detected.clone().or_else(|| {
+        if fg_is_shell { return None; }
+        state.session_states.get(&session_id)
+            .and_then(|s| s.agent_type.clone())
+    });
 
     // Mirror the detected agent type into session_states so the PTY reader's
     // `agent_active_for_parse` check flips on and plain-prefix structured
@@ -3524,13 +3550,13 @@ pub(crate) fn get_session_foreground_process(
     // gates off while the UI still shows the agent active. Session teardown
     // clears session_states entirely, so no explicit reset is needed here.
     if let Some(mut entry) = state.session_states.get_mut(&session_id)
-        && detected.is_some()
-        && entry.agent_type != detected
+        && effective.is_some()
+        && entry.agent_type != effective
     {
-        entry.agent_type = detected.clone();
+        entry.agent_type = effective.clone();
     }
 
-    detected
+    effective
 }
 
 /// Check if a PTY session has a non-shell foreground process running.
