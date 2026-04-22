@@ -91,7 +91,15 @@
           Nightly Builds
         </a>
       </div>
-      <img src="/screenshot.png" alt="TUICommander — multiple agents, split panes, sidebar with repos" class="hero-screenshot" loading="eager" />
+      <div class="hero-video" id="hero-video">
+        <img src="/screenshot.png" alt="TUICommander — multiple agents, split panes, sidebar with repos" class="hero-screenshot" loading="eager" />
+        <button class="hero-play-btn" aria-label="Play demo video" type="button">
+          <svg viewBox="0 0 68 68" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="34" cy="34" r="34" fill="rgba(0,0,0,0.6)"/>
+            <polygon points="27,20 27,48 50,34" fill="#fff"/>
+          </svg>
+        </button>
+      </div>
       <div class="hero-platforms">
         <span>macOS</span>
         <span>&middot;</span>
@@ -808,6 +816,20 @@ Use <span class="str">`gh pr create`</span>.
         }
       }
     })();
+  </script>
+  <script>
+    document.getElementById('hero-video').addEventListener('click', function() {
+      var el = this;
+      if (el.dataset.active) return;
+      el.dataset.active = '1';
+      var iframe = document.createElement('iframe');
+      iframe.src = 'https://www.youtube-nocookie.com/embed/YBtD9g-PFJs?autoplay=1&rel=0';
+      iframe.allow = 'autoplay; encrypted-media';
+      iframe.allowFullscreen = true;
+      iframe.className = 'hero-video-iframe';
+      el.innerHTML = '';
+      el.appendChild(iframe);
+    });
   </script>
 </body>
 </html>
