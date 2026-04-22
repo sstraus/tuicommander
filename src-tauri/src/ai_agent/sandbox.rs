@@ -116,7 +116,7 @@ impl FileSandbox {
     ) -> Result<PathBuf, String> {
         // Try the sandbox root first.
         match self.resolve_for_write(path) {
-            Ok(p) => return Ok(p),
+            Ok(p) => Ok(p),
             Err(sandbox_err) => {
                 // Check if the path falls under any of the extra roots.
                 let p = Path::new(path);

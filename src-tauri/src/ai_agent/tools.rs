@@ -641,10 +641,10 @@ fn resolve_file_path(sandbox: &FileSandbox, path: &str, _unrestricted: bool) -> 
 /// form `/private/tmp` (since `/tmp` is a symlink on macOS).
 fn extra_write_roots() -> Vec<std::path::PathBuf> {
     let mut roots = vec![std::path::PathBuf::from("/tmp")];
-    if let Ok(canon) = std::path::Path::new("/tmp").canonicalize() {
-        if canon != std::path::Path::new("/tmp") {
-            roots.push(canon);
-        }
+    if let Ok(canon) = std::path::Path::new("/tmp").canonicalize()
+        && canon != std::path::Path::new("/tmp")
+    {
+        roots.push(canon);
     }
     roots
 }

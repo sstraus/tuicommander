@@ -123,48 +123,61 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
     isActive: boolean;
   };
 
-  const liveTerminals = createMemo(() => {
+  /** Build a fresh row from the live store. Called at render time so every
+   *  store mutation (intent, status, last-prompt, …) flows through immediately
+   *  instead of waiting for the 10s order snapshot. */
+  const buildRow = (id: string): TerminalRow | null => {
+    const term = terminalsStore.get(id);
+    if (!term) return null;
+    const status = getTerminalStatus(term.shellState, term.awaitingInput, term.sessionId);
+    return {
+      id,
+      name: term.name,
+      project: projectName(term.cwd),
+      agent: term.agentType || "shell",
+      status,
+      lastDataAt: terminalsStore.getLastDataAt(id),
+      lastPrompt: term.lastPrompt,
+      agentIntent: term.agentIntent,
+      // Claude Code spinner verbs are decorative garbage — suppress them
+      currentTask: term.agentType === "claude" ? null : term.currentTask,
+      activeSubTasks: term.activeSubTasks,
+      isActive: terminalsStore.state.activeId === id,
+    };
+  };
+
+  /** Order-only snapshot: list of ids sorted by lastDataAt. Row *contents*
+   *  remain live — only the sort order is stabilised. */
+  const liveOrder = createMemo(() => {
     const ids = terminalsStore.getAttachedIds();
-    const filtered = ids.map((id) => {
-      const term = terminalsStore.get(id);
-      if (!term) return null;
-      const status = getTerminalStatus(term.shellState, term.awaitingInput, term.sessionId);
-      return {
-        id,
-        name: term.name,
-        project: projectName(term.cwd),
-        agent: term.agentType || "shell",
-        status,
-        lastDataAt: terminalsStore.getLastDataAt(id),
-        lastPrompt: term.lastPrompt,
-        agentIntent: term.agentIntent,
-        // Claude Code spinner verbs are decorative garbage — suppress them
-        currentTask: term.agentType === "claude" ? null : term.currentTask,
-        activeSubTasks: term.activeSubTasks,
-        isActive: terminalsStore.state.activeId === id,
-      };
-    }).filter(Boolean) as TerminalRow[];
-    return filtered.sort((a, b) => (b.lastDataAt ?? 0) - (a.lastDataAt ?? 0));
+    return ids
+      .map((id) => ({ id, t: terminalsStore.getLastDataAt(id) ?? 0 }))
+      .sort((a, b) => b.t - a.t)
+      .map((x) => x.id);
   });
 
-  // Snapshot sort order every 10s so rows don't reshuffle on every store mutation.
+  // Snapshot sort order every 10s so rows don't reshuffle on every mutation.
   // New items/removals trigger an immediate snapshot via count change.
-  const [snapshot, setSnapshot] = createSignal<TerminalRow[]>(liveTerminals());
+  const [orderSnapshot, setOrderSnapshot] = createSignal<string[]>(liveOrder());
   createEffect(() => {
     if (!isOpen()) return;
-    const interval = setInterval(() => setSnapshot(liveTerminals()), 10_000);
+    const interval = setInterval(() => setOrderSnapshot(liveOrder()), 10_000);
     onCleanup(() => clearInterval(interval));
   });
 
-  let prevCount = liveTerminals().length;
-  const terminals = createMemo(() => {
-    const current = liveTerminals();
+  let prevCount = liveOrder().length;
+  const orderedIds = createMemo(() => {
+    const current = liveOrder();
     if (current.length !== prevCount) {
       prevCount = current.length;
-      setSnapshot(current);
+      setOrderSnapshot(current);
     }
-    return snapshot();
+    return orderSnapshot();
   });
+
+  const terminals = createMemo(() =>
+    orderedIds().map(buildRow).filter(Boolean) as TerminalRow[],
+  );
 
   return (
     <Show when={isOpen()}>
