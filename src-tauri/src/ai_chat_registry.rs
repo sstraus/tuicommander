@@ -17,6 +17,7 @@ use tokio::sync::Mutex;
 /// Events pushed to each subscriber's Channel.
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[allow(dead_code)]
 pub enum ChatEvent {
     Snapshot(ConversationStateSnapshot),
     Chunk { delta: String },
@@ -261,11 +262,13 @@ impl ChatRegistry {
     }
 
     /// Number of active chats (for testing/debug).
+    #[allow(dead_code)]
     pub fn chat_count(&self) -> usize {
         self.chats.len()
     }
 
     /// Number of subscribers for a chat (for testing/debug).
+    #[allow(dead_code)]
     pub async fn subscriber_count(&self, chat_id: &str) -> usize {
         match self.chats.get(chat_id) {
             Some(slot) => slot.lock().await.subscribers.len(),
@@ -418,12 +421,15 @@ impl ConversationState {
     pub fn push_message(&mut self, msg: ChatMessage) {
         self.messages.push(msg);
     }
+    #[allow(dead_code)]
     pub fn messages(&self) -> &[ChatMessage] {
         &self.messages
     }
+    #[allow(dead_code)]
     pub fn streaming_text(&self) -> &str {
         &self.streaming_text
     }
+    #[allow(dead_code)]
     pub fn is_streaming(&self) -> bool {
         self.is_streaming
     }

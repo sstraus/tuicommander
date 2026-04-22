@@ -911,6 +911,7 @@ pub(crate) async fn stream_ai_chat(
 
 /// Stream LLM response with ~50ms chunk batching to avoid IPC saturation.
 /// Returns the full response text on success.
+#[allow(clippy::too_many_arguments)]
 async fn stream_with_batching(
     client: genai::Client,
     model: &str,

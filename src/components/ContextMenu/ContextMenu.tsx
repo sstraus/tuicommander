@@ -201,21 +201,28 @@ export const ContextMenu: Component<ContextMenuProps> = (props) => {
 export function createContextMenu() {
   const [visible, setVisible] = createSignal(false);
   const [position, setPosition] = createSignal({ x: 0, y: 0 });
+  let previousFocus: HTMLElement | null = null;
 
   const open = (e: MouseEvent) => {
     e.preventDefault();
+    previousFocus = document.activeElement as HTMLElement | null;
     setPosition({ x: e.clientX, y: e.clientY });
     setVisible(true);
   };
 
   /** Open the menu at specific coordinates (for programmatic positioning) */
   const openAt = (x: number, y: number) => {
+    previousFocus = document.activeElement as HTMLElement | null;
     setPosition({ x, y });
     setVisible(true);
   };
 
   const close = () => {
     setVisible(false);
+    if (previousFocus) {
+      requestAnimationFrame(() => previousFocus?.focus());
+      previousFocus = null;
+    }
   };
 
   return {
