@@ -405,10 +405,10 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
 
     try {
       const lineRange = startLine === endLine ? `L${startLine}` : `L${startLine}-L${endLine}`;
-      const sanitize = (s: string) => s.replace(/[\r\n\0]/g, " ");
-      const codeSnippet = lines.map((l) => `${l.type}${sanitize(l.content)}`).join("; ");
+      const sanitize = (s: string) => s.replace(/[\r\0]/g, "");
+      const codeSnippet = lines.map((l) => `${l.type}${sanitize(l.content)}`).join("\n");
 
-      const message = `[${sanitize(props.filePath)}:${lineRange}] ${codeSnippet} — ${text}`;
+      const message = `[${props.filePath.replace(/[\r\n\0]/g, "")}:${lineRange}]\n${codeSnippet}\n— ${text}`;
 
       await pty.sendCommand(term.sessionId, message, term.agentType);
 
