@@ -349,7 +349,7 @@ mod tests {
 
     #[test]
     fn resolve_for_write_with_extra_roots_allows_extra_root() {
-        let (dir, sb) = sandbox();
+        let (_dir, sb) = sandbox();
         let extra = TempDir::new().unwrap();
         let extra_roots = vec![extra.path().canonicalize().unwrap()];
         let target = extra.path().join("output.txt");

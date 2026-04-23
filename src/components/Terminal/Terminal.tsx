@@ -218,9 +218,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
   let resizeTimer: ReturnType<typeof setTimeout> | undefined;
   // ResizeObserver debounce — coalesces rapid layout changes before fitting
   let resizeObserverTimer: ReturnType<typeof setTimeout> | undefined;
-  // PTY resize debounce — longer than xterm fit to avoid Ink hard-wrapping
-  // at transient narrow widths when panels open/close briefly.
-  let ptyResizeTimer: ReturnType<typeof setTimeout> | undefined;
   // rAF handle for the visibility effect — cancellable on cleanup
   let rafHandle = 0;
 
@@ -1309,23 +1306,14 @@ export const Terminal: Component<TerminalProps> = (props) => {
             cb();
           }
 
-          // Debounce the PTY resize separately from xterm fit. xterm reflows
-          // immediately for correct visuals, but the PTY resize is delayed so
-          // Ink/TUI programs don't hard-wrap at transient narrow widths when
-          // panels open/close briefly. If cols stabilize within 500ms, Ink
-          // never sees the intermediate width → no stale narrow blocks.
+          // Cancel any pending stale onResize debounce — we're about to send
+          // the authoritative dimensions ourselves.
           clearTimeout(resizeTimer);
-          clearTimeout(ptyResizeTimer);
           if (sessionId && terminal && terminal.rows > 0 && terminal.cols > 0) {
-            const rows = terminal.rows;
-            const cols = terminal.cols;
-            ptyResizeTimer = setTimeout(() => {
-              if (sessionId && terminal && terminal.rows === rows && terminal.cols === cols) {
-                pty.resize(sessionId, rows, cols).catch((err) => {
-                  appLogger.error("terminal", "ResizeObserver resize failed", err);
-                });
-              }
-            }, 500);
+
+            pty.resize(sessionId, terminal.rows, terminal.cols).catch((err) => {
+              appLogger.error("terminal", "ResizeObserver resize failed", err);
+            });
           }
         });
       }, 100);
@@ -1356,12 +1344,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
     terminal.onResize(({ rows, cols }) => {
       if (sessionId && rows > 0 && cols > 0) {
-        // Debounce PTY resize to avoid SIGWINCH storms and transient narrow
-        // widths from panel toggles. The 500ms window lets panels open/close
-        // without Ink hard-wrapping at the intermediate width.
+        // Debounce resize calls to avoid SIGWINCH storms during window drag
         clearTimeout(resizeTimer);
-        clearTimeout(ptyResizeTimer);
-        ptyResizeTimer = setTimeout(async () => {
+        resizeTimer = setTimeout(async () => {
           if (sessionId) {
             try {
               await pty.resize(sessionId, rows, cols);
@@ -1369,7 +1354,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
               appLogger.error("terminal", "Failed to resize PTY", err);
             }
           }
-        }, 500);
+        }, 150);
       }
     });
 
@@ -1649,7 +1634,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
   onCleanup(() => {
     clearTimeout(resizeTimer);
     clearTimeout(resizeObserverTimer);
-    clearTimeout(ptyResizeTimer);
     clearTimeout(retryTimer);
     clearTimeout(agentDetectTimer);
     resizeObserver?.disconnect();

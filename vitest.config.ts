@@ -20,6 +20,11 @@ export default defineConfig({
         classNameStrategy: "non-scoped",
       },
     },
+    server: {
+      deps: {
+        inline: ["@git-diff-view/solid", "solid-codemirror"],
+      },
+    },
     environment: "happy-dom",
     globals: true,
     setupFiles: ["src/__tests__/setup.ts"],

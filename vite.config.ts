@@ -57,6 +57,18 @@ export default defineConfig(async () => ({
       exclude: Features.VendorPrefixes,
     },
   },
+  resolve: {
+    dedupe: [
+      "@codemirror/state",
+      "@codemirror/view",
+      "@codemirror/language",
+      "@codemirror/language-data",
+      "@codemirror/commands",
+      "@codemirror/search",
+      "@lezer/common",
+      "@lezer/highlight",
+    ],
+  },
   optimizeDeps: {
     include: [
       "@codemirror/state",

@@ -387,25 +387,11 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
     requestAnimationFrame(() => commentTextareaRef?.focus());
   }
 
-  /** Find the right terminal: active > last active > any with a session. */
-  function findTerminal(): { sessionId: string; agentType: string | null } | null {
-    for (const id of [terminalsStore.state.activeId, terminalsStore.state.lastActiveId]) {
-      if (!id) continue;
-      const terminal = terminalsStore.get(id);
-      if (terminal?.sessionId) return { sessionId: terminal.sessionId, agentType: terminal.agentType ?? null };
-    }
-    for (const id of terminalsStore.getIds()) {
-      const terminal = terminalsStore.get(id);
-      if (terminal?.sessionId) return { sessionId: terminal.sessionId, agentType: terminal.agentType ?? null };
-    }
-    return null;
-  }
-
   async function handleCommentSend() {
     const text = commentText().trim();
     if (!text) return;
 
-    const term = findTerminal();
+    const term = terminalsStore.findTerminalWithSession();
     if (!term) {
       setCommentError("No terminal with active session — open a terminal first");
       return;

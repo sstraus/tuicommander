@@ -31,6 +31,7 @@ vi.mock("../../stores/repositories", () => ({
     getActive: mockGetActive,
     get: vi.fn(() => undefined),
     getGroupForRepo: vi.fn(() => undefined),
+    getRevision: vi.fn(() => 0),
   },
 }));
 

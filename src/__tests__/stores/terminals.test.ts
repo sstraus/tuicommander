@@ -438,6 +438,125 @@ describe("terminalsStore", () => {
     });
   });
 
+  describe("lastActiveId", () => {
+    it("is set when setActive is called with a valid ID", () => {
+      testInScope(() => {
+        const id = store.add(makeTerminal());
+        store.setActive(id);
+        expect(store.state.lastActiveId).toBe(id);
+      });
+    });
+
+    it("persists after setActive(null)", () => {
+      testInScope(() => {
+        const id = store.add(makeTerminal());
+        store.setActive(id);
+        store.setActive(null);
+        expect(store.state.activeId).toBeNull();
+        expect(store.state.lastActiveId).toBe(id);
+      });
+    });
+
+    it("updates to the latest active terminal", () => {
+      testInScope(() => {
+        const id1 = store.add(makeTerminal({ name: "T1" }));
+        const id2 = store.add(makeTerminal({ name: "T2" }));
+        store.setActive(id1);
+        store.setActive(id2);
+        expect(store.state.lastActiveId).toBe(id2);
+      });
+    });
+
+    it("is cleared when the lastActive terminal is removed", () => {
+      testInScope(() => {
+        const id = store.add(makeTerminal());
+        store.setActive(id);
+        store.setActive(null);
+        expect(store.state.lastActiveId).toBe(id);
+        store.remove(id);
+        expect(store.state.lastActiveId).toBeNull();
+      });
+    });
+
+    it("is not cleared when a different terminal is removed", () => {
+      testInScope(() => {
+        const id1 = store.add(makeTerminal({ name: "T1" }));
+        const id2 = store.add(makeTerminal({ name: "T2" }));
+        store.setActive(id1);
+        store.remove(id2);
+        expect(store.state.lastActiveId).toBe(id1);
+      });
+    });
+
+    it("is not set when setActive is called with null and no previous active", () => {
+      testInScope(() => {
+        store.setActive(null);
+        expect(store.state.lastActiveId).toBeNull();
+      });
+    });
+  });
+
+  describe("findTerminalWithSession()", () => {
+    it("returns active terminal when it has a session", () => {
+      testInScope(() => {
+        const id = store.add(makeTerminal({ sessionId: "s1" }));
+        store.setActive(id);
+        const result = store.findTerminalWithSession();
+        expect(result).toEqual({ sessionId: "s1", agentType: null });
+      });
+    });
+
+    it("falls back to lastActiveId when active has no session", () => {
+      testInScope(() => {
+        const id1 = store.add(makeTerminal({ name: "T1", sessionId: "s1" }));
+        const id2 = store.add(makeTerminal({ name: "T2" }));
+        store.setActive(id1);
+        store.setActive(id2);
+        // id2 is active but has no session, id1 is lastActiveId (from previous setActive)
+        // Actually both calls update lastActiveId, so lastActiveId = id2 too.
+        // Let's set active to null to use lastActiveId
+        store.setActive(id1);
+        store.setActive(null);
+        // Now activeId=null, lastActiveId=id1 (which has session)
+        const result = store.findTerminalWithSession();
+        expect(result).toEqual({ sessionId: "s1", agentType: null });
+      });
+    });
+
+    it("falls back to any terminal with a session", () => {
+      testInScope(() => {
+        store.add(makeTerminal({ name: "T1" }));
+        store.add(makeTerminal({ name: "T2", sessionId: "s2" }));
+        // No active terminal set
+        const result = store.findTerminalWithSession();
+        expect(result?.sessionId).toBe("s2");
+      });
+    });
+
+    it("returns null when no terminal has a session", () => {
+      testInScope(() => {
+        store.add(makeTerminal({ name: "T1" }));
+        store.add(makeTerminal({ name: "T2" }));
+        expect(store.findTerminalWithSession()).toBeNull();
+      });
+    });
+
+    it("returns null when no terminals exist", () => {
+      testInScope(() => {
+        expect(store.findTerminalWithSession()).toBeNull();
+      });
+    });
+
+    it("includes agentType when terminal has one", () => {
+      testInScope(() => {
+        const id = store.add(makeTerminal({ sessionId: "s1", agentType: "claude" }));
+        store.setActive(id);
+        const result = store.findTerminalWithSession();
+        expect(result).toEqual({ sessionId: "s1", agentType: "claude" });
+      });
+    });
+  });
+
   describe("getCount()", () => {
     it("returns terminal count", () => {
       testInScope(() => {

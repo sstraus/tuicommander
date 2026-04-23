@@ -493,6 +493,20 @@ function createTerminalsStore() {
       return state.activeId ? state.terminals[state.activeId] : undefined;
     },
 
+    /** Find the best terminal with an active PTY session: active > lastActive > any. */
+    findTerminalWithSession(): { sessionId: string; agentType: string | null } | null {
+      for (const id of [state.activeId, state.lastActiveId]) {
+        if (!id) continue;
+        const t = state.terminals[id];
+        if (t?.sessionId) return { sessionId: t.sessionId, agentType: t.agentType ?? null };
+      }
+      for (const id of Object.keys(state.terminals)) {
+        const t = state.terminals[id];
+        if (t?.sessionId) return { sessionId: t.sessionId, agentType: t.agentType ?? null };
+      }
+      return null;
+    },
+
     /** Get all terminal IDs */
     getIds(): string[] {
       return Object.keys(state.terminals);
