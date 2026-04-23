@@ -65,7 +65,10 @@ export async function sendCommand(
 ): Promise<void> {
   const skipPrefix = !agentType && isWindowsNative(shellFamily);
   const prefix = skipPrefix ? "" : "\x15";
-  await writeFn(prefix + text);
+  const payload = text.includes("\n")
+    ? `\x1b[200~${text}\x1b[201~`
+    : text;
+  await writeFn(prefix + payload);
   await writeFn("\r");
 }
 

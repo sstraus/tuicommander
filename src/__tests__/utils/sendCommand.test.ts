@@ -80,6 +80,20 @@ describe("sendCommand", () => {
     expect(calls).toEqual(["dir", "\r"]);
   });
 
+  it("wraps multi-line text in bracketed paste sequences", async () => {
+    setPlatform("MacIntel");
+    const { writeFn, calls } = makeRecorder();
+    await sendCommand(writeFn, "line1\nline2", null, "posix");
+    expect(calls).toEqual(["\x15\x1b[200~line1\nline2\x1b[201~", "\r"]);
+  });
+
+  it("does not wrap single-line text in bracketed paste", async () => {
+    setPlatform("MacIntel");
+    const { writeFn, calls } = makeRecorder();
+    await sendCommand(writeFn, "single line", null, "posix");
+    expect(calls).toEqual(["\x15single line", "\r"]);
+  });
+
   it("sends Enter as a separate write regardless of prefix decision", async () => {
     setPlatform("MacIntel");
     const { writeFn, calls } = makeRecorder();
