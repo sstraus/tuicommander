@@ -7,6 +7,7 @@ import { usePty } from "./usePty";
 import { invoke } from "../invoke";
 import { appLogger } from "../stores/appLogger";
 import { isWindows } from "../platform";
+import { isTauri } from "../transport";
 
 export interface SmartPromptResult {
   ok: boolean;
@@ -197,9 +198,12 @@ export function useSmartPrompts() {
     if (!active?.sessionId) return { ok: false, reason: "No active terminal" };
 
     try {
-      if (prompt.autoExecute === false) {
-        // Just inject text, no Enter. Skip Ctrl-U prefix on native Windows
-        // shells without a detected agent (cmd.exe/PowerShell echo it literally).
+      // DEFERRED (2026-04-23) — Desktop compose routing bypasses autoExecute=false.
+      // All prompts go to ComposePanel where the user decides to send or not.
+      // This is intentional: ComposePanel replaces the "inject without execute" behavior.
+      if (isTauri() && active.ref?.openComposeWithText) {
+        active.ref.openComposeWithText(content);
+      } else if (prompt.autoExecute === false) {
         const prefix = isWindows() && !active.agentType ? "" : "\x15";
         await pty.write(active.sessionId, prefix + content);
       } else {

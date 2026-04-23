@@ -26,6 +26,37 @@ export function useSidebarDragDrop() {
     setDragOverGroupSide(null);
   };
 
+  const findLastItem = (x: number, y: number): { type: "repo"; path: string } | { type: "group"; groupId: string } | null => {
+    const el = document.elementFromPoint(x, y);
+    // Check if we're inside the sidebar at all
+    const sidebar = el?.closest("#sidebar") ?? document.getElementById("sidebar");
+    if (!sidebar) return null;
+    const sidebarRect = sidebar.getBoundingClientRect();
+    if (x < sidebarRect.left || x > sidebarRect.right || y < sidebarRect.top || y > sidebarRect.bottom) return null;
+
+    // Find all repo/group items and pick the last one by visual position
+    const repos = sidebar.querySelectorAll<HTMLElement>("[data-sidebar-repo]");
+    const groups = sidebar.querySelectorAll<HTMLElement>("[data-sidebar-group]");
+    let lastEl: HTMLElement | null = null;
+    let lastBottom = 0;
+    let lastType: "repo" | "group" = "repo";
+
+    repos.forEach((r) => {
+      const b = r.getBoundingClientRect().bottom;
+      if (b > lastBottom) { lastBottom = b; lastEl = r; lastType = "repo"; }
+    });
+    groups.forEach((g) => {
+      const b = g.getBoundingClientRect().bottom;
+      if (b > lastBottom) { lastBottom = b; lastEl = g; lastType = "group"; }
+    });
+
+    // Only activate if cursor is below the last item
+    if (!lastEl || y < lastBottom) return null;
+
+    if (lastType === "repo") return { type: "repo", path: (lastEl as HTMLElement).dataset.sidebarRepo! };
+    return { type: "group", groupId: (lastEl as HTMLElement).dataset.sidebarGroup! };
+  };
+
   const updateHover = (x: number, y: number, payload: DragPayload) => {
     const el = document.elementFromPoint(x, y);
     const repoEl = el?.closest("[data-sidebar-repo]") as HTMLElement | null;
@@ -56,6 +87,24 @@ export function useSidebarDragDrop() {
       setDragOverRepoPath(null);
       setDragOverSide(null);
     } else {
+      const last = findLastItem(x, y);
+      if (last?.type === "repo") {
+        if (!(payload.type === "repo" && last.path === payload.path)) {
+          setDragOverRepoPath(last.path);
+          setDragOverSide("bottom");
+          setDragOverGroupId(null);
+          setDragOverGroupSide(null);
+          return;
+        }
+      } else if (last?.type === "group") {
+        if (!(payload.type === "group" && last.groupId === payload.groupId)) {
+          setDragOverGroupId(last.groupId);
+          setDragOverGroupSide("bottom");
+          setDragOverRepoPath(null);
+          setDragOverSide(null);
+          return;
+        }
+      }
       setDragOverRepoPath(null);
       setDragOverSide(null);
       setDragOverGroupId(null);
@@ -65,8 +114,18 @@ export function useSidebarDragDrop() {
 
   const performDrop = (x: number, y: number, payload: DragPayload) => {
     const el = document.elementFromPoint(x, y);
-    const repoEl = el?.closest("[data-sidebar-repo]") as HTMLElement | null;
-    const groupEl = el?.closest("[data-sidebar-group]") as HTMLElement | null;
+    let repoEl = el?.closest("[data-sidebar-repo]") as HTMLElement | null;
+    let groupEl = el?.closest("[data-sidebar-group]") as HTMLElement | null;
+
+    // Fallback: cursor is in the list container but below all items → treat as last item
+    if (!repoEl && !groupEl) {
+      const last = findLastItem(x, y);
+      if (last?.type === "repo") {
+        repoEl = document.querySelector(`[data-sidebar-repo="${CSS.escape(last.path)}"]`) as HTMLElement | null;
+      } else if (last?.type === "group") {
+        groupEl = document.querySelector(`[data-sidebar-group="${CSS.escape(last.groupId)}"]`) as HTMLElement | null;
+      }
+    }
 
     if (repoEl && payload.type === "repo") {
       const targetPath = repoEl.dataset.sidebarRepo!;

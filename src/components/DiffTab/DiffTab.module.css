@@ -96,6 +96,11 @@
   border-color: var(--error);
 }
 
+/* Hover hint on add/del rows — cursor shows they're selectable */
+.diffWrapper :global(.diff-tailwindcss-wrapper) tr[data-state="diff"] {
+  cursor: pointer;
+}
+
 /* Line-level selection highlight */
 :global(.diff-tailwindcss-wrapper) tr.lineSelected {
   outline: 1px solid var(--accent);
@@ -107,12 +112,23 @@
   background: inherit !important;
 }
 
-/* Floating bar for restoring selected lines */
-.restoreSelectedBar {
+/* Sticky container for selection bar + comment box */
+.selectionFloater {
   position: sticky;
   bottom: 8px;
-  left: 50%;
-  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.selectionFloater > * {
+  pointer-events: auto;
+}
+
+.selectionBar {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -121,9 +137,7 @@
   border: 1px solid var(--accent);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-dropdown);
-  z-index: 10;
   width: fit-content;
-  margin: 0 auto;
 }
 
 .restoreSelectedBtn {
@@ -140,6 +154,26 @@
 
 .restoreSelectedBtn:hover {
   background: var(--accent-hover);
+}
+
+.commentBtn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  background: var(--bg-highlight);
+  color: var(--fg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.commentBtn:hover {
+  background: var(--bg-tertiary);
+  color: var(--fg-primary);
 }
 
 .clearSelectionBtn {
@@ -159,4 +193,90 @@
 .clearSelectionBtn:hover {
   color: var(--fg-primary);
   background: var(--bg-highlight);
+}
+
+/* Comment box (stacked above selection bar inside floater) */
+.commentBox {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-dropdown);
+  width: min(480px, calc(100vw - 64px));
+}
+
+.commentTextarea {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--bg-primary);
+  color: var(--fg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
+  font-family: inherit;
+  resize: vertical;
+  min-height: 60px;
+  outline: none;
+}
+
+.commentTextarea:focus {
+  border-color: var(--accent);
+}
+
+.commentActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.commentHint {
+  color: var(--fg-muted);
+  font-size: var(--font-xs);
+  margin-right: auto;
+}
+
+.commentCancelBtn {
+  padding: 4px 10px;
+  background: none;
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
+  cursor: pointer;
+}
+
+.commentCancelBtn:hover {
+  color: var(--fg-primary);
+  background: var(--bg-highlight);
+}
+
+.commentSendBtn {
+  padding: 4px 12px;
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.commentSendBtn:hover {
+  background: var(--accent-hover);
+}
+
+.commentSendBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.commentErrorMsg {
+  color: var(--error);
+  font-size: var(--font-xs);
+  padding: 0 2px;
 }

@@ -6,6 +6,7 @@ import { usePty } from "../../hooks/usePty";
 import { appLogger } from "../../stores/appLogger";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
+import { isTauri } from "../../transport";
 import { KeyComboCapture } from "../shared/KeyComboCapture";
 import { useConfirmDialog } from "../../hooks/useConfirmDialog";
 import { ConfirmDialog } from "../ConfirmDialog";
@@ -152,14 +153,16 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
     const activeTerminal = terminalsStore.getActive();
     if (!activeTerminal?.sessionId) return;
 
-    let content = await promptLibraryStore.processContent(prompt, variables);
-
-    if (executeImmediately) {
-      content += "\n";
-    }
+    const content = await promptLibraryStore.processContent(prompt, variables);
 
     try {
-      await pty.write(activeTerminal.sessionId, content);
+      // Desktop: route through compose panel for review
+      if (isTauri() && activeTerminal.ref?.openComposeWithText) {
+        activeTerminal.ref.openComposeWithText(content);
+      } else {
+        const toWrite = executeImmediately ? content + "\n" : content;
+        await pty.write(activeTerminal.sessionId, toWrite);
+      }
       promptLibraryStore.markAsUsed(prompt.id);
       promptLibraryStore.closeDrawer();
       props.onClose?.();

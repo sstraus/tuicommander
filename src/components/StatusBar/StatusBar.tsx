@@ -16,7 +16,9 @@ import { activePrStatus } from "../../utils/mergedPrGrace";
 import { getModifierSymbol, shortenHomePath } from "../../platform";
 import { t } from "../../i18n";
 import { appLogger } from "../../stores/appLogger";
+import { repositoriesStore } from "../../stores/repositories";
 import { cx } from "../../utils";
+import { invoke } from "../../invoke";
 import s from "./StatusBar.module.css";
 
 export interface StatusBarProps {
@@ -143,6 +145,18 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
   const github = useGitHub(getRepoPath);
 
   const notesBadgeCount = () => notesStore.filteredCount(props.currentRepoPath ?? null);
+
+  const [changesCount, setChangesCount] = createSignal(0);
+  createEffect(() => {
+    const repoPath = props.currentRepoPath;
+    if (!repoPath) { setChangesCount(0); return; }
+    void repositoriesStore.getRevision(repoPath);
+    let cancelled = false;
+    onCleanup(() => { cancelled = true; });
+    invoke<{ staged: unknown[]; unstaged: unknown[]; untracked: string[] }>("get_working_tree_status", { path: repoPath })
+      .then((st) => { if (!cancelled) setChangesCount(st.staged.length + st.unstaged.length + st.untracked.length); })
+      .catch((err) => { if (!cancelled) { appLogger.warn("git", "get_working_tree_status failed", { repoPath, error: err }); setChangesCount(0); } });
+  });
 
   // PR data with lifecycle rules (CLOSED: hidden, MERGED: grace period, OPEN: shown).
   // Re-evaluates every second so the merged grace period ticks down (driven by sharedTimer above).
@@ -291,6 +305,9 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
         </button>
         <button class="toggle-btn" onClick={props.onToggleDiff} title={`${t("statusBar.git", "Git")} (${getModifierSymbol()}⇧D)`} style={{ position: "relative" }}>
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 7H7v2H5v2h2v2h2v-2h2V9H9V7zm7 2h4v2h-4V9zm0 4h4v2h-4v-2zM5 19h14v2H5v-2zM5 3h14v2H5V3z"/></svg>
+          <Show when={changesCount() > 0}>
+            <span class={s.toggleBadge}>{changesCount()}</span>
+          </Show>
         </button>
 
         <Show when={settingsStore.isAiChatEnabled()}>

@@ -716,6 +716,19 @@ section {
 .partial {
   color: var(--warning);
 }
+.badge-beta {
+  display: inline-block;
+  font-size: 0.55em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.15em 0.5em;
+  border-radius: 4px;
+  background: var(--warning);
+  color: var(--bg);
+  vertical-align: middle;
+  margin-left: 0.3em;
+}
 
 /* ============================================
    TERMINAL FEATURES

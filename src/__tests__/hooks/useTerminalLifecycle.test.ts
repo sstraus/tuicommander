@@ -543,7 +543,7 @@ describe("useTerminalLifecycle", () => {
       const mockClear = vi.fn();
       const id = terminalsStore.add(makeTerminal({ name: "T1" }));
       terminalsStore.setActive(id);
-      terminalsStore.update(id, { ref: { clear: mockClear, fit: vi.fn(), write: vi.fn(), writeln: vi.fn(), input: vi.fn(), focus: vi.fn(), getSessionId: vi.fn(), getSelection: vi.fn(() => ""), openSearch: vi.fn(), closeSearch: vi.fn(), searchBuffer: vi.fn(() => []), scrollToLine: vi.fn(), scrollToTop: vi.fn(), scrollToBottom: vi.fn(), scrollPages: vi.fn(), getBufferLines: vi.fn(() => []), refresh: vi.fn() } });
+      terminalsStore.update(id, { ref: { clear: mockClear, fit: vi.fn(), write: vi.fn(), writeln: vi.fn(), input: vi.fn(), focus: vi.fn(), getSessionId: vi.fn(), getSelection: vi.fn(() => ""), openSearch: vi.fn(), closeSearch: vi.fn(), toggleCompose: vi.fn(), openComposeWithText: vi.fn(), searchBuffer: vi.fn(() => []), scrollToLine: vi.fn(), scrollToTop: vi.fn(), scrollToBottom: vi.fn(), scrollPages: vi.fn(), getBufferLines: vi.fn(() => []), refresh: vi.fn() } });
 
       lifecycle.clearTerminal();
       expect(mockClear).toHaveBeenCalled();
@@ -704,7 +704,7 @@ describe("useTerminalLifecycle", () => {
       const id = terminalsStore.add(makeTerminal({ name: "T1" }));
       terminalsStore.setActive(id);
       terminalsStore.update(id, {
-        ref: { write: mockWrite, clear: vi.fn(), fit: vi.fn(), writeln: vi.fn(), input: vi.fn(), focus: vi.fn(), getSessionId: vi.fn(), getSelection: vi.fn(() => ""), openSearch: vi.fn(), closeSearch: vi.fn(), searchBuffer: vi.fn(() => []), scrollToLine: vi.fn(), scrollToTop: vi.fn(), scrollToBottom: vi.fn(), scrollPages: vi.fn(), getBufferLines: vi.fn(() => []), refresh: vi.fn() },
+        ref: { write: mockWrite, clear: vi.fn(), fit: vi.fn(), writeln: vi.fn(), input: vi.fn(), focus: vi.fn(), getSessionId: vi.fn(), getSelection: vi.fn(() => ""), openSearch: vi.fn(), closeSearch: vi.fn(), toggleCompose: vi.fn(), openComposeWithText: vi.fn(), searchBuffer: vi.fn(() => []), scrollToLine: vi.fn(), scrollToTop: vi.fn(), scrollToBottom: vi.fn(), scrollPages: vi.fn(), getBufferLines: vi.fn(() => []), refresh: vi.fn() },
       });
 
       await lifecycle.pasteToTerminal();

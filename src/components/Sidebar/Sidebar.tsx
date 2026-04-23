@@ -230,7 +230,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
       <div class={s.content}>
         {/* Repository Section */}
         <div>
-          <div class={s.repoList}>
+          <div class={s.repoList} data-sidebar-list>
             {/* Grouped repos */}
             <For each={groupedLayout().groups}>
               {(entry) => (

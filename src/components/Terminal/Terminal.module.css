@@ -98,3 +98,30 @@
 .osc133GutterErr {
   background: var(--red, #f85149);
 }
+
+/* Compose panel tab — bottom edge handle that pulls up the compose panel */
+.composeHint {
+  position: absolute;
+  bottom: 0;
+  left: 12px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-family: var(--font-ui);
+  color: var(--fg-muted);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  cursor: pointer;
+  opacity: 0.5;
+  user-select: none;
+  transition: opacity 0.15s;
+}
+
+.composeHint:hover {
+  opacity: 1;
+  color: var(--fg-primary);
+}

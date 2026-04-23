@@ -1343,6 +1343,10 @@ const App: Component = () => {
     toggleCommandOverview: () => {
       mdTabsStore.addCommandOverview();
     },
+    toggleComposePanel: () => {
+      const active = terminalsStore.getActive();
+      active?.ref?.toggleCompose();
+    },
     newFile: () => {
       const defaultPath = gitOps.activeWorktreePath() || repositoriesStore.state.activeRepoPath || undefined;
       (async () => {
