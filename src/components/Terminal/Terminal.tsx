@@ -32,6 +32,7 @@ import { installRenderObserver } from "./renderObserver";
 import { FlowController } from "./flowControl";
 import { installLinkProvider } from "./linkProvider";
 import { detectAgentForTerminal } from "../../hooks/useAgentPolling";
+import { ComposePanel } from "../ComposePanel";
 import s from "./Terminal.module.css";
 
 
@@ -85,6 +86,17 @@ function currentTheme() {
     scrollbarSliderHoverBackground: "rgba(100, 100, 100, 0.7)",
     scrollbarSliderActiveBackground: "rgba(191, 191, 191, 0.4)",
   };
+}
+
+/** Extract the user's typed (but not submitted) text from the terminal's current line.
+ *  Reads the line at the cursor position and strips common shell prompts. */
+function extractCurrentInput(term: XTerm): string {
+  const buf = term.buffer.active;
+  const absRow = buf.baseY + buf.cursorY;
+  const line = buf.getLine(absRow)?.translateToString(true) ?? "";
+  // Strip common prompt patterns: "user@host:path$ ", "$ ", "> ", "% ", "# ", "❯ ", "→ "
+  const prompted = line.replace(/^.*[$%#❯→>]\s/, "");
+  return prompted.trimEnd();
 }
 
 // Font families mapping
@@ -166,6 +178,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
   // Search overlay state
   const [searchVisible, setSearchVisible] = createSignal(false);
+  // Compose panel state
+  const [composeOpen, setComposeOpen] = createSignal(false);
+  const [pendingComposeText, setPendingComposeText] = createSignal("");
   // WebSocket reconnect state (browser/PWA mode only)
   const [reconnecting, setReconnecting] = createSignal<{ attempt: number; max: number } | null>(null);
   let sessionInitialized = false;
@@ -203,6 +218,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
   let resizeTimer: ReturnType<typeof setTimeout> | undefined;
   // ResizeObserver debounce — coalesces rapid layout changes before fitting
   let resizeObserverTimer: ReturnType<typeof setTimeout> | undefined;
+  // PTY resize debounce — longer than xterm fit to avoid Ink hard-wrapping
+  // at transient narrow widths when panels open/close briefly.
+  let ptyResizeTimer: ReturnType<typeof setTimeout> | undefined;
   // rAF handle for the visibility effect — cancellable on cleanup
   let rafHandle = 0;
 
@@ -1291,14 +1309,23 @@ export const Terminal: Component<TerminalProps> = (props) => {
             cb();
           }
 
-          // Cancel any pending stale onResize debounce — we're about to send
-          // the authoritative dimensions ourselves.
+          // Debounce the PTY resize separately from xterm fit. xterm reflows
+          // immediately for correct visuals, but the PTY resize is delayed so
+          // Ink/TUI programs don't hard-wrap at transient narrow widths when
+          // panels open/close briefly. If cols stabilize within 500ms, Ink
+          // never sees the intermediate width → no stale narrow blocks.
           clearTimeout(resizeTimer);
+          clearTimeout(ptyResizeTimer);
           if (sessionId && terminal && terminal.rows > 0 && terminal.cols > 0) {
-
-            pty.resize(sessionId, terminal.rows, terminal.cols).catch((err) => {
-              appLogger.error("terminal", "ResizeObserver resize failed", err);
-            });
+            const rows = terminal.rows;
+            const cols = terminal.cols;
+            ptyResizeTimer = setTimeout(() => {
+              if (sessionId && terminal && terminal.rows === rows && terminal.cols === cols) {
+                pty.resize(sessionId, rows, cols).catch((err) => {
+                  appLogger.error("terminal", "ResizeObserver resize failed", err);
+                });
+              }
+            }, 500);
           }
         });
       }, 100);
@@ -1329,9 +1356,12 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
     terminal.onResize(({ rows, cols }) => {
       if (sessionId && rows > 0 && cols > 0) {
-        // Debounce resize calls to avoid SIGWINCH storms during window drag
+        // Debounce PTY resize to avoid SIGWINCH storms and transient narrow
+        // widths from panel toggles. The 500ms window lets panels open/close
+        // without Ink hard-wrapping at the intermediate width.
         clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(async () => {
+        clearTimeout(ptyResizeTimer);
+        ptyResizeTimer = setTimeout(async () => {
           if (sessionId) {
             try {
               await pty.resize(sessionId, rows, cols);
@@ -1339,7 +1369,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
               appLogger.error("terminal", "Failed to resize PTY", err);
             }
           }
-        }, 150);
+        }, 500);
       }
     });
 
@@ -1619,6 +1649,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
   onCleanup(() => {
     clearTimeout(resizeTimer);
     clearTimeout(resizeObserverTimer);
+    clearTimeout(ptyResizeTimer);
     clearTimeout(retryTimer);
     clearTimeout(agentDetectTimer);
     resizeObserver?.disconnect();
@@ -1673,6 +1704,19 @@ export const Terminal: Component<TerminalProps> = (props) => {
     getSessionId: () => sessionId,
     openSearch: () => setSearchVisible(true),
     closeSearch: () => setSearchVisible(false),
+    toggleCompose: () => {
+      setComposeOpen((prev) => {
+        if (!prev && terminal) {
+          const input = extractCurrentInput(terminal);
+          setPendingComposeText(input);
+        }
+        return !prev;
+      });
+    },
+    openComposeWithText: (text: string) => {
+      setPendingComposeText(text);
+      setComposeOpen(true);
+    },
     searchBuffer: (query: string) => {
       if (!terminal) return [];
       const buf = terminal.buffer.active;
@@ -1751,6 +1795,41 @@ export const Terminal: Component<TerminalProps> = (props) => {
         ref={containerRef}
         class={s.content}
         style={{ width: "100%", height: "100%", opacity: fitted() ? 1 : 0 }}
+      />
+      <Show when={!composeOpen()}>
+        <div
+          class={s.composeHint}
+          onClick={() => setComposeOpen(true)}
+          title="Open compose editor (Cmd+I)"
+        >
+          <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" style={{ "margin-right": "4px", opacity: 0.7 }}>
+            <path d="M12.146.854a.5.5 0 0 1 .708 0l2.292 2.292a.5.5 0 0 1 0 .708L5.854 13.146a.5.5 0 0 1-.233.131l-3.5 1a.5.5 0 0 1-.617-.617l1-3.5a.5.5 0 0 1 .131-.233L12.146.854z" />
+          </svg>
+          Compose ⌘I
+        </div>
+      </Show>
+      <ComposePanel
+        isOpen={composeOpen}
+        initialText={pendingComposeText}
+        onClose={() => {
+          setComposeOpen(false);
+          terminal?.focus();
+        }}
+        onSend={async (text) => {
+          if (sessionId) {
+            try {
+              const term = terminalsStore.get(props.id);
+              await pty.sendCommand(sessionId, text, term?.agentType);
+              setComposeOpen(false);
+              terminal?.focus();
+            } catch (err) {
+              appLogger.error("terminal", "ComposePanel send failed", { sessionId, error: err });
+            }
+          } else {
+            setComposeOpen(false);
+            terminal?.focus();
+          }
+        }}
       />
     </div>
   );

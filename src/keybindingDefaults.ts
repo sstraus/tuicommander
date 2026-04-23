@@ -62,6 +62,7 @@ export const ACTION_NAMES = [
   "open-path",
   "open-secondary-window",
   "command-overview",
+  "toggle-compose-panel",
   // Numbered tabs and branches
   ...Array.from({ length: 9 }, (_, i) => `switch-tab-${i + 1}`),
   ...Array.from({ length: 9 }, (_, i) => `switch-branch-${i + 1}`),
@@ -136,6 +137,7 @@ export const DEFAULT_BINDINGS: Record<ActionName, string> = {
   "open-path": "Cmd+Alt+O",
   "open-secondary-window": "",
   "command-overview": "",
+  "toggle-compose-panel": "Cmd+I",
   // Numbered tabs
   ...Object.fromEntries(
     Array.from({ length: 9 }, (_, i) => [`switch-tab-${i + 1}`, `Cmd+${i + 1}`]),

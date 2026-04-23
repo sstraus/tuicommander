@@ -83,6 +83,8 @@ export interface TerminalRef {
   getSessionId: () => string | null;
   openSearch: () => void;
   closeSearch: () => void;
+  toggleCompose: () => void;
+  openComposeWithText: (text: string) => void;
   /** Search the terminal buffer for a query string (case-insensitive) */
   searchBuffer: (query: string) => TerminalMatch[];
   /** Scroll to an absolute buffer line index (centered in viewport) */
@@ -104,6 +106,8 @@ export interface TerminalState extends TerminalData {
 interface TerminalsStoreState {
   terminals: Record<string, TerminalState>;
   activeId: string | null;
+  /** Last non-null activeId — survives tab switches so non-terminal UI can find the right terminal. */
+  lastActiveId: string | null;
   counter: number;
   /** Tabs currently detached to floating windows: tabId → window label */
   detachedWindows: Record<string, string>;
@@ -119,6 +123,7 @@ function createTerminalsStore() {
   const [state, setState] = createStore<TerminalsStoreState>({
     terminals: {},
     activeId: null,
+    lastActiveId: null,
     counter: 0,
     detachedWindows: {},
     debouncedBusy: {},
@@ -276,6 +281,9 @@ function createTerminalsStore() {
           if (s.activeId === id) {
             s.activeId = null;
           }
+          if (s.lastActiveId === id) {
+            s.lastActiveId = null;
+          }
         })
       );
     },
@@ -293,6 +301,7 @@ function createTerminalsStore() {
         if (id) {
           setState("terminals", id, "activity", false);
           setState("terminals", id, "unseen", false);
+          setState("lastActiveId", id);
         }
         setState("activeId", id);
       });

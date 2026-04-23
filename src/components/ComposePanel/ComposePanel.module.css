@@ -1,0 +1,57 @@
+.panel {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 200px;
+  background: var(--bg-primary);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+  transform: translateY(100%);
+  transition: transform 0.15s ease-out;
+  pointer-events: none;
+}
+
+.panelOpen {
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.editor {
+  flex: 1;
+  overflow: hidden;
+}
+
+.statusBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 12px;
+  color: var(--fg-muted);
+  font-size: var(--font-xs);
+  font-family: var(--font-ui);
+  border-top: 1px solid var(--border);
+  user-select: none;
+}
+
+.sendButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 20px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--bg-primary);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.sendButton:hover {
+  opacity: 0.85;
+}

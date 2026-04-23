@@ -26,20 +26,73 @@ export function extractHunks(diff: string): string[] {
   return hunks;
 }
 
+export interface SelectedLineInfo {
+  lineNumber: number;
+  content: string;
+  type: "+" | "-" | " ";
+}
+
 /**
- * Build a partial patch containing only the selected change lines from a hunk.
- *
- * For `git apply --reverse`:
- * - Selected additions stay as `+` (reverse removes them)
- * - Selected deletions stay as `-` (reverse restores them)
- * - Unselected additions become context lines (already in file, keep them)
- * - Unselected deletions are dropped (already removed, stay removed)
- *
- * @param fullDiff    The full unified diff string
- * @param hunkIdx     Index of the hunk to extract from (0-based)
- * @param selectedLines  Set of line indices within the hunk body (0-based, relative to first line after @@)
- * @returns A valid unified diff patch string, or "" if nothing selected
+ * Extract the content and line numbers of selected lines from a hunk.
+ * Line numbers are from the new file (+side) for additions/context,
+ * and from the old file (-side) for deletions.
  */
+export function extractSelectedLines(
+  fullDiff: string,
+  hunkIdx: number,
+  selectedLines: Set<number>,
+): { lines: SelectedLineInfo[]; startLine: number; endLine: number } {
+  if (selectedLines.size === 0) return { lines: [], startLine: 0, endLine: 0 };
+
+  const allLines = fullDiff.split("\n");
+  let headerEnd = 0;
+  for (let i = 0; i < allLines.length; i++) {
+    if (allLines[i].startsWith("@@")) { headerEnd = i; break; }
+  }
+
+  const hunkStarts: number[] = [];
+  for (let i = headerEnd; i < allLines.length; i++) {
+    if (allLines[i].startsWith("@@")) hunkStarts.push(i);
+  }
+  if (hunkIdx < 0 || hunkIdx >= hunkStarts.length) return { lines: [], startLine: 0, endLine: 0 };
+
+  const hunkLineIdx = hunkStarts[hunkIdx];
+  const hunkEndIdx = hunkIdx + 1 < hunkStarts.length ? hunkStarts[hunkIdx + 1] : allLines.length;
+  const hunkHeader = allLines[hunkLineIdx];
+  const bodyLines = allLines.slice(hunkLineIdx + 1, hunkEndIdx);
+
+  if (bodyLines.length > 0 && bodyLines[bodyLines.length - 1] === "") bodyLines.pop();
+
+  const headerMatch = hunkHeader.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+  let oldLine = headerMatch ? parseInt(headerMatch[1]) : 1;
+  let newLine = headerMatch ? parseInt(headerMatch[2]) : 1;
+
+  const result: SelectedLineInfo[] = [];
+  let startLine = Infinity;
+  let endLine = 0;
+
+  for (let i = 0; i < bodyLines.length; i++) {
+    const line = bodyLines[i];
+    const isAdd = line.startsWith("+");
+    const isDel = line.startsWith("-");
+
+    if (selectedLines.has(i)) {
+      const ln = isDel ? oldLine : newLine;
+      const type = isAdd ? "+" : isDel ? "-" : " ";
+      result.push({ lineNumber: ln, content: line.slice(1), type: type as "+" | "-" | " " });
+      if (ln < startLine) startLine = ln;
+      if (ln > endLine) endLine = ln;
+    }
+
+    if (isAdd) newLine++;
+    else if (isDel) oldLine++;
+    else { oldLine++; newLine++; }
+  }
+
+  if (result.length === 0) return { lines: [], startLine: 0, endLine: 0 };
+  return { lines: result, startLine, endLine };
+}
+
 export function buildPartialPatch(
   fullDiff: string,
   hunkIdx: number,

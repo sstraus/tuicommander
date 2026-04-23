@@ -14,7 +14,10 @@ import { appLogger } from "../../stores/appLogger";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
 import { editorTabsStore } from "../../stores/editorTabs";
-import { extractHunks, buildPartialPatch } from "./diffPatch";
+import { extractHunks, buildPartialPatch, extractSelectedLines } from "./diffPatch";
+import { terminalsStore } from "../../stores/terminals";
+import { usePty } from "../../hooks/usePty";
+import { getModifierSymbol } from "../../platform";
 import s from "./DiffTab.module.css";
 
 export interface DiffTabProps {
@@ -36,6 +39,7 @@ function canRestore(scope?: string, untracked?: boolean): boolean {
 }
 
 export const DiffTab: Component<DiffTabProps> = (props) => {
+  const pty = usePty();
   const [diff, setDiff] = createSignal("");
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
@@ -54,14 +58,12 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
   // Line-level selection state
   const [selectedLines, setSelectedLines] = createSignal<Set<number>>(new Set<number>());
   const [selectedHunkIdx, setSelectedHunkIdx] = createSignal<number | null>(null);
-  let lastClickedLine = -1; // For shift-click range selection
 
   // Clear selection when diff changes
   createEffect(() => {
     diff();
     setSelectedLines(new Set<number>());
     setSelectedHunkIdx(null);
-    lastClickedLine = -1;
   });
 
   let contentRef: HTMLElement | undefined;
@@ -216,17 +218,22 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
 
   // --- Line-level selection ---
 
-  /** Find which hunk and line index a DOM element belongs to */
+  /** Detect whether a <tr> is an addition, deletion, or neither.
+   *  The @git-diff-view library marks additions with data-line-new-num only,
+   *  deletions with data-line-old-num only, and context lines with both. */
+  function isChangeLine(row: Element): boolean {
+    const hasNew = row.querySelector("[data-line-new-num]");
+    const hasOld = row.querySelector("[data-line-old-num]");
+    return (!!hasNew !== !!hasOld);
+  }
+
+  /** Find which hunk and line index a DOM element belongs to. */
   function findLineInfo(el: HTMLElement): { hunkIdx: number; lineIdx: number; isChange: boolean } | null {
     const row = el.closest("tr");
     if (!row || !contentRef) return null;
 
-    // Check if this is an addition or deletion row (not context or hunk header)
-    const hasAdd = row.querySelector("[class*='diff-line-add']");
-    const hasDel = row.querySelector("[class*='diff-line-del']");
-    if (!hasAdd && !hasDel) return null;
+    if (!isChangeLine(row)) return null;
 
-    // Find hunk index: count how many hunk headers precede this row
     const allRows = Array.from(contentRef.querySelectorAll("tr"));
     const rowIdx = allRows.indexOf(row);
     if (rowIdx < 0) return null;
@@ -249,56 +256,70 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
     return hunkIdx >= 0 ? { hunkIdx, lineIdx, isChange: true } : null;
   }
 
-  function handleLineClick(e: MouseEvent) {
-    if (!canRestore(props.scope, props.untracked)) return;
-    // Don't interfere with revert button clicks
+  // --- Drag-to-select ---
+  let isDragging = false;
+  let dragAnchorLine = -1;
+  let dragAnchorHunk = -1;
+
+  function selectRange(hunkIdx: number, from: number, to: number) {
+    const start = Math.min(from, to);
+    const end = Math.max(from, to);
+    const next = new Set<number>();
+    const hunks = extractHunks(diff());
+    if (hunkIdx < hunks.length) {
+      const hunkLines = hunks[hunkIdx].split("\n");
+      const bodyStart = hunkLines.findIndex((l) => l.startsWith("@@"));
+      if (bodyStart >= 0) {
+        const body = hunkLines.slice(bodyStart + 1);
+        for (let i = start; i <= end; i++) {
+          if (i < body.length && (body[i].startsWith("+") || body[i].startsWith("-"))) {
+            next.add(i);
+          }
+        }
+      }
+    }
+    setSelectedHunkIdx(hunkIdx);
+    setSelectedLines(next);
+  }
+
+  function handleLineMouseDown(e: MouseEvent) {
     if ((e.target as HTMLElement).closest(`.${s.revertBtn}`)) return;
+    if (e.button !== 0) return;
 
     const info = findLineInfo(e.target as HTMLElement);
     if (!info) return;
 
-    // If clicking in a different hunk, reset selection
+    e.preventDefault();
+    isDragging = true;
+    dragAnchorLine = info.lineIdx;
+    dragAnchorHunk = info.hunkIdx;
+
     if (selectedHunkIdx() !== null && selectedHunkIdx() !== info.hunkIdx) {
       setSelectedLines(new Set<number>());
     }
     setSelectedHunkIdx(info.hunkIdx);
 
-    const prev = selectedLines();
-    const next = new Set(prev);
-
-    if (e.shiftKey && lastClickedLine >= 0) {
-      // Shift+click: select range
-      const start = Math.min(lastClickedLine, info.lineIdx);
-      const end = Math.max(lastClickedLine, info.lineIdx);
-      // Get all change lines in the hunk to only select those in range
-      const hunks = extractHunks(diff());
-      if (info.hunkIdx < hunks.length) {
-        const hunkLines = hunks[info.hunkIdx].split("\n");
-        const bodyStart = hunkLines.findIndex((l) => l.startsWith("@@"));
-        if (bodyStart >= 0) {
-          const body = hunkLines.slice(bodyStart + 1);
-          for (let i = start; i <= end; i++) {
-            if (i < body.length && (body[i].startsWith("+") || body[i].startsWith("-"))) {
-              next.add(i);
-            }
-          }
-        }
-      }
-    } else {
-      // Toggle single line
-      if (next.has(info.lineIdx)) {
-        next.delete(info.lineIdx);
-      } else {
-        next.add(info.lineIdx);
-      }
-    }
-
-    lastClickedLine = info.lineIdx;
+    const next = new Set<number>();
+    next.add(info.lineIdx);
     setSelectedLines(next);
-
-    // Apply visual selection to DOM rows
     applyLineSelectionStyles();
   }
+
+  function handleLineMouseMove(e: MouseEvent) {
+    if (!isDragging) return;
+    const info = findLineInfo(e.target as HTMLElement);
+    if (!info || info.hunkIdx !== dragAnchorHunk) return;
+    selectRange(dragAnchorHunk, dragAnchorLine, info.lineIdx);
+    applyLineSelectionStyles();
+  }
+
+  function handleLineMouseUp() {
+    isDragging = false;
+  }
+
+  const globalMouseUp = () => { isDragging = false; };
+  document.addEventListener("mouseup", globalMouseUp);
+  onCleanup(() => document.removeEventListener("mouseup", globalMouseUp));
 
   /** Apply/remove CSS class on selected rows */
   function applyLineSelectionStyles() {
@@ -347,11 +368,82 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
   function clearSelection() {
     setSelectedLines(new Set<number>());
     setSelectedHunkIdx(null);
-    lastClickedLine = -1;
     if (contentRef) {
       contentRef.querySelectorAll(`.${s.lineSelected}`).forEach((el) =>
         el.classList.remove(s.lineSelected),
       );
+    }
+  }
+
+  // --- Comment on selected lines ---
+  const [commentVisible, setCommentVisible] = createSignal(false);
+  const [commentText, setCommentText] = createSignal("");
+  const [commentError, setCommentError] = createSignal<string | null>(null);
+  let commentTextareaRef: HTMLTextAreaElement | undefined;
+
+  function handleCommentOpen() {
+    setCommentVisible(true);
+    setCommentError(null);
+    requestAnimationFrame(() => commentTextareaRef?.focus());
+  }
+
+  /** Find the right terminal: active > last active > any with a session. */
+  function findTerminal(): { sessionId: string; agentType: string | null } | null {
+    for (const id of [terminalsStore.state.activeId, terminalsStore.state.lastActiveId]) {
+      if (!id) continue;
+      const terminal = terminalsStore.get(id);
+      if (terminal?.sessionId) return { sessionId: terminal.sessionId, agentType: terminal.agentType ?? null };
+    }
+    for (const id of terminalsStore.getIds()) {
+      const terminal = terminalsStore.get(id);
+      if (terminal?.sessionId) return { sessionId: terminal.sessionId, agentType: terminal.agentType ?? null };
+    }
+    return null;
+  }
+
+  async function handleCommentSend() {
+    const text = commentText().trim();
+    if (!text) return;
+
+    const term = findTerminal();
+    if (!term) {
+      setCommentError("No terminal with active session — open a terminal first");
+      return;
+    }
+
+    const hIdx = selectedHunkIdx();
+    if (hIdx === null) return;
+
+    const { lines, startLine, endLine } = extractSelectedLines(diff(), hIdx, selectedLines());
+    if (lines.length === 0) return;
+
+    try {
+      const lineRange = startLine === endLine ? `L${startLine}` : `L${startLine}-L${endLine}`;
+      const sanitize = (s: string) => s.replace(/[\r\n\0]/g, " ");
+      const codeSnippet = lines.map((l) => `${l.type}${sanitize(l.content)}`).join("; ");
+
+      const message = `[${sanitize(props.filePath)}:${lineRange}] ${codeSnippet} — ${text}`;
+
+      await pty.sendCommand(term.sessionId, message, term.agentType);
+
+      setCommentText("");
+      setCommentError(null);
+      setCommentVisible(false);
+      clearSelection();
+    } catch (err) {
+      appLogger.error("git", "Failed to send comment to terminal", err);
+      setCommentError("Failed to send — see logs for details");
+    }
+  }
+
+  function handleCommentKeyDown(e: KeyboardEvent) {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      void handleCommentSend();
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setCommentVisible(false);
     }
   }
 
@@ -443,16 +535,15 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
         }}
         onMouseOut={() => setHoverHunkIdx(null)}
         onClick={(e) => {
-          // Delegate click on revert buttons
           const btn = (e.target as HTMLElement).closest(`.${s.revertBtn}`);
           if (btn) {
             const idx = parseInt(btn.getAttribute("data-hunk-idx") || "-1", 10);
             if (idx >= 0) handleRevertClick(idx);
-            return;
           }
-          // Line-level selection
-          handleLineClick(e);
         }}
+        onMouseDown={handleLineMouseDown}
+        onMouseMove={handleLineMouseMove}
+        onMouseUp={handleLineMouseUp}
       >
         <DiffViewer
           diff={diff()}
@@ -475,15 +566,51 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
             isStaged={isStaged()}
           />
         </Show>
-        {/* Floating restore-selected button */}
-        <Show when={canRestore(props.scope, props.untracked) && selectedCount() > 0}>
-          <div class={s.restoreSelectedBar}>
-            <button class={s.restoreSelectedBtn} onClick={handleRestoreSelected}>
-              {isStaged() ? "Unstage" : "Discard"} {selectedCount()} line{selectedCount() > 1 ? "s" : ""}
-            </button>
-            <button class={s.clearSelectionBtn} onClick={clearSelection} title="Clear selection">
-              &times;
-            </button>
+        <Show when={selectedCount() > 0}>
+          <div class={s.selectionFloater}>
+            <Show when={commentVisible()}>
+              <div class={s.commentBox}>
+                <textarea
+                  ref={(el) => { commentTextareaRef = el; }}
+                  class={s.commentTextarea}
+                  placeholder="Write a comment about the selected lines..."
+                  value={commentText()}
+                  onInput={(e) => setCommentText(e.currentTarget.value)}
+                  onKeyDown={handleCommentKeyDown}
+                  rows={3}
+                />
+                <Show when={commentError()}>
+                  <div class={s.commentErrorMsg}>{commentError()}</div>
+                </Show>
+                <div class={s.commentActions}>
+                  <span class={s.commentHint}>{getModifierSymbol()}+Enter to send</span>
+                  <button class={s.commentCancelBtn} onClick={() => setCommentVisible(false)}>Cancel</button>
+                  <button
+                    class={s.commentSendBtn}
+                    disabled={!commentText().trim()}
+                    onClick={handleCommentSend}
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
+            </Show>
+            <div class={s.selectionBar}>
+              <Show when={canRestore(props.scope, props.untracked)}>
+                <button class={s.restoreSelectedBtn} onClick={handleRestoreSelected}>
+                  {isStaged() ? "Unstage" : "Discard"} {selectedCount()} line{selectedCount() > 1 ? "s" : ""}
+                </button>
+              </Show>
+              <button class={s.commentBtn} onClick={handleCommentOpen} title="Comment on selected lines">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M1 3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5.236L2.22 14.54A.5.5 0 0 1 1 14.14V3zm2-1a1 1 0 0 0-1 1v9.86l2.236-1.86A.5.5 0 0 1 4.56 11H13a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H3z" />
+                </svg>
+                Comment
+              </button>
+              <button class={s.clearSelectionBtn} onClick={() => { clearSelection(); setCommentVisible(false); }} title="Clear selection">
+                &times;
+              </button>
+            </div>
           </div>
         </Show>
       </div>
