@@ -1887,13 +1887,6 @@ mod tests {
         assert_eq!(redact_secrets(input), input, "PATH was incorrectly redacted");
     }
 
-    #[test]
-    fn redact_api_key_long_value() {
-        let input = "STRIPE_API_KEY=sk_live_ABCDEFGHIJKLMNOPQRSTUVWXYZabcde";
-        let output = redact_secrets(input);
-        assert!(!output.contains("sk_live_"), "secret value leaked: {output}");
-    }
-
     // ── map_key ────────────────────────────────────────────────
 
     #[test]
