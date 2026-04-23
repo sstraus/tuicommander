@@ -21,6 +21,7 @@ export interface LogSpan {
 
 export interface LogLine {
   spans: LogSpan[];
+  cols?: number;
 }
 
 // --- ANSI color mapping ---

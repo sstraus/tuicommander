@@ -3721,6 +3721,43 @@ pub(crate) fn list_active_sessions(state: State<'_, Arc<AppState>>) -> Vec<Activ
         .collect()
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct VtLogChunk {
+    pub lines: Vec<crate::state::LogLine>,
+    pub screen: Vec<crate::state::LogLine>,
+    pub total_lines: usize,
+    pub oldest: usize,
+}
+
+/// Returns scrollback log lines and current screen rows for a session.
+///
+/// This is the desktop IPC equivalent of the PWA WebSocket `format=log` path.
+/// `lines` are finalized scrollback lines (each appears once, oldest first).
+/// `screen` is the current visible screen with agent chrome trimmed.
+#[tauri::command]
+pub(crate) fn read_vt_log(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) -> VtLogChunk {
+    let limit = limit.unwrap_or(200);
+    let Some(vt_log) = state.vt_log_buffers.get(&session_id) else {
+        return VtLogChunk { lines: vec![], screen: vec![], total_lines: 0, oldest: 0 };
+    };
+    let buf = vt_log.lock();
+    let offset = offset.unwrap_or_else(|| buf.total_lines().saturating_sub(limit));
+    let (lines, _) = buf.lines_since_owned(offset, limit);
+    let raw_rows = buf.screen_rows();
+    let refs: Vec<&str> = raw_rows.iter().map(|s| s.as_str()).collect();
+    let cutoff = crate::chrome::find_chrome_cutoff(&refs).unwrap_or(raw_rows.len());
+    let screen: Vec<crate::state::LogLine> = buf.screen_log_lines().into_iter().take(cutoff).collect();
+    let total_lines = buf.total_lines();
+    let oldest = buf.oldest_offset();
+
+    VtLogChunk { lines, screen, total_lines, oldest }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

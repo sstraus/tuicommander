@@ -1522,7 +1522,11 @@ pub struct LogSpan {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct LogLine {
     pub spans: Vec<LogSpan>,
+    #[serde(skip_serializing_if = "is_zero_u16")]
+    pub cols: u16,
 }
+
+fn is_zero_u16(v: &u16) -> bool { *v == 0 }
 
 impl LogLine {
     /// Returns the plain-text content (all span texts concatenated).
@@ -1651,7 +1655,7 @@ fn extract_log_line(screen: &vt100::Screen, row: u16) -> LogLine {
         }
     }
 
-    LogLine { spans }
+    LogLine { spans, cols }
 }
 
 /// A screen row that changed after a `VtLogBuffer::process()` call.
@@ -1694,6 +1698,17 @@ pub struct VtLogBuffer {
     /// Monotonically increasing count of all log lines ever pushed (not bounded
     /// by capacity). Used as stable cursor for paginated reads.
     total_pushed: usize,
+    /// Widest cols seen so far. The parser never shrinks below this —
+    /// prevents Ink re-renders from fragmenting scrollback mid-word.
+    max_cols: u16,
+    /// Actual PTY cols (what the child process / Ink sees). May be smaller
+    /// than parser cols when a side panel narrows the terminal. Stamped
+    /// onto LogLine.cols so the frontend can detect narrow-captured lines.
+    pty_cols: u16,
+    /// When true, scrollback capture is paused — a side panel just
+    /// narrowed the terminal and Ink is flooding scrollback with
+    /// narrow re-renders. Cleared when pty_cols widens again.
+    suppress_capture: bool,
 }
 
 /// Internal scrollback capacity for the vt100 parser. Must be large enough
@@ -1712,6 +1727,9 @@ impl VtLogBuffer {
             was_alternate: false,
             scrollback_read: 0,
             total_pushed: 0,
+            max_cols: cols,
+            pty_cols: cols,
+            suppress_capture: false,
         }
     }
 
@@ -1769,15 +1787,23 @@ impl VtLogBuffer {
         // --- Log extraction: read new scrollback lines from vt100 ---
         // The vt100 parser accumulates scrollback automatically when lines
         // scroll off the top of the normal screen. We just read the delta.
+        //
+        // When suppress_capture is set (side panel halved the terminal
+        // width), Ink re-renders push fragmented junk into scrollback.
+        // Skip capture but keep scrollback_read in sync.
         if !is_alternate {
             let total_sb = self.scrollback_count();
             let delta = total_sb.saturating_sub(self.scrollback_read);
             if delta > 0 {
-                let screen_height = self.parser.screen().size().0 as usize;
-                let new_lines = self.read_scrollback_lines(delta, screen_height);
-                let trimmed = trim_agent_chrome(new_lines);
-                for ll in trimmed {
-                    self.push_log_line(ll);
+                if !self.suppress_capture {
+                    let screen_height = self.parser.screen().size().0 as usize;
+                    let new_lines = self.read_scrollback_lines(delta, screen_height);
+                    let trimmed = trim_agent_chrome(new_lines);
+                    let pty_cols = self.pty_cols;
+                    for mut ll in trimmed {
+                        ll.cols = pty_cols;
+                        self.push_log_line(ll);
+                    }
                 }
                 self.scrollback_read = total_sb;
             }
@@ -1789,8 +1815,28 @@ impl VtLogBuffer {
     }
 
     /// Update parser dimensions on terminal resize.
+    ///
+    /// Rows are always resized (row count affects scrollback extraction).
+    /// Cols are only resized upward: when a side panel shrinks the terminal,
+    /// Ink re-renders at narrow width and pushes reformatted fragments into
+    /// scrollback. By keeping the parser at max-cols, the narrow Ink output
+    /// arrives as short lines (not wrapped fragments) and CUU cursor
+    /// addressing still works because the lines are shorter than parser cols.
     pub fn resize(&mut self, rows: u16, cols: u16) {
-        self.parser.screen_mut().set_size(rows, cols);
+        let prev = self.pty_cols;
+        self.pty_cols = cols;
+        if cols > self.max_cols {
+            self.max_cols = cols;
+        }
+        // Suppress scrollback capture when cols drops by >50% (side panel).
+        // Ignore the very first resize (total_pushed==0, xterm fit addon).
+        if cols < prev / 2 && self.total_pushed > 0 {
+            self.suppress_capture = true;
+        } else if cols >= prev {
+            self.suppress_capture = false;
+        }
+        let effective_cols = cols.max(self.max_cols);
+        self.parser.screen_mut().set_size(rows, effective_cols);
         self.prev_rows.clear();
         // Re-sync scrollback count after resize (vt100 may adjust scrollback).
         self.scrollback_read = self.scrollback_count();
@@ -1808,24 +1854,31 @@ impl VtLogBuffer {
 
     /// Reads the `count` most recent scrollback lines as styled `LogLine`s.
     /// Pages through the vt100 scrollback if `count` exceeds screen height.
+    /// Soft-wrapped rows (continuations from terminal resize) are merged into
+    /// their parent line so the log doesn't contain narrow-wrapped fragments.
     fn read_scrollback_lines(&mut self, count: usize, screen_height: usize) -> Vec<LogLine> {
-        let mut result = Vec::with_capacity(count);
+        let mut result: Vec<LogLine> = Vec::with_capacity(count);
         let total_sb = self.scrollback_count();
-        // Read in pages of screen_height, from oldest to newest.
         let mut remaining = count;
-        let mut read_start = total_sb.saturating_sub(count); // oldest unread position
+        let mut read_start = total_sb.saturating_sub(count);
 
         while remaining > 0 {
             let page = remaining.min(screen_height);
-            // Set scrollback offset so the page starts at read_start.
-            // Offset = total_sb - read_start positions the view so that
-            // row 0 is at read_start in the scrollback.
             let offset = total_sb - read_start;
             self.parser.screen_mut().set_scrollback(offset);
             {
                 let screen = self.parser.screen();
                 for row_idx in 0..page {
-                    result.push(extract_log_line(screen, row_idx as u16));
+                    let line = extract_log_line(screen, row_idx as u16);
+                    if screen.row_wrapped(row_idx as u16) {
+                        if let Some(prev) = result.last_mut() {
+                            prev.spans.extend(line.spans);
+                        } else {
+                            result.push(line);
+                        }
+                    } else {
+                        result.push(line);
+                    }
                 }
             }
             read_start += page;
@@ -1858,8 +1911,6 @@ impl VtLogBuffer {
         for line in &mut slice {
             line.strip_structural_tokens();
         }
-        // Remove lines that became entirely empty after stripping
-        slice.retain(|l| !l.spans.is_empty());
         (slice, total)
     }
 
@@ -3436,6 +3487,37 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_vt_log_screen_with_chrome_trim() {
+        let mut buf = VtLogBuffer::new(24, 80, 1000);
+        // Write content lines + agent chrome (separator + prompt + status bar)
+        for i in 0..5 {
+            buf.process(format!("content line {i}\r\n").as_bytes());
+        }
+        // Simulate Claude Code chrome at bottom
+        buf.process(b"\x1b[20;1H");
+        buf.process("────────────────────────────────────────\r\n".as_bytes());
+        buf.process("❯ \r\n".as_bytes());
+        buf.process("────────────────────────────────────────\r\n".as_bytes());
+        buf.process("  [Opus 4.6 | Max] tuicommander git:(main)\r\n".as_bytes());
+
+        let raw_rows = buf.screen_rows();
+        let refs: Vec<&str> = raw_rows.iter().map(|s| s.as_str()).collect();
+        let cutoff = crate::chrome::find_chrome_cutoff(&refs).unwrap_or(raw_rows.len());
+        let screen: Vec<LogLine> = buf.screen_log_lines().into_iter().take(cutoff).collect();
+
+        let screen_text: Vec<String> = screen.iter().map(|l| l.text()).collect();
+        assert!(
+            !screen_text.iter().any(|t| t.contains("❯") || t.contains("Opus 4.6")),
+            "chrome should be trimmed, got: {screen_text:?}"
+        );
+        // Content lines should still be present
+        assert!(
+            screen_text.iter().any(|t| t.contains("content line")),
+            "content should be preserved, got: {screen_text:?}"
+        );
+    }
+
     /// Integration test: spawn a real PTY process, feed its output through
     /// VtLogBuffer, and verify that clean log lines are extracted.
     #[test]
@@ -3687,6 +3769,7 @@ mod tests {
                     bold: false, italic: false, underline: false,
                 }]
             },
+            cols: 0,
         }).collect()
     }
 
@@ -3867,6 +3950,7 @@ mod tests {
                 LogSpan { text: "hello".into(), fg: Some(LogColor::Idx(1)), bg: None, bold: true, italic: false, underline: false },
                 LogSpan { text: " world".into(), fg: None, bg: None, bold: false, italic: false, underline: false },
             ],
+            cols: 0,
         };
         assert_eq!(line.text(), "hello world");
     }
@@ -3894,6 +3978,7 @@ mod tests {
                 LogSpan { text: "hello".into(), fg: Some(LogColor::Idx(1)), bg: None, bold: true, italic: false, underline: false },
                 LogSpan { text: " world".into(), fg: None, bg: None, bold: false, italic: false, underline: false },
             ],
+            cols: 0,
         };
         let json = serde_json::to_value(&line).unwrap();
         let spans = json["spans"].as_array().unwrap();
@@ -3913,6 +3998,7 @@ mod tests {
             spans: vec![
                 LogSpan { text: "normal output".into(), ..Default::default() },
             ],
+            cols: 0,
         };
         line.strip_structural_tokens();
         assert_eq!(line.spans[0].text, "normal output");
@@ -3924,6 +4010,7 @@ mod tests {
             spans: vec![
                 LogSpan { text: "intent: reading the config file".into(), ..Default::default() },
             ],
+            cols: 0,
         };
         line.strip_structural_tokens();
         assert!(line.spans.is_empty(), "plain-prefix intent should be stripped entirely");
@@ -3935,6 +4022,7 @@ mod tests {
             spans: vec![
                 LogSpan { text: "suggest: Run tests | Check logs | Push".into(), ..Default::default() },
             ],
+            cols: 0,
         };
         line.strip_structural_tokens();
         assert!(line.spans.is_empty(), "plain-prefix suggest should be stripped entirely");
@@ -3946,6 +4034,7 @@ mod tests {
             spans: vec![
                 LogSpan { text: "The intent: of this code is clear".into(), ..Default::default() },
             ],
+            cols: 0,
         };
         line.strip_structural_tokens();
         assert_eq!(line.spans[0].text, "The intent: of this code is clear");
@@ -3958,6 +4047,7 @@ mod tests {
             spans: vec![
                 LogSpan { text: "  suggest: Run tests | Check logs | Push".into(), ..Default::default() },
             ],
+            cols: 0,
         };
         line.strip_structural_tokens();
         assert!(line.spans.is_empty(), "indented suggest should be stripped");
@@ -3969,6 +4059,7 @@ mod tests {
             spans: vec![
                 LogSpan { text: "  intent: reading the config file".into(), ..Default::default() },
             ],
+            cols: 0,
         };
         line.strip_structural_tokens();
         assert!(line.spans.is_empty(), "indented intent should be stripped");
@@ -3981,6 +4072,7 @@ mod tests {
             spans: vec![
                 LogSpan { text: "● suggest: A | B | C".into(), ..Default::default() },
             ],
+            cols: 0,
         };
         line.strip_structural_tokens();
         assert!(line.spans.is_empty(), "bullet-prefixed suggest should be stripped");
@@ -3992,6 +4084,7 @@ mod tests {
             spans: vec![
                 LogSpan { text: "⏺ intent: doing something (Task)".into(), ..Default::default() },
             ],
+            cols: 0,
         };
         line.strip_structural_tokens();
         assert!(line.spans.is_empty(), "bullet-prefixed intent should be stripped");
@@ -4079,4 +4172,5 @@ mod tests {
         let ss = state.session_state_with_shell("s1").unwrap();
         assert!(!ss.rate_limited, "rate limit should expire with default timeout");
     }
+
 }

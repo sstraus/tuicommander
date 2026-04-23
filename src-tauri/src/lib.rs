@@ -1171,6 +1171,7 @@ pub fn run() {
             pty::get_session_metrics,
             pty::can_spawn_session,
             pty::list_active_sessions,
+            pty::read_vt_log,
             pty::update_session_cwd,
             pty::set_session_name,
             pty::get_session_foreground_process,

@@ -1,0 +1,78 @@
+.overlay {
+  position: absolute;
+  inset: 0 2px 0 0;
+  overflow-y: auto;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  /* Background is set via inline style to match the active xterm theme */
+}
+
+/* Match xterm's custom scrollbar (14px slider, 4px radius) */
+.overlay::-webkit-scrollbar {
+  width: 14px;
+}
+.overlay::-webkit-scrollbar-track {
+  background: transparent;
+}
+.overlay::-webkit-scrollbar-thumb {
+  background: rgba(121, 121, 121, 0.4);
+  border-radius: var(--radius-md);
+}
+.overlay::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 100, 100, 0.7);
+}
+.overlay::-webkit-scrollbar-thumb:active {
+  background: rgba(191, 191, 191, 0.4);
+}
+
+.header {
+  position: sticky;
+  top: 0;
+  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  padding: 4px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-family: var(--font-ui);
+  color: var(--fg-muted);
+  z-index: 1;
+  /* Background inherited from inline style on .overlay */
+}
+
+.label {
+  opacity: 0.6;
+  user-select: none;
+}
+
+.closeBtn {
+  background: none;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.2));
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-family: var(--font-ui);
+  padding: 2px 8px;
+  cursor: pointer;
+  border-radius: var(--radius-sm, 3px);
+  transition: background 0.1s, color 0.1s;
+}
+
+.closeBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--fg-primary, #fff);
+}
+
+.content {
+  flex: 1;
+  padding: 8px;
+  line-height: var(--cell-height);
+}
+
+.row {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  min-height: var(--cell-height);
+  line-height: inherit;
+}
+
