@@ -212,6 +212,21 @@ Shells that emit OSC 7 (`\x1b]7;file://hostname/path\x07`) report the current wo
 
 Additionally, `CLAUDECODE` is removed from the environment (`env_remove`) to prevent nested-session detection when TUICommander itself runs inside a Claude Code session.
 
+## Session Conflict Flag File
+
+When an agent reports a session conflict (session already in use or not found), TUICommander handles it via a flag-file mechanism instead of writing directly to the PTY.
+
+**Flow:**
+
+1. The output parser detects a session conflict message (`ParsedEvent::AgentSessionConflict`)
+2. `ChunkProcessor` calls `mark_session_conflict()`, which creates a flag file named `no-session-inject.<TUIC_SESSION>` in the app config directory
+3. Shell wrapper functions (zsh, bash, fish) check for this flag file before injecting `--session-id $TUIC_SESSION`
+4. If the flag file exists, the wrapper skips session-id injection, allowing the agent to start a fresh session
+
+This replaced the previous `maybe_reset_tuic_session` approach, which wrote `export TUIC_SESSION=...` directly to the PTY. Direct PTY writes could corrupt TUI output (e.g., Ink-based agents in raw mode). The flag-file approach is safe because it uses the filesystem as a side-channel — no bytes are injected into the terminal stream.
+
+A debounce (`last_session_conflict_mark`) prevents creating multiple flag files within a short window for the same session.
+
 ## Ctrl-U Prefix Handling
 
 Single-key PTY writes that should clear the current input line prepend `\x15` (Ctrl-U) on POSIX shells. The selection is **shell-family aware**, not host-platform aware: the detected shell (`bash`/`zsh`/`fish` → POSIX, `powershell`/`cmd` → Windows) drives the choice. Mixing PowerShell on macOS or a POSIX shell via WSL/MSYS now behaves correctly. Native Windows shells skip the prefix entirely to avoid inserting a literal `^U`.

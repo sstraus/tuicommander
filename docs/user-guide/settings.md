@@ -14,6 +14,7 @@ Open settings with `Cmd+,`. Settings are organized into tabs.
 | **Prevent sleep when busy** | Keep machine awake while agents are working |
 | **Auto-check for updates** | Check for new versions on startup |
 | **Auto-show PR popover** | Automatically display PR details when switching branches. Only shows for OPEN pull requests — CLOSED PRs are hidden, and MERGED PRs fade after 5 minutes of user activity. |
+| **Copy on Select** | Auto-copy terminal selection to clipboard. When text is selected in the terminal, it is immediately copied. A "Copied to clipboard" confirmation appears in the status bar. Enabled by default. Also configurable in Appearance tab. |
 | **Repository defaults** | Base branch, file handling, setup/run scripts applied to new repos |
 
 ## Appearance Tab

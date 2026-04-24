@@ -162,12 +162,12 @@ Also accessible via the "Search Terminals" command in the palette.
 
 ## Copy & Paste
 
-- **Copy:** Select text in the terminal, then `Cmd+C`
+- **Copy:** Select text in the terminal, then `Cmd+C`. A "Copied to clipboard" confirmation appears in the status bar.
 - **Paste:** `Cmd+V` writes clipboard content to the active terminal
 
 ### Copy on Select
 
-When enabled (Settings > Appearance), selecting text in the terminal automatically copies it to the clipboard. A brief confirmation appears in the status bar. This is enabled by default.
+When enabled (Settings > General > Terminal or Settings > Appearance), selecting text in the terminal automatically copies it to the clipboard. A brief "Copied to clipboard" confirmation appears in the status bar. This is enabled by default.
 
 ## Clear Terminal
 
