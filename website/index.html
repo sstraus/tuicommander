@@ -91,6 +91,45 @@
           Nightly Builds
         </a>
       </div>
+
+      <div class="install-section" id="install-section">
+        <p class="install-heading">Install via terminal</p>
+        <div class="install-tabs" role="tablist">
+          <button class="install-tab active" data-tab="unix" role="tab" aria-selected="true">macOS / Linux</button>
+          <button class="install-tab" data-tab="windows" role="tab" aria-selected="false">Windows</button>
+        </div>
+        <div class="install-panel active" data-panel="unix">
+          <div class="install-block">
+            <span class="install-label">Homebrew (macOS)</span>
+            <div class="install-code">
+              <code>brew install sstraus/tap/tuicommander</code>
+              <button class="copy-btn" title="Copy" type="button"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>
+            </div>
+          </div>
+          <span class="install-divider">or</span>
+          <div class="install-block">
+            <span class="install-label">Shell (macOS &amp; Linux &mdash; auto-detects your system)</span>
+            <div class="install-code">
+              <code>curl -fsSL https://tuicommander.com/install.sh | sh</code>
+              <button class="copy-btn" title="Copy" type="button"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>
+            </div>
+          </div>
+        </div>
+        <div class="install-panel" data-panel="windows">
+          <div class="install-block">
+            <span class="install-label">PowerShell</span>
+            <div class="install-code">
+              <code>irm https://tuicommander.com/install.ps1 | iex</code>
+              <button class="copy-btn" title="Copy" type="button"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>
+            </div>
+          </div>
+        </div>
+        <p class="all-downloads-link">
+          <span class="version-badge" id="version-badge"></span>
+          <a href="https://github.com/sstraus/tuicommander/releases/latest" rel="noopener noreferrer">All downloads &amp; release notes &rarr;</a>
+        </p>
+      </div>
+
       <div class="hero-video" id="hero-video">
         <img src="/screenshot.png" alt="TUICommander — multiple agents, split panes, sidebar with repos" class="hero-screenshot" loading="eager" />
         <button class="hero-play-btn" aria-label="Play demo video" type="button">
@@ -861,23 +900,57 @@ Use <span class="str">`gh pr create`</span>.
     (function() {
       var ua = navigator.userAgent || '';
       var platform = navigator.platform || '';
-      var label, suffix;
-      if (/Mac|iPhone|iPad/.test(platform) || /Mac OS/.test(ua)) {
-        label = 'Download for macOS';
-        suffix = '.dmg';
-      } else if (/Win/.test(platform)) {
-        label = 'Download for Windows';
-        suffix = '.msi';
-      } else if (/Linux/.test(platform)) {
-        label = 'Download for Linux';
-        suffix = '.AppImage';
+      var os = 'linux';
+      if (/Mac|iPhone|iPad/.test(platform) || /Mac OS/.test(ua)) os = 'macos';
+      else if (/Win/.test(platform)) os = 'windows';
+
+      var labels = { macos: 'Download for macOS', windows: 'Download for Windows', linux: 'Download for Linux' };
+      var btns = document.querySelectorAll('#hero-download, #bottom-download');
+      btns.forEach(function(b) { b.textContent = labels[os]; });
+
+      var tabs = document.querySelectorAll('.install-tab');
+      var panels = document.querySelectorAll('.install-panel');
+      function selectTab(target) {
+        tabs.forEach(function(t) {
+          var active = t.getAttribute('data-tab') === target;
+          t.classList.toggle('active', active);
+          t.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+        panels.forEach(function(p) {
+          p.classList.toggle('active', p.getAttribute('data-panel') === target);
+        });
       }
-      if (label) {
-        var btns = document.querySelectorAll('#hero-download, #bottom-download');
-        for (var i = 0; i < btns.length; i++) {
-          btns[i].textContent = label;
-        }
-      }
+      selectTab(os === 'windows' ? 'windows' : 'unix');
+      tabs.forEach(function(t) {
+        t.addEventListener('click', function() { selectTab(this.getAttribute('data-tab')); });
+      });
+
+      var copySvg = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
+      var checkSvg = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#4ec9b0" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>';
+      document.querySelectorAll('.copy-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var code = this.closest('.install-code').querySelector('code');
+          navigator.clipboard.writeText(code.textContent).then(function() {
+            btn.innerHTML = checkSvg;
+            setTimeout(function() { btn.innerHTML = copySvg; }, 2000);
+          });
+        });
+      });
+
+      var dlSuffix = { macos: '.dmg', windows: 'x64-setup.exe', linux: 'amd64.AppImage' };
+      fetch('https://api.github.com/repos/sstraus/tuicommander/releases/latest')
+        .then(function(r) { return r.json(); })
+        .then(function(release) {
+          var target = dlSuffix[os];
+          (release.assets || []).forEach(function(asset) {
+            if (target && asset.name.endsWith(target)) {
+              btns.forEach(function(b) { b.href = asset.browser_download_url; });
+            }
+          });
+          var badge = document.getElementById('version-badge');
+          if (badge && release.tag_name) badge.textContent = release.tag_name;
+        })
+        .catch(function() {});
     })();
   </script>
   <script>
@@ -886,9 +959,11 @@ Use <span class="str">`gh pr create`</span>.
       if (el.dataset.active) return;
       el.dataset.active = '1';
       var iframe = document.createElement('iframe');
-      iframe.src = 'https://www.youtube-nocookie.com/embed/YBtD9g-PFJs?autoplay=1&rel=0';
-      iframe.allow = 'autoplay; encrypted-media';
+      iframe.src = 'https://www.youtube.com/embed/YBtD9g-PFJs?si=QTpfQvQ5tdQZ5KXt&autoplay=1&rel=0';
+      iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
+      iframe.referrerPolicy = 'strict-origin-when-cross-origin';
       iframe.allowFullscreen = true;
+      iframe.title = 'TUICommander demo';
       iframe.className = 'hero-video-iframe';
       el.innerHTML = '';
       el.appendChild(iframe);
