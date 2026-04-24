@@ -17,6 +17,7 @@ import { paneLayoutStore } from "../../stores/paneLayout";
 import { rateLimitStore } from "../../stores/ratelimit";
 import { appLogger } from "../../stores/appLogger";
 import { notificationsStore } from "../../stores/notifications";
+import { toastsStore } from "../../stores/toasts";
 import { invoke } from "../../invoke";
 import { isMacOS, isWindows } from "../../platform";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
@@ -35,6 +36,12 @@ import { detectAgentForTerminal } from "../../hooks/useAgentPolling";
 import { ComposePanel } from "../ComposePanel";
 import s from "./Terminal.module.css";
 
+
+/** Trim trailing whitespace from each line of a terminal selection.
+ * xterm.js pads lines with spaces to the terminal width. */
+function trimSelection(text: string): string {
+  return text.split("\n").map(line => line.trimEnd()).join("\n");
+}
 
 /** Structured events parsed by Rust OutputParser, received via pty-parsed-{sessionId} */
 type ParsedEvent =
@@ -59,7 +66,8 @@ type ParsedEvent =
       amend_key?: string;
     }
   | { type: "active-subtasks"; count: number; task_type: string }
-  | { type: "shell-state"; state: "busy" | "idle" };
+  | { type: "shell-state"; state: "busy" | "idle" }
+  | { type: "agent-session-conflict"; matched_text: string; kind: "in-use" | "not-found" };
 
 export interface TerminalProps {
   id: string;
@@ -120,7 +128,7 @@ export function cleanOscTitle(title: string): string {
   cleaned = cleaned.trim();
   // Paths: shell is just reporting CWD (idle prompt) — not useful as a tab title
   // since the status bar already shows the full path. Return empty to keep original name.
-  if (cleaned.startsWith("/") || cleaned.startsWith("~")) {
+  if (/^(\/|~|[A-Za-z]:[\\/])/.test(cleaned)) {
     return "";
   }
   // Strip flags and their values, keep command + subcommands (bare words before first flag)
@@ -549,6 +557,15 @@ export const Terminal: Component<TerminalProps> = (props) => {
         case "tool-error":
           terminalsStore.setAwaitingInput(props.id, "error");
           break;
+        case "agent-session-conflict": {
+          const title = parsed.kind === "not-found"
+            ? "Session not found — reset applied"
+            : "Session ID conflict — reset applied";
+          const msg = "TUIC_SESSION regenerated. The next `claude` invocation in this tab will use a fresh id.";
+          appLogger.warn("terminal", `[AgentSessionConflict] ${props.id} kind=${parsed.kind} matched="${parsed.matched_text}"`);
+          toastsStore.add(title, msg, "warn", true);
+          break;
+        }
         case "intent":
           retryCount = 0;
           terminalsStore.setAgentIntent(props.id, parsed.text);
@@ -944,7 +961,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
           if (sel) {
             event.preventDefault();
             const setStatus = (window as unknown as Record<string, unknown>).__tuic_setStatusInfo as ((msg: string) => void) | undefined;
-            navigator.clipboard.writeText(sel).then(
+            navigator.clipboard.writeText(trimSelection(sel)).then(
               () => setStatus?.("Copied to clipboard"),
               (err) => appLogger.warn("terminal", "Ctrl+C copy failed", err),
             );
@@ -1132,7 +1149,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
         const sel = terminal?.getSelection();
         if (sel && sel.length >= 2) {
           const setStatus = (window as unknown as Record<string, unknown>).__tuic_setStatusInfo as ((msg: string) => void) | undefined;
-          navigator.clipboard.writeText(sel).then(() => {
+          navigator.clipboard.writeText(trimSelection(sel)).then(() => {
             setStatus?.("Copied to clipboard");
           }).catch((err) => {
             appLogger.warn("terminal", "Copy-on-select clipboard write failed", err);
@@ -1384,6 +1401,14 @@ export const Terminal: Component<TerminalProps> = (props) => {
       // No image — let xterm handle text paste normally
     };
     containerRef.addEventListener("paste", handleImagePaste, true);
+
+    const handleCopy = (e: ClipboardEvent) => {
+      const sel = terminal?.getSelection();
+      if (!sel) return;
+      e.preventDefault();
+      navigator.clipboard.writeText(trimSelection(sel)).catch(() => {});
+    };
+    containerRef.addEventListener("copy", handleCopy, true);
   };
 
   // Deferred onReady callback: when safeFit exhausts retries, the ResizeObserver

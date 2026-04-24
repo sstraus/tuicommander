@@ -355,7 +355,8 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
       // Prefer xterm's selection (canvas-rendered, invisible to DOM).
       // Fall back to DOM selection for non-terminal panels (code editor, etc.).
       const active = terminalsStore.getActive();
-      const selection = active?.ref?.getSelection() || window.getSelection()?.toString();
+      const rawSel = active?.ref?.getSelection() || window.getSelection()?.toString();
+      const selection = rawSel ? rawSel.split("\n").map(l => l.trimEnd()).join("\n") : "";
       if (selection) {
         await navigator.clipboard.writeText(selection);
         deps.setStatusInfo("Copied to clipboard");

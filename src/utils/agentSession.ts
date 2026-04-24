@@ -42,7 +42,7 @@ export function buildAgentLaunchCommand(command: string, agentSessionId?: string
 
   const parts = command.split(" ");
   const binary = parts[0];
-  const binaryName = binary.split("/").pop() ?? "";
+  const binaryName = binary.split(/[\\/]/).pop() ?? "";
 
   const isClaude = agentType === "claude" || binaryName.startsWith("claude");
   if (!isClaude) return command;

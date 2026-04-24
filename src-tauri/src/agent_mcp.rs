@@ -429,6 +429,30 @@ pub(crate) fn get_agent_config_path(agent_type: String) -> Option<String> {
     get_agent_settings_path(&agent_type).map(|p| p.to_string_lossy().to_string())
 }
 
+/// MCP connection info for manual configuration
+#[derive(Serialize)]
+pub(crate) struct McpBridgeInfo {
+    pub(crate) bridge_path: String,
+    pub(crate) config_snippet: String,
+}
+
+/// Return bridge path + ready-to-paste JSON snippet for manual MCP setup
+#[tauri::command]
+pub(crate) fn get_mcp_bridge_info() -> McpBridgeInfo {
+    let bridge_path = detect_bridge_binary();
+    let entry = TuicMcpEntry {
+        transport_type: "stdio".to_string(),
+        command: bridge_path.clone(),
+        args: vec![],
+        env: BTreeMap::new(),
+    };
+    let wrapper = serde_json::json!({
+        "tuicommander": entry,
+    });
+    let config_snippet = serde_json::to_string_pretty(&wrapper).unwrap_or_default();
+    McpBridgeInfo { bridge_path, config_snippet }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------

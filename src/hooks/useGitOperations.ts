@@ -16,6 +16,7 @@ import { savedPaneLayouts, paneLayoutKey } from "../stores/savedPaneLayouts";
 import { globalWorkspaceStore } from "../stores/globalWorkspace";
 import { effectiveMergeMethod, isMergeMethodNotAllowed } from "../utils/prMerge";
 import type { WorktreeCreateOptions } from "../components/CreateWorktreeDialog";
+import { pathStartsWith } from "../utils/pathUtils";
 
 /** Dependencies injected into useGitOperations */
 export interface GitOperationsDeps {
@@ -449,7 +450,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
     const id = terminalsStore.add({
       sessionId: null,
       fontSize: deps.getDefaultFontSize(),
-      name: `${branchName.split("/").pop()} ${termCount + 1}`,
+      name: `${branchName.split(/[\\/]/).pop()} ${termCount + 1}`,
       cwd: branch?.worktreePath || null,
       awaitingInput: null,
       tuicSession: crypto.randomUUID(),
@@ -1384,7 +1385,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
         // For main branches without a worktreePath, the repo path itself is the match
         const wt = branch.worktreePath ?? (branch.isMain ? repoPath : null);
         if (!wt) continue;
-        if ((cwd === wt || cwd.startsWith(wt + "/")) && wt.length > bestLen) {
+        if (pathStartsWith(cwd, wt) && wt.length > bestLen) {
           best = { repoPath, branchName };
           bestLen = wt.length;
         }
@@ -1418,7 +1419,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
     // If no match and cwd is inside a known repo, the worktree may have just been created
     if (!target && currentRepoPathForTerm) {
       const isInsideKnownRepo = repositoriesStore.getPaths().some(
-        (rp) => newCwd === rp || newCwd.startsWith(rp + "/"),
+        (rp) => pathStartsWith(newCwd, rp),
       );
       if (isInsideKnownRepo) {
         await refreshAllBranchStats();

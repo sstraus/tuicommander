@@ -78,11 +78,11 @@ function statusClass(status: string): string {
   }
 }
 
-/** Split path into directory and basename */
+/** Split path into directory and basename, handling both `/` and `\`. */
 function splitPath(filePath: string): { dir: string; base: string } {
-  const lastSlash = filePath.lastIndexOf("/");
-  if (lastSlash === -1) return { dir: "", base: filePath };
-  return { dir: filePath.slice(0, lastSlash + 1), base: filePath.slice(lastSlash + 1) };
+  const lastSep = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
+  if (lastSep === -1) return { dir: "", base: filePath };
+  return { dir: filePath.slice(0, lastSep + 1), base: filePath.slice(lastSep + 1) };
 }
 
 export const ChangesTab: Component<ChangesTabProps> = (props) => {

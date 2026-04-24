@@ -205,6 +205,23 @@ ParsedEvent::ShellState {
 
 Emitted by the reader thread on real-output→busy and idle transitions. The frontend consumes this instead of deriving busy/idle from raw PTY data. See `docs/backend/pty.md` for idle detection details.
 
+### AgentSessionConflict
+
+Claude Code startup session-id failure:
+
+```rust
+ParsedEvent::AgentSessionConflict {
+    matched_text: String,
+    kind: String,  // "in-use" | "not-found"
+}
+```
+
+Fired when the PTY emits either:
+- `Session ID <uuid> is already in use.` — the injected `--session-id` collides with a live process or stale lock.
+- `No conversation found with session ID: <uuid>` — a `--resume <uuid>` pointed at a missing session file (usually wrong config dir, e.g. running `c` where the session lives under `c2`'s `~/.claude-private`).
+
+**Auto-reset behaviour:** on this event the reader thread writes a fresh `export TUIC_SESSION=<new-uuid>` (or `set -gx` under fish) into the PTY so the shell wrapper's `--session-id` auto-injection stops wedging the tab on the stale id. Guarded by a 3-second cooldown — Claude prints the error line several times as it exits, but only the first fires the reset. The frontend raises a warn toast so the user knows what happened.
+
 ### ChoicePrompt
 
 Numbered confirmation / multiple-choice menu rendered by Claude-Code-style footers (`Esc to cancel · Tab to amend`):

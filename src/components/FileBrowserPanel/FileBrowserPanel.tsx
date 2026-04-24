@@ -4,7 +4,7 @@ import { appLogger } from "../../stores/appLogger";
 import { useFileBrowser } from "../../hooks/useFileBrowser";
 import { invoke, listen } from "../../invoke";
 import { getModifierSymbol, shortenHomePath } from "../../platform";
-import { replaceBasename } from "../../utils/pathUtils";
+import { replaceBasename, isAbsolutePath, joinPath } from "../../utils/pathUtils";
 import { ContextMenu, createContextMenu, type ContextMenuItem } from "../ContextMenu";
 import { Dropdown } from "../ui/Dropdown";
 import { ConfirmDialog } from "../ConfirmDialog";
@@ -517,7 +517,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   const handleRevealInOS = async (entry: DirEntry) => {
     const fsRoot = root();
     if (!fsRoot) return;
-    const abs = entry.path.startsWith("/") ? entry.path : `${fsRoot}/${entry.path}`;
+    const abs = isAbsolutePath(entry.path) ? entry.path : joinPath(fsRoot, entry.path);
     try {
       const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
       await revealItemInDir(abs);
@@ -596,7 +596,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 
     // Smart prompts with placement="file-context" — appear first when any exist.
     const fsRoot = root() ?? "";
-    const abs = entry.path.startsWith("/") ? entry.path : `${fsRoot}/${entry.path}`;
+    const abs = isAbsolutePath(entry.path) ? entry.path : joinPath(fsRoot, entry.path);
     const smartItem = fileContextSmartMenuItem(
       { absPath: abs, repoRoot: fsRoot, isDir: entry.is_dir },
       smartPrompts,
@@ -648,7 +648,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
           const r = root();
           if (!r) return;
           import("@tauri-apps/plugin-opener").then(({ openPath }) => {
-            const abs = entry.path.startsWith("/") ? entry.path : `${r}/${entry.path}`;
+            const abs = isAbsolutePath(entry.path) ? entry.path : joinPath(r, entry.path);
             openPath(abs).catch((err) => appLogger.error("app", "Failed to open file with default app", err));
           });
         },
@@ -1047,7 +1047,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
                 {(entry, index) => {
                   const isSearch = !!searchQuery().trim();
                   const absPath = () =>
-                    entry.path.startsWith("/") ? entry.path : `${root() ?? ""}/${entry.path}`;
+                    isAbsolutePath(entry.path) ? entry.path : joinPath(root() ?? "", entry.path);
                   return (
                     <div
                       class={cx(

@@ -308,7 +308,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
               >
                 {extractGithubRepo(pr().url)
                   ?? repositoriesStore.get(props.repoPath)?.displayName
-                  ?? props.repoPath.split("/").pop()}
+                  ?? props.repoPath.split(/[\\/]/).pop()}
               </div>
 
               {/* Header: state badge + title + number */}

@@ -131,6 +131,26 @@ describe("plan-file path resolution", () => {
     await flushMicrotasks();
     expect(getPlans().has("/absolute/plans/bar.md")).toBe(true);
   });
+
+  it("resolves relative path with Windows CWD", async () => {
+    addTerminalWithSession("sess-win", "C:\\DATA\\repos\\arcane");
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "plans/feature.md" }, "sess-win");
+    await flushMicrotasks();
+    expect(getPlans().has("C:\\DATA\\repos\\arcane/plans/feature.md")).toBe(true);
+  });
+
+  it("keeps Windows absolute path unchanged", async () => {
+    addTerminalWithSession("sess-win2", "C:\\DATA\\repos\\arcane");
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "C:\\DATA\\repos\\arcane\\plans\\bar.md" }, "sess-win2");
+    await flushMicrotasks();
+    expect(getPlans().has("C:\\DATA\\repos\\arcane\\plans\\bar.md")).toBe(true);
+  });
+
+  it("does NOT skip Windows absolute paths as unresolved", async () => {
+    pluginRegistry.dispatchStructuredEvent("plan-file", { path: "D:\\plans\\orphan.md" }, "s1");
+    await flushMicrotasks();
+    expect(getPlans().size).toBe(1);
+  });
 });
 
 // ---------------------------------------------------------------------------

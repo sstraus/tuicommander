@@ -8,6 +8,7 @@ import { activityStore } from "../stores/activityStore";
 import { repoSettingsStore } from "../stores/repoSettings";
 import { paneLayoutStore } from "../stores/paneLayout";
 import { assignTabToActiveGroup } from "../utils/paneTabAssign";
+import { isAbsolutePath, pathStartsWith, pathStripPrefix } from "../utils/pathUtils";
 import { mdTabsStore } from "../stores/mdTabs";
 import { editorTabsStore } from "../stores/editorTabs";
 import { invoke, listen } from "../invoke";
@@ -291,25 +292,20 @@ export async function initApp(deps: AppInitDeps) {
     // Match to repo/branch by cwd (ancestor path matching)
     let assigned = false;
     if (cwd) {
-      const cwdNorm = cwd.endsWith("/") ? cwd : cwd + "/";
       const matchedRepo = repositoriesStore.getPaths().find((repoPath) => {
-        const repoNorm = repoPath.endsWith("/") ? repoPath : repoPath + "/";
-        // cwd is the repo root or a subdirectory of it
-        if (cwd === repoPath || cwdNorm.startsWith(repoNorm)) return true;
-        // cwd is a worktree path or subdirectory of one
+        if (pathStartsWith(cwd, repoPath)) return true;
         const repoState = repositoriesStore.get(repoPath);
         if (!repoState) return false;
         return Object.values(repoState.branches).some(
-          (b) => b.worktreePath && (cwd === b.worktreePath || cwdNorm.startsWith(b.worktreePath + "/")),
+          (b) => b.worktreePath && pathStartsWith(cwd, b.worktreePath),
         );
       });
 
       if (matchedRepo) {
         const repoState = repositoriesStore.get(matchedRepo);
-        // Try worktree match first, then fall back to active branch
         const branchName =
           Object.values(repoState?.branches || {}).find(
-            (b) => b.worktreePath && (cwd === b.worktreePath || cwdNorm.startsWith(b.worktreePath + "/")),
+            (b) => b.worktreePath && pathStartsWith(cwd, b.worktreePath),
           )?.name || repoState?.activeBranch;
 
         if (branchName) {
@@ -370,10 +366,10 @@ export async function initApp(deps: AppInitDeps) {
         // Resolve: absolute path → find owning repo, relative → active repo
         let repoPath: string | null = null;
         let relPath = filePath;
-        if (filePath.startsWith("/")) {
+        if (isAbsolutePath(filePath)) {
           const repos = repositoriesStore.getPaths();
-          repoPath = repos.find((rp) => filePath.startsWith(rp + "/") || filePath === rp) ?? null;
-          if (repoPath) relPath = filePath.slice(repoPath.length + 1);
+          repoPath = repos.find((rp) => pathStartsWith(filePath, rp)) ?? null;
+          if (repoPath) relPath = pathStripPrefix(filePath, repoPath);
         } else {
           repoPath = activeRepoPath ?? null;
         }
@@ -384,7 +380,7 @@ export async function initApp(deps: AppInitDeps) {
           const line = parseInt(parsed.searchParams.get("line") || "0", 10);
           if (repoPath) {
             editorTabsStore.add(repoPath, relPath, line || undefined);
-          } else if (filePath.startsWith("/")) {
+          } else if (isAbsolutePath(filePath)) {
             editorTabsStore.add("__external__", filePath, line || undefined, { externalEditable: true });
           } else {
             appLogger.warn("app", `tuic://edit relative path without active repo: ${filePath}`);

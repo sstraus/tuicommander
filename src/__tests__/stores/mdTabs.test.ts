@@ -460,6 +460,34 @@ describe("mdTabsStore", () => {
         expect(resolveRepoForCwd("/Gits/alpha-sibling/src")).toBeNull();
       });
     });
+
+    it("resolves Windows drive-letter CWD to registered Windows repo", () => {
+      testInScope(() => {
+        repositoriesStore.add({ path: "C:\\DATA\\repos\\arcane", displayName: "arcane" });
+        expect(resolveRepoForCwd("C:\\DATA\\repos\\arcane\\src")).toBe("C:\\DATA\\repos\\arcane");
+      });
+    });
+
+    it("does not match Windows path that merely shares a name prefix", () => {
+      testInScope(() => {
+        repositoriesStore.add({ path: "C:\\DATA\\repos\\arcane", displayName: "arcane" });
+        expect(resolveRepoForCwd("C:\\DATA\\repos\\arcane-fork\\src")).toBeNull();
+      });
+    });
+
+    it("matches mixed separators (forward slash CWD against backslash repo)", () => {
+      testInScope(() => {
+        repositoriesStore.add({ path: "C:\\DATA\\repos\\arcane", displayName: "arcane" });
+        expect(resolveRepoForCwd("C:/DATA/repos/arcane/src/lib")).toBe("C:\\DATA\\repos\\arcane");
+      });
+    });
+
+    it("returns exact match for Windows drive-letter repo", () => {
+      testInScope(() => {
+        repositoriesStore.add({ path: "C:\\DATA\\repos\\arcane", displayName: "arcane" });
+        expect(resolveRepoForCwd("C:\\DATA\\repos\\arcane")).toBe("C:\\DATA\\repos\\arcane");
+      });
+    });
   });
 
   describe("openUiTab() repo routing", () => {

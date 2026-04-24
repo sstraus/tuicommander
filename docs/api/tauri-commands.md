@@ -317,6 +317,7 @@ The live registry exposes status via SSE events (`upstream_status_changed`). Val
 | `install_agent_mcp` | `agent` | `String` | Install TUICommander MCP entry |
 | `remove_agent_mcp` | `agent` | `String` | Remove TUICommander MCP entry |
 | `get_agent_config_path` | `agent` | `String` | Get agent's MCP config file path |
+| `get_mcp_bridge_info` | — | `McpBridgeInfo` | Bridge path + ready-to-paste JSON config snippet |
 
 ## Prompt Processing (`prompt.rs`)
 

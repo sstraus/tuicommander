@@ -1,5 +1,6 @@
 import { createTabManager, type BaseTab } from "./tabManager";
 import { currentBranchKey } from "./repositories";
+import { pathBasename } from "../utils/pathUtils";
 
 /** Editor tab data */
 export interface EditorTabData extends BaseTab {
@@ -37,7 +38,7 @@ function createEditorTabsStore() {
       }
 
       const id = base._nextId("edit");
-      const fileName = filePath.split("/").pop() || filePath;
+      const fileName = pathBasename(filePath) || filePath;
       return base._addTab({ id, repoPath, filePath, fileName, isDirty: false, branchKey: currentBranchKey(), initialLine, externalEditable: opts?.externalEditable });
     },
 

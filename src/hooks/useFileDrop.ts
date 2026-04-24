@@ -15,6 +15,7 @@ import {
 import { rpc, isTauri } from "../transport";
 import { invoke } from "../invoke";
 import { classifyFile } from "../utils/filePreview";
+import { pathStartsWith, pathStripPrefix } from "../utils/pathUtils";
 
 // Re-export for existing callsites that import from useFileDrop
 export { markInternalDragStart, markInternalDragEnd, isInternalDrag };
@@ -33,11 +34,8 @@ export function classifyDroppedFile(filePath: string): "markdown" | "editor" {
  */
 function resolveRepoPaths(absolutePath: string): [repoPath: string, filePath: string] {
   const activeRepo = repositoriesStore.state.activeRepoPath;
-  if (activeRepo) {
-    const prefix = activeRepo.endsWith("/") ? activeRepo : activeRepo + "/";
-    if (absolutePath.startsWith(prefix)) {
-      return [activeRepo, absolutePath.slice(prefix.length)];
-    }
+  if (activeRepo && pathStartsWith(absolutePath, activeRepo)) {
+    return [activeRepo, pathStripPrefix(absolutePath, activeRepo)];
   }
   return ["", absolutePath];
 }

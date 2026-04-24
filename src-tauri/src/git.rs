@@ -1837,28 +1837,24 @@ fn validate_paths_within_repo(repo_path: &Path, files: &[String]) -> Result<(), 
                 }
             }
             Err(_) => {
-                // File doesn't exist on disk — normalize manually and verify prefix.
-                // Always check, not only when ".." is present, to catch all traversal vectors.
-                let mut components = Vec::new();
-                for component in full.components() {
+                // File doesn't exist on disk — validate the relative path doesn't escape.
+                // We already rejected absolute paths above, so `file` is relative.
+                // Walk its components: any upward traversal above the root is rejected.
+                let mut depth: usize = 0;
+                for component in Path::new(file).components() {
                     match component {
+                        std::path::Component::Normal(_) => { depth += 1; }
                         std::path::Component::ParentDir => {
-                            if components.is_empty() {
+                            if depth == 0 {
                                 return Err(format!("Access denied: path '{}' is outside repository", file));
                             }
-                            components.pop();
+                            depth -= 1;
                         }
-                        std::path::Component::Normal(c) => components.push(c.to_os_string()),
                         std::path::Component::RootDir | std::path::Component::Prefix(_) => {
-                            components.clear();
-                            components.push(component.as_os_str().to_os_string());
+                            return Err(format!("Access denied: path '{}' is outside repository", file));
                         }
                         std::path::Component::CurDir => {}
                     }
-                }
-                let normalized: PathBuf = components.iter().collect();
-                if !normalized.starts_with(&canonical_repo) {
-                    return Err(format!("Access denied: path '{}' is outside repository", file));
                 }
             }
         }

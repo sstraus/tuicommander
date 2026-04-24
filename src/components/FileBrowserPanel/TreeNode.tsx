@@ -2,6 +2,7 @@ import { Component, createSignal, For, Show } from "solid-js";
 import { useFileBrowser } from "../../hooks/useFileBrowser";
 import { appLogger } from "../../stores/appLogger";
 import { cx } from "../../utils";
+import { isAbsolutePath, joinPath } from "../../utils/pathUtils";
 import type { DirEntry } from "../../types/fs";
 import { getStatusClass, formatSize } from "./fileUtils";
 import { FileIcon } from "./FileIcon";
@@ -50,7 +51,7 @@ export const TreeNode: Component<TreeNodeProps> = (props) => {
   };
 
   const absPath = () =>
-    props.entry.path.startsWith("/") ? props.entry.path : `${props.fsRoot}/${props.entry.path}`;
+    isAbsolutePath(props.entry.path) ? props.entry.path : joinPath(props.fsRoot, props.entry.path);
 
   return (
     <>

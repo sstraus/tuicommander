@@ -122,6 +122,18 @@ pub enum ParsedEvent {
         #[serde(skip_serializing_if = "Option::is_none")]
         agent_type: Option<String>,
     },
+    /// Agent failed to start because of a session-id conflict or missing session.
+    /// Emitted when Claude Code prints startup errors like
+    /// "Session ID X is already in use." or "No conversation found with session ID: X".
+    /// The PTY reader consumes this to auto-reset `TUIC_SESSION` so the shell
+    /// wrapper's `--session-id` injection stops wedging the terminal across
+    /// repeated invocations.
+    #[serde(rename = "agent-session-conflict")]
+    AgentSessionConflict {
+        matched_text: String,
+        /// "in-use" (session id already locked) or "not-found" (session id not resumable)
+        kind: String,
+    },
 }
 
 /// Payload for ParsedEvent::ChoicePrompt. Separate struct so it can be reused
@@ -206,6 +218,14 @@ lazy_static::lazy_static! {
     static ref RATE_LIMIT_PATTERNS: Vec<RateLimitPattern> = build_rate_limit_patterns();
     /// Pre-built API error patterns — compiled once at first use.
     static ref API_ERROR_PATTERNS: Vec<ApiErrorPattern> = build_api_error_patterns();
+    /// Claude Code session-id conflict on startup: the value injected via
+    /// `--session-id` is already held by another process (or a stale lock).
+    static ref SESSION_IN_USE_RE: regex::Regex =
+        regex::Regex::new(r"Session ID\s+[0-9a-fA-F-]{8,}\s+is already in use").unwrap();
+    /// Claude Code `--resume <id>` against a session file that no longer exists
+    /// (wrong config dir, pruned history, etc.).
+    static ref SESSION_NOT_FOUND_RE: regex::Regex =
+        regex::Regex::new(r"No conversation found with session ID:\s*[0-9a-fA-F-]{8,}").unwrap();
 }
 
 impl OutputParser {
@@ -297,6 +317,11 @@ impl OutputParser {
 
         // Suggest follow-up actions: `suggest: A | B | C` at column 0
         if let Some(evt) = parse_suggest(&clean, true) {
+            events.push(evt);
+        }
+
+        // Agent startup session-id conflict (Claude Code)
+        if let Some(evt) = parse_agent_session_conflict(&clean) {
             events.push(evt);
         }
 
@@ -409,6 +434,12 @@ impl OutputParser {
             } else {
                 events.push(evt);
             }
+        }
+
+        // Agent startup session-id conflict (Claude Code):
+        // "Session ID ... is already in use" / "No conversation found with session ID: ..."
+        if let Some(evt) = parse_agent_session_conflict(&joined) {
+            events.push(evt);
         }
 
         // Reset dedup state on user-input (new agent cycle may produce new errors/suggestions).
@@ -933,6 +964,46 @@ fn parse_usage_exhausted(clean: &str) -> Option<ParsedEvent> {
         }
     }
     None
+}
+
+/// Claude Code startup session-id conflict.
+///
+/// Fires on two distinct startup failures:
+///   * `Session ID <uuid> is already in use.` — the injected `--session-id`
+///     collides with a running process or a stale lock.
+///   * `No conversation found with session ID: <uuid>` — a `--resume <uuid>`
+///     pointed at a session file that doesn't exist (usually wrong config dir).
+///
+/// Both wedge the shell: the auto-injecting wrapper keeps re-using the same
+/// `$TUIC_SESSION`, so every subsequent `claude` invocation in the tab hits
+/// the same error. The PTY reader consumes this event to auto-reset the env
+/// var (see `pty.rs`) so the next invocation gets a fresh UUID.
+fn parse_agent_session_conflict(clean: &str) -> Option<ParsedEvent> {
+    // Fast path: the substring "session ID" (case-insensitive) is the only
+    // common thread. Bail early on chunks that can't possibly match.
+    if !clean.contains("Session ID") && !clean.contains("session ID") {
+        return None;
+    }
+    let try_match = |re: &regex::Regex, kind: &str| -> Option<ParsedEvent> {
+        let m = re.find(clean)?;
+        // Guard: reject matches that live inside source code, diff hunks, or
+        // markdown fences — this exact file will match its own regex when an
+        // agent pastes it back into a terminal.
+        let match_line = clean[..m.start()]
+            .rfind('\n')
+            .map(|nl| &clean[nl + 1..])
+            .unwrap_or(clean);
+        let match_line = match_line.lines().next().unwrap_or(match_line);
+        if line_is_code_or_diff(match_line) {
+            return None;
+        }
+        Some(ParsedEvent::AgentSessionConflict {
+            matched_text: m.as_str().to_string(),
+            kind: kind.to_string(),
+        })
+    };
+    try_match(&SESSION_IN_USE_RE, "in-use")
+        .or_else(|| try_match(&SESSION_NOT_FOUND_RE, "not-found"))
 }
 
 /// Question detection: most detection is handled by the silence-based detector
@@ -1578,6 +1649,69 @@ mod tests {
         let mut parser = OutputParser::new();
         let events = parser.parse("Hello world, everything is fine");
         assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_agent_session_conflict_in_use() {
+        let mut parser = OutputParser::new();
+        let events = parser.parse(
+            "Error: Session ID 48ab1308-3b52-4ed3-af0f-e67c8f4ee890 is already in use.",
+        );
+        let conflict = events
+            .iter()
+            .find(|e| matches!(e, ParsedEvent::AgentSessionConflict { .. }))
+            .expect("Expected AgentSessionConflict event");
+        match conflict {
+            ParsedEvent::AgentSessionConflict { kind, matched_text } => {
+                assert_eq!(kind, "in-use");
+                assert!(matched_text.contains("48ab1308"));
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn test_agent_session_conflict_not_found() {
+        let mut parser = OutputParser::new();
+        let events = parser.parse(
+            "No conversation found with session ID: ac9a1640-f3bf-4707-8b38-49ad6be4e2f1",
+        );
+        let conflict = events
+            .iter()
+            .find(|e| matches!(e, ParsedEvent::AgentSessionConflict { .. }))
+            .expect("Expected AgentSessionConflict event");
+        match conflict {
+            ParsedEvent::AgentSessionConflict { kind, .. } => {
+                assert_eq!(kind, "not-found");
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn test_agent_session_conflict_ignores_source_code() {
+        let mut parser = OutputParser::new();
+        // Indented string literal like our own regex source — must NOT fire.
+        let events = parser.parse(
+            "    let msg = \"Session ID abc12345-0000-0000-0000-000000000000 is already in use\";",
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, ParsedEvent::AgentSessionConflict { .. })),
+            "source-code context should be rejected: {events:?}"
+        );
+    }
+
+    #[test]
+    fn test_agent_session_conflict_no_match() {
+        let mut parser = OutputParser::new();
+        let events = parser.parse("Session ID is used but not quite in use here");
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, ParsedEvent::AgentSessionConflict { .. })),
+        );
     }
 
     #[test]

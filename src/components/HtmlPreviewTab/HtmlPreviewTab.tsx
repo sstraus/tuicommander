@@ -6,6 +6,7 @@ import { repositoriesStore } from "../../stores/repositories";
 import { invoke } from "../../invoke";
 import { mdTabsStore, type HtmlPreviewTab as HtmlPreviewTabData } from "../../stores/mdTabs";
 import { shortenHomePath } from "../../platform";
+import { isAbsolutePath, joinPath } from "../../utils/pathUtils";
 import { openPath } from "@tauri-apps/plugin-opener";
 import e from "../shared/editor-header.module.css";
 import s from "./HtmlPreviewTab.module.css";
@@ -40,7 +41,7 @@ function detectKind(fileName: string): PreviewKind {
 /** Resolve full absolute path from tab data */
 function absolutePath(tab: HtmlPreviewTabData): string {
   const root = tab.fsRoot || tab.repoPath;
-  return tab.filePath.startsWith("/") ? tab.filePath : `${root}/${tab.filePath}`;
+  return isAbsolutePath(tab.filePath) ? tab.filePath : joinPath(root, tab.filePath);
 }
 
 export const HtmlPreviewTab: Component<HtmlPreviewTabProps> = (props) => {
@@ -63,7 +64,7 @@ export const HtmlPreviewTab: Component<HtmlPreviewTabProps> = (props) => {
 
   /** Read file content — used for HTML and text previews */
   const readFileContent = async (fsRoot: string | undefined, filePath: string): Promise<string> => {
-    if (filePath.startsWith("/")) {
+    if (isAbsolutePath(filePath)) {
       return await invoke<string>("read_external_file", { path: filePath });
     }
     return fsRoot
@@ -109,7 +110,7 @@ export const HtmlPreviewTab: Component<HtmlPreviewTabProps> = (props) => {
   const displayPath = () => {
     const { fsRoot, repoPath, filePath } = props.tab;
     const root = fsRoot || repoPath;
-    return filePath.startsWith("/") ? shortenHomePath(filePath) : `${shortenHomePath(root)}/${filePath}`;
+    return isAbsolutePath(filePath) ? shortenHomePath(filePath) : joinPath(shortenHomePath(root), filePath);
   };
 
   return (

@@ -740,3 +740,11 @@ Features to test when TUICommander is more usable.
 - [ ] Option hint in parens (e.g. "Yes, and don't ask again (shift+tab)") renders as separate `.hint` span
 - [ ] Codex numbered-choice dialog (if/when encountered) captured by parser — add fixture if not
 - [ ] Aider confirmation dialog — add fixture if layout differs
+
+## AgentSessionConflict auto-reset
+- [ ] In a zsh PTY tab, `claude --session-id <known-stale-uuid>` to force "Session ID already in use" — confirm warn toast fires and `TUIC_SESSION` is reset (check via `echo $TUIC_SESSION`)
+- [ ] Repeat with `claude --resume <missing-uuid>` to trigger "No conversation found with session ID" path (kind="not-found")
+- [ ] Subsequent `claude` (plain) in same tab spawns cleanly — wrapper now injects the NEW uuid, no retry wedge
+- [ ] Cooldown: pasting the error text twice in quick succession fires only one toast (3s cooldown)
+- [ ] Fish shell (`chsh` or spawn explicitly): conflict triggers `set -gx TUIC_SESSION …` syntax, not `export`
+- [ ] False-positive guard: an agent pasting the source of `output_parser.rs` (regex line) does NOT trigger a reset — indented string literals rejected by `line_is_code_or_diff`

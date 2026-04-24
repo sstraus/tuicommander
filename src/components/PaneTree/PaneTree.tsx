@@ -16,6 +16,7 @@ import { getRepoColor } from "../../utils/repoColor";
 import { initMouseDrag } from "../../hooks/useMouseDrag";
 import { findPaneGroupAtPoint } from "../../stores/dragDrop";
 import { GlobeIcon } from "../GlobeIcon";
+import { pathBasename } from "../../utils/pathUtils";
 import "./PaneTree.css";
 
 // ---- PaneNodeView: recursive tree renderer ----
@@ -531,11 +532,11 @@ function tabTitle(tab: PaneTab): string {
     }
     case "diff": {
       const d = diffTabsStore.get(tab.id);
-      return d?.filePath?.split("/").pop() ?? tab.id;
+      return (d?.filePath && pathBasename(d.filePath)) || tab.id;
     }
     case "editor": {
       const e = editorTabsStore.get(tab.id);
-      return e?.filePath?.split("/").pop() ?? tab.id;
+      return (e?.filePath && pathBasename(e.filePath)) || tab.id;
     }
   }
 }

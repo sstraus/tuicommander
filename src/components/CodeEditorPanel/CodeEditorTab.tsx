@@ -12,6 +12,7 @@ import { repositoriesStore } from "../../stores/repositories";
 import { appLogger } from "../../stores/appLogger";
 import { useFileBrowser } from "../../hooks/useFileBrowser";
 import { invoke } from "../../invoke";
+import { isAbsolutePath } from "../../utils/pathUtils";
 import { ContextMenu, createContextMenu } from "../ContextMenu";
 import { codeEditorTheme } from "./theme";
 import { detectLanguage } from "./languageDetection";
@@ -50,7 +51,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
   const fb = useFileBrowser();
 
   /** True when the file path is absolute (outside the repository) */
-  const isExternal = () => props.filePath.startsWith("/");
+  const isExternal = () => isAbsolutePath(props.filePath);
 
   /** Guard: scroll to initialLine only once on first file load */
   let didScrollToInitialLine = false;
