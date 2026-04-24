@@ -37,7 +37,7 @@ export function resolveTuicPath(
     const sorted = [...repoPaths].sort((a, b) => b.length - a.length);
     const repo = sorted.find((rp) => pathStartsWith(path, rp));
     if (!repo) return null;
-    return { repoPath: repo, relPath: pathStripPrefix(path, repo) };
+    return { repoPath: repo, relPath: pathStripPrefix(path, repo)! };
   }
 
   if (!activeRepoPath) return null;
@@ -48,6 +48,6 @@ export function resolveTuicPath(
     return null;
   }
 
-  const relPath = pathStripPrefix(absoluteResolved, activeRepoPath);
+  const relPath = pathStripPrefix(absoluteResolved, activeRepoPath)!;
   return { repoPath: activeRepoPath, relPath };
 }

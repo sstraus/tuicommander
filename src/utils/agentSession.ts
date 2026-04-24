@@ -1,6 +1,7 @@
 import { AGENTS, type AgentType } from "../agents";
 import { rpc } from "../transport";
 import { agentConfigsStore } from "../stores/agentConfigs";
+import { pathBasename } from "./pathUtils";
 
 /**
  * Apply the agent's default run config to a resume command.
@@ -42,7 +43,7 @@ export function buildAgentLaunchCommand(command: string, agentSessionId?: string
 
   const parts = command.split(" ");
   const binary = parts[0];
-  const binaryName = binary.split(/[\\/]/).pop() ?? "";
+  const binaryName = pathBasename(binary) ?? "";
 
   const isClaude = agentType === "claude" || binaryName.startsWith("claude");
   if (!isClaude) return command;

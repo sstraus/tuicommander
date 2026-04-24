@@ -133,8 +133,8 @@ describe("pathStripPrefix", () => {
     expect(pathStripPrefix("C:\\repo\\src\\file.ts", "C:/repo")).toBe("src/file.ts");
   });
 
-  it("no match: returns original path unchanged", () => {
-    expect(pathStripPrefix("/other/path/file.ts", "/repo")).toBe("/other/path/file.ts");
+  it("no match: returns null", () => {
+    expect(pathStripPrefix("/other/path/file.ts", "/repo")).toBeNull();
   });
 
   it("prefix with trailing separator", () => {
@@ -142,7 +142,7 @@ describe("pathStripPrefix", () => {
   });
 
   it("partial directory name is NOT stripped", () => {
-    expect(pathStripPrefix("/Users/develop/file", "/Users/dev")).toBe("/Users/develop/file");
+    expect(pathStripPrefix("/Users/develop/file", "/Users/dev")).toBeNull();
   });
 });
 

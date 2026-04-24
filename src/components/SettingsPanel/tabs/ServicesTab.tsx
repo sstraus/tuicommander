@@ -741,7 +741,9 @@ export const ServicesTab: Component = () => {
                   navigator.clipboard.writeText(bridgeInfo()!.config_snippet).then(() => {
                     setSnippetCopied(true);
                     setTimeout(() => setSnippetCopied(false), 2000);
-                  }).catch(() => {});
+                  }).catch((err) => {
+                    appLogger.warn("settings", "Clipboard write failed", { error: String(err) });
+                  });
                 }}
               >{snippetCopied() ? "Copied" : "Copy"}</button>
             </div>

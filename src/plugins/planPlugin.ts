@@ -33,7 +33,7 @@ function displayName(absolutePath: string): string {
 function openPlanTab(absolutePath: string, repoPath: string | undefined): string | null {
   const root = repoPath?.replace(/[\\/]+$/, "");
   const relativePath =
-    root && pathStartsWith(absolutePath, root) ? pathStripPrefix(absolutePath, root) : absolutePath;
+    root && pathStartsWith(absolutePath, root) ? pathStripPrefix(absolutePath, root)! : absolutePath;
   return mdTabsStore.addFileBackground(root ?? "", relativePath);
 }
 
@@ -80,7 +80,7 @@ class PlanPlugin implements TuiPlugin {
       }
 
       // If an active repo is set, only accept plans from sessions within that repo
-      if (ownerRepo && cwd && !cwd.startsWith(ownerRepo)) {
+      if (ownerRepo && cwd && !pathStartsWith(cwd, ownerRepo)) {
         appLogger.info("plugin", `[plan] SKIPPED: session cwd "${cwd}" outside active repo "${ownerRepo}"`);
         return;
       }
@@ -107,8 +107,11 @@ class PlanPlugin implements TuiPlugin {
     const plansDir = joinPath(repoPath, "plans");
     this.watchedPlansDir = plansDir;
 
-    invoke("start_dir_watcher", { path: plansDir }).catch(() => {
-      // plans/ directory may not exist — that's fine
+    invoke("start_dir_watcher", { path: plansDir }).catch((err) => {
+      const msg = String(err);
+      if (!msg.includes("not found") && !msg.includes("No such file")) {
+        appLogger.warn("plugin", "[plan] Failed to start dir watcher", err);
+      }
     });
 
     listen<{ dir_path: string }>("dir-changed", (event) => {
@@ -166,9 +169,11 @@ class PlanPlugin implements TuiPlugin {
         }
       })
       .then(() => this.openActivePlan(repoPath))
-      .catch(() => {
-        // plans/ directory may not exist — that's fine
-        // Still try to open active plan even if plans/ doesn't exist
+      .catch((err) => {
+        const msg = String(err);
+        if (!msg.includes("not found") && !msg.includes("No such file")) {
+          appLogger.warn("plugin", "[plan] Failed to scan plans directory", err);
+        }
         this.openActivePlan(repoPath);
       });
   }

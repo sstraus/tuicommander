@@ -1248,15 +1248,17 @@ struct ChunkProcessor {
     pending_command: Option<String>,
     /// `Instant` when OSC 133 C arrived; used for `duration_ms`.
     pending_command_started: Option<std::time::Instant>,
-    /// Last time we auto-reset `TUIC_SESSION` in response to an
-    /// `AgentSessionConflict` event. Gates subsequent resets so a single
-    /// burst of conflict output (Claude prints the line repeatedly as it
-    /// exits) fires the mitigation exactly once.
-    last_tuic_session_reset: Option<std::time::Instant>,
+    /// TUIC_SESSION UUID for this PTY — used to create flag files that
+    /// signal the shell wrapper to stop injecting `--session-id`.
+    tuic_session: Option<String>,
+    /// Last time we created a no-session-inject flag file in response to
+    /// an `AgentSessionConflict` event. Gates subsequent marks so a single
+    /// burst of conflict output fires the mitigation exactly once.
+    last_session_conflict_mark: Option<std::time::Instant>,
 }
 
 impl ChunkProcessor {
-    fn new(session_cwd: Option<String>) -> Self {
+    fn new(session_cwd: Option<String>, tuic_session: Option<String>) -> Self {
         Self {
             parser: OutputParser::new(),
             last_status_task: None,
@@ -1274,7 +1276,8 @@ impl ChunkProcessor {
             last_vt_log_emit: None,
             pending_command: None,
             pending_command_started: None,
-            last_tuic_session_reset: None,
+            tuic_session,
+            last_session_conflict_mark: None,
         }
     }
 
@@ -1436,58 +1439,43 @@ impl ChunkProcessor {
         }
     }
 
-    /// Auto-reset `TUIC_SESSION` when a Claude-Code startup session-id
-    /// conflict is detected in PTY output. The shell wrapper (see
-    /// `shell_integration.rs`) auto-injects `--session-id $TUIC_SESSION`
-    /// into every `claude` invocation; once that id collides, every retry
-    /// fails identically. Writing a fresh `export TUIC_SESSION=<uuid>` into
-    /// the shell unblocks the next invocation without the user having to
-    /// bypass the alias manually.
+    /// Create a flag file that tells the shell wrapper to stop injecting
+    /// `--session-id $TUIC_SESSION` into `claude` invocations. This is the
+    /// safe alternative to writing `export TUIC_SESSION=…` into the PTY,
+    /// which can corrupt fullscreen TUI output or race with user input.
     ///
     /// Guarded by a 3-second cooldown: Claude prints the error line multiple
-    /// times as it exits, and we want exactly one reset per conflict burst.
-    fn maybe_reset_tuic_session(&mut self, session_id: &str, state: &AppState, kind: &str) {
+    /// times as it exits, and we want exactly one flag per conflict burst.
+    fn mark_session_no_inject(&mut self, kind: &str) {
         const COOLDOWN: std::time::Duration = std::time::Duration::from_secs(3);
         let now = std::time::Instant::now();
         if self
-            .last_tuic_session_reset
+            .last_session_conflict_mark
             .is_some_and(|t| now.duration_since(t) < COOLDOWN)
         {
             return;
         }
-        self.last_tuic_session_reset = Some(now);
+        self.last_session_conflict_mark = Some(now);
 
-        let new_session = Uuid::new_v4().to_string();
-        let Some(entry) = state.sessions.get(session_id) else {
+        let Some(ref tuic_session) = self.tuic_session else {
             return;
         };
-        let mut guard = entry.lock();
-        // Fish uses `set -x`; bash/zsh/sh use `export`. Check the shell path
-        // before emitting the assignment — fish would choke on `export VAR=…`.
-        let is_fish = std::path::Path::new(&guard.shell)
-            .file_name()
-            .and_then(|s| s.to_str())
-            .is_some_and(|s| s.eq_ignore_ascii_case("fish"));
-        let line = if is_fish {
-            format!("\nset -gx TUIC_SESSION {new_session}\n")
-        } else {
-            format!("\nexport TUIC_SESSION={new_session}\n")
-        };
-        match guard.writer.write_all(line.as_bytes()) {
+
+        let flag_path = crate::config::config_dir()
+            .join(format!("no-session-inject.{tuic_session}"));
+        match std::fs::write(&flag_path, b"") {
             Ok(()) => {
-                let _ = guard.writer.flush();
                 tracing::info!(
-                    session_id = %session_id,
-                    new_tuic_session = %new_session,
+                    tuic_session = %tuic_session,
                     kind = %kind,
-                    "TUIC_SESSION auto-reset after agent-session-conflict"
+                    "Created no-session-inject flag after agent-session-conflict"
                 );
             }
             Err(e) => {
                 tracing::warn!(
-                    session_id = %session_id,
+                    tuic_session = %tuic_session,
                     error = %e,
-                    "TUIC_SESSION auto-reset: PTY write failed"
+                    "Failed to create no-session-inject flag"
                 );
             }
         }
@@ -1651,10 +1639,10 @@ impl ChunkProcessor {
             .unwrap_or(false);
         events.extend(self.parser.parse_clean_lines(&changed_rows, agent_active_for_parse));
 
-        // Slash menu detection — trim prompt/status chrome from the bottom
-        // of the screen before scanning, because the menu renders above the
-        // prompt line (separator + ❯ + status bar) and the parser scans
-        // bottom-up, breaking on the first non-matching row.
+        // Compute screen rows once for both slash-menu and choice-prompt parsers.
+        let screen_cache = state.vt_log_buffers.get(session_id)
+            .map(|vt_log| vt_log.lock().screen_rows());
+
         // Slash menu detection — use full screen rows (not chrome-trimmed).
         // Claude Code v2.1+ renders autocomplete items BELOW the prompt chrome,
         // so trimming to above-chrome would discard the menu. parse_slash_menu
@@ -1663,10 +1651,9 @@ impl ChunkProcessor {
         let slash_on = state.slash_mode.get(session_id)
             .is_some_and(|v| v.load(std::sync::atomic::Ordering::Relaxed));
         if slash_on
-            && let Some(vt_log) = state.vt_log_buffers.get(session_id)
+            && let Some(screen) = &screen_cache
         {
-            let screen = vt_log.lock().screen_rows();
-            let menu = crate::output_parser::parse_slash_menu(&screen);
+            let menu = crate::output_parser::parse_slash_menu(screen);
             tracing::debug!("slash_menu parse: sid={session_id} found={} rows={}", menu.is_some(), screen.len());
             if let Some(evt) = menu {
                 events.push(evt);
@@ -1680,11 +1667,10 @@ impl ChunkProcessor {
         // Parser uses a strict shape (title with ?/verb + ≥2 numbered options)
         // so false-positive cost is low. Dedup via last_choice_prompt_sig
         // guards against repaint re-emission.
-        if let Some(vt_log) = state.vt_log_buffers.get(session_id) {
-            let screen = vt_log.lock().screen_rows();
-            if let Some(evt) = crate::output_parser::parse_choice_prompt(&screen) {
-                events.push(evt);
-            }
+        if let Some(screen) = &screen_cache
+            && let Some(evt) = crate::output_parser::parse_choice_prompt(screen)
+        {
+            events.push(evt);
         }
 
         let regex_found_question = if suppress_notifications { false } else {
@@ -1701,23 +1687,21 @@ impl ChunkProcessor {
                 continue;
             }
 
-            // Auto-reset TUIC_SESSION on Claude-Code session-id conflict.
-            // The shell wrapper keeps injecting the same `$TUIC_SESSION`, so
-            // once it collides every subsequent `claude` invocation hits the
-            // same error — the tab effectively dies. Cooldown prevents a
-            // burst of identical error lines from firing multiple resets.
+            // Mark session for no-inject on Claude-Code session-id conflict.
+            // The shell wrapper checks for a flag file before injecting
+            // `--session-id $TUIC_SESSION`; creating the flag stops the
+            // broken injection without risky PTY writes.
             //
             // Gate on Shell mode: the conflict is a startup-only error, so
             // if we're inside a fullscreen TUI (an agent already running) the
-            // match is a false positive (e.g. the agent quoting a log line)
-            // and writing `export TUIC_SESSION=…` would corrupt the TUI.
+            // match is a false positive (e.g. the agent quoting a log line).
             if let ParsedEvent::AgentSessionConflict { kind, .. } = event
                 && matches!(
                     self.terminal_mode,
                     crate::ai_agent::tui_detect::TerminalMode::Shell
                 )
             {
-                self.maybe_reset_tuic_session(session_id, state, kind);
+                self.mark_session_no_inject(kind);
             }
 
             // Suggest: park in SilenceState and defer emission until silence
@@ -2385,6 +2369,7 @@ pub(crate) fn spawn_reader_thread(
     session_id: String,
     app: AppHandle,
     state: Arc<AppState>,
+    tuic_session: Option<String>,
 ) {
     let silence = Arc::new(Mutex::new(SilenceState::new()));
     let running = Arc::new(AtomicBool::new(true));
@@ -2412,7 +2397,7 @@ pub(crate) fn spawn_reader_thread(
             .sessions
             .get(&session_id)
             .and_then(|s| s.lock().cwd.clone());
-        let mut processor = ChunkProcessor::new(session_cwd);
+        let mut processor = ChunkProcessor::new(session_cwd, tuic_session);
         loop {
             while paused.load(Ordering::Relaxed) {
                 std::thread::sleep(std::time::Duration::from_millis(10));
@@ -2546,7 +2531,7 @@ pub(crate) fn spawn_headless_reader_thread(
             .sessions
             .get(&session_id)
             .and_then(|s| s.lock().cwd.clone());
-        let mut processor = ChunkProcessor::new(session_cwd);
+        let mut processor = ChunkProcessor::new(session_cwd, None);
         loop {
             while paused.load(Ordering::Relaxed) {
                 std::thread::sleep(std::time::Duration::from_millis(10));
@@ -2661,6 +2646,7 @@ pub(crate) async fn create_pty(
         // (e.g. `claude --session-id $TUIC_SESSION`, then `claude --resume $TUIC_SESSION`)
         if let Some(ref tuic_session) = config.tuic_session {
             cmd.env("TUIC_SESSION", tuic_session);
+            cmd.env("TUIC_CONFIG_DIR", crate::config::config_dir().to_string_lossy().as_ref());
         }
 
         // Inject env flags (feature flags configured in Settings → Agents)
@@ -2683,6 +2669,14 @@ pub(crate) async fn create_pty(
     }
 
     let (pair, child) = pair_and_child.ok_or(last_err)?;
+
+    let tuic_session = config.tuic_session.clone();
+
+    // Clean up stale no-session-inject flag from a previous conflict
+    if let Some(ref ts) = tuic_session {
+        let flag = crate::config::config_dir().join(format!("no-session-inject.{ts}"));
+        let _ = std::fs::remove_file(&flag);
+    }
 
     let writer = pair
         .master
@@ -2735,6 +2729,7 @@ pub(crate) async fn create_pty(
         session_id.clone(),
         app,
         state.inner().clone(),
+        tuic_session,
     );
 
     Ok(session_id)
@@ -2833,7 +2828,7 @@ pub(crate) async fn spawn_session_for_agent(
         }));
     }
 
-    spawn_reader_thread(reader, paused, session_id.clone(), app, state.clone());
+    spawn_reader_thread(reader, paused, session_id.clone(), app, state.clone(), None);
 
     Ok(session_id)
 }
@@ -2967,6 +2962,7 @@ pub(crate) async fn create_pty_with_worktree(
         session_id.clone(),
         app,
         state.inner().clone(),
+        None,
     );
 
     Ok(WorktreeResult {
@@ -5877,7 +5873,7 @@ mod tests {
 
     #[test]
     fn test_chunk_processor_new_has_correct_defaults() {
-        let cp = ChunkProcessor::new(Some("/home/user/repo".to_string()));
+        let cp = ChunkProcessor::new(Some("/home/user/repo".to_string()), None);
         assert_eq!(cp.session_cwd, Some("/home/user/repo".to_string()));
         assert!(cp.last_status_task.is_none());
         assert!(cp.last_question_text.is_none());
@@ -5898,7 +5894,7 @@ mod tests {
         state.output_buffers.insert(sid.to_string(), Mutex::new(OutputRingBuffer::new(4096)));
         state.last_output_ms.insert(sid.to_string(), AtomicU64::new(0));
 
-        let mut cp = ChunkProcessor::new(None);
+        let mut cp = ChunkProcessor::new(None, None);
         let mut utf8_buf = Utf8ReadBuffer::new();
         let mut esc_buf = EscapeAwareBuffer::new();
 
@@ -5945,7 +5941,7 @@ mod tests {
         state.output_buffers.insert(sid.to_string(), Mutex::new(OutputRingBuffer::new(4096)));
         state.last_output_ms.insert(sid.to_string(), AtomicU64::new(0));
 
-        let mut cp = ChunkProcessor::new(None);
+        let mut cp = ChunkProcessor::new(None, None);
         let mut utf8_buf = Utf8ReadBuffer::new();
         let mut esc_buf = EscapeAwareBuffer::new();
 
@@ -5988,7 +5984,7 @@ mod tests {
 
     #[test]
     fn test_chunk_processor_planfile_resolution() {
-        let cp = ChunkProcessor::new(Some("/home/user/repo".to_string()));
+        let cp = ChunkProcessor::new(Some("/home/user/repo".to_string()), None);
         // Test that resolve_planfile_path resolves relative paths
         let resolved = cp.resolve_planfile_path("plans/foo.md");
         assert_eq!(resolved, Some("/home/user/repo/plans/foo.md".to_string()));
@@ -5996,14 +5992,14 @@ mod tests {
 
     #[test]
     fn test_chunk_processor_planfile_resolution_absolute_passthrough() {
-        let cp = ChunkProcessor::new(Some("/home/user/repo".to_string()));
+        let cp = ChunkProcessor::new(Some("/home/user/repo".to_string()), None);
         let resolved = cp.resolve_planfile_path("/absolute/path/plan.md");
         assert_eq!(resolved, Some("/absolute/path/plan.md".to_string()));
     }
 
     #[test]
     fn test_chunk_processor_planfile_resolution_no_cwd() {
-        let cp = ChunkProcessor::new(None);
+        let cp = ChunkProcessor::new(None, None);
         // Relative path with no CWD should return None
         let resolved = cp.resolve_planfile_path("plans/foo.md");
         assert_eq!(resolved, None);
@@ -6011,7 +6007,7 @@ mod tests {
 
     #[test]
     fn test_chunk_processor_planfile_normalizes_dotdot() {
-        let cp = ChunkProcessor::new(Some("/home/user/repo__wt/feat".to_string()));
+        let cp = ChunkProcessor::new(Some("/home/user/repo__wt/feat".to_string()), None);
         let resolved = cp.resolve_planfile_path("../../repo/plans/foo.md");
         assert_eq!(resolved, Some("/home/user/repo/plans/foo.md".to_string()));
     }
@@ -6020,7 +6016,7 @@ mod tests {
 
     #[test]
     fn test_transform_xterm_no_token_passes_through() {
-        let mut cp = ChunkProcessor::new(None);
+        let mut cp = ChunkProcessor::new(None, None);
         let result = cp.transform_xterm("just regular output".to_string());
         assert_eq!(result, Some("just regular output".to_string()));
     }
@@ -6028,7 +6024,7 @@ mod tests {
     #[test]
     fn test_transform_xterm_intent_passes_through() {
         // Intent coloring is now handled by the frontend MutationObserver.
-        let mut cp = ChunkProcessor::new(None);
+        let mut cp = ChunkProcessor::new(None, None);
         let result = cp.transform_xterm("intent: Fix the bug\n".to_string());
         assert!(result.is_some());
         let data = result.unwrap();
@@ -6038,7 +6034,7 @@ mod tests {
     #[test]
     fn test_transform_xterm_suggest_passes_through() {
         // Suggest lines are no longer concealed in Rust — the frontend handles it.
-        let mut cp = ChunkProcessor::new(None);
+        let mut cp = ChunkProcessor::new(None, None);
         let result = cp.transform_xterm("suggest: A | B | C\n".to_string());
         assert!(result.is_some());
         let data = result.unwrap();
@@ -6047,7 +6043,7 @@ mod tests {
 
     #[test]
     fn test_transform_xterm_incomplete_intent_passes_through() {
-        let mut cp = ChunkProcessor::new(None);
+        let mut cp = ChunkProcessor::new(None, None);
         let r1 = cp.transform_xterm("intent: doing so".to_string());
         assert!(r1.is_some(), "incomplete intent must pass through");
     }
@@ -6056,7 +6052,7 @@ mod tests {
 
     #[test]
     fn test_transform_xterm_alt_buffer_injects_clear() {
-        let mut cp = ChunkProcessor::new(None);
+        let mut cp = ChunkProcessor::new(None, None);
         // Enter alt buffer
         cp.transform_xterm("\x1b[?1049h".to_string());
         assert!(cp.in_alt_buffer);
@@ -6067,7 +6063,7 @@ mod tests {
 
     #[test]
     fn test_transform_xterm_normal_buffer_no_inject() {
-        let mut cp = ChunkProcessor::new(None);
+        let mut cp = ChunkProcessor::new(None, None);
         // NOT in alt buffer — no injection
         let result = cp.transform_xterm("\x1b[Hcontent".to_string()).unwrap();
         assert!(!result.contains("\x1b[2J"), "should not inject clear in normal buffer");
@@ -6075,7 +6071,7 @@ mod tests {
 
     #[test]
     fn test_transform_xterm_alt_buffer_exit_stops_inject() {
-        let mut cp = ChunkProcessor::new(None);
+        let mut cp = ChunkProcessor::new(None, None);
         // Enter then exit alt buffer
         cp.transform_xterm("\x1b[?1049h".to_string());
         cp.transform_xterm("\x1b[?1049l".to_string());
@@ -6086,7 +6082,7 @@ mod tests {
 
     #[test]
     fn test_transform_xterm_alt_buffer_no_clear_on_subsequent_redraws() {
-        let mut cp = ChunkProcessor::new(None);
+        let mut cp = ChunkProcessor::new(None, None);
         // Enter alt buffer — first cursor-home gets clear
         cp.transform_xterm("\x1b[?1049h".to_string());
         let r1 = cp.transform_xterm("\x1b[Hfirst redraw".to_string()).unwrap();
@@ -6099,7 +6095,7 @@ mod tests {
 
     #[test]
     fn test_transform_xterm_alt_buffer_clear_on_shrink() {
-        let mut cp = ChunkProcessor::new(None);
+        let mut cp = ChunkProcessor::new(None, None);
         // Enter alt buffer, consume initial clear
         cp.transform_xterm("\x1b[?1049h".to_string());
         cp.transform_xterm("\x1b[Hinit".to_string()); // consumes one-shot

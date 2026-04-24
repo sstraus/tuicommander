@@ -383,7 +383,7 @@ pub(super) fn spawn_pty_session(
     // fall back to headless for tests or pre-setup scenarios
     let app_handle = state.app_handle.read().clone();
     if let Some(ref app) = app_handle {
-        spawn_reader_thread(reader, paused, session_id.clone(), app.clone(), state);
+        spawn_reader_thread(reader, paused, session_id.clone(), app.clone(), state, None);
     } else {
         spawn_headless_reader_thread(reader, paused, session_id.clone(), state);
     }

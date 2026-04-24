@@ -345,10 +345,17 @@ impl OutputParser {
         // markdown inline code (`path`), which leaves literal backticks in the clean
         // text. Removing them lets all parsers match paths/tokens without needing
         // backtick-aware regexes — plugins benefit too via structured events.
-        let joined: String = rows.iter()
-            .map(|r| if r.text.contains('`') { r.text.replace('`', "") } else { r.text.clone() })
-            .collect::<Vec<_>>()
-            .join("\n");
+        let mut joined = String::new();
+        for (i, r) in rows.iter().enumerate() {
+            if i > 0 { joined.push('\n'); }
+            if r.text.contains('`') {
+                for ch in r.text.chars() {
+                    if ch != '`' { joined.push(ch); }
+                }
+            } else {
+                joined.push_str(&r.text);
+            }
+        }
 
         // PR/MR URL detection (operates on text directly)
         if let Some(evt) = parse_pr_url(&joined) {
@@ -471,12 +478,7 @@ impl OutputParser {
                 // Guard: reject matches that appear inside source code or documentation.
                 // Real API errors appear on their own line (e.g. "Error: rate_limit_error"),
                 // not inside string literals, comments, regex patterns, or test assertions.
-                let match_line = text[..m.start()]
-                    .rfind('\n')
-                    .map(|nl| &text[nl + 1..])
-                    .unwrap_or(text);
-                let match_line = match_line.lines().next().unwrap_or(match_line);
-                if line_is_code_or_diff(match_line) {
+                if line_is_code_or_diff(line_containing_match(text, m.start())) {
                     continue;
                 }
 
@@ -512,12 +514,7 @@ impl OutputParser {
         for pattern in self.api_error_patterns {
             if let Some(m) = pattern.regex.find(text) {
                 // Guard: reject matches inside source code or documentation.
-                let match_line = text[..m.start()]
-                    .rfind('\n')
-                    .map(|nl| &text[nl + 1..])
-                    .unwrap_or(text);
-                let match_line = match_line.lines().next().unwrap_or(match_line);
-                if line_is_code_or_diff(match_line) {
+                if line_is_code_or_diff(line_containing_match(text, m.start())) {
                     continue;
                 }
                 // Dedup: suppress re-emission when the same error text is still
@@ -541,12 +538,22 @@ impl OutputParser {
 /// Returns true if a line looks like source code, documentation, or agent commentary
 /// Combined guard: returns true if a line looks like source code, diff output,
 /// or documentation context — not a real agent output line.
+/// Extract the line containing a regex match from the full text.
+fn line_containing_match(text: &str, match_start: usize) -> &str {
+    let line = text[..match_start]
+        .rfind('\n')
+        .map(|nl| &text[nl + 1..])
+        .unwrap_or(text);
+    line.lines().next().unwrap_or(line)
+}
+
 fn line_is_code_or_diff(line: &str) -> bool {
     line_is_source_code(line) || line_is_diff_or_code_context(line)
 }
 
-/// rather than a real API error. This prevents false-positive rate-limit detection when
-/// agents read/discuss source files that contain error-code strings.
+/// Detect whether a line looks like source code rather than a real API error or
+/// session conflict. Prevents false-positive detection when agents read/discuss
+/// source files that contain error-code strings.
 fn line_is_source_code(line: &str) -> bool {
     let trimmed = line.trim();
     // Rust raw string literals: r"...", r#"..."# (must be preceded by whitespace or line start)
@@ -989,12 +996,14 @@ fn parse_agent_session_conflict(clean: &str) -> Option<ParsedEvent> {
         // Guard: reject matches that live inside source code, diff hunks, or
         // markdown fences — this exact file will match its own regex when an
         // agent pastes it back into a terminal.
-        let match_line = clean[..m.start()]
-            .rfind('\n')
-            .map(|nl| &clean[nl + 1..])
-            .unwrap_or(clean);
-        let match_line = match_line.lines().next().unwrap_or(match_line);
-        if line_is_code_or_diff(match_line) {
+        if line_is_code_or_diff(line_containing_match(clean, m.start())) {
+            return None;
+        }
+        // Reject matches inside markdown fenced code blocks (``` ... ```)
+        let fences_before = clean[..m.start()].lines()
+            .filter(|l| l.trim().starts_with("```"))
+            .count();
+        if fences_before % 2 == 1 {
             return None;
         }
         Some(ParsedEvent::AgentSessionConflict {
@@ -1711,6 +1720,48 @@ mod tests {
             !events
                 .iter()
                 .any(|e| matches!(e, ParsedEvent::AgentSessionConflict { .. })),
+        );
+    }
+
+    #[test]
+    fn test_agent_session_conflict_ignores_diff_hunk() {
+        let mut parser = OutputParser::new();
+        let events = parser.parse(
+            "+        \"Error: Session ID abc12345-0000-0000-0000-000000000000 is already in use.\"",
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, ParsedEvent::AgentSessionConflict { .. })),
+            "diff hunk prefix should be rejected: {events:?}"
+        );
+    }
+
+    #[test]
+    fn test_agent_session_conflict_ignores_markdown_fence() {
+        let mut parser = OutputParser::new();
+        let events = parser.parse(
+            "```\nError: Session ID abc12345-0000-0000-0000-000000000000 is already in use.\n```",
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, ParsedEvent::AgentSessionConflict { .. })),
+            "markdown fence should be rejected: {events:?}"
+        );
+    }
+
+    #[test]
+    fn test_agent_session_conflict_ignores_not_found_in_code() {
+        let mut parser = OutputParser::new();
+        let events = parser.parse(
+            "    let msg = \"No conversation found with session ID: abc12345-0000-0000-0000-000000000000\";",
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, ParsedEvent::AgentSessionConflict { .. })),
+            "not-found variant in source-code should be rejected: {events:?}"
         );
     }
 

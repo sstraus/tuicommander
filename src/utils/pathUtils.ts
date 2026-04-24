@@ -35,13 +35,13 @@ export function pathStartsWith(path: string, prefix: string): boolean {
   return np === npfx || np.startsWith(npfx + "/");
 }
 
-/** Strip `prefix` from `path` at a directory boundary. Returns the relative portion, or original path if no match. Separators are normalized to `/` in the result. */
-export function pathStripPrefix(path: string, prefix: string): string {
+/** Strip `prefix` from `path` at a directory boundary. Returns the relative portion, or `null` if `path` does not start with `prefix`. Separators are normalized to `/` in the result. */
+export function pathStripPrefix(path: string, prefix: string): string | null {
   const np = normalizeSep(path);
   const npfx = normalizeSep(prefix).replace(/\/+$/, "");
   if (np === npfx) return "";
   if (np.startsWith(npfx + "/")) return np.slice(npfx.length + 1);
-  return path;
+  return null;
 }
 
 /** Join path segments, stripping trailing/leading separators between parts. */

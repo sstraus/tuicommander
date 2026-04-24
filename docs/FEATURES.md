@@ -3,7 +3,7 @@
 > Canonical feature inventory. Update this file when adding, changing, or removing features.
 > See [AGENTS.md](../AGENTS.md) for the maintenance requirement.
 
-**Version:** 1.0.6 | **Last verified:** 2026-04-21
+**Version:** 1.0.7 | **Last verified:** 2026-04-24
 
 ---
 
@@ -58,7 +58,8 @@
 - Copy selection: `Cmd+C`
 - Paste to terminal: `Cmd+V`
 - **Trailing whitespace trimmed** — All copy paths (Cmd+C, Ctrl+C, copy-on-select) strip trailing spaces that xterm.js pads to the terminal width
-- **Copy on Select** — When enabled (Settings > Appearance), selecting text in the terminal automatically copies it to the clipboard. A brief 'Copied to clipboard' confirmation appears in the status bar.
+- **Copy on Select** — When enabled (Settings > General > Terminal or Settings > Appearance), selecting text in the terminal automatically copies it to the clipboard. A brief "Copied to clipboard" confirmation appears in the status bar.
+- **Copy feedback (Cmd+C)** — Copying via Cmd+C shows "Copied to clipboard" in the status bar, consistent with copy-on-select and Ctrl+C paths.
 
 ### 1.6 Clear Terminal
 - `Cmd+L` — clears display, running processes unaffected
@@ -499,6 +500,7 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - **Automatic session binding**: Shell integration injects wrapper functions that transparently bind agent sessions to the current tab (zsh, bash, fish):
   - **Claude Code**: `claude()` adds `--session-id $TUIC_SESSION`; bypassed when `--session-id`, `--resume`, or `--continue` are explicit
   - **Goose**: `goose()` adds `--name $TUIC_SESSION` to `session` and `run` subcommands; bypassed when `--name`, `-n`, `--resume`, or `-r` are explicit
+  - **Session conflict handling**: When an agent reports a session conflict (in-use or not-found), TUICommander creates a `no-session-inject.$TUIC_SESSION` flag file in the config directory. Shell wrappers check for this file and skip `--session-id` injection when it exists — avoiding PTY writes that could corrupt TUI output
 - **Automatic resume**: On restore, TUICommander verifies if the session file exists on disk (`verify_agent_session`) before using `--resume $TUIC_SESSION`
 - **UI spawn coherence**: When spawning agents via the context menu, `TUIC_SESSION` is used as `--session-id` automatically
 - **Custom scripts**: `$TUIC_SESSION` is available as a stable key for any tab-specific state
@@ -981,6 +983,7 @@ Variables are resolved from the Rust backend (`resolve_context_variables`) and f
 - Power management: prevent sleep when busy
 - Updates: auto-check, check now
 - Git integration: auto-show PR popover
+- Terminal: copy-on-select toggle (auto-copy selection to clipboard)
 - Experimental Features: master toggle + per-feature sub-flags (AI Chat)
 - Repository defaults: base branch, file handling, setup/run scripts, worktree defaults (storage strategy, prompt on create, etc.)
 

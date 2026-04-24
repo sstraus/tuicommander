@@ -72,6 +72,20 @@ export const GeneralTab: Component = () => {
         <p class={s.hint}>{t("general.hint.confirmBeforeClosingTab", "Show a confirmation dialog when closing a terminal tab")}</p>
       </div>
 
+      <h3>{t("general.heading.terminal", "Terminal")}</h3>
+
+      <div class={s.group}>
+        <div class={s.toggle}>
+          <input
+            type="checkbox"
+            checked={settingsStore.state.copyOnSelect}
+            onChange={(e) => settingsStore.setCopyOnSelect(e.currentTarget.checked)}
+          />
+          <span>{t("general.toggle.copyOnSelect", "Copy on select")}</span>
+        </div>
+        <p class={s.hint}>{t("general.hint.copyOnSelect", "Automatically copy selected text to clipboard")}</p>
+      </div>
+
       <h3>{t("general.heading.powerManagement", "Power Management")}</h3>
 
       <div class={s.group}>

@@ -10,12 +10,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - **Manual MCP configuration panel** — Expandable "Manual MCP configuration" section in Settings > Services > TUIC Tools shows the `tuic-bridge` binary path and a ready-to-paste JSON snippet for manual MCP client setup. Copy button included.
+- **Copy-on-select settings toggle** — UI toggle in Settings > General > Terminal section to enable/disable copy-on-select behavior (previously only in Appearance tab).
+- **Copy feedback for Cmd+C** — The `handleCopy` capture-phase listener (Cmd+C) now shows "Copied to clipboard" in the status bar, matching the existing behavior of copy-on-select and Ctrl+C paths.
 
 ### Fixed
 - **Terminal copy trailing whitespace** — All copy paths (Cmd+C, Ctrl+C on Windows, copy-on-select, keyboard shortcut handler) now strip trailing spaces that xterm.js pads to the terminal width.
 - **Windows path support across frontend** — Replaced all raw string path operations (`startsWith("/")`, `.split("/").pop()`, template literal joins) with cross-platform `pathUtils` helpers (`isAbsolutePath()`, `pathBasename()`, `joinPath()`, `pathStartsWith()`, `pathStripPrefix()`). Affects 15+ files: App.tsx, FileBrowserPanel, CodeEditorTab, MarkdownTab, HtmlPreviewTab, PaneTree, ChangesTab, resolveTuicPath, planPlugin, mdTabs, diffTabs, editorTabs, useAppInit, useFileDrop, useGitOperations.
 - **Git path traversal validation** — Simplified `validate_paths_within_repo` to use depth-counting instead of full path canonicalization, correctly rejecting `../` escapes without needing the file to exist on disk.
 - **`$HOME` restriction removed from `list_markdown_files` and `read_file`** — The artificial `$HOME` boundary blocked access to repos on external drives and non-standard locations. The user IS the trust boundary for a local desktop app.
+- **Session conflict flag-file approach** — Replaced `maybe_reset_tuic_session` (which wrote `export TUIC_SESSION=...` directly to the PTY) with a flag-file mechanism. Now creates `no-session-inject.$TUIC_SESSION` in the config dir; shell wrappers (zsh/bash/fish) check for this file before injecting `--session-id`. Eliminates PTY writes that could corrupt TUI output.
 
 ### Added (tests)
 - **pathUtils comprehensive test suite** — 40+ tests covering `isAbsolutePath`, `normalizeSep`, `pathStartsWith`, `pathStripPrefix`, `joinPath`, `pathParts` with Unix, Windows, UNC, and mixed-separator cases.

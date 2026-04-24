@@ -645,6 +645,7 @@ pub(crate) async fn spawn_agent(
         session_id.clone(),
         app,
         state.inner().clone(),
+        None,
     );
 
     Ok(session_id)

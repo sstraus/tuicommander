@@ -35,7 +35,7 @@ export function classifyDroppedFile(filePath: string): "markdown" | "editor" {
 function resolveRepoPaths(absolutePath: string): [repoPath: string, filePath: string] {
   const activeRepo = repositoriesStore.state.activeRepoPath;
   if (activeRepo && pathStartsWith(absolutePath, activeRepo)) {
-    return [activeRepo, pathStripPrefix(absolutePath, activeRepo)];
+    return [activeRepo, pathStripPrefix(absolutePath, activeRepo)!];
   }
   return ["", absolutePath];
 }

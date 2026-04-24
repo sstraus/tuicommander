@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { stripAnsi } from "../utils/stripAnsi";
 import { parseDiff, parseDiffFiles } from "../components/ui/DiffViewer";
 import { validateBranchName } from "../components/RenameBranchDialog/RenameBranchDialog";
-import { cleanOscTitle } from "../components/Terminal/Terminal";
+import { cleanOscTitle, trimSelection } from "../components/Terminal/Terminal";
 
 describe("stripAnsi", () => {
   it("strips color codes", () => {
@@ -284,6 +284,8 @@ describe("cleanOscTitle", () => {
     expect(cleanOscTitle("~/Gits/CC_Playground/abrowser")).toBe("");
     expect(cleanOscTitle("~")).toBe("");
     expect(cleanOscTitle("~/")).toBe("");
+    expect(cleanOscTitle("C:\\Users\\me")).toBe("");
+    expect(cleanOscTitle("\\\\server\\share")).toBe("");
   });
 
   it("keeps subcommands but strips flags", () => {
@@ -360,5 +362,31 @@ describe("cleanOscTitle", () => {
   it("strips geometric shape spinners", () => {
     expect(cleanOscTitle("\u25D0 building")).toBe("building");
     expect(cleanOscTitle("\u25CB loading")).toBe("loading");
+  });
+});
+
+describe("trimSelection", () => {
+  it("trims trailing whitespace from each line", () => {
+    expect(trimSelection("hello   \nworld   ")).toBe("hello\nworld");
+  });
+
+  it("preserves leading whitespace", () => {
+    expect(trimSelection("  indented   \n    more   ")).toBe("  indented\n    more");
+  });
+
+  it("handles empty lines", () => {
+    expect(trimSelection("line1   \n   \nline3   ")).toBe("line1\n\nline3");
+  });
+
+  it("handles single line", () => {
+    expect(trimSelection("single line   ")).toBe("single line");
+  });
+
+  it("handles empty string", () => {
+    expect(trimSelection("")).toBe("");
+  });
+
+  it("handles lines with no trailing whitespace", () => {
+    expect(trimSelection("clean\nalready")).toBe("clean\nalready");
   });
 });

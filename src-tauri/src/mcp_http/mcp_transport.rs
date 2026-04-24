@@ -1486,7 +1486,7 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
                     "cwd": cwd_str,
                     "agent_type": agent_type_val,
                 }));
-                spawn_reader_thread(reader, paused, session_id.clone(), app.clone(), state.clone());
+                spawn_reader_thread(reader, paused, session_id.clone(), app.clone(), state.clone(), None);
             } else {
                 spawn_headless_reader_thread(reader, paused, session_id.clone(), state.clone());
             }

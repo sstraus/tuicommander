@@ -369,7 +369,7 @@ export async function initApp(deps: AppInitDeps) {
         if (isAbsolutePath(filePath)) {
           const repos = repositoriesStore.getPaths();
           repoPath = repos.find((rp) => pathStartsWith(filePath, rp)) ?? null;
-          if (repoPath) relPath = pathStripPrefix(filePath, repoPath);
+          if (repoPath) relPath = pathStripPrefix(filePath, repoPath)!;
         } else {
           repoPath = activeRepoPath ?? null;
         }

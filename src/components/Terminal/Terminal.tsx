@@ -39,7 +39,7 @@ import s from "./Terminal.module.css";
 
 /** Trim trailing whitespace from each line of a terminal selection.
  * xterm.js pads lines with spaces to the terminal width. */
-function trimSelection(text: string): string {
+export function trimSelection(text: string): string {
   return text.split("\n").map(line => line.trimEnd()).join("\n");
 }
 
@@ -128,7 +128,7 @@ export function cleanOscTitle(title: string): string {
   cleaned = cleaned.trim();
   // Paths: shell is just reporting CWD (idle prompt) — not useful as a tab title
   // since the status bar already shows the full path. Return empty to keep original name.
-  if (/^(\/|~|[A-Za-z]:[\\/])/.test(cleaned)) {
+  if (/^(\/|~|[A-Za-z]:[\\/]|\\\\)/.test(cleaned)) {
     return "";
   }
   // Strip flags and their values, keep command + subcommands (bare words before first flag)
@@ -202,6 +202,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
   // WebGL addon lifecycle — atlas stress detection, context loss recovery,
   // and adaptive threshold scaling. See webglLifecycle.ts for details.
   const webglLife = new WebglLifecycle(() => new WebglAddon());
+
+  // Clipboard event handlers — hoisted for cleanup
+  let handleCopyRef: ((e: ClipboardEvent) => void) | null = null;
+  let handleImagePasteRef: ((e: ClipboardEvent) => void) | null = null;
 
   // Render observer for suggest/intent row overlays — disposed on cleanup
   let renderObserverCleanup: (() => void) | null = null;
@@ -729,7 +733,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
             }
           }
         }
-      }).catch(() => {});
+      }).catch((err) => {
+        appLogger.debug("terminal", "Shell state sync failed", { sessionId, error: String(err) });
+      });
     }
   };
 
@@ -1400,14 +1406,23 @@ export const Terminal: Component<TerminalProps> = (props) => {
       }
       // No image — let xterm handle text paste normally
     };
+    handleImagePasteRef = handleImagePaste;
     containerRef.addEventListener("paste", handleImagePaste, true);
 
     const handleCopy = (e: ClipboardEvent) => {
       const sel = terminal?.getSelection();
       if (!sel) return;
+      const trimmed = trimSelection(sel);
       e.preventDefault();
-      navigator.clipboard.writeText(trimSelection(sel)).catch(() => {});
+      if (e.clipboardData) {
+        e.clipboardData.setData("text/plain", trimmed);
+      } else {
+        navigator.clipboard.writeText(trimmed).catch(() => {});
+      }
+      const setStatus = (window as unknown as Record<string, unknown>).__tuic_setStatusInfo as ((msg: string) => void) | undefined;
+      setStatus?.("Copied to clipboard");
     };
+    handleCopyRef = handleCopy;
     containerRef.addEventListener("copy", handleCopy, true);
   };
 
@@ -1682,6 +1697,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // Clean up plugin line buffer for this session
     if (sessionId) pluginRegistry.removeSession(sessionId);
 
+    if (containerRef && handleCopyRef) containerRef.removeEventListener("copy", handleCopyRef, true);
+    if (containerRef && handleImagePasteRef) containerRef.removeEventListener("paste", handleImagePasteRef, true);
     renderObserverCleanup?.();
     scrollbarFixCleanup?.();
     viewportLock.dispose();

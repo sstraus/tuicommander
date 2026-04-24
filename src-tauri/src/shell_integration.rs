@@ -34,7 +34,11 @@ if [[ -n "$TUIC_SESSION" ]]; then
     local a; for a in "$@"; do
       case "$a" in --session-id|--resume|--continue) command claude "$@"; return;; esac
     done
-    command claude --session-id "$TUIC_SESSION" "$@"
+    if [[ -n "$TUIC_CONFIG_DIR" && -f "$TUIC_CONFIG_DIR/no-session-inject.$TUIC_SESSION" ]]; then
+      command claude "$@"
+    else
+      command claude --session-id "$TUIC_SESSION" "$@"
+    fi
   }
   # Auto-inject --name for Goose so tab↔session mapping is deterministic
   goose() {
@@ -77,7 +81,11 @@ if [[ -n "$TUIC_SESSION" ]]; then
     local a; for a in "$@"; do
       case "$a" in --session-id|--resume|--continue) command claude "$@"; return;; esac
     done
-    command claude --session-id "$TUIC_SESSION" "$@"
+    if [[ -n "$TUIC_CONFIG_DIR" && -f "$TUIC_CONFIG_DIR/no-session-inject.$TUIC_SESSION" ]]; then
+      command claude "$@"
+    else
+      command claude --session-id "$TUIC_SESSION" "$@"
+    fi
   }
   # Auto-inject --name for Goose so tab↔session mapping is deterministic
   goose() {
@@ -116,7 +124,11 @@ if set -q TUIC_SESSION
           return
       end
     end
-    command claude --session-id $TUIC_SESSION $argv
+    if set -q TUIC_CONFIG_DIR; and test -f "$TUIC_CONFIG_DIR/no-session-inject.$TUIC_SESSION"
+      command claude $argv
+    else
+      command claude --session-id $TUIC_SESSION $argv
+    end
   end
   # Auto-inject --name for Goose so tab↔session mapping is deterministic
   function goose --wraps goose

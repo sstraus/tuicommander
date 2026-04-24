@@ -991,7 +991,7 @@ const App: Component = () => {
 
     // Convert to relative path when inside the effective root (worktree or repo), keep absolute otherwise
     const filePath = pathStartsWith(absolutePath, fsRoot)
-      ? pathStripPrefix(absolutePath, fsRoot)
+      ? pathStripPrefix(absolutePath, fsRoot)!
       : absolutePath;
 
     const target = classifyFile(filePath);
@@ -1013,7 +1013,7 @@ const App: Component = () => {
         const repoPath = repositoriesStore.state.activeRepoPath ?? "";
         const fsRoot = gitOps.activeWorktreePath() || repoPath;
         const filePath = fsRoot && pathStartsWith(absolutePath, fsRoot)
-          ? pathStripPrefix(absolutePath, fsRoot)
+          ? pathStripPrefix(absolutePath, fsRoot)!
           : absolutePath;
         const effectiveRepo = filePath === absolutePath ? "" : repoPath;
         const effectiveRoot = filePath === absolutePath ? "" : fsRoot;

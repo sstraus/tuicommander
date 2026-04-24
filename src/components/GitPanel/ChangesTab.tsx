@@ -10,6 +10,7 @@ import { ContextMenu, createContextMenu, type ContextMenuItem } from "../Context
 import { SmartButtonStrip } from "../SmartButtonStrip/SmartButtonStrip";
 import { fileContextSmartMenuItem } from "../../utils/promptContext";
 import { cx, globToRegex } from "../../utils";
+import { joinPath } from "../../utils/pathUtils";
 import type { CommitLogEntry, WorkingTreeStatus } from "./types";
 import s from "./ChangesTab.module.css";
 
@@ -415,7 +416,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
     // Smart prompts with placement="file-context" — only when right-clicked a single file.
     if (effectiveSelection.size === 1) {
       const repoRoot = props.repoPath;
-      const abs = repoRoot ? `${repoRoot}/${file.path}` : file.path;
+      const abs = repoRoot ? joinPath(repoRoot, file.path) : file.path;
       const smartItem = fileContextSmartMenuItem(
         { absPath: abs, repoRoot, isDir: false },
         smartPrompts,
