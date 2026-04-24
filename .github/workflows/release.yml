@@ -147,3 +147,83 @@ jobs:
         run: |
           security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
           rm -f "$APPLE_API_KEY_PATH" 2>/dev/null || true
+
+  finalize-release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build release notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
+          TAG="v${VERSION}"
+
+          # Extract changelog section for this version
+          awk "/^## \[${VERSION}\]/{found=1; next} /^## \[/{if(found) exit} found" CHANGELOG.md > /tmp/changelog-section.md
+
+          # Build release body: changelog + download legend
+          {
+            echo "## What's Changed"
+            echo ""
+            if [ -s /tmp/changelog-section.md ]; then
+              cat /tmp/changelog-section.md
+            else
+              echo "See [CHANGELOG.md](https://github.com/sstraus/tuicommander/blob/main/CHANGELOG.md) for details."
+            fi
+            echo ""
+            # Download legend (quoted heredoc — no variable expansion)
+            cat <<'LEGEND'
+          ---
+
+          📦 **Downloads**
+
+          Pick the right build for your system:
+          LEGEND
+            # Version-specific filenames (unquoted heredoc for variable expansion)
+            cat <<FILENAMES
+
+          * 🍎 **macOS** (Apple Silicon)
+              \`TUICommander_${VERSION}_aarch64.dmg\`
+              (alt: \`TUICommander_aarch64.app.tar.gz\`)
+          * 🪟 **Windows** (64-bit)
+              \`TUICommander_${VERSION}_x64-setup.exe\`
+          * 🐧 **Linux** (Debian / Ubuntu)
+              \`TUICommander_${VERSION}_amd64.deb\`
+          * 🐧 **Linux** (RHEL / Fedora / CentOS)
+              \`TUICommander-${VERSION}-1.x86_64.rpm\`
+          * 🐧 **Linux** (portable)
+              \`TUICommander_${VERSION}_amd64.AppImage\`
+          FILENAMES
+            cat <<'FOOTER'
+
+          ---
+
+          🔐 **Verify** (optional)
+
+          Each release includes `.sig` files for signature verification.
+
+          ---
+
+          💻 **Install via terminal**
+
+          ```bash
+          # macOS (Homebrew)
+          brew install sstraus/tap/tuicommander
+
+          # macOS / Linux
+          curl -fsSL https://tuicommander.com/install.sh | sh
+          ```
+
+          ```powershell
+          # Windows (PowerShell)
+          irm https://tuicommander.com/install.ps1 | iex
+          ```
+          FOOTER
+          } > /tmp/release-body.md
+
+          gh release edit "${TAG}" --notes-file /tmp/release-body.md

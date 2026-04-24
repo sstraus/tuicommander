@@ -315,6 +315,134 @@ section {
 }
 
 /* ============================================
+   INSTALL SECTION
+   ============================================ */
+.install-section {
+  max-width: 640px;
+  margin: 0 auto 40px;
+  text-align: left;
+}
+.install-heading {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 12px;
+  font-weight: 500;
+}
+.install-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+  justify-content: center;
+}
+.install-tab {
+  padding: 8px 20px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--fg-muted);
+  font-size: 0.85rem;
+  font-weight: 500;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.install-tab:hover {
+  color: var(--fg-secondary);
+}
+.install-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.install-panel {
+  display: none;
+}
+.install-panel.active {
+  display: block;
+}
+.install-block {
+  margin-bottom: 8px;
+}
+.install-label {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--fg-muted);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+.install-code {
+  display: flex;
+  align-items: flex-start;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  gap: 10px;
+}
+.install-code code {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--fg-primary);
+  white-space: pre;
+  overflow-x: auto;
+  line-height: 1.5;
+  -webkit-user-select: all;
+  user-select: all;
+}
+.copy-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+}
+.copy-btn:hover {
+  color: var(--fg-primary);
+  background: var(--bg-highlight);
+}
+.install-divider {
+  display: block;
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+  margin: 8px 0;
+}
+.all-downloads-link {
+  margin-top: 16px;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+}
+.all-downloads-link a {
+  color: var(--fg-muted);
+  transition: color 0.2s;
+}
+.all-downloads-link a:hover {
+  color: var(--accent);
+}
+.version-badge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--accent);
+  background: var(--accent-glow);
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-right: 6px;
+}
+
+/* ============================================
    AGENT BAR
    ============================================ */
 .agent-bar {
@@ -1084,6 +1212,12 @@ section {
     padding: 12px 14px;
     min-width: 65px;
   }
+  .install-section {
+    margin: 0 auto 32px;
+  }
+  .install-code code {
+    font-size: 0.7rem;
+  }
 }
 
 @media (max-width: 480px) {
@@ -1101,5 +1235,9 @@ section {
   }
   .workflow-steps {
     grid-template-columns: 1fr;
+  }
+  .install-tab {
+    padding: 8px 14px;
+    font-size: 0.8rem;
   }
 }
