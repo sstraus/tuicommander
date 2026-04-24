@@ -300,6 +300,18 @@ section {
   transform: translate(-50%, -50%) scale(1.1);
   opacity: 1;
 }
+.hero-video-fallback {
+  text-align: center;
+  margin-top: 8px;
+  font-size: 0.85rem;
+}
+.hero-video-fallback a {
+  color: var(--fg-muted);
+  text-decoration: none;
+}
+.hero-video-fallback a:hover {
+  color: var(--accent);
+}
 .hero-platforms {
   display: flex;
   gap: 16px;
