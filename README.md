@@ -247,8 +247,8 @@ Rust + [Tauri v2](https://tauri.app) backend, [SolidJS](https://solidjs.com) UI,
 
 ---
 
-<p align="center">MIT licensed. Zero telemetry. Runs locally.<br><a href="https://github.com/sstraus/tuicommander/releases">Follow the releases</a> — new features land weekly.</p>
+<p align="center">Apache 2.0 licensed. Zero telemetry. Runs locally.<br><a href="https://github.com/sstraus/tuicommander/releases">Follow the releases</a> — new features land weekly.</p>
 
 ## License
 
-[MIT](LICENSE) &copy; 2026 Stefano Straus
+[Apache 2.0](LICENSE) &copy; 2026 Stefano Straus
