@@ -5,7 +5,7 @@
 <h1 align="center">TUICommander</h1>
 
 <p align="center">
-  <strong>A modern terminal and AI-native IDE.<br>Work with multiple agents in one place, without losing context.</strong>
+  <strong>The IDE that understands AI agents.<br>Run parallel agents on isolated branches with full observability.</strong>
 </p>
 
 <p align="center">
@@ -19,6 +19,7 @@
 </p>
 
 <p align="center">
+  <a href="https://tuicommander.com"><strong>Website</strong></a> &bull;
   <a href="https://github.com/sstraus/tuicommander/releases/latest"><strong>Download</strong></a> &bull;
   <a href="https://github.com/sstraus/tuicommander/releases/tag/tip"><strong>Nightly</strong></a> &bull;
   <a href="docs/FEATURES.md"><strong>All Features</strong></a> &bull;
@@ -36,15 +37,13 @@
 
 ## The problem
 
-You're running Claude Code on five branches. One hit a rate limit 12 minutes ago. Another is waiting for a Y/N answer. A third finished and you didn't notice. You find out by accident — when you happen to glance at the right terminal.
-
-Then you switch to VS Code to check a diff, open GitHub to see if CI passed, pull out your laptop to check from the couch. Every tool switch is lost context.
+You're running Claude Code in one terminal, Aider in another, Codex in a third. One hit a rate limit 10 minutes ago and you didn't notice. Another is waiting for a Y/N confirmation. You switch between windows and still lose track.
 
 The more sessions you run, the worse it gets. The tooling doesn't understand what's happening inside the terminal.
 
 ## The solution
 
-**TUICommander is a modern terminal and AI-native IDE** — designed from the ground up for multi-agent development. Agents, code, diffs, PRs, CI status, and usage analytics live in one window. No context switching. No lost threads.
+**TUICommander is an AI-native IDE** — designed from the ground up for multi-agent development. Agents, code, diffs, PRs, CI status, and usage analytics live in one window. No context switching. No lost threads.
 
 AI-native means the agents are not an afterthought. Rate limit detection, question recognition, session-aware resume, and usage tracking are core — not plugins.
 
@@ -52,9 +51,17 @@ AI-native means the agents are not an afterthought. Rate limit detection, questi
 
 ## What makes it different
 
-### Agent awareness — not just terminals
+### Run many AI sessions in parallel
 
-TUICommander auto-detects **10 AI coding agents** (Claude Code, Codex CLI, Aider, Gemini CLI, Amp, Cursor Agent, OpenCode, Warp Oz, Droid, Jules) and understands what they're doing:
+Launch Claude Code on five branches at once — or mix agents. Each session runs in its own Git worktree — no context collision, no stash conflicts, no "which terminal was that?" moments.
+
+- Up to 50 terminal sessions running simultaneously
+- Each session works on its own isolated copy of the repo
+- Activity dashboard showing every session at a glance
+
+### Agent observability — not just terminals
+
+TUICommander auto-detects **10 AI coding agents** (Claude Code, Codex CLI, Aider, Gemini CLI, Amp, Cursor Agent, OpenCode, Warp Oz, Droid, Goose) and understands what they're doing:
 
 - **Rate limit detection** — Provider-specific patterns with countdown timers per session.
 - **Question detection** — Y/N prompts, numbered options, inquirer-style menus. Tab indicator, notification sound, keyboard overlay.
@@ -64,19 +71,14 @@ TUICommander auto-detects **10 AI coding agents** (Claude Code, Codex CLI, Aider
 
 No other tool knows that your agent is stuck.
 
-### One branch, one worktree, one world
+### Git worktrees, fully managed
 
 Click a branch in the sidebar. TUICommander auto-creates a git worktree — a fully isolated copy of the repo. The terminal opens *inside* it. Switch to another branch: your previous terminals are preserved. Switch back: they're exactly as you left them.
 
-```
-Add repo → Click branch → Worktree auto-created → Terminal opens in isolated copy
-                                                   ├── Claude Code on feature-auth
-                                                   ├── Switch branch → Claude Code on fix-payments
-                                                   ├── Switch branch → Codex on refactor-api
-                                                   └── Activity dashboard shows all sessions
-```
-
-Every agent works on its own copy. No stashing, no conflicts, no "wrong branch" mistakes.
+- Automatic worktree creation on branch click
+- Worktree Manager — PR status, dirty file counts, last commit at a glance
+- Post-merge cleanup dialog — delete branch, archive worktree in one click
+- Configurable base branch, setup scripts, auto-fetch intervals
 
 ### See what your agents changed — without leaving
 
@@ -84,21 +86,30 @@ The feedback loop happens in the same window:
 
 - **Git Panel** — Staging, inline commit, blame with age heatmap, canvas commit graph, stashes, branches with ahead/behind counts.
 - **Diff views** — Side-by-side, unified, or scroll-all-files. Word-level highlighting, hunk and line-level restore.
-- **PR management** — Merge via GitHub API with auto-detected merge method. Post-merge cleanup: switch base, pull, delete branch, archive worktree — all in one dialog.
+- **PR management** — Merge via GitHub API with auto-detected merge method. Post-merge cleanup.
+- **GitHub Issues** — Filter by assigned/created/mentioned, labels with colors, close/reopen.
 - **CI Auto-Heal** — When CI fails, TUICommander fetches failure logs and injects them into the agent for automatic fix.
 - **Built-in code editor** — CodeMirror 6 with syntax highlighting, find/replace, disk conflict detection.
 - **File browser** — Directory tree, content search (grep), git status indicators.
 
-### One connection for all your tools
+### Built-in AI Chat & autonomous agent
 
-The **MCP Proxy Hub** aggregates all your MCP servers into a single endpoint. Claude Code, Cursor, VS Code — each agent connects once and gets access to every upstream tool.
+A conversational AI companion that sees your terminal as you see it. Ask about errors, get code suggestions, or let the autonomous agent take the wheel and drive your terminal directly.
 
+- Multi-provider: Ollama (local, free), Anthropic, OpenAI, OpenRouter, or any compatible endpoint
+- Autonomous AI Agent (ReAct loop) with 12 tools: read screen, send input, edit files, search code, run commands
+- Session knowledge: the agent learns from your terminal history — commands, errors, fix patterns
+- Live cost tracking: prompt/completion tokens and estimated cost per turn
+- Per-terminal chat state, conversation history, detachable panel for multi-monitor
+
+### MCP Proxy Hub — one connection for all your tools
+
+Aggregate all your MCP servers into a single endpoint. Claude Code, Cursor, VS Code — each agent connects once and gets access to every upstream tool.
+
+- Auto-configures Claude Code, Cursor, Windsurf, VS Code, Zed, Amp, Gemini
 - Circuit breakers, health checks, hot-reload per upstream
-- Credential management via OS keyring
+- Credential management via OS keyring, OAuth 2.1 support
 - Tool filtering: whitelist or blacklist per upstream server
-- Add or remove servers without restarting anything
-
-For teams, this means one MCP connection instead of N. The agents get everything.
 
 ### Control from anywhere
 
@@ -107,35 +118,35 @@ A **mobile companion PWA** lets you monitor agents from your phone, answer quest
 - QR code scan for instant LAN connection
 - Tailscale auto-HTTPS or E2E-encrypted cloud relay — no VPN or port forwarding
 - Live WebSocket output, suggest follow-up chips, slash menu
-- Works offline — queues commands until reconnected
 
 ### Agents that coordinate
 
 **Agent Teams** — Claude Code's sub-agents run as native TUICommander tabs instead of tmux panes. Full session awareness, output parsing, and question detection for each sub-agent.
 
-**Inter-agent messaging** — When multiple agents work in parallel, they discover peers, send messages, and receive push notifications through TUICommander as the coordination hub. No external daemon needed.
+**Inter-agent messaging** — When multiple agents work in parallel, they discover peers, send messages, and receive push notifications through TUICommander as the coordination hub.
+
+### Automate repetitive workflows
+
+**30 built-in Smart Prompts** turn common tasks into one-click operations: Smart Commit, Review Changes, Create PR, Fix CI, and more. Context variables like branch, diff, and PR data are resolved automatically.
+
+- Inject mode (PTY write), headless mode (subprocess), or shell script mode (direct execution)
+- 31 context variables auto-resolved from git, GitHub, and terminal state
+- Create your own prompts with the same variable system
 
 ### Talk to your agents
 
 On-device speech-to-text powered by whisper-rs. No cloud service, no API keys, no data leaving your machine.
 
 - GPU-accelerated on macOS (Metal), CPU fallback on Windows/Linux
-- Streaming transcription with partial results in ~1.5s
 - Push-to-talk hotkey — text injected into the active terminal
-
-### Automate repetitive workflows
-
-**Smart Prompts** — 24 built-in one-click operations: Smart Commit, Review Changes, Create PR, Fix CI, and more. Context variables like branch, diff, and PR data are resolved automatically.
-
-- Inject mode (PTY write), headless mode (subprocess), or API mode (direct LLM call)
-- Create your own prompts with the same variable system
-- Placement options: toolbar, Git Panel, PR popover, command palette
+- 5 model sizes from tiny (75 MB) to large-v3-turbo (1.6 GB)
 
 ### Extend everything
 
 **Plugin system** — Obsidian-style plugins with hot reload and a community registry:
 
-- 15 capability tiers from read-only watchers to PTY write access
+- 5 capability tiers from read-only watchers to scoped Tauri invoke
+- TUIC SDK v1.0: `tuic.activeRepo`, `tuic.toast`, `tuic.onRepoChange` and more
 - Terminal output watchers with regex triggers
 - Status bar tickers, custom panels, notification contributions
 - Browse and install with one click
@@ -146,18 +157,22 @@ On-device speech-to-text powered by whisper-rs. No cloud service, no API keys, n
 
 ## How it compares
 
-| Capability | tmux | Warp | Cursor | TUICommander |
-|---|---|---|---|---|
-| Terminal sessions | Yes | Yes | Yes | Yes (50, split, detach) |
-| AI coding agents | No | Partial | Built-in | Any agent (10 detected) |
-| Parallel agents | No | No | Limited | Unlimited |
-| Git worktree orchestration | No | No | No | Automatic |
-| Agent observability | No | No | No | Real-time |
-| MCP Proxy Hub | No | No | No | Built-in |
-| Remote access (phone) | SSH | No | No | Built-in PWA |
-| Voice dictation | No | No | Extension | Local Whisper |
-| CI Auto-Heal | No | No | No | Built-in |
-| Plugin system | No | No | Extensions | Hot reload |
+| Capability | Ghostty / Kitty | Warp | Cursor IDE | Claude Desktop | TUICommander |
+|---|---|---|---|---|---|
+| Terminal sessions | Yes | Yes | Yes | No | Yes (50) |
+| AI coding agents | No | Partial | Built-in | Built-in | Any agent (10 detected) |
+| Parallel agents | No | No | Limited | No | Unlimited |
+| Git worktree orchestration | No | No | No | No | Automatic |
+| Agent observability | No | No | No | No | Real-time |
+| Global Workspace | No | No | Yes | No | Multi-repo |
+| Usage dashboard | No | No | No | Basic | Full (heatmap, per-project) |
+| Remote access (phone/tablet) | No | No | No | Mobile app | PWA + E2E relay |
+| Voice dictation | No | No | Extension | Built-in | Local Whisper |
+| MCP Proxy Hub | No | No | No | No | Built-in |
+| Plugin system | No | No | Extensions | No | Hot reload + SDK |
+| GitHub Issues & PR management | No | No | Extension | No | Built-in |
+| Built-in AI Chat | No | Built-in | Built-in | Built-in | Multi-provider (beta) |
+| CI Auto-Heal | No | No | No | No | Built-in |
 
 ---
 
@@ -174,6 +189,7 @@ On-device speech-to-text powered by whisper-rs. No cloud service, no API keys, n
 - Tab status dots: idle, busy, done, unseen, question, error
 - Copy on select, configurable bell (visual/sound/both), scroll shortcuts
 - International keyboard support, Kitty keyboard protocol
+- 11 bundled monospace fonts (JetBrains Mono, Fira Code, Hack, Cascadia Code, and more)
 </details>
 
 <details>
@@ -183,6 +199,7 @@ On-device speech-to-text powered by whisper-rs. No cloud service, no API keys, n
 - Worktree Manager (`Cmd+Shift+W`): all worktrees across all repos, orphan detection, batch operations
 - Git Panel (`Cmd+Shift+D`): staging, commit, log with canvas commit graph, stashes, branches, blame with age heatmap
 - PR management: merge via GitHub API, auto-detect merge method, post-merge cleanup dialog
+- GitHub Issues: filter by assigned/created/mentioned, labels with colors, close/reopen
 - Auto-delete branch on PR close, CI Auto-Heal, PR notifications
 - Repository groups: named, colored, collapsible, drag-and-drop reordering
 - Park repos: temporarily hide repos you're not using
@@ -193,7 +210,7 @@ On-device speech-to-text powered by whisper-rs. No cloud service, no API keys, n
 <details>
 <summary><strong>Productivity</strong> — Smart Prompts, palette, keybindings, dictation</summary>
 
-- Smart Prompts (`Cmd+Shift+K`): 24 built-in AI automation prompts with auto-resolved context variables
+- Smart Prompts (`Cmd+Shift+K`): 30 built-in AI automation prompts with auto-resolved context variables
 - Command palette (`Cmd+P`): fuzzy search all actions, files (`!`), file contents (`?`), terminal buffers (`~`)
 - Configurable keybindings with chord support and conflict detection
 - Claude Usage Dashboard: rate limits, 7-day chart, 52-week heatmap, per-project breakdown
@@ -201,7 +218,7 @@ On-device speech-to-text powered by whisper-rs. No cloud service, no API keys, n
 - IDE launchers: open in VS Code, Cursor, Zed, or any detected editor
 - Ideas panel (`Cmd+Alt+N`): quick notes with image paste and send-to-terminal
 - Voice dictation: streaming on-device Whisper with partial results
-- 13 bundled monospace fonts
+- Focus mode (`Cmd+Alt+Enter`): maximize active tab, hide sidebar and panels
 </details>
 
 > **Full feature reference:** **[docs/FEATURES.md](docs/FEATURES.md)**
@@ -211,6 +228,19 @@ On-device speech-to-text powered by whisper-rs. No cloud service, no API keys, n
 ## Get started
 
 **[Download the latest release](https://github.com/sstraus/tuicommander/releases/latest)** — macOS builds are signed and notarized.
+
+Install via terminal:
+
+```bash
+# macOS (Homebrew)
+brew install sstraus/tap/tuicommander
+
+# macOS / Linux (shell)
+curl -fsSL https://tuicommander.com/install.sh | sh
+
+# Windows (PowerShell)
+irm https://tuicommander.com/install.ps1 | iex
+```
 
 Want the bleeding edge? The **[Nightly](https://github.com/sstraus/tuicommander/releases/tag/tip)** is rebuilt on every push to `main`.
 
