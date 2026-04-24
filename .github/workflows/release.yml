@@ -226,4 +226,4 @@ jobs:
           FOOTER
           } > /tmp/release-body.md
 
-          gh release edit "${TAG}" --notes-file /tmp/release-body.md
+          gh release edit "${TAG}" --notes-file /tmp/release-body.md --draft=false
