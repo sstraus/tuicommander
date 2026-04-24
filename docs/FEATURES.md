@@ -57,6 +57,7 @@
 ### 1.5 Copy & Paste
 - Copy selection: `Cmd+C`
 - Paste to terminal: `Cmd+V`
+- **Trailing whitespace trimmed** — All copy paths (Cmd+C, Ctrl+C, copy-on-select) strip trailing spaces that xterm.js pads to the terminal width
 - **Copy on Select** — When enabled (Settings > Appearance), selecting text in the terminal automatically copies it to the clipboard. A brief 'Copied to clipboard' confirmation appears in the status bar.
 
 ### 1.6 Clear Terminal

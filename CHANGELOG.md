@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-04-24
+
+### Added
+- **Manual MCP configuration panel** — Expandable "Manual MCP configuration" section in Settings > Services > TUIC Tools shows the `tuic-bridge` binary path and a ready-to-paste JSON snippet for manual MCP client setup. Copy button included.
+
+### Fixed
+- **Terminal copy trailing whitespace** — All copy paths (Cmd+C, Ctrl+C on Windows, copy-on-select, keyboard shortcut handler) now strip trailing spaces that xterm.js pads to the terminal width.
+- **Windows path support across frontend** — Replaced all raw string path operations (`startsWith("/")`, `.split("/").pop()`, template literal joins) with cross-platform `pathUtils` helpers (`isAbsolutePath()`, `pathBasename()`, `joinPath()`, `pathStartsWith()`, `pathStripPrefix()`). Affects 15+ files: App.tsx, FileBrowserPanel, CodeEditorTab, MarkdownTab, HtmlPreviewTab, PaneTree, ChangesTab, resolveTuicPath, planPlugin, mdTabs, diffTabs, editorTabs, useAppInit, useFileDrop, useGitOperations.
+- **Git path traversal validation** — Simplified `validate_paths_within_repo` to use depth-counting instead of full path canonicalization, correctly rejecting `../` escapes without needing the file to exist on disk.
+- **`$HOME` restriction removed from `list_markdown_files` and `read_file`** — The artificial `$HOME` boundary blocked access to repos on external drives and non-standard locations. The user IS the trust boundary for a local desktop app.
+
+### Added (tests)
+- **pathUtils comprehensive test suite** — 40+ tests covering `isAbsolutePath`, `normalizeSep`, `pathStartsWith`, `pathStripPrefix`, `joinPath`, `pathParts` with Unix, Windows, UNC, and mixed-separator cases.
+- **Windows path tests for planPlugin, mdTabs** — Drive-letter CWD resolution, mixed separators, absolute path preservation.
+
+## [1.0.6] - 2026-04-18
+
 ### Added
 - **Run config Edit/Delete menu** — The Delete button on each run config in Settings → Agents has been replaced with a `···` dropdown containing Edit and Delete. Edit opens an inline form for name, command, and args (with cross-agent duplicate name validation). Env editing continues to live on the dedicated "Env" button.
 - **Auto-inject session binding for Claude Code and Goose** — Shell integration (zsh, bash, fish) wraps `claude` and `goose` commands with functions that transparently inject session identifiers (`--session-id $TUIC_SESSION` for Claude, `--name $TUIC_SESSION` for Goose `session`/`run` subcommands), ensuring deterministic 1:1 tab↔session mapping. Wrappers are bypassed when the user explicitly passes session/resume flags.

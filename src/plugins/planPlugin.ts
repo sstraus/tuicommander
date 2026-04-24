@@ -2,6 +2,7 @@ import { invoke, listen } from "../invoke";
 import { mdTabsStore } from "../stores/mdTabs";
 import { appLogger } from "../stores/appLogger";
 import { extractPlanMetadata } from "../utils/frontmatter";
+import { isAbsolutePath, pathBasename, pathStartsWith, pathStripPrefix, joinPath } from "../utils/pathUtils";
 import type { DirEntry } from "../types/fs";
 import type { PluginHost, TuiPlugin } from "./types";
 
@@ -18,7 +19,7 @@ const PLUGIN_ID = "plan";
 
 /** Derive the display name from an absolute plan file path. */
 function displayName(absolutePath: string): string {
-  const base = absolutePath.split("/").pop() ?? absolutePath;
+  const base = pathBasename(absolutePath) || absolutePath;
   return base.replace(/\.[^.]+$/, ""); // strip extension
 }
 
@@ -30,9 +31,9 @@ function displayName(absolutePath: string): string {
  * back to the absolute path (the markdown tab handles both transparently).
  */
 function openPlanTab(absolutePath: string, repoPath: string | undefined): string | null {
-  const root = repoPath?.replace(/\/$/, "");
+  const root = repoPath?.replace(/[\\/]+$/, "");
   const relativePath =
-    root && absolutePath.startsWith(`${root}/`) ? absolutePath.slice(root.length + 1) : absolutePath;
+    root && pathStartsWith(absolutePath, root) ? pathStripPrefix(absolutePath, root) : absolutePath;
   return mdTabsStore.addFileBackground(root ?? "", relativePath);
 }
 
@@ -65,15 +66,15 @@ class PlanPlugin implements TuiPlugin {
       const rawPath = (payload as { path: string }).path;
 
       const cwd = host.getSessionCwd(sessionId);
-      const absolutePath = rawPath.startsWith("/") ? rawPath
-        : cwd ? `${cwd.replace(/\/$/, "")}/${rawPath}` : rawPath;
+      const absolutePath = isAbsolutePath(rawPath) ? rawPath
+        : cwd ? joinPath(cwd, rawPath) : rawPath;
 
       const ownerRepo = host.getActiveRepoPath();
 
       appLogger.info("plugin", `[plan] event: raw="${rawPath}" abs="${absolutePath}" cwd="${cwd}" ownerRepo="${ownerRepo}"`);
 
       // Skip plans with unresolved relative paths (no cwd, not absolute)
-      if (!absolutePath.startsWith("/")) {
+      if (!isAbsolutePath(absolutePath)) {
         appLogger.warn("plugin", `[plan] SKIPPED: cannot resolve relative path "${rawPath}" (cwd=${cwd})`);
         return;
       }
@@ -103,7 +104,7 @@ class PlanPlugin implements TuiPlugin {
 
   /** Start a file system watcher on <repo>/plans/ so new plans are detected immediately. */
   private watchPlansDir(repoPath: string): void {
-    const plansDir = `${repoPath.replace(/\/$/, "")}/plans`;
+    const plansDir = joinPath(repoPath, "plans");
     this.watchedPlansDir = plansDir;
 
     invoke("start_dir_watcher", { path: plansDir }).catch(() => {
@@ -123,12 +124,11 @@ class PlanPlugin implements TuiPlugin {
 
   /** Re-scan plans/ and auto-open any new plans as background tabs. */
   private rescanAndOpenNew(repoPath: string): void {
-    const root = repoPath.replace(/\/$/, "");
     invoke<DirEntry[]>("list_directory", { repoPath, subdir: "plans" })
       .then((entries) => {
         const mdFiles = entries.filter((e) => !e.is_dir && e.name.endsWith(".md"));
         for (const entry of mdFiles) {
-          const absolutePath = `${root}/${entry.path}`;
+          const absolutePath = joinPath(repoPath, entry.path);
           if (!this.plans.has(absolutePath)) {
             this.addPlan(absolutePath);
             openPlanTab(absolutePath, repoPath);
@@ -161,7 +161,7 @@ class PlanPlugin implements TuiPlugin {
       .then((entries) => {
         const mdFiles = entries.filter((e) => !e.is_dir && e.name.endsWith(".md"));
         for (const entry of mdFiles) {
-          const absolutePath = `${repoPath.replace(/\/$/, "")}/${entry.path}`;
+          const absolutePath = joinPath(repoPath, entry.path);
           this.addPlan(absolutePath);
         }
       })
@@ -177,10 +177,9 @@ class PlanPlugin implements TuiPlugin {
    *  The marker file can be in <repo>/.claude/ or <repo>/src-tauri/.claude/ (Claude Code
    *  CWD varies). */
   private async openActivePlan(repoPath: string): Promise<void> {
-    const root = repoPath.replace(/\/$/, "");
     const candidates = [
-      `${root}/.claude/active-plan.json`,
-      `${root}/src-tauri/.claude/active-plan.json`,
+      joinPath(repoPath, ".claude/active-plan.json"),
+      joinPath(repoPath, "src-tauri/.claude/active-plan.json"),
     ];
 
     for (const markerPath of candidates) {
@@ -191,9 +190,9 @@ class PlanPlugin implements TuiPlugin {
         const marker = parsed as { path?: string };
         if (!marker.path) continue;
 
-        const planPath = marker.path.startsWith("/")
+        const planPath = isAbsolutePath(marker.path)
           ? marker.path
-          : `${root}/${marker.path}`;
+          : joinPath(repoPath, marker.path);
 
         if (!this.plans.has(planPath)) {
           this.addPlan(planPath);

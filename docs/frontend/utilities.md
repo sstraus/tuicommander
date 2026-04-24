@@ -58,6 +58,28 @@ findOrphanTerminals(terminalIds: string[], branchTerminalMap: Record<string, str
 
 Finds terminals that exist in the store but aren't associated with any branch. Used for cleanup.
 
+## Path Utilities (`pathUtils.ts`)
+
+Cross-platform path helpers that handle both `/` (Unix) and `\` (Windows) separators. All path comparison and construction in the frontend MUST use these instead of raw string operations.
+
+| Function | Description |
+|----------|-------------|
+| `isAbsolutePath(p)` | True for Unix `/...`, Windows `C:\...`, and UNC `\\...` paths |
+| `normalizeSep(p)` | Convert all backslashes to forward slashes |
+| `pathStartsWith(path, prefix)` | Directory-boundary-aware prefix check, separator-agnostic |
+| `pathStripPrefix(path, prefix)` | Strip prefix at directory boundary, returns relative portion |
+| `joinPath(base, ...parts)` | Join segments, stripping redundant separators |
+| `pathParts(p)` | Split by either separator |
+| `pathBasename(p)` | Last segment (filename or directory name) |
+| `pathDirname(p)` | Directory portion, preserving original separator |
+| `replaceBasename(p, newName)` | Replace last segment |
+
+**Forbidden patterns** (use the helpers instead):
+- `startsWith("/")` → `isAbsolutePath()`
+- `path + "/"` → `joinPath()`
+- `.split("/").pop()` → `pathBasename()`
+- `path.startsWith(prefix + "/")` → `pathStartsWith()`
+
 ## File Preview (`filePreview.ts`)
 
 ```typescript

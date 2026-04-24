@@ -1248,6 +1248,11 @@ struct ChunkProcessor {
     pending_command: Option<String>,
     /// `Instant` when OSC 133 C arrived; used for `duration_ms`.
     pending_command_started: Option<std::time::Instant>,
+    /// Last time we auto-reset `TUIC_SESSION` in response to an
+    /// `AgentSessionConflict` event. Gates subsequent resets so a single
+    /// burst of conflict output (Claude prints the line repeatedly as it
+    /// exits) fires the mitigation exactly once.
+    last_tuic_session_reset: Option<std::time::Instant>,
 }
 
 impl ChunkProcessor {
@@ -1269,6 +1274,7 @@ impl ChunkProcessor {
             last_vt_log_emit: None,
             pending_command: None,
             pending_command_started: None,
+            last_tuic_session_reset: None,
         }
     }
 
@@ -1427,6 +1433,63 @@ impl ChunkProcessor {
             Some(normalize_path(&joined).to_string_lossy().into_owned())
         } else {
             None
+        }
+    }
+
+    /// Auto-reset `TUIC_SESSION` when a Claude-Code startup session-id
+    /// conflict is detected in PTY output. The shell wrapper (see
+    /// `shell_integration.rs`) auto-injects `--session-id $TUIC_SESSION`
+    /// into every `claude` invocation; once that id collides, every retry
+    /// fails identically. Writing a fresh `export TUIC_SESSION=<uuid>` into
+    /// the shell unblocks the next invocation without the user having to
+    /// bypass the alias manually.
+    ///
+    /// Guarded by a 3-second cooldown: Claude prints the error line multiple
+    /// times as it exits, and we want exactly one reset per conflict burst.
+    fn maybe_reset_tuic_session(&mut self, session_id: &str, state: &AppState, kind: &str) {
+        const COOLDOWN: std::time::Duration = std::time::Duration::from_secs(3);
+        let now = std::time::Instant::now();
+        if self
+            .last_tuic_session_reset
+            .is_some_and(|t| now.duration_since(t) < COOLDOWN)
+        {
+            return;
+        }
+        self.last_tuic_session_reset = Some(now);
+
+        let new_session = Uuid::new_v4().to_string();
+        let Some(entry) = state.sessions.get(session_id) else {
+            return;
+        };
+        let mut guard = entry.lock();
+        // Fish uses `set -x`; bash/zsh/sh use `export`. Check the shell path
+        // before emitting the assignment — fish would choke on `export VAR=…`.
+        let is_fish = std::path::Path::new(&guard.shell)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .is_some_and(|s| s.eq_ignore_ascii_case("fish"));
+        let line = if is_fish {
+            format!("\nset -gx TUIC_SESSION {new_session}\n")
+        } else {
+            format!("\nexport TUIC_SESSION={new_session}\n")
+        };
+        match guard.writer.write_all(line.as_bytes()) {
+            Ok(()) => {
+                let _ = guard.writer.flush();
+                tracing::info!(
+                    session_id = %session_id,
+                    new_tuic_session = %new_session,
+                    kind = %kind,
+                    "TUIC_SESSION auto-reset after agent-session-conflict"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    session_id = %session_id,
+                    error = %e,
+                    "TUIC_SESSION auto-reset: PTY write failed"
+                );
+            }
         }
     }
 
@@ -1636,6 +1699,25 @@ impl ChunkProcessor {
                 | ParsedEvent::ApiError { .. }
             ) {
                 continue;
+            }
+
+            // Auto-reset TUIC_SESSION on Claude-Code session-id conflict.
+            // The shell wrapper keeps injecting the same `$TUIC_SESSION`, so
+            // once it collides every subsequent `claude` invocation hits the
+            // same error — the tab effectively dies. Cooldown prevents a
+            // burst of identical error lines from firing multiple resets.
+            //
+            // Gate on Shell mode: the conflict is a startup-only error, so
+            // if we're inside a fullscreen TUI (an agent already running) the
+            // match is a false positive (e.g. the agent quoting a log line)
+            // and writing `export TUIC_SESSION=…` would corrupt the TUI.
+            if let ParsedEvent::AgentSessionConflict { kind, .. } = event
+                && matches!(
+                    self.terminal_mode,
+                    crate::ai_agent::tui_detect::TerminalMode::Shell
+                )
+            {
+                self.maybe_reset_tuic_session(session_id, state, kind);
             }
 
             // Suggest: park in SilenceState and defer emission until silence

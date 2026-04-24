@@ -3,6 +3,7 @@ import { currentBranchKey } from "./repositories";
 import { terminalsStore } from "./terminals";
 import { mdTabsStore } from "./mdTabs";
 import { editorTabsStore } from "./editorTabs";
+import { pathBasename } from "../utils/pathUtils";
 
 export type DiffStatus = "M" | "A" | "D" | "R" | "?";
 
@@ -54,7 +55,7 @@ function createDiffTabsStore() {
       }
 
       const id = base._nextId("diff");
-      const fileName = filePath ? (filePath.split("/").pop() || filePath) : "Diff Scroll";
+      const fileName = filePath ? (pathBasename(filePath) || filePath) : "Diff Scroll";
       const tabId = base._addTab({ id, repoPath, filePath, fileName, status, scope, untracked, branchKey: currentBranchKey() });
       terminalsStore.setActive(null);
       mdTabsStore.setActive(null);

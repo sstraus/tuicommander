@@ -1,5 +1,6 @@
 import { createTabManager, type BaseTab } from "./tabManager";
 import { currentBranchKey, repositoriesStore } from "./repositories";
+import { pathBasename, pathStartsWith } from "../utils/pathUtils";
 
 // Zoom bounds mirror the terminal zoom (useTerminalLifecycle) for consistency.
 const MD_MIN_FONT_SIZE = 8;
@@ -91,8 +92,7 @@ export function resolveRepoForCwd(cwd: string | null | undefined): string | null
   if (repos.includes(cwd)) return cwd;
   let best: string | null = null;
   for (const repo of repos) {
-    const prefix = repo.endsWith("/") ? repo : `${repo}/`;
-    if (cwd.startsWith(prefix) && (best === null || repo.length > best.length)) {
+    if (pathStartsWith(cwd, repo) && (best === null || repo.length > best.length)) {
       best = repo;
     }
   }
@@ -136,7 +136,7 @@ function createMdTabsStore() {
       }
 
       const id = base._nextId("md");
-      const fileName = filePath.split("/").pop() || filePath;
+      const fileName = pathBasename(filePath) || filePath;
       const tab: FileTab = { type: "file", id, repoPath, filePath, fileName, branchKey: currentBranchKey(), fsRoot: effectiveRoot };
       const tabId = base._addTab(tab);
 
@@ -153,7 +153,7 @@ function createMdTabsStore() {
       if (existing) return null;
 
       const id = base._nextId("md");
-      const fileName = filePath.split("/").pop() || filePath;
+      const fileName = pathBasename(filePath) || filePath;
       const tab: FileTab = {
         type: "file",
         id,
@@ -336,7 +336,7 @@ function createMdTabsStore() {
       }
 
       const id = base._nextId("md");
-      const fileName = filePath.split("/").pop() || filePath;
+      const fileName = pathBasename(filePath) || filePath;
       const tab: HtmlPreviewTab = { type: "html-preview", id, title: fileName, repoPath, filePath, fileName, branchKey: currentBranchKey(), fsRoot: effectiveRoot };
       return base._addTab(tab);
     },

@@ -58,6 +58,7 @@ import { repositoriesStore } from "./stores/repositories";
 import { pluginStore } from "./stores/pluginStore";
 import { mdTabsStore } from "./stores/mdTabs";
 import { classifyFile } from "./utils/filePreview";
+import { pathBasename, pathStartsWith, pathStripPrefix } from "./utils/pathUtils";
 import { diffTabsStore } from "./stores/diffTabs";
 import { uiStore } from "./stores/ui";
 import { settingsStore } from "./stores/settings";
@@ -349,7 +350,7 @@ const App: Component = () => {
     const paths = tccDeniedPaths();
     if (paths.length === 0) return;
     markTccAlertShown();
-    const repos = paths.map((p) => p.split("/").pop() ?? p).join(", ");
+    const repos = paths.map((p) => pathBasename(p) || p).join(", ");
     void dialogs.confirm({
       title: "Permission denied",
       message: `macOS blocked access to: ${repos}\n\nRepositories inside ~/Documents, ~/Desktop, or ~/Downloads require Full Disk Access.\n\nTo fix: System Settings → Privacy & Security → Full Disk Access → add TUICommander.\n\nAlternatively, move your repositories to a non-protected folder (e.g. ~/Repositories).`,
@@ -989,9 +990,8 @@ const App: Component = () => {
     const fsRoot = gitOps.activeWorktreePath() || repoPath;
 
     // Convert to relative path when inside the effective root (worktree or repo), keep absolute otherwise
-    const rootPrefix = fsRoot.endsWith("/") ? fsRoot : fsRoot + "/";
-    const filePath = absolutePath.startsWith(rootPrefix)
-      ? absolutePath.slice(rootPrefix.length)
+    const filePath = pathStartsWith(absolutePath, fsRoot)
+      ? pathStripPrefix(absolutePath, fsRoot)
       : absolutePath;
 
     const target = classifyFile(filePath);
@@ -1012,9 +1012,8 @@ const App: Component = () => {
       for (const absolutePath of event.payload) {
         const repoPath = repositoriesStore.state.activeRepoPath ?? "";
         const fsRoot = gitOps.activeWorktreePath() || repoPath;
-        const rootPrefix = fsRoot ? (fsRoot.endsWith("/") ? fsRoot : fsRoot + "/") : "";
-        const filePath = rootPrefix && absolutePath.startsWith(rootPrefix)
-          ? absolutePath.slice(rootPrefix.length)
+        const filePath = fsRoot && pathStartsWith(absolutePath, fsRoot)
+          ? pathStripPrefix(absolutePath, fsRoot)
           : absolutePath;
         const effectiveRepo = filePath === absolutePath ? "" : repoPath;
         const effectiveRoot = filePath === absolutePath ? "" : fsRoot;

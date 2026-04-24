@@ -1,12 +1,13 @@
 import { LanguageDescription, type LanguageSupport } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
+import { pathBasename } from "../../utils/pathUtils";
 
 /** Files without a recognized extension that should use Shell highlighting */
 const SHELL_FILENAMES = /^(Makefile|GNUmakefile|makefile)$/;
 
 /** Detect the CodeMirror language support for a filename using language-data's 143-language registry */
 export async function detectLanguage(filename: string): Promise<LanguageSupport | null> {
-  const basename = filename.split("/").pop() ?? filename;
+  const basename = pathBasename(filename) || filename;
 
   const desc = LanguageDescription.matchFilename(languages, basename);
   if (desc) return desc.load();

@@ -434,15 +434,6 @@ pub(crate) fn list_markdown_files_impl(path: String) -> Result<Vec<MarkdownFileE
         return Err(format!("Path does not exist: {path}"));
     }
 
-    // Security: ensure the path is within $HOME to prevent directory enumeration
-    if let Some(home) = dirs::home_dir() {
-        let canonical = repo_path.canonicalize()
-            .map_err(|e| format!("Failed to resolve path: {e}"))?;
-        if !canonical.starts_with(&home) {
-            return Err("Access denied: path must be within the user's home directory".into());
-        }
-    }
-
     // Walk the filesystem to find all .md files (fast, skips heavy dirs).
     // We avoid `git ls-files --others` which is extremely slow on large repos.
     fn walk_dir(dir: &Path, base: &Path, md_paths: &mut Vec<(String, u64)>) -> std::io::Result<()> {
@@ -511,14 +502,8 @@ pub(crate) fn read_file_impl(path: String, file: String) -> Result<String, Strin
     let repo_path = PathBuf::from(&path);
     let file_path = repo_path.join(&file);
 
-    // Security: ensure the repo path is within $HOME
     let canonical_repo = repo_path.canonicalize()
         .map_err(|e| format!("Failed to resolve repo path: {e}"))?;
-    if let Some(home) = dirs::home_dir()
-        && !canonical_repo.starts_with(&home)
-    {
-        return Err("Access denied: path must be within the user's home directory".into());
-    }
 
     // Security: ensure the file is within the repo path
     let canonical_file = file_path.canonicalize()
@@ -1323,6 +1308,7 @@ pub fn run() {
             agent_mcp::install_agent_mcp,
             agent_mcp::remove_agent_mcp,
             agent_mcp::get_agent_config_path,
+            agent_mcp::get_mcp_bridge_info,
             prompt::extract_prompt_variables,
             prompt::process_prompt_content,
             prompt::process_prompt_content_shell_safe,

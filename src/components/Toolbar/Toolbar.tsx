@@ -423,7 +423,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
                                 return color ? { color } : undefined;
                               })()}
                             >
-                              {repositoriesStore.get(notif.repoPath)?.displayName ?? notif.repoPath.split("/").pop()}
+                              {repositoriesStore.get(notif.repoPath)?.displayName ?? notif.repoPath.split(/[\\/]/).pop()}
                             </span>
                             <span class={s.notifPr}>#{notif.prNumber} {info.label}</span>
                             <span class={s.notifBranch} title={notif.title}>{notif.branch}</span>

@@ -142,6 +142,9 @@ export const ServicesTab: Component = () => {
   const [disabledNativeTools, setDisabledNativeTools] = createSignal<string[]>([]);
   const [collapseTools, setCollapseTools] = createSignal<boolean>(false);
   const [upstreamStatus, setUpstreamStatus] = createSignal<UpstreamStatusEntry[]>([]);
+  const [bridgeInfo, setBridgeInfo] = createSignal<{ bridge_path: string; config_snippet: string } | null>(null);
+  const [bridgeInfoOpen, setBridgeInfoOpen] = createSignal(false);
+  const [snippetCopied, setSnippetCopied] = createSignal(false);
 
   // Tailscale state (mirrors Rust TailscaleState enum serialization)
   type TailscaleStatus =
@@ -691,6 +694,59 @@ export const ServicesTab: Component = () => {
         <p class={s.hint}>
           Native tools exposed via MCP. Disable tools to restrict what AI agents can access.
         </p>
+      </div>
+
+      <div class={s.group} style={{ padding: "4px 0" }}>
+        <button
+          style={{
+            background: "none", border: "none", color: "var(--text-secondary)",
+            cursor: "pointer", "font-size": "12px", padding: "2px 0",
+            display: "flex", "align-items": "center", gap: "4px",
+          }}
+          onClick={() => {
+            const opening = !bridgeInfoOpen();
+            setBridgeInfoOpen(opening);
+            if (opening && !bridgeInfo()) {
+              rpc<{ bridge_path: string; config_snippet: string }>("get_mcp_bridge_info")
+                .then(setBridgeInfo)
+                .catch((e) => appLogger.warn("config", "Failed to fetch bridge info", e));
+            }
+          }}
+        >
+          <span style={{ "font-size": "10px" }}>{bridgeInfoOpen() ? "▼" : "▶"}</span>
+          Manual MCP configuration
+        </button>
+        <Show when={bridgeInfoOpen() && bridgeInfo()}>
+          <div style={{ "margin-top": "6px" }}>
+            <p class={s.hint} style={{ margin: "0 0 4px" }}>
+              Bridge path: <code style={{ "font-size": "11px", "word-break": "break-all" }}>{bridgeInfo()!.bridge_path}</code>
+            </p>
+            <p class={s.hint} style={{ margin: "0 0 6px" }}>
+              Add this to your MCP client config (e.g. <code style={{ "font-size": "11px" }}>~/.claude.json</code> under <code style={{ "font-size": "11px" }}>mcpServers</code>):
+            </p>
+            <div style={{ position: "relative" }}>
+              <pre style={{
+                background: "var(--bg-tertiary, #1a1a1a)", padding: "8px 10px",
+                "border-radius": "4px", "font-size": "11px", "line-height": "1.4",
+                overflow: "auto", margin: 0, color: "var(--text-primary)",
+              }}>{bridgeInfo()!.config_snippet}</pre>
+              <button
+                style={{
+                  position: "absolute", top: "4px", right: "4px",
+                  background: "var(--bg-secondary)", border: "1px solid var(--border-subtle, #333)",
+                  color: "var(--text-secondary)", cursor: "pointer", padding: "2px 8px",
+                  "border-radius": "3px", "font-size": "11px",
+                }}
+                onClick={() => {
+                  navigator.clipboard.writeText(bridgeInfo()!.config_snippet).then(() => {
+                    setSnippetCopied(true);
+                    setTimeout(() => setSnippetCopied(false), 2000);
+                  }).catch(() => {});
+                }}
+              >{snippetCopied() ? "Copied" : "Copy"}</button>
+            </div>
+          </div>
+        </Show>
       </div>
 
       <div class={s.group} style={{ display: "flex", "align-items": "center", gap: "8px", padding: "4px 0" }}>

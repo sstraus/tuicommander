@@ -1,18 +1,22 @@
+import { isAbsolutePath, normalizeSep, pathStartsWith, pathStripPrefix, joinPath } from "../../utils/pathUtils";
+
 export interface ResolvedPath {
   repoPath: string;
   relPath: string;
 }
 
-/** Normalize a POSIX path: resolve . and .. segments, collapse multiple slashes */
+/** Normalize a path: resolve . and .. segments, collapse multiple slashes, handle both separators. */
 function normalizePath(p: string): string {
-  const parts = p.split("/");
+  const n = normalizeSep(p);
+  const parts = n.split("/");
   const out: string[] = [];
   for (const seg of parts) {
     if (seg === "." || seg === "") continue;
     if (seg === "..") { out.pop(); continue; }
     out.push(seg);
   }
-  return (p.startsWith("/") ? "/" : "") + out.join("/");
+  if (n.startsWith("/")) return "/" + out.join("/");
+  return out.join("/");
 }
 
 /**
@@ -29,32 +33,21 @@ export function resolveTuicPath(
 ): ResolvedPath | null {
   if (!path) return null;
 
-  // Absolute path — backward-compatible behavior
-  if (path.startsWith("/")) {
-    // Sort repos longest-first so nested repos match before parents
+  if (isAbsolutePath(path)) {
     const sorted = [...repoPaths].sort((a, b) => b.length - a.length);
-    const repo = sorted.find((rp) => path.startsWith(rp + "/") || path === rp);
+    const repo = sorted.find((rp) => pathStartsWith(path, rp));
     if (!repo) return null;
-    const relPath = path === repo ? "" : path.slice(repo.length + 1);
-    return { repoPath: repo, relPath };
+    return { repoPath: repo, relPath: pathStripPrefix(path, repo) };
   }
 
-  // Relative path — needs an active repo
   if (!activeRepoPath) return null;
 
-  const absoluteResolved = normalizePath(activeRepoPath + "/" + path);
+  const absoluteResolved = normalizePath(joinPath(activeRepoPath, path));
 
-  // Guard: resolved path must stay within the repo root
-  if (
-    !absoluteResolved.startsWith(activeRepoPath + "/") &&
-    absoluteResolved !== activeRepoPath
-  ) {
+  if (!pathStartsWith(absoluteResolved, activeRepoPath)) {
     return null;
   }
 
-  const relPath = absoluteResolved === activeRepoPath
-    ? ""
-    : absoluteResolved.slice(activeRepoPath.length + 1).replace(/\/+$/, "");
-
+  const relPath = pathStripPrefix(absoluteResolved, activeRepoPath);
   return { repoPath: activeRepoPath, relPath };
 }

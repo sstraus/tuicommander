@@ -23,6 +23,7 @@ import { SearchBar } from "../shared/SearchBar";
 import { t } from "../../i18n";
 import { shortenHomePath } from "../../platform";
 import { classifyFile } from "../../utils/filePreview";
+import { isAbsolutePath, pathDirname, joinPath } from "../../utils/pathUtils";
 import e from "../shared/editor-header.module.css";
 import s from "./MarkdownTab.module.css";
 
@@ -85,7 +86,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
     // Absolute paths: always use read_external_file (no repo constraint).
     // This avoids "Access denied" when the file is outside the tab's repoPath
     // (e.g. file from a different repo opened via terminal link click).
-    if (filePath.startsWith("/")) {
+    if (isAbsolutePath(filePath)) {
       return await invoke<string>("read_external_file", { path: filePath });
     }
     return fsRoot
@@ -256,7 +257,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
     try {
       if (root) {
         await invoke<void>("write_file", { repoPath: root, file: ft.filePath, content: updatedContent });
-      } else if (ft.filePath.startsWith("/")) {
+      } else if (isAbsolutePath(ft.filePath)) {
         await invoke<void>("write_external_file", { path: ft.filePath, content: updatedContent });
       } else {
         appLogger.error("app", "writeTweakedSource: cannot resolve write target", { filePath: ft.filePath });
@@ -314,14 +315,11 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
     if (tab.type !== "file") return undefined;
     const ft = tab as FileTab;
     const root = ft.fsRoot || ft.repoPath;
-    if (!root && ft.filePath.startsWith("/")) {
-      const lastSlash = ft.filePath.lastIndexOf("/");
-      return lastSlash > 0 ? ft.filePath.slice(0, lastSlash) : "/";
+    if (!root && isAbsolutePath(ft.filePath)) {
+      return pathDirname(ft.filePath) || "/";
     }
-    const dir = ft.filePath.includes("/")
-      ? ft.filePath.slice(0, ft.filePath.lastIndexOf("/"))
-      : "";
-    return dir ? `${root}/${dir}` : root;
+    const dir = pathDirname(ft.filePath);
+    return dir ? joinPath(root, dir) : root;
   };
 
   const fullPath = () => {
