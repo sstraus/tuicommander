@@ -9,6 +9,7 @@ import {
   on,
   onCleanup,
   onMount,
+  untrack,
 } from "solid-js";
 import { Sidebar } from "./components/Sidebar";
 import { Toolbar } from "./components/Toolbar";
@@ -105,7 +106,7 @@ import { useSmartPrompts } from "./hooks/useSmartPrompts";
 import { registerAiChatContextActions } from "./components/AIChatPanel/contextMenuActions";
 import { AIChatPanel } from "./components/AIChatPanel/AIChatPanel";
 import { aiChatStore } from "./stores/aiChatStore";
-import { renderPanelMode, registerPanel } from "./panelRouter";
+import { renderPanelMode, registerPanel, panelRegistry, togglePanel, detachPanel } from "./panelRouter";
 import { createPanelSyncProvider, type PanelAction } from "./utils/panelSync";
 import { activityPanelAdapter } from "./panelAdapters/activity";
 import { aiAgentStore } from "./stores/aiAgentStore";
@@ -132,6 +133,8 @@ registerPanel({
   id: "ai-chat",
   title: "AI Chat",
   defaultSize: { width: 500, height: 700 },
+  toggle: () => uiStore.toggleAiChatPanel(),
+  detachParams: () => ({ chatId: aiChatStore.chatId() }),
   Component: (props: { params: URLSearchParams }) => {
     const chatId = props.params.get("chatId");
     if (chatId) aiChatStore.setChatId(chatId);
@@ -467,27 +470,30 @@ const App: Component = () => {
     let unlisten: (() => void) | undefined;
     listen<PanelAction>("panel-action", (event) => {
       const { panelId, action, data } = event.payload;
-      if (panelId === "activity") {
-        if (action === "reattach") {
-          uiStore.clearDetached("activity");
-          activityDashboardStore.open();
-        } else {
-          activityPanelAdapter.handleAction(action, data);
-        }
+      if (action === "reattach") {
+        uiStore.clearDetached(panelId);
+        panelRegistry[panelId]?.toggle?.();
+      } else {
+        panelRegistry[panelId]?.handleAction?.(action, data);
       }
     }).then((fn) => { unlisten = fn; });
     onCleanup(() => unlisten?.());
   }
 
   // Start sync provider for Activity Dashboard when detached.
+  // untrack: serialize() reads terminalsStore — those must NOT become effect
+  // deps, otherwise every terminal mutation recreates the provider.
   createEffect(() => {
     if (!uiStore.isDetached("activity")) return;
-    const provider = createPanelSyncProvider(
-      "activity",
-      activityPanelAdapter.serialize,
-      activityPanelAdapter.syncIntervalMs,
-    );
-    provider.start();
+    const provider = untrack(() => {
+      const p = createPanelSyncProvider(
+        "activity",
+        activityPanelAdapter.serialize,
+        activityPanelAdapter.syncIntervalMs,
+      );
+      p.start();
+      return p;
+    });
     onCleanup(() => provider.stop());
   });
 
@@ -549,6 +555,28 @@ const App: Component = () => {
       setStatusInfo("Error: App failed to initialize — check error log");
       document.getElementById("splash")?.remove();
     });
+
+    // Reopen detached panel windows that were persisted before shutdown.
+    if (isTauri()) {
+      const panels = { ...uiStore.state.detachedPanels };
+      for (const [panelId, _label] of Object.entries(panels)) {
+        const adapter = panelRegistry[panelId];
+        if (!adapter) {
+          uiStore.clearDetached(panelId);
+          continue;
+        }
+        invoke("open_panel_window", {
+          panelId,
+          title: adapter.title,
+          params: {},
+          width: adapter.defaultSize.width,
+          height: adapter.defaultSize.height,
+        }).catch((err) => {
+          appLogger.warn("app", `Failed to restore detached panel: ${panelId}`, { error: String(err) });
+          uiStore.clearDetached(panelId);
+        });
+      }
+    }
 
     // Check for updates after hydration (non-blocking)
     if (settingsStore.state.autoUpdateEnabled) {
@@ -1304,12 +1332,12 @@ const App: Component = () => {
       active?.ref?.openSearch();
     },
     toggleCommandPalette: () => commandPaletteStore.toggle(),
-    toggleActivityDashboard: () => activityDashboardStore.toggle(),
+    toggleActivityDashboard: () => togglePanel("activity"),
     toggleWorktreeManager: () => worktreeManagerStore.toggle(),
     toggleBranchSwitcher: () => branchSwitcherStore.toggle(),
     toggleErrorLog: () => errorLogStore.toggle(),
     toggleBranchesTab: () => uiStore.toggleGitPanelOnTab("branches"),
-    toggleAiChatPanel: () => uiStore.toggleAiChatPanel(),
+    toggleAiChatPanel: () => togglePanel("ai-chat"),
     toggleMcpPopup: () => mcpPopupStore.toggle(),
     toggleGlobalWorkspace: () => {
       if (!globalWorkspaceStore.hasPromoted()) return;
@@ -1382,21 +1410,9 @@ const App: Component = () => {
     },
     detachActivityDashboard: () => {
       if (!isTauri()) return;
-      (async () => {
-        try {
-          await invoke("open_panel_window", {
-            panelId: "activity",
-            title: "Activity Dashboard",
-            params: {},
-            width: 550,
-            height: 650,
-          });
-          uiStore.setDetached("activity", "panel-activity");
-          activityDashboardStore.close();
-        } catch (e) {
-          appLogger.error("app", "Failed to detach Activity Dashboard", { error: String(e) });
-        }
-      })();
+      detachPanel("activity").catch((e) =>
+        appLogger.error("app", "Failed to detach Activity Dashboard", { error: String(e) }),
+      );
     },
     newFile: () => {
       const defaultPath = gitOps.activeWorktreePath() || repositoriesStore.state.activeRepoPath || undefined;
@@ -1670,7 +1686,7 @@ const App: Component = () => {
         // Help
         case "help-panel": setHelpPanelVisible((v) => !v); break;
         case "command-palette": commandPaletteStore.toggle(); break;
-        case "activity-dashboard": activityDashboardStore.toggle(); break;
+        case "activity-dashboard": shortcutHandlers.toggleActivityDashboard(); break;
         case "error-log": errorLogStore.toggle(); break;
         case "mcp-popup": mcpPopupStore.toggle(); break;
         case "check-for-updates": updaterStore.checkForUpdate().catch((err) => appLogger.warn("app", "Updater manual check failed", err)); break;
@@ -1925,7 +1941,7 @@ const App: Component = () => {
           onToggleMarkdown={() => uiStore.toggleMarkdownPanel()}
           onToggleNotes={() => uiStore.toggleNotesPanel()}
           onToggleFileBrowser={() => uiStore.toggleFileBrowserPanel()}
-          onToggleAiChat={() => uiStore.toggleAiChatPanel()}
+          onToggleAiChat={() => togglePanel("ai-chat")}
           onToggleErrorLog={() => errorLogStore.toggle()}
           onDictationStart={dictation.handleDictationStart}
           onDictationStop={dictation.handleDictationStop}
