@@ -1,10 +1,17 @@
 import { Component, JSX } from "solid-js";
+import { invoke } from "./invoke";
+import { emitTo } from "@tauri-apps/api/event";
+import { uiStore } from "./stores/ui";
 
 export interface PanelAdapter {
   id: string;
   title: string;
   defaultSize: { width: number; height: number };
   Component: Component<{ params: URLSearchParams }>;
+  handleAction?: (action: string, data: unknown) => void;
+  toggle?: () => void;
+  detachParams?: () => Record<string, string>;
+  onDetach?: () => void;
 }
 
 const panelRegistry: Record<string, PanelAdapter> = {};
@@ -38,6 +45,40 @@ export function renderPanelMode(): JSX.Element | null {
       <adapter.Component params={params} />
     </div>
   );
+}
+
+export async function detachPanel(panelId: string): Promise<void> {
+  const adapter = panelRegistry[panelId];
+  if (!adapter) return;
+  await invoke("open_panel_window", {
+    panelId,
+    title: adapter.title,
+    params: adapter.detachParams?.() ?? {},
+    width: adapter.defaultSize.width,
+    height: adapter.defaultSize.height,
+  });
+  uiStore.setDetached(panelId, `panel-${panelId}`);
+  adapter.onDetach?.();
+}
+
+export function togglePanel(panelId: string): boolean {
+  const adapter = panelRegistry[panelId];
+  if (!adapter?.toggle) return false;
+  if (uiStore.isDetached(panelId)) {
+    invoke("focus_panel_window", { panelId }).catch(() => {});
+    return true;
+  }
+  adapter.toggle();
+  return true;
+}
+
+export async function reattachPanel(panelId: string): Promise<void> {
+  await emitTo("main", "panel-action", { panelId, action: "reattach", data: {} });
+  await invoke("close_panel_window", { panelId });
+}
+
+export async function closePanel(panelId: string): Promise<void> {
+  await invoke("close_panel_window", { panelId });
 }
 
 export { panelRegistry };
