@@ -106,6 +106,8 @@ import { registerAiChatContextActions } from "./components/AIChatPanel/contextMe
 import { AIChatPanel } from "./components/AIChatPanel/AIChatPanel";
 import { aiChatStore } from "./stores/aiChatStore";
 import { renderPanelMode, registerPanel } from "./panelRouter";
+import { createPanelSyncProvider, type PanelAction } from "./utils/panelSync";
+import { activityPanelAdapter } from "./panelAdapters/activity";
 import { aiAgentStore } from "./stores/aiAgentStore";
 import { applyAppTheme, applyFontFamily } from "./themes";
 import { createLongPressHandlerFromHotkey } from "./hooks/useLongPressHotkey";
@@ -136,6 +138,8 @@ registerPanel({
     return <AIChatPanel visible={true} onClose={() => window.close()} />;
   },
 });
+
+registerPanel(activityPanelAdapter);
 
 const App: Component = () => {
   const [statusInfo, _setStatusInfoRaw] = createSignal("Ready");
@@ -449,14 +453,38 @@ const App: Component = () => {
     onCleanup(() => unlisten?.());
   }
 
-  // Reset detached flag when the AI Chat panel window is closed.
+  // Generic panel window lifecycle: clear detached state when any panel window closes.
   {
     let unlisten: (() => void) | undefined;
-    listen<string>("ai-chat-window-closed", () => {
-      uiStore.setAiChatDetached(false);
+    listen<string>("panel-window-closed", (event) => {
+      uiStore.clearDetached(event.payload);
     }).then((fn) => { unlisten = fn; });
     onCleanup(() => unlisten?.());
   }
+
+  // Route actions from detached panel windows to the correct adapter.
+  {
+    let unlisten: (() => void) | undefined;
+    listen<PanelAction>("panel-action", (event) => {
+      const { panelId, action, data } = event.payload;
+      if (panelId === "activity") {
+        activityPanelAdapter.handleAction(action, data);
+      }
+    }).then((fn) => { unlisten = fn; });
+    onCleanup(() => unlisten?.());
+  }
+
+  // Start sync provider for Activity Dashboard when detached.
+  createEffect(() => {
+    if (!uiStore.isDetached("activity")) return;
+    const provider = createPanelSyncProvider(
+      "activity",
+      activityPanelAdapter.serialize,
+      activityPanelAdapter.syncIntervalMs,
+    );
+    provider.start();
+    onCleanup(() => provider.stop());
+  });
 
   // Notification sounds are now played natively via Rust (rodio) —
   // no Web Audio warmup needed.
