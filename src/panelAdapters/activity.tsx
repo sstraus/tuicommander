@@ -1,99 +1,72 @@
-import { Component, For, Show, createSignal, createEffect, onCleanup, onMount } from "solid-js";
+import { Component, createSignal, createEffect, onMount } from "solid-js";
 import { invoke } from "../invoke";
 import { buildActivitySnapshot, type ActivitySnapshot, type ActivityTerminalRow } from "../utils/activitySnapshot";
 import { createPanelSyncReceiver } from "../utils/panelSync";
 import { initPanelWindow } from "../hooks/initPanelWindow";
 import { terminalsStore } from "../stores/terminals";
 import { globalWorkspaceStore } from "../stores/globalWorkspace";
-import { formatRelativeTime } from "../utils/time";
+import { ActivityDashboard, type TerminalRow } from "../components/ActivityDashboard/ActivityDashboard";
+import s from "../components/ActivityDashboard/ActivityDashboard.module.css";
 import type { PanelAdapter } from "../panelRouter";
 
-function truncate(text: string, maxLen = 80): string {
-  const oneLine = text.replace(/\n/g, " ").trim();
-  if (oneLine.length <= maxLen) return oneLine;
-  return oneLine.slice(0, maxLen - 1) + "…";
+function getTerminalStatus(
+  row: ActivityTerminalRow,
+): { label: string; className: string } {
+  if (row.isRateLimited) {
+    return { label: "Rate limited", className: s.statusRateLimited };
+  } else if (row.awaitingInput) {
+    return { label: "Waiting for input", className: s.statusWaiting };
+  } else if (row.shellState === "busy") {
+    return { label: "Working", className: s.statusWorking };
+  } else if (row.shellState === "idle") {
+    return { label: "Idle", className: s.statusIdle };
+  }
+  return { label: "—", className: s.statusIdle };
+}
+
+function projectName(cwd: string | null): string | null {
+  if (!cwd) return null;
+  const segments = cwd.replace(/\/+$/, "").split("/");
+  return segments[segments.length - 1] || null;
+}
+
+function snapshotToRows(snap: ActivitySnapshot): TerminalRow[] {
+  return snap.terminals.map((t) => ({
+    id: t.id,
+    name: t.name,
+    project: projectName(t.cwd),
+    agent: t.agentType || "shell",
+    status: getTerminalStatus(t),
+    lastDataAt: t.lastDataAt,
+    lastPrompt: t.lastPrompt,
+    agentIntent: t.agentIntent,
+    currentTask: t.currentTask,
+    activeSubTasks: t.activeSubTasks,
+    isActive: t.isActive,
+    isPromoted: t.isPromoted,
+  }));
 }
 
 const DetachedActivityDashboard: Component<{ params: URLSearchParams }> = () => {
   const { state, emitAction } = createPanelSyncReceiver<ActivitySnapshot>("activity");
-  const [, setTick] = createSignal(0);
+  const [rows, setRows] = createSignal<TerminalRow[]>([]);
 
   onMount(() => {
     void initPanelWindow();
   });
 
   createEffect(() => {
-    const interval = setInterval(() => setTick((n) => n + 1), 1000);
-    onCleanup(() => clearInterval(interval));
+    const snap = state();
+    if (snap) setRows(snapshotToRows(snap));
   });
 
-  const handleRowClick = (termId: string) => {
-    void emitAction("navigate", { termId });
-  };
-
-  const handlePromote = (e: MouseEvent, termId: string) => {
-    e.stopPropagation();
-    void emitAction("promote", { termId });
-  };
-
   return (
-    <div style={{ padding: "12px", height: "100vh", overflow: "auto", background: "var(--bg-primary)", color: "var(--fg-primary)" }}>
-      <h3 style={{ margin: "0 0 12px", "font-size": "14px" }}>Activity Dashboard</h3>
-      <Show when={state()} fallback={<div style={{ color: "var(--fg-secondary)" }}>Waiting for data...</div>}>
-        {(snap) => (
-          <For each={snap().terminals}>
-            {(term: ActivityTerminalRow) => (
-              <div
-                onClick={() => handleRowClick(term.id)}
-                style={{
-                  padding: "8px",
-                  "border-bottom": "1px solid var(--border)",
-                  cursor: "pointer",
-                  background: term.isActive ? "var(--bg-tertiary)" : "transparent",
-                }}
-              >
-                <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
-                  <span style={{ "font-weight": "bold", "font-size": "13px" }}>{term.name}</span>
-                  <span style={{ color: "var(--fg-secondary)", "font-size": "12px" }}>{term.agentType ?? "shell"}</span>
-                  <span style={{
-                    "font-size": "11px",
-                    color: term.shellState === "busy" ? "var(--fg-accent)" : "var(--fg-secondary)",
-                  }}>
-                    {term.isRateLimited ? "Rate limited" : term.awaitingInput ? "Waiting" : term.shellState ?? "—"}
-                  </span>
-                  <span style={{ "margin-left": "auto", "font-size": "11px", color: "var(--fg-secondary)" }}>
-                    {formatRelativeTime(term.lastDataAt)}
-                  </span>
-                  <button
-                    onClick={(e) => handlePromote(e, term.id)}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      color: term.isPromoted ? "var(--fg-accent)" : "var(--fg-secondary)",
-                      "font-size": "14px",
-                    }}
-                    title={term.isPromoted ? "Remove from Global Workspace" : "Promote to Global Workspace"}
-                  >
-                    {term.isPromoted ? "\u{1F310}" : "\u{1F517}"}
-                  </button>
-                </div>
-                <Show when={term.agentIntent}>
-                  <div style={{ "font-size": "12px", color: "var(--fg-secondary)", "margin-top": "4px" }}>
-                    {truncate(term.agentIntent!)}
-                  </div>
-                </Show>
-                <Show when={term.currentTask}>
-                  <div style={{ "font-size": "12px", color: "var(--fg-secondary)", "margin-top": "2px" }}>
-                    {truncate(term.currentTask!)}
-                  </div>
-                </Show>
-              </div>
-            )}
-          </For>
-        )}
-      </Show>
-    </div>
+    <ActivityDashboard
+      embedded
+      terminals={rows}
+      onSelect={(id) => void emitAction("navigate", { termId: id })}
+      onPromote={(id) => void emitAction("promote", { termId: id })}
+    />
   );
 };
 

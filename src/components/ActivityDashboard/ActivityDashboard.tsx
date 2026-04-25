@@ -71,8 +71,28 @@ const SubTaskIcon: Component = () => (
   </svg>
 );
 
+export type TerminalRow = {
+  id: string;
+  name: string;
+  project: string | null;
+  agent: string;
+  status: { label: string; className: string };
+  lastDataAt: number | null;
+  lastPrompt: string | null;
+  agentIntent: string | null;
+  currentTask: string | null;
+  activeSubTasks: number;
+  isActive: boolean;
+  isPromoted: boolean;
+};
+
 interface ActivityDashboardProps {
   onSelect?: (id: string) => void;
+  onPromote?: (id: string) => void;
+  /** When true, renders without overlay — used in detached panel windows. */
+  embedded?: boolean;
+  /** External data source. When provided, bypasses store reads. */
+  terminals?: () => TerminalRow[];
 }
 
 export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
@@ -120,6 +140,26 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
     }
   };
 
+  const handleReattach = async () => {
+    if (!isTauri()) return;
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("close_panel_window", { panelId: "activity" });
+    } catch (e) {
+      appLogger.error("app", "Failed to reattach Activity Dashboard", { error: String(e) });
+    }
+  };
+
+  const handleClosePanel = async () => {
+    if (!isTauri()) return;
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("close_panel_window", { panelId: "activity" });
+    } catch (e) {
+      appLogger.error("app", "Failed to close Activity Dashboard", { error: String(e) });
+    }
+  };
+
   const handleRowClick = (termId: string) => {
     if (props.onSelect) {
       props.onSelect(termId);
@@ -127,21 +167,7 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
       terminalsStore.setActive(termId);
       requestAnimationFrame(() => terminalsStore.get(termId)?.ref?.focus());
     }
-    activityDashboardStore.close();
-  };
-
-  type TerminalRow = {
-    id: string;
-    name: string;
-    project: string | null;
-    agent: string;
-    status: { label: string; className: string };
-    lastDataAt: number | null;
-    lastPrompt: string | null;
-    agentIntent: string | null;
-    currentTask: string | null;
-    activeSubTasks: number;
-    isActive: boolean;
+    if (!props.embedded) activityDashboardStore.close();
   };
 
   /** Build a fresh row from the live store. Called at render time so every
@@ -164,6 +190,7 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
       currentTask: term.agentType === "claude" ? null : term.currentTask,
       activeSubTasks: term.activeSubTasks,
       isActive: terminalsStore.state.activeId === id,
+      isPromoted: globalWorkspaceStore.isPromoted(id),
     };
   };
 
@@ -196,108 +223,135 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
     return orderSnapshot();
   });
 
-  const terminals = createMemo(() =>
+  const storeTerminals = createMemo(() =>
     orderedIds().map(buildRow).filter(Boolean) as TerminalRow[],
   );
+
+  const terminals = () => props.terminals ? props.terminals() : storeTerminals();
+
+  const dashboardContent = () => (
+    <>
+      <div class={s.header}>
+        <h3>Activity Dashboard</h3>
+        <div class={s.headerActions}>
+          <Show when={!props.embedded && isTauri()}>
+            <button class={s.detach} onClick={handleDetach} title="Open in separate window">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
+                <path d="M8 2h4v4M8 6l4-4M6 3H3a1 1 0 00-1 1v7a1 1 0 001 1h7a1 1 0 001-1V8" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+          </Show>
+          <Show when={props.embedded}>
+            <button class={s.detach} onClick={handleReattach} title="Bring back to main window">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
+                <path d="M6 12H3a1 1 0 01-1-1V4a1 1 0 011-1h7a1 1 0 011 1v3M10 8l-4 4M10 12V8H6" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+          </Show>
+          <Show when={!props.embedded}>
+            <button class={s.close} onClick={() => activityDashboardStore.close()}>
+              &times;
+            </button>
+          </Show>
+          <Show when={props.embedded}>
+            <button class={s.close} onClick={handleClosePanel}>
+              &times;
+            </button>
+          </Show>
+        </div>
+      </div>
+
+      <div class={s.list}>
+        <Show when={terminals().length === 0}>
+          <div class={s.empty}>No active terminals</div>
+        </Show>
+
+        <For each={terminals()}>
+          {(term) => (
+            <div
+              class={`${s.row} ${term.isActive ? s.activeRow : ""}`}
+              onClick={() => handleRowClick(term.id)}
+            >
+              <div class={s.rowMain}>
+                <div class={s.nameCell}>
+                  <span class={s.termName}>{term.name}</span>
+                  <Show when={term.project}>
+                    <span class={s.project}>{term.project}</span>
+                  </Show>
+                </div>
+                <span class={s.agent}>{term.agent}</span>
+                <span class={`${s.status} ${term.status.className}`}>{term.status.label}</span>
+                <span class={s.lastActivity}>{formatRelativeTime(term.lastDataAt)}</span>
+                <button
+                  class={`${s.promoteBtn} ${term.isPromoted ? s.promoted : ""}`}
+                  title={term.isPromoted ? "Remove from Global Workspace" : "Promote to Global Workspace"}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (props.onPromote) {
+                      props.onPromote(term.id);
+                    } else {
+                      globalWorkspaceStore.togglePromote(term.id);
+                    }
+                  }}
+                >
+                  <GlobeIcon />
+                </button>
+              </div>
+              <Show when={term.currentTask}>
+                {(task) => (
+                  <div class={s.subRow} title={task()}>
+                    <TaskIcon />
+                    <span class={s.subText}>{truncate(task())}</span>
+                  </div>
+                )}
+              </Show>
+              <Show when={term.activeSubTasks > 0}>
+                <div class={s.subRow} title={`${term.activeSubTasks} sub-tasks running`}>
+                  <SubTaskIcon />
+                  <span class={s.subText}>{term.activeSubTasks} sub-tasks running</span>
+                </div>
+              </Show>
+              <Show when={term.agentIntent} keyed>
+                {(intent) => (
+                  <div class={s.subRow} title={intent}>
+                    <IntentIcon />
+                    <span class={s.subText}>{truncate(intent)}</span>
+                  </div>
+                )}
+              </Show>
+              {(() => {
+                const prompt = term.lastPrompt;
+                if (!prompt || term.agentIntent) return null;
+                return (
+                  <div class={s.subRow} title={prompt}>
+                    <PromptIcon />
+                    <span class={s.subText}>{truncate(prompt)}</span>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+        </For>
+      </div>
+
+      <div class={s.footer}>
+        <span>{terminals().length} terminal(s)</span>
+        <Show when={!props.embedded}>
+          <span style={{ "margin-left": "auto" }}>Click to switch • Esc to close</span>
+        </Show>
+      </div>
+    </>
+  );
+
+  if (props.embedded) {
+    return <div class={s.dashboard} style={{ "max-height": "100vh", height: "100vh" }}>{dashboardContent()}</div>;
+  }
 
   return (
     <Show when={isOpen()}>
       <div class={s.overlay} onClick={() => activityDashboardStore.close()}>
         <div class={s.dashboard} onClick={(e) => e.stopPropagation()}>
-          <div class={s.header}>
-            <h3>Activity Dashboard</h3>
-            <div class={s.headerActions}>
-              <Show when={isTauri()}>
-                <button class={s.detach} onClick={handleDetach} title="Open in separate window">
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
-                    <path d="M8 2h4v4M8 6l4-4M6 3H3a1 1 0 00-1 1v7a1 1 0 001 1h7a1 1 0 001-1V8" stroke-linecap="round" stroke-linejoin="round" />
-                  </svg>
-                </button>
-              </Show>
-              <button class={s.close} onClick={() => activityDashboardStore.close()}>
-                &times;
-              </button>
-            </div>
-          </div>
-
-          <div class={s.list}>
-            <Show when={terminals().length === 0}>
-              <div class={s.empty}>No active terminals</div>
-            </Show>
-
-            <For each={terminals()}>
-              {(term) => (
-                <div
-                  class={`${s.row} ${term.isActive ? s.activeRow : ""}`}
-                  onClick={() => handleRowClick(term.id)}
-                >
-                  <div class={s.rowMain}>
-                    <div class={s.nameCell}>
-                      <span class={s.termName}>{term.name}</span>
-                      <Show when={term.project}>
-                        <span class={s.project}>{term.project}</span>
-                      </Show>
-                    </div>
-                    <span class={s.agent}>{term.agent}</span>
-                    <span class={`${s.status} ${term.status.className}`}>{term.status.label}</span>
-                    <span class={s.lastActivity}>{formatRelativeTime(term.lastDataAt)}</span>
-                    {(() => {
-                      const isGlobal = globalWorkspaceStore.isPromoted(term.id);
-                      return (
-                    <button
-                      class={`${s.promoteBtn} ${isGlobal ? s.promoted : ""}`}
-                      title={isGlobal ? "Remove from Global Workspace" : "Promote to Global Workspace"}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        globalWorkspaceStore.togglePromote(term.id);
-                      }}
-                    >
-                      <GlobeIcon />
-                    </button>
-                      );
-                    })()}
-                  </div>
-                  <Show when={term.currentTask}>
-                    {(task) => (
-                      <div class={s.subRow} title={task()}>
-                        <TaskIcon />
-                        <span class={s.subText}>{truncate(task())}</span>
-                      </div>
-                    )}
-                  </Show>
-                  <Show when={term.activeSubTasks > 0}>
-                    <div class={s.subRow} title={`${term.activeSubTasks} sub-tasks running`}>
-                      <SubTaskIcon />
-                      <span class={s.subText}>{term.activeSubTasks} sub-tasks running</span>
-                    </div>
-                  </Show>
-                  <Show when={term.agentIntent} keyed>
-                    {(intent) => (
-                      <div class={s.subRow} title={intent}>
-                        <IntentIcon />
-                        <span class={s.subText}>{truncate(intent)}</span>
-                      </div>
-                    )}
-                  </Show>
-                  {(() => {
-                    const prompt = term.lastPrompt;
-                    if (!prompt || term.agentIntent) return null;
-                    return (
-                      <div class={s.subRow} title={prompt}>
-                        <PromptIcon />
-                        <span class={s.subText}>{truncate(prompt)}</span>
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-            </For>
-          </div>
-
-          <div class={s.footer}>
-            <span>{terminals().length} terminal(s)</span>
-            <span style={{ "margin-left": "auto" }}>Click to switch • Esc to close</span>
-          </div>
+          {dashboardContent()}
         </div>
       </div>
     </Show>
