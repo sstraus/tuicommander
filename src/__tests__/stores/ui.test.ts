@@ -466,6 +466,89 @@ describe("uiStore", () => {
     });
   });
 
+  describe("detachedPanels", () => {
+    it("setDetached adds entry to map", () => {
+      testInScope(() => {
+        store.setDetached("activity", "panel-activity");
+        expect(store.state.detachedPanels).toEqual({ activity: "panel-activity" });
+      });
+    });
+
+    it("setDetached supports multiple panels", () => {
+      testInScope(() => {
+        store.setDetached("activity", "panel-activity");
+        store.setDetached("ai-chat", "panel-ai-chat");
+        expect(store.state.detachedPanels).toEqual({
+          activity: "panel-activity",
+          "ai-chat": "panel-ai-chat",
+        });
+      });
+    });
+
+    it("clearDetached removes the entry", () => {
+      testInScope(() => {
+        store.setDetached("activity", "panel-activity");
+        store.setDetached("ai-chat", "panel-ai-chat");
+        store.clearDetached("activity");
+        expect(store.state.detachedPanels).toEqual({ "ai-chat": "panel-ai-chat" });
+      });
+    });
+
+    it("clearDetached is no-op for non-existent panel", () => {
+      testInScope(() => {
+        store.clearDetached("nonexistent");
+        expect(store.state.detachedPanels).toEqual({});
+      });
+    });
+
+    it("isDetached returns correct boolean", () => {
+      testInScope(() => {
+        expect(store.isDetached("activity")).toBe(false);
+        store.setDetached("activity", "panel-activity");
+        expect(store.isDetached("activity")).toBe(true);
+        store.clearDetached("activity");
+        expect(store.isDetached("activity")).toBe(false);
+      });
+    });
+
+    it("backward compat: setAiChatDetached(true) delegates to setDetached", () => {
+      testInScope(() => {
+        store.setAiChatDetached(true);
+        expect(store.isDetached("ai-chat")).toBe(true);
+        expect(store.state.detachedPanels["ai-chat"]).toBe("panel-ai-chat");
+      });
+    });
+
+    it("backward compat: setAiChatDetached(false) delegates to clearDetached", () => {
+      testInScope(() => {
+        store.setAiChatDetached(true);
+        store.setAiChatDetached(false);
+        expect(store.isDetached("ai-chat")).toBe(false);
+      });
+    });
+
+    it("backward compat: aiChatDetached getter reflects detachedPanels", () => {
+      testInScope(() => {
+        expect(store.state.aiChatDetached).toBe(false);
+        store.setDetached("ai-chat", "panel-ai-chat");
+        expect(store.state.aiChatDetached).toBe(true);
+        store.clearDetached("ai-chat");
+        expect(store.state.aiChatDetached).toBe(false);
+      });
+    });
+
+    it("is ephemeral — does not persist via save_ui_prefs", () => {
+      testInScope(() => {
+        mockInvoke.mockClear();
+        store.setDetached("activity", "panel-activity");
+        const persistCalls = mockInvoke.mock.calls.filter(
+          (c) => c[0] === "save_ui_prefs",
+        );
+        expect(persistCalls).toHaveLength(0);
+      });
+    });
+  });
+
   describe("loading state", () => {
     it("setLoading sets loading and message", () => {
       testInScope(() => {

@@ -1,5 +1,5 @@
 import { batch } from "solid-js";
-import { createStore } from "solid-js/store";
+import { createStore, reconcile } from "solid-js/store";
 import { invoke } from "../invoke";
 import { appLogger } from "./appLogger";
 
@@ -42,6 +42,8 @@ interface UIStoreState {
   gitPanelVisible: boolean;
 
   aiChatPanelVisible: boolean;
+  detachedPanels: Record<string, string>;
+  /** @deprecated Backward-compat — use isDetached("ai-chat"). Derived from detachedPanels. */
   aiChatDetached: boolean;
 
   // Knowledge history overlay — ephemeral, not persisted. Full-screen modal
@@ -91,6 +93,7 @@ function createUIStore() {
     fileBrowserPanelVisible: false,
     gitPanelVisible: false,
     aiChatPanelVisible: false,
+    detachedPanels: {} as Record<string, string>,
     aiChatDetached: false,
     knowledgeHistoryOverlayVisible: false,
     gitPanelRequestedTab: null,
@@ -319,8 +322,31 @@ function createUIStore() {
       saveUIPrefs();
     },
 
+    setDetached(panelId: string, windowLabel: string): void {
+      setState("detachedPanels", panelId, windowLabel);
+      if (panelId === "ai-chat") setState("aiChatDetached", true);
+    },
+
+    clearDetached(panelId: string): void {
+      const { [panelId]: _, ...rest } = state.detachedPanels;
+      setState("detachedPanels", reconcile(rest));
+      if (panelId === "ai-chat") setState("aiChatDetached", false);
+    },
+
+    isDetached(panelId: string): boolean {
+      return panelId in state.detachedPanels;
+    },
+
+    /** @deprecated Backward-compat shim — delegates to setDetached/clearDetached */
     setAiChatDetached(detached: boolean): void {
-      setState("aiChatDetached", detached);
+      if (detached) {
+        setState("detachedPanels", "ai-chat", "panel-ai-chat");
+        setState("aiChatDetached", true);
+      } else {
+        const { "ai-chat": _, ...rest } = state.detachedPanels;
+        setState("detachedPanels", reconcile(rest));
+        setState("aiChatDetached", false);
+      }
     },
 
     setKnowledgeHistoryOverlayVisible(visible: boolean): void {
