@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, cleanup } from "@solidjs/testing-library";
 
-const { mockSubscribe, mockUnsubscribe, mockChatId } = vi.hoisted(() => ({
+const { mockSubscribe, mockUnsubscribe, mockChatId, mockDetachPanel, mockReattachPanel, mockClosePanel } = vi.hoisted(() => ({
   mockSubscribe: vi.fn().mockResolvedValue(undefined),
   mockUnsubscribe: vi.fn().mockResolvedValue(undefined),
   mockChatId: vi.fn(() => "chat-abc123"),
+  mockDetachPanel: vi.fn().mockResolvedValue(undefined),
+  mockReattachPanel: vi.fn().mockResolvedValue(undefined),
+  mockClosePanel: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -15,6 +18,12 @@ vi.mock("@tauri-apps/api/core", () => ({
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn().mockResolvedValue(vi.fn()),
   emit: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("../../panelRouter", () => ({
+  detachPanel: mockDetachPanel,
+  reattachPanel: mockReattachPanel,
+  closePanel: mockClosePanel,
 }));
 
 vi.mock("../../stores/aiChatStore", () => ({
@@ -79,8 +88,10 @@ vi.mock("../../utils/sendCommand", () => ({
 
 vi.mock("../../stores/ui", () => ({
   uiStore: {
-    state: { aiChatDetached: false },
-    setAiChatDetached: vi.fn(),
+    state: { detachedPanels: {} },
+    isDetached: vi.fn(() => false),
+    setDetached: vi.fn(),
+    clearDetached: vi.fn(),
   },
 }));
 
@@ -88,7 +99,6 @@ vi.mock("../../transport", () => ({
   isTauri: () => true,
 }));
 
-import { invoke } from "@tauri-apps/api/core";
 import { AIChatPanel } from "../../components/AIChatPanel/AIChatPanel";
 
 describe("AIChatPanel lifecycle", () => {
@@ -118,16 +128,14 @@ describe("AIChatPanel lifecycle", () => {
 
   it("renders detach button in main window mode", () => {
     const { container } = render(() => <AIChatPanel visible={true} onClose={() => {}} />);
-    const detachBtn = container.querySelector('button[title="Detach into separate window"]');
+    const detachBtn = container.querySelector('button[title="Open in separate window"]');
     expect(detachBtn).not.toBeNull();
   });
 
-  it("detach button invokes open_ai_chat_window command", async () => {
+  it("detach button calls detachPanel", () => {
     const { container } = render(() => <AIChatPanel visible={true} onClose={() => {}} />);
-    const detachBtn = container.querySelector('button[title="Detach into separate window"]') as HTMLButtonElement;
+    const detachBtn = container.querySelector('button[title="Open in separate window"]') as HTMLButtonElement;
     detachBtn.click();
-    await vi.waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("open_ai_chat_window", { chatId: "chat-abc123" });
-    });
+    expect(mockDetachPanel).toHaveBeenCalledWith("ai-chat");
   });
 });

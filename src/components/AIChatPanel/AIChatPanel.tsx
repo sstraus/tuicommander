@@ -6,14 +6,18 @@ import { ContentRenderer } from "../ui/ContentRenderer";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 import { sendCommand, getShellFamily } from "../../utils/sendCommand";
 import { appLogger } from "../../stores/appLogger";
-import { uiStore } from "../../stores/ui";
-import { isTauri } from "../../transport";
+import { PanelWindowControls } from "../ui/PanelWindowControls";
 import { cx } from "../../utils";
 import p from "../shared/panel.module.css";
 import s from "./AIChatPanel.module.css";
 import { SessionKnowledgeBar } from "./SessionKnowledgeBar";
 
 const isPanelMode = () => new URLSearchParams(window.location.search).get("mode") === "panel";
+
+// DEFERRED (2026-04-25) — In detached panel mode, terminalsStore/aiAgentStore are empty
+// (separate window = separate JS stores). Chat streaming works (Rust Channel), but sending
+// messages and agent controls are broken. Fix: sync active session ID via panel-action or
+// pass it as a URL param + listen for changes via emitTo.
 
 /** Session ID of the currently active terminal tab (null when no terminal is focused). */
 function useActiveSessionId() {
@@ -101,11 +105,6 @@ const IconPlay = () => (
   </svg>
 );
 
-const IconDetach = () => (
-  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
-    <path d="M8 2h4v4M8 6l4-4M6 3H3a1 1 0 00-1 1v7a1 1 0 001 1h7a1 1 0 001-1V8" stroke-linecap="round" stroke-linejoin="round" />
-  </svg>
-);
 
 const IconUnlock = () => (
   <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
@@ -335,23 +334,6 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
     }
   };
 
-  const handleDetach = async () => {
-    if (!isTauri()) return;
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("open_panel_window", {
-        panelId: "ai-chat",
-        title: "AI Chat",
-        params: { chatId: aiChatStore.chatId() },
-        width: 500,
-        height: 700,
-      });
-      uiStore.setDetached("ai-chat", "panel-ai-chat");
-    } catch (e) {
-      appLogger.error("ai-chat", "Failed to detach panel", { error: String(e) });
-    }
-  };
-
   // ── Code block enhancement: inject Copy + Run buttons ──────────────────
   const enhanceCodeBlocks = (container: HTMLDivElement, signal: AbortSignal) => {
     const pres = container.querySelectorAll("pre");
@@ -469,18 +451,11 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
           >
             <IconTrash />
           </button>
-          <Show when={!isPanelMode()}>
-            <button
-              class={s.headerBtn}
-              onClick={handleDetach}
-              title="Detach into separate window"
-            >
-              <IconDetach />
-            </button>
-          </Show>
-          <button class={p.close} onClick={props.onClose} title="Close">
-            &times;
-          </button>
+          <PanelWindowControls
+            panelId="ai-chat"
+            mode={isPanelMode() ? "detached" : "inline"}
+            onInlineClose={props.onClose}
+          />
         </div>
       </div>
 

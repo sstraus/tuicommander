@@ -3,37 +3,18 @@ import { activityDashboardStore } from "../../stores/activityDashboard";
 import { terminalsStore } from "../../stores/terminals";
 import { globalWorkspaceStore } from "../../stores/globalWorkspace";
 import { rateLimitStore } from "../../stores/ratelimit";
-import { uiStore } from "../../stores/ui";
-import { appLogger } from "../../stores/appLogger";
-import { isTauri } from "../../transport";
+import { PanelWindowControls } from "../ui/PanelWindowControls";
 import { formatRelativeTime } from "../../utils/time";
+import { projectName, terminalStatusLabel } from "../../utils/activitySnapshot";
 import { GlobeIcon } from "../GlobeIcon";
 import s from "./ActivityDashboard.module.css";
 
-/** Derive status label and CSS class from terminal state */
-function getTerminalStatus(
-  shellState: string | null,
-  awaitingInput: string | null,
-  sessionId: string | null,
-): { label: string; className: string } {
-  if (sessionId && rateLimitStore.isRateLimited(sessionId)) {
-    return { label: "Rate limited", className: s.statusRateLimited };
-  } else if (awaitingInput) {
-    return { label: "Waiting for input", className: s.statusWaiting };
-  } else if (shellState === "busy") {
-    return { label: "Working", className: s.statusWorking };
-  } else if (shellState === "idle") {
-    return { label: "Idle", className: s.statusIdle };
-  }
-  return { label: "\u2014", className: s.statusIdle };
-}
-
-/** Extract project name (last path segment) from cwd */
-function projectName(cwd: string | null): string | null {
-  if (!cwd) return null;
-  const segments = cwd.replace(/\/+$/, "").split("/");
-  return segments[segments.length - 1] || null;
-}
+const statusClasses = {
+  rateLimited: s.statusRateLimited,
+  waiting: s.statusWaiting,
+  working: s.statusWorking,
+  idle: s.statusIdle,
+};
 
 /** Truncate a string to a single line for display */
 function truncate(text: string, maxLen = 80): string {
@@ -122,46 +103,6 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
     onCleanup(() => document.removeEventListener("keydown", handleKeydown, true));
   });
 
-  const handleDetach = async () => {
-    if (!isTauri()) return;
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("open_panel_window", {
-        panelId: "activity",
-        title: "Activity Dashboard",
-        params: {},
-        width: 550,
-        height: 650,
-      });
-      uiStore.setDetached("activity", "panel-activity");
-      activityDashboardStore.close();
-    } catch (e) {
-      appLogger.error("app", "Failed to detach Activity Dashboard", { error: String(e) });
-    }
-  };
-
-  const handleReattach = async () => {
-    if (!isTauri()) return;
-    try {
-      const { emitTo } = await import("@tauri-apps/api/event");
-      await emitTo("main", "panel-action", { panelId: "activity", action: "reattach", data: {} });
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("close_panel_window", { panelId: "activity" });
-    } catch (e) {
-      appLogger.error("app", "Failed to reattach Activity Dashboard", { error: String(e) });
-    }
-  };
-
-  const handleClosePanel = async () => {
-    if (!isTauri()) return;
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("close_panel_window", { panelId: "activity" });
-    } catch (e) {
-      appLogger.error("app", "Failed to close Activity Dashboard", { error: String(e) });
-    }
-  };
-
   const handleRowClick = (termId: string) => {
     if (props.onSelect) {
       props.onSelect(termId);
@@ -178,7 +119,8 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
   const buildRow = (id: string): TerminalRow | null => {
     const term = terminalsStore.get(id);
     if (!term) return null;
-    const status = getTerminalStatus(term.shellState, term.awaitingInput, term.sessionId);
+    const isRL = !!(term.sessionId && rateLimitStore.isRateLimited(term.sessionId));
+    const status = terminalStatusLabel(term.shellState, term.awaitingInput, isRL, statusClasses);
     return {
       id,
       name: term.name,
@@ -236,30 +178,11 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
       <div class={s.header}>
         <h3>Activity Dashboard</h3>
         <div class={s.headerActions}>
-          <Show when={!props.embedded && isTauri()}>
-            <button class={s.detach} onClick={handleDetach} title="Open in separate window">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
-                <path d="M8 2h4v4M8 6l4-4M6 3H3a1 1 0 00-1 1v7a1 1 0 001 1h7a1 1 0 001-1V8" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </button>
-          </Show>
-          <Show when={props.embedded}>
-            <button class={s.detach} onClick={handleReattach} title="Bring back to main window">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
-                <path d="M6 12H3a1 1 0 01-1-1V4a1 1 0 011-1h7a1 1 0 011 1v3M10 8l-4 4M10 12V8H6" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </button>
-          </Show>
-          <Show when={!props.embedded}>
-            <button class={s.close} onClick={() => activityDashboardStore.close()}>
-              &times;
-            </button>
-          </Show>
-          <Show when={props.embedded}>
-            <button class={s.close} onClick={handleClosePanel}>
-              &times;
-            </button>
-          </Show>
+          <PanelWindowControls
+            panelId="activity"
+            mode={props.embedded ? "detached" : "inline"}
+            onInlineClose={() => activityDashboardStore.close()}
+          />
         </div>
       </div>
 
