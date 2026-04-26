@@ -33,7 +33,7 @@ pub(crate) enum ProviderType {
     Custom,
 }
 
-#[allow(dead_code)] // Wired in story 1478 (slot resolver)
+#[allow(dead_code)] // Wired in story 1480 (consumers call resolve_slot)
 impl ProviderType {
     pub(crate) fn default_base_url(&self) -> Option<&'static str> {
         match self {
@@ -155,6 +155,77 @@ pub(crate) fn load_registry() -> ProviderRegistry {
 
 pub(crate) fn save_registry(registry: &ProviderRegistry) -> Result<(), String> {
     save_json_config(CONFIG_FILE, registry)
+}
+
+// ---------------------------------------------------------------------------
+// Slot resolver
+// ---------------------------------------------------------------------------
+
+#[derive(Debug)]
+#[allow(dead_code)] // Wired in story 1480 (consumers call resolve_slot)
+pub(crate) struct ResolvedSlot {
+    pub config: crate::llm_api::LlmApiConfig,
+    pub api_key: String,
+    pub provider_type: ProviderType,
+}
+
+#[allow(dead_code)] // Wired in story 1480
+pub(crate) fn resolve_slot(
+    registry: &ProviderRegistry,
+    slot: SlotName,
+) -> Result<ResolvedSlot, String> {
+    let model_id = registry
+        .slots
+        .get(&slot)
+        .or_else(|| match slot {
+            SlotName::AgentSearch | SlotName::AgentRead | SlotName::AgentWrite => {
+                registry.slots.get(&SlotName::AgentDefault)
+            }
+            _ => None,
+        })
+        .ok_or_else(|| format!("No model configured for slot {slot:?}"))?;
+
+    let model = registry
+        .models
+        .iter()
+        .find(|m| &m.id == model_id)
+        .ok_or_else(|| format!("Model '{model_id}' not found in registry"))?;
+
+    let provider = registry
+        .providers
+        .iter()
+        .find(|p| p.id == model.provider_id)
+        .ok_or_else(|| {
+            format!(
+                "Provider '{}' not found for model '{}'",
+                model.provider_id, model.id
+            )
+        })?;
+
+    let base_url = provider
+        .base_url
+        .clone()
+        .or_else(|| provider.provider_type.default_base_url().map(String::from));
+    let base_url = base_url.map(|u| if u.ends_with('/') { u } else { format!("{u}/") });
+
+    let api_key = crate::credentials::get(crate::credentials::Credential::Provider(&provider.id))?
+        .unwrap_or_else(|| {
+            if provider.provider_type.needs_api_key() {
+                String::new()
+            } else {
+                "local".into()
+            }
+        });
+
+    Ok(ResolvedSlot {
+        config: crate::llm_api::LlmApiConfig {
+            provider: format!("{:?}", provider.provider_type).to_lowercase(),
+            model: model.model_name.clone(),
+            base_url,
+        },
+        api_key,
+        provider_type: provider.provider_type,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -470,5 +541,183 @@ mod tests {
         assert_eq!(loaded.models[0].tier, ModelTier::Premium);
         assert_eq!(loaded.slots.get(&SlotName::Chat), Some(&"m1".to_string()));
         assert!(loaded.features.enrichment_enabled);
+    }
+
+    // -- resolve_slot tests --
+
+    fn test_registry() -> ProviderRegistry {
+        let mut slots = HashMap::new();
+        slots.insert(SlotName::Chat, "sonnet".to_string());
+        slots.insert(SlotName::AgentDefault, "sonnet".to_string());
+        slots.insert(SlotName::AgentSearch, "haiku".to_string());
+        slots.insert(SlotName::Headless, "gpt4o".to_string());
+
+        ProviderRegistry {
+            schema_version: 1,
+            providers: vec![
+                ProviderEntry {
+                    id: "anthropic-main".to_string(),
+                    provider_type: ProviderType::Anthropic,
+                    label: "Anthropic".to_string(),
+                    base_url: None,
+                },
+                ProviderEntry {
+                    id: "openai-main".to_string(),
+                    provider_type: ProviderType::OpenAi,
+                    label: "OpenAI".to_string(),
+                    base_url: None,
+                },
+                ProviderEntry {
+                    id: "ollama-local".to_string(),
+                    provider_type: ProviderType::Ollama,
+                    label: "Ollama".to_string(),
+                    base_url: None,
+                },
+            ],
+            models: vec![
+                ModelEntry {
+                    id: "sonnet".to_string(),
+                    provider_id: "anthropic-main".to_string(),
+                    model_name: "claude-sonnet-4-5-20241022".to_string(),
+                    tier: ModelTier::Standard,
+                },
+                ModelEntry {
+                    id: "haiku".to_string(),
+                    provider_id: "anthropic-main".to_string(),
+                    model_name: "claude-haiku-4-5-20241022".to_string(),
+                    tier: ModelTier::Economic,
+                },
+                ModelEntry {
+                    id: "gpt4o".to_string(),
+                    provider_id: "openai-main".to_string(),
+                    model_name: "gpt-4o".to_string(),
+                    tier: ModelTier::Premium,
+                },
+                ModelEntry {
+                    id: "llama".to_string(),
+                    provider_id: "ollama-local".to_string(),
+                    model_name: "llama3.2".to_string(),
+                    tier: ModelTier::Standard,
+                },
+            ],
+            slots,
+            features: Features::default(),
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn resolve_slot_chat() {
+        crate::credentials::set(
+            crate::credentials::Credential::Provider("anthropic-main"),
+            "sk-ant-test",
+        ).unwrap();
+
+        let reg = test_registry();
+        let resolved = resolve_slot(&reg, SlotName::Chat).unwrap();
+        assert_eq!(resolved.config.model, "claude-sonnet-4-5-20241022");
+        assert_eq!(resolved.api_key, "sk-ant-test");
+        assert_eq!(resolved.provider_type, ProviderType::Anthropic);
+        assert!(resolved.config.base_url.is_none());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn resolve_slot_agent_phase_fallback_to_default() {
+        crate::credentials::set(
+            crate::credentials::Credential::Provider("anthropic-main"),
+            "sk-ant-test",
+        ).unwrap();
+
+        let reg = test_registry();
+        // AgentRead not explicitly set → falls back to AgentDefault
+        let resolved = resolve_slot(&reg, SlotName::AgentRead).unwrap();
+        assert_eq!(resolved.config.model, "claude-sonnet-4-5-20241022");
+
+        // AgentWrite not explicitly set → falls back to AgentDefault
+        let resolved2 = resolve_slot(&reg, SlotName::AgentWrite).unwrap();
+        assert_eq!(resolved2.config.model, "claude-sonnet-4-5-20241022");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn resolve_slot_agent_search_uses_explicit() {
+        crate::credentials::set(
+            crate::credentials::Credential::Provider("anthropic-main"),
+            "sk-ant-test",
+        ).unwrap();
+
+        let reg = test_registry();
+        // AgentSearch IS explicitly set to haiku
+        let resolved = resolve_slot(&reg, SlotName::AgentSearch).unwrap();
+        assert_eq!(resolved.config.model, "claude-haiku-4-5-20241022");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn resolve_slot_ollama_gets_default_base_url() {
+        let mut reg = test_registry();
+        reg.slots.insert(SlotName::Enrichment, "llama".to_string());
+
+        let resolved = resolve_slot(&reg, SlotName::Enrichment).unwrap();
+        assert_eq!(resolved.config.model, "llama3.2");
+        assert_eq!(resolved.config.base_url.as_deref(), Some("http://localhost:11434/v1/"));
+        assert_eq!(resolved.api_key, "local");
+        assert_eq!(resolved.provider_type, ProviderType::Ollama);
+    }
+
+    #[test]
+    fn resolve_slot_error_no_slot_configured() {
+        let reg = test_registry();
+        let result = resolve_slot(&reg, SlotName::Enrichment);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("No model configured"));
+    }
+
+    #[test]
+    fn resolve_slot_error_dangling_model_ref() {
+        let mut reg = test_registry();
+        reg.slots.insert(SlotName::Enrichment, "nonexistent".to_string());
+
+        let result = resolve_slot(&reg, SlotName::Enrichment);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found in registry"));
+    }
+
+    #[test]
+    fn resolve_slot_error_dangling_provider_ref() {
+        let mut reg = test_registry();
+        reg.models.push(ModelEntry {
+            id: "orphan".to_string(),
+            provider_id: "deleted-provider".to_string(),
+            model_name: "orphan-model".to_string(),
+            tier: ModelTier::Standard,
+        });
+        reg.slots.insert(SlotName::Enrichment, "orphan".to_string());
+
+        let result = resolve_slot(&reg, SlotName::Enrichment);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Provider 'deleted-provider' not found"));
+    }
+
+    #[test]
+    fn resolve_slot_base_url_trailing_slash_normalization() {
+        let mut reg = ProviderRegistry::default();
+        reg.providers.push(ProviderEntry {
+            id: "custom".to_string(),
+            provider_type: ProviderType::Custom,
+            label: "Custom".to_string(),
+            base_url: Some("http://my-llm:8080/v1".to_string()),
+        });
+        reg.models.push(ModelEntry {
+            id: "m1".to_string(),
+            provider_id: "custom".to_string(),
+            model_name: "my-model".to_string(),
+            tier: ModelTier::Standard,
+        });
+        reg.slots.insert(SlotName::Chat, "m1".to_string());
+
+        let resolved = resolve_slot(&reg, SlotName::Chat).unwrap();
+        assert_eq!(resolved.config.base_url.as_deref(), Some("http://my-llm:8080/v1/"));
     }
 }

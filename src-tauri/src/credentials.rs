@@ -36,6 +36,7 @@ pub(crate) enum Credential<'a> {
     LlmApiKey,
     GithubOauthToken,
     McpUpstream(&'a str),
+    #[allow(dead_code)] // Wired in story 1480 (resolve_slot reads provider keys)
     Provider(&'a str),
 }
 
