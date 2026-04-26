@@ -41,6 +41,7 @@ pub(crate) mod plugins;
 pub(crate) mod prompt;
 pub(crate) mod smart_prompt;
 pub(crate) mod llm_api;
+pub(crate) mod provider_registry;
 pub(crate) mod ai_chat;
 pub(crate) mod ai_chat_registry;
 pub(crate) mod credentials;
@@ -1352,6 +1353,8 @@ pub fn run() {
             prompt::resolve_prompt_variables,
             smart_prompt::execute_headless_prompt,
             smart_prompt::execute_shell_script,
+            provider_registry::load_provider_registry,
+            provider_registry::save_provider_registry,
             llm_api::load_llm_api_config,
             llm_api::save_llm_api_config,
             llm_api::has_llm_api_key,
