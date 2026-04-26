@@ -36,6 +36,7 @@ pub(crate) enum Credential<'a> {
     LlmApiKey,
     GithubOauthToken,
     McpUpstream(&'a str),
+    Provider(&'a str),
 }
 
 impl Credential<'_> {
@@ -45,6 +46,7 @@ impl Credential<'_> {
             Self::LlmApiKey => "llm-api/api-key".into(),
             Self::GithubOauthToken => "github/oauth-token".into(),
             Self::McpUpstream(name) => format!("mcp/{name}"),
+            Self::Provider(id) => format!("provider/{id}"),
         }
     }
 
@@ -54,6 +56,7 @@ impl Credential<'_> {
             Self::LlmApiKey => Some(("tuicommander-llm-api", "api-key")),
             Self::GithubOauthToken => Some(("tuicommander-github", "oauth-token")),
             Self::McpUpstream(name) => Some(("tuicommander-mcp", name)),
+            Self::Provider(_) => None,
         }
     }
 }
@@ -294,6 +297,24 @@ mod tests {
             "github/oauth-token"
         );
         assert_eq!(Credential::McpUpstream("foo").vault_key(), "mcp/foo");
+        assert_eq!(Credential::Provider("my-id").vault_key(), "provider/my-id");
+    }
+
+    #[test]
+    fn provider_credential_has_no_legacy_entry() {
+        assert!(Credential::Provider("test").legacy_entry().is_none());
+    }
+
+    #[test]
+    fn provider_credential_crud() {
+        reset_vault();
+        set(Credential::Provider("anthropic-main"), "sk-ant-123").unwrap();
+        assert_eq!(
+            get(Credential::Provider("anthropic-main")).unwrap(),
+            Some("sk-ant-123".to_string())
+        );
+        delete(Credential::Provider("anthropic-main")).unwrap();
+        assert_eq!(get(Credential::Provider("anthropic-main")).unwrap(), None);
     }
 
     #[test]
