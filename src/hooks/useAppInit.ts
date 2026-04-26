@@ -376,6 +376,8 @@ export async function initApp(deps: AppInitDeps) {
 
         if (cmd === "open" && repoPath) {
           mdTabsStore.add(repoPath, relPath);
+        } else if (cmd === "open" && isAbsolutePath(filePath)) {
+          editorTabsStore.add("__external__", filePath, undefined, { externalEditable: false });
         } else if (cmd === "edit") {
           const line = parseInt(parsed.searchParams.get("line") || "0", 10);
           if (repoPath) {
