@@ -3,8 +3,9 @@ use axum::extract::{Query, State};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 
+use crate::github_poller::PollerCmd;
 use crate::state::AppState;
-use super::types::{CiChecksQuery, IssueActionRequest, IssuesQuery, PathQuery, PrDiffQuery};
+use super::types::{CiChecksQuery, IssueActionRequest, IssuesQuery, PathQuery, PollRepoRequest, PrDiffQuery, SetVisibilityRequest, StartPollingRequest, UpdatePathsRequest};
 use super::{err_500, validate_repo_path};
 
 pub(super) async fn repo_github_status(Query(q): Query<PathQuery>) -> Response {
@@ -112,4 +113,68 @@ pub(super) async fn repo_reopen_issue(
         Ok(()) => Json(serde_json::json!({"ok": true})).into_response(),
         Err(e) => (axum::http::StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": e}))).into_response(),
     }
+}
+
+// --- GitHub poller HTTP handlers ---
+
+pub(super) async fn poller_start(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<StartPollingRequest>,
+) -> Response {
+    let guard = state.github_poller.lock();
+    if let Some(poller) = guard.as_ref() {
+        let _ = poller.cmd_tx.try_send(PollerCmd::UpdatePaths(body.paths));
+        let _ = poller.cmd_tx.try_send(PollerCmd::SetIssueFilter(body.issue_filter));
+    }
+    Json(serde_json::json!({"ok": true})).into_response()
+}
+
+pub(super) async fn poller_stop(
+    State(state): State<Arc<AppState>>,
+) -> Response {
+    let poller = state.github_poller.lock().take();
+    if let Some(p) = poller {
+        let _ = p.cmd_tx.send(PollerCmd::Stop).await;
+    }
+    Json(serde_json::json!({"ok": true})).into_response()
+}
+
+pub(super) async fn poller_set_visibility(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<SetVisibilityRequest>,
+) -> Response {
+    if let Some(poller) = state.github_poller.lock().as_ref() {
+        let _ = poller.cmd_tx.try_send(PollerCmd::SetVisibility(body.visible));
+    }
+    Json(serde_json::json!({"ok": true})).into_response()
+}
+
+pub(super) async fn poller_poll_repo(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<PollRepoRequest>,
+) -> Response {
+    if let Some(poller) = state.github_poller.lock().as_ref() {
+        let _ = poller.cmd_tx.try_send(PollerCmd::PollRepo(body.path));
+    }
+    Json(serde_json::json!({"ok": true})).into_response()
+}
+
+pub(super) async fn poller_update_paths(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<UpdatePathsRequest>,
+) -> Response {
+    if let Some(poller) = state.github_poller.lock().as_ref() {
+        let _ = poller.cmd_tx.try_send(PollerCmd::UpdatePaths(body.paths));
+    }
+    Json(serde_json::json!({"ok": true})).into_response()
+}
+
+pub(super) async fn poller_set_issue_filter(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<super::types::SetIssueFilterRequest>,
+) -> Response {
+    if let Some(poller) = state.github_poller.lock().as_ref() {
+        let _ = poller.cmd_tx.try_send(PollerCmd::SetIssueFilter(body.filter));
+    }
+    Json(serde_json::json!({"ok": true})).into_response()
 }

@@ -99,6 +99,9 @@ fn event_type_name(event: &AppEvent) -> &'static str {
         AppEvent::PeerRegistered { .. } => "peer-registered",
         AppEvent::PeerUnregistered { .. } => "peer-unregistered",
         AppEvent::UiTab { .. } => "ui-tab",
+        AppEvent::GitHubPrUpdate { .. } => "github-pr-update",
+        AppEvent::GitHubTransition { .. } => "github-transition",
+        AppEvent::GitHubIssuesUpdate { .. } => "github-issues-update",
     }
 }
 
@@ -153,6 +156,15 @@ fn event_payload(event: &AppEvent) -> serde_json::Value {
             if let Some(u) = url { v["url"] = serde_json::Value::String(u.clone()); }
             if let Some(p) = origin_repo_path { v["origin_repo_path"] = serde_json::Value::String(p.clone()); }
             v
+        }
+        AppEvent::GitHubPrUpdate { repo_path, statuses } => {
+            serde_json::json!({ "repo_path": repo_path, "statuses": statuses })
+        }
+        AppEvent::GitHubTransition { transition } => {
+            serde_json::to_value(transition).unwrap_or_default()
+        }
+        AppEvent::GitHubIssuesUpdate { repo_path, issues } => {
+            serde_json::json!({ "repo_path": repo_path, "issues": issues })
         }
     }
 }

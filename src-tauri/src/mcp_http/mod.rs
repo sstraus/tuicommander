@@ -472,6 +472,13 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/repo/issues", get(github_routes::repo_issues))
         .route("/repo/issues/close", post(github_routes::repo_close_issue))
         .route("/repo/issues/reopen", post(github_routes::repo_reopen_issue))
+        // GitHub poller
+        .route("/repo/github-poller/start", post(github_routes::poller_start))
+        .route("/repo/github-poller/stop", post(github_routes::poller_stop))
+        .route("/repo/github-poller/visibility", post(github_routes::poller_set_visibility))
+        .route("/repo/github-poller/poll-repo", post(github_routes::poller_poll_repo))
+        .route("/repo/github-poller/update-paths", post(github_routes::poller_update_paths))
+        .route("/repo/github-poller/set-issue-filter", post(github_routes::poller_set_issue_filter))
         // Watchers (for browser/mobile clients)
         .route("/watchers/repo", post(watcher_routes::start_repo_watcher_http).delete(watcher_routes::stop_repo_watcher_http))
         .route("/watchers/dir", post(watcher_routes::start_dir_watcher_http).delete(watcher_routes::stop_dir_watcher_http))
@@ -925,6 +932,7 @@ mod tests {
             github_token: parking_lot::RwLock::new(None),
             github_token_source: parking_lot::RwLock::new(Default::default()),
             github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
+            github_poller: parking_lot::Mutex::new(None),
             github_viewer_login: parking_lot::RwLock::new(None),
             server_shutdown: parking_lot::Mutex::new(None),
             ipc_started: std::sync::atomic::AtomicBool::new(false),

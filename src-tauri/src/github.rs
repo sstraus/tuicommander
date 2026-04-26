@@ -403,7 +403,7 @@ pub(crate) struct GitHubStatus {
 }
 
 /// Summary of CI check states for a PR
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub(crate) struct CheckSummary {
     pub(crate) passed: u32,
     pub(crate) failed: u32,
@@ -412,7 +412,7 @@ pub(crate) struct CheckSummary {
 }
 
 /// Individual CI check detail
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub(crate) struct CheckDetail {
     pub(crate) context: String,
     pub(crate) state: String,
@@ -514,7 +514,7 @@ pub(crate) fn is_light_color(hex: &str) -> bool {
 }
 
 /// PR label with name, hex color, and pre-computed display colors
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub(crate) struct PrLabel {
     name: String,
     color: String,
@@ -523,7 +523,7 @@ pub(crate) struct PrLabel {
 }
 
 /// PR status for a branch, returned by batch endpoint
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub(crate) struct BranchPrStatus {
     pub(crate) branch: String,
     pub(crate) number: i32,
@@ -700,7 +700,7 @@ async fn get_viewer_login(state: &AppState) -> Result<String, String> {
 // ── GitHub Issues ────────────────────────────────────────────────────────────
 
 /// GitHub Issue status, analogous to BranchPrStatus for PRs.
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub(crate) struct GitHubIssue {
     pub(crate) number: i32,
     pub(crate) title: String,

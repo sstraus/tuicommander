@@ -398,3 +398,32 @@ pub(super) struct RunGitCommandRequest {
     pub path: String,
     pub args: Vec<String>,
 }
+
+// --- GitHub poller ---
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct StartPollingRequest {
+    pub paths: Vec<String>,
+    pub issue_filter: String,
+}
+
+#[derive(Deserialize)]
+pub(super) struct SetVisibilityRequest {
+    pub visible: bool,
+}
+
+#[derive(Deserialize)]
+pub(super) struct PollRepoRequest {
+    pub path: String,
+}
+
+#[derive(Deserialize)]
+pub(super) struct UpdatePathsRequest {
+    pub paths: Vec<String>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct SetIssueFilterRequest {
+    pub filter: String,
+}

@@ -1,17 +1,10 @@
 import { createStore } from "solid-js/store";
-import { invoke } from "../invoke";
+import { invoke, listen } from "../invoke";
 import { appLogger } from "./appLogger";
 import { settingsStore } from "./settings";
 import { repositoriesStore } from "./repositories";
 import { prNotificationsStore, type PrNotificationType } from "./prNotifications";
 import type { BranchPrStatus, CheckSummary, CheckDetail, GitHubStatus, GitHubIssue } from "../types";
-
-const PR_STATE_STORAGE_KEY = "github:pr_state";
-
-const BASE_INTERVAL = 30000; // 30 seconds
-const HIDDEN_INTERVAL = 120000; // 2 minutes when tab not visible
-const MAX_INTERVAL = 300000; // 5 minutes (backoff cap)
-const ISSUES_INTERVAL = 120000; // 120 seconds for issues polling
 
 /** Per-repo remote tracking data (ahead/behind from local git) */
 interface RepoRemoteStatus {
@@ -44,16 +37,7 @@ function createGitHubStore() {
     circuitBreakerOpen: false,
   });
 
-  let intervalId: number | null = null;
-  let issuesIntervalId: number | null = null;
-  let currentInterval = BASE_INTERVAL;
-  let pollingActive = false;
-  /** True until the first poll completes — startup poll includes MERGED state for offline transition detection */
-  let isStartupPoll = true;
-  /** Consecutive batch failures (non-rate-limit) for backoff */
-  let batchFailCount = 0;
-  /** Pending per-repo immediate polls (debounced to 2s to coalesce rapid git events) */
-  const pendingRepoPollTimers = new Map<string, number>();
+  const unlisteners: (() => void)[] = [];
 
   /** Callback fired when a PR reaches a terminal state (merged/closed) */
   let prTerminalCallback: ((repoPath: string, branch: string, prNumber: number, type: "merged" | "closed") => void) | null = null;
@@ -62,112 +46,25 @@ function createGitHubStore() {
   /** Callback fired when CI checks recover (failed → all passing) for a PR */
   let ciRecoveredCallback: ((repoPath: string, branch: string, prNumber: number) => void) | null = null;
 
-  /** Detect significant PR state transitions and emit notifications */
-  function detectTransitions(repoPath: string, oldPr: BranchPrStatus, newPr: BranchPrStatus): void {
-    const oldState = oldPr.state?.toUpperCase();
-    const newState = newPr.state?.toUpperCase();
-
-    let type: PrNotificationType | null = null;
-
-    // Terminal state transitions
-    if (oldState !== "MERGED" && newState === "MERGED") {
-      type = "merged";
-    } else if (oldState !== "CLOSED" && newState === "CLOSED") {
-      type = "closed";
-    }
-    // Actionable state transitions (only for open PRs)
-    else if (newState === "OPEN") {
-      // Became blocked (conflicts)
-      if (oldPr.mergeable !== "CONFLICTING" && newPr.mergeable === "CONFLICTING") {
-        type = "blocked";
-      }
-      // CI failed
-      else if ((oldPr.checks?.failed ?? 0) === 0 && (newPr.checks?.failed ?? 0) > 0) {
-        type = "ci_failed";
-      }
-      // Changes requested
-      else if (oldPr.review_decision !== "CHANGES_REQUESTED" && newPr.review_decision === "CHANGES_REQUESTED") {
-        type = "changes_requested";
-      }
-      // Became ready to merge
-      else if (
-        (oldPr.mergeable !== "MERGEABLE" || oldPr.review_decision !== "APPROVED" || (oldPr.checks?.failed ?? 0) > 0) &&
-        newPr.mergeable === "MERGEABLE" && newPr.review_decision === "APPROVED" && (newPr.checks?.failed ?? 0) === 0
-      ) {
-        type = "ready";
-      }
-    }
-
-    if (type) {
-      prNotificationsStore.add({
-        repoPath,
-        branch: newPr.branch,
-        prNumber: newPr.number,
-        title: newPr.title,
-        type,
-      });
-
-      // Fire terminal state callback for auto-delete logic
-      if ((type === "merged" || type === "closed") && prTerminalCallback) {
-        prTerminalCallback(repoPath, newPr.branch, newPr.number, type);
-      }
-      // Fire CI failed callback for auto-heal logic
-      if (type === "ci_failed" && ciFailedCallback) {
-        ciFailedCallback(repoPath, newPr.branch, newPr.number);
-      }
-    }
-
-    // Detect CI recovery (failed → all passing) — skip if "ready" already covers it
-    if (type !== "ready" && newState === "OPEN") {
-      const oldFailed = oldPr.checks?.failed ?? 0;
-      const newFailed = newPr.checks?.failed ?? 0;
-      const newPending = newPr.checks?.pending ?? 0;
-      if (oldFailed > 0 && newFailed === 0 && newPending === 0) {
-        prNotificationsStore.add({
-          repoPath,
-          branch: newPr.branch,
-          prNumber: newPr.number,
-          title: newPr.title,
-          type: "ci_recovered",
-        });
-        ciRecoveredCallback?.(repoPath, newPr.branch, newPr.number);
-      }
-    }
-  }
-
-  /** Update repo data from a batch poll result (only updates changed branches) */
+  /** Update repo data from Rust poller event (transitions handled by separate event) */
   function updateRepoData(repoPath: string, prStatuses: BranchPrStatus[]): void {
     const branches: Record<string, BranchPrStatus> = {};
     for (const pr of prStatuses) {
       branches[pr.branch] = pr;
     }
 
-    // Initialize repo entry if it doesn't exist yet
     if (!state.repos[repoPath]) {
       setState("repos", repoPath, { branches, remoteStatus: null, lastPolled: Date.now(), issues: [], issuesLastPolled: 0 });
       return;
     }
 
-    // Detect state transitions before updating
-    const existing = state.repos[repoPath]?.branches;
-    if (existing) {
-      for (const pr of prStatuses) {
-        const oldPr = existing[pr.branch];
-        if (oldPr) {
-          detectTransitions(repoPath, oldPr, pr);
-        }
-      }
-    }
-
-    // Update lastPolled separately so branch data comparisons are granular
     setState("repos", repoPath, "lastPolled", Date.now());
 
-    // Update each branch individually so SolidJS can diff unchanged values
     for (const pr of prStatuses) {
       setState("repos", repoPath, "branches", pr.branch, pr);
     }
 
-    // Remove branches no longer present in poll results
+    const existing = state.repos[repoPath]?.branches;
     if (existing) {
       for (const key of Object.keys(existing)) {
         if (!(key in branches)) {
@@ -242,36 +139,9 @@ function createGitHubStore() {
    *  Reads from settingsStore as single source of truth for the filter value. */
   function setIssueFilter(filter: import("../types").IssueFilterMode): void {
     settingsStore.setIssueFilter(filter);
-    if (filter !== "disabled") {
-      // Re-poll immediately with new filter
-      pollIssues().catch((err) => appLogger.warn("github", "Issue re-poll failed after filter change", err));
-    }
-  }
-
-  /** Persist current PR state to localStorage for offline transition detection on next startup */
-  function persistPrState(): void {
-    try {
-      localStorage.setItem(PR_STATE_STORAGE_KEY, JSON.stringify(state.repos));
-    } catch {
-      // localStorage can throw in private browsing or when storage is full — ignore
-    }
-  }
-
-  /** Seed PR store from persisted state (without emitting transition notifications).
-   *  Called before the first poll so startup can detect offline transitions. */
-  function loadPersistedPrState(): void {
-    try {
-      const raw = localStorage.getItem(PR_STATE_STORAGE_KEY);
-      if (!raw) return;
-      const repos = JSON.parse(raw) as Record<string, RepoGitHubData>;
-      for (const [repoPath, repoData] of Object.entries(repos)) {
-        if (repoData.branches && typeof repoData.branches === "object") {
-          setState("repos", repoPath, { branches: repoData.branches, remoteStatus: null, lastPolled: 0, issues: repoData.issues ?? [], issuesLastPolled: 0 });
-        }
-      }
-    } catch {
-      // Corrupted or missing persisted state — ignore
-    }
+    invoke("github_set_issue_filter", { filter }).catch((err) =>
+      appLogger.warn("github", "Failed to update issue filter in poller", err),
+    );
   }
 
   /** Poll a single repo's remote tracking status (ahead/behind) */
@@ -286,161 +156,11 @@ function createGitHubStore() {
     }
   }
 
-  /** Poll issues for all repos using batched GraphQL call.
-   *  Skips parked repos — they stay dormant. (#1358-caf5) */
-  async function pollIssues(): Promise<void> {
-    const filter = settingsStore.state.issueFilter;
-    if (filter === "disabled") return;
-    const paths = repositoriesStore.getActivePaths();
-    if (paths.length === 0) return;
-
-    try {
-      const circuitOk = await invoke<boolean>("check_github_circuit");
-      if (!circuitOk) {
-        setState("circuitBreakerOpen", true);
-        return;
-      }
-    } catch {
-      // If the check fails, proceed normally
-    }
-
-    setState("issuesLoading", true);
-    try {
-      const allIssues = await invoke<Record<string, GitHubIssue[]>>("get_all_issues", {
-        paths,
-        filterMode: filter,
-      });
-      for (const [path, issues] of Object.entries(allIssues)) {
-        updateRepoIssues(path, issues);
-      }
-      setState("circuitBreakerOpen", false);
-    } catch (err) {
-      const errStr = String(err);
-      if (errStr.includes("circuit breaker open") || errStr.startsWith("rate-limit:")) {
-        setState("circuitBreakerOpen", true);
-      } else {
-        appLogger.warn("github", "Issues poll failed", err);
-      }
-    } finally {
-      setState("issuesLoading", false);
-    }
-  }
-
-  /** Poll all repos using a single batched GraphQL call.
-   *  Falls back to per-repo individual calls if the batch fails.
-   *  Skips parked repos — they stay dormant. (#1358-caf5) */
-  async function pollAll(): Promise<void> {
-    const paths = repositoriesStore.getActivePaths();
-    if (paths.length === 0) return;
-
-    // Check circuit breaker upfront to avoid wasted IPC calls
-    try {
-      const circuitOk = await invoke<boolean>("check_github_circuit");
-      if (!circuitOk) {
-        setState("circuitBreakerOpen", true);
-        currentInterval = MAX_INTERVAL;
-        scheduleNext();
-        return;
-      }
-    } catch {
-      // If the check itself fails, proceed normally
-    }
-
-    const includeMerged = isStartupPoll;
-    let hitRateLimit = false;
-    let batchSucceeded = false;
-
-    // Attempt a single batched GraphQL call for all repos
-    try {
-      const allStatuses = await invoke<Record<string, BranchPrStatus[]>>("get_all_pr_statuses", {
-        paths,
-        includeMerged,
-      });
-      for (const [path, statuses] of Object.entries(allStatuses)) {
-        updateRepoData(path, statuses);
-      }
-      batchSucceeded = true;
-      batchFailCount = 0;
-      setState("circuitBreakerOpen", false);
-    } catch (err) {
-      const errStr = String(err);
-      if (errStr.startsWith("rate-limit:") || errStr.includes("circuit breaker open")) {
-        hitRateLimit = true;
-        appLogger.warn("github", `GitHub API unavailable: ${errStr}`);
-      } else {
-        batchFailCount++;
-        const backoff = Math.min(MAX_INTERVAL, BASE_INTERVAL * Math.pow(2, batchFailCount - 1));
-        appLogger.warn("github", `Batch PR poll failed (${batchFailCount}x, next in ${Math.round(backoff / 1000)}s)`, err);
-        currentInterval = backoff;
-        scheduleNext();
-        return; // Skip per-repo fallback — batch error likely affects all repos
-      }
-    }
-
-    // Fall back to per-repo calls if batch failed (and wasn't rate-limited)
-    if (!batchSucceeded && !hitRateLimit) {
-      await Promise.all(
-        paths.map(async (path) => {
-          try {
-            const statuses = await invoke<BranchPrStatus[]>("get_repo_pr_statuses", {
-              path,
-              includeMerged: includeMerged || undefined,
-            });
-            updateRepoData(path, statuses);
-          } catch (err) {
-            const errStr = String(err);
-            if (errStr.startsWith("rate-limit:") || errStr.includes("circuit breaker open")) {
-              hitRateLimit = true;
-              appLogger.warn("github", `GitHub API unavailable: ${errStr}`);
-            } else {
-              appLogger.error("github", `Failed to poll PR statuses for ${path}`, err);
-            }
-          }
-        })
-      );
-    }
-
-    if (hitRateLimit) {
-      currentInterval = MAX_INTERVAL;
-      scheduleNext();
-      // Preserve isStartupPoll — retry with includeMerged on next attempt
-      return;
-    }
-
-    // Only fetch remote status (git ahead/behind) when API is reachable
-    await Promise.all(paths.map(pollRemoteStatus));
-    currentInterval = document.hidden ? HIDDEN_INTERVAL : BASE_INTERVAL;
-    persistPrState();
-    isStartupPoll = false;
-  }
-
-  /** Immediately poll a single repo for PR status (debounced: coalesces rapid git events) */
+  /** Tell Rust poller to immediately re-poll a single repo (debounced in Rust) */
   function pollRepo(path: string): void {
-    // Cancel any pending timer for this repo
-    const existing = pendingRepoPollTimers.get(path);
-    if (existing) window.clearTimeout(existing);
-
-    const timerId = window.setTimeout(async () => {
-      pendingRepoPollTimers.delete(path);
-      // Skip if circuit breaker is known to be open (avoid wasted IPC)
-      if (currentInterval === MAX_INTERVAL) return;
-      try {
-        const statuses = await invoke<BranchPrStatus[]>("get_repo_pr_statuses", { path });
-        updateRepoData(path, statuses);
-        await pollRemoteStatus(path);
-      } catch (err) {
-        const errStr = String(err);
-        if (errStr.includes("circuit breaker open") || errStr.startsWith("rate-limit:")) {
-          // API unavailable — back off the main poller too
-          currentInterval = MAX_INTERVAL;
-          scheduleNext();
-        } else {
-          appLogger.debug("github", `Immediate poll failed for ${path}`, err);
-        }
-      }
-    }, 2000);
-
-    pendingRepoPollTimers.set(path, timerId);
+    invoke("github_poll_repo", { path }).catch((err) =>
+      appLogger.debug("github", `Immediate poll failed for ${path}`, err),
+    );
   }
 
   /** Lazy-load CI check details for a PR and populate the store.
@@ -461,56 +181,68 @@ function createGitHubStore() {
     }
   }
 
-  /** Handle visibility changes to pause/resume polling */
+  /** Forward visibility changes to Rust poller (controls poll interval) */
   function onVisibilityChange(): void {
-    if (!pollingActive) return;
-    if (document.hidden) {
-      clearScheduled();
-    } else {
-      pollAll().catch((err) => appLogger.warn("github", "Poll failed on visibility change", err));
-      scheduleNext();
+    invoke("github_set_visibility", { visible: !document.hidden }).catch((err) =>
+      appLogger.debug("github", "Failed to set poller visibility", err),
+    );
+  }
+
+  /** Handle transition events from Rust poller */
+  function handleTransition(t: { type: PrNotificationType; repo_path: string; branch: string; pr_number: number; title: string }): void {
+    prNotificationsStore.add({
+      repoPath: t.repo_path,
+      branch: t.branch,
+      prNumber: t.pr_number,
+      title: t.title,
+      type: t.type,
+    });
+
+    if ((t.type === "merged" || t.type === "closed") && prTerminalCallback) {
+      prTerminalCallback(t.repo_path, t.branch, t.pr_number, t.type);
+    }
+    if (t.type === "ci_failed" && ciFailedCallback) {
+      ciFailedCallback(t.repo_path, t.branch, t.pr_number);
+    }
+    if (t.type === "ci_recovered" && ciRecoveredCallback) {
+      ciRecoveredCallback(t.repo_path, t.branch, t.pr_number);
     }
   }
 
-  /** Start background polling */
+  /** Start Rust poller and set up event listeners */
   function startPolling(): void {
-    pollingActive = true;
-    isStartupPoll = true;
-    loadPersistedPrState();
+    const paths = repositoriesStore.getActivePaths();
+    const issueFilter = settingsStore.state.issueFilter ?? "disabled";
+
+    invoke("github_start_polling", { paths, issueFilter }).catch((err) =>
+      appLogger.warn("github", "Failed to start GitHub poller", err),
+    );
+
+    listen<{ repo_path: string; statuses: BranchPrStatus[] }>("github-pr-update", (event) => {
+      updateRepoData(event.payload.repo_path, event.payload.statuses);
+      pollRemoteStatus(event.payload.repo_path);
+    }).then((unsub) => unlisteners.push(unsub));
+
+    listen<{ type: PrNotificationType; repo_path: string; branch: string; pr_number: number; title: string }>(
+      "github-transition",
+      (event) => handleTransition(event.payload),
+    ).then((unsub) => unlisteners.push(unsub));
+
+    listen<{ repo_path: string; issues: GitHubIssue[] }>("github-issues-update", (event) => {
+      updateRepoIssues(event.payload.repo_path, event.payload.issues);
+    }).then((unsub) => unlisteners.push(unsub));
+
     document.addEventListener("visibilitychange", onVisibilityChange);
-    pollAll().catch((err) => appLogger.warn("github", "Initial poll failed", err));
-    pollIssues().catch((err) => appLogger.warn("github", "Initial issues poll failed", err));
-    scheduleNext();
-    issuesIntervalId = window.setInterval(() => {
-      if (!document.hidden) {
-        pollIssues().catch((err) => appLogger.warn("github", "Issues poll failed", err));
-      }
-    }, ISSUES_INTERVAL);
   }
 
-  /** Stop background polling */
+  /** Stop Rust poller and tear down event listeners */
   function stopPolling(): void {
-    pollingActive = false;
-    clearScheduled();
-    if (issuesIntervalId) {
-      clearInterval(issuesIntervalId);
-      issuesIntervalId = null;
-    }
+    invoke("github_stop_polling").catch((err) =>
+      appLogger.debug("github", "Failed to stop GitHub poller", err),
+    );
+    for (const unsub of unlisteners) unsub();
+    unlisteners.length = 0;
     document.removeEventListener("visibilitychange", onVisibilityChange);
-  }
-
-  /** Clear scheduled interval */
-  function clearScheduled(): void {
-    if (intervalId) {
-      clearInterval(intervalId);
-      intervalId = null;
-    }
-  }
-
-  /** Schedule next poll */
-  function scheduleNext(): void {
-    clearScheduled();
-    intervalId = window.setInterval(pollAll, currentInterval);
   }
 
   /** Directly set remote status for a repo (used by simulator) */
@@ -534,7 +266,12 @@ function createGitHubStore() {
     setRemoteStatus,
     getRepoIssues,
     setIssueFilter,
-    pollIssues,
+    pollIssues(): void {
+      const filter = settingsStore.state.issueFilter ?? "disabled";
+      invoke("github_set_issue_filter", { filter }).catch((err) =>
+        appLogger.debug("github", "Failed to trigger issues re-poll", err),
+      );
+    },
     loadCheckDetails,
     pollRepo,
     startPolling,

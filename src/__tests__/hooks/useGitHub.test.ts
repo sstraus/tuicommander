@@ -14,6 +14,7 @@ vi.mock("../../stores/repositories", () => ({
 describe("useGitHub (reactive wrapper)", () => {
   beforeEach(() => {
     mockInvoke.mockReset();
+    mockInvoke.mockResolvedValue(undefined);
   });
 
   describe("initial state", () => {

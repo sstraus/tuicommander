@@ -18,6 +18,7 @@ mod tab_shortcut;
 pub(crate) mod git_graph;
 pub(crate) mod github;
 pub(crate) mod github_auth;
+pub(crate) mod github_poller;
 pub(crate) mod repo_watcher;
 pub(crate) mod dir_watcher;
 pub(crate) mod mcp_http;
@@ -140,10 +141,10 @@ fn sanitize_window_state() {
                 changed = true;
             }
         }
-        if changed {
-            if let Ok(out) = serde_json::to_string_pretty(&json) {
-                let _ = std::fs::write(&path, out);
-            }
+        if changed
+            && let Ok(out) = serde_json::to_string_pretty(&json)
+        {
+            let _ = std::fs::write(&path, out);
         }
     }
 }
@@ -859,6 +860,7 @@ pub fn run() {
         github_token: parking_lot::RwLock::new(github_token),
         github_token_source: parking_lot::RwLock::new(github_token_source),
         github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
+        github_poller: parking_lot::Mutex::new(None),
         github_viewer_login: parking_lot::RwLock::new(None),
         server_shutdown: parking_lot::Mutex::new(None),
         ipc_started: std::sync::atomic::AtomicBool::new(false),
@@ -1274,6 +1276,12 @@ pub fn run() {
             github::get_all_issues,
             github::close_issue,
             github::reopen_issue,
+            github_poller::github_start_polling,
+            github_poller::github_stop_polling,
+            github_poller::github_set_visibility,
+            github_poller::github_poll_repo,
+            github_poller::github_update_paths,
+            github_poller::github_set_issue_filter,
             github_auth::github_start_login,
             github_auth::github_poll_login,
             github_auth::github_logout,

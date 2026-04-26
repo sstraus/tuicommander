@@ -306,6 +306,44 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
       body: { paths: args.paths, include_merged: args.includeMerged },
     }),
   },
+  github_start_polling: {
+    map: (args) => ({
+      method: "POST",
+      path: "/repo/github-poller/start",
+      body: { paths: args.paths, issueFilter: args.issueFilter },
+    }),
+  },
+  github_stop_polling: {
+    map: () => ({ method: "POST", path: "/repo/github-poller/stop" }),
+  },
+  github_set_visibility: {
+    map: (args) => ({
+      method: "POST",
+      path: "/repo/github-poller/visibility",
+      body: { visible: args.visible },
+    }),
+  },
+  github_poll_repo: {
+    map: (args) => ({
+      method: "POST",
+      path: "/repo/github-poller/poll-repo",
+      body: { path: args.path },
+    }),
+  },
+  github_update_paths: {
+    map: (args) => ({
+      method: "POST",
+      path: "/repo/github-poller/update-paths",
+      body: { paths: args.paths },
+    }),
+  },
+  github_set_issue_filter: {
+    map: (args) => ({
+      method: "POST",
+      path: "/repo/github-poller/set-issue-filter",
+      body: { filter: args.filter },
+    }),
+  },
   get_git_branches: {
     map: (_args, p) => ({ method: "GET", path: `/repo/branches?path=${p("path")}` }),
   },

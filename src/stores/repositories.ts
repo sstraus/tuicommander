@@ -246,6 +246,7 @@ function createRepositoriesStore() {
         setState("repoOrder", [...state.repoOrder, repo.path]);
       }
       save();
+      invoke("github_update_paths", { paths: this.getActivePaths() }).catch(() => {});
     },
 
     /** Remove a repository */
@@ -273,6 +274,7 @@ function createRepositoriesStore() {
         })
       );
       save();
+      invoke("github_update_paths", { paths: this.getActivePaths() }).catch(() => {});
     },
 
     /** Set active repository */
@@ -549,6 +551,7 @@ function createRepositoriesStore() {
       if (!state.repositories[path]) return;
       setState("repositories", path, "parked", parked);
       save();
+      invoke("github_update_paths", { paths: this.getActivePaths() }).catch(() => {});
       const cmd = parked ? "stop_repo_watcher" : "start_repo_watcher";
       invoke(cmd, { repoPath: path }).catch((err) => {
         appLogger.warn("store", `${cmd} failed for ${path}`, err);

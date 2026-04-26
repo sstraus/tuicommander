@@ -54,8 +54,6 @@ const DEDUP_COMMANDS = new Set([
   "get_recent_commits",
   "get_remote_url",
   "get_github_status",
-  "get_repo_pr_statuses",
-  "check_github_circuit",
   "get_shell_state",
   "get_last_prompt",
   "load_config",

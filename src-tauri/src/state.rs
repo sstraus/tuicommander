@@ -113,6 +113,23 @@ pub enum AppEvent {
         #[serde(skip_serializing_if = "Option::is_none")]
         origin_repo_path: Option<String>,
     },
+    /// GitHub PR statuses updated for a repo (from Rust poller)
+    #[serde(rename = "github-pr-update")]
+    GitHubPrUpdate {
+        repo_path: String,
+        statuses: Vec<crate::github::BranchPrStatus>,
+    },
+    /// GitHub PR transition detected (merged, closed, blocked, etc.)
+    #[serde(rename = "github-transition")]
+    GitHubTransition {
+        transition: crate::github_poller::PrTransition,
+    },
+    /// GitHub issues updated for a repo (from Rust poller)
+    #[serde(rename = "github-issues-update")]
+    GitHubIssuesUpdate {
+        repo_path: String,
+        issues: Vec<crate::github::GitHubIssue>,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -839,6 +856,8 @@ pub struct AppState {
     pub(crate) github_token_source: parking_lot::RwLock<crate::github_auth::TokenSource>,
     /// Circuit breaker for GitHub API calls
     pub(crate) github_circuit_breaker: crate::github::GitHubCircuitBreaker,
+    /// Background GitHub poller task handle
+    pub(crate) github_poller: parking_lot::Mutex<Option<crate::github_poller::GitHubPoller>>,
     /// Cached GitHub viewer login (authenticated user) for issue filtering.
     pub(crate) github_viewer_login: parking_lot::RwLock<Option<String>>,
     /// Shutdown sender for the HTTP server — send () to gracefully stop it.
@@ -1401,7 +1420,10 @@ impl AppState {
             | AppEvent::WorktreeCreated { .. }
             | AppEvent::PeerRegistered { .. }
             | AppEvent::PeerUnregistered { .. }
-            | AppEvent::UiTab { .. } => {}
+            | AppEvent::UiTab { .. }
+            | AppEvent::GitHubPrUpdate { .. }
+            | AppEvent::GitHubTransition { .. }
+            | AppEvent::GitHubIssuesUpdate { .. } => {}
         }
     }
 
@@ -2026,6 +2048,7 @@ pub(crate) mod tests_support {
             github_token: parking_lot::RwLock::new(None),
             github_token_source: parking_lot::RwLock::new(Default::default()),
             github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
+            github_poller: parking_lot::Mutex::new(None),
             github_viewer_login: parking_lot::RwLock::new(None),
             server_shutdown: parking_lot::Mutex::new(None),
             ipc_started: std::sync::atomic::AtomicBool::new(false),
@@ -2478,6 +2501,7 @@ mod tests {
             github_token: parking_lot::RwLock::new(None),
             github_token_source: parking_lot::RwLock::new(Default::default()),
             github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
+            github_poller: parking_lot::Mutex::new(None),
             github_viewer_login: parking_lot::RwLock::new(None),
             server_shutdown: parking_lot::Mutex::new(None),
             ipc_started: std::sync::atomic::AtomicBool::new(false),

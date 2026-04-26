@@ -1,28 +1,43 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import "../mocks/tauri";
 import { mockInvoke } from "../mocks/tauri";
+import { listen as tauriListen } from "@tauri-apps/api/event";
 import type { BranchPrStatus } from "../../types";
 import { testInScope, testInScopeAsync } from "../helpers/store";
+
+const mockListen = tauriListen as ReturnType<typeof vi.fn>;
+
+const listenHandlers = new Map<string, ((event: { payload: unknown }) => void)[]>();
+
+function emitEvent(event: string, payload: unknown): void {
+  const handlers = listenHandlers.get(event);
+  if (handlers) {
+    for (const h of handlers) h({ payload });
+  }
+}
 
 describe("githubStore", () => {
   let store: typeof import("../../stores/github").githubStore;
 
-  // Mock repositoriesStore to return controlled repo paths
   const mockGetPaths = vi.fn<() => string[]>(() => ["/repo1"]);
   const mockSetIssueFilter = vi.fn();
 
   beforeEach(async () => {
     vi.resetModules();
     vi.useFakeTimers();
-    localStorage.clear();
+    listenHandlers.clear();
     mockInvoke.mockReset();
     mockGetPaths.mockReturnValue(["/repo1"]);
+
+    mockListen.mockImplementation((event: string, handler: (event: { payload: unknown }) => void) => {
+      if (!listenHandlers.has(event)) listenHandlers.set(event, []);
+      listenHandlers.get(event)!.push(handler);
+      return Promise.resolve(vi.fn());
+    });
 
     vi.doMock("../../stores/repositories", () => ({
       repositoriesStore: {
         getPaths: mockGetPaths,
-        // pollAll/pollIssues now use getActivePaths to skip parked repos.
-        // Tests don't exercise parking — alias to getPaths. (#1358-caf5)
         getActivePaths: mockGetPaths,
       },
     }));
@@ -35,6 +50,7 @@ describe("githubStore", () => {
       },
     }));
 
+    mockInvoke.mockResolvedValue(undefined);
     store = (await import("../../stores/github")).githubStore;
   });
 
@@ -112,7 +128,6 @@ describe("githubStore", () => {
 
     it("removes stale branches no longer in poll results", () => {
       testInScope(() => {
-        // First update adds two branches
         store.updateRepoData("/repo1", [
           makePrStatus({ branch: "feature/x" }),
           makePrStatus({ branch: "feature/y" }),
@@ -120,7 +135,6 @@ describe("githubStore", () => {
         expect(store.state.repos["/repo1"].branches["feature/x"]).toBeDefined();
         expect(store.state.repos["/repo1"].branches["feature/y"]).toBeDefined();
 
-        // Second update only has feature/x — feature/y should be removed
         store.updateRepoData("/repo1", [
           makePrStatus({ branch: "feature/x" }),
         ]);
@@ -229,566 +243,152 @@ describe("githubStore", () => {
     });
   });
 
-  describe("detectTransitions()", () => {
-    let notifStore: typeof import("../../stores/prNotifications").prNotificationsStore;
-
-    beforeEach(async () => {
-      // Import prNotificationsStore from the same module registry created by outer beforeEach
-      notifStore = (await import("../../stores/prNotifications")).prNotificationsStore;
-      notifStore.clearAll();
-    });
-
-    afterEach(() => {
-      notifStore.clearAll();
-    });
-
-    /** Seed initial branch state and then update to trigger detectTransitions */
-    function transition(
-      oldOverrides: Partial<BranchPrStatus>,
-      newOverrides: Partial<BranchPrStatus>,
-    ) {
-      store.updateRepoData("/repo1", [makePrStatus(oldOverrides)]);
-      store.updateRepoData("/repo1", [makePrStatus(newOverrides)]);
-    }
-
-    it("emits 'merged' when OPEN → MERGED", () => {
-      testInScope(() => {
-        transition({ state: "OPEN" }, { state: "MERGED" });
-        const active = notifStore.getActive();
-        expect(active).toHaveLength(1);
-        expect(active[0].type).toBe("merged");
-        expect(active[0].prNumber).toBe(42);
-      });
-    });
-
-    it("emits 'merged' when CLOSED → MERGED", () => {
-      testInScope(() => {
-        transition({ state: "CLOSED" }, { state: "MERGED" });
-        const active = notifStore.getActive();
-        expect(active).toHaveLength(1);
-        expect(active[0].type).toBe("merged");
-      });
-    });
-
-    it("emits 'closed' when OPEN → CLOSED", () => {
-      testInScope(() => {
-        transition({ state: "OPEN" }, { state: "CLOSED" });
-        const active = notifStore.getActive();
-        expect(active).toHaveLength(1);
-        expect(active[0].type).toBe("closed");
-      });
-    });
-
-    it("emits 'blocked' when mergeable becomes CONFLICTING on open PR", () => {
-      testInScope(() => {
-        transition(
-          { state: "OPEN", mergeable: "MERGEABLE" },
-          { state: "OPEN", mergeable: "CONFLICTING" },
-        );
-        const active = notifStore.getActive();
-        expect(active).toHaveLength(1);
-        expect(active[0].type).toBe("blocked");
-      });
-    });
-
-    it("emits 'ci_failed' when failed checks go from 0 to >0 on open PR", () => {
-      testInScope(() => {
-        transition(
-          { state: "OPEN", checks: { passed: 2, failed: 0, pending: 0, total: 2 } },
-          { state: "OPEN", checks: { passed: 1, failed: 1, pending: 0, total: 2 } },
-        );
-        const active = notifStore.getActive();
-        expect(active).toHaveLength(1);
-        expect(active[0].type).toBe("ci_failed");
-      });
-    });
-
-    it("emits 'changes_requested' when review_decision becomes CHANGES_REQUESTED", () => {
-      testInScope(() => {
-        transition(
-          { state: "OPEN", review_decision: "" },
-          { state: "OPEN", review_decision: "CHANGES_REQUESTED" },
-        );
-        const active = notifStore.getActive();
-        expect(active).toHaveLength(1);
-        expect(active[0].type).toBe("changes_requested");
-      });
-    });
-
-    it("emits 'ready' when PR becomes mergeable+approved+no-failures", () => {
-      testInScope(() => {
-        // Old: mergeable but not approved, so not 'ready'
-        transition(
-          {
-            state: "OPEN",
-            mergeable: "MERGEABLE",
-            review_decision: "",
-            checks: { passed: 2, failed: 0, pending: 0, total: 2 },
-          },
-          {
-            state: "OPEN",
-            mergeable: "MERGEABLE",
-            review_decision: "APPROVED",
-            checks: { passed: 2, failed: 0, pending: 0, total: 2 },
-          },
-        );
-        const active = notifStore.getActive();
-        expect(active).toHaveLength(1);
-        expect(active[0].type).toBe("ready");
-      });
-    });
-
-    it("emits 'ready' when PR goes from conflicting to mergeable+approved", () => {
-      testInScope(() => {
-        transition(
-          {
-            state: "OPEN",
-            mergeable: "CONFLICTING",
-            review_decision: "APPROVED",
-            checks: { passed: 2, failed: 0, pending: 0, total: 2 },
-          },
-          {
-            state: "OPEN",
-            mergeable: "MERGEABLE",
-            review_decision: "APPROVED",
-            checks: { passed: 2, failed: 0, pending: 0, total: 2 },
-          },
-        );
-        const active = notifStore.getActive();
-        expect(active).toHaveLength(1);
-        expect(active[0].type).toBe("ready");
-      });
-    });
-
-    it("emits 'ready' when CI failures are resolved and PR is otherwise ready", () => {
-      testInScope(() => {
-        transition(
-          {
-            state: "OPEN",
-            mergeable: "MERGEABLE",
-            review_decision: "APPROVED",
-            checks: { passed: 1, failed: 1, pending: 0, total: 2 },
-          },
-          {
-            state: "OPEN",
-            mergeable: "MERGEABLE",
-            review_decision: "APPROVED",
-            checks: { passed: 2, failed: 0, pending: 0, total: 2 },
-          },
-        );
-        const active = notifStore.getActive();
-        expect(active).toHaveLength(1);
-        expect(active[0].type).toBe("ready");
-      });
-    });
-
-    it("does not emit when state is unchanged", () => {
-      testInScope(() => {
-        transition({ state: "OPEN" }, { state: "OPEN" });
-        expect(notifStore.getActive()).toHaveLength(0);
-      });
-    });
-
-    it("does not emit on first update (no prior data)", () => {
-      testInScope(() => {
-        // Only one updateRepoData call — no prior data, no transitions
-        store.updateRepoData("/repo1", [makePrStatus({ state: "MERGED" })]);
-        expect(notifStore.getActive()).toHaveLength(0);
-      });
-    });
-
-    it("does not emit 'blocked' when already CONFLICTING", () => {
-      testInScope(() => {
-        transition(
-          { state: "OPEN", mergeable: "CONFLICTING" },
-          { state: "OPEN", mergeable: "CONFLICTING" },
-        );
-        expect(notifStore.getActive()).toHaveLength(0);
-      });
-    });
-
-    it("does not emit 'ci_failed' when already had failures", () => {
-      testInScope(() => {
-        transition(
-          { state: "OPEN", checks: { passed: 1, failed: 1, pending: 0, total: 2 } },
-          { state: "OPEN", checks: { passed: 0, failed: 2, pending: 0, total: 2 } },
-        );
-        expect(notifStore.getActive()).toHaveLength(0);
-      });
-    });
-
-    it("does not emit 'blocked' or other OPEN transitions for closed PRs", () => {
-      testInScope(() => {
-        transition(
-          { state: "OPEN", mergeable: "MERGEABLE" },
-          { state: "CLOSED", mergeable: "CONFLICTING" },
-        );
-        // 'closed' is emitted, but NOT 'blocked' (since PR is not OPEN in new state)
-        const active = notifStore.getActive();
-        expect(active).toHaveLength(1);
-        expect(active[0].type).toBe("closed");
-      });
-    });
-
-    it("includes correct branch and title in notification", () => {
-      testInScope(() => {
-        transition(
-          { state: "OPEN", branch: "my/feature", title: "My Feature PR" },
-          { state: "MERGED", branch: "my/feature", title: "My Feature PR" },
-        );
-        const active = notifStore.getActive();
-        expect(active[0].branch).toBe("my/feature");
-        expect(active[0].title).toBe("My Feature PR");
-        expect(active[0].repoPath).toBe("/repo1");
-      });
-    });
-
-    it("fires prTerminal callback on merged transition", () => {
-      testInScope(() => {
-        const cb = vi.fn();
-        store.setOnPrTerminal(cb);
-        transition({ state: "OPEN" }, { state: "MERGED" });
-        expect(cb).toHaveBeenCalledWith("/repo1", "feature/x", 42, "merged");
-        store.setOnPrTerminal(null);
-      });
-    });
-
-    it("fires prTerminal callback on closed transition", () => {
-      testInScope(() => {
-        const cb = vi.fn();
-        store.setOnPrTerminal(cb);
-        transition({ state: "OPEN" }, { state: "CLOSED" });
-        expect(cb).toHaveBeenCalledWith("/repo1", "feature/x", 42, "closed");
-        store.setOnPrTerminal(null);
-      });
-    });
-
-    it("does NOT fire prTerminal callback on non-terminal transitions", () => {
-      testInScope(() => {
-        const cb = vi.fn();
-        store.setOnPrTerminal(cb);
-        transition(
-          { state: "OPEN", mergeable: "MERGEABLE" },
-          { state: "OPEN", mergeable: "CONFLICTING" },
-        );
-        expect(cb).not.toHaveBeenCalled();
-        store.setOnPrTerminal(null);
-      });
-    });
-  });
-
-  describe("polling", () => {
-    // pollAll() checks the circuit breaker before polling — let it pass by default
-    beforeEach(() => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "check_github_circuit") return Promise.resolve(true);
-        return Promise.resolve(null);
-      });
-    });
-
-    it("polls repos on startPolling using batched get_all_pr_statuses", async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "check_github_circuit") return Promise.resolve(true);
-        if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [makePrStatus()] });
-        return Promise.resolve(null);
-      });
-
+  describe("event-driven polling", () => {
+    it("startPolling invokes github_start_polling with paths and issue filter", async () => {
       await testInScopeAsync(async () => {
         store.startPolling();
-
-        // Flush the initial poll microtask
         await vi.advanceTimersByTimeAsync(0);
 
-        expect(mockInvoke).toHaveBeenCalledWith("get_all_pr_statuses", {
+        expect(mockInvoke).toHaveBeenCalledWith("github_start_polling", {
           paths: ["/repo1"],
-          includeMerged: true,
+          issueFilter: "assigned",
         });
         store.stopPolling();
       });
     });
 
-    it("includes all repo paths in batched poll", async () => {
-      mockGetPaths.mockReturnValue(["/repo1", "/repo2"]);
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "check_github_circuit") return Promise.resolve(true);
-        if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [], "/repo2": [] });
-        return Promise.resolve(null);
-      });
-
-      // Need fresh import with new mock
-      vi.resetModules();
-      vi.doMock("../../stores/repositories", () => ({
-        repositoriesStore: {
-          getPaths: mockGetPaths,
-          getActivePaths: mockGetPaths,
-        },
-      }));
-      store = (await import("../../stores/github")).githubStore;
-
+    it("stopPolling invokes github_stop_polling", async () => {
       await testInScopeAsync(async () => {
         store.startPolling();
         await vi.advanceTimersByTimeAsync(0);
-
-        expect(mockInvoke).toHaveBeenCalledWith("get_all_pr_statuses", {
-          paths: ["/repo1", "/repo2"],
-          includeMerged: true,
-        });
         store.stopPolling();
+
+        expect(mockInvoke).toHaveBeenCalledWith("github_stop_polling");
       });
     });
 
-    it("uses includeMerged=true on startup poll and false on subsequent", async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "check_github_circuit") return Promise.resolve(true);
-        if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [] });
-        return Promise.resolve(null);
-      });
-
+    it("pollRepo invokes github_poll_repo with path", async () => {
       await testInScopeAsync(async () => {
-        store.startPolling();
-        await vi.advanceTimersByTimeAsync(0); // startup poll
+        store.pollRepo("/repo1");
+        await vi.advanceTimersByTimeAsync(0);
 
-        // First call is startup: includeMerged = true
-        const startupCall = mockInvoke.mock.calls.find((c: unknown[]) => c[0] === "get_all_pr_statuses");
-        expect(startupCall?.[1]).toMatchObject({ includeMerged: true });
-
-        mockInvoke.mockClear();
-
-        // Advance past the 30s interval for a subsequent poll
-        await vi.advanceTimersByTimeAsync(30_000);
-
-        const subsequentCall = mockInvoke.mock.calls.find((c: unknown[]) => c[0] === "get_all_pr_statuses");
-        expect(subsequentCall?.[1]).toMatchObject({ includeMerged: false });
-
-        store.stopPolling();
+        expect(mockInvoke).toHaveBeenCalledWith("github_poll_repo", { path: "/repo1" });
       });
     });
 
-    it("skips per-repo fallback and applies backoff when batch fails", async () => {
-      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "check_github_circuit") return Promise.resolve(true);
-        if (cmd === "get_all_pr_statuses") return Promise.reject(new Error("batch failed"));
-        return Promise.resolve(null);
-      });
-
+    it("updates store when github-pr-update event fires", async () => {
       await testInScopeAsync(async () => {
         store.startPolling();
         await vi.advanceTimersByTimeAsync(0);
 
-        // Batch error triggers early return with backoff — no per-repo fallback
-        expect(mockInvoke).not.toHaveBeenCalledWith("get_repo_pr_statuses", expect.anything());
-        // Backoff warning should be logged
-        expect(warnSpy).toHaveBeenCalledWith(
-          "[github]",
-          expect.stringContaining("Batch PR poll failed"),
-          expect.anything(),
-        );
-        warnSpy.mockRestore();
-        store.stopPolling();
-      });
-    });
+        const prStatus = makePrStatus({ branch: "main", number: 7 });
+        emitEvent("github-pr-update", { repo_path: "/repo1", statuses: [prStatus] });
 
-    it("stopPolling prevents further polls", async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "check_github_circuit") return Promise.resolve(true);
-        if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [] });
-        return Promise.resolve(null);
-      });
-
-      await testInScopeAsync(async () => {
-        store.startPolling();
-        await vi.advanceTimersByTimeAsync(0);
-
-        const callCount = mockInvoke.mock.calls.length;
-        store.stopPolling();
-
-        // Advance past next polling interval — should NOT trigger new calls
-        await vi.advanceTimersByTimeAsync(60000);
-
-        expect(mockInvoke.mock.calls.length).toBe(callCount);
-      });
-    });
-
-    it("pauses polling when document becomes hidden", async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "check_github_circuit") return Promise.resolve(true);
-        if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [makePrStatus()] });
-        return Promise.resolve(null);
-      });
-
-      await testInScopeAsync(async () => {
-        store.startPolling();
-        await vi.advanceTimersByTimeAsync(0);
-
-        const callsAfterStart = mockInvoke.mock.calls.length;
-
-        // Simulate tab becoming hidden
-        Object.defineProperty(document, "hidden", { value: true, writable: true, configurable: true });
-        document.dispatchEvent(new Event("visibilitychange"));
-
-        // Advance past multiple poll intervals — should NOT trigger new calls
-        await vi.advanceTimersByTimeAsync(120000);
-        expect(mockInvoke.mock.calls.length).toBe(callsAfterStart);
-
-        store.stopPolling();
-        Object.defineProperty(document, "hidden", { value: false, writable: true, configurable: true });
-      });
-    });
-
-    it("resumes polling with immediate poll when document becomes visible", async () => {
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "check_github_circuit") return Promise.resolve(true);
-        if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [makePrStatus()] });
-        return Promise.resolve(null);
-      });
-
-      await testInScopeAsync(async () => {
-        store.startPolling();
-        await vi.advanceTimersByTimeAsync(0);
-
-        // Go hidden
-        Object.defineProperty(document, "hidden", { value: true, writable: true, configurable: true });
-        document.dispatchEvent(new Event("visibilitychange"));
-        await vi.advanceTimersByTimeAsync(0);
-
-        const callsWhileHidden = mockInvoke.mock.calls.length;
-
-        // Go visible again
-        Object.defineProperty(document, "hidden", { value: false, writable: true, configurable: true });
-        document.dispatchEvent(new Event("visibilitychange"));
-        await vi.advanceTimersByTimeAsync(0);
-
-        // Should trigger an immediate poll on becoming visible
-        expect(mockInvoke.mock.calls.length).toBeGreaterThan(callsWhileHidden);
-
-        store.stopPolling();
-      });
-    });
-
-    it("skips polling when no repos are configured", async () => {
-      mockGetPaths.mockReturnValue([]);
-      mockInvoke.mockResolvedValue(null);
-
-      await testInScopeAsync(async () => {
-        store.startPolling();
-        await vi.advanceTimersByTimeAsync(0);
-
-        // Should not have called invoke since there are no repos
-        expect(mockInvoke).not.toHaveBeenCalled();
-
-        store.stopPolling();
-      });
-    });
-
-    it("updates store state from successful batch poll response", async () => {
-      const prStatus = makePrStatus({ branch: "main", state: "OPEN", number: 7 });
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "check_github_circuit") return Promise.resolve(true);
-        if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [prStatus] });
-        return Promise.resolve(null);
-      });
-
-      await testInScopeAsync(async () => {
-        store.startPolling();
-        await vi.advanceTimersByTimeAsync(0);
-
-        // State should reflect the polled data
         const data = store.getBranchPrData("/repo1", "main");
         expect(data).not.toBeNull();
         expect(data!.number).toBe(7);
-        expect(data!.state).toBe("OPEN");
 
         store.stopPolling();
       });
     });
 
-    it("applies exponential backoff when batch errors occur", async () => {
-      // Batch errors trigger backoff: 30s, 60s, 120s, ...
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "check_github_circuit") return Promise.resolve(true);
-        if (cmd === "get_all_pr_statuses") return Promise.reject(new Error("network error"));
-        return Promise.resolve(null);
-      });
-      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-      await testInScopeAsync(async () => {
-        store.startPolling();
-
-        const batchCallCount = () =>
-          mockInvoke.mock.calls.filter((c: unknown[]) => c[0] === "get_all_pr_statuses").length;
-
-        await vi.advanceTimersByTimeAsync(0);
-        const after0 = batchCallCount(); // 1st poll (immediate)
-
-        // 1st failure → backoff = 30s (BASE_INTERVAL * 2^0)
-        await vi.advanceTimersByTimeAsync(30_000);
-        const after30 = batchCallCount(); // 2nd poll at t=30s
-
-        // 2nd failure → backoff = 60s (BASE_INTERVAL * 2^1)
-        // At t=60s the 3rd poll hasn't fired yet (next at t=90s)
-        await vi.advanceTimersByTimeAsync(30_000);
-        const after60 = batchCallCount();
-
-        // Backoff means fewer polls in the second 30s window
-        expect(after30 - after0).toBeGreaterThan(after60 - after30);
-
-        warnSpy.mockRestore();
-        store.stopPolling();
-      });
-    });
-
-    it("persists PR state to localStorage after successful poll", async () => {
-      const prStatus = makePrStatus({ branch: "feat/x", state: "OPEN" });
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "check_github_circuit") return Promise.resolve(true);
-        if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [prStatus] });
-        return Promise.resolve(null);
-      });
-
+    it("updates issues when github-issues-update event fires", async () => {
       await testInScopeAsync(async () => {
         store.startPolling();
         await vi.advanceTimersByTimeAsync(0);
 
-        const raw = localStorage.getItem("github:pr_state");
-        expect(raw).not.toBeNull();
-        const saved = JSON.parse(raw!);
-        expect(saved["/repo1"]).toBeDefined();
-        expect(saved["/repo1"].branches["feat/x"]).toBeDefined();
+        emitEvent("github-issues-update", {
+          repo_path: "/repo1",
+          issues: [{ number: 1, title: "Bug", state: "OPEN" }],
+        });
+
+        const issues = store.getRepoIssues("/repo1");
+        expect(issues).toHaveLength(1);
+        expect(issues[0].title).toBe("Bug");
 
         store.stopPolling();
       });
     });
 
-    it("loads persisted PR state on startPolling for offline transition detection", async () => {
-      // Persist an OPEN PR before starting
-      const persistedPr = makePrStatus({ branch: "feat/y", state: "OPEN", number: 99 });
-      localStorage.setItem(
-        "github:pr_state",
-        JSON.stringify({ "/repo1": { branches: { "feat/y": persistedPr }, remoteStatus: null, lastPolled: 0 } }),
-      );
+    it("fires prTerminal callback on merged transition event", async () => {
+      await testInScopeAsync(async () => {
+        const cb = vi.fn();
+        store.setOnPrTerminal(cb);
+        store.startPolling();
+        await vi.advanceTimersByTimeAsync(0);
 
-      // New poll returns the same PR as MERGED → should emit 'merged' notification
-      const mergedPr = makePrStatus({ branch: "feat/y", state: "MERGED", number: 99 });
-      mockInvoke.mockImplementation((cmd: string) => {
-        if (cmd === "check_github_circuit") return Promise.resolve(true);
-        if (cmd === "get_all_pr_statuses") return Promise.resolve({ "/repo1": [mergedPr] });
-        return Promise.resolve(null);
+        emitEvent("github-transition", {
+          type: "merged",
+          repo_path: "/repo1",
+          branch: "feature/x",
+          pr_number: 42,
+          title: "Add feature",
+        });
+
+        expect(cb).toHaveBeenCalledWith("/repo1", "feature/x", 42, "merged");
+        store.setOnPrTerminal(null);
+        store.stopPolling();
       });
+    });
 
-      let notifStore: typeof import("../../stores/prNotifications").prNotificationsStore;
-      notifStore = (await import("../../stores/prNotifications")).prNotificationsStore;
-      notifStore.clearAll();
+    it("fires ciFailed callback on ci_failed transition event", async () => {
+      await testInScopeAsync(async () => {
+        const cb = vi.fn();
+        store.setOnCiFailed(cb);
+        store.startPolling();
+        await vi.advanceTimersByTimeAsync(0);
 
+        emitEvent("github-transition", {
+          type: "ci_failed",
+          repo_path: "/repo1",
+          branch: "feature/x",
+          pr_number: 42,
+          title: "Add feature",
+        });
+
+        expect(cb).toHaveBeenCalledWith("/repo1", "feature/x", 42);
+        store.setOnCiFailed(null);
+        store.stopPolling();
+      });
+    });
+
+    it("fires ciRecovered callback on ci_recovered transition event", async () => {
+      await testInScopeAsync(async () => {
+        const cb = vi.fn();
+        store.setOnCiRecovered(cb);
+        store.startPolling();
+        await vi.advanceTimersByTimeAsync(0);
+
+        emitEvent("github-transition", {
+          type: "ci_recovered",
+          repo_path: "/repo1",
+          branch: "feature/x",
+          pr_number: 42,
+          title: "Add feature",
+        });
+
+        expect(cb).toHaveBeenCalledWith("/repo1", "feature/x", 42);
+        store.setOnCiRecovered(null);
+        store.stopPolling();
+      });
+    });
+
+    it("forwards visibility changes to Rust poller", async () => {
       await testInScopeAsync(async () => {
         store.startPolling();
         await vi.advanceTimersByTimeAsync(0);
 
-        // Should have detected the OPEN → MERGED transition
-        const active = notifStore.getActive();
-        expect(active).toHaveLength(1);
-        expect(active[0].type).toBe("merged");
-        expect(active[0].branch).toBe("feat/y");
+        Object.defineProperty(document, "hidden", { value: true, writable: true, configurable: true });
+        document.dispatchEvent(new Event("visibilitychange"));
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(mockInvoke).toHaveBeenCalledWith("github_set_visibility", { visible: false });
+
+        Object.defineProperty(document, "hidden", { value: false, writable: true, configurable: true });
+        document.dispatchEvent(new Event("visibilitychange"));
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(mockInvoke).toHaveBeenCalledWith("github_set_visibility", { visible: true });
 
         store.stopPolling();
       });
@@ -848,19 +448,13 @@ describe("githubStore", () => {
   });
 
   describe("setIssueFilter()", () => {
-    it("delegates to settingsStore.setIssueFilter", () => {
-      testInScope(() => {
+    it("delegates to settingsStore.setIssueFilter and invokes Rust command", async () => {
+      await testInScopeAsync(async () => {
         store.setIssueFilter("created");
-        expect(mockSetIssueFilter).toHaveBeenCalledWith("created");
-      });
-    });
+        await vi.advanceTimersByTimeAsync(0);
 
-    it("does not trigger re-poll when set to 'disabled'", () => {
-      testInScope(() => {
-        store.setIssueFilter("disabled");
-        expect(mockSetIssueFilter).toHaveBeenCalledWith("disabled");
-        // No invoke call for poll_issues when disabled
-        expect(mockInvoke).not.toHaveBeenCalledWith("poll_issues", expect.anything());
+        expect(mockSetIssueFilter).toHaveBeenCalledWith("created");
+        expect(mockInvoke).toHaveBeenCalledWith("github_set_issue_filter", { filter: "created" });
       });
     });
   });

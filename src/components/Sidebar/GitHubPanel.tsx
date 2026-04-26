@@ -273,7 +273,7 @@ export const GitHubPanel: Component<{
         issueNumber: issue.number,
       });
       appLogger.info("github", `${isOpen ? "Closed" : "Reopened"} issue #${issue.number}`);
-      githubStore.pollIssues().catch(() => {});
+      githubStore.pollIssues();
     } catch (e) {
       const msg = String(e);
       setIssueActionError({ num: issue.number, msg });

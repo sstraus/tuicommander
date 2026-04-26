@@ -2804,6 +2804,7 @@ mod tests {
             github_token: parking_lot::RwLock::new(None),
             github_token_source: parking_lot::RwLock::new(Default::default()),
             github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
+            github_poller: parking_lot::Mutex::new(None),
             github_viewer_login: parking_lot::RwLock::new(None),
             server_shutdown: parking_lot::Mutex::new(None),
             ipc_started: std::sync::atomic::AtomicBool::new(false),
