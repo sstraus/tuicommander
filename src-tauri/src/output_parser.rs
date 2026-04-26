@@ -449,11 +449,11 @@ impl OutputParser {
             }
         }
 
-        if !self.session_conflict_fired {
-            if let Some(evt) = parse_agent_session_conflict(&joined) {
-                self.session_conflict_fired = true;
-                events.push(evt);
-            }
+        if !self.session_conflict_fired
+            && let Some(evt) = parse_agent_session_conflict(&joined)
+        {
+            self.session_conflict_fired = true;
+            events.push(evt);
         }
 
         // Reset dedup state on user-input (new agent cycle may produce new errors/suggestions).

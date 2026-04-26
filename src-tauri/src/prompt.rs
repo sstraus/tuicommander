@@ -315,10 +315,10 @@ fn resolve_vars(repo_path: &str, needed: &[String]) -> HashMap<String, String> {
     if needed_set.contains("repo_path") {
         result.insert("repo_path".to_string(), repo_path.to_string());
     }
-    if needed_set.contains("repo_name") {
-        if let Some(name) = std::path::Path::new(repo_path).file_name().and_then(|n| n.to_str()) {
-            result.insert("repo_name".to_string(), name.to_string());
-        }
+    if needed_set.contains("repo_name")
+        && let Some(name) = std::path::Path::new(repo_path).file_name().and_then(|n| n.to_str())
+    {
+        result.insert("repo_name".to_string(), name.to_string());
     }
 
     // Collect git vars we need, including implicit dependencies for derived vars.
@@ -346,11 +346,11 @@ fn resolve_vars(repo_path: &str, needed: &[String]) -> HashMap<String, String> {
         let cache = var_cache().lock();
         for var in &git_needed {
             let key = (repo_path.to_string(), var.to_string());
-            if let Some(entry) = cache.get(&key) {
-                if now.duration_since(entry.fetched_at) < VAR_CACHE_TTL {
-                    result.insert(var.to_string(), entry.value.clone());
-                    continue;
-                }
+            if let Some(entry) = cache.get(&key)
+                && now.duration_since(entry.fetched_at) < VAR_CACHE_TTL
+            {
+                result.insert(var.to_string(), entry.value.clone());
+                continue;
             }
             to_fetch.push(var);
         }
@@ -376,22 +376,21 @@ fn resolve_vars(repo_path: &str, needed: &[String]) -> HashMap<String, String> {
     }
 
     // Derive computed variables from resolved ones.
-    if needed_set.contains("dirty_files_count") {
-        if let Some(changed) = result.get("changed_files") {
-            let count = changed.lines().filter(|l| !l.is_empty()).count();
-            result.insert("dirty_files_count".to_string(), count.to_string());
-        }
+    if needed_set.contains("dirty_files_count")
+        && let Some(changed) = result.get("changed_files")
+    {
+        let count = changed.lines().filter(|l| !l.is_empty()).count();
+        result.insert("dirty_files_count".to_string(), count.to_string());
     }
-    if needed_set.contains("repo_owner") || needed_set.contains("repo_slug") {
-        if let Some(url) = result.get("remote_url").cloned() {
-            if let Some((owner, slug)) = parse_remote_owner_slug(&url) {
-                if needed_set.contains("repo_owner") {
-                    result.insert("repo_owner".to_string(), owner);
-                }
-                if needed_set.contains("repo_slug") {
-                    result.insert("repo_slug".to_string(), slug);
-                }
-            }
+    if (needed_set.contains("repo_owner") || needed_set.contains("repo_slug"))
+        && let Some(url) = result.get("remote_url").cloned()
+        && let Some((owner, slug)) = parse_remote_owner_slug(&url)
+    {
+        if needed_set.contains("repo_owner") {
+            result.insert("repo_owner".to_string(), owner);
+        }
+        if needed_set.contains("repo_slug") {
+            result.insert("repo_slug".to_string(), slug);
         }
     }
 
