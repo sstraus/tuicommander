@@ -9,7 +9,7 @@ import { projectName, terminalStatusLabel } from "../../utils/activitySnapshot";
 import { GlobeIcon } from "../GlobeIcon";
 import s from "./ActivityDashboard.module.css";
 
-const statusClasses = {
+export const statusClasses = {
   rateLimited: s.statusRateLimited,
   waiting: s.statusWaiting,
   working: s.statusWorking,

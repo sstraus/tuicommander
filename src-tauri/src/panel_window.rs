@@ -5,7 +5,7 @@ use tauri::{Emitter, Manager};
 fn validate_panel_id(id: &str) -> Result<(), String> {
     if id.is_empty()
         || id.len() > 64
-        || !id.chars().all(|c| c.is_alphanumeric() || c == '-')
+        || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
     {
         return Err(format!("Invalid panel_id: {id}"));
     }
@@ -28,10 +28,16 @@ pub async fn open_panel_window(
         return Ok(());
     }
     let mut query = format!("mode=panel&panel={panel_id}");
-    for (k, v) in &params {
+    if !params.is_empty() {
         let mut enc = url::form_urlencoded::Serializer::new(String::new());
-        enc.append_pair(k, v);
-        query.push_str(&format!("&{}", enc.finish()));
+        for (k, v) in &params {
+            enc.append_pair(k, v);
+        }
+        let encoded = enc.finish();
+        if !encoded.is_empty() {
+            query.push('&');
+            query.push_str(&encoded);
+        }
     }
     let url = tauri::WebviewUrl::App(format!("/?{query}").into());
     let window = tauri::WebviewWindowBuilder::new(&app, &label, url)
@@ -42,10 +48,11 @@ pub async fn open_panel_window(
         .map_err(|e| format!("Failed to create panel window: {e}"))?;
 
     let app_handle = app.clone();
-    let pid = panel_id.clone();
     window.on_window_event(move |event| {
         if let tauri::WindowEvent::Destroyed = event {
-            let _ = app_handle.emit("panel-window-closed", &pid);
+            if let Err(e) = app_handle.emit("panel-window-closed", &panel_id) {
+                tracing::warn!("Failed to emit panel-window-closed for {panel_id}: {e}");
+            }
         }
     });
     Ok(())
@@ -73,11 +80,12 @@ pub async fn close_panel_window(app: tauri::AppHandle, panel_id: String) -> Resu
 
 #[tauri::command]
 pub async fn focus_main_window(app: tauri::AppHandle) -> Result<(), String> {
-    if let Some(w) = app.get_webview_window("main") {
-        super::ensure_window_visible(&w);
-        w.unminimize().map_err(|e| e.to_string())?;
-        w.set_focus().map_err(|e| e.to_string())?;
-    }
+    let w = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Main window not found".to_string())?;
+    super::ensure_window_visible(&w);
+    w.unminimize().map_err(|e| e.to_string())?;
+    w.set_focus().map_err(|e| e.to_string())?;
     Ok(())
 }
 

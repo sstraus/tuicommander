@@ -480,22 +480,22 @@ const App: Component = () => {
     onCleanup(() => unlisten?.());
   }
 
-  // Start sync provider for Activity Dashboard when detached.
-  // untrack: serialize() reads terminalsStore — those must NOT become effect
-  // deps, otherwise every terminal mutation recreates the provider.
-  createEffect(() => {
-    if (!uiStore.isDetached("activity")) return;
-    const provider = untrack(() => {
-      const p = createPanelSyncProvider(
-        "activity",
-        activityPanelAdapter.serialize,
-        activityPanelAdapter.syncIntervalMs,
-      );
-      p.start();
-      return p;
+  // Start sync providers for detached projection panels.
+  // untrack: serialize() reads stores — those must NOT become effect deps,
+  // otherwise every store mutation recreates the provider.
+  for (const adapter of Object.values(panelRegistry)) {
+    if (!adapter.serialize || !adapter.syncIntervalMs) continue;
+    const a = adapter;
+    createEffect(() => {
+      if (!uiStore.isDetached(a.id)) return;
+      const provider = untrack(() => {
+        const p = createPanelSyncProvider(a.id, a.serialize!, a.syncIntervalMs!);
+        p.start();
+        return p;
+      });
+      onCleanup(() => provider.stop());
     });
-    onCleanup(() => provider.stop());
-  });
+  }
 
   // Notification sounds are now played natively via Rust (rodio) —
   // no Web Audio warmup needed.

@@ -18,7 +18,6 @@ interface PanelWindowControlsProps {
   panelId: string;
   mode: "inline" | "detached";
   onInlineClose?: () => void;
-  class?: string;
 }
 
 export const PanelWindowControls: Component<PanelWindowControlsProps> = (props) => {

@@ -12,6 +12,10 @@ export interface PanelAdapter {
   toggle?: () => void;
   detachParams?: () => Record<string, string>;
   onDetach?: () => void;
+  /** For projection panels: serializer for cross-window sync snapshots. */
+  serialize?: () => unknown;
+  /** Sync push interval in ms (default: no sync). Must be set alongside serialize. */
+  syncIntervalMs?: number;
 }
 
 const panelRegistry: Record<string, PanelAdapter> = {};
@@ -65,7 +69,10 @@ export function togglePanel(panelId: string): boolean {
   const adapter = panelRegistry[panelId];
   if (!adapter?.toggle) return false;
   if (uiStore.isDetached(panelId)) {
-    invoke("focus_panel_window", { panelId }).catch(() => {});
+    invoke("focus_panel_window", { panelId }).catch(() => {
+      uiStore.clearDetached(panelId);
+      adapter.toggle?.();
+    });
     return true;
   }
   adapter.toggle();

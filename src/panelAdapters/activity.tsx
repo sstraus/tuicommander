@@ -5,17 +5,9 @@ import { createPanelSyncReceiver } from "../utils/panelSync";
 import { initPanelWindow } from "../hooks/initPanelWindow";
 import { terminalsStore } from "../stores/terminals";
 import { globalWorkspaceStore } from "../stores/globalWorkspace";
-import { ActivityDashboard, type TerminalRow } from "../components/ActivityDashboard/ActivityDashboard";
-import s from "../components/ActivityDashboard/ActivityDashboard.module.css";
+import { ActivityDashboard, statusClasses, type TerminalRow } from "../components/ActivityDashboard/ActivityDashboard";
 import type { PanelAdapter } from "../panelRouter";
 import { activityDashboardStore } from "../stores/activityDashboard";
-
-const statusClasses = {
-  rateLimited: s.statusRateLimited,
-  waiting: s.statusWaiting,
-  working: s.statusWorking,
-  idle: s.statusIdle,
-};
 
 function snapshotToRows(snap: ActivitySnapshot): TerminalRow[] {
   return snap.terminals.map((t) => ({
@@ -57,11 +49,7 @@ const DetachedActivityDashboard: Component<{ params: URLSearchParams }> = () => 
   );
 };
 
-export const activityPanelAdapter: PanelAdapter & {
-  syncIntervalMs: number;
-  serialize: () => ActivitySnapshot;
-  handleAction: (action: string, data: unknown) => void;
-} = {
+export const activityPanelAdapter: PanelAdapter = {
   id: "activity",
   title: "Activity Dashboard",
   defaultSize: { width: 550, height: 650 },
@@ -70,13 +58,14 @@ export const activityPanelAdapter: PanelAdapter & {
   syncIntervalMs: 1000,
   serialize: buildActivitySnapshot,
   handleAction(action: string, data: unknown) {
+    const d = data as Record<string, unknown> | null;
+    if (typeof d?.termId !== "string") return;
+    const termId = d.termId;
     if (action === "navigate") {
-      const { termId } = data as { termId: string };
       void invoke("focus_main_window");
       terminalsStore.setActive(termId);
       requestAnimationFrame(() => terminalsStore.get(termId)?.ref?.focus());
     } else if (action === "promote") {
-      const { termId } = data as { termId: string };
       globalWorkspaceStore.togglePromote(termId);
     }
   },

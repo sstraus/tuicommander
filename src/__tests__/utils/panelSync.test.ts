@@ -113,10 +113,10 @@ describe("panelSync", () => {
       });
     });
 
-    it("registers onCloseRequested handler", () => {
+    it("does not register onCloseRequested (Rust Destroyed handles close)", () => {
       mockWindowListen.mockImplementation(() => Promise.resolve(() => {}));
       createPanelSyncReceiver("activity");
-      expect(mockOnCloseRequested).toHaveBeenCalledTimes(1);
+      expect(mockOnCloseRequested).not.toHaveBeenCalled();
     });
   });
 
@@ -203,7 +203,8 @@ describe("panelSync", () => {
       });
 
       const serialize = vi.fn().mockReturnValue({ data: "fresh" });
-      createPanelSyncProvider("activity", serialize, 5000);
+      const provider = createPanelSyncProvider("activity", serialize, 5000);
+      provider.start();
 
       resyncCallback!({ payload: { panelId: "activity" } });
       expect(mockEmitTo).toHaveBeenCalledWith(
@@ -226,10 +227,14 @@ describe("panelSync", () => {
       });
 
       const serialize = vi.fn().mockReturnValue({});
-      createPanelSyncProvider("activity", serialize, 5000);
+      const provider = createPanelSyncProvider("activity", serialize, 5000);
+      provider.start();
+      mockEmitTo.mockClear();
 
       resyncCallback!({ payload: { panelId: "ai-chat" } });
       expect(mockEmitTo).not.toHaveBeenCalled();
+
+      provider.stop();
     });
   });
 });

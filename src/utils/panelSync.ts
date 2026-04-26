@@ -2,6 +2,7 @@ import { createSignal, onCleanup } from "solid-js";
 import { listen } from "../invoke";
 import { emitTo } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { appLogger } from "../stores/appLogger";
 
 export interface PanelSnapshot<T = unknown> {
   panelId: string;
@@ -29,7 +30,8 @@ export function createPanelSyncReceiver<T>(panelId: string) {
     if (event.payload.ts <= lastTs) return;
     lastTs = event.payload.ts;
     setState(() => event.payload.snapshot);
-  }).then((fn) => cleanups.push(fn));
+  }).then((fn) => cleanups.push(fn))
+    .catch((e) => appLogger.error("panel-sync", `Failed to register panel-sync listener for ${panelId}`, e));
 
   const onVisChange = () => {
     if (!document.hidden) {
@@ -38,11 +40,6 @@ export function createPanelSyncReceiver<T>(panelId: string) {
   };
   document.addEventListener("visibilitychange", onVisChange);
   cleanups.push(() => document.removeEventListener("visibilitychange", onVisChange));
-
-  // Notify main window when this panel window is closed via OS controls.
-  win.onCloseRequested(async () => {
-    await emitTo("main", "panel-window-closed", panelId);
-  }).then((fn) => cleanups.push(fn));
 
   function destroy() {
     for (const fn of cleanups) fn();
@@ -65,25 +62,32 @@ export function createPanelSyncProvider(
 ) {
   let timer: ReturnType<typeof setInterval> | undefined;
   let resyncUnlisten: (() => void) | undefined;
+  let pushCount = 0;
 
   function push() {
+    pushCount++;
     const label = `panel-${panelId}`;
+    const count = pushCount;
     emitTo(label, "panel-sync", {
       panelId,
       ts: Date.now(),
       snapshot: serialize(),
-    }).catch(() => {});
+    }).catch((e) => {
+      if (count > 1) {
+        appLogger.warn("panel-sync", `Failed to push snapshot to ${label}`, e);
+      }
+    });
   }
 
   function start() {
     if (timer) return;
+    listen<{ panelId: string }>("panel-resync-request", (e) => {
+      if (e.payload.panelId === panelId) push();
+    }).then((fn) => { resyncUnlisten = fn; })
+      .catch((e) => appLogger.error("panel-sync", `Failed to register resync listener for ${panelId}`, e));
     push();
     timer = setInterval(push, intervalMs);
   }
-
-  listen<{ panelId: string }>("panel-resync-request", (e) => {
-    if (e.payload.panelId === panelId) push();
-  }).then((fn) => { resyncUnlisten = fn; });
 
   function stop() {
     clearInterval(timer);
