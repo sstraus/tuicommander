@@ -26,7 +26,7 @@ export interface CodeEditorTabProps {
   repoPath: string;
   filePath: string;
   initialLine?: number; // Line to scroll to on first mount (1-based)
-  externalEditable?: boolean; // Allow editing external (absolute-path) files (e.g. agent config)
+  externalEditable?: boolean; // External files start unlocked when true, locked (but unlockable) when false
   onClose?: () => void;
 }
 
@@ -289,8 +289,8 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
         </Show>
         <button
           class={e.btn}
-          onClick={() => { if (!isExternal()) setIsReadOnly((v) => !v); }}
-          title={isExternal() ? t("codeEditor.external", "External file (read-only)") : isReadOnly() ? t("codeEditor.unlock", "Unlock editing") : t("codeEditor.lock", "Lock (read-only)")}
+          onClick={() => setIsReadOnly((v) => !v)}
+          title={isReadOnly() ? t("codeEditor.unlock", "Unlock editing") : t("codeEditor.lock", "Lock (read-only)")}
         >
           {isReadOnly()
             ? <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a3 3 0 0 0-3 3v3H4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-1V4a3 3 0 0 0-3-3zm1.5 6H6.5V4a1.5 1.5 0 0 1 3 0v3z"/></svg>
