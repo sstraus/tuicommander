@@ -68,6 +68,17 @@ pub(super) async fn resolve_context_variables_http(
     }
 }
 
+pub(super) async fn resolve_prompt_variables_http(
+    Json(body): Json<serde_json::Value>,
+) -> Response {
+    let content = body.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let repo_path = body.get("repoPath").and_then(|v| v.as_str()).map(|s| s.to_string());
+    match crate::prompt::resolve_prompt_variables(content, repo_path).await {
+        Ok(result) => Json(result).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    }
+}
+
 pub(super) async fn execute_headless_prompt_http(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<serde_json::Value>,

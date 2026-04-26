@@ -105,12 +105,9 @@ export function useSmartPrompts() {
     return { ok: true };
   }
 
-  /** Resolve all context variables: git vars from Rust + frontend store data (GitHub, agent) */
-  async function resolveAllVariables(repoPath: string): Promise<Record<string, string>> {
-    // Git variables from Rust backend
-    const vars = await promptLibraryStore.resolveVariables(repoPath);
-
-    // GitHub/PR variables from frontend store
+  /** Frontend-only variables (GitHub PR, agent/terminal) — no IPC needed. */
+  function resolveFrontendVars(repoPath: string): Record<string, string> {
+    const vars: Record<string, string> = {};
     const repo = repositoriesStore.get(repoPath);
     const branch = repo?.activeBranch ?? "";
     if (branch) {
@@ -131,8 +128,6 @@ export function useSmartPrompts() {
         if (pr.deletions != null) vars["pr_deletions"] = String(pr.deletions);
       }
     }
-
-    // Agent/terminal variables
     const activeTerminal = terminalsStore.getActive();
     if (activeTerminal?.agentType) {
       vars["agent_type"] = activeTerminal.agentType;
@@ -140,8 +135,13 @@ export function useSmartPrompts() {
     if (activeTerminal?.cwd) {
       vars["cwd"] = activeTerminal.cwd;
     }
-
     return vars;
+  }
+
+  /** Resolve all context variables (git + frontend). */
+  async function resolveAllVariables(repoPath: string): Promise<Record<string, string>> {
+    const vars = await promptLibraryStore.resolveVariables(repoPath);
+    return { ...vars, ...resolveFrontendVars(repoPath) };
   }
 
   /** Execute a smart prompt via inject or headless mode */
@@ -161,14 +161,13 @@ export function useSmartPrompts() {
       ? "api"
       : rawMode;
 
-    // Resolve variables
+    // Single IPC: extract needed variable names + resolve only those from git.
     const activeRepo = repositoriesStore.getActive();
     const repoPath = activeRepo?.path ?? "";
-    const autoVars = repoPath ? await resolveAllVariables(repoPath) : {};
-    const allVars = { ...autoVars, ...manualVariables };
-
-    // Check for unresolved variables — return them so the UI can show a dialog
-    const varNames = await promptLibraryStore.extractVariables(prompt.content);
+    const { vars: gitVars, needed: varNames } = await invoke<{ vars: Record<string, string>; needed: string[] }>(
+      "resolve_prompt_variables", { content: prompt.content, repoPath: repoPath || null },
+    );
+    const allVars = { ...gitVars, ...resolveFrontendVars(repoPath), ...manualVariables };
     const unresolved = varNames.filter((v) => !(v in allVars));
     if (unresolved.length > 0) {
       return { ok: false, reason: "unresolved_variables", output: JSON.stringify(unresolved) };

@@ -118,6 +118,36 @@ async fn open_ai_chat_window(app: tauri::AppHandle, chat_id: String) -> Result<(
     Ok(())
 }
 
+/// Fix corrupted dimensions in the window-state JSON before the plugin reads it.
+/// titleBarStyle Overlay can persist width/height 0; SIZE is excluded from the
+/// plugin flags so these zeros stay fossilised forever. We patch them at startup.
+fn sanitize_window_state() {
+    let Some(cfg_dir) = dirs::config_dir() else { return };
+    // Preview and release use different bundle identifiers
+    for id in ["com.tuic.preview", "com.tuic.commander"] {
+        let path = cfg_dir.join(id).join(".window-state.json");
+        let Ok(data) = std::fs::read_to_string(&path) else { continue };
+        let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&data) else { continue };
+        let Some(map) = json.as_object_mut() else { continue };
+        let mut changed = false;
+        for (_label, state) in map.iter_mut() {
+            let Some(obj) = state.as_object_mut() else { continue };
+            let w = obj.get("width").and_then(|v| v.as_u64()).unwrap_or(0);
+            let h = obj.get("height").and_then(|v| v.as_u64()).unwrap_or(0);
+            if w < 800 || h < 600 {
+                obj.insert("width".into(), serde_json::json!(1200));
+                obj.insert("height".into(), serde_json::json!(800));
+                changed = true;
+            }
+        }
+        if changed {
+            if let Ok(out) = serde_json::to_string_pretty(&json) {
+                let _ = std::fs::write(&path, out);
+            }
+        }
+    }
+}
+
 /// Ensure the window has valid dimensions and is positioned on a visible monitor.
 /// The window-state plugin can persist invalid state (e.g. width/height 0, or
 /// positions off-screen) which causes downstream failures like PTY garbage output.
@@ -971,6 +1001,8 @@ pub fn run() {
         });
     }
 
+    sanitize_window_state();
+
     let builder = tauri::Builder::default();
     let builder = plugins::register_plugin_protocol(builder);
     let builder = builder
@@ -1007,6 +1039,28 @@ pub fn run() {
                         return false;
                     }
                     true
+                })
+                .on_page_load(|webview, payload| {
+                    // WebKit WebContent process crashes leave the WebView on about:blank.
+                    // Detect this and force-reload the embedded app page.
+                    if payload.event() == tauri::webview::PageLoadEvent::Finished
+                        && payload.url().as_str() == "about:blank"
+                    {
+                        tracing::error!(
+                            source = "webview",
+                            label = webview.label(),
+                            "WebView landed on about:blank — WebContent likely crashed, reloading app"
+                        );
+                        let label = webview.label().to_string();
+                        let handle = webview.app_handle().clone();
+                        tauri::async_runtime::spawn(async move {
+                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                            if let Some(wv) = handle.get_webview_window(&label) {
+                                let target: url::Url = "tauri://localhost/".parse().unwrap();
+                                let _ = wv.navigate(target);
+                            }
+                        });
+                    }
                 })
                 .build(),
         )
@@ -1313,6 +1367,7 @@ pub fn run() {
             prompt::process_prompt_content,
             prompt::process_prompt_content_shell_safe,
             prompt::resolve_context_variables,
+            prompt::resolve_prompt_variables,
             smart_prompt::execute_headless_prompt,
             smart_prompt::execute_shell_script,
             llm_api::load_llm_api_config,

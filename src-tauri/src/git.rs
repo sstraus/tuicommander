@@ -1955,6 +1955,7 @@ pub(crate) async fn git_apply_reverse_patch(path: String, patch: String, scope: 
         let git_bin = crate::cli::resolve_cli("git");
         let mut child = Command::new(&git_bin)
             .current_dir(&repo_path)
+            .arg("--no-optional-locks")
             .args(&args)
             .env("GIT_TERMINAL_PROMPT", "0")
             .stdin(Stdio::piped())

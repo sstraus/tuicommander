@@ -562,6 +562,13 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
       body: { repoPath: args.repoPath },
     }),
   },
+  resolve_prompt_variables: {
+    map: (args) => ({
+      method: "POST",
+      path: "/prompt/resolve-prompt-variables",
+      body: { content: args.content, repoPath: args.repoPath },
+    }),
+  },
   execute_headless_prompt: {
     map: (args) => ({
       method: "POST",

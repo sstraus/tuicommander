@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::process::Command;
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 /// Extract template variable names from content.
 ///
@@ -186,6 +188,7 @@ fn git_output(repo_path: &str, args: &[&str]) -> Option<String> {
     let output = Command::new(&git_bin)
         .arg("-C")
         .arg(repo_path)
+        .arg("--no-optional-locks")
         .args(args)
         .output()
         .ok()?;
@@ -251,83 +254,191 @@ fn detect_base_branch(repo_path: &str) -> Option<String> {
     None
 }
 
-/// Resolve all auto-resolvable git context variables for a repository path.
+// ---------------------------------------------------------------------------
+// Per-variable cache — avoids re-running git commands across rapid calls.
+// ---------------------------------------------------------------------------
+
+const VAR_CACHE_TTL: Duration = Duration::from_secs(3);
+
+struct CacheEntry {
+    value: String,
+    fetched_at: Instant,
+}
+
+fn var_cache() -> &'static parking_lot::Mutex<HashMap<(String, String), CacheEntry>> {
+    static CACHE: OnceLock<parking_lot::Mutex<HashMap<(String, String), CacheEntry>>> = OnceLock::new();
+    CACHE.get_or_init(|| parking_lot::Mutex::new(HashMap::new()))
+}
+
+fn resolve_single_var(repo_path: &str, var: &str) -> Option<String> {
+    match var {
+        "branch" => git_output(repo_path, &["rev-parse", "--abbrev-ref", "HEAD"]),
+        "diff" => git_output(repo_path, &["diff"]).map(|v| truncate(v, MAX_VARIABLE_LEN)),
+        "staged_diff" => git_output(repo_path, &["diff", "--staged"]).map(|v| truncate(v, MAX_VARIABLE_LEN)),
+        "changed_files" => git_output(repo_path, &["status", "--short"]),
+        "commit_log" => git_output(repo_path, &["log", "--oneline", "-20"]),
+        "last_commit" => git_output(repo_path, &["log", "-1", "--format=%H %s"]),
+        "conflict_files" => git_output(repo_path, &["diff", "--name-only", "--diff-filter=U"]),
+        "stash_list" => git_output(repo_path, &["stash", "list"]),
+        "remote_url" => git_output(repo_path, &["config", "--get", "remote.origin.url"]),
+        "current_user" => git_output(repo_path, &["config", "user.name"]),
+        "base_branch" => detect_base_branch(repo_path),
+        "branch_status" => {
+            git_output(repo_path, &["rev-list", "--left-right", "--count", "@{upstream}...HEAD"])
+                .and_then(|s| {
+                    let parts: Vec<&str> = s.split_whitespace().collect();
+                    if parts.len() == 2 {
+                        Some(format!("{} ahead, {} behind", parts[1], parts[0]))
+                    } else {
+                        None
+                    }
+                })
+        }
+        _ => None,
+    }
+}
+
+const ALL_VARS: &[&str] = &[
+    "branch", "diff", "staged_diff", "changed_files", "commit_log",
+    "last_commit", "conflict_files", "stash_list", "remote_url",
+    "current_user", "base_branch", "branch_status",
+    "dirty_files_count", "repo_owner", "repo_slug",
+    "repo_name", "repo_path",
+];
+
+fn resolve_vars(repo_path: &str, needed: &[String]) -> HashMap<String, String> {
+    let now = Instant::now();
+    let mut result = HashMap::new();
+    let needed_set: HashSet<&str> = needed.iter().map(|s| s.as_str()).collect();
+
+    // Non-git variables (no process spawn).
+    if needed_set.contains("repo_path") {
+        result.insert("repo_path".to_string(), repo_path.to_string());
+    }
+    if needed_set.contains("repo_name") {
+        if let Some(name) = std::path::Path::new(repo_path).file_name().and_then(|n| n.to_str()) {
+            result.insert("repo_name".to_string(), name.to_string());
+        }
+    }
+
+    // Collect git vars we need, including implicit dependencies for derived vars.
+    let directly_resolvable: &[&str] = &[
+        "branch", "diff", "staged_diff", "changed_files", "commit_log",
+        "last_commit", "conflict_files", "stash_list", "remote_url",
+        "current_user", "base_branch", "branch_status",
+    ];
+    let mut git_needed: HashSet<&str> = HashSet::new();
+    for var in directly_resolvable {
+        if needed_set.contains(var) {
+            git_needed.insert(var);
+        }
+    }
+    if needed_set.contains("dirty_files_count") {
+        git_needed.insert("changed_files");
+    }
+    if needed_set.contains("repo_owner") || needed_set.contains("repo_slug") {
+        git_needed.insert("remote_url");
+    }
+
+    // Check cache — short lock, no I/O.
+    let mut to_fetch: Vec<&str> = Vec::new();
+    {
+        let cache = var_cache().lock();
+        for var in &git_needed {
+            let key = (repo_path.to_string(), var.to_string());
+            if let Some(entry) = cache.get(&key) {
+                if now.duration_since(entry.fetched_at) < VAR_CACHE_TTL {
+                    result.insert(var.to_string(), entry.value.clone());
+                    continue;
+                }
+            }
+            to_fetch.push(var);
+        }
+    }
+
+    // Resolve cache misses sequentially (no lock held).
+    if !to_fetch.is_empty() {
+        let resolved_at = Instant::now();
+        let mut fresh: Vec<(String, String)> = Vec::new();
+        for var in &to_fetch {
+            if let Some(value) = resolve_single_var(repo_path, var) {
+                fresh.push((var.to_string(), value));
+            }
+        }
+        let mut cache = var_cache().lock();
+        for (name, value) in fresh {
+            cache.insert(
+                (repo_path.to_string(), name.clone()),
+                CacheEntry { value: value.clone(), fetched_at: resolved_at },
+            );
+            result.insert(name, value);
+        }
+    }
+
+    // Derive computed variables from resolved ones.
+    if needed_set.contains("dirty_files_count") {
+        if let Some(changed) = result.get("changed_files") {
+            let count = changed.lines().filter(|l| !l.is_empty()).count();
+            result.insert("dirty_files_count".to_string(), count.to_string());
+        }
+    }
+    if needed_set.contains("repo_owner") || needed_set.contains("repo_slug") {
+        if let Some(url) = result.get("remote_url").cloned() {
+            if let Some((owner, slug)) = parse_remote_owner_slug(&url) {
+                if needed_set.contains("repo_owner") {
+                    result.insert("repo_owner".to_string(), owner);
+                }
+                if needed_set.contains("repo_slug") {
+                    result.insert("repo_slug".to_string(), slug);
+                }
+            }
+        }
+    }
+
+    // Strip dependency-only vars not in the original needed set.
+    result.retain(|k, _| needed_set.contains(k.as_str()));
+    result
+}
+
+// ---------------------------------------------------------------------------
+// Tauri commands
+// ---------------------------------------------------------------------------
+
+#[derive(serde::Serialize)]
+pub(crate) struct PromptVarsResult {
+    pub vars: HashMap<String, String>,
+    pub needed: Vec<String>,
+}
+
+/// Single-call variable resolver for smart prompts.
 ///
-/// Runs independent git commands in parallel via rayon for lower latency.
-/// Best-effort: variables that fail to resolve are simply omitted from the map.
+/// Extracts `{var}` names from `content`, resolves only the git-backed ones
+/// that actually appear, and returns both the resolved map and the full list
+/// of variable names (so the frontend can detect unresolved ones without a
+/// second IPC round-trip).
+#[tauri::command]
+pub(crate) async fn resolve_prompt_variables(
+    content: String,
+    repo_path: Option<String>,
+) -> Result<PromptVarsResult, String> {
+    tokio::task::spawn_blocking(move || {
+        let needed = extract_variables(&content);
+        let vars = match &repo_path {
+            Some(rp) if !rp.is_empty() => resolve_vars(rp, &needed),
+            _ => HashMap::new(),
+        };
+        PromptVarsResult { vars, needed }
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))
+}
+
+/// Resolve all git context variables (used by the MCP endpoint).
 #[tauri::command]
 pub(crate) async fn resolve_context_variables(repo_path: String) -> Result<HashMap<String, String>, String> {
-    tokio::task::spawn_blocking(move || -> HashMap<String, String> {
-        // Define all git variable resolvers as (key, args) pairs
-        let commands: Vec<(&str, Vec<&str>, bool)> = vec![
-            ("branch", vec!["rev-parse", "--abbrev-ref", "HEAD"], false),
-            ("diff", vec!["diff"], true),
-            ("staged_diff", vec!["diff", "--staged"], true),
-            ("changed_files", vec!["status", "--short"], false),
-            ("commit_log", vec!["log", "--oneline", "-20"], false),
-            ("last_commit", vec!["log", "-1", "--format=%H %s"], false),
-            ("conflict_files", vec!["diff", "--name-only", "--diff-filter=U"], false),
-            ("stash_list", vec!["stash", "list"], false),
-            ("remote_url", vec!["config", "--get", "remote.origin.url"], false),
-            ("current_user", vec!["config", "user.name"], false),
-        ];
-
-        // Run all git commands in parallel using std threads
-        let results: Vec<(String, Option<String>)> = std::thread::scope(|s| {
-            let handles: Vec<_> = commands.into_iter().map(|(key, args, should_truncate)| {
-                let rp = &repo_path;
-                s.spawn(move || {
-                    let val = git_output(rp, &args);
-                    let val = if should_truncate { val.map(|v| truncate(v, MAX_VARIABLE_LEN)) } else { val };
-                    (key.to_string(), val)
-                })
-            }).collect();
-            handles.into_iter().map(|h| h.join().unwrap()).collect()
-        });
-
-        let mut vars = HashMap::new();
-        for (key, val) in results {
-            if let Some(v) = val {
-                vars.insert(key, v);
-            }
-        }
-
-        if let Some(v) = detect_base_branch(&repo_path) {
-            vars.insert("base_branch".to_string(), v);
-        }
-        if let Some(name) = std::path::Path::new(&repo_path)
-            .file_name()
-            .and_then(|n| n.to_str())
-        {
-            vars.insert("repo_name".to_string(), name.to_string());
-        }
-        vars.insert("repo_path".to_string(), repo_path.clone());
-
-        // Derive repo_owner and repo_slug from remote_url
-        if let Some(url) = vars.get("remote_url")
-            && let Some((owner, slug)) = parse_remote_owner_slug(url)
-        {
-            vars.insert("repo_owner".to_string(), owner);
-            vars.insert("repo_slug".to_string(), slug);
-        }
-
-        // Derive dirty_files_count from changed_files
-        if let Some(changed) = vars.get("changed_files") {
-            let count = changed.lines().filter(|l| !l.is_empty()).count();
-            vars.insert("dirty_files_count".to_string(), count.to_string());
-        }
-
-        // Branch status (ahead/behind remote)
-        if let Some(status) = git_output(&repo_path, &["rev-list", "--left-right", "--count", "@{upstream}...HEAD"]) {
-            let parts: Vec<&str> = status.split_whitespace().collect();
-            if parts.len() == 2 {
-                let behind = parts[0];
-                let ahead = parts[1];
-                vars.insert("branch_status".to_string(), format!("{ahead} ahead, {behind} behind"));
-            }
-        }
-
-        vars
+    tokio::task::spawn_blocking(move || {
+        let all: Vec<String> = ALL_VARS.iter().map(|s| s.to_string()).collect();
+        resolve_vars(&repo_path, &all)
     })
     .await
     .map_err(|e| format!("spawn_blocking join error: {e}"))
