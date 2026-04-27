@@ -16,6 +16,7 @@ Open settings with `Cmd+,`. Settings are organized into tabs.
 | **Auto-show PR popover** | Automatically display PR details when switching branches. Only shows for OPEN pull requests — CLOSED PRs are hidden, and MERGED PRs fade after 5 minutes of user activity. |
 | **Copy on Select** | Auto-copy terminal selection to clipboard. When text is selected in the terminal, it is immediately copied. A "Copied to clipboard" confirmation appears in the status bar. Enabled by default. Also configurable in Appearance tab. |
 | **Repository defaults** | Base branch, file handling, setup/run scripts applied to new repos |
+| **Experimental Features** | Master toggle for experimental features. When enabled, shows sub-toggles: **AI Chat** (AI Chat panel, shortcuts, command palette entry), **Scroll History** (scrollback overlay with search when scrolling up in agent mode). |
 
 ## Appearance Tab
 
