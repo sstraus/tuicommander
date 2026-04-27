@@ -1,20 +1,16 @@
 import { Component, For, Index, createMemo, createSignal, onCleanup, onMount } from "solid-js";
-import { type LogLine, spanStyle } from "../../mobile/utils/logLine";
+import { type LogLine, spanStyle, lineText } from "../../mobile/utils/logLine";
 import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
 import s from "./AltScreenHistory.module.css";
 
 const POLL_INTERVAL = 500;
 
-function lineText(line: LogLine): string {
-  return line.spans.map((sp) => sp.text).join("");
-}
-
 function deduplicatedScreen(log: LogLine[], screen: LogLine[]): LogLine[] {
   if (screen.length === 0 || log.length === 0) return screen;
   const lastLogTexts = log.slice(-screen.length).map(lineText);
   let overlap = 0;
-  for (let start = 0; start <= lastLogTexts.length - screen.length + overlap; start++) {
+  for (let start = 0; start <= lastLogTexts.length - screen.length; start++) {
     let match = true;
     for (let j = 0; j < screen.length && start + j < lastLogTexts.length; j++) {
       if (lastLogTexts[start + j] !== lineText(screen[j])) {
@@ -82,18 +78,19 @@ export const AltScreenHistory: Component<Props> = (props) => {
       }
       setScreenRows(chunk.screen);
       newestTotal = chunk.total_lines;
-    } catch {
-      // silently ignore polling errors
+    } catch (err) {
+      appLogger.debug("terminal", "read_vt_log poll failed", { sessionId: props.sessionId, error: String(err) });
     }
   }
 
-  onMount(async () => {
-    await fetchAll();
-    requestAnimationFrame(() => {
-      if (containerEl) {
-        ignoreScrollUntil = performance.now() + 150;
-        containerEl.scrollTop = containerEl.scrollHeight;
-      }
+  onMount(() => {
+    fetchAll().then(() => {
+      requestAnimationFrame(() => {
+        if (containerEl) {
+          ignoreScrollUntil = performance.now() + 150;
+          containerEl.scrollTop = containerEl.scrollHeight;
+        }
+      });
     });
 
     const pollId = setInterval(fetchNewer, POLL_INTERVAL);
@@ -121,10 +118,7 @@ export const AltScreenHistory: Component<Props> = (props) => {
     if (atBottom) props.onClose();
   };
 
-  const allLines = createMemo(() => [
-    ...logLines(),
-    ...deduplicatedScreen(logLines(), screenRows()),
-  ]);
+  const dedupScreen = createMemo(() => deduplicatedScreen(logLines(), screenRows()));
 
   const renderLine = (line: LogLine) => (
     <div class={s.row}>
@@ -161,7 +155,8 @@ export const AltScreenHistory: Component<Props> = (props) => {
           "font-weight": props.fontWeight,
         }}
       >
-        <For each={allLines()}>{renderLine}</For>
+        <For each={logLines()}>{renderLine}</For>
+        <For each={dedupScreen()}>{renderLine}</For>
       </div>
     </div>
   );

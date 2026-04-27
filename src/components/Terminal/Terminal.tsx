@@ -1230,24 +1230,25 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // Scroll-up → show scrollback history overlay.
     // xterm.js scrollback gets corrupted by resize with Ink/agent panels, so we
     // show an overlay that reads clean scrollback lines from the Rust VtLogBuffer.
-    const handleAltWheelUp = (e: WheelEvent) => {
-      if (!settingsStore.state.experimentalFeaturesEnabled) return;
-      const bufType = terminal?.buffer.active.type ?? "none";
-      const agentType = terminalsStore.get(props.id)?.agentType ?? null;
-      if (showAltHistory()) return;
-      if (!terminal) return;
-      const isAgentOrAltScreen = bufType === "alternate" || agentType !== null;
-      if (!isAgentOrAltScreen) return;
-      if (e.deltaY >= 0) return;
-      if (!sessionId || !isTauri()) return;
-      e.preventDefault();
-      e.stopPropagation();
-      setShowAltHistory(true);
-    };
-    // capture:true — fires before xterm's own wheel listener (which may stopPropagation
-    // during the bubble phase on some xterm versions, preventing our handler from running).
-    containerRef.addEventListener("wheel", handleAltWheelUp, { capture: true, passive: false });
-    altWheelCleanup = () => containerRef?.removeEventListener("wheel", handleAltWheelUp, { capture: true });
+    if (settingsStore.state.experimentalFeaturesEnabled) {
+      const handleAltWheelUp = (e: WheelEvent) => {
+        const bufType = terminal?.buffer.active.type ?? "none";
+        const agentType = terminalsStore.get(props.id)?.agentType ?? null;
+        if (showAltHistory()) return;
+        if (!terminal) return;
+        const isAgentOrAltScreen = bufType === "alternate" || agentType !== null;
+        if (!isAgentOrAltScreen) return;
+        if (e.deltaY >= 0) return;
+        if (!sessionId || !isTauri()) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setShowAltHistory(true);
+      };
+      // capture:true — fires before xterm's own wheel listener (which may stopPropagation
+      // during the bubble phase on some xterm versions, preventing our handler from running).
+      containerRef.addEventListener("wheel", handleAltWheelUp, { capture: true, passive: false });
+      altWheelCleanup = () => containerRef?.removeEventListener("wheel", handleAltWheelUp, { capture: true });
+    }
 
     // Preload the configured font so the canvas/WebGL renderer can measure
     // and render it correctly from the start (see preloadFont comment above).
@@ -1966,7 +1967,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
           }
         }}
       />
-      <Show when={settingsStore.state.experimentalFeaturesEnabled && showAltHistory()}>
+      <Show when={settingsStore.state.experimentalFeaturesEnabled && showAltHistory() && sessionId}>
         <AltScreenHistory
           sessionId={sessionId!}
           onClose={() => {
