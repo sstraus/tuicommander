@@ -49,10 +49,10 @@ pub async fn open_panel_window(
 
     let app_handle = app.clone();
     window.on_window_event(move |event| {
-        if let tauri::WindowEvent::Destroyed = event {
-            if let Err(e) = app_handle.emit("panel-window-closed", &panel_id) {
-                tracing::warn!("Failed to emit panel-window-closed for {panel_id}: {e}");
-            }
+        if let tauri::WindowEvent::Destroyed = event
+            && let Err(e) = app_handle.emit("panel-window-closed", &panel_id)
+        {
+            tracing::warn!("Failed to emit panel-window-closed for {panel_id}: {e}");
         }
     });
     Ok(())

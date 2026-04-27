@@ -28,10 +28,10 @@ fn build_llm_runtime() -> Result<LlmRuntime, String> {
         (SlotName::AgentRead, ToolPhase::Read),
         (SlotName::AgentWrite, ToolPhase::Write),
     ] {
-        if let Ok(r) = resolve_slot(&registry, slot) {
-            if r.config.model != resolved.config.model {
-                model_overrides.insert(phase, r.config.model);
-            }
+        if let Ok(r) = resolve_slot(&registry, slot)
+            && r.config.model != resolved.config.model
+        {
+            model_overrides.insert(phase, r.config.model);
         }
     }
 

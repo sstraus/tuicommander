@@ -164,7 +164,8 @@ function createGitHubStore() {
   }
 
   /** Lazy-load CI check details for a PR and populate the store.
-   *  Called when PrDetailPopover opens to avoid fetching check details on every poll. */
+   *  Called when PrDetailPopover opens to avoid fetching check details on every poll.
+   *  Also recomputes CheckSummary from the fresh data so the badge/ring stay in sync. */
   async function loadCheckDetails(repoPath: string, branch: string, prNumber: number): Promise<void> {
     try {
       const rawChecks = await invoke<{ name: string; status: string; conclusion: string }[]>(
@@ -175,7 +176,21 @@ function createGitHubStore() {
         context: c.name,
         state: c.conclusion || c.status,
       }));
+
+      let passed = 0, failed = 0, pending = 0;
+      for (const c of rawChecks) {
+        switch (c.conclusion) {
+          case "success": case "neutral": case "skipped":
+            passed++; break;
+          case "failure": case "cancelled": case "timed_out": case "action_required": case "stale":
+            failed++; break;
+          default:
+            pending++; break;
+        }
+      }
+
       setState("repos", repoPath, "branches", branch, "check_details", details);
+      setState("repos", repoPath, "branches", branch, "checks", { passed, failed, pending, total: passed + failed + pending });
     } catch (err) {
       appLogger.debug("github", `Failed to load check details for ${repoPath}:${branch}`, err);
     }
