@@ -596,6 +596,12 @@ export function applyFontFamily(font: FontType): void {
   tag.textContent = `* { --font-mono: ${family} !important; }`;
 }
 
+const ANSI_KEYS: readonly (keyof ITheme)[] = [
+  "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
+  "brightBlack", "brightRed", "brightGreen", "brightYellow",
+  "brightBlue", "brightMagenta", "brightCyan", "brightWhite",
+];
+
 /** Apply an app theme by setting CSS custom properties on the document root */
 export function applyAppTheme(key: string): void {
   if (!(key in APP_THEMES)) {
@@ -605,5 +611,12 @@ export function applyAppTheme(key: string): void {
   const root = document.documentElement.style;
   for (const [prop, value] of Object.entries(theme)) {
     root.setProperty(camelToKebab(prop), value);
+  }
+  const termTheme = getTerminalTheme(key);
+  for (const k of ANSI_KEYS) {
+    const val = termTheme[k];
+    if (typeof val === "string") {
+      root.setProperty(`--ansi-${camelToKebab(k).slice(2)}`, val);
+    }
   }
 }
