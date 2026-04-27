@@ -1,10 +1,11 @@
-import { Component, onCleanup, onMount } from "solid-js";
+import { Component, createSignal, onCleanup, onMount } from "solid-js";
 import { Terminal as XTerm, type ITerminalOptions } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { WebglLifecycle } from "./webglLifecycle";
+import { TerminalSearch } from "./TerminalSearch";
 import { logLinesToAnsi } from "./logLineToAnsi";
 import type { LogLine } from "../../mobile/utils/logLine";
 import { invoke } from "../../invoke";
@@ -32,7 +33,7 @@ export const AltScreenHistory: Component<Props> = (props) => {
   let containerEl: HTMLDivElement | undefined;
   let terminal: XTerm | undefined;
   let fitAddon: FitAddon | undefined;
-  let searchAddon: SearchAddon | undefined;
+  const [searchAddon, setSearchAddon] = createSignal<SearchAddon | undefined>();
   const webglLife = new WebglLifecycle(() => new WebglAddon());
   let newestTotal = 0;
   let ignoreScrollUntil = 0;
@@ -90,8 +91,9 @@ export const AltScreenHistory: Component<Props> = (props) => {
     fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
 
-    searchAddon = new SearchAddon();
-    terminal.loadAddon(searchAddon);
+    const sa = new SearchAddon();
+    terminal.loadAddon(sa);
+    setSearchAddon(sa);
 
     terminal.open(containerEl);
     fitAddon.fit();
@@ -114,7 +116,7 @@ export const AltScreenHistory: Component<Props> = (props) => {
 
   onCleanup(() => {
     webglLife.dispose();
-    searchAddon?.dispose();
+    searchAddon()?.dispose();
     fitAddon?.dispose();
     terminal?.dispose();
   });
@@ -128,6 +130,11 @@ export const AltScreenHistory: Component<Props> = (props) => {
 
   return (
     <div class={s.overlay}>
+      <TerminalSearch
+        visible={props.searchVisible}
+        searchAddon={searchAddon()}
+        onClose={props.onSearchClose}
+      />
       <div class={s.header} style={{ background: props.terminalOptions.theme?.background ?? "#1e1e1e" }}>
         <span class={s.label}>Scroll history</span>
         <button class={s.closeBtn} onClick={props.onClose}>
