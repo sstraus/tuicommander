@@ -134,13 +134,13 @@ describe("providerRegistryStore", () => {
     providerRegistryStore.addModel(sonnet);
     providerRegistryStore.addModel(haiku);
     providerRegistryStore.setSlot("chat", sonnet.id);
-    providerRegistryStore.setSlot("agent_default", haiku.id);
+    providerRegistryStore.setSlot("agent_mid", haiku.id);
 
     providerRegistryStore.removeModel(sonnet.id);
 
     expect(providerRegistryStore.state.registry.models).toHaveLength(1);
     expect(providerRegistryStore.state.registry.slots["chat"]).toBeUndefined();
-    expect(providerRegistryStore.state.registry.slots["agent_default"]).toBe(haiku.id);
+    expect(providerRegistryStore.state.registry.slots["agent_mid"]).toBe(haiku.id);
   });
 
   // -- slots --
@@ -177,24 +177,24 @@ describe("providerRegistryStore", () => {
     expect(providerRegistryStore.resolveSlot("chat")).toBeNull();
   });
 
-  it("resolveSlot falls back from agent_search to agent_default", () => {
+  it("resolveSlot falls back from agent_low to agent_mid", () => {
     providerRegistryStore.addProvider(anthropic);
     providerRegistryStore.addModel(sonnet);
-    providerRegistryStore.setSlot("agent_default", sonnet.id);
+    providerRegistryStore.setSlot("agent_mid", sonnet.id);
 
-    const resolved = providerRegistryStore.resolveSlot("agent_search");
+    const resolved = providerRegistryStore.resolveSlot("agent_low");
     expect(resolved).not.toBeNull();
     expect(resolved!.model.id).toBe(sonnet.id);
   });
 
-  it("resolveSlot uses agent_search over agent_default when both set", () => {
+  it("resolveSlot uses agent_low over agent_mid when both set", () => {
     providerRegistryStore.addProvider(anthropic);
     providerRegistryStore.addModel(sonnet);
     providerRegistryStore.addModel(haiku);
-    providerRegistryStore.setSlot("agent_default", sonnet.id);
-    providerRegistryStore.setSlot("agent_search", haiku.id);
+    providerRegistryStore.setSlot("agent_mid", sonnet.id);
+    providerRegistryStore.setSlot("agent_low", haiku.id);
 
-    const resolved = providerRegistryStore.resolveSlot("agent_search");
+    const resolved = providerRegistryStore.resolveSlot("agent_low");
     expect(resolved!.model.id).toBe(haiku.id);
   });
 

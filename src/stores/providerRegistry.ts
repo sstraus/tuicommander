@@ -1,5 +1,6 @@
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "../invoke";
+import { appLogger } from "./appLogger";
 
 // ---------------------------------------------------------------------------
 // Types (mirror Rust serialized names — snake_case)
@@ -14,8 +15,8 @@ export type ProviderType =
 export type ModelTier = "economic" | "standard" | "premium";
 
 export type SlotName =
-  | "chat" | "agent_default" | "agent_search"
-  | "agent_read" | "agent_write" | "headless" | "enrichment";
+  | "chat" | "agent_mid" | "agent_low"
+  | "agent_high" | "headless" | "enrichment";
 
 export interface ProviderEntry {
   id: string;
@@ -125,7 +126,9 @@ function createProviderRegistryStore() {
         delete s.keyStatus[id];
       })
     );
-    void invoke("delete_provider_api_key", { providerId: id }).catch(() => {});
+    void invoke("delete_provider_api_key", { providerId: id }).catch((e: unknown) => {
+      appLogger.warn("settings", `Failed to delete API key for provider ${id}: ${String(e)}`);
+    });
     void save();
   }
 
@@ -170,8 +173,8 @@ function createProviderRegistryStore() {
     slot: SlotName
   ): { provider: ProviderEntry; model: ModelEntry } | null {
     const agentFallback: SlotName[] =
-      slot === "agent_search" || slot === "agent_read" || slot === "agent_write"
-        ? [slot, "agent_default"]
+      slot === "agent_low" || slot === "agent_high"
+        ? [slot, "agent_mid"]
         : [slot];
 
     for (const s of agentFallback) {

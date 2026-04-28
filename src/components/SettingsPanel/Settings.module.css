@@ -249,6 +249,7 @@
 
 .group select,
 .group input[type="text"],
+.group input[type="password"],
 .group textarea {
   width: 100%;
   padding: 8px 12px;
@@ -261,7 +262,8 @@
 }
 
 .group select,
-.group input[type="text"] {
+.group input[type="text"],
+.group input[type="password"] {
   height: 36px;
 }
 

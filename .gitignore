@@ -1,3 +1,6 @@
+# MCP server config (local paths)
+.mcp.json
+
 # Profiling results
 scripts/perf/results/
 

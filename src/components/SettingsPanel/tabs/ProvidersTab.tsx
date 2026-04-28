@@ -8,6 +8,7 @@ import {
 } from "solid-js";
 import { invoke } from "../../../invoke";
 import { providerRegistryStore, type ProviderEntry, type ProviderType, type ModelEntry, type SlotName } from "../../../stores/providerRegistry";
+import { appLogger } from "../../../stores/appLogger";
 import s from "../Settings.module.css";
 
 // ---------------------------------------------------------------------------
@@ -36,21 +37,20 @@ const PROVIDER_TYPES: { value: ProviderType; label: string; comingSoon?: boolean
 ];
 
 const SLOT_LABELS: Record<SlotName, string> = {
-  chat:          "Chat",
-  agent_default: "Agent (default)",
-  agent_search:  "Agent search",
-  agent_read:    "Agent read",
-  agent_write:   "Agent write",
-  headless:      "Headless / Smart Prompts",
-  enrichment:    "Enrichment",
+  chat:       "Chat",
+  agent_mid:  "Agent (mid)",
+  agent_low:  "Agent (low)",
+  agent_high: "Agent (high)",
+  headless:   "Headless / Smart Prompts",
+  enrichment: "Enrichment",
 };
 
 const SLOT_NAMES: SlotName[] = [
-  "chat", "agent_default", "agent_search", "agent_read", "agent_write",
+  "chat", "agent_mid", "agent_low", "agent_high",
   "headless", "enrichment",
 ];
 
-const AGENT_PHASE_SLOTS: SlotName[] = ["agent_search", "agent_read", "agent_write"];
+const AGENT_FALLBACK_SLOTS: SlotName[] = ["agent_low", "agent_high"];
 
 const LOCAL_PROVIDER_TYPES: ProviderType[] = ["ollama", "lm_studio", "lite_llm"];
 
@@ -113,7 +113,7 @@ const AddProviderForm: Component<{ onAdd: (e: ProviderEntry) => void; onCancel: 
         </select>
       </div>
       <Show when={selectedDef()?.comingSoon}>
-        <p style={{ color: "var(--color-fg-muted)", "font-size": "0.85em" }}>
+        <p class={s.hint}>
           Bedrock and Vertex require additional SDK integration — coming soon.
         </p>
       </Show>
@@ -149,10 +149,10 @@ const AddProviderForm: Component<{ onAdd: (e: ProviderEntry) => void; onCancel: 
         </div>
       </Show>
       <Show when={error()}>
-        <p style={{ color: "var(--color-danger)" }}>{error()}</p>
+        <p style={{ color: "var(--error)" }}>{error()}</p>
       </Show>
-      <div style={{ display: "flex", gap: "8px", "margin-top": "8px" }}>
-        <button onClick={submit} disabled={saving()}>
+      <div class={s.actions}>
+        <button class={s.saveBtn} onClick={submit} disabled={saving()}>
           {saving() ? "Adding…" : "Add"}
         </button>
         <button onClick={props.onCancel}>Cancel</button>
@@ -181,7 +181,7 @@ const AddModelForm: Component<{
   }
 
   return (
-    <div data-testid="add-model-form" style={{ "margin-top": "8px" }}>
+    <div data-testid="add-model-form" class={s.section} style={{ "margin-top": "8px" }}>
       <div class={s.group}>
         <label>Model name</label>
         <input
@@ -200,10 +200,10 @@ const AddModelForm: Component<{
         </select>
       </div>
       <Show when={error()}>
-        <p style={{ color: "var(--color-danger)" }}>{error()}</p>
+        <p style={{ color: "var(--error)" }}>{error()}</p>
       </Show>
-      <div style={{ display: "flex", gap: "8px" }}>
-        <button onClick={submit}>Add model</button>
+      <div class={s.actions}>
+        <button class={s.saveBtn} onClick={submit}>Add model</button>
         <button onClick={props.onCancel}>Cancel</button>
       </div>
     </div>
@@ -241,7 +241,8 @@ const ProviderCard: Component<{ provider: ProviderEntry }> = (props) => {
           { providerId }
         );
         return result.models ?? [];
-      } catch {
+      } catch (e) {
+        appLogger.warn("settings", `Ollama model check failed: ${String(e)}`);
         return [];
       }
     }
@@ -267,6 +268,8 @@ const ProviderCard: Component<{ provider: ProviderEntry }> = (props) => {
     try {
       await providerRegistryStore.deleteKey(props.provider.id);
       setKeyMsg("Key removed");
+    } catch (e) {
+      setKeyMsg(`Error: ${String(e)}`);
     } finally {
       setSavingKey(false);
     }
@@ -275,23 +278,19 @@ const ProviderCard: Component<{ provider: ProviderEntry }> = (props) => {
   return (
     <div
       data-testid={`provider-card-${props.provider.id}`}
-      style={{
-        border: "1px solid var(--color-border)",
-        "border-radius": "6px",
-        padding: "12px",
-        "margin-bottom": "8px",
-      }}
+      class={s.groupItem}
     >
-      <div style={{ display: "flex", "align-items": "center", "justify-content": "space-between" }}>
-        <div>
+      <div class={s.groupRow}>
+        <div class={s.groupName}>
           <strong>{props.provider.label}</strong>
           {" "}
-          <span style={{ color: "var(--color-fg-muted)", "font-size": "0.8em" }}>
+          <span class={s.hintInline}>
             ({PROVIDER_TYPES.find((p) => p.value === props.provider.type)?.label ?? props.provider.type})
           </span>
           {" "}
           <span
-            style={{ color: hasKey() ? "var(--color-success)" : "var(--color-fg-muted)", "font-size": "0.8em" }}
+            style={{ color: hasKey() ? "var(--success)" : undefined }}
+            class={!hasKey() ? s.hintInline : undefined}
             data-testid={`key-status-${props.provider.id}`}
           >
             {needsApiKey(props.provider.type)
@@ -300,10 +299,10 @@ const ProviderCard: Component<{ provider: ProviderEntry }> = (props) => {
           </span>
         </div>
         <button
+          class={s.groupDeleteBtn}
           data-testid={`remove-provider-${props.provider.id}`}
           onClick={() => providerRegistryStore.removeProvider(props.provider.id)}
           title="Remove provider"
-          style={{ color: "var(--color-danger)" }}
         >
           ×
         </button>
@@ -311,22 +310,21 @@ const ProviderCard: Component<{ provider: ProviderEntry }> = (props) => {
 
       {/* Models */}
       <div style={{ "margin-top": "8px" }}>
-        <div style={{ "font-size": "0.85em", color: "var(--color-fg-muted)" }}>
-          Models ({models().length}):
-        </div>
+        <div class={s.hintInline}>Models ({models().length}):</div>
         <For each={models()}>
           {(model) => (
             <div
               data-testid={`model-entry-${model.id}`}
-              style={{ display: "flex", "align-items": "center", gap: "8px", "margin-top": "4px" }}
+              class={s.groupRow}
+              style={{ "margin-top": "4px" }}
             >
               <span>{model.model_name}</span>
-              <span style={{ "font-size": "0.8em", color: "var(--color-fg-muted)" }}>({model.tier})</span>
+              <span class={s.hintInline}>({model.tier})</span>
               <button
+                class={s.groupDeleteBtn}
                 data-testid={`remove-model-${model.id}`}
                 onClick={() => providerRegistryStore.removeModel(model.id)}
                 title="Remove model"
-                style={{ color: "var(--color-danger)", "font-size": "0.8em" }}
               >
                 ×
               </button>
@@ -336,18 +334,17 @@ const ProviderCard: Component<{ provider: ProviderEntry }> = (props) => {
 
         {/* Ollama live discovery */}
         <Show when={isOllama() && (ollamaModels()?.length ?? 0) > 0}>
-          <div style={{ "margin-top": "4px", "font-size": "0.8em", color: "var(--color-fg-muted)" }}>
-            Available: {ollamaModels()!.join(", ")}
-          </div>
+          <div class={s.hint}>Available: {ollamaModels()?.join(", ")}</div>
         </Show>
 
         <Show
           when={showAddModel()}
           fallback={
             <button
+              class={s.inlineBtn}
               data-testid={`add-model-btn-${props.provider.id}`}
               onClick={() => setShowAddModel(true)}
-              style={{ "margin-top": "4px", "font-size": "0.85em" }}
+              style={{ "margin-top": "4px" }}
             >
               + Add model
             </button>
@@ -367,26 +364,26 @@ const ProviderCard: Component<{ provider: ProviderEntry }> = (props) => {
       {/* API Key management */}
       <Show when={needsApiKey(props.provider.type)}>
         <div style={{ "margin-top": "8px" }}>
-          <div class={s.group} style={{ display: "flex", gap: "8px", "align-items": "center" }}>
+          <div class={s.passwordRow}>
             <input
+              class={s.input}
               type="password"
               placeholder={hasKey() ? "Replace existing key…" : "Enter API key…"}
               value={keyInput()}
               onInput={(e) => setKeyInput(e.currentTarget.value)}
-              style={{ flex: "1" }}
               data-testid={`key-input-${props.provider.id}`}
             />
-            <button onClick={saveKey} disabled={savingKey() || !keyInput().trim()}>
+            <button class={s.saveBtn} onClick={saveKey} disabled={savingKey() || !keyInput().trim()}>
               Save
             </button>
             <Show when={hasKey()}>
-              <button onClick={deleteKey} disabled={savingKey()} style={{ color: "var(--color-danger)" }}>
+              <button class={s.testBtn} onClick={deleteKey} disabled={savingKey()} style={{ color: "var(--error)" }}>
                 Remove
               </button>
             </Show>
           </div>
           <Show when={keyMsg()}>
-            <div style={{ "font-size": "0.8em", color: "var(--color-fg-muted)" }}>{keyMsg()}</div>
+            <div class={s.hint}>{keyMsg()}</div>
           </Show>
         </div>
       </Show>
@@ -428,21 +425,19 @@ const SlotAssignments: Component = () => {
       <For each={SLOT_NAMES}>
         {(slot) => {
           const currentModelId = () => providerRegistryStore.state.registry.slots[slot];
-          const isAgentPhase = AGENT_PHASE_SLOTS.includes(slot);
-          const fallbackHint = isAgentPhase && !currentModelId();
+          const isAgentTier = AGENT_FALLBACK_SLOTS.includes(slot);
+          const fallbackHint = () => isAgentTier && !currentModelId();
 
           return (
             <div class={s.group} data-testid={`slot-row-${slot}`}>
               <label>
                 {SLOT_LABELS[slot]}
-                <Show when={fallbackHint}>
+                <Show when={fallbackHint()}>
                   {" "}
-                  <span style={{ "font-size": "0.8em", color: "var(--color-fg-muted)" }}>
-                    (falls back to agent default)
-                  </span>
+                  <span class={s.hintInline}>(falls back to agent mid)</span>
                 </Show>
               </label>
-              <div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
+              <div class={s.passwordRow}>
                 <select
                   data-testid={`slot-select-${slot}`}
                   value={currentModelId() ?? ""}
@@ -461,6 +456,7 @@ const SlotAssignments: Component = () => {
                 </select>
                 <Show when={currentModelId()}>
                   <button
+                    class={s.testBtn}
                     data-testid={`test-slot-${slot}`}
                     onClick={() => testSlot(slot)}
                     title="Test connection"
@@ -470,9 +466,7 @@ const SlotAssignments: Component = () => {
                 </Show>
               </div>
               <Show when={testResults()[slot]}>
-                <div style={{ "font-size": "0.8em", color: "var(--color-fg-muted)" }}>
-                  {testResults()[slot]}
-                </div>
+                <div class={s.hint}>{testResults()[slot]}</div>
               </Show>
             </div>
           );
@@ -499,9 +493,9 @@ export const ProvidersTab: Component = () => {
           <Show when={!showAddForm()}>
             {" "}
             <button
+              class={s.inlineBtn}
               data-testid="add-provider-btn"
               onClick={() => setShowAddForm(true)}
-              style={{ "font-size": "0.85em", "margin-left": "8px" }}
             >
               + Add
             </button>
@@ -521,7 +515,7 @@ export const ProvidersTab: Component = () => {
         <Show
           when={providers().length > 0}
           fallback={
-            <p style={{ color: "var(--color-fg-muted)" }}>
+            <p class={s.hint}>
               No providers configured. Add one to get started.
             </p>
           }

@@ -757,7 +757,6 @@ impl SilenceState {
         if items.is_empty() {
             return;
         }
-        tracing::info!("[suggest-trace] mark_suggest_candidate: {} items parked", items.len());
         self.pending_suggest_items = Some(items);
         self.pending_suggest_at = Some(std::time::Instant::now());
     }
@@ -768,11 +767,7 @@ impl SilenceState {
     /// `None` until new items are parked.
     pub(crate) fn drain_pending_suggest(&mut self) -> Option<Vec<String>> {
         self.pending_suggest_at = None;
-        let items = self.pending_suggest_items.take();
-        if let Some(ref v) = items {
-            tracing::info!("[suggest-trace] drain_pending_suggest: emitting {} items", v.len());
-        }
-        items
+        self.pending_suggest_items.take()
     }
 
     /// Drop any parked suggest on user input. Parallels `reset_tool_error_memory`:
@@ -1082,16 +1077,16 @@ fn spawn_silence_timer(
             if let Some(text) = silence.lock().check_tool_error() {
                 let parsed = ParsedEvent::ToolError { matched_text: text };
                 if let Ok(json) = serde_json::to_value(&parsed) {
+                    if let Some(ref app) = app {
+                        let _ = app.emit(
+                            &format!("pty-parsed-{session_id}"),
+                            &json,
+                        );
+                    }
                     let _ = event_bus.send(crate::state::AppEvent::PtyParsed {
                         session_id: session_id.clone(),
                         parsed: json,
                     });
-                }
-                if let Some(ref app) = app {
-                    let _ = app.emit(
-                        &format!("pty-parsed-{session_id}"),
-                        &parsed,
-                    );
                 }
             }
 
@@ -1108,16 +1103,16 @@ fn spawn_silence_timer(
             {
                 let parsed = ParsedEvent::Suggest { items };
                 if let Ok(json) = serde_json::to_value(&parsed) {
+                    if let Some(ref app) = app {
+                        let _ = app.emit(
+                            &format!("pty-parsed-{session_id}"),
+                            &json,
+                        );
+                    }
                     let _ = event_bus.send(crate::state::AppEvent::PtyParsed {
                         session_id: session_id.clone(),
                         parsed: json,
                     });
-                }
-                if let Some(ref app) = app {
-                    let _ = app.emit(
-                        &format!("pty-parsed-{session_id}"),
-                        &parsed,
-                    );
                 }
             }
 
@@ -1187,16 +1182,16 @@ fn spawn_silence_timer(
                 confident: false,
             };
             if let Ok(json) = serde_json::to_value(&parsed) {
+                if let Some(ref app) = app {
+                    let _ = app.emit(
+                        &format!("pty-parsed-{session_id}"),
+                        &json,
+                    );
+                }
                 let _ = event_bus.send(crate::state::AppEvent::PtyParsed {
                     session_id: session_id.clone(),
                     parsed: json,
                 });
-            }
-            if let Some(ref app) = app {
-                let _ = app.emit(
-                    &format!("pty-parsed-{session_id}"),
-                    &parsed,
-                );
             }
         }
     });
@@ -1571,11 +1566,6 @@ impl ChunkProcessor {
                 let screen = vt.screen_rows();
                 let refs: Vec<&str> = screen.iter().map(|s| s.as_str()).collect();
                 if let Some(cutoff) = crate::chrome::find_chrome_cutoff(&refs) {
-                    let has_suggest = changed.iter().any(|r| r.text.contains("suggest:"));
-                    let dropped_suggest = has_suggest && changed.iter().any(|r| r.text.contains("suggest:") && r.row_index >= cutoff);
-                    if dropped_suggest {
-                        tracing::warn!("[suggest-trace] chrome_cutoff={} DROPPED suggest row(s)! screen_rows={}", cutoff, refs.len());
-                    }
                     changed.into_iter().filter(|r| r.row_index < cutoff).collect()
                 } else {
                     changed

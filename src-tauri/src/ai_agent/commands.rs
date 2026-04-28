@@ -20,19 +20,19 @@ fn build_llm_runtime() -> Result<LlmRuntime, String> {
     use super::engine::ToolPhase;
 
     let registry = load_registry();
-    let resolved = resolve_slot(&registry, SlotName::AgentDefault)?;
+    let resolved = resolve_slot(&registry, SlotName::AgentMid)?;
 
     let mut model_overrides = std::collections::HashMap::new();
-    for (slot, phase) in [
-        (SlotName::AgentSearch, ToolPhase::Search),
-        (SlotName::AgentRead, ToolPhase::Read),
-        (SlotName::AgentWrite, ToolPhase::Write),
-    ] {
-        if let Ok(r) = resolve_slot(&registry, slot)
-            && r.config.model != resolved.config.model
-        {
-            model_overrides.insert(phase, r.config.model);
-        }
+    if let Ok(r) = resolve_slot(&registry, SlotName::AgentLow)
+        && r.config.model != resolved.config.model
+    {
+        model_overrides.insert(ToolPhase::Search, r.config.model.clone());
+        model_overrides.insert(ToolPhase::Read, r.config.model);
+    }
+    if let Ok(r) = resolve_slot(&registry, SlotName::AgentHigh)
+        && r.config.model != resolved.config.model
+    {
+        model_overrides.insert(ToolPhase::Write, r.config.model);
     }
 
     Ok(LlmRuntime {

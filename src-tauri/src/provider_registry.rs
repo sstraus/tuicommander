@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use crate::config::{load_json_config, save_json_config};
 
 const CONFIG_FILE: &str = "providers.json";
-const SCHEMA_VERSION: u32 = 1;
+const SCHEMA_VERSION: u32 = 2;
 
 // ---------------------------------------------------------------------------
 // Provider types
@@ -101,10 +101,9 @@ pub(crate) struct ModelEntry {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum SlotName {
     Chat,
-    AgentDefault,
-    AgentSearch,
-    AgentRead,
-    AgentWrite,
+    AgentMid,
+    AgentLow,
+    AgentHigh,
     Headless,
     Enrichment,
 }
@@ -130,7 +129,7 @@ pub(crate) struct ProviderRegistry {
 }
 
 fn default_schema_version() -> u32 {
-    SCHEMA_VERSION
+    1
 }
 
 impl Default for ProviderRegistry {
@@ -151,10 +150,57 @@ impl Default for ProviderRegistry {
 
 pub(crate) fn load_registry() -> ProviderRegistry {
     let path = crate::config::config_dir().join(CONFIG_FILE);
-    if path.exists() {
-        return load_json_config(CONFIG_FILE);
+    if !path.exists() {
+        return migrate_from_legacy();
     }
-    migrate_from_legacy()
+    let content = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!(path = %path.display(), "Could not read config: {e}");
+            return ProviderRegistry::default();
+        }
+    };
+    let mut json: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!(path = %path.display(), "Corrupt config: {e}. Using defaults.");
+            return ProviderRegistry::default();
+        }
+    };
+    let version = json.get("schema_version").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
+    if version < 2 {
+        migrate_slots_v1_to_v2(&mut json);
+    }
+    match serde_json::from_value::<ProviderRegistry>(json) {
+        Ok(mut reg) => {
+            reg.schema_version = SCHEMA_VERSION;
+            let _ = save_registry(&reg);
+            reg
+        }
+        Err(e) => {
+            tracing::error!("Failed to deserialize after migration: {e}. Using defaults.");
+            ProviderRegistry::default()
+        }
+    }
+}
+
+fn migrate_slots_v1_to_v2(json: &mut serde_json::Value) {
+    let slots = match json.get_mut("slots").and_then(|v| v.as_object_mut()) {
+        Some(m) => m,
+        None => return,
+    };
+    let renames = [
+        ("agent_default", "agent_mid"),
+        ("agent_search", "agent_low"),
+        ("agent_read", "agent_low"),
+        ("agent_write", "agent_high"),
+    ];
+    for (old, new) in renames {
+        if let Some(val) = slots.remove(old) {
+            slots.entry(new).or_insert(val);
+        }
+    }
+    tracing::info!("Migrated providers.json slots from v1 to v2");
 }
 
 fn infer_provider_type(provider_str: &str) -> ProviderType {
@@ -197,7 +243,7 @@ fn migrate_from_legacy() -> ProviderRegistry {
         });
 
         reg.slots.insert(SlotName::Chat, model_id.clone());
-        reg.slots.insert(SlotName::AgentDefault, model_id.clone());
+        reg.slots.insert(SlotName::AgentMid, model_id.clone());
         reg.slots.insert(SlotName::Enrichment, model_id.clone());
 
         if let Ok(Some(key)) = crate::credentials::get(crate::credentials::Credential::AiChatApiKey) {
@@ -218,10 +264,9 @@ fn migrate_from_legacy() -> ProviderRegistry {
                 let mid = reg.models.iter().find(|m| m.model_name == *override_model)
                     .map(|m| m.id.clone()).unwrap_or(override_id);
                 match phase {
-                    ToolPhase::Search => { reg.slots.insert(SlotName::AgentSearch, mid); }
-                    ToolPhase::Read => { reg.slots.insert(SlotName::AgentRead, mid); }
-                    ToolPhase::Write => { reg.slots.insert(SlotName::AgentWrite, mid); }
-                    ToolPhase::Plan => {} // plan uses agent_default
+                    ToolPhase::Search | ToolPhase::Read => { reg.slots.insert(SlotName::AgentLow, mid); }
+                    ToolPhase::Write => { reg.slots.insert(SlotName::AgentHigh, mid); }
+                    ToolPhase::Plan => {} // plan uses agent_mid
                 }
             }
         }
@@ -303,8 +348,8 @@ pub(crate) fn resolve_slot(
         .slots
         .get(&slot)
         .or_else(|| match slot {
-            SlotName::AgentSearch | SlotName::AgentRead | SlotName::AgentWrite => {
-                registry.slots.get(&SlotName::AgentDefault)
+            SlotName::AgentLow | SlotName::AgentHigh => {
+                registry.slots.get(&SlotName::AgentMid)
             }
             _ => None,
         })
@@ -438,7 +483,7 @@ mod tests {
     #[test]
     fn default_registry_has_schema_version() {
         let reg = ProviderRegistry::default();
-        assert_eq!(reg.schema_version, 1);
+        assert_eq!(reg.schema_version, SCHEMA_VERSION);
         assert!(reg.providers.is_empty());
         assert!(reg.models.is_empty());
         assert!(reg.slots.is_empty());
@@ -450,7 +495,7 @@ mod tests {
         let reg = ProviderRegistry::default();
         let json = serde_json::to_string_pretty(&reg).unwrap();
         let loaded: ProviderRegistry = serde_json::from_str(&json).unwrap();
-        assert_eq!(loaded.schema_version, 1);
+        assert_eq!(loaded.schema_version, SCHEMA_VERSION);
         assert!(loaded.providers.is_empty());
         assert!(loaded.models.is_empty());
         assert!(loaded.slots.is_empty());
@@ -460,7 +505,7 @@ mod tests {
     fn serde_round_trip_populated_registry() {
         let mut slots = HashMap::new();
         slots.insert(SlotName::Chat, "sonnet-4".to_string());
-        slots.insert(SlotName::AgentDefault, "sonnet-4".to_string());
+        slots.insert(SlotName::AgentMid, "sonnet-4".to_string());
         slots.insert(SlotName::Enrichment, "haiku".to_string());
 
         let reg = ProviderRegistry {
@@ -513,7 +558,7 @@ mod tests {
         assert_eq!(loaded.models[0].tier, ModelTier::Standard);
         assert_eq!(loaded.models[1].tier, ModelTier::Economic);
         assert_eq!(loaded.slots.get(&SlotName::Chat), Some(&"sonnet-4".to_string()));
-        assert_eq!(loaded.slots.get(&SlotName::AgentDefault), Some(&"sonnet-4".to_string()));
+        assert_eq!(loaded.slots.get(&SlotName::AgentMid), Some(&"sonnet-4".to_string()));
         assert_eq!(loaded.slots.get(&SlotName::Enrichment), Some(&"haiku".to_string()));
         assert!(loaded.features.enrichment_enabled);
     }
@@ -611,14 +656,13 @@ mod tests {
     fn slot_name_all_variants_serde() {
         let variants = [
             (SlotName::Chat, "chat"),
-            (SlotName::AgentDefault, "agent_default"),
-            (SlotName::AgentSearch, "agent_search"),
-            (SlotName::AgentRead, "agent_read"),
-            (SlotName::AgentWrite, "agent_write"),
+            (SlotName::AgentMid, "agent_mid"),
+            (SlotName::AgentLow, "agent_low"),
+            (SlotName::AgentHigh, "agent_high"),
             (SlotName::Headless, "headless"),
             (SlotName::Enrichment, "enrichment"),
         ];
-        assert_eq!(variants.len(), 7, "All 7 slot names must be covered");
+        assert_eq!(variants.len(), 6, "All 6 slot names must be covered");
 
         for (variant, expected_str) in &variants {
             let json = serde_json::to_string(variant).unwrap();
@@ -666,9 +710,9 @@ mod tests {
     fn slot_names_usable_as_hash_keys() {
         let mut map = HashMap::new();
         map.insert(SlotName::Chat, "m1".to_string());
-        map.insert(SlotName::AgentDefault, "m2".to_string());
+        map.insert(SlotName::AgentMid, "m2".to_string());
         assert_eq!(map.get(&SlotName::Chat), Some(&"m1".to_string()));
-        assert_eq!(map.get(&SlotName::AgentDefault), Some(&"m2".to_string()));
+        assert_eq!(map.get(&SlotName::AgentMid), Some(&"m2".to_string()));
         assert!(map.get(&SlotName::Headless).is_none());
     }
 
@@ -684,7 +728,7 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
         let reg = load_registry();
-        assert_eq!(reg.schema_version, 1);
+        assert_eq!(reg.schema_version, SCHEMA_VERSION);
         assert!(reg.providers.is_empty());
     }
 
@@ -718,7 +762,7 @@ mod tests {
         save_registry(&reg).unwrap();
         let loaded = load_registry();
 
-        assert_eq!(loaded.schema_version, 1);
+        assert_eq!(loaded.schema_version, SCHEMA_VERSION);
         assert_eq!(loaded.providers.len(), 1);
         assert_eq!(loaded.providers[0].id, "p1");
         assert_eq!(loaded.models.len(), 1);
@@ -733,8 +777,9 @@ mod tests {
     fn test_registry() -> ProviderRegistry {
         let mut slots = HashMap::new();
         slots.insert(SlotName::Chat, "sonnet".to_string());
-        slots.insert(SlotName::AgentDefault, "sonnet".to_string());
-        slots.insert(SlotName::AgentSearch, "haiku".to_string());
+        slots.insert(SlotName::AgentMid, "sonnet".to_string());
+        slots.insert(SlotName::AgentLow, "haiku".to_string());
+        slots.insert(SlotName::AgentHigh, "gpt4o".to_string());
         slots.insert(SlotName::Headless, "gpt4o".to_string());
 
         ProviderRegistry {
@@ -808,34 +853,49 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
-    fn resolve_slot_agent_phase_fallback_to_default() {
+    fn resolve_slot_agent_tier_fallback_to_mid() {
         crate::credentials::set(
             crate::credentials::Credential::Provider("anthropic-main"),
             "sk-ant-test",
         ).unwrap();
 
-        let reg = test_registry();
-        // AgentRead not explicitly set → falls back to AgentDefault
-        let resolved = resolve_slot(&reg, SlotName::AgentRead).unwrap();
+        let mut reg = test_registry();
+        reg.slots.remove(&SlotName::AgentLow);
+        reg.slots.remove(&SlotName::AgentHigh);
+        // AgentLow/AgentHigh not set → falls back to AgentMid
+        let resolved = resolve_slot(&reg, SlotName::AgentLow).unwrap();
         assert_eq!(resolved.config.model, "claude-sonnet-4-5-20241022");
 
-        // AgentWrite not explicitly set → falls back to AgentDefault
-        let resolved2 = resolve_slot(&reg, SlotName::AgentWrite).unwrap();
+        let resolved2 = resolve_slot(&reg, SlotName::AgentHigh).unwrap();
         assert_eq!(resolved2.config.model, "claude-sonnet-4-5-20241022");
     }
 
     #[test]
     #[serial_test::serial]
-    fn resolve_slot_agent_search_uses_explicit() {
+    fn resolve_slot_agent_low_uses_explicit() {
         crate::credentials::set(
             crate::credentials::Credential::Provider("anthropic-main"),
             "sk-ant-test",
         ).unwrap();
 
         let reg = test_registry();
-        // AgentSearch IS explicitly set to haiku
-        let resolved = resolve_slot(&reg, SlotName::AgentSearch).unwrap();
+        // AgentLow IS explicitly set to haiku
+        let resolved = resolve_slot(&reg, SlotName::AgentLow).unwrap();
         assert_eq!(resolved.config.model, "claude-haiku-4-5-20241022");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn resolve_slot_agent_high_uses_explicit() {
+        crate::credentials::set(
+            crate::credentials::Credential::Provider("openai-main"),
+            "sk-openai-test",
+        ).unwrap();
+
+        let reg = test_registry();
+        // AgentHigh IS explicitly set to gpt4o
+        let resolved = resolve_slot(&reg, SlotName::AgentHigh).unwrap();
+        assert_eq!(resolved.config.model, "gpt-4o");
     }
 
     #[test]
@@ -920,10 +980,78 @@ mod tests {
         let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
 
         let reg = load_registry();
-        assert_eq!(reg.schema_version, 1);
+        assert_eq!(reg.schema_version, SCHEMA_VERSION);
         assert!(reg.providers.is_empty());
         assert!(reg.models.is_empty());
         assert!(reg.slots.is_empty());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn load_registry_migrates_v1_slot_keys_to_v2() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
+
+        let v1_json = serde_json::json!({
+            "schema_version": 1,
+            "providers": [{
+                "id": "anthropic-main",
+                "type": "anthropic",
+                "label": "Anthropic"
+            }],
+            "models": [{
+                "id": "sonnet",
+                "provider_id": "anthropic-main",
+                "model_name": "claude-sonnet-4-5-20241022",
+                "tier": "standard"
+            }],
+            "slots": {
+                "chat": "sonnet",
+                "agent_default": "sonnet",
+                "agent_search": "sonnet",
+                "agent_write": "sonnet"
+            },
+            "features": { "enrichment_enabled": false }
+        });
+        let path = dir.path().join(CONFIG_FILE);
+        std::fs::write(&path, serde_json::to_string_pretty(&v1_json).unwrap()).unwrap();
+
+        let reg = load_registry();
+        assert_eq!(reg.schema_version, SCHEMA_VERSION);
+        assert_eq!(reg.slots.get(&SlotName::Chat), Some(&"sonnet".to_string()));
+        assert_eq!(reg.slots.get(&SlotName::AgentMid), Some(&"sonnet".to_string()));
+        assert_eq!(reg.slots.get(&SlotName::AgentLow), Some(&"sonnet".to_string()));
+        assert_eq!(reg.slots.get(&SlotName::AgentHigh), Some(&"sonnet".to_string()));
+        assert!(reg.slots.get(&SlotName::Headless).is_none());
+    }
+
+    #[test]
+    fn migrate_slots_v1_to_v2_preserves_existing_new_keys() {
+        let mut json = serde_json::json!({
+            "slots": {
+                "agent_default": "model-a",
+                "agent_mid": "model-b"
+            }
+        });
+        migrate_slots_v1_to_v2(&mut json);
+        let slots = json["slots"].as_object().unwrap();
+        assert_eq!(slots.get("agent_mid").unwrap(), "model-b");
+        assert!(slots.get("agent_default").is_none());
+    }
+
+    #[test]
+    fn migrate_slots_v1_to_v2_collapses_search_and_read_to_low() {
+        let mut json = serde_json::json!({
+            "slots": {
+                "agent_search": "model-a",
+                "agent_read": "model-b"
+            }
+        });
+        migrate_slots_v1_to_v2(&mut json);
+        let slots = json["slots"].as_object().unwrap();
+        assert_eq!(slots.get("agent_low").unwrap(), "model-a");
+        assert!(slots.get("agent_search").is_none());
+        assert!(slots.get("agent_read").is_none());
     }
 
     #[test]
@@ -950,7 +1078,7 @@ mod tests {
         assert_eq!(reg.models.len(), 1);
         assert_eq!(reg.models[0].model_name, "claude-sonnet-4-5-20241022");
         assert!(reg.slots.contains_key(&SlotName::Chat));
-        assert!(reg.slots.contains_key(&SlotName::AgentDefault));
+        assert!(reg.slots.contains_key(&SlotName::AgentMid));
         assert!(reg.slots.contains_key(&SlotName::Enrichment));
         assert!(reg.features.enrichment_enabled);
 
@@ -1064,9 +1192,9 @@ mod tests {
         write_json(dir.path(), "ai-chat.json", &chat);
 
         let reg = load_registry();
-        assert!(reg.slots.contains_key(&SlotName::AgentSearch));
+        assert!(reg.slots.contains_key(&SlotName::AgentLow));
         // Write override uses the same model as default — model exists, slot set
-        assert!(reg.slots.contains_key(&SlotName::AgentWrite));
+        assert!(reg.slots.contains_key(&SlotName::AgentHigh));
         // Haiku model should be added
         assert!(reg.models.iter().any(|m| m.model_name == "claude-haiku-4-5-20241022"));
     }

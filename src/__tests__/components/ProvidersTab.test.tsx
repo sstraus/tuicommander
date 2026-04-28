@@ -152,17 +152,17 @@ describe("ProvidersTab", () => {
     expect(getByTestId("slot-assignments")).toBeTruthy();
   });
 
-  it("renders all 7 slot dropdowns", () => {
+  it("renders all 6 slot dropdowns", () => {
     const { getByTestId } = render(() => <ProvidersTab />);
-    for (const slot of ["chat", "agent_default", "agent_search", "agent_read", "agent_write", "headless", "enrichment"]) {
+    for (const slot of ["chat", "agent_mid", "agent_low", "agent_high", "headless", "enrichment"]) {
       expect(getByTestId(`slot-select-${slot}`)).toBeTruthy();
     }
   });
 
-  it("shows fallback hint for agent phase slots when unset", () => {
+  it("shows fallback hint for agent tier slots when unset", () => {
     const { getByTestId } = render(() => <ProvidersTab />);
-    const searchRow = getByTestId("slot-row-agent_search");
-    expect(searchRow.textContent).toContain("falls back to agent default");
+    const lowRow = getByTestId("slot-row-agent_low");
+    expect(lowRow.textContent).toContain("falls back to agent mid");
   });
 
   it("calls setSlot when slot dropdown changes", () => {
