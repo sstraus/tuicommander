@@ -1394,27 +1394,35 @@ impl ChunkProcessor {
             self.terminal_mode = self.terminal_mode.on_alt_exit();
         }
 
-        // Detect content shrink in alternate buffer: when Ink's cursor-up (ESC[nA)
-        // value decreases, the rendered content has gotten shorter and old lines
-        // will persist as ghost artifacts. Schedule a clear for the next cursor-home.
+        // Detect render-height change in alternate buffer: when Ink's cursor-up
+        // (ESC[nA) value changes, the chrome area may have shifted vertically.
+        // Ink never sends ESC[K (erase to end of line), so rows that were chrome
+        // in the previous render but aren't overwritten in the new one persist as
+        // ghost artifacts — starting from the bottom and expanding upward.
         if self.in_alt_buffer
             && let Some(n) = extract_largest_cursor_up(&data) {
-                if n < self.last_cursor_up_n && self.last_cursor_up_n > 0 {
+                if n != self.last_cursor_up_n && self.last_cursor_up_n > 0 {
                     self.alt_buffer_needs_clear = true;
                 }
                 self.last_cursor_up_n = n;
         }
 
-        // Inject ESC[2J (clear screen) before ESC[H (cursor home) when needed.
-        // Triggered on alt-buffer entry and when content shrinks. One-shot: consumed
-        // after inject fires to prevent per-keystroke flicker.
+        // Inject ESC[2J (clear screen) before the first positioning sequence when
+        // needed. Tries cursor-home (ESC[H) first, then falls back to cursor-up
+        // (ESC[nA). Ink re-renders use cursor-up for repositioning, not cursor-home,
+        // so the fallback is essential — without it the flag accumulates forever.
         let data = if self.alt_buffer_needs_clear {
             let injected = inject_clear_before_cursor_home(&data);
             if injected.len() != data.len() {
-                // inject happened — consume the flag
                 self.alt_buffer_needs_clear = false;
+                injected
+            } else {
+                let injected = inject_clear_before_cursor_up(&data);
+                if injected.len() != data.len() {
+                    self.alt_buffer_needs_clear = false;
+                }
+                injected
             }
-            injected
         } else {
             data
         };
@@ -1983,6 +1991,7 @@ pub(crate) fn cleanup_session(session_id: &str, state: &AppState) {
     }
     state.output_buffers.remove(session_id);
     state.vt_log_buffers.remove(session_id);
+    state.grid_channels.remove(session_id);
     state.ws_clients.remove(session_id);
     state.kitty_states.remove(session_id);
     state.input_buffers.remove(session_id);
@@ -2008,6 +2017,7 @@ fn tombstone_transient_cleanup(session_id: &str, state: &AppState) {
         .or_insert_with(|| AtomicU64::new(0))
         .store(now_ms, Ordering::Relaxed);
     state.ws_clients.remove(session_id);
+    state.grid_channels.remove(session_id);
     state.kitty_states.remove(session_id);
     state.input_buffers.remove(session_id);
     state.silence_states.remove(session_id);
@@ -2290,6 +2300,44 @@ fn inject_clear_before_cursor_home(data: &str) -> String {
     data.to_string()
 }
 
+/// Inject ESC[2J before the first ESC[nA (cursor-up, n > 0) in `data`.
+///
+/// Fallback for `inject_clear_before_cursor_home`: Ink re-renders reposition via
+/// cursor-up (ESC[nA), not cursor-home (ESC[H). Without this path the
+/// `alt_buffer_needs_clear` flag is set but never consumed, and ghost rows
+/// from previous renders accumulate from the bottom upward.
+fn inject_clear_before_cursor_up(data: &str) -> String {
+    let bytes = data.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+
+    while i < len {
+        if bytes[i] == 0x1b && i + 1 < len && bytes[i + 1] == b'[' {
+            let seq_start = i;
+            i += 2; // skip ESC[
+            let num_start = i;
+            while i < len && bytes[i].is_ascii_digit() {
+                i += 1;
+            }
+            if i < len && bytes[i] == b'A' && i > num_start {
+                // ESC[nA with n > 0 — inject ESC[2J before it
+                let mut result = String::with_capacity(len + 4);
+                result.push_str(&data[..seq_start]);
+                result.push_str("\x1b[2J");
+                result.push_str(&data[seq_start..]);
+                return result;
+            }
+            if i < len {
+                i += 1; // skip command byte
+            }
+        } else {
+            i += 1;
+        }
+    }
+
+    data.to_string()
+}
+
 /// Clamp cursor-up ANSI sequences (ESC[nA) so `n` never exceeds the viewport height.
 ///
 /// Ink-based TUI agents (Claude Code, Codex) emit ESC[nA where n equals the previous
@@ -2428,6 +2476,15 @@ pub(crate) fn spawn_reader_thread(
                                 data: clamped_data,
                             },
                         );
+
+                        if let Some(ch) = state.grid_channels.get(&session_id) {
+                            if let Some(vt) = state.vt_log_buffers.get(&session_id) {
+                                let frame = vt.lock().serialize_dirty_rows();
+                                if !frame.is_empty() {
+                                    let _ = ch.send(frame);
+                                }
+                            }
+                        }
                     }
                 }
                 Err(e) => {
@@ -3826,6 +3883,28 @@ pub(crate) fn read_vt_log(
     let screen: Vec<crate::state::LogLine> = screen_log.into_iter().take(cutoff).collect();
 
     VtLogChunk { lines, screen, total_lines, oldest }
+}
+
+/// Register a Tauri Channel for binary grid frame streaming on a session.
+/// The frontend calls this once per terminal; subsequent PTY output triggers
+/// `serialize_dirty_rows()` on the session's TerminalGrid and sends the result
+/// via the channel. Replaces any previously registered channel for the session.
+#[tauri::command]
+pub(crate) fn subscribe_terminal_grid(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+    channel: tauri::ipc::Channel<Vec<u8>>,
+) {
+    state.grid_channels.insert(session_id, channel);
+}
+
+/// Unregister the grid channel for a session (called by the frontend on unmount).
+#[tauri::command]
+pub(crate) fn unsubscribe_terminal_grid(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+) {
+    state.grid_channels.remove(&session_id);
 }
 
 #[cfg(test)]
@@ -6144,11 +6223,91 @@ mod tests {
     }
 
     #[test]
+    fn test_transform_xterm_alt_buffer_clear_on_growth() {
+        let mut cp = ChunkProcessor::new(None, None);
+        // Enter alt buffer, consume initial clear via cursor-home
+        cp.transform_xterm("\x1b[?1049h".to_string());
+        cp.transform_xterm("\x1b[Hinit".to_string());
+
+        // Establish baseline height
+        cp.transform_xterm("\x1b[20Aredraw".to_string());
+        assert_eq!(cp.last_cursor_up_n, 20);
+
+        // Height grows — clear must fire (chrome shifted down, old top row is ghost)
+        let r = cp.transform_xterm("\x1b[25A\x1b[Hredraw taller".to_string()).unwrap();
+        assert!(r.contains("\x1b[2J"), "clear must be injected when content grows");
+    }
+
+    #[test]
+    fn test_transform_xterm_cursor_up_fallback_on_entry() {
+        let mut cp = ChunkProcessor::new(None, None);
+        // Enter alt buffer (sets alt_buffer_needs_clear)
+        cp.transform_xterm("\x1b[?1049h".to_string());
+
+        // Ink re-renders with cursor-up only, no cursor-home.
+        // The fallback must inject ESC[2J before the cursor-up.
+        let r = cp.transform_xterm("\x1b[30Acontent".to_string()).unwrap();
+        assert!(r.contains("\x1b[2J\x1b[30A"), "clear must inject before cursor-up fallback");
+        assert!(!cp.alt_buffer_needs_clear, "flag must be consumed");
+    }
+
+    #[test]
+    fn test_transform_xterm_cursor_up_fallback_on_shrink() {
+        let mut cp = ChunkProcessor::new(None, None);
+        cp.transform_xterm("\x1b[?1049h".to_string());
+        cp.transform_xterm("\x1b[Hinit".to_string()); // consume entry flag
+
+        // Establish height
+        cp.transform_xterm("\x1b[40Aredraw".to_string());
+
+        // Shrink with cursor-up only (no cursor-home) — fallback path
+        let r = cp.transform_xterm("\x1b[25Aredraw short".to_string()).unwrap();
+        assert!(r.contains("\x1b[2J\x1b[25A"), "cursor-up fallback must fire on shrink");
+    }
+
+    #[test]
+    fn test_transform_xterm_no_clear_on_normal_buffer_cursor_up() {
+        let mut cp = ChunkProcessor::new(None, None);
+        // NOT in alt buffer — cursor-up must NOT trigger clear injection
+        let r = cp.transform_xterm("\x1b[10Acontent".to_string()).unwrap();
+        assert!(!r.contains("\x1b[2J"), "must not inject in normal buffer");
+    }
+
+    #[test]
     fn test_extract_largest_cursor_up() {
         assert_eq!(extract_largest_cursor_up("\x1b[5A"), Some(5));
         assert_eq!(extract_largest_cursor_up("\x1b[10Afoo\x1b[3A"), Some(10));
         assert_eq!(extract_largest_cursor_up("no cursor up here"), None);
         assert_eq!(extract_largest_cursor_up("\x1b[H"), None); // cursor home, not up
+    }
+
+    // --- inject_clear_before_cursor_up tests ---
+
+    #[test]
+    fn test_inject_clear_before_cursor_up_basic() {
+        let result = inject_clear_before_cursor_up("\x1b[20Acontent");
+        assert_eq!(result, "\x1b[2J\x1b[20Acontent");
+    }
+
+    #[test]
+    fn test_inject_clear_before_cursor_up_preserves_prefix() {
+        let result = inject_clear_before_cursor_up("prefix\x1b[10Acontent");
+        assert_eq!(result, "prefix\x1b[2J\x1b[10Acontent");
+    }
+
+    #[test]
+    fn test_inject_clear_before_cursor_up_no_match() {
+        let input = "no cursor up \x1b[H here";
+        let result = inject_clear_before_cursor_up(input);
+        assert_eq!(result, input, "cursor-home must NOT match cursor-up injection");
+    }
+
+    #[test]
+    fn test_inject_clear_before_cursor_up_bare_esc_a_ignored() {
+        // ESC[A (no number) means cursor-up 1, but has no digit before A
+        let input = "\x1b[Acontent";
+        let result = inject_clear_before_cursor_up(input);
+        assert_eq!(result, input, "bare ESC[A (no n) should not trigger injection");
     }
 
     // --- log_anomalous_sequences tests ---

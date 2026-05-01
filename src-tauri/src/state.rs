@@ -887,6 +887,9 @@ pub struct AppState {
     /// Per-session VT100 log buffers for clean mobile/REST output (session_id → buffer).
     /// Separate DashMap to avoid writer contention on PtySession.
     pub(crate) vt_log_buffers: DashMap<String, Mutex<VtLogBuffer>>,
+    /// Active Tauri Channel subscriptions for binary grid streaming (session_id → channel).
+    /// Frontend calls `subscribe_terminal_grid` to register; channel is dropped on session exit.
+    pub(crate) grid_channels: DashMap<String, tauri::ipc::Channel<Vec<u8>>>,
     /// Per-session kitty keyboard protocol state (session_id → state).
     /// Separate DashMap (not inside PtySession) to avoid writer contention.
     pub(crate) kitty_states: DashMap<String, Mutex<KittyKeyboardState>>,
@@ -1821,6 +1824,12 @@ impl VtLogBuffer {
         self.total_pushed - self.log.len()
     }
 
+    /// Serialize damaged grid rows into a binary frame for Tauri Channel streaming.
+    /// Delegates to the inner TerminalGrid; returns empty Vec when no rows changed.
+    pub(crate) fn serialize_dirty_rows(&mut self) -> Vec<u8> {
+        self.grid.serialize_dirty_rows()
+    }
+
     // --- private helpers ---
 
     fn push_log_line(&mut self, line: LogLine) {
@@ -1891,6 +1900,7 @@ pub(crate) mod tests_support {
             app_handle: parking_lot::RwLock::new(None),
             plugin_watchers: dashmap::DashMap::new(),
             vt_log_buffers: dashmap::DashMap::new(),
+            grid_channels: dashmap::DashMap::new(),
             kitty_states: dashmap::DashMap::new(),
             input_buffers: dashmap::DashMap::new(),
             last_prompts: dashmap::DashMap::new(),
@@ -2345,6 +2355,7 @@ mod tests {
             app_handle: parking_lot::RwLock::new(None),
             plugin_watchers: dashmap::DashMap::new(),
             vt_log_buffers: dashmap::DashMap::new(),
+            grid_channels: dashmap::DashMap::new(),
             kitty_states: dashmap::DashMap::new(),
             input_buffers: dashmap::DashMap::new(),
             last_prompts: dashmap::DashMap::new(),
