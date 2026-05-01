@@ -9,6 +9,7 @@ import {
   type DecodedFrame,
   type DecodedCell,
 } from "./canvasTerminalUtils";
+import { keyToSequence } from "./terminalInput";
 // Re-export for external consumers
 export type { CellMetrics, CursorShape, DecodedFrame, DecodedCell };
 
@@ -34,6 +35,11 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
   let blinkInterval: ReturnType<typeof setInterval> | undefined;
   let unsubscribe: (() => void) | undefined;
   let resizeObserver: ResizeObserver | undefined;
+  let invokeRef: ((cmd: string, args: Record<string, unknown>) => Promise<unknown>) | undefined;
+
+  function writePty(data: string) {
+    invokeRef?.("write_pty", { sessionId: props.sessionId, data }).catch(() => {});
+  }
 
   function remeasure() {
     if (!ctx) return;
@@ -250,11 +256,35 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
     canvasRef.addEventListener("focus", () => { setFocused(true); startBlink(); });
     canvasRef.addEventListener("blur", () => { setFocused(false); stopBlink(); repaintCursorIfNeeded(); });
-    canvasRef.addEventListener("keydown", () => resetBlink());
+
+    let composing = false;
+    canvasRef.addEventListener("compositionstart", () => { composing = true; });
+    canvasRef.addEventListener("compositionend", (e) => {
+      composing = false;
+      if (e.data) writePty(e.data);
+    });
+
+    canvasRef.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (composing) return;
+      resetBlink();
+      const seq = keyToSequence(e);
+      if (seq !== null) {
+        e.preventDefault();
+        e.stopPropagation();
+        writePty(seq);
+      }
+    });
+
+    canvasRef.addEventListener("paste", (e: ClipboardEvent) => {
+      const text = e.clipboardData?.getData("text");
+      if (text) writePty(text);
+      e.preventDefault();
+    });
 
     // Subscribe to grid channel
     try {
       const { invoke, Channel } = await import("@tauri-apps/api/core");
+      invokeRef = invoke;
       const channel = new Channel<ArrayBuffer | number[]>();
       channel.onmessage = onFrame;
       await invoke("subscribe_terminal_grid", {
