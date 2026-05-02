@@ -25,6 +25,9 @@ export type { CellMetrics, CursorShape, DecodedFrame, DecodedCell };
 export interface CanvasTerminalProps {
   sessionId: string;
   onOpenFilePath?: (path: string, line?: number, col?: number) => void;
+  onSearchOpen?: () => void;
+  onSearchClose?: () => void;
+  searchVisible?: boolean;
 }
 
 const SUGGEST_ANCHOR_RE = /^[\s●⏺]*suggest:\s+\S/;
@@ -508,6 +511,27 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     canvasRef.addEventListener("keydown", (e: KeyboardEvent) => {
       if (composing) return;
       resetBlink();
+
+      // DEFERRED (2026-05-02) — Cmd+F opens the shared SearchBar but search uses xterm's
+      // SearchAddon which doesn't work with CanvasTerminal. Needs a CanvasTerminalSearch
+      // component that uses the Rust terminal_search IPC + canvas highlight rendering.
+      if ((e.metaKey || e.ctrlKey) && e.key === "f" && !e.altKey && !e.shiftKey) {
+        e.preventDefault();
+        props.onSearchOpen?.();
+        return;
+      }
+
+      // Escape closes search when visible
+      if (e.key === "Escape" && props.searchVisible) {
+        e.preventDefault();
+        props.onSearchClose?.();
+        return;
+      }
+
+      // Cmd+Enter: don't send \r to PTY — let document-level keybinding handle
+      if (e.metaKey && e.key === "Enter") {
+        return;
+      }
 
       // Ctrl/Cmd+C with selection → copy instead of interrupt
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c" && selectionStart && selectionEnd) {
