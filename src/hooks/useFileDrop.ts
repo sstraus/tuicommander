@@ -213,8 +213,10 @@ async function dispatchTauriDrop(paths: string[], x: number, y: number): Promise
   }
 
   if (target?.kind === "pane") {
-    const images = paths.filter(isImageFile);
-    const nonImages = paths.filter((p) => !isImageFile(p));
+    const active = terminalsStore.getActive();
+    const hasAgent = !!active?.agentType;
+    const images = hasAgent ? paths.filter(isImageFile) : [];
+    const nonImages = hasAgent ? paths.filter((p) => !isImageFile(p)) : paths;
     if (images.length > 0) {
       writeImagesToTerminal(images);
     }
