@@ -17,6 +17,7 @@ import {
   filePathRegex,
   fileUrlRegex,
 } from "./linkProvider";
+import { handleOpenUrl } from "../../utils/openUrl";
 import { terminalsStore } from "../../stores/terminals";
 import { isMacOS, isWindows } from "../../platform";
 // Re-export for external consumers
@@ -446,27 +447,38 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     if (links === undefined) {
       const fpRe = filePathRegex();
       const fuRe = fileUrlRegex();
-      const matches: { text: string; candidate: string; index: number }[] = [];
+      const webUrlRe = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/g;
+      const fileMatches: { text: string; candidate: string; index: number }[] = [];
+      const urlMatches: { text: string; path: string; index: number }[] = [];
       let match: RegExpExecArray | null;
+
+      // Web URLs (no resolution needed)
+      webUrlRe.lastIndex = 0;
+      while ((match = webUrlRe.exec(rowText)) !== null) {
+        urlMatches.push({ text: match[0], path: match[0], index: match.index });
+      }
+
+      // File paths
       fpRe.lastIndex = 0;
       while ((match = fpRe.exec(rowText)) !== null) {
         const idx = rowText.indexOf(match[1], match.index);
-        matches.push({ text: match[1], candidate: match[1], index: idx });
+        fileMatches.push({ text: match[1], candidate: match[1], index: idx });
       }
       fuRe.lastIndex = 0;
       while ((match = fuRe.exec(rowText)) !== null) {
-        matches.push({ text: match[0], candidate: match[1], index: match.index });
+        fileMatches.push({ text: match[0], candidate: match[1], index: match.index });
       }
 
-      if (matches.length === 0) {
+      if (fileMatches.length === 0 && urlMatches.length === 0) {
         linkCache.set(cacheKey, null);
         if (linkCache.size > 200) linkCache.clear();
         links = null;
       } else {
+        // Resolve file paths
         const termData = terminalsStore.get(props.sessionId);
         const cwd = termData?.cwd || "";
-        const resolved = await Promise.all(
-          matches.map(async (m) => {
+        const resolvedFiles = await Promise.all(
+          fileMatches.map(async (m) => {
             try {
               const r = await invokeRef!("resolve_terminal_path", { cwd, candidate: m.candidate }) as { absolute_path: string; is_directory: boolean } | null;
               if (!r) return null;
@@ -483,8 +495,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
             }
           }),
         );
-        const validLinks = resolved.filter(Boolean) as { text: string; path: string; line?: number; col?: number; index: number }[];
-        links = validLinks.length > 0 ? validLinks : null;
+        const validFiles = resolvedFiles.filter(Boolean) as { text: string; path: string; line?: number; col?: number; index: number }[];
+        const allLinks = [...validFiles, ...urlMatches];
+        links = allLinks.length > 0 ? allLinks : null;
         if (linkCache.size > 200) linkCache.clear();
         linkCache.set(cacheKey, links);
       }
@@ -765,6 +778,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     };
 
     const onMouseUp = () => {
+      if (selecting && selectionStart && selectionEnd) {
+        copySelection();
+      }
       selecting = false;
     };
 
@@ -774,7 +790,11 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     // Link click
     canvasRef.addEventListener("click", (e: MouseEvent) => {
       if (hoveredLink && (e.metaKey || e.ctrlKey)) {
-        props.onOpenFilePath?.(hoveredLink.path, hoveredLink.line, hoveredLink.col);
+        if (hoveredLink.path.startsWith("http://") || hoveredLink.path.startsWith("https://")) {
+          handleOpenUrl(hoveredLink.path);
+        } else {
+          props.onOpenFilePath?.(hoveredLink.path, hoveredLink.line, hoveredLink.col);
+        }
       }
     });
 
@@ -897,7 +917,8 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     try {
       const text = await invokeRef("terminal_select_text", { sessionId: props.sessionId }) as string | null;
       if (text) {
-        await navigator.clipboard.writeText(text);
+        const trimmed = text.split("\n").map(line => line.replace(/\s+$/, "")).join("\n");
+        await navigator.clipboard.writeText(trimmed);
       }
     } catch {
       // clipboard not available
@@ -925,6 +946,20 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
         width: "100%",
         height: "100%",
         overflow: "hidden",
+      }}
+      onDragOver={(e) => {
+        if (e.dataTransfer?.types?.includes("application/x-tuic-path")) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "copy";
+        }
+      }}
+      onDrop={(e) => {
+        const path = e.dataTransfer?.getData("application/x-tuic-path");
+        if (!path) return;
+        e.preventDefault();
+        const quoted = `'${path.replace(/'/g, "'\\''")}' `;
+        writePty(quoted);
+        canvasRef.focus();
       }}
     >
       <canvas
@@ -969,7 +1004,8 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
             width: "10px",
             "margin-left": "2px",
             "border-radius": "5px",
-            background: "rgba(255,255,255,0.3)",
+            background: "var(--text-primary, rgba(255,255,255,0.3))",
+            opacity: "0.3",
             "min-height": "20px",
             position: "absolute",
             top: "0",
