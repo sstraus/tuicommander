@@ -265,6 +265,8 @@ impl TerminalGrid {
     /// Read a range of scrollback lines as plain text.
     /// `offset` is counted from the top of scrollback (0 = oldest visible).
     /// Returns up to `limit` lines.
+    /// Read a range of scrollback lines as plain text.
+    #[cfg(test)]
     pub fn read_scrollback_lines(&self, offset: usize, limit: usize) -> Vec<String> {
         let grid = self.term.grid();
         let history = grid.history_size();
@@ -285,6 +287,25 @@ impl TerminalGrid {
         lines
     }
 
+    /// Number of visible screen rows.
+    #[cfg(test)]
+    pub fn screen_lines(&self) -> usize {
+        self.term.grid().screen_lines()
+    }
+
+    /// Number of visible columns.
+    #[cfg(test)]
+    pub fn columns(&self) -> usize {
+        self.term.grid().columns()
+    }
+
+    /// Read the cursor position (line, column) in screen coordinates.
+    #[cfg(test)]
+    pub fn cursor_point(&self) -> (usize, usize) {
+        let point = self.term.grid().cursor.point;
+        (point.line.0.max(0) as usize, point.column.0)
+    }
+
     /// Clear the cached prev_rows to force full diff on next process().
     pub fn clear_prev_rows(&mut self) {
         self.prev_rows.clear();
@@ -295,22 +316,6 @@ impl TerminalGrid {
         let size = GridSize { cols: cols as usize, lines: rows as usize };
         self.term.resize(size);
         self.prev_rows.clear();
-    }
-
-    /// Number of visible screen rows.
-    pub fn screen_lines(&self) -> usize {
-        self.term.grid().screen_lines()
-    }
-
-    /// Number of visible columns.
-    pub fn columns(&self) -> usize {
-        self.term.grid().columns()
-    }
-
-    /// Read the cursor position (line, column) in screen coordinates.
-    pub fn cursor_point(&self) -> (usize, usize) {
-        let point = self.term.grid().cursor.point;
-        (point.line.0.max(0) as usize, point.column.0)
     }
 
     /// Extract a styled `LogLine` from a grid row by iterating cells.
@@ -552,6 +557,7 @@ impl TerminalGrid {
     }
 
     /// Whether a selection is active.
+    #[cfg(test)]
     pub fn has_selection(&self) -> bool {
         self.term.selection.is_some()
     }
@@ -738,7 +744,7 @@ impl TerminalGrid {
 
         buf.extend_from_slice(&(row_count as u16).to_le_bytes());
         buf.extend_from_slice(&(cursor.line.0.max(0) as u16).to_le_bytes());
-        buf.extend_from_slice(&(cursor.column.0.max(0) as u16).to_le_bytes());
+        buf.extend_from_slice(&(cursor.column.0 as u16).to_le_bytes());
         buf.push(cursor_visible as u8);
         buf.extend_from_slice(&(display_offset as u32).to_le_bytes());
         buf.extend_from_slice(&(history_size as u32).to_le_bytes());

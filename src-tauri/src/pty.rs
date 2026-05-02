@@ -1617,14 +1617,14 @@ impl ChunkProcessor {
         }
 
         // Emit OSC 133 shell integration events to frontend
-        if !osc133_events.is_empty() {
-            if let Some(a) = app {
-                for evt in &osc133_events {
-                    let _ = a.emit(
-                        &format!("pty-osc133-{session_id}"),
-                        evt,
-                    );
-                }
+        if !osc133_events.is_empty()
+            && let Some(a) = app
+        {
+            for evt in &osc133_events {
+                let _ = a.emit(
+                    &format!("pty-osc133-{session_id}"),
+                    evt,
+                );
             }
         }
 
@@ -1634,11 +1634,11 @@ impl ChunkProcessor {
             for evt in term_events {
                 match evt {
                     TermEvent::PtyWrite(response) => {
-                        if let Some(sess) = state.sessions.get(session_id) {
-                            if let Some(mut s) = sess.try_lock() {
-                                let _ = s.writer.write_all(response.as_bytes());
-                                let _ = s.writer.flush();
-                            }
+                        if let Some(sess) = state.sessions.get(session_id)
+                            && let Some(mut s) = sess.try_lock()
+                        {
+                            let _ = s.writer.write_all(response.as_bytes());
+                            let _ = s.writer.flush();
                         }
                     }
                     TermEvent::Title(title) => {
@@ -2528,12 +2528,12 @@ pub(crate) fn spawn_reader_thread(
                     // Send grid frame unconditionally: the alacritty grid
                     // receives data inside process_chunk even when xterm
                     // output is suppressed (silence, transform_xterm=None).
-                    if let Some(ch) = state.grid_channels.get(&session_id) {
-                        if let Some(vt) = state.vt_log_buffers.get(&session_id) {
-                            let frame = vt.lock().serialize_dirty_rows();
-                            if !frame.is_empty() {
-                                let _ = ch.send(frame);
-                            }
+                    if let Some(ch) = state.grid_channels.get(&session_id)
+                        && let Some(vt) = state.vt_log_buffers.get(&session_id)
+                    {
+                        let frame = vt.lock().serialize_dirty_rows();
+                        if !frame.is_empty() {
+                            let _ = ch.send(frame);
                         }
                     }
                 }
@@ -3961,10 +3961,10 @@ pub(crate) fn terminal_request_frame(
             vt.grid_force_full_damage();
             vt.serialize_dirty_rows()
         };
-        if !frame.is_empty() {
-            if let Some(ch) = state.grid_channels.get(&session_id) {
-                let _ = ch.send(frame);
-            }
+        if !frame.is_empty()
+            && let Some(ch) = state.grid_channels.get(&session_id)
+        {
+            let _ = ch.send(frame);
         }
     }
 }
@@ -3999,10 +3999,10 @@ pub(crate) fn terminal_select_start(
             vt.grid_selection_start(col, row, ty);
             vt.serialize_dirty_rows()
         };
-        if !frame.is_empty() {
-            if let Some(ch) = state.grid_channels.get(&session_id) {
-                let _ = ch.send(frame);
-            }
+        if !frame.is_empty()
+            && let Some(ch) = state.grid_channels.get(&session_id)
+        {
+            let _ = ch.send(frame);
         }
     }
 }
@@ -4020,10 +4020,10 @@ pub(crate) fn terminal_select_update(
             vt.grid_selection_update(col, row);
             vt.serialize_dirty_rows()
         };
-        if !frame.is_empty() {
-            if let Some(ch) = state.grid_channels.get(&session_id) {
-                let _ = ch.send(frame);
-            }
+        if !frame.is_empty()
+            && let Some(ch) = state.grid_channels.get(&session_id)
+        {
+            let _ = ch.send(frame);
         }
     }
 }
@@ -4048,10 +4048,10 @@ pub(crate) fn terminal_select_clear(
             vt.grid_selection_clear();
             vt.serialize_dirty_rows()
         };
-        if !frame.is_empty() {
-            if let Some(ch) = state.grid_channels.get(&session_id) {
-                let _ = ch.send(frame);
-            }
+        if !frame.is_empty()
+            && let Some(ch) = state.grid_channels.get(&session_id)
+        {
+            let _ = ch.send(frame);
         }
     }
 }
@@ -4070,10 +4070,10 @@ pub(crate) fn terminal_scroll(
             vt.grid_scroll(delta);
             vt.serialize_dirty_rows()
         };
-        if !frame.is_empty() {
-            if let Some(ch) = state.grid_channels.get(&session_id) {
-                let _ = ch.send(frame);
-            }
+        if !frame.is_empty()
+            && let Some(ch) = state.grid_channels.get(&session_id)
+        {
+            let _ = ch.send(frame);
         }
     }
 }

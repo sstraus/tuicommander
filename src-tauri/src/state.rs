@@ -1862,10 +1862,6 @@ impl VtLogBuffer {
         self.grid.selection_clear();
     }
 
-    pub(crate) fn grid_has_selection(&self) -> bool {
-        self.grid.has_selection()
-    }
-
     pub(crate) fn grid_force_full_damage(&mut self) {
         self.grid.force_full_damage();
     }
