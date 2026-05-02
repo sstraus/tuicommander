@@ -140,24 +140,36 @@ export function computeCursorRect(
 /**
  * Measure a monospace font and return cell metrics for grid layout.
  * Uses 'M' as the reference glyph (widest ASCII char in most monospace fonts).
+ * Cell height is derived from actual font metrics (ascent + descent), not fontSize,
+ * matching how real terminals (xterm.js, Alacritty) compute cell dimensions.
  */
 export function measureFont(
   ctx: CanvasRenderingContext2D,
   fontSize: number,
   fontFamily: string,
   dpr: number = 1,
+  lineHeight: number = 1.2,
+  fontWeight: number = 400,
 ): CellMetrics {
-  ctx.font = `${fontSize}px ${fontFamily}`;
+  ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
   const m = ctx.measureText("M");
   const cellWidth = Math.ceil(m.width);
-  const ascent = Math.ceil(m.actualBoundingBoxAscent);
-  const descent = Math.ceil(m.actualBoundingBoxDescent);
-  const cellHeight = ascent + descent + 1;
+  // Cell height from actual font metrics (ascent + descent), scaled by lineHeight.
+  // This matches standard terminal behaviour — fontSize * lineHeight produces cells
+  // that are too small because fontSize < actual font height for most fonts.
+  const ascent = Math.ceil(m.fontBoundingBoxAscent ?? m.actualBoundingBoxAscent);
+  const descent = Math.ceil(m.fontBoundingBoxDescent ?? m.actualBoundingBoxDescent);
+  const fontHeight = ascent + descent;
+  // Snap to device pixels for crisp rendering on Retina displays
+  const rawDevicePx = fontHeight * lineHeight * dpr;
+  const cellHeight = Math.round(rawDevicePx / dpr);
+  // Baseline: ascent + half the extra space (lineHeight padding) centers text vertically
+  const baseline = ascent + Math.floor((cellHeight - fontHeight) / 2);
 
   return {
     cellWidth,
     cellHeight,
-    baseline: ascent,
+    baseline: Math.max(baseline, 0),
     fontSize,
     dpr,
     scaledCellWidth: cellWidth * dpr,
