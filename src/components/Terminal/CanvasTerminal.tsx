@@ -458,8 +458,10 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
         rafId = undefined;
         if (!alive) return;
         const m = metrics();
-        if (currentFrame && m) paintFrame(currentFrame, m);
-        invokeRef?.("ack_terminal_frame", { sessionId: props.sessionId }).catch(() => {});
+        if (currentFrame && m) {
+          paintFrame(currentFrame, m);
+          invokeRef?.("ack_terminal_frame", { sessionId: props.sessionId }).catch(() => {});
+        }
       });
     }
   }

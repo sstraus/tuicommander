@@ -89,22 +89,12 @@ export function openPathsAsTabs(paths: string[]): void {
 }
 
 /**
- * Convert Tauri physical-pixel coordinates to CSS pixels for elementFromPoint.
- * On macOS with titleBarStyle="Overlay", Tauri reports coordinates relative to
- * the window frame which includes the native titlebar inset.
- */
-function physicalToCss(physicalX: number, physicalY: number): { x: number; y: number } {
-  const dpr = window.devicePixelRatio || 1;
-  const chromeHeight = (window.outerHeight - window.innerHeight) * dpr;
-  return { x: physicalX / dpr, y: (physicalY - chromeHeight) / dpr };
-}
-
-/**
  * Hit-test the element under a physical-pixel coordinate from a Tauri drop event.
+ * Tauri's `position` is in *physical* pixels; `elementFromPoint` needs CSS pixels.
  */
 function elementAtDropPoint(physicalX: number, physicalY: number): Element | null {
-  const { x, y } = physicalToCss(physicalX, physicalY);
-  return document.elementFromPoint(x, y);
+  const dpr = window.devicePixelRatio || 1;
+  return document.elementFromPoint(physicalX / dpr, physicalY / dpr);
 }
 
 /**

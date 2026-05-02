@@ -30,14 +30,10 @@ const DROP_HOVER_CLASS = "drop-target-hover";
 
 /**
  * Convert Tauri physical-pixel coordinates to CSS pixels for elementFromPoint.
- * On macOS with titleBarStyle="Overlay", Tauri reports coordinates relative to
- * the window frame which includes the native titlebar inset. We measure the
- * actual offset by comparing window.outerHeight with window.innerHeight.
  */
 export function tauriPhysicalToCss(physicalX: number, physicalY: number): { x: number; y: number } {
   const dpr = window.devicePixelRatio || 1;
-  const chromeHeight = (window.outerHeight - window.innerHeight) * dpr;
-  return { x: physicalX / dpr, y: (physicalY - chromeHeight) / dpr };
+  return { x: physicalX / dpr, y: physicalY / dpr };
 }
 
 function updateDropHover(physicalX: number, physicalY: number): void {
