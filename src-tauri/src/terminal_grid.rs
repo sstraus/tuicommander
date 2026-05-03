@@ -299,6 +299,12 @@ impl TerminalGrid {
         (point.line.0.max(0) as usize, point.column.0)
     }
 
+    /// Return the text of the row the cursor is currently on.
+    pub fn get_cursor_row_text(&self) -> String {
+        let cursor_line = self.term.grid().cursor.point.line;
+        self.get_row_text(cursor_line.0.max(0) as usize)
+    }
+
     /// Clear the cached prev_rows to force full diff on next process().
     pub fn clear_prev_rows(&mut self) {
         self.prev_rows.clear();

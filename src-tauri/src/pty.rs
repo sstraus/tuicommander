@@ -4226,6 +4226,16 @@ pub(crate) fn terminal_get_lines(
 }
 
 #[tauri::command]
+pub(crate) fn terminal_get_cursor_line(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+) -> String {
+    state.vt_log_buffers.get(&session_id)
+        .map(|vt| vt.lock().grid_get_cursor_line())
+        .unwrap_or_default()
+}
+
+#[tauri::command]
 pub(crate) fn terminal_hyperlink_at(
     state: State<'_, Arc<AppState>>,
     session_id: String,

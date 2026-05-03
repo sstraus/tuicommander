@@ -1208,6 +1208,7 @@ pub fn run() {
             pty::terminal_search_buffer,
             pty::terminal_get_row_text,
             pty::terminal_get_lines,
+            pty::terminal_get_cursor_line,
             pty::terminal_hyperlink_at,
             pty::update_session_cwd,
             pty::set_session_name,

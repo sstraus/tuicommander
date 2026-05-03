@@ -1911,6 +1911,10 @@ impl VtLogBuffer {
         self.grid.get_row_text(row)
     }
 
+    pub(crate) fn grid_get_cursor_line(&self) -> String {
+        self.grid.get_cursor_row_text()
+    }
+
     pub(crate) fn grid_get_lines(&self, start: usize, end: usize) -> Vec<String> {
         let total = self.grid.total_lines();
         let clamped_end = end.min(total);

@@ -96,15 +96,18 @@ function currentTheme() {
   };
 }
 
+/** Strip common shell prompt patterns from a raw terminal line. */
+function stripPrompt(line: string): string {
+  return line.replace(/^.*[$%#❯→>]\s/, "").trimEnd();
+}
+
 /** Extract the user's typed (but not submitted) text from the terminal's current line.
  *  Reads the line at the cursor position and strips common shell prompts. */
 function extractCurrentInput(term: XTerm): string {
   const buf = term.buffer.active;
   const absRow = buf.baseY + buf.cursorY;
   const line = buf.getLine(absRow)?.translateToString(true) ?? "";
-  // Strip common prompt patterns: "user@host:path$ ", "$ ", "> ", "% ", "# ", "❯ ", "→ "
-  const prompted = line.replace(/^.*[$%#❯→>]\s/, "");
-  return prompted.trimEnd();
+  return stripPrompt(line);
 }
 
 // Font families mapping
@@ -1852,6 +1855,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
     openSearch: () => setSearchVisible(true),
     closeSearch: () => setSearchVisible(false),
     toggleCompose: () => {
+      if (isNative() && sessionId) {
+        invoke("terminal_get_cursor_line", { sessionId }).then((raw) => {
+          setPendingComposeText(stripPrompt(raw as string));
+          setComposeOpen(true);
+        }).catch(() => setComposeOpen((p) => !p));
+        return;
+      }
       setComposeOpen((prev) => {
         if (!prev && terminal) {
           const input = extractCurrentInput(terminal);
