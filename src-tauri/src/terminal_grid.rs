@@ -178,7 +178,6 @@ pub struct TerminalGrid {
     term: Term<TermEventCollector>,
     processor: ansi::Processor,
     prev_rows: Vec<String>,
-    force_full_next: bool,
     bell_flag: Arc<AtomicBool>,
     events: Arc<Mutex<Vec<TermEvent>>>,
 }
@@ -200,7 +199,6 @@ impl TerminalGrid {
             term,
             processor: ansi::Processor::new(),
             prev_rows: Vec::new(),
-            force_full_next: false,
             bell_flag,
             events,
         }
@@ -319,7 +317,7 @@ impl TerminalGrid {
         let size = GridSize { cols: cols as usize, lines: rows as usize };
         self.term.resize_reflow(size, false);
         self.prev_rows.clear();
-        self.force_full_next = true;
+        self.term.mark_fully_damaged();
     }
 
     /// Extract a styled `LogLine` from a grid row by iterating cells.
@@ -594,7 +592,7 @@ impl TerminalGrid {
 
     /// Mark all rows as dirty so the next serialize_dirty_rows returns a full frame.
     pub fn force_full_damage(&mut self) {
-        self.force_full_next = true;
+        self.term.mark_fully_damaged();
     }
 
     // --- Scroll API ---
@@ -602,7 +600,7 @@ impl TerminalGrid {
     /// Scroll the viewport by `delta` lines (positive = up / into history).
     pub fn scroll(&mut self, delta: i32) {
         self.term.scroll_display(Scroll::Delta(delta));
-        self.force_full_next = true;
+        self.term.mark_fully_damaged();
     }
 
     /// Current display offset (0 = at bottom, >0 = scrolled up).
@@ -709,10 +707,7 @@ impl TerminalGrid {
         if mode.contains(TermMode::REPORT_ALL_KEYS_AS_ESC) { keyboard_flags |= 0x08; }
         if mode.contains(TermMode::REPORT_ASSOCIATED_TEXT) { keyboard_flags |= 0x10; }
 
-        let dirty_lines: Vec<usize> = if self.force_full_next {
-            self.force_full_next = false;
-            (0..num_lines).collect()
-        } else {
+        let dirty_lines: Vec<usize> = {
             let damage = self.term.damage();
             match damage {
                 TermDamage::Full => (0..num_lines).collect(),

@@ -491,7 +491,7 @@ impl<T> Term<T> {
     }
 
     #[inline]
-    fn mark_fully_damaged(&mut self) {
+    pub fn mark_fully_damaged(&mut self) {
         self.damage.full = true;
     }
 
