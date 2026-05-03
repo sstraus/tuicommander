@@ -141,7 +141,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
   const focusedFilePath = (): string | undefined => {
     const editTab = editorTabsStore.getActive();
     if (editTab) {
-      return `${editTab.repoPath}/${editTab.filePath}`;
+      return `${editTab.fsRoot}/${editTab.filePath}`;
     }
     const mdTab = mdTabsStore.getActive();
     if (mdTab?.type === "file") {

@@ -23,7 +23,11 @@ import s from "./CodeEditorTab.module.css";
 
 export interface CodeEditorTabProps {
   id: string;
+  /** Canonical repo path — used for repositoriesStore (revisions) and diff tabs. */
   repoPath: string;
+  /** Filesystem root for actual file I/O — equals the active worktree path
+   *  when one is selected, otherwise mirrors repoPath. Defaults to repoPath. */
+  fsRoot?: string;
   filePath: string;
   initialLine?: number; // Line to scroll to on first mount (1-based)
   externalEditable?: boolean; // Allow editing external (absolute-path) files (e.g. agent config)
@@ -56,12 +60,16 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
   /** Guard: scroll to initialLine only once on first file load */
   let didScrollToInitialLine = false;
 
+  /** Filesystem root used for disk I/O — falls back to repoPath when the
+   *  parent didn't pass an explicit worktree path. */
+  const fsRoot = () => props.fsRoot ?? props.repoPath;
+
   /** Read file content — uses the right command depending on internal vs external */
   const readContent = async (): Promise<string> => {
     if (isExternal()) {
       return invoke<string>("read_external_file", { path: props.filePath });
     }
-    return fb.readFile(props.repoPath, props.filePath);
+    return fb.readFile(fsRoot(), props.filePath);
   };
 
   // Sync dirty state to tab store for the tab bar indicator
@@ -69,11 +77,11 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
     editorTabsStore.setDirty(props.id, dirty());
   });
 
-  // Load file content
+  // Load file content — re-fires when the worktree root or path changes.
   createEffect(
     on(
-      () => [props.repoPath, props.filePath] as const,
-      async ([_repoPath, filePath]) => {
+      () => [fsRoot(), props.filePath] as const,
+      async ([_fsRoot, filePath]) => {
         if (!filePath) return;
 
         setLoading(true);
@@ -247,7 +255,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
       if (isExternal()) {
         await invoke("write_external_file", { path: props.filePath, content: currentCode });
       } else {
-        await fb.writeFile(props.repoPath, props.filePath, currentCode);
+        await fb.writeFile(fsRoot(), props.filePath, currentCode);
       }
       setSavedContent(currentCode);
       setDirty(false);
@@ -345,7 +353,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
         items={[{
           label: t("codeEditor.copyPath", "Copy Path"),
           action: () => {
-            const fullPath = isExternal() ? props.filePath : `${props.repoPath}/${props.filePath}`;
+            const fullPath = isExternal() ? props.filePath : `${fsRoot()}/${props.filePath}`;
             navigator.clipboard.writeText(shortenHomePath(fullPath)).catch((err) =>
               appLogger.error("app", "Failed to copy path", err),
             );

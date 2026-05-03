@@ -220,6 +220,7 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
                         <CodeEditorTab
                           id={id}
                           repoPath={editTab.repoPath}
+                          fsRoot={editTab.fsRoot}
                           filePath={editTab.filePath}
                           initialLine={editTab.initialLine}
                           externalEditable={editTab.externalEditable}

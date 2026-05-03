@@ -4,7 +4,14 @@ import { pathBasename } from "../utils/pathUtils";
 
 /** Editor tab data */
 export interface EditorTabData extends BaseTab {
+  /** Canonical repo path. Used for branch-scope filtering and repo-store ops
+   *  (revisions, diffs). Matches the key used in repositoriesStore. */
   repoPath: string;
+  /** Filesystem root for actual file I/O. Equals the active worktree path when
+   *  one is selected, otherwise repoPath. Stored separately so the branch
+   *  filter (which keys on canonical repoPath) keeps working on worktree
+   *  branches. */
+  fsRoot: string;
   filePath: string;
   fileName: string; // Display name (basename of filePath)
   isDirty: boolean;
@@ -27,10 +34,19 @@ function createEditorTabsStore() {
     getCount: base.getCount,
     setPinned: base.setPinned,
 
-    /** Add a new editor tab (or activate existing if same file already open) */
-    add(repoPath: string, filePath: string, initialLine?: number, opts?: { externalEditable?: boolean }): string {
+    /** Add a new editor tab (or activate existing if same file already open).
+     *  `fsRoot` defaults to `repoPath` when omitted — pass it explicitly when
+     *  the file lives inside a git worktree whose path differs from the
+     *  canonical repo path. */
+    add(
+      repoPath: string,
+      filePath: string,
+      initialLine?: number,
+      opts?: { fsRoot?: string; externalEditable?: boolean },
+    ): string {
+      const fsRoot = opts?.fsRoot ?? repoPath;
       const existing = Object.values(base.state.tabs).find(
-        (tab) => tab.repoPath === repoPath && tab.filePath === filePath,
+        (tab) => tab.repoPath === repoPath && tab.fsRoot === fsRoot && tab.filePath === filePath,
       );
       if (existing) {
         base.setActive(existing.id);
@@ -39,7 +55,7 @@ function createEditorTabsStore() {
 
       const id = base._nextId("edit");
       const fileName = pathBasename(filePath) || filePath;
-      return base._addTab({ id, repoPath, filePath, fileName, isDirty: false, branchKey: currentBranchKey(), initialLine, externalEditable: opts?.externalEditable });
+      return base._addTab({ id, repoPath, fsRoot, filePath, fileName, isDirty: false, branchKey: currentBranchKey(), initialLine, externalEditable: opts?.externalEditable });
     },
 
     /** Mark a tab as dirty or clean */

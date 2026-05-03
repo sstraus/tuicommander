@@ -1000,7 +1000,7 @@ const App: Component = () => {
     } else if (target === "preview") {
       mdTabsStore.addHtmlPreview(repoPath, filePath, fsRoot);
     } else {
-      const tabId = editorTabsStore.add(fsRoot, filePath);
+      const tabId = editorTabsStore.add(repoPath, filePath, undefined, { fsRoot });
       terminalLifecycle.handleTerminalSelect(tabId);
     }
   };
@@ -1024,7 +1024,7 @@ const App: Component = () => {
         } else if (target === "preview") {
           mdTabsStore.addHtmlPreview(effectiveRepo, filePath, effectiveRoot || undefined);
         } else {
-          editorTabsStore.add(effectiveRoot || effectiveRepo, filePath);
+          editorTabsStore.add(effectiveRepo, filePath, undefined, { fsRoot: effectiveRoot || effectiveRepo });
         }
       }
     }).then((fn) => { unlisten = fn; }).catch((err) => appLogger.error("app", "Failed to listen for file-open events", err));
@@ -1866,7 +1866,7 @@ const App: Component = () => {
               } else if (target === "preview" && line === undefined) {
                 mdTabsStore.addHtmlPreview(repoPath, filePath, fsRoot || undefined);
               } else {
-                const tabId = editorTabsStore.add(fsRoot, filePath, line);
+                const tabId = editorTabsStore.add(repoPath, filePath, line, { fsRoot });
                 terminalLifecycle.handleTerminalSelect(tabId);
               }
             }}
