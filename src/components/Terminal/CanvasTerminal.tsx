@@ -11,7 +11,6 @@ import {
 } from "./canvasTerminalUtils";
 import {
   getSharedMetrics,
-  drawCachedGlyph,
   acquireCache,
   releaseCache,
   invalidateGlyphCache,
@@ -461,32 +460,69 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
   function paintRow(row: DecodedFrame["rows"][0], y: number, m: CellMetrics, fontFamily?: string) {
     fontFamily ??= settingsStore.getFontFamily();
-    let lastFont = "";
+
+    // Pass 1: backgrounds (per-cell, attributes vary independently of text)
+    for (let c = 0; c < row.cells.length; c++) {
+      const cell = row.cells[c];
+      if (!cell.defaultBg || cell.inverse) {
+        ctx.fillStyle = resolveBg(cell, cachedBgDefault);
+        ctx.fillRect(c * m.cellWidth, y, m.cellWidth, m.cellHeight);
+      }
+    }
+
+    // Pass 2: text runs — group adjacent cells with identical attributes so that
+    // ligature-capable fonts (FiraCode, JetBrains Mono) can render multi-char
+    // sequences (=>, !=, ===) as a single fillText call.
+    let runStart = -1;
+    let runText = "";
+    let runFont = "";
+    let runFg = "";
+    let runDim = false;
+
+    const flushRun = () => {
+      if (runStart < 0) return;
+      if (runDim) ctx.globalAlpha = 0.5;
+      ctx.font = runFont;
+      ctx.fillStyle = runFg;
+      ctx.fillText(runText, runStart * m.cellWidth, y + m.baseline);
+      if (runDim) ctx.globalAlpha = 1.0;
+      runStart = -1;
+      runText = "";
+    };
+
+    for (let c = 0; c < row.cells.length; c++) {
+      const cell = row.cells[c];
+      if (!cell.char || cell.char === " ") { flushRun(); continue; }
+
+      const cp = cell.char.codePointAt(0) ?? 0;
+      if ((cp >= 0x2580 && cp <= 0x2593) || (cp >= 0x2596 && cp <= 0x259F)) {
+        flushRun();
+        ctx.fillStyle = resolveFg(cell, cachedFgDefault);
+        drawBlockChar(cp, c * m.cellWidth, y, m);
+        continue;
+      }
+
+      const font = buildFontStyle(cell, m.fontSize, fontFamily);
+      const fg = resolveFg(cell, cachedFgDefault);
+      const dim = cell.dim ?? false;
+
+      if (runStart >= 0 && font === runFont && fg === runFg && dim === runDim) {
+        runText += cell.char;
+      } else {
+        flushRun();
+        runStart = c;
+        runText = cell.char;
+        runFont = font;
+        runFg = fg;
+        runDim = dim;
+      }
+    }
+    flushRun();
+
+    // Pass 3: decorations (per-cell — colors may vary independently)
     for (let c = 0; c < row.cells.length; c++) {
       const cell = row.cells[c];
       const x = c * m.cellWidth;
-      if (!cell.defaultBg || cell.inverse) {
-        ctx.fillStyle = resolveBg(cell, cachedBgDefault);
-        ctx.fillRect(x, y, m.cellWidth, m.cellHeight);
-      }
-      if (cell.char && cell.char !== " ") {
-        const fg = resolveFg(cell, cachedFgDefault);
-        ctx.fillStyle = fg;
-        if (cell.dim) ctx.globalAlpha = 0.5;
-        const cp = cell.char.codePointAt(0) ?? 0;
-        if (((cp >= 0x2580 && cp <= 0x2593) || (cp >= 0x2596 && cp <= 0x259F)) && drawBlockChar(cp, x, y, m)) {
-          // Block element drawn as geometry
-        } else {
-          const font = buildFontStyle(cell, m.fontSize, fontFamily);
-          if (!cell.dim && drawCachedGlyph(ctx, cell.char, font, fg, x, y, m)) {
-            // Drawn from shared DOM canvas atlas
-          } else {
-            if (font !== lastFont) { ctx.font = font; lastFont = font; }
-            ctx.fillText(cell.char, x, y + m.baseline);
-          }
-        }
-        if (cell.dim) ctx.globalAlpha = 1.0;
-      }
       if (cell.underline) {
         ctx.fillStyle = resolveFg(cell, cachedFgDefault);
         ctx.fillRect(x, y + m.cellHeight - 1, m.cellWidth, 1);
