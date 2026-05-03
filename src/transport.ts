@@ -210,33 +210,6 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
       path: `/sessions/${args.sessionId}/terminal/scroll-info`,
     }),
   },
-  terminal_select_start: {
-    map: (args) => ({
-      method: "POST",
-      path: `/sessions/${args.sessionId}/terminal/select/start`,
-      body: { col: args.col, row: args.row, word: args.word },
-    }),
-  },
-  terminal_select_update: {
-    map: (args) => ({
-      method: "POST",
-      path: `/sessions/${args.sessionId}/terminal/select/update`,
-      body: { col: args.col, row: args.row },
-    }),
-  },
-  terminal_select_text: {
-    map: (args) => ({
-      method: "GET",
-      path: `/sessions/${args.sessionId}/terminal/select/text`,
-      transform: (data) => (data as { text: string | null }).text,
-    }),
-  },
-  terminal_select_clear: {
-    map: (args) => ({
-      method: "POST",
-      path: `/sessions/${args.sessionId}/terminal/select/clear`,
-    }),
-  },
   terminal_search: {
     map: (args) => ({
       method: "POST",

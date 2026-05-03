@@ -1806,6 +1806,11 @@ impl VtLogBuffer {
         self.grid.screen_text_rows()
     }
 
+    /// Borrowed view of cached screen rows — avoids cloning when caller holds the lock.
+    pub fn screen_rows_ref(&self) -> Option<&[String]> {
+        self.grid.screen_text_rows_ref()
+    }
+
     /// Current visible screen rows as styled LogLines (with ANSI color attributes).
     /// Used by mobile/REST to render screen content with colors.
     pub fn screen_log_lines(&self) -> Vec<LogLine> {
@@ -1848,24 +1853,6 @@ impl VtLogBuffer {
     /// Delegates to the inner TerminalGrid; returns empty Vec when no rows changed.
     pub(crate) fn serialize_dirty_rows(&mut self) -> Vec<u8> {
         self.grid.serialize_dirty_rows()
-    }
-
-    // --- Selection delegates ---
-
-    pub(crate) fn grid_selection_start(&mut self, col: usize, row: usize, ty: alacritty_terminal::selection::SelectionType) {
-        self.grid.selection_start(col, row, ty);
-    }
-
-    pub(crate) fn grid_selection_update(&mut self, col: usize, row: usize) {
-        self.grid.selection_update(col, row);
-    }
-
-    pub(crate) fn grid_selection_text(&self) -> Option<String> {
-        self.grid.selection_text()
-    }
-
-    pub(crate) fn grid_selection_clear(&mut self) {
-        self.grid.selection_clear();
     }
 
     pub(crate) fn grid_force_full_damage(&mut self) {

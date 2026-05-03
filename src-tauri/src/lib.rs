@@ -1198,10 +1198,6 @@ pub fn run() {
             pty::terminal_request_frame,
             pty::ack_terminal_frame,
 
-            pty::terminal_select_start,
-            pty::terminal_select_update,
-            pty::terminal_select_text,
-            pty::terminal_select_clear,
             pty::terminal_scroll,
             pty::terminal_scroll_to,
             pty::terminal_scroll_info,

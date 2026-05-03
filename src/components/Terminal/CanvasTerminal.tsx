@@ -76,8 +76,8 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
   let scrollThumbRef!: HTMLDivElement;
   let overlayRef!: HTMLDivElement;
   let containerRef!: HTMLDivElement;
-  let ctx: CanvasRenderingContext2D;
-  let octx: CanvasRenderingContext2D;
+  let ctx!: CanvasRenderingContext2D;
+  let octx!: CanvasRenderingContext2D;
 
   const [metrics, setMetrics] = createSignal<CellMetrics | null>(null);
   const [focused, setFocused] = createSignal(false);
@@ -102,6 +102,8 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
   let dprChangeHandler: (() => void) | undefined;
   let cleanupTouch: (() => void) | undefined;
   let alive = true;
+  let linkCheckGeneration = 0;
+  const ipcErr = (cmd: string) => (e: unknown) => appLogger.debug("terminal", `${cmd} failed`, { sessionId: props.sessionId, error: e });
 
   // Selection state
   let selecting = false;
@@ -158,6 +160,20 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     });
   }
 
+  function scheduleRepaint() {
+    if (rafId !== undefined || hidden || !alive) return;
+    rafId = requestAnimationFrame(() => {
+      rafId = undefined;
+      if (!alive || hidden) return;
+      const m = metrics();
+      if (currentFrame && m) {
+        const dirty = pendingDirtyRows.size > 0 ? new Set(pendingDirtyRows) : undefined;
+        pendingDirtyRows.clear();
+        paintFrame(currentFrame, m, dirty);
+      }
+    });
+  }
+
   function canvasToGrid(e: MouseEvent): { col: number; row: number } {
     const m = metrics();
     if (!m) return { col: 0, row: 0 };
@@ -211,7 +227,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       rowMap.clear();
       fullRepaintNeeded = true;
       lastDisplayOffset = -1;
-      invokeRef("resize_pty", { sessionId: props.sessionId, rows, cols }).catch(() => {});
+      invokeRef("resize_pty", { sessionId: props.sessionId, rows, cols }).catch(ipcErr("resize_pty"));
     }
 
     if (currentFrame) {
@@ -284,7 +300,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     const clamped = Math.max(0, Math.min(targetOffset, currentFrame.historySize));
     const delta = clamped - currentFrame.displayOffset;
     if (delta !== 0) {
-      invokeRef("terminal_scroll", { sessionId: props.sessionId, delta }).catch(() => {});
+      invokeRef("terminal_scroll", { sessionId: props.sessionId, delta }).catch(ipcErr("terminal_scroll"));
     }
   }
 
@@ -473,6 +489,15 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
   // --- Suggest / Intent overlay ---
 
+  function rowToText(row: DecodedFrame["rows"][0]): string {
+    let text = "";
+    for (let ci = 0; ci < row.count; ci++) {
+      const cp = row.codepoints[ci];
+      text += cp === 0 ? " " : String.fromCodePoint(cp);
+    }
+    return text;
+  }
+
   function makeOverlayDiv(top: number, height: number, background: string): HTMLDivElement {
     const div = document.createElement("div");
     div.style.cssText = `position:absolute;left:0;right:0;top:${top}px;height:${height}px;background:${background}`;
@@ -491,15 +516,16 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       for (const idx of dirtyIndices) {
         const row = rowMap.get(idx);
         if (!row) continue;
-        let text = "";
-        for (let ci = 0; ci < row.count; ci++) { const cp = row.codepoints[ci]; text += cp === 0 ? " " : String.fromCodePoint(cp); }
+        const text = rowToText(row);
         if (SUGGEST_ANCHOR_RE.test(text) || INTENT_RE.test(text)) {
           hasSuggestContent = true;
           break;
         }
       }
-      if (!hasSuggestContent && lastSuggestOverlayKey !== "") return;
-      if (!hasSuggestContent && lastSuggestOverlayKey === "") return;
+      if (!hasSuggestContent) {
+        if (lastSuggestOverlayKey === "") return;
+        // Stale overlay — fall through to rebuild/clear it
+      }
     }
 
     const bg = cachedBgDefault;
@@ -508,9 +534,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     const getRowSnapshot = (i: number) => {
       const row = rowMap.get(i);
       if (!row) return null;
-      let text = "";
-      for (let ci = 0; ci < row.count; ci++) { const cp = row.codepoints[ci]; text += cp === 0 ? " " : String.fromCodePoint(cp); }
-      return { text, isWrapped: false };
+      return { text: rowToText(row), isWrapped: false };
     };
 
     // Build new overlay key to detect changes
@@ -959,7 +983,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       // DON'T clear rowMap (would cause blank flash). Instead request a full frame;
       // when it arrives, the >= screenRowCount branch above will replace rowMap.
       fullRepaintNeeded = true;
-      invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(() => {});
+      invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(ipcErr("terminal_request_frame"));
     }
     for (const row of frame.rows) {
 
@@ -967,30 +991,15 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       pendingDirtyRows.add(row.index);
     }
 
-    // Update frame metadata without rebuilding rows array
-    currentFrame = {
-      ...frame,
-      rows: frame.rows,
-    };
+    currentFrame = frame;
 
     // Ack on receive, not after paint. Otherwise the backend is forced to wait
     // until the frontend has displayed an intermediate PTY state (for example a
     // newline carrying the previous SGR background before the CLI writes reset/text).
-    invokeRef?.("ack_terminal_frame", { sessionId: props.sessionId }).catch(() => {});
+    invokeRef?.("ack_terminal_frame", { sessionId: props.sessionId }).catch(ipcErr("ack_terminal_frame"));
 
     if (hidden) return;
-    if (rafId === undefined) {
-      rafId = requestAnimationFrame(() => {
-        rafId = undefined;
-        if (!alive || hidden) return;
-        const m = metrics();
-        if (currentFrame && m) {
-          const dirty = pendingDirtyRows.size > 0 ? new Set(pendingDirtyRows) : undefined;
-          pendingDirtyRows.clear();
-          paintFrame(currentFrame, m, dirty);
-        }
-      });
-    }
+    scheduleRepaint();
   }
 
   // --- Link detection on hover ---
@@ -999,6 +1008,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
   async function checkLinksAtRow(row: number, col: number) {
     if (!invokeRef || !alive) return;
+    const gen = ++linkCheckGeneration;
 
     // OSC 8 hyperlinks take priority — the program explicitly tagged this cell
     try {
@@ -1011,13 +1021,13 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
         return;
       }
     } catch { /* ignore — command may not exist on older backend */ }
-    if (!alive) return;
+    if (!alive || gen !== linkCheckGeneration) return;
 
     const rowText = await invokeRef("terminal_get_row_text", {
       sessionId: props.sessionId,
       row,
     }) as string;
-    if (!alive) return;
+    if (!alive || gen !== linkCheckGeneration) return;
 
     const cacheKey = `${row}:${rowText}`;
     let links = linkCache.get(cacheKey);
@@ -1097,8 +1107,14 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
   }
 
   onMount(async () => {
-    ctx = canvasRef.getContext("2d", { alpha: false })!;
-    octx = overlayCanvasRef.getContext("2d")!;
+    const baseCtx = canvasRef.getContext("2d", { alpha: false });
+    const overlayCtx = overlayCanvasRef.getContext("2d");
+    if (!baseCtx || !overlayCtx) {
+      appLogger.error("terminal", "Failed to acquire canvas 2D context");
+      return;
+    }
+    ctx = baseCtx;
+    octx = overlayCtx;
     acquireCache();
     const fontFamily = settingsStore.getFontFamily();
     const fontSize = settingsStore.state.defaultFontSize;
@@ -1117,12 +1133,12 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       const isVisible = entries[0]?.isIntersecting ?? false;
       if (isVisible && hidden) {
         hidden = false;
-  
         rowMap.clear();
         fullRepaintNeeded = true;
         currentFrame = null;
         lastDisplayOffset = -1;
-        invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(() => {});
+        remeasure();
+        invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(ipcErr("terminal_request_frame"));
       } else if (!isVisible && !hidden) {
         hidden = true;
       }
@@ -1160,7 +1176,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       if (e.key === "ArrowDown" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey
         && currentFrame && currentFrame.displayOffset > 0) {
         e.preventDefault();
-        invokeRef?.("terminal_scroll", { sessionId: props.sessionId, delta: -(currentFrame.displayOffset) }).catch(() => {});
+        invokeRef?.("terminal_scroll", { sessionId: props.sessionId, delta: -(currentFrame.displayOffset) }).catch(ipcErr("terminal_scroll"));
         return;
       }
 
@@ -1185,7 +1201,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
               }
             }
             if (targetLine !== undefined) {
-              invokeRef?.("terminal_scroll_to", { sessionId: props.sessionId, line: targetLine }).catch(() => {});
+              invokeRef?.("terminal_scroll_to", { sessionId: props.sessionId, line: targetLine }).catch(ipcErr("terminal_scroll_to"));
             }
             e.preventDefault();
             return;
@@ -1202,7 +1218,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
         currentFrame = null;
         lastDisplayOffset = -1;
         remeasure();
-        invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(() => {});
+        invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(ipcErr("terminal_request_frame"));
         return;
       }
 
@@ -1254,7 +1270,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
         e.preventDefault();
         navigator.clipboard.readText().then(
           (text) => { if (text) writePty(`\x1b[200~${text}\x1b[201~`); },
-        ).catch(() => {});
+        ).catch(ipcErr("clipboard_read"));
         return;
       }
 
@@ -1264,11 +1280,8 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
         selectionStart = null;
         selectionEnd = null;
         cachedSelectionText = "";
-        const m = metrics();
-        if (currentFrame && m) {
-          fullRepaintNeeded = true;
-          paintFrame(currentFrame, m);
-        }
+        fullRepaintNeeded = true;
+        scheduleRepaint();
       }
 
       // Shift+Enter → ESC CR (multi-line for Claude Code, Ink, etc.)
@@ -1390,8 +1403,8 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
         selectionEnd = null;
       }
       selecting = true;
-      const m = metrics();
-      if (currentFrame && m) paintFrame(currentFrame, m);
+      fullRepaintNeeded = true;
+      scheduleRepaint();
     });
 
     const onMouseMove = (e: MouseEvent) => {
@@ -1442,7 +1455,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       const lines = m ? Math.round(e.deltaY / m.cellHeight) : Math.sign(e.deltaY);
       const delta = -(lines || Math.sign(e.deltaY));
       if (delta !== 0) {
-        invokeRef?.("terminal_scroll", { sessionId: props.sessionId, delta }).catch(() => {});
+        invokeRef?.("terminal_scroll", { sessionId: props.sessionId, delta }).catch(ipcErr("terminal_scroll"));
       }
     }
     canvasRef.addEventListener("wheel", handleWheel, { passive: false });
@@ -1463,7 +1476,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       const targetOffset = Math.round((1 - clickRatio) * currentFrame.historySize);
       const delta = targetOffset - currentFrame.displayOffset;
       if (delta !== 0) {
-        invokeRef?.("terminal_scroll", { sessionId: props.sessionId, delta }).catch(() => {});
+        invokeRef?.("terminal_scroll", { sessionId: props.sessionId, delta }).catch(ipcErr("terminal_scroll"));
       }
     });
 
@@ -1489,7 +1502,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       const newOffset = Math.max(0, Math.min(historySize, scrollDragStartOffset - offsetDelta));
       const delta = newOffset - (currentFrame.displayOffset);
       if (delta !== 0) {
-        invokeRef?.("terminal_scroll", { sessionId: props.sessionId, delta }).catch(() => {});
+        invokeRef?.("terminal_scroll", { sessionId: props.sessionId, delta }).catch(ipcErr("terminal_scroll"));
       }
     };
 
@@ -1504,7 +1517,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     cleanupTouch = installTouchHandlers(canvasRef, touchTextareaRef, {
       onScroll: (dy) => {
         const lines = Math.round(dy / (metrics()?.cellHeight ?? 20));
-        if (lines !== 0) invokeRef?.("terminal_scroll", { sessionId: props.sessionId, delta: -lines }).catch(() => {});
+        if (lines !== 0) invokeRef?.("terminal_scroll", { sessionId: props.sessionId, delta: -lines }).catch(ipcErr("terminal_scroll"));
       },
       onInput: (data) => writePty(data),
       onFocus: () => { setFocused(true); startBlink(); props.onFocus?.(); },
@@ -1567,7 +1580,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
         currentFrame = null;
         lastDisplayOffset = -1;
         remeasure();
-        invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(() => {});
+        invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(ipcErr("terminal_request_frame"));
       },
       searchFind: async (query: string) => {
         if (!query || !invokeRef) {
@@ -1621,6 +1634,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     settingsStore.state.defaultFontSize;
     settingsStore.state.font;
     settingsStore.state.fontWeight;
+    if (!alive) return;
     settingsStore.state.theme;
     invalidateGlyphCache();
     fontStyleCache.clear();
@@ -1637,8 +1651,8 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
         cachedSelectionText = trimmed;
         await navigator.clipboard.writeText(trimmed);
       }
-    } catch {
-      // clipboard not available
+    } catch (e) {
+      appLogger.warn("terminal", "Clipboard write failed", { error: e });
     }
   }
 

@@ -441,19 +441,6 @@ pub(super) struct TerminalScrollToRequest {
 }
 
 #[derive(Deserialize)]
-pub(super) struct TerminalSelectStartRequest {
-    pub col: usize,
-    pub row: usize,
-    pub word: Option<bool>,
-}
-
-#[derive(Deserialize)]
-pub(super) struct TerminalSelectUpdateRequest {
-    pub col: usize,
-    pub row: usize,
-}
-
-#[derive(Deserialize)]
 pub(super) struct TerminalSearchRequest {
     pub query: String,
 }

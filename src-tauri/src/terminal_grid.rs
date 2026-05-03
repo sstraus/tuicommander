@@ -1,7 +1,6 @@
 use alacritty_terminal::event::{Event, EventListener};
 use alacritty_terminal::grid::Dimensions;
-use alacritty_terminal::index::{Column, Line, Point, Side};
-use alacritty_terminal::selection::{Selection, SelectionType};
+use alacritty_terminal::index::{Column, Line, Point};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::grid::Scroll;
 use alacritty_terminal::term::{Config, Term, TermDamage, TermMode};
@@ -250,6 +249,17 @@ impl TerminalGrid {
             self.read_screen_text()
         } else {
             self.prev_rows.clone()
+        }
+    }
+
+    /// Borrowed view of the cached screen rows — avoids cloning when the caller
+    /// only needs `&[String]` and holds the lock.  Returns `None` only when
+    /// `process()` has never been called (empty `prev_rows`).
+    pub fn screen_text_rows_ref(&self) -> Option<&[String]> {
+        if self.prev_rows.is_empty() {
+            None
+        } else {
+            Some(&self.prev_rows)
         }
     }
 
@@ -539,39 +549,6 @@ impl TerminalGrid {
         None
     }
 
-    // --- Selection API (delegates to alacritty's native Selection) ---
-
-    /// Start a new selection at the given screen coordinate.
-    pub fn selection_start(&mut self, col: usize, row: usize, ty: SelectionType) {
-        let point = Point::new(Line(row as i32), Column(col));
-        let selection = Selection::new(ty, point, Side::Left);
-        self.term.selection = Some(selection);
-    }
-
-    /// Update the active selection endpoint.
-    pub fn selection_update(&mut self, col: usize, row: usize) {
-        if let Some(ref mut sel) = self.term.selection {
-            let point = Point::new(Line(row as i32), Column(col));
-            sel.update(point, Side::Right);
-        }
-    }
-
-    /// Extract selected text, if any.
-    pub fn selection_text(&self) -> Option<String> {
-        self.term.selection_to_string()
-    }
-
-    /// Clear the current selection.
-    pub fn selection_clear(&mut self) {
-        self.term.selection = None;
-    }
-
-    /// Whether a selection is active.
-    #[cfg(test)]
-    pub fn has_selection(&self) -> bool {
-        self.term.selection.is_some()
-    }
-
     /// Returns true if a bell was rung since last drain, and resets the flag.
     pub fn drain_bell(&self) -> bool {
         self.bell_flag.swap(false, Ordering::Relaxed)
@@ -641,7 +618,7 @@ impl TerminalGrid {
     /// The query is auto-escaped for literal substring search unless it contains
     /// regex metacharacters; case-insensitive when all lowercase.
     pub fn search(&self, query: &str) -> Vec<SearchMatch> {
-        if query.is_empty() {
+        if query.is_empty() || query.len() > 1024 {
             return Vec::new();
         }
         let mut regex = match RegexSearch::new(query) {
@@ -683,7 +660,7 @@ impl TerminalGrid {
     }
 
     pub fn search_buffer(&self, query: &str) -> Vec<BufferSearchMatch> {
-        if query.is_empty() {
+        if query.is_empty() || query.len() > 1024 {
             return Vec::new();
         }
         let mut regex = match RegexSearch::new(query) {
@@ -901,7 +878,9 @@ impl TerminalGrid {
                 }
                 text.push(cell.c);
             }
-            rows.push(text.trim_end().to_string());
+            let trimmed_len = text.trim_end().len();
+            text.truncate(trimmed_len);
+            rows.push(text);
         }
         rows
     }
@@ -920,7 +899,9 @@ impl TerminalGrid {
             }
             text.push(cell.c);
         }
-        Some(text.trim_end().to_string())
+        let trimmed_len = text.trim_end().len();
+        text.truncate(trimmed_len);
+        Some(text)
     }
 
     #[cfg(test)]
@@ -971,6 +952,21 @@ mod tests {
         assert_eq!(rows[2], "line3");
         assert_eq!(rows[3], "");
         assert_eq!(rows[4], "");
+    }
+
+    #[test]
+    fn screen_text_rows_ref_returns_none_before_process() {
+        let grid = TerminalGrid::new(5, 20, 100);
+        assert!(grid.screen_text_rows_ref().is_none());
+    }
+
+    #[test]
+    fn screen_text_rows_ref_matches_owned() {
+        let mut grid = TerminalGrid::new(5, 20, 100);
+        let _ = grid.process(b"line1\r\nline2\r\nline3");
+        let owned = grid.screen_text_rows();
+        let borrowed = grid.screen_text_rows_ref().unwrap();
+        assert_eq!(owned, borrowed);
     }
 
     #[test]
@@ -1269,31 +1265,6 @@ mod tests {
         assert_eq!(attrs & super::ATTR_DEFAULT_FG, 0, "fg is NOT default");
     }
 
-    // --- Selection tests ---
-
-    #[test]
-    fn selection_start_and_text() {
-        let mut grid = TerminalGrid::new(5, 20, 0);
-        let _ = grid.process(b"hello world");
-        grid.selection_start(0, 0, SelectionType::Simple);
-        grid.selection_update(4, 0);
-        let text = grid.selection_text();
-        assert!(text.is_some());
-        assert_eq!(text.unwrap().trim(), "hello");
-    }
-
-    #[test]
-    fn selection_clear() {
-        let mut grid = TerminalGrid::new(5, 20, 0);
-        let _ = grid.process(b"hello");
-        grid.selection_start(0, 0, SelectionType::Simple);
-        grid.selection_update(4, 0);
-        assert!(grid.has_selection());
-        grid.selection_clear();
-        assert!(!grid.has_selection());
-        assert!(grid.selection_text().is_none());
-    }
-
     // --- Search tests ---
 
     #[test]
@@ -1335,6 +1306,15 @@ mod tests {
         let _ = grid.process(b"test content");
         let matches = grid.search("[invalid");
         assert!(matches.is_empty());
+    }
+
+    #[test]
+    fn search_rejects_query_over_1024_bytes() {
+        let mut grid = TerminalGrid::new(5, 40, 0);
+        let _ = grid.process(b"test content");
+        let long_query = "a".repeat(1025);
+        assert!(grid.search(&long_query).is_empty());
+        assert!(grid.search_buffer(&long_query).is_empty());
     }
 
     // --- Scroll tests ---

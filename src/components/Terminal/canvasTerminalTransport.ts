@@ -62,6 +62,9 @@ export class TauriTransport implements TerminalTransport {
   }
 }
 
+const MAX_RECONNECT_ATTEMPTS = 10;
+const INITIAL_RECONNECT_MS = 1000;
+
 export class WsTransport implements TerminalTransport {
   private sessionId: string;
   private ws: WebSocket | null = null;
@@ -69,6 +72,7 @@ export class WsTransport implements TerminalTransport {
   private eventHandlers = new Map<string, (payload: unknown) => void>();
   private closed = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectAttempts = 0;
 
   constructor(sessionId: string) {
     this.sessionId = sessionId;
@@ -77,12 +81,13 @@ export class WsTransport implements TerminalTransport {
   async subscribe(onFrame: (data: ArrayBuffer) => void): Promise<void> {
     this.onFrameHandler = onFrame;
     this.closed = false;
+    this.reconnectAttempts = 0;
     await this.connect();
   }
 
   private async connect(): Promise<void> {
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${proto}//${window.location.host}/sessions/${this.sessionId}/stream?format=grid`;
+    const url = `${proto}//${window.location.host}/sessions/${encodeURIComponent(this.sessionId)}/stream?format=grid`;
     this.ws = new WebSocket(url);
     this.ws.binaryType = "arraybuffer";
     this.ws.onmessage = (e) => {
@@ -93,19 +98,31 @@ export class WsTransport implements TerminalTransport {
           const event = JSON.parse(e.data as string) as { type: string; [key: string]: unknown };
           const { type, ...payload } = event;
           this.eventHandlers.get(type)?.(payload);
-        } catch {
-          // ignore non-JSON text messages
+        } catch (err) {
+          console.debug("WsTransport: unparseable text frame", (e.data as string)?.slice?.(0, 100), err);
         }
       }
     };
     this.ws.onclose = () => {
-      if (!this.closed) {
-        this.reconnectTimer = setTimeout(() => this.connect(), 1000);
+      if (this.closed) return;
+      if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+        console.warn(`WsTransport: giving up after ${MAX_RECONNECT_ATTEMPTS} reconnect attempts`, this.sessionId);
+        return;
       }
+      const delay = INITIAL_RECONNECT_MS * Math.pow(2, Math.min(this.reconnectAttempts, 5));
+      this.reconnectAttempts++;
+      this.reconnectTimer = setTimeout(() => {
+        this.connect().then(() => {
+          this.reconnectAttempts = 0;
+        }).catch((err) => {
+          console.debug("WsTransport: reconnect failed", this.sessionId, err);
+        });
+      }, delay);
     };
+    const ws = this.ws;
     await new Promise<void>((resolve, reject) => {
-      this.ws!.onopen = () => resolve();
-      this.ws!.onerror = () => reject(new Error("WebSocket connection failed"));
+      ws.onopen = () => resolve();
+      ws.onerror = () => reject(new Error("WebSocket connection failed"));
     });
   }
 
@@ -124,7 +141,8 @@ export class WsTransport implements TerminalTransport {
     return rpc(cmd, args);
   }
 
-  async onEvent(type: string, handler: (payload: unknown) => void): Promise<void> {
+  onEvent(type: string, handler: (payload: unknown) => void): Promise<void> {
     this.eventHandlers.set(type, handler);
+    return Promise.resolve();
   }
 }

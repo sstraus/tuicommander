@@ -1602,7 +1602,7 @@ impl ChunkProcessor {
         // Feed raw data (post-kitty-strip) into VT100 log buffer.
         // Also capture the post-process `total_lines` and `oldest_offset` so
         // we can emit a throttled growth/rotation event for the scrollback overlay.
-        let (changed_rows, vt_log_total, vt_log_oldest, term_events) = if let Some(vt_log) = state.vt_log_buffers.get(session_id) {
+        let (changed_rows, vt_log_total, vt_log_oldest, term_events, screen_cache) = if let Some(vt_log) = state.vt_log_buffers.get(session_id) {
             let mut vt = vt_log.lock();
             let changed = vt.process(data.as_bytes());
             let total = vt.total_lines();
@@ -1613,11 +1613,18 @@ impl ChunkProcessor {
             // Claude Code (and similar agents) render a quota/budget status bar below
             // the input box separator. Those rows are cosmetic chrome — processing them
             // resets the silence timer and causes false busy→idle→question transitions.
+            //
+            // Use screen_rows_ref() to avoid cloning prev_rows for the chrome cutoff
+            // check. The owned snapshot is captured once below for slash-menu/choice-prompt
+            // parsing that happens after the lock is released.
             let changed = if !changed.is_empty() {
-                let screen = vt.screen_rows();
-                let refs: Vec<&str> = screen.iter().map(|s| s.as_str()).collect();
-                if let Some(cutoff) = crate::chrome::find_chrome_cutoff(&refs) {
-                    changed.into_iter().filter(|r| r.row_index < cutoff).collect()
+                if let Some(screen) = vt.screen_rows_ref() {
+                    let refs: Vec<&str> = screen.iter().map(|s| s.as_str()).collect();
+                    if let Some(cutoff) = crate::chrome::find_chrome_cutoff(&refs) {
+                        changed.into_iter().filter(|r| r.row_index < cutoff).collect()
+                    } else {
+                        changed
+                    }
                 } else {
                     changed
                 }
@@ -1625,9 +1632,12 @@ impl ChunkProcessor {
                 changed
             };
 
-            (changed, Some(total), Some(oldest), tevts)
+            // Single owned snapshot for downstream parsers (slash-menu, choice-prompt).
+            let screen = vt.screen_rows();
+
+            (changed, Some(total), Some(oldest), tevts, Some(screen))
         } else {
-            (Vec::new(), None, None, Vec::new())
+            (Vec::new(), None, None, Vec::new(), None)
         };
 
         // Emit scrollback-overlay growth/rotation event (throttled to 100ms).
@@ -1743,9 +1753,7 @@ impl ChunkProcessor {
             .unwrap_or(false);
         events.extend(self.parser.parse_clean_lines(&changed_rows, agent_active_for_parse));
 
-        // Compute screen rows once for both slash-menu and choice-prompt parsers.
-        let screen_cache = state.vt_log_buffers.get(session_id)
-            .map(|vt_log| vt_log.lock().screen_rows());
+        // screen_cache was computed once inside the vt_log lock scope above.
 
         // Slash menu detection — use full screen rows (not chrome-trimmed).
         // Claude Code v2.1+ renders autocomplete items BELOW the prompt chrome,
@@ -4012,7 +4020,12 @@ pub(crate) fn send_grid_frame(state: &AppState, session_id: &str, frame: Vec<u8>
     if frame.is_empty() {
         return;
     }
-    if let Some(watch_tx) = state.grid_watch.get(session_id) {
+    let needs_watch = state.grid_watch.get(session_id)
+        .is_some_and(|tx| tx.receiver_count() > 0);
+
+    if needs_watch
+        && let Some(watch_tx) = state.grid_watch.get(session_id)
+    {
         let _ = watch_tx.send(frame.clone());
     }
     if let Some(ch) = state.grid_channels.get(session_id) {
@@ -4073,72 +4086,6 @@ pub(crate) fn unsubscribe_terminal_grid(
 ) {
     state.grid_channels.remove(&session_id);
     state.grid_frame_in_flight.remove(&session_id);
-}
-
-// --- Selection commands ---
-
-#[tauri::command]
-pub(crate) fn terminal_select_start(
-    state: State<'_, Arc<AppState>>,
-    session_id: String,
-    col: usize,
-    row: usize,
-    word: Option<bool>,
-) {
-    if let Some(vt) = state.vt_log_buffers.get(&session_id) {
-        let ty = if word.unwrap_or(false) {
-            alacritty_terminal::selection::SelectionType::Semantic
-        } else {
-            alacritty_terminal::selection::SelectionType::Simple
-        };
-        let frame = {
-            let mut vt = vt.lock();
-            vt.grid_selection_start(col, row, ty);
-            vt.serialize_dirty_rows()
-        };
-        send_grid_frame(&state, &session_id, frame);
-    }
-}
-
-#[tauri::command]
-pub(crate) fn terminal_select_update(
-    state: State<'_, Arc<AppState>>,
-    session_id: String,
-    col: usize,
-    row: usize,
-) {
-    if let Some(vt) = state.vt_log_buffers.get(&session_id) {
-        let frame = {
-            let mut vt = vt.lock();
-            vt.grid_selection_update(col, row);
-            vt.serialize_dirty_rows()
-        };
-        send_grid_frame(&state, &session_id, frame);
-    }
-}
-
-#[tauri::command]
-pub(crate) fn terminal_select_text(
-    state: State<'_, Arc<AppState>>,
-    session_id: String,
-) -> Option<String> {
-    state.vt_log_buffers.get(&session_id)
-        .and_then(|vt| vt.lock().grid_selection_text())
-}
-
-#[tauri::command]
-pub(crate) fn terminal_select_clear(
-    state: State<'_, Arc<AppState>>,
-    session_id: String,
-) {
-    if let Some(vt) = state.vt_log_buffers.get(&session_id) {
-        let frame = {
-            let mut vt = vt.lock();
-            vt.grid_selection_clear();
-            vt.serialize_dirty_rows()
-        };
-        send_grid_frame(&state, &session_id, frame);
-    }
 }
 
 // --- Scroll commands ---

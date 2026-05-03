@@ -371,6 +371,8 @@ pub(super) fn spawn_pty_session(
         session_id.clone(),
         std::sync::atomic::AtomicU64::new(0),
     );
+    let (grid_watch_tx, _) = tokio::sync::watch::channel(Vec::new());
+    state.grid_watch.insert(session_id.clone(), grid_watch_tx);
 
     // Broadcast to SSE/WebSocket consumers (before state is moved to reader thread)
     let _ = state.event_bus.send(crate::state::AppEvent::SessionCreated {
@@ -920,7 +922,10 @@ async fn handle_ws_log_session(
                         tracing::error!(session_id = %session_id, "PTY write failed: {e}");
                         break;
                     }
-                    let _ = s.writer.flush();
+                    if let Err(e) = s.writer.flush() {
+                        tracing::error!("PTY flush failed: {e}");
+                        break;
+                    }
                 }
             }
             Message::Binary(data) => {
@@ -930,7 +935,10 @@ async fn handle_ws_log_session(
                         tracing::error!(session_id = %session_id, "PTY write failed: {e}");
                         break;
                     }
-                    let _ = s.writer.flush();
+                    if let Err(e) = s.writer.flush() {
+                        tracing::error!("PTY flush failed: {e}");
+                        break;
+                    }
                 }
             }
             Message::Close(_) => break,
@@ -1060,7 +1068,10 @@ async fn handle_ws_grid_session(
                         tracing::error!(session_id = %sid, "PTY write failed: {e}");
                         break;
                     }
-                    let _ = s.writer.flush();
+                    if let Err(e) = s.writer.flush() {
+                        tracing::error!("PTY flush failed: {e}");
+                        break;
+                    }
                 }
             }
             Message::Close(_) => break,
@@ -1145,72 +1156,6 @@ pub(super) async fn terminal_scroll_info(
         "screen_lines": vt.grid_screen_lines(),
     });
     Json(info).into_response()
-}
-
-pub(super) async fn terminal_select_start(
-    State(state): State<Arc<AppState>>,
-    Path(session_id): Path<String>,
-    Json(body): Json<super::types::TerminalSelectStartRequest>,
-) -> impl IntoResponse {
-    let Some(vt) = state.vt_log_buffers.get(&session_id) else {
-        return session_not_found();
-    };
-    let ty = if body.word.unwrap_or(false) {
-        alacritty_terminal::selection::SelectionType::Semantic
-    } else {
-        alacritty_terminal::selection::SelectionType::Simple
-    };
-    let frame = {
-        let mut vt = vt.lock();
-        vt.grid_selection_start(body.col, body.row, ty);
-        vt.serialize_dirty_rows()
-    };
-    crate::pty::send_grid_frame(&state, &session_id, frame);
-    (StatusCode::OK, Json(serde_json::json!({"ok": true})))
-}
-
-pub(super) async fn terminal_select_update(
-    State(state): State<Arc<AppState>>,
-    Path(session_id): Path<String>,
-    Json(body): Json<super::types::TerminalSelectUpdateRequest>,
-) -> impl IntoResponse {
-    let Some(vt) = state.vt_log_buffers.get(&session_id) else {
-        return session_not_found();
-    };
-    let frame = {
-        let mut vt = vt.lock();
-        vt.grid_selection_update(body.col, body.row);
-        vt.serialize_dirty_rows()
-    };
-    crate::pty::send_grid_frame(&state, &session_id, frame);
-    (StatusCode::OK, Json(serde_json::json!({"ok": true})))
-}
-
-pub(super) async fn terminal_select_text(
-    State(state): State<Arc<AppState>>,
-    Path(session_id): Path<String>,
-) -> impl IntoResponse {
-    let Some(vt) = state.vt_log_buffers.get(&session_id) else {
-        return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "Session not found"}))).into_response();
-    };
-    let text = vt.lock().grid_selection_text();
-    Json(serde_json::json!({"text": text})).into_response()
-}
-
-pub(super) async fn terminal_select_clear(
-    State(state): State<Arc<AppState>>,
-    Path(session_id): Path<String>,
-) -> impl IntoResponse {
-    let Some(vt) = state.vt_log_buffers.get(&session_id) else {
-        return session_not_found();
-    };
-    let frame = {
-        let mut vt = vt.lock();
-        vt.grid_selection_clear();
-        vt.serialize_dirty_rows()
-    };
-    crate::pty::send_grid_frame(&state, &session_id, frame);
-    (StatusCode::OK, Json(serde_json::json!({"ok": true})))
 }
 
 pub(super) async fn terminal_search(

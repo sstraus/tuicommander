@@ -239,34 +239,6 @@ describe("transport", () => {
       expect(result.path).toBe("/sessions/s1/terminal/scroll-info");
     });
 
-    it("maps terminal_select_start to POST /sessions/{id}/terminal/select/start", () => {
-      const result = mapCommandToHttp("terminal_select_start", { sessionId: "s1", col: 5, row: 3, word: true });
-      expect(result.method).toBe("POST");
-      expect(result.path).toBe("/sessions/s1/terminal/select/start");
-      expect(result.body).toEqual({ col: 5, row: 3, word: true });
-    });
-
-    it("maps terminal_select_update to POST /sessions/{id}/terminal/select/update", () => {
-      const result = mapCommandToHttp("terminal_select_update", { sessionId: "s1", col: 10, row: 7 });
-      expect(result.method).toBe("POST");
-      expect(result.path).toBe("/sessions/s1/terminal/select/update");
-      expect(result.body).toEqual({ col: 10, row: 7 });
-    });
-
-    it("maps terminal_select_text to GET with transform", () => {
-      const result = mapCommandToHttp("terminal_select_text", { sessionId: "s1" });
-      expect(result.method).toBe("GET");
-      expect(result.path).toBe("/sessions/s1/terminal/select/text");
-      expect(result.transform!({ text: "selected" })).toBe("selected");
-      expect(result.transform!({ text: null })).toBeNull();
-    });
-
-    it("maps terminal_select_clear to POST /sessions/{id}/terminal/select/clear", () => {
-      const result = mapCommandToHttp("terminal_select_clear", { sessionId: "s1" });
-      expect(result.method).toBe("POST");
-      expect(result.path).toBe("/sessions/s1/terminal/select/clear");
-    });
-
     it("maps terminal_search to POST with transform", () => {
       const result = mapCommandToHttp("terminal_search", { sessionId: "s1", query: "foo" });
       expect(result.method).toBe("POST");

@@ -1,7 +1,7 @@
 import { Component, createEffect, createSignal } from "solid-js";
-import type { SearchOptions } from "../shared/DomSearchEngine";
 import type { CanvasTerminalRef } from "./CanvasTerminal";
 import { SearchBar } from "../shared/SearchBar";
+import { appLogger } from "../../stores/appLogger";
 
 export interface TerminalSearchProps {
   visible: boolean;
@@ -24,12 +24,14 @@ export const TerminalSearch: Component<TerminalSearchProps> = (props) => {
     }
   });
 
-  const handleSearch = (term: string, _opts: SearchOptions) => {
+  const handleSearch = (term: string) => {
     lastTerm = term;
     if (term) {
       props.canvasRef?.searchFind(term).then(({ index, count }) => {
         setResultIndex(index);
         setResultCount(count);
+      }).catch((e) => {
+        appLogger.warn("terminal", "searchFind failed", { error: e });
       });
     } else {
       props.canvasRef?.searchClear();

@@ -225,10 +225,10 @@ mod dev_store {
     }
 
     fn sync(guard: &HashMap<String, String>) {
-        if let Ok(json) = serde_json::to_string_pretty(guard) {
-            if let Err(e) = std::fs::write(file_path(), json) {
-                tracing::warn!(error = %e, "dev_store: failed to persist credentials to disk");
-            }
+        if let Ok(json) = serde_json::to_string_pretty(guard)
+            && let Err(e) = std::fs::write(file_path(), json)
+        {
+            tracing::warn!(error = %e, "dev_store: failed to persist credentials to disk");
         }
     }
 
