@@ -5892,39 +5892,35 @@ mod tests {
         );
     }
 
-    // --- vt100 escape sequence handling diagnostics ---
+    // --- Escape sequence handling diagnostics (using TerminalGrid) ---
 
-    /// Verify that `\x1b[<n>F` (CPL — Cursor Previous Line) is handled by vt100
+    /// Verify that `\x1b[<n>F` (CPL — Cursor Previous Line) is handled
     /// and does NOT leak parameter digits into screen cell text.
     #[test]
-    fn test_vt100_cpl_sequence_does_not_leak() {
-        let mut parser = vt100::Parser::new(24, 80, 0);
-        // Write on row 2, then CPL to go back to row 1 and overwrite
-        parser.process(b"\n");                     // move to row 1
-        parser.process(b"old content here\n");     // row 1 has text, cursor at row 2
-        parser.process(b"\x1b[1F");                // CPL: go up 1 line, col 0
-        parser.process(b"new content");            // overwrite row 1
-        let screen = parser.screen();
-        let row1: String = screen.rows(0, 80).nth(1).unwrap().trim_end().to_string();
-        assert_eq!(row1, "new content here",
+    fn test_cpl_sequence_does_not_leak() {
+        let mut grid = crate::terminal_grid::TerminalGrid::new(24, 80, 0);
+        grid.process(b"\n");
+        grid.process(b"old content here\n");
+        grid.process(b"\x1b[1F");
+        grid.process(b"new content");
+        let row1 = grid.get_row_text(1);
+        assert_eq!(row1.trim_end(), "new content here",
             "CPL should move cursor up; row1 = {:?}", row1);
-        // The critical check: no "1F" should appear anywhere
         assert!(!row1.contains("1F"),
             "escape param '1F' leaked into screen text: {:?}", row1);
     }
 
     /// Verify that `\x1b[<n>E` (CNL — Cursor Next Line) is handled.
     #[test]
-    fn test_vt100_cnl_sequence_does_not_leak() {
-        let mut parser = vt100::Parser::new(24, 80, 0);
-        parser.process(b"line0");
-        parser.process(b"\x1b[1E");  // CNL: go down 1 line, col 0
-        parser.process(b"line1");
-        let screen = parser.screen();
-        let row0: String = screen.rows(0, 80).next().unwrap().trim_end().to_string();
-        let row1: String = screen.rows(0, 80).nth(1).unwrap().trim_end().to_string();
-        assert_eq!(row0, "line0", "row0 should be unchanged; got {:?}", row0);
-        assert_eq!(row1, "line1", "CNL should move cursor down; got {:?}", row1);
+    fn test_cnl_sequence_does_not_leak() {
+        let mut grid = crate::terminal_grid::TerminalGrid::new(24, 80, 0);
+        grid.process(b"line0");
+        grid.process(b"\x1b[1E");
+        grid.process(b"line1");
+        let row0 = grid.get_row_text(0);
+        let row1 = grid.get_row_text(1);
+        assert_eq!(row0.trim_end(), "line0", "row0 should be unchanged; got {:?}", row0);
+        assert_eq!(row1.trim_end(), "line1", "CNL should move cursor down; got {:?}", row1);
     }
 
     /// Simulate Ink-style rendering: write intent, then use CPL to update it.
@@ -5981,32 +5977,26 @@ mod tests {
     }
 
     /// Test what happens when CSI is aborted by an unexpected byte.
-    /// Some terminal emulators discard the sequence; others print the chars.
     #[test]
-    fn test_vt100_aborted_csi_does_not_leak_digits() {
-        // Scenario: \x1b[1 followed by a non-CSI byte (e.g. ESC starting
-        // a new sequence). The pending "1" should NOT become visible text.
-        let mut parser = vt100::Parser::new(24, 80, 0);
+    fn test_aborted_csi_does_not_leak_digits() {
+        let mut grid = crate::terminal_grid::TerminalGrid::new(24, 80, 0);
         // \x1b[1\x1b[2K — the first CSI is aborted by the second ESC
-        parser.process(b"\x1b[1\x1b[2KHello");
-        let screen = parser.screen();
-        let row: String = screen.rows(0, 80).next().unwrap().trim_end().to_string();
+        grid.process(b"\x1b[1\x1b[2KHello");
+        let row = grid.get_row_text(0);
         eprintln!("aborted CSI row: {:?}", row);
         assert!(!row.starts_with('1'),
             "aborted CSI parameter '1' should not appear in cell text: {:?}", row);
     }
 
-    /// Test intermediate characters in CSI (e.g. \x1b[?25l has '?' intermediate).
-    /// If vt100 doesn't recognize a private-mode sequence, does it leak?
+    /// Test that unknown private CSI sequences don't leak.
     #[test]
-    fn test_vt100_unknown_private_csi_does_not_leak() {
-        let mut parser = vt100::Parser::new(24, 80, 0);
+    fn test_unknown_private_csi_does_not_leak() {
+        let mut grid = crate::terminal_grid::TerminalGrid::new(24, 80, 0);
         // \x1b[?1234z — fictional private sequence with unknown final byte 'z'
-        parser.process(b"\x1b[?1234zVisible text");
-        let screen = parser.screen();
-        let row: String = screen.rows(0, 80).next().unwrap().trim_end().to_string();
+        grid.process(b"\x1b[?1234zVisible text");
+        let row = grid.get_row_text(0);
         eprintln!("unknown private CSI row: {:?}", row);
-        assert_eq!(row, "Visible text",
+        assert_eq!(row.trim_end(), "Visible text",
             "unknown private CSI should not leak; got: {:?}", row);
     }
 

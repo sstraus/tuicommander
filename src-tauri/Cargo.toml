@@ -113,4 +113,5 @@ tempfile = "3"
 tower = { version = "0.5", features = ["util"] }
 serial_test = "3"
 mockito = "1"
+strip-ansi-escapes = "0.2"
 

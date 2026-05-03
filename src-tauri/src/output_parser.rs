@@ -740,21 +740,16 @@ fn parse_pr_url(text: &str) -> Option<ParsedEvent> {
     None
 }
 
-/// Strip ANSI escape sequences from raw PTY text using the vt100 crate.
+/// Strip ANSI escape sequences from raw PTY text.
 ///
-/// Renders the text through a virtual 220×50 screen and extracts the visible
-/// rows, correctly handling cursor movement, carriage returns, and all CSI/OSC
-/// sequences. Only used by the test-only [`OutputParser::parse`] method.
+/// Uses `strip-ansi-escapes` to remove all CSI/OSC/ESC sequences.
+/// Only used by the test-only [`OutputParser::parse`] method.
 #[cfg(test)]
 fn strip_ansi_via_vt100(text: &str) -> String {
-    let mut parser = vt100::Parser::new(50, 220, 0);
-    parser.process(text.as_bytes());
-    let screen = parser.screen();
-    let cols = screen.size().1;
-    screen
-        .rows(0, cols)
-        .map(|r| r.trim_end().to_string())
-        .filter(|r| !r.is_empty())
+    let stripped = strip_ansi_escapes::strip(text);
+    String::from_utf8_lossy(&stripped)
+        .lines()
+        .filter(|l| !l.trim().is_empty())
         .collect::<Vec<_>>()
         .join("\n")
 }
