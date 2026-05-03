@@ -180,6 +180,10 @@ pub struct TerminalGrid {
     term: Term<TermEventCollector>,
     processor: ansi::Processor,
     prev_rows: Vec<String>,
+    last_frame_display_offset: Option<usize>,
+    last_frame_history_size: Option<usize>,
+    last_frame_screen_lines: Option<usize>,
+    last_frame_columns: Option<usize>,
     bell_flag: Arc<AtomicBool>,
     events: Arc<Mutex<Vec<TermEvent>>>,
 }
@@ -201,6 +205,10 @@ impl TerminalGrid {
             term,
             processor: ansi::Processor::new(),
             prev_rows: Vec::new(),
+            last_frame_display_offset: None,
+            last_frame_history_size: None,
+            last_frame_screen_lines: None,
+            last_frame_columns: None,
             bell_flag,
             events,
         }
@@ -764,6 +772,15 @@ impl TerminalGrid {
         if mode.contains(TermMode::REPORT_ALL_KEYS_AS_ESC) { keyboard_flags |= 0x08; }
         if mode.contains(TermMode::REPORT_ASSOCIATED_TEXT) { keyboard_flags |= 0x10; }
 
+        let viewport_changed =
+            self.last_frame_display_offset != Some(display_offset)
+            || self.last_frame_history_size != Some(history_size)
+            || self.last_frame_screen_lines != Some(num_lines)
+            || self.last_frame_columns != Some(num_cols);
+        if viewport_changed {
+            self.term.mark_fully_damaged();
+        }
+
         let dirty_lines: Vec<usize> = {
             let damage = self.term.damage();
             match damage {
@@ -777,6 +794,10 @@ impl TerminalGrid {
 
         if dirty_lines.is_empty() {
             self.term.reset_damage();
+            self.last_frame_display_offset = Some(display_offset);
+            self.last_frame_history_size = Some(history_size);
+            self.last_frame_screen_lines = Some(num_lines);
+            self.last_frame_columns = Some(num_cols);
             return Vec::new();
         }
 
@@ -822,7 +843,7 @@ impl TerminalGrid {
                 let ch = if cell.flags.contains(Flags::WIDE_CHAR_SPACER) {
                     0u32
                 } else if cell.c == '\0' {
-                    ' ' as u32
+                    0u32
                 } else {
                     cell.c as u32
                 };
@@ -860,6 +881,10 @@ impl TerminalGrid {
         }
 
         self.term.reset_damage();
+        self.last_frame_display_offset = Some(display_offset);
+        self.last_frame_history_size = Some(history_size);
+        self.last_frame_screen_lines = Some(num_lines);
+        self.last_frame_columns = Some(num_cols);
         buf
     }
 
@@ -1094,6 +1119,11 @@ mod tests {
         // Second cell = 'i'
         let (ch, _, _, _, _, _, _, _) = decode_cell(&buf, cell0 + 11);
         assert_eq!(ch, 'i');
+
+        // Alacritty represents regular empty cells as spaces; wide-char spacers
+        // are the NUL cells covered by serialize_wide_char_spacer_is_zero.
+        let (ch, _, _, _, _, _, _, _) = decode_cell(&buf, cell0 + 22);
+        assert_eq!(ch, ' ');
     }
 
     #[test]
@@ -1165,6 +1195,19 @@ mod tests {
         let (num_rows, _, _, _) = decode_header(&buf);
         // Should have fewer rows than the full 5
         assert!(num_rows <= 5, "partial damage, got {num_rows} rows");
+    }
+
+    #[test]
+    fn serialize_full_frame_when_history_grows() {
+        let mut grid = TerminalGrid::new(3, 10, 100);
+        let _ = grid.process(b"one\r\ntwo\r\nthree");
+        let _ = grid.serialize_dirty_rows();
+
+        let _ = grid.process(b"\r\nfour");
+        let buf = grid.serialize_dirty_rows();
+        let (num_rows, _, _, _) = decode_header(&buf);
+
+        assert_eq!(num_rows, 3, "scrollback growth shifts viewport rows, so frame must be full");
     }
 
     #[test]

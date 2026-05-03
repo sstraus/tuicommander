@@ -104,7 +104,7 @@ dependencies = [
  "serde",
  "signal-hook",
  "unicode-width",
- "vte",
+ "vte 0.15.0",
  "windows-sys 0.59.0",
 ]
 
@@ -6663,6 +6663,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "strip-ansi-escapes"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a8f8038e7e7969abb3f1b7c2a811225e9296da208539e0f79c5251d6cac0025"
+dependencies = [
+ "vte 0.14.1",
+]
+
+[[package]]
 name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7975,6 +7984,7 @@ dependencies = [
  "serde_json",
  "serial_test",
  "sha2",
+ "strip-ansi-escapes",
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard-manager",
@@ -7996,7 +8006,6 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
- "vt100",
  "web-push-native",
  "whisper-rs",
  "windows-sys 0.61.2",
@@ -8260,14 +8269,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "vt100"
-version = "0.16.2"
+name = "vte"
+version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "054ff75fb8fa83e609e685106df4faeffdf3a735d3c74ebce97ec557d5d36fd9"
+checksum = "231fdcd7ef3037e8330d8e17e61011a2c244126acc0a982f4040ac3f9f0bc077"
 dependencies = [
- "itoa",
- "unicode-width",
- "vte",
+ "memchr",
 ]
 
 [[package]]
