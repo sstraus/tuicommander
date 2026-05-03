@@ -26,21 +26,22 @@
 /* ---- Resize Handles ---- */
 
 .pane-resize-handle {
-  flex: 0 0 8px;
+  flex: 0 0 4px;
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1;
+  background: var(--bg-secondary);
 }
 
 .pane-resize-vertical {
   cursor: col-resize;
-  width: 8px;
+  width: 4px;
 }
 
 .pane-resize-horizontal {
   cursor: row-resize;
-  height: 8px;
+  height: 4px;
 }
 
 .pane-resize-handle::after {

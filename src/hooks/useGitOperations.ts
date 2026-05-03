@@ -465,7 +465,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
       }
       repositoriesStore.addTerminalToBranch(repoPath, branchName, id);
       terminalsStore.setActive(id);
-      assignTabToActiveGroup(id, "terminal");
+      if (!needsSwitch) {
+        assignTabToActiveGroup(id, "terminal");
+      }
     });
     // Focus the new terminal after SolidJS renders and mounts the component
     // (onMount sets ref, which happens in the next frame).

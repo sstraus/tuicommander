@@ -194,6 +194,7 @@
   flex: 1;
   min-width: 200px;
   position: relative;
+  background: var(--bg-secondary);
 }
 
 #terminal-panes.split-vertical {
