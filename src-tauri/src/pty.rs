@@ -4284,6 +4284,64 @@ mod tests {
         assert_eq!(classify_agent("vim"), None);
     }
 
+    // --- parse_osc7_cwd tests (story 1558-81bb) ---
+
+    #[test]
+    fn osc7_simple_path() {
+        assert_eq!(parse_osc7_cwd("file://hostname/Users/me"), Ok("/Users/me".into()));
+    }
+
+    #[test]
+    fn osc7_empty_hostname() {
+        assert_eq!(parse_osc7_cwd("file:///home/user"), Ok("/home/user".into()));
+    }
+
+    #[test]
+    fn osc7_localhost() {
+        assert_eq!(parse_osc7_cwd("file://localhost/tmp/foo"), Ok("/tmp/foo".into()));
+    }
+
+    #[test]
+    fn osc7_trailing_slash_stripped() {
+        assert_eq!(parse_osc7_cwd("file:///home/user/"), Ok("/home/user".into()));
+    }
+
+    #[test]
+    fn osc7_root_path_preserved() {
+        assert_eq!(parse_osc7_cwd("file:///"), Ok("/".into()));
+    }
+
+    #[test]
+    fn osc7_percent_encoded_space() {
+        assert_eq!(
+            parse_osc7_cwd("file:///home/user/my%20project"),
+            Ok("/home/user/my project".into()),
+        );
+    }
+
+    #[test]
+    fn osc7_percent_encoded_special_chars() {
+        assert_eq!(
+            parse_osc7_cwd("file:///tmp/%E2%9C%93"),
+            Ok("/tmp/\u{2713}".into()),
+        );
+    }
+
+    #[test]
+    fn osc7_missing_scheme() {
+        assert!(parse_osc7_cwd("/home/user").is_err());
+    }
+
+    #[test]
+    fn osc7_wrong_scheme() {
+        assert!(parse_osc7_cwd("http://localhost/foo").is_err());
+    }
+
+    #[test]
+    fn osc7_invalid_percent_encoding() {
+        assert!(parse_osc7_cwd("file:///home/%GG").is_err());
+    }
+
     // --- classify_shell tests (story 1274-2e38) ---
 
     #[test]

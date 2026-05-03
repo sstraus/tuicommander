@@ -2027,6 +2027,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
           onResume={handleResume}
           onResumeDismiss={() => terminalsStore.update(props.id, { pendingResumeCommand: null })}
           hasPendingResume={!!terminalsStore.get(props.id)?.pendingResumeCommand}
+          onCwdChange={props.onCwdChange}
           onRef={(ref) => { canvasTerminalRef = ref; }}
           onBell={handleBell}
         />}

@@ -1125,6 +1125,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     resizeObserver?.disconnect();
     if (dprChangeHandler) dprMediaQuery?.removeEventListener("change", dprChangeHandler);
     unsubscribe?.();
+    unlistenCwd?.();
     clearTimeout(linkThrottle);
     linkCache.clear();
     screenRows.clear();
