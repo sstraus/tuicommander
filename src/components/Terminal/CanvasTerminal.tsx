@@ -28,6 +28,7 @@ import { isMacOS, isWindows } from "../../platform";
 import { appLogger } from "../../stores/appLogger";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
 import { createTransport, type TerminalTransport } from "./canvasTerminalTransport";
+import { installTouchHandlers } from "./canvasTerminalTouch";
 // Re-export for external consumers
 export type { CellMetrics, CursorShape, DecodedFrame, DecodedCell };
 
@@ -62,6 +63,7 @@ const INTENT_RE = /^[\s●⏺]*intent:\s+/;
 
 const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
   let canvasRef!: HTMLCanvasElement;
+  let touchTextareaRef!: HTMLTextAreaElement;
   let scrollbarRef!: HTMLDivElement;
   let scrollThumbRef!: HTMLDivElement;
   let overlayRef!: HTMLDivElement;
@@ -71,8 +73,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
   const [metrics, setMetrics] = createSignal<CellMetrics | null>(null);
   const [focused, setFocused] = createSignal(false);
   let currentFrame: DecodedFrame | null = null;
-  // Accumulated screen buffer: survives partial damage frames so resize can repaint everything
-  let screenRows = new Map<number, DecodedFrame["rows"][0]>();
   let lastDisplayOffset = -1;
   let lastScreenRows = -1;
   let lastScreenCols = -1;
@@ -91,6 +91,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
   let resizeDebounce: ReturnType<typeof setTimeout> | undefined;
   let dprMediaQuery: MediaQueryList | undefined;
   let dprChangeHandler: (() => void) | undefined;
+  let cleanupTouch: (() => void) | undefined;
   let alive = true;
 
   // Selection state
@@ -197,7 +198,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
         && (cols !== lastResizeCols || rows !== lastResizeRows)) {
       lastResizeCols = cols;
       lastResizeRows = rows;
-      screenRows.clear();
+
       rowMap.clear();
       fullRepaintNeeded = true;
       lastDisplayOffset = -1;
@@ -265,9 +266,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
         }
       }
 
-      ctx.fillStyle = cachedBgDefault;
       for (const idx of rowsToRepaint) {
         const y = idx * m.cellHeight;
+        ctx.fillStyle = cachedBgDefault;
         ctx.fillRect(0, y, w, m.cellHeight);
         const row = rowMap.get(idx);
         if (row) paintRow(row, y, m, fontFamily);
@@ -990,7 +991,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     const scrollChanged = frame.displayOffset !== lastDisplayOffset || frame.historySize !== lastHistorySize;
 
     if (geomChanged) {
-      screenRows.clear();
+
       rowMap.clear();
       fullRepaintNeeded = true;
     }
@@ -1006,7 +1007,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     const screenRowCount = frame.screenRows || lastResizeRows || 24;
     if (frame.rows.length >= screenRowCount) {
       rowMap.clear();
-      screenRows.clear();
+
       fullRepaintNeeded = true;
     } else if (scrollChanged && !geomChanged) {
       // Scroll changed but only partial rows arrived — old row indices are stale.
@@ -1016,7 +1017,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(() => {});
     }
     for (const row of frame.rows) {
-      screenRows.set(row.index, row);
+
       rowMap.set(row.index, row);
       pendingDirtyRows.add(row.index);
     }
@@ -1170,7 +1171,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       const isVisible = entries[0]?.isIntersecting ?? false;
       if (isVisible && hidden) {
         hidden = false;
-        screenRows.clear();
+  
         rowMap.clear();
         fullRepaintNeeded = true;
         currentFrame = null;
@@ -1249,7 +1250,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       // Force re-render: clear accumulated buffer and request fresh frame from Rust
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "l" && !e.altKey) {
         e.preventDefault();
-        screenRows.clear();
+  
         rowMap.clear();
         fullRepaintNeeded = true;
         currentFrame = null;
@@ -1553,6 +1554,22 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     document.addEventListener("mousemove", onScrollDragMove);
     document.addEventListener("mouseup", onScrollDragUp);
 
+    // Touch input (mobile/tablet)
+    cleanupTouch = installTouchHandlers(canvasRef, touchTextareaRef, {
+      onScroll: (dy) => {
+        const lines = Math.round(dy / (metrics()?.cellHeight ?? 20));
+        if (lines !== 0) invokeRef?.("terminal_scroll", { sessionId: props.sessionId, delta: -lines }).catch(() => {});
+      },
+      onInput: (data) => writePty(data),
+      onFocus: () => { setFocused(true); startBlink(); props.onFocus?.(); },
+      onFontSizeChange: (delta) => {
+        const cur = settingsStore.state.defaultFontSize;
+        const next = Math.round(cur + delta);
+        if (next !== cur) settingsStore.setDefaultFontSize(next);
+      },
+      onSelectionMode: () => { /* future: enter selection UI */ },
+    });
+
     // Subscribe to grid channel via transport abstraction
     try {
       transport = createTransport(props.sessionId);
@@ -1598,7 +1615,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       focus: () => canvasRef.focus(),
       getSelectionText: () => cachedSelectionText,
       refresh: () => {
-        screenRows.clear();
+  
         rowMap.clear();
         fullRepaintNeeded = true;
         currentFrame = null;
@@ -1688,9 +1705,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     visibilityObserver?.disconnect();
     if (dprChangeHandler) dprMediaQuery?.removeEventListener("change", dprChangeHandler);
     unsubscribe?.();
+    cleanupTouch?.();
     clearTimeout(linkThrottle);
     linkCache.clear();
-    screenRows.clear();
     rowMap.clear();
     colorStringCache.clear();
     fontStyleCache.clear();
@@ -1721,6 +1738,24 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
         canvasRef.focus();
       }}
     >
+      {/* Offscreen textarea for mobile virtual keyboard input */}
+      <textarea
+        ref={touchTextareaRef!}
+        style={{
+          position: "fixed",
+          top: "-9999px",
+          left: "-9999px",
+          width: "1px",
+          height: "1px",
+          opacity: "0",
+          "pointer-events": "none",
+        }}
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="off"
+        spellcheck={false}
+        tabIndex={-1}
+      />
       <canvas
         ref={canvasRef!}
         style={{
