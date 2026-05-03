@@ -63,12 +63,14 @@ const INTENT_RE = /^[\s●⏺]*intent:\s+/;
 
 const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
   let canvasRef!: HTMLCanvasElement;
+  let overlayCanvasRef!: HTMLCanvasElement;
   let touchTextareaRef!: HTMLTextAreaElement;
   let scrollbarRef!: HTMLDivElement;
   let scrollThumbRef!: HTMLDivElement;
   let overlayRef!: HTMLDivElement;
   let containerRef!: HTMLDivElement;
   let ctx: CanvasRenderingContext2D;
+  let octx: CanvasRenderingContext2D;
 
   const [metrics, setMetrics] = createSignal<CellMetrics | null>(null);
   const [focused, setFocused] = createSignal(false);
@@ -117,11 +119,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
   let hidden = false;
   let lastHistorySize = -1;
 
-  // Previous overlay rows — needed to invalidate stale overlay pixels on transition
-  let lastCursorRow = -1;
-  let lastSearchRows = new Set<number>();
-  let lastSelectionRows = new Set<number>();
-  let lastGutterRows = new Set<number>();
 
   // Memoized color strings: pack RGB into u32 key → "rgb(r,g,b)" string
   const colorStringCache = new Map<number, string>();
@@ -194,6 +191,11 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     canvasRef.style.width = `${logicalW}px`;
     canvasRef.style.height = `${logicalH}px`;
     ctx.scale(dpr, dpr);
+    overlayCanvasRef.width = logicalW * dpr;
+    overlayCanvasRef.height = logicalH * dpr;
+    overlayCanvasRef.style.width = `${logicalW}px`;
+    overlayCanvasRef.style.height = `${logicalH}px`;
+    octx.scale(dpr, dpr);
     if (cols > 0 && rows > 0 && logicalW > 0 && logicalH > 0 && invokeRef
         && (cols !== lastResizeCols || rows !== lastResizeRows)) {
       lastResizeCols = cols;
@@ -225,48 +227,8 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       }
       fullRepaintNeeded = false;
     } else {
-      // Incremental: repaint dirty rows + previous/current overlay rows
-      const rowsToRepaint = new Set(dirtyIndices);
-
-      // Cursor: repaint previous/current rows, plus the swept range when the
-      // cursor moves vertically. TUIs often clear below the cursor; alacritty
-      // damage can arrive as sparse rows, so the canvas must invalidate the
-      // visible rows the cursor crossed instead of only the row marked dirty.
-      if (lastCursorRow >= 0) {
-        const start = Math.min(lastCursorRow, frame.cursorRow);
-        const end = Math.max(lastCursorRow, frame.cursorRow);
-        for (let r = start; r <= end; r++) rowsToRepaint.add(r);
-      }
-      rowsToRepaint.add(frame.cursorRow);
-
-      // Search highlights: previous + current viewport rows
-      for (const r of lastSearchRows) rowsToRepaint.add(r);
-      for (const match of searchMatches) {
-        const vpRow = absRowToViewport(match.row);
-        if (vpRow !== null) rowsToRepaint.add(vpRow);
-      }
-
-      // Selection: previous + current row range
-      for (const r of lastSelectionRows) rowsToRepaint.add(r);
-      if (selectionStart && selectionEnd) {
-        const s = Math.min(selectionStart.row, selectionEnd.row);
-        const e = Math.max(selectionStart.row, selectionEnd.row);
-        for (let r = s; r <= e; r++) rowsToRepaint.add(r);
-      }
-
-      // Gutter markers: previous + current
-      for (const r of lastGutterRows) rowsToRepaint.add(r);
-      const term = terminalsStore.get(props.terminalId);
-      if (term) {
-        for (const block of term.commandBlocks) {
-          if (block.exitCode !== null && block.exitCode !== 0) {
-            const vpRow = absRowToViewport(block.promptLine);
-            if (vpRow !== null) rowsToRepaint.add(vpRow);
-          }
-        }
-      }
-
-      for (const idx of rowsToRepaint) {
+      // Incremental: repaint only dirty text rows (overlay handles cursor/selection/search)
+      for (const idx of dirtyIndices) {
         const y = idx * m.cellHeight;
         ctx.fillStyle = cachedBgDefault;
         ctx.fillRect(0, y, w, m.cellHeight);
@@ -275,43 +237,18 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       }
     }
 
+    repaintOverlay(frame, m);
 
+    updateScrollbar(frame);
+    updateSuggestOverlay(frame, m, dirtyIndices);
+  }
+
+  function repaintOverlay(frame: DecodedFrame, m: CellMetrics) {
+    octx.clearRect(0, 0, overlayCanvasRef.width / m.dpr, overlayCanvasRef.height / m.dpr);
     paintSelection(frame, m);
     paintSearchHighlights(m);
     paintGutterMarkers(m);
     paintCursor(frame, m);
-
-    // Update previous overlay state for next incremental frame
-    lastCursorRow = frame.cursorRow;
-
-    const newSearchRows = new Set<number>();
-    for (const match of searchMatches) {
-      const vpRow = absRowToViewport(match.row);
-      if (vpRow !== null) newSearchRows.add(vpRow);
-    }
-    lastSearchRows = newSearchRows;
-
-    const newSelectionRows = new Set<number>();
-    if (selectionStart && selectionEnd) {
-      const s = Math.min(selectionStart.row, selectionEnd.row);
-      const e = Math.max(selectionStart.row, selectionEnd.row);
-      for (let r = s; r <= e; r++) newSelectionRows.add(r);
-    }
-    lastSelectionRows = newSelectionRows;
-
-    const newGutterRows = new Set<number>();
-    const gutterTerm = terminalsStore.get(props.terminalId);
-    if (gutterTerm) {
-      for (const block of gutterTerm.commandBlocks) {
-        if (block.exitCode !== null && block.exitCode !== 0) {
-          const vpRow = absRowToViewport(block.promptLine);
-          if (vpRow !== null) newGutterRows.add(vpRow);
-        }
-      }
-    }
-    lastGutterRows = newGutterRows;
-    updateScrollbar(frame);
-    updateSuggestOverlay(frame, m, dirtyIndices);
   }
 
   function findNearestVisibleMatch(matches: typeof searchMatches): number {
@@ -362,11 +299,11 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       const x = match.col_start * m.cellWidth;
       const y = vpRow * m.cellHeight;
       const w = (match.col_end - match.col_start) * m.cellWidth;
-      ctx.fillStyle = "rgba(255, 180, 50, 0.2)";
-      ctx.fillRect(x, y, w, m.cellHeight);
+      octx.fillStyle = "rgba(255, 180, 50, 0.2)";
+      octx.fillRect(x, y, w, m.cellHeight);
       if (isActive) {
-        ctx.fillStyle = "#e8984c";
-        ctx.fillRect(x, y + m.cellHeight - 2, w, 2);
+        octx.fillStyle = "#e8984c";
+        octx.fillRect(x, y + m.cellHeight - 2, w, 2);
       }
     }
   }
@@ -380,8 +317,8 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       if (block.exitCode === null || block.exitCode === 0) continue;
       const vpRow = absRowToViewport(block.promptLine);
       if (vpRow === null) continue;
-      ctx.fillStyle = "#f85149";
-      ctx.fillRect(0, vpRow * m.cellHeight, 3, m.cellHeight);
+      octx.fillStyle = "#f85149";
+      octx.fillRect(0, vpRow * m.cellHeight, 3, m.cellHeight);
     }
   }
 
@@ -390,7 +327,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     const startRow = Math.min(selectionStart.row, selectionEnd.row);
     const endRow = Math.max(selectionStart.row, selectionEnd.row);
 
-    ctx.fillStyle = "rgba(58, 130, 220, 0.35)";
+    octx.fillStyle = "rgba(58, 130, 220, 0.35)";
 
     for (let ri = startRow; ri <= endRow; ri++) {
       const row = rowMap.get(ri);
@@ -400,17 +337,17 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       if (startRow === endRow) {
         const c0 = Math.min(selectionStart.col, selectionEnd.col);
         const c1 = Math.max(selectionStart.col, selectionEnd.col);
-        ctx.fillRect(c0 * m.cellWidth, y, (c1 - c0 + 1) * m.cellWidth, m.cellHeight);
+        octx.fillRect(c0 * m.cellWidth, y, (c1 - c0 + 1) * m.cellWidth, m.cellHeight);
       } else if (ri === startRow) {
         const isStartFirst = selectionStart.row <= selectionEnd.row;
         const startCol = isStartFirst ? selectionStart.col : selectionEnd.col;
-        ctx.fillRect(startCol * m.cellWidth, y, (row.cells.length - startCol) * m.cellWidth, m.cellHeight);
+        octx.fillRect(startCol * m.cellWidth, y, (row.cells.length - startCol) * m.cellWidth, m.cellHeight);
       } else if (ri === endRow) {
         const isStartFirst = selectionStart.row <= selectionEnd.row;
         const endCol = isStartFirst ? selectionEnd.col : selectionStart.col;
-        ctx.fillRect(0, y, (endCol + 1) * m.cellWidth, m.cellHeight);
+        octx.fillRect(0, y, (endCol + 1) * m.cellWidth, m.cellHeight);
       } else {
-        ctx.fillRect(0, y, row.cells.length * m.cellWidth, m.cellHeight);
+        octx.fillRect(0, y, row.cells.length * m.cellWidth, m.cellHeight);
       }
     }
   }
@@ -478,23 +415,23 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     const rect = computeCursorRect(shape, frame.cursorRow, frame.cursorCol, m);
 
     if (!focused()) {
-      ctx.strokeStyle = cachedFgDefault;
-      ctx.lineWidth = 1;
-      ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
+      octx.strokeStyle = cachedFgDefault;
+      octx.lineWidth = 1;
+      octx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
       return;
     }
 
-    ctx.fillStyle = cachedFgDefault;
-    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    octx.fillStyle = cachedFgDefault;
+    octx.fillRect(rect.x, rect.y, rect.w, rect.h);
 
     if (shape === "block") {
       const row = rowMap.get(frame.cursorRow);
       const cell = row?.cells[frame.cursorCol];
       if (cell && cell.char && cell.char !== " ") {
         const fontFamily = settingsStore.getFontFamily();
-        ctx.font = buildFontStyle(cell, m.fontSize, fontFamily);
-        ctx.fillStyle = cachedBgDefault;
-        ctx.fillText(cell.char, rect.x, frame.cursorRow * m.cellHeight + m.baseline);
+        octx.font = buildFontStyle(cell, m.fontSize, fontFamily);
+        octx.fillStyle = cachedBgDefault;
+        octx.fillText(cell.char, rect.x, frame.cursorRow * m.cellHeight + m.baseline);
       }
     }
   }
@@ -963,15 +900,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
   }
 
   function repaintCursorOnly(frame: DecodedFrame, m: CellMetrics) {
-    const prevRow = frame.cursorRow;
-    const row = rowMap.get(prevRow);
-    if (row) {
-      const y = prevRow * m.cellHeight;
-      ctx.fillStyle = cachedBgDefault;
-      ctx.fillRect(0, y, canvasRef.width / m.dpr, m.cellHeight);
-      paintRow(row, y, m);
-    }
-    paintCursor(frame, m);
+    repaintOverlay(frame, m);
   }
 
   function repaintCursorIfNeeded() {
@@ -1153,6 +1082,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
   onMount(async () => {
     ctx = canvasRef.getContext("2d", { alpha: false })!;
+    octx = overlayCanvasRef.getContext("2d")!;
     acquireCache();
     const fontFamily = settingsStore.getFontFamily();
     const fontSize = settingsStore.state.defaultFontSize;
@@ -1764,6 +1694,16 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
           cursor: "text",
         }}
         tabIndex={0}
+      />
+      {/* Overlay canvas: cursor, selection, search highlights — redrawn every frame without touching base canvas */}
+      <canvas
+        ref={overlayCanvasRef!}
+        style={{
+          position: "absolute",
+          top: "0",
+          left: "0",
+          "pointer-events": "none",
+        }}
       />
       {/* Suggest/intent overlay */}
       <div
