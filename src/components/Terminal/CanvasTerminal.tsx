@@ -225,11 +225,16 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       const vpRow = absRowToViewport(match.row);
       if (vpRow === null) continue;
       const isActive = i === activeSearchIndex;
-      ctx.fillStyle = isActive ? "rgba(230, 180, 50, 0.7)" : "rgba(220, 200, 100, 0.35)";
       const x = match.col_start * m.cellWidth;
       const y = vpRow * m.cellHeight;
       const w = (match.col_end - match.col_start) * m.cellWidth;
+      ctx.fillStyle = "rgba(255, 180, 50, 0.25)";
       ctx.fillRect(x, y, w, m.cellHeight);
+      if (isActive) {
+        ctx.strokeStyle = "#e8984c";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x + 1, y + 1, w - 2, m.cellHeight - 2);
+      }
     }
   }
 
