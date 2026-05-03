@@ -133,13 +133,14 @@ function createUIStore() {
   }
 
   /** Keys of the mutually exclusive right-side panels */
-  type ExclusivePanel = "markdownPanelVisible" | "fileBrowserPanelVisible" | "gitPanelVisible" | "aiChatPanelVisible" | "aiTriagePanelVisible";
+  type ExclusivePanel = "markdownPanelVisible" | "fileBrowserPanelVisible" | "gitPanelVisible" | "aiChatPanelVisible" | "aiTriagePanelVisible" | "notesPanelVisible";
   const exclusivePanels: ExclusivePanel[] = [
     "markdownPanelVisible",
     "fileBrowserPanelVisible",
     "gitPanelVisible",
     "aiChatPanelVisible",
     "aiTriagePanelVisible",
+    "notesPanelVisible",
   ];
 
   /** Open one exclusive panel and close the others, or close all if `key` is already open (toggle). */
@@ -274,13 +275,11 @@ function createUIStore() {
     },
 
     toggleNotesPanel(): void {
-      setState("notesPanelVisible", (v) => !v);
-      saveUIPrefs();
+      setExclusivePanel("notesPanelVisible", !state.notesPanelVisible);
     },
 
     setNotesPanelVisible(visible: boolean): void {
-      setState("notesPanelVisible", visible);
-      saveUIPrefs();
+      setExclusivePanel("notesPanelVisible", visible);
     },
 
     toggleFileBrowserPanel(): void {

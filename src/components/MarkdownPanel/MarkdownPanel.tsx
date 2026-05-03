@@ -9,6 +9,7 @@ import { getModifierSymbol, shortenHomePath } from "../../platform";
 import { globToRegex } from "../../utils";
 import { pathBasename, pathDirname } from "../../utils/pathUtils";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
+import { PanelWindowControls } from "../ui/PanelWindowControls";
 import { Dropdown } from "../ui/Dropdown";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
@@ -44,6 +45,7 @@ export interface MarkdownPanelProps {
   /** Effective filesystem root (worktree path when on a linked worktree, otherwise same as repoPath) */
   fsRoot?: string | null;
   onClose: () => void;
+  mode?: "inline" | "detached";
 }
 
 /** Git status badge CSS class (shared pattern with FileBrowser) */
@@ -57,6 +59,7 @@ const getStatusClass = (status: string): string => {
 };
 
 export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
+  const mode = () => props.mode ?? "inline";
   const [files, setFiles] = createSignal<MdFileEntry[]>([]);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
@@ -197,8 +200,10 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
   };
 
   return (
-    <div id="markdown-panel" class={cx(s.panel, !props.visible && s.hidden)}>
-      <PanelResizeHandle panelId="markdown-panel" />
+    <div id="markdown-panel" class={cx(s.panel, mode() === "detached" && s.detached, !props.visible && s.hidden)}>
+      <Show when={mode() === "inline"}>
+        <PanelResizeHandle panelId="markdown-panel" />
+      </Show>
       <div class={p.header}>
         <div class={p.headerLeft}>
           <span class={p.title}>{t("markdownPanel.title", "Markdown Files")}</span>
@@ -212,9 +217,7 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
             <span class={g.legendItem} title={t("markdownPanel.untracked", "Untracked (new file)")}><span class={cx(g.dot, g.untracked)} /> new</span>
           </div>
         </div>
-        <button class={p.close} onClick={props.onClose} title={`${t("markdownPanel.close", "Close")} (${getModifierSymbol()}M)`}>
-          &times;
-        </button>
+        <PanelWindowControls panelId="markdown" mode={mode()} onInlineClose={props.onClose} />
       </div>
 
       {/* Search filter + sort control */}

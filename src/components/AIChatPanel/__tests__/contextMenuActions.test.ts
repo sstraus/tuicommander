@@ -82,7 +82,7 @@ describe("registerAiChatContextActions", () => {
     expect(contextMenuActionsStore.getContextActions("terminal")).toHaveLength(0);
   });
 
-  it("explain action opens AI Chat panel and sends with sessionId", () => {
+  it("explain action opens AI Chat panel and sends with sessionId", async () => {
     // Provide a selection so the action has text to work with
     vi.spyOn(window, "getSelection").mockReturnValue({
       toString: () => "some selected output",
@@ -92,7 +92,7 @@ describe("registerAiChatContextActions", () => {
     const actions = contextMenuActionsStore.getContextActions("terminal");
     const explain = actions.find((a) => a.id === "ai-chat:explain")!;
 
-    explain.action({ target: "terminal", sessionId: "sess-1" });
+    await explain.action({ target: "terminal", sessionId: "sess-1" });
 
     expect(uiStore.setAiChatPanelVisible).toHaveBeenCalledWith(true);
     expect(aiChatStore.sendMessage).toHaveBeenCalledWith(
@@ -105,7 +105,7 @@ describe("registerAiChatContextActions", () => {
     );
   });
 
-  it("fix-error action opens AI Chat panel and sends error prompt with sessionId", () => {
+  it("fix-error action opens AI Chat panel and sends error prompt with sessionId", async () => {
     vi.spyOn(window, "getSelection").mockReturnValue({
       toString: () => "Error: command not found",
     } as Selection);
@@ -114,7 +114,7 @@ describe("registerAiChatContextActions", () => {
     const actions = contextMenuActionsStore.getContextActions("terminal");
     const fixError = actions.find((a) => a.id === "ai-chat:fix-error")!;
 
-    fixError.action({ target: "terminal", sessionId: "sess-2" });
+    await fixError.action({ target: "terminal", sessionId: "sess-2" });
 
     expect(uiStore.setAiChatPanelVisible).toHaveBeenCalledWith(true);
     expect(aiChatStore.sendMessage).toHaveBeenCalledWith(

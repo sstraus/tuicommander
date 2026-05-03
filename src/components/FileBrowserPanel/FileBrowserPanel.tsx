@@ -21,6 +21,7 @@ import { cx } from "../../utils";
 import { markInternalDragStart, markInternalDragEnd } from "../../stores/dragDrop";
 import type { DirEntry, ContentMatch } from "../../types/fs";
 import type { ContentSearchOptions } from "../../hooks/useFileBrowser";
+import { PanelWindowControls } from "../ui/PanelWindowControls";
 import p from "../shared/panel.module.css";
 import g from "../shared/git-status.module.css";
 import s from "./FileBrowserPanel.module.css";
@@ -32,6 +33,7 @@ export interface FileBrowserPanelProps {
   fsRoot?: string | null;
   onClose: () => void;
   onFileOpen: (repoPath: string, filePath: string, line?: number) => void;
+  mode?: "inline" | "detached";
 }
 
 /** SVG icons for content search toggle buttons (same as SearchBar) */
@@ -69,6 +71,7 @@ const ContentModeIcon = () => (
 );
 
 export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
+  const mode = () => props.mode ?? "inline";
   const [entries, setEntries] = createSignal<DirEntry[]>([]);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
@@ -764,8 +767,10 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
   });
 
   return (
-    <div id="file-browser-panel" class={cx(s.panel, !props.visible && s.hidden)} tabIndex={-1}>
-      <PanelResizeHandle panelId="file-browser-panel" />
+    <div id="file-browser-panel" class={cx(s.panel, mode() === "detached" && s.detached, !props.visible && s.hidden)} tabIndex={-1}>
+      <Show when={mode() === "inline"}>
+        <PanelResizeHandle panelId="file-browser-panel" />
+      </Show>
       <div class={p.header}>
         <div class={p.headerLeft}>
           <span class={p.title}>{t("fileBrowser.title", "Files")}</span>
@@ -779,9 +784,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
             <span class={g.legendItem} title={t("fileBrowser.untracked", "Untracked (new file)")}><span class={cx(g.dot, g.untracked)} /> new</span>
           </div>
         </div>
-        <button class={p.close} onClick={props.onClose} title={`${t("fileBrowser.close", "Close")} (${getModifierSymbol()}E)`}>
-          &times;
-        </button>
+        <PanelWindowControls panelId="file-browser" mode={mode()} onInlineClose={props.onClose} />
       </div>
 
       {/* Search filter with F/C mode toggle */}

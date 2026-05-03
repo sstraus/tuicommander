@@ -112,6 +112,9 @@ import { renderPanelMode, registerPanel, panelRegistry, togglePanel, detachPanel
 import { createPanelSyncProvider, type PanelAction } from "./utils/panelSync";
 import { activityPanelAdapter } from "./panelAdapters/activity";
 import { gitPanelAdapter } from "./panelAdapters/git";
+import { fileBrowserPanelAdapter } from "./panelAdapters/fileBrowser";
+import { markdownPanelAdapter } from "./panelAdapters/markdown";
+import { notesPanelAdapter } from "./panelAdapters/notes";
 import { aiAgentStore } from "./stores/aiAgentStore";
 import { applyAppTheme, applyFontFamily } from "./themes";
 import { createLongPressHandlerFromHotkey } from "./hooks/useLongPressHotkey";
@@ -147,6 +150,9 @@ registerPanel({
 
 registerPanel(activityPanelAdapter);
 registerPanel(gitPanelAdapter);
+registerPanel(fileBrowserPanelAdapter);
+registerPanel(markdownPanelAdapter);
+registerPanel(notesPanelAdapter);
 
 const App: Component = () => {
   // Detached panel mode: full-viewport single panel.

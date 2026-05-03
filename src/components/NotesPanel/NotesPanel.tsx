@@ -5,6 +5,7 @@ import { invoke } from "../../invoke";
 import { repositoriesStore } from "../../stores/repositories";
 import { getModifierSymbol } from "../../platform";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
+import { PanelWindowControls } from "../ui/PanelWindowControls";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
 import { formatRelativeTime } from "../../utils/time";
@@ -17,6 +18,7 @@ export interface NotesPanelProps {
   repoPath: string | null;
   onClose: () => void;
   onSendToTerminal: (text: string) => void;
+  mode?: "inline" | "detached";
 }
 
 const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
@@ -57,6 +59,7 @@ function buildTerminalText(text: string, images: string[]): string {
 }
 
 export const NotesPanel: Component<NotesPanelProps> = (props) => {
+  const mode = () => props.mode ?? "inline";
   const [inputText, setInputText] = createSignal("");
   const [editingId, setEditingId] = createSignal<string | null>(null);
   const [reassigningId, setReassigningId] = createSignal<string | null>(null);
@@ -184,8 +187,10 @@ export const NotesPanel: Component<NotesPanelProps> = (props) => {
   };
 
   return (
-    <div id="notes-panel" class={cx(s.panel, !props.visible && s.hidden)}>
-      <PanelResizeHandle panelId="notes-panel" />
+    <div id="notes-panel" class={cx(s.panel, mode() === "detached" && s.detached, !props.visible && s.hidden)}>
+      <Show when={mode() === "inline"}>
+        <PanelResizeHandle panelId="notes-panel" />
+      </Show>
       <div class={p.header}>
         <div class={p.headerLeft}>
           <span class={p.title}><span style={{ filter: "grayscale(1) brightness(1.5)", "font-style": "normal" }}>💡</span> {t("notesPanel.title", "Ideas")}</span>
@@ -199,9 +204,7 @@ export const NotesPanel: Component<NotesPanelProps> = (props) => {
               <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M6.5 1h3a.5.5 0 0 1 .5.5v1H6v-1a.5.5 0 0 1 .5-.5zM11 2.5V1.5A1.5 1.5 0 0 0 9.5 0h-3A1.5 1.5 0 0 0 5 1.5v1H1.5a.5.5 0 0 0 0 1h.538l.853 10.66A2 2 0 0 0 4.885 16h6.23a2 2 0 0 0 1.994-1.84l.853-10.66h.538a.5.5 0 0 0 0-1H11zm1.958 1l-.846 10.58a1 1 0 0 1-.997.92h-6.23a1 1 0 0 1-.997-.92L3.042 3.5h9.916z"/></svg>
             </button>
           </Show>
-          <button class={p.close} onClick={props.onClose} title={`${t("notesPanel.close", "Close")} (${getModifierSymbol()}N)`}>
-            &times;
-          </button>
+          <PanelWindowControls panelId="notes" mode={mode()} onInlineClose={props.onClose} />
         </div>
       </div>
 

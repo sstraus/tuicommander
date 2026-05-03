@@ -22,33 +22,48 @@ export interface PanelOrchestratorProps {
 export const PanelOrchestrator: Component<PanelOrchestratorProps> = (props) => {
   return (
     <>
-      <FileBrowserPanel
-        visible={uiStore.state.fileBrowserPanelVisible && !globalWorkspaceStore.isActive()}
-        repoPath={props.repoPath}
-        fsRoot={props.fsRoot}
-        onClose={() => uiStore.toggleFileBrowserPanel()}
-        onFileOpen={props.onFileOpen}
-      />
+      <Show
+        when={!uiStore.isDetached("file-browser")}
+        fallback={<DetachedPlaceholder panel="File Browser" panelId="file-browser" />}
+      >
+        <FileBrowserPanel
+          visible={uiStore.state.fileBrowserPanelVisible && !globalWorkspaceStore.isActive()}
+          repoPath={props.repoPath}
+          fsRoot={props.fsRoot}
+          onClose={() => uiStore.toggleFileBrowserPanel()}
+          onFileOpen={props.onFileOpen}
+        />
+      </Show>
 
-      <MarkdownPanel
-        visible={uiStore.state.markdownPanelVisible}
-        repoPath={props.repoPath}
-        fsRoot={props.fsRoot}
-        onClose={() => uiStore.toggleMarkdownPanel()}
-      />
+      <Show
+        when={!uiStore.isDetached("markdown")}
+        fallback={<DetachedPlaceholder panel="Markdown" panelId="markdown" />}
+      >
+        <MarkdownPanel
+          visible={uiStore.state.markdownPanelVisible}
+          repoPath={props.repoPath}
+          fsRoot={props.fsRoot}
+          onClose={() => uiStore.toggleMarkdownPanel()}
+        />
+      </Show>
 
-      <NotesPanel
-        visible={uiStore.state.notesPanelVisible}
-        repoPath={props.repoPath}
-        onClose={() => uiStore.toggleNotesPanel()}
-        onSendToTerminal={(text) => {
-          const active = terminalsStore.getActive();
-          if (active?.ref) {
-            active.ref.write(`${text}\r`);
-            requestAnimationFrame(() => active.ref?.focus());
-          }
-        }}
-      />
+      <Show
+        when={!uiStore.isDetached("notes")}
+        fallback={<DetachedPlaceholder panel="Notes" panelId="notes" />}
+      >
+        <NotesPanel
+          visible={uiStore.state.notesPanelVisible}
+          repoPath={props.repoPath}
+          onClose={() => uiStore.toggleNotesPanel()}
+          onSendToTerminal={(text) => {
+            const active = terminalsStore.getActive();
+            if (active?.ref) {
+              active.ref.write(`${text}\r`);
+              requestAnimationFrame(() => active.ref?.focus());
+            }
+          }}
+        />
+      </Show>
 
       <Show
         when={!uiStore.isDetached("git")}
