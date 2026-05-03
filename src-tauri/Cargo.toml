@@ -65,7 +65,6 @@ grep-matcher = "0.1"
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
 url = "2"
 chrono = { version = "0.4", features = ["serde"] }
-vt100 = "0.16"
 alacritty_terminal = "0.26.0"
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] }
 aes-gcm = "0.10"

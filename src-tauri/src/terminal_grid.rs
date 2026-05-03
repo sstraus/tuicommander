@@ -174,9 +174,8 @@ fn resolve_color(c: Color, colors: &Colors) -> Option<Rgb> {
 
 /// Wraps `alacritty_terminal::Term` with a TUICommander-specific API.
 ///
-/// Provides the same `process() → Vec<ChangedRow>` + `screen_text_rows()`
-/// interface that `VtLogBuffer` expects, so it can drop in as a replacement
-/// for the current `vt100::Parser`.
+/// Provides `process() → Vec<ChangedRow>` + `screen_text_rows()`
+/// interface that `VtLogBuffer` and HTTP/WS handlers use.
 pub struct TerminalGrid {
     term: Term<TermEventCollector>,
     processor: ansi::Processor,
