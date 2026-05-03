@@ -4,10 +4,17 @@ import {
   decodeBinaryFrame,
   computeCursorRect,
   snapLineHeight,
+  ATTR_BOLD,
+  ATTR_ITALIC,
+  ATTR_UNDERLINE,
+  ATTR_STRIKEOUT,
+  ATTR_DIM,
+  ATTR_INVERSE,
+  ATTR_DEFAULT_FG,
+  ATTR_DEFAULT_BG,
   type CellMetrics,
   type CursorShape,
   type DecodedFrame,
-  type DecodedCell,
 } from "./canvasTerminalUtils";
 import {
   getSharedMetrics,
@@ -30,7 +37,7 @@ import { pluginRegistry } from "../../plugins/pluginRegistry";
 import { createTransport, type TerminalTransport } from "./canvasTerminalTransport";
 import { installTouchHandlers } from "./canvasTerminalTouch";
 // Re-export for external consumers
-export type { CellMetrics, CursorShape, DecodedFrame, DecodedCell };
+export type { CellMetrics, CursorShape, DecodedFrame };
 
 export interface CanvasTerminalRef {
   focus: () => void;
@@ -341,13 +348,13 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       } else if (ri === startRow) {
         const isStartFirst = selectionStart.row <= selectionEnd.row;
         const startCol = isStartFirst ? selectionStart.col : selectionEnd.col;
-        octx.fillRect(startCol * m.cellWidth, y, (row.cells.length - startCol) * m.cellWidth, m.cellHeight);
+        octx.fillRect(startCol * m.cellWidth, y, (row.count - startCol) * m.cellWidth, m.cellHeight);
       } else if (ri === endRow) {
         const isStartFirst = selectionStart.row <= selectionEnd.row;
         const endCol = isStartFirst ? selectionEnd.col : selectionStart.col;
         octx.fillRect(0, y, (endCol + 1) * m.cellWidth, m.cellHeight);
       } else {
-        octx.fillRect(0, y, row.cells.length * m.cellWidth, m.cellHeight);
+        octx.fillRect(0, y, row.count * m.cellWidth, m.cellHeight);
       }
     }
   }
@@ -366,7 +373,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       }
 
       let startCol = 0;
-      let endCol = row.cells.length - 1;
+      let endCol = row.count - 1;
       if (startRow === endRow) {
         startCol = Math.min(selectionStart.col, selectionEnd.col);
         endCol = Math.max(selectionStart.col, selectionEnd.col);
@@ -378,32 +385,33 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
         endCol = isStartFirst ? selectionEnd.col : selectionStart.col;
       }
 
-      lines.push(row.cells
-        .slice(startCol, endCol + 1)
-        .map((cell) => cell.char || " ")
-        .join("")
-        .replace(/\s+$/, ""));
+      let rowText = "";
+      for (let c = startCol; c <= endCol; c++) {
+        const cp = row.codepoints[c];
+        rowText += cp === 0 ? " " : String.fromCodePoint(cp);
+      }
+      lines.push(rowText.replace(/\s+$/, ""));
     }
 
     return lines.join("\n");
   }
 
-  function resolveFg(cell: DecodedCell, defaultColor: string): string {
-    if (cell.inverse) {
-      return cell.defaultBg ? defaultColor : cachedRgbString(cell.bgR, cell.bgG, cell.bgB);
+  function resolveFg(fgP: number, bgP: number, a: number, defaultColor: string): string {
+    if (a & ATTR_INVERSE) {
+      return (a & ATTR_DEFAULT_BG) ? defaultColor : cachedRgbString((bgP >> 16) & 0xff, (bgP >> 8) & 0xff, bgP & 0xff);
     }
-    return cell.defaultFg ? defaultColor : cachedRgbString(cell.fgR, cell.fgG, cell.fgB);
+    return (a & ATTR_DEFAULT_FG) ? defaultColor : cachedRgbString((fgP >> 16) & 0xff, (fgP >> 8) & 0xff, fgP & 0xff);
   }
 
-  function resolveBg(cell: DecodedCell, defaultColor: string): string {
-    if (cell.inverse) {
-      return cell.defaultFg ? defaultColor : cachedRgbString(cell.fgR, cell.fgG, cell.fgB);
+  function resolveBg(fgP: number, bgP: number, a: number, defaultColor: string): string {
+    if (a & ATTR_INVERSE) {
+      return (a & ATTR_DEFAULT_FG) ? defaultColor : cachedRgbString((fgP >> 16) & 0xff, (fgP >> 8) & 0xff, fgP & 0xff);
     }
-    return cell.defaultBg ? defaultColor : cachedRgbString(cell.bgR, cell.bgG, cell.bgB);
+    return (a & ATTR_DEFAULT_BG) ? defaultColor : cachedRgbString((bgP >> 16) & 0xff, (bgP >> 8) & 0xff, bgP & 0xff);
   }
 
-  function buildFontStyle(cell: DecodedCell, fontSize: number, fontFamily: string): string {
-    return cachedFontStyle(cell.italic, cell.bold, fontSize, fontFamily);
+  function buildFontStyle(a: number, fontSize: number, fontFamily: string): string {
+    return cachedFontStyle((a & ATTR_ITALIC) !== 0, (a & ATTR_BOLD) !== 0, fontSize, fontFamily);
   }
 
   function paintCursor(frame: DecodedFrame, m: CellMetrics) {
@@ -426,12 +434,15 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
     if (shape === "block") {
       const row = rowMap.get(frame.cursorRow);
-      const cell = row?.cells[frame.cursorCol];
-      if (cell && cell.char && cell.char !== " ") {
-        const fontFamily = settingsStore.getFontFamily();
-        octx.font = buildFontStyle(cell, m.fontSize, fontFamily);
-        octx.fillStyle = cachedBgDefault;
-        octx.fillText(cell.char, rect.x, frame.cursorRow * m.cellHeight + m.baseline);
+      const col = frame.cursorCol;
+      if (row && col < row.count) {
+        const cp = row.codepoints[col];
+        if (cp !== 0 && cp !== 0x20) {
+          const fontFamily = settingsStore.getFontFamily();
+          octx.font = buildFontStyle(row.attrs[col], m.fontSize, fontFamily);
+          octx.fillStyle = cachedBgDefault;
+          octx.fillText(String.fromCodePoint(cp), rect.x, frame.cursorRow * m.cellHeight + m.baseline);
+        }
       }
     }
   }
@@ -480,7 +491,8 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       for (const idx of dirtyIndices) {
         const row = rowMap.get(idx);
         if (!row) continue;
-        const text = row.cells.map(c => c.char || " ").join("");
+        let text = "";
+        for (let ci = 0; ci < row.count; ci++) { const cp = row.codepoints[ci]; text += cp === 0 ? " " : String.fromCodePoint(cp); }
         if (SUGGEST_ANCHOR_RE.test(text) || INTENT_RE.test(text)) {
           hasSuggestContent = true;
           break;
@@ -496,7 +508,8 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     const getRowSnapshot = (i: number) => {
       const row = rowMap.get(i);
       if (!row) return null;
-      const text = row.cells.map(c => c.char || " ").join("");
+      let text = "";
+      for (let ci = 0; ci < row.count; ci++) { const cp = row.codepoints[ci]; text += cp === 0 ? " " : String.fromCodePoint(cp); }
       return { text, isWrapped: false };
     };
 
@@ -807,20 +820,18 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     fontFamily ??= settingsStore.getFontFamily();
 
     let lastVisibleCol = -1;
-    for (let c = row.cells.length - 1; c >= 0; c--) {
-      const ch = row.cells[c].char;
-      if (ch && ch !== " ") {
-        lastVisibleCol = c;
-        break;
-      }
+    for (let c = row.count - 1; c >= 0; c--) {
+      const cp = row.codepoints[c];
+      if (cp !== 0 && cp !== 0x20) { lastVisibleCol = c; break; }
     }
 
-    // Pass 1: backgrounds (per-cell, attributes vary independently of text)
-    for (let c = 0; c < row.cells.length; c++) {
-      const cell = row.cells[c];
-      if (!cell.char || (cell.char === " " && c > lastVisibleCol)) continue;
-      if (!cell.defaultBg || cell.inverse) {
-        ctx.fillStyle = resolveBg(cell, cachedBgDefault);
+    // Pass 1: backgrounds
+    for (let c = 0; c < row.count; c++) {
+      const cp = row.codepoints[c];
+      if (cp === 0 || (cp === 0x20 && c > lastVisibleCol)) continue;
+      const a = row.attrs[c];
+      if (!(a & ATTR_DEFAULT_BG) || (a & ATTR_INVERSE)) {
+        ctx.fillStyle = resolveBg(row.fg[c], row.bg[c], a, cachedBgDefault);
         ctx.fillRect(c * m.cellWidth, y, m.cellWidth, m.cellHeight);
       }
     }
@@ -845,38 +856,41 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       runText = "";
     };
 
-    for (let c = 0; c < row.cells.length; c++) {
-      const cell = row.cells[c];
-      if (!cell.char || cell.char === " ") { flushRun(); continue; }
+    for (let c = 0; c < row.count; c++) {
+      const cp = row.codepoints[c];
+      if (cp === 0 || cp === 0x20) { flushRun(); continue; }
 
-      const cp = cell.char.codePointAt(0) ?? 0;
+      const a = row.attrs[c];
+      const fgP = row.fg[c];
+      const bgP = row.bg[c];
+
       if (cp >= 0x2500 && cp <= 0x257F) {
         flushRun();
-        ctx.fillStyle = resolveFg(cell, cachedFgDefault);
+        ctx.fillStyle = resolveFg(fgP, bgP, a, cachedFgDefault);
         ctx.strokeStyle = ctx.fillStyle;
         if (!drawBoxDrawingChar(cp, c * m.cellWidth, y, m)) {
-          ctx.font = buildFontStyle(cell, m.fontSize, fontFamily);
-          ctx.fillText(cell.char, c * m.cellWidth, y + m.baseline);
+          ctx.font = buildFontStyle(a, m.fontSize, fontFamily);
+          ctx.fillText(String.fromCodePoint(cp), c * m.cellWidth, y + m.baseline);
         }
         continue;
       }
       if ((cp >= 0x2580 && cp <= 0x2593) || (cp >= 0x2596 && cp <= 0x259F)) {
         flushRun();
-        ctx.fillStyle = resolveFg(cell, cachedFgDefault);
+        ctx.fillStyle = resolveFg(fgP, bgP, a, cachedFgDefault);
         drawBlockChar(cp, c * m.cellWidth, y, m);
         continue;
       }
 
-      const font = buildFontStyle(cell, m.fontSize, fontFamily);
-      const fg = resolveFg(cell, cachedFgDefault);
-      const dim = cell.dim ?? false;
+      const font = buildFontStyle(a, m.fontSize, fontFamily);
+      const fg = resolveFg(fgP, bgP, a, cachedFgDefault);
+      const dim = (a & ATTR_DIM) !== 0;
 
       if (runStart >= 0 && font === runFont && fg === runFg && dim === runDim) {
-        runText += cell.char;
+        runText += String.fromCodePoint(cp);
       } else {
         flushRun();
         runStart = c;
-        runText = cell.char;
+        runText = String.fromCodePoint(cp);
         runFont = font;
         runFg = fg;
         runDim = dim;
@@ -884,16 +898,18 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     }
     flushRun();
 
-    // Pass 3: decorations (per-cell — colors may vary independently)
-    for (let c = 0; c < row.cells.length; c++) {
-      const cell = row.cells[c];
+    // Pass 3: decorations
+    for (let c = 0; c < row.count; c++) {
+      const a = row.attrs[c];
+      if (!(a & (ATTR_UNDERLINE | ATTR_STRIKEOUT))) continue;
       const x = c * m.cellWidth;
-      if (cell.underline) {
-        ctx.fillStyle = resolveFg(cell, cachedFgDefault);
+      const fg = resolveFg(row.fg[c], row.bg[c], a, cachedFgDefault);
+      if (a & ATTR_UNDERLINE) {
+        ctx.fillStyle = fg;
         ctx.fillRect(x, y + m.cellHeight - 1, m.cellWidth, 1);
       }
-      if (cell.strikeout) {
-        ctx.fillStyle = resolveFg(cell, cachedFgDefault);
+      if (a & ATTR_STRIKEOUT) {
+        ctx.fillStyle = fg;
         ctx.fillRect(x, y + Math.floor(m.cellHeight / 2), m.cellWidth, 1);
       }
     }

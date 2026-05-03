@@ -3,36 +3,26 @@
 // Wire format constants (must match terminal_grid.rs)
 const HEADER_SIZE = 22;
 const CELL_SIZE = 11; // 4 (char u32) + 3 (fg) + 3 (bg) + 1 (attrs)
-const ATTR_BOLD = 0x01;
-const ATTR_ITALIC = 0x02;
-const ATTR_UNDERLINE = 0x04;
-const ATTR_STRIKEOUT = 0x08;
-const ATTR_DIM = 0x10;
-const ATTR_INVERSE = 0x20;
-const ATTR_DEFAULT_FG = 0x40;
-const ATTR_DEFAULT_BG = 0x80;
-
-export interface DecodedCell {
-  char: string;
-  fgR: number;
-  fgG: number;
-  fgB: number;
-  bgR: number;
-  bgG: number;
-  bgB: number;
-  bold: boolean;
-  italic: boolean;
-  underline: boolean;
-  strikeout: boolean;
-  dim: boolean;
-  inverse: boolean;
-  defaultFg: boolean;
-  defaultBg: boolean;
-}
+export const ATTR_BOLD = 0x01;
+export const ATTR_ITALIC = 0x02;
+export const ATTR_UNDERLINE = 0x04;
+export const ATTR_STRIKEOUT = 0x08;
+export const ATTR_DIM = 0x10;
+export const ATTR_INVERSE = 0x20;
+export const ATTR_DEFAULT_FG = 0x40;
+export const ATTR_DEFAULT_BG = 0x80;
 
 export interface DecodedRow {
   index: number;
-  cells: DecodedCell[];
+  count: number;
+  /** Unicode codepoints; 0 = empty cell */
+  codepoints: Uint32Array;
+  /** Packed fg color: r<<16|g<<8|b (valid when ATTR_DEFAULT_FG not set) */
+  fg: Uint32Array;
+  /** Packed bg color: r<<16|g<<8|b (valid when ATTR_DEFAULT_BG not set) */
+  bg: Uint32Array;
+  /** Per-cell ATTR_* bitmask */
+  attrs: Uint8Array;
 }
 
 export interface DecodedFrame {
@@ -88,34 +78,26 @@ export function decodeBinaryFrame(buffer: ArrayBuffer): DecodedFrame | null {
     const rowIndex = view.getUint16(offset, true); offset += 2;
     const colCount = view.getUint16(offset, true); offset += 2;
 
-    const cells: DecodedCell[] = [];
+    const codepoints = new Uint32Array(colCount);
+    const fg = new Uint32Array(colCount);
+    const bg = new Uint32Array(colCount);
+    const attrs = new Uint8Array(colCount);
+
     for (let c = 0; c < colCount; c++) {
       if (offset + CELL_SIZE > buffer.byteLength) break;
-      const cp = view.getUint32(offset, true); offset += 4;
-      const fgR = view.getUint8(offset); offset += 1;
-      const fgG = view.getUint8(offset); offset += 1;
-      const fgB = view.getUint8(offset); offset += 1;
-      const bgR = view.getUint8(offset); offset += 1;
-      const bgG = view.getUint8(offset); offset += 1;
-      const bgB = view.getUint8(offset); offset += 1;
-      const attrs = view.getUint8(offset); offset += 1;
-
-      cells.push({
-        char: cp === 0 ? "" : String.fromCodePoint(cp),
-        fgR, fgG, fgB,
-        bgR, bgG, bgB,
-        bold: (attrs & ATTR_BOLD) !== 0,
-        italic: (attrs & ATTR_ITALIC) !== 0,
-        underline: (attrs & ATTR_UNDERLINE) !== 0,
-        strikeout: (attrs & ATTR_STRIKEOUT) !== 0,
-        dim: (attrs & ATTR_DIM) !== 0,
-        inverse: (attrs & ATTR_INVERSE) !== 0,
-        defaultFg: (attrs & ATTR_DEFAULT_FG) !== 0,
-        defaultBg: (attrs & ATTR_DEFAULT_BG) !== 0,
-      });
+      codepoints[c] = view.getUint32(offset, true); offset += 4;
+      const fgR = view.getUint8(offset++);
+      const fgG = view.getUint8(offset++);
+      const fgB = view.getUint8(offset++);
+      const bgR = view.getUint8(offset++);
+      const bgG = view.getUint8(offset++);
+      const bgB = view.getUint8(offset++);
+      attrs[c] = view.getUint8(offset++);
+      fg[c] = (fgR << 16) | (fgG << 8) | fgB;
+      bg[c] = (bgR << 16) | (bgG << 8) | bgB;
     }
 
-    rows.push({ index: rowIndex, cells });
+    rows.push({ index: rowIndex, count: colCount, codepoints, fg, bg, attrs });
   }
 
   return { cursorRow, cursorCol, cursorVisible, cursorShape, displayOffset, historySize, hasSelection, keyboardFlags, bell, screenRows, screenCols, rows };
