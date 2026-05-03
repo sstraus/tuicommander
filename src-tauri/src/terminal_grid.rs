@@ -840,9 +840,7 @@ impl TerminalGrid {
 
             for col in 0..num_cols {
                 let cell = &grid[line][Column(col)];
-                let ch = if cell.flags.contains(Flags::WIDE_CHAR_SPACER) {
-                    0u32
-                } else if cell.c == '\0' {
+                let ch = if cell.flags.contains(Flags::WIDE_CHAR_SPACER) || cell.c == '\0' {
                     0u32
                 } else {
                     cell.c as u32

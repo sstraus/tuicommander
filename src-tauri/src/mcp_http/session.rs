@@ -977,13 +977,10 @@ async fn handle_ws_grid_session(
         let frame = vt.serialize_dirty_rows();
         if frame.is_empty() { None } else { Some(frame) }
     });
-    if let Some(frame) = initial_frame {
-        if futures_util::SinkExt::send(
-            &mut ws_sender,
-            Message::Binary(frame.into()),
-        ).await.is_err() {
-            return;
-        }
+    if let Some(frame) = initial_frame
+        && futures_util::SinkExt::send(&mut ws_sender, Message::Binary(frame.into())).await.is_err()
+    {
+        return;
     }
 
     // Subscribe to event bus for parsed events (exit, closed, etc.)
@@ -996,13 +993,15 @@ async fn handle_ws_grid_session(
                 result = frame_rx.changed() => {
                     if result.is_err() { break; } // sender dropped
                     let frame = frame_rx.borrow_and_update().clone();
-                    if !frame.is_empty() {
-                        if futures_util::SinkExt::send(
+                    if !frame.is_empty()
+                        && futures_util::SinkExt::send(
                             &mut ws_sender,
                             Message::Binary(frame.into()),
-                        ).await.is_err() {
-                            break;
-                        }
+                        )
+                        .await
+                        .is_err()
+                    {
+                        break;
                     }
                 }
                 result = event_rx.recv() => {
