@@ -1,131 +1,62 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import "../mocks/tauri";
-import type { SearchAddon, ISearchOptions, ISearchResultChangeEvent } from "@xterm/addon-search";
-import type { IEvent } from "@xterm/xterm";
+import type { CanvasTerminalRef } from "../../components/Terminal/CanvasTerminal";
 
 /**
- * Unit tests for TerminalSearch behavior logic.
+ * Unit tests for TerminalSearch canvas-based search behavior.
  *
- * Since TerminalSearch is a SolidJS component tightly coupled to DOM rendering
- * and @xterm/addon-search (which needs a real terminal), we test the interaction
- * patterns by verifying the SearchAddon mock calls that the component would make.
- *
- * The keyboard shortcut integration (Cmd+F dispatches findInTerminal) is covered
- * in useKeyboardShortcuts.test.ts.
+ * TerminalSearch delegates search operations to CanvasTerminalRef methods.
+ * We test the interaction patterns via a mock CanvasTerminalRef.
  */
 
-type MockSearchAddon = SearchAddon & { _fireResults: (e: ISearchResultChangeEvent) => void };
-
-function createMockSearchAddon(): MockSearchAddon {
-  const listeners: ((e: ISearchResultChangeEvent) => void)[] = [];
-
+function createMockCanvasRef(): CanvasTerminalRef {
   return {
-    findNext: vi.fn().mockReturnValue(true),
-    findPrevious: vi.fn().mockReturnValue(true),
-    clearDecorations: vi.fn(),
-    clearActiveDecoration: vi.fn(),
-    activate: vi.fn(),
-    dispose: vi.fn(),
-    onDidChangeResults: ((listener: (e: ISearchResultChangeEvent) => void) => {
-      listeners.push(listener);
-      return { dispose: () => { const idx = listeners.indexOf(listener); if (idx >= 0) listeners.splice(idx, 1); } };
-    }) as IEvent<ISearchResultChangeEvent>,
-    _fireResults: (e: ISearchResultChangeEvent) => {
-      for (const l of listeners) l(e);
-    },
-  } as MockSearchAddon;
+    focus: vi.fn(),
+    blur: vi.fn(),
+    refresh: vi.fn(),
+    searchFind: vi.fn().mockResolvedValue({ index: 0, count: 1 }),
+    searchNext: vi.fn().mockReturnValue({ index: 1, count: 3 }),
+    searchPrev: vi.fn().mockReturnValue({ index: 2, count: 3 }),
+    searchClear: vi.fn(),
+    scrollToBottom: vi.fn(),
+    scrollLines: vi.fn(),
+    scrollToRow: vi.fn(),
+    getSelection: vi.fn().mockReturnValue(""),
+    clearSelection: vi.fn(),
+    selectAll: vi.fn(),
+    resize: vi.fn(),
+    getRowCount: vi.fn().mockReturnValue(24),
+    getColCount: vi.fn().mockReturnValue(80),
+  } as unknown as CanvasTerminalRef;
 }
 
-describe("TerminalSearch interaction patterns", () => {
-  let addon: ReturnType<typeof createMockSearchAddon>;
-
-  beforeEach(() => {
-    addon = createMockSearchAddon();
-  });
-
-  describe("search addon calls", () => {
-    it("findNext is called with correct options for case-sensitive search", () => {
-      const options: ISearchOptions = {
-        caseSensitive: true,
-        regex: false,
-        wholeWord: false,
-        incremental: true,
-        decorations: {
-          matchBackground: "#ffff0040",
-          matchBorder: "transparent",
-          matchOverviewRuler: "#ffff00",
-          activeMatchBackground: "#ff8c00b0",
-          activeMatchBorder: "#ff8c00",
-          activeMatchColorOverviewRuler: "#ff8c00",
-        },
-      };
-
-      addon.findNext("test", options);
-      expect(addon.findNext).toHaveBeenCalledWith("test", options);
+describe("TerminalSearch canvas interaction patterns", () => {
+  describe("searchFind", () => {
+    it("resolves with index and count", async () => {
+      const ref = createMockCanvasRef();
+      const result = await ref.searchFind("hello");
+      expect(result).toEqual({ index: 0, count: 1 });
+      expect(ref.searchFind).toHaveBeenCalledWith("hello");
     });
 
-    it("findPrevious is called with same options", () => {
-      const options: ISearchOptions = {
-        caseSensitive: false,
-        regex: true,
-        wholeWord: false,
-        incremental: true,
-        decorations: {
-          matchBackground: "#ffff0040",
-          matchBorder: "transparent",
-          matchOverviewRuler: "#ffff00",
-          activeMatchBackground: "#ff8c00b0",
-          activeMatchBorder: "#ff8c00",
-          activeMatchColorOverviewRuler: "#ff8c00",
-        },
-      };
-
-      addon.findPrevious("pattern.*", options);
-      expect(addon.findPrevious).toHaveBeenCalledWith("pattern.*", options);
-    });
-
-    it("clearDecorations is called when search term is empty", () => {
-      addon.clearDecorations();
-      expect(addon.clearDecorations).toHaveBeenCalled();
+    it("searchClear is called when term is empty", () => {
+      const ref = createMockCanvasRef();
+      ref.searchClear();
+      expect(ref.searchClear).toHaveBeenCalled();
     });
   });
 
-  describe("result change events", () => {
-    it("onDidChangeResults fires with result index and count", () => {
-      const callback = vi.fn();
-      addon.onDidChangeResults(callback);
-
-      addon._fireResults({
-        resultIndex: 2,
-        resultCount: 10,
-      });
-
-      expect(callback).toHaveBeenCalledWith({ resultIndex: 2, resultCount: 10 });
+  describe("searchNext / searchPrev", () => {
+    it("searchNext returns next index and count", () => {
+      const ref = createMockCanvasRef();
+      const result = ref.searchNext();
+      expect(result).toEqual({ index: 1, count: 3 });
     });
 
-    it("listener can be disposed", () => {
-      const callback = vi.fn();
-      const disposable = addon.onDidChangeResults(callback);
-      disposable.dispose();
-
-      addon._fireResults({
-        resultIndex: 0,
-        resultCount: 5,
-      });
-
-      expect(callback).not.toHaveBeenCalled();
-    });
-
-    it("resultIndex -1 indicates threshold exceeded", () => {
-      const callback = vi.fn();
-      addon.onDidChangeResults(callback);
-
-      addon._fireResults({
-        resultIndex: -1,
-        resultCount: 1500,
-      });
-
-      expect(callback).toHaveBeenCalledWith({ resultIndex: -1, resultCount: 1500 });
+    it("searchPrev returns previous index and count", () => {
+      const ref = createMockCanvasRef();
+      const result = ref.searchPrev();
+      expect(result).toEqual({ index: 2, count: 3 });
     });
   });
 
@@ -140,9 +71,7 @@ describe("TerminalSearch interaction patterns", () => {
         activeMatchColorOverviewRuler: "#ff8c00",
       };
 
-      // Yellow-tinted inactive matches
       expect(decorations.matchBackground).toBe("#ffff0040");
-      // Orange active match
       expect(decorations.activeMatchBackground).toBe("#ff8c00b0");
       expect(decorations.activeMatchBorder).toBe("#ff8c00");
     });
