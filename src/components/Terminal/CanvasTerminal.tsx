@@ -27,6 +27,7 @@ import { handleOpenUrl } from "../../utils/openUrl";
 import { terminalsStore } from "../../stores/terminals";
 import { isMacOS, isWindows } from "../../platform";
 import { appLogger } from "../../stores/appLogger";
+import { pluginRegistry } from "../../plugins/pluginRegistry";
 // Re-export for external consumers
 export type { CellMetrics, CursorShape, DecodedFrame, DecodedCell };
 
@@ -80,7 +81,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
   let unsubscribe: (() => void) | undefined;
   let unlistenCwd: (() => void) | undefined;
   let unlistenOsc133: (() => void) | undefined;
+  let unlistenPtyOutput: (() => void) | undefined;
   let resizeObserver: ResizeObserver | undefined;
+  let visibilityObserver: IntersectionObserver | undefined;
   let lastResizeCols = 0;
   let lastResizeRows = 0;
   let invokeRef: ((cmd: string, args: Record<string, unknown>) => Promise<unknown>) | undefined;
@@ -105,6 +108,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
   // Row index → row data lookup (rebuilt each paintFrame)
   let rowMap = new Map<number, DecodedFrame["rows"][0]>();
+  let hidden = false;
 
   function writePty(data: string) {
     invokeRef?.("write_pty", { sessionId: props.sessionId, data }).catch((e) => {
@@ -539,10 +543,11 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       rows: Array.from(screenRows.values()),
     };
 
+    if (hidden) return;
     if (rafId === undefined) {
       rafId = requestAnimationFrame(() => {
         rafId = undefined;
-        if (!alive) return;
+        if (!alive || hidden) return;
         const m = metrics();
         if (currentFrame && m) {
           paintFrame(currentFrame, m);
@@ -666,6 +671,21 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       resizeDebounce = setTimeout(() => remeasure(), 100);
     });
     resizeObserver.observe(containerRef);
+
+    // Flow control: stop acking frames when hidden, request full frame on show
+    visibilityObserver = new IntersectionObserver((entries) => {
+      const isVisible = entries[0]?.isIntersecting ?? false;
+      if (isVisible && hidden) {
+        hidden = false;
+        screenRows.clear();
+        currentFrame = null;
+        lastDisplayOffset = -1;
+        invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(() => {});
+      } else if (!isVisible && !hidden) {
+        hidden = true;
+      }
+    }, { threshold: 0 });
+    visibilityObserver.observe(containerRef);
 
     // DPR change: browser zoom or external monitor switch
     dprChangeHandler = () => {
@@ -1085,6 +1105,11 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
           terminalsStore.handleOsc133(props.terminalId, marker, line, exit_code ?? undefined);
         },
       );
+      unlistenPtyOutput = await listen<{ data: string }>(
+        `pty-output-${props.sessionId}`, (event) => {
+          pluginRegistry.processRawOutput(event.payload.data, props.sessionId);
+        },
+      );
     } catch {
       // not in Tauri context
     }
@@ -1174,10 +1199,12 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     if (rafId !== undefined) { cancelAnimationFrame(rafId); rafId = undefined; }
     clearTimeout(resizeDebounce);
     resizeObserver?.disconnect();
+    visibilityObserver?.disconnect();
     if (dprChangeHandler) dprMediaQuery?.removeEventListener("change", dprChangeHandler);
     unsubscribe?.();
     unlistenCwd?.();
     unlistenOsc133?.();
+    unlistenPtyOutput?.();
     clearTimeout(linkThrottle);
     linkCache.clear();
     screenRows.clear();
