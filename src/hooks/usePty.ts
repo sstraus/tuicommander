@@ -1,6 +1,7 @@
 import { rpc } from "../transport";
 import { appLogger } from "../stores/appLogger";
 import { sendCommand as sendCommandUtil, getShellFamily, clearShellFamilyCache } from "../utils/sendCommand";
+import { browserCreatedSessions } from "./useAppInit";
 import type { PtyConfig, OrchestratorStats } from "../types";
 
 /** Worktree configuration */
@@ -49,7 +50,9 @@ export function usePty() {
 
   /** Create a new PTY session */
   async function createSession(config: PtyConfig): Promise<string> {
-    return await rpc<string>("create_pty", { config });
+    const sessionId = await rpc<string>("create_pty", { config });
+    browserCreatedSessions.add(sessionId);
+    return sessionId;
   }
 
   /** Create a PTY session with a git worktree */
@@ -57,10 +60,12 @@ export function usePty() {
     ptyConfig: PtyConfig,
     worktreeConfig: WorktreeConfig
   ): Promise<WorktreeResult> {
-    return await rpc<WorktreeResult>("create_pty_with_worktree", {
+    const result = await rpc<WorktreeResult>("create_pty_with_worktree", {
       pty_config: ptyConfig,
       worktree_config: worktreeConfig,
     });
+    browserCreatedSessions.add(result.session_id);
+    return result;
   }
 
   /** Write raw data to a PTY session */
