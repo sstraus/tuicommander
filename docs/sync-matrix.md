@@ -107,6 +107,18 @@ When modifying provider types, slot names, credential storage, or the ProvidersT
 | `src/hooks/useSmartPrompts.ts` | `resolveSlot("headless")` check for headless execution |
 | `docs/backend/config.md` | `providers.json` schema documentation |
 
+### AI Prompts
+When modifying customizable AI service prompts (diff triage, future services):
+
+| File | What to update |
+|------|----------------|
+| `src-tauri/src/config.rs` | `AiPromptsConfig` struct, load/save commands |
+| `src-tauri/src/diff_triage.rs` | `build_chat_request` system_prompt param, `default_system_prompt()` |
+| `src/stores/aiPrompts.ts` | Frontend store: hydrate, save, `DEFAULT_DIFF_TRIAGE_PROMPT` const |
+| `src/components/SettingsPanel/tabs/AiPromptsTab.tsx` | Settings UI: textarea per service, reset button |
+| `src-tauri/src/mcp_http/mcp_transport.rs` | MCP config tool: `list_ai_prompts`, `load_ai_prompt`, `save_ai_prompt` actions |
+| `docs/backend/config.md` | `ai-prompts.json` schema documentation |
+
 ### AI Chat
 When modifying AI Chat panel, settings, context menu actions, or streaming backend:
 

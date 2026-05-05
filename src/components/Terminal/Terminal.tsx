@@ -212,6 +212,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
   /** Track PTY activity for the activity dashboard. CanvasTerminal handles
    *  rendering and plugin dispatch; this callback only updates store metadata. */
   const handlePtyData = (_data: string) => {
+    if (disposed) return;
     const now = Date.now();
     if (!lastDataAtTimestamp || now - lastDataAtTimestamp > 1000) {
       lastDataAtTimestamp = now;
@@ -229,6 +230,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
     // Shared handler for structured events from Rust OutputParser.
     // Used by both Tauri (listen) and browser (WebSocket onParsed) modes.
     const handleParsedEvent = (parsed: ParsedEvent) => {
+      if (disposed) return;
       switch (parsed.type) {
         case "progress": {
           const awProg = terminalsStore.get(props.id)?.awaitingInput;
@@ -466,6 +468,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       targetSessionId,
       (data: string) => handlePtyData(data),
       () => {
+        if (disposed) return;
         // Guard: terminal may have been removed from the store already
         // (e.g. pane closed). Updating a removed entry would recreate it as a ghost.
         const stillExists = terminalsStore.get(props.id);
@@ -518,6 +521,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       // Listen for OSC 133 shell integration markers from Rust (native renderer)
       unlistenOsc133 = await listen<{ marker: string; line: number; exit_code: number | null }>(
         `pty-osc133-${targetSessionId}`, (event) => {
+          if (disposed) return;
           const { marker, line, exit_code } = event.payload;
           terminalsStore.handleOsc133(props.id, marker, line, exit_code ?? undefined);
         },
@@ -527,6 +531,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
       // Listen for OSC 0/2 title changes from Rust (native renderer)
       unlistenTitle = await listen<string>(
         `pty-title-${targetSessionId}`, (event) => {
+          if (disposed) return;
           const title = event.payload;
           const term = terminalsStore.get(props.id);
           if (term?.nameIsCustom || (term?.agentIntent && settingsStore.state.intentTabTitle)) return;
@@ -705,14 +710,17 @@ export const Terminal: Component<TerminalProps> = (props) => {
   });
 
   // Alt-screen recovery: when an agent exits without leaving alt-screen,
-  // send the exit sequences via the PTY so alacritty processes them.
-  // DEFERRED (2026-04-19) — layer 2 termios reset on agent→shell transition.
+  // inject exit sequences directly into the terminal grid (display side only).
+  // Never writes to PTY stdin — that would leak as shell input.
   let lastAgentType: string | null = null;
   createEffect(() => {
     const curr = terminalsStore.get(props.id)?.agentType ?? null;
     if (lastAgentType !== null && curr === null && sessionId) {
-      pty.write(sessionId, "\x1b[?1049l\x1b[?1047l\x1b[?47l\x1b[?25h\x1b[0m").catch(() => {});
-      appLogger.debug("terminal", `[Recovery] ${props.id} wrote alt-screen exit after agent "${lastAgentType}" → null`);
+      invoke<boolean>("terminal_exit_alt_screen", { sessionId }).then((wasAlt) => {
+        if (wasAlt) {
+          appLogger.debug("terminal", `[Recovery] ${props.id} exited alt-screen after agent "${lastAgentType}" → null`);
+        }
+      }).catch(() => {});
     }
     lastAgentType = curr;
   });

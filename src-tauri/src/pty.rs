@@ -4179,14 +4179,14 @@ pub(crate) fn ack_terminal_frame(
         // Only flush if this ACK corresponds to a real in-flight frame
         // (reader set it). Prevents flush→ACK→flush loop when the flush
         // itself sends a frame that gets ACKed.
-        if was_in_flight {
-            if let Some(vt) = state.vt_log_buffers.get(&session_id) {
-                let frame = vt.lock().serialize_dirty_rows();
-                if !frame.is_empty() {
-                    if let Some(ch) = state.grid_channels.get(&session_id) {
-                        let _ = ch.send(frame);
-                    }
-                }
+        if was_in_flight
+            && let Some(vt) = state.vt_log_buffers.get(&session_id)
+        {
+            let frame = vt.lock().serialize_dirty_rows();
+            if !frame.is_empty()
+                && let Some(ch) = state.grid_channels.get(&session_id)
+            {
+                let _ = ch.send(frame);
             }
         }
     }

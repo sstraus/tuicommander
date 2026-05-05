@@ -19,6 +19,7 @@ import { cx } from "../../utils";
 import { PrDetailContent } from "./PrDetailContent";
 import { SmartButtonStrip } from "../SmartButtonStrip/SmartButtonStrip";
 import type { SavedPrompt } from "../../stores/promptLibrary";
+import { prContextVariables } from "../../utils/promptContext";
 import { PostMergeCleanupDialog, type CleanupStep, type StepId, type StepStatus } from "../PostMergeCleanupDialog/PostMergeCleanupDialog";
 import { executeCleanup } from "../../hooks/usePostMergeCleanup";
 import type { AgentType } from "../../agents";
@@ -382,6 +383,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
                       if (p.id === "smart-review-comments") return pr().review_decision === "CHANGES_REQUESTED";
                       return true;
                     }}
+                    contextVariables={() => prContextVariables(pr())}
                   />
                 </div>
                 <Show when={mergeError()}>

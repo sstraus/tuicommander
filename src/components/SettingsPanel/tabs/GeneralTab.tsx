@@ -1,12 +1,57 @@
-import { Component, For, Show } from "solid-js";
+import { Component, For, Show, createSignal, onMount } from "solid-js";
 import { settingsStore, IDE_NAMES } from "../../../stores/settings";
 import { appLogger } from "../../../stores/appLogger";
 import { updaterStore } from "../../../stores/updater";
+import { invoke } from "../../../invoke";
+import { isTauri } from "../../../transport";
 import type { IdeType, UpdateChannel } from "../../../stores/settings";
 import { t } from "../../../i18n";
 import s from "../Settings.module.css";
 
+interface CliStatus {
+  installed: boolean;
+  path: string | null;
+  version_match: boolean;
+  prompt_dismissed: boolean;
+}
+
 export const GeneralTab: Component = () => {
+  const [cliStatus, setCliStatus] = createSignal<CliStatus | null>(null);
+  const [cliInstalling, setCliInstalling] = createSignal(false);
+
+  const refreshCliStatus = async () => {
+    if (!isTauri()) return;
+    try {
+      const status = await invoke<CliStatus>("get_cli_status");
+      setCliStatus(status);
+    } catch (err) {
+      appLogger.error("app", "Failed to get CLI status", err);
+    }
+  };
+
+  onMount(refreshCliStatus);
+
+  const handleInstallCli = async () => {
+    setCliInstalling(true);
+    try {
+      await invoke<string>("install_cli");
+      await refreshCliStatus();
+    } catch (err) {
+      appLogger.error("app", "Failed to install CLI", err);
+    } finally {
+      setCliInstalling(false);
+    }
+  };
+
+  const handleUninstallCli = async () => {
+    try {
+      await invoke("uninstall_cli");
+      await refreshCliStatus();
+    } catch (err) {
+      appLogger.error("app", "Failed to uninstall CLI", err);
+    }
+  };
+
   return (
     <div class={s.section}>
       <h3>{t("general.heading.general", "General")}</h3>
@@ -45,6 +90,46 @@ export const GeneralTab: Component = () => {
         />
         <p class={s.hint}>{t("general.hint.shell", "Shell used in terminals (leave blank for system default)")}</p>
       </div>
+
+      <Show when={isTauri() && cliStatus()}>
+        <h3>{t("general.heading.cli", "Command Line Interface")}</h3>
+
+        <div class={s.group}>
+          <Show when={cliStatus()!.installed} fallback={
+            <>
+              <p class={s.hint}>
+                {t("general.hint.cliNotInstalled", "Install the tuic command to control TUICommander from the terminal. Open files, manage sessions, and use it as a tmux replacement.")}
+              </p>
+              <button
+                class={s.testBtn}
+                onClick={handleInstallCli}
+                disabled={cliInstalling()}
+                style={{ "margin-top": "8px" }}
+              >
+                {cliInstalling()
+                  ? t("general.btn.installing", "Installing...")
+                  : t("general.btn.installCli", "Install tuic CLI")}
+              </button>
+            </>
+          }>
+            <p class={s.hint} style={{ color: "var(--success)" }}>
+              {t("general.hint.cliInstalled", "Installed at {path}", { path: cliStatus()!.path ?? "/usr/local/bin/tuic" })}
+              {!cliStatus()!.version_match && (
+                <span style={{ color: "var(--warning, #e5c07b)", "margin-left": "8px" }}>
+                  {t("general.hint.cliOutdated", "(update pending — restart to apply)")}
+                </span>
+              )}
+            </p>
+            <button
+              class={s.testBtn}
+              onClick={handleUninstallCli}
+              style={{ "margin-top": "8px" }}
+            >
+              {t("general.btn.uninstallCli", "Uninstall")}
+            </button>
+          </Show>
+        </div>
+      </Show>
 
       <h3>{t("general.heading.confirmations", "Confirmations")}</h3>
 
@@ -192,6 +277,19 @@ export const GeneralTab: Component = () => {
           </div>
           <p class={s.hint}>
             {t("general.hint.aiChat", "Enable the AI Chat panel, keyboard shortcut, and command palette entry.")}
+          </p>
+        </div>
+        <div class={s.group}>
+          <div class={s.toggle}>
+            <input
+              type="checkbox"
+              checked={settingsStore.state.scrollbackReflow}
+              onChange={(e) => settingsStore.setScrollbackReflow(e.currentTarget.checked)}
+            />
+            <span>{t("general.toggle.scrollbackReflow", "Scrollback reflow")}</span>
+          </div>
+          <p class={s.hint}>
+            {t("general.hint.scrollbackReflow", "Reflow scrollback history when the terminal width changes. Keeps history readable after opening/closing side panels. New terminals only.")}
           </p>
         </div>
       </Show>

@@ -162,4 +162,54 @@ describe("editorTabsStore", () => {
       });
     });
   });
+
+  describe("worktree fsRoot support", () => {
+    const REPO = "/Users/dev/myrepo";
+    const WORKTREE = "/Users/dev/myrepo/.claude/worktrees/feat-x";
+    const BRANCH_KEY = `${REPO}|feat-x`;
+
+    it("tab opened with worktree path as repoPath is invisible (the bug)", () => {
+      testInScope(() => {
+        editorTabsStore.add(WORKTREE, "src/main.ts");
+        const visible = editorTabsStore.getVisibleIds(BRANCH_KEY);
+        // Worktree path doesn't match canonical repo in branchKey → filtered out
+        expect(visible).toHaveLength(0);
+      });
+    });
+
+    it("tab with canonical repoPath + fsRoot opt is visible", () => {
+      testInScope(() => {
+        editorTabsStore.add(REPO, "src/main.ts", undefined, { fsRoot: WORKTREE });
+        const visible = editorTabsStore.getVisibleIds(BRANCH_KEY);
+        expect(visible).toHaveLength(1);
+      });
+    });
+
+    it("fsRoot defaults to repoPath when omitted", () => {
+      testInScope(() => {
+        editorTabsStore.add(REPO, "src/main.ts");
+        const tab = editorTabsStore.getActive();
+        expect(tab?.fsRoot).toBe(REPO);
+      });
+    });
+
+    it("same file from different worktrees creates separate tabs", () => {
+      testInScope(() => {
+        const WORKTREE_B = "/Users/dev/myrepo/.claude/worktrees/feat-y";
+        const id1 = editorTabsStore.add(REPO, "src/main.ts", undefined, { fsRoot: WORKTREE });
+        const id2 = editorTabsStore.add(REPO, "src/main.ts", undefined, { fsRoot: WORKTREE_B });
+        expect(id1).not.toBe(id2);
+        expect(editorTabsStore.getCount()).toBe(2);
+      });
+    });
+
+    it("same file + same fsRoot deduplicates", () => {
+      testInScope(() => {
+        const id1 = editorTabsStore.add(REPO, "src/main.ts", undefined, { fsRoot: WORKTREE });
+        const id2 = editorTabsStore.add(REPO, "src/main.ts", undefined, { fsRoot: WORKTREE });
+        expect(id1).toBe(id2);
+        expect(editorTabsStore.getCount()).toBe(1);
+      });
+    });
+  });
 });

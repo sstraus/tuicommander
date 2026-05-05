@@ -21,6 +21,7 @@ import { openPathsAsTabs } from "../../hooks/useFileDrop";
 import { globalWorkspaceStore } from "../../stores/globalWorkspace";
 import { useSmartPrompts } from "../../hooks/useSmartPrompts";
 import { fileContextSmartMenuItem } from "../../utils/promptContext";
+import { handleOpenUrl } from "../../utils/openUrl";
 import type { ContextMenuItem } from "../ContextMenu/ContextMenu";
 import s from "./TabBar.module.css";
 
@@ -166,8 +167,10 @@ export const TabBar: Component<TabBarProps> = (props) => {
       const idx = ids.indexOf(id);
       const isPinned = tab?.pinned ?? false;
       const hasPath = tab?.type === "file" && tab.filePath;
+      const tabUrl = tab?.type === "plugin-panel" ? (tab as import("../../stores/mdTabs").PluginPanelTab).url : undefined;
       const mdItems: ContextMenuItem[] = [
         ...(hasPath ? [{ label: t("tabBar.copyPath", "Copy Path"), action: () => { navigator.clipboard.writeText(shortenHomePath(tab.filePath)).catch((err) => appLogger.error("app", "Failed to copy path", err)); } }] : []),
+        ...(tabUrl ? [{ label: t("tabBar.openInBrowser", "Open in Browser"), action: () => handleOpenUrl(tabUrl) }] : []),
         { label: isPinned ? t("tabBar.unpinTab", "Unpin Tab") : t("tabBar.pinTab", "Pin Tab"), action: () => mdTabsStore.setPinned(id, !isPinned) },
         { label: t("tabBar.print", "Print…"), action: () => window.print() },
         { label: "", separator: true, action: () => {} },

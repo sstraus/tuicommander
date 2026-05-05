@@ -34,6 +34,7 @@
 
 ## Extensibility
 
+- [CLI Companion (tuic)](./user-guide/cli.md)
 - [Plugins](./user-guide/plugins.md)
 - [MCP Proxy Hub](./user-guide/mcp-proxy.md)
 - [Remote Access](./user-guide/remote-access.md)

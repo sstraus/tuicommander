@@ -1664,3 +1664,41 @@ TUICommander aggregates upstream MCP servers and exposes them through its own `/
 - Scripts in `scripts/perf/`: IPC latency, PTY throughput, CPU recording, Tokio console, memory snapshots
 - `tokio-console` feature flag for async task inspection
 - See `docs/guides/profiling.md`
+
+## 21. CLI Companion (`tuic`)
+
+### 21.1 Overview
+- Standalone Rust binary embedded as a sidecar, installed to system PATH
+- Combines VS Code-style file opening, tmux-style session management, and agent orchestration
+- Cross-platform: macOS, Linux, Windows
+- Communicates via IPC (Unix socket / Windows named pipe) with the running TUICommander instance
+- Auto-launches TUICommander if not running
+
+### 21.2 Editor Mode
+- `tuic [path]` — open file or directory (VS Code/Zed style)
+- `tuic open --goto file:line:col` — open at specific position
+- `tuic open --wait` — block until file closed ($EDITOR support)
+- `tuic diff <a> <b>` — diff view
+
+### 21.3 Session Management (tmux-compatible)
+- `tuic ls` / `tuic new` / `tuic kill` / `tuic send` / `tuic capture`
+- `tuic resize <id> WxH` / `tuic pause` / `tuic resume`
+- Targets accept UUIDs, ID prefixes, or session names
+- tmux key name translation (Enter, C-c, Space, etc.)
+
+### 21.4 Agent Orchestration
+- `tuic agent spawn <type> [repo]` — spawn AI agent
+- `tuic agent ls` — list running agents
+- `tuic agent send <id> <message>` — message an agent
+
+### 21.5 tmux Compatibility Mode
+- `tuic alias` creates `tmux → tuic` symlink; `argv[0]` detection switches to compat mode
+- Supports: `new-session`, `list-sessions`, `kill-session`, `kill-server`, `send-keys`, `capture-pane`, `resize-pane`, `attach-session`, `has-session`
+- Tools expecting tmux (e.g. Claude Code `--tmux`) transparently use TUICommander
+
+### 21.6 Installation
+- First-run prompt on app launch (one-time, dismissible)
+- Settings > General > Command Line Interface (install/uninstall button with status)
+- Auto-update on app startup (silent, no elevation prompt)
+- Paths: `/usr/local/bin/tuic` (macOS/Linux), `%LOCALAPPDATA%\Microsoft\WindowsApps\tuic.exe` (Windows)
+- `tuic install-cli` / `tuic alias` for self-service

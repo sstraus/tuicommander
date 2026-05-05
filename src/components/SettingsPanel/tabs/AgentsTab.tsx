@@ -2,6 +2,7 @@ import { Component, For, Show, createMemo, createSignal, onCleanup, onMount } fr
 import { AGENTS, AGENT_DISPLAY, AGENT_TYPES, MCP_SUPPORT, type AgentType, type AgentRunConfig } from "../../../agents";
 import { appLogger } from "../../../stores/appLogger";
 import { agentConfigsStore } from "../../../stores/agentConfigs";
+import { aiPromptsStore, DEFAULT_DIFF_TRIAGE_PROMPT } from "../../../stores/aiPrompts";
 import { useAgentDetection, type AgentAvailability } from "../../../hooks/useAgentDetection";
 import { invoke } from "../../../invoke";
 import { settingsStore } from "../../../stores/settings";
@@ -13,6 +14,7 @@ import { setClaudeUsageEnabled } from "../../../plugins";
 import { AgentIcon } from "../../ui/AgentIcon";
 import { CC_ENV_FLAGS, ENV_FLAG_CATEGORIES, CATEGORY_ORDER, type EnvFlagDef, type EnvFlagCategory } from "../../../data/ccEnvFlags";
 import { findDuplicateEnvKeys, buildEnvFromEntries } from "../../../utils/envVars";
+import { t } from "../../../i18n";
 import s from "../Settings.module.css";
 import a from "./AgentsTab.module.css";
 
@@ -782,6 +784,64 @@ const AgentRow: Component<{
 };
 
 // ---------------------------------------------------------------------------
+// AI Prompts section (embedded in Agents tab)
+// ---------------------------------------------------------------------------
+
+const AiPromptsSection: Component = () => {
+  const [expanded, setExpanded] = createSignal(false);
+
+  const handleExpand = () => {
+    if (!expanded()) void aiPromptsStore.hydrate();
+    setExpanded(!expanded());
+  };
+
+  return (
+    <div class={s.group} style={{ "margin-top": "16px" }}>
+      <h3
+        style={{ cursor: "pointer", display: "flex", "align-items": "center", gap: "6px" }}
+        onClick={handleExpand}
+      >
+        <span class={a.expandIcon} classList={{ [a.expanded]: expanded() }}>&#9654;</span>
+        {t("aiPrompts.heading.title", "AI Prompts")}
+      </h3>
+      <p class={s.hint}>
+        {t("aiPrompts.hint.description", "Customize system prompts sent to AI services.")}
+      </p>
+
+      <Show when={expanded()}>
+        <div style={{ "margin-top": "8px" }}>
+          <label>{t("aiPrompts.heading.diffTriage", "Diff Triage")}</label>
+          <p class={s.hint}>
+            {t("aiPrompts.hint.diffTriage", "System prompt sent to the LLM when classifying changed files.")}
+          </p>
+          <div class={s.group}>
+            <textarea
+              rows={12}
+              value={aiPromptsStore.getEffectivePrompt("diff_triage")}
+              onBlur={(e) => {
+                const val = e.currentTarget.value;
+                const isDefault = val.trim() === DEFAULT_DIFF_TRIAGE_PROMPT.trim();
+                aiPromptsStore.setDiffTriagePrompt(isDefault ? null : val);
+              }}
+            />
+          </div>
+          <Show when={aiPromptsStore.isCustom("diff_triage")}>
+            <div class={s.actions}>
+              <span class={s.hintInline}>
+                {t("aiPrompts.modified", "Modified")}
+              </span>
+              <button onClick={() => aiPromptsStore.resetToDefault("diff_triage")}>
+                {t("aiPrompts.resetDefault", "Reset to Default")}
+              </button>
+            </div>
+          </Show>
+        </div>
+      </Show>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // Main tab
 // ---------------------------------------------------------------------------
 
@@ -845,6 +905,8 @@ export const AgentsTab: Component = () => {
           )}
         </For>
       </div>
+
+      <AiPromptsSection />
     </div>
   );
 };

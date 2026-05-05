@@ -255,7 +255,7 @@ const SESSION_ACTIONS: &str = "list, create, input, output, resize, close, kill,
 const AGENT_ACTIONS: &str = "spawn, detect, stats, metrics, register, list_peers, send, inbox";
 const REPO_ACTIONS: &str = "list, active, prs, status, worktree_list, worktree_create, worktree_remove";
 const UI_ACTIONS: &str = "tab, toast, confirm";
-const CONFIG_ACTIONS: &str = "get, save";
+const CONFIG_ACTIONS: &str = "get, save, list_ai_prompts, load_ai_prompt, save_ai_prompt, list_prompts, load_prompt, save_prompt";
 const DEBUG_ACTIONS: &str = "agent_detection, logs, sessions, invoke_js, help";
 
 // Legacy action constants — still referenced by handlers until dispatch refactor (story 1091).
@@ -351,10 +351,16 @@ fn native_tool_definitions() -> serde_json::Value {
         },
         {
             "name": "config",
-            "description": "Read or write app configuration.\n\nActions (pass as 'action' parameter):\n- get: Returns app config (shell, font, theme, etc.). Password hash is stripped.\n- save: Persists configuration. Requires config object. Partial updates OK.",
+            "description": "Read or write app configuration.\n\nActions (pass as 'action' parameter):\n- get: Returns app config (shell, font, theme, etc.). Password hash is stripped.\n- save: Persists configuration. Requires config object. Partial updates OK.\n- list_ai_prompts: Lists AI services with custom/default status.\n- load_ai_prompt: Returns prompt for a service (requires 'service' param). Includes prompt, default_prompt, is_custom.\n- save_ai_prompt: Sets custom prompt for a service (requires 'service' + 'prompt' params, null/empty resets to default). Localhost only.\n- list_prompts: Lists saved smart prompts (id, label, pinned — no text).\n- load_prompt: Returns full prompt entry by id (requires 'id' param).\n- save_prompt: Upserts a prompt by id (requires 'id', 'label', 'text'; optional 'pinned'). Localhost only.",
             "inputSchema": { "type": "object", "properties": {
-                "action": { "type": "string", "description": "One of: get, save" },
-                "config": { "type": "object", "description": "Config fields to save (action=save)" }
+                "action": { "type": "string", "description": "One of: get, save, list_ai_prompts, load_ai_prompt, save_ai_prompt, list_prompts, load_prompt, save_prompt" },
+                "config": { "type": "object", "description": "Config fields to save (action=save)" },
+                "service": { "type": "string", "description": "AI service name (action=load_ai_prompt, save_ai_prompt). Currently: diff_triage" },
+                "prompt": { "type": "string", "description": "Custom prompt text (action=save_ai_prompt). Null or empty resets to default." },
+                "id": { "type": "string", "description": "Prompt id (action=load_prompt, save_prompt)" },
+                "label": { "type": "string", "description": "Prompt label (action=save_prompt)" },
+                "text": { "type": "string", "description": "Prompt text (action=save_prompt)" },
+                "pinned": { "type": "boolean", "description": "Pin prompt (action=save_prompt, optional)" }
             }, "required": ["action"] }
         },
         {
@@ -567,6 +573,12 @@ fn require_session_id<'a>(args: &'a serde_json::Value, action: &str) -> Result<&
     args["session_id"]
         .as_str()
         .ok_or_else(|| serde_json::json!({"error": format!("Action '{}' requires 'session_id'. Get valid IDs with session action='list'", action)}))
+}
+
+fn require_string<'a>(args: &'a serde_json::Value, field: &str) -> Result<&'a str, serde_json::Value> {
+    args[field]
+        .as_str()
+        .ok_or_else(|| serde_json::json!({"error": format!("Missing required parameter '{field}'")}))
 }
 
 /// Extract path from args with guidance error
@@ -1100,15 +1112,20 @@ async fn handle_github(state: &Arc<AppState>, args: &serde_json::Value) -> serde
                 Err(e) => return e,
             };
             if let Err(e) = validate_mcp_repo_path(&path) { return e; }
-            let statuses = crate::github::get_repo_pr_statuses_impl(
+            let statuses = if let Some(cached) = crate::state::AppState::get_cached(
+                &state.git_cache.github_status,
                 &path,
-                false,
-                state,
-            ).await;
+                crate::state::GITHUB_CACHE_TTL,
+            ) {
+                Ok(cached)
+            } else {
+                crate::github::get_repo_pr_statuses_impl(&path, false, state).await
+            };
             to_json_or_error(statuses)
         }
         "status" => {
             // Cross-repo aggregate: for each workspace repo, return branch/ahead/behind/open PRs
+            // Reads from poller cache to avoid fan-out API calls
             let repo_data = crate::config::load_repositories();
             let repo_order = repo_data.get("repoOrder")
                 .and_then(|v| v.as_array())
@@ -1120,11 +1137,14 @@ async fn handle_github(state: &Arc<AppState>, args: &serde_json::Value) -> serde
                 let info = crate::git::get_repo_info_impl(path);
                 if !info.is_git_repo { continue; }
                 let gh = crate::github::get_github_status_impl(path);
-                let prs = crate::github::get_repo_pr_statuses_impl(path, false, state).await;
-                let (open_prs, failing_ci) = match &prs {
-                    Ok(v) => (v.len(), v.iter().filter(|p| p.checks.failed > 0).count()),
-                    Err(_) => (0, 0),
-                };
+                let cached_prs: Vec<crate::github::BranchPrStatus> =
+                    crate::state::AppState::get_cached(
+                        &state.git_cache.github_status,
+                        path,
+                        crate::state::GITHUB_CACHE_TTL,
+                    ).unwrap_or_default();
+                let open_prs = cached_prs.len();
+                let failing_ci = cached_prs.iter().filter(|p| p.checks.failed > 0).count();
                 results.push(serde_json::json!({
                     "path": path,
                     "branch": info.branch,
@@ -1833,6 +1853,107 @@ fn handle_config(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Val
                     }
                     serde_json::json!({"ok": true})
                 }
+                Err(e) => serde_json::json!({"error": e}),
+            }
+        }
+        "list_ai_prompts" => {
+            let config = crate::config::load_ai_prompts();
+            serde_json::json!({
+                "services": [{
+                    "name": "diff_triage",
+                    "description": "System prompt for diff triage LLM classification",
+                    "is_custom": config.diff_triage_system_prompt.is_some(),
+                }]
+            })
+        }
+        "load_ai_prompt" => {
+            let service = match require_string(args, "service") {
+                Ok(s) => s,
+                Err(e) => return e,
+            };
+            let config = crate::config::load_ai_prompts();
+            match service {
+                "diff_triage" => {
+                    let default_prompt = crate::diff_triage::default_system_prompt();
+                    serde_json::json!({
+                        "service": "diff_triage",
+                        "prompt": config.diff_triage_system_prompt.as_deref().unwrap_or(default_prompt),
+                        "default_prompt": default_prompt,
+                        "is_custom": config.diff_triage_system_prompt.is_some(),
+                    })
+                }
+                _ => serde_json::json!({"error": format!("Unknown AI service: {service}")}),
+            }
+        }
+        "save_ai_prompt" => {
+            if !addr.ip().is_loopback() {
+                return serde_json::json!({"error": "AI prompt save is restricted to localhost connections"});
+            }
+            let service = match require_string(args, "service") {
+                Ok(s) => s,
+                Err(e) => return e,
+            };
+            match service {
+                "diff_triage" => {
+                    let prompt = args.get("prompt").and_then(|v| v.as_str())
+                        .filter(|s| !s.trim().is_empty())
+                        .map(|s| s.to_string());
+                    let mut config = crate::config::load_ai_prompts();
+                    config.diff_triage_system_prompt = prompt;
+                    match crate::config::save_ai_prompts(config) {
+                        Ok(()) => serde_json::json!({"ok": true}),
+                        Err(e) => serde_json::json!({"error": e}),
+                    }
+                }
+                _ => serde_json::json!({"error": format!("Unknown AI service: {service}")}),
+            }
+        }
+        "list_prompts" => {
+            let lib = crate::config::load_prompt_library();
+            serde_json::json!({
+                "prompts": lib.prompts.iter().map(|p| serde_json::json!({
+                    "id": p.id, "label": p.label, "pinned": p.pinned,
+                })).collect::<Vec<_>>()
+            })
+        }
+        "load_prompt" => {
+            let id = match require_string(args, "id") {
+                Ok(s) => s,
+                Err(e) => return e,
+            };
+            let lib = crate::config::load_prompt_library();
+            match lib.prompts.iter().find(|p| p.id == id) {
+                Some(p) => to_json_or_error(p.clone()),
+                None => serde_json::json!({"error": format!("Prompt not found: {id}")}),
+            }
+        }
+        "save_prompt" => {
+            if !addr.ip().is_loopback() {
+                return serde_json::json!({"error": "Prompt save is restricted to localhost connections"});
+            }
+            let id = match require_string(args, "id") {
+                Ok(s) => s.to_string(),
+                Err(e) => return e,
+            };
+            let label = match require_string(args, "label") {
+                Ok(s) => s.to_string(),
+                Err(e) => return e,
+            };
+            let text = match require_string(args, "text") {
+                Ok(s) => s.to_string(),
+                Err(e) => return e,
+            };
+            let pinned = args.get("pinned").and_then(|v| v.as_bool()).unwrap_or(false);
+            let mut lib = crate::config::load_prompt_library();
+            if let Some(existing) = lib.prompts.iter_mut().find(|p| p.id == id) {
+                existing.label = label;
+                existing.text = text;
+                existing.pinned = pinned;
+            } else {
+                lib.prompts.push(crate::config::PromptEntry { id, label, text, pinned });
+            }
+            match crate::config::save_prompt_library(lib) {
+                Ok(()) => serde_json::json!({"ok": true}),
                 Err(e) => serde_json::json!({"error": e}),
             }
         }
@@ -5081,5 +5202,183 @@ mod tests {
     #[test]
     fn resolve_repo_empty_known_returns_input() {
         assert_eq!(resolve_repo_for_path("/foo/bar", &[]), "/foo/bar");
+    }
+
+    // ── config tool: AI prompts + prompt library ────────────────────
+
+    fn localhost() -> SocketAddr {
+        "127.0.0.1:9999".parse().unwrap()
+    }
+
+    fn remote_addr() -> SocketAddr {
+        "192.168.1.10:9999".parse().unwrap()
+    }
+
+    #[test]
+    fn config_list_ai_prompts_returns_services() {
+        let state = test_state();
+        let r = handle_config(&state, localhost(), &serde_json::json!({"action": "list_ai_prompts"}));
+        let services = r["services"].as_array().unwrap();
+        assert_eq!(services.len(), 1);
+        assert_eq!(services[0]["name"], "diff_triage");
+    }
+
+    #[test]
+    fn config_load_ai_prompt_returns_default_when_no_custom() {
+        let state = test_state();
+        let _guard = crate::config::set_config_dir_override(std::env::temp_dir().join("test-ai-prompts-load"));
+        let r = handle_config(&state, localhost(), &serde_json::json!({
+            "action": "load_ai_prompt", "service": "diff_triage"
+        }));
+        assert_eq!(r["is_custom"], false);
+        assert_eq!(r["service"], "diff_triage");
+        assert!(r["prompt"].as_str().unwrap().len() > 10);
+        assert_eq!(r["prompt"], r["default_prompt"]);
+    }
+
+    #[test]
+    fn config_load_ai_prompt_unknown_service_errors() {
+        let state = test_state();
+        let r = handle_config(&state, localhost(), &serde_json::json!({
+            "action": "load_ai_prompt", "service": "nonexistent"
+        }));
+        assert!(r["error"].as_str().unwrap().contains("Unknown"));
+    }
+
+    #[test]
+    fn config_save_ai_prompt_round_trip() {
+        let state = test_state();
+        let dir = std::env::temp_dir().join("test-ai-prompts-save");
+        let _ = std::fs::create_dir_all(&dir);
+        let _guard = crate::config::set_config_dir_override(dir);
+
+        let save_r = handle_config(&state, localhost(), &serde_json::json!({
+            "action": "save_ai_prompt", "service": "diff_triage", "prompt": "Custom prompt"
+        }));
+        assert_eq!(save_r["ok"], true);
+
+        let load_r = handle_config(&state, localhost(), &serde_json::json!({
+            "action": "load_ai_prompt", "service": "diff_triage"
+        }));
+        assert_eq!(load_r["is_custom"], true);
+        assert_eq!(load_r["prompt"], "Custom prompt");
+    }
+
+    #[test]
+    fn config_save_ai_prompt_empty_resets_to_default() {
+        let state = test_state();
+        let dir = std::env::temp_dir().join("test-ai-prompts-reset");
+        let _ = std::fs::create_dir_all(&dir);
+        let _guard = crate::config::set_config_dir_override(dir);
+
+        handle_config(&state, localhost(), &serde_json::json!({
+            "action": "save_ai_prompt", "service": "diff_triage", "prompt": "Custom"
+        }));
+        handle_config(&state, localhost(), &serde_json::json!({
+            "action": "save_ai_prompt", "service": "diff_triage", "prompt": ""
+        }));
+
+        let r = handle_config(&state, localhost(), &serde_json::json!({
+            "action": "load_ai_prompt", "service": "diff_triage"
+        }));
+        assert_eq!(r["is_custom"], false);
+    }
+
+    #[test]
+    fn config_save_ai_prompt_blocked_from_remote() {
+        let state = test_state();
+        let r = handle_config(&state, remote_addr(), &serde_json::json!({
+            "action": "save_ai_prompt", "service": "diff_triage", "prompt": "Hack"
+        }));
+        assert!(r["error"].as_str().unwrap().contains("localhost"));
+    }
+
+    #[test]
+    fn config_save_ai_prompt_preserves_other_fields() {
+        let state = test_state();
+        let dir = std::env::temp_dir().join("test-ai-prompts-preserve");
+        let _ = std::fs::create_dir_all(&dir);
+        let _guard = crate::config::set_config_dir_override(dir);
+
+        handle_config(&state, localhost(), &serde_json::json!({
+            "action": "save_ai_prompt", "service": "diff_triage", "prompt": "Custom"
+        }));
+
+        let config = crate::config::load_ai_prompts();
+        assert_eq!(config.diff_triage_system_prompt.as_deref(), Some("Custom"));
+    }
+
+    #[test]
+    fn config_list_prompts_empty_library() {
+        let state = test_state();
+        let dir = std::env::temp_dir().join("test-prompts-list");
+        let _ = std::fs::create_dir_all(&dir);
+        let _guard = crate::config::set_config_dir_override(dir);
+
+        let r = handle_config(&state, localhost(), &serde_json::json!({"action": "list_prompts"}));
+        assert_eq!(r["prompts"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn config_save_and_load_prompt_round_trip() {
+        let state = test_state();
+        let dir = std::env::temp_dir().join("test-prompts-roundtrip");
+        let _ = std::fs::create_dir_all(&dir);
+        let _guard = crate::config::set_config_dir_override(dir);
+
+        let save_r = handle_config(&state, localhost(), &serde_json::json!({
+            "action": "save_prompt", "id": "p1", "label": "My Prompt", "text": "Do stuff"
+        }));
+        assert_eq!(save_r["ok"], true);
+
+        let load_r = handle_config(&state, localhost(), &serde_json::json!({
+            "action": "load_prompt", "id": "p1"
+        }));
+        assert_eq!(load_r["label"], "My Prompt");
+        assert_eq!(load_r["text"], "Do stuff");
+        assert_eq!(load_r["pinned"], false);
+    }
+
+    #[test]
+    fn config_save_prompt_upserts() {
+        let state = test_state();
+        let dir = std::env::temp_dir().join("test-prompts-upsert");
+        let _ = std::fs::create_dir_all(&dir);
+        let _guard = crate::config::set_config_dir_override(dir);
+
+        handle_config(&state, localhost(), &serde_json::json!({
+            "action": "save_prompt", "id": "p1", "label": "V1", "text": "Old"
+        }));
+        handle_config(&state, localhost(), &serde_json::json!({
+            "action": "save_prompt", "id": "p1", "label": "V2", "text": "New", "pinned": true
+        }));
+
+        let list_r = handle_config(&state, localhost(), &serde_json::json!({"action": "list_prompts"}));
+        let prompts = list_r["prompts"].as_array().unwrap();
+        assert_eq!(prompts.len(), 1);
+        assert_eq!(prompts[0]["label"], "V2");
+        assert_eq!(prompts[0]["pinned"], true);
+    }
+
+    #[test]
+    fn config_save_prompt_blocked_from_remote() {
+        let state = test_state();
+        let r = handle_config(&state, remote_addr(), &serde_json::json!({
+            "action": "save_prompt", "id": "p1", "label": "X", "text": "Y"
+        }));
+        assert!(r["error"].as_str().unwrap().contains("localhost"));
+    }
+
+    #[test]
+    fn config_load_prompt_not_found() {
+        let state = test_state();
+        let dir = std::env::temp_dir().join("test-prompts-404");
+        let _ = std::fs::create_dir_all(&dir);
+        let _guard = crate::config::set_config_dir_override(dir);
+
+        let r = handle_config(&state, localhost(), &serde_json::json!({
+            "action": "load_prompt", "id": "nonexistent"
+        }));
+        assert!(r["error"].as_str().unwrap().contains("not found"));
     }
 }

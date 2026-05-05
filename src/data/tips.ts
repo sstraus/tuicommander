@@ -324,4 +324,19 @@ export const TIPS: Tip[] = [
     description: "Hide the sidebar, tab bar, and side panels to maximize the active tab. Toolbar and status bar stay visible. Press again to restore.",
     shortcut: `${mod}+Alt+Enter`,
   },
+  {
+    feature: "tuic CLI",
+    description: "Control TUICommander from the terminal. Open files, manage sessions, spawn agents, and use it as a tmux replacement. Install from Settings > General.",
+    shortcut: null,
+  },
+  {
+    feature: "tuic as tmux",
+    description: "Run 'tuic alias' to create a tmux compatibility symlink. Any tool expecting tmux (like Claude Code) will use TUICommander instead.",
+    shortcut: null,
+  },
+  {
+    feature: "tuic open",
+    description: "Open files in TUICommander from the terminal: 'tuic file.rs:42' opens at line 42. 'tuic .' opens the current directory as a repo.",
+    shortcut: null,
+  },
 ];

@@ -4,3 +4,6 @@
 # for CMake. Without these, CMake auto-detects a wrong version and the build breaks.
 MACOSX_DEPLOYMENT_TARGET = "10.15"
 CMAKE_OSX_DEPLOYMENT_TARGET = "10.15"
+
+[term]
+progress.term-integration = true

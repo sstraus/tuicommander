@@ -1,0 +1,19 @@
+[package]
+name = "tuic-cli"
+version = "1.1.0"
+description = "CLI companion for TUICommander — editor opener, session multiplexer, tmux replacement"
+authors = ["Stefano Straus <github.com/sstraus>"]
+edition = "2024"
+
+[[bin]]
+name = "tuic"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "6"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

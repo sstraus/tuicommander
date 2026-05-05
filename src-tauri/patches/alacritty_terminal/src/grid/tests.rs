@@ -170,7 +170,7 @@ fn shrink_reflow() {
     grid[Line(0)][Column(3)] = cell('4');
     grid[Line(0)][Column(4)] = cell('5');
 
-    grid.resize(true, 1, 2);
+    grid.resize(ReflowMode::All, 1, 2);
 
     assert_eq!(grid.total_lines(), 3);
 
@@ -196,8 +196,8 @@ fn shrink_reflow_twice() {
     grid[Line(0)][Column(3)] = cell('4');
     grid[Line(0)][Column(4)] = cell('5');
 
-    grid.resize(true, 1, 4);
-    grid.resize(true, 1, 2);
+    grid.resize(ReflowMode::All, 1, 4);
+    grid.resize(ReflowMode::All, 1, 2);
 
     assert_eq!(grid.total_lines(), 3);
 
@@ -223,7 +223,7 @@ fn shrink_reflow_empty_cell_inside_line() {
     grid[Line(0)][Column(3)] = cell('4');
     grid[Line(0)][Column(4)] = Cell::default();
 
-    grid.resize(true, 1, 2);
+    grid.resize(ReflowMode::All, 1, 2);
 
     assert_eq!(grid.total_lines(), 2);
 
@@ -235,7 +235,7 @@ fn shrink_reflow_empty_cell_inside_line() {
     assert_eq!(grid[Line(0)][Column(0)], cell('3'));
     assert_eq!(grid[Line(0)][Column(1)], cell('4'));
 
-    grid.resize(true, 1, 1);
+    grid.resize(ReflowMode::All, 1, 1);
 
     assert_eq!(grid.total_lines(), 4);
 
@@ -260,7 +260,7 @@ fn grow_reflow() {
     grid[Line(1)][Column(0)] = cell('3');
     grid[Line(1)][Column(1)] = Cell::default();
 
-    grid.resize(true, 2, 3);
+    grid.resize(ReflowMode::All, 2, 3);
 
     assert_eq!(grid.total_lines(), 2);
 
@@ -286,7 +286,7 @@ fn grow_reflow_multiline() {
     grid[Line(2)][Column(0)] = cell('5');
     grid[Line(2)][Column(1)] = cell('6');
 
-    grid.resize(true, 3, 6);
+    grid.resize(ReflowMode::All, 3, 6);
 
     assert_eq!(grid.total_lines(), 3);
 
@@ -315,7 +315,7 @@ fn grow_reflow_disabled() {
     grid[Line(1)][Column(0)] = cell('3');
     grid[Line(1)][Column(1)] = Cell::default();
 
-    grid.resize(false, 2, 3);
+    grid.resize(ReflowMode::None, 2, 3);
 
     assert_eq!(grid.total_lines(), 2);
 
@@ -339,13 +339,90 @@ fn shrink_reflow_disabled() {
     grid[Line(0)][Column(3)] = cell('4');
     grid[Line(0)][Column(4)] = cell('5');
 
-    grid.resize(false, 1, 2);
+    grid.resize(ReflowMode::None, 1, 2);
 
     assert_eq!(grid.total_lines(), 1);
 
     assert_eq!(grid[Line(0)].len(), 2);
     assert_eq!(grid[Line(0)][Column(0)], cell('1'));
     assert_eq!(grid[Line(0)][Column(1)], cell('2'));
+}
+
+/// Shrink with HistoryOnly reflow: history rows wrap, screen rows truncate.
+#[test]
+fn shrink_reflow_history_only() {
+    // 2 screen rows, 5 cols, 5 lines of scrollback capacity.
+    let mut grid = Grid::<Cell>::new(2, 5, 5);
+
+    // Push 2 rows into history by scrolling.
+    grid.scroll_up(&(Line(0)..Line(2)), 2);
+
+    // Fill the 2 history rows (now at Line(-2) and Line(-1)).
+    for col in 0..5 {
+        grid[Line(-2)][Column(col)] = cell((b'A' + col as u8) as char);
+        grid[Line(-1)][Column(col)] = cell((b'F' + col as u8) as char);
+    }
+
+    // Fill screen rows.
+    for col in 0..5 {
+        grid[Line(0)][Column(col)] = cell((b'a' + col as u8) as char);
+        grid[Line(1)][Column(col)] = cell((b'f' + col as u8) as char);
+    }
+
+    // Shrink from 5 cols to 3 with HistoryOnly: history reflowed, screen truncated.
+    grid.resize(ReflowMode::HistoryOnly, 2, 3);
+
+    // Screen rows: truncated to 3, no reflow (data past col 3 lost).
+    assert_eq!(grid[Line(0)][Column(0)], cell('a'));
+    assert_eq!(grid[Line(0)][Column(1)], cell('b'));
+    assert_eq!(grid[Line(0)][Column(2)], cell('c'));
+
+    assert_eq!(grid[Line(1)][Column(0)], cell('f'));
+    assert_eq!(grid[Line(1)][Column(1)], cell('g'));
+    assert_eq!(grid[Line(1)][Column(2)], cell('h'));
+
+    // History: reflowed — "ABCDE" at 3 cols becomes 2 rows: "ABC" + "DE".
+    // Total history lines should be 4 (2 original × ~2 each at 3 cols from 5).
+    assert!(grid.history_size() >= 3);
+}
+
+/// Shrink then grow with HistoryOnly: history round-trips through reflow.
+#[test]
+fn shrink_grow_reflow_history_only_roundtrip() {
+    let mut grid = Grid::<Cell>::new(2, 6, 10);
+
+    // Push history.
+    grid.scroll_up(&(Line(0)..Line(2)), 1);
+    for col in 0..6 {
+        grid[Line(-1)][Column(col)] = cell((b'A' + col as u8) as char);
+    }
+
+    // Fill screen.
+    for col in 0..6 {
+        grid[Line(0)][Column(col)] = cell((b'a' + col as u8) as char);
+        grid[Line(1)][Column(col)] = cell((b'f' + col as u8) as char);
+    }
+
+    // Shrink 6→3: history reflows (wraps), screen truncates.
+    grid.resize(ReflowMode::HistoryOnly, 2, 3);
+
+    // Grow back 3→6: history reflows (unwraps), screen just pads.
+    grid.resize(ReflowMode::HistoryOnly, 2, 6);
+
+    // History should be back to 1 line with original content.
+    assert_eq!(grid.history_size(), 1);
+    assert_eq!(grid[Line(-1)][Column(0)], cell('A'));
+    assert_eq!(grid[Line(-1)][Column(1)], cell('B'));
+    assert_eq!(grid[Line(-1)][Column(2)], cell('C'));
+    assert_eq!(grid[Line(-1)][Column(3)], cell('D'));
+    assert_eq!(grid[Line(-1)][Column(4)], cell('E'));
+    assert_eq!(grid[Line(-1)][Column(5)], cell('F'));
+
+    // Screen rows: data lost past col 3 (truncated on shrink, padded with empty on grow).
+    assert_eq!(grid[Line(0)][Column(0)], cell('a'));
+    assert_eq!(grid[Line(0)][Column(1)], cell('b'));
+    assert_eq!(grid[Line(0)][Column(2)], cell('c'));
+    assert_eq!(grid[Line(0)][Column(3)], Cell::default());
 }
 
 #[test]

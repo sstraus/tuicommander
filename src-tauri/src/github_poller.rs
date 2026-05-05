@@ -89,7 +89,7 @@ pub(crate) fn detect_transitions(
 // Poller
 // ---------------------------------------------------------------------------
 
-const BASE_INTERVAL: Duration = Duration::from_secs(30);
+const BASE_INTERVAL: Duration = Duration::from_secs(60);
 const HIDDEN_INTERVAL: Duration = Duration::from_secs(120);
 const MAX_INTERVAL: Duration = Duration::from_secs(300);
 /// Debounce window for coalescing event-driven poll requests into the periodic batch.

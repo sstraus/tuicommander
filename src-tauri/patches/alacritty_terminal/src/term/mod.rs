@@ -653,15 +653,16 @@ impl<T> Term<T> {
 
     /// Resize terminal to new dimensions.
     pub fn resize<S: Dimensions>(&mut self, size: S) {
-        self.resize_reflow(size, true);
+        self.resize_reflow(size, crate::grid::ReflowMode::All);
     }
 
-    /// Resize the terminal, optionally disabling reflow.
+    /// Resize the terminal with explicit reflow control.
     ///
-    /// When `reflow` is false, lines are truncated/padded instead of reflowed.
-    /// This avoids breaking cursor-addressed TUIs (e.g. Ink) that use CUU
-    /// positioning and assume stable line identity across resizes.
-    pub fn resize_reflow<S: Dimensions>(&mut self, size: S, reflow: bool) {
+    /// `ReflowMode::None` — lines are truncated/padded (no reflow).
+    /// `ReflowMode::All` — full reflow (original alacritty behavior).
+    /// `ReflowMode::HistoryOnly` — reflow scrollback but leave visible screen
+    /// untouched, preserving cursor-addressed TUI positioning.
+    pub fn resize_reflow<S: Dimensions>(&mut self, size: S, reflow: crate::grid::ReflowMode) {
         let old_cols = self.columns();
         let old_lines = self.screen_lines();
 
@@ -682,9 +683,13 @@ impl<T> Term<T> {
         delta = cmp::min(cmp::max(delta, min_delta), history_size as i32);
         self.vi_mode_cursor.point.line += delta;
 
+        use crate::grid::ReflowMode;
         let is_alt = self.mode.contains(TermMode::ALT_SCREEN);
-        self.grid.resize(reflow && !is_alt, num_lines, num_cols);
-        self.inactive_grid.resize(reflow && is_alt, num_lines, num_cols);
+        // Alt screen never gets reflow; primary screen uses the requested mode.
+        let primary_mode = if is_alt { ReflowMode::None } else { reflow };
+        let alt_mode = if is_alt { reflow } else { ReflowMode::None };
+        self.grid.resize(primary_mode, num_lines, num_cols);
+        self.inactive_grid.resize(alt_mode, num_lines, num_cols);
 
         // Invalidate selection and tabs only when necessary.
         if old_cols != num_cols {

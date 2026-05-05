@@ -15,6 +15,7 @@ import { PrDetailContent } from "../PrDetailPopover/PrDetailContent";
 import { IssueDetailContent } from "../IssueDetailPopover/IssueDetailContent";
 import { SmartButtonStrip } from "../SmartButtonStrip/SmartButtonStrip";
 import type { SavedPrompt } from "../../stores/promptLibrary";
+import { prContextVariables } from "../../utils/promptContext";
 import { handleOpenUrl } from "../../utils/openUrl";
 import { mdTabsStore } from "../../stores/mdTabs";
 import { PostMergeCleanupDialog, type CleanupStep, type StepId, type StepStatus } from "../PostMergeCleanupDialog/PostMergeCleanupDialog";
@@ -472,6 +473,7 @@ export const GitHubPanel: Component<{
                                       if (p.id === "smart-review-comments") return pr.review_decision === "CHANGES_REQUESTED";
                                       return true;
                                     }}
+                                    contextVariables={() => prContextVariables(pr)}
                                   />
                                 </div>
                                 <Show when={approveError()}>

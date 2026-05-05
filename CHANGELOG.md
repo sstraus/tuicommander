@@ -4,12 +4,44 @@ All notable changes to TUICommander will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [1.1.1] - 2026-05-05
 
 ### Added
+- **CLI companion (`tuic`)** — Standalone sidecar binary for controlling TUICommander from the terminal. Supports file opening with goto (`tuic file.rs:42`), session management (ls/new/kill/send), agent orchestration (spawn/ls/send), and tmux compatibility mode (`tuic alias`). First-run install prompt on app launch; install/uninstall from Settings > General. Auto-updates on startup.
+- **Scrollback reflow setting** — New `scrollbackReflow` option (Settings > General) enables history-only reflow on column resize. Keeps scrollback readable when side panels narrow the terminal, without affecting cursor-addressed TUIs on the visible screen. Backed by new `ReflowMode::HistoryOnly` in the alacritty grid fork.
 - **Delta cursor for MCP read tools** — `session action=output`, `read_screen`, and `drive_agent` now return a `cursor` field. Pass `since_cursor` on subsequent calls to receive only new scrollback lines, avoiding full re-reads.
 - **`drive_agent` MCP tool** — Atomic send→wait→read operation for external agents. Sends a command, waits for idle/pattern match, returns screen + shell state + cursor in a single call.
 - **Session aliases** — Human-friendly aliases for terminal sessions derived from repo directory name (e.g. `tuicommander` → `tc-1`). All `ai_terminal_*` tools accept aliases in place of UUIDs. Visible in tab tooltips and `list_sessions` output. Counters reset on app restart.
+- **AI Prompts editor** — Customizable system prompts for AI services (starting with Diff Triage). Collapsible section in Settings > Agents with textarea, "Modified" indicator, and "Reset to Default" button. Prompts stored in `ai-prompts.json`, exposed via MCP (`config` tool: `list_ai_prompts`, `load_ai_prompt`, `save_ai_prompt`). Smart prompts also exposed via MCP (`list_prompts`, `load_prompt`, `save_prompt`).
+- **PR context variables** — Extracted `prContextVariables()` utility for reuse across SmartButtonStrip in PR detail popover and GitHub panel sidebar.
+- **Plugin tab "Open in Browser"** — Right-click context menu on plugin panel tabs now includes "Open in Browser" action.
+- **New tips** — Three new tips for the `tuic` CLI (general, tmux alias, file open).
+
+### Changed
+- **Editor tabs: worktree-aware fsRoot** — `EditorTabData` now carries a separate `fsRoot` field for file I/O, distinct from the canonical `repoPath`. Fixes file reads in git worktrees where the on-disk path differs from the repo root.
+- **GitHub poller interval** — Base polling interval increased from 30s to 60s; cache TTL aligned. Reduces API call volume.
+- **MCP GitHub tools use poller cache** — `prs` and `status` actions read from the poller's cached PR data instead of making live GitHub API calls, eliminating fan-out requests.
+- **IDE launcher: open -a fallback on macOS** — `open_in_app` for VS Code, Cursor, and Windsurf now falls back to `open -a <App>` when the CLI binary isn't in PATH, using a shared `goto_editor_cmd()` helper (DRY refactor).
+- **IDE launcher hover CSS** — Fixed hover style applying to disabled split buttons.
+- **Sidecar builder** — `build-sidecar.mjs` now builds multiple sidecars (tuic-bridge + tuic CLI), with incremental skip when source hasn't changed.
+- **Terminal touch: pixel-based momentum scrolling** — Touch scroll now uses pixel-level accumulation with velocity-based momentum and friction, matching native feel. Replaces line-granularity scroll.
+- **Canvas terminal: 6px left gutter** — Added a left gutter for error markers and visual breathing room, with proper coordinate adjustments for mouse position, selection, and painting.
+- **Canvas terminal: per-glyph rendering** — Replaced ligature-batched `fillText` runs with per-glyph rendering. Eliminates sub-pixel cursor drift on long lines caused by `Math.ceil` cell width accumulation. Removed PUA special-case (Nerd Font icons now render via normal path).
+- **Canvas terminal: progressive scroll acceleration** — Wheel and touch scroll now use pixel accumulation with progressive acceleration. First screenful is damped (0.5x), then ramps up. Prevents scroll overshoot at start while allowing fast scrolling.
+- **Alt-screen recovery** — Agent→shell transition now uses `terminal_exit_alt_screen` IPC (display-side injection) instead of writing escape sequences to PTY stdin, preventing leaked input.
+- **VtLogBuffer: alt-screen query + history reflow** — Added `is_alternate_screen()` and `set_reflow_history()` methods to VtLogBuffer for display-side alt-screen detection and history-only reflow configuration.
+
+### Fixed
+- **OSC 9;4 progress: last match wins** — `parse_osc94` now uses `captures_iter().last()` to report the most recent progress value when multiple OSC 9;4 sequences arrive in a single PTY chunk.
+- **Clipboard status message restored** — `copySelection()` in CanvasTerminal now shows "Copied to clipboard" / "Copy failed" in the status bar, lost during xterm→canvas migration.
+- **Cargo config** — Fixed `term.progress = true` placed under `[env]` section (invalid), moved to `[term]` section as `progress.term-integration = true`.
+- **Terminal.tsx disposal guards** — Added `disposed` checks in `handlePtyData`, `handleParsedEvent`, `onData`, OSC 133, and title listeners to prevent updates after component unmount.
+- **Collapsible if (clippy)** — Collapsed nested `if` statements in PTY ACK flush path.
+- **MCP `load_prompt` response shape** — Fixed `to_json_or_error(Ok::<_, String>(...))` wrapping response in `{"Ok": {...}}` instead of flat fields.
+- **MCP `save_ai_prompt` partial save** — Changed from constructing a fresh `AiPromptsConfig` to load-modify-save pattern, preventing future field wipe when new services are added.
+- **Enrichment settings: duplicate label** — Removed duplicate "Enrichment" label rendered by both parent group and `SlotRow` component. Added `showLabel` prop to `SlotRow`.
+- **Enrichment hint visibility** — "Rate-limited to ~10/min" hint now only shows when enrichment is toggled on.
+- **CSP connect-src** — Added `plugin:` scheme to `connect-src` directive for Tauri plugin fetch requests.
 
 ## [1.1.0] - 2026-05-04
 

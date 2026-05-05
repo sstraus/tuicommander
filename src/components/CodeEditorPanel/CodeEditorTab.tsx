@@ -24,6 +24,8 @@ import s from "./CodeEditorTab.module.css";
 export interface CodeEditorTabProps {
   id: string;
   repoPath: string;
+  /** On-disk root for file I/O (worktree path when active, otherwise repoPath). */
+  fsRoot?: string;
   filePath: string;
   initialLine?: number; // Line to scroll to on first mount (1-based)
   externalEditable?: boolean; // External files start unlocked when true, locked (but unlockable) when false
@@ -53,6 +55,9 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
   /** True when the file path is absolute (outside the repository) */
   const isExternal = () => isAbsolutePath(props.filePath);
 
+  /** Filesystem root for disk I/O — worktree when active, otherwise canonical repoPath. */
+  const fsRoot = () => props.fsRoot ?? props.repoPath;
+
   /** Guard: scroll to initialLine only once on first file load */
   let didScrollToInitialLine = false;
 
@@ -61,7 +66,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
     if (isExternal()) {
       return invoke<string>("read_external_file", { path: props.filePath });
     }
-    return fb.readFile(props.repoPath, props.filePath);
+    return fb.readFile(fsRoot(), props.filePath);
   };
 
   // Sync dirty state to tab store for the tab bar indicator
@@ -72,8 +77,8 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
   // Load file content
   createEffect(
     on(
-      () => [props.repoPath, props.filePath] as const,
-      async ([_repoPath, filePath]) => {
+      () => [fsRoot(), props.filePath] as const,
+      async ([_fsRoot, filePath]) => {
         if (!filePath) return;
 
         setLoading(true);
@@ -247,7 +252,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
       if (isExternal()) {
         await invoke("write_external_file", { path: props.filePath, content: currentCode });
       } else {
-        await fb.writeFile(props.repoPath, props.filePath, currentCode);
+        await fb.writeFile(fsRoot(), props.filePath, currentCode);
       }
       setSavedContent(currentCode);
       setDirty(false);
@@ -345,7 +350,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
         items={[{
           label: t("codeEditor.copyPath", "Copy Path"),
           action: () => {
-            const fullPath = isExternal() ? props.filePath : `${props.repoPath}/${props.filePath}`;
+            const fullPath = isExternal() ? props.filePath : `${fsRoot()}/${props.filePath}`;
             navigator.clipboard.writeText(shortenHomePath(fullPath)).catch((err) =>
               appLogger.error("app", "Failed to copy path", err),
             );

@@ -49,6 +49,7 @@ pub(crate) mod credentials;
 pub(crate) mod registry;
 pub(crate) mod pty;
 pub(crate) mod relay_client;
+mod tuic_cli;
 mod shell_integration;
 pub(crate) mod sleep_prevention;
 pub(crate) mod push;
@@ -1135,6 +1136,9 @@ pub fn run() {
                 }
             }
 
+            // Auto-update CLI binary if installed
+            tuic_cli::auto_update_cli(app.handle());
+
             // Pre-warm content indices for known repos: one at a time, after a
             // short delay, so boot UI stays responsive and the cooperative
             // throttle in `ContentIndex::build_with_throttle` keeps CPU gentle.
@@ -1199,6 +1203,7 @@ pub fn run() {
             pty::unsubscribe_terminal_grid,
             pty::terminal_request_frame,
             pty::ack_terminal_frame,
+            pty::terminal_exit_alt_screen,
 
             pty::terminal_scroll,
             pty::terminal_scroll_to,
@@ -1353,6 +1358,8 @@ pub fn run() {
             config::save_pane_layout,
             config::load_prompt_library,
             config::save_prompt_library,
+            config::load_ai_prompts,
+            config::save_ai_prompts,
             config::load_notes,
             config::save_notes,
             config::save_note_image,
@@ -1465,7 +1472,11 @@ pub fn run() {
             app_logger::get_logs,
             app_logger::clear_logs,
             notification_sound::play_notification_sound,
-            git_graph::get_commit_graph
+            git_graph::get_commit_graph,
+            tuic_cli::get_cli_status,
+            tuic_cli::install_cli,
+            tuic_cli::uninstall_cli,
+            tuic_cli::dismiss_cli_prompt
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

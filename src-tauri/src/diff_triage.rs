@@ -507,6 +507,10 @@ fn is_ignore_file(filename: &str) -> bool {
     filename.starts_with('.') && filename.ends_with("ignore")
 }
 
+pub(crate) fn default_system_prompt() -> &'static str {
+    MULTI_TURN_SYSTEM_PROMPT
+}
+
 const MULTI_TURN_SYSTEM_PROMPT: &str = "\
 You are a senior code reviewer triaging a changeset. \
 I'll show the file list first, then each file's diff one at a time. \
@@ -560,11 +564,15 @@ fn build_file_msg(path: &str, diff: &str, additions: u32, deletions: u32) -> Str
 /// Builds a ChatRequest from session history + a new user message, placing
 /// CacheControl::Ephemeral on the system prompt, an optional midpoint message
 /// (when history > 40 messages), and the final user message.
-fn build_chat_request(session: &TriageSession, new_user_msg: &str) -> genai::chat::ChatRequest {
+fn build_chat_request(
+    session: &TriageSession,
+    new_user_msg: &str,
+    system_prompt: &str,
+) -> genai::chat::ChatRequest {
     use genai::chat::{CacheControl, ChatMessage, ChatRequest, MessageOptions};
 
     // System message with cache hint — stable across turns
-    let system_msg = ChatMessage::system(MULTI_TURN_SYSTEM_PROMPT)
+    let system_msg = ChatMessage::system(system_prompt)
         .with_options(MessageOptions::from(CacheControl::Ephemeral));
     let mut req = ChatRequest::default().append_message(system_msg);
 
@@ -746,11 +754,12 @@ async fn do_turn(
     user_msg: String,
     repo_path: &str,
     tools: &[genai::chat::Tool],
+    system_prompt: &str,
 ) -> Option<String> {
     use genai::chat::{ChatOptions, ToolResponse};
 
     let chat_options = ChatOptions::default().with_capture_tool_calls(true);
-    let mut req = build_chat_request(session, &user_msg).with_tools(tools.to_vec());
+    let mut req = build_chat_request(session, &user_msg, system_prompt).with_tools(tools.to_vec());
 
     for _ in 0..=MAX_TOOL_CALLS_PER_TURN {
         let response = match tokio::time::timeout(
@@ -803,6 +812,7 @@ async fn classify_multi_turn(
     app: &tauri::AppHandle,
     repo_path: &str,
     stats: &HashMap<&str, (u32, u32)>,
+    system_prompt: &str,
 ) -> LlmParsed {
     let tools = build_genai_tools();
     let file_paths: Vec<&str> = files.iter().map(|(p, _, _, _)| p.as_str()).collect();
@@ -819,7 +829,7 @@ async fn classify_multi_turn(
     if session.summary.is_none() {
         let overview_msg = build_overview(&file_paths, heuristic_names);
         if let Some(text) =
-            do_turn(client, model, session, overview_msg, repo_path, &tools).await
+            do_turn(client, model, session, overview_msg, repo_path, &tools, system_prompt).await
             && let JsonlParsed::Summary(s) = parse_jsonl_line(&text)
         {
             session.summary = Some(s.clone());
@@ -850,7 +860,7 @@ async fn classify_multi_turn(
 
         let file_msg = build_file_msg(path, diff, *additions, *deletions);
         let mut fc =
-            match do_turn(client, model, session, file_msg, repo_path, &tools).await {
+            match do_turn(client, model, session, file_msg, repo_path, &tools, system_prompt).await {
                 Some(text) => match parse_jsonl_line(&text) {
                     JsonlParsed::File(mut fc) => {
                         fc.path = path.clone();
@@ -1062,6 +1072,13 @@ pub(crate) async fn run_diff_triage(
     let client = crate::llm_api::build_client(&resolved.config, &resolved.api_key);
     let model_name = resolved.config.model.clone();
 
+    let prompts_config = crate::config::load_ai_prompts();
+    let system_prompt = prompts_config
+        .diff_triage_system_prompt
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(MULTI_TURN_SYSTEM_PROMPT);
+
     let parsed = classify_multi_turn(
         &client,
         &model_name,
@@ -1071,6 +1088,7 @@ pub(crate) async fn run_diff_triage(
         &app,
         &repo_path,
         &stats,
+        system_prompt,
     )
     .await;
 
@@ -1424,7 +1442,7 @@ mod tests {
     #[test]
     fn build_chat_request_cache_control_on_system_and_last() {
         let session = TriageSession::new("haiku".to_string());
-        let req = build_chat_request(&session, "classify this file");
+        let req = build_chat_request(&session, "classify this file", MULTI_TURN_SYSTEM_PROMPT);
         // system_msg + final_user = 2 messages (no session history)
         assert_eq!(req.messages.len(), 2);
         // Both system and final user have cache options
@@ -1442,7 +1460,7 @@ mod tests {
                 content: format!("msg {i}"),
             });
         }
-        let req = build_chat_request(&session, "new msg");
+        let req = build_chat_request(&session, "new msg", MULTI_TURN_SYSTEM_PROMPT);
         // system (idx 0) + 42 session msgs + final user = 44 total
         assert_eq!(req.messages.len(), 44);
         let cached_count = req.messages.iter().filter(|m| m.options.is_some()).count();
@@ -1450,6 +1468,21 @@ mod tests {
         assert_eq!(cached_count, 3, "expected system + midpoint + final to have cache options; got {cached_count}");
         // midpoint of 42 session msgs = index 21 in session → index 22 in req.messages
         assert!(req.messages[22].options.is_some(), "midpoint session msg must have cache options");
+    }
+
+    #[test]
+    fn build_chat_request_uses_custom_system_prompt() {
+        let session = TriageSession::new("haiku".to_string());
+        let custom = "You are a custom reviewer.";
+        let req = build_chat_request(&session, "classify this", custom);
+        assert_eq!(req.messages.len(), 2);
+        let first_text = req.messages[0].content.first_text().unwrap();
+        assert_eq!(first_text, custom);
+    }
+
+    #[test]
+    fn default_system_prompt_returns_const() {
+        assert_eq!(default_system_prompt(), MULTI_TURN_SYSTEM_PROMPT);
     }
 
     #[test]

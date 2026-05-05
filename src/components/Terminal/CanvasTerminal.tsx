@@ -120,6 +120,14 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
   let cachedBgDefault = "#1e1e1e";
   let cachedFgDefault = "#d4d4d4";
 
+  const GUTTER_PX = 6;
+
+  // Pixel scroll accumulator: shared by wheel + touch handlers.
+  // Accumulates raw pixel delta; when it crosses cellHeight, emits a line scroll to backend.
+  let scrollAccumPx = 0;
+  let scrollGestureDistPx = 0;
+  let scrollGestureEndTimer: ReturnType<typeof setTimeout> | undefined;
+
   // Row index → row data lookup (persistent, updated incrementally)
   let rowMap = new Map<number, DecodedFrame["rows"][0]>();
   // Rows that arrived in the latest onFrame batch (drives incremental repaint)
@@ -182,9 +190,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     const m = metrics();
     if (!m) return { col: 0, row: 0 };
     const rect = canvasRef.getBoundingClientRect();
-    const x = e.clientX - rect.left;
+    const x = e.clientX - rect.left - GUTTER_PX;
     const y = e.clientY - rect.top;
-    const maxCol = Math.max(0, Math.floor(rect.width / m.cellWidth) - 1);
+    const maxCol = Math.max(0, Math.floor((rect.width - GUTTER_PX) / m.cellWidth) - 1);
     const maxRow = Math.max(0, Math.floor(rect.height / m.cellHeight) - 1);
     return {
       col: Math.max(0, Math.min(Math.floor(x / m.cellWidth), maxCol)),
@@ -222,21 +230,23 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     cachedBgDefault = getComputedStyle(canvasRef).getPropertyValue("--bg-secondary").trim() || "#1e1e1e";
     cachedFgDefault = getComputedStyle(canvasRef).getPropertyValue("--text-primary").trim() || "#d4d4d4";
 
-    const cols = Math.floor(rect.width / m.cellWidth);
+    const cols = Math.floor((rect.width - GUTTER_PX) / m.cellWidth);
     const rows = Math.floor(rect.height / m.cellHeight);
     if (cols <= 0 || rows <= 0) return;
-    const logicalW = cols * m.cellWidth;
+    const logicalW = cols * m.cellWidth + GUTTER_PX;
     const logicalH = rows * m.cellHeight;
     canvasRef.width = logicalW * dpr;
     canvasRef.height = logicalH * dpr;
     canvasRef.style.width = `${logicalW}px`;
     canvasRef.style.height = `${logicalH}px`;
     ctx.scale(dpr, dpr);
+    ctx.translate(GUTTER_PX, 0);
     overlayCanvasRef.width = logicalW * dpr;
     overlayCanvasRef.height = logicalH * dpr;
     overlayCanvasRef.style.width = `${logicalW}px`;
     overlayCanvasRef.style.height = `${logicalH}px`;
     octx.scale(dpr, dpr);
+    octx.translate(GUTTER_PX, 0);
     if (cols > 0 && rows > 0 && logicalW > 0 && logicalH > 0 && invokeRef
         && (cols !== lastResizeCols || rows !== lastResizeRows)) {
       lastResizeCols = cols;
@@ -259,10 +269,10 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     const fontFamily = settingsStore.getFontFamily();
 
     if (fullRepaintNeeded || !dirtyIndices) {
-      // Full repaint: clear canvas + paint all rows
+      // Full repaint: clear canvas + paint all rows (include gutter area)
       const h = canvasRef.height / m.dpr;
       ctx.fillStyle = cachedBgDefault;
-      ctx.fillRect(0, 0, w, h);
+      ctx.fillRect(-GUTTER_PX, 0, w, h);
       for (const [, row] of rowMap) {
         paintRow(row, row.index * m.cellHeight, m, fontFamily);
       }
@@ -272,7 +282,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       for (const idx of dirtyIndices) {
         const y = idx * m.cellHeight;
         ctx.fillStyle = cachedBgDefault;
-        ctx.fillRect(0, y, w, m.cellHeight);
+        ctx.fillRect(-GUTTER_PX, y, w, m.cellHeight);
         const row = rowMap.get(idx);
         if (row) paintRow(row, y, m, fontFamily);
       }
@@ -285,7 +295,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
   }
 
   function repaintOverlay(frame: DecodedFrame, m: CellMetrics) {
-    octx.clearRect(0, 0, overlayCanvasRef.width / m.dpr, overlayCanvasRef.height / m.dpr);
+    octx.clearRect(-GUTTER_PX, 0, overlayCanvasRef.width / m.dpr, overlayCanvasRef.height / m.dpr);
     paintSelection(m);
     paintSearchHighlights(m);
     paintLinkUnderline(frame, m);
@@ -377,7 +387,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       const vpRow = absRowToViewport(block.promptLine);
       if (vpRow === null) continue;
       octx.fillStyle = "#f85149";
-      octx.fillRect(0, vpRow * m.cellHeight, 3, m.cellHeight);
+      octx.fillRect(-GUTTER_PX, vpRow * m.cellHeight, 3, m.cellHeight);
     }
   }
 
@@ -900,61 +910,34 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       }
     }
 
-    // Pass 2: text runs — group adjacent cells with identical attributes so that
-    // ligature-capable fonts (FiraCode, JetBrains Mono) can render multi-char
-    // sequences (=>, !=, ===) as a single fillText call.
-    let runStart = -1;
-    let runText = "";
-    let runFont = "";
-    let runFg = "";
-    let runDim = false;
-
-    const flushRun = () => {
-      if (runStart < 0) return;
-      if (runDim) ctx.globalAlpha = 0.5;
-      ctx.font = runFont;
-      ctx.fillStyle = runFg;
-      ctx.fillText(runText, runStart * m.cellWidth, y + m.baseline);
-      if (runDim) ctx.globalAlpha = 1.0;
-      runStart = -1;
-      runText = "";
-    };
+    // Pass 2: text — render each glyph at its exact grid position to prevent
+    // cursor drift (cellWidth is Math.ceil'd, so batched fillText runs
+    // accumulate sub-pixel error over long lines).
+    let lastFont = "";
+    let lastFg = "";
+    let lastDim = false;
 
     for (let c = 0; c < row.count; c++) {
       const cp = row.codepoints[c];
-      if (cp === 0 || cp === 0x20) { flushRun(); continue; }
+      if (cp === 0 || cp === 0x20) continue;
 
       const a = row.attrs[c];
       const fgP = row.fg[c];
       const bgP = row.bg[c];
+      const x = c * m.cellWidth;
 
       if (cp >= 0x2500 && cp <= 0x257F) {
-        flushRun();
         ctx.fillStyle = resolveFg(fgP, bgP, a, cachedFgDefault);
         ctx.strokeStyle = ctx.fillStyle;
-        if (!drawBoxDrawingChar(cp, c * m.cellWidth, y, m)) {
+        if (!drawBoxDrawingChar(cp, x, y, m)) {
           ctx.font = buildFontStyle(a, m.fontSize, fontFamily);
-          ctx.fillText(String.fromCodePoint(cp), c * m.cellWidth, y + m.baseline);
+          ctx.fillText(String.fromCodePoint(cp), x, y + m.baseline);
         }
         continue;
       }
       if ((cp >= 0x2580 && cp <= 0x2593) || (cp >= 0x2596 && cp <= 0x259F)) {
-        flushRun();
         ctx.fillStyle = resolveFg(fgP, bgP, a, cachedFgDefault);
-        drawBlockChar(cp, c * m.cellWidth, y, m);
-        continue;
-      }
-
-      // PUA / symbol codepoints: render individually so the browser can
-      // font-fallback per-glyph (Nerd Font icons, Powerline, etc.)
-      if ((cp >= 0xE000 && cp <= 0xF8FF) || (cp >= 0xF0000 && cp <= 0xFFFFF)) {
-        flushRun();
-        const dim = (a & ATTR_DIM) !== 0;
-        if (dim) ctx.globalAlpha = 0.5;
-        ctx.font = buildFontStyle(a, m.fontSize, fontFamily);
-        ctx.fillStyle = resolveFg(fgP, bgP, a, cachedFgDefault);
-        ctx.fillText(String.fromCodePoint(cp), c * m.cellWidth, y + m.baseline);
-        if (dim) ctx.globalAlpha = 1.0;
+        drawBlockChar(cp, x, y, m);
         continue;
       }
 
@@ -962,18 +945,16 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       const fg = resolveFg(fgP, bgP, a, cachedFgDefault);
       const dim = (a & ATTR_DIM) !== 0;
 
-      if (runStart >= 0 && font === runFont && fg === runFg && dim === runDim) {
-        runText += String.fromCodePoint(cp);
-      } else {
-        flushRun();
-        runStart = c;
-        runText = String.fromCodePoint(cp);
-        runFont = font;
-        runFg = fg;
-        runDim = dim;
+      if (font !== lastFont) { ctx.font = font; lastFont = font; }
+      if (fg !== lastFg) { ctx.fillStyle = fg; lastFg = fg; }
+      if (dim !== lastDim) {
+        ctx.globalAlpha = dim ? 0.5 : 1.0;
+        lastDim = dim;
       }
+
+      ctx.fillText(String.fromCodePoint(cp), x, y + m.baseline);
     }
-    flushRun();
+    if (lastDim) ctx.globalAlpha = 1.0;
 
     // Pass 3: decorations
     for (let c = 0; c < row.count; c++) {
@@ -1544,6 +1525,11 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     });
 
     // --- Scroll ---
+    function resetScrollGesture() {
+      scrollAccumPx = 0;
+      scrollGestureDistPx = 0;
+    }
+
     function handleWheel(e: WheelEvent) {
       e.preventDefault();
       e.stopPropagation();
@@ -1554,11 +1540,36 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
         return;
       }
       const m = metrics();
-      const lines = m ? Math.round(e.deltaY / m.cellHeight) : Math.sign(e.deltaY);
-      const delta = -(lines || Math.sign(e.deltaY));
-      if (delta !== 0) {
-        invokeRef?.("terminal_scroll", { sessionId: props.sessionId, delta }).catch(ipcErr("terminal_scroll"));
+      const ch = m?.cellHeight ?? 20;
+      const screenPx = ch * (lastResizeRows || 24);
+
+      // Boundary check: don't accumulate past scroll limits
+      const dy = e.deltaY;
+      const atBottom = currentFrame && currentFrame.displayOffset === 0;
+      const atTop = currentFrame && currentFrame.displayOffset >= currentFrame.historySize;
+      if ((atBottom && dy > 0) || (atTop && dy < 0)) {
+        // Can't scroll further in this direction — ignore
+        return;
       }
+
+      // Accumulate pixel delta with progressive acceleration:
+      // First screenful of gesture distance uses 0.5× factor (damped),
+      // then linearly ramps up beyond that.
+      scrollGestureDistPx += Math.abs(dy);
+      const excess = Math.max(0, scrollGestureDistPx - screenPx);
+      const factor = 0.5 + 0.5 * (excess / screenPx);
+      scrollAccumPx += dy * factor;
+
+      const lines = Math.trunc(scrollAccumPx / ch);
+      if (lines !== 0) {
+        scrollAccumPx -= lines * ch;
+        invokeRef?.("terminal_scroll", { sessionId: props.sessionId, delta: -lines }).catch(ipcErr("terminal_scroll"));
+      }
+
+
+      // Reset gesture state after trackpad inactivity
+      clearTimeout(scrollGestureEndTimer);
+      scrollGestureEndTimer = setTimeout(resetScrollGesture, 200);
     }
     canvasRef.addEventListener("wheel", handleWheel, { passive: false });
     scrollbarRef.addEventListener("wheel", handleWheel, { passive: false });
@@ -1617,10 +1628,21 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
     // Touch input (mobile/tablet)
     cleanupTouch = installTouchHandlers(canvasRef, touchTextareaRef, {
-      onScroll: (dy) => {
-        const lines = Math.round(dy / (metrics()?.cellHeight ?? 20));
-        if (lines !== 0) invokeRef?.("terminal_scroll", { sessionId: props.sessionId, delta: -lines }).catch(ipcErr("terminal_scroll"));
+      onScrollPixels: (dy) => {
+        const m = metrics();
+        const ch = m?.cellHeight ?? 20;
+        const screenPx = ch * (lastResizeRows || 24);
+        scrollGestureDistPx += Math.abs(dy);
+        const excess = Math.max(0, scrollGestureDistPx - screenPx);
+        const factor = 0.5 + 0.5 * (excess / screenPx);
+        scrollAccumPx += dy * factor;
+        const lines = Math.trunc(scrollAccumPx / ch);
+        if (lines !== 0) {
+          scrollAccumPx -= lines * ch;
+          invokeRef?.("terminal_scroll", { sessionId: props.sessionId, delta: -lines }).catch(ipcErr("terminal_scroll"));
+        }
       },
+      onScrollEnd: resetScrollGesture,
       onInput: (data) => writePty(data),
       onFocus: () => { setFocused(true); startBlink(); props.onFocus?.(); },
       onFontSizeChange: (delta) => {
@@ -1746,15 +1768,18 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
   });
 
   async function copySelection() {
+    const setStatus = (window as unknown as Record<string, unknown>).__tuic_setStatusInfo as ((msg: string) => void) | undefined;
     try {
       const text = getLocalSelectionText();
       if (text) {
         const trimmed = text.split("\n").map(line => line.replace(/\s+$/, "")).join("\n");
         cachedSelectionText = trimmed;
         await navigator.clipboard.writeText(trimmed);
+        setStatus?.("Copied to clipboard");
       }
     } catch (e) {
       appLogger.warn("terminal", "Clipboard write failed", { error: e });
+      setStatus?.("Copy failed — clipboard unavailable");
     }
   }
 

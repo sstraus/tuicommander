@@ -702,7 +702,7 @@ pub(crate) fn parse_osc94(text: &str) -> Option<ParsedEvent> {
         static ref OSC94_RE: regex::Regex =
             regex::Regex::new(r"\x1b\]9;4;(\d);(\d{1,3})(?:\x07|\x1b\\)").unwrap();
     }
-    OSC94_RE.captures(text).map(|caps| {
+    OSC94_RE.captures_iter(text).last().map(|caps| {
         let state: u8 = caps[1].parse().unwrap_or(0);
         let value: u8 = caps[2].parse().unwrap_or(0).min(100);
         ParsedEvent::Progress { state, value }
@@ -1829,6 +1829,19 @@ mod tests {
             ParsedEvent::Progress { state, value } => {
                 assert_eq!(*state, 0);
                 assert_eq!(*value, 0);
+            }
+            _ => panic!("Expected Progress event"),
+        }
+    }
+
+    #[test]
+    fn test_osc94_progress_multiple_in_chunk() {
+        let chunk = "\x1b]9;4;1;5\x07some output\x1b]9;4;1;50\x07more\x1b]9;4;1;100\x07";
+        let event = parse_osc94(chunk);
+        match event {
+            Some(ParsedEvent::Progress { state, value }) => {
+                assert_eq!(state, 1);
+                assert_eq!(value, 100, "should return the LAST progress value in chunk");
             }
             _ => panic!("Expected Progress event"),
         }

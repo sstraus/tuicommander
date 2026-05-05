@@ -408,6 +408,11 @@ pub(crate) struct AppConfig {
     /// Sub-flag: AI Chat panel, shortcuts, and palette entry
     #[serde(default)]
     pub(crate) ai_chat_enabled: bool,
+    /// Sub-flag: reflow scrollback history on column resize. Keeps scrollback
+    /// readable when side panels temporarily narrow the terminal, without
+    /// affecting cursor-addressed TUIs on the visible screen.
+    #[serde(default)]
+    pub(crate) scrollback_reflow: bool,
     /// Terminal cursor style: "bar" (default), "block", "underline"
     #[serde(default = "default_cursor_style")]
     pub(crate) cursor_style: String,
@@ -528,6 +533,7 @@ impl Default for AppConfig {
             issue_filter: default_issue_filter(),
             experimental_features_enabled: false,
             ai_chat_enabled: false,
+            scrollback_reflow: false,
             cursor_style: default_cursor_style(),
             terminal_renderer: default_terminal_renderer(),
             ai_terminal_mcp_enabled: false,
@@ -900,6 +906,16 @@ pub(crate) struct PromptLibraryConfig {
 }
 
 // ---------------------------------------------------------------------------
+// AiPromptsConfig — customizable system prompts for internal AI services
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Serialize, Deserialize, Default)]
+pub(crate) struct AiPromptsConfig {
+    #[serde(default)]
+    pub(crate) diff_triage_system_prompt: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
 // AgentsConfig — per-agent run configurations
 // ---------------------------------------------------------------------------
 
@@ -964,6 +980,7 @@ const KEYBINDINGS_FILE: &str = "keybindings.json";
 const PANE_LAYOUT_FILE: &str = "pane-layout.json";
 const AGENTS_CONFIG_FILE: &str = "agents.json";
 const ACTIVITY_FILE: &str = "activity.json";
+const AI_PROMPTS_FILE: &str = "ai-prompts.json";
 
 // App config
 #[tauri::command]
@@ -1107,6 +1124,17 @@ pub(crate) fn load_agents_config() -> AgentsConfig {
 #[tauri::command]
 pub(crate) fn save_agents_config(config: AgentsConfig) -> Result<(), String> {
     save_json_config(AGENTS_CONFIG_FILE, &config)
+}
+
+// AI prompts
+#[tauri::command]
+pub(crate) fn load_ai_prompts() -> AiPromptsConfig {
+    load_json_config(AI_PROMPTS_FILE)
+}
+
+#[tauri::command]
+pub(crate) fn save_ai_prompts(config: AiPromptsConfig) -> Result<(), String> {
+    save_json_config(AI_PROMPTS_FILE, &config)
 }
 
 // ---------------------------------------------------------------------------
@@ -1299,6 +1327,7 @@ mod tests {
             issue_filter: "assigned".to_string(),
             experimental_features_enabled: false,
             ai_chat_enabled: false,
+            scrollback_reflow: false,
             ai_terminal_mcp_enabled: false,
             cursor_style: "bar".to_string(),
             terminal_renderer: "webgl".to_string(),
@@ -1474,6 +1503,29 @@ mod tests {
         assert_eq!(loaded.prompts.len(), 1);
         assert_eq!(loaded.prompts[0].id, "abc");
         assert!(loaded.prompts[0].pinned);
+    }
+
+    #[test]
+    fn ai_prompts_round_trip() {
+        let dir = TempDir::new().unwrap();
+        let cfg = AiPromptsConfig {
+            diff_triage_system_prompt: Some("Custom triage prompt".to_string()),
+        };
+        let loaded: AiPromptsConfig =
+            round_trip_in_dir(dir.path(), "ai-prompts.json", &cfg);
+        assert_eq!(
+            loaded.diff_triage_system_prompt.as_deref(),
+            Some("Custom triage prompt")
+        );
+    }
+
+    #[test]
+    fn ai_prompts_empty_file_returns_default() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("ai-prompts.json"), "{}").unwrap();
+        let loaded: AiPromptsConfig =
+            round_trip_in_dir(dir.path(), "ai-prompts.json", &AiPromptsConfig::default());
+        assert!(loaded.diff_triage_system_prompt.is_none());
     }
 
     #[test]

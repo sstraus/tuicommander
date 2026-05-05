@@ -26,6 +26,29 @@ fn format_goto_arg(path: &str, line: Option<u32>, col: Option<u32>) -> String {
     }
 }
 
+/// Build a Command for a --goto-style editor (vscode, cursor, windsurf, zed).
+/// Falls back to `open -a` on macOS when the CLI binary isn't installed.
+fn goto_editor_cmd(
+    cli_name: &str,
+    #[cfg_attr(not(target_os = "macos"), allow(unused))]
+    app_name: &str,
+    path: &str,
+    line: Option<u32>,
+    col: Option<u32>,
+) -> Command {
+    let resolved = resolve_cli(cli_name);
+    if resolved != cli_name || has_cli(cli_name) {
+        let mut c = Command::new(&resolved);
+        if line.is_some() { c.arg("--goto"); }
+        c.arg(format_goto_arg(path, line, col));
+        return c;
+    }
+    #[cfg(target_os = "macos")]
+    { let mut c = Command::new("open"); c.arg("-a").arg(app_name).arg(path); c }
+    #[cfg(not(target_os = "macos"))]
+    { let mut c = Command::new(cli_name); c.arg(format_goto_arg(path, line, col)); c }
+}
+
 /// Open a path in an IDE or application.
 /// `line` and `col` are optional and only used by editors that support them.
 #[tauri::command]
@@ -37,24 +60,9 @@ pub(crate) fn open_in_app(
 ) -> Result<(), String> {
     let mut cmd = match app.as_str() {
         // CLI-based editors with --goto support (cross-platform, with path resolution)
-        "vscode" => {
-            let mut c = Command::new(resolve_cli("code"));
-            if line.is_some() { c.arg("--goto"); }
-            c.arg(format_goto_arg(&path, line, col));
-            c
-        }
-        "cursor" => {
-            let mut c = Command::new(resolve_cli("cursor"));
-            if line.is_some() { c.arg("--goto"); }
-            c.arg(format_goto_arg(&path, line, col));
-            c
-        }
-        "windsurf" => {
-            let mut c = Command::new(resolve_cli("windsurf"));
-            if line.is_some() { c.arg("--goto"); }
-            c.arg(format_goto_arg(&path, line, col));
-            c
-        }
+        "vscode" => goto_editor_cmd("code", "Visual Studio Code", &path, line, col),
+        "cursor" => goto_editor_cmd("cursor", "Cursor", &path, line, col),
+        "windsurf" => goto_editor_cmd("windsurf", "Windsurf", &path, line, col),
         // Zed uses path:line natively
         "zed" => {
             let mut c = Command::new(resolve_cli("zed"));

@@ -39,6 +39,7 @@ interface RustAppConfig {
   issue_filter?: string;
   experimental_features_enabled?: boolean;
   ai_chat_enabled?: boolean;
+  scrollback_reflow?: boolean;
   cursor_style?: string;
   terminal_renderer?: string;
 }
@@ -264,6 +265,7 @@ interface SettingsStoreState {
   issueFilter: IssueFilterMode;
   experimentalFeaturesEnabled: boolean;
   aiChatEnabled: boolean;
+  scrollbackReflow: boolean;
   cursorStyle: "bar" | "block" | "underline";
   terminalRenderer: TerminalRenderer;
 }
@@ -297,6 +299,7 @@ function createSettingsStore() {
     issueFilter: "assigned",
     experimentalFeaturesEnabled: false,
     aiChatEnabled: false,
+    scrollbackReflow: false,
     cursorStyle: "bar" as SettingsStoreState["cursorStyle"],
     terminalRenderer: "webgl",
   });
@@ -335,6 +338,7 @@ function createSettingsStore() {
       issue_filter: state.issueFilter,
       experimental_features_enabled: state.experimentalFeaturesEnabled,
       ai_chat_enabled: state.aiChatEnabled,
+      scrollback_reflow: state.scrollbackReflow,
       cursor_style: state.cursorStyle,
       terminal_renderer: state.terminalRenderer,
       session_token_duration_secs: baseConfig?.session_token_duration_secs ?? 86400,
@@ -398,6 +402,7 @@ function createSettingsStore() {
         setState("issueFilter", validateIssueFilter(config.issue_filter || null));
         setState("experimentalFeaturesEnabled", config.experimental_features_enabled ?? false);
         setState("aiChatEnabled", config.ai_chat_enabled ?? false);
+        setState("scrollbackReflow", config.scrollback_reflow ?? false);
         const cs = config.cursor_style;
         setState("cursorStyle", (cs === "block" || cs === "underline") ? cs : "bar");
         setState("terminalRenderer", validateTerminalRenderer(config.terminal_renderer || null));
@@ -548,6 +553,11 @@ function createSettingsStore() {
 
     setAiChatEnabled(enabled: boolean): void {
       setState("aiChatEnabled", enabled);
+      save();
+    },
+
+    setScrollbackReflow(enabled: boolean): void {
+      setState("scrollbackReflow", enabled);
       save();
     },
 

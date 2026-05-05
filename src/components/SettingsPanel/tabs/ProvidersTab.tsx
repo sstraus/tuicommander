@@ -462,25 +462,28 @@ const SlotAssignments: Component<{ detection: ReturnType<typeof useAgentDetectio
   }
 
   /** Render a single slot row (reused for both the loop and the headless slot) */
-  function SlotRow(slotProps: { slot: SlotName }) {
+  function SlotRow(slotProps: { slot: SlotName; showLabel?: boolean }) {
     const currentModelId = () => providerRegistryStore.state.registry.slots[slotProps.slot];
     const isAgentTier = AGENT_FALLBACK_SLOTS.includes(slotProps.slot);
     const fallbackHint = () => isAgentTier && !currentModelId();
+    const showLabel = () => slotProps.showLabel !== false;
 
     return (
       <div class={s.group} data-testid={`slot-row-${slotProps.slot}`}>
-        <label>
-          {SLOT_LABELS[slotProps.slot]}
-          {" "}
-          <span class={s.infoBadge}>
-            ?
-            <span class={s.infoBadgeTip}>{SLOT_DESCRIPTIONS[slotProps.slot]}</span>
-          </span>
-          <Show when={fallbackHint()}>
+        <Show when={showLabel()}>
+          <label>
+            {SLOT_LABELS[slotProps.slot]}
             {" "}
-            <span class={s.hintInline}>(falls back to agent mid)</span>
-          </Show>
-        </label>
+            <span class={s.infoBadge}>
+              ?
+              <span class={s.infoBadgeTip}>{SLOT_DESCRIPTIONS[slotProps.slot]}</span>
+            </span>
+            <Show when={fallbackHint()}>
+              {" "}
+              <span class={s.hintInline}>(falls back to agent mid)</span>
+            </Show>
+          </label>
+        </Show>
         <div class={s.passwordRow}>
           <select
             data-testid={`slot-select-${slotProps.slot}`}
@@ -633,11 +636,11 @@ const SlotAssignments: Component<{ detection: ReturnType<typeof useAgentDetectio
           <span>Enrich command blocks with AI metadata</span>
         </div>
         <Show when={enrichmentEnabled()}>
-          <SlotRow slot="enrichment" />
+          <SlotRow slot="enrichment" showLabel={false} />
+          <p class={s.hint}>
+            Rate-limited to ~10/min. Sends command output to the provider.
+          </p>
         </Show>
-        <p class={s.hint}>
-          Rate-limited to ~10/min. Sends command output to the provider.
-        </p>
       </div>
     </div>
   );

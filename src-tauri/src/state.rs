@@ -241,8 +241,8 @@ impl PartialEq for SessionState {
 /// This TTL is a safety net for cases where the watcher misses an event.
 pub(crate) const GIT_CACHE_TTL: Duration = Duration::from_secs(60);
 
-/// TTL for GitHub operations (network): 30 seconds
-pub(crate) const GITHUB_CACHE_TTL: Duration = Duration::from_secs(30);
+/// TTL for GitHub operations (network): aligned with poller BASE_INTERVAL
+pub(crate) const GITHUB_CACHE_TTL: Duration = Duration::from_secs(60);
 
 /// Buffer that handles UTF-8 characters split across read boundaries.
 /// Carries incomplete trailing bytes from one read to the next.
@@ -1851,6 +1851,12 @@ impl VtLogBuffer {
         }
     }
 
+    /// Enable history-only reflow: scrollback rows are reflowed on column
+    /// resize while the visible screen stays untouched.
+    pub fn set_reflow_history(&mut self, enabled: bool) {
+        self.grid.reflow_history = enabled;
+    }
+
     /// Feed raw PTY bytes into the terminal grid.
     ///
     /// Returns the screen rows that changed since the previous call.  Changed
@@ -2009,6 +2015,10 @@ impl VtLogBuffer {
     /// Delegates to the inner TerminalGrid; returns empty Vec when no rows changed.
     pub(crate) fn serialize_dirty_rows(&mut self) -> Vec<u8> {
         self.grid.serialize_dirty_rows()
+    }
+
+    pub(crate) fn is_alternate_screen(&self) -> bool {
+        self.grid.is_alternate_screen()
     }
 
     pub(crate) fn grid_force_full_damage(&mut self) {
@@ -4409,6 +4419,32 @@ mod tests {
 
         let ss = state.session_state_with_shell("s1").unwrap();
         assert!(!ss.rate_limited, "rate limit should expire with default timeout");
+    }
+
+    // ── VtLogBuffer alt-screen ──────────────────────────────────
+
+    #[test]
+    fn vt_log_buffer_is_alternate_screen_tracks_state() {
+        let mut vt = VtLogBuffer::new(24, 80, 1000);
+        assert!(!vt.is_alternate_screen());
+        vt.process(b"\x1b[?1049h");
+        assert!(vt.is_alternate_screen());
+        vt.process(b"\x1b[?1049l");
+        assert!(!vt.is_alternate_screen());
+    }
+
+    #[test]
+    fn vt_log_buffer_exit_alt_screen_only_when_active() {
+        let mut vt = VtLogBuffer::new(24, 80, 1000);
+
+        // Not in alt screen — should be no-op
+        assert!(!vt.is_alternate_screen());
+
+        // Enter alt screen, then exit via the recovery sequences
+        vt.process(b"\x1b[?1049h");
+        assert!(vt.is_alternate_screen());
+        vt.process(b"\x1b[?1049l\x1b[?1047l\x1b[?47l\x1b[?25h\x1b[0m");
+        assert!(!vt.is_alternate_screen());
     }
 
 }

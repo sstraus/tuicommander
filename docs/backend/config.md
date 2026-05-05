@@ -187,6 +187,18 @@ struct PromptEntry {
 
 **Commands:** `load_prompt_library()`, `save_prompt_library(config)`
 
+### AI Prompts (`ai-prompts.json`)
+
+**Type:** `AiPromptsConfig`
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `diff_triage_system_prompt` | `Option<String>` | `None` | Custom system prompt for diff triage LLM classification. Falls back to built-in default when `None` or empty. |
+
+**Commands:** `load_ai_prompts()`, `save_ai_prompts(config)`
+
+**MCP actions:** `list_ai_prompts`, `load_ai_prompt` (requires `service`), `save_ai_prompt` (requires `service` + `prompt`, localhost only)
+
 ### Notes (`notes.json`)
 
 **Type:** `serde_json::Value` (flexible JSON, shape defined by frontend)

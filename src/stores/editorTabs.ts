@@ -4,7 +4,10 @@ import { pathBasename } from "../utils/pathUtils";
 
 /** Editor tab data */
 export interface EditorTabData extends BaseTab {
+  /** Canonical repo path — drives branch-scope filtering and repo-store ops. */
   repoPath: string;
+  /** On-disk root for file I/O. Equals the worktree path when active, otherwise repoPath. */
+  fsRoot: string;
   filePath: string;
   fileName: string; // Display name (basename of filePath)
   isDirty: boolean;
@@ -28,10 +31,12 @@ function createEditorTabsStore() {
     setPinned: base.setPinned,
     reorderByIds: base.reorderByIds,
 
-    /** Add a new editor tab (or activate existing if same file already open) */
-    add(repoPath: string, filePath: string, initialLine?: number, opts?: { externalEditable?: boolean }): string {
+    /** Add a new editor tab (or activate existing if same file already open).
+     *  Pass `fsRoot` via opts when the file lives in a worktree that differs from the canonical repo path. */
+    add(repoPath: string, filePath: string, initialLine?: number, opts?: { fsRoot?: string; externalEditable?: boolean }): string {
+      const fsRoot = opts?.fsRoot ?? repoPath;
       const existing = Object.values(base.state.tabs).find(
-        (tab) => tab.repoPath === repoPath && tab.filePath === filePath,
+        (tab) => tab.repoPath === repoPath && tab.fsRoot === fsRoot && tab.filePath === filePath,
       );
       if (existing) {
         base.setActive(existing.id);
@@ -40,7 +45,7 @@ function createEditorTabsStore() {
 
       const id = base._nextId("edit");
       const fileName = pathBasename(filePath) || filePath;
-      return base._addTab({ id, repoPath, filePath, fileName, isDirty: false, branchKey: currentBranchKey(), initialLine, externalEditable: opts?.externalEditable });
+      return base._addTab({ id, repoPath, fsRoot, filePath, fileName, isDirty: false, branchKey: currentBranchKey(), initialLine, externalEditable: opts?.externalEditable });
     },
 
     /** Mark a tab as dirty or clean */

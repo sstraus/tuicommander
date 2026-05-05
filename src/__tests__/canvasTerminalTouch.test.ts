@@ -28,7 +28,8 @@ describe("installTouchHandlers", () => {
     document.body.appendChild(textarea);
 
     opts = {
-      onScroll: vi.fn(),
+      onScrollPixels: vi.fn(),
+      onScrollEnd: vi.fn(),
       onInput: vi.fn(),
       onFocus: vi.fn(),
       onFontSizeChange: vi.fn(),
@@ -55,25 +56,33 @@ describe("installTouchHandlers", () => {
     });
   });
 
-  describe("single-finger swipe scrolls", () => {
-    it("swipe down scrolls positively", () => {
+  describe("single-finger swipe emits raw pixel deltas", () => {
+    it("swipe down emits positive pixel delta", () => {
       const t1 = makeTouch(100, 100);
-      const t2 = makeTouch(100, 140); // moved down 40px
+      const t2 = makeTouch(100, 200);
       canvas.dispatchEvent(touchEvent("touchstart", [t1]));
       canvas.dispatchEvent(touchEvent("touchmove", [t2], [t2]));
-      expect(opts.onScroll).toHaveBeenCalledWith(expect.any(Number));
-      const delta = opts.onScroll.mock.calls[0][0] as number;
-      expect(delta).toBeGreaterThan(0);
+      expect(opts.onScrollPixels).toHaveBeenCalledWith(100);
     });
 
-    it("swipe up scrolls negatively", () => {
-      const t1 = makeTouch(100, 140);
-      const t2 = makeTouch(100, 100); // moved up 40px
+    it("swipe up emits negative pixel delta", () => {
+      const t1 = makeTouch(100, 200);
+      const t2 = makeTouch(100, 100);
       canvas.dispatchEvent(touchEvent("touchstart", [t1]));
       canvas.dispatchEvent(touchEvent("touchmove", [t2], [t2]));
-      expect(opts.onScroll).toHaveBeenCalledWith(expect.any(Number));
-      const delta = opts.onScroll.mock.calls[0][0] as number;
-      expect(delta).toBeLessThan(0);
+      expect(opts.onScrollPixels).toHaveBeenCalledWith(-100);
+    });
+
+    it("incremental moves emit incremental deltas", () => {
+      const t1 = makeTouch(100, 100);
+      const t2 = makeTouch(100, 130);
+      const t3 = makeTouch(100, 150);
+      canvas.dispatchEvent(touchEvent("touchstart", [t1]));
+      canvas.dispatchEvent(touchEvent("touchmove", [t2], [t2]));
+      canvas.dispatchEvent(touchEvent("touchmove", [t3], [t3]));
+      expect(opts.onScrollPixels).toHaveBeenCalledTimes(2);
+      expect(opts.onScrollPixels.mock.calls[0][0]).toBe(30);
+      expect(opts.onScrollPixels.mock.calls[1][0]).toBe(20);
     });
   });
 

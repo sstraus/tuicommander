@@ -9,9 +9,22 @@ use crate::term::cell::{Flags, ResetDiscriminant};
 use crate::grid::row::Row;
 use crate::grid::{Dimensions, Grid, GridCell};
 
+/// Controls which rows participate in reflow during column resize.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReflowMode {
+    /// No reflow — rows are truncated/padded.
+    None,
+    /// Reflow all rows (screen + history). Original alacritty behavior.
+    All,
+    /// Reflow only history (scrollback) rows; screen rows are truncated/padded.
+    /// Preserves cursor-addressed TUI positioning on the visible screen while
+    /// keeping scrollback readable across resize cycles.
+    HistoryOnly,
+}
+
 impl<T: GridCell + Default + PartialEq> Grid<T> {
     /// Resize the grid's width and/or height.
-    pub fn resize<D>(&mut self, reflow: bool, lines: usize, columns: usize)
+    pub fn resize<D>(&mut self, reflow: ReflowMode, lines: usize, columns: usize)
     where
         T: ResetDiscriminant<D>,
         D: PartialEq,
@@ -98,20 +111,42 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
     }
 
     /// Grow number of columns in each row, reflowing if necessary.
-    fn grow_columns(&mut self, reflow: bool, columns: usize) {
-        // Check if a row needs to be wrapped.
-        let should_reflow = |row: &Row<T>| -> bool {
+    fn grow_columns(&mut self, reflow: ReflowMode, columns: usize) {
+        // Storage layout after take_all() + rezero():
+        //   inner[0] = bottom screen, ..., inner[L-1] = top screen,
+        //   inner[L] = newest history, ..., inner[L+H-1] = oldest history.
+        // So: screen rows have i < self.lines, history rows have i >= self.lines.
+        let screen_lines = self.lines;
+
+        let reflow_for = |i: usize| -> bool {
+            match reflow {
+                ReflowMode::None => false,
+                ReflowMode::All => true,
+                ReflowMode::HistoryOnly => i >= screen_lines,
+            }
+        };
+
+        // Check if a row needs to be unwrapped (joined with the row above).
+        let should_reflow = |row: &Row<T>, buf_idx: usize| -> bool {
             let len = Column(row.len());
-            reflow && len.0 > 0 && len < columns && row[len - 1].flags().contains(Flags::WRAPLINE)
+            reflow_for(buf_idx)
+                && len.0 > 0
+                && len < columns
+                && row[len - 1].flags().contains(Flags::WRAPLINE)
         };
 
         self.columns = columns;
 
         let mut reversed: Vec<Row<T>> = Vec::with_capacity(self.raw.len());
+        // Track the original buffer index of each row pushed to `reversed`,
+        // so we can determine history/screen for the `should_reflow` check.
+        let mut reversed_idx: Vec<usize> = Vec::with_capacity(self.raw.len());
         let mut cursor_line_delta = 0;
 
+        let any_screen_reflow = reflow == ReflowMode::All;
+
         // Remove the linewrap special case, by moving the cursor outside of the grid.
-        if self.cursor.input_needs_wrap && reflow {
+        if self.cursor.input_needs_wrap && any_screen_reflow {
             self.cursor.input_needs_wrap = false;
             self.cursor.point.column += 1;
         }
@@ -119,11 +154,13 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
         let mut rows = self.raw.take_all();
 
         for (i, mut row) in rows.drain(..).enumerate().rev() {
-            // Check if reflowing should be performed.
+            // Check if reflowing should be performed on the last pushed row.
+            let last_buf_idx = reversed_idx.last().copied().unwrap_or(0);
             let last_row = match reversed.last_mut() {
-                Some(last_row) if should_reflow(last_row) => last_row,
+                Some(last_row) if should_reflow(last_row, last_buf_idx) => last_row,
                 _ => {
                     reversed.push(row);
+                    reversed_idx.push(i);
                     continue;
                 },
             };
@@ -166,7 +203,7 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
 
             let cursor_buffer_line = self.lines - self.cursor.point.line.0 as usize - 1;
 
-            if i == cursor_buffer_line && reflow {
+            if i == cursor_buffer_line && any_screen_reflow {
                 // Resize cursor's line and reflow the cursor if necessary.
                 let mut target = self.cursor.point.sub(self, Boundary::Cursor, num_wrapped);
 
@@ -207,6 +244,7 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
             }
 
             reversed.push(row);
+            reversed_idx.push(i);
         }
 
         // Make sure we have at least the viewport filled.
@@ -242,11 +280,23 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
     }
 
     /// Shrink number of columns in each row, reflowing if necessary.
-    fn shrink_columns(&mut self, reflow: bool, columns: usize) {
+    fn shrink_columns(&mut self, reflow: ReflowMode, columns: usize) {
         self.columns = columns;
 
+        // Same storage layout as grow_columns: screen at i < self.lines,
+        // history at i >= self.lines.
+        let screen_lines = self.lines;
+        let reflow_for = |i: usize| -> bool {
+            match reflow {
+                ReflowMode::None => false,
+                ReflowMode::All => true,
+                ReflowMode::HistoryOnly => i >= screen_lines,
+            }
+        };
+        let any_screen_reflow = reflow == ReflowMode::All;
+
         // Remove the linewrap special case, by moving the cursor outside of the grid.
-        if self.cursor.input_needs_wrap && reflow {
+        if self.cursor.input_needs_wrap && any_screen_reflow {
             self.cursor.input_needs_wrap = false;
             self.cursor.point.column += 1;
         }
@@ -256,6 +306,8 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
 
         let mut rows = self.raw.take_all();
         for (i, mut row) in rows.drain(..).enumerate().rev() {
+            let reflow_this = reflow_for(i);
+
             // Append lines left over from the previous row.
             if let Some(buffered) = buffered.take() {
                 // Add a column for every cell added before the cursor, if it goes beyond the new
@@ -271,10 +323,10 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
             loop {
                 // Remove all cells which require reflowing.
                 let mut wrapped = match row.shrink(columns) {
-                    Some(wrapped) if reflow => wrapped,
+                    Some(wrapped) if reflow_this => wrapped,
                     _ => {
                         let cursor_buffer_line = self.lines - self.cursor.point.line.0 as usize - 1;
-                        if reflow && i == cursor_buffer_line && self.cursor.point.column > columns {
+                        if reflow_this && i == cursor_buffer_line && self.cursor.point.column > columns {
                             // If there are empty cells before the cursor, we assume it is explicit
                             // whitespace and need to wrap it like normal content.
                             Vec::new()
@@ -372,7 +424,7 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
         self.display_offset = min(self.display_offset, self.history_size());
 
         // Reflow the primary cursor, or clamp it if reflow is disabled.
-        if !reflow {
+        if !any_screen_reflow {
             self.cursor.point.column = min(self.cursor.point.column, Column(columns - 1));
         } else if self.cursor.point.column == columns
             && !self[self.cursor.point.line][Column(columns - 1)].flags().contains(Flags::WRAPLINE)

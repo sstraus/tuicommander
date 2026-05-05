@@ -4,6 +4,7 @@ import { githubStore } from "../stores/github";
 import { repositoriesStore } from "../stores/repositories";
 import { agentConfigsStore } from "../stores/agentConfigs";
 import { providerRegistryStore } from "../stores/providerRegistry";
+import { prContextVariables } from "../utils/promptContext";
 import { usePty } from "./usePty";
 import { invoke } from "../invoke";
 import { appLogger } from "../stores/appLogger";
@@ -113,21 +114,7 @@ export function useSmartPrompts() {
     const branch = repo?.activeBranch ?? "";
     if (branch) {
       const pr = githubStore.getBranchPrData(repoPath, branch);
-      if (pr) {
-        vars["pr_number"] = String(pr.number);
-        vars["pr_title"] = pr.title;
-        vars["pr_url"] = pr.url;
-        vars["pr_state"] = pr.state;
-        vars["merge_status"] = pr.mergeable;
-        vars["review_decision"] = pr.review_decision;
-        if (pr.checks) {
-          vars["pr_checks"] = `${pr.checks.passed} passed, ${pr.checks.failed} failed, ${pr.checks.pending} pending`;
-        }
-        if (pr.author) vars["pr_author"] = pr.author;
-        if (pr.labels?.length) vars["pr_labels"] = pr.labels.map((l) => l.name).join(", ");
-        if (pr.additions != null) vars["pr_additions"] = String(pr.additions);
-        if (pr.deletions != null) vars["pr_deletions"] = String(pr.deletions);
-      }
+      if (pr) Object.assign(vars, prContextVariables(pr));
     }
     const activeTerminal = terminalsStore.getActive();
     if (activeTerminal?.agentType) {

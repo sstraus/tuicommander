@@ -3,6 +3,7 @@ import { toastsStore } from "../stores/toasts";
 import { appLogger } from "../stores/appLogger";
 import type { ContextMenuItem } from "../components/ContextMenu";
 import type { useSmartPrompts } from "../hooks/useSmartPrompts";
+import type { BranchPrStatus } from "../types";
 import { t } from "../i18n";
 
 /**
@@ -17,6 +18,27 @@ export interface FileContextInput {
   repoRoot?: string | null;
   /** Whether the path is a directory (folder selected in browser). */
   isDir?: boolean;
+}
+
+/** Build PR context variables from a BranchPrStatus object.
+ *  Matches the variable names used by resolveFrontendVars in useSmartPrompts. */
+export function prContextVariables(pr: BranchPrStatus): Record<string, string> {
+  const vars: Record<string, string> = {
+    pr_number: String(pr.number),
+    pr_title: pr.title,
+    pr_url: pr.url,
+    pr_state: pr.state,
+    merge_status: pr.mergeable,
+    review_decision: pr.review_decision,
+  };
+  if (pr.checks) {
+    vars.pr_checks = `${pr.checks.passed} passed, ${pr.checks.failed} failed, ${pr.checks.pending} pending`;
+  }
+  if (pr.author) vars.pr_author = pr.author;
+  if (pr.labels?.length) vars.pr_labels = pr.labels.map((l) => l.name).join(", ");
+  if (pr.additions != null) vars.pr_additions = String(pr.additions);
+  if (pr.deletions != null) vars.pr_deletions = String(pr.deletions);
+  return vars;
 }
 
 /** Build the variable map passed to `executeSmartPrompt` as `manualVariables`. */

@@ -34,7 +34,7 @@
   border-left: 1px solid var(--border);
 }
 
-.btn:hover {
+.split:hover .btn:not(:disabled) {
   background: var(--bg-highlight);
   color: var(--fg-primary);
   border-color: var(--accent);

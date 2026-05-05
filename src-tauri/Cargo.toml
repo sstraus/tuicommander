@@ -1,9 +1,9 @@
 [workspace]
-members = [".", "crates/tuic-bridge"]
+members = [".", "crates/tuic-bridge", "crates/tuic-cli"]
 
 [package]
 name = "tuicommander"
-version = "1.1.0"
+version = "1.1.1"
 description = "TUICommander - Native platform for AI coding agents"
 authors = ["Stefano Straus <github.com/sstraus>"]
 edition = "2024"
