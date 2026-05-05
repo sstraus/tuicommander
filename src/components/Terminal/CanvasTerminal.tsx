@@ -458,6 +458,11 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       lines.push(rowText.replace(/\s+$/, ""));
     }
 
+    // Remove trailing blank lines (empty rows at end of selection)
+    while (lines.length > 0 && lines[lines.length - 1] === "") {
+      lines.pop();
+    }
+
     return lines.join("\n");
   }
 
@@ -1435,6 +1440,16 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       const absRow = viewportRowToAbs(pos.row);
       if (absRow === null) return;
       const absPos = { col: pos.col, row: absRow };
+
+      // Shift+click: extend selection from existing anchor
+      if (e.shiftKey && selectionStart) {
+        selectionEnd = absPos;
+        selecting = true;
+        fullRepaintNeeded = true;
+        scheduleRepaint();
+        return;
+      }
+
       const now = Date.now();
 
       if (now - lastClickTime < 400) {
@@ -1772,9 +1787,8 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     try {
       const text = getLocalSelectionText();
       if (text) {
-        const trimmed = text.split("\n").map(line => line.replace(/\s+$/, "")).join("\n");
-        cachedSelectionText = trimmed;
-        await navigator.clipboard.writeText(trimmed);
+        cachedSelectionText = text;
+        await navigator.clipboard.writeText(text);
         setStatus?.("Copied to clipboard");
       }
     } catch (e) {
