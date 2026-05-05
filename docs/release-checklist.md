@@ -7,8 +7,9 @@ When Boss asks to tag a release:
 3. **Update CHANGELOG.md** — move Unreleased items under the new version heading
 4. **Commit** with message `chore: bump version to vX.Y.Z`
 5. **Tag** with `git tag vX.Y.Z`
-6. **GitHub release** — create via `gh release create vX.Y.Z --generate-notes`
-7. **Milestone** — close the matching milestone if one exists, create the next one
+6. **Community credits** — check `gh issue list --state all --label "" --search "is:issue"` and git log for external contributors since last release. Add a `### Community` section to the release notes thanking contributors with links to their issues/PRs
+7. **GitHub release** — create via `gh release create vX.Y.Z --generate-notes`, include the Community section
+8. **Milestone** — close the matching milestone if one exists, create the next one
 
 ## GitHub Issue Management
 
