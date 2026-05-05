@@ -17,6 +17,7 @@ import { invoke } from "../../invoke";
 import { cx } from "../../utils";
 import { t } from "../../i18n";
 import { sidebarPluginStore } from "../../stores/sidebarPluginStore";
+import { repoSettingsStore } from "../../stores/repoSettings";
 import { contextMenuActionsStore } from "../../stores/contextMenuActionsStore";
 import { SidebarPluginSection } from "./SidebarPluginSection";
 import { remoteUrlToGitHub } from "../GitPanel/BranchesTab";
@@ -190,8 +191,13 @@ export const BranchItem: Component<{
   currentBranch?: () => string;
   githubBaseUrl?: string | null;
   repoHasTerminals: boolean;
+  onSetLabel?: (currentLabel: string | undefined) => void;
 }> = (props) => {
   const ctxMenu = createContextMenu();
+
+  const branchLabel = createMemo(() =>
+    repoSettingsStore.getEffective(props.repoPath)?.branchLabels?.[props.branch.name],
+  );
 
   const pr = createMemo(() => activePrStatus(props.repoPath, props.branch.name));
   const checks = createMemo(() => githubStore.getCheckSummary(props.repoPath, props.branch.name));
@@ -235,6 +241,12 @@ export const BranchItem: Component<{
       { label: "Copy Path", action: handleCopyPath, disabled: !props.branch.worktreePath },
       { label: "Add Terminal", action: props.onAddTerminal },
     ];
+    if (!props.branch.isShell && props.branch.name) {
+      items.push({ label: "Set Label…", action: () => props.onSetLabel?.(branchLabel()) });
+      if (branchLabel()) {
+        items.push({ label: "Clear Label", action: () => repoSettingsStore.setLabel(props.repoPath, props.branch.name, null) });
+      }
+    }
     if (!props.branch.isShell) {
       const agentItems = props.agentMenuItems?.();
       if (agentItems && agentItems.length > 0) {
@@ -314,10 +326,13 @@ export const BranchItem: Component<{
         <span
           class={s.branchName}
           onDblClick={handleDoubleClick}
-          title={props.branch.name}
+          title={branchLabel() ?? props.branch.name}
         >
-          {props.branch.name}
+          {branchLabel() ?? props.branch.name}
         </span>
+        <Show when={branchLabel()}>
+          <span class={s.branchSubLabel} title={props.branch.name}>{props.branch.name}</span>
+        </Show>
       </div>
       <Show when={props.branch.isMerged && !props.branch.isMain && !props.branch.terminals.length && !(props.branch.additions + props.branch.deletions)}>
         <span class={s.mergedBadge} title="Branch is merged into main">Merged</span>
@@ -412,6 +427,7 @@ export const RepoSection: Component<{
   onMouseDrag: (e: MouseEvent) => void;
 }> = (props) => {
   const repoMenu = createContextMenu();
+  const [labelDialogBranch, setLabelDialogBranch] = createSignal<{ name: string; current: string | undefined } | null>(null);
   const [groupPromptVisible, setGroupPromptVisible] = createSignal(false);
   const [remoteOnlyPopoverVisible, setRemoteOnlyPopoverVisible] = createSignal(false);
   const [remoteCleanupActive, setRemoteCleanupActive] = createSignal(false);
@@ -589,6 +605,7 @@ export const RepoSection: Component<{
                 onAddTerminal={() => props.onAddTerminal(branch.name)}
                 onRemove={() => props.onRemoveBranch(branch.name)}
                 onRename={() => props.onRenameBranch(branch.name)}
+                onSetLabel={(current) => setLabelDialogBranch({ name: branch.name, current })}
                 onShowPrDetail={() => props.onShowPrDetail(branch.name)}
                 onShowChanges={props.onShowChanges}
                 onCreateWorktreeFromBranch={props.onCreateWorktreeFromBranch ? () => props.onCreateWorktreeFromBranch!(branch.name) : undefined}
@@ -617,6 +634,20 @@ export const RepoSection: Component<{
         y={repoMenu.position().y}
         visible={repoMenu.visible()}
         onClose={repoMenu.close}
+      />
+      <PromptDialog
+        visible={!!labelDialogBranch()}
+        title="Set Label"
+        placeholder="Human-readable name…"
+        confirmLabel="Save"
+        defaultValue={labelDialogBranch()?.current ?? ""}
+        subtitle={labelDialogBranch()?.name}
+        onClose={() => setLabelDialogBranch(null)}
+        onConfirm={(label) => {
+          const b = labelDialogBranch();
+          if (b) repoSettingsStore.setLabel(props.repo.path, b.name, label || null);
+          setLabelDialogBranch(null);
+        }}
       />
       <PromptDialog
         visible={groupPromptVisible()}

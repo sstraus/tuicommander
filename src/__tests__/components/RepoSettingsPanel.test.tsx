@@ -101,6 +101,7 @@ describe("SettingsPanel — repo context", () => {
       autoFetchIntervalMinutes: null,
       autoDeleteOnPrClose: null,
       mcpUpstreams: null,
+      branchLabels: {},
     };
     vi.mocked(repoSettingsStore.getOrCreate).mockReturnValue(mockSettings);
   });

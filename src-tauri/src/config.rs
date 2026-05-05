@@ -783,6 +783,9 @@ pub(crate) struct RepoSettingsEntry {
     /// Allowlist of upstream MCP server names relevant to this repo (None = all)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) mcp_upstreams: Option<Vec<String>>,
+    /// Human-readable labels for branches/worktrees, keyed by branch name
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub(crate) branch_labels: HashMap<String, String>,
 }
 
 impl RepoSettingsEntry {
@@ -1007,6 +1010,32 @@ pub(crate) fn load_repo_settings() -> RepoSettingsMap {
 #[tauri::command]
 pub(crate) fn save_repo_settings(config: RepoSettingsMap) -> Result<(), String> {
     save_json_config(REPO_SETTINGS_FILE, &config)
+}
+
+/// Set or clear a human-readable label for a branch/worktree within a repo.
+/// `label = None` removes the label. Idempotent; no-ops on unknown repo paths.
+#[tauri::command]
+pub(crate) fn set_branch_label(repo_path: String, branch_name: String, label: Option<String>) -> Result<(), String> {
+    let mut settings: RepoSettingsMap = load_json_config(REPO_SETTINGS_FILE);
+    if let Some(entry) = settings.repos.get_mut(&repo_path) {
+        match label {
+            Some(l) if !l.trim().is_empty() => { entry.branch_labels.insert(branch_name, l.trim().to_string()); }
+            _ => { entry.branch_labels.remove(&branch_name); }
+        }
+        save_json_config(REPO_SETTINGS_FILE, &settings)
+    } else {
+        Ok(())
+    }
+}
+
+/// Remove a branch label — called by worktree deletion to keep config tidy.
+pub(crate) fn remove_branch_label(repo_path: &str, branch_name: &str) {
+    let mut settings: RepoSettingsMap = load_json_config(REPO_SETTINGS_FILE);
+    if let Some(entry) = settings.repos.get_mut(repo_path) {
+        if entry.branch_labels.remove(branch_name).is_some() {
+            let _ = save_json_config(REPO_SETTINGS_FILE, &settings);
+        }
+    }
 }
 
 #[tauri::command]

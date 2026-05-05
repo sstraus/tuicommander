@@ -3,6 +3,7 @@ import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
 import { worktreeManagerStore } from "../../stores/worktreeManager";
 import { repositoriesStore } from "../../stores/repositories";
+import { repoSettingsStore } from "../../stores/repoSettings";
 import { githubStore } from "../../stores/github";
 import { formatRelativeTime } from "../../utils/time";
 import type { BranchPrStatus } from "../../types";
@@ -309,7 +310,12 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
                   <span class={s.repo}>{wt.repoName}</span>
                   {/* Col 3: Branch + worktree path */}
                   <div class={s.branchCell}>
-                    <span class={s.branch}>{wt.branch}</span>
+                    <span class={s.branch}>
+                      {repoSettingsStore.getEffective(wt.repoPath)?.branchLabels?.[wt.branch] ?? wt.branch}
+                    </span>
+                    <Show when={repoSettingsStore.getEffective(wt.repoPath)?.branchLabels?.[wt.branch]}>
+                      <span class={s.branchSubLabel}>{wt.branch}</span>
+                    </Show>
                     <span class={s.worktreePath}>{wt.worktreePath}</span>
                   </div>
                   {/* Col 4: Badges */}

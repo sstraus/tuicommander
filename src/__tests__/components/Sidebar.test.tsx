@@ -60,6 +60,8 @@ vi.mock("../../stores/repositories", () => ({
 vi.mock("../../stores/repoSettings", () => ({
   repoSettingsStore: {
     get: vi.fn(() => undefined),
+    getEffective: vi.fn(() => undefined),
+    setLabel: vi.fn(),
   },
 }));
 
@@ -955,8 +957,8 @@ describe("Sidebar", () => {
       expect(contextMenu).not.toBeNull();
 
       const items = contextMenu!.querySelectorAll(".item");
-      // Copy Path, Add Terminal, Rename Branch (no Delete Worktree for main)
-      expect(items.length).toBe(3);
+      // Copy Path, Add Terminal, Set Label…, Rename Branch (no Delete Worktree for main)
+      expect(items.length).toBe(4);
     });
 
     it("context menu Copy Path action copies worktreePath to clipboard", async () => {
@@ -1027,8 +1029,8 @@ describe("Sidebar", () => {
 
       const contextMenu = container.querySelector(".menu");
       const items = contextMenu!.querySelectorAll(".item");
-      // Copy Path, Add Terminal, Rename Branch (NO Delete Worktree)
-      expect(items.length).toBe(3);
+      // Copy Path, Add Terminal, Set Label…, Rename Branch (NO Delete Worktree)
+      expect(items.length).toBe(4);
       const labels = Array.from(items).map((i) => i.querySelector(".label")!.textContent);
       expect(labels).not.toContain("Delete Worktree");
     });
@@ -1049,8 +1051,8 @@ describe("Sidebar", () => {
 
       const contextMenu = container.querySelector(".menu");
       const items = contextMenu!.querySelectorAll(".item");
-      // Copy Path, Add Terminal, Rename Branch, Delete Worktree
-      expect(items.length).toBe(4);
+      // Copy Path, Add Terminal, Set Label…, Rename Branch, Delete Worktree
+      expect(items.length).toBe(5);
       const labels = Array.from(items).map((i) => i.querySelector(".label")!.textContent);
       expect(labels).toContain("Delete Worktree");
     });

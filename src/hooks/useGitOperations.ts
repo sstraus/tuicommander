@@ -447,14 +447,17 @@ export function useGitOperations(deps: GitOperationsDeps) {
     const branch = repositoriesStore.get(repoPath)?.branches[branchName];
     const termCount = branch?.terminals.length || 0;
 
+    const label = repoSettingsStore.getEffective(repoPath)?.branchLabels?.[branchName];
+    const tabName = label ?? `${branchName.split(/[\\/]/).pop()} ${termCount + 1}`;
     const id = terminalsStore.add({
       sessionId: null,
       fontSize: deps.getDefaultFontSize(),
-      name: `${branchName.split(/[\\/]/).pop()} ${termCount + 1}`,
+      name: tabName,
       cwd: branch?.worktreePath || null,
       awaitingInput: null,
       tuicSession: crypto.randomUUID(),
     });
+    if (label) terminalsStore.update(id, { nameIsCustom: true });
 
     batch(() => {
       if (needsSwitch) {

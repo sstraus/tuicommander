@@ -461,6 +461,17 @@
   text-overflow: ellipsis;
 }
 
+.branchSubLabel {
+  display: block;
+  font-size: 10px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: monospace;
+  line-height: 1.3;
+}
+
 .branchStats {
   display: flex;
   gap: 4px;

@@ -43,6 +43,8 @@ export interface RepoSettings {
   autoDeleteOnPrClose: AutoDeleteOnPrClose | null;
   /** Allowlist of upstream MCP server names for this repo (null = all servers) */
   mcpUpstreams: string[] | null;
+  /** Human-readable labels for branches/worktrees, keyed by branch name */
+  branchLabels: Record<string, string>;
 }
 
 /** Fully resolved settings with no nulls — use getEffective() to obtain */
@@ -68,6 +70,8 @@ export interface EffectiveRepoSettings {
   autoDeleteOnPrClose: AutoDeleteOnPrClose;
   /** Resolved MCP upstream allowlist (null = all servers) */
   mcpUpstreams: string[] | null;
+  /** Human-readable labels for branches/worktrees, keyed by branch name */
+  branchLabels: Record<string, string>;
 }
 
 /** Fields that can be overridden per-repo (all others are repo-specific) */
@@ -177,6 +181,7 @@ function createRepoSettingsStore() {
         path,
         displayName,
         color: "",
+        branchLabels: {},
         ...OVERRIDABLE_NULL_DEFAULTS,
       };
 
@@ -229,6 +234,7 @@ function createRepoSettingsStore() {
         autoFetchIntervalMinutes: settings.autoFetchIntervalMinutes ?? defaults.autoFetchIntervalMinutes,
         autoDeleteOnPrClose: settings.autoDeleteOnPrClose ?? local?.auto_delete_on_pr_close ?? defaults.autoDeleteOnPrClose,
         mcpUpstreams: settings.mcpUpstreams ?? local?.mcp_upstreams ?? null,
+        branchLabels: settings.branchLabels ?? {},
       };
     },
 
@@ -238,6 +244,22 @@ function createRepoSettingsStore() {
 
       setState("settings", path, { ...state.settings[path], ...updates });
       saveSettings(state.settings);
+    },
+
+    /** Set or clear a human-readable label for a branch/worktree. `null` removes it. */
+    setLabel(repoPath: string, branchName: string, label: string | null): void {
+      const current = state.settings[repoPath];
+      if (!current) return;
+      const next = { ...current.branchLabels };
+      if (label && label.trim()) {
+        next[branchName] = label.trim();
+      } else {
+        delete next[branchName];
+      }
+      setState("settings", repoPath, "branchLabels", reconcile(next));
+      invoke("set_branch_label", { repoPath, branchName, label: label?.trim() || null }).catch((err) =>
+        appLogger.error("config", "Failed to set branch label", err),
+      );
     },
 
     /** Remove settings for a repository */

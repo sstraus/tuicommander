@@ -394,6 +394,7 @@ pub(crate) fn remove_worktree_by_branch(repo_path: &str, branch_name: &str, dele
 pub(crate) fn remove_worktree(state: State<'_, Arc<AppState>>, repo_path: String, branch_name: String, delete_branch: Option<bool>) -> Result<(), String> {
     let script = resolve_archive_script(&repo_path);
     remove_worktree_by_branch(&repo_path, &branch_name, delete_branch.unwrap_or(true), script.as_deref())?;
+    crate::config::remove_branch_label(&repo_path, &branch_name);
     state.invalidate_repo_caches(&repo_path);
     Ok(())
 }

@@ -1333,6 +1333,7 @@ pub fn run() {
             config::save_ui_prefs,
             config::load_repo_settings,
             config::save_repo_settings,
+            config::set_branch_label,
             config::load_repo_local_config,
             mcp_upstream_config::load_mcp_upstreams,
             mcp_upstream_config::save_mcp_upstreams,

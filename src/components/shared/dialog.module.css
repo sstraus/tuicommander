@@ -39,6 +39,13 @@
   border-bottom: 1px solid var(--border);
 }
 
+.headerText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .headerIcon {
   font-size: var(--font-xl);
   color: var(--accent);
@@ -49,6 +56,16 @@
   font-size: var(--font-lg);
   font-weight: 600;
   color: var(--fg-primary);
+}
+
+.subtitle {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--fg-muted);
+  font-family: monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .body {
