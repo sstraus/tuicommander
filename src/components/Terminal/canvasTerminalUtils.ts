@@ -35,6 +35,9 @@ export interface DecodedFrame {
   hasSelection: boolean;
   keyboardFlags: number;
   bell: boolean;
+  mouseMode: 0 | 1 | 2 | 3;
+  sgrMouse: boolean;
+  focusReporting: boolean;
   screenRows: number;
   screenCols: number;
   rows: DecodedRow[];
@@ -71,6 +74,9 @@ export function decodeBinaryFrame(buffer: ArrayBuffer): DecodedFrame | null {
   const bell = (frameFlags & 0x01) !== 0;
   const cursorShapeRaw = (frameFlags >> 1) & 0x03;
   const cursorShape: "block" | "underline" | "beam" = cursorShapeRaw === 2 ? "beam" : cursorShapeRaw === 1 ? "underline" : "block";
+  const mouseMode = ((frameFlags >> 3) & 0x03) as 0 | 1 | 2 | 3;
+  const sgrMouse = (frameFlags & 0x20) !== 0;
+  const focusReporting = (frameFlags & 0x40) !== 0;
 
   const rows: DecodedRow[] = [];
   for (let r = 0; r < numRows; r++) {
@@ -100,7 +106,7 @@ export function decodeBinaryFrame(buffer: ArrayBuffer): DecodedFrame | null {
     rows.push({ index: rowIndex, count: colCount, codepoints, fg, bg, attrs });
   }
 
-  return { cursorRow, cursorCol, cursorVisible, cursorShape, displayOffset, historySize, hasSelection, keyboardFlags, bell, screenRows, screenCols, rows };
+  return { cursorRow, cursorCol, cursorVisible, cursorShape, displayOffset, historySize, hasSelection, keyboardFlags, bell, mouseMode, sgrMouse, focusReporting, screenRows, screenCols, rows };
 }
 
 /** Measure natural character height via DOM span — matches xterm.js CharSizeService. */

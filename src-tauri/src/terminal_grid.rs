@@ -1,5 +1,5 @@
 use alacritty_terminal::event::{Event, EventListener};
-use alacritty_terminal::grid::Dimensions;
+use alacritty_terminal::grid::{Dimensions, ReflowMode};
 use alacritty_terminal::index::{Column, Line, Point};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::grid::Scroll;
@@ -187,6 +187,10 @@ pub struct TerminalGrid {
     last_frame_columns: Option<usize>,
     bell_flag: Arc<AtomicBool>,
     events: Arc<Mutex<Vec<TermEvent>>>,
+    /// When true, column resizes reflow scrollback history while leaving the
+    /// visible screen untouched. Preserves TUI cursor positioning on screen
+    /// while keeping scrollback readable across resize cycles.
+    pub reflow_history: bool,
 }
 
 impl TerminalGrid {
@@ -212,6 +216,7 @@ impl TerminalGrid {
             last_frame_columns: None,
             bell_flag,
             events,
+            reflow_history: false,
         }
     }
 
@@ -328,13 +333,15 @@ impl TerminalGrid {
         self.prev_rows.clear();
     }
 
-    /// Resize the terminal grid without reflow.
+    /// Resize the terminal grid.
     ///
-    /// Reflow is disabled because cursor-addressed TUIs (Ink/Claude Code)
-    /// use CUU positioning that breaks when reflow merges or splits lines.
+    /// When `reflow_history` is enabled, scrollback rows are reflowed (wrapped/
+    /// unwrapped) to match the new column width while the visible screen is left
+    /// untouched — preserving cursor-addressed TUI positioning.
     pub fn resize(&mut self, rows: u16, cols: u16) {
         let size = GridSize { cols: cols as usize, lines: rows as usize };
-        self.term.resize_reflow(size, false);
+        let mode = if self.reflow_history { ReflowMode::HistoryOnly } else { ReflowMode::None };
+        self.term.resize_reflow(size, mode);
         self.prev_rows.clear();
         self.term.mark_fully_damaged();
     }
@@ -721,11 +728,11 @@ impl TerminalGrid {
     /// Serialize dirty rows as a compact binary frame.
     ///
     /// Uses alacritty's built-in damage tracking to identify changed rows.
-    /// Wire format:
+    /// Wire format (22-byte header):
     /// ```text
     /// Header: [num_rows: u16] [cursor_row: u16] [cursor_col: u16] [cursor_visible: u8]
     ///         [display_offset: u32] [history_size: u32] [has_selection: u8]
-    ///         [keyboard_flags: u8]
+    ///         [keyboard_flags: u8] [frame_flags: u8] [num_lines: u16] [num_cols: u16]
     /// Per row: [row_index: u16] [col_count: u16] [cells...]
     /// Per cell: [char: u32 LE] [fg_r, fg_g, fg_b] [bg_r, bg_g, bg_b] [attrs: u8]
     /// ```
@@ -734,6 +741,9 @@ impl TerminalGrid {
     /// keyboard_flags: bit0=disambiguate_esc_codes, bit1=report_event_types,
     ///                 bit2=report_alternate_keys, bit3=report_all_keys_as_esc,
     ///                 bit4=report_associated_text
+    /// frame_flags: bit0=bell, bits1-2=cursor_shape (0=block,1=underline,2=beam),
+    ///              bits3-4=mouse_mode (0=none,1=click,2=drag,3=motion),
+    ///              bit5=sgr_mouse, bit6=focus_reporting
     pub fn serialize_dirty_rows(&mut self) -> Vec<u8> {
         let num_cols = self.term.grid().columns();
         let num_lines = self.term.grid().screen_lines();
@@ -742,7 +752,7 @@ impl TerminalGrid {
         let display_offset = self.term.grid().display_offset();
         let history_size = self.term.grid().history_size();
         let has_selection = self.term.selection.is_some();
-        let mode = self.term.mode();
+        let mode = *self.term.mode();
         let mut keyboard_flags: u8 = 0;
         if mode.contains(TermMode::DISAMBIGUATE_ESC_CODES) { keyboard_flags |= 0x01; }
         if mode.contains(TermMode::REPORT_EVENT_TYPES) { keyboard_flags |= 0x02; }
@@ -796,6 +806,16 @@ impl TerminalGrid {
             _ => 0,
         };
         frame_flags |= shape_bits << 1;
+        // bits 3-4: mouse mode (0=none, 1=click, 2=drag, 3=motion)
+        let mouse_bits: u8 = if mode.contains(TermMode::MOUSE_MOTION) { 3 }
+            else if mode.contains(TermMode::MOUSE_DRAG) { 2 }
+            else if mode.contains(TermMode::MOUSE_REPORT_CLICK) { 1 }
+            else { 0 };
+        frame_flags |= mouse_bits << 3;
+        // bit 5: SGR mouse encoding
+        if mode.contains(TermMode::SGR_MOUSE) { frame_flags |= 0x20; }
+        // bit 6: focus reporting
+        if mode.contains(TermMode::FOCUS_IN_OUT) { frame_flags |= 0x40; }
 
         buf.extend_from_slice(&(row_count as u16).to_le_bytes());
         buf.extend_from_slice(&(cursor.line.0.max(0) as u16).to_le_bytes());
@@ -1065,6 +1085,7 @@ mod tests {
     // --- Binary serialization tests ---
 
     const TEST_HEADER_SIZE: usize = 22;
+    const TEST_FRAME_FLAGS_OFFSET: usize = 17;
 
     /// Helper: decode the header from a serialized frame.
     fn decode_header(buf: &[u8]) -> (u16, u16, u16, bool) {
@@ -1264,6 +1285,57 @@ mod tests {
         assert_eq!(fg_g, 150);
         assert_eq!(fg_b, 200);
         assert_eq!(attrs & super::ATTR_DEFAULT_FG, 0, "fg is NOT default");
+    }
+
+    #[test]
+    fn serialize_mouse_and_focus_mode_flags() {
+        let mut grid = TerminalGrid::new(5, 10, 0);
+        // Enable mouse click reporting (?1000h), SGR encoding (?1006h), focus reporting (?1004h)
+        let _ = grid.process(b"\x1b[?1000h\x1b[?1006h\x1b[?1004h");
+        let _ = grid.process(b"X");
+        let buf = grid.serialize_dirty_rows();
+        assert!(!buf.is_empty());
+
+        // frame_flags is at offset 17 in the 22-byte header
+        let frame_flags = buf[TEST_FRAME_FLAGS_OFFSET];
+        // bits 3-4: mouse mode = 1 (click only, not drag/motion)
+        assert_eq!((frame_flags >> 3) & 0x03, 1, "mouse mode = click");
+        // bit 5: SGR mouse
+        assert_ne!(frame_flags & 0x20, 0, "SGR mouse active");
+        // bit 6: focus reporting
+        assert_ne!(frame_flags & 0x40, 0, "focus reporting active");
+    }
+
+    #[test]
+    fn serialize_mouse_drag_mode_flag() {
+        let mut grid = TerminalGrid::new(5, 10, 0);
+        // Enable mouse drag reporting (?1002h)
+        let _ = grid.process(b"\x1b[?1002h");
+        let _ = grid.process(b"X");
+        let buf = grid.serialize_dirty_rows();
+        let frame_flags = buf[TEST_FRAME_FLAGS_OFFSET];
+        assert_eq!((frame_flags >> 3) & 0x03, 2, "mouse mode = drag");
+    }
+
+    #[test]
+    fn serialize_mouse_motion_mode_flag() {
+        let mut grid = TerminalGrid::new(5, 10, 0);
+        // Enable mouse motion reporting (?1003h)
+        let _ = grid.process(b"\x1b[?1003h");
+        let _ = grid.process(b"X");
+        let buf = grid.serialize_dirty_rows();
+        let frame_flags = buf[TEST_FRAME_FLAGS_OFFSET];
+        assert_eq!((frame_flags >> 3) & 0x03, 3, "mouse mode = motion");
+    }
+
+    #[test]
+    fn serialize_no_mouse_flags_by_default() {
+        let mut grid = TerminalGrid::new(5, 10, 0);
+        let _ = grid.process(b"plain text");
+        let buf = grid.serialize_dirty_rows();
+        let frame_flags = buf[TEST_FRAME_FLAGS_OFFSET];
+        // bits 3-6 should all be zero
+        assert_eq!(frame_flags & 0x78, 0, "no mouse/focus flags by default");
     }
 
     // --- Search tests ---
@@ -1671,5 +1743,57 @@ mod tests {
             }
             _ => panic!("expected Tuic event"),
         }
+    }
+
+    #[test]
+    fn reflow_history_preserves_scrollback_through_resize_cycle() {
+        let mut grid = TerminalGrid::new(3, 20, 100);
+        grid.reflow_history = true;
+
+        // Write enough lines to push content into scrollback history.
+        // 6 lines into a 3-row terminal → 3 lines in history.
+        let _ = grid.process(b"AAAAAAAAAABBBBBBBBBB\r\n");
+        let _ = grid.process(b"CCCCCCCCCCDDDDDDDDDD\r\n");
+        let _ = grid.process(b"EEEEEEEEEEFFFFFFFFFF\r\n");
+        let _ = grid.process(b"line4\r\nline5\r\nline6");
+        let history_before = grid.scrollback_count();
+        assert!(history_before >= 3, "expected at least 3 history lines, got {history_before}");
+
+        // Shrink cols from 20 to 10 — history rows should reflow (wrap),
+        // screen rows should truncate.
+        grid.resize(3, 10);
+        let history_after_shrink = grid.scrollback_count();
+        assert!(
+            history_after_shrink > history_before,
+            "history should grow after shrink reflow: {history_before} -> {history_after_shrink}"
+        );
+
+        // Grow back to 20 — history rows should unwrap back.
+        grid.resize(3, 20);
+        let history_after_grow = grid.scrollback_count();
+        assert_eq!(
+            history_after_grow, history_before,
+            "history should restore after grow reflow: {history_before} -> {history_after_grow}"
+        );
+    }
+
+    #[test]
+    fn reflow_history_disabled_truncates_scrollback() {
+        let mut grid = TerminalGrid::new(3, 20, 100);
+        // reflow_history defaults to false
+
+        let _ = grid.process(b"AAAAAAAAAABBBBBBBBBB\r\n");
+        let _ = grid.process(b"CCCCCCCCCCDDDDDDDDDD\r\n");
+        let _ = grid.process(b"EEEEEEEEEEFFFFFFFFFF\r\n");
+        let _ = grid.process(b"line4\r\nline5\r\nline6");
+        let history_before = grid.scrollback_count();
+
+        // Shrink — without reflow, history count stays the same (rows truncated).
+        grid.resize(3, 10);
+        assert_eq!(
+            grid.scrollback_count(),
+            history_before,
+            "history count should not change without reflow"
+        );
     }
 }

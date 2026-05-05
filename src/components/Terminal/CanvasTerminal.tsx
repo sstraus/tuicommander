@@ -156,6 +156,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
   }
 
   function writePty(data: string) {
+    if (currentFrame && currentFrame.displayOffset > 0) {
+      invokeRef?.("terminal_scroll", { sessionId: props.sessionId, delta: -(currentFrame.displayOffset) }).catch(ipcErr("terminal_scroll"));
+    }
     invokeRef?.("write_pty", { sessionId: props.sessionId, data }).catch((e) => {
       appLogger.warn("terminal", "PTY write failed", { sessionId: props.sessionId, error: e });
     });
@@ -187,6 +190,10 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       col: Math.max(0, Math.min(Math.floor(x / m.cellWidth), maxCol)),
       row: Math.max(0, Math.min(Math.floor(y / m.cellHeight), maxRow)),
     };
+  }
+
+  function sgrMouseSequence(button: number, col: number, row: number, press: boolean): string {
+    return `\x1b[<${button};${col + 1};${row + 1}${press ? "M" : "m"}`;
   }
 
   function viewportRowToAbs(viewportRow: number): number | null {
@@ -933,6 +940,19 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
         continue;
       }
 
+      // PUA / symbol codepoints: render individually so the browser can
+      // font-fallback per-glyph (Nerd Font icons, Powerline, etc.)
+      if ((cp >= 0xE000 && cp <= 0xF8FF) || (cp >= 0xF0000 && cp <= 0xFFFFF)) {
+        flushRun();
+        const dim = (a & ATTR_DIM) !== 0;
+        if (dim) ctx.globalAlpha = 0.5;
+        ctx.font = buildFontStyle(a, m.fontSize, fontFamily);
+        ctx.fillStyle = resolveFg(fgP, bgP, a, cachedFgDefault);
+        ctx.fillText(String.fromCodePoint(cp), c * m.cellWidth, y + m.baseline);
+        if (dim) ctx.globalAlpha = 1.0;
+        continue;
+      }
+
       const font = buildFontStyle(a, m.fontSize, fontFamily);
       const fg = resolveFg(fgP, bgP, a, cachedFgDefault);
       const dim = (a & ATTR_DIM) !== 0;
@@ -1190,8 +1210,14 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     dprMediaQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
     dprMediaQuery.addEventListener("change", dprChangeHandler);
 
-    canvasRef.addEventListener("focus", () => { setFocused(true); startBlink(); props.onFocus?.(); });
-    canvasRef.addEventListener("blur", () => { setFocused(false); stopBlink(); repaintCursorIfNeeded(); });
+    canvasRef.addEventListener("focus", () => {
+      setFocused(true); startBlink(); props.onFocus?.();
+      if (currentFrame?.focusReporting) writePty("\x1b[I");
+    });
+    canvasRef.addEventListener("blur", () => {
+      setFocused(false); stopBlink(); repaintCursorIfNeeded();
+      if (currentFrame?.focusReporting) writePty("\x1b[O");
+    });
 
     // --- Keyboard ---
     let composing = false;
@@ -1410,6 +1436,14 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
     canvasRef.addEventListener("mousedown", (e: MouseEvent) => {
       canvasRef.focus();
+      if (currentFrame && currentFrame.mouseMode > 0 && !e.shiftKey) {
+        const pos = canvasToGrid(e);
+        if (currentFrame.sgrMouse) {
+          writePty(sgrMouseSequence(e.button, pos.col, pos.row, true));
+        }
+        e.preventDefault();
+        return;
+      }
       if (e.button !== 0) return;
       const pos = canvasToGrid(e);
       const absRow = viewportRowToAbs(pos.row);
@@ -1443,6 +1477,18 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     });
 
     const onMouseMove = (e: MouseEvent) => {
+      if (currentFrame && currentFrame.mouseMode > 0 && !e.shiftKey) {
+        if (currentFrame.mouseMode >= 3) {
+          const pos = canvasToGrid(e);
+          writePty(sgrMouseSequence(35, pos.col, pos.row, true));
+        } else if (currentFrame.mouseMode >= 2 && e.buttons > 0) {
+          const pos = canvasToGrid(e);
+          const btn = e.buttons & 1 ? 0 : e.buttons & 4 ? 1 : 2;
+          writePty(sgrMouseSequence(32 + btn, pos.col, pos.row, true));
+        }
+        return;
+      }
+
       if (selecting && selectionStart) {
         const pos = canvasToGrid(e);
         const absRow = viewportRowToAbs(pos.row);
@@ -1462,7 +1508,14 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       }
     };
 
-    const onMouseUp = () => {
+    const onMouseUp = (e: MouseEvent) => {
+      if (currentFrame && currentFrame.mouseMode > 0 && !e.shiftKey) {
+        const pos = canvasToGrid(e);
+        if (currentFrame.sgrMouse) {
+          writePty(sgrMouseSequence(e.button, pos.col, pos.row, false));
+        }
+        return;
+      }
       if (selecting && selectionStart && selectionEnd) {
         copySelection();
       }
@@ -1489,6 +1542,12 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     function handleWheel(e: WheelEvent) {
       e.preventDefault();
       e.stopPropagation();
+      if (currentFrame && currentFrame.mouseMode > 0) {
+        const pos = canvasToGrid(e as unknown as MouseEvent);
+        const btn = e.deltaY < 0 ? 64 : 65;
+        writePty(sgrMouseSequence(btn, pos.col, pos.row, true));
+        return;
+      }
       const m = metrics();
       const lines = m ? Math.round(e.deltaY / m.cellHeight) : Math.sign(e.deltaY);
       const delta = -(lines || Math.sign(e.deltaY));

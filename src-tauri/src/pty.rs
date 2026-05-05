@@ -76,6 +76,11 @@ fn inject_unix_terminal_env(cmd: &mut CommandBuilder) {
     // ghostty is chosen because it has no iTerm/WezTerm-specific side effects.
     // On macOS this also prevents /etc/zshrc sourcing zshrc_Apple_Terminal.
     cmd.env("TERM_PROGRAM", "ghostty");
+    // iTerm2 feature-reporting protocol: advertise capabilities so tools
+    // (cargo, uv, mise, etc.) can detect support without a TERM_PROGRAM whitelist.
+    // T2=24-bit color, P=OSC 9;4 progress, H=OSC 8 hyperlinks, U=unicode,
+    // B=bracketed paste, Sy=synchronized output, M=mouse, F=focus reporting.
+    cmd.env("TERM_FEATURES", "T2PHUBSyMF");
     // CC also checks TERM_PROGRAM_VERSION — missing or matching /^[0-2]\./
     // causes rejection.  Use a value that passes the gate.
     cmd.env("TERM_PROGRAM_VERSION", "3.0.0");
@@ -2974,10 +2979,14 @@ pub(crate) async fn create_pty(
         session_id.clone(),
         Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
     );
-    state.vt_log_buffers.insert(
-        session_id.clone(),
-        Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
-    );
+    let mut vt_log = VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY);
+    {
+        let cfg = state.config.read();
+        if cfg.is_experimental_enabled(cfg.scrollback_reflow) {
+            vt_log.set_reflow_history(true);
+        }
+    }
+    state.vt_log_buffers.insert(session_id.clone(), Mutex::new(vt_log));
     let (grid_watch_tx, _) = tokio::sync::watch::channel(Vec::new());
     state.grid_watch.insert(session_id.clone(), grid_watch_tx);
     state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
@@ -3075,10 +3084,14 @@ pub(crate) async fn spawn_session_for_agent(
         session_id.clone(),
         Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
     );
-    state.vt_log_buffers.insert(
-        session_id.clone(),
-        Mutex::new(VtLogBuffer::new(rows, cols, VT_LOG_BUFFER_CAPACITY)),
-    );
+    let mut vt_log = VtLogBuffer::new(rows, cols, VT_LOG_BUFFER_CAPACITY);
+    {
+        let cfg = state.config.read();
+        if cfg.is_experimental_enabled(cfg.scrollback_reflow) {
+            vt_log.set_reflow_history(true);
+        }
+    }
+    state.vt_log_buffers.insert(session_id.clone(), Mutex::new(vt_log));
     let (grid_watch_tx, _) = tokio::sync::watch::channel(Vec::new());
     state.grid_watch.insert(session_id.clone(), grid_watch_tx);
     state.last_output_ms.insert(session_id.clone(), AtomicU64::new(0));
@@ -3213,10 +3226,14 @@ pub(crate) async fn create_pty_with_worktree(
         session_id.clone(),
         Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
     );
-    state.vt_log_buffers.insert(
-        session_id.clone(),
-        Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
-    );
+    let mut vt_log = VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY);
+    {
+        let cfg = state.config.read();
+        if cfg.is_experimental_enabled(cfg.scrollback_reflow) {
+            vt_log.set_reflow_history(true);
+        }
+    }
+    state.vt_log_buffers.insert(session_id.clone(), Mutex::new(vt_log));
     let (grid_watch_tx, _) = tokio::sync::watch::channel(Vec::new());
     state.grid_watch.insert(session_id.clone(), grid_watch_tx);
     state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
@@ -4150,6 +4167,8 @@ pub(crate) fn subscribe_terminal_grid(
 
 /// Acknowledge that the frontend has painted the last grid frame.
 /// Clears the in-flight flag so the PTY reader can send the next frame.
+/// If the VT grid has accumulated dirty rows while in-flight (PTY went idle
+/// before the reader could send another frame), flush them immediately.
 #[tauri::command]
 pub(crate) fn ack_terminal_frame(
     state: State<'_, Arc<AppState>>,
@@ -4157,6 +4176,17 @@ pub(crate) fn ack_terminal_frame(
 ) {
     if let Some(flag) = state.grid_frame_in_flight.get(&session_id) {
         flag.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+    // Flush dirty rows accumulated while in-flight (PTY went idle before
+    // the reader could send). Send directly via channel WITHOUT re-setting
+    // in_flight — prevents ACK→flush→ACK tight loop.
+    if let Some(vt) = state.vt_log_buffers.get(&session_id) {
+        let frame = vt.lock().serialize_dirty_rows();
+        if !frame.is_empty() {
+            if let Some(ch) = state.grid_channels.get(&session_id) {
+                let _ = ch.send(frame);
+            }
+        }
     }
 }
 
@@ -4184,6 +4214,32 @@ pub(crate) fn unsubscribe_terminal_grid(
 ) {
     state.grid_channels.remove(&session_id);
     state.grid_frame_in_flight.remove(&session_id);
+}
+
+/// Exit alternate screen via the terminal grid (display side only, never touches PTY stdin).
+/// Only injects the exit sequences when the grid is actually in alternate-screen mode,
+/// preventing escape leaks into the shell when the agent already cleaned up normally.
+#[tauri::command]
+pub(crate) fn terminal_exit_alt_screen(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+) -> bool {
+    if let Some(vt) = state.vt_log_buffers.get(&session_id) {
+        let (was_alt, frame) = {
+            let mut vt = vt.lock();
+            if !vt.is_alternate_screen() {
+                return false;
+            }
+            vt.process(b"\x1b[?1049l\x1b[?1047l\x1b[?47l\x1b[?25h\x1b[0m");
+            (true, vt.serialize_dirty_rows())
+        };
+        if was_alt {
+            send_grid_frame(&state, &session_id, frame);
+        }
+        was_alt
+    } else {
+        false
+    }
 }
 
 // --- Scroll commands ---
