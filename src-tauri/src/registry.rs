@@ -32,7 +32,7 @@ pub struct RegistryEntry {
 ///
 /// Returns the parsed list of registry entries or an error string.
 /// The caller (TypeScript store) is responsible for caching / TTL.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn fetch_plugin_registry() -> Result<Vec<RegistryEntry>, String> {
     fetch_registry_from(DEFAULT_REGISTRY_URL).await
 }

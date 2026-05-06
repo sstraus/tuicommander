@@ -1,4 +1,6 @@
+#[cfg(feature = "desktop")]
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+#[cfg(feature = "desktop")]
 use tauri::{App, Wry};
 
 /// Build the native system menu bar.

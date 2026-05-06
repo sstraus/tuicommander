@@ -18,8 +18,7 @@ pub(super) async fn start_repo_watcher_http(
     if let Err(e) = validate_repo_path(&q.path) {
         return e.into_response();
     }
-    let app_handle = state.app_handle.read().clone();
-    match crate::repo_watcher::start_watching(&q.path, app_handle.as_ref(), &state) {
+    match crate::repo_watcher::start_watching(&q.path, &state) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response(),
         Err(e) => err_500(&e),
     }
@@ -45,8 +44,7 @@ pub(super) async fn start_dir_watcher_http(
     if let Err(e) = validate_repo_path(&q.path) {
         return e.into_response();
     }
-    let app_handle = state.app_handle.read().clone();
-    match crate::dir_watcher::start_watching(&q.path, app_handle.as_ref(), &state) {
+    match crate::dir_watcher::start_watching(&q.path, &state) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response(),
         Err(e) => err_500(&e),
     }

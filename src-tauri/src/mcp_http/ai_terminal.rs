@@ -253,6 +253,7 @@ pub(crate) async fn handle(
     }
 }
 
+#[cfg(feature = "desktop")]
 async fn confirm_external_write(
     state: &Arc<AppState>,
     tool_name: &str,
@@ -292,6 +293,16 @@ async fn confirm_external_write(
         tracing::warn!(tool_name, error = %e, "confirm_external_write JoinError, denying");
         false
     })
+}
+
+#[cfg(not(feature = "desktop"))]
+async fn confirm_external_write(
+    _state: &Arc<AppState>,
+    tool_name: &str,
+    _args: &serde_json::Value,
+) -> bool {
+    tracing::warn!(tool_name, "confirm_external_write: no desktop feature, denying");
+    false
 }
 
 #[cfg(test)]

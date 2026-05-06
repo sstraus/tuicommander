@@ -14,5 +14,6 @@ fn main() {
         std::env::var("TARGET").unwrap_or_default()
     );
 
-    tauri_build::build()
+    #[cfg(feature = "desktop")]
+    tauri_build::build();
 }

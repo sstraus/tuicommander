@@ -177,7 +177,10 @@ pub async fn basic_auth_middleware(
     req: Request<axum::body::Body>,
     next: Next,
 ) -> Response {
-    // Localhost bypass: local Tauri app connections don't need auth
+    // Localhost bypass: only in desktop mode where the Tauri webview connects
+    // locally. Headless mode binds 0.0.0.0 so loopback must be authenticated
+    // like any other address — otherwise any local process gets full access.
+    #[cfg(feature = "desktop")]
     if addr.ip().is_loopback() {
         return next.run(req).await;
     }

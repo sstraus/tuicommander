@@ -59,7 +59,7 @@ fn format_process_error(output: &Output) -> String {
 /// interpolation is performed, so characters like `;`, `&&`, backticks or `$()` in
 /// args are passed to the child process verbatim. `stdin_content` is piped to the
 /// process stdin to convey prompt content. Timeout is capped at 5 minutes.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) async fn execute_headless_prompt(
     command: String,
     args: Vec<String>,
@@ -120,7 +120,7 @@ pub(crate) async fn execute_headless_prompt(
 /// Unlike `execute_headless_prompt` (which runs a CLI agent command and pipes content
 /// via stdin), this executes `script_content` itself as a shell script — no agent involved.
 /// Timeout is capped at 60 seconds.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) async fn execute_shell_script(
     script_content: String,
     timeout_ms: u64,

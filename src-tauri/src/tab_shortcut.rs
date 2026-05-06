@@ -17,6 +17,7 @@ pub(crate) fn install(app_handle: tauri::AppHandle) {
     use block2::RcBlock;
     use objc2_app_kit::{NSEvent, NSEventMask, NSEventModifierFlags};
     use std::ptr::{self, NonNull};
+#[cfg(feature = "desktop")]
     use tauri::Emitter;
 
     let block = RcBlock::new(move |event: NonNull<NSEvent>| -> *mut NSEvent {

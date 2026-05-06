@@ -429,7 +429,7 @@ pub(crate) fn ensure_mcp_configs(disabled: &[String]) {
 // ---------------------------------------------------------------------------
 
 /// Check MCP installation status for an agent
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn get_agent_mcp_status(agent_type: String) -> AgentMcpStatus {
     // Codex uses TOML — handle separately
     if agent_type == "codex" {
@@ -474,6 +474,7 @@ pub(crate) fn get_agent_mcp_status(agent_type: String) -> AgentMcpStatus {
 
 /// Install the tui-mcp-bridge MCP entry into an agent's config.
 /// Also removes the agent from `disabled_mcp_agents` so `ensure_mcp_configs` won't skip it.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn install_agent_mcp(
     agent_type: String,
@@ -520,6 +521,7 @@ pub(crate) fn install_agent_mcp(
 
 /// Remove the tui-mcp-bridge MCP entry from an agent's config.
 /// Also adds the agent to `disabled_mcp_agents` so `ensure_mcp_configs` won't reinstall it.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn remove_agent_mcp(
     agent_type: String,
@@ -579,7 +581,7 @@ fn update_disabled_mcp_agents(
 }
 
 /// Get the path to an agent's own configuration file
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn get_agent_config_path(agent_type: String) -> Option<String> {
     get_agent_settings_path(&agent_type).map(|p| p.to_string_lossy().to_string())
 }
@@ -592,7 +594,7 @@ pub(crate) struct McpBridgeInfo {
 }
 
 /// Return bridge path + ready-to-paste JSON snippet for manual MCP setup
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn get_mcp_bridge_info() -> McpBridgeInfo {
     let bridge_path = detect_bridge_binary();
     let entry = TuicMcpEntry {

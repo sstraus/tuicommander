@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+#[cfg(feature = "desktop")]
 use tauri::State;
 
 /// Resolve the effective archive_script for a repo from the three-tier config:
@@ -299,6 +300,7 @@ pub(crate) fn generate_clone_branch_name(source_branch: &str, existing: &[String
 }
 
 /// Create a worktree without a PTY session
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn create_worktree(
     state: State<'_, Arc<AppState>>,
@@ -331,6 +333,7 @@ pub(crate) fn create_worktree(
 
 /// Get worktrees directory path.
 /// When `repo_path` is provided, resolves the effective storage strategy for the repo.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn get_worktrees_dir(state: State<'_, Arc<AppState>>, repo_path: Option<String>) -> String {
     match repo_path {
@@ -390,6 +393,7 @@ pub(crate) fn remove_worktree_by_branch(repo_path: &str, branch_name: &str, dele
 /// Remove a git worktree by branch name (Tauri command with cache invalidation)
 ///
 /// `delete_branch` defaults to `true` when omitted (preserving existing behavior).
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn remove_worktree(state: State<'_, Arc<AppState>>, repo_path: String, branch_name: String, delete_branch: Option<bool>) -> Result<(), String> {
     let script = resolve_archive_script(&repo_path);
@@ -403,7 +407,7 @@ pub(crate) fn remove_worktree(state: State<'_, Arc<AppState>>, repo_path: String
 ///
 /// If the branch has a linked worktree, runs `git status --porcelain` in that directory.
 /// If no worktree exists (bare local ref), returns `false` — there's nothing to be dirty.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn check_worktree_dirty(repo_path: String, branch_name: String) -> Result<bool, String> {
     let base_repo = PathBuf::from(&repo_path);
 
@@ -460,6 +464,7 @@ pub(crate) fn delete_local_branch_impl(repo_path: &str, branch_name: &str) -> Re
 }
 
 /// Tauri command: delete a local branch (and its worktree if linked).
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn delete_local_branch(state: State<'_, Arc<AppState>>, repo_path: String, branch_name: String) -> Result<(), String> {
     delete_local_branch_impl(&repo_path, &branch_name)?;
@@ -489,7 +494,7 @@ pub(crate) fn get_worktree_paths_cached(
 }
 
 /// Get worktree paths for a repo: maps branch name -> worktree directory
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn get_worktree_paths(repo_path: String) -> Result<HashMap<String, String>, String> {
     let base_repo = PathBuf::from(&repo_path);
 
@@ -560,7 +565,7 @@ fn parse_orphan_worktrees(porcelain: &str) -> Vec<String> {
 
 /// Detect orphan worktrees: linked worktrees present on the filesystem but in detached HEAD
 /// state (i.e. their branch has been deleted). Returns a list of worktree directory paths.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn detect_orphan_worktrees(repo_path: String) -> Result<Vec<String>, String> {
     let base_repo = PathBuf::from(&repo_path);
 
@@ -576,6 +581,7 @@ pub(crate) fn detect_orphan_worktrees(repo_path: String) -> Result<Vec<String>, 
 ///
 /// Safety: `worktree_path` is validated against the repo's actual worktree list to prevent
 /// arbitrary directory deletion via a crafted path.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn remove_orphan_worktree(
     state: State<'_, Arc<AppState>>,
@@ -630,19 +636,19 @@ pub(crate) fn validate_worktree_path(repo_path: &str, worktree_path: &str) -> Re
 }
 
 /// Generate a worktree name (Story 063)
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn generate_worktree_name_cmd(existing_names: Vec<String>) -> String {
     generate_worktree_name(&existing_names)
 }
 
 /// Generate a hybrid clone branch name: `{sanitized_source}--{random_name}`
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn generate_clone_branch_name_cmd(source_branch: String, existing_names: Vec<String>) -> String {
     generate_clone_branch_name(&source_branch, &existing_names)
 }
 
 /// List local branch names for a repository (excludes HEAD and remote-only refs)
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn list_local_branches(repo_path: String) -> Result<Vec<String>, String> {
     let out = git_cmd(Path::new(&repo_path))
         .args(["branch", "--format=%(refname:short)"])
@@ -744,7 +750,7 @@ pub(crate) struct BaseRefOption {
 /// Returns structured refs: default branch first (flagged), then local branches,
 /// then remote tracking branches. Filters out origin/HEAD and deduplicates
 /// where a local branch has the same name as its remote tracking branch.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn list_base_ref_options(repo_path: String) -> Result<Vec<BaseRefOption>, String> {
     let default_branch = get_remote_default_branch(&repo_path)?;
     let repo = Path::new(&repo_path);
@@ -825,6 +831,7 @@ pub(crate) struct SwitchBranchResult {
 /// When `stash` is true, performs `git stash push` before checkout and
 /// does NOT auto-pop (the user can pop manually).
 /// When `force` is true, passes `--force` to discard uncommitted changes.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn switch_branch(
     state: State<'_, Arc<AppState>>,
@@ -897,6 +904,7 @@ pub(crate) fn switch_branch(
 
 /// Create a local branch tracking a remote branch and switch to it.
 /// Equivalent to `git checkout -b <branch> origin/<branch>`.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn checkout_remote_branch(
     state: State<'_, Arc<AppState>>,
@@ -930,6 +938,7 @@ pub(crate) struct MergeArchiveResult {
 ///
 /// Called after `merge_and_archive_worktree` returns `action: "pending"` (ask mode).
 /// The merge has already succeeded; this only handles the worktree cleanup.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn finalize_merged_worktree(
     state: State<'_, Arc<AppState>>,
@@ -968,6 +977,7 @@ pub(crate) fn finalize_merged_worktree(
 /// 1. `git checkout <target_branch>` (in the base repo)
 /// 2. `git merge <source_branch>` (in the base repo)
 /// 3. Based on `after_merge`: archive (move dir) or delete (remove worktree + branch)
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn merge_and_archive_worktree(
     state: State<'_, Arc<AppState>>,
@@ -1113,7 +1123,7 @@ fn run_script_in_dir(script: &str, cwd: &Path) -> Result<(), String> {
 ///
 /// Used to execute setup/run scripts after worktree creation.
 /// The script is passed to `sh -c` (Unix) or `cmd /C` (Windows).
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn run_setup_script(script: String, cwd: String) -> Result<serde_json::Value, String> {
     let cwd = crate::cli::expand_tilde(&cwd);
     let cwd_path = Path::new(&cwd);

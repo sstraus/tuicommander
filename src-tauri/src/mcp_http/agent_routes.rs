@@ -1,6 +1,7 @@
-use crate::pty::{spawn_headless_reader_thread, spawn_reader_thread};
+use crate::pty::spawn_reader_thread;
 use crate::{AppState, OutputRingBuffer, PtySession, MAX_CONCURRENT_SESSIONS};
 use crate::state::{OUTPUT_RING_BUFFER_CAPACITY, VtLogBuffer, VT_LOG_BUFFER_CAPACITY};
+#[cfg(feature = "desktop")]
 use tauri::Emitter;
 use axum::extract::{ConnectInfo, Query, State};
 use axum::http::StatusCode;
@@ -295,15 +296,12 @@ pub(super) async fn spawn_agent_session(
         agent_type: body.agent_type.clone(),
     });
 
-    let app_handle = state.app_handle.read().clone();
-    if let Some(ref app) = app_handle {
-        spawn_reader_thread(reader, paused, session_id.clone(), app.clone(), state, None);
-    } else {
-        spawn_headless_reader_thread(reader, paused, session_id.clone(), state);
-    }
+    #[cfg(feature = "desktop")]
+    let state_ref = state.clone();
+    spawn_reader_thread(reader, paused, session_id.clone(), state, None);
 
-    // Tauri IPC for desktop backward compat
-    if let Some(app) = app_handle {
+    #[cfg(feature = "desktop")]
+    if let Some(app) = state_ref.app_handle.read().as_ref() {
         let _ = app.emit("session-created", serde_json::json!({
             "session_id": session_id,
             "cwd": body.cwd,

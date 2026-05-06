@@ -5,6 +5,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
+#[cfg(feature = "desktop")]
 use tauri::State;
 
 use crate::error_classification::calculate_backoff_delay;
@@ -1058,6 +1059,7 @@ pub(crate) async fn get_all_batch_impl(
 }
 
 /// Fetch issues for a single repo (Tauri command).
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn get_repo_issues(
     state: State<'_, Arc<AppState>>,
@@ -1071,6 +1073,7 @@ pub(crate) async fn get_repo_issues(
 }
 
 /// Fetch issues for multiple repos (Tauri command).
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn get_all_issues(
     state: State<'_, Arc<AppState>>,
@@ -1118,6 +1121,7 @@ pub(crate) async fn close_issue_impl(
 }
 
 /// Close a GitHub issue (Tauri command).
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn close_issue(
     repo_path: String,
@@ -1165,6 +1169,7 @@ pub(crate) async fn reopen_issue_impl(
 }
 
 /// Reopen a GitHub issue (Tauri command).
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn reopen_issue(
     repo_path: String,
@@ -1295,6 +1300,7 @@ pub(crate) async fn get_repo_pr_statuses_impl(
 }
 
 /// Get PR statuses for a repository (cached, 30s TTL).
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn get_repo_pr_statuses(
     state: State<'_, Arc<AppState>>,
@@ -1389,6 +1395,7 @@ pub(crate) async fn get_all_pr_statuses_impl(
 /// Fetch PR statuses for all repos in a single batched GraphQL call.
 /// On failure, the frontend should retry with per-repo individual calls.
 /// `include_merged` is true for the startup poll to detect offline transitions.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn get_all_pr_statuses(
     state: State<'_, Arc<AppState>>,
@@ -1515,6 +1522,7 @@ pub(crate) fn get_github_status_cached(state: &AppState, path: &str) -> GitHubSt
 }
 
 /// Tauri command wrapper — cached with GIT_CACHE_TTL to avoid spawning git subprocesses every poll.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn get_github_status(
     path: String,
@@ -1535,6 +1543,7 @@ pub(crate) async fn get_github_status(
 
 /// Check if the GitHub API circuit breaker is open (rate-limited or failure-based).
 /// Returns Ok(true) if requests are allowed, Ok(false) if blocked.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn check_github_circuit(
     state: State<'_, Arc<AppState>>,
@@ -1693,6 +1702,7 @@ pub(crate) async fn merge_pr_github_impl(
 
 /// Merge a PR via GitHub REST API (Tauri command).
 /// Supports merge_method: "merge", "squash", "rebase".
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn merge_pr_via_github(
     repo_path: String,
@@ -1705,6 +1715,7 @@ pub(crate) async fn merge_pr_via_github(
 }
 
 /// Get CI check details for a PR via GitHub GraphQL API (Story 060).
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn get_ci_checks(
     path: String,
@@ -1762,6 +1773,7 @@ pub(crate) async fn approve_pr_impl(
 }
 
 /// Approve a PR via GitHub REST API (Tauri command).
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn approve_pr(
     repo_path: String,
@@ -1907,7 +1919,7 @@ fn fetch_ci_failure_logs_impl(repo_path: &str, branch: &str) -> Result<String, S
 }
 
 /// Tauri command: fetch CI failure logs for the latest failed run on a branch.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) async fn fetch_ci_failure_logs(
     repo_path: String,
     branch: String,
@@ -1919,6 +1931,7 @@ pub(crate) async fn fetch_ci_failure_logs(
 }
 
 /// Fetch PR diff via GitHub REST API (Tauri command).
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn get_pr_diff(
     repo_path: String,

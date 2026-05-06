@@ -4,6 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
+#[cfg(feature = "desktop")]
 use tauri::Emitter;
 
 // ---------------------------------------------------------------------------
@@ -800,6 +801,7 @@ async fn do_turn(
     None
 }
 
+#[cfg(feature = "desktop")]
 /// Multi-turn LLM classification: overview turn + per-file turns with tool use.
 /// Skips unchanged files (hash match). Updates session in place.
 #[allow(clippy::too_many_arguments)]
@@ -908,6 +910,7 @@ async fn classify_multi_turn(
 }
 
 
+#[cfg(feature = "desktop")]
 #[derive(Debug, Clone, Serialize)]
 struct TriageProgress {
     repo_path: String,
@@ -919,6 +922,7 @@ struct TriageProgress {
     llm_model: Option<String>,
 }
 
+#[cfg(feature = "desktop")]
 #[allow(clippy::too_many_arguments)]
 fn emit_progress(
     app: &tauri::AppHandle,
@@ -944,6 +948,7 @@ fn emit_progress(
     );
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn run_diff_triage(
     app: tauri::AppHandle,

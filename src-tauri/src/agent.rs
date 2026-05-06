@@ -4,6 +4,7 @@ use serde::Serialize;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+#[cfg(feature = "desktop")]
 use tauri::{AppHandle, State};
 use uuid::Uuid;
 
@@ -51,7 +52,7 @@ fn goto_editor_cmd(
 
 /// Open a path in an IDE or application.
 /// `line` and `col` are optional and only used by editors that support them.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn open_in_app(
     path: String,
     app: String,
@@ -180,7 +181,7 @@ pub(crate) fn open_in_app(
 }
 
 /// Detect installed IDE applications (cross-platform)
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn detect_installed_ides() -> Vec<String> {
     let mut installed = Vec::new();
 
@@ -300,7 +301,7 @@ pub(crate) struct AgentBinaryDetection {
 }
 
 /// Detect any agent binary location
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn detect_agent_binary(binary: String) -> AgentBinaryDetection {
     let home = dirs::home_dir()
         .unwrap_or_default()
@@ -382,7 +383,7 @@ pub(crate) fn detect_agent_binary(binary: String) -> AgentBinaryDetection {
 /// Batch-detect multiple agent binaries in parallel.
 /// Returns a map of binary name -> detection result.
 /// Skips version detection for speed; use detect_agent_binary for full info.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn detect_all_agent_binaries(
     binaries: Vec<String>,
 ) -> std::collections::HashMap<String, AgentBinaryDetection> {
@@ -516,7 +517,7 @@ fn get_binary_version(path: &str) -> Option<String> {
 }
 
 /// Detect claude binary location (legacy, delegates to detect_agent_binary)
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn detect_claude_binary() -> Result<String, String> {
     let detection = detect_agent_binary("claude".to_string());
     detection.path.ok_or_else(|| {
@@ -525,9 +526,10 @@ pub(crate) fn detect_claude_binary() -> Result<String, String> {
 }
 
 /// Spawn an agent in a PTY
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn spawn_agent(
-    app: AppHandle,
+    _app: AppHandle,
     state: State<'_, Arc<AppState>>,
     pty_config: PtyConfig,
     agent_config: AgentConfig,
@@ -651,7 +653,6 @@ pub(crate) async fn spawn_agent(
         reader,
         paused,
         session_id.clone(),
-        app,
         state.inner().clone(),
         None,
     );

@@ -7,6 +7,8 @@
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "desktop")]
+#[cfg(feature = "desktop")]
 use tauri::State;
 
 use crate::state::AppState;
@@ -191,6 +193,7 @@ pub(crate) async fn poll_device_flow(
 
 /// Start a Device Flow login. Returns the device code and user code
 /// for display in the UI.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn github_start_login(
     state: State<'_, Arc<AppState>>,
@@ -201,6 +204,7 @@ pub(crate) async fn github_start_login(
 /// Poll GitHub for the Device Flow token. The frontend calls this repeatedly
 /// with the interval from `github_start_login`. On success, the token is saved
 /// to the OS keyring and activated in AppState.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn github_poll_login(
     state: State<'_, Arc<AppState>>,
@@ -236,6 +240,7 @@ pub(crate) async fn github_poll_login(
 
 /// Log out of GitHub OAuth. Deletes the token from keyring and clears
 /// the runtime state. Falls back to env/gh CLI tokens if available.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn github_logout(
     state: State<'_, Arc<AppState>>,
@@ -258,6 +263,7 @@ pub(crate) async fn github_logout(
 /// Disconnect from GitHub entirely, clearing the runtime token regardless
 /// of source. Does NOT delete env vars or gh CLI config — only clears the
 /// in-memory token so the app stops using it until restart or re-login.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn github_disconnect(
     state: State<'_, Arc<AppState>>,
@@ -291,6 +297,7 @@ pub(crate) struct GitHubDiagnostics {
 }
 
 /// Get GitHub integration diagnostics for the settings UI.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn github_diagnostics(
     state: State<'_, Arc<AppState>>,
@@ -323,6 +330,7 @@ pub(crate) async fn github_diagnostics(
 
 /// Get the current GitHub authentication status, including the user's
 /// login name if authenticated.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn github_auth_status(
     state: State<'_, Arc<AppState>>,

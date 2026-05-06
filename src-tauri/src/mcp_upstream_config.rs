@@ -254,11 +254,12 @@ pub(crate) async fn auto_connect_saved_upstreams(state: &crate::state::AppState)
 // Persistence (Tauri commands)
 // ---------------------------------------------------------------------------
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn load_mcp_upstreams() -> UpstreamMcpConfig {
     load_json_config(UPSTREAMS_FILE)
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn save_mcp_upstreams(
     config: UpstreamMcpConfig,
@@ -311,6 +312,7 @@ fn set_upstream_auth(name: &str, auth: Option<UpstreamAuth>) -> Result<(), Strin
 /// Set per-project upstream MCP allowlist. `None` clears the override
 /// (inherits all globally-enabled servers). Persists to repo-settings.json
 /// and emits a tool-list refresh so connected MCP clients see the change.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn set_project_mcp_upstreams(
     repo_path: String,
@@ -343,6 +345,7 @@ pub(crate) fn set_project_mcp_upstreams_inner(
 /// Reconnect a single upstream by name (disconnect + connect).
 ///
 /// Useful when credentials change or the upstream is temporarily unreachable.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn reconnect_mcp_upstream(
     name: String,
@@ -377,6 +380,7 @@ pub(crate) async fn reconnect_mcp_upstream(
 }
 
 /// Returns a JSON snapshot of all upstream statuses, tool lists, and metrics.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn get_mcp_upstream_status(
     state: tauri::State<'_, std::sync::Arc<crate::state::AppState>>,

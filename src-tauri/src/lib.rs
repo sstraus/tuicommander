@@ -1,3 +1,5 @@
+#![cfg_attr(not(feature = "desktop"), allow(dead_code, unused_imports, unused_variables))]
+
 pub(crate) mod agent;
 pub(crate) mod agent_mcp;
 pub(crate) mod agent_session;
@@ -7,6 +9,7 @@ pub(crate) mod chrome;
 pub(crate) mod claude_usage;
 pub(crate) mod cli;
 pub(crate) mod config;
+#[cfg(feature = "desktop")]
 mod dictation;
 pub(crate) mod diff_triage;
 pub(crate) mod error_classification;
@@ -14,7 +17,9 @@ pub(crate) mod fs;
 mod input_line_buffer;
 pub(crate) mod git;
 pub(crate) mod git_cli;
+#[cfg(feature = "desktop")]
 mod global_hotkey;
+#[cfg(feature = "desktop")]
 mod tab_shortcut;
 pub(crate) mod git_graph;
 pub(crate) mod github;
@@ -29,8 +34,11 @@ pub(crate) mod mcp_proxy;
 pub(crate) mod mcp_upstream_config;
 #[allow(dead_code)] // Used by OAuth discovery (story 1193-7f78), not yet wired
 pub(crate) mod mcp_upstream_credentials;
+#[cfg(feature = "desktop")]
 mod menu;
+#[cfg(feature = "desktop")]
 pub(crate) mod notification_sound;
+#[cfg(feature = "desktop")]
 mod panel_window;
 mod output_parser;
 pub(crate) mod plugin_credentials;
@@ -49,8 +57,10 @@ pub(crate) mod credentials;
 pub(crate) mod registry;
 pub(crate) mod pty;
 pub(crate) mod relay_client;
+#[cfg(feature = "desktop")]
 mod tuic_cli;
 mod shell_integration;
+#[cfg(feature = "desktop")]
 pub(crate) mod sleep_prevention;
 pub(crate) mod push;
 pub(crate) mod state;
@@ -59,18 +69,22 @@ pub(crate) mod tailscale;
 pub(crate) mod tool_search;
 pub(crate) mod text_rank;
 pub(crate) mod content_index;
+#[cfg(feature = "desktop")]
 mod updater;
 pub(crate) mod worktree;
 
-use dashmap::DashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+#[cfg(feature = "desktop")]
 use tauri::{Emitter, Manager, State, WebviewWindow};
 
 // Re-export shared types from state module
 pub(crate) use state::{AppState, OutputRingBuffer, PtySession};
-pub(crate) use state::{SessionMetrics, MAX_CONCURRENT_SESSIONS};
+pub(crate) use state::MAX_CONCURRENT_SESSIONS;
+#[cfg(test)]
+pub(crate) use state::SessionMetrics;
 
+#[cfg(feature = "desktop")]
 /// Open a secondary window for multi-monitor use. The window loads the same
 /// frontend with a `?mode=secondary` query param so App.tsx can render a
 /// pane-only layout without sidebar or tab bar.
@@ -93,6 +107,7 @@ async fn open_secondary_window(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(feature = "desktop")]
 /// Fix corrupted dimensions in the window-state JSON before the plugin reads it.
 /// titleBarStyle Overlay can persist width/height 0; SIZE is excluded from the
 /// plugin flags so these zeros stay fossilised forever. We patch them at startup.
@@ -122,10 +137,12 @@ fn sanitize_window_state() {
     }
 }
 
+#[cfg(feature = "desktop")]
 /// Ensure the window has valid dimensions and is positioned on a visible monitor.
 /// The window-state plugin can persist invalid state (e.g. width/height 0, or
 /// positions off-screen) which causes downstream failures like PTY garbage output.
 fn ensure_window_visible(window: &WebviewWindow) {
+#[cfg(feature = "desktop")]
     use tauri::PhysicalPosition;
 
     const MIN_WIDTH: u32 = 800;
@@ -172,12 +189,14 @@ fn ensure_window_visible(window: &WebviewWindow) {
     }
 }
 
+#[cfg(feature = "desktop")]
 /// Load configuration from cached AppState
 #[tauri::command]
 fn load_config(state: State<'_, Arc<AppState>>) -> config::AppConfig {
     state.config.read().clone()
 }
 
+#[cfg(feature = "desktop")]
 /// Save configuration to disk, update the AppState cache, and live-restart the HTTP server
 /// if MCP / Remote Access settings changed (no app restart required).
 #[tauri::command]
@@ -207,7 +226,7 @@ fn save_config(state: State<'_, Arc<AppState>>, config: config::AppConfig) -> Re
 }
 
 /// Hash a plaintext password with bcrypt for remote access config
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 async fn hash_password(password: String) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
         bcrypt::hash(&password, 12).map_err(|e| format!("Failed to hash password: {e}"))
@@ -217,12 +236,14 @@ async fn hash_password(password: String) -> Result<String, String> {
 }
 
 /// Clear all git/GitHub operation caches
+#[cfg(feature = "desktop")]
 #[tauri::command]
 fn clear_caches(state: State<'_, Arc<AppState>>) {
     state.clear_caches();
 }
 
 /// Clear git/GitHub caches for a specific repo path
+#[cfg(feature = "desktop")]
 #[tauri::command]
 fn clear_repo_caches(state: State<'_, Arc<AppState>>, path: String) {
     state.invalidate_repo_caches(&path);
@@ -252,6 +273,7 @@ pub(crate) fn get_local_ips_impl(state: &AppState) -> Vec<LocalIpEntry> {
     get_local_ips_with_config(ipv6_enabled)
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 fn get_local_ips(state: State<'_, Arc<AppState>>) -> Vec<LocalIpEntry> {
     get_local_ips_impl(&state)
@@ -411,6 +433,7 @@ pub(crate) fn pick_preferred_ip(ips: Vec<LocalIpEntry>) -> Option<String> {
 
 /// Legacy single-IP command kept for backwards compatibility.
 /// Returns the LAN/Tailscale IP preferred for remote access, or the default-route IP.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 fn get_local_ip(state: State<'_, Arc<AppState>>) -> Option<String> {
     pick_preferred_ip(get_local_ips(state))
@@ -496,7 +519,7 @@ pub(crate) fn list_markdown_files_impl(path: String) -> Result<Vec<MarkdownFileE
     Ok(entries)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 fn list_markdown_files(path: String) -> Result<Vec<MarkdownFileEntry>, String> {
     list_markdown_files_impl(path)
 }
@@ -521,7 +544,7 @@ pub(crate) fn read_file_impl(path: String, file: String) -> Result<String, Strin
         .map_err(|e| format!("Failed to read file: {e}"))
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 fn read_file(path: String, file: String) -> Result<String, String> {
     read_file_impl(path, file)
 }
@@ -532,7 +555,7 @@ fn read_file(path: String, file: String) -> Result<String, String> {
 /// No TCC directory blocking: reading a specific file by known path does not
 /// trigger macOS permission dialogs (TCC guards directory enumeration, not
 /// individual reads). The HTTP endpoint has its own repo-root check.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 fn read_external_file(path: String) -> Result<String, String> {
     let p = std::path::Path::new(&path);
     if !p.is_absolute() {
@@ -547,7 +570,7 @@ fn read_external_file(path: String) -> Result<String, String> {
 ///
 /// Target must be inside the user's home directory — see
 /// [`crate::fs::validate_external_write_path`] for the full rationale (story 1273-c95e).
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 fn write_external_file(path: String, content: String) -> Result<(), String> {
     let p = std::path::Path::new(&path);
     let home = dirs::home_dir()
@@ -559,6 +582,7 @@ fn write_external_file(path: String, content: String) -> Result<(), String> {
 
 /// Get MCP server status (running, port, active sessions).
 /// Async to avoid blocking the Tauri IPC thread during the TCP self-test.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 async fn get_mcp_status(state: State<'_, Arc<AppState>>) -> Result<serde_json::Value, String> {
     // Collect config and session count synchronously first (fast, no I/O)
@@ -618,6 +642,7 @@ async fn get_mcp_status(state: State<'_, Arc<AppState>>) -> Result<serde_json::V
 
 /// Execute an MCP tool call via deep link: `tuic://cmd/{tool}/{action}?{params}`.
 /// Reuses the same dispatch as the MCP `tools/call` handler — no HTTP round-trip.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 async fn deep_link_mcp_call(
     state: State<'_, Arc<AppState>>,
@@ -646,6 +671,7 @@ async fn deep_link_mcp_call(
 }
 
 /// Regenerate the session token, invalidating all existing remote sessions.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 fn regenerate_session_token(state: State<'_, Arc<AppState>>) {
     let new_token = uuid::Uuid::new_v4().to_string();
@@ -661,6 +687,7 @@ fn regenerate_session_token(state: State<'_, Arc<AppState>>) {
 /// Build a QR-code connect URL server-side so the raw session token
 /// never reaches JS (where a malicious plugin could steal it).
 /// Uses HTTPS + Tailscale FQDN when TLS is active on a Tailscale IP.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 fn get_connect_url(state: State<'_, Arc<AppState>>, ip: String) -> String {
     let port = state.config.read().remote_access_port;
@@ -678,11 +705,13 @@ fn get_connect_url(state: State<'_, Arc<AppState>>, ip: String) -> String {
 }
 
 /// Get Tailscale daemon status for the frontend Settings panel.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 fn get_tailscale_status(state: State<'_, Arc<AppState>>) -> tailscale::TailscaleState {
     state.tailscale_state.read().clone()
 }
 
+#[cfg(feature = "desktop")]
 /// Provision TLS config from current Tailscale state.
 /// Returns Some(RustlsConfig) if Tailscale is running with HTTPS enabled and cert provisioning succeeds.
 async fn provision_tls_config(ts_state: &tailscale::TailscaleState) -> Option<axum_server::tls_rustls::RustlsConfig> {
@@ -703,6 +732,7 @@ async fn provision_tls_config(ts_state: &tailscale::TailscaleState) -> Option<ax
     None
 }
 
+#[cfg(feature = "desktop")]
 /// Restart the HTTP/MCP server with fresh TLS config (reuses the shutdown/spawn pattern from save_config).
 fn restart_server(state: &Arc<AppState>) {
     // Shutdown existing server
@@ -723,6 +753,7 @@ fn restart_server(state: &Arc<AppState>) {
 }
 
 /// Re-detect Tailscale daemon status and restart server if HTTPS availability changed.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 async fn recheck_tailscale_status(state: State<'_, Arc<AppState>>) -> Result<tailscale::TailscaleState, String> {
     let old_https = matches!(
@@ -751,6 +782,7 @@ async fn recheck_tailscale_status(state: State<'_, Arc<AppState>>) -> Result<tai
 }
 
 /// Get relay client status (enabled, connected, url, session_id).
+#[cfg(feature = "desktop")]
 #[tauri::command]
 fn get_relay_status(state: State<'_, Arc<AppState>>) -> serde_json::Value {
     let cfg = state.config.read();
@@ -763,6 +795,7 @@ fn get_relay_status(state: State<'_, Arc<AppState>>) -> serde_json::Value {
     })
 }
 
+#[cfg(feature = "desktop")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Install the rustls CryptoProvider before anything touches TLS.
@@ -816,138 +849,32 @@ pub fn run() {
         tracing::info!(source = "github", "No GitHub token from env/CLI — keychain deferred until first use");
     }
 
-    let mcp_upstream_registry_arc = Arc::new(mcp_proxy::registry::UpstreamRegistry::new());
+    let data_dir = config::config_dir();
 
-    let state = Arc::new(AppState {
-        sessions: DashMap::new(),
-        worktrees_dir,
-        metrics: SessionMetrics::new(),
-        output_buffers: DashMap::new(),
-        mcp_sessions: DashMap::new(),
-        ws_clients: DashMap::new(),
-        config: parking_lot::RwLock::new(config.clone()),
-        git_cache: crate::state::GitCacheState::new(),
-        repo_watchers: DashMap::new(),
-        dir_watchers: DashMap::new(),
-        http_client: reqwest::Client::new(),
-        github_token: parking_lot::RwLock::new(github_token),
-        github_token_source: parking_lot::RwLock::new(github_token_source),
-        github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
-        github_poller: parking_lot::Mutex::new(None),
-        github_viewer_login: parking_lot::RwLock::new(None),
-        server_shutdown: parking_lot::Mutex::new(None),
-        ipc_started: std::sync::atomic::AtomicBool::new(false),
-        session_token: parking_lot::RwLock::new(config.session_token.clone()),
-        app_handle: parking_lot::RwLock::new(None),
-        plugin_watchers: DashMap::new(),
-        vt_log_buffers: DashMap::new(),
-        grid_channels: DashMap::new(),
-        grid_watch: DashMap::new(),
-        grid_frame_in_flight: DashMap::new(),
-        kitty_states: DashMap::new(),
-        input_buffers: DashMap::new(),
-        last_prompts: DashMap::new(),
-        silence_states: DashMap::new(),
-        claude_usage_cache: parking_lot::Mutex::new(claude_usage::load_cache_from_disk()),
-        log_buffer,
-        event_bus: tokio::sync::broadcast::channel(256).0,
-        event_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-        session_states: dashmap::DashMap::new(),
-        mcp_upstream_registry: mcp_upstream_registry_arc.clone(),
-        oauth_flow_manager: Arc::new(crate::mcp_oauth::flow::OAuthFlowManager::new(
-            mcp_upstream_registry_arc.auth_semaphore.clone(),
-        )),
-        mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
-        tool_search_index: Arc::new(parking_lot::RwLock::new(crate::tool_search::ToolSearchIndex::build(&[]))),
-        content_indices: DashMap::new(),
-        indexer_throttle: Arc::new(crate::content_index::IndexerThrottle::default()),
-        slash_mode: DashMap::new(),
-        last_output_ms: DashMap::new(),
-        shell_states: DashMap::new(),
-        terminal_rows: DashMap::new(),
-        exit_codes: DashMap::new(),
-        shell_state_since_ms: DashMap::new(),
-        loaded_plugins: DashMap::new(),
-        relay: crate::state::RelayState::new(),
-        peer_agents: DashMap::new(),
-        agent_inbox: DashMap::new(),
-        agent_inbox_evictions: DashMap::new(),
-        session_html_tabs: DashMap::new(),
-        mcp_to_session: DashMap::new(),
-        session_to_mcp: DashMap::new(),
-        session_parent: DashMap::new(),
-        messaging_channels: DashMap::new(),
-        session_knowledge: DashMap::new(),
-        knowledge_dirty: DashMap::new(),
-        has_osc133_integration: DashMap::new(),
-        file_sandboxes: DashMap::new(),
-        unrestricted_sessions: DashMap::new(),
-        #[cfg(unix)]
-        bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
-        tailscale_state: parking_lot::RwLock::new(tailscale::TailscaleState::NotInstalled),
-        push_store: push::PushStore::load(&config::config_dir()),
-        desktop_window_focused: std::sync::atomic::AtomicBool::new(true),
-        server_start_time: std::time::Instant::now(),
-        github_rate_limit_remaining: std::sync::atomic::AtomicU32::new(u32::MAX),
-        term_aliases: DashMap::new(),
-        term_alias_counters: DashMap::new(),
-    });
+    let mut app_state = AppState::new(data_dir, worktrees_dir, config.clone(), log_buffer);
+    *app_state.github_token.get_mut() = github_token;
+    *app_state.github_token_source.get_mut() = github_token_source;
 
-    // Wire the event bus into the upstream registry so status changes emit SSE events.
-    state.mcp_upstream_registry.set_event_bus(state.event_bus.clone());
-    // Wire the MCP tools_changed signal so upstream changes notify MCP bridge clients.
-    state.mcp_upstream_registry.set_mcp_tools_tx(state.mcp_tools_changed.clone());
-    // Wire the OAuth flow orchestrator so 401 NeedsOAuth upstreams can start a flow.
-    state
-        .mcp_upstream_registry
-        .set_oauth_flow_manager(state.oauth_flow_manager.clone());
+    let state = Arc::new(app_state);
+    state.wire_event_bus();
 
     // Always start HTTP API server (Unix socket is always on; TCP only if remote access enabled)
     // Tailscale detection + TLS provisioning happens inside the server thread (non-blocking to Tauri setup)
     {
         let remote_enabled = config.remote_access_enabled;
-        let mcp_state = state.clone();
-        let accumulator_state = state.clone();
-        let boot_registry_state = state.clone();
-        let ts_state_ref = state.clone();
+        let server_state = state.clone();
         std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new()
                 .expect("Failed to create tokio runtime for HTTP server");
             rt.block_on(async move {
-                // Start session state accumulator (consumes broadcast events)
-                AppState::spawn_session_state_accumulator(accumulator_state);
-
-                // Start tool search index updater (rebuilds on mcp_tools_changed)
-                crate::mcp_http::mcp_transport::spawn_tool_search_index_updater(boot_registry_state.clone());
-
-                // Start tombstone sweeper (reaps exited-session buffers after TTL)
-                crate::pty::spawn_tombstone_sweeper(boot_registry_state.clone());
-
-                // Start content index updater (rebuilds on repo-changed)
-                crate::content_index::spawn_content_index_updater(boot_registry_state.clone());
-
-                // Start session-knowledge debounced persister (flushes dirty sessions every 2s).
-                crate::ai_agent::knowledge::spawn_persist_task(boot_registry_state.clone());
-
-                // Start AI block enrichment worker (drains the opt-in queue populated
-                // at OSC 133 D markers). No-op unless the user enables the setting.
-                crate::ai_agent::enrichment::spawn_worker(boot_registry_state.clone());
-
-                // Start cron scheduler for time-triggered agent tasks
-                {
-                    let sched_state = boot_registry_state.clone();
-                    tokio::spawn(async move {
-                        let scheduler = crate::ai_agent::scheduler::Scheduler::new(sched_state);
-                        scheduler.run().await;
-                    });
-                }
+                spawn_background_tasks(&server_state);
 
                 // Detect Tailscale and provision TLS cert (async, doesn't block window render)
                 let tls_config = if remote_enabled {
                     let ts_state = tokio::task::spawn_blocking(tailscale::detect).await
                         .unwrap_or(tailscale::TailscaleState::NotInstalled);
                     tracing::info!(source = "tailscale", ?ts_state, "Tailscale detection result");
-                    *ts_state_ref.tailscale_state.write() = ts_state.clone();
+                    *server_state.tailscale_state.write() = ts_state.clone();
                     provision_tls_config(&ts_state).await
                 } else {
                     None
@@ -957,10 +884,11 @@ pub fn run() {
                 // bridge is reachable as soon as possible. Upstream connections
                 // can be slow (network timeouts, OAuth) and must not delay socket
                 // availability — that causes "MCP disconnected" in Claude Code.
-                mcp_http::start_server(mcp_state, true, remote_enabled, tls_config).await;
+                let srv_state = server_state.clone();
+                mcp_http::start_server(srv_state, true, remote_enabled, tls_config).await;
 
                 // Auto-connect saved upstream MCP servers (after socket is live)
-                crate::mcp_upstream_config::auto_connect_saved_upstreams(&boot_registry_state).await;
+                crate::mcp_upstream_config::auto_connect_saved_upstreams(&server_state).await;
             });
         });
     }
@@ -1061,10 +989,13 @@ pub fn run() {
         .manage(state)
         .manage(ai_chat_registry::ChatRegistry::new())
         .manage(crate::fs::ContentSearchCancel(std::sync::Mutex::new(None)))
-        .manage(dictation::DictationState::new())
-        .manage(sleep_prevention::SleepBlocker::new())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_clipboard_manager::init());
+
+    #[cfg(feature = "desktop")]
+    let builder = builder
+        .manage(dictation::DictationState::new())
+        .manage(sleep_prevention::SleepBlocker::new());
 
     // Single-instance lock only in release builds — allows tauri dev to run
     // alongside the installed TUIC-preview.app (they share the same identifier).
@@ -1082,11 +1013,14 @@ pub fn run() {
             #[cfg(desktop)]
             app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
 
-            let m = menu::build_menu(app)?;
-            app.set_menu(m)?;
-            app.on_menu_event(|app_handle, event| {
-                let _ = app_handle.emit("menu-action", event.id().0.as_str());
-            });
+            #[cfg(feature = "desktop")]
+            {
+                let m = menu::build_menu(app)?;
+                app.set_menu(m)?;
+                app.on_menu_event(|app_handle, event| {
+                    let _ = app_handle.emit("menu-action", event.id().0.as_str());
+                });
+            }
 
             // Store AppHandle so HTTP handlers can emit Tauri events
             let app_state: &Arc<AppState> = app.state::<Arc<AppState>>().inner();
@@ -1105,18 +1039,21 @@ pub fn run() {
                 });
             }
 
-            // Install global hotkey plugin (registers handler, no shortcuts yet)
-            if let Err(e) = global_hotkey::init(app.handle()) {
-                tracing::warn!(source = "global-hotkey", "Failed to init plugin: {e}");
-            } else {
-                global_hotkey::restore_from_config(app.handle());
+            #[cfg(feature = "desktop")]
+            {
+                // Install global hotkey plugin (registers handler, no shortcuts yet)
+                if let Err(e) = global_hotkey::init(app.handle()) {
+                    tracing::warn!(source = "global-hotkey", "Failed to init plugin: {e}");
+                } else {
+                    global_hotkey::restore_from_config(app.handle());
+                }
+
+                // Install Fn/Globe key monitor for push-to-talk dictation
+                dictation::fn_key_monitor::install(app.handle().clone());
+
+                // Install Ctrl+Tab monitor (macOS swallows it before JS/WKWebView)
+                tab_shortcut::install(app.handle().clone());
             }
-
-            // Install Fn/Globe key monitor for push-to-talk dictation
-            dictation::fn_key_monitor::install(app.handle().clone());
-
-            // Install Ctrl+Tab monitor (macOS swallows it before JS/WKWebView)
-            tab_shortcut::install(app.handle().clone());
 
             // Start plugin directory watcher for hot-reload
             plugins::start_plugin_watcher(app.handle());
@@ -1127,16 +1064,16 @@ pub fn run() {
             let repos_json = config::load_repositories();
             let mut known_repo_paths: Vec<String> = Vec::new();
             if let Some(repos) = repos_json.get("repos").and_then(|r| r.as_object()) {
-                let handle = app.handle().clone();
                 for repo_path in repos.keys() {
                     known_repo_paths.push(repo_path.clone());
-                    if let Err(e) = repo_watcher::start_watching(repo_path, Some(&handle), app_state) {
+                    if let Err(e) = repo_watcher::start_watching(repo_path, app_state) {
                         app_logger::log_via_state(app_state, "warn", "app", &format!("[RepoWatcher] Failed to watch {repo_path}: {e}"));
                     }
                 }
             }
 
             // Auto-update CLI binary if installed
+            #[cfg(feature = "desktop")]
             tuic_cli::auto_update_cli(app.handle());
 
             // Pre-warm content indices for known repos: one at a time, after a
@@ -1540,6 +1477,87 @@ fn build_connect_url(scheme: &str, host: &str, port: u16, token: &str) -> String
         host.to_string()
     };
     format!("{scheme}://{host}:{port}/?token={token}")
+}
+
+/// Spawn background tasks shared by both desktop and headless modes.
+fn spawn_background_tasks(state: &Arc<AppState>) {
+    AppState::spawn_session_state_accumulator(state.clone());
+    mcp_http::mcp_transport::spawn_tool_search_index_updater(state.clone());
+    pty::spawn_tombstone_sweeper(state.clone());
+    content_index::spawn_content_index_updater(state.clone());
+    ai_agent::knowledge::spawn_persist_task(state.clone());
+    ai_agent::enrichment::spawn_worker(state.clone());
+    {
+        let sched_state = state.clone();
+        tokio::spawn(async move {
+            let scheduler = ai_agent::scheduler::Scheduler::new(sched_state);
+            scheduler.run().await;
+        });
+    }
+}
+
+/// Run the headless (non-desktop) server.
+/// Called by the `tuicommander-remote` binary.
+#[cfg(not(feature = "desktop"))]
+pub async fn run_headless(port: u16) -> anyhow::Result<()> {
+    let log_buffer = Arc::new(parking_lot::Mutex::new(
+        app_logger::LogRingBuffer::new(app_logger::LOG_RING_CAPACITY),
+    ));
+    app_logger::init_tracing(log_buffer.clone());
+
+    let mut app_config = config::load_app_config();
+    app_config.remote_access_enabled = true;
+    if app_config.remote_access_port != port {
+        tracing::info!(
+            source = "remote",
+            config_port = app_config.remote_access_port,
+            override_port = port,
+            "Port overridden by TUIC_PORT / CLI argument"
+        );
+        app_config.remote_access_port = port;
+    }
+    if app_config.lan_auth_bypass {
+        tracing::warn!(
+            source = "remote",
+            "lan_auth_bypass is not supported in headless mode — forcing off"
+        );
+        app_config.lan_auth_bypass = false;
+    }
+    if app_config.session_token.is_empty() {
+        app_config.session_token = uuid::Uuid::new_v4().to_string();
+    }
+
+    let data_dir = config::config_dir();
+    let worktrees_dir = data_dir.join("worktrees");
+    std::fs::create_dir_all(&worktrees_dir)?;
+
+    let (github_token, github_token_source) = crate::github_auth::resolve_token_without_keychain();
+
+    let mut app_state = AppState::new(data_dir, worktrees_dir, app_config.clone(), log_buffer);
+    *app_state.github_token.get_mut() = github_token;
+    *app_state.github_token_source.get_mut() = github_token_source;
+
+    let state = Arc::new(app_state);
+    state.wire_event_bus();
+
+    spawn_background_tasks(&state);
+
+    agent_mcp::ensure_mcp_configs(&app_config.disabled_mcp_agents);
+
+    tracing::info!(source = "remote", port, "Starting tuicommander-remote");
+
+    // Run server until SIGINT/SIGTERM, then shut down gracefully.
+    tokio::select! {
+        _ = mcp_http::start_server(state.clone(), true, true, None) => {}
+        _ = tokio::signal::ctrl_c() => {
+            tracing::info!(source = "remote", "Received shutdown signal");
+            if let Some(tx) = state.server_shutdown.lock().take() {
+                let _ = tx.send(());
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

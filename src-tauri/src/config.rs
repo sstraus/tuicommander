@@ -988,52 +988,52 @@ const ACTIVITY_FILE: &str = "activity.json";
 const AI_PROMPTS_FILE: &str = "ai-prompts.json";
 
 // App config
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn load_app_config() -> AppConfig {
     load_json_config(APP_CONFIG_FILE)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn save_app_config(config: AppConfig) -> Result<(), String> {
     save_json_config(APP_CONFIG_FILE, &config)
 }
 
 // Notification config
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn load_notification_config() -> NotificationConfig {
     load_json_config(NOTIFICATION_CONFIG_FILE)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn save_notification_config(config: NotificationConfig) -> Result<(), String> {
     save_json_config(NOTIFICATION_CONFIG_FILE, &config)
 }
 
 // UI prefs
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn load_ui_prefs() -> UIPrefsConfig {
     load_json_config(UI_PREFS_FILE)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn save_ui_prefs(config: UIPrefsConfig) -> Result<(), String> {
     save_json_config(UI_PREFS_FILE, &config)
 }
 
 // Repo settings
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn load_repo_settings() -> RepoSettingsMap {
     load_json_config(REPO_SETTINGS_FILE)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn save_repo_settings(config: RepoSettingsMap) -> Result<(), String> {
     save_json_config(REPO_SETTINGS_FILE, &config)
 }
 
 /// Set or clear a human-readable label for a branch/worktree within a repo.
 /// `label = None` removes the label. Idempotent; no-ops on unknown repo paths.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn set_branch_label(repo_path: String, branch_name: String, label: Option<String>) -> Result<(), String> {
     let mut settings: RepoSettingsMap = load_json_config(REPO_SETTINGS_FILE);
     if let Some(entry) = settings.repos.get_mut(&repo_path) {
@@ -1058,113 +1058,113 @@ pub(crate) fn remove_branch_label(repo_path: &str, branch_name: &str) {
     }
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn check_has_custom_settings(path: String) -> bool {
     let settings: RepoSettingsMap = load_json_config(REPO_SETTINGS_FILE);
     settings.repos.get(&path).is_some_and(|entry| entry.has_custom_settings())
 }
 
 // Repo local config (.tuic.json in repo root)
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn load_repo_local_config(repo_path: String) -> Option<RepoLocalConfig> {
     load_repo_local_config_from_path(std::path::Path::new(&repo_path))
 }
 
 // Repo defaults (global defaults for all repos)
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn load_repo_defaults() -> RepoDefaultsConfig {
     load_json_config(REPO_DEFAULTS_FILE)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn save_repo_defaults(config: RepoDefaultsConfig) -> Result<(), String> {
     save_json_config(REPO_DEFAULTS_FILE, &config)
 }
 
 // Repositories (opaque JSON — schema owned by frontend)
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn load_repositories() -> serde_json::Value {
     load_json_config(REPOSITORIES_FILE)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn save_repositories(config: serde_json::Value) -> Result<(), String> {
     save_json_config(REPOSITORIES_FILE, &config)
 }
 
 // Pane layout (schema owned by frontend)
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn load_pane_layout() -> serde_json::Value {
     load_json_config(PANE_LAYOUT_FILE)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn save_pane_layout(layout: serde_json::Value) -> Result<(), String> {
     save_json_config(PANE_LAYOUT_FILE, &layout)
 }
 
 // Prompt library
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn load_prompt_library() -> PromptLibraryConfig {
     load_json_config(PROMPT_LIBRARY_FILE)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn save_prompt_library(config: PromptLibraryConfig) -> Result<(), String> {
     save_json_config(PROMPT_LIBRARY_FILE, &config)
 }
 
 // Notes (opaque JSON — schema owned by frontend)
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn load_notes() -> serde_json::Value {
     load_json_config(NOTES_FILE)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn save_notes(config: serde_json::Value) -> Result<(), String> {
     save_json_config(NOTES_FILE, &config)
 }
 
 // Activity center (opaque JSON — schema owned by frontend)
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn load_activity() -> serde_json::Value {
     load_json_config(ACTIVITY_FILE)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn save_activity(items: serde_json::Value) -> Result<(), String> {
     save_json_config(ACTIVITY_FILE, &items)
 }
 
 // Keybindings (opaque JSON — schema owned by frontend)
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn load_keybindings() -> serde_json::Value {
     load_json_config(KEYBINDINGS_FILE)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn save_keybindings(config: serde_json::Value) -> Result<(), String> {
     save_json_config(KEYBINDINGS_FILE, &config)
 }
 
 // Agents config
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn load_agents_config() -> AgentsConfig {
     load_json_config(AGENTS_CONFIG_FILE)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn save_agents_config(config: AgentsConfig) -> Result<(), String> {
     save_json_config(AGENTS_CONFIG_FILE, &config)
 }
 
 // AI prompts
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn load_ai_prompts() -> AiPromptsConfig {
     load_json_config(AI_PROMPTS_FILE)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn save_ai_prompts(config: AiPromptsConfig) -> Result<(), String> {
     save_json_config(AI_PROMPTS_FILE, &config)
 }
@@ -1196,7 +1196,7 @@ fn validate_note_id(note_id: &str) -> Result<(), String> {
 
 /// Save a base64-encoded image to `config_dir()/note-images/<note_id>/<timestamp>.<extension>`.
 /// Returns the absolute path of the saved file.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn save_note_image(
     note_id: String,
     data_base64: String,
@@ -1246,7 +1246,7 @@ pub(crate) fn save_note_image(
 }
 
 /// Delete all image assets for a note. No-op if the directory doesn't exist.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn delete_note_assets(note_id: String) -> Result<(), String> {
     validate_note_id(&note_id)?;
 
@@ -1259,7 +1259,7 @@ pub(crate) fn delete_note_assets(note_id: String) -> Result<(), String> {
 }
 
 /// Delete image assets for multiple notes in a single IPC round-trip.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn delete_note_assets_batch(note_ids: Vec<String>) -> Result<(), String> {
     let base = config_dir().join(NOTE_IMAGES_DIR);
     for note_id in &note_ids {
@@ -1275,7 +1275,7 @@ pub(crate) fn delete_note_assets_batch(note_ids: Vec<String>) -> Result<(), Stri
 
 /// Return the absolute path of the note-images root directory.
 /// The frontend needs this as `baseDir` for `convertFileSrc()`.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn get_note_images_dir() -> String {
     config_dir()
         .join(NOTE_IMAGES_DIR)

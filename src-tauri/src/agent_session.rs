@@ -23,7 +23,7 @@ use std::time::SystemTime;
 /// - `agent_type`: one of `"claude"`, `"gemini"`, `"codex"`, `"goose"`
 /// - `cwd`: the terminal's working directory (used to compute project-scoped paths)
 /// - `claimed_ids`: session IDs already assigned to other terminals — excluded from results
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn discover_agent_session(
     agent_type: String,
     cwd: String,
@@ -42,7 +42,7 @@ pub(crate) fn discover_agent_session(
 
 /// Return the absolute path to Claude Code's project directory for a given CWD.
 /// E.g. `/Users/foo/bar` → `~/.claude/projects/-Users-foo-bar`.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn claude_project_dir(cwd: String) -> Result<String, String> {
     let base = claude_projects_dir()
         .ok_or_else(|| "Could not determine home directory".to_string())?;
@@ -224,7 +224,7 @@ fn extract_codex_uuid(name: &str) -> Option<String> {
 ///
 /// Used at restore time to decide if `--resume <uuid>` is safe: if the session
 /// file doesn't exist, the resume command would fail.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn verify_agent_session(
     agent_type: String,
     session_id: String,
@@ -244,7 +244,7 @@ pub(crate) fn verify_agent_session(
 /// `--session-id <stale-uuid>` on the first manual `claude` invocation, which
 /// would cause Claude to exit immediately and leak VT probe responses (DA1,
 /// DECRPM) as visible garbage in the shell.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn preflight_session_inject(tuic_session: String, cwd: String) {
     if !tuic_session.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
         || tuic_session.len() != 36

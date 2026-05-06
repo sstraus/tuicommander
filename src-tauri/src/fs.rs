@@ -2,6 +2,7 @@ use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "desktop")]
 use tauri::Emitter;
 
 /// A directory entry returned by `list_directory`.
@@ -241,13 +242,13 @@ pub(crate) fn stat_path_impl(path: String) -> PathStat {
 }
 
 /// Stat an absolute path — returns existence and directory flag without leaking errors.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn stat_path(path: String) -> PathStat {
     stat_path_impl(path)
 }
 
 /// List entries in a directory within a repository.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn list_directory(repo_path: String, subdir: String) -> Result<Vec<DirEntry>, String> {
     list_directory_impl(repo_path, subdir)
 }
@@ -376,6 +377,7 @@ pub(crate) fn list_directory_impl(repo_path: String, subdir: String) -> Result<V
 /// Recursively search files in a repository matching a glob-like query.
 /// Returns up to `limit` results (default 200) to avoid blowing up on huge repos.
 /// Respects .gitignore natively via the `ignore` crate (no subprocess).
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn search_files(
     app_state: tauri::State<'_, std::sync::Arc<crate::state::AppState>>,
@@ -387,6 +389,7 @@ pub async fn search_files(
     search_files_impl(repo_path, query, limit)
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn search_content(
@@ -423,7 +426,7 @@ pub async fn search_content(
     let throttle_guard = app_state.indexer_throttle.begin_search();
 
     // Run search in blocking thread
-    tauri::async_runtime::spawn_blocking(move || {
+    tokio::task::spawn_blocking(move || {
         let _throttle_guard = throttle_guard;
         match search_content_indexed(
             &index_arc, repo_path, query, case_sensitive, use_regex, whole_word, limit,
@@ -896,13 +899,13 @@ fn build_search_pattern(query: &str) -> regex::Regex {
 
 /// Read a file's content within a repository.
 /// Re-uses the existing `read_file_impl` from lib.rs.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn fs_read_file(repo_path: String, file: String) -> Result<String, String> {
     crate::read_file_impl(repo_path, file)
 }
 
 /// Write content to a file within a repository.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn write_file(repo_path: String, file: String, content: String) -> Result<(), String> {
     let (_canonical_repo, canonical_target) = if PathBuf::from(&repo_path).join(&file).exists() {
         validate_path(&repo_path, &file)?
@@ -915,7 +918,7 @@ pub fn write_file(repo_path: String, file: String, content: String) -> Result<()
 }
 
 /// Create a directory (and parents) within a repository.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn create_directory(repo_path: String, dir: String) -> Result<(), String> {
     let repo = PathBuf::from(&repo_path);
     let target = repo.join(&dir);
@@ -947,7 +950,7 @@ pub fn create_directory(repo_path: String, dir: String) -> Result<(), String> {
 }
 
 /// Delete a file or directory within a repository.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn delete_path(repo_path: String, path: String) -> Result<(), String> {
     let (_canonical_repo, canonical_target) = validate_path(&repo_path, &path)?;
 
@@ -961,7 +964,7 @@ pub fn delete_path(repo_path: String, path: String) -> Result<(), String> {
 }
 
 /// Rename/move a file or directory within a repository.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn rename_path(
     repo_path: String,
     from: String,
@@ -979,7 +982,7 @@ pub fn rename_path(
 }
 
 /// Copy a file within a repository.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn copy_path(
     repo_path: String,
     from: String,
@@ -1057,7 +1060,7 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::
 /// directory, the function performs no filesystem operations and returns
 /// `needs_confirm=true`. When `allow_recursive=true`, directories are moved
 /// via rename (or copy+remove on cross-device) or copied recursively.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn fs_transfer_paths(
     dest_dir: String,
     paths: Vec<String>,
@@ -1236,7 +1239,7 @@ fn is_tcc_protected_path(path: &std::path::Path) -> bool {
 ///
 /// SAFETY: Refuses to probe macOS TCC-protected directories to avoid
 /// triggering system permission dialogs.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn resolve_terminal_path(cwd: String, candidate: String) -> Option<ResolvedFilePath> {
     let path_str = strip_line_col_suffix(&candidate);
 
@@ -1274,7 +1277,7 @@ pub fn resolve_terminal_path(cwd: String, candidate: String) -> Option<ResolvedF
 }
 
 /// Append a path pattern to the repo's .gitignore file.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn add_to_gitignore(repo_path: String, pattern: String) -> Result<(), String> {
     let repo = PathBuf::from(&repo_path);
     let canonical_repo = repo

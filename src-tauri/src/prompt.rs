@@ -154,12 +154,12 @@ fn cmd_shell_quote(value: &str) -> String {
     out
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn extract_prompt_variables(content: String) -> Vec<String> {
     extract_variables(&content)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn process_prompt_content(
     content: String,
     variables: HashMap<String, String>,
@@ -172,7 +172,7 @@ pub(crate) fn process_prompt_content(
 /// `process_prompt_content` whenever the resulting string is going to be
 /// handed to `sh -c` / `cmd /C`, otherwise repo-controlled variables like
 /// `{branch}` or `{pr_title}` can execute arbitrary commands.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn process_prompt_content_shell_safe(
     content: String,
     variables: HashMap<String, String>,
@@ -415,7 +415,7 @@ pub(crate) struct PromptVarsResult {
 /// that actually appear, and returns both the resolved map and the full list
 /// of variable names (so the frontend can detect unresolved ones without a
 /// second IPC round-trip).
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) async fn resolve_prompt_variables(
     content: String,
     repo_path: Option<String>,
@@ -433,7 +433,7 @@ pub(crate) async fn resolve_prompt_variables(
 }
 
 /// Resolve all git context variables (used by the MCP endpoint).
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) async fn resolve_context_variables(repo_path: String) -> Result<HashMap<String, String>, String> {
     tokio::task::spawn_blocking(move || {
         let all: Vec<String> = ALL_VARS.iter().map(|s| s.to_string()).collect();

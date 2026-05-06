@@ -1,6 +1,8 @@
 //! Tauri IPC commands for the agent loop API.
 
 use std::sync::Arc;
+#[cfg(feature = "desktop")]
+#[cfg(feature = "desktop")]
 use tauri::State;
 
 use crate::state::AppState;
@@ -43,6 +45,7 @@ fn build_llm_runtime() -> Result<LlmRuntime, String> {
 }
 
 /// Start an agent loop on a terminal session.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn start_agent_loop(
     state: State<'_, Arc<AppState>>,
@@ -84,6 +87,7 @@ pub(crate) async fn start_agent_loop(
     // subscribe via `listen("agent-loop-event", ...)`.
     if let Some(handle) = app_handle {
         tokio::spawn(async move {
+#[cfg(feature = "desktop")]
             use tauri::Emitter;
             while let Ok(event) = rx.recv().await {
                 let _ = handle.emit("agent-loop-event", &event);
@@ -95,7 +99,7 @@ pub(crate) async fn start_agent_loop(
 }
 
 /// Cancel an active agent loop.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) async fn cancel_agent_loop(
     session_id: String,
 ) -> Result<String, String> {
@@ -104,7 +108,7 @@ pub(crate) async fn cancel_agent_loop(
 }
 
 /// Pause an active agent loop.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) async fn pause_agent_loop(
     session_id: String,
 ) -> Result<String, String> {
@@ -113,7 +117,7 @@ pub(crate) async fn pause_agent_loop(
 }
 
 /// Resume a paused agent loop.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) async fn resume_agent_loop(
     session_id: String,
 ) -> Result<String, String> {
@@ -122,7 +126,7 @@ pub(crate) async fn resume_agent_loop(
 }
 
 /// Get the status of an agent loop.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) async fn agent_loop_status(
     session_id: String,
 ) -> Result<serde_json::Value, String> {
@@ -146,7 +150,7 @@ pub(crate) async fn agent_loop_status(
 
 /// Approve or reject a pending destructive command from the agent.
 /// Resolves the oneshot channel that the engine is blocking on.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) async fn approve_agent_action(
     session_id: String,
     approved: bool,
@@ -274,7 +278,7 @@ pub(crate) struct KnowledgeListFilter {
 /// `ai-sessions/` on every call (no in-memory index yet) — acceptable up
 /// to a few hundred files; upgrade path is a sidecar index if this becomes
 /// a bottleneck.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) async fn list_knowledge_sessions(
     filter: Option<KnowledgeListFilter>,
     limit: Option<usize>,
@@ -397,6 +401,7 @@ pub(crate) struct SessionDetail {
 /// Load the full command history for one session. Reads from disk if the
 /// session is not currently active — covers the "inspect last week's
 /// session" case from the story.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn get_knowledge_session_detail(
     state: State<'_, Arc<AppState>>,
@@ -450,12 +455,12 @@ fn history_command(c: &super::knowledge::CommandOutcome) -> HistoryCommand {
 
 // ── Scheduler commands ──────────────────────────────────────────
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn load_scheduler_config() -> super::scheduler::SchedulerConfig {
     super::scheduler::load_config()
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn save_scheduler_config(
     config: super::scheduler::SchedulerConfig,
 ) -> Result<(), String> {
@@ -464,6 +469,7 @@ pub(crate) fn save_scheduler_config(
 
 /// Return a frontend-friendly summary of the session's accumulated knowledge.
 /// Returns an empty summary if no commands have been recorded yet.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn get_session_knowledge(
     state: State<'_, Arc<AppState>>,

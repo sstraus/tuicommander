@@ -4,6 +4,7 @@ use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
+#[cfg(feature = "desktop")]
 use tauri::{AppHandle, Emitter, Manager};
 use crate::state::AppEvent;
 use crate::AppState;
@@ -192,7 +193,6 @@ pub(crate) struct WatchHandle(#[allow(dead_code)] pub(crate) Mutex<RecommendedWa
 /// a synchronous walkdir+stat scan at registration time.
 pub(crate) fn start_watching(
     repo_path: &str,
-    app_handle: Option<&AppHandle>,
     state: &Arc<AppState>,
 ) -> Result<(), String> {
     // Don't double-watch
@@ -206,30 +206,28 @@ pub(crate) fn start_watching(
     let gitignore = Arc::new(parking_lot::RwLock::new(build_gitignore(&repo)));
 
     let repo_path_owned = repo_path.to_string();
-    let handle = app_handle.cloned();
+    #[cfg(feature = "desktop")]
+    let handle = state.app_handle.read().clone();
     let event_bus = state.event_bus.clone();
     let state_cb = Arc::clone(state);
-    let emitter = Arc::new(CategoryEmitter::new(
-        tauri::async_runtime::handle().inner().clone(),
-    ));
+    let rt_handle = {
+        #[cfg(feature = "desktop")]
+        { tauri::async_runtime::handle().inner().clone() }
+        #[cfg(not(feature = "desktop"))]
+        { tokio::runtime::Handle::current() }
+    };
+    let emitter = Arc::new(CategoryEmitter::new(rt_handle));
 
     let repo_for_cb = repo.clone();
     let git_dir_for_cb = git_dir.clone();
     let gitignore_cb = Arc::clone(&gitignore);
 
-    // Raw notify watcher — no debouncer-full, no walkdir scan.
-    // Each OS event is classified and fed to CategoryEmitter which
-    // handles per-category trailing debounce.
     let mut watcher = notify::recommended_watcher(
         move |result: Result<notify::Event, notify::Error>| {
             let event = match result {
                 Ok(e) => e,
                 Err(err) => {
-                    if let Some(ref handle) = handle {
-                        crate::app_logger::log_via_handle(handle, "warn", "app", &format!("[repo_watcher] error for {repo_path_owned}: {err}"));
-                    } else {
-                        tracing::warn!(source = "repo_watcher", path = %repo_path_owned, "Watcher error: {err}");
-                    }
+                    tracing::warn!(source = "repo_watcher", path = %repo_path_owned, "Watcher error: {err}");
                     return;
                 }
             };
@@ -263,6 +261,7 @@ pub(crate) fn start_watching(
                 let repo_path = repo_path_owned.clone();
                 let repo = repo_for_cb.clone();
                 let bus = event_bus.clone();
+                #[cfg(feature = "desktop")]
                 let h = handle.clone();
                 emitter.trigger(&EventCategory::Head, move || {
                     if let Some(branch) = crate::git::read_branch_from_head(&repo) {
@@ -270,6 +269,7 @@ pub(crate) fn start_watching(
                             repo_path: repo_path.clone(),
                             branch: branch.clone(),
                         });
+                        #[cfg(feature = "desktop")]
                         if let Some(ref handle) = h {
                             let _ = handle.emit(
                                 "head-changed",
@@ -283,6 +283,7 @@ pub(crate) fn start_watching(
             if has_git_state {
                 let repo_path = repo_path_owned.clone();
                 let bus = event_bus.clone();
+                #[cfg(feature = "desktop")]
                 let h = handle.clone();
                 let st = Arc::clone(&state_cb);
                 emitter.trigger(&EventCategory::GitState, move || {
@@ -290,6 +291,7 @@ pub(crate) fn start_watching(
                     let _ = bus.send(AppEvent::RepoChanged {
                         repo_path: repo_path.clone(),
                     });
+                    #[cfg(feature = "desktop")]
                     if let Some(ref handle) = h {
                         let _ = handle.emit(
                             "repo-changed",
@@ -299,12 +301,10 @@ pub(crate) fn start_watching(
                 });
             }
 
-            // Only emit WorkingTree if GitState didn't already fire in this event.
-            // A git operation (commit, stage) already triggers RepoChanged via GitState
-            // at 500ms — emitting again at 1500ms would double-fire githubStore.pollRepo.
             if has_working_tree && !has_git_state {
                 let repo_path = repo_path_owned.clone();
                 let bus = event_bus.clone();
+                #[cfg(feature = "desktop")]
                 let h = handle.clone();
                 let st = Arc::clone(&state_cb);
                 emitter.trigger(&EventCategory::WorkingTree, move || {
@@ -312,6 +312,7 @@ pub(crate) fn start_watching(
                     let _ = bus.send(AppEvent::RepoChanged {
                         repo_path: repo_path.clone(),
                     });
+                    #[cfg(feature = "desktop")]
                     if let Some(ref handle) = h {
                         let _ = handle.emit(
                             "repo-changed",
@@ -343,12 +344,14 @@ pub(crate) fn stop_watching(repo_path: &str, state: &Arc<AppState>) {
 
 // --- Tauri commands ---
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn start_repo_watcher(repo_path: String, app_handle: AppHandle) -> Result<(), String> {
     let state = app_handle.state::<Arc<AppState>>();
-    start_watching(&repo_path, Some(&app_handle), &state)
+    start_watching(&repo_path, &state)
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn stop_repo_watcher(repo_path: String, app_handle: AppHandle) {
     let state = app_handle.state::<Arc<AppState>>();

@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, AtomicUsize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+#[cfg(feature = "desktop")]
 use tauri::{AppHandle, Emitter};
 
 // ---------------------------------------------------------------------------
@@ -129,6 +130,11 @@ pub enum AppEvent {
     GitHubIssuesUpdate {
         repo_path: String,
         issues: Vec<crate::github::GitHubIssue>,
+    },
+    /// Close HTML tabs owned by a session (emitted on session exit)
+    #[serde(rename = "close-html-tabs")]
+    CloseHtmlTabs {
+        tab_ids: Vec<String>,
     },
 }
 
@@ -831,6 +837,7 @@ pub(crate) const AGENT_MESSAGE_MAX_BYTES: usize = 64 * 1024;
 /// Global state for managing PTY sessions and worktrees
 pub struct AppState {
     pub sessions: DashMap<String, Mutex<PtySession>>,
+    pub(crate) data_dir: PathBuf,
     pub(crate) worktrees_dir: PathBuf,
     pub(crate) metrics: SessionMetrics,
     /// Ring buffers for MCP output access (one per session)
@@ -880,16 +887,14 @@ pub struct AppState {
     /// Browsers auto-send cookies in fetch(), unlike stored Basic Auth credentials.
     /// Behind RwLock so it can be regenerated at runtime (invalidating all sessions).
     pub(crate) session_token: parking_lot::RwLock<String>,
-    /// Tauri AppHandle — stored after setup() so HTTP handlers can emit events.
-    /// None before Tauri initializes (or in headless/test scenarios).
+    #[cfg(feature = "desktop")]
     pub(crate) app_handle: parking_lot::RwLock<Option<AppHandle>>,
     /// Plugin filesystem watchers: watch_id → (plugin_id, watcher)
     pub plugin_watchers: DashMap<String, (String, notify::RecommendedWatcher)>,
     /// Per-session VT100 log buffers for clean mobile/REST output (session_id → buffer).
     /// Separate DashMap to avoid writer contention on PtySession.
     pub(crate) vt_log_buffers: DashMap<String, Mutex<VtLogBuffer>>,
-    /// Active Tauri Channel subscriptions for binary grid streaming (session_id → channel).
-    /// Frontend calls `subscribe_terminal_grid` to register; channel is dropped on session exit.
+    #[cfg(feature = "desktop")]
     pub(crate) grid_channels: DashMap<String, tauri::ipc::Channel<Vec<u8>>>,
     /// Watch channel for WebSocket grid streaming (session_id → sender).
     /// Uses latest-frame-wins semantics: slow WS clients skip intermediate frames.
@@ -1042,6 +1047,102 @@ pub struct AppState {
 }
 
 impl AppState {
+    pub fn new(
+        data_dir: PathBuf,
+        worktrees_dir: PathBuf,
+        config: crate::config::AppConfig,
+        log_buffer: Arc<Mutex<crate::app_logger::LogRingBuffer>>,
+    ) -> Self {
+        let mcp_upstream_registry = Arc::new(crate::mcp_proxy::registry::UpstreamRegistry::new());
+        let session_token = config.session_token.clone();
+        let push_store = crate::push::PushStore::load(&data_dir);
+        Self {
+            sessions: DashMap::new(),
+            data_dir,
+            worktrees_dir,
+            metrics: SessionMetrics::new(),
+            output_buffers: DashMap::new(),
+            mcp_sessions: DashMap::new(),
+            ws_clients: DashMap::new(),
+            config: parking_lot::RwLock::new(config),
+            git_cache: GitCacheState::new(),
+            repo_watchers: DashMap::new(),
+            dir_watchers: DashMap::new(),
+            http_client: reqwest::Client::new(),
+            github_token: parking_lot::RwLock::new(None),
+            github_token_source: parking_lot::RwLock::new(Default::default()),
+            github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
+            github_poller: parking_lot::Mutex::new(None),
+            github_viewer_login: parking_lot::RwLock::new(None),
+            github_rate_limit_remaining: std::sync::atomic::AtomicU32::new(u32::MAX),
+            server_shutdown: parking_lot::Mutex::new(None),
+            ipc_started: std::sync::atomic::AtomicBool::new(false),
+            session_token: parking_lot::RwLock::new(session_token),
+            #[cfg(feature = "desktop")]
+            app_handle: parking_lot::RwLock::new(None),
+            plugin_watchers: DashMap::new(),
+            vt_log_buffers: DashMap::new(),
+            #[cfg(feature = "desktop")]
+            grid_channels: DashMap::new(),
+            grid_watch: DashMap::new(),
+            grid_frame_in_flight: DashMap::new(),
+            kitty_states: DashMap::new(),
+            input_buffers: DashMap::new(),
+            last_prompts: DashMap::new(),
+            silence_states: DashMap::new(),
+            claude_usage_cache: parking_lot::Mutex::new(crate::claude_usage::load_cache_from_disk()),
+            log_buffer,
+            event_bus: tokio::sync::broadcast::channel(256).0,
+            event_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            session_states: DashMap::new(),
+            oauth_flow_manager: Arc::new(crate::mcp_oauth::flow::OAuthFlowManager::new(
+                mcp_upstream_registry.auth_semaphore.clone(),
+            )),
+            mcp_upstream_registry,
+            mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
+            tool_search_index: Arc::new(parking_lot::RwLock::new(crate::tool_search::ToolSearchIndex::build(&[]))),
+            content_indices: DashMap::new(),
+            indexer_throttle: Arc::new(crate::content_index::IndexerThrottle::default()),
+            slash_mode: DashMap::new(),
+            last_output_ms: DashMap::new(),
+            shell_states: DashMap::new(),
+            terminal_rows: DashMap::new(),
+            exit_codes: DashMap::new(),
+            shell_state_since_ms: DashMap::new(),
+            loaded_plugins: DashMap::new(),
+            relay: RelayState::new(),
+            peer_agents: DashMap::new(),
+            agent_inbox: DashMap::new(),
+            agent_inbox_evictions: DashMap::new(),
+            session_html_tabs: DashMap::new(),
+            mcp_to_session: DashMap::new(),
+            session_to_mcp: DashMap::new(),
+            session_parent: DashMap::new(),
+            messaging_channels: DashMap::new(),
+            session_knowledge: DashMap::new(),
+            knowledge_dirty: DashMap::new(),
+            has_osc133_integration: DashMap::new(),
+            file_sandboxes: DashMap::new(),
+            unrestricted_sessions: DashMap::new(),
+            #[cfg(unix)]
+            bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
+            tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),
+            push_store,
+            desktop_window_focused: std::sync::atomic::AtomicBool::new(true),
+            server_start_time: std::time::Instant::now(),
+            term_aliases: DashMap::new(),
+            term_alias_counters: DashMap::new(),
+        }
+    }
+
+    /// Wire event bus and MCP registry after construction.
+    /// Must be called after wrapping in `Arc`.
+    pub fn wire_event_bus(self: &Arc<Self>) {
+        self.mcp_upstream_registry.set_event_bus(self.event_bus.clone());
+        self.mcp_upstream_registry.set_mcp_tools_tx(self.mcp_tools_changed.clone());
+        self.mcp_upstream_registry.set_oauth_flow_manager(self.oauth_flow_manager.clone());
+    }
+
     /// Assign a human-friendly alias based on the repo/cwd name.
     /// E.g. `tuicommander` → `tc-1`, `night-recovery` → `nr-1`, no repo → `sh-1`.
     ///
@@ -1067,6 +1168,7 @@ impl AppState {
         *counter += 1;
         let alias = format!("{prefix}-{}", *counter);
         self.term_aliases.insert(session_id.to_string(), alias.clone());
+        #[cfg(feature = "desktop")]
         if let Some(ref app) = *self.app_handle.read() {
             let _ = app.emit("term-alias-assigned", serde_json::json!({
                 "session_id": session_id,
@@ -1596,7 +1698,8 @@ impl AppState {
             | AppEvent::UiTab { .. }
             | AppEvent::GitHubPrUpdate { .. }
             | AppEvent::GitHubTransition { .. }
-            | AppEvent::GitHubIssuesUpdate { .. } => {}
+            | AppEvent::GitHubIssuesUpdate { .. }
+            | AppEvent::CloseHtmlTabs { .. } => {}
         }
     }
 
@@ -2139,89 +2242,34 @@ pub(crate) mod tests_support {
     use super::*;
 
     pub fn make_test_app_state() -> AppState {
-        AppState {
-            sessions: dashmap::DashMap::new(),
-            worktrees_dir: std::env::temp_dir().join("test-worktrees"),
-            metrics: SessionMetrics::new(),
-            output_buffers: dashmap::DashMap::new(),
-            mcp_sessions: dashmap::DashMap::new(),
-            ws_clients: dashmap::DashMap::new(),
-            config: parking_lot::RwLock::new(crate::config::AppConfig::default()),
-            git_cache: GitCacheState::new(),
-            repo_watchers: dashmap::DashMap::new(),
-            dir_watchers: dashmap::DashMap::new(),
-            http_client: reqwest::Client::new(),
-            github_token: parking_lot::RwLock::new(None),
-            github_token_source: parking_lot::RwLock::new(Default::default()),
-            github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
-            github_poller: parking_lot::Mutex::new(None),
-            github_viewer_login: parking_lot::RwLock::new(None),
-            github_rate_limit_remaining: std::sync::atomic::AtomicU32::new(u32::MAX),
-            server_shutdown: parking_lot::Mutex::new(None),
-            ipc_started: std::sync::atomic::AtomicBool::new(false),
-            session_token: parking_lot::RwLock::new(String::from("test-token")),
-            app_handle: parking_lot::RwLock::new(None),
-            plugin_watchers: dashmap::DashMap::new(),
-            vt_log_buffers: dashmap::DashMap::new(),
-            grid_channels: dashmap::DashMap::new(),
-            grid_watch: dashmap::DashMap::new(),
-            grid_frame_in_flight: dashmap::DashMap::new(),
-            kitty_states: dashmap::DashMap::new(),
-            input_buffers: dashmap::DashMap::new(),
-            last_prompts: dashmap::DashMap::new(),
-            silence_states: dashmap::DashMap::new(),
-            claude_usage_cache: parking_lot::Mutex::new(std::collections::HashMap::new()),
-            log_buffer: Arc::new(parking_lot::Mutex::new(crate::app_logger::LogRingBuffer::new(crate::app_logger::LOG_RING_CAPACITY))),
-            event_bus: tokio::sync::broadcast::channel(256).0,
-            event_counter: Arc::new(AtomicU64::new(0)),
-            session_states: DashMap::new(),
-            mcp_upstream_registry: {
-                let r = Arc::new(crate::mcp_proxy::registry::UpstreamRegistry::new());
-                r
-            },
-            oauth_flow_manager: Arc::new(crate::mcp_oauth::flow::OAuthFlowManager::new(
-                Arc::new(tokio::sync::Semaphore::new(1)),
-            )),
-            mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
-            tool_search_index: Arc::new(parking_lot::RwLock::new(crate::tool_search::ToolSearchIndex::build(&[]))),
-            content_indices: DashMap::new(),
-            indexer_throttle: Arc::new(crate::content_index::IndexerThrottle::default()),
-            slash_mode: DashMap::new(),
-            last_output_ms: DashMap::new(),
-            shell_states: DashMap::new(),
-            terminal_rows: DashMap::new(),
-            exit_codes: DashMap::new(),
-            shell_state_since_ms: DashMap::new(),
-            loaded_plugins: DashMap::new(),
-            relay: RelayState::new(),
-            peer_agents: DashMap::new(),
-            agent_inbox: DashMap::new(),
-            agent_inbox_evictions: DashMap::new(),
-            session_html_tabs: DashMap::new(),
-            mcp_to_session: DashMap::new(),
-            session_to_mcp: DashMap::new(),
-            session_parent: DashMap::new(),
-            messaging_channels: DashMap::new(),
-            session_knowledge: DashMap::new(),
-            knowledge_dirty: DashMap::new(),
-            has_osc133_integration: DashMap::new(),
-            file_sandboxes: DashMap::new(),
-            unrestricted_sessions: DashMap::new(),
-            #[cfg(unix)]
-            bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
-            tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),
-            push_store: crate::push::PushStore::load(&std::env::temp_dir()),
-            desktop_window_focused: std::sync::atomic::AtomicBool::new(true),
-            server_start_time: std::time::Instant::now(),
-            term_aliases: DashMap::new(),
-            term_alias_counters: DashMap::new(),
-        }
+        let log_buffer = Arc::new(parking_lot::Mutex::new(
+            crate::app_logger::LogRingBuffer::new(crate::app_logger::LOG_RING_CAPACITY),
+        ));
+        let mut state = AppState::new(
+            std::env::temp_dir().join("test-tuic-data"),
+            std::env::temp_dir().join("test-worktrees"),
+            crate::config::AppConfig::default(),
+            log_buffer,
+        );
+        // Override session_token for deterministic tests
+        state.session_token = parking_lot::RwLock::new(String::from("test-token"));
+        // Skip disk I/O for claude_usage in tests
+        state.claude_usage_cache = parking_lot::Mutex::new(std::collections::HashMap::new());
+        state
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── data_dir ─────────────────────────────────────────────
+
+    #[test]
+    fn test_state_has_data_dir() {
+        let state = tests_support::make_test_app_state();
+        assert_eq!(state.data_dir, std::env::temp_dir().join("test-tuic-data"));
+    }
 
     // ── split_name_segments ──────────────────────────────────
 
@@ -2771,6 +2819,7 @@ mod tests {
     fn make_test_app_state() -> AppState {
         AppState {
             sessions: dashmap::DashMap::new(),
+            data_dir: std::env::temp_dir().join("test-tuic-data"),
             worktrees_dir: std::env::temp_dir().join("test-worktrees"),
             metrics: SessionMetrics::new(),
             output_buffers: dashmap::DashMap::new(),
@@ -2790,9 +2839,11 @@ mod tests {
             server_shutdown: parking_lot::Mutex::new(None),
             ipc_started: std::sync::atomic::AtomicBool::new(false),
             session_token: parking_lot::RwLock::new(String::from("test-token")),
+            #[cfg(feature = "desktop")]
             app_handle: parking_lot::RwLock::new(None),
             plugin_watchers: dashmap::DashMap::new(),
             vt_log_buffers: dashmap::DashMap::new(),
+            #[cfg(feature = "desktop")]
             grid_channels: dashmap::DashMap::new(),
             grid_watch: dashmap::DashMap::new(),
             grid_frame_in_flight: dashmap::DashMap::new(),

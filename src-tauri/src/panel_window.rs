@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+#[cfg(feature = "desktop")]
 use tauri::{Emitter, Manager};
 
 fn validate_panel_id(id: &str) -> Result<(), String> {

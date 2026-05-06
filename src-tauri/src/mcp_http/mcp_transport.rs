@@ -1,4 +1,4 @@
-use crate::pty::{resolve_shell, spawn_headless_reader_thread, spawn_reader_thread};
+use crate::pty::{resolve_shell, spawn_reader_thread};
 use crate::{AppState, OutputRingBuffer, PtySession, MAX_CONCURRENT_SESSIONS};
 use crate::state::{OUTPUT_RING_BUFFER_CAPACITY, VtLogBuffer, VT_LOG_BUFFER_CAPACITY};
 use axum::extract::{ConnectInfo, State};
@@ -11,6 +11,7 @@ use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+#[cfg(feature = "desktop")]
 use tauri::{Emitter, Manager};
 use uuid::Uuid;
 
@@ -97,18 +98,21 @@ pub(crate) fn emit_close_html_tabs(state: &AppState, session_id: &str) {
     let Some((_, tab_ids)) = state.session_html_tabs.remove(session_id) else {
         return;
     };
-    let Some(app) = state.app_handle.read().as_ref().cloned() else {
-        // No app handle (test mode or pre-init). Tabs were already drained.
-        return;
-    };
-    if let Err(err) = app.emit("close-html-tabs", serde_json::json!({ "tab_ids": tab_ids })) {
-        tracing::warn!(
-            source = "session",
-            session_id = %session_id,
-            tab_count = tab_ids.len(),
-            error = %err,
-            "failed to emit close-html-tabs — frontend tabs may be orphaned"
-        );
+    let _ = state.event_bus.send(crate::state::AppEvent::CloseHtmlTabs {
+        tab_ids: tab_ids.clone(),
+    });
+    #[cfg(feature = "desktop")]
+    #[allow(clippy::collapsible_if)]
+    if let Some(app) = state.app_handle.read().as_ref() {
+        if let Err(err) = app.emit("close-html-tabs", serde_json::json!({ "tab_ids": tab_ids })) {
+            tracing::warn!(
+                source = "session",
+                session_id = %session_id,
+                tab_count = tab_ids.len(),
+                error = %err,
+                "failed to emit close-html-tabs — frontend tabs may be orphaned"
+            );
+        }
     }
 }
 
@@ -995,6 +999,7 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_i
                     session_id: session_id.to_string(),
                     reason: "closed".to_string(),
                 });
+                #[cfg(feature = "desktop")]
                 if let Some(app) = state.app_handle.read().as_ref() {
                     let _ = app.emit("session-closed", serde_json::json!({
                         "session_id": session_id,
@@ -1024,6 +1029,7 @@ fn handle_session(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_i
                     session_id: session_id.to_string(),
                     reason: "killed".to_string(),
                 });
+                #[cfg(feature = "desktop")]
                 if let Some(app) = state.app_handle.read().as_ref() {
                     let _ = app.emit("session-closed", serde_json::json!({
                         "session_id": session_id,
@@ -1274,6 +1280,7 @@ fn handle_worktree(state: &Arc<AppState>, args: &serde_json::Value, is_claude_co
                         branch: branch_name.clone(),
                         worktree_path: wt_path.clone(),
                     });
+                    #[cfg(feature = "desktop")]
                     if let Some(handle) = state.app_handle.read().as_ref() {
                         let _ = handle.emit("worktree-created", serde_json::json!({
                             "repo_path": path,
@@ -1516,23 +1523,20 @@ fn handle_agent(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Valu
                 agent_type: agent_type_str,
             });
 
-            let print_mode = args["print_mode"].as_bool().unwrap_or(false);
-            let app_handle = state.app_handle.read().clone();
-            if !print_mode {
-                if let Some(ref app) = app_handle {
+            #[cfg(feature = "desktop")]
+            {
+                let print_mode = args["print_mode"].as_bool().unwrap_or(false);
+                let app_handle = state.app_handle.read().clone();
+                if !print_mode && let Some(ref app) = app_handle {
                     let agent_type_val = args["agent_type"].as_str();
                     let _ = app.emit("session-created", serde_json::json!({
                         "session_id": session_id,
                         "cwd": cwd_str,
                         "agent_type": agent_type_val,
                     }));
-                    spawn_reader_thread(reader, paused, session_id.clone(), app.clone(), state.clone(), None);
-                } else {
-                    spawn_headless_reader_thread(reader, paused, session_id.clone(), state.clone());
                 }
-            } else {
-                spawn_headless_reader_thread(reader, paused, session_id.clone(), state.clone());
             }
+            spawn_reader_thread(reader, paused, session_id.clone(), state.clone(), None);
 
             // Auto-register child as peer + pre-init inbox when spawned in swarm context.
             if let Some(ref parent_id) = caller_tuic {
@@ -2237,6 +2241,7 @@ fn handle_ui(state: &Arc<AppState>, args: &serde_json::Value, mcp_session_id: Op
                     .push(id.clone());
             }
             // Emit to Tauri webview (native mode)
+            #[cfg(feature = "desktop")]
             if let Some(app) = state.app_handle.read().as_ref() {
                 let _ = app.emit("ui-tab", &payload);
             }
@@ -2287,29 +2292,36 @@ fn handle_notify(state: &Arc<AppState>, addr: SocketAddr, args: &serde_json::Val
             serde_json::json!({"ok": true})
         }
         "confirm" => {
-            if !addr.ip().is_loopback() {
-                return serde_json::json!({"error": "Action 'confirm' is restricted to localhost connections"});
+            #[cfg(not(feature = "desktop"))]
+            {
+                serde_json::json!({"error": "Action 'confirm' requires desktop feature"})
             }
-            let title = match args["title"].as_str() {
-                Some(t) => t.to_string(),
-                None => return serde_json::json!({"error": "Action 'confirm' requires 'title'"}),
-            };
-            let message = args["message"].as_str().unwrap_or("").to_string();
+            #[cfg(feature = "desktop")]
+            {
+                if !addr.ip().is_loopback() {
+                    return serde_json::json!({"error": "Action 'confirm' is restricted to localhost connections"});
+                }
+                let title = match args["title"].as_str() {
+                    Some(t) => t.to_string(),
+                    None => return serde_json::json!({"error": "Action 'confirm' requires 'title'"}),
+                };
+                let message = args["message"].as_str().unwrap_or("").to_string();
 
-            let app_handle = state.app_handle.read();
-            let handle = match app_handle.as_ref() {
-                Some(h) => h,
-                None => return serde_json::json!({"error": "App handle not available (headless mode)"}),
-            };
+                let app_handle = state.app_handle.read();
+                let handle = match app_handle.as_ref() {
+                    Some(h) => h,
+                    None => return serde_json::json!({"error": "App handle not available (headless mode)"}),
+                };
 
-            use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
-            let confirmed = handle.dialog()
-                .message(&message)
-                .title(&title)
-                .buttons(MessageDialogButtons::OkCancel)
-                .blocking_show();
+                use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+                let confirmed = handle.dialog()
+                    .message(&message)
+                    .title(&title)
+                    .buttons(MessageDialogButtons::OkCancel)
+                    .blocking_show();
 
-            serde_json::json!({"confirmed": confirmed})
+                serde_json::json!({"confirmed": confirmed})
+            }
         }
         other => serde_json::json!({"error": format!(
             "Unknown action '{}' for tool 'notify'. Available: {}", other, LEGACY_NOTIFY_ACTIONS
@@ -2713,22 +2725,28 @@ fn handle_debug_unified(state: &Arc<AppState>, addr: SocketAddr, args: &serde_js
     };
     match action {
         "invoke_js" => {
-            if !addr.ip().is_loopback() {
-                return serde_json::json!({"error": "invoke_js is restricted to localhost connections"});
+            #[cfg(not(feature = "desktop"))]
+            {
+                serde_json::json!({"error": "invoke_js requires desktop feature"})
             }
-            let script = match args["script"].as_str() {
-                Some(s) => s,
-                None => return serde_json::json!({"error": "script required (string)"}),
-            };
-            let app_handle = state.app_handle.read().clone();
-            let Some(handle) = app_handle else {
-                return serde_json::json!({"error": "AppHandle not initialized"});
-            };
-            let Some(window) = handle.get_webview_window("main") else {
-                return serde_json::json!({"error": "main window not found"});
-            };
-            let wrapped = format!(
-                r#"(async () => {{
+            #[cfg(feature = "desktop")]
+            {
+                if !addr.ip().is_loopback() {
+                    return serde_json::json!({"error": "invoke_js is restricted to localhost connections"});
+                }
+                let script = match args["script"].as_str() {
+                    Some(s) => s,
+                    None => return serde_json::json!({"error": "script required (string)"}),
+                };
+                let app_handle = state.app_handle.read().clone();
+                let Some(handle) = app_handle else {
+                    return serde_json::json!({"error": "AppHandle not initialized"});
+                };
+                let Some(window) = handle.get_webview_window("main") else {
+                    return serde_json::json!({"error": "main window not found"});
+                };
+                let wrapped = format!(
+                    r#"(async () => {{
   const __src = "eval_js";
   const __logs = [];
   const __origLog = console.log;
@@ -2756,13 +2774,14 @@ fn handle_debug_unified(state: &Arc<AppState>, addr: SocketAddr, args: &serde_js
     console.error = __origError;
   }}
 }})()"#
-            );
-            match window.eval(&wrapped) {
-                Ok(()) => serde_json::json!({
-                    "ok": true,
-                    "hint": "Result logged with source='eval_js'. Read via: debug(action='logs', source='eval_js', limit=1)"
-                }),
-                Err(e) => serde_json::json!({"error": format!("eval failed: {e}")}),
+                );
+                match window.eval(&wrapped) {
+                    Ok(()) => serde_json::json!({
+                        "ok": true,
+                        "hint": "Result logged with source='eval_js'. Read via: debug(action='logs', source='eval_js', limit=1)"
+                    }),
+                    Err(e) => serde_json::json!({"error": format!("eval failed: {e}")}),
+                }
             }
         }
         "agent_detection" | "logs" | "sessions" => handle_debug(state, args),
@@ -2934,6 +2953,7 @@ mod tests {
     fn test_state() -> Arc<AppState> {
         let state = Arc::new(AppState {
             sessions: dashmap::DashMap::new(),
+            data_dir: std::env::temp_dir().join("test-tuic-data"),
             worktrees_dir: std::env::temp_dir().join("test-worktrees"),
             metrics: crate::SessionMetrics::new(),
             output_buffers: dashmap::DashMap::new(),
@@ -2953,9 +2973,11 @@ mod tests {
             server_shutdown: parking_lot::Mutex::new(None),
             ipc_started: std::sync::atomic::AtomicBool::new(false),
             session_token: parking_lot::RwLock::new(uuid::Uuid::new_v4().to_string()),
+            #[cfg(feature = "desktop")]
             app_handle: parking_lot::RwLock::new(None),
             plugin_watchers: dashmap::DashMap::new(),
             vt_log_buffers: dashmap::DashMap::new(),
+            #[cfg(feature = "desktop")]
             grid_channels: dashmap::DashMap::new(),
             grid_watch: dashmap::DashMap::new(),
             grid_frame_in_flight: dashmap::DashMap::new(),

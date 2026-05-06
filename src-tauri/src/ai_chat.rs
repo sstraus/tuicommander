@@ -168,18 +168,18 @@ pub(crate) async fn detect_ollama(base: &str) -> OllamaStatus {
 // Tauri commands
 // ---------------------------------------------------------------------------
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn load_ai_chat_config() -> AiChatConfig {
     load_json_config(CONFIG_FILE)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn save_ai_chat_config(config: AiChatConfig) -> Result<(), String> {
     save_json_config(CONFIG_FILE, &config)
 }
 
 /// Quick connection test: first validate the API key, then send a minimal completion.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) async fn test_ai_chat_connection() -> Result<String, String> {
     let registry = crate::provider_registry::load_registry();
     let resolved = crate::provider_registry::resolve_slot(&registry, crate::provider_registry::SlotName::Chat)
@@ -296,7 +296,7 @@ fn now_millis() -> u64 {
         .as_millis() as u64
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn list_conversations() -> Result<Vec<ConversationMeta>, String> {
     #[derive(serde::Deserialize)]
     struct MetaOnly { meta: ConversationMeta }
@@ -320,7 +320,7 @@ pub(crate) fn list_conversations() -> Result<Vec<ConversationMeta>, String> {
     Ok(metas)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn load_conversation(id: String) -> Result<Conversation, String> {
     crate::ai_agent::knowledge::validate_file_stem(&id)?;
     let dir = conversations_dir()?;
@@ -332,7 +332,7 @@ pub(crate) fn load_conversation(id: String) -> Result<Conversation, String> {
     Ok(conv)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn save_conversation(mut conversation: Conversation) -> Result<(), String> {
     crate::ai_agent::knowledge::validate_file_stem(&conversation.meta.id)?;
     conversation.sanitize_for_persist();
@@ -343,7 +343,7 @@ pub(crate) fn save_conversation(mut conversation: Conversation) -> Result<(), St
     crate::config::persist_atomic(&path, data.as_bytes())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn delete_conversation(id: String) -> Result<(), String> {
     crate::ai_agent::knowledge::validate_file_stem(&id)?;
     let dir = conversations_dir()?;
@@ -355,7 +355,7 @@ pub(crate) fn delete_conversation(id: String) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn new_conversation_id() -> String {
     use std::fmt::Write;
     let ts = now_millis();
@@ -703,6 +703,7 @@ pub(crate) struct StreamChatMessage {
     pub content: String,
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn stream_ai_chat(
     state: tauri::State<'_, Arc<AppState>>,
@@ -836,6 +837,7 @@ pub(crate) async fn stream_ai_chat(
     Ok(())
 }
 
+#[cfg(feature = "desktop")]
 /// Stream LLM response with ~50ms chunk batching to avoid IPC saturation.
 /// Returns the full response text on success.
 #[allow(clippy::too_many_arguments)]
@@ -954,7 +956,7 @@ async fn stream_with_batching(
     }
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) async fn cancel_ai_chat(chat_id: String) -> Result<(), String> {
     let active = ACTIVE_CHATS.lock().await;
     if let Some(flag) = active.get(&chat_id) {

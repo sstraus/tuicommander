@@ -934,6 +934,7 @@ mod tests {
     pub(super) fn test_state() -> Arc<AppState> {
         let state = Arc::new(AppState {
             sessions: DashMap::new(),
+            data_dir: std::env::temp_dir().join("test-tuic-data"),
             worktrees_dir: std::env::temp_dir().join("test-worktrees"),
             metrics: crate::SessionMetrics::new(),
             output_buffers: DashMap::new(),
@@ -953,9 +954,11 @@ mod tests {
             server_shutdown: parking_lot::Mutex::new(None),
             ipc_started: std::sync::atomic::AtomicBool::new(false),
             session_token: parking_lot::RwLock::new(uuid::Uuid::new_v4().to_string()),
+            #[cfg(feature = "desktop")]
             app_handle: parking_lot::RwLock::new(None),
             plugin_watchers: DashMap::new(),
             vt_log_buffers: DashMap::new(),
+            #[cfg(feature = "desktop")]
             grid_channels: DashMap::new(),
             grid_watch: DashMap::new(),
             grid_frame_in_flight: DashMap::new(),

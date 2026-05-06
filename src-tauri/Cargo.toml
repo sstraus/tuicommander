@@ -11,16 +11,21 @@ default-run = "tuicommander"
 
 [profile.release]
 incremental = true
+
 [lib]
 name = "tuicommander_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[[bin]]
+name = "tuicommander-remote"
+path = "src/bin/tuicommander_remote.rs"
+
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2", features = [], optional = true }
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset"] }
-tauri-plugin-opener = "2"
+tauri = { version = "2", features = ["protocol-asset"], optional = true }
+tauri-plugin-opener = { version = "2", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 portable-pty = "0.9"
@@ -31,16 +36,16 @@ regex = "1"
 lazy_static = "1"
 uuid = { version = "1", features = ["v4"] }
 dirs = "6"
-tauri-plugin-dialog = "2.6.0"
-tauri-plugin-single-instance = "2"
-whisper-rs = "0.16"
-cpal = "0.17"
-rodio = "0.20"
+tauri-plugin-dialog = { version = "2.6.0", optional = true }
+tauri-plugin-single-instance = { version = "2", optional = true }
+whisper-rs = { version = "0.16", optional = true }
+cpal = { version = "0.17", optional = true }
+rodio = { version = "0.20", optional = true }
 reqwest = { version = "0.13", features = ["stream", "json", "form"] }
 futures-util = "0.3"
 axum = { version = "0.8", features = ["ws"] }
 async-stream = "0.3"
-tauri-plugin-window-state = "2.4.1"
+tauri-plugin-window-state = { version = "2.4.1", optional = true }
 bcrypt = "0.19"
 base64 = "0.22"
 include_dir = { version = "0.7.4", features = ["glob"] }
@@ -51,11 +56,11 @@ libc = "0.2"
 notify = "8"
 gh-token = "0.1"
 keepawake = "0.6"
-tauri-plugin-updater = "2"
-tauri-plugin-process = "2"
-tauri-plugin-deep-link = "2"
-tauri-plugin-clipboard-manager = "2"
-tauri-plugin-global-shortcut = "2"
+tauri-plugin-updater = { version = "2", optional = true }
+tauri-plugin-process = { version = "2", optional = true }
+tauri-plugin-deep-link = { version = "2", optional = true }
+tauri-plugin-clipboard-manager = { version = "2", optional = true }
+tauri-plugin-global-shortcut = { version = "2", optional = true }
 zip = "8"
 glob = "0.3"
 ignore = "0.4"
@@ -87,21 +92,41 @@ cron = "0.16"
 toml = "0.8"
 
 [features]
-default = []
+default = ["desktop"]
+desktop = [
+    "dep:tauri",
+    "dep:tauri-build",
+    "dep:tauri-plugin-opener",
+    "dep:tauri-plugin-dialog",
+    "dep:tauri-plugin-single-instance",
+    "dep:tauri-plugin-window-state",
+    "dep:tauri-plugin-updater",
+    "dep:tauri-plugin-process",
+    "dep:tauri-plugin-deep-link",
+    "dep:tauri-plugin-clipboard-manager",
+    "dep:tauri-plugin-global-shortcut",
+    "dep:whisper-rs",
+    "dep:cpal",
+    "dep:rodio",
+    "dep:objc2",
+    "dep:objc2-foundation",
+    "dep:objc2-app-kit",
+    "dep:block2",
+]
 # GPU features for Linux builds (macOS always has Metal, Windows always has Vulkan via target deps)
 cuda = ["whisper-rs/cuda"]
 vulkan = ["whisper-rs/vulkan"]
 tokio-console = ["console-subscriber"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
-whisper-rs = { version = "0.16", features = ["metal"] }
-objc2 = "0.6"
-objc2-foundation = "0.3"
-objc2-app-kit = { version = "0.3", features = ["NSEvent", "block2"] }
-block2 = "0.6"
+whisper-rs = { version = "0.16", features = ["metal"], optional = true }
+objc2 = { version = "0.6", optional = true }
+objc2-foundation = { version = "0.3", optional = true }
+objc2-app-kit = { version = "0.3", features = ["NSEvent", "block2"], optional = true }
+block2 = { version = "0.6", optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-whisper-rs = { version = "0.16", features = ["vulkan"] }
+whisper-rs = { version = "0.16", features = ["vulkan"], optional = true }
 windows-sys = { version = "0.61", features = ["Win32_System_Diagnostics_ToolHelp", "Win32_Foundation"] }
 
 [patch.crates-io]

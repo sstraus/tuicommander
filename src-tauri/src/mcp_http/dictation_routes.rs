@@ -6,6 +6,7 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use std::collections::HashMap;
 use std::sync::Arc;
+#[cfg(feature = "desktop")]
 use tauri::Manager;
 
 pub(super) async fn get_dictation_status_http(

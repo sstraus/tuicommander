@@ -182,7 +182,7 @@ pub(crate) fn delete_upstream_credential(upstream_name: &str) -> Result<(), Stri
 // Tauri commands
 // ---------------------------------------------------------------------------
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn save_mcp_upstream_credential(
     name: String,
     token: String,
@@ -191,7 +191,7 @@ pub(crate) fn save_mcp_upstream_credential(
     save_upstream_credential(&name, &token)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn delete_mcp_upstream_credential(name: String) -> Result<(), String> {
     validate_keyring_name(&name)?;
     delete_upstream_credential(&name)

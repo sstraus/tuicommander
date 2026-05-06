@@ -214,7 +214,7 @@ fn assign_lanes(commits: &[RawCommit]) -> Vec<GraphNode> {
 // Tauri command
 // ---------------------------------------------------------------------------
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) async fn get_commit_graph(path: String, count: Option<u32>) -> Result<Vec<GraphNode>, String> {
     tokio::task::spawn_blocking(move || {
         let count = count.unwrap_or(200).min(1000);

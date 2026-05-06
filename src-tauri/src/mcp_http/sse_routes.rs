@@ -102,6 +102,7 @@ fn event_type_name(event: &AppEvent) -> &'static str {
         AppEvent::GitHubPrUpdate { .. } => "github-pr-update",
         AppEvent::GitHubTransition { .. } => "github-transition",
         AppEvent::GitHubIssuesUpdate { .. } => "github-issues-update",
+        AppEvent::CloseHtmlTabs { .. } => "close-html-tabs",
     }
 }
 
@@ -165,6 +166,9 @@ fn event_payload(event: &AppEvent) -> serde_json::Value {
         }
         AppEvent::GitHubIssuesUpdate { repo_path, issues } => {
             serde_json::json!({ "repo_path": repo_path, "issues": issues })
+        }
+        AppEvent::CloseHtmlTabs { tab_ids } => {
+            serde_json::json!({ "tab_ids": tab_ids })
         }
     }
 }

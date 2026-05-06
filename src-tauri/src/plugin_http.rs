@@ -117,6 +117,7 @@ fn url_matches_pattern(url: &str, pattern: &str) -> bool {
 /// - `body` — Optional request body
 /// - `allowed_urls` — URL patterns from the plugin's manifest (empty = unrestricted)
 /// - `plugin_id` — The requesting plugin's ID (for logging)
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn plugin_http_fetch(
     url: String,
@@ -192,7 +193,7 @@ pub async fn plugin_http_fetch(
 
 /// Fetch HTML content from a URL for rendering in a plugin panel tab.
 /// Internal frontend command — no SSRF restrictions (localhost, private IPs all valid).
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn fetch_tab_html(url: String) -> Result<String, String> {
 
     let response = shared_client()

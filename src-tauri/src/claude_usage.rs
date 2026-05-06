@@ -15,6 +15,7 @@ use std::io::{BufRead, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+#[cfg(feature = "desktop")]
 use tauri::State;
 
 // ---------------------------------------------------------------------------
@@ -865,7 +866,7 @@ fn get_stale_cache() -> Option<UsageApiResponse> {
 
 /// Fetch rate-limit usage from the Anthropic OAuth API.
 /// Uses an in-memory cache (5 min TTL) and retries 429s with exponential backoff.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn get_claude_usage_api() -> Result<UsageApiResponse, String> {
     // Return fresh cache if available
     if let Some(cached) = try_get_fresh_cache() {
@@ -958,6 +959,7 @@ pub async fn get_claude_usage_api() -> Result<UsageApiResponse, String> {
 /// Returns hourly token usage points aggregated from the session stats cache.
 /// The `scope` parameter filters which projects to include ("all" or a slug).
 /// The `days` parameter limits the time window (default 7).
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn get_claude_usage_timeline(
     state: State<'_, Arc<crate::AppState>>,
@@ -1013,6 +1015,7 @@ pub async fn get_claude_usage_timeline(
 /// - `"all"` — all projects
 /// - `"current"` — current project (determined from config / active repo)
 /// - Any other string — treated as a specific project slug
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn get_claude_session_stats(
     state: State<'_, Arc<crate::AppState>>,
@@ -1261,7 +1264,7 @@ pub async fn get_claude_session_stats(
 }
 
 /// List available Claude project slugs for the scope dropdown.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn get_claude_project_list() -> Result<Vec<ProjectEntry>, String> {
     let projects_dir = claude_projects_dir()
         .ok_or_else(|| "Cannot determine home directory".to_string())?;

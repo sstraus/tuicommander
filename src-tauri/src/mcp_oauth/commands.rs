@@ -12,6 +12,8 @@
 //! - [`cancel_mcp_upstream_oauth`] — cancels an in-progress flow.
 
 use std::sync::Arc;
+#[cfg(feature = "desktop")]
+#[cfg(feature = "desktop")]
 use tauri::State;
 
 use crate::mcp_oauth::callback_server;
@@ -35,6 +37,7 @@ pub(crate) struct StartOAuthResponse {
 /// browser redirects to `http://127.0.0.1:{port}/oauth/callback` after the
 /// user grants consent. The callback server completes the token exchange and
 /// resumes the upstream connection automatically.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn start_mcp_upstream_oauth(
     state: State<'_, Arc<AppState>>,
@@ -189,6 +192,7 @@ pub(crate) async fn start_mcp_upstream_oauth(
 /// Finalize the OAuth flow after the browser redirects back with `code` and
 /// `state`. On success, upstream tokens are persisted and the upstream is
 /// transitioned back to `Connecting`.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn mcp_oauth_callback(
     state: State<'_, Arc<AppState>>,
@@ -210,6 +214,7 @@ pub(crate) async fn mcp_oauth_callback(
 /// Cancel any in-progress OAuth flows for the named upstream and transition
 /// its status out of `Authenticating`. Safe to call even if no flow is
 /// pending — it becomes a no-op.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn cancel_mcp_upstream_oauth(
     state: State<'_, Arc<AppState>>,

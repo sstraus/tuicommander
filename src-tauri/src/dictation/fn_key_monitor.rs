@@ -14,6 +14,7 @@ pub fn install(app_handle: tauri::AppHandle) {
     use objc2_app_kit::{NSEvent, NSEventMask, NSEventModifierFlags};
     use std::ptr::NonNull;
     use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "desktop")]
     use tauri::Emitter;
 
     let fn_was_down = AtomicBool::new(false);

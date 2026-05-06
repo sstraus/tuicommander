@@ -37,6 +37,7 @@ impl Drop for ProcessingGuard {
     }
 }
 
+#[cfg(feature = "desktop")]
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::app_logger;

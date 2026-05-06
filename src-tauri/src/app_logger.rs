@@ -12,6 +12,7 @@
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+#[cfg(feature = "desktop")]
 use tauri::{Manager, State};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -324,6 +325,7 @@ fn cleanup_old_logs(log_dir: &std::path::Path) {
 // ---------------------------------------------------------------------------
 
 /// Push a log entry from the frontend into the Rust ring buffer.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn push_log(
     state: State<'_, Arc<AppState>>,
@@ -337,6 +339,7 @@ pub(crate) fn push_log(
 }
 
 /// Retrieve log entries. Returns up to `limit` most recent entries (0 = all).
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn get_logs(
     state: State<'_, Arc<AppState>>,
@@ -347,12 +350,14 @@ pub(crate) fn get_logs(
 }
 
 /// Clear all log entries.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn clear_logs(state: State<'_, Arc<AppState>>) {
     let mut buf = state.log_buffer.lock();
     buf.clear();
 }
 
+#[cfg(feature = "desktop")]
 /// Push a log entry from internal Rust code using an AppHandle.
 ///
 /// Use this in contexts where you have an `AppHandle` but not a `State<>` extractor

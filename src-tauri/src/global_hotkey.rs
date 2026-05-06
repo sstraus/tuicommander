@@ -7,7 +7,9 @@
 use anyhow::Result;
 use std::str::FromStr;
 use std::sync::Arc;
+#[cfg(feature = "desktop")]
 use tauri::Manager;
+#[cfg(feature = "desktop")]
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 use crate::state::AppState;

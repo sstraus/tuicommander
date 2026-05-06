@@ -88,7 +88,7 @@ pub(crate) fn build_client(config: &LlmApiConfig, api_key: &str) -> genai::Clien
 
 /// Execute a Smart Prompt via direct LLM API call.
 /// Returns the model's response text.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) async fn execute_api_prompt(
     system_prompt: Option<String>,
     content: String,

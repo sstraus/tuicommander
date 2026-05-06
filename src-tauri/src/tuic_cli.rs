@@ -7,6 +7,7 @@
 //! - Tracking whether the first-run prompt has been dismissed
 
 use serde::Serialize;
+#[cfg(feature = "desktop")]
 use tauri::Manager;
 
 #[derive(Serialize)]

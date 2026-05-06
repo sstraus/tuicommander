@@ -402,23 +402,23 @@ pub(crate) fn resolve_slot(
 // Tauri commands
 // ---------------------------------------------------------------------------
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn load_provider_registry() -> ProviderRegistry {
     load_registry()
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn save_provider_registry(registry: ProviderRegistry) -> Result<(), String> {
     save_registry(&registry)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn get_provider_api_key_exists(provider_id: String) -> Result<bool, String> {
     crate::credentials::get(crate::credentials::Credential::Provider(&provider_id))
         .map(|v| v.is_some())
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn save_provider_api_key(provider_id: String, key: String) -> Result<(), String> {
     if key.is_empty() {
         return Err("API key must not be empty".to_string());
@@ -426,12 +426,12 @@ pub(crate) fn save_provider_api_key(provider_id: String, key: String) -> Result<
     crate::credentials::set(crate::credentials::Credential::Provider(&provider_id), &key)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn delete_provider_api_key(provider_id: String) -> Result<(), String> {
     crate::credentials::delete(crate::credentials::Credential::Provider(&provider_id))
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) async fn test_slot_connection(slot: SlotName) -> Result<String, String> {
     use genai::chat::{ChatMessage, ChatRequest};
 
@@ -459,7 +459,7 @@ pub(crate) async fn test_slot_connection(slot: SlotName) -> Result<String, Strin
     Ok(format!("Connection successful — model replied: {text}"))
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) async fn check_ollama_models(provider_id: String) -> crate::ai_chat::OllamaStatus {
     let registry = load_registry();
     let base = registry

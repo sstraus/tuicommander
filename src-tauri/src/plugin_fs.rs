@@ -8,6 +8,7 @@ use crate::AppState;
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::PathBuf;
 use std::sync::Arc;
+#[cfg(feature = "desktop")]
 use tauri::{AppHandle, Emitter, State};
 
 /// Maximum file size readable via plugin_read_file (10 MB).
@@ -83,6 +84,7 @@ fn validate_within_home(raw: &str) -> Result<PathBuf, String> {
 
 /// Read a file's content as UTF-8 text.
 /// Validates the path is within $HOME, enforces a 10 MB size limit.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn plugin_read_file(
     path: String,
@@ -114,6 +116,7 @@ pub async fn plugin_read_file(
 
 /// List filenames in a directory, optionally filtered by a glob pattern.
 /// Returns filenames only (not full paths). Validates path is within $HOME.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn plugin_list_directory(
     path: String,
@@ -179,6 +182,7 @@ async fn plugin_list_directory_inner(
 /// Seeks to `file_size - max_bytes`, then skips to the next newline to avoid
 /// partial lines. If the file is smaller than `max_bytes`, reads the entire file.
 /// Validates path is within $HOME, same as plugin_read_file.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn plugin_read_file_tail(
     path: String,
@@ -236,6 +240,7 @@ async fn plugin_read_file_tail_inner(
 /// Start watching a path for filesystem changes.
 /// Returns a watch_id (UUID) that can be used with plugin_unwatch.
 /// Emits `plugin-fs-change-{plugin_id}` Tauri events on changes.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn plugin_watch_path(
     path: String,
@@ -283,6 +288,7 @@ pub async fn plugin_watch_path(
 }
 
 /// Stop watching a previously registered path.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn plugin_unwatch(
     watch_id: String,
@@ -300,6 +306,7 @@ pub async fn plugin_unwatch(
 // Debounce loop
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "desktop")]
 /// Collect notify events and emit batched Tauri events after a quiet period.
 fn debounce_loop(
     rx: std::sync::mpsc::Receiver<notify::Result<Event>>,
@@ -378,6 +385,7 @@ const MAX_WRITE_SIZE: usize = 10 * 1024 * 1024;
 
 /// Write content to a file within $HOME.
 /// Creates parent directories if needed. Refuses to overwrite directories.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn plugin_write_file(
     path: String,
@@ -439,6 +447,7 @@ async fn plugin_write_file_inner(
 
 /// Rename/move a file within $HOME.
 /// Both source and destination must be within $HOME. Source must exist.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn plugin_rename_path(
     from: String,
