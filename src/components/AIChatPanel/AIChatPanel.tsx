@@ -206,7 +206,10 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
   let messageListRef: HTMLDivElement | undefined;
   let textareaRef: HTMLTextAreaElement | undefined;
 
-  const [agentMode, setAgentMode] = createSignal(false);
+  const [autonomy, setAutonomy] = createSignal<"assisted" | "autonomous">("assisted");
+  const [maxSteps, setMaxSteps] = createSignal(20);
+  const [modelOverride, setModelOverride] = createSignal<string>("");
+  const [availableModels, setAvailableModels] = createSignal<string[]>([]);
   const [showHistory, setShowHistory] = createSignal(false);
   const [showUnrestrictedConfirm, setShowUnrestrictedConfirm] = createSignal(false);
   const [historyList, setHistoryList] = createSignal<ConversationMeta[]>([]);
@@ -215,6 +218,24 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
     void conversationStore.listAllConversations().then(setHistoryList);
     setShowHistory(true);
   };
+
+  // Load available models from the Main slot provider on mount
+  createEffect(() => {
+    import("@tauri-apps/api/core").then(({ invoke }) => {
+      invoke<{ slots: Record<string, string>; models: Array<{ id: string; model_name: string }> }>("load_provider_registry")
+        .then((reg) => {
+          const mainModelId = reg.slots["Main"];
+          const names = reg.models.map((m) => m.model_name).filter(Boolean);
+          setAvailableModels(names);
+          // Pre-select the configured Main model if no override set
+          if (!modelOverride()) {
+            const main = reg.models.find((m) => m.id === mainModelId);
+            if (main) setModelOverride(main.model_name);
+          }
+        })
+        .catch(() => { /* ignore — provider not configured */ });
+    }).catch(() => { /* ignore in non-Tauri */ });
+  });
 
   const resolveSessionName = (sessionId?: string | null): string => {
     if (!sessionId) return "";
@@ -271,7 +292,7 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
     if (!text || isFrozen()) return;
     const sid = activeSessionId();
 
-    if (agentMode()) {
+    if (autonomy() === "autonomous") {
       const st = conversationStore.agentState();
       if (st === "running" || st === "paused") return;
       if (sid) conversationStore.startAgent(sid, text, conversationStore.unrestricted());
@@ -414,7 +435,41 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
           </Show>
         </div>
         <div class={s.headerActions}>
-          <Show when={agentMode()}>
+          {/* Model picker */}
+          <Show when={availableModels().length > 0}>
+            <select
+              class={s.modelPicker}
+              value={modelOverride()}
+              onChange={(e) => setModelOverride(e.currentTarget.value)}
+              title="Model override for this conversation"
+            >
+              <For each={availableModels()}>
+                {(m) => <option value={m}>{m}</option>}
+              </For>
+            </select>
+          </Show>
+          {/* Autonomy toggle */}
+          <button
+            class={cx(s.headerBtn, autonomy() === "autonomous" && s.headerBtnActive)}
+            onClick={() => setAutonomy((v) => v === "assisted" ? "autonomous" : "assisted")}
+            title={autonomy() === "autonomous" ? "Autonomous mode — click for Assisted" : "Assisted mode — click for Autonomous"}
+          >
+            <IconRobot />
+          </button>
+          {/* Step count (autonomous only) */}
+          <Show when={autonomy() === "autonomous"}>
+            <input
+              type="number"
+              class={s.stepInput}
+              min={1}
+              max={50}
+              value={maxSteps()}
+              onInput={(e) => setMaxSteps(Math.max(1, Math.min(50, Number(e.currentTarget.value))))}
+              title="Max agent steps"
+            />
+          </Show>
+          {/* Unrestricted toggle (autonomous only) */}
+          <Show when={autonomy() === "autonomous"}>
             <button
               class={cx(s.headerBtn, conversationStore.unrestricted() && s.headerBtnDanger)}
               onClick={() => {
@@ -429,13 +484,6 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
               <IconUnlock />
             </button>
           </Show>
-          <button
-            class={cx(s.headerBtn, agentMode() && s.headerBtnActive)}
-            onClick={() => setAgentMode((v) => !v)}
-            title={agentMode() ? "Switch to chat mode" : "Switch to agent mode"}
-          >
-            <IconRobot />
-          </button>
           <button
             class={cx(s.headerBtn, showHistory() && s.headerBtnActive)}
             onClick={() => (showHistory() ? setShowHistory(false) : openHistory())}
@@ -506,9 +554,16 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
       <Show when={conversationStore.agentState() === "running" || conversationStore.agentState() === "paused"}>
         <div class={s.agentBanner}>
           <IconRobot />
-          <span class={s.agentBannerText}>
-            Agent {conversationStore.agentState() === "paused" ? "paused" : "running"}
-          </span>
+          <Show
+            when={conversationStore.isThinking()}
+            fallback={
+              <span class={s.agentBannerText}>
+                Agent {conversationStore.agentState() === "paused" ? "paused" : "running"}
+              </span>
+            }
+          >
+            <span class={cx(s.agentBannerText, s.thinkingPulse)}>Thinking…</span>
+          </Show>
           <span class={s.agentBannerIteration}>
             iter {conversationStore.currentIteration() + 1}
           </span>
@@ -586,6 +641,16 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
                 onClick={() => conversationStore.approveAction(approval().sessionId, false)}
               >
                 Deny
+              </button>
+              <button
+                class={cx(s.approvalBtn, s.alwaysAllowBtn)}
+                onClick={() => {
+                  conversationStore.setUnrestricted(true);
+                  conversationStore.approveAction(approval().sessionId, true);
+                }}
+                title="Approve and disable all future approval prompts"
+              >
+                Always allow
               </button>
             </div>
           </div>
@@ -687,7 +752,7 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
           data-focus-target="ai-chat"
           class={s.textarea}
           rows={1}
-          placeholder={isFrozen() ? "Focus a terminal first..." : agentMode() ? "Describe a goal for the agent..." : "Ask about your terminal... (Enter to send)"}
+          placeholder={isFrozen() ? "Focus a terminal first..." : autonomy() === "autonomous" ? "Describe a goal for the agent..." : "Ask about your terminal... (Enter to send)"}
           value={inputText()}
           onInput={(e) => {
             setInputText(e.currentTarget.value);
@@ -702,7 +767,7 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
             <button
               class={s.sendBtn}
               onClick={handleSend}
-              disabled={!inputText().trim() || conversationStore.isStreaming() || isFrozen() || (agentMode() && (conversationStore.agentState() === "running" || conversationStore.agentState() === "paused"))}
+              disabled={!inputText().trim() || conversationStore.isStreaming() || isFrozen() || (autonomy() === "autonomous" && (conversationStore.agentState() === "running" || conversationStore.agentState() === "paused"))}
               title="Send (Enter)"
             >
               <IconSend />

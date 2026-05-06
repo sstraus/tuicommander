@@ -148,8 +148,11 @@ export interface PerTerminalConversationState {
   setCompletionReason: Setter<string | null>;
   unrestricted: Accessor<boolean>;
   setUnrestricted: Setter<boolean>;
+  isThinking: Accessor<boolean>;
+  setIsThinking: Setter<boolean>;
   // Bookkeeping
   currentMode: ConversationMode | null;
+  activeSessionId: string | null;
   persistTimer: ReturnType<typeof setTimeout> | null;
   initialized: boolean;
   registrySubscription: RegistrySubscription | null;
@@ -189,6 +192,7 @@ function createState(): PerTerminalConversationState {
   const [agentError, setAgentError] = createSignal<string | null>(null);
   const [completionReason, setCompletionReason] = createSignal<string | null>(null);
   const [unrestricted, setUnrestricted] = createSignal(false);
+  const [isThinking, setIsThinking] = createSignal(false);
   return {
     messages, setMessages,
     isStreaming, setIsStreaming,
@@ -204,7 +208,9 @@ function createState(): PerTerminalConversationState {
     agentError, setAgentError,
     completionReason, setCompletionReason,
     unrestricted, setUnrestricted,
+    isThinking, setIsThinking,
     currentMode: null,
+    activeSessionId: null,
     persistTimer: null,
     initialized: false,
     registrySubscription: null,
@@ -247,6 +253,7 @@ function agentError(): string | null { return activeConversation().agentError();
 function completionReason(): string | null { return activeConversation().completionReason(); }
 function unrestricted(): boolean { return activeConversation().unrestricted(); }
 function setUnrestricted(value: boolean): void { activeConversation().setUnrestricted(value); }
+function isThinking(): boolean { return activeConversation().isThinking(); }
 
 // ---------------------------------------------------------------------------
 // Message management
@@ -418,9 +425,11 @@ function applyConversationEvent(s: PerTerminalConversationState, event: Conversa
     case "thinking":
       s.setCurrentIteration(event.iteration);
       s.setAgentState("running");
+      s.setIsThinking(true);
       break;
 
     case "text_chunk":
+      s.setIsThinking(false);
       if (mode === "autonomous") {
         s.setTextChunks((prev) => prev + event.text);
       } else {
@@ -429,6 +438,7 @@ function applyConversationEvent(s: PerTerminalConversationState, event: Conversa
       break;
 
     case "tool_call": {
+      s.setIsThinking(false);
       const entry: ToolCallEntry = {
         status: "pending",
         toolName: event.tool_name,
@@ -467,10 +477,12 @@ function applyConversationEvent(s: PerTerminalConversationState, event: Conversa
 
     case "paused":
       s.setAgentState("paused");
+      s.setIsThinking(false);
       break;
 
     case "resumed":
       s.setAgentState("running");
+      s.setIsThinking(false);
       break;
 
     case "rate_limited":
@@ -479,6 +491,7 @@ function applyConversationEvent(s: PerTerminalConversationState, event: Conversa
 
     case "error":
       batch(() => {
+        s.setIsThinking(false);
         if (mode === "autonomous") {
           s.setAgentState("error");
           s.setAgentError(event.message);
@@ -492,6 +505,7 @@ function applyConversationEvent(s: PerTerminalConversationState, event: Conversa
 
     case "completed": {
       const usage = event.usage;
+      s.setIsThinking(false);
       if (usage) {
         appLogger.info("conversation", `usage: input=${usage.input_tokens} output=${usage.output_tokens}`);
         accumulateUsageForState(s, usage);
@@ -552,6 +566,7 @@ async function sendMessage(text: string, sessionId: string | null): Promise<void
     s.setStreamingText("");
   });
   s.currentMode = "assisted";
+  s.activeSessionId = sessionId;
 
   try {
     const { invoke, Channel } = await import("@tauri-apps/api/core");
@@ -592,8 +607,10 @@ async function startAgent(sessionId: string, goal: string, isUnrestricted?: bool
     s.setCompletionReason(null);
     s.setCurrentIteration(0);
     s.setPendingApproval(null);
+    s.setIsThinking(false);
   });
   s.currentMode = "autonomous";
+  s.activeSessionId = sessionId;
 
   const bypassed = isUnrestricted ? ["*"] : [];
 
@@ -683,6 +700,7 @@ function resetAgent(): void {
     s.setCompletionReason(null);
     s.setCurrentIteration(0);
     s.setPendingApproval(null);
+    s.setIsThinking(false);
   });
 }
 
@@ -764,12 +782,12 @@ async function onTerminalClose(key: string): Promise<void> {
     s.registrySubscription = null;
   }
 
-  if (s.isStreaming() && isTauri()) {
+  if ((s.isStreaming() || s.agentState() === "running") && s.activeSessionId && isTauri()) {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("cancel_ai_chat", { chatId: s.chatId() });
+      await invoke("cancel_conversation", { sessionId: s.activeSessionId });
     } catch (e) {
-      appLogger.warn("conversation", "onTerminalClose: cancel_ai_chat failed", { error: String(e) });
+      appLogger.warn("conversation", "onTerminalClose: cancel_conversation failed", { error: String(e) });
     }
   }
 
@@ -963,6 +981,7 @@ export const conversationStore = {
   completionReason,
   unrestricted,
   setUnrestricted,
+  isThinking,
 
   // Chat actions
   addUserMessage,

@@ -586,6 +586,49 @@
   color: var(--text-on-error);
 }
 
+.alwaysAllowBtn {
+  background: var(--fg-tertiary, #888);
+  color: var(--bg-primary, #fff);
+}
+
+/* ── Model picker ──────────────────────────────────────── */
+.modelPicker {
+  font-size: var(--font-xs);
+  background: var(--bg-secondary);
+  color: var(--fg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1px 4px;
+  cursor: pointer;
+  max-width: 120px;
+}
+
+.modelPicker:hover {
+  color: var(--fg-primary);
+}
+
+/* ── Step count input ──────────────────────────────────── */
+.stepInput {
+  font-size: var(--font-xs);
+  background: var(--bg-secondary);
+  color: var(--fg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1px 4px;
+  width: 48px;
+  text-align: center;
+}
+
+/* ── Thinking pulse animation ──────────────────────────── */
+.thinkingPulse {
+  animation: thinkingPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes thinkingPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 /* ── Input queue badge ─────────────────────────────────── */
 .queueBadge {
   display: inline-flex;
