@@ -1054,13 +1054,11 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
 
-        let chat = crate::ai_chat::AiChatConfig {
-            provider: "anthropic".to_string(),
-            model: "claude-sonnet-4-5-20241022".to_string(),
-            base_url: None,
-            ..crate::ai_chat::AiChatConfig::default()
-        };
-        write_json(dir.path(), "ai-chat.json", &chat);
+        // Write raw legacy JSON (provider/model are skip_serializing in current AiChatConfig)
+        std::fs::write(
+            dir.path().join("ai-chat.json"),
+            r#"{"temperature":0.7,"provider":"anthropic","model":"claude-sonnet-4-5-20241022"}"#,
+        ).unwrap();
 
         crate::credentials::set(crate::credentials::Credential::AiChatApiKey, "sk-ant-old").unwrap();
 
@@ -1113,18 +1111,15 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
 
-        let chat = crate::ai_chat::AiChatConfig {
-            provider: "openai".to_string(),
-            model: "gpt-4o".to_string(),
-            base_url: None,
-            ..crate::ai_chat::AiChatConfig::default()
-        };
+        std::fs::write(
+            dir.path().join("ai-chat.json"),
+            r#"{"temperature":0.7,"provider":"openai","model":"gpt-4o"}"#,
+        ).unwrap();
         let llm = crate::llm_api::LlmApiConfig {
             provider: "openai".to_string(),
             model: "gpt-4o-mini".to_string(),
             base_url: None,
         };
-        write_json(dir.path(), "ai-chat.json", &chat);
         write_json(dir.path(), "llm-api.json", &llm);
 
         let reg = load_registry();
@@ -1141,18 +1136,15 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
 
-        let chat = crate::ai_chat::AiChatConfig {
-            provider: "anthropic".to_string(),
-            model: "claude-sonnet-4-5-20241022".to_string(),
-            base_url: None,
-            ..crate::ai_chat::AiChatConfig::default()
-        };
+        std::fs::write(
+            dir.path().join("ai-chat.json"),
+            r#"{"temperature":0.7,"provider":"anthropic","model":"claude-sonnet-4-5-20241022"}"#,
+        ).unwrap();
         let llm = crate::llm_api::LlmApiConfig {
             provider: "openai".to_string(),
             model: "gpt-4o-mini".to_string(),
             base_url: None,
         };
-        write_json(dir.path(), "ai-chat.json", &chat);
         write_json(dir.path(), "llm-api.json", &llm);
 
         let reg = load_registry();
@@ -1168,18 +1160,10 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
 
-        let mut overrides = std::collections::HashMap::new();
-        overrides.insert(crate::ai_agent::engine::ToolPhase::Search, "claude-haiku-4-5-20241022".to_string());
-        overrides.insert(crate::ai_agent::engine::ToolPhase::Write, "claude-sonnet-4-5-20241022".to_string());
-
-        let chat = crate::ai_chat::AiChatConfig {
-            provider: "anthropic".to_string(),
-            model: "claude-sonnet-4-5-20241022".to_string(),
-            base_url: None,
-            agent_model_overrides: Some(overrides),
-            ..crate::ai_chat::AiChatConfig::default()
-        };
-        write_json(dir.path(), "ai-chat.json", &chat);
+        std::fs::write(
+            dir.path().join("ai-chat.json"),
+            r#"{"temperature":0.7,"provider":"anthropic","model":"claude-sonnet-4-5-20241022","agent_model_overrides":{"search":"claude-haiku-4-5-20241022","write":"claude-sonnet-4-5-20241022"}}"#,
+        ).unwrap();
 
         use crate::ai_agent::engine::ToolPhase;
         let reg = load_registry();
@@ -1198,12 +1182,10 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
 
-        let chat = crate::ai_chat::AiChatConfig {
-            provider: "anthropic".to_string(),
-            model: "claude-sonnet-4-5-20241022".to_string(),
-            ..crate::ai_chat::AiChatConfig::default()
-        };
-        write_json(dir.path(), "ai-chat.json", &chat);
+        std::fs::write(
+            dir.path().join("ai-chat.json"),
+            r#"{"temperature":0.7,"provider":"anthropic","model":"claude-sonnet-4-5-20241022"}"#,
+        ).unwrap();
 
         let _ = load_registry();
         // providers.json should now exist

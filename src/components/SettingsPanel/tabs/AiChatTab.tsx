@@ -3,18 +3,8 @@ import { invoke } from "../../../invoke";
 import { appLogger } from "../../../stores/appLogger";
 import s from "../Settings.module.css";
 
-// ---------------------------------------------------------------------------
-// Types matching Rust backend (provider/model fields kept for migration compat)
-// ---------------------------------------------------------------------------
-
 interface AiChatConfig {
   temperature: number;
-  context_lines: number;
-  // Legacy fields — kept in JSON for backward compat, not shown in UI
-  provider?: string;
-  model?: string;
-  base_url?: string | null;
-  agent_model_overrides?: Record<string, string> | null;
 }
 
 interface ScheduledJob {
@@ -36,7 +26,6 @@ interface SchedulerConfig {
 
 export const AiChatTab: Component = () => {
   const [temperature, setTemperature] = createSignal(0.7);
-  const [contextLines, setContextLines] = createSignal(150);
 
   // Scheduler state
   const [schedulerJobs, setSchedulerJobs] = createSignal<ScheduledJob[]>([]);
@@ -56,7 +45,6 @@ export const AiChatTab: Component = () => {
         await invoke("save_ai_chat_config", {
           config: {
             temperature: temperature(),
-            context_lines: contextLines(),
           },
         });
       } catch (e) {
@@ -69,7 +57,6 @@ export const AiChatTab: Component = () => {
     try {
       const config = await invoke<AiChatConfig>("load_ai_chat_config");
       setTemperature(config.temperature ?? 0.7);
-      setContextLines(config.context_lines ?? 150);
     } catch (e) {
       appLogger.warn("config", "Failed to load AI Chat config", e);
     }
@@ -130,34 +117,8 @@ export const AiChatTab: Component = () => {
 
   return (
     <div class={s.section}>
-      <p class={s.hint} style={{ "margin-bottom": "16px" }}>
-        Provider, model, and API key are now managed in the{" "}
-        <strong>Providers</strong> tab.
-      </p>
-
       {/* ── Parameters ── */}
       <h3>Parameters</h3>
-
-      <div class={s.group}>
-        <label>Context Lines</label>
-        <div class={s.slider}>
-          <input
-            type="range"
-            min={50}
-            max={500}
-            step={10}
-            value={contextLines()}
-            onInput={(e) => {
-              setContextLines(parseInt(e.currentTarget.value));
-              saveConfig();
-            }}
-          />
-          <span>{contextLines()}</span>
-        </div>
-        <p class={s.hint}>
-          Number of terminal output lines included as context per turn (50–500)
-        </p>
-      </div>
 
       <div class={s.group}>
         <label>Temperature</label>

@@ -22,25 +22,18 @@ pub(crate) const CONFIG_FILE: &str = "ai-chat.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct AiChatConfig {
-    /// Provider identifier: "ollama", "anthropic", "openai", "openrouter", "custom"
-    #[serde(default = "default_provider")]
-    pub provider: String,
-    /// Model name (e.g. "qwen2.5:7b", "claude-sonnet-4-5-20241022")
-    #[serde(default)]
-    pub model: String,
-    /// Custom base URL — pre-filled per provider, editable for custom
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub base_url: Option<String>,
     /// Sampling temperature 0.0–1.0
     #[serde(default = "default_temperature")]
     pub temperature: f32,
-    /// Max terminal context lines injected per turn
-    #[serde(default = "default_context_lines")]
-    pub context_lines: u32,
-    /// Per-phase model overrides for agent mode. Keys are ToolPhase variants
-    /// (plan/search/read/write); values are model identifiers. Phases without
-    /// an override use the main `model` field.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    // Legacy fields — read from old ai-chat.json for one-time migration to
+    // provider registry, never written again.
+    #[serde(default = "default_provider", skip_serializing)]
+    pub provider: String,
+    #[serde(default, skip_serializing)]
+    pub model: String,
+    #[serde(default, skip_serializing)]
+    pub base_url: Option<String>,
+    #[serde(default, skip_serializing)]
     pub agent_model_overrides: Option<HashMap<crate::ai_agent::engine::ToolPhase, String>>,
 }
 
@@ -52,18 +45,13 @@ fn default_temperature() -> f32 {
     0.7
 }
 
-fn default_context_lines() -> u32 {
-    150
-}
-
 impl Default for AiChatConfig {
     fn default() -> Self {
         Self {
+            temperature: default_temperature(),
             provider: default_provider(),
             model: String::new(),
             base_url: None,
-            temperature: default_temperature(),
-            context_lines: default_context_lines(),
             agent_model_overrides: None,
         }
     }
@@ -720,9 +708,10 @@ pub(crate) async fn stream_ai_chat(
         }
     };
 
-    // Assemble terminal context (context_lines still comes from ai-chat.json)
-    let chat_config: AiChatConfig = load_json_config(CONFIG_FILE);
-    let ctx = assemble_terminal_context(&state, &session_id, chat_config.context_lines);
+    let temperature: f32 = load_json_config::<AiChatConfig>(CONFIG_FILE).temperature;
+    // DEFERRED (2026-05-06) — context_lines removed from AiChatConfig.
+    // Will be replaced by OSC 133 block-based context (story 1611-375b).
+    let ctx = assemble_terminal_context(&state, &session_id, 150);
     let mut system_prompt = build_system_prompt(&ctx);
     if let Some(section) = crate::ai_agent::context::build_knowledge_section(&state, &session_id) {
         system_prompt.push_str("\n\n");
@@ -764,7 +753,7 @@ pub(crate) async fn stream_ai_chat(
 
     let chat_options = ChatOptions::default()
         .with_capture_usage(true)
-        .with_temperature(chat_config.temperature.into());
+        .with_temperature(temperature.into());
 
     // Set up cancellation
     let cancelled = Arc::new(AtomicBool::new(false));
@@ -1036,39 +1025,34 @@ mod tests {
 
     #[test]
     fn serde_round_trip_minimal() {
+        // Legacy fields are skip_serializing — only temperature survives round-trip.
         let config = AiChatConfig {
             provider: "anthropic".to_string(),
             model: "claude-sonnet-4-5-20241022".to_string(),
             base_url: None,
             temperature: 0.5,
-            context_lines: 200,
             agent_model_overrides: None,
         };
         let json = serde_json::to_string(&config).unwrap();
         let loaded: AiChatConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(loaded.provider, "anthropic");
-        assert_eq!(loaded.model, "claude-sonnet-4-5-20241022");
+        // Legacy fields are not serialized, so loaded has defaults.
+        assert_eq!(loaded.provider, "ollama");
+        assert!(loaded.model.is_empty());
         assert!(loaded.base_url.is_none());
         assert!((loaded.temperature - 0.5).abs() < f32::EPSILON);
-        assert_eq!(loaded.context_lines, 200);
     }
 
     #[test]
     fn serde_round_trip_with_base_url() {
-        let config = AiChatConfig {
-            provider: "custom".to_string(),
-            model: "my-model".to_string(),
-            base_url: Some("https://my-llm.internal/v1/".to_string()),
-            temperature: 0.3,
-            context_lines: 100,
-            agent_model_overrides: None,
-        };
-        let json = serde_json::to_string(&config).unwrap();
-        let loaded: AiChatConfig = serde_json::from_str(&json).unwrap();
+        // base_url is skip_serializing — it's a legacy migration field.
+        // Verify that old JSON with base_url can still be read (deserializes fine).
+        let json = r#"{"temperature":0.3,"base_url":"https://my-llm.internal/v1/"}"#;
+        let loaded: AiChatConfig = serde_json::from_str(json).unwrap();
         assert_eq!(
             loaded.base_url,
             Some("https://my-llm.internal/v1/".to_string())
         );
+        assert!((loaded.temperature - 0.3).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -1077,7 +1061,6 @@ mod tests {
         assert_eq!(loaded.provider, "ollama");
         assert!(loaded.model.is_empty());
         assert!((loaded.temperature - 0.7).abs() < f32::EPSILON);
-        assert_eq!(loaded.context_lines, 150);
     }
 
     #[test]
@@ -1091,15 +1074,10 @@ mod tests {
             crate::ai_agent::engine::ToolPhase::Read,
             "anthropic/claude-haiku-3-5".to_string(),
         );
-        let config = AiChatConfig {
-            provider: "openrouter".to_string(),
-            model: "anthropic/claude-sonnet-4-5".to_string(),
-            agent_model_overrides: Some(overrides),
-            ..Default::default()
-        };
-        let json = serde_json::to_string(&config).unwrap();
-        assert!(json.contains("agent_model_overrides"));
-        let loaded: AiChatConfig = serde_json::from_str(&json).unwrap();
+        // agent_model_overrides is skip_serializing (migration-only).
+        // Verify old JSON with this field can still be deserialized.
+        let json = r#"{"temperature":0.7,"provider":"openrouter","model":"anthropic/claude-sonnet-4-5","agent_model_overrides":{"search":"anthropic/claude-haiku-3-5","read":"anthropic/claude-haiku-3-5"}}"#;
+        let loaded: AiChatConfig = serde_json::from_str(json).unwrap();
         let loaded_overrides = loaded.agent_model_overrides.unwrap();
         assert_eq!(loaded_overrides.len(), 2);
         assert_eq!(
