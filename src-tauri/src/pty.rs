@@ -1721,6 +1721,11 @@ impl ChunkProcessor {
             for evt in term_events {
                 match evt {
                     TermEvent::PtyWrite(response) => {
+                        if response.contains("\x1b[?1049") || response.contains("\x1b[?1047") || response.contains("\x1b[?47l") || response.contains("\x1b[?25h") {
+                            tracing::error!(source = "terminal", session_id = %session_id,
+                                "PtyWrite contains DEC private mode sequences! response={:?}",
+                                response.as_bytes().iter().take(200).collect::<Vec<_>>());
+                        }
                         if let Some(sess) = state.sessions.get(session_id)
                             && let Some(mut s) = sess.try_lock()
                         {
@@ -3284,6 +3289,11 @@ pub(crate) async fn write_pty(
     tokio::task::spawn_blocking(move || {
     if let Some(entry) = state.sessions.get(&session_id) {
         tracing::trace!(session_id = %session_id, data_len = data.len(), "write_pty");
+        if data.contains("\x1b[?1049") || data.contains("\x1b[?1047") || data.contains("\x1b[?47l") || data.contains("\x1b[?25h") {
+            tracing::error!(source = "terminal", session_id = %session_id,
+                "write_pty received DEC private mode sequences! data({} bytes)={:?}",
+                data.len(), data.as_bytes().iter().take(200).collect::<Vec<_>>());
+        }
         let t0 = std::time::Instant::now();
         {
             let mut session = entry.lock();
