@@ -140,6 +140,7 @@ async fn poll_loop(
     let mut startup = true;
     let mut poll_cycle: u32 = 0;
     let mut last_changed: HashMap<String, Instant> = HashMap::new();
+    let mut etag_cache: HashMap<String, String> = HashMap::new();
     // Pending on-demand poll: set by PollRepo/SetIssueFilter to fire the batch
     // early rather than spawning a separate single-repo API call.
     let mut pending_poll_at: Option<tokio::time::Instant> = None;
@@ -160,7 +161,7 @@ async fn poll_loop(
             _ = pending_sleep => {
                 pending_poll_at = None;
                 let rate_budget = state.github_rate_limit_remaining.load(std::sync::atomic::Ordering::Relaxed);
-                poll_batch(&state, &handle, &paths, false, &issue_filter, &mut prev, &mut fail_count, &mut last_changed).await;
+                poll_batch(&state, &handle, &paths, false, &issue_filter, &mut prev, &mut fail_count, &mut last_changed, None).await;
                 interval = tokio::time::interval(current_interval(visible, fail_count, rate_budget));
                 interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             }
@@ -171,7 +172,8 @@ async fn poll_loop(
                 } else {
                     tiered_paths(&paths, &last_changed, poll_cycle)
                 };
-                poll_batch(&state, &handle, &batch_paths, startup, &issue_filter, &mut prev, &mut fail_count, &mut last_changed).await;
+                let use_etag = !startup;
+                poll_batch(&state, &handle, &batch_paths, startup, &issue_filter, &mut prev, &mut fail_count, &mut last_changed, if use_etag { Some(&mut etag_cache) } else { None }).await;
                 startup = false;
                 poll_cycle = poll_cycle.wrapping_add(1);
                 pending_poll_at = None;
@@ -268,11 +270,12 @@ async fn poll_batch(
     prev: &mut PrevState,
     fail_count: &mut u32,
     last_changed: &mut HashMap<String, Instant>,
+    etag_cache: Option<&mut HashMap<String, String>>,
 ) {
     if paths.is_empty() { return; }
     if state.github_circuit_breaker.check().is_err() { return; }
 
-    match crate::github::get_all_batch_impl(paths, include_merged, issue_filter, state).await {
+    match crate::github::get_all_batch_impl(paths, include_merged, issue_filter, state, etag_cache).await {
         Ok(result) => {
             *fail_count = 0;
             let now = Instant::now();

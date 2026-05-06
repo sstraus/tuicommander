@@ -945,6 +945,7 @@ pub(crate) async fn get_all_batch_impl(
     include_merged: bool,
     filter_mode: &str,
     state: &AppState,
+    etag_cache: Option<&mut std::collections::HashMap<String, String>>,
 ) -> Result<BatchPollResult, String> {
     if state.github_token.read().is_none() {
         return Ok(BatchPollResult { prs: Default::default(), issues: Default::default() });
@@ -953,7 +954,7 @@ pub(crate) async fn get_all_batch_impl(
     let now = Instant::now();
     state.git_cache.github_repo_cooldown.retain(|_key, expiry| *expiry > now);
 
-    let repos: Vec<(String, String, String)> = paths
+    let all_repos: Vec<(String, String, String)> = paths
         .iter()
         .filter_map(|path| {
             let repo_path = PathBuf::from(path);
@@ -967,9 +968,19 @@ pub(crate) async fn get_all_batch_impl(
         })
         .collect();
 
-    if repos.is_empty() {
+    if all_repos.is_empty() {
         return Ok(BatchPollResult { prs: Default::default(), issues: Default::default() });
     }
+
+    let repos = if let Some(cache) = etag_cache {
+        let changed = filter_changed_repos(&all_repos, cache, state).await;
+        if changed.is_empty() {
+            return Ok(BatchPollResult { prs: Default::default(), issues: Default::default() });
+        }
+        changed
+    } else {
+        all_repos
+    };
 
     let include_issues = !matches!(filter_mode, "" | "disabled");
     let viewer = if include_issues && !matches!(filter_mode, "all") {
@@ -1371,7 +1382,7 @@ pub(crate) async fn get_all_pr_statuses_impl(
     include_merged: bool,
     state: &AppState,
 ) -> Result<std::collections::HashMap<String, Vec<BranchPrStatus>>, String> {
-    let result = get_all_batch_impl(paths, include_merged, "disabled", state).await?;
+    let result = get_all_batch_impl(paths, include_merged, "disabled", state, None).await?;
     Ok(result.prs)
 }
 
@@ -1432,6 +1443,56 @@ pub(crate) fn get_github_status_impl(path: &str) -> GitHubStatus {
         ahead,
         behind,
     }
+}
+
+/// Check which repos have changed PRs since the last poll using REST ETags.
+/// Returns the subset of `repos` where the PR list has actually changed (200).
+/// Repos returning 304 are filtered out (no change, zero rate-limit cost).
+/// On any error (network, auth), the repo is assumed changed (safe fallback).
+pub(crate) async fn filter_changed_repos(
+    repos: &[(String, String, String)],
+    etag_cache: &mut std::collections::HashMap<String, String>,
+    state: &AppState,
+) -> Vec<(String, String, String)> {
+    let token = {
+        let guard = state.github_token.read();
+        match guard.as_ref() {
+            Some(t) => t.clone(),
+            None => return repos.to_vec(),
+        }
+    };
+
+    let client = &state.http_client;
+    let mut changed = Vec::new();
+
+    for (path, owner, name) in repos {
+        let url = format!("https://api.github.com/repos/{owner}/{name}/pulls?state=open&sort=updated&direction=desc&per_page=1");
+        let mut req = client.get(&url)
+            .header("Authorization", format!("Bearer {token}"))
+            .header("User-Agent", "tuicommander")
+            .header("Accept", "application/json");
+
+        let cache_key = format!("{owner}/{name}");
+        if let Some(etag) = etag_cache.get(&cache_key) {
+            req = req.header("If-None-Match", etag.as_str());
+        }
+
+        match req.send().await {
+            Ok(resp) => {
+                if resp.status().as_u16() == 304 {
+                    continue;
+                }
+                if let Some(etag) = resp.headers().get("etag").and_then(|v| v.to_str().ok()) {
+                    etag_cache.insert(cache_key, etag.to_string());
+                }
+                changed.push((path.clone(), owner.clone(), name.clone()));
+            }
+            Err(_) => {
+                changed.push((path.clone(), owner.clone(), name.clone()));
+            }
+        }
+    }
+    changed
 }
 
 /// Tauri command wrapper — cached with GIT_CACHE_TTL to avoid spawning git subprocesses every poll.
