@@ -14,9 +14,7 @@ export type ProviderType =
 
 export type ModelTier = "economic" | "standard" | "premium";
 
-export type SlotName =
-  | "chat" | "agent_mid" | "agent_low"
-  | "agent_high" | "headless";
+export type SlotName = "main" | "triage" | "headless";
 
 export interface ProviderEntry {
   id: string;
@@ -170,23 +168,15 @@ function createProviderRegistryStore() {
   function resolveSlot(
     slot: SlotName
   ): { provider: ProviderEntry; model: ModelEntry } | null {
-    const agentFallback: SlotName[] =
-      slot === "agent_low" || slot === "agent_high"
-        ? [slot, "agent_mid"]
-        : [slot];
-
-    for (const s of agentFallback) {
-      const modelId = state.registry.slots[s];
-      if (!modelId) continue;
-      const model = state.registry.models.find((m) => m.id === modelId);
-      if (!model) continue;
-      const provider = state.registry.providers.find(
-        (p) => p.id === model.provider_id
-      );
-      if (!provider) continue;
-      return { provider, model };
-    }
-    return null;
+    const modelId = state.registry.slots[slot];
+    if (!modelId) return null;
+    const model = state.registry.models.find((m) => m.id === modelId);
+    if (!model) return null;
+    const provider = state.registry.providers.find(
+      (p) => p.id === model.provider_id
+    );
+    if (!provider) return null;
+    return { provider, model };
   }
 
   function _reset(): void {

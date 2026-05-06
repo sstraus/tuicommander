@@ -176,7 +176,7 @@ pub(crate) fn save_ai_chat_config(config: AiChatConfig) -> Result<(), String> {
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) async fn test_ai_chat_connection() -> Result<String, String> {
     let registry = crate::provider_registry::load_registry();
-    let resolved = crate::provider_registry::resolve_slot(&registry, crate::provider_registry::SlotName::Chat)
+    let resolved = crate::provider_registry::resolve_slot(&registry, crate::provider_registry::SlotName::Main)
         .map_err(|_| "AI Chat not configured — set provider and model in Settings > AI Chat".to_string())?;
 
     let llm_config = &resolved.config;
@@ -709,7 +709,7 @@ pub(crate) async fn stream_ai_chat(
 ) -> Result<(), String> {
     let resolved = match crate::provider_registry::resolve_slot(
         &crate::provider_registry::load_registry(),
-        crate::provider_registry::SlotName::Chat,
+        crate::provider_registry::SlotName::Main,
     ) {
         Ok(r) => r,
         Err(e) => {

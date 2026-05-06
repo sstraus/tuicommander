@@ -22,19 +22,24 @@ fn build_llm_runtime() -> Result<LlmRuntime, String> {
     use super::engine::ToolPhase;
 
     let registry = load_registry();
-    let resolved = resolve_slot(&registry, SlotName::AgentMid)?;
+    let resolved = resolve_slot(&registry, SlotName::Main)?;
 
+    // Build model_overrides from registry.phase_overrides.
+    // Only include overrides that differ from the main model.
     let mut model_overrides = std::collections::HashMap::new();
-    if let Ok(r) = resolve_slot(&registry, SlotName::AgentLow)
-        && r.config.model != resolved.config.model
-    {
-        model_overrides.insert(ToolPhase::Search, r.config.model.clone());
-        model_overrides.insert(ToolPhase::Read, r.config.model);
+    for (phase, model_id) in &registry.phase_overrides {
+        if let Some(model) = registry.models.iter().find(|m| &m.id == model_id) {
+            if model.model_name != resolved.config.model {
+                model_overrides.insert(*phase, model.model_name.clone());
+            }
+        }
     }
-    if let Ok(r) = resolve_slot(&registry, SlotName::AgentHigh)
-        && r.config.model != resolved.config.model
-    {
-        model_overrides.insert(ToolPhase::Write, r.config.model);
+
+    // Ensure Search and Read are both set if either is present.
+    if let Some(s) = model_overrides.get(&ToolPhase::Search).cloned() {
+        model_overrides.entry(ToolPhase::Read).or_insert(s);
+    } else if let Some(r) = model_overrides.get(&ToolPhase::Read).cloned() {
+        model_overrides.entry(ToolPhase::Search).or_insert(r);
     }
 
     Ok(LlmRuntime {

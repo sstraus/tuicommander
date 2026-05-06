@@ -11,7 +11,7 @@ import type { ProviderEntry, ModelEntry, ProviderRegistry } from "../../stores/p
 const mockInvoke = invoke as ReturnType<typeof vi.fn>;
 
 const emptyRegistry: ProviderRegistry = {
-  schema_version: 1,
+  schema_version: 3,
   providers: [],
   models: [],
   slots: {},
@@ -91,13 +91,13 @@ describe("providerRegistryStore", () => {
   it("removeProvider removes provider, cascades models and slots, deletes key", () => {
     providerRegistryStore.addProvider(anthropic);
     providerRegistryStore.addModel(sonnet);
-    providerRegistryStore.setSlot("chat", sonnet.id);
+    providerRegistryStore.setSlot("main", sonnet.id);
 
     providerRegistryStore.removeProvider("anthropic-main");
 
     expect(providerRegistryStore.state.registry.providers).toHaveLength(0);
     expect(providerRegistryStore.state.registry.models).toHaveLength(0);
-    expect(providerRegistryStore.state.registry.slots["chat"]).toBeUndefined();
+    expect(providerRegistryStore.state.registry.slots["main"]).toBeUndefined();
     expect(providerRegistryStore.state.keyStatus["anthropic-main"]).toBeUndefined();
   });
 
@@ -109,7 +109,7 @@ describe("providerRegistryStore", () => {
     providerRegistryStore.addProvider(other);
     providerRegistryStore.addModel(sonnet);
     providerRegistryStore.addModel(otherModel);
-    providerRegistryStore.setSlot("chat", sonnet.id);
+    providerRegistryStore.setSlot("main", sonnet.id);
     providerRegistryStore.setSlot("headless", otherModel.id);
 
     providerRegistryStore.removeProvider("anthropic-main");
@@ -118,7 +118,7 @@ describe("providerRegistryStore", () => {
     expect(providerRegistryStore.state.registry.providers[0].id).toBe("openai-main");
     expect(providerRegistryStore.state.registry.models).toHaveLength(1);
     expect(providerRegistryStore.state.registry.slots["headless"]).toBe("model-gpt4");
-    expect(providerRegistryStore.state.registry.slots["chat"]).toBeUndefined();
+    expect(providerRegistryStore.state.registry.slots["main"]).toBeUndefined();
   });
 
   // -- addModel / removeModel --
@@ -133,14 +133,14 @@ describe("providerRegistryStore", () => {
     providerRegistryStore.addProvider(anthropic);
     providerRegistryStore.addModel(sonnet);
     providerRegistryStore.addModel(haiku);
-    providerRegistryStore.setSlot("chat", sonnet.id);
-    providerRegistryStore.setSlot("agent_mid", haiku.id);
+    providerRegistryStore.setSlot("main", sonnet.id);
+    providerRegistryStore.setSlot("triage", haiku.id);
 
     providerRegistryStore.removeModel(sonnet.id);
 
     expect(providerRegistryStore.state.registry.models).toHaveLength(1);
-    expect(providerRegistryStore.state.registry.slots["chat"]).toBeUndefined();
-    expect(providerRegistryStore.state.registry.slots["agent_mid"]).toBe(haiku.id);
+    expect(providerRegistryStore.state.registry.slots["main"]).toBeUndefined();
+    expect(providerRegistryStore.state.registry.slots["triage"]).toBe(haiku.id);
   });
 
   // -- slots --
@@ -148,16 +148,16 @@ describe("providerRegistryStore", () => {
   it("setSlot assigns a model to a slot", () => {
     providerRegistryStore.addProvider(anthropic);
     providerRegistryStore.addModel(sonnet);
-    providerRegistryStore.setSlot("chat", sonnet.id);
-    expect(providerRegistryStore.state.registry.slots["chat"]).toBe(sonnet.id);
+    providerRegistryStore.setSlot("main", sonnet.id);
+    expect(providerRegistryStore.state.registry.slots["main"]).toBe(sonnet.id);
   });
 
   it("clearSlot removes a slot", () => {
     providerRegistryStore.addProvider(anthropic);
     providerRegistryStore.addModel(sonnet);
-    providerRegistryStore.setSlot("chat", sonnet.id);
-    providerRegistryStore.clearSlot("chat");
-    expect(providerRegistryStore.state.registry.slots["chat"]).toBeUndefined();
+    providerRegistryStore.setSlot("main", sonnet.id);
+    providerRegistryStore.clearSlot("main");
+    expect(providerRegistryStore.state.registry.slots["main"]).toBeUndefined();
   });
 
   // -- resolveSlot --
@@ -165,36 +165,36 @@ describe("providerRegistryStore", () => {
   it("resolveSlot returns provider and model for a configured slot", () => {
     providerRegistryStore.addProvider(anthropic);
     providerRegistryStore.addModel(sonnet);
-    providerRegistryStore.setSlot("chat", sonnet.id);
+    providerRegistryStore.setSlot("main", sonnet.id);
 
-    const resolved = providerRegistryStore.resolveSlot("chat");
+    const resolved = providerRegistryStore.resolveSlot("main");
     expect(resolved).not.toBeNull();
     expect(resolved!.provider.id).toBe("anthropic-main");
     expect(resolved!.model.id).toBe(sonnet.id);
   });
 
   it("resolveSlot returns null for unconfigured slot", () => {
-    expect(providerRegistryStore.resolveSlot("chat")).toBeNull();
+    expect(providerRegistryStore.resolveSlot("main")).toBeNull();
   });
 
-  it("resolveSlot falls back from agent_low to agent_mid", () => {
-    providerRegistryStore.addProvider(anthropic);
-    providerRegistryStore.addModel(sonnet);
-    providerRegistryStore.setSlot("agent_mid", sonnet.id);
-
-    const resolved = providerRegistryStore.resolveSlot("agent_low");
-    expect(resolved).not.toBeNull();
-    expect(resolved!.model.id).toBe(sonnet.id);
-  });
-
-  it("resolveSlot uses agent_low over agent_mid when both set", () => {
+  it("resolveSlot resolves triage slot independently", () => {
     providerRegistryStore.addProvider(anthropic);
     providerRegistryStore.addModel(sonnet);
     providerRegistryStore.addModel(haiku);
-    providerRegistryStore.setSlot("agent_mid", sonnet.id);
-    providerRegistryStore.setSlot("agent_low", haiku.id);
+    providerRegistryStore.setSlot("main", sonnet.id);
+    providerRegistryStore.setSlot("triage", haiku.id);
 
-    const resolved = providerRegistryStore.resolveSlot("agent_low");
+    const resolved = providerRegistryStore.resolveSlot("triage");
+    expect(resolved).not.toBeNull();
+    expect(resolved!.model.id).toBe(haiku.id);
+  });
+
+  it("resolveSlot resolves headless slot independently", () => {
+    providerRegistryStore.addProvider(anthropic);
+    providerRegistryStore.addModel(haiku);
+    providerRegistryStore.setSlot("headless", haiku.id);
+
+    const resolved = providerRegistryStore.resolveSlot("headless");
     expect(resolved!.model.id).toBe(haiku.id);
   });
 

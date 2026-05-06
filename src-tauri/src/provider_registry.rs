@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use crate::config::{load_json_config, save_json_config};
 
 const CONFIG_FILE: &str = "providers.json";
-const SCHEMA_VERSION: u32 = 2;
+const SCHEMA_VERSION: u32 = 3;
 
 // ---------------------------------------------------------------------------
 // Provider types
@@ -100,10 +100,8 @@ pub(crate) struct ModelEntry {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum SlotName {
-    Chat,
-    AgentMid,
-    AgentLow,
-    AgentHigh,
+    Main,
+    Triage,
     Headless,
 }
 
@@ -120,6 +118,11 @@ pub(crate) struct ProviderRegistry {
     pub models: Vec<ModelEntry>,
     #[serde(default)]
     pub slots: HashMap<SlotName, String>,
+    /// Per-phase model overrides for the Main slot.
+    /// Maps ToolPhase (search/read/write/plan) → model_id from the models list.
+    /// Phases without an entry fall back to the Main slot model.
+    #[serde(default)]
+    pub phase_overrides: HashMap<crate::ai_agent::engine::ToolPhase, String>,
     #[serde(default)]
     pub features: Features,
 }
@@ -135,6 +138,7 @@ impl Default for ProviderRegistry {
             providers: vec![],
             models: vec![],
             slots: HashMap::new(),
+            phase_overrides: HashMap::new(),
             features: Features::default(),
         }
     }
@@ -167,6 +171,9 @@ pub(crate) fn load_registry() -> ProviderRegistry {
     if version < 2 {
         migrate_slots_v1_to_v2(&mut json);
     }
+    if version < 3 {
+        migrate_slots_v2_to_v3(&mut json);
+    }
     match serde_json::from_value::<ProviderRegistry>(json) {
         Ok(mut reg) => {
             reg.schema_version = SCHEMA_VERSION;
@@ -197,6 +204,47 @@ fn migrate_slots_v1_to_v2(json: &mut serde_json::Value) {
         }
     }
     tracing::info!("Migrated providers.json slots from v1 to v2");
+}
+
+/// Migrate from 5-slot schema (chat/agent_mid/agent_low/agent_high/headless) to
+/// 3-slot schema (main/triage/headless). agent_low/agent_high move to phase_overrides.
+fn migrate_slots_v2_to_v3(json: &mut serde_json::Value) {
+    let slots = match json.get_mut("slots").and_then(|v| v.as_object_mut()) {
+        Some(m) => m,
+        None => return,
+    };
+
+    // chat and agent_mid both map to main; prefer an explicitly-set main
+    for old in ["chat", "agent_mid"] {
+        if let Some(val) = slots.remove(old) {
+            slots.entry("main").or_insert(val);
+        }
+    }
+
+    // agent_low → phase_overrides.search + phase_overrides.read
+    // agent_high → phase_overrides.write
+    let low = slots.remove("agent_low");
+    let high = slots.remove("agent_high");
+
+    if low.is_some() || high.is_some() {
+        let overrides = json
+            .as_object_mut()
+            .unwrap()
+            .entry("phase_overrides")
+            .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()))
+            .as_object_mut()
+            .unwrap();
+
+        if let Some(low_model) = low {
+            overrides.entry("search").or_insert(low_model.clone());
+            overrides.entry("read").or_insert(low_model);
+        }
+        if let Some(high_model) = high {
+            overrides.entry("write").or_insert(high_model);
+        }
+    }
+
+    tracing::info!("Migrated providers.json slots from v2 to v3 (3-slot schema)");
 }
 
 fn infer_provider_type(provider_str: &str) -> ProviderType {
@@ -238,8 +286,7 @@ fn migrate_from_legacy() -> ProviderRegistry {
             tier: ModelTier::Standard,
         });
 
-        reg.slots.insert(SlotName::Chat, model_id.clone());
-        reg.slots.insert(SlotName::AgentMid, model_id.clone());
+        reg.slots.insert(SlotName::Main, model_id.clone());
 
         if let Ok(Some(key)) = crate::credentials::get(crate::credentials::Credential::AiChatApiKey) {
             let _ = crate::credentials::set(crate::credentials::Credential::Provider(&provider_id), &key);
@@ -259,9 +306,10 @@ fn migrate_from_legacy() -> ProviderRegistry {
                 let mid = reg.models.iter().find(|m| m.model_name == *override_model)
                     .map(|m| m.id.clone()).unwrap_or(override_id);
                 match phase {
-                    ToolPhase::Search | ToolPhase::Read => { reg.slots.insert(SlotName::AgentLow, mid); }
-                    ToolPhase::Write => { reg.slots.insert(SlotName::AgentHigh, mid); }
-                    ToolPhase::Plan => {} // plan uses agent_mid
+                    ToolPhase::Search => { reg.phase_overrides.insert(ToolPhase::Search, mid.clone()); reg.phase_overrides.insert(ToolPhase::Read, mid); }
+                    ToolPhase::Read => { reg.phase_overrides.insert(ToolPhase::Read, mid); }
+                    ToolPhase::Write => { reg.phase_overrides.insert(ToolPhase::Write, mid); }
+                    ToolPhase::Plan => {} // plan uses main slot
                 }
             }
         }
@@ -341,12 +389,6 @@ pub(crate) fn resolve_slot(
     let model_id = registry
         .slots
         .get(&slot)
-        .or_else(|| match slot {
-            SlotName::AgentLow | SlotName::AgentHigh => {
-                registry.slots.get(&SlotName::AgentMid)
-            }
-            _ => None,
-        })
         .ok_or_else(|| format!("No model configured for slot {slot:?}"))?;
 
     let model = registry
@@ -496,9 +538,11 @@ mod tests {
 
     #[test]
     fn serde_round_trip_populated_registry() {
+        use crate::ai_agent::engine::ToolPhase;
         let mut slots = HashMap::new();
-        slots.insert(SlotName::Chat, "sonnet-4".to_string());
-        slots.insert(SlotName::AgentMid, "sonnet-4".to_string());
+        slots.insert(SlotName::Main, "sonnet-4".to_string());
+        let mut phase_overrides = HashMap::new();
+        phase_overrides.insert(ToolPhase::Search, "haiku".to_string());
 
         let reg = ProviderRegistry {
             schema_version: 1,
@@ -531,6 +575,7 @@ mod tests {
                 },
             ],
             slots,
+            phase_overrides,
             features: Features {},
         };
 
@@ -549,8 +594,8 @@ mod tests {
         assert_eq!(loaded.models[0].model_name, "claude-sonnet-4-5-20241022");
         assert_eq!(loaded.models[0].tier, ModelTier::Standard);
         assert_eq!(loaded.models[1].tier, ModelTier::Economic);
-        assert_eq!(loaded.slots.get(&SlotName::Chat), Some(&"sonnet-4".to_string()));
-        assert_eq!(loaded.slots.get(&SlotName::AgentMid), Some(&"sonnet-4".to_string()));
+        assert_eq!(loaded.slots.get(&SlotName::Main), Some(&"sonnet-4".to_string()));
+        assert_eq!(loaded.phase_overrides.get(&ToolPhase::Search), Some(&"haiku".to_string()));
     }
 
     #[test]
@@ -644,13 +689,11 @@ mod tests {
     #[test]
     fn slot_name_all_variants_serde() {
         let variants = [
-            (SlotName::Chat, "chat"),
-            (SlotName::AgentMid, "agent_mid"),
-            (SlotName::AgentLow, "agent_low"),
-            (SlotName::AgentHigh, "agent_high"),
+            (SlotName::Main, "main"),
+            (SlotName::Triage, "triage"),
             (SlotName::Headless, "headless"),
         ];
-        assert_eq!(variants.len(), 5, "All 5 slot names must be covered");
+        assert_eq!(variants.len(), 3, "All 3 slot names must be covered");
 
         for (variant, expected_str) in &variants {
             let json = serde_json::to_string(variant).unwrap();
@@ -697,10 +740,10 @@ mod tests {
     #[test]
     fn slot_names_usable_as_hash_keys() {
         let mut map = HashMap::new();
-        map.insert(SlotName::Chat, "m1".to_string());
-        map.insert(SlotName::AgentMid, "m2".to_string());
-        assert_eq!(map.get(&SlotName::Chat), Some(&"m1".to_string()));
-        assert_eq!(map.get(&SlotName::AgentMid), Some(&"m2".to_string()));
+        map.insert(SlotName::Main, "m1".to_string());
+        map.insert(SlotName::Triage, "m2".to_string());
+        assert_eq!(map.get(&SlotName::Main), Some(&"m1".to_string()));
+        assert_eq!(map.get(&SlotName::Triage), Some(&"m2".to_string()));
         assert!(map.get(&SlotName::Headless).is_none());
     }
 
@@ -721,7 +764,7 @@ mod tests {
         let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
 
         let mut slots = HashMap::new();
-        slots.insert(SlotName::Chat, "m1".to_string());
+        slots.insert(SlotName::Main, "m1".to_string());
 
         let reg = ProviderRegistry {
             schema_version: 1,
@@ -738,6 +781,7 @@ mod tests {
                 tier: ModelTier::Premium,
             }],
             slots,
+            phase_overrides: HashMap::new(),
             features: Features {},
         };
 
@@ -750,18 +794,20 @@ mod tests {
         assert_eq!(loaded.models.len(), 1);
         assert_eq!(loaded.models[0].model_name, "gpt-4o");
         assert_eq!(loaded.models[0].tier, ModelTier::Premium);
-        assert_eq!(loaded.slots.get(&SlotName::Chat), Some(&"m1".to_string()));
+        assert_eq!(loaded.slots.get(&SlotName::Main), Some(&"m1".to_string()));
     }
 
     // -- resolve_slot tests --
 
     fn test_registry() -> ProviderRegistry {
+        use crate::ai_agent::engine::ToolPhase;
         let mut slots = HashMap::new();
-        slots.insert(SlotName::Chat, "sonnet".to_string());
-        slots.insert(SlotName::AgentMid, "sonnet".to_string());
-        slots.insert(SlotName::AgentLow, "haiku".to_string());
-        slots.insert(SlotName::AgentHigh, "gpt4o".to_string());
+        slots.insert(SlotName::Main, "sonnet".to_string());
         slots.insert(SlotName::Headless, "gpt4o".to_string());
+        let mut phase_overrides = HashMap::new();
+        phase_overrides.insert(ToolPhase::Search, "haiku".to_string());
+        phase_overrides.insert(ToolPhase::Read, "haiku".to_string());
+        phase_overrides.insert(ToolPhase::Write, "gpt4o".to_string());
 
         ProviderRegistry {
             schema_version: 1,
@@ -812,20 +858,21 @@ mod tests {
                 },
             ],
             slots,
+            phase_overrides,
             features: Features::default(),
         }
     }
 
     #[test]
     #[serial_test::serial]
-    fn resolve_slot_chat() {
+    fn resolve_slot_main() {
         crate::credentials::set(
             crate::credentials::Credential::Provider("anthropic-main"),
             "sk-ant-test",
         ).unwrap();
 
         let reg = test_registry();
-        let resolved = resolve_slot(&reg, SlotName::Chat).unwrap();
+        let resolved = resolve_slot(&reg, SlotName::Main).unwrap();
         assert_eq!(resolved.config.model, "claude-sonnet-4-5-20241022");
         assert_eq!(resolved.api_key, "sk-ant-test");
         assert_eq!(resolved.provider_type, ProviderType::Anthropic);
@@ -833,50 +880,12 @@ mod tests {
     }
 
     #[test]
-    #[serial_test::serial]
-    fn resolve_slot_agent_tier_fallback_to_mid() {
-        crate::credentials::set(
-            crate::credentials::Credential::Provider("anthropic-main"),
-            "sk-ant-test",
-        ).unwrap();
-
-        let mut reg = test_registry();
-        reg.slots.remove(&SlotName::AgentLow);
-        reg.slots.remove(&SlotName::AgentHigh);
-        // AgentLow/AgentHigh not set → falls back to AgentMid
-        let resolved = resolve_slot(&reg, SlotName::AgentLow).unwrap();
-        assert_eq!(resolved.config.model, "claude-sonnet-4-5-20241022");
-
-        let resolved2 = resolve_slot(&reg, SlotName::AgentHigh).unwrap();
-        assert_eq!(resolved2.config.model, "claude-sonnet-4-5-20241022");
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn resolve_slot_agent_low_uses_explicit() {
-        crate::credentials::set(
-            crate::credentials::Credential::Provider("anthropic-main"),
-            "sk-ant-test",
-        ).unwrap();
-
+    fn phase_overrides_in_registry() {
+        use crate::ai_agent::engine::ToolPhase;
         let reg = test_registry();
-        // AgentLow IS explicitly set to haiku
-        let resolved = resolve_slot(&reg, SlotName::AgentLow).unwrap();
-        assert_eq!(resolved.config.model, "claude-haiku-4-5-20241022");
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn resolve_slot_agent_high_uses_explicit() {
-        crate::credentials::set(
-            crate::credentials::Credential::Provider("openai-main"),
-            "sk-openai-test",
-        ).unwrap();
-
-        let reg = test_registry();
-        // AgentHigh IS explicitly set to gpt4o
-        let resolved = resolve_slot(&reg, SlotName::AgentHigh).unwrap();
-        assert_eq!(resolved.config.model, "gpt-4o");
+        assert_eq!(reg.phase_overrides.get(&ToolPhase::Search), Some(&"haiku".to_string()));
+        assert_eq!(reg.phase_overrides.get(&ToolPhase::Write), Some(&"gpt4o".to_string()));
+        assert!(reg.phase_overrides.get(&ToolPhase::Plan).is_none());
     }
 
     #[test]
@@ -942,9 +951,9 @@ mod tests {
             model_name: "my-model".to_string(),
             tier: ModelTier::Standard,
         });
-        reg.slots.insert(SlotName::Chat, "m1".to_string());
+        reg.slots.insert(SlotName::Main, "m1".to_string());
 
-        let resolved = resolve_slot(&reg, SlotName::Chat).unwrap();
+        let resolved = resolve_slot(&reg, SlotName::Main).unwrap();
         assert_eq!(resolved.config.base_url.as_deref(), Some("http://my-llm:8080/v1/"));
     }
 
@@ -970,7 +979,8 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
-    fn load_registry_migrates_v1_slot_keys_to_v2() {
+    fn load_registry_migrates_v1_slot_keys_to_v3() {
+        use crate::ai_agent::engine::ToolPhase;
         let dir = tempfile::TempDir::new().unwrap();
         let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
 
@@ -1000,10 +1010,12 @@ mod tests {
 
         let reg = load_registry();
         assert_eq!(reg.schema_version, SCHEMA_VERSION);
-        assert_eq!(reg.slots.get(&SlotName::Chat), Some(&"sonnet".to_string()));
-        assert_eq!(reg.slots.get(&SlotName::AgentMid), Some(&"sonnet".to_string()));
-        assert_eq!(reg.slots.get(&SlotName::AgentLow), Some(&"sonnet".to_string()));
-        assert_eq!(reg.slots.get(&SlotName::AgentHigh), Some(&"sonnet".to_string()));
+        // v1 chat/agent_default → v2 chat/agent_mid → v3 main
+        assert_eq!(reg.slots.get(&SlotName::Main), Some(&"sonnet".to_string()));
+        // v1 agent_search → v2 agent_low → v3 phase_overrides.search/read
+        assert_eq!(reg.phase_overrides.get(&ToolPhase::Search), Some(&"sonnet".to_string()));
+        // v1 agent_write → v2 agent_high → v3 phase_overrides.write
+        assert_eq!(reg.phase_overrides.get(&ToolPhase::Write), Some(&"sonnet".to_string()));
         assert!(reg.slots.get(&SlotName::Headless).is_none());
     }
 
@@ -1058,8 +1070,7 @@ mod tests {
         assert_eq!(reg.providers[0].id, "anthropic-chat");
         assert_eq!(reg.models.len(), 1);
         assert_eq!(reg.models[0].model_name, "claude-sonnet-4-5-20241022");
-        assert!(reg.slots.contains_key(&SlotName::Chat));
-        assert!(reg.slots.contains_key(&SlotName::AgentMid));
+        assert!(reg.slots.contains_key(&SlotName::Main));
 
         let migrated_key = crate::credentials::get(
             crate::credentials::Credential::Provider("anthropic-chat")
@@ -1088,7 +1099,7 @@ mod tests {
         assert_eq!(reg.providers[0].id, "openai-headless");
         assert_eq!(reg.models.len(), 1);
         assert!(reg.slots.contains_key(&SlotName::Headless));
-        assert!(!reg.slots.contains_key(&SlotName::Chat));
+        assert!(!reg.slots.contains_key(&SlotName::Main));
 
         let migrated_key = crate::credentials::get(
             crate::credentials::Credential::Provider("openai-headless")
@@ -1120,7 +1131,7 @@ mod tests {
         // Same provider, different models — one provider, two models
         assert_eq!(reg.providers.len(), 1);
         assert_eq!(reg.models.len(), 2);
-        assert!(reg.slots.contains_key(&SlotName::Chat));
+        assert!(reg.slots.contains_key(&SlotName::Main));
         assert!(reg.slots.contains_key(&SlotName::Headless));
     }
 
@@ -1147,7 +1158,7 @@ mod tests {
         let reg = load_registry();
         assert_eq!(reg.providers.len(), 2);
         assert_eq!(reg.models.len(), 2);
-        assert!(reg.slots.contains_key(&SlotName::Chat));
+        assert!(reg.slots.contains_key(&SlotName::Main));
         assert!(reg.slots.contains_key(&SlotName::Headless));
     }
 
@@ -1170,10 +1181,13 @@ mod tests {
         };
         write_json(dir.path(), "ai-chat.json", &chat);
 
+        use crate::ai_agent::engine::ToolPhase;
         let reg = load_registry();
-        assert!(reg.slots.contains_key(&SlotName::AgentLow));
-        // Write override uses the same model as default — model exists, slot set
-        assert!(reg.slots.contains_key(&SlotName::AgentHigh));
+        // Search override → phase_overrides.search + phase_overrides.read
+        assert!(reg.phase_overrides.contains_key(&ToolPhase::Search));
+        assert!(reg.phase_overrides.contains_key(&ToolPhase::Read));
+        // Write override uses the same model as default — phase_overrides.write set
+        assert!(reg.phase_overrides.contains_key(&ToolPhase::Write));
         // Haiku model should be added
         assert!(reg.models.iter().any(|m| m.model_name == "claude-haiku-4-5-20241022"));
     }

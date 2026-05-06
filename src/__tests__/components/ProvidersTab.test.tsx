@@ -152,44 +152,39 @@ describe("ProvidersTab", () => {
     expect(getByTestId("slot-assignments")).toBeTruthy();
   });
 
-  it("renders all 5 slot rows", () => {
+  it("renders all 3 slot rows", () => {
     const { getByTestId } = render(() => <ProvidersTab />);
-    for (const slot of ["chat", "agent_mid", "agent_low", "agent_high", "headless"]) {
+    for (const slot of ["main", "triage", "headless"]) {
       expect(getByTestId(`slot-row-${slot}`)).toBeTruthy();
     }
-    for (const slot of ["chat", "agent_mid", "agent_low", "agent_high"]) {
+    // headless slot-select is only shown when External API is active
+    for (const slot of ["main", "triage"]) {
       expect(getByTestId(`slot-select-${slot}`)).toBeTruthy();
     }
-  });
-
-  it("shows fallback hint for agent tier slots when unset", () => {
-    const { getByTestId } = render(() => <ProvidersTab />);
-    const lowRow = getByTestId("slot-row-agent_low");
-    expect(lowRow.textContent).toContain("falls back to agent mid");
   });
 
   it("calls setSlot when slot dropdown changes", () => {
     mockStore.state.registry.providers = [anthropic];
     mockStore.state.registry.models = [sonnet];
     const { getByTestId } = render(() => <ProvidersTab />);
-    fireEvent.change(getByTestId("slot-select-chat"), { target: { value: "model-sonnet" } });
-    expect(mockStore.setSlot).toHaveBeenCalledWith("chat", "model-sonnet");
+    fireEvent.change(getByTestId("slot-select-main"), { target: { value: "model-sonnet" } });
+    expect(mockStore.setSlot).toHaveBeenCalledWith("main", "model-sonnet");
   });
 
   it("calls clearSlot when empty option selected", () => {
     mockStore.state.registry.providers = [anthropic];
     mockStore.state.registry.models = [sonnet];
-    mockStore.state.registry.slots = { chat: "model-sonnet" };
+    mockStore.state.registry.slots = { main: "model-sonnet" };
     const { getByTestId } = render(() => <ProvidersTab />);
-    fireEvent.change(getByTestId("slot-select-chat"), { target: { value: "" } });
-    expect(mockStore.clearSlot).toHaveBeenCalledWith("chat");
+    fireEvent.change(getByTestId("slot-select-main"), { target: { value: "" } });
+    expect(mockStore.clearSlot).toHaveBeenCalledWith("main");
   });
 
   it("shows test button when slot is configured", () => {
     mockStore.state.registry.providers = [anthropic];
     mockStore.state.registry.models = [sonnet];
-    mockStore.state.registry.slots = { chat: "model-sonnet" };
+    mockStore.state.registry.slots = { main: "model-sonnet" };
     const { getByTestId } = render(() => <ProvidersTab />);
-    expect(getByTestId("test-slot-chat")).toBeTruthy();
+    expect(getByTestId("test-slot-main")).toBeTruthy();
   });
 });

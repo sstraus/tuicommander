@@ -41,26 +41,18 @@ const PROVIDER_TYPES: { value: ProviderType; label: string; comingSoon?: boolean
 ];
 
 const SLOT_LABELS: Record<SlotName, string> = {
-  chat:       "Chat",
-  agent_mid:  "Agent (mid)",
-  agent_low:  "Agent (low)",
-  agent_high: "Agent (high)",
-  headless:   "Headless / Smart Prompts",
+  main:     "Main",
+  triage:   "Triage",
+  headless: "Headless / Smart Prompts",
 };
 
 const SLOT_DESCRIPTIONS: Record<SlotName, string> = {
-  chat:       "Used by the AI Chat panel for interactive conversations about your code.",
-  agent_mid:  "Default model for AI agent sessions. Also used as fallback when Agent (low) or Agent (high) are unset.",
-  agent_low:  "Used during agent search and read phases — pick a cheaper/faster model to save costs.",
-  agent_high: "Used during agent write phases — pick a higher-quality model for code generation.",
-  headless:   "Used by Smart Prompts in API mode for one-shot LLM calls (e.g. commit messages, code review).",
+  main:     "Used by the AI Chat panel and agent sessions. Per-phase model overrides are configured separately.",
+  triage:   "Used for diff triage annotations and automated code analysis tasks.",
+  headless: "Used by Smart Prompts in API mode for one-shot LLM calls (e.g. commit messages, code review).",
 };
 
-const SLOT_NAMES: SlotName[] = [
-  "chat", "agent_mid", "agent_low", "agent_high",
-];
-
-const AGENT_FALLBACK_SLOTS: SlotName[] = ["agent_low", "agent_high"];
+const SLOT_NAMES: SlotName[] = ["main", "triage"];
 
 const LOCAL_PROVIDER_TYPES: ProviderType[] = ["ollama", "lm_studio", "lite_llm"];
 
@@ -433,8 +425,6 @@ const SlotAssignments: Component<{ detection: ReturnType<typeof useAgentDetectio
   /** Render a single slot row (reused for both the loop and the headless slot) */
   function SlotRow(slotProps: { slot: SlotName; showLabel?: boolean }) {
     const currentModelId = () => providerRegistryStore.state.registry.slots[slotProps.slot];
-    const isAgentTier = AGENT_FALLBACK_SLOTS.includes(slotProps.slot);
-    const fallbackHint = () => isAgentTier && !currentModelId();
     const showLabel = () => slotProps.showLabel !== false;
 
     return (
@@ -447,10 +437,6 @@ const SlotAssignments: Component<{ detection: ReturnType<typeof useAgentDetectio
               ?
               <span class={s.infoBadgeTip}>{SLOT_DESCRIPTIONS[slotProps.slot]}</span>
             </span>
-            <Show when={fallbackHint()}>
-              {" "}
-              <span class={s.hintInline}>(falls back to agent mid)</span>
-            </Show>
           </label>
         </Show>
         <div class={s.passwordRow}>
