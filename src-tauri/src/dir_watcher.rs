@@ -124,8 +124,8 @@ mod tests {
         assert!(result.unwrap_err().contains("does not exist"));
     }
 
-    #[test]
-    fn test_watcher_stops_on_drop() {
+    #[tokio::test]
+    async fn test_watcher_stops_on_drop() {
         let tmp = TempDir::new().unwrap();
         let dir_path = tmp.path().to_str().unwrap().to_string();
         let state = make_test_state();
@@ -137,24 +137,24 @@ mod tests {
         assert!(!state.dir_watchers.contains_key(&dir_path));
     }
 
-    #[test]
-    fn test_replace_watcher() {
+    #[tokio::test]
+    async fn test_replace_watcher() {
         let tmp1 = TempDir::new().unwrap();
         let tmp2 = TempDir::new().unwrap();
         let path1 = tmp1.path().to_str().unwrap().to_string();
         let path2 = tmp2.path().to_str().unwrap().to_string();
         let state = make_test_state();
 
-        start_watching(&path1, None, &state).unwrap();
+        start_watching(&path1, &state).unwrap();
         assert!(state.dir_watchers.contains_key(&path1));
 
         // Starting a new path doesn't affect the old one
-        start_watching(&path2, None, &state).unwrap();
+        start_watching(&path2, &state).unwrap();
         assert!(state.dir_watchers.contains_key(&path1));
         assert!(state.dir_watchers.contains_key(&path2));
 
         // Re-watching the same path replaces the watcher (no error, no double entry)
-        start_watching(&path1, None, &state).unwrap();
+        start_watching(&path1, &state).unwrap();
         assert_eq!(state.dir_watchers.len(), 2);
     }
 

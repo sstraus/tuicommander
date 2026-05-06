@@ -11,9 +11,14 @@ default-run = "tuicommander"
 
 [profile.release]
 incremental = true
+
 [lib]
 name = "tuicommander_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "tuicommander-remote"
+path = "src/bin/tuicommander_remote.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [], optional = true }

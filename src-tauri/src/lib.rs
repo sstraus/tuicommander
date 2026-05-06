@@ -846,96 +846,14 @@ pub fn run() {
         tracing::info!(source = "github", "No GitHub token from env/CLI — keychain deferred until first use");
     }
 
-    let mcp_upstream_registry_arc = Arc::new(mcp_proxy::registry::UpstreamRegistry::new());
-
     let data_dir = config::config_dir();
 
-    let state = Arc::new(AppState {
-        sessions: DashMap::new(),
-        data_dir,
-        worktrees_dir,
-        metrics: SessionMetrics::new(),
-        output_buffers: DashMap::new(),
-        mcp_sessions: DashMap::new(),
-        ws_clients: DashMap::new(),
-        config: parking_lot::RwLock::new(config.clone()),
-        git_cache: crate::state::GitCacheState::new(),
-        repo_watchers: DashMap::new(),
-        dir_watchers: DashMap::new(),
-        http_client: reqwest::Client::new(),
-        github_token: parking_lot::RwLock::new(github_token),
-        github_token_source: parking_lot::RwLock::new(github_token_source),
-        github_circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
-        github_poller: parking_lot::Mutex::new(None),
-        github_viewer_login: parking_lot::RwLock::new(None),
-        server_shutdown: parking_lot::Mutex::new(None),
-        ipc_started: std::sync::atomic::AtomicBool::new(false),
-        session_token: parking_lot::RwLock::new(config.session_token.clone()),
-        #[cfg(feature = "desktop")]
-        app_handle: parking_lot::RwLock::new(None),
-        plugin_watchers: DashMap::new(),
-        vt_log_buffers: DashMap::new(),
-        #[cfg(feature = "desktop")]
-        grid_channels: DashMap::new(),
-        grid_watch: DashMap::new(),
-        grid_frame_in_flight: DashMap::new(),
-        kitty_states: DashMap::new(),
-        input_buffers: DashMap::new(),
-        last_prompts: DashMap::new(),
-        silence_states: DashMap::new(),
-        claude_usage_cache: parking_lot::Mutex::new(claude_usage::load_cache_from_disk()),
-        log_buffer,
-        event_bus: tokio::sync::broadcast::channel(256).0,
-        event_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-        session_states: dashmap::DashMap::new(),
-        mcp_upstream_registry: mcp_upstream_registry_arc.clone(),
-        oauth_flow_manager: Arc::new(crate::mcp_oauth::flow::OAuthFlowManager::new(
-            mcp_upstream_registry_arc.auth_semaphore.clone(),
-        )),
-        mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
-        tool_search_index: Arc::new(parking_lot::RwLock::new(crate::tool_search::ToolSearchIndex::build(&[]))),
-        content_indices: DashMap::new(),
-        indexer_throttle: Arc::new(crate::content_index::IndexerThrottle::default()),
-        slash_mode: DashMap::new(),
-        last_output_ms: DashMap::new(),
-        shell_states: DashMap::new(),
-        terminal_rows: DashMap::new(),
-        exit_codes: DashMap::new(),
-        shell_state_since_ms: DashMap::new(),
-        loaded_plugins: DashMap::new(),
-        relay: crate::state::RelayState::new(),
-        peer_agents: DashMap::new(),
-        agent_inbox: DashMap::new(),
-        agent_inbox_evictions: DashMap::new(),
-        session_html_tabs: DashMap::new(),
-        mcp_to_session: DashMap::new(),
-        session_to_mcp: DashMap::new(),
-        session_parent: DashMap::new(),
-        messaging_channels: DashMap::new(),
-        session_knowledge: DashMap::new(),
-        knowledge_dirty: DashMap::new(),
-        has_osc133_integration: DashMap::new(),
-        file_sandboxes: DashMap::new(),
-        unrestricted_sessions: DashMap::new(),
-        #[cfg(unix)]
-        bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
-        tailscale_state: parking_lot::RwLock::new(tailscale::TailscaleState::NotInstalled),
-        push_store: push::PushStore::load(&config::config_dir()),
-        desktop_window_focused: std::sync::atomic::AtomicBool::new(true),
-        server_start_time: std::time::Instant::now(),
-        github_rate_limit_remaining: std::sync::atomic::AtomicU32::new(u32::MAX),
-        term_aliases: DashMap::new(),
-        term_alias_counters: DashMap::new(),
-    });
+    let mut app_state = AppState::new(data_dir, worktrees_dir, config.clone(), log_buffer);
+    *app_state.github_token.get_mut() = github_token;
+    *app_state.github_token_source.get_mut() = github_token_source;
 
-    // Wire the event bus into the upstream registry so status changes emit SSE events.
-    state.mcp_upstream_registry.set_event_bus(state.event_bus.clone());
-    // Wire the MCP tools_changed signal so upstream changes notify MCP bridge clients.
-    state.mcp_upstream_registry.set_mcp_tools_tx(state.mcp_tools_changed.clone());
-    // Wire the OAuth flow orchestrator so 401 NeedsOAuth upstreams can start a flow.
-    state
-        .mcp_upstream_registry
-        .set_oauth_flow_manager(state.oauth_flow_manager.clone());
+    let state = Arc::new(app_state);
+    state.wire_event_bus();
 
     // Always start HTTP API server (Unix socket is always on; TCP only if remote access enabled)
     // Tailscale detection + TLS provisioning happens inside the server thread (non-blocking to Tauri setup)
@@ -1585,6 +1503,58 @@ fn build_connect_url(scheme: &str, host: &str, port: u16, token: &str) -> String
         host.to_string()
     };
     format!("{scheme}://{host}:{port}/?token={token}")
+}
+
+/// Run the headless (non-desktop) server.
+/// Called by the `tuicommander-remote` binary.
+#[cfg(not(feature = "desktop"))]
+pub async fn run_headless(port: u16) -> anyhow::Result<()> {
+    let log_buffer = Arc::new(parking_lot::Mutex::new(
+        app_logger::LogRingBuffer::new(app_logger::LOG_RING_CAPACITY),
+    ));
+    app_logger::init_tracing(log_buffer.clone());
+
+    let mut app_config = config::load_app_config();
+    app_config.remote_access_enabled = true;
+    app_config.remote_access_port = port;
+    if app_config.session_token.is_empty() {
+        app_config.session_token = uuid::Uuid::new_v4().to_string();
+    }
+
+    let data_dir = config::config_dir();
+    let worktrees_dir = data_dir.join("worktrees");
+    std::fs::create_dir_all(&worktrees_dir)?;
+
+    let (github_token, github_token_source) = crate::github_auth::resolve_token_without_keychain();
+
+    let mut app_state = AppState::new(data_dir, worktrees_dir, app_config.clone(), log_buffer);
+    *app_state.github_token.get_mut() = github_token;
+    *app_state.github_token_source.get_mut() = github_token_source;
+
+    let state = Arc::new(app_state);
+    state.wire_event_bus();
+
+    AppState::spawn_session_state_accumulator(state.clone());
+    mcp_http::mcp_transport::spawn_tool_search_index_updater(state.clone());
+    pty::spawn_tombstone_sweeper(state.clone());
+    content_index::spawn_content_index_updater(state.clone());
+    ai_agent::knowledge::spawn_persist_task(state.clone());
+    ai_agent::enrichment::spawn_worker(state.clone());
+    {
+        let sched_state = state.clone();
+        tokio::spawn(async move {
+            let scheduler = ai_agent::scheduler::Scheduler::new(sched_state);
+            scheduler.run().await;
+        });
+    }
+
+    agent_mcp::ensure_mcp_configs(&app_config.disabled_mcp_agents);
+
+    tracing::info!(source = "remote", port, "Starting tuicommander-remote");
+
+    mcp_http::start_server(state, true, true, None).await;
+
+    Ok(())
 }
 
 #[cfg(test)]
