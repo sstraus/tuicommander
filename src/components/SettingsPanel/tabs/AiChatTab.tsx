@@ -1,6 +1,7 @@
-import { Component, For, createSignal, onMount } from "solid-js";
-import { invoke } from "../../../invoke";
+import { Component, For, Show, createSignal, onCleanup, onMount } from "solid-js";
+import { invoke, listen } from "../../../invoke";
 import { appLogger } from "../../../stores/appLogger";
+import { toastsStore } from "../../../stores/toasts";
 import s from "../Settings.module.css";
 
 interface AiChatConfig {
@@ -14,6 +15,40 @@ interface ScheduledJob {
   target_session?: string | null;
   max_duration_secs: number;
   enabled: boolean;
+  one_shot?: boolean;
+}
+
+/** Parse agent-generated cron `0 0/{n} * * * *` → interval in minutes, or null. */
+function parseCronIntervalMinutes(expr: string): number | null {
+  const m = expr.match(/^0\s+0\/(\d+)\s+\*\s+\*\s+\*\s+\*$/);
+  if (m) return parseInt(m[1], 10);
+  // also match hourly `0 0 * * * *` → 60 min
+  if (/^0\s+0\s+\*\s+\*\s+\*\s+\*$/.test(expr)) return 60;
+  return null;
+}
+
+function humanInterval(expr: string): string {
+  const mins = parseCronIntervalMinutes(expr);
+  if (mins === null) return expr;
+  if (mins < 60) return `every ${mins} min`;
+  const hrs = mins / 60;
+  return hrs === 1 ? "every hour" : `every ${hrs} hr`;
+}
+
+function nextRunLabel(expr: string): string {
+  const mins = parseCronIntervalMinutes(expr);
+  if (mins === null) return "";
+  const now = new Date();
+  // Compute next multiple-of-interval boundary from the current minute
+  const currentMin = now.getHours() * 60 + now.getMinutes();
+  const nextMin = (Math.floor(currentMin / mins) + 1) * mins;
+  const nextDate = new Date(now);
+  nextDate.setHours(Math.floor(nextMin / 60) % 24, nextMin % 60, 0, 0);
+  if (nextMin >= 24 * 60) {
+    nextDate.setDate(nextDate.getDate() + 1);
+    nextDate.setHours(0, nextMin % (24 * 60) % 60, 0, 0);
+  }
+  return nextDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 interface SchedulerConfig {
@@ -29,8 +64,9 @@ export const AiChatTab: Component = () => {
 
   // Scheduler state
   const [schedulerJobs, setSchedulerJobs] = createSignal<ScheduledJob[]>([]);
-  const [newCron, setNewCron] = createSignal("");
+  const [newIntervalMinutes, setNewIntervalMinutes] = createSignal(15);
   const [newGoal, setNewGoal] = createSignal("");
+  const [newOneShot, setNewOneShot] = createSignal(false);
 
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -67,6 +103,23 @@ export const AiChatTab: Component = () => {
     } catch (e) {
       appLogger.warn("config", "Failed to load scheduler config", e);
     }
+
+    const unlisten = await listen<{ job_id: string; goal: string; timed_out: boolean }>(
+      "scheduled-job-completed",
+      (event) => {
+        const { goal, timed_out } = event.payload;
+        if (timed_out) {
+          toastsStore.add("Scheduled task timed out", goal, "warn");
+        } else {
+          toastsStore.add("Scheduled task completed", goal, "info");
+        }
+        // Refresh job list (one-shot jobs may now be disabled)
+        invoke<SchedulerConfig>("load_scheduler_config")
+          .then((sc) => setSchedulerJobs(sc.jobs))
+          .catch(() => {});
+      }
+    );
+    onCleanup(() => unlisten());
   });
 
   // ---------------------------------------------------------------------------
@@ -83,21 +136,23 @@ export const AiChatTab: Component = () => {
   };
 
   const handleAddJob = async () => {
-    const cron = newCron().trim();
     const goal = newGoal().trim();
-    if (!cron || !goal) return;
+    const interval = newIntervalMinutes();
+    if (!goal || interval < 5) return;
     const id = `job-${Date.now().toString(36)}`;
+    const cron_expr = `0 0/${interval} * * * *`;
     const job: ScheduledJob = {
       id,
-      cron_expr: cron,
+      cron_expr,
       goal,
       target_session: null,
       max_duration_secs: 300,
       enabled: true,
+      one_shot: newOneShot(),
     };
     await saveScheduler([...schedulerJobs(), job]);
-    setNewCron("");
     setNewGoal("");
+    setNewOneShot(false);
   };
 
   const handleToggleJob = async (id: string) => {
@@ -160,8 +215,21 @@ export const AiChatTab: Component = () => {
                   onChange={() => handleToggleJob(job.id)}
                 />
               </label>
-              <code class={s.schedulerCron}>{job.cron_expr}</code>
-              <span class={s.schedulerGoal}>{job.goal}</span>
+              <div class={s.schedulerInfo}>
+                <span class={s.schedulerGoal}>{job.goal}</span>
+                <div class={s.schedulerMeta}>
+                  <code class={s.schedulerCron}>{humanInterval(job.cron_expr)}</code>
+                  <Show when={nextRunLabel(job.cron_expr)}>
+                    <span class={s.schedulerNext}>next {nextRunLabel(job.cron_expr)}</span>
+                  </Show>
+                  <Show when={job.one_shot}>
+                    <span class={s.schedulerBadge}>once</span>
+                  </Show>
+                  <Show when={job.id.startsWith("agent-")}>
+                    <span class={s.schedulerBadge}>AI</span>
+                  </Show>
+                </div>
+              </div>
               <button
                 class={s.schedulerRemove}
                 onClick={() => handleRemoveJob(job.id)}
@@ -175,12 +243,15 @@ export const AiChatTab: Component = () => {
 
         <div class={s.schedulerAdd}>
           <input
-            type="text"
+            type="number"
             class={s.schedulerCronInput}
-            value={newCron()}
-            placeholder="0 0 * * * *"
-            onInput={(e) => setNewCron(e.currentTarget.value)}
+            value={newIntervalMinutes()}
+            min={5}
+            max={1440}
+            title="Interval in minutes (min 5)"
+            onInput={(e) => setNewIntervalMinutes(parseInt(e.currentTarget.value, 10) || 15)}
           />
+          <span class={s.schedulerAddLabel}>min</span>
           <input
             type="text"
             class={s.schedulerGoalInput}
@@ -188,17 +259,24 @@ export const AiChatTab: Component = () => {
             placeholder="Goal (e.g. run tests and report)"
             onInput={(e) => setNewGoal(e.currentTarget.value)}
           />
+          <label class={s.schedulerOneShotLabel} title="Run once then disable">
+            <input
+              type="checkbox"
+              checked={newOneShot()}
+              onChange={(e) => setNewOneShot(e.currentTarget.checked)}
+            />
+            once
+          </label>
           <button
             class={s.testBtn}
-            disabled={!newCron().trim() || !newGoal().trim()}
+            disabled={!newGoal().trim() || newIntervalMinutes() < 5}
             onClick={handleAddJob}
           >
             Add
           </button>
         </div>
         <p class={s.hint}>
-          Cron format: sec min hour day month weekday (6 fields).
-          Example: <code>0 0 * * * *</code> = top of every hour.
+          Interval in minutes (minimum 5). Jobs run with standard trust — destructive commands require approval.
         </p>
       </div>
 

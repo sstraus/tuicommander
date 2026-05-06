@@ -152,7 +152,9 @@ impl Scheduler {
 
         let timeout = std::time::Duration::from_secs(job.max_duration_secs);
         let job_id = job.id.clone();
+        let job_goal = job.goal.clone();
         let one_shot = job.one_shot;
+        let state = self.state.clone();
 
         match start_conversation(self.state.clone(), session_id.clone(), job.goal.clone(), config).await {
             Ok(mut rx) => {
@@ -161,6 +163,7 @@ impl Scheduler {
                 tauri::async_runtime::spawn(async move {
                     let deadline = tokio::time::sleep(timeout);
                     tokio::pin!(deadline);
+                    let mut timed_out = false;
                     loop {
                         tokio::select! {
                             _ = &mut deadline => {
@@ -168,6 +171,7 @@ impl Scheduler {
                                 if let Err(e) = super::conversation_engine::cancel_conversation(&session_id) {
                                     tracing::warn!(job_id = %job_id, "Failed to cancel timed-out job: {e}");
                                 }
+                                timed_out = true;
                                 break;
                             }
                             msg = rx.recv() => {
@@ -194,6 +198,15 @@ impl Scheduler {
                         if let Err(e) = crate::config::save_json_config(CONFIG_FILE, &cfg) {
                             tracing::warn!(job_id = %job_id, "Failed to disable one-shot job: {e}");
                         }
+                    }
+                    // Emit completion event for frontend toast.
+                    use tauri::Emitter as _;
+                    if let Some(ref app) = *state.app_handle.read() {
+                        let _ = app.emit("scheduled-job-completed", serde_json::json!({
+                            "job_id": job_id,
+                            "goal": job_goal,
+                            "timed_out": timed_out,
+                        }));
                     }
                 });
             }

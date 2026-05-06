@@ -995,8 +995,57 @@
   margin-top: 8px;
 }
 
+.schedulerInfo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.schedulerMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.schedulerNext {
+  font-size: var(--font-xs, 10px);
+  color: var(--fg-secondary);
+}
+
+.schedulerBadge {
+  font-size: var(--font-xs, 10px);
+  background: var(--bg-tertiary, var(--bg-primary));
+  color: var(--fg-secondary);
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: var(--radius-sm);
+  padding: 0 4px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.schedulerAddLabel {
+  font-size: var(--font-sm);
+  color: var(--fg-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.schedulerOneShotLabel {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-sm);
+  color: var(--fg-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
 .schedulerCronInput {
-  width: 140px;
+  width: 70px;
   flex-shrink: 0;
 }
 
