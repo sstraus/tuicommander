@@ -249,11 +249,25 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
 
   onMount(() => {
     document.addEventListener("keydown", handleKeyDown);
+    if (!props.anchor) {
+      requestAnimationFrame(() => {
+        if (!popoverEl) return;
+        const rect = popoverEl.getBoundingClientRect();
+        if (rect.top < 0) {
+          setFlippedTop(true);
+        }
+      });
+    }
   });
 
   onCleanup(() => {
     document.removeEventListener("keydown", handleKeyDown);
   });
+
+  let popoverEl: HTMLDivElement | undefined;
+  const [flippedTop, setFlippedTop] = createSignal(false);
+
+  const shouldAnchorTop = () => props.anchor === "top" || (!props.anchor && flippedTop());
 
   const repoColor = createMemo(() => getRepoColor(props.repoPath));
 
@@ -296,7 +310,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
 
       <Show when={!cleanupCtx()}>
       <div class={s.overlay} onClick={props.onClose} />
-      <div class={cx(s.popover, props.anchor === "top" && s.anchorTop)}>
+      <div ref={popoverEl} class={cx(s.popover, shouldAnchorTop() && s.anchorTop)}>
         <Show when={prData()} fallback={
           <div class={s.empty}>{t("prDetail.noData", "No PR data available for")} {props.branch}</div>
         }>
