@@ -75,42 +75,52 @@ function encodeArg(command: string, args: Record<string, unknown>, key: string):
 /** Args accessor + URL encoder, bound to a specific command invocation */
 type ArgEncoder = (key: string) => string;
 
-/** A command table entry: either a mapper function or a browser-unsupported marker */
-type CommandTableEntry =
-  | { map: (args: Record<string, unknown>, p: ArgEncoder) => HttpMapping }
-  | { browserUnsupported: true };
+/** A command table entry: a mapper function that builds the HTTP request */
+type CommandTableEntry = { map: (args: Record<string, unknown>, p: ArgEncoder) => HttpMapping };
 
 /**
  * Table-driven mapping from Tauri command names to HTTP method/path/body.
  *
- * Each entry is either:
- * - `{ map: (args, p) => HttpMapping }` — a mapper that builds the HTTP request
- * - `{ browserUnsupported: true }` — command requires native OS features
- *
  * The `p` helper encodes a required argument for URL usage (throws if missing).
  */
 const COMMAND_TABLE: Record<string, CommandTableEntry> = {
-  // --- Browser-unsupported: Dictation (requires local audio hardware) ---
-  get_dictation_status: { browserUnsupported: true },
-  get_model_info: { browserUnsupported: true },
-  download_whisper_model: { browserUnsupported: true },
-  delete_whisper_model: { browserUnsupported: true },
-  start_dictation: { browserUnsupported: true },
-  stop_dictation_and_transcribe: { browserUnsupported: true },
-  get_correction_map: { browserUnsupported: true },
-  set_correction_map: { browserUnsupported: true },
-  list_audio_devices: { browserUnsupported: true },
-  inject_text: { browserUnsupported: true },
-  get_dictation_config: { browserUnsupported: true },
-  set_dictation_config: { browserUnsupported: true },
-  // --- Browser-unsupported: OS integration ---
-  open_in_app: { browserUnsupported: true },
-  // --- Browser-unsupported: Native audio ---
-  play_notification_sound: { browserUnsupported: true },
-  // --- Browser-unsupported: Relay (desktop config only) ---
-  get_relay_status: { browserUnsupported: true },
-  // --- Browser-unsupported: Update channel check (hardcoded GitHub URLs) ---
-  check_update_channel: { browserUnsupported: true },
+  // --- Dictation ---
+  get_dictation_status: { map: () => ({ method: "GET", path: "/dictation/status" }) },
+  get_model_info: { map: () => ({ method: "GET", path: "/dictation/models" }) },
+  download_whisper_model: {
+    map: (args) => ({ method: "POST", path: "/dictation/models/download", body: { model: args.model_name } }),
+  },
+  delete_whisper_model: {
+    map: (args) => ({ method: "POST", path: "/dictation/models/delete", body: { model: args.model_name } }),
+  },
+  start_dictation: { map: () => ({ method: "POST", path: "/dictation/start" }) },
+  stop_dictation_and_transcribe: { map: () => ({ method: "POST", path: "/dictation/stop" }) },
+  get_correction_map: { map: () => ({ method: "GET", path: "/dictation/corrections" }) },
+  set_correction_map: {
+    map: (args) => ({ method: "PUT", path: "/dictation/corrections", body: { map: args.map } }),
+  },
+  list_audio_devices: { map: () => ({ method: "GET", path: "/dictation/devices" }) },
+  inject_text: {
+    map: (args) => ({ method: "POST", path: "/dictation/inject", body: { text: args.text } }),
+  },
+  get_dictation_config: { map: () => ({ method: "GET", path: "/dictation/config" }) },
+  set_dictation_config: {
+    map: (args) => ({ method: "PUT", path: "/dictation/config", body: args.config }),
+  },
+  // --- OS integration ---
+  open_in_app: {
+    map: (args) => ({ method: "POST", path: "/agents/open-in-app", body: { path: args.path, app: args.app, line: args.line, col: args.col } }),
+  },
+  // --- Native audio ---
+  play_notification_sound: {
+    map: (args) => ({ method: "POST", path: "/system/notification-sound", body: { sound: args.sound, volume: args.volume } }),
+  },
+  // --- Relay ---
+  get_relay_status: { map: () => ({ method: "GET", path: "/system/relay-status" }) },
+  // --- Update channel ---
+  check_update_channel: {
+    map: (_args, p) => ({ method: "GET", path: `/system/check-update?channel=${p("channel")}` }),
+  },
   // --- MCP upstream config (proxied through server for keyring access) ---
   load_mcp_upstreams: { map: () => ({ method: "GET", path: "/mcp/upstreams" }) },
   save_mcp_upstreams: {
@@ -738,7 +748,9 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
     }),
   },
   detect_agents: { map: () => ({ method: "GET", path: "/agents" }) },
-  detect_all_agent_binaries: { browserUnsupported: true },
+  detect_all_agent_binaries: {
+    map: (args) => ({ method: "POST", path: "/agents/detect-all", body: { binaries: args.binaries } }),
+  },
   detect_agent_binary: {
     map: (_args, p) => ({ method: "GET", path: `/agents/detect?binary=${p("binary")}` }),
   },
@@ -859,11 +871,6 @@ export function mapCommandToHttp(command: string, args: Record<string, unknown>)
   const entry = COMMAND_TABLE[command];
   if (!entry) {
     throw new Error(`No HTTP mapping for command: ${command}`);
-  }
-  if ("browserUnsupported" in entry) {
-    throw new Error(
-      `Command "${command}" requires native OS features and is not available in browser mode`,
-    );
   }
   const p: ArgEncoder = (key) => encodeArg(command, args, key);
   return entry.map(args, p);

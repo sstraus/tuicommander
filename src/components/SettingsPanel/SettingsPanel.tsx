@@ -24,6 +24,7 @@ import {
 import { ProvidersTab } from "./tabs/ProvidersTab";
 import { t } from "../../i18n";
 import { settingsStore } from "../../stores/settings";
+import { isTauri } from "../../transport";
 import s from "./Settings.module.css";
 
 /** Context for initial selection when opening the panel */
@@ -51,10 +52,13 @@ const BASE_GLOBAL_TABS: SettingsShellTab[] = [
 ];
 
 function getGlobalTabs(): SettingsShellTab[] {
+  const tabs = isTauri()
+    ? BASE_GLOBAL_TABS
+    : BASE_GLOBAL_TABS.filter((tab) => tab.key !== "dictation");
   if (settingsStore.isAiChatEnabled()) {
-    return [...BASE_GLOBAL_TABS, { key: "ai-chat", label: "AI Chat" }];
+    return [...tabs, { key: "ai-chat", label: "AI Chat" }];
   }
-  return BASE_GLOBAL_TABS;
+  return tabs;
 }
 
 function defaultTab(ctx: SettingsContext): string {
