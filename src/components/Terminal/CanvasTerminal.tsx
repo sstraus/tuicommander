@@ -115,6 +115,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
   // Link detection
   const linkCache = new Map<string, { text: string; path: string; line?: number; col?: number; index: number }[] | null>();
   let hoveredLink: { row: number; colStart: number; colEnd: number; path: string; line?: number; col?: number } | null = null;
+  const detectedLinks = new Map<number, { colStart: number; colEnd: number }[]>();
 
   // Cached CSS custom properties (re-read on remeasure, not every frame)
   let cachedBgDefault = "#1e1e1e";
@@ -126,7 +127,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
   // Accumulates raw pixel delta; when it crosses cellHeight, emits a line scroll to backend.
   let scrollAccumPx = 0;
   let scrollGestureDistPx = 0;
-  let scrollGestureEndTimer: ReturnType<typeof setTimeout> | undefined;
 
   // Row index → row data lookup (persistent, updated incrementally)
   let rowMap = new Map<number, DecodedFrame["rows"][0]>();
@@ -252,7 +252,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       lastResizeCols = cols;
       lastResizeRows = rows;
 
-      rowMap.clear();
+      rowMap.clear(); detectedLinks.clear();
       fullRepaintNeeded = true;
       lastDisplayOffset = -1;
       invokeRef("resize_pty", { sessionId: props.sessionId, rows, cols }).catch(ipcErr("resize_pty"));
@@ -304,20 +304,41 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
   }
 
   function paintLinkUnderline(_frame: DecodedFrame, m: CellMetrics) {
-    if (!hoveredLink) return;
-    const vpRow = hoveredLink.row;
-    if (vpRow < 0 || vpRow >= (currentFrame?.screenRows || lastResizeRows)) return;
-    const x = hoveredLink.colStart * m.cellWidth;
-    const w = (hoveredLink.colEnd - hoveredLink.colStart) * m.cellWidth;
-    const y = vpRow * m.cellHeight + m.cellHeight - 1;
+    const maxRow = currentFrame?.screenRows || lastResizeRows;
     octx.strokeStyle = cachedFgDefault;
     octx.lineWidth = 1;
-    octx.setLineDash([3, 2]);
-    octx.beginPath();
-    octx.moveTo(x, y + 0.5);
-    octx.lineTo(x + w, y + 0.5);
-    octx.stroke();
-    octx.setLineDash([]);
+
+    // Dashed underline for all detected links
+    if (detectedLinks.size > 0) {
+      octx.globalAlpha = 0.4;
+      octx.setLineDash([2, 3]);
+      octx.beginPath();
+      for (const [row, spans] of detectedLinks) {
+        if (row < 0 || row >= maxRow) continue;
+        const y = row * m.cellHeight + m.cellHeight - 1 + 0.5;
+        for (const span of spans) {
+          octx.moveTo(span.colStart * m.cellWidth, y);
+          octx.lineTo(span.colEnd * m.cellWidth, y);
+        }
+      }
+      octx.stroke();
+      octx.setLineDash([]);
+      octx.globalAlpha = 1;
+    }
+
+    // Solid underline for hovered link
+    if (hoveredLink) {
+      const vpRow = hoveredLink.row;
+      if (vpRow >= 0 && vpRow < maxRow) {
+        const x = hoveredLink.colStart * m.cellWidth;
+        const w = (hoveredLink.colEnd - hoveredLink.colStart) * m.cellWidth;
+        const y = vpRow * m.cellHeight + m.cellHeight - 1 + 0.5;
+        octx.beginPath();
+        octx.moveTo(x, y);
+        octx.lineTo(x + w, y);
+        octx.stroke();
+      }
+    }
   }
 
   function findNearestVisibleMatch(matches: typeof searchMatches): number {
@@ -1002,7 +1023,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       selectionStart = null;
       selectionEnd = null;
       cachedSelectionText = "";
-      rowMap.clear();
+      rowMap.clear(); detectedLinks.clear();
       fullRepaintNeeded = true;
     }
 
@@ -1016,7 +1037,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     // When backend sends all screen rows, replace rowMap to discard stale entries
     const screenRowCount = frame.screenRows || lastResizeRows || 24;
     if (frame.rows.length >= screenRowCount) {
-      rowMap.clear();
+      rowMap.clear(); detectedLinks.clear();
 
       fullRepaintNeeded = true;
     } else if (scrollChanged && !geomChanged) {
@@ -1027,9 +1048,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(ipcErr("terminal_request_frame"));
     }
     for (const row of frame.rows) {
-
       rowMap.set(row.index, row);
       pendingDirtyRows.add(row.index);
+      scanRowForLinks(row.index);
     }
 
     currentFrame = frame;
@@ -1043,7 +1064,35 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     scheduleRepaint();
   }
 
-  // --- Link detection on hover ---
+  // --- Link detection ---
+
+  const WEB_URL_RE = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/g;
+  const FILE_PATH_RE = filePathRegex();
+  const FILE_URL_RE = fileUrlRegex();
+
+  function scanRowForLinks(rowIndex: number) {
+    const row = rowMap.get(rowIndex);
+    if (!row) { detectedLinks.delete(rowIndex); return; }
+    const text = rowToText(row);
+    const spans: { colStart: number; colEnd: number }[] = [];
+    let match: RegExpExecArray | null;
+
+    WEB_URL_RE.lastIndex = 0;
+    while ((match = WEB_URL_RE.exec(text)) !== null) {
+      spans.push({ colStart: match.index, colEnd: match.index + match[0].length });
+    }
+    FILE_PATH_RE.lastIndex = 0;
+    while ((match = FILE_PATH_RE.exec(text)) !== null) {
+      const idx = text.indexOf(match[1], match.index);
+      spans.push({ colStart: idx, colEnd: idx + match[1].length });
+    }
+    FILE_URL_RE.lastIndex = 0;
+    while ((match = FILE_URL_RE.exec(text)) !== null) {
+      spans.push({ colStart: match.index, colEnd: match.index + match[0].length });
+    }
+    if (spans.length > 0) detectedLinks.set(rowIndex, spans);
+    else detectedLinks.delete(rowIndex);
+  }
 
   let linkThrottle: ReturnType<typeof setTimeout> | undefined;
 
@@ -1077,9 +1126,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     const cacheKey = `${row}:${rowText}`;
     let links = linkCache.get(cacheKey);
     if (links === undefined) {
-      const fpRe = filePathRegex();
-      const fuRe = fileUrlRegex();
-      const webUrlRe = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/g;
+      const fpRe = FILE_PATH_RE;
+      const fuRe = FILE_URL_RE;
+      const webUrlRe = WEB_URL_RE;
       const fileMatches: { text: string; candidate: string; index: number }[] = [];
       const urlMatches: { text: string; path: string; index: number }[] = [];
       let match: RegExpExecArray | null;
@@ -1152,7 +1201,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     if (currentFrame) { const m = metrics(); if (m) repaintOverlay(currentFrame, m); }
   }
 
-  let inertiaRaf = 0;
 
   onMount(async () => {
     const baseCtx = canvasRef.getContext("2d", { alpha: false });
@@ -1184,7 +1232,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       const isVisible = entries[0]?.isIntersecting ?? false;
       if (isVisible && hidden) {
         hidden = false;
-        rowMap.clear();
+        rowMap.clear(); detectedLinks.clear();
         fullRepaintNeeded = true;
         currentFrame = null;
         lastDisplayOffset = -1;
@@ -1270,7 +1318,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "l" && !e.altKey) {
         e.preventDefault();
   
-        rowMap.clear();
+        rowMap.clear(); detectedLinks.clear();
         fullRepaintNeeded = true;
         currentFrame = null;
         lastDisplayOffset = -1;
@@ -1557,42 +1605,12 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       }
     });
 
-    // --- Scroll (acceleration + inertia) ---
-    let scrollVelocity = 0;
-    let lastWheelTime = 0;
-    let residualLines = 0;
-    const ACCEL_WINDOW = 120;
-    const ACCEL_SCALE = 0.15;
-    const ACCEL_MAX = 8;
-    const INERTIA_DECAY = 0.88;
-    const INERTIA_MIN = 0.3;
+    // --- Scroll ---
+    let scrollGestureEndTimer: ReturnType<typeof setTimeout> | undefined;
 
     function resetScrollGesture() {
       scrollAccumPx = 0;
       scrollGestureDistPx = 0;
-    }
-
-    function applyScrollDelta(linesDelta: number) {
-      const rounded = Math.trunc(linesDelta);
-      residualLines += linesDelta - rounded;
-      let extra = Math.trunc(residualLines);
-      residualLines -= extra;
-      const total = rounded + extra;
-      if (total !== 0) {
-        invokeRef?.("terminal_scroll", { sessionId: props.sessionId, delta: -total }).catch(ipcErr("terminal_scroll"));
-      }
-    }
-
-    function tickInertia() {
-      inertiaRaf = 0;
-      if (Math.abs(scrollVelocity) < INERTIA_MIN) {
-        scrollVelocity = 0;
-        residualLines = 0;
-        return;
-      }
-      applyScrollDelta(scrollVelocity);
-      scrollVelocity *= INERTIA_DECAY;
-      inertiaRaf = requestAnimationFrame(tickInertia);
     }
 
     function handleWheel(e: WheelEvent) {
@@ -1605,21 +1623,27 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
         return;
       }
       const m = metrics();
-      const rawLines = m ? e.deltaY / m.cellHeight : Math.sign(e.deltaY);
-      const now = performance.now();
-      const dt = now - lastWheelTime;
-      lastWheelTime = now;
+      const ch = m?.cellHeight ?? 20;
+      const screenPx = ch * (lastResizeRows || 24);
 
-      if (dt < ACCEL_WINDOW && Math.sign(rawLines) === Math.sign(scrollVelocity)) {
-        const boost = Math.min(Math.abs(scrollVelocity) * ACCEL_SCALE, ACCEL_MAX);
-        scrollVelocity = rawLines + Math.sign(rawLines) * boost;
-      } else {
-        scrollVelocity = rawLines;
+      const dy = e.deltaY;
+      const atBottom = currentFrame && currentFrame.displayOffset === 0;
+      const atTop = currentFrame && currentFrame.displayOffset >= currentFrame.historySize;
+      if ((atBottom && dy > 0) || (atTop && dy < 0)) return;
+
+      scrollGestureDistPx += Math.abs(dy);
+      const excess = Math.max(0, scrollGestureDistPx - screenPx);
+      const factor = 0.5 + 0.5 * (excess / screenPx);
+      scrollAccumPx += dy * factor;
+
+      const lines = Math.trunc(scrollAccumPx / ch);
+      if (lines !== 0) {
+        scrollAccumPx -= lines * ch;
+        invokeRef?.("terminal_scroll", { sessionId: props.sessionId, delta: -lines }).catch(ipcErr("terminal_scroll"));
       }
 
-      if (inertiaRaf) { cancelAnimationFrame(inertiaRaf); inertiaRaf = 0; }
-      applyScrollDelta(scrollVelocity);
-      inertiaRaf = requestAnimationFrame(tickInertia);
+      clearTimeout(scrollGestureEndTimer);
+      scrollGestureEndTimer = setTimeout(resetScrollGesture, 200);
     }
     canvasRef.addEventListener("wheel", handleWheel, { passive: false });
     scrollbarRef.addEventListener("wheel", handleWheel, { passive: false });
@@ -1749,7 +1773,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
       getSelectionText: () => cachedSelectionText,
       refresh: () => {
   
-        rowMap.clear();
+        rowMap.clear(); detectedLinks.clear();
         fullRepaintNeeded = true;
         currentFrame = null;
         lastDisplayOffset = -1;
@@ -1836,7 +1860,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     alive = false;
     stopBlink();
     if (rafId !== undefined) { cancelAnimationFrame(rafId); rafId = undefined; }
-    if (inertiaRaf) { cancelAnimationFrame(inertiaRaf); inertiaRaf = 0; }
     clearTimeout(resizeDebounce);
     resizeObserver?.disconnect();
     visibilityObserver?.disconnect();
@@ -1845,7 +1868,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
     cleanupTouch?.();
     clearTimeout(linkThrottle);
     linkCache.clear();
-    rowMap.clear();
+    rowMap.clear(); detectedLinks.clear();
     colorStringCache.clear();
     fontStyleCache.clear();
     releaseCache();
