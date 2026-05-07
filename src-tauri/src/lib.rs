@@ -1606,7 +1606,11 @@ pub async fn run_headless(port: u16) -> anyhow::Result<()> {
 
     // Run server until SIGINT/SIGTERM, then shut down gracefully.
     tokio::select! {
-        _ = mcp_http::start_server(state.clone(), true, true, tls_config) => {}
+        tcp_bound = mcp_http::start_server(state.clone(), true, true, tls_config) => {
+            if !tcp_bound {
+                anyhow::bail!("Fatal: failed to bind TCP on port {port} — cannot serve in headless mode");
+            }
+        }
         _ = tokio::signal::ctrl_c() => {
             tracing::info!(source = "remote", "Received shutdown signal");
             if let Some(tx) = state.server_shutdown.lock().take() {

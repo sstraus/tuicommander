@@ -496,6 +496,7 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         // Config
         .route("/config", get(config_routes::get_config).put(config_routes::put_config))
         .route("/config/hash-password", post(config_routes::hash_password_http))
+        .route("/api/auth/rotate-token", post(config_routes::rotate_session_token))
         .route("/config/notifications", get(config_routes::get_notification_config).put(config_routes::put_notification_config))
         .route("/config/ui-prefs", get(config_routes::get_ui_prefs).put(config_routes::put_ui_prefs))
         .route("/config/repo-settings", get(config_routes::get_repo_settings).put(config_routes::put_repo_settings))
@@ -637,12 +638,15 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
 ///
 /// Both listeners share a single shutdown signal so `save_config` can restart
 /// the server cleanly.
+/// Start IPC + TCP listeners. Returns `true` if TCP bound successfully (or
+/// wasn't requested). Returns `false` only when `remote_enabled` is true and
+/// TCP bind failed on all port attempts.
 pub async fn start_server(
     state: Arc<AppState>,
     mcp_enabled: bool,
     remote_enabled: bool,
     tls_config: Option<axum_server::tls_rustls::RustlsConfig>,
-) {
+) -> bool {
     let config = state.config.read().clone();
 
     // Register shutdown channel so save_config can restart server. Only the
@@ -866,6 +870,8 @@ pub async fn start_server(
         None
     };
 
+    let tcp_bound = !remote_enabled || tcp_handle.is_some();
+
     // Spawn TLS cert renewal task (checks every 24h, renews if < 30 days to expiry)
     let renewal_handle = if let Some(ref tls) = tls_config {
         let ts_state = state.tailscale_state.read().clone();
@@ -894,6 +900,8 @@ pub async fn start_server(
     if let Some(h) = renewal_handle {
         h.abort();
     }
+
+    tcp_bound
 }
 
 #[cfg(test)]

@@ -84,6 +84,22 @@ pub(super) async fn hash_password_http(
     }
 }
 
+pub(super) async fn rotate_session_token(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    let new_token = uuid::Uuid::new_v4().to_string();
+    *state.session_token.write() = new_token.clone();
+    let mut cfg = state.config.read().clone();
+    cfg.services.auth.session_token = new_token;
+    if let Err(e) = crate::config::save_app_config(cfg) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("Failed to persist token: {e}")})),
+        );
+    }
+    (StatusCode::OK, Json(serde_json::json!({"ok": true})))
+}
+
 pub(super) async fn get_notification_config() -> impl IntoResponse {
     Json(crate::config::load_notification_config())
 }
