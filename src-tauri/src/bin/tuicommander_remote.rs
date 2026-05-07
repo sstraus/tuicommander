@@ -1,6 +1,10 @@
 #[cfg(not(feature = "desktop"))]
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    if std::env::args().any(|a| a == "--set-password") {
+        return tuicommander_lib::set_password_interactive();
+    }
+
     let port: u16 = match std::env::var("TUIC_PORT") {
         Ok(val) => val.parse().unwrap_or_else(|e| {
             eprintln!("warning: TUIC_PORT={val:?} is not a valid port ({e}), using default 9877");

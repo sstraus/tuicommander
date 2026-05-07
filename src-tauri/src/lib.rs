@@ -1495,6 +1495,50 @@ fn spawn_background_tasks(state: &Arc<AppState>) {
     }
 }
 
+/// Interactive CLI to set username + password for headless auth.
+/// Reads from stdin, hashes with bcrypt, writes to config.json.
+#[cfg(not(feature = "desktop"))]
+pub fn set_password_interactive() -> anyhow::Result<()> {
+    use std::io::{self, BufRead, Write};
+
+    let stdin = io::stdin();
+    let mut stdout = io::stdout();
+
+    print!("Username: ");
+    stdout.flush()?;
+    let mut username = String::new();
+    stdin.lock().read_line(&mut username)?;
+    let username = username.trim().to_string();
+    if username.is_empty() {
+        anyhow::bail!("Username cannot be empty");
+    }
+
+    print!("Password: ");
+    stdout.flush()?;
+    let mut password = String::new();
+    stdin.lock().read_line(&mut password)?;
+    let password = password.trim().to_string();
+    if password.is_empty() {
+        anyhow::bail!("Password cannot be empty");
+    }
+
+    let hash = bcrypt::hash(&password, 12)
+        .map_err(|e| anyhow::anyhow!("Failed to hash password: {e}"))?;
+
+    let mut cfg = config::load_app_config();
+    cfg.services.auth.username = username.clone();
+    cfg.services.auth.password_hash = hash;
+    config::save_app_config(cfg)?;
+
+    let masked = if username.len() <= 2 {
+        format!("{}*", &username[..1])
+    } else {
+        format!("{}…{}", &username[..1], &username[username.len() - 1..])
+    };
+    println!("Credentials saved for user \"{masked}\"");
+    Ok(())
+}
+
 /// Run the headless (non-desktop) server.
 /// Called by the `tuicommander-remote` binary.
 #[cfg(not(feature = "desktop"))]
