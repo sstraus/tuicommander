@@ -6,7 +6,6 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::state::AppState;
-use super::engine;
 use super::conversation_engine::ACTIVE_CONVERSATIONS;
 use super::knowledge::{OutcomeClass, SessionKnowledge};
 use super::tui_detect::TerminalMode;
@@ -15,6 +14,7 @@ use super::tui_detect::TerminalMode;
 /// Uses per-conversation Channel transport with 50ms TextChunk batching.
 #[cfg(feature = "desktop")]
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn start_conversation(
     state: tauri::State<'_, Arc<AppState>>,
     session_id: String,

@@ -6,7 +6,6 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::Duration;
 
 use crate::config::{load_json_config, save_json_config};
@@ -377,12 +376,14 @@ pub(crate) fn new_conversation_id() -> String {
 
 /// Per-million-token pricing: (input_usd, output_usd, cached_input_usd).
 /// Cached input price = standard input * cache_discount (typically 0.10 for Anthropic, 0.50 for OpenAI).
+#[allow(dead_code)]
 struct ModelPricing {
     input_per_m: f64,
     output_per_m: f64,
     cached_input_per_m: f64,
 }
 
+#[allow(dead_code)]
 fn model_pricing(model: &str) -> Option<ModelPricing> {
     // Match by prefix to handle version suffixes (e.g. claude-sonnet-4-5-20241022)
     let m = model.to_lowercase();
@@ -422,6 +423,7 @@ fn model_pricing(model: &str) -> Option<ModelPricing> {
 }
 
 /// Estimate cost in USD for a completion. Returns None if the model is not in the pricing table.
+#[allow(dead_code)]
 pub(crate) fn estimate_cost_usd(
     model: &str,
     prompt_tokens: Option<i32>,

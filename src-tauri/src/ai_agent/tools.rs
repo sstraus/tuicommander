@@ -1722,11 +1722,6 @@ async fn exec_run_command_inner(state: &AppState, session_id: &str, args: &Value
 
 // ── Dispatch ──────────────────────────────────────────────────
 
-/// Dispatch a tool call by function name.
-///
-/// `session_id` is the identity of the agent's PTY session — threaded through
-/// so filesystem tools can look up their sandbox without the LLM needing to
-/// pass it explicitly. Terminal tools continue to read `session_id` from
 // ── schedule_task / list_schedules / cancel_schedule ─────────────────────
 
 fn exec_schedule_task(args: &Value) -> ToolResult {

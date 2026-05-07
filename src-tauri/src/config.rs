@@ -355,7 +355,7 @@ impl<'de> serde::Deserialize<'de> for TlsConfig {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub(crate) struct RelayConfig {
     #[serde(default)]
     pub(crate) enabled: bool,
@@ -365,17 +365,6 @@ pub(crate) struct RelayConfig {
     pub(crate) token: String,
     #[serde(default)]
     pub(crate) session_id: String,
-}
-
-impl Default for RelayConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            url: String::new(),
-            token: String::new(),
-            session_id: String::new(),
-        }
-    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -416,6 +405,7 @@ pub(crate) struct ServicesConfig {
 }
 
 impl ServicesConfig {
+    #[allow(dead_code)]
     pub(crate) fn validate(&self) -> Vec<String> {
         let mut warnings = Vec::new();
         if self.server.enabled

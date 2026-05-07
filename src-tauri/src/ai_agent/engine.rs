@@ -5,16 +5,14 @@
 //! or a termination condition is met.
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
 use dashmap::DashMap;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use serde::Serialize;
-use tokio::sync::{broadcast, oneshot, Notify};
 
-use crate::state::AppState;
 use super::tools;
 
 // ── Constants ─────────────────────────────────────────────────
@@ -30,18 +28,15 @@ pub(crate) const TOOL_DISPATCH_LIMIT_PER_SESSION: usize = 500;
 
 // ── Active agents registry ────────────────────────────────────
 
+#[allow(dead_code)]
 pub(crate) static ACTIVE_AGENTS: std::sync::LazyLock<DashMap<String, AgentHandle>> =
     std::sync::LazyLock::new(DashMap::new);
 
-/// Handle to a running agent loop — used for pause/resume/cancel.
+/// Handle to a running agent loop — used for cancel and status queries.
+#[allow(dead_code)]
 pub(crate) struct AgentHandle {
     pub cancel: Arc<AtomicBool>,
     pub state: Arc<RwLock<AgentState>>,
-    pub pause_notify: Arc<Notify>,
-    pub event_tx: broadcast::Sender<AgentLoopEvent>,
-    /// Oneshot sender for pending approval — set when NeedsApproval fires,
-    /// consumed by approve_agent_action.
-    pub approval_tx: Arc<Mutex<Option<oneshot::Sender<bool>>>>,
 }
 
 // ── Agent state ───────────────────────────────────────────────
@@ -54,24 +49,6 @@ pub enum AgentState {
     Completed,
     Cancelled,
     Error,
-}
-
-// ── Agent loop events ─────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum AgentLoopEvent {
-    Started { session_id: String },
-    Thinking { session_id: String, iteration: usize },
-    TextChunk { session_id: String, text: String },
-    ToolCall { session_id: String, tool_name: String, args: serde_json::Value },
-    ToolResult { session_id: String, tool_name: String, success: bool, output: String },
-    NeedsApproval { session_id: String, tool_name: String, command: String, reason: String },
-    Paused { session_id: String },
-    Resumed { session_id: String },
-    RateLimited { session_id: String, wait_ms: u64 },
-    Error { session_id: String, message: String },
-    Completed { session_id: String, reason: String },
 }
 
 // ── Rate limiter ──────────────────────────────────────────────
@@ -172,6 +149,7 @@ pub(crate) fn compose_system_prompt(
     out
 }
 
+#[allow(dead_code)]
 fn build_system_prompt(session_id: &str) -> String {
     format!(
         "You are an AI agent controlling a terminal session (id: {session_id}).\n\n\
@@ -232,446 +210,6 @@ pub(crate) fn redact_json_values(val: &serde_json::Value) -> serde_json::Value {
         }
         other => other.clone(),
     }
-}
-
-// ── Core loop ─────────────────────────────────────────────────
-
-/// Provider/model/key bundle passed into the agent loop. Constructed by the
-/// caller (Tauri command layer) so the engine stays decoupled from the
-/// `ai_chat` config and keyring code paths.
-pub(crate) struct LlmRuntime {
-    pub config: crate::llm_api::LlmApiConfig,
-    pub api_key: String,
-    pub model_overrides: std::collections::HashMap<ToolPhase, String>,
-}
-
-/// Trust level for an agent session. Controls safety gate behavior.
-/// Standard: all verdicts enforced (NeedsApproval pauses for user).
-/// Unrestricted: NeedsApproval auto-approved; Block verdicts remain hard-blocked;
-///               filesystem sandbox disabled. Per-session, not persisted.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum TrustLevel {
-    #[default]
-    Standard,
-    Unrestricted,
-}
-
-/// Start the agent loop for a session. Returns error if already active.
-pub(crate) async fn start_agent_loop(
-    state: Arc<AppState>,
-    session_id: String,
-    user_goal: String,
-    runtime: LlmRuntime,
-    trust_level: TrustLevel,
-) -> Result<broadcast::Receiver<AgentLoopEvent>, String> {
-    // Reject duplicate
-    if ACTIVE_AGENTS.contains_key(&session_id) {
-        return Err(format!("Agent already active on session {session_id}"));
-    }
-
-    let cancel = Arc::new(AtomicBool::new(false));
-    let agent_state = Arc::new(RwLock::new(AgentState::Running));
-    let pause_notify = Arc::new(Notify::new());
-    let (event_tx, event_rx) = broadcast::channel(256);
-
-    let approval_tx: Arc<Mutex<Option<oneshot::Sender<bool>>>> = Arc::new(Mutex::new(None));
-    let handle = AgentHandle {
-        cancel: cancel.clone(),
-        state: agent_state.clone(),
-        pause_notify: pause_notify.clone(),
-        event_tx: event_tx.clone(),
-        approval_tx: approval_tx.clone(),
-    };
-    ACTIVE_AGENTS.insert(session_id.clone(), handle);
-
-    if trust_level == TrustLevel::Unrestricted {
-        state.unrestricted_sessions.insert(session_id.clone(), ());
-    }
-
-    // Spawn the loop
-    let sid = session_id.clone();
-    tokio::spawn(async move {
-        let result = run_loop(
-            state.clone(),
-            sid.clone(),
-            user_goal,
-            runtime,
-            trust_level,
-            LoopHandles {
-                cancel,
-                agent_state: agent_state.clone(),
-                pause_notify,
-                event_tx: event_tx.clone(),
-                approval_tx,
-            },
-        )
-        .await;
-
-        state.unrestricted_sessions.remove(&sid);
-        state.file_sandboxes.remove(&sid);
-
-        match result {
-            Ok(reason) => {
-                *agent_state.write() = AgentState::Completed;
-                let _ = event_tx.send(AgentLoopEvent::Completed {
-                    session_id: sid.clone(),
-                    reason,
-                });
-            }
-            Err(e) => {
-                tracing::error!(session_id = %sid, error = %e, "Agent loop failed");
-                *agent_state.write() = AgentState::Error;
-                let _ = event_tx.send(AgentLoopEvent::Error {
-                    session_id: sid.clone(),
-                    message: e,
-                });
-            }
-        }
-        ACTIVE_AGENTS.remove(&sid);
-    });
-
-    Ok(event_rx)
-}
-
-/// Cancel an active agent loop.
-pub(crate) fn cancel_agent_loop(session_id: &str) -> Result<(), String> {
-    let entry = ACTIVE_AGENTS.get(session_id)
-        .ok_or_else(|| format!("No active agent on session {session_id}"))?;
-    entry.cancel.store(true, Ordering::Release);
-    *entry.state.write() = AgentState::Cancelled;
-    Ok(())
-}
-
-/// Pause an active agent loop.
-pub(crate) fn pause_agent_loop(session_id: &str) -> Result<(), String> {
-    let entry = ACTIVE_AGENTS.get(session_id)
-        .ok_or_else(|| format!("No active agent on session {session_id}"))?;
-    *entry.state.write() = AgentState::Paused;
-    let _ = entry.event_tx.send(AgentLoopEvent::Paused {
-        session_id: session_id.to_string(),
-    });
-    Ok(())
-}
-
-/// Resume a paused agent loop.
-pub(crate) fn resume_agent_loop(session_id: &str) -> Result<(), String> {
-    let entry = ACTIVE_AGENTS.get(session_id)
-        .ok_or_else(|| format!("No active agent on session {session_id}"))?;
-    *entry.state.write() = AgentState::Running;
-    entry.pause_notify.notify_one();
-    let _ = entry.event_tx.send(AgentLoopEvent::Resumed {
-        session_id: session_id.to_string(),
-    });
-    Ok(())
-}
-
-/// Coordination handles shared between the spawner and the loop.
-struct LoopHandles {
-    cancel: Arc<AtomicBool>,
-    agent_state: Arc<RwLock<AgentState>>,
-    pause_notify: Arc<Notify>,
-    event_tx: broadcast::Sender<AgentLoopEvent>,
-    approval_tx: Arc<Mutex<Option<oneshot::Sender<bool>>>>,
-}
-
-/// The actual ReAct loop.
-async fn run_loop(
-    state: Arc<AppState>,
-    session_id: String,
-    user_goal: String,
-    runtime: LlmRuntime,
-    trust_level: TrustLevel,
-    h: LoopHandles,
-) -> Result<String, String> {
-    let LoopHandles { cancel, agent_state, pause_notify, event_tx, approval_tx } = h;
-    use futures_util::StreamExt;
-    use genai::chat::{
-        ChatMessage, ChatOptions, ChatRequest, ChatStreamEvent as GenaiStreamEvent,
-        ContentPart, Tool, ToolResponse,
-    };
-
-    let _ = event_tx.send(AgentLoopEvent::Started {
-        session_id: session_id.clone(),
-    });
-
-    let LlmRuntime { config: llm_config, api_key, model_overrides } = runtime;
-    let base_model = llm_config.model.clone();
-    let client = crate::llm_api::build_client(&llm_config, &api_key);
-
-    // Build tools for genai
-    let tool_defs = tools::tool_definitions();
-    let genai_tools: Vec<Tool> = tool_defs
-        .as_array()
-        .unwrap_or(&Vec::new())
-        .iter()
-        .filter_map(|t| {
-            let name = t["name"].as_str()?;
-            let mut tool = Tool::new(name);
-            if let Some(desc) = t["description"].as_str() {
-                tool = tool.with_description(desc);
-            }
-            if let Some(schema) = t.get("inputSchema") {
-                tool = tool.with_schema(schema.clone());
-            }
-            Some(tool)
-        })
-        .collect();
-
-    let chat_options = ChatOptions::default().with_capture_tool_calls(true);
-
-    // Base system prompt is constant per session; knowledge is appended and
-    // refreshed every iteration so tool calls that mutate session knowledge
-    // (mid-loop writes, terminal_mode flips, command outcomes) are reflected
-    // in subsequent LLM turns instead of being frozen at iteration 0.
-    // Cross-session memory is injected once at start — prior-session data is static.
-    let base_system_prompt = build_system_prompt(&session_id);
-    let cross_session: Option<String> =
-        super::context::build_cross_session_section(&state, &session_id);
-    let mut last_knowledge: Option<String> =
-        super::context::build_knowledge_section(&state, &session_id);
-    let mut chat_req = ChatRequest::default()
-        .with_system(compose_system_prompt(
-            &base_system_prompt,
-            cross_session.as_deref(),
-            last_knowledge.as_deref(),
-        ))
-        .with_tools(genai_tools.clone())
-        .append_message(ChatMessage::user(user_goal));
-
-    let mut rate_limiter = RateLimiter::new(RATE_LIMIT_PER_MINUTE, RATE_LIMIT_PER_SESSION);
-    let mut tool_limiter = RateLimiter::new(TOOL_DISPATCH_LIMIT_PER_MINUTE, TOOL_DISPATCH_LIMIT_PER_SESSION);
-    let mut repetition = RepetitionDetector::new();
-    let deadline = tokio::time::Instant::now() + LOOP_TIMEOUT;
-    let mut last_tool_names: Vec<String> = Vec::new();
-
-    for iteration in 0..MAX_ITERATIONS {
-        if cancel.load(Ordering::Acquire) {
-            tracing::info!(session_id, "Agent loop cancelled");
-            return Ok("cancelled".into());
-        }
-
-        if tokio::time::Instant::now() >= deadline {
-            tracing::warn!(session_id, "Agent loop timed out");
-            return Ok("timeout".into());
-        }
-
-        // Refresh knowledge section every iteration: tool calls executed at
-        // the end of the previous iteration may have updated SessionKnowledge
-        // (cwd, command outcomes, TUI mode). Only re-write the system prompt
-        // when content actually changed to avoid pointless allocations.
-        if iteration > 0 {
-            let current = super::context::build_knowledge_section(&state, &session_id);
-            if current != last_knowledge {
-                chat_req.system = Some(compose_system_prompt(
-                    &base_system_prompt,
-                    cross_session.as_deref(),
-                    current.as_deref(),
-                ));
-                last_knowledge = current;
-            }
-        }
-
-        // Check pause
-        while *agent_state.read() == AgentState::Paused {
-            // Wait for resume or check cancel every 100ms
-            tokio::select! {
-                _ = pause_notify.notified() => {}
-                _ = tokio::time::sleep(Duration::from_millis(100)) => {}
-            }
-            if cancel.load(Ordering::Acquire) {
-                return Ok("cancelled".into());
-            }
-        }
-
-        if let Err(wait) = rate_limiter.check() {
-            if wait == Duration::ZERO {
-                tracing::warn!(session_id, "LLM session rate limit reached");
-                return Ok("session_rate_limit".into());
-            }
-            tracing::debug!(session_id, wait_ms = wait.as_millis() as u64, "LLM rate limit, waiting");
-            let _ = event_tx.send(AgentLoopEvent::RateLimited {
-                session_id: session_id.clone(),
-                wait_ms: wait.as_millis() as u64,
-            });
-            tokio::time::sleep(wait).await;
-            if cancel.load(Ordering::Acquire) {
-                return Ok("cancelled".into());
-            }
-        }
-        rate_limiter.record();
-
-        let _ = event_tx.send(AgentLoopEvent::Thinking {
-            session_id: session_id.clone(),
-            iteration,
-        });
-
-        // Select model based on last iteration's tool phase
-        let phase_refs: Vec<&str> = last_tool_names.iter().map(|s| s.as_str()).collect();
-        let phase = classify_phase(&phase_refs);
-        let model = select_model_for_phase(&base_model, &model_overrides, phase);
-
-        let stream_resp = client
-            .exec_chat_stream(model, chat_req.clone(), Some(&chat_options))
-            .await
-            .map_err(|e| format!("LLM stream error: {e}"))?;
-
-        let mut stream = stream_resp.stream;
-        let mut tool_calls = Vec::new();
-        let mut text_buf = String::new();
-        // Collect ContentParts for assistant message reconstruction
-        let mut assistant_parts: Vec<ContentPart> = Vec::new();
-
-        loop {
-            tokio::select! {
-                event = stream.next() => {
-                    match event {
-                        Some(Ok(GenaiStreamEvent::Chunk(chunk))) => {
-                            text_buf.push_str(&chunk.content);
-                            let _ = event_tx.send(AgentLoopEvent::TextChunk {
-                                session_id: session_id.clone(),
-                                text: chunk.content,
-                            });
-                        }
-                        Some(Ok(GenaiStreamEvent::End(end))) => {
-                            // Extract tool calls from captured content
-                            if let Some(content) = end.captured_content {
-                                for part in content.into_parts() {
-                                    match part {
-                                        ContentPart::ToolCall(tc) => {
-                                            tool_calls.push(tc);
-                                        }
-                                        other => {
-                                            assistant_parts.push(other);
-                                        }
-                                    }
-                                }
-                            }
-                            break;
-                        }
-                        Some(Err(e)) => {
-                            tracing::error!(session_id, iteration, error = %e, "LLM stream error");
-                            return Err(format!("Stream error at iteration {iteration}: {e}"));
-                        }
-                        None => break,
-                        _ => {} // Start, ReasoningChunk, ToolCallChunk, etc.
-                    }
-                }
-                _ = tokio::time::sleep(Duration::from_millis(50)) => {
-                    if cancel.load(Ordering::Acquire) {
-                        return Ok("cancelled".into());
-                    }
-                }
-            }
-        }
-
-        if tool_calls.is_empty() {
-            tracing::info!(session_id, iteration, "Agent completed (end_turn)");
-            return Ok("end_turn".into());
-        }
-
-        // Append assistant message with tool calls to conversation
-        chat_req = chat_req.append_message(tool_calls.clone());
-
-        // Execute tool calls
-        for tc in &tool_calls {
-            if let Err(wait) = tool_limiter.check() {
-                if wait == Duration::ZERO {
-                    tracing::warn!(session_id, "Tool dispatch session limit reached");
-                    return Ok("tool_dispatch_session_limit".into());
-                }
-                tracing::debug!(session_id, wait_ms = wait.as_millis() as u64, "Tool dispatch rate limit, waiting");
-                let _ = event_tx.send(AgentLoopEvent::RateLimited {
-                    session_id: session_id.clone(),
-                    wait_ms: wait.as_millis() as u64,
-                });
-                tokio::time::sleep(wait).await;
-                if cancel.load(Ordering::Acquire) {
-                    return Ok("cancelled".into());
-                }
-            }
-            tool_limiter.record();
-
-            // Repetition detection
-            let sig = format!("{}:{}", tc.fn_name, tc.fn_arguments);
-            if repetition.record(&sig) {
-                tracing::warn!(session_id, tool = %tc.fn_name, "Repetition detected, stopping");
-                return Ok(format!("repetition_detected: {}", tc.fn_name));
-            }
-
-            let redacted_args = redact_json_values(&tc.fn_arguments);
-            let _ = event_tx.send(AgentLoopEvent::ToolCall {
-                session_id: session_id.clone(),
-                tool_name: tc.fn_name.clone(),
-                args: redacted_args,
-            });
-
-            tracing::debug!(session_id, tool = %tc.fn_name, "Dispatching tool");
-            let mut result = tools::dispatch(&state, &session_id, &tc.fn_name, &tc.fn_arguments).await;
-
-            // Approval flow: auto-approve when Unrestricted, else pause for user
-            if result.needs_approval {
-                let reason = result.approval_reason.clone().unwrap_or_default();
-                let command = result.approval_command.clone().unwrap_or_default();
-
-                if trust_level == TrustLevel::Unrestricted {
-                    tracing::debug!(session_id, tool = %tc.fn_name, "Unrestricted: auto-approving NeedsApproval");
-                    result = tools::dispatch_approved(&state, &session_id, &tc.fn_name, &tc.fn_arguments).await;
-                } else {
-                    let _ = event_tx.send(AgentLoopEvent::NeedsApproval {
-                        session_id: session_id.clone(),
-                        tool_name: tc.fn_name.clone(),
-                        command: command.clone(),
-                        reason: reason.clone(),
-                    });
-
-                    let (tx, rx) = oneshot::channel();
-                    *approval_tx.lock() = Some(tx);
-
-                    // Wait for approval or cancellation
-                    let approved = tokio::select! {
-                        res = rx => res.unwrap_or(false),
-                        _ = async {
-                            while !cancel.load(Ordering::Acquire) {
-                                tokio::time::sleep(Duration::from_millis(100)).await;
-                            }
-                        } => false,
-                    };
-
-                    *approval_tx.lock() = None;
-
-                    if cancel.load(Ordering::Acquire) {
-                        return Ok("cancelled".into());
-                    }
-
-                    if approved {
-                        result = tools::dispatch_approved(&state, &session_id, &tc.fn_name, &tc.fn_arguments).await;
-                    } else {
-                        result = tools::ToolResult::err(format!("User rejected: {reason}"));
-                    }
-                }
-            }
-
-            let _ = event_tx.send(AgentLoopEvent::ToolResult {
-                session_id: session_id.clone(),
-                tool_name: tc.fn_name.clone(),
-                success: result.success,
-                output: result.output.clone(),
-            });
-
-            // Append tool response
-            let tool_resp = ToolResponse::new(
-                tc.call_id.clone(),
-                result.output,
-            );
-            chat_req = chat_req.append_message(tool_resp);
-        }
-
-        last_tool_names = tool_calls.iter().map(|tc| tc.fn_name.clone()).collect();
-    }
-
-    tracing::warn!(session_id, "Agent hit max iterations");
-    Ok("max_iterations".into())
 }
 
 // ---------------------------------------------------------------------------
@@ -800,82 +338,19 @@ mod tests {
         assert_eq!(json, "\"paused\"");
     }
 
-    // ── AgentLoopEvent ─────────────────────────────────────────
-
-    #[test]
-    fn event_started_serializes() {
-        let evt = AgentLoopEvent::Started { session_id: "s1".into() };
-        let json = serde_json::to_string(&evt).unwrap();
-        assert!(json.contains("\"type\":\"started\""));
-        assert!(json.contains("\"session_id\":\"s1\""));
-    }
-
-    #[test]
-    fn event_tool_call_serializes() {
-        let evt = AgentLoopEvent::ToolCall {
-            session_id: "s1".into(),
-            tool_name: "read_screen".into(),
-            args: json!({"session_id": "s1"}),
-        };
-        let json = serde_json::to_string(&evt).unwrap();
-        assert!(json.contains("\"type\":\"tool_call\""));
-        assert!(json.contains("\"tool_name\":\"read_screen\""));
-    }
-
-    #[test]
-    fn event_completed_serializes() {
-        let evt = AgentLoopEvent::Completed {
-            session_id: "s1".into(),
-            reason: "end_turn".into(),
-        };
-        let json = serde_json::to_string(&evt).unwrap();
-        assert!(json.contains("\"type\":\"completed\""));
-        assert!(json.contains("\"reason\":\"end_turn\""));
-    }
-
-    #[test]
-    fn event_error_serializes() {
-        let evt = AgentLoopEvent::Error {
-            session_id: "s1".into(),
-            message: "LLM timeout".into(),
-        };
-        let json = serde_json::to_string(&evt).unwrap();
-        assert!(json.contains("\"type\":\"error\""));
-    }
-
     // ── ACTIVE_AGENTS registry ─────────────────────────────────
 
     #[test]
     fn active_agents_rejects_duplicate() {
         let sid = "test-dup-check";
         let cancel = Arc::new(AtomicBool::new(false));
-        let (tx, _) = broadcast::channel(16);
         ACTIVE_AGENTS.insert(sid.to_string(), AgentHandle {
-
             cancel,
             state: Arc::new(RwLock::new(AgentState::Running)),
-            pause_notify: Arc::new(Notify::new()),
-            event_tx: tx,
-            approval_tx: Arc::new(Mutex::new(None)),
         });
         assert!(ACTIVE_AGENTS.contains_key(sid));
         // Cleanup
         ACTIVE_AGENTS.remove(sid);
-    }
-
-    #[test]
-    fn cancel_missing_session_errors() {
-        assert!(cancel_agent_loop("nonexistent").is_err());
-    }
-
-    #[test]
-    fn pause_missing_session_errors() {
-        assert!(pause_agent_loop("nonexistent").is_err());
-    }
-
-    #[test]
-    fn resume_missing_session_errors() {
-        assert!(resume_agent_loop("nonexistent").is_err());
     }
 
     // ── System prompt ──────────────────────────────────────────
@@ -895,105 +370,6 @@ mod tests {
         assert!(MAX_IDENTICAL_CALLS >= 2);
         assert!(RATE_LIMIT_PER_MINUTE > 0);
         assert!(RATE_LIMIT_PER_SESSION > RATE_LIMIT_PER_MINUTE);
-    }
-
-    // ── Approval channel ──────────────────────────────────────
-
-    #[test]
-    fn approval_tx_starts_none() {
-        let atx: Arc<Mutex<Option<oneshot::Sender<bool>>>> = Arc::new(Mutex::new(None));
-        assert!(atx.lock().is_none());
-    }
-
-    #[tokio::test]
-    async fn approval_channel_approve_path() {
-        let (tx, rx) = oneshot::channel::<bool>();
-        let atx: Arc<Mutex<Option<oneshot::Sender<bool>>>> = Arc::new(Mutex::new(Some(tx)));
-        // Simulate approve_agent_action
-        let sender = atx.lock().take().unwrap();
-        sender.send(true).unwrap();
-        assert!(rx.await.unwrap());
-    }
-
-    #[tokio::test]
-    async fn approval_channel_reject_path() {
-        let (tx, rx) = oneshot::channel::<bool>();
-        let atx: Arc<Mutex<Option<oneshot::Sender<bool>>>> = Arc::new(Mutex::new(Some(tx)));
-        let sender = atx.lock().take().unwrap();
-        sender.send(false).unwrap();
-        assert!(!rx.await.unwrap());
-    }
-
-    #[tokio::test]
-    async fn approval_channel_dropped_sender_returns_false() {
-        let (tx, rx) = oneshot::channel::<bool>();
-        drop(tx);
-        assert!(rx.await.is_err());
-    }
-
-    #[test]
-    fn approval_handle_take_clears() {
-        let (tx, _rx) = oneshot::channel::<bool>();
-        let atx: Arc<Mutex<Option<oneshot::Sender<bool>>>> = Arc::new(Mutex::new(Some(tx)));
-        let taken = atx.lock().take();
-        assert!(taken.is_some());
-        assert!(atx.lock().is_none());
-    }
-
-    #[test]
-    fn needs_approval_event_serializes() {
-        let evt = AgentLoopEvent::NeedsApproval {
-            session_id: "s1".into(),
-            tool_name: "send_input".into(),
-            command: "rm -rf /tmp".into(),
-            reason: "destructive command".into(),
-        };
-        let json = serde_json::to_string(&evt).unwrap();
-        assert!(json.contains("\"type\":\"needs_approval\""));
-        assert!(json.contains("\"tool_name\":\"send_input\""));
-        assert!(json.contains("\"command\":\"rm -rf /tmp\""));
-        assert!(json.contains("\"reason\":\"destructive command\""));
-    }
-
-    #[test]
-    fn approve_action_no_pending_errors() {
-        let sid = "test-no-pending";
-        let cancel = Arc::new(AtomicBool::new(false));
-        let (tx, _) = broadcast::channel(16);
-        let atx = Arc::new(Mutex::new(None));
-        ACTIVE_AGENTS.insert(sid.to_string(), AgentHandle {
-
-            cancel,
-            state: Arc::new(RwLock::new(AgentState::Running)),
-            pause_notify: Arc::new(Notify::new()),
-            event_tx: tx,
-            approval_tx: atx.clone(),
-        });
-        // No pending approval — take returns None
-        assert!(atx.lock().take().is_none());
-        ACTIVE_AGENTS.remove(sid);
-    }
-
-    #[tokio::test]
-    async fn approve_action_resolves_channel() {
-        let sid = "test-approve-resolve";
-        let cancel = Arc::new(AtomicBool::new(false));
-        let (etx, _) = broadcast::channel(16);
-        let (otx, orx) = oneshot::channel::<bool>();
-        let atx = Arc::new(Mutex::new(Some(otx)));
-        ACTIVE_AGENTS.insert(sid.to_string(), AgentHandle {
-
-            cancel,
-            state: Arc::new(RwLock::new(AgentState::Running)),
-            pause_notify: Arc::new(Notify::new()),
-            event_tx: etx,
-            approval_tx: atx.clone(),
-        });
-        // Simulate approve_agent_action
-        let sender = atx.lock().take().unwrap();
-        sender.send(true).unwrap();
-        assert!(orx.await.unwrap());
-        ACTIVE_AGENTS.remove(sid);
     }
 
     // ── redact_json_values ────────────────────────────────────
@@ -1126,31 +502,6 @@ mod tests {
         // Iteration 2: no further change → no rebuild needed.
         let still_current = crate::ai_agent::context::build_knowledge_section(&state, sid);
         assert_eq!(still_current, last, "stable knowledge must compare equal");
-    }
-
-    // ── TrustLevel ────────────────────────────────────────────
-
-    #[test]
-    fn trust_level_default_is_standard() {
-        assert_eq!(TrustLevel::default(), TrustLevel::Standard);
-    }
-
-    #[test]
-    fn trust_level_serializes() {
-        let s = serde_json::to_string(&TrustLevel::Standard).unwrap();
-        let u = serde_json::to_string(&TrustLevel::Unrestricted).unwrap();
-        assert_eq!(s, r#""standard""#);
-        assert_eq!(u, r#""unrestricted""#);
-    }
-
-    #[test]
-    fn unrestricted_sessions_registered_and_cleaned_up() {
-        let state = crate::state::tests_support::make_test_app_state();
-        let sid = "test-unrestricted";
-        state.unrestricted_sessions.insert(sid.to_string(), ());
-        assert!(state.unrestricted_sessions.contains_key(sid));
-        state.unrestricted_sessions.remove(sid);
-        assert!(!state.unrestricted_sessions.contains_key(sid));
     }
 
     // ── ToolPhase & model selection ──────────────────────────────

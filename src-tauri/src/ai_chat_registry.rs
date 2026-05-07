@@ -259,6 +259,7 @@ impl ChatRegistry {
     }
 
     /// Update streaming text (append delta) and fan-out a Chunk event.
+    #[allow(dead_code)]
     pub async fn append_streaming_chunk(&self, chat_id: &str, delta: &str) {
         {
             let slot = self.get_or_create(chat_id);
@@ -428,6 +429,7 @@ pub(crate) async fn chat_push_message(
 }
 
 // Expose ConversationState fields for update closures in other modules
+#[allow(dead_code)]
 impl ConversationState {
     pub fn set_streaming(&mut self, streaming: bool) {
         self.is_streaming = streaming;
