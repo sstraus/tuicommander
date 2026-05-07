@@ -468,8 +468,7 @@ struct DiffSignals {
     test_signals: u32,
     schema_signals: u32,
     auth_signals: u32,
-    error_handling_signals: u32,
-    hunk_contexts: Vec<String>,
+    hunk_context: Option<String>,
     hunk_count: u32,
 }
 
@@ -483,8 +482,8 @@ fn analyze_diff(diff: &str) -> DiffSignals {
                 if !ctx.is_empty() {
                     let name = ctx.split('(').next().unwrap_or(ctx).trim();
                     let name = name.split_whitespace().last().unwrap_or(name);
-                    if !name.is_empty() {
-                        s.hunk_contexts.push(name.to_string());
+                    if !name.is_empty() && s.hunk_context.is_none() {
+                        s.hunk_context = Some(name.to_string());
                     }
                 }
             }
@@ -530,7 +529,6 @@ fn analyze_diff(diff: &str) -> DiffSignals {
             || trimmed.contains("describe(")
             || trimmed.contains("it(")
             || trimmed.contains("test(")
-            || trimmed.contains("expect(")
             || trimmed.contains("assert")
         {
             s.test_signals += 1;
@@ -557,16 +555,6 @@ fn analyze_diff(diff: &str) -> DiffSignals {
         {
             s.auth_signals += 1;
         }
-        // Error handling signals
-        if trimmed.contains("unwrap()")
-            || trimmed.contains("expect(")
-            || trimmed.contains("panic!")
-            || trimmed.contains("try {")
-            || trimmed.contains("catch")
-            || trimmed.contains("throw")
-        {
-            s.error_handling_signals += 1;
-        }
     }
     s
 }
@@ -575,7 +563,7 @@ fn build_fallback_summary(signals: &DiffSignals, additions: u32, deletions: u32)
     let lines_str = format!("+{additions} -{deletions} lines");
 
     if signals.api_surface_removed > 0 {
-        let ctx = signals.hunk_contexts.first()
+        let ctx = signals.hunk_context.as_deref()
             .map(|c| format!(" in {c}"))
             .unwrap_or_default();
         return format!("Removed public API{ctx}; {lines_str}");
@@ -585,7 +573,7 @@ fn build_fallback_summary(signals: &DiffSignals, additions: u32, deletions: u32)
     }
     if signals.api_surface_added > 0 {
         let n = signals.api_surface_added;
-        let ctx = signals.hunk_contexts.first()
+        let ctx = signals.hunk_context.as_deref()
             .map(|c| format!(" in {c}"))
             .unwrap_or_default();
         return format!(
@@ -593,7 +581,7 @@ fn build_fallback_summary(signals: &DiffSignals, additions: u32, deletions: u32)
             if n == 1 { " added" } else { "s added" }
         );
     }
-    if let Some(ctx) = signals.hunk_contexts.first() {
+    if let Some(ctx) = signals.hunk_context.as_deref() {
         return format!("Changed {ctx}; {lines_str}");
     }
     let h = signals.hunk_count;
@@ -633,29 +621,33 @@ fn fallback_classification(
     if let Some(diff_text) = diff {
         let signals = analyze_diff(diff_text);
 
+        // Priority chain: Schema > ApiSurface > Test > path-based default
         if signals.schema_signals > 0 {
             category = Category::Schema;
             risk = Risk::BehavioralChange;
             relevance = Relevance::High;
-        }
-        if signals.test_signals > 0 && category != Category::Test {
-            category = Category::Test;
-        }
-        if signals.api_surface_added > 0 || signals.api_surface_removed > 0 {
+        } else if signals.api_surface_added > 0 || signals.api_surface_removed > 0 {
             category = Category::ApiSurface;
             relevance = Relevance::High;
+            if signals.api_surface_removed > 0 {
+                risk = Risk::BreakingChange;
+            }
+        } else if signals.test_signals > 0 && category != Category::Test {
+            category = Category::Test;
         }
-        if signals.api_surface_removed > 0 {
-            risk = Risk::BreakingChange;
-        }
+
         if signals.auth_signals > 0 {
             relevance = Relevance::High;
             if risk == Risk::Cosmetic {
                 risk = Risk::BehavioralChange;
             }
         }
-        let total = additions + deletions;
-        if total > 20 && deletions > 0 && (deletions as f64 / total as f64) > 0.5 {
+        let total = additions.saturating_add(deletions);
+        if total > 20
+            && deletions > 0
+            && (f64::from(deletions) / f64::from(total)) > 0.5
+            && !matches!(category, Category::Style | Category::Test | Category::Config)
+        {
             risk = Risk::BreakingChange;
         }
 
@@ -1205,9 +1197,13 @@ pub(crate) async fn run_diff_triage(
         .iter()
         .map(|(path, _, _, is_untracked)| (path.clone(), *is_untracked))
         .collect();
-    let all_diffs = crate::git::get_bulk_diffs(repo_path.clone(), bulk_files)
-        .await
-        .unwrap_or_default();
+    let all_diffs = match crate::git::get_bulk_diffs(repo_path.clone(), bulk_files).await {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::warn!("triage: get_bulk_diffs failed, proceeding without diffs: {e}");
+            Default::default()
+        }
+    };
 
     // Take existing session (invalidate first if refresh=true), or create fresh
     let mut session = {
@@ -1765,7 +1761,7 @@ mod tests {
         let diff = "@@ -1,3 +1,5 @@ mod handler\n+pub fn handle_request(req: Request) -> Response {\n+    todo!()\n+}";
         let c = fallback_classification("src/handler.rs", Some(diff), 3, 0);
         assert_eq!(c.category, Category::ApiSurface, "pub fn should → ApiSurface");
-        assert!(c.relevance == Relevance::High || c.relevance == Relevance::Medium);
+        assert_eq!(c.relevance, Relevance::High);
     }
 
     #[test]
@@ -1826,6 +1822,59 @@ mod tests {
     fn fallback_none_diff_no_summary() {
         let c = fallback_classification("src/main.rs", None, 0, 0);
         assert!(c.summary.is_empty(), "no diff → empty summary");
+    }
+
+    // ── signal cascade interaction tests ─────────────────────────────────────
+
+    #[test]
+    fn fallback_schema_wins_over_api_surface() {
+        let diff = "+pub fn run_migration() {\n+    CREATE TABLE users (id INT);\n+}";
+        let c = fallback_classification("src/db.rs", Some(diff), 3, 0);
+        assert_eq!(c.category, Category::Schema, "Schema has priority over ApiSurface");
+        assert_eq!(c.relevance, Relevance::High);
+    }
+
+    #[test]
+    fn fallback_schema_wins_over_test_signals() {
+        let diff = "+ALTER TABLE users ADD COLUMN x TEXT;\n+#[test]\n+fn verify() { assert!(true); }";
+        let c = fallback_classification("src/db.rs", Some(diff), 3, 0);
+        assert_eq!(c.category, Category::Schema, "Schema has priority over Test");
+    }
+
+    #[test]
+    fn fallback_api_surface_wins_over_test_signals() {
+        let diff = "+export function createTestUser() {}\n+describe('user', () => {});";
+        let c = fallback_classification("tests/helpers.ts", Some(diff), 5, 0);
+        assert_eq!(c.category, Category::ApiSurface, "ApiSurface has priority over Test");
+    }
+
+    #[test]
+    fn fallback_auth_in_style_file_upgrades_risk() {
+        let diff = "+.password-input { color: red; }";
+        let c = fallback_classification("styles/auth.scss", Some(diff), 2, 0);
+        assert_eq!(c.relevance, Relevance::High);
+        assert_eq!(c.risk, Risk::BehavioralChange, "auth upgrades Cosmetic → BehavioralChange");
+    }
+
+    #[test]
+    fn fallback_heavy_deletions_not_breaking_for_style() {
+        let diff = (0..5).map(|i| format!("+a{i}"))
+            .chain((0..30).map(|i| format!("-b{i}")))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let c = fallback_classification("styles/theme.css", Some(&diff), 5, 30);
+        assert_eq!(c.category, Category::Style);
+        assert_ne!(c.risk, Risk::BreakingChange, "deletion ratio should not fire on Style");
+    }
+
+    #[test]
+    fn fallback_heavy_deletions_boundary_total_20_does_not_trigger() {
+        let diff = (0..9).map(|i| format!("+a{i}"))
+            .chain((0..11).map(|i| format!("-b{i}")))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let c = fallback_classification("src/core.rs", Some(&diff), 9, 11);
+        assert_ne!(c.risk, Risk::BreakingChange, "total=20 should not trigger (need >20)");
     }
 
     #[test]
@@ -2119,7 +2168,7 @@ mod tests {
     fn analyze_diff_test_js_patterns() {
         let diff = "+describe('foo', () => {\n+  it('does thing', () => {\n+    expect(x).toBe(y);\n+  });\n+});";
         let s = analyze_diff(diff);
-        assert!(s.test_signals >= 3);
+        assert!(s.test_signals >= 2, "describe( and it( are test signals");
     }
 
     #[test]
@@ -2147,15 +2196,15 @@ mod tests {
     fn analyze_diff_hunk_header_extracts_context() {
         let diff = "@@ -10,5 +10,7 @@ fn process_event(event: &Event) -> Result<()> {\n+    do_stuff();";
         let s = analyze_diff(diff);
-        assert!(!s.hunk_contexts.is_empty());
-        assert!(s.hunk_contexts[0].contains("process_event"));
+        assert!(s.hunk_context.is_some());
+        assert!(s.hunk_context.as_deref().unwrap().contains("process_event"));
     }
 
     #[test]
     fn analyze_diff_hunk_header_no_context() {
         let diff = "@@ -10,5 +10,7 @@\n+    do_stuff();";
         let s = analyze_diff(diff);
-        assert!(s.hunk_contexts.is_empty());
+        assert!(s.hunk_context.is_none());
     }
 
     #[test]
@@ -2166,7 +2215,7 @@ mod tests {
         assert_eq!(s.test_signals, 0);
         assert_eq!(s.schema_signals, 0);
         assert_eq!(s.auth_signals, 0);
-        assert!(s.hunk_contexts.is_empty());
+        assert!(s.hunk_context.is_none());
     }
 
     #[test]
@@ -2185,8 +2234,7 @@ mod tests {
         let signals = DiffSignals {
             api_surface_added: 0, api_surface_removed: 1,
             test_signals: 0, schema_signals: 0, auth_signals: 0,
-            error_handling_signals: 0,
-            hunk_contexts: vec!["handle_request".to_string()],
+            hunk_context: Some("handle_request".to_string()),
             hunk_count: 1,
         };
         let s = build_fallback_summary(&signals, 2, 14);
@@ -2199,8 +2247,7 @@ mod tests {
         let signals = DiffSignals {
             api_surface_added: 0, api_surface_removed: 1,
             test_signals: 0, schema_signals: 0, auth_signals: 0,
-            error_handling_signals: 0,
-            hunk_contexts: vec![],
+            hunk_context: None,
             hunk_count: 1,
         };
         let s = build_fallback_summary(&signals, 2, 14);
@@ -2212,8 +2259,7 @@ mod tests {
         let signals = DiffSignals {
             api_surface_added: 0, api_surface_removed: 0,
             test_signals: 0, schema_signals: 1, auth_signals: 0,
-            error_handling_signals: 0,
-            hunk_contexts: vec![],
+            hunk_context: None,
             hunk_count: 1,
         };
         let s = build_fallback_summary(&signals, 5, 2);
@@ -2225,8 +2271,7 @@ mod tests {
         let signals = DiffSignals {
             api_surface_added: 2, api_surface_removed: 0,
             test_signals: 0, schema_signals: 0, auth_signals: 0,
-            error_handling_signals: 0,
-            hunk_contexts: vec![],
+            hunk_context: None,
             hunk_count: 1,
         };
         let s = build_fallback_summary(&signals, 20, 0);
@@ -2238,8 +2283,7 @@ mod tests {
         let signals = DiffSignals {
             api_surface_added: 0, api_surface_removed: 0,
             test_signals: 0, schema_signals: 0, auth_signals: 0,
-            error_handling_signals: 0,
-            hunk_contexts: vec!["process_event".to_string()],
+            hunk_context: Some("process_event".to_string()),
             hunk_count: 1,
         };
         let s = build_fallback_summary(&signals, 9, 7);
@@ -2251,8 +2295,7 @@ mod tests {
         let signals = DiffSignals {
             api_surface_added: 0, api_surface_removed: 0,
             test_signals: 0, schema_signals: 0, auth_signals: 0,
-            error_handling_signals: 0,
-            hunk_contexts: vec![],
+            hunk_context: None,
             hunk_count: 2,
         };
         let s = build_fallback_summary(&signals, 3, 0);
