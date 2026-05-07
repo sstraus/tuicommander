@@ -2,13 +2,12 @@
 
 use std::sync::Arc;
 #[cfg(feature = "desktop")]
-#[cfg(feature = "desktop")]
 use tauri::State;
 
-use crate::state::AppState;
 use super::conversation_engine::ACTIVE_CONVERSATIONS;
 use super::knowledge::{OutcomeClass, SessionKnowledge};
 use super::tui_detect::TerminalMode;
+use crate::state::AppState;
 
 /// Start a unified conversation via the new conversation_engine.
 /// Uses per-conversation Channel transport with 50ms TextChunk batching.
@@ -26,7 +25,9 @@ pub(crate) async fn start_conversation(
     bypassed_tools: Option<Vec<String>>,
     on_event: tauri::ipc::Channel<super::conversation_engine::ConversationEvent>,
 ) -> Result<(), String> {
-    use super::conversation_engine::{Autonomy, ConversationConfig, ConversationEvent, start_conversation as engine_start};
+    use super::conversation_engine::{
+        Autonomy, ConversationConfig, ConversationEvent, start_conversation as engine_start,
+    };
     use std::collections::HashSet;
 
     let config = ConversationConfig {
@@ -37,7 +38,10 @@ pub(crate) async fn start_conversation(
         max_steps,
         temperature: temperature.unwrap_or(0.7),
         model_override,
-        bypassed_tools: bypassed_tools.unwrap_or_default().into_iter().collect::<HashSet<_>>(),
+        bypassed_tools: bypassed_tools
+            .unwrap_or_default()
+            .into_iter()
+            .collect::<HashSet<_>>(),
     };
 
     let mut rx = engine_start(state.inner().clone(), session_id, message, config).await?;
@@ -57,8 +61,7 @@ pub(crate) async fn start_conversation(
                         Ok(other) => {
                             // Flush pending text batch before non-text event
                             if !text_batch.is_empty() {
-                                let _ = on_event.send(ConversationEvent::TextChunk { text: text_batch.clone() });
-                                text_batch.clear();
+                                let _ = on_event.send(ConversationEvent::TextChunk { text: std::mem::take(&mut text_batch) });
                             }
                             let done = matches!(other, ConversationEvent::Completed { .. } | ConversationEvent::Error { .. });
                             let _ = on_event.send(other);
@@ -67,7 +70,7 @@ pub(crate) async fn start_conversation(
                         Err(_) => {
                             // Flush remaining text on channel close
                             if !text_batch.is_empty() {
-                                let _ = on_event.send(ConversationEvent::TextChunk { text: text_batch.clone() });
+                                let _ = on_event.send(ConversationEvent::TextChunk { text: std::mem::take(&mut text_batch) });
                             }
                             break;
                         }
@@ -75,8 +78,7 @@ pub(crate) async fn start_conversation(
                 }
                 _ = interval.tick() => {
                     if !text_batch.is_empty() {
-                        let _ = on_event.send(ConversationEvent::TextChunk { text: text_batch.clone() });
-                        text_batch.clear();
+                        let _ = on_event.send(ConversationEvent::TextChunk { text: std::mem::take(&mut text_batch) });
                     }
                 }
             }
@@ -88,27 +90,21 @@ pub(crate) async fn start_conversation(
 
 /// Cancel an active conversation (conversation_engine).
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub(crate) fn cancel_conversation(
-    session_id: String,
-) -> Result<String, String> {
+pub(crate) fn cancel_conversation(session_id: String) -> Result<String, String> {
     super::conversation_engine::cancel_conversation(&session_id)?;
     Ok(format!("Conversation cancelled on session {session_id}"))
 }
 
 /// Pause an active conversation.
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub(crate) fn pause_conversation(
-    session_id: String,
-) -> Result<String, String> {
+pub(crate) fn pause_conversation(session_id: String) -> Result<String, String> {
     super::conversation_engine::pause_conversation(&session_id)?;
     Ok(format!("Conversation paused on session {session_id}"))
 }
 
 /// Resume a paused conversation.
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub(crate) fn resume_conversation(
-    session_id: String,
-) -> Result<String, String> {
+pub(crate) fn resume_conversation(session_id: String) -> Result<String, String> {
     super::conversation_engine::resume_conversation(&session_id)?;
     Ok(format!("Conversation resumed on session {session_id}"))
 }
@@ -124,9 +120,7 @@ pub(crate) fn approve_conversation_action(
 
 /// Get the status of an agent loop.
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub(crate) async fn agent_loop_status(
-    session_id: String,
-) -> Result<serde_json::Value, String> {
+pub(crate) async fn agent_loop_status(session_id: String) -> Result<serde_json::Value, String> {
     let entry = ACTIVE_CONVERSATIONS.get(&session_id);
     match entry {
         Some(handle) => {
@@ -207,15 +201,19 @@ impl SessionKnowledgeSummary {
     }
 }
 
-fn outcome_summary(c: &super::knowledge::CommandOutcome) -> OutcomeSummary {
-    let (kind, error_type) = match &c.classification {
+fn classify_kind(c: &OutcomeClass) -> (&'static str, Option<String>) {
+    match c {
         OutcomeClass::Success => ("success", None),
         OutcomeClass::Error { error_type } => ("error", Some(error_type.clone())),
         OutcomeClass::TuiLaunched { .. } => ("tui_launched", None),
         OutcomeClass::Timeout => ("timeout", None),
         OutcomeClass::UserCancelled => ("user_cancelled", None),
         OutcomeClass::Inferred => ("inferred", None),
-    };
+    }
+}
+
+fn outcome_summary(c: &super::knowledge::CommandOutcome) -> OutcomeSummary {
+    let (kind, error_type) = classify_kind(&c.classification);
     OutcomeSummary {
         timestamp: c.timestamp,
         command: c.command.clone(),
@@ -269,7 +267,10 @@ pub(crate) async fn list_knowledge_sessions(
     Ok(rows)
 }
 
-fn scan_sessions(filter: &KnowledgeListFilter, limit: usize) -> Result<Vec<SessionListEntry>, String> {
+fn scan_sessions(
+    filter: &KnowledgeListFilter,
+    limit: usize,
+) -> Result<Vec<SessionListEntry>, String> {
     use crate::ai_agent::knowledge as kb;
     let dir = crate::config::config_dir().join("ai-sessions");
     let Ok(entries) = std::fs::read_dir(&dir) else {
@@ -405,14 +406,7 @@ fn to_detail(session_id: &str, k: &SessionKnowledge) -> SessionDetail {
 }
 
 fn history_command(c: &super::knowledge::CommandOutcome) -> HistoryCommand {
-    let (kind, error_type) = match &c.classification {
-        OutcomeClass::Success => ("success", None),
-        OutcomeClass::Error { error_type } => ("error", Some(error_type.clone())),
-        OutcomeClass::TuiLaunched { .. } => ("tui_launched", None),
-        OutcomeClass::Timeout => ("timeout", None),
-        OutcomeClass::UserCancelled => ("user_cancelled", None),
-        OutcomeClass::Inferred => ("inferred", None),
-    };
+    let (kind, error_type) = classify_kind(&c.classification);
     HistoryCommand {
         id: c.id,
         timestamp: c.timestamp,
@@ -440,6 +434,89 @@ pub(crate) fn save_scheduler_config(
     super::scheduler::save_config(&config)
 }
 
+// ── Watcher commands ────────────────────────────────────────────
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) async fn watcher_create(
+    state: State<'_, Arc<AppState>>,
+    name: String,
+    session_id: Option<String>,
+    trigger: super::watcher::WatcherTrigger,
+    instructions: String,
+    max_fires: Option<u32>,
+    cooldown_secs: Option<u32>,
+) -> Result<String, String> {
+    let rule = super::watcher::WatcherRule {
+        id: String::new(),
+        name,
+        session_id,
+        template_id: None,
+        trigger,
+        instructions,
+        max_fires: max_fires.unwrap_or(super::watcher::default_max_fires()),
+        fire_count: 0,
+        cooldown_secs: cooldown_secs.unwrap_or(super::watcher::default_cooldown()),
+        burst_threshold: super::watcher::default_burst_threshold(),
+        burst_window_secs: super::watcher::default_burst_window(),
+        status: super::watcher::WatcherStatus::Active,
+        created_at: 0,
+    };
+
+    let engine = state
+        .watcher_engine
+        .get()
+        .ok_or("Watcher engine not initialized")?;
+    let cfg = engine.config();
+    let mut config = cfg.write();
+    super::watcher::create_rule(&mut config, rule)
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) async fn watcher_list(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<super::watcher::WatcherRule>, String> {
+    let engine = state
+        .watcher_engine
+        .get()
+        .ok_or("Watcher engine not initialized")?;
+    let cfg = engine.config();
+    let config = cfg.read();
+    Ok(config.rules.clone())
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) async fn watcher_delete(
+    state: State<'_, Arc<AppState>>,
+    id: String,
+) -> Result<(), String> {
+    let engine = state
+        .watcher_engine
+        .get()
+        .ok_or("Watcher engine not initialized")?;
+    let cfg = engine.config();
+    let mut config = cfg.write();
+    super::watcher::delete_rule(&mut config, &id)
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) async fn watcher_toggle(
+    state: State<'_, Arc<AppState>>,
+    id: String,
+    enabled: bool,
+) -> Result<(), String> {
+    let engine = state
+        .watcher_engine
+        .get()
+        .ok_or("Watcher engine not initialized")?;
+    let cfg = engine.config();
+    let mut config = cfg.write();
+    super::watcher::toggle_rule(&mut config, &id, enabled)
+}
+
 /// Return a frontend-friendly summary of the session's accumulated knowledge.
 /// Returns an empty summary if no commands have been recorded yet.
 #[cfg(feature = "desktop")]
@@ -463,11 +540,9 @@ pub(crate) async fn get_session_knowledge(
     Ok(summary)
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
-pub(crate) fn toggle_ai_suggestions(
-    state: State<'_, Arc<AppState>>,
-    session_id: String,
-) -> bool {
+pub(crate) fn toggle_ai_suggestions(state: State<'_, Arc<AppState>>, session_id: String) -> bool {
     let current = state
         .ai_suggestions_enabled
         .get(&session_id)
@@ -484,6 +559,7 @@ pub(crate) fn toggle_ai_suggestions(
     new_val
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn get_ai_suggestions_enabled(
     state: State<'_, Arc<AppState>>,
@@ -555,10 +631,11 @@ mod tests {
         assert_eq!(s.commands_count, 8);
         assert_eq!(s.recent_outcomes.len(), 5);
         assert_eq!(s.recent_outcomes[0].command, "cmd7");
-        assert!(s
-            .recent_errors
-            .iter()
-            .all(|o| o.error_type.as_deref() == Some("npm_error")));
+        assert!(
+            s.recent_errors
+                .iter()
+                .all(|o| o.error_type.as_deref() == Some("npm_error"))
+        );
     }
 
     #[test]
@@ -574,8 +651,8 @@ mod tests {
 
     #[test]
     fn file_sandbox_inserted_on_start_and_removed_on_end() {
-        use crate::state::tests_support::make_test_app_state;
         use super::super::sandbox::FileSandbox;
+        use crate::state::tests_support::make_test_app_state;
 
         let state = make_test_app_state();
         let sid = "test-sandbox-session";
@@ -588,6 +665,9 @@ mod tests {
 
         // Simulate what engine cleanup does at loop end.
         state.file_sandboxes.remove(sid);
-        assert!(!state.file_sandboxes.contains_key(sid), "sandbox removed after loop");
+        assert!(
+            !state.file_sandboxes.contains_key(sid),
+            "sandbox removed after loop"
+        );
     }
 }

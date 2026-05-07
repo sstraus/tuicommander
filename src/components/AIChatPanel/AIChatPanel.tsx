@@ -1,13 +1,14 @@
-import { Component, For, Show, createSignal, createEffect, createMemo, onCleanup } from "solid-js";
-import { conversationStore, type ConversationMeta, type ToolCallEntry } from "../../stores/conversationStore";
+import { type Component, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { invoke } from "../../invoke";
+import { appLogger } from "../../stores/appLogger";
+import { type ConversationMeta, conversationStore, type ToolCallEntry } from "../../stores/conversationStore";
 import { terminalsStore } from "../../stores/terminals";
+import { cx } from "../../utils";
+import { getShellFamily, sendCommand } from "../../utils/sendCommand";
+import p from "../shared/panel.module.css";
 import { ContentRenderer } from "../ui/ContentRenderer";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
-import { sendCommand, getShellFamily } from "../../utils/sendCommand";
-import { appLogger } from "../../stores/appLogger";
 import { PanelWindowControls } from "../ui/PanelWindowControls";
-import { cx } from "../../utils";
-import p from "../shared/panel.module.css";
 import s from "./AIChatPanel.module.css";
 import { SessionKnowledgeBar } from "./SessionKnowledgeBar";
 
@@ -20,97 +21,138 @@ const isPanelMode = () => new URLSearchParams(window.location.search).get("mode"
 
 /** Session ID of the currently active terminal tab (null when no terminal is focused). */
 function useActiveSessionId() {
-  return createMemo(() => {
-    const id = terminalsStore.state.activeId;
-    return id ? (terminalsStore.get(id)?.sessionId ?? null) : null;
-  });
+	return createMemo(() => {
+		const id = terminalsStore.state.activeId;
+		return id ? (terminalsStore.get(id)?.sessionId ?? null) : null;
+	});
 }
 
 export interface AIChatPanelProps {
-  visible: boolean;
-  onClose: () => void;
+	visible: boolean;
+	onClose: () => void;
 }
 
 /** Copy text to clipboard, return true on success */
 async function copyToClipboard(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    return false;
-  }
+	try {
+		await navigator.clipboard.writeText(text);
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 /** Extract code text from a <pre><code> element */
 function extractCodeText(pre: HTMLPreElement): string {
-  const code = pre.querySelector("code");
-  return (code ?? pre).textContent ?? "";
+	const code = pre.querySelector("code");
+	return (code ?? pre).textContent ?? "";
 }
 
 // ── Inline SVG icons (monochrome, fill=currentColor) ─────────────────────
 
 const IconSend = () => (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-    <path d="M8 2.5l-4.5 4.5h3v5h3v-5h3z" />
-  </svg>
+	<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+		<path d="M8 2.5l-4.5 4.5h3v5h3v-5h3z" />
+	</svg>
 );
 
 const IconStop = () => (
-  <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-    <rect x="2" y="2" width="10" height="10" rx="1" />
-  </svg>
+	<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+		<rect x="2" y="2" width="10" height="10" rx="1" />
+	</svg>
 );
 
 const IconTrash = () => (
-  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
-    <path d="M2.5 4h9M5 4V2.5h4V4M3.5 4v7.5a1 1 0 001 1h5a1 1 0 001-1V4" />
-    <path d="M5.5 6.5v3M8.5 6.5v3" />
-  </svg>
+	<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
+		<path d="M2.5 4h9M5 4V2.5h4V4M3.5 4v7.5a1 1 0 001 1h5a1 1 0 001-1V4" />
+		<path d="M5.5 6.5v3M8.5 6.5v3" />
+	</svg>
 );
 
 // SVG strings for imperative DOM injection (codeBlock Copy/Run buttons live
 // inside markdown-parsed HTML, so they're constructed via createElement rather
 // than JSX). Content is fully static — no interpolation, safe via innerHTML.
 const SVG_COPY =
-  '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="4" y="4" width="7" height="7" rx="1"/><path d="M3 10V3h7"/></svg>';
+	'<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="4" y="4" width="7" height="7" rx="1"/><path d="M3 10V3h7"/></svg>';
 const SVG_COPIED =
-  '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7l3 3 5-5"/></svg>';
+	'<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7l3 3 5-5"/></svg>';
 const SVG_RUN =
-  '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M4 2.5l8 4.5-8 4.5z"/></svg>';
+	'<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M4 2.5l8 4.5-8 4.5z"/></svg>';
 
 const IconHistory = () => (
-  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
-    <circle cx="7" cy="7" r="5.5" />
-    <path d="M7 4v3.5l2 1.5" stroke-linecap="round" />
-  </svg>
+	<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
+		<circle cx="7" cy="7" r="5.5" />
+		<path d="M7 4v3.5l2 1.5" stroke-linecap="round" />
+	</svg>
 );
 
 const IconRobot = () => (
-  <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-    <path d="M7 1a.75.75 0 01.75.75V3h1.5A2.25 2.25 0 0111.5 5.25v4.5A2.25 2.25 0 019.25 12h-4.5A2.25 2.25 0 012.5 9.75v-4.5A2.25 2.25 0 014.75 3h1.5V1.75A.75.75 0 017 1zM5 6.5a.75.75 0 100 1.5.75.75 0 000-1.5zm4 0a.75.75 0 100 1.5.75.75 0 000-1.5zM5.5 9a.5.5 0 000 1h3a.5.5 0 000-1h-3z" />
-  </svg>
+	<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+		<path d="M7 1a.75.75 0 01.75.75V3h1.5A2.25 2.25 0 0111.5 5.25v4.5A2.25 2.25 0 019.25 12h-4.5A2.25 2.25 0 012.5 9.75v-4.5A2.25 2.25 0 014.75 3h1.5V1.75A.75.75 0 017 1zM5 6.5a.75.75 0 100 1.5.75.75 0 000-1.5zm4 0a.75.75 0 100 1.5.75.75 0 000-1.5zM5.5 9a.5.5 0 000 1h3a.5.5 0 000-1h-3z" />
+	</svg>
 );
 
 const IconPause = () => (
-  <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-    <rect x="3" y="2" width="3" height="10" rx="0.5" />
-    <rect x="8" y="2" width="3" height="10" rx="0.5" />
-  </svg>
+	<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+		<rect x="3" y="2" width="3" height="10" rx="0.5" />
+		<rect x="8" y="2" width="3" height="10" rx="0.5" />
+	</svg>
 );
 
 const IconPlay = () => (
-  <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-    <path d="M4 2.5l8 4.5-8 4.5z" />
-  </svg>
+	<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+		<path d="M4 2.5l8 4.5-8 4.5z" />
+	</svg>
 );
 
+const IconEye = () => (
+	<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
+		<path d="M1 7s2.5-4 6-4 6 4 6 4-2.5 4-6 4-6-4-6-4z" />
+		<circle cx="7" cy="7" r="2" />
+	</svg>
+);
 
 const IconUnlock = () => (
-  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
-    <rect x="2.5" y="6" width="9" height="6.5" rx="1" />
-    <path d="M5 6V4a2 2 0 014 0" stroke-linecap="round" />
-  </svg>
+	<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
+		<rect x="2.5" y="6" width="9" height="6.5" rx="1" />
+		<path d="M5 6V4a2 2 0 014 0" stroke-linecap="round" />
+	</svg>
 );
+
+// ── Watcher types ───────────────────────────────────────────────
+type WatcherTrigger =
+	| { type: "idle" }
+	| { type: "busy" }
+	| { type: "command_done"; on_failure_only: boolean }
+	| { type: "question"; confident_only: boolean }
+	| { type: "error" }
+	| { type: "unseen" }
+	| { type: "pattern"; regex: string };
+
+type WatcherTriggerKey = "idle" | "busy" | "command_done" | "command_done_fail" | "question" | "error" | "unseen";
+
+const TRIGGER_MAP: Record<WatcherTriggerKey, WatcherTrigger> = {
+	idle: { type: "idle" },
+	busy: { type: "busy" },
+	command_done: { type: "command_done", on_failure_only: false },
+	command_done_fail: { type: "command_done", on_failure_only: true },
+	question: { type: "question", confident_only: true },
+	error: { type: "error" },
+	unseen: { type: "unseen" },
+};
+
+interface WatcherRule {
+	id: string;
+	name: string;
+	session_id: string | null;
+	template_id: string | null;
+	trigger: WatcherTrigger;
+	instructions: string;
+	max_fires: number;
+	fire_count: number;
+	cooldown_secs: number;
+	status: "active" | "paused" | "stopped" | "exhausted";
+}
 
 /** Fields stripped from the args display — internal plumbing the user doesn't need. */
 const TOOL_NOISE_FIELDS = new Set(["session_id", "timeout_ms"]);
@@ -118,700 +160,882 @@ const TOOL_OUTPUT_TRUNCATE = 500;
 
 /** Collapsible tool call card */
 const ToolCallCard: Component<{ entry: ToolCallEntry }> = (props) => {
-  const [expanded, setExpanded] = createSignal(false);
-  const [outputExpanded, setOutputExpanded] = createSignal(false);
-  const [copied, setCopied] = createSignal(false);
+	const [expanded, setExpanded] = createSignal(false);
+	const [outputExpanded, setOutputExpanded] = createSignal(false);
+	const [copied, setCopied] = createSignal(false);
 
-  const statusClass = () => {
-    if (props.entry.status === "pending") return s.toolCallPending;
-    return props.entry.result.success ? s.toolCallSuccess : s.toolCallFailure;
-  };
+	const statusClass = () => {
+		if (props.entry.status === "pending") return s.toolCallPending;
+		return props.entry.result.success ? s.toolCallSuccess : s.toolCallFailure;
+	};
 
-  const filteredArgs = () => {
-    const args = props.entry.args;
-    if (!args || typeof args !== "object") return args;
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(args as Record<string, unknown>)) {
-      if (!TOOL_NOISE_FIELDS.has(k)) out[k] = v;
-    }
-    return out;
-  };
+	const filteredArgs = () => {
+		const args = props.entry.args;
+		if (!args || typeof args !== "object") return args;
+		const out: Record<string, unknown> = {};
+		for (const [k, v] of Object.entries(args as Record<string, unknown>)) {
+			if (!TOOL_NOISE_FIELDS.has(k)) out[k] = v;
+		}
+		return out;
+	};
 
-  const doneEntry = () =>
-    props.entry.status === "done"
-      ? (props.entry as ToolCallEntry & { status: "done" })
-      : null;
+	const doneEntry = () => (props.entry.status === "done" ? (props.entry as ToolCallEntry & { status: "done" }) : null);
 
-  const fullOutput = () => doneEntry()?.result.output ?? "";
-  const isLong = () => fullOutput().length > TOOL_OUTPUT_TRUNCATE;
-  const displayOutput = () =>
-    outputExpanded() || !isLong()
-      ? fullOutput()
-      : fullOutput().slice(0, TOOL_OUTPUT_TRUNCATE) + "…";
+	const fullOutput = () => doneEntry()?.result.output ?? "";
+	const isLong = () => fullOutput().length > TOOL_OUTPUT_TRUNCATE;
+	const displayOutput = () =>
+		outputExpanded() || !isLong() ? fullOutput() : fullOutput().slice(0, TOOL_OUTPUT_TRUNCATE) + "…";
 
-  const handleCopy = () => {
-    void navigator.clipboard.writeText(fullOutput()).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  };
+	const handleCopy = () => {
+		void navigator.clipboard.writeText(fullOutput()).then(() => {
+			setCopied(true);
+			setTimeout(() => setCopied(false), 1500);
+		});
+	};
 
-  return (
-    <div class={s.toolCallCard}>
-      <div class={s.toolCallHeader} onClick={() => setExpanded(!expanded())}>
-        <span class={cx(s.toolCallStatusDot, statusClass())} />
-        <span class={s.toolCallName}>{props.entry.toolName}</span>
-        <Show when={props.entry.status === "done"}>
-          <span class={s.toolCallDuration}>{doneEntry()!.duration}ms</span>
-        </Show>
-      </div>
-      <Show when={expanded()}>
-        <div class={s.toolCallBody}>
-          <div>Args: {JSON.stringify(filteredArgs(), null, 2)}</div>
-          <Show when={doneEntry()}>
-            {(entry) => (
-              <div>
-                <div class={s.toolCallResultHeader}>
-                  <span>Result ({entry().result.success ? "ok" : "error"}):</span>
-                  <button
-                    class={cx(s.toolCallCopyBtn, copied() ? s.toolCallCopyBtnCopied : "")}
-                    onClick={handleCopy}
-                    title="Copy result to clipboard"
-                  >
-                    {copied() ? "copied" : "copy"}
-                  </button>
-                </div>
-                <div class={s.toolCallOutput}>{displayOutput()}</div>
-                <Show when={isLong()}>
-                  <button
-                    class={s.toolCallExpandBtn}
-                    onClick={() => setOutputExpanded(!outputExpanded())}
-                  >
-                    {outputExpanded()
-                      ? "Show less"
-                      : `Show more (${fullOutput().length - TOOL_OUTPUT_TRUNCATE} more chars)`}
-                  </button>
-                </Show>
-              </div>
-            )}
-          </Show>
-        </div>
-      </Show>
-    </div>
-  );
+	return (
+		<div class={s.toolCallCard}>
+			<div class={s.toolCallHeader} onClick={() => setExpanded(!expanded())}>
+				<span class={cx(s.toolCallStatusDot, statusClass())} />
+				<span class={s.toolCallName}>{props.entry.toolName}</span>
+				<Show when={props.entry.status === "done" && doneEntry()}>
+					{(entry) => <span class={s.toolCallDuration}>{entry().duration}ms</span>}
+				</Show>
+			</div>
+			<Show when={expanded()}>
+				<div class={s.toolCallBody}>
+					<div>Args: {JSON.stringify(filteredArgs(), null, 2)}</div>
+					<Show when={doneEntry()}>
+						{(entry) => (
+							<div>
+								<div class={s.toolCallResultHeader}>
+									<span>Result ({entry().result.success ? "ok" : "error"}):</span>
+									<button
+										class={cx(s.toolCallCopyBtn, copied() ? s.toolCallCopyBtnCopied : "")}
+										onClick={handleCopy}
+										title="Copy result to clipboard"
+									>
+										{copied() ? "copied" : "copy"}
+									</button>
+								</div>
+								<div class={s.toolCallOutput}>{displayOutput()}</div>
+								<Show when={isLong()}>
+									<button class={s.toolCallExpandBtn} onClick={() => setOutputExpanded(!outputExpanded())}>
+										{outputExpanded()
+											? "Show less"
+											: `Show more (${fullOutput().length - TOOL_OUTPUT_TRUNCATE} more chars)`}
+									</button>
+								</Show>
+							</div>
+						)}
+					</Show>
+				</div>
+			</Show>
+		</div>
+	);
 };
 
 export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
-  const [inputText, setInputText] = createSignal("");
-  let messageListRef: HTMLDivElement | undefined;
-  let textareaRef: HTMLTextAreaElement | undefined;
+	const [inputText, setInputText] = createSignal("");
+	let messageListRef: HTMLDivElement | undefined;
+	let textareaRef: HTMLTextAreaElement | undefined;
 
-  const [autonomy, setAutonomy] = createSignal<"assisted" | "autonomous">("assisted");
-  const [maxSteps, setMaxSteps] = createSignal(20);
-  const [modelOverride, setModelOverride] = createSignal<string>("");
-  const [availableModels, setAvailableModels] = createSignal<string[]>([]);
-  const [showHistory, setShowHistory] = createSignal(false);
-  const [showUnrestrictedConfirm, setShowUnrestrictedConfirm] = createSignal(false);
-  const [historyList, setHistoryList] = createSignal<ConversationMeta[]>([]);
+	const [autonomy, setAutonomy] = createSignal<"assisted" | "autonomous">("assisted");
+	const [maxSteps, setMaxSteps] = createSignal(20);
+	const [modelOverride, setModelOverride] = createSignal<string>("");
+	const [availableModels, setAvailableModels] = createSignal<string[]>([]);
+	const [showHistory, setShowHistory] = createSignal(false);
+	const [showUnrestrictedConfirm, setShowUnrestrictedConfirm] = createSignal(false);
+	const [historyList, setHistoryList] = createSignal<ConversationMeta[]>([]);
 
-  const openHistory = () => {
-    void conversationStore.listAllConversations().then(setHistoryList);
-    setShowHistory(true);
-  };
+	// Active terminal derived from terminalsStore (null when non-terminal tab focused)
+	const activeSessionId = useActiveSessionId();
+	const isFrozen = createMemo(() => !terminalsStore.state.activeId);
+	const activeTerminalName = createMemo(() => {
+		const id = terminalsStore.state.activeId;
+		return id ? (terminalsStore.get(id)?.name ?? null) : null;
+	});
 
-  // Load available models from the Main slot provider on mount
-  createEffect(() => {
-    import("@tauri-apps/api/core").then(({ invoke }) => {
-      invoke<{ slots: Record<string, string>; models: Array<{ id: string; model_name: string }> }>("load_provider_registry")
-        .then((reg) => {
-          const mainModelId = reg.slots["Main"];
-          const names = reg.models.map((m) => m.model_name).filter(Boolean);
-          setAvailableModels(names);
-          // Pre-select the configured Main model if no override set
-          if (!modelOverride()) {
-            const main = reg.models.find((m) => m.id === mainModelId);
-            if (main) setModelOverride(main.model_name);
-          }
-        })
-        .catch(() => { /* ignore — provider not configured */ });
-    }).catch(() => { /* ignore in non-Tauri */ });
-  });
+	// ── Watcher state ──────────────────────────────────────────────
+	const [watchers, setWatchers] = createSignal<WatcherRule[]>([]);
+	const [showWatcherCreate, setShowWatcherCreate] = createSignal(false);
+	const [watcherTrigger, setWatcherTrigger] = createSignal<WatcherTriggerKey>("idle");
+	const [watcherInstructions, setWatcherInstructions] = createSignal("");
+	const [watcherMaxFires, setWatcherMaxFires] = createSignal(50);
+	const [watcherName, setWatcherName] = createSignal("");
 
-  const resolveSessionName = (sessionId?: string | null): string => {
-    if (!sessionId) return "";
-    const ids = terminalsStore.getIds();
-    for (const id of ids) {
-      const t = terminalsStore.get(id);
-      if (t?.tuicSession === sessionId || t?.sessionId === sessionId) return t.name ?? sessionId;
-    }
-    return sessionId.slice(0, 8);
-  };
+	const refreshWatchers = () => {
+		invoke<WatcherRule[]>("watcher_list")
+			.then(setWatchers)
+			.catch((e) => appLogger.warn("ai-chat", "Failed to refresh watchers", { error: String(e) }));
+	};
 
-  const handleLoadConversation = async (id: string) => {
-    await conversationStore.loadConversation(id);
-    setShowHistory(false);
-  };
+	const sessionWatchers = createMemo(() => {
+		const sid = activeSessionId();
+		return sid ? watchers().filter((w) => w.session_id === sid) : [];
+	});
 
-  // Active terminal derived from terminalsStore (null when non-terminal tab focused)
-  const activeSessionId = useActiveSessionId();
-  const isFrozen = createMemo(() => !terminalsStore.state.activeId);
-  const activeTerminalName = createMemo(() => {
-    const id = terminalsStore.state.activeId;
-    return id ? (terminalsStore.get(id)?.name ?? null) : null;
-  });
+	const activeWatcher = createMemo(() => (sessionWatchers() ?? []).find((w) => w.status === "active" || w.status === "paused"));
 
-  // ── Registry subscription lifecycle ─────────────────────────────────────
-  createEffect(() => {
-    const id = conversationStore.chatId();
-    void conversationStore.subscribeToRegistry(id);
-  });
-  onCleanup(() => {
-    void conversationStore.unsubscribeFromRegistry();
-  });
+	createEffect(() => {
+		activeSessionId(); // tracked: re-run when session changes
+		refreshWatchers();
+	});
 
-  // ── Auto-scroll on new messages / streaming chunks ──────────────────────
-  createEffect(() => {
-    // Subscribe to reactive dependencies
-    conversationStore.streamingText();
-    conversationStore.messages().length;
-    if (messageListRef) {
-      messageListRef.scrollTop = messageListRef.scrollHeight;
-    }
-  });
+	const handleCreateWatcher = async () => {
+		const sid = activeSessionId();
+		if (!watcherInstructions().trim()) return;
+		try {
+			const trigger = TRIGGER_MAP[watcherTrigger()];
+			await invoke("watcher_create", {
+				name: watcherName() || "Watcher",
+				sessionId: sid || null,
+				trigger,
+				instructions: watcherInstructions(),
+				maxFires: watcherMaxFires(),
+			});
+			setShowWatcherCreate(false);
+			setWatcherInstructions("");
+			setWatcherName("");
+			refreshWatchers();
+		} catch (e) {
+			appLogger.warn("ai-chat", "Failed to create watcher", { error: String(e) });
+		}
+	};
 
-  // ── Auto-resize textarea ───────────────────────────────────────────────
-  const autoResize = () => {
-    if (!textareaRef) return;
-    textareaRef.style.height = "auto";
-    textareaRef.style.height = `${Math.min(textareaRef.scrollHeight, 150)}px`;
-  };
+	const handleToggleWatcher = async (id: string, enabled: boolean) => {
+		try {
+			await invoke("watcher_toggle", { id, enabled });
+			refreshWatchers();
+		} catch (e) {
+			appLogger.warn("ai-chat", "Failed to toggle watcher", { error: String(e) });
+			refreshWatchers();
+		}
+	};
 
-  // ── Send message ───────────────────────────────────────────────────────
-  const handleSend = () => {
-    const text = inputText().trim();
-    if (!text || isFrozen()) return;
-    const sid = activeSessionId();
+	const handleDeleteWatcher = async (id: string) => {
+		try {
+			await invoke("watcher_delete", { id });
+			refreshWatchers();
+		} catch (e) {
+			appLogger.warn("ai-chat", "Failed to delete watcher", { error: String(e) });
+			refreshWatchers();
+		}
+	};
 
-    if (autonomy() === "autonomous") {
-      const st = conversationStore.agentState();
-      if (st === "running" || st === "paused") return;
-      if (sid) conversationStore.startAgent(sid, text, conversationStore.unrestricted());
-    } else {
-      if (conversationStore.isStreaming()) return;
-      conversationStore.sendMessage(text, sid);
-    }
+	const openHistory = () => {
+		void conversationStore.listAllConversations().then(setHistoryList);
+		setShowHistory(true);
+	};
 
-    setInputText("");
-    if (textareaRef) {
-      textareaRef.style.height = "auto";
-    }
-  };
+	// Load available models from the Main slot provider on mount
+	onMount(() => {
+		invoke<{ slots: Record<string, string>; models: Array<{ id: string; model_name: string }> }>(
+			"load_provider_registry",
+		)
+			.then((reg) => {
+				const mainModelId = reg.slots["Main"];
+				const names = reg.models.map((m) => m.model_name).filter(Boolean);
+				setAvailableModels(names);
+				if (!modelOverride()) {
+					const main = reg.models.find((m) => m.id === mainModelId);
+					if (main) setModelOverride(main.model_name);
+				}
+			})
+			.catch(() => {
+				/* provider not configured */
+			});
+	});
 
-  const handleKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "Enter") {
-      if (e.metaKey || e.ctrlKey || e.shiftKey) {
-        // Cmd/Ctrl/Shift+Enter = newline (default behavior)
-        return;
-      }
-      e.preventDefault();
-      handleSend();
-    }
-  };
+	const resolveSessionName = (sessionId?: string | null): string => {
+		if (!sessionId) return "";
+		const ids = terminalsStore.getIds();
+		for (const id of ids) {
+			const t = terminalsStore.get(id);
+			if (t?.tuicSession === sessionId || t?.sessionId === sessionId) return t.name ?? sessionId;
+		}
+		return sessionId.slice(0, 8);
+	};
 
-  // ── Run code in active terminal ────────────────────────────────────────
-  const runCodeInTerminal = async (code: string) => {
-    const sessionId = activeSessionId();
-    if (!sessionId) {
-      appLogger.warn("ai-chat", "Cannot run code: no terminal attached");
-      return;
-    }
-    // Find the terminal ref for this session
-    const ids = terminalsStore.getIds();
-    let termRef: { write: (data: string) => void } | undefined;
-    let agentType: string | null = null;
-    for (const id of ids) {
-      const t = terminalsStore.get(id);
-      if (t?.sessionId === sessionId && t.ref) {
-        termRef = t.ref;
-        agentType = t.agentType ?? null;
-        break;
-      }
-    }
-    if (!termRef) {
-      appLogger.warn("ai-chat", "Cannot run code: terminal ref not found", { sessionId });
-      return;
-    }
-    const resolvedRef = termRef;
-    const shellFamily = await getShellFamily(sessionId);
-    const lines = code.trim().split("\n");
-    for (const line of lines) {
-      await sendCommand(
-        (data: string) => { resolvedRef.write(data); return Promise.resolve(); },
-        line,
-        agentType,
-        shellFamily,
-      );
-    }
-  };
+	const handleLoadConversation = async (id: string) => {
+		await conversationStore.loadConversation(id);
+		setShowHistory(false);
+	};
 
-  // ── Code block enhancement: inject Copy + Run buttons ──────────────────
-  const enhanceCodeBlocks = (container: HTMLDivElement, signal: AbortSignal) => {
-    const pres = container.querySelectorAll("pre");
-    for (const pre of pres) {
-      if (pre.parentElement?.classList.contains(s.codeBlockWrapper)) continue;
+	// ── Registry subscription lifecycle ─────────────────────────────────────
+	createEffect(() => {
+		const id = conversationStore.chatId();
+		void conversationStore.subscribeToRegistry(id);
+	});
+	onCleanup(() => {
+		void conversationStore.unsubscribeFromRegistry();
+	});
 
-      const parent = pre.parentElement;
-      if (!parent) continue;
+	// ── Auto-scroll on new messages / streaming chunks ──────────────────────
+	createEffect(() => {
+		// Subscribe to reactive dependencies
+		conversationStore.streamingText();
+		conversationStore.messages().length;
+		if (messageListRef) {
+			messageListRef.scrollTop = messageListRef.scrollHeight;
+		}
+	});
 
-      const wrapper = document.createElement("div");
-      wrapper.className = s.codeBlockWrapper;
-      parent.insertBefore(wrapper, pre);
-      wrapper.appendChild(pre);
+	// ── Auto-resize textarea ───────────────────────────────────────────────
+	const autoResize = () => {
+		if (!textareaRef) return;
+		textareaRef.style.height = "auto";
+		textareaRef.style.height = `${Math.min(textareaRef.scrollHeight, 150)}px`;
+	};
 
-      const actions = document.createElement("div");
-      actions.className = s.codeBlockActions;
+	// ── Send message ───────────────────────────────────────────────────────
+	const handleSend = () => {
+		const text = inputText().trim();
+		if (!text || isFrozen()) return;
+		const sid = activeSessionId();
 
-      // Copy button
-      const copyBtn = document.createElement("button");
-      copyBtn.className = s.codeActionBtn;
-      copyBtn.title = "Copy code";
-      copyBtn.innerHTML = SVG_COPY;
-      copyBtn.addEventListener("click", async () => {
-        const text = extractCodeText(pre);
-        const ok = await copyToClipboard(text);
-        if (ok) {
-          copyBtn.innerHTML = SVG_COPIED;
-          copyBtn.classList.add(s.codeActionBtnCopied);
-          setTimeout(() => {
-            copyBtn.innerHTML = SVG_COPY;
-            copyBtn.classList.remove(s.codeActionBtnCopied);
-          }, 1500);
-        }
-      }, { signal });
-      actions.appendChild(copyBtn);
+		if (autonomy() === "autonomous") {
+			const st = conversationStore.agentState();
+			if (st === "running" || st === "paused") return;
+			if (sid) conversationStore.startAgent(sid, text, conversationStore.unrestricted());
+		} else {
+			if (conversationStore.isStreaming()) return;
+			conversationStore.sendMessage(text, sid);
+		}
 
-      // Run button
-      const runBtn = document.createElement("button");
-      runBtn.className = s.codeActionBtn;
-      runBtn.title = "Run in terminal";
-      runBtn.innerHTML = SVG_RUN;
-      runBtn.addEventListener("click", () => {
-        const text = extractCodeText(pre);
-        void runCodeInTerminal(text).catch((e) =>
-          appLogger.warn("ai-chat", "Run code failed", { error: String(e) }),
-        );
-      }, { signal });
-      actions.appendChild(runBtn);
+		setInputText("");
+		if (textareaRef) {
+			textareaRef.style.height = "auto";
+		}
+	};
 
-      wrapper.appendChild(actions);
-    }
-  };
+	const handleKeyDown = (e: KeyboardEvent) => {
+		if (e.key === "Enter") {
+			if (e.metaKey || e.ctrlKey || e.shiftKey) {
+				// Cmd/Ctrl/Shift+Enter = newline (default behavior)
+				return;
+			}
+			e.preventDefault();
+			handleSend();
+		}
+	};
 
-  // ── Retry last message on error ────────────────────────────────────────
-  const handleRetry = () => {
-    const msgs = conversationStore.messages();
-    const lastUser = [...msgs].reverse().find((m) => m.role === "user");
-    if (lastUser) {
-      conversationStore.setError(null);
-      conversationStore.sendMessage(lastUser.content, activeSessionId());
-    }
-  };
+	// ── Run code in active terminal ────────────────────────────────────────
+	const runCodeInTerminal = async (code: string) => {
+		const sessionId = activeSessionId();
+		if (!sessionId) {
+			appLogger.warn("ai-chat", "Cannot run code: no terminal attached");
+			return;
+		}
+		// Find the terminal ref for this session
+		const ids = terminalsStore.getIds();
+		let termRef: { write: (data: string) => void } | undefined;
+		let agentType: string | null = null;
+		for (const id of ids) {
+			const t = terminalsStore.get(id);
+			if (t?.sessionId === sessionId && t.ref) {
+				termRef = t.ref;
+				agentType = t.agentType ?? null;
+				break;
+			}
+		}
+		if (!termRef) {
+			appLogger.warn("ai-chat", "Cannot run code: terminal ref not found", { sessionId });
+			return;
+		}
+		const resolvedRef = termRef;
+		const shellFamily = await getShellFamily(sessionId);
+		const lines = code.trim().split("\n");
+		for (const line of lines) {
+			await sendCommand(
+				(data: string) => {
+					resolvedRef.write(data);
+					return Promise.resolve();
+				},
+				line,
+				agentType,
+				shellFamily,
+			);
+		}
+	};
 
-  return (
-    <div id="ai-chat-panel" class={cx(s.panel, !props.visible && s.hidden)}>
-      <PanelResizeHandle panelId="ai-chat-panel" minWidth={300} maxWidth={700} />
+	// ── Code block enhancement: inject Copy + Run buttons ──────────────────
+	const enhanceCodeBlocks = (container: HTMLDivElement, signal: AbortSignal) => {
+		const pres = container.querySelectorAll("pre");
+		for (const pre of pres) {
+			if (pre.parentElement?.classList.contains(s.codeBlockWrapper)) continue;
 
-      {/* ── Header ──────────────────────────────────────────── */}
-      <div class={p.header}>
-        <div class={p.headerLeft}>
-          <span class={p.title}>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" style={{ "vertical-align": "-2px", "margin-right": "4px" }}>
-              <path d="M2 2.5A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5v6A1.5 1.5 0 0110.5 10H5l-3 2.5V10A1.5 1.5 0 010.5 8.5v-6z" transform="translate(1 0.5)" />
-            </svg>
-            AI Chat
-          </span>
-          <Show when={activeTerminalName()}>
-            {(name) => <span class={s.terminalName}>{name()}</span>}
-          </Show>
-        </div>
-        <div class={s.headerActions}>
-          {/* Model picker */}
-          <Show when={availableModels().length > 0}>
-            <select
-              class={s.modelPicker}
-              value={modelOverride()}
-              onChange={(e) => setModelOverride(e.currentTarget.value)}
-              title="Model override for this conversation"
-            >
-              <For each={availableModels()}>
-                {(m) => <option value={m}>{m}</option>}
-              </For>
-            </select>
-          </Show>
-          {/* Autonomy toggle */}
-          <button
-            class={cx(s.headerBtn, autonomy() === "autonomous" && s.headerBtnActive)}
-            onClick={() => setAutonomy((v) => v === "assisted" ? "autonomous" : "assisted")}
-            title={autonomy() === "autonomous" ? "Autonomous mode — click for Assisted" : "Assisted mode — click for Autonomous"}
-          >
-            <IconRobot />
-          </button>
-          {/* Step count (autonomous only) */}
-          <Show when={autonomy() === "autonomous"}>
-            <input
-              type="number"
-              class={s.stepInput}
-              min={1}
-              max={50}
-              value={maxSteps()}
-              onInput={(e) => setMaxSteps(Math.max(1, Math.min(50, Number(e.currentTarget.value))))}
-              title="Max agent steps"
-            />
-          </Show>
-          {/* Unrestricted toggle (autonomous only) */}
-          <Show when={autonomy() === "autonomous"}>
-            <button
-              class={cx(s.headerBtn, conversationStore.unrestricted() && s.headerBtnDanger)}
-              onClick={() => {
-                if (conversationStore.unrestricted()) {
-                  conversationStore.setUnrestricted(false);
-                } else {
-                  setShowUnrestrictedConfirm(true);
-                }
-              }}
-              title={conversationStore.unrestricted() ? "Disable unrestricted mode" : "Enable unrestricted mode (no approval prompts)"}
-            >
-              <IconUnlock />
-            </button>
-          </Show>
-          <button
-            class={cx(s.headerBtn, showHistory() && s.headerBtnActive)}
-            onClick={() => (showHistory() ? setShowHistory(false) : openHistory())}
-            title="Conversation history"
-          >
-            <IconHistory />
-          </button>
-          <button
-            class={s.headerBtn}
-            onClick={() => conversationStore.clearHistory()}
-            title="Clear conversation"
-          >
-            <IconTrash />
-          </button>
-          <PanelWindowControls
-            panelId="ai-chat"
-            mode={isPanelMode() ? "detached" : "inline"}
-            onInlineClose={props.onClose}
-          />
-        </div>
-      </div>
+			const parent = pre.parentElement;
+			if (!parent) continue;
 
-      {/* ── Error banner ────────────────────────────────────── */}
-      <Show when={conversationStore.error()}>
-        <div class={s.errorBanner}>
-          <span class={s.errorText}>{conversationStore.error()}</span>
-          <button class={s.retryBtn} onClick={handleRetry}>Retry</button>
-        </div>
-      </Show>
+			const wrapper = document.createElement("div");
+			wrapper.className = s.codeBlockWrapper;
+			parent.insertBefore(wrapper, pre);
+			wrapper.appendChild(pre);
 
-      {/* ── Unrestricted confirmation dialog ─────────────── */}
-      <Show when={showUnrestrictedConfirm()}>
-        <div class={s.approvalCard}>
-          <div class={s.approvalText}>
-            <strong>Enable unrestricted mode?</strong>
-            <br />
-            <span style={{ "font-size": "var(--font-xs)", color: "var(--fg-secondary)" }}>
-              The agent will skip all approval prompts and operate without sandbox restrictions.
-              Only use on repos you fully trust.
-            </span>
-          </div>
-          <div class={s.approvalActions}>
-            <button
-              class={cx(s.approvalBtn, s.denyBtn)}
-              onClick={() => {
-                conversationStore.setUnrestricted(true);
-                setShowUnrestrictedConfirm(false);
-              }}
-            >
-              Enable
-            </button>
-            <button
-              class={cx(s.approvalBtn, s.approveBtn)}
-              onClick={() => setShowUnrestrictedConfirm(false)}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      </Show>
+			const actions = document.createElement("div");
+			actions.className = s.codeBlockActions;
 
-      {/* ── Unrestricted banner ───────────────────────────── */}
-      <Show when={conversationStore.unrestricted()}>
-        <div class={s.unrestrictedBanner}>UNRESTRICTED</div>
-      </Show>
+			// Copy button
+			const copyBtn = document.createElement("button");
+			copyBtn.className = s.codeActionBtn;
+			copyBtn.title = "Copy code";
+			copyBtn.innerHTML = SVG_COPY;
+			copyBtn.addEventListener(
+				"click",
+				async () => {
+					const text = extractCodeText(pre);
+					const ok = await copyToClipboard(text);
+					if (ok) {
+						copyBtn.innerHTML = SVG_COPIED;
+						copyBtn.classList.add(s.codeActionBtnCopied);
+						setTimeout(() => {
+							copyBtn.innerHTML = SVG_COPY;
+							copyBtn.classList.remove(s.codeActionBtnCopied);
+						}, 1500);
+					}
+				},
+				{ signal },
+			);
+			actions.appendChild(copyBtn);
 
-      {/* ── Agent banner ──────────────────────────────────── */}
-      <Show when={conversationStore.agentState() === "running" || conversationStore.agentState() === "paused"}>
-        <div class={s.agentBanner}>
-          <IconRobot />
-          <Show
-            when={conversationStore.isThinking()}
-            fallback={
-              <span class={s.agentBannerText}>
-                Agent {conversationStore.agentState() === "paused" ? "paused" : "running"}
-              </span>
-            }
-          >
-            <span class={cx(s.agentBannerText, s.thinkingPulse)}>Thinking…</span>
-          </Show>
-          <span class={s.agentBannerIteration}>
-            iter {conversationStore.currentIteration() + 1}
-          </span>
-          <Show when={conversationStore.agentState() === "running"}>
-            <button
-              class={s.agentBannerBtn}
-              onClick={() => {
-                const sid = activeSessionId();
-                if (sid) conversationStore.pauseAgent(sid);
-              }}
-              title="Pause agent"
-            >
-              <IconPause />
-            </button>
-          </Show>
-          <Show when={conversationStore.agentState() === "paused"}>
-            <button
-              class={s.agentBannerBtn}
-              onClick={() => {
-                const sid = activeSessionId();
-                if (sid) conversationStore.resumeAgent(sid);
-              }}
-              title="Resume agent"
-            >
-              <IconPlay />
-            </button>
-          </Show>
-          <button
-            class={cx(s.agentBannerBtn, s.agentBannerBtnDanger)}
-            onClick={() => {
-              const sid = activeSessionId();
-              if (sid) conversationStore.cancelAgent(sid);
-            }}
-            title="Stop agent"
-          >
-            <IconStop />
-          </button>
-        </div>
-      </Show>
+			// Run button
+			const runBtn = document.createElement("button");
+			runBtn.className = s.codeActionBtn;
+			runBtn.title = "Run in terminal";
+			runBtn.innerHTML = SVG_RUN;
+			runBtn.addEventListener(
+				"click",
+				() => {
+					const text = extractCodeText(pre);
+					void runCodeInTerminal(text).catch((e) => appLogger.warn("ai-chat", "Run code failed", { error: String(e) }));
+				},
+				{ signal },
+			);
+			actions.appendChild(runBtn);
 
-      {/* ── Agent completion/error banner ─────────────────── */}
-      <Show when={["completed", "cancelled", "error"].includes(conversationStore.agentState())}>
-        <div class={cx(s.agentDoneBanner, conversationStore.agentState() === "error" && s.agentDoneBannerError)}>
-          <span class={s.agentBannerText}>
-            {conversationStore.agentState() === "completed"
-              ? `Agent done${conversationStore.completionReason() ? ` — ${conversationStore.completionReason()}` : ""}`
-              : conversationStore.agentState() === "cancelled"
-              ? "Agent cancelled"
-              : `Agent error: ${conversationStore.agentError() ?? "unknown error"}`}
-          </span>
-          <button class={s.agentBannerBtn} onClick={() => conversationStore.reset()} title="Dismiss">✕</button>
-        </div>
-      </Show>
+			wrapper.appendChild(actions);
+		}
+	};
 
-      {/* ── Approval prompt ────────────────────────────────── */}
-      <Show when={conversationStore.pendingApproval()}>
-        {(approval) => (
-          <div class={s.approvalCard}>
-            <div class={s.approvalText}>
-              Agent wants to run: <strong>{approval().command}</strong>
-              <br />
-              <span style={{ "font-size": "var(--font-xs)", color: "var(--fg-secondary)" }}>
-                {approval().reason}
-              </span>
-            </div>
-            <div class={s.approvalActions}>
-              <button
-                class={cx(s.approvalBtn, s.approveBtn)}
-                onClick={() => conversationStore.approveAction(approval().sessionId, true)}
-              >
-                Approve
-              </button>
-              <button
-                class={cx(s.approvalBtn, s.denyBtn)}
-                onClick={() => conversationStore.approveAction(approval().sessionId, false)}
-              >
-                Deny
-              </button>
-              <button
-                class={cx(s.approvalBtn, s.alwaysAllowBtn)}
-                onClick={() => {
-                  conversationStore.setUnrestricted(true);
-                  conversationStore.approveAction(approval().sessionId, true);
-                }}
-                title="Approve and disable all future approval prompts"
-              >
-                Always allow
-              </button>
-            </div>
-          </div>
-        )}
-      </Show>
+	// ── Retry last message on error ────────────────────────────────────────
+	const handleRetry = () => {
+		const msgs = conversationStore.messages();
+		const lastUser = [...msgs].reverse().find((m) => m.role === "user");
+		if (lastUser) {
+			conversationStore.setError(null);
+			conversationStore.sendMessage(lastUser.content, activeSessionId());
+		}
+	};
 
-      {/* ── History panel ───────────────────────────────────── */}
-      <Show when={showHistory()}>
-        <div class={s.historyPanel}>
-          <div class={s.historyHeader}>All conversations</div>
-          <Show when={historyList().length === 0}>
-            <div class={s.historyEmpty}>No conversations saved yet</div>
-          </Show>
-          <For each={historyList()}>
-            {(conv) => (
-              <button class={s.historyItem} onClick={() => void handleLoadConversation(conv.id)}>
-                <span class={s.historyTitle}>{conv.title || "Untitled"}</span>
-                <span class={s.historyMeta}>
-                  <Show when={resolveSessionName(conv.session_id)}>
-                    <span class={s.historySession}>{resolveSessionName(conv.session_id)}</span>
-                  </Show>
-                  <Show when={conv.provider || conv.model}>
-                    <span class={s.historyModel}>{[conv.provider, conv.model].filter(Boolean).join(" / ")}</span>
-                  </Show>
-                  <span class={s.historyCount}>{conv.message_count} msgs</span>
-                  <span class={s.historyDate}>{new Date(conv.updated * 1000).toLocaleDateString()}</span>
-                </span>
-              </button>
-            )}
-          </For>
-        </div>
-      </Show>
+	return (
+		<div id="ai-chat-panel" class={cx(s.panel, !props.visible && s.hidden)}>
+			<PanelResizeHandle panelId="ai-chat-panel" minWidth={300} maxWidth={700} />
 
-      {/* ── Message list ────────────────────────────────────── */}
-      <div class={cx(s.messageList, showHistory() && s.hidden)} ref={messageListRef}>
-        <Show
-          when={conversationStore.messages().length > 0 || conversationStore.isStreaming()}
-          fallback={
-            <div class={s.emptyState}>Ask me about your terminal output</div>
-          }
-        >
-          <For each={conversationStore.messages()}>
-            {(msg) => (
-              <Show
-                when={msg.role === "user"}
-                fallback={
-                  <div
-                    class={s.assistantMsg}
-                    ref={(el) => {
-                      const ac = new AbortController();
-                      onCleanup(() => ac.abort());
-                      requestAnimationFrame(() => enhanceCodeBlocks(el, ac.signal));
-                    }}
-                  >
-                    <ContentRenderer content={msg.content} />
-                  </div>
-                }
-              >
-                <div class={s.userMsg}>{msg.content}</div>
-              </Show>
-            )}
-          </For>
+			{/* ── Header ──────────────────────────────────────────── */}
+			<div class={p.header}>
+				<div class={p.headerLeft}>
+					<span class={p.title}>
+						<svg
+							width="14"
+							height="14"
+							viewBox="0 0 14 14"
+							fill="currentColor"
+							style={{ "vertical-align": "-2px", "margin-right": "4px" }}
+						>
+							<path
+								d="M2 2.5A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5v6A1.5 1.5 0 0110.5 10H5l-3 2.5V10A1.5 1.5 0 010.5 8.5v-6z"
+								transform="translate(1 0.5)"
+							/>
+						</svg>
+						AI Chat
+					</span>
+					<Show when={activeTerminalName()}>{(name) => <span class={s.terminalName}>{name()}</span>}</Show>
+				</div>
+				<div class={s.headerActions}>
+					{/* Model picker */}
+					<Show when={availableModels().length > 0}>
+						<select
+							class={s.modelPicker}
+							value={modelOverride()}
+							onChange={(e) => setModelOverride(e.currentTarget.value)}
+							title="Model override for this conversation"
+						>
+							<For each={availableModels()}>{(m) => <option value={m}>{m}</option>}</For>
+						</select>
+					</Show>
+					{/* Autonomy toggle */}
+					<button
+						class={cx(s.headerBtn, autonomy() === "autonomous" && s.headerBtnActive)}
+						onClick={() => setAutonomy((v) => (v === "assisted" ? "autonomous" : "assisted"))}
+						title={
+							autonomy() === "autonomous"
+								? "Autonomous mode — click for Assisted"
+								: "Assisted mode — click for Autonomous"
+						}
+					>
+						<IconRobot />
+					</button>
+					{/* Step count (autonomous only) */}
+					<Show when={autonomy() === "autonomous"}>
+						<input
+							type="number"
+							class={s.stepInput}
+							min={1}
+							max={50}
+							value={maxSteps()}
+							onInput={(e) => setMaxSteps(Math.max(1, Math.min(50, Number(e.currentTarget.value))))}
+							title="Max agent steps"
+						/>
+					</Show>
+					{/* Unrestricted toggle (autonomous only) */}
+					<Show when={autonomy() === "autonomous"}>
+						<button
+							class={cx(s.headerBtn, conversationStore.unrestricted() && s.headerBtnDanger)}
+							onClick={() => {
+								if (conversationStore.unrestricted()) {
+									conversationStore.setUnrestricted(false);
+								} else {
+									setShowUnrestrictedConfirm(true);
+								}
+							}}
+							title={
+								conversationStore.unrestricted()
+									? "Disable unrestricted mode"
+									: "Enable unrestricted mode (no approval prompts)"
+							}
+						>
+							<IconUnlock />
+						</button>
+					</Show>
+					{/* Watcher toggle */}
+					<button
+						class={cx(s.headerBtn, activeWatcher() && s.headerBtnActive)}
+						onClick={() => (activeWatcher() ? undefined : setShowWatcherCreate(true))}
+						title={activeWatcher() ? `Watcher: ${activeWatcher()?.status}` : "Create watcher for this terminal"}
+					>
+						<IconEye />
+					</button>
+					<button
+						class={cx(s.headerBtn, showHistory() && s.headerBtnActive)}
+						onClick={() => (showHistory() ? setShowHistory(false) : openHistory())}
+						title="Conversation history"
+					>
+						<IconHistory />
+					</button>
+					<button class={s.headerBtn} onClick={() => conversationStore.clearHistory()} title="Clear conversation">
+						<IconTrash />
+					</button>
+					<PanelWindowControls
+						panelId="ai-chat"
+						mode={isPanelMode() ? "detached" : "inline"}
+						onInlineClose={props.onClose}
+					/>
+				</div>
+			</div>
 
-          {/* Streaming text: render as markdown so formatting is progressive */}
-          <Show when={conversationStore.isStreaming() && conversationStore.streamingText()}>
-            <div class={s.assistantMsg}>
-              <ContentRenderer content={conversationStore.streamingText()!} />
-            </div>
-          </Show>
+			{/* ── Active watcher bar ──────────────────────────────── */}
+			<Show when={activeWatcher()}>
+				{(watcher) => (
+					<div class={s.watcherBar}>
+						<span class={cx(s.watcherStatusDot, s[`watcherStatus_${watcher().status}`])} />
+						<span class={s.watcherName}>{watcher().name}</span>
+						<span class={s.watcherFires}>
+							{watcher().fire_count}/{watcher().max_fires}
+						</span>
+						<Show when={watcher().status === "paused"}>
+							<button class={s.watcherSmallBtn} onClick={() => handleToggleWatcher(watcher().id, true)} title="Resume">
+								<IconPlay />
+							</button>
+						</Show>
+						<Show when={watcher().status === "active"}>
+							<button class={s.watcherSmallBtn} onClick={() => handleToggleWatcher(watcher().id, false)} title="Pause">
+								<IconPause />
+							</button>
+						</Show>
+						<button class={s.watcherSmallBtn} onClick={() => handleDeleteWatcher(watcher().id)} title="Delete watcher">
+							<IconTrash />
+						</button>
+					</div>
+				)}
+			</Show>
 
-          {/* Agent tool call cards */}
-          <Show when={conversationStore.toolCalls().length > 0}>
-            <For each={conversationStore.toolCalls()}>
-              {(entry) => <ToolCallCard entry={entry} />}
-            </For>
-          </Show>
+			{/* ── Watcher create dialog ──────────────────────────── */}
+			<Show when={showWatcherCreate()}>
+				<div class={s.watcherCreateDialog}>
+					<div class={s.watcherCreateTitle}>Create Watcher</div>
+					<label class={s.watcherLabel}>
+						Name
+						<input
+							type="text"
+							class={s.watcherInput}
+							value={watcherName()}
+							onInput={(e) => setWatcherName(e.currentTarget.value)}
+							placeholder="Watcher"
+						/>
+					</label>
+					<label class={s.watcherLabel}>
+						Trigger
+						<select
+							class={s.watcherSelect}
+							value={watcherTrigger()}
+							onChange={(e) => setWatcherTrigger(e.currentTarget.value as WatcherTriggerKey)}
+						>
+							<option value="idle">Idle</option>
+							<option value="busy">Busy</option>
+							<option value="command_done">Command Done</option>
+							<option value="command_done_fail">Command Failed</option>
+							<option value="question">Question</option>
+							<option value="error">Error</option>
+							<option value="unseen">Unseen</option>
+						</select>
+					</label>
+					<label class={s.watcherLabel}>
+						Instructions
+						<textarea
+							class={s.watcherTextarea}
+							value={watcherInstructions()}
+							onInput={(e) => setWatcherInstructions(e.currentTarget.value)}
+							placeholder="What should the AI do when triggered?"
+							rows={3}
+							maxLength={8192}
+						/>
+					</label>
+					<label class={s.watcherLabel}>
+						Max fires
+						<input
+							type="number"
+							class={s.watcherInput}
+							min={1}
+							max={999}
+							value={watcherMaxFires()}
+							onInput={(e) => setWatcherMaxFires(Math.max(1, Number(e.currentTarget.value)))}
+						/>
+					</label>
+					<div class={s.watcherCreateActions}>
+						<button class={s.watcherCancelBtn} onClick={() => setShowWatcherCreate(false)}>
+							Cancel
+						</button>
+						<button class={s.watcherConfirmBtn} onClick={handleCreateWatcher} disabled={!watcherInstructions().trim()}>
+							Create
+						</button>
+					</div>
+				</div>
+			</Show>
 
-          {/* Agent text output */}
-          <Show when={conversationStore.textChunks()}>
-            <div class={s.assistantMsg}>
-              <ContentRenderer content={conversationStore.textChunks()!} />
-            </div>
-          </Show>
-        </Show>
-      </div>
+			{/* ── Error banner ────────────────────────────────────── */}
+			<Show when={conversationStore.error()}>
+				<div class={s.errorBanner}>
+					<span class={s.errorText}>{conversationStore.error()}</span>
+					<button class={s.retryBtn} onClick={handleRetry}>
+						Retry
+					</button>
+				</div>
+			</Show>
 
-      {/* ── Session knowledge footer ────────────────────────── */}
-      <SessionKnowledgeBar sessionId={activeSessionId()} />
+			{/* ── Unrestricted confirmation dialog ─────────────── */}
+			<Show when={showUnrestrictedConfirm()}>
+				<div class={s.approvalCard}>
+					<div class={s.approvalText}>
+						<strong>Enable unrestricted mode?</strong>
+						<br />
+						<span style={{ "font-size": "var(--font-xs)", color: "var(--fg-secondary)" }}>
+							The agent will skip all approval prompts and operate without sandbox restrictions. Only use on repos you
+							fully trust.
+						</span>
+					</div>
+					<div class={s.approvalActions}>
+						<button
+							class={cx(s.approvalBtn, s.denyBtn)}
+							onClick={() => {
+								conversationStore.setUnrestricted(true);
+								setShowUnrestrictedConfirm(false);
+							}}
+						>
+							Enable
+						</button>
+						<button class={cx(s.approvalBtn, s.approveBtn)} onClick={() => setShowUnrestrictedConfirm(false)}>
+							Cancel
+						</button>
+					</div>
+				</div>
+			</Show>
 
-      {/* ── Frozen overlay ──────────────────────────────────── */}
-      <Show when={isFrozen()}>
-        <div class={s.frozenBanner}>No terminal focused — chat is read-only</div>
-      </Show>
+			{/* ── Unrestricted banner ───────────────────────────── */}
+			<Show when={conversationStore.unrestricted()}>
+				<div class={s.unrestrictedBanner}>UNRESTRICTED</div>
+			</Show>
 
-      {/* ── Input area ──────────────────────────────────────── */}
-      <div class={s.inputArea}>
-        <textarea
-          ref={textareaRef}
-          data-focus-target="ai-chat"
-          class={s.textarea}
-          rows={1}
-          placeholder={isFrozen() ? "Focus a terminal first..." : autonomy() === "autonomous" ? "Describe a goal for the agent..." : "Ask about your terminal... (Enter to send)"}
-          value={inputText()}
-          onInput={(e) => {
-            setInputText(e.currentTarget.value);
-            autoResize();
-          }}
-          onKeyDown={handleKeyDown}
-          disabled={isFrozen()}
-        />
-        <Show
-          when={conversationStore.isStreaming()}
-          fallback={
-            <button
-              class={s.sendBtn}
-              onClick={handleSend}
-              disabled={!inputText().trim() || conversationStore.isStreaming() || isFrozen() || (autonomy() === "autonomous" && (conversationStore.agentState() === "running" || conversationStore.agentState() === "paused"))}
-              title="Send (Enter)"
-            >
-              <IconSend />
-            </button>
-          }
-        >
-          <button
-            class={s.stopBtn}
-            onClick={() => conversationStore.cancelStream()}
-            title="Stop generating"
-          >
-            <IconStop />
-          </button>
-        </Show>
-      </div>
+			{/* ── Agent banner ──────────────────────────────────── */}
+			<Show when={conversationStore.agentState() === "running" || conversationStore.agentState() === "paused"}>
+				<div class={s.agentBanner}>
+					<IconRobot />
+					<Show
+						when={conversationStore.isThinking()}
+						fallback={
+							<span class={s.agentBannerText}>
+								Agent {conversationStore.agentState() === "paused" ? "paused" : "running"}
+							</span>
+						}
+					>
+						<span class={cx(s.agentBannerText, s.thinkingPulse)}>Thinking…</span>
+					</Show>
+					<span class={s.agentBannerIteration}>iter {conversationStore.currentIteration() + 1}</span>
+					<Show when={conversationStore.agentState() === "running"}>
+						<button
+							class={s.agentBannerBtn}
+							onClick={() => {
+								const sid = activeSessionId();
+								if (sid) conversationStore.pauseAgent(sid);
+							}}
+							title="Pause agent"
+						>
+							<IconPause />
+						</button>
+					</Show>
+					<Show when={conversationStore.agentState() === "paused"}>
+						<button
+							class={s.agentBannerBtn}
+							onClick={() => {
+								const sid = activeSessionId();
+								if (sid) conversationStore.resumeAgent(sid);
+							}}
+							title="Resume agent"
+						>
+							<IconPlay />
+						</button>
+					</Show>
+					<button
+						class={cx(s.agentBannerBtn, s.agentBannerBtnDanger)}
+						onClick={() => {
+							const sid = activeSessionId();
+							if (sid) conversationStore.cancelAgent(sid);
+						}}
+						title="Stop agent"
+					>
+						<IconStop />
+					</button>
+				</div>
+			</Show>
 
-      {/* ── Usage footer ────────────────────────────────────── */}
-      <Show when={conversationStore.sessionUsage()}>
-        {(usage) => {
-          const prompt = () => usage().promptTokens ?? 0;
-          const completion = () => usage().completionTokens ?? 0;
-          const cached = () => usage().cachedTokens ?? 0;
-          const total = () => prompt() + completion();
-          const cachedPct = () => (total() > 0 ? Math.round((cached() / total()) * 100) : 0);
-          const cost = () => usage().costUsd;
-          return (
-            <div class={s.usageFooter}>
-              <span title="Prompt tokens">↑{prompt().toLocaleString()}</span>
-              <span title="Completion tokens">↓{completion().toLocaleString()}</span>
-              <span>tok</span>
-              <Show when={cost() != null}>
-                <span>·</span>
-                <span title="Estimated cost">${cost()!.toFixed(4)}</span>
-              </Show>
-              <Show when={cached() > 0}>
-                <span>·</span>
-                <span title="Cache hit rate">{cachedPct()}% cached</span>
-              </Show>
-            </div>
-          );
-        }}
-      </Show>
-    </div>
-  );
+			{/* ── Agent completion/error banner ─────────────────── */}
+			<Show when={["completed", "cancelled", "error"].includes(conversationStore.agentState())}>
+				<div class={cx(s.agentDoneBanner, conversationStore.agentState() === "error" && s.agentDoneBannerError)}>
+					<span class={s.agentBannerText}>
+						{conversationStore.agentState() === "completed"
+							? `Agent done${conversationStore.completionReason() ? ` — ${conversationStore.completionReason()}` : ""}`
+							: conversationStore.agentState() === "cancelled"
+								? "Agent cancelled"
+								: `Agent error: ${conversationStore.agentError() ?? "unknown error"}`}
+					</span>
+					<button class={s.agentBannerBtn} onClick={() => conversationStore.reset()} title="Dismiss">
+						✕
+					</button>
+				</div>
+			</Show>
+
+			{/* ── Approval prompt ────────────────────────────────── */}
+			<Show when={conversationStore.pendingApproval()}>
+				{(approval) => (
+					<div class={s.approvalCard}>
+						<div class={s.approvalText}>
+							Agent wants to run: <strong>{approval().command}</strong>
+							<br />
+							<span style={{ "font-size": "var(--font-xs)", color: "var(--fg-secondary)" }}>{approval().reason}</span>
+						</div>
+						<div class={s.approvalActions}>
+							<button
+								class={cx(s.approvalBtn, s.approveBtn)}
+								onClick={() => conversationStore.approveAction(approval().sessionId, true)}
+							>
+								Approve
+							</button>
+							<button
+								class={cx(s.approvalBtn, s.denyBtn)}
+								onClick={() => conversationStore.approveAction(approval().sessionId, false)}
+							>
+								Deny
+							</button>
+							<button
+								class={cx(s.approvalBtn, s.alwaysAllowBtn)}
+								onClick={() => {
+									conversationStore.setUnrestricted(true);
+									conversationStore.approveAction(approval().sessionId, true);
+								}}
+								title="Approve and disable all future approval prompts"
+							>
+								Always allow
+							</button>
+						</div>
+					</div>
+				)}
+			</Show>
+
+			{/* ── History panel ───────────────────────────────────── */}
+			<Show when={showHistory()}>
+				<div class={s.historyPanel}>
+					<div class={s.historyHeader}>All conversations</div>
+					<Show when={historyList().length === 0}>
+						<div class={s.historyEmpty}>No conversations saved yet</div>
+					</Show>
+					<For each={historyList()}>
+						{(conv) => (
+							<button class={s.historyItem} onClick={() => void handleLoadConversation(conv.id)}>
+								<span class={s.historyTitle}>{conv.title || "Untitled"}</span>
+								<span class={s.historyMeta}>
+									<Show when={resolveSessionName(conv.session_id)}>
+										<span class={s.historySession}>{resolveSessionName(conv.session_id)}</span>
+									</Show>
+									<Show when={conv.provider || conv.model}>
+										<span class={s.historyModel}>{[conv.provider, conv.model].filter(Boolean).join(" / ")}</span>
+									</Show>
+									<span class={s.historyCount}>{conv.message_count} msgs</span>
+									<span class={s.historyDate}>{new Date(conv.updated * 1000).toLocaleDateString()}</span>
+								</span>
+							</button>
+						)}
+					</For>
+				</div>
+			</Show>
+
+			{/* ── Message list ────────────────────────────────────── */}
+			<div class={cx(s.messageList, showHistory() && s.hidden)} ref={messageListRef}>
+				<Show
+					when={conversationStore.messages().length > 0 || conversationStore.isStreaming()}
+					fallback={<div class={s.emptyState}>Ask me about your terminal output</div>}
+				>
+					<For each={conversationStore.messages()}>
+						{(msg) => (
+							<Show
+								when={msg.role === "user"}
+								fallback={
+									<div
+										class={s.assistantMsg}
+										ref={(el) => {
+											const ac = new AbortController();
+											onCleanup(() => ac.abort());
+											requestAnimationFrame(() => enhanceCodeBlocks(el, ac.signal));
+										}}
+									>
+										<ContentRenderer content={msg.content} />
+									</div>
+								}
+							>
+								<div class={s.userMsg}>{msg.content}</div>
+							</Show>
+						)}
+					</For>
+
+					{/* Streaming text: render as markdown so formatting is progressive */}
+					<Show when={conversationStore.isStreaming() && conversationStore.streamingText()}>
+						{(text) => (
+							<div class={s.assistantMsg}>
+								<ContentRenderer content={text()} />
+							</div>
+						)}
+					</Show>
+
+					{/* Agent tool call cards */}
+					<Show when={conversationStore.toolCalls().length > 0}>
+						<For each={conversationStore.toolCalls()}>{(entry) => <ToolCallCard entry={entry} />}</For>
+					</Show>
+
+					{/* Agent text output */}
+					<Show when={conversationStore.textChunks()}>
+						<div class={s.assistantMsg}>
+							<ContentRenderer content={conversationStore.textChunks()!} />
+						</div>
+					</Show>
+				</Show>
+			</div>
+
+			{/* ── Session knowledge footer ────────────────────────── */}
+			<SessionKnowledgeBar sessionId={activeSessionId()} />
+
+			{/* ── Frozen overlay ──────────────────────────────────── */}
+			<Show when={isFrozen()}>
+				<div class={s.frozenBanner}>No terminal focused — chat is read-only</div>
+			</Show>
+
+			{/* ── Input area ──────────────────────────────────────── */}
+			<div class={s.inputArea}>
+				<textarea
+					ref={textareaRef}
+					data-focus-target="ai-chat"
+					class={s.textarea}
+					rows={1}
+					placeholder={
+						isFrozen()
+							? "Focus a terminal first..."
+							: autonomy() === "autonomous"
+								? "Describe a goal for the agent..."
+								: "Ask about your terminal... (Enter to send)"
+					}
+					value={inputText()}
+					onInput={(e) => {
+						setInputText(e.currentTarget.value);
+						autoResize();
+					}}
+					onKeyDown={handleKeyDown}
+					disabled={isFrozen()}
+				/>
+				<Show
+					when={conversationStore.isStreaming()}
+					fallback={
+						<button
+							class={s.sendBtn}
+							onClick={handleSend}
+							disabled={
+								!inputText().trim() ||
+								conversationStore.isStreaming() ||
+								isFrozen() ||
+								(autonomy() === "autonomous" &&
+									(conversationStore.agentState() === "running" || conversationStore.agentState() === "paused"))
+							}
+							title="Send (Enter)"
+						>
+							<IconSend />
+						</button>
+					}
+				>
+					<button class={s.stopBtn} onClick={() => conversationStore.cancelStream()} title="Stop generating">
+						<IconStop />
+					</button>
+				</Show>
+			</div>
+
+			{/* ── Usage footer ────────────────────────────────────── */}
+			<Show when={conversationStore.sessionUsage()}>
+				{(usage) => {
+					const prompt = () => usage().promptTokens ?? 0;
+					const completion = () => usage().completionTokens ?? 0;
+					const cached = () => usage().cachedTokens ?? 0;
+					const total = () => prompt() + completion();
+					const cachedPct = () => (total() > 0 ? Math.round((cached() / total()) * 100) : 0);
+					const cost = () => usage().costUsd;
+					return (
+						<div class={s.usageFooter}>
+							<span title="Prompt tokens">↑{prompt().toLocaleString()}</span>
+							<span title="Completion tokens">↓{completion().toLocaleString()}</span>
+							<span>tok</span>
+							<Show when={cost()}>
+								{(c) => (
+									<>
+										<span>·</span>
+										<span title="Estimated cost">${c().toFixed(4)}</span>
+									</>
+								)}
+							</Show>
+							<Show when={cached() > 0}>
+								<span>·</span>
+								<span title="Cache hit rate">{cachedPct()}% cached</span>
+							</Show>
+						</div>
+					);
+				}}
+			</Show>
+		</div>
+	);
 };
 
 export default AIChatPanel;
