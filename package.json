@@ -23,6 +23,7 @@
     "@codemirror/view": "^6.39.16",
     "@git-diff-view/core": "^0.1.3",
     "@git-diff-view/solid": "^0.1.3",
+    "@lezer/common": "^1.5.2",
     "@lezer/highlight": "^1.2.3",
     "@tanstack/solid-virtual": "^3.13.21",
     "@tauri-apps/api": "^2",
