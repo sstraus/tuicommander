@@ -5,8 +5,8 @@ use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, AtomicUsize};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, AtomicUsize};
 use std::time::{Duration, Instant};
 #[cfg(feature = "desktop")]
 use tauri::{AppHandle, Emitter};
@@ -23,14 +23,9 @@ use tauri::{AppHandle, Emitter};
 #[serde(tag = "event", content = "payload")]
 pub enum AppEvent {
     #[serde(rename = "head-changed")]
-    HeadChanged {
-        repo_path: String,
-        branch: String,
-    },
+    HeadChanged { repo_path: String, branch: String },
     #[serde(rename = "repo-changed")]
-    RepoChanged {
-        repo_path: String,
-    },
+    RepoChanged { repo_path: String },
     #[serde(rename = "session-created")]
     SessionCreated {
         session_id: String,
@@ -38,29 +33,19 @@ pub enum AppEvent {
         agent_type: Option<String>,
     },
     #[serde(rename = "session-closed")]
-    SessionClosed {
-        session_id: String,
-        reason: String,
-    },
+    SessionClosed { session_id: String, reason: String },
     #[serde(rename = "pty-parsed")]
     PtyParsed {
         session_id: String,
         parsed: serde_json::Value,
     },
     #[serde(rename = "pty-exit")]
-    PtyExit {
-        session_id: String,
-    },
+    PtyExit { session_id: String },
     #[serde(rename = "plugin-changed")]
     #[allow(dead_code)] // reserved for future plugin hot-reload notifications
-    PluginChanged {
-        plugin_ids: Vec<String>,
-    },
+    PluginChanged { plugin_ids: Vec<String> },
     #[serde(rename = "upstream-status-changed")]
-    UpstreamStatusChanged {
-        name: String,
-        status: String,
-    },
+    UpstreamStatusChanged { name: String, status: String },
     /// Frontend should open the user's browser at `authorization_url` —
     /// an upstream MCP server has triggered an OAuth flow.
     #[serde(rename = "mcp-oauth-start")]
@@ -78,9 +63,7 @@ pub enum AppEvent {
     },
     /// Directory contents changed (non-git filesystem watcher)
     #[serde(rename = "dir-changed")]
-    DirChanged {
-        dir_path: String,
-    },
+    DirChanged { dir_path: String },
     /// A worktree was created via MCP — frontend may offer to switch to it
     #[serde(rename = "worktree-created")]
     WorktreeCreated {
@@ -90,15 +73,10 @@ pub enum AppEvent {
     },
     /// A peer agent registered for inter-agent messaging
     #[serde(rename = "peer-registered")]
-    PeerRegistered {
-        tuic_session: String,
-        name: String,
-    },
+    PeerRegistered { tuic_session: String, name: String },
     /// A peer agent was unregistered (session closed or reaped)
     #[serde(rename = "peer-unregistered")]
-    PeerUnregistered {
-        tuic_session: String,
-    },
+    PeerUnregistered { tuic_session: String },
     /// Open or update a plugin panel tab from MCP
     #[serde(rename = "ui-tab")]
     UiTab {
@@ -133,8 +111,13 @@ pub enum AppEvent {
     },
     /// Close HTML tabs owned by a session (emitted on session exit)
     #[serde(rename = "close-html-tabs")]
-    CloseHtmlTabs {
-        tab_ids: Vec<String>,
+    CloseHtmlTabs { tab_ids: Vec<String> },
+    /// Scheduled agent job completed (from Scheduler)
+    #[serde(rename = "scheduled-job-completed")]
+    ScheduledJobCompleted {
+        job_id: String,
+        goal: String,
+        timed_out: bool,
     },
 }
 
@@ -142,7 +125,9 @@ pub enum AppEvent {
 // SessionState — server-side accumulator for REST polling (mobile/browser)
 // ---------------------------------------------------------------------------
 
-fn is_zero(v: &u32) -> bool { *v == 0 }
+fn is_zero(v: &u32) -> bool {
+    *v == 0
+}
 
 /// Per-session state accumulated from broadcast events.
 /// Updated by a background task that subscribes to the event bus.
@@ -241,7 +226,6 @@ impl PartialEq for SessionState {
     }
 }
 
-
 /// TTL for git operations (local disk): 60s fallback.
 /// Primary invalidation is event-driven via repo_watcher FSEvents.
 /// This TTL is a safety net for cases where the watcher misses an event.
@@ -285,7 +269,8 @@ impl Utf8ReadBuffer {
                     // Invalid byte sequence — skip the bad byte(s) and keep going
                     // Replace the invalid portion with U+FFFD and continue
                     let error_len = e.error_len().unwrap();
-                    let mut result = String::from_utf8_lossy(&combined[..valid + error_len]).to_string();
+                    let mut result =
+                        String::from_utf8_lossy(&combined[..valid + error_len]).to_string();
                     // Process any remaining bytes after the error
                     if valid + error_len < combined.len() {
                         let rest = self.push(&combined[valid + error_len..]);
@@ -903,6 +888,9 @@ pub struct AppState {
     /// Flow control: true while a grid frame is in-flight (awaiting frontend ack).
     /// When set, the PTY reader skips sending frames — damage accumulates in alacritty.
     pub(crate) grid_frame_in_flight: DashMap<String, Arc<AtomicBool>>,
+    /// Dirty flag: set by PTY reader when new data is processed, cleared by frame ticker.
+    /// Decouples read() from frame serialization to coalesce rapid writes (spinners).
+    pub(crate) grid_frame_dirty: DashMap<String, Arc<AtomicBool>>,
     /// Per-session kitty keyboard protocol state (session_id → state).
     /// Separate DashMap (not inside PtySession) to avoid writer contention.
     pub(crate) kitty_states: DashMap<String, Mutex<KittyKeyboardState>>,
@@ -946,7 +934,8 @@ pub struct AppState {
     pub(crate) tool_search_index: Arc<parking_lot::RwLock<crate::tool_search::ToolSearchIndex>>,
     /// Per-repo BM25 content index for sub-millisecond file content search.
     /// Built in background on first search or repo load, rebuilt on `RepoChanged`.
-    pub(crate) content_indices: DashMap<String, Arc<parking_lot::RwLock<crate::content_index::ContentIndex>>>,
+    pub(crate) content_indices:
+        DashMap<String, Arc<parking_lot::RwLock<crate::content_index::ContentIndex>>>,
     /// Cooperative CPU throttle for content-index builders. Search handlers
     /// acquire a guard here so indexers pause and yield priority to the user.
     pub(crate) indexer_throttle: Arc<crate::content_index::IndexerThrottle>,
@@ -1045,6 +1034,13 @@ pub struct AppState {
     pub(crate) term_aliases: DashMap<String, String>,
     /// Per-prefix counter for alias numbering (e.g. "tc" → 2 means next is tc-3).
     pub(crate) term_alias_counters: DashMap<String, u32>,
+    /// Per-session tab visibility (session_id → visible). Updated by the
+    /// frontend on tab focus changes. Read by the watcher engine to evaluate
+    /// the Unseen trigger (fires only when the terminal tab is not visible).
+    pub(crate) session_visibility: DashMap<String, bool>,
+    /// Terminal watcher engine handle — initialized once at startup.
+    /// Commands access the shared config via `engine.config()`.
+    pub(crate) watcher_engine: std::sync::OnceLock<Arc<crate::ai_agent::watcher::WatcherEngine>>,
     /// Evaluates CommandOutcome records and emits suggestions for AI investigation.
     pub(crate) trigger_classifier: crate::ai_agent::triggers::TriggerClassifier,
     /// Per-session opt-in for AI suggestions. Present + true = enabled.
@@ -1092,6 +1088,7 @@ impl AppState {
             grid_channels: DashMap::new(),
             grid_watch: DashMap::new(),
             grid_frame_in_flight: DashMap::new(),
+            grid_frame_dirty: DashMap::new(),
             kitty_states: DashMap::new(),
             input_buffers: DashMap::new(),
             last_prompts: DashMap::new(),
@@ -1106,7 +1103,9 @@ impl AppState {
             )),
             mcp_upstream_registry,
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
-            tool_search_index: Arc::new(parking_lot::RwLock::new(crate::tool_search::ToolSearchIndex::build(&[]))),
+            tool_search_index: Arc::new(parking_lot::RwLock::new(
+                crate::tool_search::ToolSearchIndex::build(&[]),
+            )),
             content_indices: DashMap::new(),
             indexer_throttle: Arc::new(crate::content_index::IndexerThrottle::default()),
             slash_mode: DashMap::new(),
@@ -1132,12 +1131,16 @@ impl AppState {
             unrestricted_sessions: DashMap::new(),
             #[cfg(unix)]
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
-            tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),
+            tailscale_state: parking_lot::RwLock::new(
+                crate::tailscale::TailscaleState::NotInstalled,
+            ),
             push_store,
             desktop_window_focused: std::sync::atomic::AtomicBool::new(true),
             server_start_time: std::time::Instant::now(),
             term_aliases: DashMap::new(),
             term_alias_counters: DashMap::new(),
+            session_visibility: DashMap::new(),
+            watcher_engine: std::sync::OnceLock::new(),
             trigger_classifier: crate::ai_agent::triggers::TriggerClassifier::new(),
             ai_suggestions_enabled: DashMap::new(),
         }
@@ -1146,9 +1149,12 @@ impl AppState {
     /// Wire event bus and MCP registry after construction.
     /// Must be called after wrapping in `Arc`.
     pub fn wire_event_bus(self: &Arc<Self>) {
-        self.mcp_upstream_registry.set_event_bus(self.event_bus.clone());
-        self.mcp_upstream_registry.set_mcp_tools_tx(self.mcp_tools_changed.clone());
-        self.mcp_upstream_registry.set_oauth_flow_manager(self.oauth_flow_manager.clone());
+        self.mcp_upstream_registry
+            .set_event_bus(self.event_bus.clone());
+        self.mcp_upstream_registry
+            .set_mcp_tools_tx(self.mcp_tools_changed.clone());
+        self.mcp_upstream_registry
+            .set_oauth_flow_manager(self.oauth_flow_manager.clone());
     }
 
     /// Assign a human-friendly alias based on the repo/cwd name.
@@ -1157,9 +1163,12 @@ impl AppState {
     /// If the same repo name already has a prefix in `term_alias_counters`, reuse it.
     /// Collision resolution only runs for new repo names whose base acronym clashes.
     pub(crate) fn assign_term_alias(&self, session_id: &str) -> String {
-        let cwd = self.sessions.get(session_id)
+        let cwd = self
+            .sessions
+            .get(session_id)
             .and_then(|s| s.lock().cwd.clone());
-        let repo_name = cwd.as_deref()
+        let repo_name = cwd
+            .as_deref()
             .and_then(|p| std::path::Path::new(p).file_name())
             .and_then(|n| n.to_str())
             .unwrap_or("")
@@ -1175,13 +1184,17 @@ impl AppState {
         let mut counter = self.term_alias_counters.entry(prefix.clone()).or_insert(0);
         *counter += 1;
         let alias = format!("{prefix}-{}", *counter);
-        self.term_aliases.insert(session_id.to_string(), alias.clone());
+        self.term_aliases
+            .insert(session_id.to_string(), alias.clone());
         #[cfg(feature = "desktop")]
         if let Some(ref app) = *self.app_handle.read() {
-            let _ = app.emit("term-alias-assigned", serde_json::json!({
-                "session_id": session_id,
-                "alias": alias,
-            }));
+            let _ = app.emit(
+                "term-alias-assigned",
+                serde_json::json!({
+                    "session_id": session_id,
+                    "alias": alias,
+                }),
+            );
         }
         alias
     }
@@ -1191,9 +1204,12 @@ impl AppState {
         for entry in self.term_aliases.iter() {
             let sid = entry.key();
             let alias = entry.value();
-            let other_cwd = self.sessions.get(sid.as_str())
+            let other_cwd = self
+                .sessions
+                .get(sid.as_str())
                 .and_then(|s| s.lock().cwd.clone());
-            let other_name = other_cwd.as_deref()
+            let other_name = other_cwd
+                .as_deref()
                 .and_then(|p| std::path::Path::new(p).file_name())
                 .and_then(|n| n.to_str())
                 .unwrap_or("");
@@ -1208,7 +1224,8 @@ impl AppState {
 
     /// Look up session_id by alias (e.g. "tc-1" → UUID).
     pub(crate) fn resolve_alias(&self, alias: &str) -> Option<String> {
-        self.term_aliases.iter()
+        self.term_aliases
+            .iter()
             .find(|e| e.value() == alias)
             .map(|e| e.key().clone())
     }
@@ -1246,12 +1263,15 @@ impl AppState {
         let id = entry.lock().record(outcome);
         self.knowledge_dirty.insert(session_id.to_string(), ());
 
+        #[cfg(feature = "desktop")]
         if let Some(suggestion) = suggestion {
             use tauri::Emitter as _;
             if let Some(ref app) = *self.app_handle.read() {
                 let _ = app.emit("ai-suggestion", &suggestion);
             }
         }
+        #[cfg(not(feature = "desktop"))]
+        let _ = suggestion;
 
         id
     }
@@ -1277,10 +1297,15 @@ fn repo_name_to_prefix(name: &str, existing: &DashMap<String, String>) -> String
         segments.iter().map(|s| &s[..1]).collect::<String>()
     } else {
         let s = &segments[0];
-        if s.len() < 3 { s.clone() } else { s[..2].to_string() }
+        if s.len() < 3 {
+            s.clone()
+        } else {
+            s[..2].to_string()
+        }
     };
 
-    let used_prefixes: std::collections::HashSet<String> = existing.iter()
+    let used_prefixes: std::collections::HashSet<String> = existing
+        .iter()
         .filter_map(|e| {
             let v = e.value();
             v.rfind('-').map(|i| v[..i].to_string())
@@ -1373,7 +1398,8 @@ pub(crate) struct GitCacheState {
     pub(crate) github_status: DashMap<String, (Vec<crate::github::BranchPrStatus>, Instant)>,
     pub(crate) git_status: DashMap<String, (crate::github::GitHubStatus, Instant)>,
     pub(crate) git_panel_context: DashMap<String, (crate::git::GitPanelContext, Instant)>,
-    pub(crate) worktree_paths: DashMap<String, (std::collections::HashMap<String, String>, Instant)>,
+    pub(crate) worktree_paths:
+        DashMap<String, (std::collections::HashMap<String, String>, Instant)>,
     /// Repos that returned null from GitHub GraphQL (not found / no access).
     /// Keyed by "owner/name", value is the cooldown expiry time.
     /// Excluded from batch queries until the cooldown expires (1 hour).
@@ -1453,11 +1479,7 @@ impl AppState {
     }
 
     /// Store a value in a TTL cache.
-    pub(crate) fn set_cached<T>(
-        map: &DashMap<String, (T, Instant)>,
-        key: String,
-        value: T,
-    ) {
+    pub(crate) fn set_cached<T>(map: &DashMap<String, (T, Instant)>, key: String, value: T) {
         map.insert(key, (value, Instant::now()));
     }
 
@@ -1479,13 +1501,16 @@ impl AppState {
     pub(crate) fn session_state_with_shell(&self, session_id: &str) -> Option<SessionState> {
         // Expire stale rate limits in-place before building the snapshot.
         if let Some(mut entry) = self.session_states.get_mut(session_id)
-            && entry.rate_limited && entry.rate_limit_set_ms > 0
+            && entry.rate_limited
+            && entry.rate_limit_set_ms > 0
         {
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis() as u64;
-            let ttl = entry.retry_after_ms.unwrap_or(Self::RATE_LIMIT_DEFAULT_EXPIRY_MS);
+            let ttl = entry
+                .retry_after_ms
+                .unwrap_or(Self::RATE_LIMIT_DEFAULT_EXPIRY_MS);
             if now.saturating_sub(entry.rate_limit_set_ms) > ttl {
                 entry.rate_limited = false;
                 entry.retry_after_ms = None;
@@ -1529,8 +1554,14 @@ impl AppState {
         let body = body.to_owned();
         tokio::spawn(async move {
             let stale = crate::push::send_push_batch(
-                subs, &config, &http_client, "TUICommander", &body, &url,
-            ).await;
+                subs,
+                &config,
+                &http_client,
+                "TUICommander",
+                &body,
+                &url,
+            )
+            .await;
             for endpoint in &stale {
                 push_state.push_store.remove(endpoint);
             }
@@ -1545,12 +1576,19 @@ impl AppState {
             .as_millis() as u64;
 
         match event {
-            AppEvent::SessionCreated { session_id, agent_type, .. } => {
-                state.session_states.insert(session_id.clone(), SessionState {
-                    last_activity_ms: now_ms,
-                    agent_type: agent_type.clone(),
-                    ..Default::default()
-                });
+            AppEvent::SessionCreated {
+                session_id,
+                agent_type,
+                ..
+            } => {
+                state.session_states.insert(
+                    session_id.clone(),
+                    SessionState {
+                        last_activity_ms: now_ms,
+                        agent_type: agent_type.clone(),
+                        ..Default::default()
+                    },
+                );
             }
             AppEvent::SessionClosed { session_id, .. } => {
                 state.session_states.remove(session_id);
@@ -1561,23 +1599,27 @@ impl AppState {
                 // Collect push notification data outside the DashMap lock
                 let mut push_data: Option<(String, String)> = None;
 
-                state.session_states
+                state
+                    .session_states
                     .entry(session_id.clone())
                     .and_modify(|s| {
                         s.last_activity_ms = now_ms;
                         match event_type {
                             "question" => {
                                 s.awaiting_input = true;
-                                s.question_text = parsed.get("prompt_text")
+                                s.question_text = parsed
+                                    .get("prompt_text")
                                     .and_then(|t| t.as_str())
                                     .map(|t| t.to_string());
-                                s.question_confident = parsed.get("confident")
+                                s.question_confident = parsed
+                                    .get("confident")
                                     .and_then(|v| v.as_bool())
                                     .unwrap_or(false);
 
                                 // Rate limit: skip if last push for this session was < 30s ago
                                 let should_push = !state.push_store.is_empty()
-                                    && s.last_push_ms.is_none_or(|t| now_ms.saturating_sub(t) >= 30_000);
+                                    && s.last_push_ms
+                                        .is_none_or(|t| now_ms.saturating_sub(t) >= 30_000);
                                 if should_push {
                                     s.last_push_ms = Some(now_ms);
                                     let prompt = s.question_text.clone().unwrap_or_default();
@@ -1592,24 +1634,28 @@ impl AppState {
                                 s.slash_menu_items = None;
                                 s.choice_prompt = None;
                                 // Capture as last_prompt if >= 10 words
-                                if let Some(content) = parsed.get("content").and_then(|v| v.as_str())
-                                    && content.split_whitespace().count() >= 10 {
-                                        s.last_prompt = Some(content.to_string());
-                                    }
+                                if let Some(content) =
+                                    parsed.get("content").and_then(|v| v.as_str())
+                                    && content.split_whitespace().count() >= 10
+                                {
+                                    s.last_prompt = Some(content.to_string());
+                                }
                             }
                             "rate-limit" if s.current_task.is_some() => {
                                 s.rate_limited = true;
-                                s.retry_after_ms = parsed.get("retry_after_ms")
-                                    .and_then(|v| v.as_u64());
+                                s.retry_after_ms =
+                                    parsed.get("retry_after_ms").and_then(|v| v.as_u64());
                                 s.rate_limit_set_ms = now_ms;
                             }
                             "usage-limit" => {
-                                s.usage_limit_pct = parsed.get("percentage")
+                                s.usage_limit_pct = parsed
+                                    .get("percentage")
                                     .and_then(|v| v.as_u64())
                                     .map(|v| v as u8);
                             }
                             "api-error" => {
-                                s.last_error = parsed.get("matched_text")
+                                s.last_error = parsed
+                                    .get("matched_text")
                                     .and_then(|t| t.as_str())
                                     .map(|t| t.to_string());
                             }
@@ -1630,7 +1676,8 @@ impl AppState {
                                 // Only update current_task + activity timestamp when task changes.
                                 // Spinner rotations (same task name) are suppressed to avoid
                                 // churning the state and flooding WS clients.
-                                let new_task = parsed.get("task_name")
+                                let new_task = parsed
+                                    .get("task_name")
                                     .and_then(|v| v.as_str())
                                     .map(|t| t.to_string());
                                 if s.current_task != new_task {
@@ -1638,39 +1685,50 @@ impl AppState {
                                 }
                             }
                             "intent" => {
-                                s.agent_intent = parsed.get("text")
+                                s.agent_intent = parsed
+                                    .get("text")
                                     .and_then(|v| v.as_str())
                                     .map(|t| t.to_string());
                             }
                             "suggest" => {
-                                s.suggested_actions = parsed.get("items")
-                                    .and_then(|v| v.as_array())
-                                    .map(|arr| arr.iter()
-                                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                                        .collect());
+                                s.suggested_actions =
+                                    parsed.get("items").and_then(|v| v.as_array()).map(|arr| {
+                                        arr.iter()
+                                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                            .collect()
+                                    });
                             }
                             "slash-menu" => {
-                                s.slash_menu_items = parsed.get("items")
-                                    .and_then(|v| serde_json::from_value::<Vec<crate::output_parser::SlashMenuItem>>(v.clone()).ok());
+                                s.slash_menu_items = parsed.get("items").and_then(|v| {
+                                    serde_json::from_value::<
+                                            Vec<crate::output_parser::SlashMenuItem>,
+                                        >(v.clone())
+                                        .ok()
+                                });
                             }
                             "choice-prompt" => {
                                 // Deserialise directly from the parsed JSON — the payload fields
                                 // (title/options/dismiss_key/amend_key) are flat at the top level
                                 // alongside "type", and serde ignores the unknown "type" field.
-                                s.choice_prompt = serde_json::from_value::<crate::output_parser::ChoicePromptPayload>(parsed.clone()).ok();
+                                s.choice_prompt = serde_json::from_value::<
+                                    crate::output_parser::ChoicePromptPayload,
+                                >(parsed.clone())
+                                .ok();
                             }
                             "active-subtasks" => {
-                                s.active_sub_tasks = parsed.get("count")
-                                    .and_then(|v| v.as_u64())
-                                    .unwrap_or(0) as u32;
+                                s.active_sub_tasks =
+                                    parsed.get("count").and_then(|v| v.as_u64()).unwrap_or(0)
+                                        as u32;
                             }
                             "progress" => {
-                                let state_val = parsed.get("state").and_then(|v| v.as_u64()).unwrap_or(0);
+                                let state_val =
+                                    parsed.get("state").and_then(|v| v.as_u64()).unwrap_or(0);
                                 if state_val == 0 {
                                     // state=0 means remove the progress bar
                                     s.progress = None;
                                 } else {
-                                    s.progress = parsed.get("value")
+                                    s.progress = parsed
+                                        .get("value")
                                         .and_then(|v| v.as_u64())
                                         .map(|v| v as u8);
                                 }
@@ -1685,9 +1743,12 @@ impl AppState {
 
                 // Spawn push notification outside the DashMap lock
                 if let Some((sid, prompt)) = push_data
-                    && !state.desktop_window_focused.load(std::sync::atomic::Ordering::Relaxed)
+                    && !state
+                        .desktop_window_focused
+                        .load(std::sync::atomic::Ordering::Relaxed)
                 {
-                    let session_name = state.sessions
+                    let session_name = state
+                        .sessions
                         .get(&sid)
                         .and_then(|s| s.value().lock().display_name.clone())
                         .unwrap_or_else(|| sid.clone());
@@ -1711,12 +1772,20 @@ impl AppState {
                     entry.last_activity_ms = now_ms;
                 }
                 // Push "session completed" to mobile (unseen)
-                if !state.desktop_window_focused.load(std::sync::atomic::Ordering::Relaxed) {
-                    let session_name = state.sessions
+                if !state
+                    .desktop_window_focused
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                {
+                    let session_name = state
+                        .sessions
                         .get(session_id)
                         .and_then(|s| s.value().lock().display_name.clone())
                         .unwrap_or_else(|| session_id.clone());
-                    Self::send_mobile_push(state, session_id, &format!("{session_name}: completed"));
+                    Self::send_mobile_push(
+                        state,
+                        session_id,
+                        &format!("{session_name}: completed"),
+                    );
                 }
             }
             // Global events don't affect per-session state
@@ -1734,7 +1803,8 @@ impl AppState {
             | AppEvent::GitHubPrUpdate { .. }
             | AppEvent::GitHubTransition { .. }
             | AppEvent::GitHubIssuesUpdate { .. }
-            | AppEvent::CloseHtmlTabs { .. } => {}
+            | AppEvent::CloseHtmlTabs { .. }
+            | AppEvent::ScheduledJobCompleted { .. } => {}
         }
     }
 
@@ -1830,8 +1900,11 @@ impl LogColor {
         use alacritty_terminal::vte::ansi::{Color, NamedColor};
         match c {
             Color::Named(n) => match n {
-                NamedColor::Foreground | NamedColor::Background | NamedColor::Cursor
-                | NamedColor::BrightForeground | NamedColor::DimForeground => None,
+                NamedColor::Foreground
+                | NamedColor::Background
+                | NamedColor::Cursor
+                | NamedColor::BrightForeground
+                | NamedColor::DimForeground => None,
                 NamedColor::Black => Some(LogColor::Idx(0)),
                 NamedColor::Red => Some(LogColor::Idx(1)),
                 NamedColor::Green => Some(LogColor::Idx(2)),
@@ -1887,7 +1960,9 @@ pub struct LogLine {
     pub cols: u16,
 }
 
-fn is_zero_u16(v: &u16) -> bool { *v == 0 }
+fn is_zero_u16(v: &u16) -> bool {
+    *v == 0
+}
 
 impl LogLine {
     /// Returns the plain-text content (all span texts concatenated).
@@ -1922,7 +1997,6 @@ impl LogLine {
         self.spans.retain(|s| !s.text.is_empty());
     }
 }
-
 
 /// A screen row that changed after a `VtLogBuffer::process()` call.
 ///
@@ -2203,7 +2277,10 @@ impl VtLogBuffer {
         self.grid.search(query)
     }
 
-    pub(crate) fn grid_search_buffer(&self, query: &str) -> Vec<crate::terminal_grid::BufferSearchMatch> {
+    pub(crate) fn grid_search_buffer(
+        &self,
+        query: &str,
+    ) -> Vec<crate::terminal_grid::BufferSearchMatch> {
         self.grid.search_buffer(query)
     }
 
@@ -2224,7 +2301,9 @@ impl VtLogBuffer {
     pub(crate) fn grid_get_lines(&self, start: usize, end: usize) -> Vec<String> {
         let total = self.grid.total_lines();
         let clamped_end = end.min(total);
-        (start..clamped_end).map(|i| self.grid.get_row_text(i)).collect()
+        (start..clamped_end)
+            .map(|i| self.grid.get_row_text(i))
+            .collect()
     }
 
     pub(crate) fn grid_hyperlink_at(&self, row: usize, col: usize) -> Option<String> {
@@ -2240,7 +2319,6 @@ impl VtLogBuffer {
         self.log.push_back(line);
         self.total_pushed += 1;
     }
-
 }
 
 // ---------------------------------------------------------------------------
@@ -2310,7 +2388,10 @@ mod tests {
 
     #[test]
     fn segments_hyphen() {
-        assert_eq!(split_name_segments("night-recovery"), vec!["night", "recovery"]);
+        assert_eq!(
+            split_name_segments("night-recovery"),
+            vec!["night", "recovery"]
+        );
     }
 
     #[test]
@@ -2320,7 +2401,10 @@ mod tests {
 
     #[test]
     fn segments_camel_case() {
-        assert_eq!(split_name_segments("tuiCommander"), vec!["tui", "commander"]);
+        assert_eq!(
+            split_name_segments("tuiCommander"),
+            vec!["tui", "commander"]
+        );
     }
 
     #[test]
@@ -2335,7 +2419,10 @@ mod tests {
 
     #[test]
     fn segments_mixed() {
-        assert_eq!(split_name_segments("my-AwesomeProject_v2"), vec!["my", "awesome", "project", "v2"]);
+        assert_eq!(
+            split_name_segments("my-AwesomeProject_v2"),
+            vec!["my", "awesome", "project", "v2"]
+        );
     }
 
     #[test]
@@ -2429,7 +2516,10 @@ mod tests {
         m.insert("s1".into(), format!("{p1}-1"));
         let p2 = repo_name_to_prefix("my-api", &m);
         assert_ne!(p2, "ma", "my-api must not collide with my-app: got {p2}");
-        assert!(p2.starts_with("ma"), "should extend from base 'ma': got {p2}");
+        assert!(
+            p2.starts_with("ma"),
+            "should extend from base 'ma': got {p2}"
+        );
     }
 
     #[test]
@@ -2471,7 +2561,10 @@ mod tests {
         let mut prefixes = Vec::new();
         for name in &["my-app", "my-api", "my-auth", "my-admin", "my-agent"] {
             let p = repo_name_to_prefix(name, &m);
-            assert!(!prefixes.contains(&p), "duplicate prefix {p} for {name}, existing: {prefixes:?}");
+            assert!(
+                !prefixes.contains(&p),
+                "duplicate prefix {p} for {name}, existing: {prefixes:?}"
+            );
             m.insert(format!("s{}", prefixes.len()), format!("{p}-1"));
             prefixes.push(p);
         }
@@ -2612,7 +2705,7 @@ mod tests {
         // Wrap-around: read_last must stitch two slices correctly.
         let mut rb = OutputRingBuffer::new(8);
         rb.write(b"ABCDEFGH"); // fills buffer, write_pos = 0
-        rb.write(b"XY");       // overwrites A,B → buf = [X,Y,C,D,E,F,G,H], write_pos = 2
+        rb.write(b"XY"); // overwrites A,B → buf = [X,Y,C,D,E,F,G,H], write_pos = 2
 
         // Read all 8 bytes — should produce CDEFGHXY (oldest to newest)
         let (data, total) = rb.read_last(8);
@@ -2721,7 +2814,7 @@ mod tests {
         // Offset is so old that data has been overwritten — return what's available
         let mut rb = OutputRingBuffer::new(8);
         rb.write(b"12345678"); // total=8, buf full
-        rb.write(b"ABCD");    // total=12, oldest is 5678ABCD
+        rb.write(b"ABCD"); // total=12, oldest is 5678ABCD
         // offset 2 would want 10 bytes, but only 8 available
         let (data, total) = rb.read_since(2);
         assert_eq!(&data, b"5678ABCD");
@@ -2883,12 +2976,15 @@ mod tests {
             grid_channels: dashmap::DashMap::new(),
             grid_watch: dashmap::DashMap::new(),
             grid_frame_in_flight: dashmap::DashMap::new(),
+            grid_frame_dirty: dashmap::DashMap::new(),
             kitty_states: dashmap::DashMap::new(),
             input_buffers: dashmap::DashMap::new(),
             last_prompts: dashmap::DashMap::new(),
             silence_states: dashmap::DashMap::new(),
             claude_usage_cache: parking_lot::Mutex::new(std::collections::HashMap::new()),
-            log_buffer: Arc::new(parking_lot::Mutex::new(crate::app_logger::LogRingBuffer::new(crate::app_logger::LOG_RING_CAPACITY))),
+            log_buffer: Arc::new(parking_lot::Mutex::new(
+                crate::app_logger::LogRingBuffer::new(crate::app_logger::LOG_RING_CAPACITY),
+            )),
             event_bus: tokio::sync::broadcast::channel(256).0,
             event_counter: Arc::new(AtomicU64::new(0)),
             session_states: DashMap::new(),
@@ -2896,11 +2992,13 @@ mod tests {
                 let r = Arc::new(crate::mcp_proxy::registry::UpstreamRegistry::new());
                 r
             },
-            oauth_flow_manager: Arc::new(crate::mcp_oauth::flow::OAuthFlowManager::new(
-                Arc::new(tokio::sync::Semaphore::new(1)),
-            )),
+            oauth_flow_manager: Arc::new(crate::mcp_oauth::flow::OAuthFlowManager::new(Arc::new(
+                tokio::sync::Semaphore::new(1),
+            ))),
             mcp_tools_changed: tokio::sync::broadcast::channel(16).0,
-            tool_search_index: Arc::new(parking_lot::RwLock::new(crate::tool_search::ToolSearchIndex::build(&[]))),
+            tool_search_index: Arc::new(parking_lot::RwLock::new(
+                crate::tool_search::ToolSearchIndex::build(&[]),
+            )),
             content_indices: DashMap::new(),
             indexer_throttle: Arc::new(crate::content_index::IndexerThrottle::default()),
             slash_mode: DashMap::new(),
@@ -2926,12 +3024,16 @@ mod tests {
             unrestricted_sessions: DashMap::new(),
             #[cfg(unix)]
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
-            tailscale_state: parking_lot::RwLock::new(crate::tailscale::TailscaleState::NotInstalled),
+            tailscale_state: parking_lot::RwLock::new(
+                crate::tailscale::TailscaleState::NotInstalled,
+            ),
             push_store: crate::push::PushStore::load(&std::env::temp_dir()),
             desktop_window_focused: std::sync::atomic::AtomicBool::new(true),
             server_start_time: std::time::Instant::now(),
             term_aliases: DashMap::new(),
             term_alias_counters: DashMap::new(),
+            session_visibility: DashMap::new(),
+            watcher_engine: std::sync::OnceLock::new(),
             trigger_classifier: crate::ai_agent::triggers::TriggerClassifier::new(),
             ai_suggestions_enabled: DashMap::new(),
         }
@@ -2999,7 +3101,10 @@ mod tests {
         // Insert with a timestamp in the past
         map.insert(
             "expired".to_string(),
-            ("old_value".to_string(), Instant::now() - Duration::from_secs(10)),
+            (
+                "old_value".to_string(),
+                Instant::now() - Duration::from_secs(10),
+            ),
         );
 
         let result = AppState::get_cached(&map, "expired", Duration::from_secs(5));
@@ -3038,10 +3143,10 @@ mod tests {
                 Instant::now(),
             ),
         );
-        state.git_cache.github_status.insert(
-            "/some/path".to_string(),
-            (vec![], Instant::now()),
-        );
+        state
+            .git_cache
+            .github_status
+            .insert("/some/path".to_string(), (vec![], Instant::now()));
 
         assert!(!state.git_cache.repo_info.is_empty());
         assert!(!state.git_cache.github_status.is_empty());
@@ -3174,11 +3279,10 @@ mod tests {
     fn test_strip_kitty_multiple_actions() {
         let (out, actions) = strip_kitty_sequences("\x1b[>1u\x1b[?u\x1b[<u");
         assert_eq!(out, "");
-        assert_eq!(actions, vec![
-            KittyAction::Push(1),
-            KittyAction::Query,
-            KittyAction::Pop,
-        ]);
+        assert_eq!(
+            actions,
+            vec![KittyAction::Push(1), KittyAction::Query, KittyAction::Pop,]
+        );
     }
 
     #[test]
@@ -3274,7 +3378,10 @@ mod tests {
         let input = "hello world";
         let (out, actions) = strip_kitty_sequences(input);
         assert!(actions.is_empty());
-        assert!(matches!(out, Cow::Borrowed(_)), "fast path should return Cow::Borrowed");
+        assert!(
+            matches!(out, Cow::Borrowed(_)),
+            "fast path should return Cow::Borrowed"
+        );
         assert_eq!(&*out, input);
     }
 
@@ -3284,7 +3391,10 @@ mod tests {
         let input = "before\x1b[>1uafter";
         let (out, actions) = strip_kitty_sequences(input);
         assert!(!actions.is_empty());
-        assert!(matches!(out, Cow::Owned(_)), "slow path should return Cow::Owned");
+        assert!(
+            matches!(out, Cow::Owned(_)),
+            "slow path should return Cow::Owned"
+        );
         assert_eq!(&*out, "beforeafter");
     }
 
@@ -3304,13 +3414,18 @@ mod tests {
 
     fn apply(state: &Arc<AppState>, event: &AppEvent) -> SessionState {
         AppState::apply_event_to_session_state(state, event);
-        state.session_states.get("s1").map(|s| s.clone()).unwrap_or_default()
+        state
+            .session_states
+            .get("s1")
+            .map(|s| s.clone())
+            .unwrap_or_default()
     }
 
     fn fresh_state() -> Arc<AppState> {
         let s = Arc::new(make_test_app_state());
         // Insert initial entry so and_modify fires
-        s.session_states.insert("s1".to_string(), SessionState::default());
+        s.session_states
+            .insert("s1".to_string(), SessionState::default());
         // Initialize last_output_ms for shell_state derivation
         s.last_output_ms.insert("s1".to_string(), AtomicU64::new(0));
         s
@@ -3319,7 +3434,10 @@ mod tests {
     #[test]
     fn test_session_state_intent_sets_agent_intent() {
         let state = fresh_state();
-        let event = make_parsed("intent", serde_json::json!({ "text": "fixing the bug", "title": null }));
+        let event = make_parsed(
+            "intent",
+            serde_json::json!({ "text": "fixing the bug", "title": null }),
+        );
         let s = apply(&state, &event);
         assert_eq!(s.agent_intent.as_deref(), Some("fixing the bug"));
     }
@@ -3327,7 +3445,10 @@ mod tests {
     #[test]
     fn test_session_state_status_line_sets_current_task() {
         let state = fresh_state();
-        let event = make_parsed("status-line", serde_json::json!({ "task_name": "Reading files", "full_line": "⏺ Reading files" }));
+        let event = make_parsed(
+            "status-line",
+            serde_json::json!({ "task_name": "Reading files", "full_line": "⏺ Reading files" }),
+        );
         let s = apply(&state, &event);
         assert_eq!(s.current_task.as_deref(), Some("Reading files"));
         // status-line also clears error and rate-limit
@@ -3384,9 +3505,15 @@ mod tests {
     #[test]
     fn test_session_state_suggest_sets_suggested_actions() {
         let state = fresh_state();
-        let event = make_parsed("suggest", serde_json::json!({ "items": ["Run tests", "Review diff"] }));
+        let event = make_parsed(
+            "suggest",
+            serde_json::json!({ "items": ["Run tests", "Review diff"] }),
+        );
         let s = apply(&state, &event);
-        assert_eq!(s.suggested_actions, Some(vec!["Run tests".to_string(), "Review diff".to_string()]));
+        assert_eq!(
+            s.suggested_actions,
+            Some(vec!["Run tests".to_string(), "Review diff".to_string()])
+        );
     }
 
     #[test]
@@ -3404,36 +3531,54 @@ mod tests {
     #[test]
     fn test_session_state_question_sets_awaiting_input() {
         let state = fresh_state();
-        let event = make_parsed("question", serde_json::json!({ "prompt_text": "Do you want to proceed?" }));
+        let event = make_parsed(
+            "question",
+            serde_json::json!({ "prompt_text": "Do you want to proceed?" }),
+        );
         let s = apply(&state, &event);
         assert!(s.awaiting_input);
         assert_eq!(s.question_text.as_deref(), Some("Do you want to proceed?"));
-        assert!(!s.question_confident, "silence-based question should not be confident");
+        assert!(
+            !s.question_confident,
+            "silence-based question should not be confident"
+        );
     }
 
     #[test]
     fn test_session_state_confident_question_sets_flag() {
         let state = fresh_state();
-        let event = make_parsed("question", serde_json::json!({
-            "prompt_text": "Enter to select",
-            "confident": true,
-        }));
+        let event = make_parsed(
+            "question",
+            serde_json::json!({
+                "prompt_text": "Enter to select",
+                "confident": true,
+            }),
+        );
         let s = apply(&state, &event);
         assert!(s.awaiting_input);
-        assert!(s.question_confident, "Ink menu question should be confident");
+        assert!(
+            s.question_confident,
+            "Ink menu question should be confident"
+        );
     }
 
     #[test]
     fn test_session_state_user_input_clears_confident() {
         let state = fresh_state();
-        let q = make_parsed("question", serde_json::json!({
-            "prompt_text": "Enter to select",
-            "confident": true,
-        }));
+        let q = make_parsed(
+            "question",
+            serde_json::json!({
+                "prompt_text": "Enter to select",
+                "confident": true,
+            }),
+        );
         apply(&state, &q);
         let event = make_parsed("user-input", serde_json::json!({ "content": "yes" }));
         let s = apply(&state, &event);
-        assert!(!s.question_confident, "user-input should clear question_confident");
+        assert!(
+            !s.question_confident,
+            "user-input should clear question_confident"
+        );
     }
 
     #[test]
@@ -3452,28 +3597,44 @@ mod tests {
     fn test_session_state_status_line_clears_awaiting_input() {
         let state = fresh_state();
         // Set question state
-        let q = make_parsed("question", serde_json::json!({ "prompt_text": "Install gopls?" }));
+        let q = make_parsed(
+            "question",
+            serde_json::json!({ "prompt_text": "Install gopls?" }),
+        );
         apply(&state, &q);
         // Status-line means agent is working → question answered
-        let status = make_parsed("status-line", serde_json::json!({ "task_name": "Reading files" }));
+        let status = make_parsed(
+            "status-line",
+            serde_json::json!({ "task_name": "Reading files" }),
+        );
         let s = apply(&state, &status);
         assert!(!s.awaiting_input, "status-line should clear awaiting_input");
-        assert!(s.question_text.is_none(), "status-line should clear question_text");
+        assert!(
+            s.question_text.is_none(),
+            "status-line should clear question_text"
+        );
     }
-
 
     #[test]
     fn test_session_state_with_shell_reads_shell_states_not_output_timing() {
         let state = fresh_state();
         // Set shell_states to BUSY (1) — this is the source of truth from PTY reader
-        state.shell_states.insert("s1".to_string(), std::sync::atomic::AtomicU8::new(1));
+        state
+            .shell_states
+            .insert("s1".to_string(), std::sync::atomic::AtomicU8::new(1));
         // Intentionally leave last_output_ms at 0 (stale) — should NOT matter
         let ss = state.session_state_with_shell("s1").unwrap();
-        assert_eq!(ss.shell_state.as_deref(), Some("busy"),
-            "shell_state must come from shell_states, not last_output_ms");
+        assert_eq!(
+            ss.shell_state.as_deref(),
+            Some("busy"),
+            "shell_state must come from shell_states, not last_output_ms"
+        );
 
         // Set shell_states to IDLE (2)
-        state.shell_states.get("s1").unwrap()
+        state
+            .shell_states
+            .get("s1")
+            .unwrap()
             .store(2, std::sync::atomic::Ordering::Relaxed);
         let ss = state.session_state_with_shell("s1").unwrap();
         assert_eq!(ss.shell_state.as_deref(), Some("idle"));
@@ -3481,18 +3642,26 @@ mod tests {
         // No shell_states entry → None
         state.shell_states.remove("s1");
         let ss = state.session_state_with_shell("s1").unwrap();
-        assert!(ss.shell_state.is_none(),
-            "no shell_states entry should produce None, not derive from timing");
+        assert!(
+            ss.shell_state.is_none(),
+            "no shell_states entry should produce None, not derive from timing"
+        );
     }
 
     #[test]
     fn test_session_state_repeated_status_line_same_task_no_change() {
         let state = fresh_state();
-        let e1 = make_parsed("status-line", serde_json::json!({ "task_name": "Twisting" }));
+        let e1 = make_parsed(
+            "status-line",
+            serde_json::json!({ "task_name": "Twisting" }),
+        );
         let s1 = apply(&state, &e1);
         assert_eq!(s1.current_task.as_deref(), Some("Twisting"));
         // Same task again — state should be identical (PartialEq)
-        let e2 = make_parsed("status-line", serde_json::json!({ "task_name": "Twisting" }));
+        let e2 = make_parsed(
+            "status-line",
+            serde_json::json!({ "task_name": "Twisting" }),
+        );
         let s2 = apply(&state, &e2);
         assert_eq!(s1, s2);
     }
@@ -3500,9 +3669,15 @@ mod tests {
     #[test]
     fn test_session_state_status_line_different_task_updates() {
         let state = fresh_state();
-        let e1 = make_parsed("status-line", serde_json::json!({ "task_name": "Twisting" }));
+        let e1 = make_parsed(
+            "status-line",
+            serde_json::json!({ "task_name": "Twisting" }),
+        );
         let s1 = apply(&state, &e1);
-        let e2 = make_parsed("status-line", serde_json::json!({ "task_name": "Reading files" }));
+        let e2 = make_parsed(
+            "status-line",
+            serde_json::json!({ "task_name": "Reading files" }),
+        );
         let s2 = apply(&state, &e2);
         assert_ne!(s1, s2);
         assert_eq!(s2.current_task.as_deref(), Some("Reading files"));
@@ -3532,7 +3707,11 @@ mod tests {
         let texts = log_texts(&buf);
         // Lines 0..6 scrolled off (30 total - 24 visible = 6)
         assert!(!texts.is_empty(), "should have finalized some lines");
-        assert!(texts[0].starts_with("line "), "line content preserved: {:?}", texts[0]);
+        assert!(
+            texts[0].starts_with("line "),
+            "line content preserved: {:?}",
+            texts[0]
+        );
     }
 
     /// In-place rewrite via \r should resolve to the final content on screen.
@@ -3543,8 +3722,15 @@ mod tests {
         buf.process(b"aaaa\rbbbb\r\n");
         // The current screen should show "bbbb" not "aaaa"
         let rows = buf.screen_rows();
-        let first_nonempty = rows.iter().find(|r| !r.is_empty()).map(|s| s.as_str()).unwrap_or("");
-        assert_eq!(first_nonempty, "bbbb", "in-place rewrite resolved to final content");
+        let first_nonempty = rows
+            .iter()
+            .find(|r| !r.is_empty())
+            .map(|s| s.as_str())
+            .unwrap_or("");
+        assert_eq!(
+            first_nonempty, "bbbb",
+            "in-place rewrite resolved to final content"
+        );
     }
 
     /// Rows scrolled off the top go into the log.
@@ -3557,8 +3743,15 @@ mod tests {
             buf.process(format!("row{i}\r\n").as_bytes());
         }
         let texts = log_texts(&buf);
-        assert!(!texts.is_empty(), "at least one line should have scrolled off");
-        assert_eq!(texts[0], "row0", "first scrolled-off row is row0, got: {:?}", texts[0]);
+        assert!(
+            !texts.is_empty(),
+            "at least one line should have scrolled off"
+        );
+        assert_eq!(
+            texts[0], "row0",
+            "first scrolled-off row is row0, got: {:?}",
+            texts[0]
+        );
     }
 
     /// Alternate screen suppresses log extraction.
@@ -3599,7 +3792,10 @@ mod tests {
         }
         // Main screen output should appear in the log
         let texts = log_texts(&buf);
-        assert!(!texts.is_empty(), "main screen lines should appear in log after alt exit");
+        assert!(
+            !texts.is_empty(),
+            "main screen lines should appear in log after alt exit"
+        );
         assert!(
             texts.iter().any(|l| l.starts_with("main")),
             "main lines present in log"
@@ -3635,7 +3831,10 @@ mod tests {
         let texts = log_texts(&buf);
         // None of the logged lines should be empty
         for line in &texts {
-            assert!(!line.is_empty(), "logged line should not be empty: {line:?}");
+            assert!(
+                !line.is_empty(),
+                "logged line should not be empty: {line:?}"
+            );
         }
     }
 
@@ -3694,7 +3893,11 @@ mod tests {
         assert_eq!(off, total);
         // The retained lines should be the newest ones
         for line in &batch {
-            assert!(line.text().starts_with("rot-"), "unexpected line: {:?}", line.text());
+            assert!(
+                line.text().starts_with("rot-"),
+                "unexpected line: {:?}",
+                line.text()
+            );
         }
         // Fetch with an offset past the end — empty
         let (empty, off2) = buf.lines_since_owned(off, usize::MAX);
@@ -3716,7 +3919,11 @@ mod tests {
         assert_eq!(batch.len(), buf.lines().len());
         assert_eq!(off, buf.total_lines());
         for line in &batch {
-            assert!(line.text().starts_with("rot-"), "unexpected line: {:?}", line.text());
+            assert!(
+                line.text().starts_with("rot-"),
+                "unexpected line: {:?}",
+                line.text()
+            );
         }
     }
 
@@ -3731,19 +3938,14 @@ mod tests {
     fn test_vt_log_incremental_chunked_feed() {
         let mut buf = VtLogBuffer::new(24, 80, 1000);
         // Build 30 lines of output
-        let full_output: String = (0..30)
-            .map(|i| format!("chunk-{i}\r\n"))
-            .collect();
+        let full_output: String = (0..30).map(|i| format!("chunk-{i}\r\n")).collect();
         let bytes = full_output.as_bytes();
         // Feed in small chunks of 7 bytes (deliberately misaligned with lines)
         for chunk in bytes.chunks(7) {
             buf.process(chunk);
         }
         let lines = log_texts(&buf);
-        let matching: Vec<&String> = lines
-            .iter()
-            .filter(|l| l.starts_with("chunk-"))
-            .collect();
+        let matching: Vec<&String> = lines.iter().filter(|l| l.starts_with("chunk-")).collect();
         // Misaligned chunking limits overlap detection — we capture some lines
         // but not all. The key property: no duplicate entries.
         assert!(
@@ -3769,12 +3971,12 @@ mod tests {
         // Set scroll region to rows 3-8 (1-indexed): ESC[3;8r
         // Then move cursor into the region and write lines to force scrolling
         // within the region only.
-        buf.process(b"\x1b[3;8r");   // DECSTBM: set scroll region rows 3-8
-        buf.process(b"\x1b[3;1H");   // CUP: move cursor to row 3, col 1
+        buf.process(b"\x1b[3;8r"); // DECSTBM: set scroll region rows 3-8
+        buf.process(b"\x1b[3;1H"); // CUP: move cursor to row 3, col 1
         for i in 0..20 {
             buf.process(format!("region-{i}\r\n").as_bytes());
         }
-        buf.process(b"\x1b[r");      // Reset scroll region to full screen
+        buf.process(b"\x1b[r"); // Reset scroll region to full screen
         let after = buf.total_lines();
         // Scroll-region scrolling changes rows within the region but doesn't
         // produce a full-screen overlap pattern, so no new log lines are
@@ -3795,8 +3997,8 @@ mod tests {
             buf.process(format!("orig-{i}\r\n").as_bytes());
         }
         // Move cursor up 3 rows (CUU) and overwrite with "REPLACED"
-        buf.process(b"\x1b[3A");            // CUU 3: move up 3
-        buf.process(b"REPLACED\r\n");       // overwrite current line
+        buf.process(b"\x1b[3A"); // CUU 3: move up 3
+        buf.process(b"REPLACED\r\n"); // overwrite current line
         let lines = log_texts(&buf);
         // "REPLACED" should NOT appear in the log — it was written via cursor
         // movement within the viewport, not as new scrolled-off output.
@@ -3819,10 +4021,7 @@ mod tests {
             buf.process(format!("\x1b[1;31mcolor-{i}\x1b[0m\r\n").as_bytes());
         }
         let lines = log_texts(&buf);
-        let color_lines: Vec<&String> = lines
-            .iter()
-            .filter(|l| l.contains("color-"))
-            .collect();
+        let color_lines: Vec<&String> = lines.iter().filter(|l| l.contains("color-")).collect();
         assert!(
             color_lines.len() >= 5,
             "should capture color-N lines, got {}: {:?}",
@@ -3859,7 +4058,9 @@ mod tests {
 
         let screen_text: Vec<String> = screen.iter().map(|l| l.text()).collect();
         assert!(
-            !screen_text.iter().any(|t| t.contains("❯") || t.contains("Opus 4.6")),
+            !screen_text
+                .iter()
+                .any(|t| t.contains("❯") || t.contains("Opus 4.6")),
             "chrome should be trimmed, got: {screen_text:?}"
         );
         // Content lines should still be present
@@ -3873,7 +4074,7 @@ mod tests {
     /// VtLogBuffer, and verify that clean log lines are extracted.
     #[test]
     fn test_vt_log_real_pty_echo() {
-        use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+        use portable_pty::{CommandBuilder, PtySize, native_pty_system};
         use std::io::Read;
 
         let pty_system = native_pty_system();
@@ -3908,7 +4109,9 @@ mod tests {
         loop {
             match reader.read(&mut raw) {
                 Ok(0) => break,
-                Ok(n) => { buf.process(&raw[..n]); }
+                Ok(n) => {
+                    buf.process(&raw[..n]);
+                }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
                 Err(_) => break,
             }
@@ -3943,7 +4146,7 @@ mod tests {
     /// captured by VtLogBuffer when using a real PTY.
     #[test]
     fn test_vt_log_real_pty_alternate_screen_suppressed() {
-        use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+        use portable_pty::{CommandBuilder, PtySize, native_pty_system};
         use std::io::Read;
 
         let pty_system = native_pty_system();
@@ -3965,9 +4168,9 @@ mod tests {
         // exit alternate screen, echo more lines.
         let script = concat!(
             "echo 'before-alt-1'; echo 'before-alt-2'; ",
-            "printf '\\033[?1049h'; ",           // enter alternate screen
+            "printf '\\033[?1049h'; ", // enter alternate screen
             "echo 'TUI-GARBAGE-LINE'; ",
-            "printf '\\033[?1049l'; ",           // exit alternate screen
+            "printf '\\033[?1049l'; ", // exit alternate screen
             "echo 'after-alt-1'; echo 'after-alt-2'; ",
             "exit 0"
         );
@@ -3984,7 +4187,9 @@ mod tests {
         loop {
             match reader.read(&mut raw) {
                 Ok(0) => break,
-                Ok(n) => { buf.process(&raw[..n]); }
+                Ok(n) => {
+                    buf.process(&raw[..n]);
+                }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
                 Err(_) => break,
             }
@@ -4044,7 +4249,11 @@ mod tests {
             "changed rows must be reported during alternate screen, got: {:?}",
             changed,
         );
-        assert_eq!(buf.total_lines(), 0, "log must remain empty during alternate screen");
+        assert_eq!(
+            buf.total_lines(),
+            0,
+            "log must remain empty during alternate screen"
+        );
     }
 
     /// Cursor movement: changed rows reflect the final rendered state.
@@ -4110,18 +4319,24 @@ mod tests {
 
     /// Helper: create plain LogLine vec from string slices for testing.
     fn make_log_lines(items: &[&str]) -> Vec<LogLine> {
-        items.iter().map(|s| LogLine {
-            spans: if s.is_empty() {
-                vec![]
-            } else {
-                vec![LogSpan {
-                    text: s.to_string(),
-                    fg: None, bg: None,
-                    bold: false, italic: false, underline: false,
-                }]
-            },
-            cols: 0,
-        }).collect()
+        items
+            .iter()
+            .map(|s| LogLine {
+                spans: if s.is_empty() {
+                    vec![]
+                } else {
+                    vec![LogSpan {
+                        text: s.to_string(),
+                        fg: None,
+                        bg: None,
+                        bold: false,
+                        italic: false,
+                        underline: false,
+                    }]
+                },
+                cols: 0,
+            })
+            .collect()
     }
 
     // find_prompt_cutoff tests live in chrome.rs (canonical location)
@@ -4132,8 +4347,8 @@ mod tests {
         // 21 lines for a 24-row screen (threshold = 16) — large batch
         let mut items: Vec<&str> = vec!["real content"; 18];
         items.push("❯ command"); // index 18
-        items.push("");           // index 19
-        items.push("Model: x");  // index 20
+        items.push(""); // index 19
+        items.push("Model: x"); // index 20
         let lines = make_log_lines(&items);
         let result = trim_agent_chrome(lines);
         assert_eq!(result.len(), 18, "lines before prompt kept");
@@ -4144,7 +4359,7 @@ mod tests {
     #[test]
     fn test_trim_agent_chrome_large_batch_gt_prompt() {
         let mut items: Vec<&str> = vec!["output"; 17];
-        items.push("> ");    // index 17 — bare "> " treated as prompt
+        items.push("> "); // index 17 — bare "> " treated as prompt
         items.push("chrome"); // index 18
         let lines = make_log_lines(&items);
         let result = trim_agent_chrome(lines);
@@ -4166,9 +4381,9 @@ mod tests {
         let lines = make_log_lines(&[
             "real output",
             "more output",
-            "────────────────────",  // separator above prompt
-            "❯ ",                    // bare prompt
-            "────────────────────",  // separator below
+            "────────────────────", // separator above prompt
+            "❯ ",                   // bare prompt
+            "────────────────────", // separator below
             "[Opus 4.6 | Max]",
             "Context ███░░░",
         ]);
@@ -4181,13 +4396,7 @@ mod tests {
     /// Empty lines above a prompt are included in the cutoff.
     #[test]
     fn test_trim_agent_chrome_empty_lines_above_prompt_trimmed() {
-        let lines = make_log_lines(&[
-            "real output",
-            "",
-            "",
-            "❯",
-            "Model: x",
-        ]);
+        let lines = make_log_lines(&["real output", "", "", "❯", "Model: x"]);
         let result = trim_agent_chrome(lines);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].text(), "real output");
@@ -4246,7 +4455,11 @@ mod tests {
     fn test_extract_log_line_colored_text() {
         // ESC[31m = red foreground, ESC[0m = reset
         let line = extract_line_from(b"\x1b[31mERROR\x1b[0m ok");
-        assert!(line.spans.len() >= 2, "should have at least 2 spans: {:?}", line.spans);
+        assert!(
+            line.spans.len() >= 2,
+            "should have at least 2 spans: {:?}",
+            line.spans
+        );
         // First span: "ERROR" with red fg
         assert_eq!(line.spans[0].text, "ERROR");
         assert_eq!(line.spans[0].fg, Some(LogColor::Idx(1))); // ANSI red = idx 1
@@ -4284,7 +4497,11 @@ mod tests {
     #[test]
     fn test_extract_log_line_empty_row() {
         let line = extract_line_from(b"");
-        assert!(line.spans.is_empty(), "empty row = empty spans: {:?}", line.spans);
+        assert!(
+            line.spans.is_empty(),
+            "empty row = empty spans: {:?}",
+            line.spans
+        );
     }
 
     /// LogLine.text() concatenates all span texts.
@@ -4292,8 +4509,22 @@ mod tests {
     fn test_log_line_text_method() {
         let line = LogLine {
             spans: vec![
-                LogSpan { text: "hello".into(), fg: Some(LogColor::Idx(1)), bg: None, bold: true, italic: false, underline: false },
-                LogSpan { text: " world".into(), fg: None, bg: None, bold: false, italic: false, underline: false },
+                LogSpan {
+                    text: "hello".into(),
+                    fg: Some(LogColor::Idx(1)),
+                    bg: None,
+                    bold: true,
+                    italic: false,
+                    underline: false,
+                },
+                LogSpan {
+                    text: " world".into(),
+                    fg: None,
+                    bg: None,
+                    bold: false,
+                    italic: false,
+                    underline: false,
+                },
             ],
             cols: 0,
         };
@@ -4312,7 +4543,11 @@ mod tests {
         assert!(!log.is_empty(), "should have scrolled-off lines");
         // At least one line should have a colored span
         let has_color = log.iter().any(|ll| ll.spans.iter().any(|s| s.fg.is_some()));
-        assert!(has_color, "scrolled-off lines should preserve color: {:?}", log);
+        assert!(
+            has_color,
+            "scrolled-off lines should preserve color: {:?}",
+            log
+        );
     }
 
     /// Serialize LogLine to JSON matches expected format.
@@ -4320,8 +4555,22 @@ mod tests {
     fn test_log_line_serialization() {
         let line = LogLine {
             spans: vec![
-                LogSpan { text: "hello".into(), fg: Some(LogColor::Idx(1)), bg: None, bold: true, italic: false, underline: false },
-                LogSpan { text: " world".into(), fg: None, bg: None, bold: false, italic: false, underline: false },
+                LogSpan {
+                    text: "hello".into(),
+                    fg: Some(LogColor::Idx(1)),
+                    bg: None,
+                    bold: true,
+                    italic: false,
+                    underline: false,
+                },
+                LogSpan {
+                    text: " world".into(),
+                    fg: None,
+                    bg: None,
+                    bold: false,
+                    italic: false,
+                    underline: false,
+                },
             ],
             cols: 0,
         };
@@ -4340,9 +4589,10 @@ mod tests {
     #[test]
     fn test_strip_structural_tokens_no_match() {
         let mut line = LogLine {
-            spans: vec![
-                LogSpan { text: "normal output".into(), ..Default::default() },
-            ],
+            spans: vec![LogSpan {
+                text: "normal output".into(),
+                ..Default::default()
+            }],
             cols: 0,
         };
         line.strip_structural_tokens();
@@ -4352,33 +4602,42 @@ mod tests {
     #[test]
     fn test_strip_structural_tokens_plain_intent() {
         let mut line = LogLine {
-            spans: vec![
-                LogSpan { text: "intent: reading the config file".into(), ..Default::default() },
-            ],
+            spans: vec![LogSpan {
+                text: "intent: reading the config file".into(),
+                ..Default::default()
+            }],
             cols: 0,
         };
         line.strip_structural_tokens();
-        assert!(line.spans.is_empty(), "plain-prefix intent should be stripped entirely");
+        assert!(
+            line.spans.is_empty(),
+            "plain-prefix intent should be stripped entirely"
+        );
     }
 
     #[test]
     fn test_strip_structural_tokens_plain_suggest() {
         let mut line = LogLine {
-            spans: vec![
-                LogSpan { text: "suggest: Run tests | Check logs | Push".into(), ..Default::default() },
-            ],
+            spans: vec![LogSpan {
+                text: "suggest: Run tests | Check logs | Push".into(),
+                ..Default::default()
+            }],
             cols: 0,
         };
         line.strip_structural_tokens();
-        assert!(line.spans.is_empty(), "plain-prefix suggest should be stripped entirely");
+        assert!(
+            line.spans.is_empty(),
+            "plain-prefix suggest should be stripped entirely"
+        );
     }
 
     #[test]
     fn test_strip_structural_tokens_mid_line_not_stripped() {
         let mut line = LogLine {
-            spans: vec![
-                LogSpan { text: "The intent: of this code is clear".into(), ..Default::default() },
-            ],
+            spans: vec![LogSpan {
+                text: "The intent: of this code is clear".into(),
+                ..Default::default()
+            }],
             cols: 0,
         };
         line.strip_structural_tokens();
@@ -4389,9 +4648,10 @@ mod tests {
     fn test_strip_structural_tokens_indented_suggest() {
         // Ink indents continuation lines — suggest: with leading whitespace must be stripped
         let mut line = LogLine {
-            spans: vec![
-                LogSpan { text: "  suggest: Run tests | Check logs | Push".into(), ..Default::default() },
-            ],
+            spans: vec![LogSpan {
+                text: "  suggest: Run tests | Check logs | Push".into(),
+                ..Default::default()
+            }],
             cols: 0,
         };
         line.strip_structural_tokens();
@@ -4401,9 +4661,10 @@ mod tests {
     #[test]
     fn test_strip_structural_tokens_indented_intent() {
         let mut line = LogLine {
-            spans: vec![
-                LogSpan { text: "  intent: reading the config file".into(), ..Default::default() },
-            ],
+            spans: vec![LogSpan {
+                text: "  intent: reading the config file".into(),
+                ..Default::default()
+            }],
             cols: 0,
         };
         line.strip_structural_tokens();
@@ -4414,25 +4675,33 @@ mod tests {
     fn test_strip_structural_tokens_bullet_suggest() {
         // Ink bullet prefix: ● suggest: ...
         let mut line = LogLine {
-            spans: vec![
-                LogSpan { text: "● suggest: A | B | C".into(), ..Default::default() },
-            ],
+            spans: vec![LogSpan {
+                text: "● suggest: A | B | C".into(),
+                ..Default::default()
+            }],
             cols: 0,
         };
         line.strip_structural_tokens();
-        assert!(line.spans.is_empty(), "bullet-prefixed suggest should be stripped");
+        assert!(
+            line.spans.is_empty(),
+            "bullet-prefixed suggest should be stripped"
+        );
     }
 
     #[test]
     fn test_strip_structural_tokens_bullet_intent() {
         let mut line = LogLine {
-            spans: vec![
-                LogSpan { text: "⏺ intent: doing something (Task)".into(), ..Default::default() },
-            ],
+            spans: vec![LogSpan {
+                text: "⏺ intent: doing something (Task)".into(),
+                ..Default::default()
+            }],
             cols: 0,
         };
         line.strip_structural_tokens();
-        assert!(line.spans.is_empty(), "bullet-prefixed intent should be stripped");
+        assert!(
+            line.spans.is_empty(),
+            "bullet-prefixed intent should be stripped"
+        );
     }
 
     #[test]
@@ -4441,7 +4710,10 @@ mod tests {
         // No agent activity (no status-line received) → rate-limit should be ignored
         let event = make_parsed("rate-limit", serde_json::json!({ "retry_after_ms": 5000 }));
         let s = apply(&state, &event);
-        assert!(!s.rate_limited, "rate-limit must be ignored on non-agent session");
+        assert!(
+            !s.rate_limited,
+            "rate-limit must be ignored on non-agent session"
+        );
         assert!(s.retry_after_ms.is_none());
     }
 
@@ -4454,7 +4726,10 @@ mod tests {
         // Now rate-limit should be accepted
         let event = make_parsed("rate-limit", serde_json::json!({ "retry_after_ms": 5000 }));
         let s = apply(&state, &event);
-        assert!(s.rate_limited, "rate-limit must be accepted on agent session");
+        assert!(
+            s.rate_limited,
+            "rate-limit must be accepted on agent session"
+        );
         assert_eq!(s.retry_after_ms, Some(5000));
     }
 
@@ -4478,7 +4753,10 @@ mod tests {
 
         // session_state_with_shell should auto-expire the stale rate limit
         let ss = state.session_state_with_shell("s1").unwrap();
-        assert!(!ss.rate_limited, "rate limit should have expired after retry_after_ms");
+        assert!(
+            !ss.rate_limited,
+            "rate limit should have expired after retry_after_ms"
+        );
         assert!(ss.retry_after_ms.is_none());
     }
 
@@ -4494,7 +4772,10 @@ mod tests {
 
         // Still within the window — should remain rate limited
         let ss = state.session_state_with_shell("s1").unwrap();
-        assert!(ss.rate_limited, "rate limit should still be active within retry window");
+        assert!(
+            ss.rate_limited,
+            "rate limit should still be active within retry window"
+        );
     }
 
     #[test]
@@ -4515,7 +4796,10 @@ mod tests {
         }
 
         let ss = state.session_state_with_shell("s1").unwrap();
-        assert!(!ss.rate_limited, "rate limit should expire with default timeout");
+        assert!(
+            !ss.rate_limited,
+            "rate limit should expire with default timeout"
+        );
     }
 
     // ── VtLogBuffer alt-screen ──────────────────────────────────
@@ -4543,5 +4827,4 @@ mod tests {
         vt.process(b"\x1b[?1049l\x1b[?1047l\x1b[?47l\x1b[?25h\x1b[0m");
         assert!(!vt.is_alternate_screen());
     }
-
 }

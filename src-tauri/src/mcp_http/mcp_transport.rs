@@ -3414,6 +3414,7 @@ mod tests {
             server_start_time: std::time::Instant::now(),
             term_aliases: dashmap::DashMap::new(),
             term_alias_counters: dashmap::DashMap::new(),
+            session_visibility: dashmap::DashMap::new(),
             watcher_engine: std::sync::OnceLock::new(),
             trigger_classifier: crate::ai_agent::triggers::TriggerClassifier::new(),
             ai_suggestions_enabled: dashmap::DashMap::new(),
