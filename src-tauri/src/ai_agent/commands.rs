@@ -517,6 +517,56 @@ pub(crate) async fn watcher_toggle(
     super::watcher::toggle_rule(&mut config, &id, enabled)
 }
 
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) async fn watcher_attach(
+    state: State<'_, Arc<AppState>>,
+    template_id: String,
+    session_id: String,
+) -> Result<String, String> {
+    let engine = state
+        .watcher_engine
+        .get()
+        .ok_or("Watcher engine not initialized")?;
+    let cfg = engine.config();
+    let mut config = cfg.write();
+    super::watcher::attach_rule(&mut config, &template_id, session_id)
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) async fn watcher_detach(
+    state: State<'_, Arc<AppState>>,
+    id: String,
+) -> Result<(), String> {
+    let engine = state
+        .watcher_engine
+        .get()
+        .ok_or("Watcher engine not initialized")?;
+    let cfg = engine.config();
+    let mut config = cfg.write();
+    super::watcher::detach_rule(&mut config, &id)
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) async fn watcher_update(
+    state: State<'_, Arc<AppState>>,
+    id: String,
+    name: Option<String>,
+    trigger: Option<super::watcher::WatcherTrigger>,
+    instructions: Option<String>,
+    max_fires: Option<u32>,
+) -> Result<(), String> {
+    let engine = state
+        .watcher_engine
+        .get()
+        .ok_or("Watcher engine not initialized")?;
+    let cfg = engine.config();
+    let mut config = cfg.write();
+    super::watcher::update_rule(&mut config, &id, name, trigger, instructions, max_fires)
+}
+
 /// Return a frontend-friendly summary of the session's accumulated knowledge.
 /// Returns an empty summary if no commands have been recorded yet.
 #[cfg(feature = "desktop")]

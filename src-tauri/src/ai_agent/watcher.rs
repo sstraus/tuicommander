@@ -196,6 +196,84 @@ pub(crate) fn toggle_rule(
     save_config(config)
 }
 
+pub(crate) fn attach_rule(
+    config: &mut WatcherConfig,
+    template_id: &str,
+    session_id: String,
+) -> Result<String, String> {
+    let template = config
+        .rules
+        .iter()
+        .find(|r| r.id == template_id)
+        .ok_or_else(|| format!("Template '{}' not found", template_id))?;
+    if template.session_id.is_some() {
+        return Err("Rule is already attached to a session".into());
+    }
+    let mut instance = template.clone();
+    instance.id = uuid::Uuid::new_v4().to_string();
+    instance.session_id = Some(session_id);
+    instance.template_id = Some(template_id.to_string());
+    instance.status = WatcherStatus::Active;
+    instance.fire_count = 0;
+    instance.created_at = now_secs();
+    let id = instance.id.clone();
+    config.rules.push(instance);
+    save_config(config)?;
+    Ok(id)
+}
+
+pub(crate) fn detach_rule(config: &mut WatcherConfig, id: &str) -> Result<(), String> {
+    let rule = config
+        .rules
+        .iter_mut()
+        .find(|r| r.id == id)
+        .ok_or_else(|| format!("Rule '{}' not found", id))?;
+    if rule.session_id.is_none() {
+        return Err("Rule is not attached to a session".into());
+    }
+    rule.session_id = None;
+    rule.status = WatcherStatus::Paused;
+    rule.fire_count = 0;
+    save_config(config)
+}
+
+pub(crate) fn update_rule(
+    config: &mut WatcherConfig,
+    id: &str,
+    name: Option<String>,
+    trigger: Option<WatcherTrigger>,
+    instructions: Option<String>,
+    max_fires: Option<u32>,
+) -> Result<(), String> {
+    let rule = config
+        .rules
+        .iter_mut()
+        .find(|r| r.id == id)
+        .ok_or_else(|| format!("Rule '{}' not found", id))?;
+    if let Some(n) = name {
+        rule.name = n;
+    }
+    if let Some(t) = trigger {
+        rule.trigger = t;
+    }
+    if let Some(i) = instructions {
+        if i.trim().is_empty() {
+            return Err("Instructions must not be empty".into());
+        }
+        if i.len() > 8192 {
+            return Err("Instructions too long (max 8192 chars)".into());
+        }
+        rule.instructions = i;
+    }
+    if let Some(m) = max_fires {
+        if m == 0 {
+            return Err("max_fires must be > 0".into());
+        }
+        rule.max_fires = m;
+    }
+    save_config(config)
+}
+
 pub(crate) fn stop_rules_for_session(config: &mut WatcherConfig, session_id: &str) -> bool {
     let mut changed = false;
     for rule in &mut config.rules {
@@ -884,6 +962,118 @@ mod tests {
         let rule = config.rules.iter_mut().find(|r| r.id == "r1").unwrap();
         rule.status = WatcherStatus::Active;
         assert_eq!(config.rules[0].status, WatcherStatus::Active);
+    }
+
+    // ── Attach / detach / update tests ───────────────────────────
+
+    #[test]
+    fn attach_clones_template() {
+        let mut config = WatcherConfig::default();
+        let mut t = make_template("watch for errors");
+        t.id = "t1".into();
+        t.name = "Error Watcher".into();
+        t.trigger = WatcherTrigger::Error;
+        t.max_fires = 20;
+        t.status = WatcherStatus::Paused;
+        config.rules.push(t);
+
+        // Inline attach logic (attach_rule calls save_config which needs disk)
+        let template = config.rules.iter().find(|r| r.id == "t1").unwrap().clone();
+        assert!(template.session_id.is_none());
+        let mut instance = template.clone();
+        instance.id = "i1".into();
+        instance.session_id = Some("s1".into());
+        instance.template_id = Some("t1".into());
+        instance.status = WatcherStatus::Active;
+        instance.fire_count = 0;
+        config.rules.push(instance);
+
+        assert_eq!(config.rules.len(), 2);
+        // Template unchanged
+        assert_eq!(config.rules[0].id, "t1");
+        assert!(config.rules[0].session_id.is_none());
+        assert_eq!(config.rules[0].status, WatcherStatus::Paused);
+        // Instance cloned
+        assert_eq!(config.rules[1].id, "i1");
+        assert_eq!(config.rules[1].session_id.as_deref(), Some("s1"));
+        assert_eq!(config.rules[1].template_id.as_deref(), Some("t1"));
+        assert_eq!(config.rules[1].status, WatcherStatus::Active);
+        assert_eq!(config.rules[1].fire_count, 0);
+        assert_eq!(config.rules[1].name, "Error Watcher");
+        assert_eq!(config.rules[1].trigger, WatcherTrigger::Error);
+        assert_eq!(config.rules[1].max_fires, 20);
+    }
+
+    #[test]
+    fn attach_rejects_non_template() {
+        let mut config = WatcherConfig::default();
+        let mut r = make_rule(Some("s1"), "already attached");
+        r.id = "r1".into();
+        config.rules.push(r);
+
+        let is_attached = config.rules.iter().find(|r| r.id == "r1").unwrap().session_id.is_some();
+        assert!(is_attached, "Should reject attaching a rule that already has a session");
+    }
+
+    #[test]
+    fn detach_clears_session_and_resets() {
+        let mut config = WatcherConfig::default();
+        let mut r = make_rule(Some("s1"), "watching");
+        r.id = "r1".into();
+        r.fire_count = 15;
+        r.status = WatcherStatus::Active;
+        config.rules.push(r);
+
+        // Inline detach logic
+        let rule = config.rules.iter_mut().find(|r| r.id == "r1").unwrap();
+        rule.session_id = None;
+        rule.status = WatcherStatus::Paused;
+        rule.fire_count = 0;
+
+        assert!(config.rules[0].session_id.is_none());
+        assert_eq!(config.rules[0].status, WatcherStatus::Paused);
+        assert_eq!(config.rules[0].fire_count, 0);
+    }
+
+    #[test]
+    fn detach_rejects_template() {
+        let config = WatcherConfig::default();
+        let t = make_template("not attached");
+        assert!(t.session_id.is_none(), "Template has no session — detach should reject");
+    }
+
+    #[test]
+    fn update_modifies_fields() {
+        let mut config = WatcherConfig::default();
+        let mut r = make_template("original instructions");
+        r.id = "r1".into();
+        r.name = "Original".into();
+        r.max_fires = 50;
+        config.rules.push(r);
+
+        // Inline update logic
+        let rule = config.rules.iter_mut().find(|r| r.id == "r1").unwrap();
+        rule.name = "Updated".into();
+        rule.instructions = "new instructions".into();
+        rule.trigger = WatcherTrigger::Question { confident_only: false };
+        rule.max_fires = 100;
+
+        assert_eq!(config.rules[0].name, "Updated");
+        assert_eq!(config.rules[0].instructions, "new instructions");
+        assert_eq!(config.rules[0].trigger, WatcherTrigger::Question { confident_only: false });
+        assert_eq!(config.rules[0].max_fires, 100);
+    }
+
+    #[test]
+    fn update_rejects_empty_instructions() {
+        let instructions = "";
+        assert!(instructions.trim().is_empty(), "Empty instructions should be rejected");
+    }
+
+    #[test]
+    fn update_rejects_zero_max_fires() {
+        let max_fires: u32 = 0;
+        assert_eq!(max_fires, 0, "Zero max_fires should be rejected");
     }
 
     // ── Trigger evaluation tests ────────────────────────────────

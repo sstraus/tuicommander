@@ -1,32 +1,37 @@
-#![cfg_attr(not(feature = "desktop"), allow(dead_code, unused_imports, unused_variables))]
+#![cfg_attr(
+    not(feature = "desktop"),
+    allow(dead_code, unused_imports, unused_variables)
+)]
 
 pub(crate) mod agent;
 pub(crate) mod agent_mcp;
 pub(crate) mod agent_session;
 pub(crate) mod ai_agent;
+pub(crate) mod ai_chat;
+pub(crate) mod ai_chat_registry;
 pub(crate) mod app_logger;
 pub(crate) mod chrome;
 pub(crate) mod claude_usage;
 pub(crate) mod cli;
 pub(crate) mod config;
+pub(crate) mod content_index;
+pub(crate) mod credentials;
 #[cfg(feature = "desktop")]
 mod dictation;
 pub(crate) mod diff_triage;
+pub(crate) mod dir_watcher;
 pub(crate) mod error_classification;
 pub(crate) mod fs;
-mod input_line_buffer;
 pub(crate) mod git;
 pub(crate) mod git_cli;
-#[cfg(feature = "desktop")]
-mod global_hotkey;
-#[cfg(feature = "desktop")]
-mod tab_shortcut;
 pub(crate) mod git_graph;
 pub(crate) mod github;
 pub(crate) mod github_auth;
 pub(crate) mod github_poller;
-pub(crate) mod repo_watcher;
-pub(crate) mod dir_watcher;
+#[cfg(feature = "desktop")]
+mod global_hotkey;
+mod input_line_buffer;
+pub(crate) mod llm_api;
 pub(crate) mod mcp_http;
 #[allow(dead_code)] // Incremental build: wired in story 1196+ (OAuth flow/token/registry)
 pub(crate) mod mcp_oauth;
@@ -38,9 +43,9 @@ pub(crate) mod mcp_upstream_credentials;
 mod menu;
 #[cfg(feature = "desktop")]
 pub(crate) mod notification_sound;
+mod output_parser;
 #[cfg(feature = "desktop")]
 mod panel_window;
-mod output_parser;
 pub(crate) mod plugin_credentials;
 pub(crate) mod plugin_exec;
 pub(crate) mod plugin_fs;
@@ -48,27 +53,25 @@ pub(crate) mod plugin_http;
 pub(crate) mod plugin_pty;
 pub(crate) mod plugins;
 pub(crate) mod prompt;
-pub(crate) mod smart_prompt;
-pub(crate) mod llm_api;
 pub(crate) mod provider_registry;
-pub(crate) mod ai_chat;
-pub(crate) mod ai_chat_registry;
-pub(crate) mod credentials;
-pub(crate) mod registry;
 pub(crate) mod pty;
+pub(crate) mod push;
+pub(crate) mod registry;
 pub(crate) mod relay_client;
-#[cfg(feature = "desktop")]
-mod tuic_cli;
+pub(crate) mod repo_watcher;
 mod shell_integration;
 #[cfg(feature = "desktop")]
 pub(crate) mod sleep_prevention;
-pub(crate) mod push;
+pub(crate) mod smart_prompt;
 pub(crate) mod state;
-pub(crate) mod terminal_grid;
+#[cfg(feature = "desktop")]
+mod tab_shortcut;
 pub(crate) mod tailscale;
-pub(crate) mod tool_search;
+pub(crate) mod terminal_grid;
 pub(crate) mod text_rank;
-pub(crate) mod content_index;
+pub(crate) mod tool_search;
+#[cfg(feature = "desktop")]
+mod tuic_cli;
 #[cfg(feature = "desktop")]
 mod updater;
 pub(crate) mod worktree;
@@ -79,10 +82,10 @@ use std::sync::Arc;
 use tauri::{Emitter, Manager, State, WebviewWindow};
 
 // Re-export shared types from state module
-pub(crate) use state::{AppState, OutputRingBuffer, PtySession};
 pub(crate) use state::MAX_CONCURRENT_SESSIONS;
 #[cfg(test)]
 pub(crate) use state::SessionMetrics;
+pub(crate) use state::{AppState, OutputRingBuffer, PtySession};
 
 #[cfg(feature = "desktop")]
 /// Open a secondary window for multi-monitor use. The window loads the same
@@ -112,15 +115,25 @@ async fn open_secondary_window(app: tauri::AppHandle) -> Result<(), String> {
 /// titleBarStyle Overlay can persist width/height 0; SIZE is excluded from the
 /// plugin flags so these zeros stay fossilised forever. We patch them at startup.
 fn sanitize_window_state() {
-    let Some(cfg_dir) = dirs::config_dir() else { return };
+    let Some(cfg_dir) = dirs::config_dir() else {
+        return;
+    };
     for id in ["com.tuic.preview", "com.tuic.commander"] {
         let path = cfg_dir.join(id).join(".window-state.json");
-        let Ok(data) = std::fs::read_to_string(&path) else { continue };
-        let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&data) else { continue };
-        let Some(map) = json.as_object_mut() else { continue };
+        let Ok(data) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&data) else {
+            continue;
+        };
+        let Some(map) = json.as_object_mut() else {
+            continue;
+        };
         let mut changed = false;
         for (_label, state) in map.iter_mut() {
-            let Some(obj) = state.as_object_mut() else { continue };
+            let Some(obj) = state.as_object_mut() else {
+                continue;
+            };
             let w = obj.get("width").and_then(|v| v.as_u64()).unwrap_or(0);
             let h = obj.get("height").and_then(|v| v.as_u64()).unwrap_or(0);
             if w < 800 || h < 600 {
@@ -129,9 +142,7 @@ fn sanitize_window_state() {
                 changed = true;
             }
         }
-        if changed
-            && let Ok(out) = serde_json::to_string_pretty(&json)
-        {
+        if changed && let Ok(out) = serde_json::to_string_pretty(&json) {
             let _ = std::fs::write(&path, out);
         }
     }
@@ -142,7 +153,7 @@ fn sanitize_window_state() {
 /// The window-state plugin can persist invalid state (e.g. width/height 0, or
 /// positions off-screen) which causes downstream failures like PTY garbage output.
 fn ensure_window_visible(window: &WebviewWindow) {
-#[cfg(feature = "desktop")]
+    #[cfg(feature = "desktop")]
     use tauri::PhysicalPosition;
 
     const MIN_WIDTH: u32 = 800;
@@ -174,7 +185,10 @@ fn ensure_window_visible(window: &WebviewWindow) {
 
     if size_invalid || !on_screen {
         tracing::warn!(
-            width = size.width, height = size.height, x = pos.x, y = pos.y,
+            width = size.width,
+            height = size.height,
+            x = pos.x,
+            y = pos.y,
             "Invalid window state — resetting to defaults"
         );
         if let Err(e) = window.set_size(tauri::PhysicalSize::new(1200u32, 800u32)) {
@@ -211,8 +225,8 @@ fn save_config(state: State<'_, Arc<AppState>>, config: config::AppConfig) -> Re
     let tools_changed = old.disabled_native_tools != config.disabled_native_tools
         || old.collapse_tools != config.collapse_tools;
 
-    config::save_app_config(config.clone())?;  // clone goes to disk
-    *state.config.write() = config;             // move original into state
+    config::save_app_config(config.clone())?; // clone goes to disk
+    *state.config.write() = config; // move original into state
 
     if tools_changed {
         let _ = state.mcp_tools_changed.send(());
@@ -295,7 +309,10 @@ fn get_local_ips_with_config(ipv6_enabled: bool) -> Vec<LocalIpEntry> {
         {
             let ip = addr.ip().to_string();
             if !ip.starts_with("127.") {
-                result.push(LocalIpEntry { ip, label: "Network".to_string() });
+                result.push(LocalIpEntry {
+                    ip,
+                    label: "Network".to_string(),
+                });
             }
         }
         // IPv6 route trick
@@ -350,7 +367,10 @@ fn enumerate_unix_ips(ipv6_enabled: bool) -> Vec<LocalIpEntry> {
                         let iface = iface_name();
                         let has_broadcast = (ifa.ifa_flags & libc::IFF_BROADCAST as u32) != 0;
                         let label = classify_ip(ip, &iface, has_broadcast);
-                        result.push(LocalIpEntry { ip: ip.to_string(), label });
+                        result.push(LocalIpEntry {
+                            ip: ip.to_string(),
+                            label,
+                        });
                     }
                 } else if ipv6_enabled && family == libc::AF_INET6 {
                     let sa6 = &*(ifa.ifa_addr as *const libc::sockaddr_in6);
@@ -359,7 +379,10 @@ fn enumerate_unix_ips(ipv6_enabled: bool) -> Vec<LocalIpEntry> {
                     if !ip.is_loopback() && (ip.segments()[0] & 0xffc0) != 0xfe80 {
                         let iface = iface_name();
                         let label = classify_ipv6(ip, &iface);
-                        result.push(LocalIpEntry { ip: ip.to_string(), label });
+                        result.push(LocalIpEntry {
+                            ip: ip.to_string(),
+                            label,
+                        });
                     }
                 }
             }
@@ -439,8 +462,6 @@ fn get_local_ip(state: State<'_, Arc<AppState>>) -> Option<String> {
     pick_preferred_ip(get_local_ips(state))
 }
 
-
-
 /// A markdown file with its git status
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct MarkdownFileEntry {
@@ -471,22 +492,25 @@ pub(crate) fn list_markdown_files_impl(path: String) -> Result<Vec<MarkdownFileE
 
                 // Skip hidden directories and common ignore patterns
                 if let Some(name) = path.file_name().and_then(|n| n.to_str())
-                    && (name.starts_with('.') || name == "node_modules" || name == "target") {
-                        continue;
-                    }
+                    && (name.starts_with('.') || name == "node_modules" || name == "target")
+                {
+                    continue;
+                }
 
                 if path.is_dir() {
                     walk_dir(&path, base, md_paths)?;
                 } else if path.extension().and_then(|s| s.to_str()) == Some("md")
-                    && let Ok(relative) = path.strip_prefix(base) {
-                        let mtime = entry.metadata()
-                            .and_then(|m| m.modified())
-                            .ok()
-                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                            .map(|d| d.as_secs())
-                            .unwrap_or(0);
-                        md_paths.push((relative.to_string_lossy().replace('\\', "/"), mtime));
-                    }
+                    && let Ok(relative) = path.strip_prefix(base)
+                {
+                    let mtime = entry
+                        .metadata()
+                        .and_then(|m| m.modified())
+                        .ok()
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    md_paths.push((relative.to_string_lossy().replace('\\', "/"), mtime));
+                }
             }
         }
         Ok(())
@@ -510,7 +534,12 @@ pub(crate) fn list_markdown_files_impl(path: String) -> Result<Vec<MarkdownFileE
         .map(|(p, mtime)| {
             let git_status = git_statuses.get(&p).cloned().unwrap_or_default();
             let is_ignored = ignored_set.contains(&p);
-            MarkdownFileEntry { path: p, git_status, is_ignored, modified_at: mtime }
+            MarkdownFileEntry {
+                path: p,
+                git_status,
+                is_ignored,
+                modified_at: mtime,
+            }
         })
         .collect();
 
@@ -529,19 +558,20 @@ pub(crate) fn read_file_impl(path: String, file: String) -> Result<String, Strin
     let repo_path = PathBuf::from(&path);
     let file_path = repo_path.join(&file);
 
-    let canonical_repo = repo_path.canonicalize()
+    let canonical_repo = repo_path
+        .canonicalize()
         .map_err(|e| format!("Failed to resolve repo path: {e}"))?;
 
     // Security: ensure the file is within the repo path
-    let canonical_file = file_path.canonicalize()
+    let canonical_file = file_path
+        .canonicalize()
         .map_err(|e| format!("Failed to resolve file path: {e}"))?;
 
     if !canonical_file.starts_with(&canonical_repo) {
         return Err("Access denied: file is outside repository".to_string());
     }
 
-    std::fs::read_to_string(&file_path)
-        .map_err(|e| format!("Failed to read file: {e}"))
+    std::fs::read_to_string(&file_path).map_err(|e| format!("Failed to read file: {e}"))
 }
 
 #[cfg_attr(feature = "desktop", tauri::command)]
@@ -561,8 +591,7 @@ fn read_external_file(path: String) -> Result<String, String> {
     if !p.is_absolute() {
         return Err("read_external_file requires an absolute path".to_string());
     }
-    std::fs::read_to_string(p)
-        .map_err(|e| format!("Failed to read file: {e}"))
+    std::fs::read_to_string(p).map_err(|e| format!("Failed to read file: {e}"))
 }
 
 /// Write a file at an absolute path (used by the UI for files outside any registered repo,
@@ -573,11 +602,10 @@ fn read_external_file(path: String) -> Result<String, String> {
 #[cfg_attr(feature = "desktop", tauri::command)]
 fn write_external_file(path: String, content: String) -> Result<(), String> {
     let p = std::path::Path::new(&path);
-    let home = dirs::home_dir()
-        .ok_or_else(|| "Could not resolve user home directory".to_string())?;
+    let home =
+        dirs::home_dir().ok_or_else(|| "Could not resolve user home directory".to_string())?;
     fs::validate_external_write_path(p, &home)?;
-    std::fs::write(p, content)
-        .map_err(|e| format!("Failed to write file: {e}"))
+    std::fs::write(p, content).map_err(|e| format!("Failed to write file: {e}"))
 }
 
 /// Get MCP server status (running, port, active sessions).
@@ -599,24 +627,29 @@ async fn get_mcp_status(state: State<'_, Arc<AppState>>) -> Result<serde_json::V
     // file.exists() is unreliable — a stale socket from a crashed run passes
     // the file check but refuses connections.
     #[cfg(unix)]
-    let running = tokio::net::UnixStream::connect(mcp_http::socket_path()).await.is_ok();
+    let running = tokio::net::UnixStream::connect(mcp_http::socket_path())
+        .await
+        .is_ok();
     #[cfg(not(unix))]
     let running = false;
 
     // TCP reachability self-test for remote access
     let remote_port = state.config.read().services.server.port;
     let reachable = if remote_enabled {
-        let preferred_ip = pick_preferred_ip(get_local_ips_with_config(state.config.read().services.server.ipv6_enabled));
+        let preferred_ip = pick_preferred_ip(get_local_ips_with_config(
+            state.config.read().services.server.ipv6_enabled,
+        ));
         if let Some(ip) = preferred_ip {
             let port = remote_port;
-            let addr = if ip.contains(':') { format!("[{ip}]:{port}") } else { format!("{ip}:{port}") };
+            let addr = if ip.contains(':') {
+                format!("[{ip}]:{port}")
+            } else {
+                format!("{ip}:{port}")
+            };
             tokio::task::spawn_blocking(move || {
                 addr.parse::<std::net::SocketAddr>().ok().map(|sa| {
-                    std::net::TcpStream::connect_timeout(
-                        &sa,
-                        std::time::Duration::from_millis(200),
-                    )
-                    .is_ok()
+                    std::net::TcpStream::connect_timeout(&sa, std::time::Duration::from_millis(200))
+                        .is_ok()
                 })
             })
             .await
@@ -680,7 +713,10 @@ fn regenerate_session_token(state: State<'_, Arc<AppState>>) {
     let mut cfg = state.config.read().clone();
     cfg.services.auth.session_token = new_token;
     if let Err(e) = config::save_app_config(cfg) {
-        tracing::error!(source = "auth", "Failed to persist regenerated session token: {e}");
+        tracing::error!(
+            source = "auth",
+            "Failed to persist regenerated session token: {e}"
+        );
     }
 }
 
@@ -695,7 +731,10 @@ fn get_connect_url(state: State<'_, Arc<AppState>>, ip: String) -> String {
 
     // If TLS is active and the IP is a Tailscale address, use https + FQDN
     let ts = state.tailscale_state.read().clone();
-    if let tailscale::TailscaleState::Running { ref fqdn, https_enabled: true } = ts
+    if let tailscale::TailscaleState::Running {
+        ref fqdn,
+        https_enabled: true,
+    } = ts
         && crate::mcp_http::auth::is_tailscale_ip(&ip)
     {
         return build_connect_url("https", fqdn, port, &token);
@@ -714,8 +753,14 @@ fn get_tailscale_status(state: State<'_, Arc<AppState>>) -> tailscale::Tailscale
 #[cfg(feature = "desktop")]
 /// Provision TLS config from current Tailscale state.
 /// Returns Some(RustlsConfig) if Tailscale is running with HTTPS enabled and cert provisioning succeeds.
-async fn provision_tls_config(ts_state: &tailscale::TailscaleState) -> Option<axum_server::tls_rustls::RustlsConfig> {
-    if let tailscale::TailscaleState::Running { fqdn, https_enabled: true } = ts_state {
+async fn provision_tls_config(
+    ts_state: &tailscale::TailscaleState,
+) -> Option<axum_server::tls_rustls::RustlsConfig> {
+    if let tailscale::TailscaleState::Running {
+        fqdn,
+        https_enabled: true,
+    } = ts_state
+    {
         match tailscale::provision_cert(fqdn).await {
             Ok((cert_pem, key_pem)) => {
                 match axum_server::tls_rustls::RustlsConfig::from_pem(cert_pem, key_pem).await {
@@ -723,7 +768,9 @@ async fn provision_tls_config(ts_state: &tailscale::TailscaleState) -> Option<ax
                         tracing::info!(source = "tailscale", fqdn, "TLS cert provisioned");
                         return Some(tls);
                     }
-                    Err(e) => tracing::error!(source = "tailscale", "Failed to load TLS config: {e}"),
+                    Err(e) => {
+                        tracing::error!(source = "tailscale", "Failed to load TLS config: {e}")
+                    }
                 }
             }
             Err(e) => tracing::error!(source = "tailscale", "Failed to provision cert: {e}"),
@@ -742,8 +789,7 @@ fn restart_server(state: &Arc<AppState>) {
     let remote_enabled = state.config.read().services.server.enabled;
     let state_arc = state.clone();
     std::thread::spawn(move || {
-        let rt = tokio::runtime::Runtime::new()
-            .expect("tokio runtime for HTTP server restart");
+        let rt = tokio::runtime::Runtime::new().expect("tokio runtime for HTTP server restart");
         rt.block_on(async move {
             let ts = state_arc.tailscale_state.read().clone();
             let tls_config = provision_tls_config(&ts).await;
@@ -755,10 +801,15 @@ fn restart_server(state: &Arc<AppState>) {
 /// Re-detect Tailscale daemon status and restart server if HTTPS availability changed.
 #[cfg(feature = "desktop")]
 #[tauri::command]
-async fn recheck_tailscale_status(state: State<'_, Arc<AppState>>) -> Result<tailscale::TailscaleState, String> {
+async fn recheck_tailscale_status(
+    state: State<'_, Arc<AppState>>,
+) -> Result<tailscale::TailscaleState, String> {
     let old_https = matches!(
         *state.tailscale_state.read(),
-        tailscale::TailscaleState::Running { https_enabled: true, .. }
+        tailscale::TailscaleState::Running {
+            https_enabled: true,
+            ..
+        }
     );
 
     let new_state = tokio::task::spawn_blocking(tailscale::detect)
@@ -767,14 +818,22 @@ async fn recheck_tailscale_status(state: State<'_, Arc<AppState>>) -> Result<tai
 
     let new_https = matches!(
         new_state,
-        tailscale::TailscaleState::Running { https_enabled: true, .. }
+        tailscale::TailscaleState::Running {
+            https_enabled: true,
+            ..
+        }
     );
 
     *state.tailscale_state.write() = new_state.clone();
 
     // Restart server if HTTPS availability changed (HTTP→HTTPS or HTTPS→HTTP)
     if old_https != new_https && state.config.read().services.server.enabled {
-        tracing::info!(source = "tailscale", old_https, new_https, "HTTPS state changed, restarting server");
+        tracing::info!(
+            source = "tailscale",
+            old_https,
+            new_https,
+            "HTTPS state changed, restarting server"
+        );
         restart_server(&state);
     }
 
@@ -786,7 +845,10 @@ async fn recheck_tailscale_status(state: State<'_, Arc<AppState>>) -> Result<tai
 #[tauri::command]
 fn get_relay_status(state: State<'_, Arc<AppState>>) -> serde_json::Value {
     let cfg = state.config.read();
-    let connected = state.relay.connected.load(std::sync::atomic::Ordering::Relaxed);
+    let connected = state
+        .relay
+        .connected
+        .load(std::sync::atomic::Ordering::Relaxed);
     serde_json::json!({
         "enabled": cfg.services.relay.enabled,
         "connected": connected,
@@ -808,9 +870,9 @@ pub fn run() {
     // Create the shared log ring buffer and initialise the tracing subscriber.
     // This must happen before any other code so all log output is captured —
     // including config loading, migration warnings, etc.
-    let log_buffer = Arc::new(parking_lot::Mutex::new(
-        app_logger::LogRingBuffer::new(app_logger::LOG_RING_CAPACITY),
-    ));
+    let log_buffer = Arc::new(parking_lot::Mutex::new(app_logger::LogRingBuffer::new(
+        app_logger::LOG_RING_CAPACITY,
+    )));
     app_logger::init_tracing(log_buffer.clone());
 
     // Default worktrees directory: <config_dir>/worktrees
@@ -838,15 +900,16 @@ pub fn run() {
         tracing::info!(source = "auth", "Generated persistent session token");
         config_dirty = true;
     }
-    if config_dirty
-        && let Err(e) = config::save_app_config(config.clone())
-    {
+    if config_dirty && let Err(e) = config::save_app_config(config.clone()) {
         tracing::error!(source = "app", "Failed to persist config: {e}");
     }
 
     let (github_token, github_token_source) = crate::github_auth::resolve_token_without_keychain();
     if github_token.is_none() {
-        tracing::info!(source = "github", "No GitHub token from env/CLI — keychain deferred until first use");
+        tracing::info!(
+            source = "github",
+            "No GitHub token from env/CLI — keychain deferred until first use"
+        );
     }
 
     let data_dir = config::config_dir();
@@ -871,9 +934,14 @@ pub fn run() {
 
                 // Detect Tailscale and provision TLS cert (async, doesn't block window render)
                 let tls_config = if remote_enabled {
-                    let ts_state = tokio::task::spawn_blocking(tailscale::detect).await
+                    let ts_state = tokio::task::spawn_blocking(tailscale::detect)
+                        .await
                         .unwrap_or(tailscale::TailscaleState::NotInstalled);
-                    tracing::info!(source = "tailscale", ?ts_state, "Tailscale detection result");
+                    tracing::info!(
+                        source = "tailscale",
+                        ?ts_state,
+                        "Tailscale detection result"
+                    );
                     *server_state.tailscale_state.write() = ts_state.clone();
                     provision_tls_config(&ts_state).await
                 } else {
@@ -1009,9 +1077,9 @@ pub fn run() {
 
     builder
         .setup(|app| {
-
             #[cfg(desktop)]
-            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
 
             #[cfg(feature = "desktop")]
             {
@@ -1067,7 +1135,12 @@ pub fn run() {
                 for repo_path in repos.keys() {
                     known_repo_paths.push(repo_path.clone());
                     if let Err(e) = repo_watcher::start_watching(repo_path, app_state) {
-                        app_logger::log_via_state(app_state, "warn", "app", &format!("[RepoWatcher] Failed to watch {repo_path}: {e}"));
+                        app_logger::log_via_state(
+                            app_state,
+                            "warn",
+                            "app",
+                            &format!("[RepoWatcher] Failed to watch {repo_path}: {e}"),
+                        );
                     }
                 }
             }
@@ -1087,7 +1160,8 @@ pub fn run() {
                         // `ensure_index` is sync + spawns its own blocking task.
                         // Awaiting JoinHandle here would require threading; instead
                         // we serialize by waiting until the index flips to ready.
-                        let index_arc = crate::content_index::ensure_index(&state_for_prewarm, &repo);
+                        let index_arc =
+                            crate::content_index::ensure_index(&state_for_prewarm, &repo);
                         // Poll until this repo's build completes before starting the next.
                         while !index_arc.read().is_ready() {
                             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
@@ -1141,7 +1215,6 @@ pub fn run() {
             pty::terminal_request_frame,
             pty::ack_terminal_frame,
             pty::terminal_exit_alt_screen,
-
             pty::terminal_scroll,
             pty::terminal_scroll_to,
             pty::terminal_scroll_info,
@@ -1359,6 +1432,13 @@ pub fn run() {
             ai_agent::commands::get_knowledge_session_detail,
             ai_agent::commands::load_scheduler_config,
             ai_agent::commands::save_scheduler_config,
+            ai_agent::commands::watcher_create,
+            ai_agent::commands::watcher_list,
+            ai_agent::commands::watcher_delete,
+            ai_agent::commands::watcher_toggle,
+            ai_agent::commands::watcher_attach,
+            ai_agent::commands::watcher_detach,
+            ai_agent::commands::watcher_update,
             repo_watcher::start_repo_watcher,
             repo_watcher::stop_repo_watcher,
             dir_watcher::start_dir_watcher,
@@ -1435,7 +1515,9 @@ pub fn run() {
                         .iter()
                         .filter_map(|u| {
                             if u.scheme() == "file" {
-                                u.to_file_path().ok().map(|p| p.to_string_lossy().into_owned())
+                                u.to_file_path()
+                                    .ok()
+                                    .map(|p| p.to_string_lossy().into_owned())
                             } else {
                                 None
                             }
@@ -1493,6 +1575,18 @@ fn spawn_background_tasks(state: &Arc<AppState>) {
             scheduler.run().await;
         });
     }
+    {
+        let watcher_state = state.clone();
+        let engine = Arc::new(ai_agent::watcher::WatcherEngine::new(watcher_state));
+        if state.watcher_engine.set(Arc::clone(&engine)).is_err() {
+            tracing::error!(
+                "WatcherEngine already initialized — duplicate spawn_background_tasks call"
+            );
+        }
+        tokio::spawn(async move {
+            engine.run().await;
+        });
+    }
 }
 
 /// Interactive CLI to set username + password for headless auth.
@@ -1522,13 +1616,13 @@ pub fn set_password_interactive() -> anyhow::Result<()> {
         anyhow::bail!("Password cannot be empty");
     }
 
-    let hash = bcrypt::hash(&password, 12)
-        .map_err(|e| anyhow::anyhow!("Failed to hash password: {e}"))?;
+    let hash =
+        bcrypt::hash(&password, 12).map_err(|e| anyhow::anyhow!("Failed to hash password: {e}"))?;
 
     let mut cfg = config::load_app_config();
     cfg.services.auth.username = username.clone();
     cfg.services.auth.password_hash = hash;
-    config::save_app_config(cfg)?;
+    config::save_app_config(cfg).map_err(|e| anyhow::anyhow!(e))?;
 
     let masked = if username.len() <= 2 {
         format!("{}*", &username[..1])
@@ -1540,12 +1634,12 @@ pub fn set_password_interactive() -> anyhow::Result<()> {
 }
 
 /// Run the headless (non-desktop) server.
-/// Called by the `tuicommander-remote` binary.
+/// Called by the `tuic-remote` binary.
 #[cfg(not(feature = "desktop"))]
 pub async fn run_headless(port: u16) -> anyhow::Result<()> {
-    let log_buffer = Arc::new(parking_lot::Mutex::new(
-        app_logger::LogRingBuffer::new(app_logger::LOG_RING_CAPACITY),
-    ));
+    let log_buffer = Arc::new(parking_lot::Mutex::new(app_logger::LogRingBuffer::new(
+        app_logger::LOG_RING_CAPACITY,
+    )));
     app_logger::init_tracing(log_buffer.clone());
 
     let mut app_config = config::load_app_config();
@@ -1588,7 +1682,10 @@ pub async fn run_headless(port: u16) -> anyhow::Result<()> {
     agent_mcp::ensure_mcp_configs(&app_config.disabled_mcp_agents);
 
     let tls_config = match &app_config.services.tls {
-        config::TlsConfig::Manual { cert_path, key_path } => {
+        config::TlsConfig::Manual {
+            cert_path,
+            key_path,
+        } => {
             let cert_pem = std::fs::read(cert_path)
                 .map_err(|e| anyhow::anyhow!("Failed to read TLS cert at {cert_path}: {e}"))?;
             let key_pem = std::fs::read(key_path)
@@ -1596,13 +1693,23 @@ pub async fn run_headless(port: u16) -> anyhow::Result<()> {
             let tls = axum_server::tls_rustls::RustlsConfig::from_pem(cert_pem, key_pem)
                 .await
                 .map_err(|e| anyhow::anyhow!("Invalid TLS cert/key: {e}"))?;
-            tracing::info!(source = "remote", cert_path, key_path, "TLS loaded (manual mode)");
+            tracing::info!(
+                source = "remote",
+                cert_path,
+                key_path,
+                "TLS loaded (manual mode)"
+            );
             Some(tls)
         }
         config::TlsConfig::Off => None,
     };
 
-    tracing::info!(source = "remote", port, tls = tls_config.is_some(), "Starting tuicommander-remote");
+    tracing::info!(
+        source = "remote",
+        port,
+        tls = tls_config.is_some(),
+        "Starting tuic-remote"
+    );
 
     // Run server until SIGINT/SIGTERM, then shut down gracefully.
     tokio::select! {
@@ -1658,4 +1765,3 @@ mod tests {
         );
     }
 }
-
