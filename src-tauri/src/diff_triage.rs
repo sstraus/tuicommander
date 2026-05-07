@@ -600,7 +600,12 @@ fn build_fallback_summary(signals: &DiffSignals, additions: u32, deletions: u32)
     format!("{lines_str} in {h} hunk{}", if h == 1 { "" } else { "s" })
 }
 
-fn fallback_classification(path: &str) -> FileClassification {
+fn fallback_classification(
+    path: &str,
+    diff: Option<&str>,
+    additions: u32,
+    deletions: u32,
+) -> FileClassification {
     let filename = Path::new(path)
         .file_name()
         .and_then(|f| f.to_str())
@@ -612,7 +617,7 @@ fn fallback_classification(path: &str) -> FileClassification {
         .to_lowercase();
     let ext = ext.as_str();
 
-    let (category, risk) = if is_test_file(path, filename) {
+    let (mut category, mut risk) = if is_test_file(path, filename) {
         (Category::Test, Risk::BehavioralChange)
     } else if is_style_file(ext) {
         (Category::Style, Risk::Cosmetic)
@@ -622,15 +627,50 @@ fn fallback_classification(path: &str) -> FileClassification {
         (Category::BusinessLogic, Risk::BehavioralChange)
     };
 
+    let mut relevance = Relevance::Medium;
+    let mut summary = String::new();
+
+    if let Some(diff_text) = diff {
+        let signals = analyze_diff(diff_text);
+
+        if signals.schema_signals > 0 {
+            category = Category::Schema;
+            risk = Risk::BehavioralChange;
+            relevance = Relevance::High;
+        }
+        if signals.test_signals > 0 && category != Category::Test {
+            category = Category::Test;
+        }
+        if signals.api_surface_added > 0 || signals.api_surface_removed > 0 {
+            category = Category::ApiSurface;
+            relevance = Relevance::High;
+        }
+        if signals.api_surface_removed > 0 {
+            risk = Risk::BreakingChange;
+        }
+        if signals.auth_signals > 0 {
+            relevance = Relevance::High;
+            if risk == Risk::Cosmetic {
+                risk = Risk::BehavioralChange;
+            }
+        }
+        let total = additions + deletions;
+        if total > 20 && deletions > 0 && (deletions as f64 / total as f64) > 0.5 {
+            risk = Risk::BreakingChange;
+        }
+
+        summary = build_fallback_summary(&signals, additions, deletions);
+    }
+
     FileClassification {
         path: path.to_string(),
-        relevance: Relevance::Medium,
+        relevance,
         category,
         risk,
-        summary: String::new(),
+        summary,
         source: ClassificationSource::Heuristic,
-        additions: 0,
-        deletions: 0,
+        additions,
+        deletions,
     }
 }
 
@@ -1015,18 +1055,12 @@ async fn classify_multi_turn(
                     }
                     _ => {
                         tracing::warn!("triage: LLM response for {path} did not parse as file classification: {text:?}");
-                        let mut fb = fallback_classification(path);
-                        fb.additions = *additions;
-                        fb.deletions = *deletions;
-                        fb
+                        fallback_classification(path, Some(diff), *additions, *deletions)
                     }
                 },
                 None => {
                     tracing::warn!("triage: LLM returned no response for {path} (timeout or error)");
-                    let mut fb = fallback_classification(path);
-                    fb.additions = *additions;
-                    fb.deletions = *deletions;
-                    fb
+                    fallback_classification(path, Some(diff), *additions, *deletions)
                 }
             };
 
@@ -1264,8 +1298,8 @@ pub(crate) async fn run_diff_triage(
         sessions.insert(repo_path.clone(), session);
     }
 
-    for (path, _, _, _) in needs_llm.iter().skip(MAX_FILES_TO_LLM) {
-        all_classified.push(fallback_classification(path));
+    for (path, additions, deletions, _) in needs_llm.iter().skip(MAX_FILES_TO_LLM) {
+        all_classified.push(fallback_classification(path, None, *additions, *deletions));
     }
 
     for c in &mut all_classified {
@@ -1678,10 +1712,9 @@ mod tests {
 
     #[test]
     fn fallback_source_files_are_business_logic() {
-        let c = fallback_classification("src/main.rs");
+        let c = fallback_classification("src/main.rs", None, 0, 0);
         assert_eq!(c.relevance, Relevance::Medium);
         assert_eq!(c.category, Category::BusinessLogic);
-        assert!(c.summary.is_empty());
     }
 
     #[test]
@@ -1693,7 +1726,7 @@ mod tests {
             "spec/models/user.spec.js",
             "pkg/handler_test.go",
         ] {
-            let c = fallback_classification(path);
+            let c = fallback_classification(path, None, 0, 0);
             assert_eq!(c.category, Category::Test, "{path}");
             assert_eq!(c.risk, Risk::BehavioralChange, "{path}");
         }
@@ -1706,7 +1739,7 @@ mod tests {
             "styles/global.scss",
             "src/theme.less",
         ] {
-            let c = fallback_classification(path);
+            let c = fallback_classification(path, None, 0, 0);
             assert_eq!(c.category, Category::Style, "{path}");
             assert_eq!(c.risk, Risk::Cosmetic, "{path}");
         }
@@ -1719,10 +1752,80 @@ mod tests {
             ".dockerignore",
             ".gitignore",
         ] {
-            let c = fallback_classification(path);
+            let c = fallback_classification(path, None, 0, 0);
             assert_eq!(c.category, Category::Config, "{path}");
             assert_eq!(c.risk, Risk::Cosmetic, "{path}");
         }
+    }
+
+    // ── fallback_classification with diff content ─────────────────────────────
+
+    #[test]
+    fn fallback_with_pub_fn_diff_is_api_surface() {
+        let diff = "@@ -1,3 +1,5 @@ mod handler\n+pub fn handle_request(req: Request) -> Response {\n+    todo!()\n+}";
+        let c = fallback_classification("src/handler.rs", Some(diff), 3, 0);
+        assert_eq!(c.category, Category::ApiSurface, "pub fn should → ApiSurface");
+        assert!(c.relevance == Relevance::High || c.relevance == Relevance::Medium);
+    }
+
+    #[test]
+    fn fallback_with_pub_fn_removal_is_breaking() {
+        let diff = "-pub fn old_api() {}";
+        let c = fallback_classification("src/api.rs", Some(diff), 0, 5);
+        assert_eq!(c.risk, Risk::BreakingChange, "removal of pub fn → BreakingChange");
+    }
+
+    #[test]
+    fn fallback_with_ts_export_is_api_surface() {
+        let diff = "+export function doThing() {}";
+        let c = fallback_classification("src/utils.ts", Some(diff), 5, 0);
+        assert_eq!(c.category, Category::ApiSurface);
+    }
+
+    #[test]
+    fn fallback_with_test_signals_is_test_category() {
+        let diff = "+#[test]\n+fn it_works() {\n+    assert_eq!(1, 1);\n+}";
+        let c = fallback_classification("src/handler.rs", Some(diff), 4, 0);
+        assert_eq!(c.category, Category::Test, "test signals should → Test");
+    }
+
+    #[test]
+    fn fallback_with_sql_is_schema() {
+        let diff = "+ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user';";
+        let c = fallback_classification("src/db.rs", Some(diff), 1, 0);
+        assert_eq!(c.category, Category::Schema);
+        assert_eq!(c.risk, Risk::BehavioralChange);
+    }
+
+    #[test]
+    fn fallback_with_heavy_deletions_is_breaking() {
+        // 5 additions, 30 deletions — ratio > 0.5 and total > 20
+        let diff = (0..5).map(|i| format!("+line{i}"))
+            .chain((0..30).map(|i| format!("-old{i}")))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let c = fallback_classification("src/core.rs", Some(&diff), 5, 30);
+        assert_eq!(c.risk, Risk::BreakingChange, "heavy deletions → BreakingChange");
+    }
+
+    #[test]
+    fn fallback_with_auth_is_high_relevance() {
+        let diff = "+let password = req.body.password;";
+        let c = fallback_classification("src/login.rs", Some(diff), 1, 0);
+        assert_eq!(c.relevance, Relevance::High, "auth signal → High relevance");
+    }
+
+    #[test]
+    fn fallback_with_hunk_context_generates_summary() {
+        let diff = "@@ -10,5 +10,7 @@ fn process_event\n+    do_stuff();";
+        let c = fallback_classification("src/events.rs", Some(diff), 1, 0);
+        assert!(!c.summary.is_empty(), "should generate a summary from hunk context");
+    }
+
+    #[test]
+    fn fallback_none_diff_no_summary() {
+        let c = fallback_classification("src/main.rs", None, 0, 0);
+        assert!(c.summary.is_empty(), "no diff → empty summary");
     }
 
     #[test]
