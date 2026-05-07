@@ -507,11 +507,12 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
   function paintCursor(frame: DecodedFrame, m: CellMetrics) {
     if (frame.displayOffset > 0) return;
+    if (!frame.cursorVisible) return;
     if (!cursorBlinkOn && focused()) return;
 
     const settingShape: CursorShape = settingsStore.state.cursorStyle === "block" ? "block"
       : settingsStore.state.cursorStyle === "underline" ? "underline" : "beam";
-    const shape: CursorShape = frame.cursorVisible ? frame.cursorShape : settingShape;
+    const shape: CursorShape = frame.cursorShape !== "block" ? frame.cursorShape : settingShape;
     const rect = computeCursorRect(shape, frame.cursorRow, frame.cursorCol, m);
 
     if (!focused()) {
