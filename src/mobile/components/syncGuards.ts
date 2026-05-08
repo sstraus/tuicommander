@@ -12,10 +12,10 @@ export const POST_SEND_GUARD_MS = 500;
 
 /** True while the post-send guard is still suppressing PTY echoes. */
 export function isPostSendGuardActive(now: number, lastSendAt: number): boolean {
-  return lastSendAt > 0 && now - lastSendAt < POST_SEND_GUARD_MS;
+	return lastSendAt > 0 && now - lastSendAt < POST_SEND_GUARD_MS;
 }
 
 /** True if `echo` extends `syncedText` (tab completion, autocomplete). */
 export function isSupersetEcho(echo: string, syncedText: string): boolean {
-  return echo.length > syncedText.length && echo.startsWith(syncedText);
+	return echo.length > syncedText.length && echo.startsWith(syncedText);
 }

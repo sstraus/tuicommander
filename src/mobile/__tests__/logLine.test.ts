@@ -1,235 +1,231 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
-  logColorToCss,
-  spanStyle,
-  normalizeLogLine,
-  hasBoxDrawing,
-  groupLineBlocks,
-  type LogColor,
-  type LogLine,
+	groupLineBlocks,
+	hasBoxDrawing,
+	type LogColor,
+	type LogLine,
+	logColorToCss,
+	normalizeLogLine,
+	spanStyle,
 } from "../utils/logLine";
 
 // --- logColorToCss ---
 
 describe("logColorToCss", () => {
-  it("returns undefined for undefined input", () => {
-    expect(logColorToCss(undefined)).toBeUndefined();
-  });
+	it("returns undefined for undefined input", () => {
+		expect(logColorToCss(undefined)).toBeUndefined();
+	});
 
-  it("returns undefined for empty object", () => {
-    expect(logColorToCss({} as LogColor)).toBeUndefined();
-  });
+	it("returns undefined for empty object", () => {
+		expect(logColorToCss({} as LogColor)).toBeUndefined();
+	});
 
-  it("maps rgb color to CSS rgb()", () => {
-    expect(logColorToCss({ rgb: [255, 128, 0] })).toBe("rgb(255,128,0)");
-  });
+	it("maps rgb color to CSS rgb()", () => {
+		expect(logColorToCss({ rgb: [255, 128, 0] })).toBe("rgb(255,128,0)");
+	});
 
-  it("maps ANSI 16-color index 0 (black) to CSS variable", () => {
-    expect(logColorToCss({ idx: 0 })).toBe("var(--ansi-black)");
-  });
+	it("maps ANSI 16-color index 0 (black) to CSS variable", () => {
+		expect(logColorToCss({ idx: 0 })).toBe("var(--ansi-black)");
+	});
 
-  it("maps ANSI 16-color index 1 (red) to CSS variable", () => {
-    expect(logColorToCss({ idx: 1 })).toBe("var(--ansi-red)");
-  });
+	it("maps ANSI 16-color index 1 (red) to CSS variable", () => {
+		expect(logColorToCss({ idx: 1 })).toBe("var(--ansi-red)");
+	});
 
-  it("maps ANSI 16-color index 15 (bright white) to CSS variable", () => {
-    expect(logColorToCss({ idx: 15 })).toBe("var(--ansi-bright-white)");
-  });
+	it("maps ANSI 16-color index 15 (bright white) to CSS variable", () => {
+		expect(logColorToCss({ idx: 15 })).toBe("var(--ansi-bright-white)");
+	});
 
-  it("maps ANSI 256-color cube index 16 to hex", () => {
-    // idx 16 = cube(0,0,0) = #000000
-    expect(logColorToCss({ idx: 16 })).toBe("#000000");
-  });
+	it("maps ANSI 256-color cube index 16 to hex", () => {
+		// idx 16 = cube(0,0,0) = #000000
+		expect(logColorToCss({ idx: 16 })).toBe("#000000");
+	});
 
-  it("maps ANSI 256-color cube index 196 to red hex", () => {
-    // idx 196 = cube(5,0,0) => r=255, g=0, b=0
-    expect(logColorToCss({ idx: 196 })).toBe("#ff0000");
-  });
+	it("maps ANSI 256-color cube index 196 to red hex", () => {
+		// idx 196 = cube(5,0,0) => r=255, g=0, b=0
+		expect(logColorToCss({ idx: 196 })).toBe("#ff0000");
+	});
 
-  it("maps ANSI 256-color grayscale index 232 to dark gray", () => {
-    // idx 232 = gray(0) = 8 => #080808
-    expect(logColorToCss({ idx: 232 })).toBe("#080808");
-  });
+	it("maps ANSI 256-color grayscale index 232 to dark gray", () => {
+		// idx 232 = gray(0) = 8 => #080808
+		expect(logColorToCss({ idx: 232 })).toBe("#080808");
+	});
 
-  it("maps ANSI 256-color grayscale index 255 to near-white", () => {
-    // idx 255 = gray(23) = 8 + 23*10 = 238 => #eeeeee
-    expect(logColorToCss({ idx: 255 })).toBe("#eeeeee");
-  });
+	it("maps ANSI 256-color grayscale index 255 to near-white", () => {
+		// idx 255 = gray(23) = 8 + 23*10 = 238 => #eeeeee
+		expect(logColorToCss({ idx: 255 })).toBe("#eeeeee");
+	});
 
-  it("prefers rgb over idx when both present", () => {
-    expect(logColorToCss({ rgb: [1, 2, 3], idx: 5 })).toBe("rgb(1,2,3)");
-  });
+	it("prefers rgb over idx when both present", () => {
+		expect(logColorToCss({ rgb: [1, 2, 3], idx: 5 })).toBe("rgb(1,2,3)");
+	});
 });
 
 // --- spanStyle ---
 
 describe("spanStyle", () => {
-  it("returns undefined for plain text span", () => {
-    expect(spanStyle({ text: "hello" })).toBeUndefined();
-  });
+	it("returns undefined for plain text span", () => {
+		expect(spanStyle({ text: "hello" })).toBeUndefined();
+	});
 
-  it("returns color for fg", () => {
-    const result = spanStyle({ text: "x", fg: { idx: 1 } });
-    expect(result).toEqual({ color: "var(--ansi-red)" });
-  });
+	it("returns color for fg", () => {
+		const result = spanStyle({ text: "x", fg: { idx: 1 } });
+		expect(result).toEqual({ color: "var(--ansi-red)" });
+	});
 
-  it("returns background-color for bg", () => {
-    const result = spanStyle({ text: "x", bg: { idx: 2 } });
-    expect(result).toEqual({ "background-color": "var(--ansi-green)" });
-  });
+	it("returns background-color for bg", () => {
+		const result = spanStyle({ text: "x", bg: { idx: 2 } });
+		expect(result).toEqual({ "background-color": "var(--ansi-green)" });
+	});
 
-  it("returns font-weight for bold", () => {
-    const result = spanStyle({ text: "x", bold: true });
-    expect(result).toEqual({ "font-weight": "600" });
-  });
+	it("returns font-weight for bold", () => {
+		const result = spanStyle({ text: "x", bold: true });
+		expect(result).toEqual({ "font-weight": "600" });
+	});
 
-  it("returns font-style for italic", () => {
-    const result = spanStyle({ text: "x", italic: true });
-    expect(result).toEqual({ "font-style": "italic" });
-  });
+	it("returns font-style for italic", () => {
+		const result = spanStyle({ text: "x", italic: true });
+		expect(result).toEqual({ "font-style": "italic" });
+	});
 
-  it("returns text-decoration for underline", () => {
-    const result = spanStyle({ text: "x", underline: true });
-    expect(result).toEqual({ "text-decoration": "underline" });
-  });
+	it("returns text-decoration for underline", () => {
+		const result = spanStyle({ text: "x", underline: true });
+		expect(result).toEqual({ "text-decoration": "underline" });
+	});
 
-  it("combines multiple attributes", () => {
-    const result = spanStyle({
-      text: "x",
-      fg: { rgb: [255, 0, 0] },
-      bold: true,
-      underline: true,
-    });
-    expect(result).toEqual({
-      color: "rgb(255,0,0)",
-      "font-weight": "600",
-      "text-decoration": "underline",
-    });
-  });
+	it("combines multiple attributes", () => {
+		const result = spanStyle({
+			text: "x",
+			fg: { rgb: [255, 0, 0] },
+			bold: true,
+			underline: true,
+		});
+		expect(result).toEqual({
+			color: "rgb(255,0,0)",
+			"font-weight": "600",
+			"text-decoration": "underline",
+		});
+	});
 });
 
 // --- normalizeLogLine ---
 
 describe("normalizeLogLine", () => {
-  it("wraps plain string into single span", () => {
-    const result = normalizeLogLine("hello world");
-    expect(result).toEqual({ spans: [{ text: "hello world" }] });
-  });
+	it("wraps plain string into single span", () => {
+		const result = normalizeLogLine("hello world");
+		expect(result).toEqual({ spans: [{ text: "hello world" }] });
+	});
 
-  it("passes through valid LogLine object", () => {
-    const logLine: LogLine = { spans: [{ text: "a", fg: { idx: 1 } }, { text: "b" }] };
-    expect(normalizeLogLine(logLine)).toBe(logLine);
-  });
+	it("passes through valid LogLine object", () => {
+		const logLine: LogLine = { spans: [{ text: "a", fg: { idx: 1 } }, { text: "b" }] };
+		expect(normalizeLogLine(logLine)).toBe(logLine);
+	});
 
-  it("wraps number as string span", () => {
-    expect(normalizeLogLine(42)).toEqual({ spans: [{ text: "42" }] });
-  });
+	it("wraps number as string span", () => {
+		expect(normalizeLogLine(42)).toEqual({ spans: [{ text: "42" }] });
+	});
 
-  it("wraps null as string span", () => {
-    expect(normalizeLogLine(null)).toEqual({ spans: [{ text: "null" }] });
-  });
+	it("wraps null as string span", () => {
+		expect(normalizeLogLine(null)).toEqual({ spans: [{ text: "null" }] });
+	});
 
-  it("wraps undefined as string span", () => {
-    expect(normalizeLogLine(undefined)).toEqual({ spans: [{ text: "undefined" }] });
-  });
+	it("wraps undefined as string span", () => {
+		expect(normalizeLogLine(undefined)).toEqual({ spans: [{ text: "undefined" }] });
+	});
 });
 
 // --- normalizeLogLine: VS15 text presentation ---
 
 describe("normalizeLogLine text presentation (VS15)", () => {
-  const VS15 = "\uFE0E";
+	const VS15 = "\uFE0E";
 
-  it("appends VS15 after ● in plain string", () => {
-    const result = normalizeLogLine("● Reading file...");
-    expect(result.spans[0].text).toBe(`●${VS15} Reading file...`);
-  });
+	it("appends VS15 after ● in plain string", () => {
+		const result = normalizeLogLine("● Reading file...");
+		expect(result.spans[0].text).toBe(`●${VS15} Reading file...`);
+	});
 
-  it("appends VS15 after ⏺ Ink bullet in LogLine span", () => {
-    const line: LogLine = { spans: [{ text: "⏺ intent: do stuff" }] };
-    const result = normalizeLogLine(line);
-    expect(result.spans[0].text).toBe(`⏺${VS15} intent: do stuff`);
-  });
+	it("appends VS15 after ⏺ Ink bullet in LogLine span", () => {
+		const line: LogLine = { spans: [{ text: "⏺ intent: do stuff" }] };
+		const result = normalizeLogLine(line);
+		expect(result.spans[0].text).toBe(`⏺${VS15} intent: do stuff`);
+	});
 
-  it("appends VS15 after Codex bullet • and ◦", () => {
-    expect(normalizeLogLine("• Working (5s)").spans[0].text).toBe(`•${VS15} Working (5s)`);
-    expect(normalizeLogLine("◦ Working (12s)").spans[0].text).toBe(`◦${VS15} Working (12s)`);
-  });
+	it("appends VS15 after Codex bullet • and ◦", () => {
+		expect(normalizeLogLine("• Working (5s)").spans[0].text).toBe(`•${VS15} Working (5s)`);
+		expect(normalizeLogLine("◦ Working (12s)").spans[0].text).toBe(`◦${VS15} Working (12s)`);
+	});
 
-  it("appends VS15 after Copilot ∴ thinking indicator", () => {
-    expect(normalizeLogLine("∴ Thinking…").spans[0].text).toBe(`∴${VS15} Thinking…`);
-  });
+	it("appends VS15 after Copilot ∴ thinking indicator", () => {
+		expect(normalizeLogLine("∴ Thinking…").spans[0].text).toBe(`∴${VS15} Thinking…`);
+	});
 
-  it("appends VS15 after ⚙ gear and ✢ star", () => {
-    expect(normalizeLogLine("⚙ Settings").spans[0].text).toBe(`⚙${VS15} Settings`);
-    expect(normalizeLogLine("✢ Status line").spans[0].text).toBe(`✢${VS15} Status line`);
-  });
+	it("appends VS15 after ⚙ gear and ✢ star", () => {
+		expect(normalizeLogLine("⚙ Settings").spans[0].text).toBe(`⚙${VS15} Settings`);
+		expect(normalizeLogLine("✢ Status line").spans[0].text).toBe(`✢${VS15} Status line`);
+	});
 
-  it("handles multiple emoji chars in one span", () => {
-    const result = normalizeLogLine("● active ○ queued");
-    expect(result.spans[0].text).toBe(`●${VS15} active ○${VS15} queued`);
-  });
+	it("handles multiple emoji chars in one span", () => {
+		const result = normalizeLogLine("● active ○ queued");
+		expect(result.spans[0].text).toBe(`●${VS15} active ○${VS15} queued`);
+	});
 
-  it("does not modify plain text without emoji chars", () => {
-    const result = normalizeLogLine("hello world");
-    expect(result.spans[0].text).toBe("hello world");
-  });
+	it("does not modify plain text without emoji chars", () => {
+		const result = normalizeLogLine("hello world");
+		expect(result.spans[0].text).toBe("hello world");
+	});
 
-  it("applies VS15 across all spans in a LogLine", () => {
-    const line: LogLine = {
-      spans: [
-        { text: "● ", fg: { idx: 2 } },
-        { text: "⚙ config" },
-      ],
-    };
-    const result = normalizeLogLine(line);
-    expect(result.spans[0].text).toBe(`●${VS15} `);
-    expect(result.spans[1].text).toBe(`⚙${VS15} config`);
-  });
+	it("applies VS15 across all spans in a LogLine", () => {
+		const line: LogLine = {
+			spans: [{ text: "● ", fg: { idx: 2 } }, { text: "⚙ config" }],
+		};
+		const result = normalizeLogLine(line);
+		expect(result.spans[0].text).toBe(`●${VS15} `);
+		expect(result.spans[1].text).toBe(`⚙${VS15} config`);
+	});
 });
 
 // --- hasBoxDrawing ---
 
 describe("hasBoxDrawing", () => {
-  it("returns false for plain text", () => {
-    expect(hasBoxDrawing({ spans: [{ text: "hello world" }] })).toBe(false);
-  });
+	it("returns false for plain text", () => {
+		expect(hasBoxDrawing({ spans: [{ text: "hello world" }] })).toBe(false);
+	});
 
-  it("returns false for empty line", () => {
-    expect(hasBoxDrawing({ spans: [] })).toBe(false);
-  });
+	it("returns false for empty line", () => {
+		expect(hasBoxDrawing({ spans: [] })).toBe(false);
+	});
 
-  it("returns true for line with vertical bar │", () => {
-    expect(hasBoxDrawing({ spans: [{ text: "│ col1 │ col2 │" }] })).toBe(true);
-  });
+	it("returns true for line with vertical bar │", () => {
+		expect(hasBoxDrawing({ spans: [{ text: "│ col1 │ col2 │" }] })).toBe(true);
+	});
 
-  it("returns true for line with tree branch ├──", () => {
-    expect(hasBoxDrawing({ spans: [{ text: "├── src/" }] })).toBe(true);
-  });
+	it("returns true for line with tree branch ├──", () => {
+		expect(hasBoxDrawing({ spans: [{ text: "├── src/" }] })).toBe(true);
+	});
 
-  it("returns true for line with corner └", () => {
-    expect(hasBoxDrawing({ spans: [{ text: "└── README.md" }] })).toBe(true);
-  });
+	it("returns true for line with corner └", () => {
+		expect(hasBoxDrawing({ spans: [{ text: "└── README.md" }] })).toBe(true);
+	});
 
-  it("returns true for horizontal rule ─", () => {
-    expect(hasBoxDrawing({ spans: [{ text: "┌─────────┐" }] })).toBe(true);
-  });
+	it("returns true for horizontal rule ─", () => {
+		expect(hasBoxDrawing({ spans: [{ text: "┌─────────┐" }] })).toBe(true);
+	});
 
-  it("detects box-drawing in any span", () => {
-    expect(hasBoxDrawing({
-      spans: [
-        { text: "prefix ", fg: { idx: 2 } },
-        { text: "│ data" },
-      ],
-    })).toBe(true);
-  });
+	it("detects box-drawing in any span", () => {
+		expect(
+			hasBoxDrawing({
+				spans: [{ text: "prefix ", fg: { idx: 2 } }, { text: "│ data" }],
+			}),
+		).toBe(true);
+	});
 
-  it("returns false for ASCII pipe |", () => {
-    expect(hasBoxDrawing({ spans: [{ text: "echo foo | grep bar" }] })).toBe(false);
-  });
+	it("returns false for ASCII pipe |", () => {
+		expect(hasBoxDrawing({ spans: [{ text: "echo foo | grep bar" }] })).toBe(false);
+	});
 
-  it("returns false for ASCII dash -", () => {
-    expect(hasBoxDrawing({ spans: [{ text: "--- separator ---" }] })).toBe(false);
-  });
+	it("returns false for ASCII dash -", () => {
+		expect(hasBoxDrawing({ spans: [{ text: "--- separator ---" }] })).toBe(false);
+	});
 });
 
 // --- groupLineBlocks ---
@@ -237,57 +233,40 @@ describe("hasBoxDrawing", () => {
 const text = (s: string): LogLine => ({ spans: [{ text: s }] });
 
 describe("groupLineBlocks", () => {
-  it("returns empty array for empty input", () => {
-    expect(groupLineBlocks([])).toEqual([]);
-  });
+	it("returns empty array for empty input", () => {
+		expect(groupLineBlocks([])).toEqual([]);
+	});
 
-  it("wraps plain text lines as individual text blocks", () => {
-    const lines = [text("hello"), text("world")];
-    const blocks = groupLineBlocks(lines);
-    expect(blocks).toEqual([
-      { type: "text", line: lines[0] },
-      { type: "text", line: lines[1] },
-    ]);
-  });
+	it("wraps plain text lines as individual text blocks", () => {
+		const lines = [text("hello"), text("world")];
+		const blocks = groupLineBlocks(lines);
+		expect(blocks).toEqual([
+			{ type: "text", line: lines[0] },
+			{ type: "text", line: lines[1] },
+		]);
+	});
 
-  it("groups consecutive box-drawing lines into a single table block", () => {
-    const lines = [
-      text("┌───────┐"),
-      text("│ data  │"),
-      text("└───────┘"),
-    ];
-    const blocks = groupLineBlocks(lines);
-    expect(blocks).toEqual([
-      { type: "table", lines },
-    ]);
-  });
+	it("groups consecutive box-drawing lines into a single table block", () => {
+		const lines = [text("┌───────┐"), text("│ data  │"), text("└───────┘")];
+		const blocks = groupLineBlocks(lines);
+		expect(blocks).toEqual([{ type: "table", lines }]);
+	});
 
-  it("interleaves text and table blocks", () => {
-    const lines = [
-      text("before"),
-      text("┌───┐"),
-      text("│ x │"),
-      text("└───┘"),
-      text("after"),
-    ];
-    const blocks = groupLineBlocks(lines);
-    expect(blocks).toHaveLength(3);
-    expect(blocks[0]).toEqual({ type: "text", line: lines[0] });
-    expect(blocks[1]).toEqual({ type: "table", lines: [lines[1], lines[2], lines[3]] });
-    expect(blocks[2]).toEqual({ type: "text", line: lines[4] });
-  });
+	it("interleaves text and table blocks", () => {
+		const lines = [text("before"), text("┌───┐"), text("│ x │"), text("└───┘"), text("after")];
+		const blocks = groupLineBlocks(lines);
+		expect(blocks).toHaveLength(3);
+		expect(blocks[0]).toEqual({ type: "text", line: lines[0] });
+		expect(blocks[1]).toEqual({ type: "table", lines: [lines[1], lines[2], lines[3]] });
+		expect(blocks[2]).toEqual({ type: "text", line: lines[4] });
+	});
 
-  it("handles multiple separate table blocks", () => {
-    const lines = [
-      text("├── src/"),
-      text("└── lib/"),
-      text("gap"),
-      text("│ col │"),
-    ];
-    const blocks = groupLineBlocks(lines);
-    expect(blocks).toHaveLength(3);
-    expect(blocks[0]).toEqual({ type: "table", lines: [lines[0], lines[1]] });
-    expect(blocks[1]).toEqual({ type: "text", line: lines[2] });
-    expect(blocks[2]).toEqual({ type: "table", lines: [lines[3]] });
-  });
+	it("handles multiple separate table blocks", () => {
+		const lines = [text("├── src/"), text("└── lib/"), text("gap"), text("│ col │")];
+		const blocks = groupLineBlocks(lines);
+		expect(blocks).toHaveLength(3);
+		expect(blocks[0]).toEqual({ type: "table", lines: [lines[0], lines[1]] });
+		expect(blocks[1]).toEqual({ type: "text", line: lines[2] });
+		expect(blocks[2]).toEqual({ type: "table", lines: [lines[3]] });
+	});
 });

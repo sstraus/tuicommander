@@ -1,42 +1,42 @@
 import { For } from "solid-js";
-import { rpc } from "../../transport";
 import { appLogger } from "../../stores/appLogger";
-import { retryWrite } from "../utils/retryWrite";
+import { rpc } from "../../transport";
 import { sendCommand } from "../../utils/sendCommand";
+import { retryWrite } from "../utils/retryWrite";
 import styles from "./QuickActions.module.css";
 
 interface SuggestChipsProps {
-  sessionId: string;
-  items: string[];
-  agentType?: string | null;
+	sessionId: string;
+	items: string[];
+	agentType?: string | null;
 }
 
 /** Strip leading "N) " or "N. " numbering from suggest items. */
 const stripNumberPrefix = (text: string): string => text.replace(/^\d+[).]\s*/, "");
 
 export function SuggestChips(props: SuggestChipsProps) {
-  const send = async (text: string) => {
-    try {
-      await sendCommand(
-        (data) => retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data })),
-        text,
-        props.agentType,
-      );
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      appLogger.warn("network", `Failed to send suggest action: ${msg}`);
-    }
-  };
+	const send = async (text: string) => {
+		try {
+			await sendCommand(
+				(data) => retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data })),
+				text,
+				props.agentType,
+			);
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			appLogger.warn("network", `Failed to send suggest action: ${msg}`);
+		}
+	};
 
-  return (
-    <div class={styles.row}>
-      <For each={props.items}>
-        {(item) => (
-          <button class={styles.chip} onClick={() => send(item)}>
-            {stripNumberPrefix(item)}
-          </button>
-        )}
-      </For>
-    </div>
-  );
+	return (
+		<div class={styles.row}>
+			<For each={props.items}>
+				{(item) => (
+					<button class={styles.chip} onClick={() => send(item)}>
+						{stripNumberPrefix(item)}
+					</button>
+				)}
+			</For>
+		</div>
+	);
 }
