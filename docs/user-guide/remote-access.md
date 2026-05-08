@@ -84,6 +84,77 @@ The app launches in standalone mode (no browser chrome) for a native-like experi
 - The question banner appears on all screens — you don't need to be on the sessions tab to respond
 - Sound notifications can be toggled in the mobile Settings tab
 
+## tuic-remote (Beta)
+
+A standalone headless daemon for running TUICommander on a server without a desktop environment. It exposes the same HTTP/WebSocket API as the desktop app's remote access feature, but runs as an independent binary — no Tauri, no GUI.
+
+### Installation
+
+Download the `tuic-remote` binary for your platform from the [GitHub Releases](https://github.com/sstraus/tuicommander/releases) page.
+
+| Platform | Artifact |
+|----------|----------|
+| Linux x64 | `tuic-remote-x86_64-unknown-linux-gnu` |
+| Linux ARM64 | `tuic-remote-aarch64-unknown-linux-gnu` |
+| macOS ARM (Apple Silicon) | `tuic-remote-aarch64-apple-darwin` |
+| Windows x64 | `tuic-remote-x86_64-pc-windows-msvc.exe` |
+
+```bash
+# Example: Linux x64
+curl -fsSL -o tuic-remote https://github.com/sstraus/tuicommander/releases/latest/download/tuic-remote-x86_64-unknown-linux-gnu
+chmod +x tuic-remote
+```
+
+### Setup
+
+Set a password before first use:
+
+```bash
+./tuic-remote --set-password
+```
+
+This stores a bcrypt hash in the TUICommander config directory (`~/.config/tuicommander/` on Linux).
+
+### Running
+
+```bash
+# Default port 9877
+./tuic-remote
+
+# Custom port
+TUIC_PORT=8080 ./tuic-remote
+```
+
+The daemon binds to `0.0.0.0:<port>` and serves:
+- The TUICommander web UI (PWA-capable)
+- WebSocket terminal streaming
+- MCP tool integration (for AI agents)
+
+### TLS
+
+Configure TLS via the TUICommander config file (`~/.config/tuicommander/config.toml`):
+
+```toml
+[services.tls]
+cert_path = "/path/to/cert.pem"
+key_path = "/path/to/key.pem"
+```
+
+### Differences from Desktop Remote Access
+
+| | Desktop Remote Access | tuic-remote |
+|---|---|---|
+| Requires desktop app | Yes | No |
+| Runs headless | No | Yes |
+| Tauri dependency | Yes | No |
+| Default port | 9876 | 9877 |
+| LAN auth bypass | Configurable | Always disabled |
+| Signal handling | N/A | Graceful SIGINT/SIGTERM |
+
+### Status
+
+**Beta** — the core HTTP/WebSocket API is stable, but the standalone daemon is new and may have rough edges. Report issues on GitHub.
+
 ## Troubleshooting
 
 | Problem | Fix |

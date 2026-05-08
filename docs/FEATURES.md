@@ -254,6 +254,14 @@ Replaced by the Git Panel's Changes tab (section 3.8). `Cmd+Shift+D` now opens t
 - Unsaved changes: dot indicator in tab bar and header
 - Disk conflict detection: banner with "Reload" (discard local) or "Keep mine" options
 - Auto-reloads silently when file changes on disk and editor is clean
+- Undo/Redo: `Cmd+Z` / `Cmd+Shift+Z` with full history
+- Code folding: collapse/expand blocks via gutter arrows or `Cmd+Shift+[`/`]`
+- Auto-close brackets: typing `(`, `[`, `{`, `"`, `'` inserts matching pair
+- Scroll past end: last line can scroll to the top of the viewport
+- Block selection: `Alt+drag` for rectangular/column selection with crosshair cursor
+- Drop cursor: ghost cursor shown when dragging text over the editor
+- Special character highlighting: invisible chars (zero-width spaces, control chars) rendered as placeholders
+- CSS color preview: inline color swatches next to hex/rgb/rgba/hsl values
 
 ### 3.6 Ideas Panel (`Cmd+Alt+N`)
 - Quick notes / idea capture with send-to-terminal
@@ -1702,3 +1710,26 @@ TUICommander aggregates upstream MCP servers and exposes them through its own `/
 - Auto-update on app startup (silent, no elevation prompt)
 - Paths: `/usr/local/bin/tuic` (macOS/Linux), `%LOCALAPPDATA%\Microsoft\WindowsApps\tuic.exe` (Windows)
 - `tuic install-cli` / `tuic alias` for self-service
+
+## 22. Headless Daemon (`tuic-remote`) — Beta
+
+### 22.1 Overview
+- Standalone headless binary for running TUICommander on servers without a desktop environment
+- Same HTTP/WebSocket API as the desktop app's remote access feature
+- No Tauri dependency — pure Rust binary
+- Available as GitHub Release artifacts for Linux x64/ARM64, macOS ARM, and Windows x64
+
+### 22.2 Configuration
+- Uses the same config file as the desktop app (`~/.config/tuicommander/config.toml`)
+- Default port: 9877 (overridable via `TUIC_PORT` env var)
+- `--set-password` flag for interactive password setup (bcrypt hashed)
+- LAN auth bypass always disabled in headless mode (security hardening)
+
+### 22.3 TLS
+- Manual TLS via `[services.tls]` config section (cert + key PEM paths)
+- No TLS by default — use a reverse proxy or Tailscale for production
+
+### 22.4 Lifecycle
+- Graceful shutdown on SIGINT/SIGTERM
+- Binds TCP, starts background tasks (MCP session reaper, upstream health checks)
+- Fails fast if port is already in use

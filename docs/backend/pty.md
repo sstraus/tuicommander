@@ -89,9 +89,16 @@ spawn_reader_thread(reader, paused, session_id, app, state)
 3. Removes session from `AppState.sessions`
 4. Updates metrics (decrement `active_sessions`)
 
-### Frontend Write Coalescing
+### Frame Emission Pipeline
 
-The frontend coalesces paint triggers via `requestAnimationFrame` (~60 repaints/sec). During high-throughput output (agent file writes, `find`, build logs), hundreds of grid frame events/sec are batched into a single canvas render pass, reducing layout recalculations. Flow control (pause/resume at HIGH_WATERMARK) and plugin dispatch remain per-chunk.
+Frame emission is decoupled from PTY reading via a per-session **frame ticker** thread (same approach as iTerm2's Metal display-link renderer):
+
+1. **Reader thread**: processes PTY data into the alacritty VT grid, sets a `grid_frame_dirty` AtomicBool flag
+2. **Ticker thread**: every 8ms, checks the dirty flag → if set, serializes dirty rows via `serialize_dirty_rows()` → sends frame via `send_grid_frame()` (respects `grid_frame_in_flight` backpressure)
+3. **Frontend**: coalesces paint triggers via `requestAnimationFrame` (~60fps)
+4. **Ack handler**: on frontend ack, flushes any remaining dirty rows accumulated while in-flight
+
+This coalesces rapid writes (e.g. spinner CR+erase+rewrite within 8ms) into a single frame, eliminating flicker from intermediate erase states. Max added latency is 8ms — imperceptible. The ticker exits when the reader's `running` flag clears, with a final flush to avoid losing the last frame.
 
 ### Headless Reader Thread
 

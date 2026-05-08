@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Code editor enhancements** — Undo/redo history, code folding, auto-close brackets, scroll past end, block selection (Alt+drag), drop cursor, special character highlighting, and CSS color preview swatches (`@replit/codemirror-css-color-picker`).
+
+### Fixed
+- **Search input autocorrect** — Disabled `autocomplete`, `autocorrect`, and `spellcheck` on all search/filter inputs (11 components). macOS WebKit was autocorrecting search queries.
+
 ## [1.1.3] - 2026-05-06
 
 ### Added

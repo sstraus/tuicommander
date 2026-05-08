@@ -168,6 +168,30 @@ OSC 133 outcome capture, or the `ai_terminal_*` MCP tools:
 | `docs/FEATURES.md` | AI Agent section (Level 2/3 of the AI-assisted terminal roadmap) |
 | `ideas/ai-assisted-terminal.md` | Status updates as capability levels ship |
 
+### Terminal Watcher (event-driven autonomous actions)
+When modifying the watcher engine, trigger evaluation, or watcher UI:
+
+| File | What to update |
+|------|----------------|
+| `src-tauri/src/ai_agent/watcher.rs` | WatcherRule model, WatcherEngine event loop, trigger evaluation, burst guard, fire_rule |
+| `src-tauri/src/ai_agent/commands.rs` | Tauri commands: watcher_create, watcher_list, watcher_delete, watcher_toggle |
+| `src-tauri/src/state.rs` | `watcher_engine` OnceLock in AppState |
+| `src-tauri/src/lib.rs` | Command registration + WatcherEngine spawn |
+| `src/components/AIChatPanel/AIChatPanel.tsx` | Watcher create dialog, status bar, toggle/delete controls |
+| `src/components/AIChatPanel/AIChatPanel.module.css` | Watcher bar + create dialog styles |
+| Config: `ai-watchers.json` | Persisted watcher rules (app config dir) |
+
+### Headless Daemon (`tuic-remote`)
+When modifying the headless binary, `run_headless`, or standalone server behavior:
+
+| File | What to update |
+|------|----------------|
+| `src-tauri/src/bin/tuic_remote.rs` | Binary entry point |
+| `src-tauri/src/lib.rs` | `run_headless()` function |
+| `docs/user-guide/remote-access.md` | `tuic-remote (Beta)` section |
+| `docs/FEATURES.md` | Section 22 (Headless Daemon) |
+| `.github/workflows/release.yml` | Release artifact build job |
+
 ### Git & Worktree Integration
 When modifying git operations, worktree logic, or GitHub API:
 
