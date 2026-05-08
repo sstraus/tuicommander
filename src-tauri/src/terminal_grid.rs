@@ -2118,7 +2118,10 @@ mod tests {
         let _ = grid.process(b"Srow4");
 
         let history_before = grid.scrollback_count();
-        assert!(history_before >= 2, "expected wrapped rows in history, got {history_before}");
+        assert!(
+            history_before >= 2,
+            "expected wrapped rows in history, got {history_before}"
+        );
 
         // Shrink to 6 cols — history reflowed (wraps further), screen truncated.
         grid.resize(4, 6);
@@ -2168,7 +2171,8 @@ mod tests {
         // Screen now: "GHI", "SC1", "SC2" — history: "ABCDEF" (WRAPLINE)
 
         let _ = grid.process(b""); // flush
-        let screen_before: Vec<String> = grid.read_screen_text()
+        let screen_before: Vec<String> = grid
+            .read_screen_text()
             .iter()
             .map(|r| r.trim_end().to_string())
             .collect();
@@ -2176,7 +2180,8 @@ mod tests {
         // Grow to 9 cols — without fix, "GHI" (top screen row) would merge into "ABCDEF".
         grid.resize(3, 9);
 
-        let screen_after: Vec<String> = grid.read_screen_text()
+        let screen_after: Vec<String> = grid
+            .read_screen_text()
             .iter()
             .map(|r| r.trim_end().to_string())
             .collect();
@@ -2192,7 +2197,11 @@ mod tests {
             }
         }
         // The screen should still have 3 rows (no rows lost to history absorption).
-        assert_eq!(screen_after.len(), 3, "screen should have 3 rows, got: {screen_after:?}");
+        assert_eq!(
+            screen_after.len(),
+            3,
+            "screen should have 3 rows, got: {screen_after:?}"
+        );
     }
 
     /// Bug regression: shrink_columns must not prepend history overflow into the
