@@ -58,7 +58,7 @@ fmt:
 check:
 	@echo "Running checks..."
 	@rtk npx tsc --noEmit && echo "  tsc ✓"
-	@rtk npx biome check src/ && echo "  biome ✓"
+	@rtk npx biome check --max-diagnostics=100 src/ && echo "  biome ✓"
 	@cd src-tauri && rtk cargo fmt --check && echo "  rustfmt ✓"
 	@cd src-tauri && rtk cargo clippy --release -- -D warnings && echo "  clippy ✓"
 	@cd src-tauri && ulimit -n 10240 && rtk cargo test -q && echo "  cargo test ✓"

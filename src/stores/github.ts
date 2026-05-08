@@ -76,11 +76,16 @@ function createGitHubStore() {
 		if (existing) {
 			const staleKeys = Object.keys(existing).filter((key) => !(key in branches));
 			if (staleKeys.length > 0) {
-				setState("repos", repoPath, "branches", produce((b) => {
-					for (const key of staleKeys) {
-						delete b[key];
-					}
-				}));
+				setState(
+					"repos",
+					repoPath,
+					"branches",
+					produce((b) => {
+						for (const key of staleKeys) {
+							delete b[key];
+						}
+					}),
+				);
 			}
 		}
 	}

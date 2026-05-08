@@ -225,7 +225,9 @@ export const ServicesTab: Component = () => {
 			return;
 		}
 		let cancelled = false;
-		onCleanup(() => { cancelled = true; });
+		onCleanup(() => {
+			cancelled = true;
+		});
 		rpc<string>("get_connect_url", { ip })
 			.then((url) => {
 				if (cancelled) return;
