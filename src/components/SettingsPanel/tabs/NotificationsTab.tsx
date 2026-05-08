@@ -2,6 +2,7 @@ import { type Component, For, Show } from "solid-js";
 import { t } from "../../../i18n";
 import type { NotificationSound } from "../../../notifications";
 import { notificationsStore } from "../../../stores/notifications";
+import { SettingSlider, SettingToggle } from "../SettingFields";
 import s from "../Settings.module.css";
 
 // ---------------------------------------------------------------------------
@@ -11,28 +12,25 @@ import s from "../Settings.module.css";
 /** Mini musical staff showing the note pattern for each sound.
  *  5 staff lines, note heads positioned by pitch, stems going up. */
 function SoundPatternSvg(props: { sound: NotificationSound }) {
-	// Staff: 5 lines from y=4 to y=20, spaced 4px apart
-	// Note positions: y maps to pitch (lower y = higher pitch)
-	// Each note: x position, y (staff position), filled noteHead
 	const patterns: Record<NotificationSound, { x: number; y: number }[]> = {
 		question: [
 			{ x: 14, y: 16 },
 			{ x: 30, y: 8 },
-		], // C5 → E5 ascending
+		],
 		completion: [
 			{ x: 10, y: 16 },
 			{ x: 24, y: 10 },
 			{ x: 38, y: 4 },
-		], // C5 → E5 → G5
+		],
 		error: [
 			{ x: 14, y: 8 },
 			{ x: 30, y: 16 },
-		], // E4 → C4 descending
+		],
 		warning: [
 			{ x: 14, y: 12 },
 			{ x: 30, y: 12 },
-		], // A4 × 2 same pitch
-		info: [{ x: 22, y: 4 }], // G5 single note
+		],
+		info: [{ x: 22, y: 4 }],
 	};
 
 	const colors: Record<NotificationSound, string> = {
@@ -49,11 +47,9 @@ function SoundPatternSvg(props: { sound: NotificationSound }) {
 
 	return (
 		<svg viewBox={`0 0 ${w} 18`} width={w} height="14" style={{ "vertical-align": "middle", "flex-shrink": "0" }}>
-			{/* Staff lines */}
 			<For each={[3, 6, 9, 12, 15]}>
 				{(ly) => <line x1="1" y1={ly} x2={w - 1} y2={ly} stroke="var(--border)" stroke-width="0.4" />}
 			</For>
-			{/* Note heads + stems */}
 			<For each={notes}>
 				{(note) => {
 					const sy = (note.y / 20) * 15;
@@ -95,32 +91,21 @@ export const NotificationsTab: Component = () => {
 					</p>
 				}
 			>
-				<div class={s.group}>
-					<label>{t("notifications.label.enableAudio", "Enable Audio")}</label>
-					<div class={s.toggle}>
-						<input
-							type="checkbox"
-							checked={notificationsStore.state.config.enabled}
-							onChange={(e) => notificationsStore.setEnabled(e.currentTarget.checked)}
-						/>
-						<span>{t("notifications.toggle.enableAudio", "Enable audio notifications")}</span>
-					</div>
-				</div>
+				<SettingToggle
+					checked={notificationsStore.state.config.enabled}
+					onChange={(v) => notificationsStore.setEnabled(v)}
+					label={t("notifications.toggle.enableAudio", "Enable audio notifications")}
+				/>
 
-				<div class={s.group}>
-					<label>{t("notifications.label.masterVolume", "Master Volume")}</label>
-					<div class={s.slider}>
-						<input
-							type="range"
-							min="0"
-							max="100"
-							value={Math.round(notificationsStore.state.config.volume * 100)}
-							onInput={(e) => notificationsStore.setVolume(parseInt(e.currentTarget.value, 10) / 100)}
-						/>
-						<span>{Math.round(notificationsStore.state.config.volume * 100)}%</span>
-					</div>
-					<p class={s.hint}>{t("notifications.hint.masterVolume", "Overall volume for all notification sounds")}</p>
-				</div>
+				<SettingSlider
+					label={t("notifications.label.masterVolume", "Master Volume")}
+					value={Math.round(notificationsStore.state.config.volume * 100)}
+					onChange={(v) => notificationsStore.setVolume(v / 100)}
+					min={0}
+					max={100}
+					suffix="%"
+					hint={t("notifications.hint.masterVolume", "Overall volume for all notification sounds")}
+				/>
 
 				<div class={s.group}>
 					<label>{t("notifications.label.notificationEvents", "Notification Events")}</label>

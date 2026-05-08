@@ -292,7 +292,7 @@ const simulator = {
 
 	/** Set status bar notification text (tests pendulum ticker) */
 	statusInfo(text: string): void {
-		const setter = (window as any).__tuic_setStatusInfo;
+		const setter = (window as unknown as Record<string, (t: string) => void>).__tuic_setStatusInfo;
 		if (!setter) {
 			console.error("[tuic] statusInfo setter not available — App not mounted yet?");
 			return;

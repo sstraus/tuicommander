@@ -6,8 +6,8 @@ vi.mock("@tauri-apps/api/core", () => ({
 	invoke: mockInvoke,
 }));
 
-const mockGetEffective = vi.fn<(path: string) => any>(() => undefined);
-const mockGetOrderedRepos = vi.fn<() => any[]>(() => []);
+const mockGetEffective = vi.fn<(path: string) => unknown>(() => undefined);
+const mockGetOrderedRepos = vi.fn<() => unknown[]>(() => []);
 const mockBumpRevision = vi.fn();
 
 vi.mock("../../stores/repoSettings", () => ({

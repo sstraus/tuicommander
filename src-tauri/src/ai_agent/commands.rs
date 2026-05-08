@@ -557,6 +557,7 @@ pub(crate) async fn watcher_update(
     trigger: Option<super::watcher::WatcherTrigger>,
     instructions: Option<String>,
     max_fires: Option<u32>,
+    cooldown_secs: Option<u32>,
 ) -> Result<(), String> {
     let engine = state
         .watcher_engine
@@ -564,7 +565,15 @@ pub(crate) async fn watcher_update(
         .ok_or("Watcher engine not initialized")?;
     let cfg = engine.config();
     let mut config = cfg.write();
-    super::watcher::update_rule(&mut config, &id, name, trigger, instructions, max_fires)
+    super::watcher::update_rule(
+        &mut config,
+        &id,
+        name,
+        trigger,
+        instructions,
+        max_fires,
+        cooldown_secs,
+    )
 }
 
 /// Return a frontend-friendly summary of the session's accumulated knowledge.

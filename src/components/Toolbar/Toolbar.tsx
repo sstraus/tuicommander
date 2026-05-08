@@ -9,6 +9,7 @@ import { pluginStore } from "../../stores/pluginStore";
 import type { PrNotification } from "../../stores/prNotifications";
 import { type PrNotificationType, prNotificationsStore } from "../../stores/prNotifications";
 import { repositoriesStore } from "../../stores/repositories";
+import { settingsStore } from "../../stores/settings";
 import { uiStore } from "../../stores/ui";
 import { updaterStore } from "../../stores/updater";
 import { cx } from "../../utils";
@@ -276,10 +277,9 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 			</div>
 
 			<div class={s.right}>
-				<SmartPromptsDropdown repoPath={props.repoPath} onOpenSettings={props.onOpenSettings} />
-
-				{/* Notification group: last-item shortcut + bell (bell always visible) */}
+				{/* Notification group: smart prompts + last-item + watcher + bell */}
 				<div class={s.notifGroup} ref={notifRef}>
+					<SmartPromptsDropdown repoPath={props.repoPath} onOpenSettings={props.onOpenSettings} />
 					{/* Last-item shortcut — only when there are items */}
 					<Show when={lastItem()}>
 						{(src) => {
@@ -332,23 +332,25 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 					</Show>
 
 					{/* Watcher manager */}
-					<div ref={watcherRef} style={{ position: "relative", display: "inline-flex", height: "100%" }}>
-						<button
-							class={s.watcherBtn}
-							onClick={() => {
-								setShowWatcherPopover(!showWatcherPopover());
-								if (showNotifPopover()) setShowNotifPopover(false);
-							}}
-							title="Watchers"
-						>
-							<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-								<path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
-							</svg>
-						</button>
-						<Show when={showWatcherPopover()}>
-							<WatcherManager />
-						</Show>
-					</div>
+					<Show when={settingsStore.isAiWatchersEnabled()}>
+						<div ref={watcherRef} style={{ position: "relative", display: "inline-flex", height: "100%" }}>
+							<button
+								class={s.watcherBtn}
+								onClick={() => {
+									setShowWatcherPopover(!showWatcherPopover());
+									if (showNotifPopover()) setShowNotifPopover(false);
+								}}
+								title="Watchers"
+							>
+								<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+									<path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
+								</svg>
+							</button>
+							<Show when={showWatcherPopover()}>
+								<WatcherManager />
+							</Show>
+						</div>
+					</Show>
 
 					{/* Bell — always visible */}
 					<button

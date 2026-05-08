@@ -19,7 +19,7 @@ import { pluginStore } from "./stores/pluginStore";
 import { terminalsStore } from "./stores/terminals";
 
 export function initDebugGlobals(): void {
-	(window as any).__TUIC__ = {
+	(window as unknown as Record<string, unknown>).__TUIC__ = {
 		// ---- Dynamic registry ----
 
 		/** List all registered store snapshot names */

@@ -246,6 +246,7 @@ pub(crate) fn update_rule(
     trigger: Option<WatcherTrigger>,
     instructions: Option<String>,
     max_fires: Option<u32>,
+    cooldown_secs: Option<u32>,
 ) -> Result<(), String> {
     let rule = config
         .rules
@@ -259,20 +260,15 @@ pub(crate) fn update_rule(
         rule.trigger = t;
     }
     if let Some(i) = instructions {
-        if i.trim().is_empty() {
-            return Err("Instructions must not be empty".into());
-        }
-        if i.len() > 8192 {
-            return Err("Instructions too long (max 8192 chars)".into());
-        }
         rule.instructions = i;
     }
     if let Some(m) = max_fires {
-        if m == 0 {
-            return Err("max_fires must be > 0".into());
-        }
         rule.max_fires = m;
     }
+    if let Some(c) = cooldown_secs {
+        rule.cooldown_secs = c;
+    }
+    validate_rule(rule)?;
     save_config(config)
 }
 

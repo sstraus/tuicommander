@@ -21,6 +21,7 @@ import { settingsStore } from "../../../stores/settings";
 import { isTauri } from "../../../transport";
 import { buildEnvFromEntries, findDuplicateEnvKeys } from "../../../utils/envVars";
 import { AgentIcon } from "../../ui/AgentIcon";
+import { SettingToggle } from "../SettingFields";
 import s from "../Settings.module.css";
 import a from "./AgentsTab.module.css";
 
@@ -840,10 +841,33 @@ const AgentRow: Component<{
 
 const AiPromptsSection: Component = () => {
 	const [expanded, setExpanded] = createSignal(false);
+	const [draft, setDraft] = createSignal("");
+	const [dirty, setDirty] = createSignal(false);
 
 	const handleExpand = () => {
-		if (!expanded()) void aiPromptsStore.hydrate();
+		if (!expanded()) {
+			aiPromptsStore
+				.hydrate()
+				.then(() => {
+					setDraft(aiPromptsStore.getEffectivePrompt("diff_triage"));
+					setDirty(false);
+				})
+				.catch((err: unknown) => appLogger.error("ai-agent", "Failed to hydrate AI prompts", err));
+		}
 		setExpanded(!expanded());
+	};
+
+	const handleSave = () => {
+		const val = draft();
+		const isDefault = val.trim() === DEFAULT_DIFF_TRIAGE_PROMPT.trim();
+		aiPromptsStore.setDiffTriagePrompt(isDefault ? null : val);
+		setDirty(false);
+	};
+
+	const handleReset = () => {
+		aiPromptsStore.resetToDefault("diff_triage");
+		setDraft(DEFAULT_DIFF_TRIAGE_PROMPT);
+		setDirty(false);
 	};
 
 	return (
@@ -865,22 +889,21 @@ const AiPromptsSection: Component = () => {
 					<div class={s.group}>
 						<textarea
 							rows={12}
-							value={aiPromptsStore.getEffectivePrompt("diff_triage")}
-							onBlur={(e) => {
-								const val = e.currentTarget.value;
-								const isDefault = val.trim() === DEFAULT_DIFF_TRIAGE_PROMPT.trim();
-								aiPromptsStore.setDiffTriagePrompt(isDefault ? null : val);
+							value={draft()}
+							onInput={(e) => {
+								setDraft(e.currentTarget.value);
+								setDirty(true);
 							}}
 						/>
 					</div>
-					<Show when={aiPromptsStore.isCustom("diff_triage")}>
-						<div class={s.actions}>
-							<span class={s.hintInline}>{t("aiPrompts.modified", "Modified")}</span>
-							<button onClick={() => aiPromptsStore.resetToDefault("diff_triage")}>
-								{t("aiPrompts.resetDefault", "Reset to Default")}
-							</button>
-						</div>
-					</Show>
+					<div class={s.actions}>
+						<button disabled={!dirty()} onClick={handleSave}>
+							{t("aiPrompts.save", "Save")}
+						</button>
+						<button disabled={!aiPromptsStore.isCustom("diff_triage") && !dirty()} onClick={handleReset}>
+							{t("aiPrompts.resetDefault", "Revert to Default")}
+						</button>
+					</div>
 				</div>
 			</Show>
 		</div>
@@ -915,29 +938,19 @@ export const AgentsTab: Component = () => {
 				Configure AI coding agents, manage run configurations, and install MCP bridge integrations.
 			</p>
 
-			<div class={s.group}>
-				<div class={s.toggle}>
-					<input
-						type="checkbox"
-						checked={settingsStore.state.intentTabTitle}
-						onChange={(e) => settingsStore.setIntentTabTitle(e.currentTarget.checked)}
-					/>
-					<span>Show agent intent as tab title</span>
-				</div>
-				<p class={s.hint}>When agents declare their current work phase, update the tab name with a short title</p>
-			</div>
+			<SettingToggle
+				checked={settingsStore.state.intentTabTitle}
+				onChange={(v) => settingsStore.setIntentTabTitle(v)}
+				label="Show agent intent as tab title"
+				hint="When agents declare their current work phase, update the tab name with a short title"
+			/>
 
-			<div class={s.group}>
-				<div class={s.toggle}>
-					<input
-						type="checkbox"
-						checked={settingsStore.state.suggestFollowups}
-						onChange={(e) => settingsStore.setSuggestFollowups(e.currentTarget.checked)}
-					/>
-					<span>Show suggested follow-up actions</span>
-				</div>
-				<p class={s.hint}>Display actionable suggestions from agents after completing a task</p>
-			</div>
+			<SettingToggle
+				checked={settingsStore.state.suggestFollowups}
+				onChange={(v) => settingsStore.setSuggestFollowups(v)}
+				label="Show suggested follow-up actions"
+				hint="Display actionable suggestions from agents after completing a task"
+			/>
 
 			<div class={a.agentList}>
 				<For each={sortedAgents()}>

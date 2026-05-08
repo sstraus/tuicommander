@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { FontType } from "../stores/settings";
 import {
 	APP_THEMES,
 	applyAppTheme,
@@ -178,7 +179,7 @@ describe("themes", () => {
 		});
 
 		it("falls back to JetBrains Mono for unknown font", () => {
-			applyFontFamily("Comic Sans" as any);
+			applyFontFamily("Comic Sans" as FontType);
 			const tag = document.getElementById("tuic-font-override")!;
 			expect(tag.textContent).toContain("JetBrains Mono");
 		});

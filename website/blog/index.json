@@ -1,6 +1,15 @@
 {
   "posts": [
     {
+      "slug": "tuic-remote",
+      "title": "One daemon, every environment: meet tuicommander-remote",
+      "date": "2026-05-08",
+      "status": "draft",
+      "feature": "tuicommander-remote / headless daemon / WSL / Docker / remote servers",
+      "summary": "A headless Rust daemon that runs inside WSL, Docker dev containers, and remote servers. The desktop app drives them as if they were local — same protocol, no path translation, no cross-OS shims.",
+      "screenshots": []
+    },
+    {
       "slug": "ai-triage",
       "title": "AI Triage: code review that understands what changed",
       "date": "2026-05-05",

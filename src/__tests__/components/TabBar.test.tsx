@@ -1,6 +1,7 @@
 import { fireEvent, render } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getModifierSymbol } from "../../platform";
+import type { AwaitingInputType } from "../../stores/terminals";
 
 // Mock Tauri APIs
 vi.mock("@tauri-apps/api/core", () => ({
@@ -64,7 +65,7 @@ describe("TabBar", () => {
 			sessionId: string | null;
 			fontSize: number;
 			cwd: string | null;
-			awaitingInput: any;
+			awaitingInput: AwaitingInputType;
 		}> = {},
 	) {
 		return terminalsStore.add({

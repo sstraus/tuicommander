@@ -1,4 +1,5 @@
 import { fireEvent, render } from "@solidjs/testing-library";
+import type { JSX } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import type { DropdownItem } from "../../components/ui/Dropdown";
 import { Dropdown } from "../../components/ui/Dropdown";
@@ -96,7 +97,7 @@ describe("Dropdown", () => {
 	});
 
 	it("renders items with icons", () => {
-		const itemsWithIcon: DropdownItem[] = [{ id: "a", label: "Alpha", icon: (<span>icon</span>) as any }];
+		const itemsWithIcon: DropdownItem[] = [{ id: "a", label: "Alpha", icon: (<span>icon</span>) as JSX.Element }];
 		const { container } = render(() => (
 			<Dropdown items={itemsWithIcon} visible={true} onSelect={() => {}} onClose={() => {}} />
 		));

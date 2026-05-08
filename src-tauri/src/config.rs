@@ -536,6 +536,12 @@ pub(crate) struct AppConfig {
     /// Sub-flag: AI Chat panel, shortcuts, and palette entry
     #[serde(default)]
     pub(crate) ai_chat_enabled: bool,
+    /// Sub-flag: AI Triage (diff classification)
+    #[serde(default)]
+    pub(crate) ai_triage_enabled: bool,
+    /// Sub-flag: AI Watchers (terminal event watchers)
+    #[serde(default)]
+    pub(crate) ai_watchers_enabled: bool,
     /// Sub-flag: reflow scrollback history on column resize. Keeps scrollback
     /// readable when side panels temporarily narrow the terminal, without
     /// affecting cursor-addressed TUIs on the visible screen.
@@ -646,6 +652,8 @@ impl Default for AppConfig {
             issue_filter: default_issue_filter(),
             experimental_features_enabled: false,
             ai_chat_enabled: false,
+            ai_triage_enabled: false,
+            ai_watchers_enabled: false,
             scrollback_reflow: false,
             cursor_style: default_cursor_style(),
             terminal_renderer: default_terminal_renderer(),
@@ -1604,6 +1612,8 @@ mod tests {
             issue_filter: "assigned".to_string(),
             experimental_features_enabled: false,
             ai_chat_enabled: false,
+            ai_triage_enabled: false,
+            ai_watchers_enabled: false,
             scrollback_reflow: false,
             ai_terminal_mcp_enabled: false,
             cursor_style: "bar".to_string(),

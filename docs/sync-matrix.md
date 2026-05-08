@@ -174,11 +174,12 @@ When modifying the watcher engine, trigger evaluation, or watcher UI:
 | File | What to update |
 |------|----------------|
 | `src-tauri/src/ai_agent/watcher.rs` | WatcherRule model, WatcherEngine event loop, trigger evaluation, burst guard, fire_rule |
-| `src-tauri/src/ai_agent/commands.rs` | Tauri commands: watcher_create, watcher_list, watcher_delete, watcher_toggle |
-| `src-tauri/src/state.rs` | `watcher_engine` OnceLock in AppState |
+| `src-tauri/src/ai_agent/commands.rs` | Tauri commands: watcher_create, watcher_list, watcher_delete, watcher_toggle, watcher_attach, watcher_detach, watcher_update |
+| `src-tauri/src/state.rs` | `watcher_engine` OnceLock in AppState, `session_visibility` DashMap |
 | `src-tauri/src/lib.rs` | Command registration + WatcherEngine spawn |
-| `src/components/AIChatPanel/AIChatPanel.tsx` | Watcher create dialog, status bar, toggle/delete controls |
-| `src/components/AIChatPanel/AIChatPanel.module.css` | Watcher bar + create dialog styles |
+| `src/components/WatcherManager/WatcherManager.tsx` | Template CRUD, attach/detach, edit form (toolbar popover) |
+| `src/components/WatcherManager/WatcherManager.module.css` | Popover styles |
+| `docs/backend/ai-watchers.md` | Architecture doc: data model, trigger paths, safety guards |
 | Config: `ai-watchers.json` | Persisted watcher rules (app config dir) |
 
 ### Headless Daemon (`tuic-remote`)

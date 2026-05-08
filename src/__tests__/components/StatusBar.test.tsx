@@ -4,10 +4,10 @@ import { fireEvent, render, waitFor } from "@solidjs/testing-library";
 
 // Use vi.hoisted so these are available to vi.mock factories (which are hoisted)
 const { mockGitHubStatus, mockGitHubRefresh, mockGetActive, mockGetBranchPrData } = vi.hoisted(() => ({
-	mockGitHubStatus: vi.fn<() => any>(() => null),
+	mockGitHubStatus: vi.fn<() => unknown>(() => null),
 	mockGitHubRefresh: vi.fn(),
-	mockGetActive: vi.fn<() => any>(() => null),
-	mockGetBranchPrData: vi.fn<() => any>(() => null),
+	mockGetActive: vi.fn<() => unknown>(() => null),
+	mockGetBranchPrData: vi.fn<() => unknown>(() => null),
 }));
 
 vi.mock("../../hooks/useGitHub", () => ({

@@ -4,13 +4,15 @@ import { getModifierSymbol } from "../../platform";
 
 // Mock IdeLauncher to avoid Tauri invoke calls from that component
 vi.mock("../../components/IdeLauncher", () => ({
-	IdeLauncher: (props: any) => <div data-testid="ide-launcher" data-repo-path={props.repoPath || ""} />,
+	IdeLauncher: (props: Record<string, unknown>) => (
+		<div data-testid="ide-launcher" data-repo-path={(props.repoPath as string) || ""} />
+	),
 }));
 
 // Mock PrDetailPopover to avoid needing GitHub store setup
 vi.mock("../../components/PrDetailPopover/PrDetailPopover", () => ({
-	PrDetailPopover: (props: any) => (
-		<div class="pr-detail-popover" data-repo={props.repoPath} data-branch={props.branch} />
+	PrDetailPopover: (props: Record<string, unknown>) => (
+		<div class="pr-detail-popover" data-repo={props.repoPath as string} data-branch={props.branch as string} />
 	),
 }));
 

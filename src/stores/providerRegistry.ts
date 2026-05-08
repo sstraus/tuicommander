@@ -44,7 +44,7 @@ export interface ModelEntry {
 	tier: ModelTier;
 }
 
-export type Features = {};
+export type Features = Record<string, never>;
 
 export interface ProviderRegistry {
 	schema_version: number;

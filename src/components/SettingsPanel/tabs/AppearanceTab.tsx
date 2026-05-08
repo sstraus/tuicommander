@@ -8,6 +8,7 @@ import { uiStore } from "../../../stores/ui";
 import { THEME_NAMES } from "../../../themes";
 import { UiLegend } from "../../HelpPanel/UiLegend";
 import { ColorSwatchPicker } from "../../shared/ColorSwatchPicker";
+import { SettingSelect, SettingSlider } from "../SettingFields";
 import s from "../Settings.module.css";
 
 /** Preset colors for groups and sidebar */
@@ -95,6 +96,9 @@ const GroupSettingsItem: Component<{
 	);
 };
 
+const themeOptions = Object.entries(THEME_NAMES).map(([value, label]) => ({ value, label }));
+const fontOptions = Object.keys(FONT_FAMILIES).map((value) => ({ value, label: value }));
+
 export const AppearanceTab: Component = () => {
 	const groups = () =>
 		repositoriesStore.state.groupOrder.map((id) => repositoriesStore.state.groups[id]).filter(Boolean);
@@ -103,110 +107,79 @@ export const AppearanceTab: Component = () => {
 		<div class={s.section}>
 			<h3>{t("appearance.heading.theme", "Theme")}</h3>
 
-			<div class={s.group}>
-				<label>{t("appearance.label.terminalTheme", "Terminal Theme")}</label>
-				<select value={settingsStore.state.theme} onChange={(e) => settingsStore.setTheme(e.currentTarget.value)}>
-					<For each={Object.entries(THEME_NAMES)}>{([value, label]) => <option value={value}>{label}</option>}</For>
-				</select>
-				<p class={s.hint}>{t("appearance.hint.terminalTheme", "Color theme for terminal output and app chrome")}</p>
-			</div>
+			<SettingSelect
+				label={t("appearance.label.terminalTheme", "Terminal Theme")}
+				value={settingsStore.state.theme}
+				onChange={(v) => settingsStore.setTheme(v)}
+				options={themeOptions}
+				hint={t("appearance.hint.terminalTheme", "Color theme for terminal output and app chrome")}
+			/>
 
 			<h3>{t("appearance.heading.terminal", "Terminal")}</h3>
 
-			<div class={s.group}>
-				<label>{t("appearance.label.terminalFont", "Terminal Font")}</label>
-				<select
-					value={settingsStore.state.font}
-					onChange={(e) => settingsStore.setFont(e.currentTarget.value as FontType)}
-				>
-					<For each={Object.entries(FONT_FAMILIES)}>{([value, _label]) => <option value={value}>{value}</option>}</For>
-				</select>
-				<p class={s.hint}>{t("appearance.hint.terminalFont", "Monospace font for terminals")}</p>
-			</div>
+			<SettingSelect
+				label={t("appearance.label.terminalFont", "Terminal Font")}
+				value={settingsStore.state.font}
+				onChange={(v) => settingsStore.setFont(v as FontType)}
+				options={fontOptions}
+				hint={t("appearance.hint.terminalFont", "Monospace font for terminals")}
+			/>
 
-			<div class={s.group}>
-				<label>{t("appearance.label.defaultFontSize", "Default Font Size")}</label>
-				<div class={s.slider}>
-					<input
-						type="range"
-						min="8"
-						max="32"
-						value={settingsStore.state.defaultFontSize}
-						onInput={(e) => settingsStore.setDefaultFontSize(parseInt(e.currentTarget.value, 10))}
-					/>
-					<span>{settingsStore.state.defaultFontSize}px</span>
-				</div>
-				<p class={s.hint}>{t("appearance.hint.defaultFontSize", "Default font size for new terminals")}</p>
-			</div>
+			<SettingSlider
+				label={t("appearance.label.defaultFontSize", "Default Font Size")}
+				value={settingsStore.state.defaultFontSize}
+				onChange={(v) => settingsStore.setDefaultFontSize(v)}
+				min={8}
+				max={32}
+				suffix="px"
+				hint={t("appearance.hint.defaultFontSize", "Default font size for new terminals")}
+			/>
 
-			<div class={s.group}>
-				<label>{t("appearance.label.fontWeight", "Font Weight")}</label>
-				<div class={s.slider}>
-					<input
-						type="range"
-						min="100"
-						max="900"
-						step="100"
-						value={settingsStore.state.fontWeight}
-						onInput={(e) => settingsStore.setFontWeight(parseInt(e.currentTarget.value, 10))}
-					/>
-					<span>{settingsStore.state.fontWeight}</span>
-				</div>
-				<p class={s.hint}>
-					{t("appearance.hint.fontWeight", "Terminal font weight (200 = ExtraLight, 400 = Regular, 700 = Bold)")}
-				</p>
-			</div>
+			<SettingSlider
+				label={t("appearance.label.fontWeight", "Font Weight")}
+				value={settingsStore.state.fontWeight}
+				onChange={(v) => settingsStore.setFontWeight(v)}
+				min={100}
+				max={900}
+				step={100}
+				hint={t("appearance.hint.fontWeight", "Terminal font weight (200 = ExtraLight, 400 = Regular, 700 = Bold)")}
+			/>
 
-			<div class={s.group}>
-				<label>{t("appearance.label.cursorStyle", "Cursor Style")}</label>
-				<select
-					value={settingsStore.state.cursorStyle}
-					onChange={(e) => settingsStore.setCursorStyle(e.currentTarget.value as "bar" | "block" | "underline")}
-				>
-					<option value="bar">{t("appearance.cursorStyle.bar", "Bar")}</option>
-					<option value="block">{t("appearance.cursorStyle.block", "Block")}</option>
-					<option value="underline">{t("appearance.cursorStyle.underline", "Underline")}</option>
-				</select>
-				<p class={s.hint}>
-					{t("appearance.hint.cursorStyle", "Shape of the terminal cursor. Applies immediately to all terminals.")}
-				</p>
-			</div>
+			<SettingSelect
+				label={t("appearance.label.cursorStyle", "Cursor Style")}
+				value={settingsStore.state.cursorStyle}
+				onChange={(v) => settingsStore.setCursorStyle(v as "bar" | "block" | "underline")}
+				options={[
+					{ value: "bar", label: t("appearance.cursorStyle.bar", "Bar") },
+					{ value: "block", label: t("appearance.cursorStyle.block", "Block") },
+					{ value: "underline", label: t("appearance.cursorStyle.underline", "Underline") },
+				]}
+				hint={t("appearance.hint.cursorStyle", "Shape of the terminal cursor. Applies immediately to all terminals.")}
+			/>
 
 			<h3>{t("appearance.heading.tabs", "Tabs")}</h3>
 
-			<div class={s.group}>
-				<label>{t("appearance.label.splitTabMode", "Split Tab Mode")}</label>
-				<select
-					value={settingsStore.state.splitTabMode}
-					onChange={(e) => {
-						const value = e.currentTarget.value;
-						if (value === "separate" || value === "unified") {
-							settingsStore.setSplitTabMode(value);
-						}
-					}}
-				>
-					<option value="separate">{t("appearance.splitTabMode.separate", "Separate")}</option>
-					<option value="unified">{t("appearance.splitTabMode.unified", "Unified")}</option>
-				</select>
-				<p class={s.hint}>{t("appearance.hint.splitTabMode", "How worktree tabs are arranged in the tab bar")}</p>
-			</div>
+			<SettingSelect
+				label={t("appearance.label.splitTabMode", "Split Tab Mode")}
+				value={settingsStore.state.splitTabMode}
+				onChange={(v) => {
+					if (v === "separate" || v === "unified") settingsStore.setSplitTabMode(v);
+				}}
+				options={[
+					{ value: "separate", label: t("appearance.splitTabMode.separate", "Separate") },
+					{ value: "unified", label: t("appearance.splitTabMode.unified", "Unified") },
+				]}
+				hint={t("appearance.hint.splitTabMode", "How worktree tabs are arranged in the tab bar")}
+			/>
 
-			<div class={s.group}>
-				<label>{t("appearance.label.maxTabNameLength", "Max Tab Name Length")}</label>
-				<div class={s.slider}>
-					<input
-						type="range"
-						min="10"
-						max="60"
-						value={settingsStore.state.maxTabNameLength}
-						onInput={(e) => settingsStore.setMaxTabNameLength(parseInt(e.currentTarget.value, 10))}
-					/>
-					<span>{settingsStore.state.maxTabNameLength}</span>
-				</div>
-				<p class={s.hint}>
-					{t("appearance.hint.maxTabNameLength", "Maximum characters shown in tab names before truncating")}
-				</p>
-			</div>
+			<SettingSlider
+				label={t("appearance.label.maxTabNameLength", "Max Tab Name Length")}
+				value={settingsStore.state.maxTabNameLength}
+				onChange={(v) => settingsStore.setMaxTabNameLength(v)}
+				min={10}
+				max={60}
+				hint={t("appearance.hint.maxTabNameLength", "Maximum characters shown in tab names before truncating")}
+			/>
 
 			<h3>{t("appearance.heading.groups", "Repository Groups")}</h3>
 			<p class={s.hint}>

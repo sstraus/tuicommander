@@ -14,6 +14,7 @@ import { rpc } from "../../../transport";
 import type { IssueFilterMode } from "../../../types";
 import { cx } from "../../../utils";
 import { handleOpenUrl } from "../../../utils/openUrl";
+import { SettingSelect, SettingToggle } from "../SettingFields";
 import s from "../Settings.module.css";
 import g from "./GitHubTab.module.css";
 
@@ -378,65 +379,47 @@ export const GitHubTab: Component = () => {
 			<Show when={!polling() && authStatus()?.authenticated}>
 				<h3>Pull Requests</h3>
 
-				<div class={s.group}>
-					<div class={s.toggle}>
-						<input
-							type="checkbox"
-							checked={settingsStore.state.autoShowPrPopover}
-							onChange={(e) => settingsStore.setAutoShowPrPopover(e.currentTarget.checked)}
-						/>
-						<span>Auto-show PR popover</span>
-					</div>
-					<p class={s.hint}>Automatically open the PR panel when a branch has an associated pull request</p>
-				</div>
+				<SettingToggle
+					checked={settingsStore.state.autoShowPrPopover}
+					onChange={(v) => settingsStore.setAutoShowPrPopover(v)}
+					label="Auto-show PR popover"
+					hint="Automatically open the PR panel when a branch has an associated pull request"
+				/>
 
-				<div class={s.group}>
-					<label>Auto-Delete on PR Close</label>
-					<select
-						value={repoDefaultsStore.state.autoDeleteOnPrClose}
-						onChange={(e) => repoDefaultsStore.setAutoDeleteOnPrClose(e.currentTarget.value as AutoDeleteOnPrClose)}
-					>
-						<option value="off">Off</option>
-						<option value="ask">Ask before deleting</option>
-						<option value="auto">Auto-delete silently</option>
-					</select>
-					<p class={s.hint}>Delete local branch when its PR is merged or closed on GitHub</p>
-				</div>
+				<SettingSelect
+					label="Auto-Delete on PR Close"
+					value={repoDefaultsStore.state.autoDeleteOnPrClose}
+					onChange={(v) => repoDefaultsStore.setAutoDeleteOnPrClose(v as AutoDeleteOnPrClose)}
+					options={[
+						{ value: "off", label: "Off" },
+						{ value: "ask", label: "Ask before deleting" },
+						{ value: "auto", label: "Auto-delete silently" },
+					]}
+					hint="Delete local branch when its PR is merged or closed on GitHub"
+				/>
 
 				<h3>Issues</h3>
 
-				<div class={s.group}>
-					<div class={s.toggle}>
-						<input
-							type="checkbox"
-							checked={settingsStore.state.issueFilter !== "disabled"}
-							onChange={(e) => {
-								if (e.currentTarget.checked) {
-									githubStore.setIssueFilter("assigned");
-								} else {
-									githubStore.setIssueFilter("disabled");
-								}
-							}}
-						/>
-						<span>Show issues</span>
-					</div>
-					<p class={s.hint}>Display the Issues section in the GitHub panel</p>
-				</div>
+				<SettingToggle
+					checked={settingsStore.state.issueFilter !== "disabled"}
+					onChange={(v) => githubStore.setIssueFilter(v ? "assigned" : "disabled")}
+					label="Show issues"
+					hint="Display the Issues section in the GitHub panel"
+				/>
 
 				<Show when={settingsStore.state.issueFilter !== "disabled"}>
-					<div class={s.group}>
-						<label>Issue Filter</label>
-						<select
-							value={settingsStore.state.issueFilter}
-							onChange={(e) => githubStore.setIssueFilter(e.currentTarget.value as IssueFilterMode)}
-						>
-							<option value="assigned">Assigned to me</option>
-							<option value="created">Created by me</option>
-							<option value="mentioned">Mentioning me</option>
-							<option value="all">All open</option>
-						</select>
-						<p class={s.hint}>Which issues to show in the GitHub panel</p>
-					</div>
+					<SettingSelect
+						label="Issue Filter"
+						value={settingsStore.state.issueFilter}
+						onChange={(v) => githubStore.setIssueFilter(v as IssueFilterMode)}
+						options={[
+							{ value: "assigned", label: "Assigned to me" },
+							{ value: "created", label: "Created by me" },
+							{ value: "mentioned", label: "Mentioning me" },
+							{ value: "all", label: "All open" },
+						]}
+						hint="Which issues to show in the GitHub panel"
+					/>
 				</Show>
 			</Show>
 
@@ -447,19 +430,18 @@ export const GitHubTab: Component = () => {
 					These defaults apply to all repositories unless overridden per-repo
 				</p>
 
-				<div class={s.group}>
-					<label>Default Base Branch</label>
-					<select
-						value={repoDefaultsStore.state.baseBranch}
-						onChange={(e) => repoDefaultsStore.setBaseBranch(e.currentTarget.value)}
-					>
-						<option value="automatic">Automatic</option>
-						<option value="main">main</option>
-						<option value="master">master</option>
-						<option value="develop">develop</option>
-					</select>
-					<p class={s.hint}>Default base branch for new worktrees</p>
-				</div>
+				<SettingSelect
+					label="Default Base Branch"
+					value={repoDefaultsStore.state.baseBranch}
+					onChange={(v) => repoDefaultsStore.setBaseBranch(v)}
+					options={[
+						{ value: "automatic", label: "Automatic" },
+						{ value: "main", label: "main" },
+						{ value: "master", label: "master" },
+						{ value: "develop", label: "develop" },
+					]}
+					hint="Default base branch for new worktrees"
+				/>
 
 				<div class={s.group}>
 					<label>File Handling Defaults</label>
@@ -519,110 +501,88 @@ export const GitHubTab: Component = () => {
 					Default worktree behavior for all repositories
 				</p>
 
-				<div class={s.group}>
-					<label>Storage Strategy</label>
-					<select
-						value={repoDefaultsStore.state.worktreeStorage}
-						onChange={(e) => repoDefaultsStore.setWorktreeStorage(e.currentTarget.value as WorktreeStorage)}
-					>
-						<option value="sibling">Sibling directory (__wt)</option>
-						<option value="app-dir">App config directory</option>
-						<option value="inside-repo">Inside repository (.worktrees)</option>
-						<option value="claude-code-default">Claude Code default (.claude/worktrees)</option>
-					</select>
-					<p class={s.hint}>Where to create worktree directories</p>
-				</div>
+				<SettingSelect
+					label="Storage Strategy"
+					value={repoDefaultsStore.state.worktreeStorage}
+					onChange={(v) => repoDefaultsStore.setWorktreeStorage(v as WorktreeStorage)}
+					options={[
+						{ value: "sibling", label: "Sibling directory (__wt)" },
+						{ value: "app-dir", label: "App config directory" },
+						{ value: "inside-repo", label: "Inside repository (.worktrees)" },
+						{ value: "claude-code-default", label: "Claude Code default (.claude/worktrees)" },
+					]}
+					hint="Where to create worktree directories"
+				/>
 
-				<div class={s.group}>
-					<div class={s.toggle}>
-						<input
-							type="checkbox"
-							checked={repoDefaultsStore.state.promptOnCreate}
-							onChange={(e) => repoDefaultsStore.setPromptOnCreate(e.currentTarget.checked)}
-						/>
-						<span>Prompt for branch name during creation</span>
-					</div>
-					<p class={s.hint}>
-						Show dialog when creating worktrees from "+" button. When off, creates instantly with auto-generated name
-					</p>
-				</div>
+				<SettingToggle
+					checked={repoDefaultsStore.state.promptOnCreate}
+					onChange={(v) => repoDefaultsStore.setPromptOnCreate(v)}
+					label="Prompt for branch name during creation"
+					hint="Show dialog when creating worktrees from '+' button. When off, creates instantly with auto-generated name"
+				/>
 
-				<div class={s.group}>
-					<div class={s.toggle}>
-						<input
-							type="checkbox"
-							checked={repoDefaultsStore.state.deleteBranchOnRemove}
-							onChange={(e) => repoDefaultsStore.setDeleteBranchOnRemove(e.currentTarget.checked)}
-						/>
-						<span>Delete local branch when removing worktree</span>
-					</div>
-				</div>
+				<SettingToggle
+					checked={repoDefaultsStore.state.deleteBranchOnRemove}
+					onChange={(v) => repoDefaultsStore.setDeleteBranchOnRemove(v)}
+					label="Delete local branch when removing worktree"
+				/>
 
-				<div class={s.group}>
-					<div class={s.toggle}>
-						<input
-							type="checkbox"
-							checked={repoDefaultsStore.state.autoArchiveMerged}
-							onChange={(e) => repoDefaultsStore.setAutoArchiveMerged(e.currentTarget.checked)}
-						/>
-						<span>Auto-archive merged worktrees</span>
-					</div>
-					<p class={s.hint}>Move worktree to archive directory when its PR is merged</p>
-				</div>
+				<SettingToggle
+					checked={repoDefaultsStore.state.autoArchiveMerged}
+					onChange={(v) => repoDefaultsStore.setAutoArchiveMerged(v)}
+					label="Auto-archive merged worktrees"
+					hint="Move worktree to archive directory when its PR is merged"
+				/>
 
-				<div class={s.group}>
-					<label>Orphan Worktree Cleanup</label>
-					<select
-						value={repoDefaultsStore.state.orphanCleanup}
-						onChange={(e) => repoDefaultsStore.setOrphanCleanup(e.currentTarget.value as OrphanCleanup)}
-					>
-						<option value="ask">Ask before removing</option>
-						<option value="on">Auto-remove</option>
-						<option value="off">Keep (mark as detached)</option>
-					</select>
-					<p class={s.hint}>Handle worktrees whose branch was deleted</p>
-				</div>
+				<SettingSelect
+					label="Orphan Worktree Cleanup"
+					value={repoDefaultsStore.state.orphanCleanup}
+					onChange={(v) => repoDefaultsStore.setOrphanCleanup(v as OrphanCleanup)}
+					options={[
+						{ value: "ask", label: "Ask before removing" },
+						{ value: "on", label: "Auto-remove" },
+						{ value: "off", label: "Keep (mark as detached)" },
+					]}
+					hint="Handle worktrees whose branch was deleted"
+				/>
 
-				<div class={s.group}>
-					<label>PR Merge Strategy</label>
-					<select
-						value={repoDefaultsStore.state.prMergeStrategy}
-						onChange={(e) => repoDefaultsStore.setPrMergeStrategy(e.currentTarget.value as MergeStrategy)}
-					>
-						<option value="merge">Merge</option>
-						<option value="squash">Squash</option>
-						<option value="rebase">Rebase</option>
-					</select>
-					<p class={s.hint}>Default merge strategy for worktree branches</p>
-				</div>
+				<SettingSelect
+					label="PR Merge Strategy"
+					value={repoDefaultsStore.state.prMergeStrategy}
+					onChange={(v) => repoDefaultsStore.setPrMergeStrategy(v as MergeStrategy)}
+					options={[
+						{ value: "merge", label: "Merge" },
+						{ value: "squash", label: "Squash" },
+						{ value: "rebase", label: "Rebase" },
+					]}
+					hint="Default merge strategy for worktree branches"
+				/>
 
-				<div class={s.group}>
-					<label>After Merge Behavior</label>
-					<select
-						value={repoDefaultsStore.state.afterMerge}
-						onChange={(e) => repoDefaultsStore.setAfterMerge(e.currentTarget.value as WorktreeAfterMerge)}
-					>
-						<option value="archive">Archive worktree</option>
-						<option value="delete">Delete worktree</option>
-						<option value="ask">Ask each time</option>
-					</select>
-					<p class={s.hint}>What to do with the worktree after merging its branch</p>
-				</div>
+				<SettingSelect
+					label="After Merge Behavior"
+					value={repoDefaultsStore.state.afterMerge}
+					onChange={(v) => repoDefaultsStore.setAfterMerge(v as WorktreeAfterMerge)}
+					options={[
+						{ value: "archive", label: "Archive worktree" },
+						{ value: "delete", label: "Delete worktree" },
+						{ value: "ask", label: "Ask each time" },
+					]}
+					hint="What to do with the worktree after merging its branch"
+				/>
 
-				<div class={s.group}>
-					<label>Auto-Fetch Interval</label>
-					<select
-						value={String(repoDefaultsStore.state.autoFetchIntervalMinutes)}
-						onChange={(e) => repoDefaultsStore.setAutoFetchIntervalMinutes(Number(e.currentTarget.value))}
-					>
-						<option value="0">Disabled</option>
-						<option value="5">5 minutes</option>
-						<option value="15">15 minutes</option>
-						<option value="30">30 minutes</option>
-						<option value="60">60 minutes</option>
-					</select>
-					<p class={s.hint}>Periodically fetch from remote to detect upstream changes</p>
-				</div>
+				<SettingSelect
+					label="Auto-Fetch Interval"
+					value={String(repoDefaultsStore.state.autoFetchIntervalMinutes)}
+					onChange={(v) => repoDefaultsStore.setAutoFetchIntervalMinutes(Number(v))}
+					options={[
+						{ value: "0", label: "Disabled" },
+						{ value: "5", label: "5 minutes" },
+						{ value: "15", label: "15 minutes" },
+						{ value: "30", label: "30 minutes" },
+						{ value: "60", label: "60 minutes" },
+					]}
+					hint="Periodically fetch from remote to detect upstream changes"
+				/>
 			</Show>
 
 			{/* Not authenticated / disconnected state */}

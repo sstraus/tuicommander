@@ -138,15 +138,13 @@
   margin-left: 2px;
 }
 
-/* Notification group: last-item + bell as a single unit */
+/* Notification group: layout container for bell, watcher, last-item */
 .notifGroup {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   height: 26px;
   position: relative;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
   -webkit-app-region: no-drag;
 }
 
@@ -156,12 +154,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 100%;
-  padding: 0 6px;
+  width: 26px;
+  height: 26px;
   background: transparent;
-  border: none;
-  border-left: 1px solid var(--border);
-  border-radius: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   color: var(--fg-secondary);
   font-size: var(--font-xs);
   cursor: pointer;
@@ -170,7 +167,7 @@
 
 .bell:hover,
 .watcherBtn:hover {
-  background: var(--bg-highlight);
+  background: var(--bg-tertiary);
   color: var(--fg-primary);
 }
 
@@ -468,12 +465,12 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 100%;
+  height: 26px;
   padding: 0 8px;
   background: transparent;
   color: var(--fg-primary);
-  border: none;
-  border-radius: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   cursor: pointer;
   font-size: var(--font-xs);
   font-family: var(--font-ui);
@@ -483,7 +480,7 @@
 }
 
 .lastItemBtn:hover {
-  background: var(--bg-highlight);
+  background: var(--bg-tertiary);
 }
 
 .lastItemIcon {

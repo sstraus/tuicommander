@@ -82,6 +82,7 @@ export const WatcherManager: Component = () => {
 	const [formTrigger, setFormTrigger] = createSignal<WatcherTriggerKey>("idle");
 	const [formInstructions, setFormInstructions] = createSignal("");
 	const [formMaxFires, setFormMaxFires] = createSignal(50);
+	const [formCooldown, setFormCooldown] = createSignal(10);
 
 	const templates = () => rules().filter((r) => !r.session_id);
 	const instances = () => rules().filter((r) => r.session_id);
@@ -89,7 +90,7 @@ export const WatcherManager: Component = () => {
 	const refresh = () => {
 		invoke<WatcherRule[]>("watcher_list")
 			.then(setRules)
-			.catch(() => {});
+			.catch((err: unknown) => appLogger.error("ai-agent", "Failed to refresh watchers", err));
 	};
 
 	onMount(refresh);
@@ -104,6 +105,7 @@ export const WatcherManager: Component = () => {
 		setFormTrigger("idle");
 		setFormInstructions("");
 		setFormMaxFires(50);
+		setFormCooldown(10);
 		setEditingId(null);
 		setShowForm(false);
 	};
@@ -118,6 +120,7 @@ export const WatcherManager: Component = () => {
 		setFormTrigger(triggerToKey(rule.trigger));
 		setFormInstructions(rule.instructions);
 		setFormMaxFires(rule.max_fires);
+		setFormCooldown(rule.cooldown_secs);
 		setEditingId(rule.id);
 		setShowForm(true);
 	};
@@ -132,6 +135,7 @@ export const WatcherManager: Component = () => {
 					trigger: TRIGGER_MAP[formTrigger()],
 					instructions: formInstructions(),
 					maxFires: formMaxFires(),
+					cooldownSecs: formCooldown(),
 				});
 				resetForm();
 				refresh();
@@ -147,6 +151,7 @@ export const WatcherManager: Component = () => {
 					trigger: TRIGGER_MAP[formTrigger()],
 					instructions: formInstructions(),
 					maxFires: formMaxFires(),
+					cooldownSecs: formCooldown(),
 				});
 				resetForm();
 				refresh();
@@ -195,10 +200,13 @@ export const WatcherManager: Component = () => {
 
 	const terminalList = () => {
 		const store = terminalsStore.state;
-		return Object.entries(store.terminals).map(([id, t]) => ({
-			id,
-			label: t.name || id.slice(0, 8),
-		}));
+		const result: { id: string; sessionId: string; label: string }[] = [];
+		for (const [id, t] of Object.entries(store.terminals)) {
+			if (t.sessionId) {
+				result.push({ id, sessionId: t.sessionId, label: t.name || id.slice(0, 8) });
+			}
+		}
+		return result;
 	};
 
 	return (
@@ -252,6 +260,23 @@ export const WatcherManager: Component = () => {
 							onInput={(e) => setFormMaxFires(Number.parseInt(e.currentTarget.value, 10) || 50)}
 							style={{ width: "60px", flex: "none" }}
 						/>
+						<label style={{ "font-size": "var(--font-2xs)", color: "var(--fg-muted)" }}>Cooldown:</label>
+						<input
+							class={s.formInput}
+							type="number"
+							min="5"
+							max="3600"
+							value={formCooldown()}
+							onInput={(e) => setFormCooldown(Math.max(5, Number.parseInt(e.currentTarget.value, 10) || 10))}
+							style={{ width: "60px", flex: "none" }}
+						/>
+						<span class={s.unit}>s</span>
+						<span
+							class={s.helpTip}
+							title="Minimum seconds between consecutive fires. Prevents the watcher from triggering too frequently."
+						>
+							?
+						</span>
 					</div>
 					<div class={s.formActions}>
 						<button class={s.cancelBtn} onClick={resetForm}>
@@ -298,7 +323,7 @@ export const WatcherManager: Component = () => {
 									<div class={s.sessionPicker}>
 										<For each={terminalList()}>
 											{(term) => (
-												<button class={s.sessionOption} onClick={() => handleAttach(rule.id, term.id)}>
+												<button class={s.sessionOption} onClick={() => handleAttach(rule.id, term.sessionId)}>
 													<svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
 														<path d="M0 2.75C0 1.784.784 1 1.75 1h12.5c.966 0 1.75.784 1.75 1.75v10.5A1.75 1.75 0 0 1 14.25 15H1.75A1.75 1.75 0 0 1 0 13.25Zm1.75-.25a.25.25 0 0 0-.25.25v10.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25V2.75a.25.25 0 0 0-.25-.25ZM7 4.5a.75.75 0 0 1 .75-.75h4.5a.75.75 0 0 1 0 1.5h-4.5A.75.75 0 0 1 7 4.5ZM3.25 7h.5a.75.75 0 0 1 0 1.5h-.5a.75.75 0 0 1 0-1.5Z" />
 													</svg>

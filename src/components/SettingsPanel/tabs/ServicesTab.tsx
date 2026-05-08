@@ -5,6 +5,7 @@ import { appLogger } from "../../../stores/appLogger";
 import { rpc, type UpstreamMcpConfig, type UpstreamMcpServer, type UpstreamTransport } from "../../../transport";
 import { cx } from "../../../utils";
 import { handleOpenUrl } from "../../../utils/openUrl";
+import { SettingInput, SettingSelect, SettingToggle } from "../SettingFields";
 import s from "../Settings.module.css";
 
 /** Pure helper: should the Authorize button be shown for this server+status? */
@@ -399,28 +400,21 @@ export const ServicesTab: Component = () => {
 
 			<h3>{t("services.heading.remoteAccess", "Remote Access")}</h3>
 
-			<div class={s.group}>
-				<div class={s.toggle}>
-					<input
-						type="checkbox"
-						checked={raEnabled()}
-						onChange={(e) => {
-							const val = e.currentTarget.checked;
-							setRaEnabled(val);
-							saveConfigField((c) => {
-								c.services.server.enabled = val;
-							});
-						}}
-					/>
-					<span>{t("services.toggle.enableRemoteAccess", "Enable remote access")}</span>
-				</div>
-				<p class={s.hint} style={{ color: "var(--warning, #e5c07b)" }}>
-					{t(
-						"services.hint.remoteAccessWarning",
-						"Warning: exposes a web interface on your local network. Secure with a strong password.",
-					)}
-				</p>
-			</div>
+			<SettingToggle
+				checked={raEnabled()}
+				onChange={(val) => {
+					setRaEnabled(val);
+					saveConfigField((c) => {
+						c.services.server.enabled = val;
+					});
+				}}
+				label={t("services.toggle.enableRemoteAccess", "Enable remote access")}
+				hint={t(
+					"services.hint.remoteAccessWarning",
+					"Warning: exposes a web interface on your local network. Secure with a strong password.",
+				)}
+				hintStyle={{ color: "var(--warning, #e5c07b)" }}
+			/>
 
 			<Show when={raEnabled()}>
 				<div class={s.raBody}>
@@ -534,28 +528,22 @@ export const ServicesTab: Component = () => {
 							</div>
 						</Show>
 
-						<div class={s.group}>
-							<label>{t("services.label.tokenDuration", "Session Token Duration")}</label>
-							<select
-								class={s.input}
-								value={tokenDuration()}
-								onChange={(e) => {
-									const val = parseInt(e.currentTarget.value, 10);
-									setTokenDuration(val);
-									saveConfigField((c) => {
-										c.services.auth.session_token_duration_secs = val;
-									});
-								}}
-							>
-								<For each={TOKEN_DURATIONS}>{(opt) => <option value={opt.value}>{opt.label}</option>}</For>
-							</select>
-							<p class={s.hint}>
-								{t(
-									"services.hint.tokenDuration",
-									"How long remote sessions stay authenticated. Token always resets on app restart.",
-								)}
-							</p>
-						</div>
+						<SettingSelect
+							label={t("services.label.tokenDuration", "Session Token Duration")}
+							value={String(tokenDuration())}
+							onChange={(v) => {
+								const val = parseInt(v, 10);
+								setTokenDuration(val);
+								saveConfigField((c) => {
+									c.services.auth.session_token_duration_secs = val;
+								});
+							}}
+							options={TOKEN_DURATIONS.map((o) => ({ value: String(o.value), label: o.label }))}
+							hint={t(
+								"services.hint.tokenDuration",
+								"How long remote sessions stay authenticated. Token always resets on app restart.",
+							)}
+						/>
 
 						<div class={s.group}>
 							<button class={s.testBtn} disabled={regenerating()} onClick={regenerateToken}>
@@ -605,46 +593,32 @@ export const ServicesTab: Component = () => {
 					</Show>
 				</div>
 
-				<div class={s.group} style={{ "margin-top": "16px" }}>
-					<div class={s.toggle}>
-						<input
-							type="checkbox"
-							checked={ipv6Enabled()}
-							onChange={(e) => {
-								const val = e.currentTarget.checked;
-								setIpv6Enabled(val);
-								saveConfigField((c) => {
-									c.services.server.ipv6_enabled = val;
-								});
-							}}
-						/>
-						<span>{t("services.toggle.enableIpv6", "Enable IPv6 (dual-stack)")}</span>
-					</div>
-					<p class={s.hint}>
-						{t(
-							"services.hint.ipv6Description",
-							"Binds the server to both IPv4 and IPv6 addresses. Requires save + server restart.",
-						)}
-					</p>
-				</div>
+				<SettingToggle
+					checked={ipv6Enabled()}
+					onChange={(val) => {
+						setIpv6Enabled(val);
+						saveConfigField((c) => {
+							c.services.server.ipv6_enabled = val;
+						});
+					}}
+					label={t("services.toggle.enableIpv6", "Enable IPv6 (dual-stack)")}
+					hint={t(
+						"services.hint.ipv6Description",
+						"Binds the server to both IPv4 and IPv6 addresses. Requires save + server restart.",
+					)}
+				/>
 
-				<div class={s.group}>
-					<div class={s.toggle}>
-						<input
-							type="checkbox"
-							checked={lanAuthBypass()}
-							onChange={(e) => {
-								const val = e.currentTarget.checked;
-								setLanAuthBypass(val);
-								saveConfigField((c) => {
-									c.services.auth.lan_auth_bypass = val;
-								});
-							}}
-						/>
-						<span>{t("services.toggle.lanAuthBypass", "Allow LAN access without authentication")}</span>
-					</div>
-					<p class={s.hint} style={{ color: lanAuthBypass() ? "var(--warning, #e5c07b)" : undefined }}>
-						{lanAuthBypass()
+				<SettingToggle
+					checked={lanAuthBypass()}
+					onChange={(val) => {
+						setLanAuthBypass(val);
+						saveConfigField((c) => {
+							c.services.auth.lan_auth_bypass = val;
+						});
+					}}
+					label={t("services.toggle.lanAuthBypass", "Allow LAN access without authentication")}
+					hint={
+						lanAuthBypass()
 							? t(
 									"services.hint.lanAuthBypassWarning",
 									"Devices on your local network can access without a password. Only use on trusted networks.",
@@ -652,9 +626,10 @@ export const ServicesTab: Component = () => {
 							: t(
 									"services.hint.lanAuthBypassDescription",
 									"Skips authentication for private/LAN IP addresses (RFC1918, Tailscale, IPv6 ULA)",
-								)}
-					</p>
-				</div>
+								)
+					}
+					hintStyle={lanAuthBypass() ? { color: "var(--warning, #e5c07b)" } : undefined}
+				/>
 			</Show>
 
 			{/* ── Tailscale TLS ── */}
@@ -711,38 +686,29 @@ export const ServicesTab: Component = () => {
 			{/* ── Cloud Relay ── */}
 			<h3>{t("services.heading.cloudRelay", "Cloud Relay")}</h3>
 
-			<div class={s.group}>
-				<div class={s.toggle}>
-					<input
-						type="checkbox"
-						checked={relayEnabled()}
-						onChange={(e) => {
-							const val = e.currentTarget.checked;
-							setRelayEnabled(val);
-							// Auto-generate session ID on first enable
-							if (val && !relaySessionId()) {
-								const id = crypto.randomUUID();
-								setRelaySessionId(id);
-								saveConfigField((c) => {
-									c.services.relay.enabled = val;
-									c.services.relay.session_id = id;
-								});
-							} else {
-								saveConfigField((c) => {
-									c.services.relay.enabled = val;
-								});
-							}
-						}}
-					/>
-					<span>{t("services.toggle.enableRelay", "Enable cloud relay")}</span>
-				</div>
-				<p class={s.hint}>
-					{t(
-						"services.hint.relayDescription",
-						"Connect from anywhere via an E2E-encrypted WebSocket relay. No port forwarding or VPN needed.",
-					)}
-				</p>
-			</div>
+			<SettingToggle
+				checked={relayEnabled()}
+				onChange={(val) => {
+					setRelayEnabled(val);
+					if (val && !relaySessionId()) {
+						const id = crypto.randomUUID();
+						setRelaySessionId(id);
+						saveConfigField((c) => {
+							c.services.relay.enabled = val;
+							c.services.relay.session_id = id;
+						});
+					} else {
+						saveConfigField((c) => {
+							c.services.relay.enabled = val;
+						});
+					}
+				}}
+				label={t("services.toggle.enableRelay", "Enable cloud relay")}
+				hint={t(
+					"services.hint.relayDescription",
+					"Connect from anywhere via an E2E-encrypted WebSocket relay. No port forwarding or VPN needed.",
+				)}
+			/>
 
 			<Show when={relayEnabled()}>
 				<div class={s.group}>
@@ -759,43 +725,34 @@ export const ServicesTab: Component = () => {
 					</p>
 				</div>
 
-				<div class={s.group}>
-					<label>{t("services.label.relayUrl", "Relay Server URL")}</label>
-					<input
-						type="text"
-						class={s.input}
-						value={relayUrl()}
-						placeholder="wss://relay.tuicommander.com"
-						onInput={(e) => setRelayUrl(e.currentTarget.value)}
-						onChange={() =>
-							saveConfigField((c) => {
-								c.services.relay.url = relayUrl();
-							})
-						}
-					/>
-				</div>
+				<SettingInput
+					label={t("services.label.relayUrl", "Relay Server URL")}
+					value={relayUrl()}
+					onInput={(v) => {
+						setRelayUrl(v);
+						saveConfigField((c) => {
+							c.services.relay.url = v;
+						});
+					}}
+					placeholder="wss://relay.tuicommander.com"
+				/>
 
-				<div class={s.group}>
-					<label>{t("services.label.relayToken", "Bearer Token")}</label>
-					<input
-						type="password"
-						class={s.input}
-						value={relayToken()}
-						placeholder={t("services.placeholder.relayToken", "Paste token from relay server registration")}
-						onInput={(e) => setRelayToken(e.currentTarget.value)}
-						onChange={() =>
-							saveConfigField((c) => {
-								c.services.relay.token = relayToken();
-							})
-						}
-					/>
-					<p class={s.hint}>
-						{t(
-							"services.hint.relayToken",
-							"Obtained from the relay server's /register endpoint. Used for both authentication and E2E encryption key derivation.",
-						)}
-					</p>
-				</div>
+				<SettingInput
+					label={t("services.label.relayToken", "Bearer Token")}
+					value={relayToken()}
+					onInput={(v) => {
+						setRelayToken(v);
+						saveConfigField((c) => {
+							c.services.relay.token = v;
+						});
+					}}
+					type="password"
+					placeholder={t("services.placeholder.relayToken", "Paste token from relay server registration")}
+					hint={t(
+						"services.hint.relayToken",
+						"Obtained from the relay server's /register endpoint. Used for both authentication and E2E encryption key derivation.",
+					)}
+				/>
 
 				<div class={s.group}>
 					<label>{t("services.label.relaySessionId", "Session ID")}</label>

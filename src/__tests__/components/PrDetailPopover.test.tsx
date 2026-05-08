@@ -5,9 +5,9 @@ import { fireEvent, render, waitFor } from "@solidjs/testing-library";
 import { repoSettingsStore } from "../../stores/repoSettings";
 
 const { mockGetBranchPrData, mockGetCheckSummary, mockGetCheckDetails } = vi.hoisted(() => ({
-	mockGetBranchPrData: vi.fn<() => any>(() => null),
-	mockGetCheckSummary: vi.fn<() => any>(() => null),
-	mockGetCheckDetails: vi.fn<() => any[]>(() => []),
+	mockGetBranchPrData: vi.fn<() => unknown>(() => null),
+	mockGetCheckSummary: vi.fn<() => unknown>(() => null),
+	mockGetCheckDetails: vi.fn<() => unknown[]>(() => []),
 }));
 
 vi.mock("../../stores/github", () => ({

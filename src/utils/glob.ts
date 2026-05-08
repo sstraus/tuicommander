@@ -15,7 +15,7 @@ export function globToRegex(pattern: string): RegExp {
 		} else if (ch === "?") {
 			re += "[^/]";
 			i++;
-		} else if (".+^${}()|[]\\".includes(ch)) {
+		} else if (".+^{}()$|[]\\".includes(ch)) {
 			re += "\\" + ch;
 			i++;
 		} else {

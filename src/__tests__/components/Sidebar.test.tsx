@@ -24,14 +24,14 @@ const {
 } = vi.hoisted(() => ({
 	mockToggleExpanded: vi.fn(),
 	mockToggleCollapsed: vi.fn(),
-	mockGetActive: vi.fn<() => any>(() => null),
-	mockGetOrderedRepos: vi.fn<() => any[]>(() => []),
+	mockGetActive: vi.fn<() => unknown>(() => null),
+	mockGetOrderedRepos: vi.fn<() => unknown[]>(() => []),
 	mockReorderRepo: vi.fn(),
-	mockTerminalsGet: vi.fn<() => any>(() => null),
-	mockGetCheckSummary: vi.fn<() => any>(() => null),
+	mockTerminalsGet: vi.fn<() => unknown>(() => null),
+	mockGetCheckSummary: vi.fn<() => unknown>(() => null),
 	mockGetPrStatus: vi.fn<(...args: unknown[]) => unknown>(() => null),
-	mockGetGroupedLayout: vi.fn<() => any>(() => ({ groups: [], ungrouped: [] })),
-	mockGetGroupForRepo: vi.fn<(path: string) => any>(() => undefined),
+	mockGetGroupedLayout: vi.fn<() => unknown>(() => ({ groups: [], ungrouped: [] })),
+	mockGetGroupForRepo: vi.fn<(path: string) => unknown>(() => undefined),
 	mockToggleGroupCollapsed: vi.fn(),
 	mockDeleteGroup: vi.fn(),
 	mockAddRepoToGroup: vi.fn(),
@@ -142,7 +142,7 @@ function defaultProps(overrides: Partial<Parameters<typeof Sidebar>[0]> = {}) {
 }
 
 /** Helper to create a repository with branches */
-function makeRepo(overrides: Record<string, any> = {}) {
+function makeRepo(overrides: Record<string, unknown> = {}) {
 	return {
 		path: "/repo1",
 		displayName: "Repo One",
@@ -166,7 +166,7 @@ function makeRepo(overrides: Record<string, any> = {}) {
 }
 
 /** Helper to set repo store state */
-function setRepos(repos: Record<string, any>, activeRepoPath?: string) {
+function setRepos(repos: Record<string, unknown>, activeRepoPath?: string) {
 	(repositoriesStore.state as { repositories: Record<string, unknown> }).repositories = repos;
 	(repositoriesStore.state as { activeRepoPath: string | null }).activeRepoPath =
 		activeRepoPath ?? Object.keys(repos)[0] ?? null;

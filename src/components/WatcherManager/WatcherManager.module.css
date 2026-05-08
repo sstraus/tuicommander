@@ -294,3 +294,24 @@
 .sessionOption:hover {
   background: var(--bg-highlight);
 }
+
+.unit {
+  font-size: var(--font-2xs);
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
+
+.helpTip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--bg-highlight);
+  color: var(--fg-muted);
+  font-size: 9px;
+  font-weight: 600;
+  cursor: help;
+  flex-shrink: 0;
+}
