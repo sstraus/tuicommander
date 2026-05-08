@@ -1034,7 +1034,7 @@ Variables are resolved from the Rust backend (`resolve_context_variables`) and f
 - Updates: auto-check, check now
 - Git integration: auto-show PR popover
 - Terminal: copy-on-select toggle (auto-copy selection to clipboard)
-- Experimental Features: master toggle + per-feature sub-flags (AI Chat)
+- Experimental Features: master toggle + per-feature sub-flags (AI Chat, AI Triage, AI Watchers, Scrollback Reflow)
 - Repository defaults: base branch, file handling, setup/run scripts, worktree defaults (storage strategy, prompt on create, etc.)
 
 ### 11.2 Appearance

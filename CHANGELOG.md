@@ -9,9 +9,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [1.2.0] - 2026-05-08
 
 ### Added
+- **AI Triage feature flag** — AI-powered diff triage is now an experimental sub-feature that can be independently toggled under Settings > General > Experimental Features.
+- **AI Watchers feature flag** — Terminal watchers are now an experimental sub-feature with independent toggle. The watcher toolbar button is hidden when disabled.
+- **Watcher cooldown field** — Configurable minimum seconds between consecutive watcher fires, with a `?` tooltip explaining the setting.
+- **Reusable settings components** — Extracted `SettingToggle`, `SettingSelect`, `SettingSlider`, `SettingInput` to reduce duplication across all settings tabs.
+- **AI Prompts save/revert** — Explicit Save and Revert to Default buttons replace the implicit on-blur auto-save behavior.
 - **Code editor enhancements** — Undo/redo history, code folding, auto-close brackets, scroll past end, block selection (Alt+drag), drop cursor, special character highlighting, and CSS color preview swatches (`@replit/codemirror-css-color-picker`).
 
 ### Fixed
+- **Watcher session ID mismatch** — Watcher attach was passing frontend tab IDs instead of PTY session UUIDs, causing watchers to never trigger. Now correctly uses the PTY session UUID.
+- **Watcher update validation** — `update_rule` now delegates to `validate_rule` after applying partial updates, eliminating duplicated inline checks and inconsistent error messages.
 - **Search input autocorrect** — Disabled `autocomplete`, `autocorrect`, and `spellcheck` on all search/filter inputs (11 components). macOS WebKit was autocorrecting search queries.
 
 ## [1.1.3] - 2026-05-06
