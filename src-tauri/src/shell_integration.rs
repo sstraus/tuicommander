@@ -178,11 +178,7 @@ const ZSH_DOTFILES: &[&str] = &[".zprofile", ".zshrc", ".zlogin", ".zlogout"];
 ///
 /// For zsh this sets up the ZDOTDIR trick.  For other shells it sets an env
 /// var pointing to the integration script (manual sourcing for now).
-pub(crate) fn inject(
-    app_data_dir: &Path,
-    shell: &str,
-    cmd: &mut portable_pty::CommandBuilder,
-) {
+pub(crate) fn inject(app_data_dir: &Path, shell: &str, cmd: &mut portable_pty::CommandBuilder) {
     let base = app_data_dir.join("shell-integration");
     if std::fs::create_dir_all(&base).is_err() {
         return;

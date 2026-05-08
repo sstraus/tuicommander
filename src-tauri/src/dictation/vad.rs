@@ -134,8 +134,8 @@ mod tests {
         let mut data = vec![1.0; 16000]; // 1s of DC at 1.0
         high_pass_filter(&mut data, 100.0, SR as f32);
         // After convergence, the output should be near zero
-        let tail_energy: f32 = data[8000..].iter().map(|s| s.abs()).sum::<f32>()
-            / data[8000..].len() as f32;
+        let tail_energy: f32 =
+            data[8000..].iter().map(|s| s.abs()).sum::<f32>() / data[8000..].len() as f32;
         assert!(
             tail_energy < 0.01,
             "DC should be removed, but tail energy = {tail_energy}"

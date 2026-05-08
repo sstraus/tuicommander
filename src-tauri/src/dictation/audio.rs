@@ -52,7 +52,11 @@ impl AudioCapture {
         let device = if let Some(name) = device_name {
             host.input_devices()
                 .map_err(|e| format!("Failed to enumerate devices: {e}"))?
-                .find(|d| d.description().map(|desc| desc.name() == name).unwrap_or(false))
+                .find(|d| {
+                    d.description()
+                        .map(|desc| desc.name() == name)
+                        .unwrap_or(false)
+                })
                 .ok_or_else(|| format!("Input device '{name}' not found"))?
         } else {
             host.default_input_device()
@@ -79,8 +83,14 @@ impl AudioCapture {
                     .build_input_stream(
                         &config.into(),
                         move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                            process_audio_chunk(data, sample_rate, channels, &buffer_clone,
-                                &mut mono_buf, &mut resample_buf);
+                            process_audio_chunk(
+                                data,
+                                sample_rate,
+                                channels,
+                                &buffer_clone,
+                                &mut mono_buf,
+                                &mut resample_buf,
+                            );
                         },
                         |err| tracing::error!(source = "dictation", "Audio stream error: {err}"),
                         None,
@@ -96,9 +106,16 @@ impl AudioCapture {
                         &config.into(),
                         move |data: &[i16], _: &cpal::InputCallbackInfo| {
                             float_buf.clear();
-                            float_buf.extend(data.iter().map(|&s| f32::from(s) / f32::from(i16::MAX)));
-                            process_audio_chunk(&float_buf, sample_rate, channels, &buffer_clone,
-                                &mut mono_buf, &mut resample_buf);
+                            float_buf
+                                .extend(data.iter().map(|&s| f32::from(s) / f32::from(i16::MAX)));
+                            process_audio_chunk(
+                                &float_buf,
+                                sample_rate,
+                                channels,
+                                &buffer_clone,
+                                &mut mono_buf,
+                                &mut resample_buf,
+                            );
                         },
                         |err| tracing::error!(source = "dictation", "Audio stream error: {err}"),
                         None,
@@ -302,11 +319,21 @@ mod tests {
         let stereo_data: Vec<f32> = (0..8).flat_map(|_| vec![1.0, 0.0]).collect();
         assert_eq!(stereo_data.len(), 16);
 
-        process_audio_chunk(&stereo_data, 16000, 2, &buf, &mut mono_buf, &mut resample_buf);
+        process_audio_chunk(
+            &stereo_data,
+            16000,
+            2,
+            &buf,
+            &mut mono_buf,
+            &mut resample_buf,
+        );
         let result: Vec<f32> = buf.lock().drain(..).collect();
         assert_eq!(result.len(), 8, "Stereo→mono should halve the sample count");
         for s in &result {
-            assert!((s - 0.5).abs() < 1e-6, "Each mono sample should be 0.5, got {s}");
+            assert!(
+                (s - 0.5).abs() < 1e-6,
+                "Each mono sample should be 0.5, got {s}"
+            );
         }
     }
 
@@ -324,7 +351,10 @@ mod tests {
         // 480 * (16000/48000) = 160
         assert_eq!(result.len(), 160, "48kHz→16kHz should produce 1/3 samples");
         for s in &result {
-            assert!((s - 0.25).abs() < 1e-6, "Nearest-neighbor should preserve value");
+            assert!(
+                (s - 0.25).abs() < 1e-6,
+                "Nearest-neighbor should preserve value"
+            );
         }
     }
 
@@ -336,7 +366,14 @@ mod tests {
 
         // 960 samples = 480 stereo frames at 48kHz = 10ms
         let stereo_data: Vec<f32> = (0..480).flat_map(|_| vec![0.8, 0.2]).collect();
-        process_audio_chunk(&stereo_data, 48000, 2, &buf, &mut mono_buf, &mut resample_buf);
+        process_audio_chunk(
+            &stereo_data,
+            48000,
+            2,
+            &buf,
+            &mut mono_buf,
+            &mut resample_buf,
+        );
         let result: Vec<f32> = buf.lock().drain(..).collect();
 
         // 480 mono frames at 48kHz → 160 samples at 16kHz
@@ -362,6 +399,9 @@ mod tests {
         let cap_after_second = mono_buf.capacity();
 
         // Capacity should not have changed — buffers are reused
-        assert_eq!(cap_after_first, cap_after_second, "Buffer should be reused, not reallocated");
+        assert_eq!(
+            cap_after_first, cap_after_second,
+            "Buffer should be reused, not reallocated"
+        );
     }
 }

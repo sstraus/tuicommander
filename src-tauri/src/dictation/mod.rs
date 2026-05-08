@@ -9,8 +9,8 @@ pub mod transcribe;
 pub mod vad;
 
 use parking_lot::Mutex;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 /// Shared dictation state accessible from Tauri commands.
 /// Tauri's `.manage()` wraps this in `Arc` internally, so we don't double-wrap.

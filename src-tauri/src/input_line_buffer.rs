@@ -332,12 +332,12 @@ impl InputLineBuffer {
             '~' => {
                 let key = params.first().copied().unwrap_or(0);
                 match key {
-                    1 => self.cursor = 0,               // Home (VT220)
+                    1 => self.cursor = 0, // Home (VT220)
                     3 if self.cursor < self.chars.len() => {
                         self.chars.remove(self.cursor);
                     }
                     4 => self.cursor = self.chars.len(), // End (VT220)
-                    _ => {} // Page Up/Down, Insert — ignore
+                    _ => {}                              // Page Up/Down, Insert — ignore
                 }
             }
             // Kitty CSI u sequences: ESC [ <codepoint> ; <modifier> u
@@ -534,7 +534,7 @@ mod tests {
     fn test_delete_key() {
         let mut buf = InputLineBuffer::new();
         buf.feed("hello");
-        buf.feed("\x01");    // Home
+        buf.feed("\x01"); // Home
         buf.feed("\x1b[3~"); // Delete key
         assert_eq!(buf.content(), "ello");
         assert_eq!(buf.cursor_pos(), 0);
@@ -598,7 +598,7 @@ mod tests {
     fn test_alt_f_word_forward() {
         let mut buf = InputLineBuffer::new();
         buf.feed("hello world");
-        buf.feed("\x01");  // Home
+        buf.feed("\x01"); // Home
         buf.feed("\x1bf"); // Alt+F — skips word "hello" then space → position 6
         assert_eq!(buf.cursor_pos(), 6); // After "hello " (start of "world")
     }
@@ -607,7 +607,7 @@ mod tests {
     fn test_alt_d_delete_word_forward() {
         let mut buf = InputLineBuffer::new();
         buf.feed("hello world");
-        buf.feed("\x01");  // Home
+        buf.feed("\x01"); // Home
         buf.feed("\x1bd"); // Alt+D — deletes word "hello" then space → leaves "world"
         assert_eq!(buf.content(), "world");
     }
@@ -624,7 +624,7 @@ mod tests {
     fn test_ctrl_right_word_forward() {
         let mut buf = InputLineBuffer::new();
         buf.feed("hello world");
-        buf.feed("\x01");      // Home
+        buf.feed("\x01"); // Home
         buf.feed("\x1b[1;5C"); // Ctrl+Right
         assert_eq!(buf.cursor_pos(), 6); // After "hello "
     }
@@ -660,8 +660,8 @@ mod tests {
     fn test_insert_at_cursor() {
         let mut buf = InputLineBuffer::new();
         buf.feed("hllo");
-        buf.feed("\x01");  // Home
-        buf.feed("\x06");  // Right
+        buf.feed("\x01"); // Home
+        buf.feed("\x06"); // Right
         // Now cursor at 1, between 'h' and 'l'
         buf.feed("e");
         assert_eq!(buf.content(), "hello");
@@ -688,7 +688,10 @@ mod tests {
         buf.feed("line one");
         buf.feed("\x1b\r"); // Shift+Enter (ESC CR) — literal newline
         buf.feed("line two");
-        assert_eq!(feed_and_get_line(&mut buf, "\r"), Some("line one\nline two".into()));
+        assert_eq!(
+            feed_and_get_line(&mut buf, "\r"),
+            Some("line one\nline two".into())
+        );
     }
 
     #[test]
@@ -728,7 +731,10 @@ mod tests {
         buf.feed("hello");
         buf.feed("\x1b[13;2u"); // Shift+Enter in kitty protocol → literal newline
         buf.feed("world");
-        assert_eq!(feed_and_get_line(&mut buf, "\r"), Some("hello\nworld".into()));
+        assert_eq!(
+            feed_and_get_line(&mut buf, "\r"),
+            Some("hello\nworld".into())
+        );
     }
 
     #[test]
@@ -743,7 +749,10 @@ mod tests {
     fn test_sequential_lines() {
         let mut buf = InputLineBuffer::new();
         assert_eq!(feed_and_get_line(&mut buf, "first\r"), Some("first".into()));
-        assert_eq!(feed_and_get_line(&mut buf, "second\r"), Some("second".into()));
+        assert_eq!(
+            feed_and_get_line(&mut buf, "second\r"),
+            Some("second".into())
+        );
         assert_eq!(buf.content(), "");
     }
 
@@ -782,7 +791,7 @@ mod tests {
         // On macOS, xterm.js sends Alt+Right as ESC[1;3C (modifier 3)
         let mut buf = InputLineBuffer::new();
         buf.feed("hello world");
-        buf.feed("\x01");      // Home
+        buf.feed("\x01"); // Home
         buf.feed("\x1b[1;3C"); // Alt+Right (macOS)
         // Should move word forward, like Ctrl+Right
         assert!(buf.cursor_pos() > 0);
@@ -898,7 +907,7 @@ mod tests {
     fn test_alt_b_at_beginning_is_noop() {
         let mut buf = InputLineBuffer::new();
         buf.feed("hello");
-        buf.feed("\x01");  // Home
+        buf.feed("\x01"); // Home
         buf.feed("\x1bb"); // Alt+B at beginning
         assert_eq!(buf.cursor_pos(), 0);
     }
@@ -943,7 +952,7 @@ mod tests {
     fn test_alt_f_multiple_words() {
         let mut buf = InputLineBuffer::new();
         buf.feed("one two three");
-        buf.feed("\x01");  // Home
+        buf.feed("\x01"); // Home
         buf.feed("\x1bf"); // Alt+F → after "one "
         assert_eq!(buf.cursor_pos(), 4);
         buf.feed("\x1bf"); // Alt+F → after "two "
@@ -968,7 +977,7 @@ mod tests {
     fn test_ctrl_right_multiple_words() {
         let mut buf = InputLineBuffer::new();
         buf.feed("foo bar baz");
-        buf.feed("\x01");      // Home
+        buf.feed("\x01"); // Home
         buf.feed("\x1b[1;5C"); // Ctrl+Right → after "foo "
         assert_eq!(buf.cursor_pos(), 4);
         buf.feed("\x1b[1;5C"); // Ctrl+Right → after "bar "
@@ -985,7 +994,7 @@ mod tests {
     fn test_ctrl_w_with_trailing_spaces() {
         let mut buf = InputLineBuffer::new();
         buf.feed("hello   "); // trailing spaces
-        buf.feed("\x17");     // Ctrl+W — should delete "   " + "hello"
+        buf.feed("\x17"); // Ctrl+W — should delete "   " + "hello"
         assert_eq!(buf.content(), "");
     }
 
@@ -1001,7 +1010,7 @@ mod tests {
     fn test_word_forward_over_multiple_spaces() {
         let mut buf = InputLineBuffer::new();
         buf.feed("abc   def");
-        buf.feed("\x01");  // Home
+        buf.feed("\x01"); // Home
         buf.feed("\x1bf"); // Alt+F — should skip "abc" then "   "
         assert_eq!(buf.cursor_pos(), 6); // Start of "def"
     }
@@ -1061,10 +1070,13 @@ mod tests {
     fn test_cr_and_lf_both_submit() {
         let mut buf = InputLineBuffer::new();
         let actions = buf.feed("a\rb\n");
-        let lines: Vec<_> = actions.into_iter().filter_map(|a| match a {
-            InputAction::Line(s) => Some(s),
-            _ => None,
-        }).collect();
+        let lines: Vec<_> = actions
+            .into_iter()
+            .filter_map(|a| match a {
+                InputAction::Line(s) => Some(s),
+                _ => None,
+            })
+            .collect();
         assert_eq!(lines, vec!["a", "b"]);
     }
 
@@ -1298,7 +1310,10 @@ mod tests {
         buf.feed("line2");
         buf.feed("\x1b\r"); // ESC CR
         buf.feed("line3");
-        assert_eq!(feed_and_get_line(&mut buf, "\r"), Some("line1\nline2\nline3".into()));
+        assert_eq!(
+            feed_and_get_line(&mut buf, "\r"),
+            Some("line1\nline2\nline3".into())
+        );
     }
 
     #[test]
@@ -1307,7 +1322,10 @@ mod tests {
         buf.feed("first");
         buf.feed("\x1b[13;2u"); // Kitty Shift+Enter
         buf.feed("second");
-        assert_eq!(feed_and_get_line(&mut buf, "\r"), Some("first\nsecond".into()));
+        assert_eq!(
+            feed_and_get_line(&mut buf, "\r"),
+            Some("first\nsecond".into())
+        );
     }
 
     #[test]
@@ -1378,9 +1396,9 @@ mod tests {
     fn test_backspace_retype_pattern() {
         // Common pattern: type, realize mistake, backspace, retype
         let mut buf = InputLineBuffer::new();
-        buf.feed("git comit");      // typo
-        buf.feed("\x7f\x7f\x7f");   // 3 backspaces → "git co"
-        buf.feed("mmit");            // retype correctly
+        buf.feed("git comit"); // typo
+        buf.feed("\x7f\x7f\x7f"); // 3 backspaces → "git co"
+        buf.feed("mmit"); // retype correctly
         assert_eq!(feed_and_get_line(&mut buf, "\r"), Some("git commit".into()));
     }
 
@@ -1391,7 +1409,10 @@ mod tests {
         buf.feed("\x01"); // Home
         buf.feed("\x0b"); // Ctrl+K — kill to end
         buf.feed("right command");
-        assert_eq!(feed_and_get_line(&mut buf, "\r"), Some("right command".into()));
+        assert_eq!(
+            feed_and_get_line(&mut buf, "\r"),
+            Some("right command".into())
+        );
     }
 
     #[test]
@@ -1421,10 +1442,13 @@ mod tests {
         let mut buf = InputLineBuffer::new();
         let pasted = "echo 'hello'\recho 'world'\recho 'done'\r";
         let actions = buf.feed(pasted);
-        let lines: Vec<_> = actions.into_iter().filter_map(|a| match a {
-            InputAction::Line(s) => Some(s),
-            _ => None,
-        }).collect();
+        let lines: Vec<_> = actions
+            .into_iter()
+            .filter_map(|a| match a {
+                InputAction::Line(s) => Some(s),
+                _ => None,
+            })
+            .collect();
         assert_eq!(lines, vec!["echo 'hello'", "echo 'world'", "echo 'done'"]);
     }
 
@@ -1477,7 +1501,10 @@ mod tests {
         for i in 0..100 {
             let cmd = format!("command_{}", i);
             let expected = cmd.clone();
-            assert_eq!(feed_and_get_line(&mut buf, &format!("{}\r", cmd)), Some(expected));
+            assert_eq!(
+                feed_and_get_line(&mut buf, &format!("{}\r", cmd)),
+                Some(expected)
+            );
         }
     }
 
@@ -1502,9 +1529,9 @@ mod tests {
         let mut buf = InputLineBuffer::new();
         buf.feed("abc");
         buf.feed("\x1b[D"); // Left
-        buf.feed("X");      // Insert X before 'c'
+        buf.feed("X"); // Insert X before 'c'
         buf.feed("\x1b[C"); // Right
-        buf.feed("Y");      // Append Y after 'c'
+        buf.feed("Y"); // Append Y after 'c'
         assert_eq!(buf.content(), "abXcY");
     }
 
@@ -1513,9 +1540,9 @@ mod tests {
         // Escape sequences may arrive split across multiple feed() calls
         let mut buf = InputLineBuffer::new();
         buf.feed("hello");
-        buf.feed("\x1b");  // ESC alone
-        buf.feed("[");     // CSI
-        buf.feed("D");     // Left arrow final byte
+        buf.feed("\x1b"); // ESC alone
+        buf.feed("["); // CSI
+        buf.feed("D"); // Left arrow final byte
         assert_eq!(buf.cursor_pos(), 4);
     }
 
@@ -1523,12 +1550,12 @@ mod tests {
     fn test_feed_split_csi_params() {
         let mut buf = InputLineBuffer::new();
         buf.feed("hello world");
-        buf.feed("\x1b");  // ESC
-        buf.feed("[");     // CSI start
-        buf.feed("1");     // param byte
-        buf.feed(";");     // separator
-        buf.feed("5");     // modifier
-        buf.feed("D");     // Left arrow with Ctrl modifier
+        buf.feed("\x1b"); // ESC
+        buf.feed("["); // CSI start
+        buf.feed("1"); // param byte
+        buf.feed(";"); // separator
+        buf.feed("5"); // modifier
+        buf.feed("D"); // Left arrow with Ctrl modifier
         // Should do Ctrl+Left = word backward
         assert_eq!(buf.cursor_pos(), 6); // Before "world"
     }
@@ -1636,7 +1663,7 @@ mod tests {
     fn test_esc_then_slash_drops_slash_from_buffer() {
         let mut buf = InputLineBuffer::new();
         buf.feed("\x1b"); // Write 1: Escape → esc_state = Esc
-        buf.feed("/");    // Write 2: "/" consumed as unknown ESC sequence
+        buf.feed("/"); // Write 2: "/" consumed as unknown ESC sequence
         // Buffer is empty — "/" was NOT inserted
         assert!(buf.content().is_empty());
         assert!(!buf.content().starts_with('/'));

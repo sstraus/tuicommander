@@ -568,11 +568,15 @@ impl SilenceState {
         // Safety cap: always settle after STARTUP_GRACE_MAX
         if self.created_at.elapsed() >= STARTUP_GRACE_MAX {
             self.startup_settled = true;
+            self.pending_suggest_items = None;
+            self.pending_suggest_at = None;
             return;
         }
         // Settle after STARTUP_SETTLE_SILENCE without output
         if self.last_output_at.elapsed() >= STARTUP_SETTLE_SILENCE {
             self.startup_settled = true;
+            self.pending_suggest_items = None;
+            self.pending_suggest_at = None;
         }
     }
 
@@ -2900,6 +2904,16 @@ pub(crate) fn spawn_reader_thread(
 
             if try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE, false) {
                 emit_shell_state(&state, &session_id, "idle");
+                // EOF bypass: should_transition_idle was not called, so force-clear
+                // active_sub_tasks to avoid leaving the frontend notification gate
+                // in an inconsistent state after process crash/exit.
+                if let Some(mut entry) = state.session_states.get_mut(&session_id) {
+                    if entry.active_sub_tasks > 0 {
+                        entry.active_sub_tasks = 0;
+                        drop(entry);
+                        emit_active_subtasks(&state, &session_id, 0, "");
+                    }
+                }
             }
 
             let remaining = flush_eof(&mut utf8_buf, &mut esc_buf, &session_id, &state);

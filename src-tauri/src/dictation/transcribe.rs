@@ -47,7 +47,8 @@ pub struct TranscribeResult {
 
 /// Trait for transcription, enabling mock implementations in tests.
 pub trait Transcriber: Send + Sync {
-    fn transcribe(&self, audio: &[f32], language: Option<&str>) -> Result<TranscribeResult, String>;
+    fn transcribe(&self, audio: &[f32], language: Option<&str>)
+    -> Result<TranscribeResult, String>;
 }
 
 /// Whisper model wrapper for transcription.
@@ -58,13 +59,15 @@ pub struct WhisperTranscriber {
 impl WhisperTranscriber {
     /// Load a Whisper GGML model from disk.
     pub fn load(model_path: &Path) -> Result<Self, String> {
-        let path_str = model_path
-            .to_str()
-            .ok_or("Invalid model path (non-UTF8)")?;
+        let path_str = model_path.to_str().ok_or("Invalid model path (non-UTF8)")?;
 
         let params = build_context_params();
         let backend = backend_label();
-        tracing::info!(backend, n_threads = optimal_n_threads(), "Loading Whisper model");
+        tracing::info!(
+            backend,
+            n_threads = optimal_n_threads(),
+            "Loading Whisper model"
+        );
 
         let ctx = WhisperContext::new_with_params(path_str, params)
             .map_err(|e| format!("Failed to load Whisper model: {e}"))?;
@@ -76,7 +79,11 @@ impl WhisperTranscriber {
 
 impl Transcriber for WhisperTranscriber {
     /// Transcribe audio samples (16kHz mono f32 PCM) to text.
-    fn transcribe(&self, audio: &[f32], language: Option<&str>) -> Result<TranscribeResult, String> {
+    fn transcribe(
+        &self,
+        audio: &[f32],
+        language: Option<&str>,
+    ) -> Result<TranscribeResult, String> {
         if audio.is_empty() {
             return Ok(TranscribeResult {
                 text: String::new(),
@@ -133,9 +140,10 @@ impl Transcriber for WhisperTranscriber {
 
         for i in 0..n_segments {
             if let Some(segment) = state.get_segment(i)
-                && let Ok(s) = segment.to_str() {
-                    text.push_str(s);
-                }
+                && let Ok(s) = segment.to_str()
+            {
+                text.push_str(s);
+            }
         }
 
         let result = text.trim().to_string();

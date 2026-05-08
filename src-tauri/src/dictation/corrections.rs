@@ -178,10 +178,7 @@ mod tests {
         map.insert("Cloud Code".to_string(), "Claude Code".to_string());
         let corrector = TextCorrector::from_map(map);
         // "Cloud Code" should match first (longer), not just "Cloud"
-        assert_eq!(
-            corrector.correct("I use Cloud Code"),
-            "I use Claude Code"
-        );
+        assert_eq!(corrector.correct("I use Cloud Code"), "I use Claude Code");
     }
 
     #[test]
@@ -238,9 +235,6 @@ mod tests {
         // After deserialization, sorted_keys is empty (skipped), so correct() won't work
         // Need to rebuild:
         let restored = TextCorrector::from_map(deserialized.replacements);
-        assert_eq!(
-            restored.correct("I use Cloud Code"),
-            "I use Claude Code"
-        );
+        assert_eq!(restored.correct("I use Cloud Code"), "I use Claude Code");
     }
 }

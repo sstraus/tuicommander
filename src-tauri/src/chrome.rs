@@ -120,8 +120,10 @@ fn is_codex_chrome_bullet(text: &str) -> bool {
         return true;
     }
     // Known chrome patterns: Working, Boot, esc/interrupt hints
-    after.starts_with("Working") || after.starts_with("Boot")
-        || after.contains("esc to") || after.contains("interrupt")
+    after.starts_with("Working")
+        || after.starts_with("Boot")
+        || after.contains("esc to")
+        || after.contains("interrupt")
 }
 
 /// Returns true if a row is part of Claude Code's Ink-rendered task list.
@@ -157,7 +159,10 @@ pub fn find_chrome_cutoff(rows: &[&str]) -> Option<usize> {
     }
 
     // Trim trailing empty rows (terminal padding below content).
-    let content_end = rows.iter().rposition(|r| !r.is_empty()).map_or(0, |i| i + 1);
+    let content_end = rows
+        .iter()
+        .rposition(|r| !r.is_empty())
+        .map_or(0, |i| i + 1);
     if content_end == 0 {
         return None;
     }
@@ -190,10 +195,7 @@ pub fn find_chrome_cutoff(rows: &[&str]) -> Option<usize> {
             // indicators (e.g. Gemini braille), not footer chrome.
             while idx > 0 {
                 let above = rows[idx - 1].trim();
-                if above.is_empty()
-                    || is_separator_line(above)
-                    || is_task_list_row(above)
-                {
+                if above.is_empty() || is_separator_line(above) || is_task_list_row(above) {
                     idx -= 1;
                 } else {
                     break;
@@ -220,7 +222,9 @@ mod tests {
 
     #[test]
     fn decorated_separator_with_label() {
-        assert!(is_separator_line("──────────────────────────────── extractor ──"));
+        assert!(is_separator_line(
+            "──────────────────────────────── extractor ──"
+        ));
     }
 
     #[test]
@@ -325,7 +329,9 @@ mod tests {
     #[test]
     fn status_line_not_chrome() {
         // CC status lines have no chrome markers — this is a known gap
-        assert!(!is_chrome_row("[Opus 4.6 (1M context) | Max] │ tuicommander git:(main*)"));
+        assert!(!is_chrome_row(
+            "[Opus 4.6 (1M context) | Max] │ tuicommander git:(main*)"
+        ));
     }
 
     // --- Real-world examples from live sessions (CC v2.1.81, Codex v0.116.0) ---
@@ -333,7 +339,9 @@ mod tests {
     // Claude Code mode lines (captured 2026-03-21)
     #[test]
     fn cc_mode_line_with_hint() {
-        assert!(is_chrome_row("  ⏵⏵ bypass permissions on (shift+tab to cycle)"));
+        assert!(is_chrome_row(
+            "  ⏵⏵ bypass permissions on (shift+tab to cycle)"
+        ));
     }
 
     #[test]
@@ -359,7 +367,9 @@ mod tests {
 
     #[test]
     fn cc_spinner_with_agent_count() {
-        assert!(is_chrome_row("✻ Sautéed for 2m 9s · 1 local agent still running"));
+        assert!(is_chrome_row(
+            "✻ Sautéed for 2m 9s · 1 local agent still running"
+        ));
     }
 
     #[test]
@@ -382,7 +392,9 @@ mod tests {
     // Gemini braille spinner (captured 2026-03-22)
     #[test]
     fn gemini_braille_spinner() {
-        assert!(is_chrome_row("⠴ Check tool-specific usage stats with /stats tools… (esc to cancel, 14s)"));
+        assert!(is_chrome_row(
+            "⠴ Check tool-specific usage stats with /stats tools… (esc to cancel, 14s)"
+        ));
     }
 
     #[test]
@@ -393,24 +405,32 @@ mod tests {
     // Aider Knight Rider spinner (captured 2026-03-22)
     #[test]
     fn aider_knight_rider_1() {
-        assert!(is_chrome_row("░█  Updating repo map: examples/plugins/repo-dashboard/main.js"));
+        assert!(is_chrome_row(
+            "░█  Updating repo map: examples/plugins/repo-dashboard/main.js"
+        ));
     }
 
     #[test]
     fn aider_knight_rider_2() {
-        assert!(is_chrome_row("█░  Waiting for openrouter/anthropic/claude-sonnet-4.5"));
+        assert!(is_chrome_row(
+            "█░  Waiting for openrouter/anthropic/claude-sonnet-4.5"
+        ));
     }
 
     // Codex interrupt marker (captured 2026-03-21)
     #[test]
     fn codex_interrupt() {
-        assert!(is_chrome_row("■ Conversation interrupted - tell the model what to do differently."));
+        assert!(is_chrome_row(
+            "■ Conversation interrupted - tell the model what to do differently."
+        ));
     }
 
     // Claude Code separators (captured 2026-03-21)
     #[test]
     fn cc_separator_with_extractor_label() {
-        assert!(is_separator_line("───────────────────────────────────────────────────────── extractor ──"));
+        assert!(is_separator_line(
+            "───────────────────────────────────────────────────────── extractor ──"
+        ));
     }
 
     #[test]
@@ -420,7 +440,9 @@ mod tests {
 
     #[test]
     fn cc_permission_prompt_dotted_separator() {
-        assert!(is_separator_line("╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌"));
+        assert!(is_separator_line(
+            "╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌"
+        ));
     }
 
     // Claude Code prompts
@@ -465,7 +487,9 @@ mod tests {
     // Claude Code status lines — now detected via █/░ block chars
     #[test]
     fn cc_status_context_bar() {
-        assert!(is_chrome_row("  Context █░░░░░░░░░ 8% $0 (~$2.97) │ Usage ⚠ (429)"));
+        assert!(is_chrome_row(
+            "  Context █░░░░░░░░░ 8% $0 (~$2.97) │ Usage ⚠ (429)"
+        ));
     }
 
     #[test]
@@ -481,7 +505,9 @@ mod tests {
 
     #[test]
     fn cc_menu_footer_select() {
-        assert!(is_chrome_row("Enter to select · Tab/Arrow keys to navigate · Esc to cancel"));
+        assert!(is_chrome_row(
+            "Enter to select · Tab/Arrow keys to navigate · Esc to cancel"
+        ));
     }
 
     // Codex tool call patterns (captured 2026-04-19) — must NOT be chrome
@@ -492,7 +518,9 @@ mod tests {
 
     #[test]
     fn codex_ran_long_command_not_chrome() {
-        assert!(!is_chrome_row("• Ran xcodebuild -project StepsWidgetDemo.xcodeproj -scheme StepsWidgetDemo -destination 'generic/platform=iOS'"));
+        assert!(!is_chrome_row(
+            "• Ran xcodebuild -project StepsWidgetDemo.xcodeproj -scheme StepsWidgetDemo -destination 'generic/platform=iOS'"
+        ));
     }
 
     #[test]
@@ -517,7 +545,9 @@ mod tests {
 
     #[test]
     fn codex_response_text_not_chrome() {
-        assert!(!is_chrome_row("• Il progetto compila. Prima di chiudere salvo anche la memoria di onboarding."));
+        assert!(!is_chrome_row(
+            "• Il progetto compila. Prima di chiudere salvo anche la memoria di onboarding."
+        ));
     }
 
     #[test]
@@ -527,19 +557,25 @@ mod tests {
 
     #[test]
     fn codex_truncation_indicator_not_chrome() {
-        assert!(!is_chrome_row("    … +109 lines (ctrl + t to view transcript)"));
+        assert!(!is_chrome_row(
+            "    … +109 lines (ctrl + t to view transcript)"
+        ));
     }
 
     // Codex separator between tool output and summary
     #[test]
     fn codex_tool_separator() {
-        assert!(is_separator_line("───────────────────────────────────────────────────────────────────────────────────────────"));
+        assert!(is_separator_line(
+            "───────────────────────────────────────────────────────────────────────────────────────────"
+        ));
     }
 
     // Codex status line — NOT a separator
     #[test]
     fn codex_status_not_separator() {
-        assert!(!is_separator_line("  gpt-5.4 high · 100% left · ~/Gits/personal/tuicommander"));
+        assert!(!is_separator_line(
+            "  gpt-5.4 high · 100% left · ~/Gits/personal/tuicommander"
+        ));
     }
 
     // --- find_chrome_cutoff ---
@@ -614,10 +650,7 @@ mod tests {
 
     #[test]
     fn cutoff_no_chrome() {
-        let rows: Vec<&str> = vec![
-            "Just plain text output.",
-            "No chrome markers here.",
-        ];
+        let rows: Vec<&str> = vec!["Just plain text output.", "No chrome markers here."];
         assert_eq!(find_chrome_cutoff(&rows), None);
     }
 
@@ -779,7 +812,9 @@ mod tests {
 
     #[test]
     fn task_subtree_bracket() {
-        assert!(is_task_list_row("  ⎿  ✔ Hide globe icon in global workspace (done)"));
+        assert!(is_task_list_row(
+            "  ⎿  ✔ Hide globe icon in global workspace (done)"
+        ));
     }
 
     #[test]
@@ -789,12 +824,16 @@ mod tests {
 
     #[test]
     fn task_pending_checkbox() {
-        assert!(is_task_list_row("     ◻ Screenshot and verify overlay rendering"));
+        assert!(is_task_list_row(
+            "     ◻ Screenshot and verify overlay rendering"
+        ));
     }
 
     #[test]
     fn task_completed_checkbox() {
-        assert!(is_task_list_row("     ✔ Hide globe icon in global workspace (done)"));
+        assert!(is_task_list_row(
+            "     ✔ Hide globe icon in global workspace (done)"
+        ));
     }
 
     #[test]

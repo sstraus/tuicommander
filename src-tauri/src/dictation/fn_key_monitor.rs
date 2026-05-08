@@ -14,7 +14,7 @@ pub fn install(app_handle: tauri::AppHandle) {
     use objc2_app_kit::{NSEvent, NSEventMask, NSEventModifierFlags};
     use std::ptr::NonNull;
     use std::sync::atomic::{AtomicBool, Ordering};
-#[cfg(feature = "desktop")]
+    #[cfg(feature = "desktop")]
     use tauri::Emitter;
 
     let fn_was_down = AtomicBool::new(false);
@@ -43,10 +43,7 @@ pub fn install(app_handle: tauri::AppHandle) {
     // The returned monitor is retained by AppKit for the lifetime of the app;
     // we don't store it since the monitor should live until app exit.
     let monitor = unsafe {
-        NSEvent::addLocalMonitorForEventsMatchingMask_handler(
-            NSEventMask::FlagsChanged,
-            &block,
-        )
+        NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::FlagsChanged, &block)
     };
 
     if monitor.is_some() {

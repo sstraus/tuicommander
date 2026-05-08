@@ -11,9 +11,9 @@ use crate::dictation::transcribe::Transcriber;
 use crate::dictation::vad;
 use parking_lot::Mutex;
 use std::collections::VecDeque;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
 
 // --- Constants ---
 
@@ -66,9 +66,7 @@ impl StreamingSession {
 
         let handle = std::thread::Builder::new()
             .name("streaming-dictation".into())
-            .spawn(move || {
-                streaming_loop(transcriber, audio_buffer, tx, stop_clone, language)
-            })
+            .spawn(move || streaming_loop(transcriber, audio_buffer, tx, stop_clone, language))
             .expect("Failed to spawn streaming thread");
 
         Self {
@@ -253,12 +251,18 @@ mod tests {
 
     impl EchoTranscriber {
         fn new() -> Self {
-            Self { call_count: AtomicUsize::new(0) }
+            Self {
+                call_count: AtomicUsize::new(0),
+            }
         }
     }
 
     impl Transcriber for EchoTranscriber {
-        fn transcribe(&self, audio: &[f32], _language: Option<&str>) -> Result<TranscribeResult, String> {
+        fn transcribe(
+            &self,
+            audio: &[f32],
+            _language: Option<&str>,
+        ) -> Result<TranscribeResult, String> {
             self.call_count.fetch_add(1, Ordering::Relaxed);
             Ok(TranscribeResult {
                 text: format!("{}samples", audio.len()),
@@ -271,7 +275,11 @@ mod tests {
     struct SkipTranscriber;
 
     impl Transcriber for SkipTranscriber {
-        fn transcribe(&self, _audio: &[f32], _language: Option<&str>) -> Result<TranscribeResult, String> {
+        fn transcribe(
+            &self,
+            _audio: &[f32],
+            _language: Option<&str>,
+        ) -> Result<TranscribeResult, String> {
             Ok(TranscribeResult {
                 text: String::new(),
                 skip_reason: Some("silence".to_string()),
@@ -318,14 +326,26 @@ mod tests {
     #[test]
     fn test_vad_skips_silence() {
         let silence = vec![0.0f32; ms_to_samples(2000)];
-        let is_silent = vad::vad_simple(&silence, SAMPLE_RATE, VAD_LAST_MS, VAD_THRESHOLD, VAD_FREQ_THRESHOLD);
+        let is_silent = vad::vad_simple(
+            &silence,
+            SAMPLE_RATE,
+            VAD_LAST_MS,
+            VAD_THRESHOLD,
+            VAD_FREQ_THRESHOLD,
+        );
         assert!(is_silent, "VAD should detect silence");
     }
 
     #[test]
     fn test_vad_detects_speech() {
         let speech = speech_samples(2000);
-        let is_silent = vad::vad_simple(&speech, SAMPLE_RATE, VAD_LAST_MS, VAD_THRESHOLD, VAD_FREQ_THRESHOLD);
+        let is_silent = vad::vad_simple(
+            &speech,
+            SAMPLE_RATE,
+            VAD_LAST_MS,
+            VAD_THRESHOLD,
+            VAD_FREQ_THRESHOLD,
+        );
         assert!(!is_silent, "VAD should detect speech");
     }
 
@@ -350,7 +370,10 @@ mod tests {
 
         let remaining = handle.join().expect("Loop should not panic");
         assert!(remaining.is_empty(), "No unconsumed audio expected");
-        assert!(rx.try_recv().is_err(), "No partials expected with empty buffer");
+        assert!(
+            rx.try_recv().is_err(),
+            "No partials expected with empty buffer"
+        );
     }
 
     #[test]
@@ -381,7 +404,10 @@ mod tests {
 
         // Should have received at least one partial
         let partial = rx.try_recv().expect("Should have received a partial");
-        assert!(partial.contains("samples"), "EchoTranscriber returns sample count");
+        assert!(
+            partial.contains("samples"),
+            "EchoTranscriber returns sample count"
+        );
     }
 
     #[test]

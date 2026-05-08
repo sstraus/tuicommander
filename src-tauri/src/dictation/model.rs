@@ -84,15 +84,16 @@ pub fn model_path(model: WhisperModel) -> PathBuf {
 /// Check if a model is already downloaded.
 pub fn model_exists(model: WhisperModel) -> bool {
     let path = model_path(model);
-    path.exists() && path.metadata().map(|m| m.len() > 1_000_000).unwrap_or(false)
+    path.exists()
+        && path
+            .metadata()
+            .map(|m| m.len() > 1_000_000)
+            .unwrap_or(false)
 }
 
 /// Get model file size on disk (0 if not present).
 pub fn model_size_bytes(model: WhisperModel) -> u64 {
-    model_path(model)
-        .metadata()
-        .map(|m| m.len())
-        .unwrap_or(0)
+    model_path(model).metadata().map(|m| m.len()).unwrap_or(0)
 }
 
 /// Delete a downloaded model file.
@@ -203,8 +204,14 @@ mod tests {
 
     #[test]
     fn test_from_name_small_en_alias() {
-        assert_eq!(WhisperModel::from_name("small.en"), Some(WhisperModel::SmallEn));
-        assert_eq!(WhisperModel::from_name("small-en"), Some(WhisperModel::SmallEn));
+        assert_eq!(
+            WhisperModel::from_name("small.en"),
+            Some(WhisperModel::SmallEn)
+        );
+        assert_eq!(
+            WhisperModel::from_name("small-en"),
+            Some(WhisperModel::SmallEn)
+        );
     }
 
     #[test]
@@ -212,7 +219,10 @@ mod tests {
         assert_eq!(WhisperModel::Small.filename(), "ggml-small.bin");
         assert_eq!(WhisperModel::SmallEn.filename(), "ggml-small.en.bin");
         assert_eq!(WhisperModel::LargeV2.filename(), "ggml-large-v2.bin");
-        assert_eq!(WhisperModel::LargeV3Turbo.filename(), "ggml-large-v3-turbo.bin");
+        assert_eq!(
+            WhisperModel::LargeV3Turbo.filename(),
+            "ggml-large-v3-turbo.bin"
+        );
     }
 
     #[test]
@@ -227,7 +237,9 @@ mod tests {
     fn test_download_urls() {
         for model in &WhisperModel::ALL {
             let url = model.download_url();
-            assert!(url.starts_with("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-"));
+            assert!(
+                url.starts_with("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-")
+            );
             assert!(url.ends_with(".bin"));
         }
     }

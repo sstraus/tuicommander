@@ -1,8 +1,8 @@
-use super::{audio, corrections, model, permission, streaming, transcribe, DictationState};
+use super::{DictationState, audio, corrections, model, permission, streaming, transcribe};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
-use std::sync::{mpsc, Arc};
+use std::sync::{Arc, mpsc};
 
 /// Helper to reset recording flag on error paths.
 struct RecordingGuard<'a> {
@@ -12,7 +12,10 @@ struct RecordingGuard<'a> {
 
 impl<'a> RecordingGuard<'a> {
     fn new(recording: &'a std::sync::atomic::AtomicBool) -> Self {
-        Self { recording, disarmed: false }
+        Self {
+            recording,
+            disarmed: false,
+        }
     }
     fn disarm(&mut self) {
         self.disarmed = true;
@@ -74,8 +77,7 @@ pub struct TranscribeResponse {
 /// Resolve the configured model from persisted config.
 fn configured_model() -> model::WhisperModel {
     let config = get_dictation_config();
-    model::WhisperModel::from_name(&config.model)
-        .unwrap_or(model::WhisperModel::LargeV3Turbo)
+    model::WhisperModel::from_name(&config.model).unwrap_or(model::WhisperModel::LargeV3Turbo)
 }
 
 #[tauri::command]
@@ -118,10 +120,7 @@ pub fn get_model_info() -> Vec<ModelInfo> {
 }
 
 #[tauri::command]
-pub async fn download_whisper_model(
-    app: AppHandle,
-    model_name: String,
-) -> Result<String, String> {
+pub async fn download_whisper_model(app: AppHandle, model_name: String) -> Result<String, String> {
     let whisper_model = model::WhisperModel::from_name(&model_name)
         .ok_or_else(|| format!("Unknown model: {model_name}"))?;
 
@@ -165,12 +164,10 @@ pub fn delete_whisper_model(
 }
 
 #[tauri::command]
-pub fn start_dictation(
-    app: AppHandle,
-    dictation: State<'_, DictationState>,
-) -> Result<(), String> {
+pub fn start_dictation(app: AppHandle, dictation: State<'_, DictationState>) -> Result<(), String> {
     // Atomic test-and-set: prevents TOCTOU race from concurrent IPC calls
-    if dictation.recording
+    if dictation
+        .recording
         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
         .is_err()
     {
@@ -216,20 +213,33 @@ pub fn start_dictation(
         if !model::model_exists(whisper_model) {
             return Err("Model not downloaded".to_string());
         }
-        app_logger::log_via_handle(&app, "info", "dictation", &format!("Loading model: {}", whisper_model.display_name()));
+        app_logger::log_via_handle(
+            &app,
+            "info",
+            "dictation",
+            &format!("Loading model: {}", whisper_model.display_name()),
+        );
         let t = transcribe::WhisperTranscriber::load(&model::model_path(whisper_model))?;
         *transcriber_arc_lock = Some(Arc::new(t));
         *active_model_lock = Some(whisper_model.name().to_string());
-        app_logger::log_via_handle(&app, "info", "dictation",
-            &format!("Model loaded (backend: {})", transcribe::backend_label()));
+        app_logger::log_via_handle(
+            &app,
+            "info",
+            "dictation",
+            &format!("Model loaded (backend: {})", transcribe::backend_label()),
+        );
     }
 
     // Always emit backend info so the frontend gets it even when model is reused
-    let _ = app.emit("dictation-backend-info", serde_json::json!({
-        "backend": transcribe::backend_label(),
-    }));
+    let _ = app.emit(
+        "dictation-backend-info",
+        serde_json::json!({
+            "backend": transcribe::backend_label(),
+        }),
+    );
 
-    let transcriber_arc = transcriber_arc_lock.clone()
+    let transcriber_arc = transcriber_arc_lock
+        .clone()
         .ok_or("Transcriber not available")?;
     drop(active_model_lock);
     drop(transcriber_arc_lock);
@@ -238,11 +248,20 @@ pub fn start_dictation(
     let config = get_dictation_config();
     let device_name = config.device.as_deref().filter(|s| !s.is_empty());
     let capture = audio::AudioCapture::start_with_device(device_name).map_err(|e| {
-        app_logger::log_via_handle(&app, "error", "dictation", &format!("Audio capture failed: {e}"));
+        app_logger::log_via_handle(
+            &app,
+            "error",
+            "dictation",
+            &format!("Audio capture failed: {e}"),
+        );
         // If a specific device failed, hint the user
         if device_name.is_some() {
-            app_logger::log_via_handle(&app, "warn", "dictation",
-                "Configured device not available — check Settings > Dictation > Microphone");
+            app_logger::log_via_handle(
+                &app,
+                "warn",
+                "dictation",
+                "Configured device not available — check Settings > Dictation > Microphone",
+            );
         }
         e
     })?;
@@ -253,7 +272,11 @@ pub fn start_dictation(
 
     // Start streaming session
     let config = get_dictation_config();
-    let lang = if config.language == "auto" { None } else { Some(config.language.clone()) };
+    let lang = if config.language == "auto" {
+        None
+    } else {
+        Some(config.language.clone())
+    };
     let (tx, rx) = mpsc::channel::<String>();
 
     let session = streaming::StreamingSession::start(
@@ -298,9 +321,7 @@ pub fn start_dictation(
 }
 
 #[tauri::command]
-pub async fn stop_dictation_and_transcribe(
-    app: AppHandle,
-) -> Result<TranscribeResponse, String> {
+pub async fn stop_dictation_and_transcribe(app: AppHandle) -> Result<TranscribeResponse, String> {
     // Gather all data from DictationState synchronously (before any .await).
     // This block ensures no MutexGuard or State borrow lives across the await point.
     let prepare = {
@@ -328,7 +349,11 @@ pub async fn stop_dictation_and_transcribe(
 
         // Read config while we still have sync context (avoids file I/O after .await)
         let config = get_dictation_config();
-        let lang_owned = if config.language == "auto" { None } else { Some(config.language.clone()) };
+        let lang_owned = if config.language == "auto" {
+            None
+        } else {
+            Some(config.language.clone())
+        };
 
         // Clone Arc-ed resources for the blocking task
         let transcriber = dictation.transcriber_arc.lock().clone();
@@ -336,11 +361,26 @@ pub async fn stop_dictation_and_transcribe(
         let corrections = dictation.corrections.clone();
         let processing = dictation.processing.clone();
 
-        Some((session, audio_buffer, lang_owned, transcriber, accumulated_partials, corrections, processing))
+        Some((
+            session,
+            audio_buffer,
+            lang_owned,
+            transcriber,
+            accumulated_partials,
+            corrections,
+            processing,
+        ))
     };
 
-    let (session, audio_buffer, lang_owned, transcriber, accumulated_partials, corrections, processing) =
-        prepare.unwrap(); // always Some — the None path returns Err above
+    let (
+        session,
+        audio_buffer,
+        lang_owned,
+        transcriber,
+        accumulated_partials,
+        corrections,
+        processing,
+    ) = prepare.unwrap(); // always Some — the None path returns Err above
 
     let app_clone = app.clone();
 
@@ -359,8 +399,15 @@ pub async fn stop_dictation_and_transcribe(
         }
 
         let total_duration_s = all_audio.len() as f64 / 16000.0;
-        app_logger::log_via_handle(&app_clone, "info", "dictation",
-            &format!("Streaming stopped, {:.1}s total audio for final transcription", total_duration_s));
+        app_logger::log_via_handle(
+            &app_clone,
+            "info",
+            "dictation",
+            &format!(
+                "Streaming stopped, {:.1}s total audio for final transcription",
+                total_duration_s
+            ),
+        );
 
         // Short audio: no transcription needed
         if all_audio.len() < 8000 {
@@ -382,18 +429,30 @@ pub async fn stop_dictation_and_transcribe(
                 }
                 Ok(result) => {
                     if let Some(reason) = &result.skip_reason {
-                        app_logger::log_via_handle(&app_clone, "info", "dictation",
-                            &format!("Final transcription skipped: {reason}"));
+                        app_logger::log_via_handle(
+                            &app_clone,
+                            "info",
+                            "dictation",
+                            &format!("Final transcription skipped: {reason}"),
+                        );
                     }
                 }
                 Err(e) => {
-                    app_logger::log_via_handle(&app_clone, "warn", "dictation",
-                        &format!("Final transcription failed: {e}"));
+                    app_logger::log_via_handle(
+                        &app_clone,
+                        "warn",
+                        "dictation",
+                        &format!("Final transcription failed: {e}"),
+                    );
                 }
             }
         } else {
-            app_logger::log_via_handle(&app_clone, "warn", "dictation",
-                "Transcriber not available — model not loaded");
+            app_logger::log_via_handle(
+                &app_clone,
+                "warn",
+                "dictation",
+                "Transcriber not available — model not loaded",
+            );
             return TranscribeResponse {
                 text: String::new(),
                 skip_reason: Some("model not loaded".to_string()),
@@ -413,16 +472,28 @@ pub async fn stop_dictation_and_transcribe(
         // Log accuracy comparison (lengths only — no verbatim text to avoid PII in logs)
         let composed = std::mem::take(&mut *accumulated_partials.lock());
         let match_pct = if !composed.is_empty() && !final_text.is_empty() {
-            let common = final_text.chars().zip(composed.chars())
-                .take_while(|(a, b)| a == b).count();
+            let common = final_text
+                .chars()
+                .zip(composed.chars())
+                .take_while(|(a, b)| a == b)
+                .count();
             let max_len = final_text.len().max(composed.len());
             (common as f64 / max_len as f64 * 100.0).round() as u32
         } else {
             0
         };
-        app_logger::log_via_handle(&app_clone, "info", "dictation",
-            &format!("[accuracy] full={} chars, composed={} chars, match={}%, audio={:.1}s",
-                final_text.len(), composed.len(), match_pct, total_duration_s));
+        app_logger::log_via_handle(
+            &app_clone,
+            "info",
+            "dictation",
+            &format!(
+                "[accuracy] full={} chars, composed={} chars, match={}%, audio={:.1}s",
+                final_text.len(),
+                composed.len(),
+                match_pct,
+                total_duration_s
+            ),
+        );
 
         // Apply corrections
         let corrected = corrections.lock().correct(&final_text);
@@ -434,7 +505,9 @@ pub async fn stop_dictation_and_transcribe(
             skip_reason: None,
             duration_s: total_duration_s,
         }
-    }).await.map_err(|e| {
+    })
+    .await
+    .map_err(|e| {
         let msg = format!("Transcription task panicked: {e}");
         app_logger::log_via_handle(&app, "error", "dictation", &msg);
         msg
@@ -447,9 +520,7 @@ pub async fn stop_dictation_and_transcribe(
 }
 
 #[tauri::command]
-pub fn get_correction_map(
-    dictation: State<'_, DictationState>,
-) -> HashMap<String, String> {
+pub fn get_correction_map(dictation: State<'_, DictationState>) -> HashMap<String, String> {
     dictation.corrections.lock().get_replacements().clone()
 }
 
@@ -478,10 +549,7 @@ pub fn list_audio_devices() -> Vec<audio::AudioDevice> {
 ///
 /// Security: Will require authentication token stored in env var.
 #[tauri::command]
-pub fn inject_text(
-    dictation: State<'_, DictationState>,
-    text: String,
-) -> Result<String, String> {
+pub fn inject_text(dictation: State<'_, DictationState>, text: String) -> Result<String, String> {
     // Apply corrections before injection
     let corrected = dictation.corrections.lock().correct(&text);
     let final_text = corrected.replace('\n', " ");

@@ -40,8 +40,7 @@ pub fn check() -> MicPermission {
 
     // AVCaptureDevice is in AVFoundation. The class is available at runtime
     // because cpal links AVFoundation for audio capture.
-    let cls: Option<&objc2::runtime::AnyClass> =
-        objc2::runtime::AnyClass::get(c"AVCaptureDevice");
+    let cls: Option<&objc2::runtime::AnyClass> = objc2::runtime::AnyClass::get(c"AVCaptureDevice");
     let Some(cls) = cls else {
         // AVCaptureDevice class not found — shouldn't happen on macOS 10.14+
         return MicPermission::NotDetermined;
@@ -82,8 +81,7 @@ pub fn check() -> MicPermission {
 pub fn request() -> bool {
     use objc2_foundation::NSString;
 
-    let cls: Option<&objc2::runtime::AnyClass> =
-        objc2::runtime::AnyClass::get(c"AVCaptureDevice");
+    let cls: Option<&objc2::runtime::AnyClass> = objc2::runtime::AnyClass::get(c"AVCaptureDevice");
     let Some(cls) = cls else {
         return false;
     };
@@ -105,7 +103,8 @@ pub fn request() -> bool {
     };
 
     // Block until the user responds (or timeout after 60s)
-    rx.recv_timeout(std::time::Duration::from_secs(60)).unwrap_or(false)
+    rx.recv_timeout(std::time::Duration::from_secs(60))
+        .unwrap_or(false)
 }
 
 /// Non-macOS fallback: always granted.
