@@ -18,7 +18,7 @@
 //! A background task started via [`OAuthFlowManager::spawn_cleanup_task`]
 //! periodically removes expired pending flows (default 5 minutes).
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use dashmap::DashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -184,7 +184,11 @@ impl OAuthFlowManager {
         let token_endpoint = token_override.unwrap_or(token_endpoint);
 
         // Auto-detect scopes from discovery when not explicitly configured.
-        let scopes = if scopes.is_empty() { discovered_scopes } else { scopes };
+        let scopes = if scopes.is_empty() {
+            discovered_scopes
+        } else {
+            scopes
+        };
 
         // Generate PKCE + state nonce.
         let pkce = TokenManager::generate_pkce();
@@ -338,7 +342,11 @@ impl OAuthFlowManager {
         check_issuer_matches_resource(server_url, issuer)?;
         let as_meta = discover_auth_server(&self.http_client, issuer).await?;
         let scopes = resolve_scopes(&pr_meta, &as_meta);
-        Ok((as_meta.authorization_endpoint, as_meta.token_endpoint, scopes))
+        Ok((
+            as_meta.authorization_endpoint,
+            as_meta.token_endpoint,
+            scopes,
+        ))
     }
 }
 
@@ -393,8 +401,9 @@ fn build_authorization_url(
 fn check_issuer_matches_resource(server_url: &str, issuer_url: &str) -> Result<()> {
     let server_domain = registrable_domain(server_url)
         .ok_or_else(|| anyhow!("MCP server_url \"{server_url}\" is not a valid URL"))?;
-    let issuer_domain = registrable_domain(issuer_url)
-        .ok_or_else(|| anyhow!("Authorization server issuer \"{issuer_url}\" is not a valid URL"))?;
+    let issuer_domain = registrable_domain(issuer_url).ok_or_else(|| {
+        anyhow!("Authorization server issuer \"{issuer_url}\" is not a valid URL")
+    })?;
 
     // Loopback — always allow (dev environments).
     if matches!(server_domain.as_str(), "localhost" | "127.0.0.1")
@@ -506,20 +515,21 @@ mod tests {
 
     #[test]
     fn check_issuer_allows_same_registrable_domain() {
-        assert!(check_issuer_matches_resource(
-            "https://api.example.com/mcp",
-            "https://auth.example.com",
-        )
-        .is_ok());
+        assert!(
+            check_issuer_matches_resource(
+                "https://api.example.com/mcp",
+                "https://auth.example.com",
+            )
+            .is_ok()
+        );
     }
 
     #[test]
     fn check_issuer_allows_exact_host_match() {
-        assert!(check_issuer_matches_resource(
-            "https://example.com/mcp",
-            "https://example.com",
-        )
-        .is_ok());
+        assert!(
+            check_issuer_matches_resource("https://example.com/mcp", "https://example.com",)
+                .is_ok()
+        );
     }
 
     #[test]
@@ -537,17 +547,16 @@ mod tests {
 
     #[test]
     fn check_issuer_allows_loopback_dev() {
-        assert!(check_issuer_matches_resource(
-            "http://127.0.0.1:8080/mcp",
-            "http://localhost:9090",
-        )
-        .is_ok());
+        assert!(
+            check_issuer_matches_resource("http://127.0.0.1:8080/mcp", "http://localhost:9090",)
+                .is_ok()
+        );
     }
 
     #[test]
     fn check_issuer_rejects_malformed_server_url() {
-        let err = check_issuer_matches_resource("not a url", "https://auth.example.com")
-            .unwrap_err();
+        let err =
+            check_issuer_matches_resource("not a url", "https://auth.example.com").unwrap_err();
         assert!(err.to_string().contains("server_url"));
     }
 
@@ -635,11 +644,22 @@ mod tests {
     async fn start_flow_returns_url_with_state() {
         let m = mgr();
         let out = m
-            .start_flow("test", "https://api.example.com", &oauth2_config(), "http://127.0.0.1:9999/oauth/callback")
+            .start_flow(
+                "test",
+                "https://api.example.com",
+                &oauth2_config(),
+                "http://127.0.0.1:9999/oauth/callback",
+            )
             .await
             .unwrap();
-        assert!(out.authorization_url.starts_with("https://auth.example.com/authorize?"));
-        assert!(out.authorization_url.contains(&format!("state={}", out.state)));
+        assert!(
+            out.authorization_url
+                .starts_with("https://auth.example.com/authorize?")
+        );
+        assert!(
+            out.authorization_url
+                .contains(&format!("state={}", out.state))
+        );
         assert_eq!(m.pending_count(), 1);
     }
 
@@ -664,14 +684,24 @@ mod tests {
         // releases (cancel or complete).
         let m = Arc::new(mgr());
         let _out1 = m
-            .start_flow("a", "https://api.example.com", &oauth2_config(), "http://127.0.0.1:9999/oauth/callback")
+            .start_flow(
+                "a",
+                "https://api.example.com",
+                &oauth2_config(),
+                "http://127.0.0.1:9999/oauth/callback",
+            )
             .await
             .unwrap();
         // Second call must not resolve while first holds the permit.
         let m2 = m.clone();
         let pending = tokio::spawn(async move {
-            m2.start_flow("b", "https://api.example.com", &oauth2_config(), "http://127.0.0.1:9999/oauth/callback")
-                .await
+            m2.start_flow(
+                "b",
+                "https://api.example.com",
+                &oauth2_config(),
+                "http://127.0.0.1:9999/oauth/callback",
+            )
+            .await
         });
         // Give the pending task a chance to run.
         tokio::time::sleep(Duration::from_millis(30)).await;
@@ -705,12 +735,15 @@ mod tests {
 
     #[tokio::test]
     async fn complete_flow_rejects_expired_flow() {
-        let m = OAuthFlowManager::with_timeout(
-            Arc::new(Semaphore::new(1)),
-            Duration::from_millis(1),
-        );
+        let m =
+            OAuthFlowManager::with_timeout(Arc::new(Semaphore::new(1)), Duration::from_millis(1));
         let out = m
-            .start_flow("test", "https://api.example.com", &oauth2_config(), "http://127.0.0.1:9999/oauth/callback")
+            .start_flow(
+                "test",
+                "https://api.example.com",
+                &oauth2_config(),
+                "http://127.0.0.1:9999/oauth/callback",
+            )
             .await
             .unwrap();
         tokio::time::sleep(Duration::from_millis(20)).await;
@@ -724,7 +757,12 @@ mod tests {
     async fn cancel_flow_removes_pending_and_releases_permit() {
         let m = mgr();
         let out = m
-            .start_flow("test", "https://api.example.com", &oauth2_config(), "http://127.0.0.1:9999/oauth/callback")
+            .start_flow(
+                "test",
+                "https://api.example.com",
+                &oauth2_config(),
+                "http://127.0.0.1:9999/oauth/callback",
+            )
             .await
             .unwrap();
         assert_eq!(m.pending_count(), 1);
@@ -733,7 +771,12 @@ mod tests {
         // Semaphore is now free — a new flow should start immediately.
         let _out2 = tokio::time::timeout(
             Duration::from_millis(200),
-            m.start_flow("test2", "https://api.example.com", &oauth2_config(), "http://127.0.0.1:9999/oauth/callback"),
+            m.start_flow(
+                "test2",
+                "https://api.example.com",
+                &oauth2_config(),
+                "http://127.0.0.1:9999/oauth/callback",
+            ),
         )
         .await
         .expect("second flow timed out");
@@ -752,15 +795,30 @@ mod tests {
             DEFAULT_FLOW_TIMEOUT,
         ));
         let _a = m
-            .start_flow("srv-a", "https://api.example.com", &oauth2_config(), "http://127.0.0.1:9999/oauth/callback")
+            .start_flow(
+                "srv-a",
+                "https://api.example.com",
+                &oauth2_config(),
+                "http://127.0.0.1:9999/oauth/callback",
+            )
             .await
             .unwrap();
         let _b1 = m
-            .start_flow("srv-b", "https://api.example.com", &oauth2_config(), "http://127.0.0.1:9999/oauth/callback")
+            .start_flow(
+                "srv-b",
+                "https://api.example.com",
+                &oauth2_config(),
+                "http://127.0.0.1:9999/oauth/callback",
+            )
             .await
             .unwrap();
         let _b2 = m
-            .start_flow("srv-b", "https://api.example.com", &oauth2_config(), "http://127.0.0.1:9999/oauth/callback")
+            .start_flow(
+                "srv-b",
+                "https://api.example.com",
+                &oauth2_config(),
+                "http://127.0.0.1:9999/oauth/callback",
+            )
             .await
             .unwrap();
         assert_eq!(m.pending_count(), 3);
@@ -772,12 +830,15 @@ mod tests {
 
     #[tokio::test]
     async fn cleanup_expired_removes_stale_flows() {
-        let m = OAuthFlowManager::with_timeout(
-            Arc::new(Semaphore::new(10)),
-            Duration::from_millis(1),
-        );
+        let m =
+            OAuthFlowManager::with_timeout(Arc::new(Semaphore::new(10)), Duration::from_millis(1));
         let _a = m
-            .start_flow("test", "https://api.example.com", &oauth2_config(), "http://127.0.0.1:9999/oauth/callback")
+            .start_flow(
+                "test",
+                "https://api.example.com",
+                &oauth2_config(),
+                "http://127.0.0.1:9999/oauth/callback",
+            )
             .await
             .unwrap();
         assert_eq!(m.pending_count(), 1);
@@ -791,7 +852,12 @@ mod tests {
     async fn cleanup_expired_keeps_fresh_flows() {
         let m = mgr();
         let _a = m
-            .start_flow("test", "https://api.example.com", &oauth2_config(), "http://127.0.0.1:9999/oauth/callback")
+            .start_flow(
+                "test",
+                "https://api.example.com",
+                &oauth2_config(),
+                "http://127.0.0.1:9999/oauth/callback",
+            )
             .await
             .unwrap();
         let n = m.cleanup_expired();
@@ -799,4 +865,3 @@ mod tests {
         assert_eq!(m.pending_count(), 1);
     }
 }
-

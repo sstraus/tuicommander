@@ -1,16 +1,14 @@
 use crate::AppState;
+use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use std::sync::Arc;
 
 use super::types::*;
 use super::{err_500, json_result, validate_repo_path};
 
-pub(super) async fn list_worktrees_http(
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+pub(super) async fn list_worktrees_http(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let worktrees: Vec<serde_json::Value> = state
         .sessions
         .iter()
@@ -47,7 +45,9 @@ pub(super) async fn get_worktrees_dir_http(
 }
 
 pub(super) async fn get_worktree_paths_http(Query(q): Query<PathQuery>) -> Response {
-    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
     json_result(crate::worktree::get_worktree_paths(q.path))
 }
 
@@ -67,7 +67,11 @@ pub(super) async fn create_worktree_http(
         std::path::Path::new(&config.base_repo),
         &state.worktrees_dir,
     );
-    match crate::worktree::create_worktree_internal(&worktrees_dir, &config, body.base_ref.as_deref()) {
+    match crate::worktree::create_worktree_internal(
+        &worktrees_dir,
+        &config,
+        body.base_ref.as_deref(),
+    ) {
         Ok(wt) => {
             state.invalidate_repo_caches(&body.base_repo);
             (
@@ -80,7 +84,10 @@ pub(super) async fn create_worktree_http(
                 })),
             )
         }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e})),
+        ),
     }
 }
 
@@ -88,8 +95,15 @@ pub(super) async fn remove_worktree_http(
     Path(branch): Path<String>,
     Query(q): Query<RemoveWorktreeQuery>,
 ) -> Response {
-    if let Err(e) = validate_repo_path(&q.repo_path) { return e.into_response(); }
-    match crate::worktree::remove_worktree_by_branch(&q.repo_path, &branch, q.delete_branch.unwrap_or(true), None) {
+    if let Err(e) = validate_repo_path(&q.repo_path) {
+        return e.into_response();
+    }
+    match crate::worktree::remove_worktree_by_branch(
+        &q.repo_path,
+        &branch,
+        q.delete_branch.unwrap_or(true),
+        None,
+    ) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response(),
         Err(e) => err_500(&e),
     }
@@ -98,9 +112,17 @@ pub(super) async fn remove_worktree_http(
 pub(super) async fn detect_orphan_worktrees_http(Query(q): Query<OptionalRepoQuery>) -> Response {
     let repo_path = match q.repo_path {
         Some(p) => p,
-        None => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "repoPath required"}))).into_response(),
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "repoPath required"})),
+            )
+                .into_response();
+        }
     };
-    if let Err(e) = validate_repo_path(&repo_path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&repo_path) {
+        return e.into_response();
+    }
     json_result(crate::worktree::detect_orphan_worktrees(repo_path))
 }
 
@@ -108,9 +130,15 @@ pub(super) async fn remove_orphan_worktree_http(
     State(state): State<Arc<AppState>>,
     Json(body): Json<super::types::RemoveOrphanRequest>,
 ) -> Response {
-    if let Err(e) = validate_repo_path(&body.repo_path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&body.repo_path) {
+        return e.into_response();
+    }
     if let Err(e) = crate::worktree::validate_worktree_path(&body.repo_path, &body.worktree_path) {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": e})),
+        )
+            .into_response();
     }
     let worktree = crate::state::WorktreeInfo {
         name: std::path::Path::new(&body.worktree_path)
@@ -133,11 +161,15 @@ pub(super) async fn remove_orphan_worktree_http(
 pub(super) async fn generate_worktree_name_http(
     Json(body): Json<GenerateWorktreeNameRequest>,
 ) -> impl IntoResponse {
-    Json(crate::worktree::generate_worktree_name_cmd(body.existing_names))
+    Json(crate::worktree::generate_worktree_name_cmd(
+        body.existing_names,
+    ))
 }
 
 pub(super) async fn list_local_branches_http(Query(q): Query<PathQuery>) -> Response {
-    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
     json_result(crate::worktree::list_local_branches(q.path))
 }
 
@@ -145,7 +177,9 @@ pub(super) async fn checkout_remote_branch_http(
     State(state): State<Arc<AppState>>,
     Json(body): Json<super::types::CheckoutRemoteRequest>,
 ) -> Response {
-    if let Err(e) = validate_repo_path(&body.repo_path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&body.repo_path) {
+        return e.into_response();
+    }
     let repo = std::path::PathBuf::from(&body.repo_path);
     let remote_ref = format!("origin/{}", body.branch_name);
     match crate::git_cli::git_cmd(&repo)
@@ -164,8 +198,17 @@ pub(super) async fn merge_pr_via_github_http(
     State(state): State<Arc<AppState>>,
     Json(body): Json<MergePrRequest>,
 ) -> Response {
-    if let Err(e) = validate_repo_path(&body.repo_path) { return e.into_response(); }
-    match crate::github::merge_pr_github_impl(&body.repo_path, body.pr_number, &body.merge_method, &state).await {
+    if let Err(e) = validate_repo_path(&body.repo_path) {
+        return e.into_response();
+    }
+    match crate::github::merge_pr_github_impl(
+        &body.repo_path,
+        body.pr_number,
+        &body.merge_method,
+        &state,
+    )
+    .await
+    {
         Ok(sha) => (StatusCode::OK, Json(serde_json::json!({"sha": sha}))).into_response(),
         Err(e) => err_500(&e),
     }
@@ -175,15 +218,25 @@ pub(super) async fn finalize_merged_worktree_http(
     State(state): State<Arc<AppState>>,
     Json(body): Json<FinalizeMergeRequest>,
 ) -> Response {
-    if let Err(e) = validate_repo_path(&body.repo_path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&body.repo_path) {
+        return e.into_response();
+    }
     let repo_path = body.repo_path.clone();
     let base_repo = std::path::PathBuf::from(&repo_path);
     let result = match body.action.as_str() {
-        "archive" => crate::worktree::archive_worktree(&base_repo, &body.branch_name, None)
-            .map(|ap| serde_json::json!({"merged": true, "action": "archived", "archive_path": ap})),
-        "delete" => crate::worktree::remove_worktree_by_branch(&repo_path, &body.branch_name, true, None)
-            .map(|_| serde_json::json!({"merged": true, "action": "deleted", "archive_path": null})),
-        other => Err(format!("Unknown action '{other}': expected 'archive' or 'delete'")),
+        "archive" => crate::worktree::archive_worktree(&base_repo, &body.branch_name, None).map(
+            |ap| serde_json::json!({"merged": true, "action": "archived", "archive_path": ap}),
+        ),
+        "delete" => crate::worktree::remove_worktree_by_branch(
+            &repo_path,
+            &body.branch_name,
+            true,
+            None,
+        )
+        .map(|_| serde_json::json!({"merged": true, "action": "deleted", "archive_path": null})),
+        other => Err(format!(
+            "Unknown action '{other}': expected 'archive' or 'delete'"
+        )),
     };
     match result {
         Ok(json) => {

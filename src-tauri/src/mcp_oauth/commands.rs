@@ -17,8 +17,10 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::mcp_oauth::callback_server;
-use crate::mcp_oauth::dcr::{register_client, DcrRequest};
-use crate::mcp_oauth::discovery::{discover_auth_server, discover_auth_server_relaxed, discover_protected_resource};
+use crate::mcp_oauth::dcr::{DcrRequest, register_client};
+use crate::mcp_oauth::discovery::{
+    discover_auth_server, discover_auth_server_relaxed, discover_protected_resource,
+};
 use crate::mcp_upstream_config::UpstreamAuth;
 use crate::state::AppState;
 
@@ -59,9 +61,10 @@ pub(crate) async fn start_mcp_upstream_oauth(
             .into_iter()
             .find(|s| s.name == name)
             .ok_or_else(|| format!("Upstream '{name}' not found in config or registry"))?;
-        registry.connect_upstream(server, None).await.map_err(|e| {
-            format!("Failed to register upstream '{name}' from config: {e}")
-        })?;
+        registry
+            .connect_upstream(server, None)
+            .await
+            .map_err(|e| format!("Failed to register upstream '{name}' from config: {e}"))?;
         // Give the initialize task a moment to run and detect NeedsOAuth
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
@@ -242,7 +245,10 @@ mod tests {
             state: "nonce".into(),
         };
         let json = serde_json::to_value(&resp).unwrap();
-        assert_eq!(json["authorization_url"], "https://as.example/authorize?x=1");
+        assert_eq!(
+            json["authorization_url"],
+            "https://as.example/authorize?x=1"
+        );
         assert_eq!(json["state"], "nonce");
     }
 }

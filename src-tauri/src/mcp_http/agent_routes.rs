@@ -1,17 +1,17 @@
 use crate::pty::spawn_reader_thread;
-use crate::{AppState, OutputRingBuffer, PtySession, MAX_CONCURRENT_SESSIONS};
-use crate::state::{OUTPUT_RING_BUFFER_CAPACITY, VtLogBuffer, VT_LOG_BUFFER_CAPACITY};
-#[cfg(feature = "desktop")]
-use tauri::Emitter;
+use crate::state::{OUTPUT_RING_BUFFER_CAPACITY, VT_LOG_BUFFER_CAPACITY, VtLogBuffer};
+use crate::{AppState, MAX_CONCURRENT_SESSIONS, OutputRingBuffer, PtySession};
+use axum::Json;
 use axum::extract::{ConnectInfo, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use parking_lot::Mutex;
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "desktop")]
+use tauri::Emitter;
 use uuid::Uuid;
 
 use super::guards::localhost_only;
@@ -42,15 +42,21 @@ pub(super) async fn detect_agent_binary_http(Query(q): Query<DetectBinaryQuery>)
     Json(serde_json::json!({
         "path": detection.path,
         "version": detection.version,
-    })).into_response()
+    }))
+    .into_response()
 }
 
 pub(super) async fn detect_installed_ides_http() -> impl IntoResponse {
     Json(crate::agent::detect_installed_ides())
 }
 
-pub(super) async fn process_prompt_http(Json(body): Json<ProcessPromptRequest>) -> impl IntoResponse {
-    Json(crate::prompt::process_prompt_content(body.content, body.variables))
+pub(super) async fn process_prompt_http(
+    Json(body): Json<ProcessPromptRequest>,
+) -> impl IntoResponse {
+    Json(crate::prompt::process_prompt_content(
+        body.content,
+        body.variables,
+    ))
 }
 
 pub(super) async fn extract_prompt_variables_http(
@@ -62,18 +68,27 @@ pub(super) async fn extract_prompt_variables_http(
 pub(super) async fn resolve_context_variables_http(
     Json(body): Json<serde_json::Value>,
 ) -> Response {
-    let repo_path = body.get("repoPath").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let repo_path = body
+        .get("repoPath")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
     match crate::prompt::resolve_context_variables(repo_path).await {
         Ok(vars) => Json(vars).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
     }
 }
 
-pub(super) async fn resolve_prompt_variables_http(
-    Json(body): Json<serde_json::Value>,
-) -> Response {
-    let content = body.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let repo_path = body.get("repoPath").and_then(|v| v.as_str()).map(|s| s.to_string());
+pub(super) async fn resolve_prompt_variables_http(Json(body): Json<serde_json::Value>) -> Response {
+    let content = body
+        .get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let repo_path = body
+        .get("repoPath")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
     match crate::prompt::resolve_prompt_variables(content, repo_path).await {
         Ok(result) => Json(result).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
@@ -84,21 +99,54 @@ pub(super) async fn execute_headless_prompt_http(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<serde_json::Value>,
 ) -> Response {
-    if let Err(resp) = localhost_only(&addr) { return resp.into_response(); }
-    let command = match body.get("command").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()) {
+    if let Err(resp) = localhost_only(&addr) {
+        return resp.into_response();
+    }
+    let command = match body
+        .get("command")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
+    {
         Some(c) => c.to_string(),
-        None => return (StatusCode::BAD_REQUEST, "missing required field 'command'").into_response(),
+        None => {
+            return (StatusCode::BAD_REQUEST, "missing required field 'command'").into_response();
+        }
     };
-    let args: Vec<String> = body.get("args")
+    let args: Vec<String> = body
+        .get("args")
         .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
-    let stdin_content = body.get("stdinContent").and_then(|v| v.as_str()).map(String::from);
-    let timeout_ms = body.get("timeoutMs").and_then(|v| v.as_u64()).unwrap_or(300_000);
-    let repo_path = body.get("repoPath").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let env: Option<std::collections::HashMap<String, String>> = body.get("env")
+    let stdin_content = body
+        .get("stdinContent")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let timeout_ms = body
+        .get("timeoutMs")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(300_000);
+    let repo_path = body
+        .get("repoPath")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let env: Option<std::collections::HashMap<String, String>> = body
+        .get("env")
         .and_then(|v| serde_json::from_value(v.clone()).ok());
-    match crate::smart_prompt::execute_headless_prompt(command, args, stdin_content, timeout_ms, repo_path, env).await {
+    match crate::smart_prompt::execute_headless_prompt(
+        command,
+        args,
+        stdin_content,
+        timeout_ms,
+        repo_path,
+        env,
+    )
+    .await
+    {
         Ok(output) => Json(output).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
     }
@@ -108,13 +156,27 @@ pub(super) async fn execute_api_prompt_http(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<serde_json::Value>,
 ) -> Response {
-    if let Err(resp) = localhost_only(&addr) { return resp.into_response(); }
-    let system_prompt = body.get("systemPrompt").and_then(|v| v.as_str()).map(String::from);
-    let content = match body.get("content").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+    if let Err(resp) = localhost_only(&addr) {
+        return resp.into_response();
+    }
+    let system_prompt = body
+        .get("systemPrompt")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let content = match body
+        .get("content")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+    {
         Some(c) => c.to_string(),
-        None => return (StatusCode::BAD_REQUEST, "missing required field 'content'").into_response(),
+        None => {
+            return (StatusCode::BAD_REQUEST, "missing required field 'content'").into_response();
+        }
     };
-    let timeout_ms = body.get("timeoutMs").and_then(|v| v.as_u64()).unwrap_or(60_000);
+    let timeout_ms = body
+        .get("timeoutMs")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(60_000);
     match crate::llm_api::execute_api_prompt(system_prompt, content, timeout_ms).await {
         Ok(output) => Json(output).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
@@ -124,10 +186,24 @@ pub(super) async fn execute_api_prompt_http(
 pub(super) async fn verify_agent_session_http(
     Json(body): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    let agent_type = body.get("agentType").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let session_id = body.get("sessionId").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let cwd = body.get("cwd").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    Json(crate::agent_session::verify_agent_session(agent_type, session_id, cwd))
+    let agent_type = body
+        .get("agentType")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let session_id = body
+        .get("sessionId")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let cwd = body
+        .get("cwd")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    Json(crate::agent_session::verify_agent_session(
+        agent_type, session_id, cwd,
+    ))
 }
 
 pub(super) async fn spawn_agent_session(
@@ -135,12 +211,15 @@ pub(super) async fn spawn_agent_session(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<SpawnAgentRequest>,
 ) -> Response {
-    if let Err(resp) = localhost_only(&addr) { return resp.into_response(); }
+    if let Err(resp) = localhost_only(&addr) {
+        return resp.into_response();
+    }
     if state.sessions.len() >= MAX_CONCURRENT_SESSIONS {
         return (
             StatusCode::TOO_MANY_REQUESTS,
             Json(serde_json::json!({"error": "Max concurrent sessions reached"})),
-        ).into_response();
+        )
+            .into_response();
     }
 
     // Determine binary path
@@ -150,13 +229,17 @@ pub(super) async fn spawn_agent_session(
             return (
                 StatusCode::BAD_REQUEST,
                 Json(serde_json::json!({"error": "binary_path must be an absolute path"})),
-            ).into_response();
+            )
+                .into_response();
         }
         if !p.is_file() {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"error": "binary_path does not point to an existing file"})),
-            ).into_response();
+                Json(
+                    serde_json::json!({"error": "binary_path does not point to an existing file"}),
+                ),
+            )
+                .into_response();
         }
         path.clone()
     } else if let Some(ref agent_type) = body.agent_type {
@@ -187,7 +270,11 @@ pub(super) async fn spawn_agent_session(
     let rows = body.rows.unwrap_or(24);
     let cols = body.cols.unwrap_or(80);
     if let Err(msg) = super::validate_terminal_size(rows, cols) {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": msg}))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": msg})),
+        )
+            .into_response();
     }
     let session_id = Uuid::new_v4().to_string();
     let pty_system = native_pty_system();
@@ -203,7 +290,8 @@ pub(super) async fn spawn_agent_session(
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"error": format!("Failed to open PTY: {}", e)})),
-            ).into_response()
+            )
+                .into_response();
         }
     };
 
@@ -238,7 +326,8 @@ pub(super) async fn spawn_agent_session(
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"error": format!("Failed to spawn agent: {}", e)})),
-            ).into_response()
+            )
+                .into_response();
         }
     };
 
@@ -248,7 +337,8 @@ pub(super) async fn spawn_agent_session(
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"error": format!("Failed to get PTY writer: {}", e)})),
-            ).into_response()
+            )
+                .into_response();
         }
     };
 
@@ -258,7 +348,8 @@ pub(super) async fn spawn_agent_session(
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"error": format!("Failed to get PTY reader: {}", e)})),
-            ).into_response()
+            )
+                .into_response();
         }
     };
 
@@ -277,7 +368,10 @@ pub(super) async fn spawn_agent_session(
         }),
     );
     state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
-    state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .active_sessions
+        .fetch_add(1, Ordering::Relaxed);
 
     state.output_buffers.insert(
         session_id.clone(),
@@ -287,14 +381,18 @@ pub(super) async fn spawn_agent_session(
         session_id.clone(),
         Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
     );
-    state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
+    state
+        .last_output_ms
+        .insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
 
     // Broadcast to SSE/WebSocket consumers (before state is moved to reader thread)
-    let _ = state.event_bus.send(crate::state::AppEvent::SessionCreated {
-        session_id: session_id.clone(),
-        cwd: body.cwd.clone(),
-        agent_type: body.agent_type.clone(),
-    });
+    let _ = state
+        .event_bus
+        .send(crate::state::AppEvent::SessionCreated {
+            session_id: session_id.clone(),
+            cwd: body.cwd.clone(),
+            agent_type: body.agent_type.clone(),
+        });
 
     #[cfg(feature = "desktop")]
     let state_ref = state.clone();
@@ -302,31 +400,40 @@ pub(super) async fn spawn_agent_session(
 
     #[cfg(feature = "desktop")]
     if let Some(app) = state_ref.app_handle.read().as_ref() {
-        let _ = app.emit("session-created", serde_json::json!({
-            "session_id": session_id,
-            "cwd": body.cwd,
-        }));
+        let _ = app.emit(
+            "session-created",
+            serde_json::json!({
+                "session_id": session_id,
+                "cwd": body.cwd,
+            }),
+        );
     }
 
     (
         StatusCode::CREATED,
         Json(serde_json::json!({"session_id": session_id})),
-    ).into_response()
+    )
+        .into_response()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn loopback() -> SocketAddr { "127.0.0.1:1".parse().unwrap() }
-    fn lan() -> SocketAddr { "192.168.1.2:1".parse().unwrap() }
+    fn loopback() -> SocketAddr {
+        "127.0.0.1:1".parse().unwrap()
+    }
+    fn lan() -> SocketAddr {
+        "192.168.1.2:1".parse().unwrap()
+    }
 
     #[tokio::test]
     async fn execute_headless_prompt_http_rejects_non_loopback() {
         let resp = execute_headless_prompt_http(
             ConnectInfo(lan()),
             Json(serde_json::json!({ "command": "echo", "args": ["x"] })),
-        ).await;
+        )
+        .await;
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
 
@@ -334,10 +441,9 @@ mod tests {
     async fn execute_headless_prompt_http_loopback_passes_guard() {
         // Loopback with missing 'command' field must yield 400 from the validator,
         // proving the 403 guard is NOT fired for loopback callers.
-        let resp = execute_headless_prompt_http(
-            ConnectInfo(loopback()),
-            Json(serde_json::json!({})),
-        ).await;
+        let resp =
+            execute_headless_prompt_http(ConnectInfo(loopback()), Json(serde_json::json!({})))
+                .await;
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 
@@ -346,16 +452,15 @@ mod tests {
         let resp = execute_api_prompt_http(
             ConnectInfo(lan()),
             Json(serde_json::json!({ "content": "hello" })),
-        ).await;
+        )
+        .await;
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]
     async fn execute_api_prompt_http_loopback_passes_guard() {
-        let resp = execute_api_prompt_http(
-            ConnectInfo(loopback()),
-            Json(serde_json::json!({})),
-        ).await;
+        let resp =
+            execute_api_prompt_http(ConnectInfo(loopback()), Json(serde_json::json!({}))).await;
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 }

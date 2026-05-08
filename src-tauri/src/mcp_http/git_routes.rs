@@ -1,7 +1,7 @@
+use axum::Json;
 use axum::extract::Query;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 
 use super::types::*;
 use super::{err_500, json_result, validate_repo_path};
@@ -10,16 +10,21 @@ pub(super) async fn repo_info(
     axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::AppState>>,
     Query(q): Query<PathQuery>,
 ) -> Response {
-    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
     let path = q.path;
-    match tokio::task::spawn_blocking(move || crate::git::get_repo_info_cached(&state, &path)).await {
+    match tokio::task::spawn_blocking(move || crate::git::get_repo_info_cached(&state, &path)).await
+    {
         Ok(info) => Json(info).into_response(),
         Err(e) => err_500(&format!("Task failed: {e}")),
     }
 }
 
 pub(super) async fn repo_diff(Query(q): Query<PathQuery>) -> Response {
-    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
     let path = q.path;
     match crate::git::get_git_diff(path, None).await {
         Ok(diff) => (StatusCode::OK, Json(serde_json::json!({"diff": diff}))).into_response(),
@@ -28,7 +33,9 @@ pub(super) async fn repo_diff(Query(q): Query<PathQuery>) -> Response {
 }
 
 pub(super) async fn repo_diff_stats(Query(q): Query<PathQuery>) -> Response {
-    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
     let path = q.path;
     match crate::git::get_diff_stats(path, None).await {
         Ok(stats) => Json(stats).into_response(),
@@ -37,19 +44,25 @@ pub(super) async fn repo_diff_stats(Query(q): Query<PathQuery>) -> Response {
 }
 
 pub(super) async fn repo_changed_files(Query(q): Query<PathQuery>) -> Response {
-    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
     let path = q.path;
     json_result(crate::git::get_changed_files(path, None).await)
 }
 
 pub(super) async fn repo_branches(Query(q): Query<PathQuery>) -> Response {
-    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
     let path = q.path;
     json_result(crate::git::get_git_branches(path).await)
 }
 
 pub(super) async fn get_file_diff_http(Query(q): Query<FileQuery>) -> Response {
-    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
     let path = q.path;
     let file = q.file;
     let scope = q.scope;
@@ -58,7 +71,9 @@ pub(super) async fn get_file_diff_http(Query(q): Query<FileQuery>) -> Response {
 }
 
 pub(super) async fn list_markdown_files_http(Query(q): Query<PathQuery>) -> Response {
-    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
     let path = q.path;
     match tokio::task::spawn_blocking(move || crate::list_markdown_files_impl(path)).await {
         Ok(Ok(files)) => (StatusCode::OK, Json(serde_json::json!(files))).into_response(),
@@ -68,7 +83,9 @@ pub(super) async fn list_markdown_files_http(Query(q): Query<PathQuery>) -> Resp
 }
 
 pub(super) async fn read_file_http(Query(q): Query<FileQuery>) -> Response {
-    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
     let path = q.path;
     let file = q.file;
     match tokio::task::spawn_blocking(move || crate::read_file_impl(path, file)).await {
@@ -79,11 +96,17 @@ pub(super) async fn read_file_http(Query(q): Query<FileQuery>) -> Response {
 }
 
 pub(super) async fn rename_branch_http(Json(body): Json<RenameBranchRequest>) -> Response {
-    if let Err(e) = validate_repo_path(&body.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&body.path) {
+        return e.into_response();
+    }
     let path = body.path;
     let old_name = body.old_name;
     let new_name = body.new_name;
-    match tokio::task::spawn_blocking(move || crate::git::rename_branch_impl(&path, &old_name, &new_name)).await {
+    match tokio::task::spawn_blocking(move || {
+        crate::git::rename_branch_impl(&path, &old_name, &new_name)
+    })
+    .await
+    {
         Ok(Ok(())) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response(),
         Ok(Err(e)) => err_500(&e),
         Err(e) => err_500(&format!("Task failed: {e}")),
@@ -99,7 +122,9 @@ pub(super) async fn check_is_main_branch_http(Query(q): Query<BranchQuery>) -> i
 }
 
 pub(super) async fn get_recent_commits_http(Query(q): Query<RecentCommitsQuery>) -> Response {
-    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
     let path = q.path;
     let count = q.count;
     json_result(crate::git::get_recent_commits(path, count).await)
@@ -109,7 +134,9 @@ pub(super) async fn repo_summary(
     axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::AppState>>,
     Query(q): Query<PathQuery>,
 ) -> Response {
-    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
     json_result(crate::git::get_repo_summary_impl(&state, q.path).await)
 }
 
@@ -117,7 +144,9 @@ pub(super) async fn repo_structure(
     axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::AppState>>,
     Query(q): Query<PathQuery>,
 ) -> Response {
-    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
     json_result(crate::git::get_repo_structure_impl(&state, q.path).await)
 }
 
@@ -125,7 +154,9 @@ pub(super) async fn repo_diff_stats_batch(
     axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::AppState>>,
     Query(q): Query<PathQuery>,
 ) -> Response {
-    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
     json_result(crate::git::get_repo_diff_stats_impl(&state, q.path).await)
 }
 
@@ -133,17 +164,31 @@ pub(super) async fn repo_merged_branches(
     axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::AppState>>,
     Query(q): Query<PathQuery>,
 ) -> Response {
-    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
     let path = q.path;
     // Check cache first (same pattern as Tauri command)
-    if let Some(cached) = crate::AppState::get_cached(&state.git_cache.merged_branches, &path, crate::state::GIT_CACHE_TTL) {
+    if let Some(cached) = crate::AppState::get_cached(
+        &state.git_cache.merged_branches,
+        &path,
+        crate::state::GIT_CACHE_TTL,
+    ) {
         return (StatusCode::OK, Json(serde_json::json!(cached))).into_response();
     }
     let state_clone = state.clone();
     let path_clone = path.clone();
-    match tokio::task::spawn_blocking(move || crate::git::get_merged_branches_impl(std::path::Path::new(&path_clone))).await {
+    match tokio::task::spawn_blocking(move || {
+        crate::git::get_merged_branches_impl(std::path::Path::new(&path_clone))
+    })
+    .await
+    {
         Ok(Ok(branches)) => {
-            crate::AppState::set_cached(&state_clone.git_cache.merged_branches, path, branches.clone());
+            crate::AppState::set_cached(
+                &state_clone.git_cache.merged_branches,
+                path,
+                branches.clone(),
+            );
             (StatusCode::OK, Json(serde_json::json!(branches))).into_response()
         }
         Ok(Err(e)) => err_500(&e),
@@ -164,11 +209,17 @@ pub(super) async fn get_local_ips_http(
 }
 
 pub(super) async fn remote_url(Query(q): Query<PathQuery>) -> Response {
-    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
     let path = q.path;
     match crate::git::get_remote_url(path).await {
         Ok(Some(url)) => Json(serde_json::json!({"url": url})).into_response(),
-        Ok(None) => (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "No remote URL found"}))).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "No remote URL found"})),
+        )
+            .into_response(),
         Err(e) => err_500(&e),
     }
 }
@@ -183,16 +234,30 @@ pub(super) async fn git_panel_context(
     axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::AppState>>,
     Query(q): Query<PathQuery>,
 ) -> Response {
-    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
     let path = q.path.clone();
-    if let Some(cached) = crate::AppState::get_cached(&state.git_cache.git_panel_context, &path, crate::state::GIT_CACHE_TTL) {
+    if let Some(cached) = crate::AppState::get_cached(
+        &state.git_cache.git_panel_context,
+        &path,
+        crate::state::GIT_CACHE_TTL,
+    ) {
         return Json(cached).into_response();
     }
     let state_clone = state.clone();
     let path_clone = path.clone();
-    match tokio::task::spawn_blocking(move || crate::git::get_git_panel_context_impl(std::path::Path::new(&path_clone))).await {
+    match tokio::task::spawn_blocking(move || {
+        crate::git::get_git_panel_context_impl(std::path::Path::new(&path_clone))
+    })
+    .await
+    {
         Ok(ctx) => {
-            crate::AppState::set_cached(&state_clone.git_cache.git_panel_context, path, ctx.clone());
+            crate::AppState::set_cached(
+                &state_clone.git_cache.git_panel_context,
+                path,
+                ctx.clone(),
+            );
             Json(ctx).into_response()
         }
         Err(e) => err_500(&format!("Task failed: {e}")),
@@ -202,22 +267,41 @@ pub(super) async fn git_panel_context(
 /// Allowed git subcommands for the HTTP endpoint.
 /// Only safe, non-destructive operations that the GitPanel needs.
 const ALLOWED_GIT_SUBCOMMANDS: &[&str] = &[
-    "fetch", "pull", "push", "stash", "log", "diff", "show", "branch", "tag",
-    "merge", "rebase", "cherry-pick", "remote", "status", "rev-parse",
+    "fetch",
+    "pull",
+    "push",
+    "stash",
+    "log",
+    "diff",
+    "show",
+    "branch",
+    "tag",
+    "merge",
+    "rebase",
+    "cherry-pick",
+    "remote",
+    "status",
+    "rev-parse",
 ];
 
 pub(super) async fn run_git_command_http(
     axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::AppState>>,
     Json(body): Json<RunGitCommandRequest>,
 ) -> Response {
-    if let Err(e) = validate_repo_path(&body.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&body.path) {
+        return e.into_response();
+    }
 
     // Validate subcommand against allowlist
     let subcommand = body.args.first().map(|s| s.as_str()).unwrap_or("");
     if !ALLOWED_GIT_SUBCOMMANDS.contains(&subcommand) {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
-            "error": format!("Git subcommand \"{subcommand}\" is not allowed via HTTP")
-        }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": format!("Git subcommand \"{subcommand}\" is not allowed via HTTP")
+            })),
+        )
+            .into_response();
     }
 
     let path = body.path;
@@ -250,7 +334,9 @@ pub(super) async fn run_git_command_http(
             }
             Err(e) => Err(format!("git command failed: {e}")),
         }
-    }).await {
+    })
+    .await
+    {
         Ok(Ok(result)) => Json(result).into_response(),
         Ok(Err(e)) => err_500(&e),
         Err(e) => err_500(&format!("Task failed: {e}")),
@@ -258,7 +344,9 @@ pub(super) async fn run_git_command_http(
 }
 
 pub(super) async fn working_tree_status(Query(q): Query<PathQuery>) -> Response {
-    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
     match crate::git::get_working_tree_status(q.path).await {
         Ok(status) => Json(status).into_response(),
         Err(e) => err_500(&e),
@@ -266,7 +354,9 @@ pub(super) async fn working_tree_status(Query(q): Query<PathQuery>) -> Response 
 }
 
 pub(super) async fn stage_files_http(Json(body): Json<StageFilesRequest>) -> Response {
-    if let Err(e) = validate_repo_path(&body.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&body.path) {
+        return e.into_response();
+    }
     let path = body.path;
     let files = body.files;
     match crate::git::git_stage_files(path, files).await {
@@ -276,7 +366,9 @@ pub(super) async fn stage_files_http(Json(body): Json<StageFilesRequest>) -> Res
 }
 
 pub(super) async fn unstage_files_http(Json(body): Json<StageFilesRequest>) -> Response {
-    if let Err(e) = validate_repo_path(&body.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&body.path) {
+        return e.into_response();
+    }
     let path = body.path;
     let files = body.files;
     match crate::git::git_unstage_files(path, files).await {
@@ -286,7 +378,9 @@ pub(super) async fn unstage_files_http(Json(body): Json<StageFilesRequest>) -> R
 }
 
 pub(super) async fn discard_files_http(Json(body): Json<StageFilesRequest>) -> Response {
-    if let Err(e) = validate_repo_path(&body.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&body.path) {
+        return e.into_response();
+    }
     let path = body.path;
     let files = body.files;
     match crate::git::git_discard_files(path, files).await {
@@ -296,7 +390,9 @@ pub(super) async fn discard_files_http(Json(body): Json<StageFilesRequest>) -> R
 }
 
 pub(super) async fn apply_reverse_patch_http(Json(body): Json<ReversePatchRequest>) -> Response {
-    if let Err(e) = validate_repo_path(&body.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&body.path) {
+        return e.into_response();
+    }
     let path = body.path;
     let patch = body.patch;
     let scope = body.scope;
@@ -307,7 +403,9 @@ pub(super) async fn apply_reverse_patch_http(Json(body): Json<ReversePatchReques
 }
 
 pub(super) async fn git_commit_http(Json(body): Json<CommitRequest>) -> Response {
-    if let Err(e) = validate_repo_path(&body.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&body.path) {
+        return e.into_response();
+    }
     let path = body.path;
     let message = body.message;
     let amend = body.amend;
@@ -318,7 +416,9 @@ pub(super) async fn git_commit_http(Json(body): Json<CommitRequest>) -> Response
 }
 
 pub(super) async fn commit_log_http(Query(q): Query<CommitLogQuery>) -> Response {
-    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
     let path = q.path;
     let count = q.count;
     let after = q.after;
@@ -329,7 +429,9 @@ pub(super) async fn commit_log_http(Query(q): Query<CommitLogQuery>) -> Response
 }
 
 pub(super) async fn stash_list_http(Query(q): Query<PathQuery>) -> Response {
-    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
     let path = q.path;
     match crate::git::get_stash_list(path).await {
         Ok(entries) => Json(serde_json::json!(entries)).into_response(),
@@ -338,7 +440,9 @@ pub(super) async fn stash_list_http(Query(q): Query<PathQuery>) -> Response {
 }
 
 pub(super) async fn stash_apply_http(Json(body): Json<StashRefRequest>) -> Response {
-    if let Err(e) = validate_repo_path(&body.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&body.path) {
+        return e.into_response();
+    }
     let path = body.path;
     let stash_ref = body.stash_ref;
     match crate::git::git_stash_apply(path, stash_ref).await {
@@ -348,7 +452,9 @@ pub(super) async fn stash_apply_http(Json(body): Json<StashRefRequest>) -> Respo
 }
 
 pub(super) async fn stash_pop_http(Json(body): Json<StashRefRequest>) -> Response {
-    if let Err(e) = validate_repo_path(&body.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&body.path) {
+        return e.into_response();
+    }
     let path = body.path;
     let stash_ref = body.stash_ref;
     match crate::git::git_stash_pop(path, stash_ref).await {
@@ -358,7 +464,9 @@ pub(super) async fn stash_pop_http(Json(body): Json<StashRefRequest>) -> Respons
 }
 
 pub(super) async fn stash_drop_http(Json(body): Json<StashRefRequest>) -> Response {
-    if let Err(e) = validate_repo_path(&body.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&body.path) {
+        return e.into_response();
+    }
     let path = body.path;
     let stash_ref = body.stash_ref;
     match crate::git::git_stash_drop(path, stash_ref).await {
@@ -368,7 +476,9 @@ pub(super) async fn stash_drop_http(Json(body): Json<StashRefRequest>) -> Respon
 }
 
 pub(super) async fn stash_show_http(Query(q): Query<StashRefRequest>) -> Response {
-    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
     let path = q.path;
     let stash_ref = q.stash_ref;
     match crate::git::git_stash_show(path, stash_ref).await {
@@ -378,7 +488,9 @@ pub(super) async fn stash_show_http(Query(q): Query<StashRefRequest>) -> Respons
 }
 
 pub(super) async fn file_history_http(Query(q): Query<FilePathQuery>) -> Response {
-    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
     let path = q.path;
     let file = q.file;
     let count = q.count;
@@ -390,7 +502,9 @@ pub(super) async fn file_history_http(Query(q): Query<FilePathQuery>) -> Respons
 }
 
 pub(super) async fn file_blame_http(Query(q): Query<FileBlameQuery>) -> Response {
-    if let Err(e) = validate_repo_path(&q.path) { return e.into_response(); }
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
     let path = q.path;
     let file = q.file;
     match crate::git::get_file_blame(path, file).await {

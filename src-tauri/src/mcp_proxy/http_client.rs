@@ -12,7 +12,7 @@
 use crate::mcp_oauth::token::TokenManager;
 use crate::mcp_upstream_config::UpstreamTransport;
 use crate::mcp_upstream_credentials::{
-    is_token_valid, read_stored_credential, OAuthTokenSet, StoredCredential,
+    OAuthTokenSet, StoredCredential, is_token_valid, read_stored_credential,
 };
 use serde_json::Value;
 use std::sync::Arc;
@@ -124,8 +124,10 @@ impl HttpMcpClient {
             None
         };
 
-        let mut builder = reqwest::Client::builder()
-            .user_agent(concat!("tuicommander-mcp-proxy/", env!("CARGO_PKG_VERSION")));
+        let mut builder = reqwest::Client::builder().user_agent(concat!(
+            "tuicommander-mcp-proxy/",
+            env!("CARGO_PKG_VERSION")
+        ));
 
         if let Some(t) = timeout {
             builder = builder.timeout(t);
@@ -238,10 +240,7 @@ impl HttpMcpClient {
     async fn token_manager_for(&self, set: &OAuthTokenSet) -> Arc<TokenManager> {
         self.token_manager
             .get_or_init(|| async {
-                let resource = set
-                    .resource
-                    .clone()
-                    .or_else(|| Some(self.url.clone()));
+                let resource = set.resource.clone().or_else(|| Some(self.url.clone()));
                 Arc::new(TokenManager::new(
                     self.name.clone(),
                     set.client_id.clone(),
@@ -298,7 +297,9 @@ impl HttpMcpClient {
             }
         });
 
-        let resp = self.send_post(&init_body, auth_token.as_deref(), None).await?;
+        let resp = self
+            .send_post(&init_body, auth_token.as_deref(), None)
+            .await?;
 
         // Extract session ID from response header (preserved across auth retries
         // by re-reading after the final response).
@@ -319,7 +320,11 @@ impl HttpMcpClient {
 
         // Fire-and-forget: notifications/initialized
         let _ = self
-            .rpc_raw("notifications/initialized", serde_json::json!({}), auth_token.as_deref())
+            .rpc_raw(
+                "notifications/initialized",
+                serde_json::json!({}),
+                auth_token.as_deref(),
+            )
             .await;
 
         // Fetch tool list
@@ -402,7 +407,10 @@ impl HttpMcpClient {
     pub(crate) async fn shutdown(&self) {
         if let Some(sid) = &self.session_id {
             let auth_token = self.resolve_bearer().await.ok().flatten();
-            let mut req = self.client.delete(&self.url).header(MCP_SESSION_HEADER, sid);
+            let mut req = self
+                .client
+                .delete(&self.url)
+                .header(MCP_SESSION_HEADER, sid);
             if let Some(token) = &auth_token {
                 req = req.bearer_auth(token);
             }
@@ -423,7 +431,9 @@ impl HttpMcpClient {
         body: &Value,
         auth_token: Option<&str>,
     ) -> Result<Value, UpstreamError> {
-        let resp = self.send_post(body, auth_token, self.session_id.as_deref()).await?;
+        let resp = self
+            .send_post(body, auth_token, self.session_id.as_deref())
+            .await?;
 
         if resp.status() == reqwest::StatusCode::BAD_REQUEST {
             return Err(UpstreamError::Other(format!(
@@ -436,7 +446,11 @@ impl HttpMcpClient {
             // Single retry: if OAuth credential, force-refresh once and retry.
             if let Ok(Some(refreshed)) = self.force_refresh().await {
                 let retry_resp = self
-                    .send_post(body, Some(&refreshed.access_token), self.session_id.as_deref())
+                    .send_post(
+                        body,
+                        Some(&refreshed.access_token),
+                        self.session_id.as_deref(),
+                    )
                     .await?;
                 return self.decode_response(retry_resp).await;
             }
@@ -495,8 +509,13 @@ impl HttpMcpClient {
         auth_token: Option<&str>,
         session_id: Option<&str>,
     ) -> Result<reqwest::Response, UpstreamError> {
-        let mut req = self.client.post(&self.url)
-            .header(reqwest::header::ACCEPT, "application/json, text/event-stream")
+        let mut req = self
+            .client
+            .post(&self.url)
+            .header(
+                reqwest::header::ACCEPT,
+                "application/json, text/event-stream",
+            )
             .json(body);
         if let Some(sid) = session_id {
             req = req.header(MCP_SESSION_HEADER, sid);
@@ -562,9 +581,9 @@ fn classify_401(resp: &reqwest::Response) -> UpstreamError {
         .map(|s| s.to_string());
 
     match header {
-        Some(h) if h.to_ascii_lowercase().contains("bearer") => {
-            UpstreamError::NeedsOAuth { www_authenticate: h }
-        }
+        Some(h) if h.to_ascii_lowercase().contains("bearer") => UpstreamError::NeedsOAuth {
+            www_authenticate: h,
+        },
         _ => UpstreamError::AuthFailed,
     }
 }
@@ -612,11 +631,11 @@ mod tests {
     use std::sync::Arc;
 
     use axum::{
+        Json, Router,
         extract::State as AxumState,
         http::{HeaderMap, StatusCode},
         response::IntoResponse,
         routing::post,
-        Json, Router,
     };
     use tokio::net::TcpListener;
 
@@ -650,7 +669,11 @@ mod tests {
                     .parse()
                     .unwrap(),
             );
-            return (StatusCode::UNAUTHORIZED, headers, Json(serde_json::json!({})))
+            return (
+                StatusCode::UNAUTHORIZED,
+                headers,
+                Json(serde_json::json!({})),
+            )
                 .into_response();
         }
         if state
@@ -662,9 +685,17 @@ mod tests {
 
         match method {
             "initialize" => {
-                state.init_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                if state.fail_initialize.load(std::sync::atomic::Ordering::SeqCst) {
-                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({})))
+                state
+                    .init_count
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if state
+                    .fail_initialize
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({})),
+                    )
                         .into_response();
                 }
                 let resp = serde_json::json!({
@@ -760,7 +791,9 @@ mod tests {
     #[tokio::test]
     async fn initialize_fails_when_server_returns_500() {
         let state = MockState::default();
-        state.fail_initialize.store(true, std::sync::atomic::Ordering::SeqCst);
+        state
+            .fail_initialize
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         let url = spawn_mock_server(state).await;
 
         let mut client = HttpMcpClient::new("test".to_string(), url, 10, false);
@@ -801,8 +834,12 @@ mod tests {
 
     #[tokio::test]
     async fn health_check_fails_when_not_initialized() {
-        let client =
-            HttpMcpClient::new("test".to_string(), "http://127.0.0.1:1/mcp".to_string(), 2, false);
+        let client = HttpMcpClient::new(
+            "test".to_string(),
+            "http://127.0.0.1:1/mcp".to_string(),
+            2,
+            false,
+        );
         let result = client.health_check().await;
         assert!(result.is_err());
     }
@@ -915,7 +952,10 @@ mod tests {
 
     #[test]
     fn upstream_error_display_variants() {
-        assert_eq!(UpstreamError::AuthFailed.to_string(), "Upstream authentication failed (401)");
+        assert_eq!(
+            UpstreamError::AuthFailed.to_string(),
+            "Upstream authentication failed (401)"
+        );
         let needs = UpstreamError::NeedsOAuth {
             www_authenticate: "Bearer realm=\"x\"".to_string(),
         };
@@ -933,7 +973,8 @@ mod tests {
 
     #[test]
     fn parse_sse_json_single_data_line() {
-        let body = "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[]}}\n\n";
+        let body =
+            "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[]}}\n\n";
         let val = parse_sse_json(body).unwrap();
         assert_eq!(val["result"]["tools"].as_array().unwrap().len(), 0);
     }

@@ -5,7 +5,7 @@
 //! - RFC 8414: OAuth 2.0 Authorization Server Metadata Discovery
 //! - OIDC Discovery fallback (/.well-known/openid-configuration)
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
 // ---------------------------------------------------------------------------
@@ -310,8 +310,7 @@ mod tests {
             .unwrap_err();
 
         assert!(
-            err.to_string()
-                .contains("no authorization_servers"),
+            err.to_string().contains("no authorization_servers"),
             "expected 'no authorization_servers', got: {err}"
         );
     }
@@ -511,8 +510,7 @@ mod tests {
             .unwrap_err();
 
         assert!(
-            err.to_string().contains("RFC 8414")
-                && err.to_string().contains("OIDC"),
+            err.to_string().contains("RFC 8414") && err.to_string().contains("OIDC"),
             "should mention both failures, got: {err}"
         );
     }
@@ -591,8 +589,8 @@ mod tests {
 
     #[test]
     fn validate_https_rejects_plain_http() {
-        let err = validate_endpoint_https("http://evil.example.com/token", "token_endpoint")
-            .unwrap_err();
+        let err =
+            validate_endpoint_https("http://evil.example.com/token", "token_endpoint").unwrap_err();
         assert!(err.to_string().contains("HTTPS"));
         assert!(err.to_string().contains("token_endpoint"));
     }

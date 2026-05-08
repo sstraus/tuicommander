@@ -1,15 +1,21 @@
 use crate::{AppState, MAX_CONCURRENT_SESSIONS};
+use axum::Json;
 use axum::extract::{ConnectInfo, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::Json;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 use super::guards::localhost_only;
 use super::types::*;
 
-pub(super) async fn get_config(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+pub(super) async fn get_config(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    if let Err(resp) = localhost_only(&addr) {
+        return resp.into_response();
+    }
     let config = state.config.read().clone();
     let mut json = match serde_json::to_value(config) {
         Ok(v) => v,
@@ -17,7 +23,8 @@ pub(super) async fn get_config(State(state): State<Arc<AppState>>) -> impl IntoR
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({"error": format!("Failed to serialize config: {e}")})),
-            ).into_response();
+            )
+                .into_response();
         }
     };
     // Strip sensitive fields from nested services config
@@ -42,7 +49,9 @@ pub(super) async fn put_config(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(config): Json<crate::config::AppConfig>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) { return resp; }
+    if let Err(resp) = localhost_only(&addr) {
+        return resp;
+    }
     // Preserve server-managed secrets — clients must not overwrite these via save
     let mut config = config;
     {
@@ -58,7 +67,8 @@ pub(super) async fn put_config(
                 (c.disabled_native_tools.clone(), c.collapse_tools)
             };
             *state.config.write() = config.clone();
-            if old_disabled != config.disabled_native_tools || old_collapse != config.collapse_tools {
+            if old_disabled != config.disabled_native_tools || old_collapse != config.collapse_tools
+            {
                 let _ = state.mcp_tools_changed.send(());
             }
             (StatusCode::OK, Json(serde_json::json!({"ok": true})))
@@ -74,7 +84,9 @@ pub(super) async fn hash_password_http(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(req): Json<HashPasswordRequest>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) { return resp; }
+    if let Err(resp) = localhost_only(&addr) {
+        return resp;
+    }
     match bcrypt::hash(&req.password, 12) {
         Ok(hash) => (StatusCode::OK, Json(serde_json::json!({"hash": hash}))),
         Err(e) => (
@@ -85,8 +97,12 @@ pub(super) async fn hash_password_http(
 }
 
 pub(super) async fn rotate_session_token(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
+    if let Err(resp) = localhost_only(&addr) {
+        return resp;
+    }
     let new_token = uuid::Uuid::new_v4().to_string();
     *state.session_token.write() = new_token.clone();
     let mut cfg = state.config.read().clone();
@@ -108,10 +124,15 @@ pub(super) async fn put_notification_config(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(config): Json<crate::config::NotificationConfig>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) { return resp; }
+    if let Err(resp) = localhost_only(&addr) {
+        return resp;
+    }
     match crate::config::save_notification_config(config) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e})),
+        ),
     }
 }
 
@@ -123,10 +144,15 @@ pub(super) async fn put_ui_prefs(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(config): Json<crate::config::UIPrefsConfig>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) { return resp; }
+    if let Err(resp) = localhost_only(&addr) {
+        return resp;
+    }
     match crate::config::save_ui_prefs(config) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e})),
+        ),
     }
 }
 
@@ -138,14 +164,21 @@ pub(super) async fn put_repo_settings(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(config): Json<crate::config::RepoSettingsMap>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) { return resp; }
+    if let Err(resp) = localhost_only(&addr) {
+        return resp;
+    }
     match crate::config::save_repo_settings(config) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e})),
+        ),
     }
 }
 
-pub(super) async fn check_has_custom_settings_http(Query(q): Query<PathQuery>) -> impl IntoResponse {
+pub(super) async fn check_has_custom_settings_http(
+    Query(q): Query<PathQuery>,
+) -> impl IntoResponse {
     Json(crate::config::check_has_custom_settings(q.path))
 }
 
@@ -157,10 +190,15 @@ pub(super) async fn put_repositories(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(config): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) { return resp; }
+    if let Err(resp) = localhost_only(&addr) {
+        return resp;
+    }
     match crate::config::save_repositories(config) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e})),
+        ),
     }
 }
 
@@ -172,30 +210,47 @@ pub(super) async fn put_pane_layout(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(layout): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) { return resp; }
+    if let Err(resp) = localhost_only(&addr) {
+        return resp;
+    }
     match crate::config::save_pane_layout(layout) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e})),
+        ),
     }
 }
 
-pub(super) async fn clear_caches(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+pub(super) async fn clear_caches(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    if let Err(resp) = localhost_only(&addr) {
+        return resp.into_response();
+    }
     state.clear_caches();
-    Json(serde_json::json!({"ok": true}))
+    Json(serde_json::json!({"ok": true})).into_response()
 }
 
 pub(super) async fn clear_repo_caches(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
     Json(body): Json<serde_json::Value>,
 ) -> impl IntoResponse {
+    if let Err(resp) = localhost_only(&addr) {
+        return resp.into_response();
+    }
     if let Some(path) = body.get("path").and_then(|v| v.as_str()) {
         state.invalidate_repo_caches(path);
     }
-    Json(serde_json::json!({"ok": true}))
+    Json(serde_json::json!({"ok": true})).into_response()
 }
 
 pub(super) async fn get_repo_local_config(Query(q): Query<PathQuery>) -> impl IntoResponse {
-    Json(crate::config::load_repo_local_config_from_path(std::path::Path::new(&q.path)))
+    Json(crate::config::load_repo_local_config_from_path(
+        std::path::Path::new(&q.path),
+    ))
 }
 
 pub(super) async fn get_prompt_library() -> impl IntoResponse {
@@ -206,10 +261,15 @@ pub(super) async fn put_prompt_library(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(config): Json<crate::config::PromptLibraryConfig>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) { return resp; }
+    if let Err(resp) = localhost_only(&addr) {
+        return resp;
+    }
     match crate::config::save_prompt_library(config) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e})),
+        ),
     }
 }
 
@@ -223,10 +283,15 @@ pub(super) async fn put_repo_defaults(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(config): Json<crate::config::RepoDefaultsConfig>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) { return resp; }
+    if let Err(resp) = localhost_only(&addr) {
+        return resp;
+    }
     match crate::config::save_repo_defaults(config) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e})),
+        ),
     }
 }
 
@@ -240,10 +305,15 @@ pub(super) async fn put_notes(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(config): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) { return resp; }
+    if let Err(resp) = localhost_only(&addr) {
+        return resp;
+    }
     match crate::config::save_notes(config) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e})),
+        ),
     }
 }
 
@@ -257,10 +327,15 @@ pub(super) async fn put_activity(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(items): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) { return resp; }
+    if let Err(resp) = localhost_only(&addr) {
+        return resp;
+    }
     match crate::config::save_activity(items) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e})),
+        ),
     }
 }
 
@@ -274,10 +349,15 @@ pub(super) async fn put_keybindings(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(config): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) { return resp; }
+    if let Err(resp) = localhost_only(&addr) {
+        return resp;
+    }
     match crate::config::save_keybindings(config) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e})),
+        ),
     }
 }
 
@@ -291,10 +371,15 @@ pub(super) async fn put_agents_config(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(config): Json<crate::config::AgentsConfig>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) { return resp; }
+    if let Err(resp) = localhost_only(&addr) {
+        return resp;
+    }
     match crate::config::save_agents_config(config) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e})),
+        ),
     }
 }
 
@@ -308,10 +393,15 @@ pub(super) async fn put_provider_registry(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(registry): Json<crate::provider_registry::ProviderRegistry>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) { return resp; }
+    if let Err(resp) = localhost_only(&addr) {
+        return resp;
+    }
     match crate::provider_registry::save_provider_registry(registry) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e})),
+        ),
     }
 }
 
@@ -320,7 +410,9 @@ pub(super) async fn put_provider_registry(
 pub(super) async fn get_mcp_status_http(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     // Real connect attempt — file.exists() is unreliable for stale sockets.
     #[cfg(unix)]
-    let running = tokio::net::UnixStream::connect(super::socket_path()).await.is_ok();
+    let running = tokio::net::UnixStream::connect(super::socket_path())
+        .await
+        .is_ok();
     #[cfg(not(unix))]
     let running = false;
     Json(serde_json::json!({

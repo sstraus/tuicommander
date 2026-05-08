@@ -29,8 +29,18 @@ const RUN_COMMAND: &str = "ai_terminal_run_command";
 const DRIVE_AGENT: &str = "ai_terminal_drive_agent";
 
 pub(crate) const AI_TERMINAL_TOOL_NAMES: [&str; 13] = [
-    READ_SCREEN, SEND_INPUT, SEND_KEY, WAIT_FOR, GET_STATE, GET_CONTEXT,
-    READ_FILE, WRITE_FILE, EDIT_FILE, LIST_FILES, SEARCH_FILES, RUN_COMMAND,
+    READ_SCREEN,
+    SEND_INPUT,
+    SEND_KEY,
+    WAIT_FOR,
+    GET_STATE,
+    GET_CONTEXT,
+    READ_FILE,
+    WRITE_FILE,
+    EDIT_FILE,
+    LIST_FILES,
+    SEARCH_FILES,
+    RUN_COMMAND,
     DRIVE_AGENT,
 ];
 
@@ -187,7 +197,10 @@ fn strip_prefix(name: &str) -> Option<&'static str> {
 }
 
 fn is_write_tool(name: &str) -> bool {
-    matches!(name, SEND_INPUT | SEND_KEY | WRITE_FILE | EDIT_FILE | RUN_COMMAND | DRIVE_AGENT)
+    matches!(
+        name,
+        SEND_INPUT | SEND_KEY | WRITE_FILE | EDIT_FILE | RUN_COMMAND | DRIVE_AGENT
+    )
 }
 
 /// Tools that require a per-session filesystem sandbox. For these we must
@@ -234,11 +247,12 @@ pub(crate) async fn handle(
 
     if is_write_tool(name) {
         if let Some(sid) = args["session_id"].as_str()
-            && crate::ai_agent::conversation_engine::ACTIVE_CONVERSATIONS.contains_key(sid) {
-                return serde_json::json!({
-                    "error": "Session is controlled by an active agent loop"
-                });
-            }
+            && crate::ai_agent::conversation_engine::ACTIVE_CONVERSATIONS.contains_key(sid)
+        {
+            return serde_json::json!({
+                "error": "Session is controlled by an active agent loop"
+            });
+        }
         if !confirm_external_write(state, name, args).await {
             return serde_json::json!({"error": "User declined the action"});
         }
@@ -270,7 +284,10 @@ async fn confirm_external_write(
         WRITE_FILE => format!("Write file: {}", args["file_path"].as_str().unwrap_or("")),
         EDIT_FILE => format!("Edit file: {}", args["file_path"].as_str().unwrap_or("")),
         RUN_COMMAND => format!("Run command: {}", args["command"].as_str().unwrap_or("")),
-        DRIVE_AGENT => format!("Drive agent: {}", args["command"].as_str().unwrap_or("(wait+read only)")),
+        DRIVE_AGENT => format!(
+            "Drive agent: {}",
+            args["command"].as_str().unwrap_or("(wait+read only)")
+        ),
         _ => format!("Action: {tool_name}"),
     };
     let message = format!(
@@ -301,7 +318,10 @@ async fn confirm_external_write(
     tool_name: &str,
     _args: &serde_json::Value,
 ) -> bool {
-    tracing::warn!(tool_name, "confirm_external_write: no desktop feature, denying");
+    tracing::warn!(
+        tool_name,
+        "confirm_external_write: no desktop feature, denying"
+    );
     false
 }
 
@@ -378,22 +398,27 @@ mod tests {
 
     #[tokio::test]
     async fn handle_rejects_write_when_agent_active() {
+        use crate::ai_agent::conversation_engine::{
+            ACTIVE_CONVERSATIONS, ConversationEvent, ConversationHandle,
+        };
+        use crate::ai_agent::engine::AgentState;
+        use parking_lot::{Mutex, RwLock};
         use std::sync::Arc;
         use std::sync::atomic::AtomicBool;
-        use parking_lot::{Mutex, RwLock};
-        use tokio::sync::{broadcast, Notify};
-        use crate::ai_agent::engine::AgentState;
-        use crate::ai_agent::conversation_engine::{ACTIVE_CONVERSATIONS, ConversationHandle, ConversationEvent};
+        use tokio::sync::{Notify, broadcast};
 
         let sid = "mcp-guard-test-session";
         let (tx, _rx) = broadcast::channel::<ConversationEvent>(4);
-        ACTIVE_CONVERSATIONS.insert(sid.to_string(), ConversationHandle {
-            cancel: Arc::new(AtomicBool::new(false)),
-            state: Arc::new(RwLock::new(AgentState::Running)),
-            pause_notify: Arc::new(Notify::new()),
-            event_tx: tx,
-            approval_tx: Arc::new(Mutex::new(None)),
-        });
+        ACTIVE_CONVERSATIONS.insert(
+            sid.to_string(),
+            ConversationHandle {
+                cancel: Arc::new(AtomicBool::new(false)),
+                state: Arc::new(RwLock::new(AgentState::Running)),
+                pause_notify: Arc::new(Notify::new()),
+                event_tx: tx,
+                approval_tx: Arc::new(Mutex::new(None)),
+            },
+        );
 
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
         let args = serde_json::json!({"session_id": sid, "command": "echo hi"});

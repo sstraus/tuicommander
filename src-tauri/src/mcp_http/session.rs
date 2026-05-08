@@ -1,19 +1,19 @@
 use crate::pty::{build_shell_command, resolve_shell, spawn_reader_thread};
-use crate::{AppState, OutputRingBuffer, PtySession, MAX_CONCURRENT_SESSIONS};
-use crate::state::{OUTPUT_RING_BUFFER_CAPACITY, VtLogBuffer, VT_LOG_BUFFER_CAPACITY};
-#[cfg(feature = "desktop")]
-use tauri::Emitter;
+use crate::state::{OUTPUT_RING_BUFFER_CAPACITY, VT_LOG_BUFFER_CAPACITY, VtLogBuffer};
+use crate::{AppState, MAX_CONCURRENT_SESSIONS, OutputRingBuffer, PtySession};
+use axum::Json;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use futures_util::stream::StreamExt;
 use parking_lot::Mutex;
-use portable_pty::{native_pty_system, PtySize};
+use portable_pty::{PtySize, native_pty_system};
 use std::io::Write;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "desktop")]
+use tauri::Emitter;
 use uuid::Uuid;
 
 use super::types::*;
@@ -32,11 +32,20 @@ pub(super) async fn health(State(state): State<Arc<AppState>>) -> Json<HealthRes
     #[cfg(unix)]
     let socket_path = {
         let p = state.bound_socket_path.read();
-        if p.as_os_str().is_empty() { None } else { Some(p.display().to_string()) }
+        if p.as_os_str().is_empty() {
+            None
+        } else {
+            Some(p.display().to_string())
+        }
     };
     #[cfg(not(unix))]
     let socket_path = None;
-    Json(HealthResponse { ok: true, uptime_secs: uptime, session_count, socket_path })
+    Json(HealthResponse {
+        ok: true,
+        uptime_secs: uptime,
+        session_count,
+        socket_path,
+    })
 }
 
 pub(super) async fn app_version() -> Json<super::types::VersionResponse> {
@@ -61,10 +70,7 @@ pub(super) async fn list_sessions(State(state): State<Arc<AppState>>) -> Json<Ve
                     .worktree
                     .as_ref()
                     .map(|w| w.path.to_string_lossy().to_string()),
-                worktree_branch: session
-                    .worktree
-                    .as_ref()
-                    .and_then(|w| w.branch.clone()),
+                worktree_branch: session.worktree.as_ref().and_then(|w| w.branch.clone()),
                 display_name: session.display_name.clone(),
                 state: session_state,
             }
@@ -98,11 +104,17 @@ pub(super) async fn write_to_session(
     let input_entry = state
         .input_buffers
         .entry(session_id.clone())
-        .or_insert_with(|| parking_lot::Mutex::new(crate::input_line_buffer::InputLineBuffer::new()));
+        .or_insert_with(|| {
+            parking_lot::Mutex::new(crate::input_line_buffer::InputLineBuffer::new())
+        });
     let mut buf = input_entry.lock();
     let actions = buf.feed(&body.data);
     let line_submitted = actions.iter().any(|a| {
-        matches!(a, crate::input_line_buffer::InputAction::Line(_) | crate::input_line_buffer::InputAction::Interrupt)
+        matches!(
+            a,
+            crate::input_line_buffer::InputAction::Line(_)
+                | crate::input_line_buffer::InputAction::Interrupt
+        )
     });
     // Determine slash mode. The InputLineBuffer may accumulate junk from
     // terminal responses (e.g. DA reply "1;2c"), so buf.content() alone is
@@ -117,13 +129,20 @@ pub(super) async fn write_to_session(
     } else {
         // Maintain current slash_mode for subsequent chars (delta sync sends
         // one char at a time after the initial "/"), unless dismissed
-        let is_bare_esc = body.data == "\x1b" || (body.data.contains('\x1b') && !body.data.contains("\x1b["));
+        let is_bare_esc =
+            body.data == "\x1b" || (body.data.contains('\x1b') && !body.data.contains("\x1b["));
         let dismissed = is_bare_esc || body.data.contains('\x03');
         !dismissed
-            && state.slash_mode.get(&session_id)
+            && state
+                .slash_mode
+                .get(&session_id)
                 .is_some_and(|v| v.load(std::sync::atomic::Ordering::Relaxed))
     };
-    tracing::info!("write_pty slash_mode: in_slash={in_slash} buf='{}' data='{}'", buf.content(), body.data);
+    tracing::info!(
+        "write_pty slash_mode: in_slash={in_slash} buf='{}' data='{}'",
+        buf.content(),
+        body.data
+    );
     state
         .slash_mode
         .entry(session_id.clone())
@@ -152,7 +171,10 @@ pub(super) async fn resize_session(
     Json(body): Json<ResizeRequest>,
 ) -> impl IntoResponse {
     if let Err(msg) = super::validate_terminal_size(body.rows, body.cols) {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": msg})));
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": msg})),
+        );
     }
     let entry = match state.sessions.get(&session_id) {
         Some(e) => e,
@@ -227,7 +249,8 @@ pub(super) async fn get_output(
         let offset = total.saturating_sub(limit);
         let (log_lines, _) = buf.lines_since_owned(offset, limit);
         // Append current visible screen rows (non-empty) after the log
-        let screen: Vec<String> = buf.screen_rows()
+        let screen: Vec<String> = buf
+            .screen_rows()
             .into_iter()
             .filter(|r| !r.is_empty())
             .collect();
@@ -283,10 +306,13 @@ pub(super) async fn close_session(
         });
         #[cfg(feature = "desktop")]
         if let Some(app) = state.app_handle.read().as_ref() {
-            let _ = app.emit("session-closed", serde_json::json!({
-                "session_id": session_id,
-                "reason": "explicit_close",
-            }));
+            let _ = app.emit(
+                "session-closed",
+                serde_json::json!({
+                    "session_id": session_id,
+                    "reason": "explicit_close",
+                }),
+            );
         }
 
         (StatusCode::OK, Json(serde_json::json!({"ok": true})))
@@ -310,15 +336,19 @@ pub(super) fn spawn_pty_session(
     let session_id = Uuid::new_v4().to_string();
     let pty_system = native_pty_system();
 
-    let pair = pty_system.openpty(PtySize {
-        rows,
-        cols,
-        pixel_width: 0,
-        pixel_height: 0,
-    }).map_err(|e| (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(serde_json::json!({"error": format!("Failed to open PTY: {}", e)})),
-    ))?;
+    let pair = pty_system
+        .openpty(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": format!("Failed to open PTY: {}", e)})),
+            )
+        })?;
 
     let mut cmd = build_shell_command(&shell);
     if let Some(ref dir) = cwd {
@@ -326,20 +356,26 @@ pub(super) fn spawn_pty_session(
         cmd.cwd(dir);
     }
 
-    let child = pair.slave.spawn_command(cmd).map_err(|e| (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(serde_json::json!({"error": format!("Failed to spawn shell: {}", e)})),
-    ))?;
+    let child = pair.slave.spawn_command(cmd).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("Failed to spawn shell: {}", e)})),
+        )
+    })?;
 
-    let writer = pair.master.take_writer().map_err(|e| (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(serde_json::json!({"error": format!("Failed to get PTY writer: {}", e)})),
-    ))?;
+    let writer = pair.master.take_writer().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("Failed to get PTY writer: {}", e)})),
+        )
+    })?;
 
-    let reader = pair.master.try_clone_reader().map_err(|e| (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Json(serde_json::json!({"error": format!("Failed to get PTY reader: {}", e)})),
-    ))?;
+    let reader = pair.master.try_clone_reader().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("Failed to get PTY reader: {}", e)})),
+        )
+    })?;
 
     let paused = Arc::new(AtomicBool::new(false));
     state.sessions.insert(
@@ -357,7 +393,10 @@ pub(super) fn spawn_pty_session(
     );
     state.assign_term_alias(&session_id);
     state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
-    state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .active_sessions
+        .fetch_add(1, Ordering::Relaxed);
 
     state.output_buffers.insert(
         session_id.clone(),
@@ -365,21 +404,26 @@ pub(super) fn spawn_pty_session(
     );
     state.vt_log_buffers.insert(
         session_id.clone(),
-        Mutex::new(VtLogBuffer::new(rows, cols.max(220), VT_LOG_BUFFER_CAPACITY)),
+        Mutex::new(VtLogBuffer::new(
+            rows,
+            cols.max(220),
+            VT_LOG_BUFFER_CAPACITY,
+        )),
     );
-    state.last_output_ms.insert(
-        session_id.clone(),
-        std::sync::atomic::AtomicU64::new(0),
-    );
+    state
+        .last_output_ms
+        .insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
     let (grid_watch_tx, _) = tokio::sync::watch::channel(Vec::new());
     state.grid_watch.insert(session_id.clone(), grid_watch_tx);
 
     // Broadcast to SSE/WebSocket consumers (before state is moved to reader thread)
-    let _ = state.event_bus.send(crate::state::AppEvent::SessionCreated {
-        session_id: session_id.clone(),
-        cwd: cwd.clone(),
-        agent_type: None,
-    });
+    let _ = state
+        .event_bus
+        .send(crate::state::AppEvent::SessionCreated {
+            session_id: session_id.clone(),
+            cwd: cwd.clone(),
+            agent_type: None,
+        });
 
     #[cfg(feature = "desktop")]
     let state_ref = state.clone();
@@ -387,10 +431,13 @@ pub(super) fn spawn_pty_session(
 
     #[cfg(feature = "desktop")]
     if let Some(app) = state_ref.app_handle.read().as_ref() {
-        let _ = app.emit("session-created", serde_json::json!({
-            "session_id": session_id,
-            "cwd": cwd,
-        }));
+        let _ = app.emit(
+            "session-created",
+            serde_json::json!({
+                "session_id": session_id,
+                "cwd": cwd,
+            }),
+        );
     }
 
     Ok(session_id)
@@ -410,7 +457,10 @@ pub(super) async fn create_session(
     let rows = body.rows.unwrap_or(24);
     let cols = body.cols.unwrap_or(80);
     if let Err(msg) = super::validate_terminal_size(rows, cols) {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": msg})));
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": msg})),
+        );
     }
     let shell = resolve_shell(body.shell);
 
@@ -432,7 +482,10 @@ pub(super) async fn pause_session(
         None => return session_not_found(),
     };
     entry.lock().paused.store(true, Ordering::Relaxed);
-    state.metrics.pauses_triggered.fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .pauses_triggered
+        .fetch_add(1, Ordering::Relaxed);
     (StatusCode::OK, Json(serde_json::json!({"ok": true})))
 }
 
@@ -512,21 +565,37 @@ pub(super) async fn create_session_with_worktree(
         branch: Some(body.branch_name),
         create_branch: true,
     };
-    let worktree = match crate::worktree::create_worktree_internal(&state.worktrees_dir, &wt_config, None) {
-        Ok(wt) => wt,
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))),
-    };
+    let worktree =
+        match crate::worktree::create_worktree_internal(&state.worktrees_dir, &wt_config, None) {
+            Ok(wt) => wt,
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": e})),
+                );
+            }
+        };
 
     let rows = body.config.rows.unwrap_or(24);
     let cols = body.config.cols.unwrap_or(80);
     if let Err(msg) = super::validate_terminal_size(rows, cols) {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": msg})));
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": msg})),
+        );
     }
     let shell = resolve_shell(body.config.shell);
     let worktree_path_str = worktree.path.to_string_lossy().to_string();
     let worktree_branch = worktree.branch.clone();
 
-    match spawn_pty_session(state, shell, Some(worktree_path_str.clone()), rows, cols, Some(worktree)) {
+    match spawn_pty_session(
+        state,
+        shell,
+        Some(worktree_path_str.clone()),
+        rows,
+        cols,
+        Some(worktree),
+    ) {
         Ok(session_id) => (
             StatusCode::CREATED,
             Json(serde_json::json!({
@@ -554,7 +623,8 @@ pub(super) async fn ws_stream(
     let format = query.format.as_deref().unwrap_or("raw");
 
     if format == "grid" {
-        return ws.write_buffer_size(64 * 1024)
+        return ws
+            .write_buffer_size(64 * 1024)
             .max_write_buffer_size(256 * 1024)
             .on_upgrade(move |socket| handle_ws_grid_session(socket, id, state));
     }
@@ -587,7 +657,14 @@ async fn handle_ws_session(
 
     if log_mode {
         // Log/text mode: stream clean VtLogBuffer rows, no raw PTY chunks
-        handle_ws_log_session(ws_sender, ws_receiver, session_id, state, initial_offset.unwrap_or(0)).await;
+        handle_ws_log_session(
+            ws_sender,
+            ws_receiver,
+            session_id,
+            state,
+            initial_offset.unwrap_or(0),
+        )
+        .await;
         return;
     }
 
@@ -624,11 +701,15 @@ async fn handle_ws_session(
         for chunk in data.chunks(CATCHUP_CHUNK_SIZE) {
             let text = String::from_utf8_lossy(chunk);
             if !text.is_empty() {
-                let frame = serde_json::json!({"type": "output", "data": text, "total_written": total});
+                let frame =
+                    serde_json::json!({"type": "output", "data": text, "total_written": total});
                 if futures_util::SinkExt::send(
                     &mut ws_sender,
                     Message::Text(frame.to_string().into()),
-                ).await.is_err() {
+                )
+                .await
+                .is_err()
+                {
                     return; // Client disconnected during catch-up
                 }
             }
@@ -766,10 +847,9 @@ async fn handle_ws_log_session(
                 (total, frame)
             }; // lock released here
             if let Some(frame_str) = catchup_frame {
-                let _ = futures_util::SinkExt::send(
-                    &mut ws_sender,
-                    Message::Text(frame_str.into()),
-                ).await;
+                let _ =
+                    futures_util::SinkExt::send(&mut ws_sender, Message::Text(frame_str.into()))
+                        .await;
             }
             total
         } else {
@@ -794,15 +874,16 @@ async fn handle_ws_log_session(
             let _ = futures_util::SinkExt::send(
                 &mut ws_sender,
                 Message::Text(frame.to_string().into()),
-            ).await;
+            )
+            .await;
         }
 
         loop {
             // Track whether we need to check state and/or send log frames
             enum LoopAction {
-                Poll,       // sleep arm: check state + send log/screen
-                Event,      // event arm: check state only (relevant event)
-                Skip,       // event arm: irrelevant event, skip state check
+                Poll,        // sleep arm: check state + send log/screen
+                Event,       // event arm: check state only (relevant event)
+                Skip,        // event arm: irrelevant event, skip state check
                 SessionGone, // vt_log_buffer missing, exit loop
             }
 
@@ -850,7 +931,10 @@ async fn handle_ws_log_session(
                 if futures_util::SinkExt::send(
                     &mut ws_sender,
                     Message::Text(frame.to_string().into()),
-                ).await.is_err() {
+                )
+                .await
+                .is_err()
+                {
                     break;
                 }
             }
@@ -896,7 +980,10 @@ async fn handle_ws_log_session(
                     if futures_util::SinkExt::send(
                         &mut ws_sender,
                         Message::Text(frame.to_string().into()),
-                    ).await.is_err() {
+                    )
+                    .await
+                    .is_err()
+                    {
                         break;
                     }
                     if !lines.is_empty() {
@@ -953,21 +1040,14 @@ async fn handle_ws_log_session(
 /// On connect, sends a full frame (all rows marked dirty). Subsequent frames
 /// are delta-based (only changed rows). Client sends text messages for
 /// commands (e.g. `{"type":"ack"}`) and binary messages for PTY input.
-async fn handle_ws_grid_session(
-    socket: WebSocket,
-    session_id: String,
-    state: Arc<AppState>,
-) {
+async fn handle_ws_grid_session(socket: WebSocket, session_id: String, state: Arc<AppState>) {
     let (mut ws_sender, mut ws_receiver) = socket.split();
 
     // Subscribe to the grid watch channel (latest-frame-wins for slow clients).
     let mut frame_rx = match state.grid_watch.get(&session_id) {
         Some(tx) => tx.subscribe(),
         None => {
-            let _ = futures_util::SinkExt::send(
-                &mut ws_sender,
-                Message::Close(None),
-            ).await;
+            let _ = futures_util::SinkExt::send(&mut ws_sender, Message::Close(None)).await;
             return;
         }
     };
@@ -981,7 +1061,9 @@ async fn handle_ws_grid_session(
         if frame.is_empty() { None } else { Some(frame) }
     });
     if let Some(frame) = initial_frame
-        && futures_util::SinkExt::send(&mut ws_sender, Message::Binary(frame.into())).await.is_err()
+        && futures_util::SinkExt::send(&mut ws_sender, Message::Binary(frame.into()))
+            .await
+            .is_err()
     {
         return;
     }
@@ -1142,7 +1224,11 @@ pub(super) async fn terminal_scroll_info(
     Path(session_id): Path<String>,
 ) -> impl IntoResponse {
     let Some(vt) = state.vt_log_buffers.get(&session_id) else {
-        return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "Session not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "Session not found"})),
+        )
+            .into_response();
     };
     let vt = vt.lock();
     let info = serde_json::json!({
@@ -1159,7 +1245,11 @@ pub(super) async fn terminal_search(
     Json(body): Json<super::types::TerminalSearchRequest>,
 ) -> impl IntoResponse {
     let Some(vt) = state.vt_log_buffers.get(&session_id) else {
-        return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "Session not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "Session not found"})),
+        )
+            .into_response();
     };
     let matches = vt.lock().grid_search(&body.query);
     Json(serde_json::json!({"matches": matches})).into_response()
@@ -1171,7 +1261,11 @@ pub(super) async fn terminal_search_buffer(
     Json(body): Json<super::types::TerminalSearchRequest>,
 ) -> impl IntoResponse {
     let Some(vt) = state.vt_log_buffers.get(&session_id) else {
-        return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "Session not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "Session not found"})),
+        )
+            .into_response();
     };
     let matches = vt.lock().grid_search_buffer(&body.query);
     Json(serde_json::json!({"matches": matches})).into_response()
@@ -1183,7 +1277,11 @@ pub(super) async fn terminal_get_row_text(
     Query(query): Query<super::types::TerminalRowQuery>,
 ) -> impl IntoResponse {
     let Some(vt) = state.vt_log_buffers.get(&session_id) else {
-        return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "Session not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "Session not found"})),
+        )
+            .into_response();
     };
     let text = vt.lock().grid_get_row_text(query.row);
     Json(serde_json::json!({"text": text})).into_response()
@@ -1195,7 +1293,11 @@ pub(super) async fn terminal_get_lines(
     Query(query): Query<super::types::TerminalLinesQuery>,
 ) -> impl IntoResponse {
     let Some(vt) = state.vt_log_buffers.get(&session_id) else {
-        return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "Session not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "Session not found"})),
+        )
+            .into_response();
     };
     let lines = vt.lock().grid_get_lines(query.start, query.end);
     Json(serde_json::json!({"lines": lines})).into_response()
@@ -1206,7 +1308,11 @@ pub(super) async fn terminal_get_cursor_line(
     Path(session_id): Path<String>,
 ) -> impl IntoResponse {
     let Some(vt) = state.vt_log_buffers.get(&session_id) else {
-        return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "Session not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "Session not found"})),
+        )
+            .into_response();
     };
     let text = vt.lock().grid_get_cursor_line();
     Json(serde_json::json!({"text": text})).into_response()
@@ -1218,7 +1324,11 @@ pub(super) async fn terminal_hyperlink_at(
     Query(query): Query<super::types::TerminalCellQuery>,
 ) -> impl IntoResponse {
     let Some(vt) = state.vt_log_buffers.get(&session_id) else {
-        return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "Session not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "Session not found"})),
+        )
+            .into_response();
     };
     let url = vt.lock().grid_hyperlink_at(query.row, query.col);
     Json(serde_json::json!({"url": url})).into_response()
@@ -1278,11 +1388,7 @@ mod tests {
 
     #[test]
     fn trim_no_chrome_keeps_all() {
-        let rows: Vec<String> = vec![
-            "line 1".into(),
-            "line 2".into(),
-            "line 3".into(),
-        ];
+        let rows: Vec<String> = vec!["line 1".into(), "line 2".into(), "line 3".into()];
         let result = trim_screen_chrome(rows.clone());
         assert_eq!(result.cutoff, 3);
     }
@@ -1308,8 +1414,8 @@ mod tests {
     async fn ws_catchup_no_duplicate_with_concurrent_writer() {
         use crate::state::OutputRingBuffer;
         use parking_lot::Mutex as PlMutex;
-        use std::sync::atomic::{AtomicU64, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicU64, Ordering};
 
         const CHUNK_COUNT: u64 = 5_000;
         const CHUNK_SIZE: usize = 8; // just the index, no filler
@@ -1405,8 +1511,14 @@ mod tests {
 
         // Precondition: both streams must be non-empty, otherwise the race
         // window was not exercised and the boundary invariants are vacuous.
-        assert!(!snapshot_indices.is_empty(), "subscriber attached too late — no snapshot data");
-        assert!(!live_indices.is_empty(), "writer finished before subscriber — race not exercised");
+        assert!(
+            !snapshot_indices.is_empty(),
+            "subscriber attached too late — no snapshot data"
+        );
+        assert!(
+            !live_indices.is_empty(),
+            "writer finished before subscriber — race not exercised"
+        );
 
         // Invariants:
         // 1. Snapshot indices are strictly monotonically increasing by 1.
@@ -1419,8 +1531,12 @@ mod tests {
         }
         // 3. No overlap: the last snapshot index must be exactly one less
         //    than the first live index (no duplicate, no gap).
-        let first_live = *live_indices.first().expect("live_indices must be non-empty");
-        let last_snap = *snapshot_indices.last().expect("snapshot_indices must be non-empty");
+        let first_live = *live_indices
+            .first()
+            .expect("live_indices must be non-empty");
+        let last_snap = *snapshot_indices
+            .last()
+            .expect("snapshot_indices must be non-empty");
         assert_eq!(
             first_live,
             last_snap + 1,
@@ -1458,10 +1574,7 @@ mod tests {
         assert_eq!(frame, vec![7, 8, 9]);
 
         // No pending change after consuming latest
-        let result = tokio::time::timeout(
-            std::time::Duration::from_millis(10),
-            rx.changed(),
-        ).await;
+        let result = tokio::time::timeout(std::time::Duration::from_millis(10), rx.changed()).await;
         assert!(result.is_err(), "should timeout — no new frame");
     }
 

@@ -25,8 +25,8 @@ use crate::mcp_proxy::stdio_client::StdioMcpClient;
 use crate::mcp_upstream_config::{FilterMode, UpstreamMcpServer, UpstreamTransport};
 use dashmap::DashMap;
 use serde_json::Value;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 // tokio::sync::RwLock used inline for UpstreamClient::Http
 
@@ -128,7 +128,8 @@ impl CircuitBreaker {
             // Backoff based on retry_count (circuit re-opens), not cumulative failures.
             // Reset failure_count so the next half-open window gets CB_THRESHOLD
             // fresh attempts before re-opening.
-            let delay_ms = (CB_BASE_MS * 2_f64.powf(s.retry_count.saturating_sub(1) as f64)).min(CB_MAX_MS);
+            let delay_ms =
+                (CB_BASE_MS * 2_f64.powf(s.retry_count.saturating_sub(1) as f64)).min(CB_MAX_MS);
             s.open_until = Some(Instant::now() + Duration::from_millis(delay_ms as u64));
             s.failure_count = 0;
         }
@@ -221,9 +222,8 @@ pub(crate) struct UpstreamRegistry {
     pub(crate) auth_semaphore: Arc<tokio::sync::Semaphore>,
     /// OAuth flow orchestrator. Stored as `Weak` to avoid an `Arc` cycle since
     /// `AppState` holds both the registry and the flow manager as `Arc`s.
-    oauth_flow: parking_lot::RwLock<
-        Option<std::sync::Weak<crate::mcp_oauth::flow::OAuthFlowManager>>,
-    >,
+    oauth_flow:
+        parking_lot::RwLock<Option<std::sync::Weak<crate::mcp_oauth::flow::OAuthFlowManager>>>,
 }
 
 impl UpstreamRegistry {
@@ -244,28 +244,44 @@ impl UpstreamRegistry {
         let config = UpstreamMcpServer {
             id: uuid::Uuid::new_v4().to_string(),
             name: name.to_string(),
-            transport: UpstreamTransport::Http { url: format!("http://127.0.0.1:1/{name}") },
+            transport: UpstreamTransport::Http {
+                url: format!("http://127.0.0.1:1/{name}"),
+            },
             enabled: true,
             timeout_secs: 10,
             tool_filter: None,
             auth: None,
         };
-        let client = HttpMcpClient::new(name.to_string(), format!("http://127.0.0.1:1/{name}"), 10, false);
-        let entry = Arc::new(UpstreamEntry::new(config, UpstreamClient::Http(Box::new(tokio::sync::RwLock::new(client)))));
-        *entry.tools.write() = tool_names.iter().map(|tn| UpstreamToolDef {
-            original_name: tn.to_string(),
-            definition: serde_json::json!({
-                "name": tn,
-                "description": "test tool",
-                "inputSchema": { "type": "object", "properties": {} }
-            }),
-        }).collect();
+        let client = HttpMcpClient::new(
+            name.to_string(),
+            format!("http://127.0.0.1:1/{name}"),
+            10,
+            false,
+        );
+        let entry = Arc::new(UpstreamEntry::new(
+            config,
+            UpstreamClient::Http(Box::new(tokio::sync::RwLock::new(client))),
+        ));
+        *entry.tools.write() = tool_names
+            .iter()
+            .map(|tn| UpstreamToolDef {
+                original_name: tn.to_string(),
+                definition: serde_json::json!({
+                    "name": tn,
+                    "description": "test tool",
+                    "inputSchema": { "type": "object", "properties": {} }
+                }),
+            })
+            .collect();
         *entry.status.write() = UpstreamStatus::Ready;
         self.entries.insert(name.to_string(), entry);
     }
 
     /// Wire the event bus so status changes emit SSE events.
-    pub(crate) fn set_event_bus(&self, bus: tokio::sync::broadcast::Sender<crate::state::AppEvent>) {
+    pub(crate) fn set_event_bus(
+        &self,
+        bus: tokio::sync::broadcast::Sender<crate::state::AppEvent>,
+    ) {
         *self.event_bus.write() = Some(bus);
     }
 
@@ -360,8 +376,10 @@ impl UpstreamRegistry {
         // Status changes to/from Ready affect the merged tool list.
         // Authenticating is transient — tools haven't changed, skip notification.
         let status_lower = status.to_ascii_lowercase();
-        if matches!(status_lower.as_str(), "ready" | "error" | "disconnected" | "failed" | "circuit_open")
-            && let Some(tx) = self.mcp_tools_tx.read().as_ref()
+        if matches!(
+            status_lower.as_str(),
+            "ready" | "error" | "disconnected" | "failed" | "circuit_open"
+        ) && let Some(tx) = self.mcp_tools_tx.read().as_ref()
         {
             let _ = tx.send(());
         }
@@ -396,9 +414,10 @@ impl UpstreamRegistry {
             }
             // Per-repo upstream allowlist filter
             if let Some(allowed) = allowed_upstreams
-                && !allowed.iter().any(|a| a == &entry.config.name) {
-                    continue;
-                }
+                && !allowed.iter().any(|a| a == &entry.config.name)
+            {
+                continue;
+            }
             let tools = entry.tools.read();
             for tool in tools.iter() {
                 if !apply_filter(&tool.original_name, &entry.config) {
@@ -435,7 +454,8 @@ impl UpstreamRegistry {
         prefixed_name: &str,
         args: Value,
     ) -> Result<Value, String> {
-        self.proxy_tool_call_for_repo(prefixed_name, args, None).await
+        self.proxy_tool_call_for_repo(prefixed_name, args, None)
+            .await
     }
 
     /// Like [`proxy_tool_call`] but optionally restricted to a per-repo
@@ -451,11 +471,12 @@ impl UpstreamRegistry {
 
         // Per-repo upstream allowlist: reject calls to upstreams not enabled for this project
         if let Some(allowed) = allowed_upstreams
-            && !allowed.iter().any(|a| a == upstream_name) {
-                return Err(format!(
-                    "Upstream '{upstream_name}' is not enabled for this project"
-                ));
-            }
+            && !allowed.iter().any(|a| a == upstream_name)
+        {
+            return Err(format!(
+                "Upstream '{upstream_name}' is not enabled for this project"
+            ));
+        }
 
         let entry = self
             .entries
@@ -476,12 +497,16 @@ impl UpstreamRegistry {
 
         // Block calls while backoff is active, upstream permanently failed, or authenticating
         if entry.cb.is_open() {
-            return Err(format!("Circuit open for upstream '{upstream_name}' (backoff active, will retry)"));
+            return Err(format!(
+                "Circuit open for upstream '{upstream_name}' (backoff active, will retry)"
+            ));
         }
         {
             let status = entry.status.read().clone();
             if status == UpstreamStatus::Failed {
-                return Err(format!("Upstream '{upstream_name}' has failed — restart the server or reconnect"));
+                return Err(format!(
+                    "Upstream '{upstream_name}' has failed — restart the server or reconnect"
+                ));
             }
             if matches!(
                 status,
@@ -497,7 +522,10 @@ impl UpstreamRegistry {
         let t0 = Instant::now();
         let result = dispatch_tool_call(&entry.client, tool_name, args).await;
         let elapsed_ms = t0.elapsed().as_millis().min(u32::MAX as u128) as u32;
-        entry.metrics.last_latency_ms.store(elapsed_ms, Ordering::Relaxed);
+        entry
+            .metrics
+            .last_latency_ms
+            .store(elapsed_ms, Ordering::Relaxed);
 
         match result {
             Ok(v) => {
@@ -568,7 +596,9 @@ impl UpstreamRegistry {
                 .servers
                 .into_iter()
                 .find(|s| s.name == upstream_name)
-                .ok_or_else(|| format!("Upstream '{upstream_name}' not found in config or registry"))?;
+                .ok_or_else(|| {
+                    format!("Upstream '{upstream_name}' not found in config or registry")
+                })?;
             self.connect_upstream(server, None).await?;
             // connect_upstream spawns initialize which will pick up the OAuth token
             return Ok(());
@@ -584,7 +614,14 @@ impl UpstreamRegistry {
         let flow_snapshot = self.oauth_flow();
         let tools_tx_snapshot = self.mcp_tools_tx.read().clone();
         tokio::spawn(async move {
-            initialize_entry_with_oauth(&entry, &name, bus_snapshot.as_ref(), flow_snapshot, tools_tx_snapshot.as_ref()).await;
+            initialize_entry_with_oauth(
+                &entry,
+                &name,
+                bus_snapshot.as_ref(),
+                flow_snapshot,
+                tools_tx_snapshot.as_ref(),
+            )
+            .await;
         });
         Ok(())
     }
@@ -687,43 +724,50 @@ impl UpstreamRegistry {
 
     /// Returns a JSON snapshot of all upstream statuses and metrics.
     pub(crate) fn status_snapshot(&self) -> serde_json::Value {
-        let upstreams: Vec<serde_json::Value> = self.entries.iter().map(|entry_ref| {
-            let e = entry_ref.value();
-            let status_str = match *e.status.read() {
-                UpstreamStatus::Connecting => "connecting",
-                UpstreamStatus::Ready => "ready",
-                UpstreamStatus::CircuitOpen => "circuit_open",
-                UpstreamStatus::Disabled => "disabled",
-                UpstreamStatus::Failed => "failed",
-                UpstreamStatus::Authenticating => "authenticating",
-                UpstreamStatus::NeedsAuth => "needs_auth",
-            };
-            let transport_info = match &e.config.transport {
-                UpstreamTransport::Http { url } => serde_json::json!({
-                    "type": "http",
-                    "url": url,
-                }),
-                UpstreamTransport::Stdio { command, args, cwd, .. } => serde_json::json!({
-                    "type": "stdio",
-                    "command": command,
-                    "args": args,
-                    "cwd": cwd,
-                }),
-            };
-            let tools_read = e.tools.read();
-            let tool_names: Vec<&str> = tools_read.iter()
-                .map(|t| t.original_name.as_str())
-                .collect();
-            serde_json::json!({
-                "name": entry_ref.key(),
-                "status": status_str,
-                "transport": transport_info,
-                "tool_count": tools_read.len(),
-                "tools": tool_names,
-                "metrics": e.metrics.snapshot(),
-                "last_error": *e.last_error.read(),
+        let upstreams: Vec<serde_json::Value> = self
+            .entries
+            .iter()
+            .map(|entry_ref| {
+                let e = entry_ref.value();
+                let status_str = match *e.status.read() {
+                    UpstreamStatus::Connecting => "connecting",
+                    UpstreamStatus::Ready => "ready",
+                    UpstreamStatus::CircuitOpen => "circuit_open",
+                    UpstreamStatus::Disabled => "disabled",
+                    UpstreamStatus::Failed => "failed",
+                    UpstreamStatus::Authenticating => "authenticating",
+                    UpstreamStatus::NeedsAuth => "needs_auth",
+                };
+                let transport_info = match &e.config.transport {
+                    UpstreamTransport::Http { url } => serde_json::json!({
+                        "type": "http",
+                        "url": url,
+                    }),
+                    UpstreamTransport::Stdio {
+                        command, args, cwd, ..
+                    } => serde_json::json!({
+                        "type": "stdio",
+                        "command": command,
+                        "args": args,
+                        "cwd": cwd,
+                    }),
+                };
+                let tools_read = e.tools.read();
+                let tool_names: Vec<&str> = tools_read
+                    .iter()
+                    .map(|t| t.original_name.as_str())
+                    .collect();
+                serde_json::json!({
+                    "name": entry_ref.key(),
+                    "status": status_str,
+                    "transport": transport_info,
+                    "tool_count": tools_read.len(),
+                    "tools": tool_names,
+                    "metrics": e.metrics.snapshot(),
+                    "last_error": *e.last_error.read(),
+                })
             })
-        }).collect();
+            .collect();
         serde_json::json!({ "upstreams": upstreams })
     }
 
@@ -773,7 +817,8 @@ impl UpstreamRegistry {
                     && old_server.transport != new_server.transport
                     && new_server.auth == old_server.auth
                     && old_server.auth.is_some()
-                    && let Err(e) = crate::mcp_upstream_config::clear_upstream_auth(&new_server.name)
+                    && let Err(e) =
+                        crate::mcp_upstream_config::clear_upstream_auth(&new_server.name)
                 {
                     tracing::warn!(source = "mcp_registry", name = %new_server.name, "Failed to clear stale auth: {e}");
                 }
@@ -796,7 +841,9 @@ impl UpstreamRegistry {
                 }
             };
             if should_connect
-                && let Err(e) = self.connect_upstream(new_server.clone(), Some(self_port)).await
+                && let Err(e) = self
+                    .connect_upstream(new_server.clone(), Some(self_port))
+                    .await
             {
                 tracing::error!(source = "mcp_registry", name = %new_server.name, "Failed to connect upstream: {e}");
             }
@@ -836,21 +883,25 @@ fn build_client(name: &str, config: &UpstreamMcpServer) -> Result<UpstreamClient
                 config.auth.is_some(),
             )
             .ok_or_else(|| format!("Failed to build HTTP client for '{name}'"))?;
-            Ok(UpstreamClient::Http(Box::new(tokio::sync::RwLock::new(client))))
+            Ok(UpstreamClient::Http(Box::new(tokio::sync::RwLock::new(
+                client,
+            ))))
         }
         UpstreamTransport::Stdio { .. } => {
             let client = StdioMcpClient::from_upstream_config(name.to_string(), &config.transport)
                 .ok_or_else(|| format!("Failed to build stdio client for '{name}'"))?;
-            Ok(UpstreamClient::Stdio(Arc::new(std::sync::Mutex::new(client))))
+            Ok(UpstreamClient::Stdio(Arc::new(std::sync::Mutex::new(
+                client,
+            ))))
         }
     }
 }
 
 /// Parse `{upstream}__{tool}` — returns `(upstream_name, tool_name)`.
 fn split_prefixed_name(prefixed: &str) -> Result<(&str, &str), String> {
-    prefixed
-        .split_once("__")
-        .ok_or_else(|| format!("Tool name '{prefixed}' lacks upstream prefix (expected '{{upstream}}__{{tool}}')"))
+    prefixed.split_once("__").ok_or_else(|| {
+        format!("Tool name '{prefixed}' lacks upstream prefix (expected '{{upstream}}__{{tool}}')")
+    })
 }
 
 /// Check whether a tool passes the upstream's allow/deny filter.
@@ -1084,7 +1135,8 @@ async fn run_health_checks(registry: &UpstreamRegistry) {
         tokio::spawn(async move {
             // For stuck Connecting entries, re-run full initialization
             if status == UpstreamStatus::Connecting {
-                initialize_entry_with_oauth(&entry, &name, bus.as_ref(), flow, tools_tx.as_ref()).await;
+                initialize_entry_with_oauth(&entry, &name, bus.as_ref(), flow, tools_tx.as_ref())
+                    .await;
                 return;
             }
 
@@ -1171,9 +1223,7 @@ async fn health_check_entry(entry: &UpstreamEntry) -> Result<Vec<UpstreamToolDef
         UpstreamClient::Stdio(mutex) => {
             let arc = Arc::clone(mutex);
             tokio::task::spawn_blocking(move || {
-                arc.lock()
-                    .map_err(|e| e.to_string())?
-                    .health_check()
+                arc.lock().map_err(|e| e.to_string())?.health_check()
             })
             .await
             .unwrap_or_else(|e| Err(format!("spawn_blocking error: {e}")))
@@ -1189,7 +1239,9 @@ async fn health_check_entry(entry: &UpstreamEntry) -> Result<Vec<UpstreamToolDef
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mcp_upstream_config::{FilterMode, ToolFilter, UpstreamMcpServer, UpstreamTransport};
+    use crate::mcp_upstream_config::{
+        FilterMode, ToolFilter, UpstreamMcpServer, UpstreamTransport,
+    };
 
     // -----------------------------------------------------------------------
     // Helpers
@@ -1199,7 +1251,9 @@ mod tests {
         UpstreamMcpServer {
             id: uuid::Uuid::new_v4().to_string(),
             name: name.to_string(),
-            transport: UpstreamTransport::Http { url: url.to_string() },
+            transport: UpstreamTransport::Http {
+                url: url.to_string(),
+            },
             enabled: true,
             timeout_secs: 10,
             tool_filter: None,
@@ -1245,7 +1299,9 @@ mod tests {
         UpstreamMcpServer {
             id: "test".to_string(),
             name: "test".to_string(),
-            transport: UpstreamTransport::Http { url: "http://localhost/mcp".to_string() },
+            transport: UpstreamTransport::Http {
+                url: "http://localhost/mcp".to_string(),
+            },
             enabled: true,
             timeout_secs: 10,
             tool_filter: Some(ToolFilter {
@@ -1302,8 +1358,16 @@ mod tests {
     fn ready_entry(name: &str, tools: Vec<UpstreamToolDef>) -> (String, Arc<UpstreamEntry>) {
         let config = http_server_config(name, "http://example.com/mcp");
         // Build a dummy HTTP client (won't be called in aggregation tests)
-        let client = HttpMcpClient::new(name.to_string(), "http://example.com/mcp".to_string(), 10, false);
-        let entry = Arc::new(UpstreamEntry::new(config, UpstreamClient::Http(Box::new(tokio::sync::RwLock::new(client)))));
+        let client = HttpMcpClient::new(
+            name.to_string(),
+            "http://example.com/mcp".to_string(),
+            10,
+            false,
+        );
+        let entry = Arc::new(UpstreamEntry::new(
+            config,
+            UpstreamClient::Http(Box::new(tokio::sync::RwLock::new(client))),
+        ));
         *entry.tools.write() = tools;
         *entry.status.write() = UpstreamStatus::Ready;
         (name.to_string(), entry)
@@ -1349,7 +1413,10 @@ mod tests {
 
         let tools = registry.aggregated_tools();
         assert_eq!(tools.len(), 2);
-        let names: Vec<String> = tools.iter().map(|t| t["name"].as_str().unwrap().to_string()).collect();
+        let names: Vec<String> = tools
+            .iter()
+            .map(|t| t["name"].as_str().unwrap().to_string())
+            .collect();
         assert!(names.contains(&"alpha__tool_a".to_string()));
         assert!(names.contains(&"beta__tool_b".to_string()));
     }
@@ -1370,7 +1437,10 @@ mod tests {
         let config = config_with_filter(FilterMode::Deny, &["secret_*"]);
         let name = config.name.clone(); // "test"
         let client = HttpMcpClient::new(name.clone(), "http://x/mcp".to_string(), 10, false);
-        let entry = Arc::new(UpstreamEntry::new(config, UpstreamClient::Http(Box::new(tokio::sync::RwLock::new(client)))));
+        let entry = Arc::new(UpstreamEntry::new(
+            config,
+            UpstreamClient::Http(Box::new(tokio::sync::RwLock::new(client))),
+        ));
         *entry.tools.write() = vec![make_tool_def("secret_key"), make_tool_def("safe_read")];
         *entry.status.write() = UpstreamStatus::Ready;
         registry.entries.insert(name.clone(), entry);
@@ -1489,10 +1559,7 @@ mod tests {
         let cfg = http_server_config_disabled("disabled", "http://127.0.0.1:1/mcp");
         registry.connect_upstream(cfg, None).await.unwrap();
 
-        assert_eq!(
-            registry.status("disabled"),
-            Some(UpstreamStatus::Disabled)
-        );
+        assert_eq!(registry.status("disabled"), Some(UpstreamStatus::Disabled));
     }
 
     #[tokio::test]
@@ -1508,7 +1575,10 @@ mod tests {
     async fn connect_self_referential_rejected() {
         let registry = UpstreamRegistry::new();
         let cfg = http_server_config("self", "http://127.0.0.1:9999/mcp");
-        let err = registry.connect_upstream(cfg, Some(9999)).await.unwrap_err();
+        let err = registry
+            .connect_upstream(cfg, Some(9999))
+            .await
+            .unwrap_err();
         assert!(err.contains("circular"), "got: {err}");
     }
 
@@ -1534,7 +1604,10 @@ mod tests {
         let cfg = http_server_config_disabled("toggle-off", "http://127.0.0.1:1/mcp");
         registry.connect_upstream(cfg, None).await.unwrap();
         // connect of a disabled upstream skips initialize and emits no signal
-        assert!(rx.try_recv().is_err(), "no signal expected from disabled connect");
+        assert!(
+            rx.try_recv().is_err(),
+            "no signal expected from disabled connect"
+        );
 
         registry.disconnect_upstream("toggle-off").unwrap();
 
@@ -1585,8 +1658,14 @@ mod tests {
             .proxy_tool_call("auth-block__some_tool", serde_json::json!({}))
             .await
             .expect_err("should reject during auth");
-        assert!(err.contains("-32001"), "expected -32001 error code, got: {err}");
-        assert!(err.contains("OAuth authentication"), "expected auth message, got: {err}");
+        assert!(
+            err.contains("-32001"),
+            "expected -32001 error code, got: {err}"
+        );
+        assert!(
+            err.contains("OAuth authentication"),
+            "expected auth message, got: {err}"
+        );
     }
 
     #[test]
@@ -1685,8 +1764,14 @@ mod tests {
             .proxy_tool_call("needs-auth-block__some_tool", serde_json::json!({}))
             .await
             .expect_err("should reject while awaiting user consent");
-        assert!(err.contains("-32001"), "expected -32001 error code, got: {err}");
-        assert!(err.contains("OAuth authentication"), "expected auth message, got: {err}");
+        assert!(
+            err.contains("-32001"),
+            "expected -32001 error code, got: {err}"
+        );
+        assert!(
+            err.contains("OAuth authentication"),
+            "expected auth message, got: {err}"
+        );
     }
 
     #[test]
@@ -1821,10 +1906,17 @@ mod tests {
 
         let allowed = vec!["other-server".to_string()];
         let err = registry
-            .proxy_tool_call_for_repo("blocked-server__some_tool", serde_json::json!({}), Some(&allowed))
+            .proxy_tool_call_for_repo(
+                "blocked-server__some_tool",
+                serde_json::json!({}),
+                Some(&allowed),
+            )
             .await
             .expect_err("should reject upstream not in allowlist");
-        assert!(err.contains("not enabled"), "expected 'not enabled' message, got: {err}");
+        assert!(
+            err.contains("not enabled"),
+            "expected 'not enabled' message, got: {err}"
+        );
     }
 
     #[tokio::test]

@@ -11,11 +11,11 @@
 
 use std::sync::Arc;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
+use axum::Router;
 use axum::extract::Query;
 use axum::response::{Html, IntoResponse};
 use axum::routing::get;
-use axum::Router;
 use serde::Deserialize;
 use std::net::SocketAddr;
 
@@ -132,7 +132,12 @@ async fn handle_callback(
             registry.rollback_authenticating(&name);
         }
         return Err(anyhow!(
-            "Authorization server returned error: {err}{}", if desc.is_empty() { String::new() } else { format!(" ({desc})") }
+            "Authorization server returned error: {err}{}",
+            if desc.is_empty() {
+                String::new()
+            } else {
+                format!(" ({desc})")
+            }
         ));
     }
 

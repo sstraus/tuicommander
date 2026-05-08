@@ -57,9 +57,7 @@ pub(crate) struct OAuthTokenSet {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub(crate) enum StoredCredential {
-    Bearer {
-        token: String,
-    },
+    Bearer { token: String },
     Oauth2(OAuthTokenSet),
 }
 
@@ -167,10 +165,7 @@ pub(crate) fn read_upstream_credential(upstream_name: &str) -> Result<Option<Str
     crate::credentials::get(Credential::McpUpstream(upstream_name))
 }
 
-pub(crate) fn save_upstream_credential(
-    upstream_name: &str,
-    token: &str,
-) -> Result<(), String> {
+pub(crate) fn save_upstream_credential(upstream_name: &str, token: &str) -> Result<(), String> {
     crate::credentials::set(Credential::McpUpstream(upstream_name), token)
 }
 
@@ -183,10 +178,7 @@ pub(crate) fn delete_upstream_credential(upstream_name: &str) -> Result<(), Stri
 // ---------------------------------------------------------------------------
 
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub(crate) fn save_mcp_upstream_credential(
-    name: String,
-    token: String,
-) -> Result<(), String> {
+pub(crate) fn save_mcp_upstream_credential(name: String, token: String) -> Result<(), String> {
     validate_keyring_name(&name)?;
     save_upstream_credential(&name, &token)
 }

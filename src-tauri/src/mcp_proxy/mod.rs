@@ -6,5 +6,5 @@
 //! `{upstream_name}__` to avoid namespace collisions.
 
 pub(crate) mod http_client;
-pub(crate) mod stdio_client;
 pub(crate) mod registry;
+pub(crate) mod stdio_client;

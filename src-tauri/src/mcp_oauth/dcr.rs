@@ -1,6 +1,6 @@
 //! RFC 7591 Dynamic Client Registration for MCP OAuth.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize)]
@@ -44,9 +44,7 @@ pub(crate) async fn register_client(
         .json(request)
         .send()
         .await
-        .with_context(|| {
-            format!("Failed to send DCR request to {registration_endpoint}")
-        })?;
+        .with_context(|| format!("Failed to send DCR request to {registration_endpoint}"))?;
 
     let status = resp.status();
 
@@ -141,7 +139,9 @@ mod tests {
         server
             .mock("POST", "/register")
             .with_status(400)
-            .with_body(r#"{"error":"invalid_client_metadata","error_description":"bad redirect_uri"}"#)
+            .with_body(
+                r#"{"error":"invalid_client_metadata","error_description":"bad redirect_uri"}"#,
+            )
             .create_async()
             .await;
 

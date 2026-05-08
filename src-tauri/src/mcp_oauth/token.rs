@@ -7,12 +7,12 @@
 //! - RFC 8707 `resource` parameter on exchange and refresh
 //! - Immediate keyring persistence after every token operation
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use oauth2::PkceCodeChallenge;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::mcp_upstream_credentials::{is_token_valid, save_oauth_tokens, OAuthTokenSet};
+use crate::mcp_upstream_credentials::{OAuthTokenSet, is_token_valid, save_oauth_tokens};
 
 // ---------------------------------------------------------------------------
 // TokenManager
@@ -123,8 +123,7 @@ impl TokenManager {
             .context("Failed to parse token exchange response")?;
 
         let token_set = self.token_response_to_set(token_resp);
-        save_oauth_tokens(&self.upstream_name, &token_set)
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        save_oauth_tokens(&self.upstream_name, &token_set).map_err(|e| anyhow::anyhow!("{e}"))?;
         Ok(token_set)
     }
 
@@ -156,9 +155,10 @@ impl TokenManager {
         if let Ok(Some(cred)) =
             crate::mcp_upstream_credentials::read_stored_credential(&self.upstream_name)
             && let crate::mcp_upstream_credentials::StoredCredential::Oauth2(ref fresh) = cred
-                && is_token_valid(fresh) {
-                    return Ok(Some(fresh.clone()));
-                }
+            && is_token_valid(fresh)
+        {
+            return Ok(Some(fresh.clone()));
+        }
 
         // Still expired — perform refresh
         let http_client = reqwest::Client::new();
@@ -202,8 +202,7 @@ impl TokenManager {
             token_set.refresh_token = current.refresh_token.clone();
         }
 
-        save_oauth_tokens(&self.upstream_name, &token_set)
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        save_oauth_tokens(&self.upstream_name, &token_set).map_err(|e| anyhow::anyhow!("{e}"))?;
         Ok(Some(token_set))
     }
 
@@ -376,7 +375,11 @@ mod tests {
             None,
         );
         let set = mgr
-            .exchange_code("auth-code-123", "pkce-verifier", "http://localhost/callback")
+            .exchange_code(
+                "auth-code-123",
+                "pkce-verifier",
+                "http://localhost/callback",
+            )
             .await
             .expect("exchange_code should succeed against mock keyring + mock AS");
         assert_eq!(set.access_token, "new-at");
@@ -392,10 +395,7 @@ mod tests {
             .mock("POST", "/token")
             .match_body(mockito::Matcher::AllOf(vec![
                 mockito::Matcher::UrlEncoded("grant_type".into(), "authorization_code".into()),
-                mockito::Matcher::UrlEncoded(
-                    "resource".into(),
-                    "https://api.example.com".into(),
-                ),
+                mockito::Matcher::UrlEncoded("resource".into(), "https://api.example.com".into()),
             ]))
             .with_status(200)
             .with_header("content-type", "application/json")
@@ -518,7 +518,10 @@ mod tests {
             .refresh_if_needed(&current)
             .await
             .expect("must not attempt refresh when expires_at is None");
-        assert!(result.is_none(), "should skip refresh for None-expiry token");
+        assert!(
+            result.is_none(),
+            "should skip refresh for None-expiry token"
+        );
     }
 
     #[tokio::test]
@@ -542,10 +545,7 @@ mod tests {
         };
 
         let err = mgr.refresh_if_needed(&current).await.unwrap_err();
-        assert!(
-            err.to_string().contains("no refresh_token"),
-            "got: {err}"
-        );
+        assert!(err.to_string().contains("no refresh_token"), "got: {err}");
     }
 
     /// Two concurrent 401-driven refreshes on a shared [`TokenManager`] must

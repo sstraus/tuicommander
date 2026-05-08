@@ -1,6 +1,6 @@
 use crate::AppState;
 use axum::extract::{ConnectInfo, State};
-use axum::http::{header, Request, StatusCode};
+use axum::http::{Request, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
@@ -120,22 +120,34 @@ pub(crate) fn is_private_ip(ip: &IpAddr) -> bool {
 fn is_private_ipv4(ip: &Ipv4Addr) -> bool {
     let o = ip.octets();
     // 10.0.0.0/8
-    if o[0] == 10 { return true; }
+    if o[0] == 10 {
+        return true;
+    }
     // 172.16.0.0/12
-    if o[0] == 172 && (16..=31).contains(&o[1]) { return true; }
+    if o[0] == 172 && (16..=31).contains(&o[1]) {
+        return true;
+    }
     // 192.168.0.0/16
-    if o[0] == 192 && o[1] == 168 { return true; }
+    if o[0] == 192 && o[1] == 168 {
+        return true;
+    }
     // 100.64.0.0/10 (CGNAT / Tailscale)
-    if o[0] == 100 && (64..=127).contains(&o[1]) { return true; }
+    if o[0] == 100 && (64..=127).contains(&o[1]) {
+        return true;
+    }
     false
 }
 
 fn is_private_ipv6(ip: &Ipv6Addr) -> bool {
     let seg = ip.segments();
     // fc00::/7 — Unique Local Address (ULA)
-    if (seg[0] & 0xfe00) == 0xfc00 { return true; }
+    if (seg[0] & 0xfe00) == 0xfc00 {
+        return true;
+    }
     // fe80::/10 — Link-local
-    if (seg[0] & 0xffc0) == 0xfe80 { return true; }
+    if (seg[0] & 0xffc0) == 0xfe80 {
+        return true;
+    }
     false
 }
 
@@ -191,7 +203,12 @@ pub async fn basic_auth_middleware(
     }
 
     let session_token = state.session_token.read().clone();
-    let token_duration_secs = state.config.read().services.auth.session_token_duration_secs;
+    let token_duration_secs = state
+        .config
+        .read()
+        .services
+        .auth
+        .session_token_duration_secs;
 
     // Detect TLS for Secure cookie flag (dual-protocol injects Protocol extension)
     let is_tls = req
@@ -208,6 +225,7 @@ pub async fn basic_auth_middleware(
     // The QR code embeds this token, so scanning it authenticates the device.
     // We set a session cookie so the SPA's subsequent fetch() calls are also authenticated.
     if has_valid_url_token(&req, &session_token) {
+        state.auth_rate_limits.remove(&addr.ip());
         let mut response = next.run(req).await;
         if let Ok(val) = session_cookie_value(&session_token, token_duration_secs, is_tls).parse() {
             response.headers_mut().insert(header::SET_COOKIE, val);
@@ -229,8 +247,9 @@ pub async fn basic_auth_middleware(
     {
         let (count, window_start) = *entry;
         let window = std::time::Duration::from_secs(rate_window_secs);
-        if window_start.elapsed() < window && count >= rate_max {
-            let retry_after = (window - window_start.elapsed()).as_secs() + 1;
+        let elapsed = window_start.elapsed();
+        if elapsed < window && count >= rate_max {
+            let retry_after = window.saturating_sub(elapsed).as_secs() + 1;
             tracing::warn!(source = "auth", ip = %client_ip, count, "Rate limited — too many failed auth attempts");
             return (
                 StatusCode::TOO_MANY_REQUESTS,
@@ -261,14 +280,19 @@ pub async fn basic_auth_middleware(
         validate_basic_auth(auth_header.as_deref(), &username, &hash)
     })
     .await
-    .unwrap_or(AuthResult::Invalid);
+    .unwrap_or_else(|e| {
+        tracing::error!(source = "auth", error = %e, "spawn_blocking for bcrypt panicked or was cancelled");
+        AuthResult::Invalid
+    });
 
     match result {
         AuthResult::Ok => {
             // Successful auth clears rate limit counter for this IP
             state.auth_rate_limits.remove(&client_ip);
             let mut response = next.run(req).await;
-            if let Ok(val) = session_cookie_value(&session_token, token_duration_secs, is_tls).parse() {
+            if let Ok(val) =
+                session_cookie_value(&session_token, token_duration_secs, is_tls).parse()
+            {
                 response.headers_mut().insert(header::SET_COOKIE, val);
             }
             response
@@ -327,7 +351,9 @@ mod tests {
     #[test]
     fn private_ipv4_cgnat_tailscale() {
         assert!(is_private_ip(&IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1))));
-        assert!(is_private_ip(&IpAddr::V4(Ipv4Addr::new(100, 127, 255, 255))));
+        assert!(is_private_ip(&IpAddr::V4(Ipv4Addr::new(
+            100, 127, 255, 255
+        ))));
     }
 
     #[test]
@@ -341,19 +367,27 @@ mod tests {
     #[test]
     fn private_ipv6_ula() {
         // fd00::1 — ULA
-        assert!(is_private_ip(&IpAddr::V6(Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 1))));
+        assert!(is_private_ip(&IpAddr::V6(Ipv6Addr::new(
+            0xfd00, 0, 0, 0, 0, 0, 0, 1
+        ))));
         // fc00::1 — ULA
-        assert!(is_private_ip(&IpAddr::V6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 1))));
+        assert!(is_private_ip(&IpAddr::V6(Ipv6Addr::new(
+            0xfc00, 0, 0, 0, 0, 0, 0, 1
+        ))));
     }
 
     #[test]
     fn private_ipv6_link_local() {
-        assert!(is_private_ip(&IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1))));
+        assert!(is_private_ip(&IpAddr::V6(Ipv6Addr::new(
+            0xfe80, 0, 0, 0, 0, 0, 0, 1
+        ))));
     }
 
     #[test]
     fn public_ipv6_not_private() {
-        assert!(!is_private_ip(&IpAddr::V6(Ipv6Addr::new(0x2001, 0x4860, 0x4860, 0, 0, 0, 0, 0x8888))));
+        assert!(!is_private_ip(&IpAddr::V6(Ipv6Addr::new(
+            0x2001, 0x4860, 0x4860, 0, 0, 0, 0, 0x8888
+        ))));
     }
 
     #[test]
@@ -527,7 +561,13 @@ mod tests {
         let map = dashmap::DashMap::new();
         let ip: IpAddr = "10.0.0.2".parse().unwrap();
         // Insert with a past timestamp
-        map.insert(ip, (5, std::time::Instant::now() - std::time::Duration::from_secs(301)));
+        map.insert(
+            ip,
+            (
+                5,
+                std::time::Instant::now() - std::time::Duration::from_secs(301),
+            ),
+        );
         record_auth_failure(&map, ip, 300);
         assert_eq!(map.get(&ip).unwrap().0, 1);
     }
@@ -537,7 +577,9 @@ mod tests {
         let map = dashmap::DashMap::new();
         let ip1: IpAddr = "10.0.0.1".parse().unwrap();
         let ip2: IpAddr = "10.0.0.2".parse().unwrap();
-        for _ in 0..3 { record_auth_failure(&map, ip1, 300); }
+        for _ in 0..3 {
+            record_auth_failure(&map, ip1, 300);
+        }
         record_auth_failure(&map, ip2, 300);
         assert_eq!(map.get(&ip1).unwrap().0, 3);
         assert_eq!(map.get(&ip2).unwrap().0, 1);
@@ -547,7 +589,9 @@ mod tests {
     fn successful_auth_clears_rate_limit() {
         let map = dashmap::DashMap::new();
         let ip: IpAddr = "10.0.0.1".parse().unwrap();
-        for _ in 0..3 { record_auth_failure(&map, ip, 300); }
+        for _ in 0..3 {
+            record_auth_failure(&map, ip, 300);
+        }
         assert_eq!(map.get(&ip).unwrap().0, 3);
         map.remove(&ip);
         assert!(map.get(&ip).is_none());

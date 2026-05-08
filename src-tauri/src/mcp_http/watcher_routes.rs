@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
+use axum::Json;
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::Json;
 
-use crate::AppState;
 use super::types::PathQuery;
 use super::{err_500, validate_repo_path};
+use crate::AppState;
 
 /// Start a repo watcher for a repository via HTTP (browser-only mode).
 /// The unified watcher covers HEAD, git state, and working tree changes.

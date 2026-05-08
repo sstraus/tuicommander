@@ -334,7 +334,9 @@ pub(super) struct IssuesQuery {
     pub filter: String,
 }
 
-fn default_issue_filter() -> String { "assigned".to_string() }
+fn default_issue_filter() -> String {
+    "assigned".to_string()
+}
 
 #[derive(Deserialize)]
 pub(super) struct IssueActionRequest {

@@ -1,6 +1,6 @@
 use std::convert::Infallible;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use axum::extract::{Query, State};
@@ -8,8 +8,8 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use futures_util::stream::Stream;
 use serde::Deserialize;
 
-use crate::state::AppEvent;
 use crate::AppState;
+use crate::state::AppEvent;
 
 #[derive(Deserialize)]
 pub(super) struct SseQuery {
@@ -103,6 +103,7 @@ fn event_type_name(event: &AppEvent) -> &'static str {
         AppEvent::GitHubTransition { .. } => "github-transition",
         AppEvent::GitHubIssuesUpdate { .. } => "github-issues-update",
         AppEvent::CloseHtmlTabs { .. } => "close-html-tabs",
+        AppEvent::ScheduledJobCompleted { .. } => "scheduled-job-completed",
     }
 }
 
@@ -116,7 +117,11 @@ fn event_payload(event: &AppEvent) -> serde_json::Value {
         AppEvent::RepoChanged { repo_path } => {
             serde_json::json!({ "repo_path": repo_path })
         }
-        AppEvent::SessionCreated { session_id, cwd, agent_type } => {
+        AppEvent::SessionCreated {
+            session_id,
+            cwd,
+            agent_type,
+        } => {
             serde_json::json!({ "session_id": session_id, "cwd": cwd, "agent_type": agent_type })
         }
         AppEvent::SessionClosed { session_id, reason } => {
@@ -134,16 +139,28 @@ fn event_payload(event: &AppEvent) -> serde_json::Value {
         AppEvent::UpstreamStatusChanged { name, status } => {
             serde_json::json!({ "name": name, "status": status })
         }
-        AppEvent::McpOAuthStart { name, authorization_url } => {
+        AppEvent::McpOAuthStart {
+            name,
+            authorization_url,
+        } => {
             serde_json::json!({ "name": name, "authorization_url": authorization_url })
         }
-        AppEvent::McpToast { title, message, level, sound } => {
+        AppEvent::McpToast {
+            title,
+            message,
+            level,
+            sound,
+        } => {
             serde_json::json!({ "title": title, "message": message, "level": level, "sound": sound })
         }
         AppEvent::DirChanged { dir_path } => {
             serde_json::json!({ "dir_path": dir_path })
         }
-        AppEvent::WorktreeCreated { repo_path, branch, worktree_path } => {
+        AppEvent::WorktreeCreated {
+            repo_path,
+            branch,
+            worktree_path,
+        } => {
             serde_json::json!({ "repo_path": repo_path, "branch": branch, "worktree_path": worktree_path })
         }
         AppEvent::PeerRegistered { tuic_session, name } => {
@@ -152,13 +169,28 @@ fn event_payload(event: &AppEvent) -> serde_json::Value {
         AppEvent::PeerUnregistered { tuic_session } => {
             serde_json::json!({ "tuic_session": tuic_session })
         }
-        AppEvent::UiTab { id, title, html, url, pinned, focus, origin_repo_path } => {
+        AppEvent::UiTab {
+            id,
+            title,
+            html,
+            url,
+            pinned,
+            focus,
+            origin_repo_path,
+        } => {
             let mut v = serde_json::json!({ "id": id, "title": title, "html": html, "pinned": pinned, "focus": focus });
-            if let Some(u) = url { v["url"] = serde_json::Value::String(u.clone()); }
-            if let Some(p) = origin_repo_path { v["origin_repo_path"] = serde_json::Value::String(p.clone()); }
+            if let Some(u) = url {
+                v["url"] = serde_json::Value::String(u.clone());
+            }
+            if let Some(p) = origin_repo_path {
+                v["origin_repo_path"] = serde_json::Value::String(p.clone());
+            }
             v
         }
-        AppEvent::GitHubPrUpdate { repo_path, statuses } => {
+        AppEvent::GitHubPrUpdate {
+            repo_path,
+            statuses,
+        } => {
             serde_json::json!({ "repo_path": repo_path, "statuses": statuses })
         }
         AppEvent::GitHubTransition { transition } => {
@@ -169,6 +201,13 @@ fn event_payload(event: &AppEvent) -> serde_json::Value {
         }
         AppEvent::CloseHtmlTabs { tab_ids } => {
             serde_json::json!({ "tab_ids": tab_ids })
+        }
+        AppEvent::ScheduledJobCompleted {
+            job_id,
+            goal,
+            timed_out,
+        } => {
+            serde_json::json!({ "job_id": job_id, "goal": goal, "timed_out": timed_out })
         }
     }
 }

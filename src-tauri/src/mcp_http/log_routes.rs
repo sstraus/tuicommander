@@ -1,13 +1,13 @@
 //! HTTP endpoints for the application log ring buffer.
 
+use axum::Json;
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
-use axum::Json;
 use serde::Deserialize;
 use std::sync::Arc;
 
-use crate::app_logger::LogEntry;
 use crate::AppState;
+use crate::app_logger::LogEntry;
 
 #[derive(Deserialize)]
 pub(crate) struct GetLogsQuery {
@@ -59,9 +59,7 @@ pub(crate) async fn push_log(
 }
 
 /// DELETE /logs — clear all log entries.
-pub(crate) async fn clear_logs(
-    State(state): State<Arc<AppState>>,
-) -> StatusCode {
+pub(crate) async fn clear_logs(State(state): State<Arc<AppState>>) -> StatusCode {
     let mut buf = state.log_buffer.lock();
     buf.clear();
     StatusCode::NO_CONTENT

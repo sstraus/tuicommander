@@ -61,15 +61,18 @@ impl StdioMcpClient {
         transport: &crate::mcp_upstream_config::UpstreamTransport,
     ) -> Option<Self> {
         match transport {
-            crate::mcp_upstream_config::UpstreamTransport::Stdio { command, args, env, cwd } => {
-                Some(Self::new(StdioConfig {
-                    name,
-                    command: command.clone(),
-                    args: args.clone(),
-                    env: env.clone(),
-                    cwd: cwd.clone(),
-                }))
-            }
+            crate::mcp_upstream_config::UpstreamTransport::Stdio {
+                command,
+                args,
+                env,
+                cwd,
+            } => Some(Self::new(StdioConfig {
+                name,
+                command: command.clone(),
+                args: args.clone(),
+                env: env.clone(),
+                cwd: cwd.clone(),
+            })),
             crate::mcp_upstream_config::UpstreamTransport::Http { .. } => None,
         }
     }
@@ -119,8 +122,7 @@ impl StdioMcpClient {
 
         // Re-add safe passthrough variables needed by child processes
         const SAFE_ENV_KEYS: &[&str] = &[
-            "HOME", "USER", "LANG", "LC_ALL",
-            "TMPDIR", "TEMP", "TMP", "SHELL", "TERM",
+            "HOME", "USER", "LANG", "LC_ALL", "TMPDIR", "TEMP", "TMP", "SHELL", "TERM",
         ];
         for key in SAFE_ENV_KEYS {
             if let Ok(val) = std::env::var(key) {
@@ -142,11 +144,7 @@ impl StdioMcpClient {
             "/usr/local/sbin",
         ];
         #[cfg(target_os = "linux")]
-        let candidate_prefixes: &[&str] = &[
-            "/usr/local/bin",
-            "/usr/local/sbin",
-            "/snap/bin",
-        ];
+        let candidate_prefixes: &[&str] = &["/usr/local/bin", "/usr/local/sbin", "/snap/bin"];
         #[cfg(target_os = "windows")]
         let candidate_prefixes: &[&str] = &[];
         for p in candidate_prefixes {
@@ -331,8 +329,9 @@ impl StdioMcpClient {
             Some(child) => {
                 // try_wait returns None if still running, Some(status) if exited
                 match child.try_wait() {
-                    Ok(None) => true,           // still running
-                    Ok(Some(_)) | Err(_) => {   // exited or error
+                    Ok(None) => true, // still running
+                    Ok(Some(_)) | Err(_) => {
+                        // exited or error
                         self.child = None;
                         self.stdin = None;
                         self.stdout_reader = None;
@@ -433,16 +432,26 @@ impl StdioMcpClient {
             .as_mut()
             .ok_or_else(|| format!("Upstream '{}': stdin not available", self.config.name))?;
 
-        let mut line = serde_json::to_string(value)
-            .map_err(|e| format!("Upstream '{}': failed to serialize request: {e}", self.config.name))?;
+        let mut line = serde_json::to_string(value).map_err(|e| {
+            format!(
+                "Upstream '{}': failed to serialize request: {e}",
+                self.config.name
+            )
+        })?;
         line.push('\n');
 
-        stdin
-            .write_all(line.as_bytes())
-            .map_err(|e| format!("Upstream '{}': failed to write to stdin: {e}", self.config.name))?;
-        stdin
-            .flush()
-            .map_err(|e| format!("Upstream '{}': failed to flush stdin: {e}", self.config.name))
+        stdin.write_all(line.as_bytes()).map_err(|e| {
+            format!(
+                "Upstream '{}': failed to write to stdin: {e}",
+                self.config.name
+            )
+        })?;
+        stdin.flush().map_err(|e| {
+            format!(
+                "Upstream '{}': failed to flush stdin: {e}",
+                self.config.name
+            )
+        })
     }
 
     /// Read a newline-delimited JSON response from stdout.
@@ -453,9 +462,12 @@ impl StdioMcpClient {
             .ok_or_else(|| format!("Upstream '{}': stdout not available", self.config.name))?;
 
         let mut line = String::new();
-        reader
-            .read_line(&mut line)
-            .map_err(|e| format!("Upstream '{}': failed to read from stdout: {e}", self.config.name))?;
+        reader.read_line(&mut line).map_err(|e| {
+            format!(
+                "Upstream '{}': failed to read from stdout: {e}",
+                self.config.name
+            )
+        })?;
 
         if line.is_empty() {
             return Err(format!(
@@ -671,7 +683,10 @@ while IFS= read -r line; do
 done
 "#;
         let mut env = HashMap::new();
-        env.insert("TUIC_TEST_ENV_VAR".to_string(), "hello-from-env".to_string());
+        env.insert(
+            "TUIC_TEST_ENV_VAR".to_string(),
+            "hello-from-env".to_string(),
+        );
 
         let mut tmp = std::env::temp_dir();
         tmp.push(format!("tuic-mcp-env-test-{}.sh", uuid::Uuid::new_v4()));

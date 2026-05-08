@@ -80,9 +80,7 @@ pub(crate) enum FilterMode {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub(crate) enum UpstreamAuth {
     /// Static bearer token.
-    Bearer {
-        token: String,
-    },
+    Bearer { token: String },
     /// OAuth 2.1 with PKCE (RFC 9449 / RFC 8707).
     OAuth2 {
         client_id: String,
@@ -138,7 +136,10 @@ impl std::fmt::Display for UpstreamConfigError {
                 write!(f, "URL '{url}' must use http:// or https:// scheme")
             }
             Self::SelfReferentialUrl(url) => {
-                write!(f, "URL '{url}' points to this TUIC instance (circular proxy)")
+                write!(
+                    f,
+                    "URL '{url}' points to this TUIC instance (circular proxy)"
+                )
             }
             Self::EmptyUrl(id) => write!(f, "Server '{id}' has an empty HTTP URL"),
             Self::EmptyCommand(id) => write!(f, "Server '{id}' has an empty stdio command"),
@@ -195,9 +196,10 @@ pub(crate) fn validate_upstream_config(
 
         // Auth-specific validation
         if let Some(UpstreamAuth::OAuth2 { client_id, .. }) = &server.auth
-            && client_id.is_empty() {
-                errors.push(UpstreamConfigError::EmptyOAuthClientId(server.id.clone()));
-            }
+            && client_id.is_empty()
+        {
+            errors.push(UpstreamConfigError::EmptyOAuthClientId(server.id.clone()));
+        }
     }
 
     errors
@@ -209,8 +211,13 @@ pub(crate) fn is_self_referential(url: &str, self_port: u16) -> bool {
         return false;
     };
     let host = parsed.host_str().unwrap_or("");
-    let port = parsed.port().unwrap_or(if parsed.scheme() == "https" { 443 } else { 80 });
-    let is_localhost = matches!(host, "localhost" | "127.0.0.1" | "::1" | "[::1]" | "0.0.0.0");
+    let port = parsed
+        .port()
+        .unwrap_or(if parsed.scheme() == "https" { 443 } else { 80 });
+    let is_localhost = matches!(
+        host,
+        "localhost" | "127.0.0.1" | "::1" | "[::1]" | "0.0.0.0"
+    );
     is_localhost && port == self_port
 }
 
@@ -243,11 +250,17 @@ pub(crate) async fn auto_connect_saved_upstreams(state: &crate::state::AppState)
     );
     for server in config.servers {
         tracing::info!(source = "mcp_upstream", name = %server.name, "Connecting upstream...");
-        if let Err(e) = registry.connect_upstream(server.clone(), Some(self_port)).await {
+        if let Err(e) = registry
+            .connect_upstream(server.clone(), Some(self_port))
+            .await
+        {
             tracing::warn!(source = "mcp_upstream", name = %server.name, "Boot-time connect failed: {e}");
         }
     }
-    tracing::info!(source = "mcp_upstream", "Boot-time upstream auto-connect complete");
+    tracing::info!(
+        source = "mcp_upstream",
+        "Boot-time upstream auto-connect complete"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -329,12 +342,13 @@ pub(crate) fn set_project_mcp_upstreams_inner(
     upstream_names: Option<Vec<String>>,
 ) -> Result<(), String> {
     let mut settings = crate::config::load_repo_settings();
-    let entry = settings.repos.entry(repo_path.to_string()).or_insert_with(|| {
-        crate::config::RepoSettingsEntry {
+    let entry = settings
+        .repos
+        .entry(repo_path.to_string())
+        .or_insert_with(|| crate::config::RepoSettingsEntry {
             path: repo_path.to_string(),
             ..Default::default()
-        }
-    });
+        });
     entry.mcp_upstreams = upstream_names;
     crate::config::save_repo_settings(settings)?;
     // Notify connected MCP clients that the tool list may have changed
@@ -416,7 +430,10 @@ mod tests {
             name: name.to_string(),
             transport: UpstreamTransport::Stdio {
                 command: command.to_string(),
-                args: vec!["-y".to_string(), "@modelcontextprotocol/server-filesystem".to_string()],
+                args: vec![
+                    "-y".to_string(),
+                    "@modelcontextprotocol/server-filesystem".to_string(),
+                ],
                 env: HashMap::new(),
                 cwd: None,
             },
@@ -533,7 +550,10 @@ mod tests {
         let json = serde_json::to_string_pretty(&server).unwrap();
         let parsed: UpstreamMcpServer = serde_json::from_str(&json).unwrap();
         assert_eq!(server, parsed);
-        if let Some(UpstreamAuth::OAuth2 { client_id, scopes, .. }) = &parsed.auth {
+        if let Some(UpstreamAuth::OAuth2 {
+            client_id, scopes, ..
+        }) = &parsed.auth
+        {
             assert_eq!(client_id, "my-app");
             assert_eq!(scopes.len(), 2);
         } else {
@@ -594,7 +614,10 @@ mod tests {
         };
         let errors = validate_upstream_config(&config, 3845);
         assert_eq!(errors.len(), 1);
-        assert!(matches!(errors[0], UpstreamConfigError::EmptyOAuthClientId(_)));
+        assert!(matches!(
+            errors[0],
+            UpstreamConfigError::EmptyOAuthClientId(_)
+        ));
     }
 
     #[test]
@@ -786,7 +809,10 @@ mod tests {
     #[test]
     fn empty_command_rejected() {
         let mut server = stdio_server("bad", "npx");
-        if let UpstreamTransport::Stdio { ref mut command, .. } = server.transport {
+        if let UpstreamTransport::Stdio {
+            ref mut command, ..
+        } = server.transport
+        {
             *command = String::new();
         }
         let config = UpstreamMcpConfig {
@@ -803,13 +829,16 @@ mod tests {
     fn multiple_errors_collected() {
         let config = UpstreamMcpConfig {
             servers: vec![
-                http_server("", "http://remote:8080/mcp"),  // empty name
-                http_server("BAD", ""),                      // invalid name + empty url
+                http_server("", "http://remote:8080/mcp"), // empty name
+                http_server("BAD", ""),                    // invalid name + empty url
                 http_server("ok", "http://localhost:3845/mcp"), // self-ref
             ],
         };
         let errors = validate_upstream_config(&config, 3845);
-        assert!(errors.len() >= 3, "Expected at least 3 errors, got: {errors:?}");
+        assert!(
+            errors.len() >= 3,
+            "Expected at least 3 errors, got: {errors:?}"
+        );
     }
 
     // -- Validation: invalid URL scheme --
@@ -821,7 +850,10 @@ mod tests {
         };
         let errors = validate_upstream_config(&config, 3845);
         assert_eq!(errors.len(), 1);
-        assert!(matches!(errors[0], UpstreamConfigError::InvalidUrlScheme(_)));
+        assert!(matches!(
+            errors[0],
+            UpstreamConfigError::InvalidUrlScheme(_)
+        ));
     }
 
     #[test]
@@ -831,7 +863,10 @@ mod tests {
         };
         let errors = validate_upstream_config(&config, 3845);
         assert_eq!(errors.len(), 1);
-        assert!(matches!(errors[0], UpstreamConfigError::InvalidUrlScheme(_)));
+        assert!(matches!(
+            errors[0],
+            UpstreamConfigError::InvalidUrlScheme(_)
+        ));
     }
 
     #[test]
@@ -841,7 +876,10 @@ mod tests {
         };
         let errors = validate_upstream_config(&config, 3845);
         assert_eq!(errors.len(), 1);
-        assert!(matches!(errors[0], UpstreamConfigError::InvalidUrlScheme(_)));
+        assert!(matches!(
+            errors[0],
+            UpstreamConfigError::InvalidUrlScheme(_)
+        ));
     }
 
     #[test]
@@ -901,7 +939,9 @@ mod tests {
         let registry = UpstreamRegistry::new();
         let old = UpstreamMcpConfig { servers: vec![] };
         let new_server = disabled_http_server("alpha", "http://127.0.0.1:1/mcp");
-        let new = UpstreamMcpConfig { servers: vec![new_server] };
+        let new = UpstreamMcpConfig {
+            servers: vec![new_server],
+        };
 
         registry.apply_config_diff(&old, &new, 9999).await;
 
@@ -912,9 +952,14 @@ mod tests {
     async fn diff_disconnects_removed_server() {
         let registry = UpstreamRegistry::new();
         let server = disabled_http_server("beta", "http://127.0.0.1:1/mcp");
-        registry.connect_upstream(server.clone(), None).await.unwrap();
+        registry
+            .connect_upstream(server.clone(), None)
+            .await
+            .unwrap();
 
-        let old = UpstreamMcpConfig { servers: vec![server] };
+        let old = UpstreamMcpConfig {
+            servers: vec![server],
+        };
         let new = UpstreamMcpConfig { servers: vec![] };
 
         registry.apply_config_diff(&old, &new, 9999).await;
@@ -926,13 +971,22 @@ mod tests {
     async fn diff_reconnects_changed_server() {
         let registry = UpstreamRegistry::new();
         let mut old_server = disabled_http_server("gamma", "http://127.0.0.1:1/mcp");
-        registry.connect_upstream(old_server.clone(), None).await.unwrap();
+        registry
+            .connect_upstream(old_server.clone(), None)
+            .await
+            .unwrap();
 
-        let old = UpstreamMcpConfig { servers: vec![old_server.clone()] };
+        let old = UpstreamMcpConfig {
+            servers: vec![old_server.clone()],
+        };
 
         // Change the URL → same id, different transport
-        old_server.transport = UpstreamTransport::Http { url: "http://127.0.0.1:2/mcp".to_string() };
-        let new = UpstreamMcpConfig { servers: vec![old_server] };
+        old_server.transport = UpstreamTransport::Http {
+            url: "http://127.0.0.1:2/mcp".to_string(),
+        };
+        let new = UpstreamMcpConfig {
+            servers: vec![old_server],
+        };
 
         registry.apply_config_diff(&old, &new, 9999).await;
 
@@ -944,10 +998,17 @@ mod tests {
     async fn diff_unchanged_server_stays_connected() {
         let registry = UpstreamRegistry::new();
         let server = disabled_http_server("delta", "http://127.0.0.1:1/mcp");
-        registry.connect_upstream(server.clone(), None).await.unwrap();
+        registry
+            .connect_upstream(server.clone(), None)
+            .await
+            .unwrap();
 
-        let old = UpstreamMcpConfig { servers: vec![server.clone()] };
-        let new = UpstreamMcpConfig { servers: vec![server] };
+        let old = UpstreamMcpConfig {
+            servers: vec![server.clone()],
+        };
+        let new = UpstreamMcpConfig {
+            servers: vec![server],
+        };
 
         registry.apply_config_diff(&old, &new, 9999).await;
 
@@ -959,14 +1020,23 @@ mod tests {
     async fn diff_reconnects_on_auth_change() {
         let registry = UpstreamRegistry::new();
         let server = disabled_http_server("epsilon", "http://127.0.0.1:1/mcp");
-        registry.connect_upstream(server.clone(), None).await.unwrap();
+        registry
+            .connect_upstream(server.clone(), None)
+            .await
+            .unwrap();
 
-        let old = UpstreamMcpConfig { servers: vec![server.clone()] };
+        let old = UpstreamMcpConfig {
+            servers: vec![server.clone()],
+        };
 
         // Add bearer auth → should trigger reconnect
         let mut new_server = server;
-        new_server.auth = Some(UpstreamAuth::Bearer { token: "tok".to_string() });
-        let new = UpstreamMcpConfig { servers: vec![new_server] };
+        new_server.auth = Some(UpstreamAuth::Bearer {
+            token: "tok".to_string(),
+        });
+        let new = UpstreamMcpConfig {
+            servers: vec![new_server],
+        };
 
         registry.apply_config_diff(&old, &new, 9999).await;
 
@@ -1006,7 +1076,9 @@ mod tests {
 
         // Seed two upstreams — one with existing auth, one without
         let mut server_a = http_server("alpha", "https://a.example.com/mcp");
-        server_a.auth = Some(UpstreamAuth::Bearer { token: "old-tok".into() });
+        server_a.auth = Some(UpstreamAuth::Bearer {
+            token: "old-tok".into(),
+        });
         let server_b = http_server("beta", "https://b.example.com/mcp");
         let config = UpstreamMcpConfig {
             servers: vec![server_a, server_b.clone()],
@@ -1071,7 +1143,9 @@ mod tests {
             authorization_endpoint: None,
             token_endpoint: None,
         });
-        let config = UpstreamMcpConfig { servers: vec![server] };
+        let config = UpstreamMcpConfig {
+            servers: vec![server],
+        };
         save_json_config(UPSTREAMS_FILE, &config).unwrap();
 
         clear_upstream_auth("delta").unwrap();
@@ -1095,7 +1169,9 @@ mod tests {
             authorization_endpoint: None,
             token_endpoint: None,
         });
-        let config = UpstreamMcpConfig { servers: vec![server] };
+        let config = UpstreamMcpConfig {
+            servers: vec![server],
+        };
         save_json_config(UPSTREAMS_FILE, &config).unwrap();
 
         let new_auth = UpstreamAuth::OAuth2 {
@@ -1126,18 +1202,25 @@ mod tests {
             &state,
             "/test/repo",
             Some(vec!["server-a".to_string(), "server-b".to_string()]),
-        ).unwrap();
+        )
+        .unwrap();
 
         // Verify persisted
         let settings = crate::config::load_repo_settings();
-        let entry = settings.repos.get("/test/repo").expect("entry should exist");
+        let entry = settings
+            .repos
+            .get("/test/repo")
+            .expect("entry should exist");
         assert_eq!(
             entry.mcp_upstreams,
             Some(vec!["server-a".to_string(), "server-b".to_string()])
         );
 
         // Verify signal emitted
-        assert!(rx.try_recv().is_ok(), "mcp_tools_changed should have been emitted");
+        assert!(
+            rx.try_recv().is_ok(),
+            "mcp_tools_changed should have been emitted"
+        );
     }
 
     #[test]
@@ -1149,19 +1232,15 @@ mod tests {
         let state = crate::state::tests_support::make_test_app_state();
 
         // Set then clear
-        set_project_mcp_upstreams_inner(
-            &state,
-            "/test/repo",
-            Some(vec!["server-a".to_string()]),
-        ).unwrap();
-        set_project_mcp_upstreams_inner(
-            &state,
-            "/test/repo",
-            None,
-        ).unwrap();
+        set_project_mcp_upstreams_inner(&state, "/test/repo", Some(vec!["server-a".to_string()]))
+            .unwrap();
+        set_project_mcp_upstreams_inner(&state, "/test/repo", None).unwrap();
 
         let settings = crate::config::load_repo_settings();
-        let entry = settings.repos.get("/test/repo").expect("entry should exist");
+        let entry = settings
+            .repos
+            .get("/test/repo")
+            .expect("entry should exist");
         assert_eq!(entry.mcp_upstreams, None, "None should clear the override");
     }
 }

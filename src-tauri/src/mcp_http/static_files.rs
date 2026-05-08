@@ -1,6 +1,6 @@
-use axum::http::{header, HeaderMap, StatusCode};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Redirect, Response};
-use include_dir::{include_dir, Dir};
+use include_dir::{Dir, include_dir};
 
 /// Frontend dist/ embedded at compile time for single-binary distribution.
 pub(super) static FRONTEND_DIST: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../dist");
@@ -12,7 +12,9 @@ const DEV_DIST_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../dist");
 
 /// Serve embedded static files from dist/ with correct MIME types.
 /// Unknown paths fall back to index.html for SPA client-side routing.
-pub(super) async fn serve_static(axum::extract::Path(path): axum::extract::Path<String>) -> Response {
+pub(super) async fn serve_static(
+    axum::extract::Path(path): axum::extract::Path<String>,
+) -> Response {
     serve_file(&path)
 }
 
@@ -26,7 +28,10 @@ pub(super) async fn serve_index(headers: HeaderMap) -> Response {
 
 /// Check if the User-Agent indicates a mobile device.
 fn is_mobile_user_agent(headers: &HeaderMap) -> bool {
-    let ua = match headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()) {
+    let ua = match headers
+        .get(header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+    {
         Some(s) => s,
         None => return false,
     };
@@ -65,7 +70,12 @@ fn serve_file(path: &str) -> Response {
                 .first_or_octet_stream()
                 .to_string();
             let cc = cache_control_for(path).to_string();
-            return (StatusCode::OK, [(header::CONTENT_TYPE, mime), (header::CACHE_CONTROL, cc)], bytes).into_response();
+            return (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, mime), (header::CACHE_CONTROL, cc)],
+                bytes,
+            )
+                .into_response();
         }
         // path not found on disk → SPA fallback from disk
         let fallback = spa_fallback_file(path);
@@ -73,7 +83,10 @@ fn serve_file(path: &str) -> Response {
         if let Ok(bytes) = std::fs::read(&fallback_path) {
             return (
                 StatusCode::OK,
-                [(header::CONTENT_TYPE, "text/html".to_string()), (header::CACHE_CONTROL, "no-cache".to_string())],
+                [
+                    (header::CONTENT_TYPE, "text/html".to_string()),
+                    (header::CACHE_CONTROL, "no-cache".to_string()),
+                ],
                 bytes,
             )
                 .into_response();
@@ -124,7 +137,10 @@ fn serve_embedded_file(path: &str) -> Response {
         if let Some(index) = FRONTEND_DIST.get_file(fallback) {
             (
                 StatusCode::OK,
-                [(header::CONTENT_TYPE, "text/html".to_string()), (header::CACHE_CONTROL, "no-cache".to_string())],
+                [
+                    (header::CONTENT_TYPE, "text/html".to_string()),
+                    (header::CACHE_CONTROL, "no-cache".to_string()),
+                ],
                 index.contents(),
             )
                 .into_response()
