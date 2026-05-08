@@ -219,7 +219,11 @@ fn cmd_open(path: Option<String>, _wait: bool, goto: Option<String>) -> Result<(
         parse_goto(&resolved)
     };
 
-    let actual_path = if goto.is_some() { &resolved } else { &file_path };
+    let actual_path = if goto.is_some() {
+        &resolved
+    } else {
+        &file_path
+    };
 
     // Check if path is a directory → open as repo, file → open in editor
     let metadata = std::fs::metadata(actual_path);
@@ -241,10 +245,7 @@ fn cmd_open(path: Option<String>, _wait: bool, goto: Option<String>) -> Result<(
             eprintln!("Opened {actual_path}");
         } else {
             // Maybe it's already a known repo — try activating it via deep link
-            let _ = open_deep_link(&format!(
-                "tuic://open-repo?path={}",
-                urlencod(actual_path)
-            ));
+            let _ = open_deep_link(&format!("tuic://open-repo?path={}", urlencod(actual_path)));
             eprintln!("Activated {actual_path}");
         }
         let _ = body; // suppress unused warning
@@ -291,10 +292,7 @@ fn cmd_ls() -> Result<(), String> {
     }
 
     // Header
-    println!(
-        "{:<38} {:<20} {:<10} {}",
-        "ID", "NAME", "STATUS", "REPO"
-    );
+    println!("{:<38} {:<20} {:<10} {}", "ID", "NAME", "STATUS", "REPO");
     println!("{}", "-".repeat(90));
 
     for s in &arr {
@@ -382,8 +380,7 @@ fn cmd_capture(target: &str, format: &str) -> Result<(), String> {
         _ => "?format=text",
     };
 
-    let resp =
-        ipc::get(&format!("/sessions/{id}/output{fmt_param}")).map_err(|e| e.to_string())?;
+    let resp = ipc::get(&format!("/sessions/{id}/output{fmt_param}")).map_err(|e| e.to_string())?;
 
     if resp.is_success() {
         // Output might be JSON with a "data" field or plain text
@@ -624,8 +621,7 @@ fn cmd_install_cli(target: Option<&str>) -> Result<(), String> {
 
     #[cfg(windows)]
     {
-        std::fs::copy(&self_exe, target_path)
-            .map_err(|e| format!("Failed to copy: {e}"))?;
+        std::fs::copy(&self_exe, target_path).map_err(|e| format!("Failed to copy: {e}"))?;
         println!("Installed {target_path}");
     }
 
@@ -649,7 +645,10 @@ fn cmd_alias(remove: bool) -> Result<(), String> {
         {
             if let Ok(target) = std::fs::read_link(&tmux_path) {
                 if target == self_exe
-                    || target.file_name().map(|f| f.to_string_lossy().contains("tuic")).unwrap_or(false)
+                    || target
+                        .file_name()
+                        .map(|f| f.to_string_lossy().contains("tuic"))
+                        .unwrap_or(false)
                 {
                     remove_with_elevation(&tmux_path)?;
                     println!("Removed tmux alias at {tmux_path}");
@@ -735,8 +734,7 @@ fn cmd_alias(remove: bool) -> Result<(), String> {
 
     #[cfg(windows)]
     {
-        std::fs::copy(&self_exe, &tmux_path)
-            .map_err(|e| format!("Failed to copy: {e}"))?;
+        std::fs::copy(&self_exe, &tmux_path).map_err(|e| format!("Failed to copy: {e}"))?;
         println!("Created tmux alias at {tmux_path}");
     }
 
@@ -754,8 +752,7 @@ fn cmd_pause(target: &str) -> Result<(), String> {
 
 fn cmd_resume(target: &str) -> Result<(), String> {
     let id = resolve_session_id(target)?;
-    let resp =
-        ipc::post(&format!("/sessions/{id}/resume"), "{}").map_err(|e| e.to_string())?;
+    let resp = ipc::post(&format!("/sessions/{id}/resume"), "{}").map_err(|e| e.to_string())?;
     if !resp.is_success() {
         return Err(format!("Failed to resume: {}", resp.body));
     }
@@ -1010,9 +1007,7 @@ fn remove_with_elevation(path: &str) -> Result<(), String> {
 
     #[cfg(target_os = "macos")]
     {
-        let script = format!(
-            "do shell script \"rm -f '{path}'\" with administrator privileges"
-        );
+        let script = format!("do shell script \"rm -f '{path}'\" with administrator privileges");
         let status = std::process::Command::new("osascript")
             .arg("-e")
             .arg(&script)

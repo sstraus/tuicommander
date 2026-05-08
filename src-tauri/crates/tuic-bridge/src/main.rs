@@ -9,7 +9,10 @@
 
 use serde_json::Value;
 use std::io::{self, BufRead, Write};
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 // ---------------------------------------------------------------------------
@@ -121,7 +124,9 @@ async fn connect_ipc() -> Result<IpcStream, String> {
         if let Ok(Ok(stream)) = tokio::time::timeout(
             std::time::Duration::from_secs(3),
             tokio::net::UnixStream::connect(&primary),
-        ).await {
+        )
+        .await
+        {
             return Ok(IpcStream::Unix(stream));
         }
 
@@ -129,19 +134,26 @@ async fn connect_ipc() -> Result<IpcStream, String> {
         if let Ok(entries) = std::fs::read_dir(&dir) {
             for entry in entries.flatten() {
                 let name = entry.file_name();
-                let Some(name_str) = name.to_str() else { continue };
+                let Some(name_str) = name.to_str() else {
+                    continue;
+                };
                 if name_str.starts_with("mcp-") && name_str.ends_with(".sock") {
                     if let Ok(Ok(stream)) = tokio::time::timeout(
                         std::time::Duration::from_secs(3),
                         tokio::net::UnixStream::connect(&entry.path()),
-                    ).await {
+                    )
+                    .await
+                    {
                         return Ok(IpcStream::Unix(stream));
                     }
                 }
             }
         }
 
-        Err(format!("connect {}: no live socket found", primary.display()))
+        Err(format!(
+            "connect {}: no live socket found",
+            primary.display()
+        ))
     }
     #[cfg(windows)]
     {
@@ -161,7 +173,13 @@ async fn connect_ipc() -> Result<IpcStream, String> {
 /// Exits the process if stdout is closed — the MCP client is gone, nothing left to do.
 fn emit(json: &Value) {
     let mut stdout = io::stdout().lock();
-    if writeln!(stdout, "{}", serde_json::to_string(json).unwrap_or_default()).is_err() {
+    if writeln!(
+        stdout,
+        "{}",
+        serde_json::to_string(json).unwrap_or_default()
+    )
+    .is_err()
+    {
         std::process::exit(0);
     }
     let _ = stdout.flush();
@@ -180,7 +198,10 @@ fn emit_tools_changed() {
 
 /// Send an HTTP POST to /mcp over an IPC connection.
 /// Returns the response body and any mcp-session-id header value.
-async fn post_mcp(body: &str, session_id: Option<&str>) -> Result<(String, Option<String>), String> {
+async fn post_mcp(
+    body: &str,
+    session_id: Option<&str>,
+) -> Result<(String, Option<String>), String> {
     let mut stream = connect_ipc().await?;
 
     let mut headers = format!(
@@ -192,8 +213,14 @@ async fn post_mcp(body: &str, session_id: Option<&str>) -> Result<(String, Optio
     }
     headers.push_str("\r\n");
 
-    stream.write_all(headers.as_bytes()).await.map_err(|e| format!("write headers: {e}"))?;
-    stream.write_all(body.as_bytes()).await.map_err(|e| format!("write body: {e}"))?;
+    stream
+        .write_all(headers.as_bytes())
+        .await
+        .map_err(|e| format!("write headers: {e}"))?;
+    stream
+        .write_all(body.as_bytes())
+        .await
+        .map_err(|e| format!("write body: {e}"))?;
 
     // Read the response first, then shutdown.  Calling shutdown() before read
     // signals EOF to the server, which may drop the connection before responding.
@@ -203,27 +230,25 @@ async fn post_mcp(body: &str, session_id: Option<&str>) -> Result<(String, Optio
     tokio::time::timeout(
         std::time::Duration::from_secs(10),
         stream.read_to_end(&mut buf),
-    ).await
-        .map_err(|_| "read: timed out after 10s".to_string())?
-        .map_err(|e| format!("read: {e}"))?;
+    )
+    .await
+    .map_err(|_| "read: timed out after 10s".to_string())?
+    .map_err(|e| format!("read: {e}"))?;
     let raw = String::from_utf8_lossy(&buf);
 
     // Split headers from body
-    let (header_section, response_body) = raw
-        .split_once("\r\n\r\n")
-        .ok_or("invalid HTTP response")?;
+    let (header_section, response_body) =
+        raw.split_once("\r\n\r\n").ok_or("invalid HTTP response")?;
 
     // Extract mcp-session-id from response headers
-    let sid = header_section
-        .lines()
-        .find_map(|line| {
-            let lower = line.to_lowercase();
-            if lower.starts_with("mcp-session-id:") {
-                Some(line.split_once(':')?.1.trim().to_string())
-            } else {
-                None
-            }
-        });
+    let sid = header_section.lines().find_map(|line| {
+        let lower = line.to_lowercase();
+        if lower.starts_with("mcp-session-id:") {
+            Some(line.split_once(':')?.1.trim().to_string())
+        } else {
+            None
+        }
+    });
 
     Ok((response_body.to_string(), sid))
 }
@@ -334,7 +359,11 @@ fn emit_offline_response(method: &str, id: &Value) {
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
 async fn main() {
-    eprintln!("tuic-bridge v{} starting ({})", env!("CARGO_PKG_VERSION"), ipc_endpoint());
+    eprintln!(
+        "tuic-bridge v{} starting ({})",
+        env!("CARGO_PKG_VERSION"),
+        ipc_endpoint()
+    );
 
     let state = Arc::new(BridgeState {
         session_id: Mutex::new(None),
@@ -364,9 +393,13 @@ async fn main() {
             if bg_state.connected.load(Ordering::Acquire) {
                 let sid = bg_state.session_id.lock().unwrap().clone();
                 let health = post_mcp(
-                    &serde_json::to_string(&serde_json::json!({"jsonrpc":"2.0","id":0,"method":"tools/list"})).unwrap(),
+                    &serde_json::to_string(
+                        &serde_json::json!({"jsonrpc":"2.0","id":0,"method":"tools/list"}),
+                    )
+                    .unwrap(),
                     sid.as_deref(),
-                ).await;
+                )
+                .await;
                 if health.is_err() {
                     consecutive_failures += 1;
                     eprintln!(
@@ -405,7 +438,11 @@ async fn main() {
         let stdin = io::stdin();
         for line in stdin.lock().lines() {
             match line {
-                Ok(l) if !l.trim().is_empty() => { if tx.send(l).is_err() { break; } }
+                Ok(l) if !l.trim().is_empty() => {
+                    if tx.send(l).is_err() {
+                        break;
+                    }
+                }
                 Err(_) => break,
                 _ => {}
             }
@@ -450,7 +487,8 @@ async fn main() {
                             // Parse server response, inject listChanged capability
                             // (the server doesn't advertise it but the bridge supports it)
                             if let Ok(mut resp) = serde_json::from_str::<Value>(&body) {
-                                resp["result"]["capabilities"]["tools"]["listChanged"] = Value::Bool(true);
+                                resp["result"]["capabilities"]["tools"]["listChanged"] =
+                                    Value::Bool(true);
                                 Some(resp)
                             } else {
                                 None

@@ -13,3 +13,6 @@ path = "src/main.rs"
 serde_json = "1"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "net", "io-util", "sync", "time", "macros"] }
 dirs = "6"
+
+[lints]
+workspace = true

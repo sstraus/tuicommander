@@ -207,9 +207,11 @@ pub fn ensure_running() -> io::Result<()> {
             .arg("tuic://")
             .spawn();
         if result.is_err() {
-            std::process::Command::new("tuicommander").spawn().map_err(|e| {
-                io::Error::new(e.kind(), format!("Failed to launch TUICommander: {e}"))
-            })?;
+            std::process::Command::new("tuicommander")
+                .spawn()
+                .map_err(|e| {
+                    io::Error::new(e.kind(), format!("Failed to launch TUICommander: {e}"))
+                })?;
         }
     }
 
