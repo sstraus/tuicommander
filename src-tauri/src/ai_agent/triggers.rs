@@ -64,10 +64,7 @@ impl TriggerClassifier {
                     .unwrap_or_default();
                 (
                     format!("Command failed: {} ({error_type})", outcome.command),
-                    format!(
-                        "Investigate why `{}` failed{exit_str}",
-                        outcome.command
-                    ),
+                    format!("Investigate why `{}` failed{exit_str}", outcome.command),
                 )
             }
             _ => unreachable!(),
@@ -111,7 +108,9 @@ mod tests {
     fn error_returns_suggestion() {
         let tc = TriggerClassifier::new();
         let outcome = make_outcome(
-            OutcomeClass::Error { error_type: "compile".to_string() },
+            OutcomeClass::Error {
+                error_type: "compile".to_string(),
+            },
             "cargo build",
             Some(1),
         );
@@ -133,7 +132,9 @@ mod tests {
     fn debounce_suppresses_second() {
         let tc = TriggerClassifier::new();
         let outcome = make_outcome(
-            OutcomeClass::Error { error_type: "test".to_string() },
+            OutcomeClass::Error {
+                error_type: "test".to_string(),
+            },
             "pytest",
             Some(1),
         );
@@ -145,7 +146,9 @@ mod tests {
     fn debounce_is_per_session() {
         let tc = TriggerClassifier::new();
         let outcome = make_outcome(
-            OutcomeClass::Error { error_type: "test".to_string() },
+            OutcomeClass::Error {
+                error_type: "test".to_string(),
+            },
             "pytest",
             Some(1),
         );

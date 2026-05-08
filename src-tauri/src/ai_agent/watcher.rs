@@ -472,7 +472,9 @@ impl WatcherEngine {
             config
                 .rules
                 .iter()
-                .filter(|r| r.session_id.as_deref() == Some(session_id) && r.status == WatcherStatus::Active)
+                .filter(|r| {
+                    r.session_id.as_deref() == Some(session_id) && r.status == WatcherStatus::Active
+                })
                 .filter(|r| {
                     if r.trigger == WatcherTrigger::Unseen {
                         !tab_visible
@@ -497,7 +499,9 @@ impl WatcherEngine {
             config
                 .rules
                 .iter()
-                .filter(|r| r.session_id.as_deref() == Some(session_id) && r.status == WatcherStatus::Active)
+                .filter(|r| {
+                    r.session_id.as_deref() == Some(session_id) && r.status == WatcherStatus::Active
+                })
                 .filter(|r| trigger_matches(&r.trigger, &kind))
                 .map(|r| (r.id.clone(), session_id.to_string()))
                 .collect()
@@ -647,8 +651,7 @@ impl WatcherEngine {
                 tracing::warn!(rule_id, "Watcher fire failed: {e}");
                 let mut config = self.config.write();
                 if let Some(idx) = config.rules.iter().position(|r| r.id == rule_id) {
-                    config.rules[idx].fire_count =
-                        config.rules[idx].fire_count.saturating_sub(1);
+                    config.rules[idx].fire_count = config.rules[idx].fire_count.saturating_sub(1);
                     if let Err(e) = save_config(&config) {
                         tracing::warn!(rule_id, "Failed to persist fire_count rollback: {e}");
                     }
@@ -729,7 +732,9 @@ impl WatcherEngine {
         let mut config = self.config.write();
         let mut changed = false;
         for rule in &mut config.rules {
-            if rule.session_id.as_deref() == Some(session_id) && rule.status == WatcherStatus::Active {
+            if rule.session_id.as_deref() == Some(session_id)
+                && rule.status == WatcherStatus::Active
+            {
                 rule.status = WatcherStatus::Paused;
                 tracing::info!(rule_id = %rule.id, "Watcher paused by user input");
                 #[cfg(feature = "desktop")]
@@ -954,7 +959,10 @@ mod tests {
             .iter()
             .filter(|r| r.session_id.as_deref() == Some("s1") && r.status == WatcherStatus::Active)
             .count();
-        assert_eq!(active_count, 2, "Multiple active rules on same session allowed");
+        assert_eq!(
+            active_count, 2,
+            "Multiple active rules on same session allowed"
+        );
     }
 
     #[test]
@@ -978,7 +986,10 @@ mod tests {
             }
         }
         assert_eq!(config.rules[0].status, WatcherStatus::Paused);
-        assert!(config.rules[0].session_id.is_none(), "session_id cleared on stop");
+        assert!(
+            config.rules[0].session_id.is_none(),
+            "session_id cleared on stop"
+        );
         assert_eq!(config.rules[1].status, WatcherStatus::Active);
         assert_eq!(config.rules[1].session_id.as_deref(), Some("s2"));
     }
@@ -1009,7 +1020,10 @@ mod tests {
             }
         }
         assert_eq!(config.rules[0].status, WatcherStatus::Paused);
-        assert!(config.rules[0].session_id.is_none(), "session_id cleared on reload");
+        assert!(
+            config.rules[0].session_id.is_none(),
+            "session_id cleared on reload"
+        );
         assert_eq!(config.rules[1].status, WatcherStatus::Stopped);
         assert!(config.rules[1].session_id.is_none());
         assert_eq!(config.rules[2].status, WatcherStatus::Exhausted);
@@ -1097,8 +1111,17 @@ mod tests {
         r.id = "r1".into();
         config.rules.push(r);
 
-        let is_attached = config.rules.iter().find(|r| r.id == "r1").unwrap().session_id.is_some();
-        assert!(is_attached, "Should reject attaching a rule that already has a session");
+        let is_attached = config
+            .rules
+            .iter()
+            .find(|r| r.id == "r1")
+            .unwrap()
+            .session_id
+            .is_some();
+        assert!(
+            is_attached,
+            "Should reject attaching a rule that already has a session"
+        );
     }
 
     #[test]
@@ -1125,7 +1148,10 @@ mod tests {
     fn detach_rejects_template() {
         let config = WatcherConfig::default();
         let t = make_template("not attached");
-        assert!(t.session_id.is_none(), "Template has no session — detach should reject");
+        assert!(
+            t.session_id.is_none(),
+            "Template has no session — detach should reject"
+        );
     }
 
     #[test]
@@ -1141,19 +1167,29 @@ mod tests {
         let rule = config.rules.iter_mut().find(|r| r.id == "r1").unwrap();
         rule.name = "Updated".into();
         rule.instructions = "new instructions".into();
-        rule.trigger = WatcherTrigger::Question { confident_only: false };
+        rule.trigger = WatcherTrigger::Question {
+            confident_only: false,
+        };
         rule.max_fires = 100;
 
         assert_eq!(config.rules[0].name, "Updated");
         assert_eq!(config.rules[0].instructions, "new instructions");
-        assert_eq!(config.rules[0].trigger, WatcherTrigger::Question { confident_only: false });
+        assert_eq!(
+            config.rules[0].trigger,
+            WatcherTrigger::Question {
+                confident_only: false
+            }
+        );
         assert_eq!(config.rules[0].max_fires, 100);
     }
 
     #[test]
     fn update_rejects_empty_instructions() {
         let instructions = "";
-        assert!(instructions.trim().is_empty(), "Empty instructions should be rejected");
+        assert!(
+            instructions.trim().is_empty(),
+            "Empty instructions should be rejected"
+        );
     }
 
     #[test]
@@ -1505,8 +1541,14 @@ mod tests {
         let mut rule = make_template("watch for errors");
         rule.id = "t1".into();
         let json = serde_json::to_string(&rule).unwrap();
-        assert!(!json.contains("session_id"), "session_id should be omitted when None");
-        assert!(!json.contains("template_id"), "template_id should be omitted when None");
+        assert!(
+            !json.contains("session_id"),
+            "session_id should be omitted when None"
+        );
+        assert!(
+            !json.contains("template_id"),
+            "template_id should be omitted when None"
+        );
     }
 
     #[test]
@@ -1565,15 +1607,27 @@ mod tests {
     fn question_trigger_serialization_defaults() {
         let json = r#"{"type": "question"}"#;
         let trigger: WatcherTrigger = serde_json::from_str(json).unwrap();
-        assert_eq!(trigger, WatcherTrigger::Question { confident_only: true });
+        assert_eq!(
+            trigger,
+            WatcherTrigger::Question {
+                confident_only: true
+            }
+        );
     }
 
     #[test]
     fn question_trigger_serialization_explicit() {
-        let trigger = WatcherTrigger::Question { confident_only: false };
+        let trigger = WatcherTrigger::Question {
+            confident_only: false,
+        };
         let json = serde_json::to_string(&trigger).unwrap();
         let restored: WatcherTrigger = serde_json::from_str(&json).unwrap();
-        assert_eq!(restored, WatcherTrigger::Question { confident_only: false });
+        assert_eq!(
+            restored,
+            WatcherTrigger::Question {
+                confident_only: false
+            }
+        );
     }
 
     #[test]
@@ -1599,11 +1653,17 @@ mod tests {
         let triggers = vec![
             WatcherTrigger::Idle,
             WatcherTrigger::Busy,
-            WatcherTrigger::CommandDone { on_failure_only: true },
-            WatcherTrigger::Question { confident_only: false },
+            WatcherTrigger::CommandDone {
+                on_failure_only: true,
+            },
+            WatcherTrigger::Question {
+                confident_only: false,
+            },
             WatcherTrigger::Error,
             WatcherTrigger::Unseen,
-            WatcherTrigger::Pattern { regex: r"test\b".into() },
+            WatcherTrigger::Pattern {
+                regex: r"test\b".into(),
+            },
         ];
         for trigger in triggers {
             let json = serde_json::to_string(&trigger).unwrap();
@@ -1678,7 +1738,9 @@ mod tests {
         assert!(!trigger_matches(&WatcherTrigger::Idle, &EventKind::Busy));
         assert!(!trigger_matches(&WatcherTrigger::Unseen, &EventKind::Error));
         assert!(!trigger_matches(
-            &WatcherTrigger::CommandDone { on_failure_only: false },
+            &WatcherTrigger::CommandDone {
+                on_failure_only: false
+            },
             &EventKind::Question { confident: true }
         ));
     }

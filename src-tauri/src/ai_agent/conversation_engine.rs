@@ -4,24 +4,23 @@
 //! `start_conversation()` that always includes tools and routes via `Autonomy`.
 
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use dashmap::DashMap;
 use parking_lot::{Mutex, RwLock};
 use serde::Serialize;
-use tokio::sync::{broadcast, oneshot, Notify};
+use tokio::sync::{Notify, broadcast, oneshot};
 
-use crate::state::AppState;
 use super::engine::{
-    self, AgentState, RateLimiter, RepetitionDetector,
-    classify_phase, compose_system_prompt, redact_json_values, select_model_for_phase,
-    MAX_ITERATIONS, LOOP_TIMEOUT,
-    RATE_LIMIT_PER_MINUTE, RATE_LIMIT_PER_SESSION,
-    TOOL_DISPATCH_LIMIT_PER_MINUTE, TOOL_DISPATCH_LIMIT_PER_SESSION,
+    self, AgentState, LOOP_TIMEOUT, MAX_ITERATIONS, RATE_LIMIT_PER_MINUTE, RATE_LIMIT_PER_SESSION,
+    RateLimiter, RepetitionDetector, TOOL_DISPATCH_LIMIT_PER_MINUTE,
+    TOOL_DISPATCH_LIMIT_PER_SESSION, classify_phase, compose_system_prompt, redact_json_values,
+    select_model_for_phase,
 };
 use super::tools;
+use crate::state::AppState;
 
 // ── Autonomy ──────────────────────────────────────────────────
 
@@ -62,23 +61,48 @@ impl Default for ConversationConfig {
 
 // ── ConversationEvent ─────────────────────────────────────────
 
-/// Unified event stream — step 5 (1610-5162) will expand and replace this with
-/// the final ConversationEvent enum used as the Channel transport.
+/// Unified event stream for conversation sessions.
+/// DEFERRED (2026-05-07) — expand with richer event variants (progress, file-change) per terminal-watcher plan.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub(crate) enum ConversationEvent {
-    Thinking { iteration: usize },
-    TextChunk { text: String },
-    ToolCall { tool_name: String, args: serde_json::Value },
-    ToolResult { tool_name: String, success: bool, output: String, duration_ms: u64 },
-    NeedsApproval { tool_name: String, command: String, reason: String },
+    Thinking {
+        iteration: usize,
+    },
+    TextChunk {
+        text: String,
+    },
+    ToolCall {
+        tool_name: String,
+        args: serde_json::Value,
+    },
+    ToolResult {
+        tool_name: String,
+        success: bool,
+        output: String,
+        duration_ms: u64,
+    },
+    NeedsApproval {
+        tool_name: String,
+        command: String,
+        reason: String,
+    },
     /// Tool was executed without prompting because it's in the bypass set.
-    Bypassed { tool_name: String },
+    Bypassed {
+        tool_name: String,
+    },
     Paused,
     Resumed,
-    RateLimited { wait_ms: u64 },
-    Error { message: String },
-    Completed { reason: String, usage: Option<ConversationUsage> },
+    RateLimited {
+        wait_ms: u64,
+    },
+    Error {
+        message: String,
+    },
+    Completed {
+        reason: String,
+        usage: Option<ConversationUsage>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -164,23 +188,31 @@ pub(crate) async fn start_conversation(
     message: String,
     config: ConversationConfig,
 ) -> Result<broadcast::Receiver<ConversationEvent>, String> {
-    if ACTIVE_CONVERSATIONS.contains_key(&session_id) {
-        return Err(format!("Conversation already active on session {session_id}"));
-    }
-
     let cancel = Arc::new(AtomicBool::new(false));
     let conv_state = Arc::new(RwLock::new(AgentState::Running));
     let pause_notify = Arc::new(Notify::new());
     let (event_tx, event_rx) = broadcast::channel(256);
     let approval_tx: Arc<Mutex<Option<oneshot::Sender<bool>>>> = Arc::new(Mutex::new(None));
 
-    ACTIVE_CONVERSATIONS.insert(session_id.clone(), ConversationHandle {
+    let handle = ConversationHandle {
         cancel: cancel.clone(),
         state: conv_state.clone(),
         pause_notify: pause_notify.clone(),
         event_tx: event_tx.clone(),
         approval_tx: approval_tx.clone(),
-    });
+    };
+
+    use dashmap::mapref::entry::Entry;
+    match ACTIVE_CONVERSATIONS.entry(session_id.clone()) {
+        Entry::Occupied(_) => {
+            return Err(format!(
+                "Conversation already active on session {session_id}"
+            ));
+        }
+        Entry::Vacant(v) => {
+            v.insert(handle);
+        }
+    }
 
     if config.autonomy == Autonomy::Autonomous {
         state.unrestricted_sessions.insert(session_id.clone(), ());
@@ -198,7 +230,8 @@ pub(crate) async fn start_conversation(
             pause_notify,
             event_tx.clone(),
             approval_tx,
-        ).await;
+        )
+        .await;
 
         state.unrestricted_sessions.remove(&sid);
         state.file_sandboxes.remove(&sid);
@@ -207,7 +240,10 @@ pub(crate) async fn start_conversation(
         match result {
             Ok(reason) => {
                 *conv_state.write() = AgentState::Completed;
-                let _ = event_tx.send(ConversationEvent::Completed { reason, usage: None });
+                let _ = event_tx.send(ConversationEvent::Completed {
+                    reason,
+                    usage: None,
+                });
             }
             Err(e) => {
                 tracing::error!(session_id = %sid, error = %e, "Conversation failed");
@@ -222,7 +258,8 @@ pub(crate) async fn start_conversation(
 
 /// Cancel an active conversation.
 pub(crate) fn cancel_conversation(session_id: &str) -> Result<(), String> {
-    let entry = ACTIVE_CONVERSATIONS.get(session_id)
+    let entry = ACTIVE_CONVERSATIONS
+        .get(session_id)
         .ok_or_else(|| format!("No active conversation on session {session_id}"))?;
     entry.cancel.store(true, Ordering::Release);
     *entry.state.write() = AgentState::Cancelled;
@@ -231,7 +268,8 @@ pub(crate) fn cancel_conversation(session_id: &str) -> Result<(), String> {
 
 /// Pause an active conversation.
 pub(crate) fn pause_conversation(session_id: &str) -> Result<(), String> {
-    let entry = ACTIVE_CONVERSATIONS.get(session_id)
+    let entry = ACTIVE_CONVERSATIONS
+        .get(session_id)
         .ok_or_else(|| format!("No active conversation on session {session_id}"))?;
     *entry.state.write() = AgentState::Paused;
     let _ = entry.event_tx.send(ConversationEvent::Paused);
@@ -240,7 +278,8 @@ pub(crate) fn pause_conversation(session_id: &str) -> Result<(), String> {
 
 /// Resume a paused conversation.
 pub(crate) fn resume_conversation(session_id: &str) -> Result<(), String> {
-    let entry = ACTIVE_CONVERSATIONS.get(session_id)
+    let entry = ACTIVE_CONVERSATIONS
+        .get(session_id)
         .ok_or_else(|| format!("No active conversation on session {session_id}"))?;
     *entry.state.write() = AgentState::Running;
     entry.pause_notify.notify_one();
@@ -251,7 +290,8 @@ pub(crate) fn resume_conversation(session_id: &str) -> Result<(), String> {
 /// Respond to a NeedsApproval event. `approved = true` runs the tool;
 /// `false` rejects it and sends a rejection result back to the LLM.
 pub(crate) fn approve_conversation_action(session_id: &str, approved: bool) -> Result<(), String> {
-    let entry = ACTIVE_CONVERSATIONS.get(session_id)
+    let entry = ACTIVE_CONVERSATIONS
+        .get(session_id)
         .ok_or_else(|| format!("No active conversation on session {session_id}"))?;
     if let Some(tx) = entry.approval_tx.lock().take() {
         let _ = tx.send(approved);
@@ -275,22 +315,22 @@ async fn run_conversation(
 ) -> Result<String, String> {
     use futures_util::StreamExt;
     use genai::chat::{
-        ChatMessage, ChatOptions, ChatRequest, ChatStreamEvent as GenaiStreamEvent,
-        ContentPart, Tool, ToolResponse,
+        ChatMessage, ChatOptions, ChatRequest, ChatStreamEvent as GenaiStreamEvent, ContentPart,
+        Tool, ToolResponse,
     };
 
     // Resolve LLM from provider registry
     let registry = crate::provider_registry::load_registry();
-    let resolved = crate::provider_registry::resolve_slot(
-        &registry,
-        crate::provider_registry::SlotName::Main,
-    ).map_err(|e| format!("AI not configured — {e}"))?;
+    let resolved =
+        crate::provider_registry::resolve_slot(&registry, crate::provider_registry::SlotName::Main)
+            .map_err(|e| format!("AI not configured — {e}"))?;
 
     let llm_config = resolved.config;
     let api_key = resolved.api_key;
 
     // Model: registry main + per-phase overrides, or model_override if specified
-    let base_model = config.model_override
+    let base_model = config
+        .model_override
         .as_deref()
         .unwrap_or(&llm_config.model)
         .to_string();
@@ -300,7 +340,10 @@ async fn run_conversation(
         .phase_overrides
         .iter()
         .filter_map(|(phase, model_id)| {
-            registry.models.iter().find(|m| &m.id == model_id)
+            registry
+                .models
+                .iter()
+                .find(|m| &m.id == model_id)
                 .map(|m| (*phase, m.model_name.clone()))
         })
         .collect();
@@ -349,11 +392,15 @@ async fn run_conversation(
         .append_message(ChatMessage::user(&initial_message));
 
     let mut rate_limiter = RateLimiter::new(RATE_LIMIT_PER_MINUTE, RATE_LIMIT_PER_SESSION);
-    let mut tool_limiter = RateLimiter::new(TOOL_DISPATCH_LIMIT_PER_MINUTE, TOOL_DISPATCH_LIMIT_PER_SESSION);
+    let mut tool_limiter = RateLimiter::new(
+        TOOL_DISPATCH_LIMIT_PER_MINUTE,
+        TOOL_DISPATCH_LIMIT_PER_SESSION,
+    );
     let mut repetition = RepetitionDetector::new();
     let deadline = tokio::time::Instant::now() + LOOP_TIMEOUT;
     let mut last_tool_names: Vec<String> = Vec::new();
     let max_iterations = config.max_steps.unwrap_or(MAX_ITERATIONS);
+    // When no max_steps configured: allow one tool-use round-trip, then stop.
     let is_single_response = config.max_steps.is_none();
 
     for iteration in 0..max_iterations {
@@ -393,7 +440,9 @@ async fn run_conversation(
             if wait == Duration::ZERO {
                 return Ok("session_rate_limit".into());
             }
-            let _ = event_tx.send(ConversationEvent::RateLimited { wait_ms: wait.as_millis() as u64 });
+            let _ = event_tx.send(ConversationEvent::RateLimited {
+                wait_ms: wait.as_millis() as u64,
+            });
             tokio::time::sleep(wait).await;
             if cancel.load(Ordering::Acquire) {
                 return Ok("cancelled".into());
@@ -457,18 +506,10 @@ async fn run_conversation(
             chat_req = chat_req.append_message(ChatMessage::assistant(&text_buf));
         }
 
-        // In single-response mode (max_steps = None), stop after first response
-        if is_single_response || tool_calls.is_empty() {
-            if tool_calls.is_empty() {
-                return Ok("end_turn".into());
-            }
-            // In single-response mode with tool calls: still process them once
-            if is_single_response && iteration > 0 {
-                return Ok("end_turn".into());
-            }
-        }
-
         if tool_calls.is_empty() {
+            return Ok("end_turn".into());
+        }
+        if is_single_response && iteration > 0 {
             return Ok("end_turn".into());
         }
 
@@ -481,7 +522,9 @@ async fn run_conversation(
                 if wait == Duration::ZERO {
                     return Ok("tool_dispatch_session_limit".into());
                 }
-                let _ = event_tx.send(ConversationEvent::RateLimited { wait_ms: wait.as_millis() as u64 });
+                let _ = event_tx.send(ConversationEvent::RateLimited {
+                    wait_ms: wait.as_millis() as u64,
+                });
                 tokio::time::sleep(wait).await;
                 if cancel.load(Ordering::Acquire) {
                     return Ok("cancelled".into());
@@ -502,17 +545,32 @@ async fn run_conversation(
             });
 
             let start = std::time::Instant::now();
-            let mut result = tools::dispatch(&state, &session_id, &tc.fn_name, &tc.fn_arguments).await;
+            let mut result =
+                tools::dispatch(&state, &session_id, &tc.fn_name, &tc.fn_arguments).await;
 
             if result.needs_approval {
                 let reason = result.approval_reason.clone().unwrap_or_default();
                 let command = result.approval_command.clone().unwrap_or_default();
 
                 if config.autonomy == Autonomy::Autonomous {
-                    result = tools::dispatch_approved(&state, &session_id, &tc.fn_name, &tc.fn_arguments).await;
+                    result = tools::dispatch_approved(
+                        &state,
+                        &session_id,
+                        &tc.fn_name,
+                        &tc.fn_arguments,
+                    )
+                    .await;
                 } else if config.bypassed_tools.contains(&tc.fn_name) {
-                    let _ = event_tx.send(ConversationEvent::Bypassed { tool_name: tc.fn_name.clone() });
-                    result = tools::dispatch_approved(&state, &session_id, &tc.fn_name, &tc.fn_arguments).await;
+                    let _ = event_tx.send(ConversationEvent::Bypassed {
+                        tool_name: tc.fn_name.clone(),
+                    });
+                    result = tools::dispatch_approved(
+                        &state,
+                        &session_id,
+                        &tc.fn_name,
+                        &tc.fn_arguments,
+                    )
+                    .await;
                 } else {
                     let _ = event_tx.send(ConversationEvent::NeedsApproval {
                         tool_name: tc.fn_name.clone(),
@@ -538,7 +596,13 @@ async fn run_conversation(
                     }
 
                     if approved {
-                        result = tools::dispatch_approved(&state, &session_id, &tc.fn_name, &tc.fn_arguments).await;
+                        result = tools::dispatch_approved(
+                            &state,
+                            &session_id,
+                            &tc.fn_name,
+                            &tc.fn_arguments,
+                        )
+                        .await;
                     } else {
                         result = tools::ToolResult::err(format!("User rejected: {reason}"));
                     }
@@ -605,7 +669,9 @@ mod tests {
 
     #[test]
     fn conversation_event_bypassed_serializes() {
-        let evt = ConversationEvent::Bypassed { tool_name: "send_input".into() };
+        let evt = ConversationEvent::Bypassed {
+            tool_name: "send_input".into(),
+        };
         let json = serde_json::to_string(&evt).unwrap();
         assert!(json.contains("\"type\":\"bypassed\""));
         assert!(json.contains("\"tool_name\":\"send_input\""));
@@ -613,7 +679,10 @@ mod tests {
 
     #[test]
     fn conversation_event_completed_serializes() {
-        let evt = ConversationEvent::Completed { reason: "end_turn".into(), usage: None };
+        let evt = ConversationEvent::Completed {
+            reason: "end_turn".into(),
+            usage: None,
+        };
         let json = serde_json::to_string(&evt).unwrap();
         assert!(json.contains("\"type\":\"completed\""));
         assert!(json.contains("\"reason\":\"end_turn\""));
@@ -672,7 +741,9 @@ mod tests {
 
     #[test]
     fn conversation_event_error_serializes() {
-        let evt = ConversationEvent::Error { message: "LLM timeout".into() };
+        let evt = ConversationEvent::Error {
+            message: "LLM timeout".into(),
+        };
         let json = serde_json::to_string(&evt).unwrap();
         assert!(json.contains("\"type\":\"error\""));
         assert!(json.contains("\"message\":\"LLM timeout\""));
@@ -696,7 +767,10 @@ mod tests {
     fn conversation_event_completed_with_usage_serializes() {
         let evt = ConversationEvent::Completed {
             reason: "end_turn".into(),
-            usage: Some(ConversationUsage { input_tokens: 100, output_tokens: 50 }),
+            usage: Some(ConversationUsage {
+                input_tokens: 100,
+                output_tokens: 50,
+            }),
         };
         let json = serde_json::to_string(&evt).unwrap();
         assert!(json.contains("\"type\":\"completed\""));
@@ -714,7 +788,10 @@ mod tests {
 
     #[test]
     fn single_response_mode_has_no_max_steps() {
-        let config = ConversationConfig { max_steps: None, ..Default::default() };
+        let config = ConversationConfig {
+            max_steps: None,
+            ..Default::default()
+        };
         assert!(config.max_steps.is_none());
     }
 

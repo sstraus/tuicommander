@@ -136,9 +136,14 @@ mod tests {
     fn agent_conversation_with_tool_calls_roundtrips() {
         let conv = Conversation {
             meta: ConversationMeta {
-                id: "a1".into(), title: "Agent".into(), session_id: Some("s1".into()),
-                created: 1, updated: 2, message_count: 3,
-                provider: "anthropic".into(), model: "claude-sonnet-4-5".into(),
+                id: "a1".into(),
+                title: "Agent".into(),
+                session_id: Some("s1".into()),
+                created: 1,
+                updated: 2,
+                message_count: 3,
+                provider: "anthropic".into(),
+                model: "claude-sonnet-4-5".into(),
             },
             messages: vec![
                 ChatMessage::text("user", "list files", 1),
@@ -179,7 +184,10 @@ mod tests {
         assert_eq!(tool_calls[0].name, "ai_terminal_send_input");
         assert_eq!(tool_calls[0].arguments["text"], "ls\n");
         assert_eq!(loaded.messages[2].tool_use_id.as_deref(), Some("call_1"));
-        assert_eq!(loaded.messages[2].tool_result.as_deref(), Some("Cargo.toml\nsrc/"));
+        assert_eq!(
+            loaded.messages[2].tool_result.as_deref(),
+            Some("Cargo.toml\nsrc/")
+        );
         assert_eq!(loaded.messages[2].is_error, Some(false));
     }
 

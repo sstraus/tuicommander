@@ -102,8 +102,12 @@ fn split_shell_commands(input: &str) -> Vec<String> {
                 let mut depth = 1;
                 let mut j = start;
                 while j < len && depth > 0 {
-                    if chars[j] == '(' { depth += 1; }
-                    if chars[j] == ')' { depth -= 1; }
+                    if chars[j] == '(' {
+                        depth += 1;
+                    }
+                    if chars[j] == ')' {
+                        depth -= 1;
+                    }
                     j += 1;
                 }
                 let inner: String = chars[start..j.saturating_sub(1)].iter().collect();
@@ -113,7 +117,11 @@ fn split_shell_commands(input: &str) -> Vec<String> {
             }
             '`' => {
                 let start = i + 1;
-                let end = chars[start..].iter().position(|&c| c == '`').map(|p| start + p).unwrap_or(len);
+                let end = chars[start..]
+                    .iter()
+                    .position(|&c| c == '`')
+                    .map(|p| start + p)
+                    .unwrap_or(len);
                 let inner: String = chars[start..end].iter().collect();
                 commands.extend(split_shell_commands(&inner));
                 current.push_str("`...`");
@@ -169,10 +177,16 @@ impl RegexSafetyChecker {
 
         let blocked = vec![
             // /etc/shadow is unreadable without sudo anyway; no legitimate agent use
-            (regex::Regex::new(r"\bcat\s+.*(?:/etc/shadow)").unwrap(), "reading /etc/shadow"),
+            (
+                regex::Regex::new(r"\bcat\s+.*(?:/etc/shadow)").unwrap(),
+                "reading /etc/shadow",
+            ),
         ];
 
-        Self { needs_approval, blocked }
+        Self {
+            needs_approval,
+            blocked,
+        }
     }
 }
 
@@ -234,10 +248,7 @@ impl RegexSafetyChecker {
             };
         }
 
-        let file_name = p
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
+        let file_name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
         let file_name_lower = file_name.to_lowercase();
         let path_lower = path.to_lowercase();
 
@@ -245,8 +256,16 @@ impl RegexSafetyChecker {
         let sensitive_patterns: &[(&SensitiveFileCheck, &str)] = &[
             (&|_p, f, _c| f.starts_with(".env"), ".env file"),
             (&|_p, _f, c| c.contains(&".ssh"), ".ssh directory"),
-            (&|_p, f, _c| f == ".bashrc" || f == ".zshrc" || f == ".profile" || f == ".bash_profile", "shell config"),
-            (&|p, _f, _c| p.contains("credentials") || p.contains("credential"), "credentials file"),
+            (
+                &|_p, f, _c| {
+                    f == ".bashrc" || f == ".zshrc" || f == ".profile" || f == ".bash_profile"
+                },
+                "shell config",
+            ),
+            (
+                &|p, _f, _c| p.contains("credentials") || p.contains("credential"),
+                "credentials file",
+            ),
             (&|p, _f, _c| p.contains("secret"), "secrets file"),
             // Cargo.toml, package.json, lock files: agents routinely manage
             // dependencies — allowing these avoids constant approval prompts.
@@ -268,20 +287,22 @@ impl RegexSafetyChecker {
 pub fn format_rejection(verdict: &SafetyVerdict) -> Option<String> {
     match verdict {
         SafetyVerdict::Allow => None,
-        SafetyVerdict::NeedsApproval { reason } => {
-            Some(serde_json::json!({
+        SafetyVerdict::NeedsApproval { reason } => Some(
+            serde_json::json!({
                 "status": "needs_approval",
                 "reason": reason,
                 "action": "Ask the user for explicit confirmation before executing this command."
-            }).to_string())
-        }
-        SafetyVerdict::Block { reason } => {
-            Some(serde_json::json!({
+            })
+            .to_string(),
+        ),
+        SafetyVerdict::Block { reason } => Some(
+            serde_json::json!({
                 "status": "blocked",
                 "reason": reason,
                 "action": "Do not execute this command. Find a safer alternative."
-            }).to_string())
-        }
+            })
+            .to_string(),
+        ),
     }
 }
 
@@ -312,7 +333,10 @@ mod tests {
 
     #[test]
     fn safe_git_push_no_force() {
-        assert_eq!(checker().evaluate("git push origin main"), SafetyVerdict::Allow);
+        assert_eq!(
+            checker().evaluate("git push origin main"),
+            SafetyVerdict::Allow
+        );
     }
 
     #[test]
@@ -322,7 +346,10 @@ mod tests {
 
     #[test]
     fn safe_echo() {
-        assert_eq!(checker().evaluate("echo hello > output.txt"), SafetyVerdict::Allow);
+        assert_eq!(
+            checker().evaluate("echo hello > output.txt"),
+            SafetyVerdict::Allow
+        );
     }
 
     // ── Destructive commands need approval ─────────────────────
@@ -406,7 +433,10 @@ mod tests {
         let v = checker().evaluate("sudo apt install foo");
         match v {
             SafetyVerdict::NeedsApproval { reason } => {
-                assert!(reason.contains("elevated privileges"), "unexpected reason: {reason}");
+                assert!(
+                    reason.contains("elevated privileges"),
+                    "unexpected reason: {reason}"
+                );
             }
             other => panic!("expected NeedsApproval, got {other:?}"),
         }
@@ -607,7 +637,10 @@ mod tests {
     #[test]
     fn env_with_args_allowed() {
         // `env VAR=val cmd` is a runner, not a dump
-        assert_eq!(checker().evaluate("env FOO=bar cargo test"), SafetyVerdict::Allow);
+        assert_eq!(
+            checker().evaluate("env FOO=bar cargo test"),
+            SafetyVerdict::Allow
+        );
     }
 
     // ── ReDoS guard ──────────────────────────────────────────
@@ -622,7 +655,10 @@ mod tests {
 
     #[test]
     fn sudo_in_var_not_blocked() {
-        assert_eq!(checker().evaluate("SUDO_USER=test echo hi"), SafetyVerdict::Allow);
+        assert_eq!(
+            checker().evaluate("SUDO_USER=test echo hi"),
+            SafetyVerdict::Allow
+        );
     }
 
     // ── chmod/chown ───────────────────────────────────────────
@@ -743,17 +779,26 @@ mod tests {
 
     #[test]
     fn cargo_toml_write_allowed() {
-        assert_eq!(checker().evaluate_file_write("Cargo.toml"), SafetyVerdict::Allow);
+        assert_eq!(
+            checker().evaluate_file_write("Cargo.toml"),
+            SafetyVerdict::Allow
+        );
     }
 
     #[test]
     fn package_json_write_allowed() {
-        assert_eq!(checker().evaluate_file_write("package.json"), SafetyVerdict::Allow);
+        assert_eq!(
+            checker().evaluate_file_write("package.json"),
+            SafetyVerdict::Allow
+        );
     }
 
     #[test]
     fn lock_file_write_allowed() {
-        assert_eq!(checker().evaluate_file_write("Cargo.lock"), SafetyVerdict::Allow);
+        assert_eq!(
+            checker().evaluate_file_write("Cargo.lock"),
+            SafetyVerdict::Allow
+        );
     }
 
     #[test]

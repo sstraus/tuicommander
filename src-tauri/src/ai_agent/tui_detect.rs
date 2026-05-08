@@ -18,7 +18,6 @@ pub enum TerminalMode {
     },
 }
 
-
 impl TerminalMode {
     /// Process an alternate screen buffer enter (ESC[?1049h).
     /// Returns the new mode after the transition.
@@ -68,7 +67,6 @@ impl TerminalMode {
     pub fn is_fullscreen(&self) -> bool {
         matches!(self, TerminalMode::FullscreenTui { .. })
     }
-
 }
 
 /// Known TUI application signatures matched against visible screen rows.
@@ -178,7 +176,10 @@ mod tests {
         for _ in 0..300 {
             mode = mode.on_alt_enter();
         }
-        assert!(matches!(mode, TerminalMode::FullscreenTui { depth: 255, .. }));
+        assert!(matches!(
+            mode,
+            TerminalMode::FullscreenTui { depth: 255, .. }
+        ));
     }
 
     #[test]
@@ -258,19 +259,13 @@ mod tests {
 
     #[test]
     fn no_false_positive_on_git_output() {
-        let rows = vec![
-            "On branch main",
-            "nothing to commit, working tree clean",
-        ];
+        let rows = vec!["On branch main", "nothing to commit, working tree clean"];
         assert_eq!(detect_app_from_rows(&rows), None);
     }
 
     #[test]
     fn no_false_positive_on_cargo_test() {
-        let rows = vec![
-            "running 32 tests",
-            "test result: ok. 32 passed; 0 failed",
-        ];
+        let rows = vec!["running 32 tests", "test result: ok. 32 passed; 0 failed"];
         assert_eq!(detect_app_from_rows(&rows), None);
     }
 

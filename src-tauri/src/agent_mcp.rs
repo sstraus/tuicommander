@@ -195,18 +195,18 @@ fn write_json_file(path: &std::path::Path, value: &serde_json::Value) -> Result<
     let json = serde_json::to_string_pretty(value)
         .map_err(|e| format!("Failed to serialize JSON: {e}"))?;
     let temp = path.with_extension("tmp");
-    std::fs::write(&temp, &json)
-        .map_err(|e| format!("Failed to write temp file: {e}"))?;
-    std::fs::rename(&temp, path)
-        .map_err(|e| {
-            let _ = std::fs::remove_file(&temp);
-            format!("Failed to rename temp file: {e}")
-        })?;
+    std::fs::write(&temp, &json).map_err(|e| format!("Failed to write temp file: {e}"))?;
+    std::fs::rename(&temp, path).map_err(|e| {
+        let _ = std::fs::remove_file(&temp);
+        format!("Failed to rename temp file: {e}")
+    })?;
     Ok(())
 }
 
 /// Supported agent types for auto-install
-const SUPPORTED_AGENTS: &[&str] = &["claude", "cursor", "windsurf", "vscode", "zed", "amp", "gemini", "codex"];
+const SUPPORTED_AGENTS: &[&str] = &[
+    "claude", "cursor", "windsurf", "vscode", "zed", "amp", "gemini", "codex",
+];
 
 /// Ensure a single agent's MCP config has the correct bridge entry.
 /// Returns true if the config was written (installed or updated).
@@ -317,16 +317,14 @@ fn write_toml_file(path: &std::path::Path, value: &toml::Value) -> Result<(), St
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("Failed to create directory {}: {e}", parent.display()))?;
     }
-    let output = toml::to_string_pretty(value)
-        .map_err(|e| format!("Failed to serialize TOML: {e}"))?;
+    let output =
+        toml::to_string_pretty(value).map_err(|e| format!("Failed to serialize TOML: {e}"))?;
     let temp = path.with_extension("tmp");
-    std::fs::write(&temp, &output)
-        .map_err(|e| format!("Failed to write temp file: {e}"))?;
-    std::fs::rename(&temp, path)
-        .map_err(|e| {
-            let _ = std::fs::remove_file(&temp);
-            format!("Failed to rename temp file: {e}")
-        })?;
+    std::fs::write(&temp, &output).map_err(|e| format!("Failed to write temp file: {e}"))?;
+    std::fs::rename(&temp, path).map_err(|e| {
+        let _ = std::fs::remove_file(&temp);
+        format!("Failed to rename temp file: {e}")
+    })?;
     Ok(())
 }
 
@@ -336,7 +334,8 @@ fn ensure_codex_mcp_entry(config_path: &std::path::Path, bridge_path: &str) -> b
     let mut root = read_toml_file(config_path);
 
     // Check existing: mcp_servers.tuicommander.command
-    let existing_command = root.get("mcp_servers")
+    let existing_command = root
+        .get("mcp_servers")
         .and_then(|s| s.get(TUIC_MCP_KEY))
         .and_then(|e| e.get("command"))
         .and_then(|v| v.as_str());
@@ -346,7 +345,11 @@ fn ensure_codex_mcp_entry(config_path: &std::path::Path, bridge_path: &str) -> b
             return false;
         }
         Some(old) => {
-            tracing::info!(source = "mcp", agent = "codex", "Updating path: {old} → {bridge_path}");
+            tracing::info!(
+                source = "mcp",
+                agent = "codex",
+                "Updating path: {old} → {bridge_path}"
+            );
         }
         None => {
             tracing::info!(source = "mcp", agent = "codex", "Installing bridge");
@@ -364,7 +367,10 @@ fn ensure_codex_mcp_entry(config_path: &std::path::Path, bridge_path: &str) -> b
 
     if let Some(servers) = mcp_servers.as_table_mut() {
         let mut entry = toml::value::Table::new();
-        entry.insert("command".to_string(), toml::Value::String(bridge_path.to_string()));
+        entry.insert(
+            "command".to_string(),
+            toml::Value::String(bridge_path.to_string()),
+        );
         servers.insert(TUIC_MCP_KEY.to_string(), toml::Value::Table(entry));
     }
 
@@ -419,7 +425,9 @@ pub(crate) fn ensure_mcp_configs(disabled: &[String]) {
             ensure_codex_mcp_entry(&codex_config_path(), &bridge_path);
             continue;
         }
-        let Some(spec) = get_mcp_config_spec(agent) else { continue };
+        let Some(spec) = get_mcp_config_spec(agent) else {
+            continue;
+        };
         ensure_agent_mcp_entry(&spec.config_path, &spec.key_path, &bridge_path, agent);
     }
 }
@@ -499,8 +507,8 @@ pub(crate) fn install_agent_mcp(
         args: vec![],
         env: BTreeMap::new(),
     };
-    let entry_value = serde_json::to_value(&entry)
-        .map_err(|e| format!("Failed to serialize MCP entry: {e}"))?;
+    let entry_value =
+        serde_json::to_value(&entry).map_err(|e| format!("Failed to serialize MCP entry: {e}"))?;
 
     let mut root = read_json_file(&spec.config_path);
     let servers = navigate_or_create(&mut root, &spec.key_path);
@@ -607,7 +615,10 @@ pub(crate) fn get_mcp_bridge_info() -> McpBridgeInfo {
         "tuicommander": entry,
     });
     let config_snippet = serde_json::to_string_pretty(&wrapper).unwrap_or_default();
-    McpBridgeInfo { bridge_path, config_snippet }
+    McpBridgeInfo {
+        bridge_path,
+        config_snippet,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -650,12 +661,18 @@ mod tests {
         };
         let entry_value = serde_json::to_value(&entry).unwrap();
         let servers = navigate_or_create(&mut root, &["mcpServers"]);
-        servers.as_object_mut().unwrap().insert(TUIC_MCP_KEY.to_string(), entry_value);
+        servers
+            .as_object_mut()
+            .unwrap()
+            .insert(TUIC_MCP_KEY.to_string(), entry_value);
         write_json_file(&config_path, &root).unwrap();
 
         // Verify both entries exist
         let root = read_json_file(&config_path);
-        let servers = navigate(&root, &["mcpServers"]).unwrap().as_object().unwrap();
+        let servers = navigate(&root, &["mcpServers"])
+            .unwrap()
+            .as_object()
+            .unwrap();
         assert!(servers.contains_key(TUIC_MCP_KEY));
         assert!(servers.contains_key("other-server"));
         assert_eq!(servers.len(), 2);
@@ -668,7 +685,10 @@ mod tests {
 
         // Verify only other-server remains
         let root = read_json_file(&config_path);
-        let servers = navigate(&root, &["mcpServers"]).unwrap().as_object().unwrap();
+        let servers = navigate(&root, &["mcpServers"])
+            .unwrap()
+            .as_object()
+            .unwrap();
         assert!(!servers.contains_key(TUIC_MCP_KEY));
         assert!(servers.contains_key("other-server"));
         assert_eq!(servers.len(), 1);
@@ -691,12 +711,18 @@ mod tests {
         };
         let entry_value = serde_json::to_value(&entry).unwrap();
         let servers = navigate_or_create(&mut root, &["mcpServers"]);
-        servers.as_object_mut().unwrap().insert(TUIC_MCP_KEY.to_string(), entry_value);
+        servers
+            .as_object_mut()
+            .unwrap()
+            .insert(TUIC_MCP_KEY.to_string(), entry_value);
         write_json_file(&config_path, &root).unwrap();
 
         // Verify file was created with correct content
         let root = read_json_file(&config_path);
-        let servers = navigate(&root, &["mcpServers"]).unwrap().as_object().unwrap();
+        let servers = navigate(&root, &["mcpServers"])
+            .unwrap()
+            .as_object()
+            .unwrap();
         assert!(servers.contains_key(TUIC_MCP_KEY));
         let entry = servers.get(TUIC_MCP_KEY).unwrap();
         assert_eq!(entry["command"], "tui-mcp-bridge");
@@ -719,7 +745,10 @@ mod tests {
         let mut root = read_json_file(&config_path);
         let entry = serde_json::json!({ "command": "tui-mcp-bridge" });
         let servers = navigate_or_create(&mut root, &["amp", "mcpServers"]);
-        servers.as_object_mut().unwrap().insert(TUIC_MCP_KEY.to_string(), entry);
+        servers
+            .as_object_mut()
+            .unwrap()
+            .insert(TUIC_MCP_KEY.to_string(), entry);
         write_json_file(&config_path, &root).unwrap();
 
         let root = read_json_file(&config_path);
@@ -763,12 +792,20 @@ mod tests {
     #[test]
     fn mcp_config_spec_known_agents() {
         // Verify supported agents have specs
-        for agent in &["claude", "cursor", "windsurf", "vscode", "zed", "amp", "gemini"] {
-            assert!(get_mcp_config_spec(agent).is_some(), "{agent} should be supported");
+        for agent in &[
+            "claude", "cursor", "windsurf", "vscode", "zed", "amp", "gemini",
+        ] {
+            assert!(
+                get_mcp_config_spec(agent).is_some(),
+                "{agent} should be supported"
+            );
         }
         // Verify unsupported agents don't (codex uses TOML, not JSON — handled separately)
         for agent in &["aider", "warp", "opencode", "droid", "codex"] {
-            assert!(get_mcp_config_spec(agent).is_none(), "{agent} should not have a JSON config spec");
+            assert!(
+                get_mcp_config_spec(agent).is_none(),
+                "{agent} should not have a JSON config spec"
+            );
         }
     }
 
@@ -820,7 +857,10 @@ mod tests {
         assert!(!wrote, "should not write when path already correct");
 
         let mtime_after = std::fs::metadata(&config_path).unwrap().modified().unwrap();
-        assert_eq!(mtime_before, mtime_after, "file should not have been modified");
+        assert_eq!(
+            mtime_before, mtime_after,
+            "file should not have been modified"
+        );
     }
 
     #[test]
@@ -832,9 +872,17 @@ mod tests {
 
         let root = read_json_file(&config_path);
         let entry = &root["mcpServers"][TUIC_MCP_KEY];
-        assert!(entry["args"].is_array(), "args must be an array, got {:?}", entry["args"]);
+        assert!(
+            entry["args"].is_array(),
+            "args must be an array, got {:?}",
+            entry["args"]
+        );
         assert_eq!(entry["args"].as_array().unwrap().len(), 0);
-        assert!(entry["env"].is_object(), "env must be an object, got {:?}", entry["env"]);
+        assert!(
+            entry["env"].is_object(),
+            "env must be an object, got {:?}",
+            entry["env"]
+        );
         assert_eq!(entry["env"].as_object().unwrap().len(), 0);
     }
 
@@ -899,7 +947,10 @@ mod tests {
 
         let root = read_json_file(&config_path);
         assert_eq!(root["amp"]["setting"], true);
-        assert_eq!(root["amp"]["mcpServers"][TUIC_MCP_KEY]["command"], "/bridge");
+        assert_eq!(
+            root["amp"]["mcpServers"][TUIC_MCP_KEY]["command"],
+            "/bridge"
+        );
     }
 
     // --- ensure_mcp_configs disabled_agents tests ---
@@ -928,7 +979,10 @@ mod tests {
     #[test]
     fn update_disabled_mcp_agents_mutates_in_memory_state() {
         let state = std::sync::Arc::new(crate::state::tests_support::make_test_app_state());
-        assert!(state.config.read().disabled_mcp_agents.is_empty(), "precondition");
+        assert!(
+            state.config.read().disabled_mcp_agents.is_empty(),
+            "precondition"
+        );
 
         // Simulate remove_agent_mcp's branch: add an agent to the disabled list.
         update_disabled_mcp_agents(&state, |list| {
@@ -938,7 +992,12 @@ mod tests {
         });
 
         assert!(
-            state.config.read().disabled_mcp_agents.iter().any(|a| a == "claude"),
+            state
+                .config
+                .read()
+                .disabled_mcp_agents
+                .iter()
+                .any(|a| a == "claude"),
             "in-memory state.config must be updated, not only disk",
         );
 
@@ -946,7 +1005,12 @@ mod tests {
         update_disabled_mcp_agents(&state, |list| list.retain(|a| a != "claude"));
 
         assert!(
-            !state.config.read().disabled_mcp_agents.iter().any(|a| a == "claude"),
+            !state
+                .config
+                .read()
+                .disabled_mcp_agents
+                .iter()
+                .any(|a| a == "claude"),
             "in-memory state.config must be cleared on remove",
         );
     }
@@ -986,7 +1050,9 @@ mod tests {
         assert!(config_path.exists());
 
         let root = read_toml_file(&config_path);
-        let cmd = root["mcp_servers"][TUIC_MCP_KEY]["command"].as_str().unwrap();
+        let cmd = root["mcp_servers"][TUIC_MCP_KEY]["command"]
+            .as_str()
+            .unwrap();
         assert_eq!(cmd, "/usr/local/bin/tuic-bridge");
     }
 
@@ -1011,12 +1077,16 @@ mod tests {
         let root = read_toml_file(&config_path);
         // Our entry was added
         assert_eq!(
-            root["mcp_servers"][TUIC_MCP_KEY]["command"].as_str().unwrap(),
+            root["mcp_servers"][TUIC_MCP_KEY]["command"]
+                .as_str()
+                .unwrap(),
             "/path/to/tuic-bridge",
         );
         // Other MCP server preserved
         assert_eq!(
-            root["mcp_servers"]["other_tool"]["command"].as_str().unwrap(),
+            root["mcp_servers"]["other_tool"]["command"]
+                .as_str()
+                .unwrap(),
             "/usr/bin/other",
         );
         // Other config preserved
@@ -1034,7 +1104,9 @@ mod tests {
 
         let root = read_toml_file(&config_path);
         assert_eq!(
-            root["mcp_servers"][TUIC_MCP_KEY]["command"].as_str().unwrap(),
+            root["mcp_servers"][TUIC_MCP_KEY]["command"]
+                .as_str()
+                .unwrap(),
             "/new/path",
         );
     }
@@ -1052,7 +1124,10 @@ mod tests {
         assert!(!wrote, "should not write when path already correct");
 
         let mtime_after = std::fs::metadata(&config_path).unwrap().modified().unwrap();
-        assert_eq!(mtime_before, mtime_after, "file should not have been modified");
+        assert_eq!(
+            mtime_before, mtime_after,
+            "file should not have been modified"
+        );
     }
 
     #[test]

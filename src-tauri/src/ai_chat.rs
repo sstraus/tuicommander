@@ -63,11 +63,16 @@ impl AiChatConfig {
     /// Derive the effective base_url for the provider.
     pub fn effective_base_url(&self) -> Option<String> {
         if let Some(url) = &self.base_url
-            && !url.is_empty() {
-                // genai concatenates base_url + "chat/completions" — trailing slash required
-                let url = if url.ends_with('/') { url.clone() } else { format!("{url}/") };
-                return Some(url);
-            }
+            && !url.is_empty()
+        {
+            // genai concatenates base_url + "chat/completions" — trailing slash required
+            let url = if url.ends_with('/') {
+                url.clone()
+            } else {
+                format!("{url}/")
+            };
+            return Some(url);
+        }
         // Default URLs for known providers that need one
         match self.provider.as_str() {
             "ollama" => Some("http://localhost:11434/v1/".to_string()),
@@ -123,13 +128,14 @@ pub(crate) async fn detect_ollama(base: &str) -> OllamaStatus {
             return OllamaStatus {
                 available: false,
                 models: vec![],
-            }
+            };
         }
     };
 
-    let tags: OllamaTagsResponse = resp.json().await.unwrap_or(OllamaTagsResponse {
-        models: vec![],
-    });
+    let tags: OllamaTagsResponse = resp
+        .json()
+        .await
+        .unwrap_or(OllamaTagsResponse { models: vec![] });
 
     OllamaStatus {
         available: true,
@@ -187,8 +193,11 @@ pub(crate) fn assemble_terminal_context_for_engine(
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) async fn test_ai_chat_connection() -> Result<String, String> {
     let registry = crate::provider_registry::load_registry();
-    let resolved = crate::provider_registry::resolve_slot(&registry, crate::provider_registry::SlotName::Main)
-        .map_err(|_| "AI Chat not configured — set provider and model in Settings > AI Chat".to_string())?;
+    let resolved =
+        crate::provider_registry::resolve_slot(&registry, crate::provider_registry::SlotName::Main)
+            .map_err(|_| {
+                "AI Chat not configured — set provider and model in Settings > AI Chat".to_string()
+            })?;
 
     let llm_config = &resolved.config;
     let api_key = &resolved.api_key;
@@ -202,22 +211,46 @@ pub(crate) async fn test_ai_chat_connection() -> Result<String, String> {
     let base = llm_config.base_url.clone().unwrap_or_default();
     let key_check = match llm_config.provider.as_str() {
         "openrouter" => {
-            let url = format!("{}auth/key", if base.is_empty() { "https://openrouter.ai/api/v1/" } else { &base });
+            let url = format!(
+                "{}auth/key",
+                if base.is_empty() {
+                    "https://openrouter.ai/api/v1/"
+                } else {
+                    &base
+                }
+            );
             Some(http.get(&url).bearer_auth(api_key).send().await)
         }
         "anthropic" => {
             let url = "https://api.anthropic.com/v1/models";
-            Some(http.get(url)
-                .header("x-api-key", api_key)
-                .header("anthropic-version", "2023-06-01")
-                .send().await)
+            Some(
+                http.get(url)
+                    .header("x-api-key", api_key)
+                    .header("anthropic-version", "2023-06-01")
+                    .send()
+                    .await,
+            )
         }
         "openai" => {
-            let url = format!("{}models", if base.is_empty() { "https://api.openai.com/v1/" } else { &base });
+            let url = format!(
+                "{}models",
+                if base.is_empty() {
+                    "https://api.openai.com/v1/"
+                } else {
+                    &base
+                }
+            );
             Some(http.get(&url).bearer_auth(api_key).send().await)
         }
         "ollama" => {
-            let url = format!("{}models", if base.is_empty() { "http://localhost:11434/v1/" } else { &base });
+            let url = format!(
+                "{}models",
+                if base.is_empty() {
+                    "http://localhost:11434/v1/"
+                } else {
+                    &base
+                }
+            );
             Some(http.get(&url).send().await)
         }
         _ => {
@@ -231,7 +264,9 @@ pub(crate) async fn test_ai_chat_connection() -> Result<String, String> {
         match key_check {
             Ok(resp) => {
                 let status = resp.status();
-                if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+                if status == reqwest::StatusCode::UNAUTHORIZED
+                    || status == reqwest::StatusCode::FORBIDDEN
+                {
                     return Err("API key is invalid or expired".to_string());
                 }
                 if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
@@ -239,7 +274,11 @@ pub(crate) async fn test_ai_chat_connection() -> Result<String, String> {
                 }
                 if !status.is_success() {
                     let body = resp.text().await.unwrap_or_default();
-                    return Err(format!("Key check failed (HTTP {}): {}", status.as_u16(), &body[..body.len().min(200)]));
+                    return Err(format!(
+                        "Key check failed (HTTP {}): {}",
+                        status.as_u16(),
+                        &body[..body.len().min(200)]
+                    ));
                 }
             }
             Err(e) => {
@@ -252,16 +291,17 @@ pub(crate) async fn test_ai_chat_connection() -> Result<String, String> {
     let client = llm_api::build_client(llm_config, api_key);
 
     use genai::chat::{ChatMessage, ChatRequest};
-    let chat_req =
-        ChatRequest::default()
-            .with_system("Reply with exactly: OK")
-            .append_message(ChatMessage::user("Test connection"));
+    let chat_req = ChatRequest::default()
+        .with_system("Reply with exactly: OK")
+        .append_message(ChatMessage::user("Test connection"));
 
-    let result =
-        tokio::time::timeout(Duration::from_secs(15), client.exec_chat(&llm_config.model, chat_req, None))
-            .await
-            .map_err(|_| "Connection timed out after 15s".to_string())?
-            .map_err(|e| format!("Connection failed: {e}"))?;
+    let result = tokio::time::timeout(
+        Duration::from_secs(15),
+        client.exec_chat(&llm_config.model, chat_req, None),
+    )
+    .await
+    .map_err(|_| "Connection timed out after 15s".to_string())?
+    .map_err(|e| format!("Connection failed: {e}"))?;
 
     let text = result
         .first_text()
@@ -278,9 +318,7 @@ pub(crate) async fn test_ai_chat_connection() -> Result<String, String> {
 // Persistence types live in `ai_agent::conversation` so L2 tool-call
 // extensions sit next to the agent code. L1 keeps the same import path.
 #[cfg_attr(not(test), allow(unused_imports))]
-pub(crate) use crate::ai_agent::conversation::{
-    ChatMessage, Conversation, ConversationMeta,
-};
+pub(crate) use crate::ai_agent::conversation::{ChatMessage, Conversation, ConversationMeta};
 
 const CONVERSATIONS_DIR: &str = "ai-chat-conversations";
 
@@ -304,20 +342,27 @@ fn now_millis() -> u64 {
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn list_conversations() -> Result<Vec<ConversationMeta>, String> {
     #[derive(serde::Deserialize)]
-    struct MetaOnly { meta: ConversationMeta }
+    struct MetaOnly {
+        meta: ConversationMeta,
+    }
 
     let dir = conversations_dir()?;
     let mut metas = Vec::new();
-    let entries = std::fs::read_dir(&dir).map_err(|e| format!("Failed to read conversations dir: {e}"))?;
+    let entries =
+        std::fs::read_dir(&dir).map_err(|e| format!("Failed to read conversations dir: {e}"))?;
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().is_some_and(|e| e == "json") {
             match std::fs::read_to_string(&path) {
                 Ok(data) => match serde_json::from_str::<MetaOnly>(&data) {
                     Ok(wrapper) => metas.push(wrapper.meta),
-                    Err(e) => tracing::warn!(path = %path.display(), error = %e, "Failed to parse conversation metadata"),
+                    Err(e) => {
+                        tracing::warn!(path = %path.display(), error = %e, "Failed to parse conversation metadata")
+                    }
                 },
-                Err(e) => tracing::warn!(path = %path.display(), error = %e, "Failed to read conversation file"),
+                Err(e) => {
+                    tracing::warn!(path = %path.display(), error = %e, "Failed to read conversation file")
+                }
             }
         }
     }
@@ -330,10 +375,10 @@ pub(crate) fn load_conversation(id: String) -> Result<Conversation, String> {
     crate::ai_agent::knowledge::validate_file_stem(&id)?;
     let dir = conversations_dir()?;
     let path = dir.join(format!("{id}.json"));
-    let data = std::fs::read_to_string(&path)
-        .map_err(|_| format!("Conversation not found: {id}"))?;
-    let conv: Conversation = serde_json::from_str(&data)
-        .map_err(|e| format!("Failed to parse conversation: {e}"))?;
+    let data =
+        std::fs::read_to_string(&path).map_err(|_| format!("Conversation not found: {id}"))?;
+    let conv: Conversation =
+        serde_json::from_str(&data).map_err(|e| format!("Failed to parse conversation: {e}"))?;
     Ok(conv)
 }
 
@@ -354,8 +399,7 @@ pub(crate) fn delete_conversation(id: String) -> Result<(), String> {
     let dir = conversations_dir()?;
     let path = dir.join(format!("{id}.json"));
     if path.exists() {
-        std::fs::remove_file(&path)
-            .map_err(|e| format!("Failed to delete conversation: {e}"))?;
+        std::fs::remove_file(&path).map_err(|e| format!("Failed to delete conversation: {e}"))?;
     }
     Ok(())
 }
@@ -389,35 +433,79 @@ fn model_pricing(model: &str) -> Option<ModelPricing> {
     let m = model.to_lowercase();
     // Anthropic
     if m.contains("claude-opus-4") || m.contains("claude-opus-5") {
-        return Some(ModelPricing { input_per_m: 15.0, output_per_m: 75.0, cached_input_per_m: 1.50 });
+        return Some(ModelPricing {
+            input_per_m: 15.0,
+            output_per_m: 75.0,
+            cached_input_per_m: 1.50,
+        });
     }
-    if m.contains("claude-sonnet-4") || m.contains("claude-3-7-sonnet") || m.contains("claude-3-5-sonnet") || m.contains("claude-sonnet-4-5") {
-        return Some(ModelPricing { input_per_m: 3.0, output_per_m: 15.0, cached_input_per_m: 0.30 });
+    if m.contains("claude-sonnet-4")
+        || m.contains("claude-3-7-sonnet")
+        || m.contains("claude-3-5-sonnet")
+        || m.contains("claude-sonnet-4-5")
+    {
+        return Some(ModelPricing {
+            input_per_m: 3.0,
+            output_per_m: 15.0,
+            cached_input_per_m: 0.30,
+        });
     }
     if m.contains("claude-3-5-haiku") || m.contains("claude-haiku-4") {
-        return Some(ModelPricing { input_per_m: 0.80, output_per_m: 4.0, cached_input_per_m: 0.08 });
+        return Some(ModelPricing {
+            input_per_m: 0.80,
+            output_per_m: 4.0,
+            cached_input_per_m: 0.08,
+        });
     }
     if m.contains("claude-3-opus") {
-        return Some(ModelPricing { input_per_m: 15.0, output_per_m: 75.0, cached_input_per_m: 1.50 });
+        return Some(ModelPricing {
+            input_per_m: 15.0,
+            output_per_m: 75.0,
+            cached_input_per_m: 1.50,
+        });
     }
     if m.contains("claude-3-haiku") {
-        return Some(ModelPricing { input_per_m: 0.25, output_per_m: 1.25, cached_input_per_m: 0.03 });
+        return Some(ModelPricing {
+            input_per_m: 0.25,
+            output_per_m: 1.25,
+            cached_input_per_m: 0.03,
+        });
     }
     // OpenAI
     if m.contains("gpt-4o-mini") {
-        return Some(ModelPricing { input_per_m: 0.15, output_per_m: 0.60, cached_input_per_m: 0.075 });
+        return Some(ModelPricing {
+            input_per_m: 0.15,
+            output_per_m: 0.60,
+            cached_input_per_m: 0.075,
+        });
     }
     if m.contains("gpt-4o") {
-        return Some(ModelPricing { input_per_m: 2.50, output_per_m: 10.0, cached_input_per_m: 1.25 });
+        return Some(ModelPricing {
+            input_per_m: 2.50,
+            output_per_m: 10.0,
+            cached_input_per_m: 1.25,
+        });
     }
     if m.contains("gpt-4-turbo") || m.contains("gpt-4-1106") || m.contains("gpt-4-0125") {
-        return Some(ModelPricing { input_per_m: 10.0, output_per_m: 30.0, cached_input_per_m: 5.0 });
+        return Some(ModelPricing {
+            input_per_m: 10.0,
+            output_per_m: 30.0,
+            cached_input_per_m: 5.0,
+        });
     }
     if m.contains("o3-mini") || m.contains("o1-mini") {
-        return Some(ModelPricing { input_per_m: 1.10, output_per_m: 4.40, cached_input_per_m: 0.55 });
+        return Some(ModelPricing {
+            input_per_m: 1.10,
+            output_per_m: 4.40,
+            cached_input_per_m: 0.55,
+        });
     }
     if m.contains("o1") || m.contains("o3") {
-        return Some(ModelPricing { input_per_m: 15.0, output_per_m: 60.0, cached_input_per_m: 7.50 });
+        return Some(ModelPricing {
+            input_per_m: 15.0,
+            output_per_m: 60.0,
+            cached_input_per_m: 7.50,
+        });
     }
     None
 }
@@ -1066,7 +1154,9 @@ mod tests {
     #[test]
     fn truncate_preserves_line_boundaries() {
         // Create text that exceeds budget
-        let lines: Vec<String> = (0..100).map(|i| format!("line {i}: some terminal output here")).collect();
+        let lines: Vec<String> = (0..100)
+            .map(|i| format!("line {i}: some terminal output here"))
+            .collect();
         let text = lines.join("\n");
         let result = truncate_terminal_output(&text, 500);
         assert!(result.len() < text.len());
@@ -1077,7 +1167,9 @@ mod tests {
     #[test]
     fn truncate_25_75_split() {
         // 200 lines of ~20 chars each = ~4000 chars. Budget 1000 → must truncate.
-        let lines: Vec<String> = (0..200).map(|i| format!("line {:>3}: data here", i)).collect();
+        let lines: Vec<String> = (0..200)
+            .map(|i| format!("line {:>3}: data here", i))
+            .collect();
         let text = lines.join("\n");
         let result = truncate_terminal_output(&text, 1000);
 
@@ -1087,8 +1179,12 @@ mod tests {
         let head_part = parts[0];
         let tail_part = parts[1];
         // Head is roughly 25% of budget, tail 75%
-        assert!(tail_part.len() > head_part.len(),
-            "tail ({}) should be larger than head ({})", tail_part.len(), head_part.len());
+        assert!(
+            tail_part.len() > head_part.len(),
+            "tail ({}) should be larger than head ({})",
+            tail_part.len(),
+            head_part.len()
+        );
     }
 
     #[test]
@@ -1184,10 +1280,19 @@ mod tests {
     #[test]
     fn estimate_cost_with_cached_tokens_reduces_input_cost() {
         // claude-sonnet: $3.00/$15.00 input/output, cached input = $0.30 (10%)
-        let cost_no_cache = estimate_cost_usd("claude-sonnet-4-5-20241022", Some(1000), Some(500), None);
+        let cost_no_cache =
+            estimate_cost_usd("claude-sonnet-4-5-20241022", Some(1000), Some(500), None);
         // 800 cached of 1000 prompt — cached at 10%, uncached at 100%
-        let cost_cached = estimate_cost_usd("claude-sonnet-4-5-20241022", Some(1000), Some(500), Some(800));
-        assert!(cost_cached.unwrap() < cost_no_cache.unwrap(), "cached should be cheaper");
+        let cost_cached = estimate_cost_usd(
+            "claude-sonnet-4-5-20241022",
+            Some(1000),
+            Some(500),
+            Some(800),
+        );
+        assert!(
+            cost_cached.unwrap() < cost_no_cache.unwrap(),
+            "cached should be cheaper"
+        );
     }
 
     #[test]
@@ -1198,9 +1303,13 @@ mod tests {
 
     // ── assemble_block_context ────────────────────────────────────────
 
-    fn make_outcome(cmd: &str, cwd: &str, exit_code: Option<i32>, output: &str, duration_ms: u64)
-        -> crate::ai_agent::knowledge::CommandOutcome
-    {
+    fn make_outcome(
+        cmd: &str,
+        cwd: &str,
+        exit_code: Option<i32>,
+        output: &str,
+        duration_ms: u64,
+    ) -> crate::ai_agent::knowledge::CommandOutcome {
         crate::ai_agent::knowledge::CommandOutcome {
             timestamp: 0,
             command: cmd.into(),
@@ -1222,7 +1331,13 @@ mod tests {
     #[test]
     fn block_context_contains_command_fields() {
         let mut k = crate::ai_agent::knowledge::SessionKnowledge::new();
-        k.commands.push_back(make_outcome("cargo test", "/repo", Some(0), "test passed", 120));
+        k.commands.push_back(make_outcome(
+            "cargo test",
+            "/repo",
+            Some(0),
+            "test passed",
+            120,
+        ));
         let out = assemble_block_context(&k, 16_000).unwrap();
         assert!(out.contains("[cmd: cargo test]"));
         assert!(out.contains("[cwd: /repo]"));
@@ -1234,7 +1349,8 @@ mod tests {
     #[test]
     fn block_context_no_exit_code_shows_question_mark() {
         let mut k = crate::ai_agent::knowledge::SessionKnowledge::new();
-        k.commands.push_back(make_outcome("sleep 10", "/", None, "", 0));
+        k.commands
+            .push_back(make_outcome("sleep 10", "/", None, "", 0));
         let out = assemble_block_context(&k, 16_000).unwrap();
         assert!(out.contains("[exit: ?]"));
     }
@@ -1242,12 +1358,17 @@ mod tests {
     #[test]
     fn block_context_most_recent_last_in_output() {
         let mut k = crate::ai_agent::knowledge::SessionKnowledge::new();
-        k.commands.push_back(make_outcome("first", "/", Some(0), "", 1));
-        k.commands.push_back(make_outcome("second", "/", Some(0), "", 2));
+        k.commands
+            .push_back(make_outcome("first", "/", Some(0), "", 1));
+        k.commands
+            .push_back(make_outcome("second", "/", Some(0), "", 2));
         let out = assemble_block_context(&k, 16_000).unwrap();
         let pos_first = out.find("first").unwrap();
         let pos_second = out.find("second").unwrap();
-        assert!(pos_first < pos_second, "oldest command should appear before newest");
+        assert!(
+            pos_first < pos_second,
+            "oldest command should appear before newest"
+        );
     }
 
     #[test]
@@ -1273,9 +1394,9 @@ mod tests {
     #[test]
     fn block_context_empty_snippet_omits_code_block() {
         let mut k = crate::ai_agent::knowledge::SessionKnowledge::new();
-        k.commands.push_back(make_outcome("ls", "/", Some(0), "", 5));
+        k.commands
+            .push_back(make_outcome("ls", "/", Some(0), "", 5));
         let out = assemble_block_context(&k, 16_000).unwrap();
         assert!(!out.contains("```"), "no code fence for empty output");
     }
-
 }

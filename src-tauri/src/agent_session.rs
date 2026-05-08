@@ -44,8 +44,8 @@ pub(crate) fn discover_agent_session(
 /// E.g. `/Users/foo/bar` → `~/.claude/projects/-Users-foo-bar`.
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn claude_project_dir(cwd: String) -> Result<String, String> {
-    let base = claude_projects_dir()
-        .ok_or_else(|| "Could not determine home directory".to_string())?;
+    let base =
+        claude_projects_dir().ok_or_else(|| "Could not determine home directory".to_string())?;
     let path = base.join(path_to_claude_slug(&cwd));
     path.to_str()
         .map(|s| s.to_string())
@@ -109,7 +109,9 @@ fn discover_gemini_session(_cwd: &str, claimed_ids: &[String]) -> Option<String>
     // Collect (mtime, sessionId) from all session-*.json files across all project dirs
     let mut candidates: Vec<(SystemTime, String)> = Vec::new();
 
-    let Ok(project_entries) = std::fs::read_dir(&tmp_dir) else { return None };
+    let Ok(project_entries) = std::fs::read_dir(&tmp_dir) else {
+        return None;
+    };
     for proj in project_entries.filter_map(|e| e.ok()) {
         let chats_dir = proj.path().join("chats");
         if !chats_dir.is_dir() {
@@ -127,7 +129,9 @@ fn discover_gemini_session(_cwd: &str, claimed_ids: &[String]) -> Option<String>
 }
 
 fn collect_gemini_session_files(chats_dir: &PathBuf, out: &mut Vec<(SystemTime, String)>) {
-    let Ok(entries) = std::fs::read_dir(chats_dir) else { return };
+    let Ok(entries) = std::fs::read_dir(chats_dir) else {
+        return;
+    };
     for entry in entries.filter_map(|e| e.ok()) {
         let name = entry.file_name().to_string_lossy().to_string();
         if !name.starts_with("session-") || !name.ends_with(".json") {
@@ -187,7 +191,9 @@ fn discover_codex_session(claimed_ids: &[String]) -> Option<String> {
 }
 
 fn collect_codex_files(dir: &PathBuf, out: &mut Vec<(SystemTime, String)>) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
 
     for entry in entries.filter_map(|e| e.ok()) {
         let path = entry.path();
@@ -215,7 +221,11 @@ fn extract_codex_uuid(name: &str) -> Option<String> {
         return None;
     }
     let candidate = &stem[stem.len() - 36..];
-    if is_uuid(candidate) { Some(candidate.to_string()) } else { None }
+    if is_uuid(candidate) {
+        Some(candidate.to_string())
+    } else {
+        None
+    }
 }
 
 // ─── Session verification ────────────────────────────────────────────────────
@@ -225,11 +235,7 @@ fn extract_codex_uuid(name: &str) -> Option<String> {
 /// Used at restore time to decide if `--resume <uuid>` is safe: if the session
 /// file doesn't exist, the resume command would fail.
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub(crate) fn verify_agent_session(
-    agent_type: String,
-    session_id: String,
-    cwd: String,
-) -> bool {
+pub(crate) fn verify_agent_session(agent_type: String, session_id: String, cwd: String) -> bool {
     match agent_type.as_str() {
         "claude" => verify_claude_session(&session_id, &cwd),
         "gemini" => verify_gemini_session(&session_id, &cwd),
@@ -246,7 +252,9 @@ pub(crate) fn verify_agent_session(
 /// DECRPM) as visible garbage in the shell.
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn preflight_session_inject(tuic_session: String, cwd: String) {
-    if !tuic_session.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
+    if !tuic_session
+        .chars()
+        .all(|c| c.is_ascii_hexdigit() || c == '-')
         || tuic_session.len() != 36
     {
         return;
@@ -254,8 +262,7 @@ pub(crate) fn preflight_session_inject(tuic_session: String, cwd: String) {
     if verify_claude_session(&tuic_session, &cwd) {
         return;
     }
-    let flag = crate::config::config_dir()
-        .join(format!("no-session-inject.{tuic_session}"));
+    let flag = crate::config::config_dir().join(format!("no-session-inject.{tuic_session}"));
     if !flag.exists() {
         if let Err(e) = std::fs::write(&flag, b"") {
             tracing::warn!(
@@ -294,13 +301,17 @@ fn verify_gemini_session(session_id: &str, _cwd: &str) -> bool {
     if !tmp_dir.exists() {
         return false;
     }
-    let Ok(entries) = std::fs::read_dir(&tmp_dir) else { return false };
+    let Ok(entries) = std::fs::read_dir(&tmp_dir) else {
+        return false;
+    };
     for proj in entries.filter_map(|e| e.ok()) {
         let chats_dir = proj.path().join("chats");
         if !chats_dir.is_dir() {
             continue;
         }
-        let Ok(files) = std::fs::read_dir(&chats_dir) else { continue };
+        let Ok(files) = std::fs::read_dir(&chats_dir) else {
+            continue;
+        };
         for f in files.filter_map(|e| e.ok()) {
             if let Ok(contents) = std::fs::read_to_string(f.path())
                 && let Some(found_id) = extract_json_string_field(&contents, "sessionId")
@@ -328,7 +339,9 @@ fn verify_codex_session(session_id: &str) -> bool {
 }
 
 fn codex_session_exists(dir: &std::path::Path, target_id: &str) -> bool {
-    let Ok(entries) = std::fs::read_dir(dir) else { return false };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
     for entry in entries.filter_map(|e| e.ok()) {
         let path = entry.path();
         if path.is_dir() {
@@ -355,7 +368,12 @@ fn verify_goose_session() -> bool {
 }
 
 fn goose_db_path() -> Option<PathBuf> {
-    dirs::data_dir().map(|d| d.join("Block").join("goose").join("sessions").join("sessions.db"))
+    dirs::data_dir().map(|d| {
+        d.join("Block")
+            .join("goose")
+            .join("sessions")
+            .join("sessions.db")
+    })
 }
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
@@ -443,10 +461,7 @@ mod tests {
 
     #[test]
     fn test_path_to_claude_slug_unix() {
-        assert_eq!(
-            path_to_claude_slug("/Users/foo/bar"),
-            "-Users-foo-bar"
-        );
+        assert_eq!(path_to_claude_slug("/Users/foo/bar"), "-Users-foo-bar");
     }
 
     #[test]
@@ -475,10 +490,7 @@ mod tests {
 
     #[test]
     fn test_path_to_claude_slug_trailing_slash() {
-        assert_eq!(
-            path_to_claude_slug("/Users/foo/bar/"),
-            "-Users-foo-bar"
-        );
+        assert_eq!(path_to_claude_slug("/Users/foo/bar/"), "-Users-foo-bar");
     }
 
     #[test]
@@ -494,8 +506,10 @@ mod tests {
     #[test]
     fn test_claude_project_dir_returns_path_with_slug() {
         if let Ok(result) = claude_project_dir("/Users/foo/bar".to_string()) {
-            assert!(result.ends_with("/.claude/projects/-Users-foo-bar"),
-                "unexpected path: {result}");
+            assert!(
+                result.ends_with("/.claude/projects/-Users-foo-bar"),
+                "unexpected path: {result}"
+            );
         }
         // None only if home dir unavailable (CI) — not a failure
     }
@@ -503,8 +517,10 @@ mod tests {
     #[test]
     fn test_claude_project_dir_dots_in_username() {
         if let Ok(result) = claude_project_dir("/Users/foo.bar/proj".to_string()) {
-            assert!(result.ends_with("-Users-foo-bar-proj"),
-                "unexpected path: {result}");
+            assert!(
+                result.ends_with("-Users-foo-bar-proj"),
+                "unexpected path: {result}"
+            );
         }
     }
 
@@ -515,7 +531,11 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let result = newest_unclaimed_file(
             &dir.path().to_path_buf(),
-            |name| name.strip_suffix(".jsonl").filter(|s| is_uuid(s)).map(|s| s.to_string()),
+            |name| {
+                name.strip_suffix(".jsonl")
+                    .filter(|s| is_uuid(s))
+                    .map(|s| s.to_string())
+            },
             &[],
         );
         assert!(result.is_none());
@@ -523,11 +543,7 @@ mod tests {
 
     #[test]
     fn test_missing_dir_returns_none() {
-        let result = newest_unclaimed_file(
-            &PathBuf::from("/nonexistent/path/xyz"),
-            |_| None,
-            &[],
-        );
+        let result = newest_unclaimed_file(&PathBuf::from("/nonexistent/path/xyz"), |_| None, &[]);
         assert!(result.is_none());
     }
 
@@ -539,7 +555,11 @@ mod tests {
 
         let result = newest_unclaimed_file(
             &dir.path().to_path_buf(),
-            |name| name.strip_suffix(".jsonl").filter(|s| is_uuid(s)).map(|s| s.to_string()),
+            |name| {
+                name.strip_suffix(".jsonl")
+                    .filter(|s| is_uuid(s))
+                    .map(|s| s.to_string())
+            },
             &[],
         );
         assert_eq!(result, Some(uuid.to_string()));
@@ -553,7 +573,11 @@ mod tests {
 
         let result = newest_unclaimed_file(
             &dir.path().to_path_buf(),
-            |name| name.strip_suffix(".jsonl").filter(|s| is_uuid(s)).map(|s| s.to_string()),
+            |name| {
+                name.strip_suffix(".jsonl")
+                    .filter(|s| is_uuid(s))
+                    .map(|s| s.to_string())
+            },
             &[uuid.to_string()],
         );
         assert!(result.is_none());
@@ -572,7 +596,11 @@ mod tests {
 
         let result = newest_unclaimed_file(
             &dir.path().to_path_buf(),
-            |name| name.strip_suffix(".jsonl").filter(|s| is_uuid(s)).map(|s| s.to_string()),
+            |name| {
+                name.strip_suffix(".jsonl")
+                    .filter(|s| is_uuid(s))
+                    .map(|s| s.to_string())
+            },
             &[],
         );
         assert_eq!(result, Some(uuid2.to_string()));
@@ -586,7 +614,11 @@ mod tests {
 
         let result = newest_unclaimed_file(
             &dir.path().to_path_buf(),
-            |name| name.strip_suffix(".jsonl").filter(|s| is_uuid(s)).map(|s| s.to_string()),
+            |name| {
+                name.strip_suffix(".jsonl")
+                    .filter(|s| is_uuid(s))
+                    .map(|s| s.to_string())
+            },
             &[],
         );
         assert!(result.is_none());
@@ -605,12 +637,16 @@ mod tests {
 
     #[test]
     fn test_extract_codex_uuid_wrong_prefix() {
-        assert!(extract_codex_uuid("session-2026-af467730-5e79-49d9-8a17-ebd94c99f262.jsonl").is_none());
+        assert!(
+            extract_codex_uuid("session-2026-af467730-5e79-49d9-8a17-ebd94c99f262.jsonl").is_none()
+        );
     }
 
     #[test]
     fn test_extract_codex_uuid_no_suffix() {
-        assert!(extract_codex_uuid("rollout-2026-af467730-5e79-49d9-8a17-ebd94c99f262.txt").is_none());
+        assert!(
+            extract_codex_uuid("rollout-2026-af467730-5e79-49d9-8a17-ebd94c99f262.txt").is_none()
+        );
     }
 
     // ── extract_json_string_field ──

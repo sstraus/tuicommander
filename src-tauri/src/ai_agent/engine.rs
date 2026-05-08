@@ -5,8 +5,8 @@
 //! or a termination condition is met.
 
 use std::collections::VecDeque;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 use dashmap::DashMap;
@@ -87,8 +87,13 @@ impl RateLimiter {
         }
 
         if self.window.len() >= self.per_minute {
-            let oldest = self.window.front().expect("window non-empty after len check");
-            let wait = RATE_WINDOW - now.duration_since(*oldest);
+            let oldest = self
+                .window
+                .front()
+                .expect("window non-empty after len check");
+            let wait = RATE_WINDOW
+                .checked_sub(now.duration_since(*oldest))
+                .unwrap_or(Duration::ZERO);
             return Err(wait);
         }
 
@@ -195,9 +200,7 @@ fn build_system_prompt(session_id: &str) -> String {
 /// Recursively apply `redact_secrets` to all string values in a JSON value.
 pub(crate) fn redact_json_values(val: &serde_json::Value) -> serde_json::Value {
     match val {
-        serde_json::Value::String(s) => {
-            serde_json::Value::String(tools::redact_secrets(s))
-        }
+        serde_json::Value::String(s) => serde_json::Value::String(tools::redact_secrets(s)),
         serde_json::Value::Object(map) => {
             let redacted: serde_json::Map<String, serde_json::Value> = map
                 .iter()
@@ -234,15 +237,20 @@ pub(crate) fn classify_phase(tool_names: &[&str]) -> ToolPhase {
             "write_file" | "edit_file" | "send_input" | "send_key" | "run_command"
             | "call_tool" | "spawn_session" => has_write = true,
             "search_files" | "search_code" | "list_files" | "search_tools" => has_search = true,
-            "read_screen" | "read_file" | "get_state" | "get_context"
-            | "list_sessions" | "get_agent_status" => has_read = true,
+            "read_screen" | "read_file" | "get_state" | "get_context" | "list_sessions"
+            | "get_agent_status" => has_read = true,
             _ => {}
         }
     }
-    if has_write { ToolPhase::Write }
-    else if has_search { ToolPhase::Search }
-    else if has_read { ToolPhase::Read }
-    else { ToolPhase::Plan }
+    if has_write {
+        ToolPhase::Write
+    } else if has_search {
+        ToolPhase::Search
+    } else if has_read {
+        ToolPhase::Read
+    } else {
+        ToolPhase::Plan
+    }
 }
 
 pub(crate) fn select_model_for_phase<'a>(
@@ -290,7 +298,10 @@ mod tests {
     #[test]
     fn tool_dispatch_limiter_separate_from_llm() {
         let mut llm = RateLimiter::new(RATE_LIMIT_PER_MINUTE, RATE_LIMIT_PER_SESSION);
-        let mut tool = RateLimiter::new(TOOL_DISPATCH_LIMIT_PER_MINUTE, TOOL_DISPATCH_LIMIT_PER_SESSION);
+        let mut tool = RateLimiter::new(
+            TOOL_DISPATCH_LIMIT_PER_MINUTE,
+            TOOL_DISPATCH_LIMIT_PER_SESSION,
+        );
         // Tool limiter allows more per minute than LLM limiter
         assert!(TOOL_DISPATCH_LIMIT_PER_MINUTE > RATE_LIMIT_PER_MINUTE);
         for _ in 0..RATE_LIMIT_PER_MINUTE {
@@ -344,10 +355,13 @@ mod tests {
     fn active_agents_rejects_duplicate() {
         let sid = "test-dup-check";
         let cancel = Arc::new(AtomicBool::new(false));
-        ACTIVE_AGENTS.insert(sid.to_string(), AgentHandle {
-            cancel,
-            state: Arc::new(RwLock::new(AgentState::Running)),
-        });
+        ACTIVE_AGENTS.insert(
+            sid.to_string(),
+            AgentHandle {
+                cancel,
+                state: Arc::new(RwLock::new(AgentState::Running)),
+            },
+        );
         assert!(ACTIVE_AGENTS.contains_key(sid));
         // Cleanup
         ACTIVE_AGENTS.remove(sid);
@@ -469,7 +483,10 @@ mod tests {
         // Iteration 0: no knowledge yet → base prompt only.
         let mut last = crate::ai_agent::context::build_knowledge_section(&state, sid);
         let prompt_iter0 = compose_system_prompt(&base, None, last.as_deref());
-        assert_eq!(prompt_iter0, base, "iter 0 should equal base when no knowledge");
+        assert_eq!(
+            prompt_iter0, base,
+            "iter 0 should equal base when no knowledge"
+        );
         assert!(last.is_none());
 
         // Tool call mid-loop records a command outcome (Error so it surfaces
@@ -508,10 +525,22 @@ mod tests {
 
     #[test]
     fn tool_phase_serializes() {
-        assert_eq!(serde_json::to_string(&ToolPhase::Plan).unwrap(), r#""plan""#);
-        assert_eq!(serde_json::to_string(&ToolPhase::Search).unwrap(), r#""search""#);
-        assert_eq!(serde_json::to_string(&ToolPhase::Read).unwrap(), r#""read""#);
-        assert_eq!(serde_json::to_string(&ToolPhase::Write).unwrap(), r#""write""#);
+        assert_eq!(
+            serde_json::to_string(&ToolPhase::Plan).unwrap(),
+            r#""plan""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ToolPhase::Search).unwrap(),
+            r#""search""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ToolPhase::Read).unwrap(),
+            r#""read""#
+        );
+        assert_eq!(
+            serde_json::to_string(&ToolPhase::Write).unwrap(),
+            r#""write""#
+        );
     }
 
     #[test]
@@ -548,21 +577,36 @@ mod tests {
 
     #[test]
     fn classify_phase_mixed_prefers_write() {
-        assert_eq!(classify_phase(&["read_file", "edit_file"]), ToolPhase::Write);
-        assert_eq!(classify_phase(&["search_files", "send_input"]), ToolPhase::Write);
+        assert_eq!(
+            classify_phase(&["read_file", "edit_file"]),
+            ToolPhase::Write
+        );
+        assert_eq!(
+            classify_phase(&["search_files", "send_input"]),
+            ToolPhase::Write
+        );
     }
 
     #[test]
     fn classify_phase_mixed_read_search_prefers_search() {
-        assert_eq!(classify_phase(&["read_screen", "search_files"]), ToolPhase::Search);
+        assert_eq!(
+            classify_phase(&["read_screen", "search_files"]),
+            ToolPhase::Search
+        );
     }
 
     #[test]
     fn select_model_no_overrides_returns_default() {
         let base = "anthropic/claude-sonnet-4-5";
         let overrides = std::collections::HashMap::new();
-        assert_eq!(select_model_for_phase(base, &overrides, ToolPhase::Plan), base);
-        assert_eq!(select_model_for_phase(base, &overrides, ToolPhase::Write), base);
+        assert_eq!(
+            select_model_for_phase(base, &overrides, ToolPhase::Plan),
+            base
+        );
+        assert_eq!(
+            select_model_for_phase(base, &overrides, ToolPhase::Write),
+            base
+        );
     }
 
     #[test]
@@ -572,9 +616,21 @@ mod tests {
         overrides.insert(ToolPhase::Search, "anthropic/claude-haiku-3-5".to_string());
         overrides.insert(ToolPhase::Read, "anthropic/claude-haiku-3-5".to_string());
 
-        assert_eq!(select_model_for_phase(base, &overrides, ToolPhase::Search), "anthropic/claude-haiku-3-5");
-        assert_eq!(select_model_for_phase(base, &overrides, ToolPhase::Read), "anthropic/claude-haiku-3-5");
-        assert_eq!(select_model_for_phase(base, &overrides, ToolPhase::Write), base);
-        assert_eq!(select_model_for_phase(base, &overrides, ToolPhase::Plan), base);
+        assert_eq!(
+            select_model_for_phase(base, &overrides, ToolPhase::Search),
+            "anthropic/claude-haiku-3-5"
+        );
+        assert_eq!(
+            select_model_for_phase(base, &overrides, ToolPhase::Read),
+            "anthropic/claude-haiku-3-5"
+        );
+        assert_eq!(
+            select_model_for_phase(base, &overrides, ToolPhase::Write),
+            base
+        );
+        assert_eq!(
+            select_model_for_phase(base, &overrides, ToolPhase::Plan),
+            base
+        );
     }
 }

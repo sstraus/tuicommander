@@ -15,12 +15,7 @@ const TUI_WARNING: &str = "> ⚠️ Terminal is in fullscreen TUI mode — key s
 pub fn build_cross_session_section(state: &AppState, session_id: &str) -> Option<String> {
     let sandbox = state.file_sandboxes.get(session_id)?;
     let repo_path = sandbox.root().to_string_lossy().to_string();
-    super::knowledge::summarize_for_repo(
-        &state.session_knowledge,
-        &repo_path,
-        session_id,
-        8_000,
-    )
+    super::knowledge::summarize_for_repo(&state.session_knowledge, &repo_path, session_id, 8_000)
 }
 
 /// Returns a markdown-formatted knowledge section for injection into the

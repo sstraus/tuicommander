@@ -1,11 +1,11 @@
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::io::Write;
 use std::sync::Arc;
 
-use crate::state::AppState;
-use super::safety::{RegexSafetyChecker, SafetyVerdict, SafeKey, KeyRisk};
+use super::safety::{KeyRisk, RegexSafetyChecker, SafeKey, SafetyVerdict};
 use super::sandbox::FileSandbox;
+use crate::state::AppState;
 
 /// Max file size accepted by `read_file` / `edit_file` (10 MB).
 const MAX_FILE_BYTES: u64 = 10 * 1024 * 1024;
@@ -30,11 +30,23 @@ pub struct ToolResult {
 
 impl ToolResult {
     pub fn ok(output: impl Into<String>) -> Self {
-        Self { success: true, output: output.into(), needs_approval: false, approval_reason: None, approval_command: None }
+        Self {
+            success: true,
+            output: output.into(),
+            needs_approval: false,
+            approval_reason: None,
+            approval_command: None,
+        }
     }
 
     pub fn err(output: impl Into<String>) -> Self {
-        Self { success: false, output: output.into(), needs_approval: false, approval_reason: None, approval_command: None }
+        Self {
+            success: false,
+            output: output.into(),
+            needs_approval: false,
+            approval_reason: None,
+            approval_command: None,
+        }
     }
 
     pub fn approval(reason: impl Into<String>, command: impl Into<String>) -> Self {
@@ -419,43 +431,51 @@ fn map_key(name: &str) -> Result<(String, Option<SafeKey>), String> {
 
 /// Write to a PTY session — replicates sendCommand semantics from TypeScript.
 /// Ctrl-U prefix clears existing input, then text, then \r on separate write.
-fn safe_pty_write(
-    state: &AppState,
-    session_id: &str,
-    command: &str,
-) -> Result<(), String> {
-    let entry = state.sessions.get(session_id)
+fn safe_pty_write(state: &AppState, session_id: &str, command: &str) -> Result<(), String> {
+    let entry = state
+        .sessions
+        .get(session_id)
         .ok_or_else(|| format!("Session not found: {session_id}"))?;
     let mut session = entry.lock();
 
     // Write 1: Ctrl-U + command text
     let payload = format!("\x15{command}");
-    session.writer.write_all(payload.as_bytes())
+    session
+        .writer
+        .write_all(payload.as_bytes())
         .map_err(|e| format!("PTY write failed: {e}"))?;
-    session.writer.flush()
+    session
+        .writer
+        .flush()
         .map_err(|e| format!("PTY flush failed: {e}"))?;
 
     // Write 2: Enter (separate write for Ink agent compat)
-    session.writer.write_all(b"\r")
+    session
+        .writer
+        .write_all(b"\r")
         .map_err(|e| format!("PTY write \\r failed: {e}"))?;
-    session.writer.flush()
+    session
+        .writer
+        .flush()
         .map_err(|e| format!("PTY flush failed: {e}"))?;
 
     Ok(())
 }
 
 /// Write raw bytes to a PTY (for send_key).
-fn raw_pty_write(
-    state: &AppState,
-    session_id: &str,
-    data: &[u8],
-) -> Result<(), String> {
-    let entry = state.sessions.get(session_id)
+fn raw_pty_write(state: &AppState, session_id: &str, data: &[u8]) -> Result<(), String> {
+    let entry = state
+        .sessions
+        .get(session_id)
         .ok_or_else(|| format!("Session not found: {session_id}"))?;
     let mut session = entry.lock();
-    session.writer.write_all(data)
+    session
+        .writer
+        .write_all(data)
         .map_err(|e| format!("PTY write failed: {e}"))?;
-    session.writer.flush()
+    session
+        .writer
+        .flush()
         .map_err(|e| format!("PTY flush failed: {e}"))?;
     Ok(())
 }
@@ -490,7 +510,8 @@ fn exec_read_screen(state: &AppState, args: &Value) -> ToolResult {
         let cursor = vt.total_lines();
         let rows = vt.screen_rows();
         // Trim trailing empty rows and limit
-        let last_non_empty = rows.iter()
+        let last_non_empty = rows
+            .iter()
             .rposition(|r| !r.trim().is_empty())
             .map(|i| i + 1)
             .unwrap_or(0);
@@ -548,12 +569,13 @@ fn exec_send_key_inner(state: &AppState, args: &Value, skip_safety: bool) -> Too
 
     if !skip_safety
         && let Some(sk) = safe_key
-            && sk.risk() == KeyRisk::High {
-                return ToolResult::approval(
-                    format!("{key_name} is high-risk (may terminate shell)"),
-                    format!("send_key:{key_name}"),
-                );
-            }
+        && sk.risk() == KeyRisk::High
+    {
+        return ToolResult::approval(
+            format!("{key_name} is high-risk (may terminate shell)"),
+            format!("send_key:{key_name}"),
+        );
+    }
 
     match raw_pty_write(state, session_id, seq.as_bytes()) {
         Ok(()) => ToolResult::ok(format!("Sent key: {key_name}")),
@@ -605,9 +627,10 @@ async fn exec_wait_for(state: &Arc<AppState>, args: &Value) -> ToolResult {
         };
 
         if let Some(ref re) = compiled
-            && let Some(m) = re.find(&current) {
-                return ToolResult::ok(redact_secrets(m.as_str()));
-            }
+            && let Some(m) = re.find(&current)
+        {
+            return ToolResult::ok(redact_secrets(m.as_str()));
+        }
 
         if current != last_content {
             last_content = current;
@@ -646,17 +669,21 @@ fn exec_get_context(state: &AppState, args: &Value) -> ToolResult {
         None => return ToolResult::err("Missing session_id"),
     };
 
-    let shell_state = state.shell_states.get(session_id)
-        .map(|atom| crate::pty::shell_state_str(
-            atom.load(std::sync::atomic::Ordering::Relaxed)
-        ).to_string())
+    let shell_state = state
+        .shell_states
+        .get(session_id)
+        .map(|atom| {
+            crate::pty::shell_state_str(atom.load(std::sync::atomic::Ordering::Relaxed)).to_string()
+        })
         .unwrap_or_else(|| "unknown".to_string());
 
     let ss = state.session_states.get(session_id);
-    let agent_type = ss.as_ref()
+    let agent_type = ss
+        .as_ref()
         .and_then(|s| s.agent_type.clone())
         .unwrap_or_else(|| "none".to_string());
-    let terminal_mode = ss.as_ref()
+    let terminal_mode = ss
+        .as_ref()
         .and_then(|s| s.terminal_mode.as_ref())
         .map(|m| serde_json::to_string(m).unwrap_or_default())
         .unwrap_or_else(|| "shell".to_string());
@@ -686,7 +713,9 @@ async fn exec_drive_agent(state: &Arc<AppState>, args: &Value, skip_safety: bool
     const MAX_PATTERN_BYTES: usize = 512;
     let compiled = match wait_pattern {
         Some(p) if p.len() > MAX_PATTERN_BYTES => {
-            return ToolResult::err(format!("wait_pattern too long (max {MAX_PATTERN_BYTES} bytes)"));
+            return ToolResult::err(format!(
+                "wait_pattern too long (max {MAX_PATTERN_BYTES} bytes)"
+            ));
         }
         Some(p) => match regex::Regex::new(p) {
             Ok(r) => Some(r),
@@ -730,7 +759,9 @@ async fn exec_drive_agent(state: &Arc<AppState>, args: &Value, skip_safety: bool
         }
 
         // Check shell_state for idle (most reliable signal)
-        let is_idle = state.shell_states.get(&session_id)
+        let is_idle = state
+            .shell_states
+            .get(&session_id)
             .map(|atom| {
                 let s = atom.load(std::sync::atomic::Ordering::Relaxed);
                 crate::pty::shell_state_str(s) == "idle"
@@ -789,13 +820,17 @@ async fn exec_drive_agent(state: &Arc<AppState>, args: &Value, skip_safety: bool
         }
     };
 
-    let session_state = state.session_states.get(&session_id)
+    let session_state = state
+        .session_states
+        .get(&session_id)
         .and_then(|entry| serde_json::to_value(entry.value()).ok());
 
-    let shell_state = state.shell_states.get(&session_id)
-        .map(|atom| crate::pty::shell_state_str(
-            atom.load(std::sync::atomic::Ordering::Relaxed)
-        ).to_string())
+    let shell_state = state
+        .shell_states
+        .get(&session_id)
+        .map(|atom| {
+            crate::pty::shell_state_str(atom.load(std::sync::atomic::Ordering::Relaxed)).to_string()
+        })
         .unwrap_or_else(|| "unknown".to_string());
 
     let result = json!({
@@ -828,7 +863,11 @@ fn is_session_unrestricted(state: &AppState, session_id: &str) -> bool {
 /// Resolve a file path for reading. Absolute paths are used as-is (unrestricted);
 /// relative paths are always anchored to the sandbox root so `read_file("src/main.rs")`
 /// works naturally. The sandbox jail is bypassed for reads — only writes are sandboxed.
-fn resolve_file_path(sandbox: &FileSandbox, path: &str, _unrestricted: bool) -> Result<std::path::PathBuf, String> {
+fn resolve_file_path(
+    sandbox: &FileSandbox,
+    path: &str,
+    _unrestricted: bool,
+) -> Result<std::path::PathBuf, String> {
     let p = std::path::Path::new(path);
     if p.is_absolute() {
         Ok(p.to_path_buf())
@@ -853,7 +892,11 @@ fn extra_write_roots() -> Vec<std::path::PathBuf> {
 /// Resolve a file path for writing. In unrestricted mode parent dirs are created
 /// as needed; in standard mode the path is validated against the sandbox jail
 /// (writes to /tmp are also allowed in standard mode).
-fn resolve_file_path_for_write(sandbox: &FileSandbox, path: &str, unrestricted: bool) -> Result<std::path::PathBuf, String> {
+fn resolve_file_path_for_write(
+    sandbox: &FileSandbox,
+    path: &str,
+    unrestricted: bool,
+) -> Result<std::path::PathBuf, String> {
     if unrestricted {
         let p = std::path::PathBuf::from(path);
         if let Some(parent) = p.parent() {
@@ -867,7 +910,11 @@ fn resolve_file_path_for_write(sandbox: &FileSandbox, path: &str, unrestricted: 
 
 /// Resolve an optional subdirectory for read ops. Absolute paths are allowed
 /// anywhere; relative paths and empty/omitted paths default to the sandbox root.
-fn resolve_subdir(sandbox: &FileSandbox, path: Option<&str>, _unrestricted: bool) -> Result<std::path::PathBuf, String> {
+fn resolve_subdir(
+    sandbox: &FileSandbox,
+    path: Option<&str>,
+    _unrestricted: bool,
+) -> Result<std::path::PathBuf, String> {
     match path {
         None | Some("") | Some(".") => Ok(sandbox.root().to_path_buf()),
         Some(p) => {
@@ -891,7 +938,10 @@ fn exec_read_file(state: &AppState, session_id: &str, args: &Value) -> ToolResul
         return missing_arg("file_path");
     };
     let offset = args["offset"].as_u64().unwrap_or(0) as usize;
-    let requested_limit = args["limit"].as_u64().map(|v| v as usize).unwrap_or(READ_FILE_DEFAULT_LINES);
+    let requested_limit = args["limit"]
+        .as_u64()
+        .map(|v| v as usize)
+        .unwrap_or(READ_FILE_DEFAULT_LINES);
     let limit = requested_limit.clamp(1, READ_FILE_MAX_LINES);
 
     let sandbox = match get_sandbox(state, session_id) {
@@ -967,7 +1017,12 @@ fn exec_write_file(state: &AppState, session_id: &str, args: &Value) -> ToolResu
     exec_write_file_inner(state, session_id, args, false)
 }
 
-fn exec_write_file_inner(state: &AppState, session_id: &str, args: &Value, skip_safety: bool) -> ToolResult {
+fn exec_write_file_inner(
+    state: &AppState,
+    session_id: &str,
+    args: &Value,
+    skip_safety: bool,
+) -> ToolResult {
     let Some(file_path) = args["file_path"].as_str() else {
         return missing_arg("file_path");
     };
@@ -1032,7 +1087,12 @@ fn exec_write_file_inner(state: &AppState, session_id: &str, args: &Value, skip_
     )
 }
 
-fn exec_edit_file_inner(state: &AppState, session_id: &str, args: &Value, skip_safety: bool) -> ToolResult {
+fn exec_edit_file_inner(
+    state: &AppState,
+    session_id: &str,
+    args: &Value,
+    skip_safety: bool,
+) -> ToolResult {
     let Some(file_path) = args["file_path"].as_str() else {
         return missing_arg("file_path");
     };
@@ -1161,7 +1221,10 @@ const SEARCH_MAX_CONTEXT: usize = 10;
 
 /// Resolve an optional subdirectory path against the sandbox.
 /// Empty / unset defaults to the sandbox root.
-fn resolve_sandbox_subdir(sandbox: &FileSandbox, path: Option<&str>) -> Result<std::path::PathBuf, String> {
+fn resolve_sandbox_subdir(
+    sandbox: &FileSandbox,
+    path: Option<&str>,
+) -> Result<std::path::PathBuf, String> {
     match path {
         None | Some("") | Some(".") => Ok(sandbox.root().to_path_buf()),
         Some(p) => sandbox.resolve(p),
@@ -1279,7 +1342,11 @@ fn exec_search_files(state: &AppState, session_id: &str, args: &Value) -> ToolRe
     };
 
     let mut walk_builder = ignore::WalkBuilder::new(&anchor);
-    walk_builder.hidden(false).git_ignore(true).git_global(true).git_exclude(true);
+    walk_builder
+        .hidden(false)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true);
     if let Some(g) = file_glob {
         let mut overrides = ignore::overrides::OverrideBuilder::new(&anchor);
         if let Err(e) = overrides.add(g) {
@@ -1295,7 +1362,8 @@ fn exec_search_files(state: &AppState, session_id: &str, args: &Value) -> ToolRe
 
     let root = sandbox.root().to_path_buf();
     let mut matches: Vec<Value> = Vec::new();
-    let mut files_with_matches: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut files_with_matches: std::collections::BTreeSet<String> =
+        std::collections::BTreeSet::new();
     let mut total_matches: usize = 0;
     let mut truncated = false;
 
@@ -1415,10 +1483,7 @@ fn exec_search_code(state: &Arc<AppState>, session_id: &str, args: &Value) -> To
         idx.search(query, limit)
     };
 
-    let query_words: Vec<String> = query
-        .split_whitespace()
-        .map(|w| w.to_lowercase())
-        .collect();
+    let query_words: Vec<String> = query.split_whitespace().map(|w| w.to_lowercase()).collect();
 
     let out: Vec<Value> = results
         .into_iter()
@@ -1450,7 +1515,10 @@ fn extract_bm25_snippet(path: &std::path::Path, query_words: &[String]) -> Strin
         .enumerate()
         .map(|(i, line)| {
             let lower = line.to_lowercase();
-            let hits = query_words.iter().filter(|w| lower.contains(w.as_str())).count();
+            let hits = query_words
+                .iter()
+                .filter(|w| lower.contains(w.as_str()))
+                .count();
             (i, hits)
         })
         .max_by_key(|(_, hits)| *hits)
@@ -1495,9 +1563,17 @@ async fn exec_call_tool(state: &AppState, args: &Value) -> ToolResult {
     let Some(tool_name) = args["tool_name"].as_str().filter(|s| !s.is_empty()) else {
         return missing_arg("tool_name");
     };
-    let call_args = if args["args"].is_null() { json!({}) } else { args["args"].clone() };
+    let call_args = if args["args"].is_null() {
+        json!({})
+    } else {
+        args["args"].clone()
+    };
 
-    match state.mcp_upstream_registry.proxy_tool_call(tool_name, call_args).await {
+    match state
+        .mcp_upstream_registry
+        .proxy_tool_call(tool_name, call_args)
+        .await
+    {
         Ok(result) => {
             let raw = result.to_string();
             let (output, _truncated) = truncate_output(&raw);
@@ -1532,7 +1608,10 @@ fn exec_list_sessions(state: &AppState) -> ToolResult {
 
 async fn exec_spawn_session(state: &Arc<AppState>, session_id: &str, args: &Value) -> ToolResult {
     let cwd = args["cwd"].as_str().map(|s| s.to_string()).or_else(|| {
-        state.file_sandboxes.get(session_id).map(|s| s.root().to_string_lossy().to_string())
+        state
+            .file_sandboxes
+            .get(session_id)
+            .map(|s| s.root().to_string_lossy().to_string())
     });
     let name = args["name"].as_str().map(|s| s.to_string());
 
@@ -1572,7 +1651,12 @@ fn truncate_output(s: &str) -> (String, bool) {
     (truncated, true)
 }
 
-async fn exec_run_command_inner(state: &AppState, session_id: &str, args: &Value, skip_safety: bool) -> ToolResult {
+async fn exec_run_command_inner(
+    state: &AppState,
+    session_id: &str,
+    args: &Value,
+    skip_safety: bool,
+) -> ToolResult {
     let Some(command) = args["command"].as_str() else {
         return missing_arg("command");
     };
@@ -1646,8 +1730,7 @@ async fn exec_run_command_inner(state: &AppState, session_id: &str, args: &Value
             .stderr(std::process::Stdio::piped());
         crate::cli::apply_no_window(cmd.as_std_mut());
     }
-    let mut child = match cmd.spawn()
-    {
+    let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => return ToolResult::err(format!("spawn failed: {e}")),
     };
@@ -1658,14 +1741,18 @@ async fn exec_run_command_inner(state: &AppState, session_id: &str, args: &Value
 
     let stdout_task = tokio::spawn(async move {
         use tokio::io::AsyncReadExt;
-        let Some(mut pipe) = stdout_pipe else { return Vec::new() };
+        let Some(mut pipe) = stdout_pipe else {
+            return Vec::new();
+        };
         let mut buf = Vec::new();
         let _ = pipe.read_to_end(&mut buf).await;
         buf
     });
     let stderr_task = tokio::spawn(async move {
         use tokio::io::AsyncReadExt;
-        let Some(mut pipe) = stderr_pipe else { return Vec::new() };
+        let Some(mut pipe) = stderr_pipe else {
+            return Vec::new();
+        };
         let mut buf = Vec::new();
         let _ = pipe.read_to_end(&mut buf).await;
         buf
@@ -1702,11 +1789,18 @@ async fn exec_run_command_inner(state: &AppState, session_id: &str, args: &Value
             // Timeout — kill the process group.
             #[cfg(unix)]
             if let Some(pid) = child.id() {
-                unsafe { libc::killpg(pid as i32, libc::SIGKILL); }
+                // SAFETY: pid is from tokio Child::id(), a valid Unix PID. killpg
+                // sends SIGKILL to the process group. The i32 cast is safe because
+                // Unix PIDs fit in i32.
+                unsafe {
+                    libc::killpg(pid as i32, libc::SIGKILL);
+                }
             }
             #[cfg(not(unix))]
             let _ = child.kill().await;
             let _ = child.wait().await;
+            let _ = stdout_task.await;
+            let _ = stderr_task.await;
 
             ToolResult::err(
                 json!({
@@ -1725,7 +1819,7 @@ async fn exec_run_command_inner(state: &AppState, session_id: &str, args: &Value
 // ── schedule_task / list_schedules / cancel_schedule ─────────────────────
 
 fn exec_schedule_task(args: &Value) -> ToolResult {
-    use super::scheduler::{load_config, save_config, ScheduledJob};
+    use super::scheduler::{ScheduledJob, load_config, save_config};
 
     let goal = match args["goal"].as_str() {
         Some(g) if !g.trim().is_empty() => g.trim().to_string(),
@@ -1747,10 +1841,19 @@ fn exec_schedule_task(args: &Value) -> ToolResult {
 
     let active_count = config.jobs.iter().filter(|j| j.enabled).count();
     if active_count >= 10 {
-        return ToolResult::err("Maximum 10 active scheduled jobs reached — cancel an existing job first");
+        return ToolResult::err(
+            "Maximum 10 active scheduled jobs reached — cancel an existing job first",
+        );
     }
 
-    let id = format!("agent-{}", uuid::Uuid::new_v4().to_string().split('-').next().unwrap_or("x"));
+    let id = format!(
+        "agent-{}",
+        uuid::Uuid::new_v4()
+            .to_string()
+            .split('-')
+            .next()
+            .unwrap_or("x")
+    );
     // 6-field cron: sec min hour dom month dow
     let cron_expr = format!("0 0/{} * * * *", interval_minutes);
 
@@ -1759,7 +1862,7 @@ fn exec_schedule_task(args: &Value) -> ToolResult {
         cron_expr,
         goal,
         target_session: None,
-        max_duration_secs: super::scheduler::DEFAULT_MAX_DURATION_SECS_PUB,
+        max_duration_secs: super::scheduler::DEFAULT_MAX_DURATION_SECS,
         enabled: true,
         one_shot,
     };
@@ -1769,19 +1872,27 @@ fn exec_schedule_task(args: &Value) -> ToolResult {
         return ToolResult::err(format!("Failed to save schedule: {e}"));
     }
 
-    ToolResult::ok(json!({ "id": id, "interval_minutes": interval_minutes, "one_shot": one_shot }).to_string())
+    ToolResult::ok(
+        json!({ "id": id, "interval_minutes": interval_minutes, "one_shot": one_shot }).to_string(),
+    )
 }
 
 fn exec_list_schedules() -> ToolResult {
     let config = super::scheduler::load_config();
-    let jobs: Vec<Value> = config.jobs.iter().map(|j| json!({
-        "id": j.id,
-        "goal": j.goal,
-        "cron_expr": j.cron_expr,
-        "enabled": j.enabled,
-        "one_shot": j.one_shot,
-        "max_duration_secs": j.max_duration_secs,
-    })).collect();
+    let jobs: Vec<Value> = config
+        .jobs
+        .iter()
+        .map(|j| {
+            json!({
+                "id": j.id,
+                "goal": j.goal,
+                "cron_expr": j.cron_expr,
+                "enabled": j.enabled,
+                "one_shot": j.one_shot,
+                "max_duration_secs": j.max_duration_secs,
+            })
+        })
+        .collect();
     ToolResult::ok(serde_json::to_string(&jobs).unwrap_or_default())
 }
 
@@ -1853,12 +1964,13 @@ async fn dispatch_inner(
         || (fn_name == "drive_agent" && args["command"].is_string());
     if is_cross_session_write
         && let Some(target) = args["session_id"].as_str()
-            && target != session_id
-            && !is_session_unrestricted(state, session_id) {
-                return ToolResult::err(format!(
-                    "Permission denied: agent bound to session {session_id} cannot write to {target}. Enable unrestricted mode for cross-session control."
-                ));
-            }
+        && target != session_id
+        && !is_session_unrestricted(state, session_id)
+    {
+        return ToolResult::err(format!(
+            "Permission denied: agent bound to session {session_id} cannot write to {target}. Enable unrestricted mode for cross-session control."
+        ));
+    }
     match fn_name {
         "read_screen" => exec_read_screen(state, args),
         "send_input" => exec_send_input_inner(state, args, skip_safety),
@@ -2093,7 +2205,10 @@ mod tests {
         let hex = "a".repeat(40);
         let output = redact_secrets(&format!("token={hex}"));
         assert!(output.contains("[REDACTED]"), "got: {output}");
-        assert!(output.starts_with("token="), "context word must be preserved: {output}");
+        assert!(
+            output.starts_with("token="),
+            "context word must be preserved: {output}"
+        );
 
         let output = redact_secrets(&format!("api_key: {hex}"));
         assert!(output.contains("[REDACTED]"), "got: {output}");
@@ -2113,7 +2228,8 @@ mod tests {
         assert_eq!(redact_secrets(diff), diff);
 
         // Cargo.lock — SHA-256 checksum (64 hex)
-        let cargo_lock = r#"checksum = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef""#;
+        let cargo_lock =
+            r#"checksum = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef""#;
         assert_eq!(redact_secrets(cargo_lock), cargo_lock);
 
         // package-lock.json — SHA-512 integrity hash (128 hex)
@@ -2150,7 +2266,8 @@ mod tests {
 
     #[test]
     fn redact_multiple_secrets_same_line() {
-        let input = "KEY1=sk-aaabbbccc111222333444555 KEY2=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn";
+        let input =
+            "KEY1=sk-aaabbbccc111222333444555 KEY2=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn";
         let output = redact_secrets(input);
         assert!(!output.contains("sk-aaa"));
         assert!(!output.contains("ghp_"));
@@ -2162,8 +2279,14 @@ mod tests {
     fn redact_stripe_secret_key() {
         let input = "STRIPE_SECRET_KEY=rk_live_abc123def456ghi789";
         let output = redact_secrets(input);
-        assert!(!output.contains("rk_live_"), "secret value leaked: {output}");
-        assert!(output.contains("STRIPE_SECRET_KEY="), "key name lost: {output}");
+        assert!(
+            !output.contains("rk_live_"),
+            "secret value leaked: {output}"
+        );
+        assert!(
+            output.contains("STRIPE_SECRET_KEY="),
+            "key name lost: {output}"
+        );
     }
 
     #[test]
@@ -2178,20 +2301,34 @@ mod tests {
     fn redact_my_secret_token() {
         let input = "MY_SECRET_TOKEN=abc123def456ghi789";
         let output = redact_secrets(input);
-        assert!(!output.contains("abc123def456"), "secret value leaked: {output}");
-        assert!(output.contains("MY_SECRET_TOKEN="), "key name lost: {output}");
+        assert!(
+            !output.contains("abc123def456"),
+            "secret value leaked: {output}"
+        );
+        assert!(
+            output.contains("MY_SECRET_TOKEN="),
+            "key name lost: {output}"
+        );
     }
 
     #[test]
     fn no_redact_database_host() {
         let input = "DATABASE_HOST=localhost";
-        assert_eq!(redact_secrets(input), input, "non-secret var was incorrectly redacted");
+        assert_eq!(
+            redact_secrets(input),
+            input,
+            "non-secret var was incorrectly redacted"
+        );
     }
 
     #[test]
     fn no_redact_path_var() {
         let input = "PATH=/usr/bin:/usr/local/bin";
-        assert_eq!(redact_secrets(input), input, "PATH was incorrectly redacted");
+        assert_eq!(
+            redact_secrets(input),
+            input,
+            "PATH was incorrectly redacted"
+        );
     }
 
     // ── map_key ────────────────────────────────────────────────
@@ -2261,7 +2398,13 @@ mod tests {
     #[tokio::test]
     async fn dispatch_read_screen_missing_session() {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
-        let result = dispatch(&state, "test", "read_screen", &json!({"session_id": "nope"})).await;
+        let result = dispatch(
+            &state,
+            "test",
+            "read_screen",
+            &json!({"session_id": "nope"}),
+        )
+        .await;
         assert!(!result.success);
         assert!(result.output.contains("No VT buffer"));
     }
@@ -2270,13 +2413,24 @@ mod tests {
     async fn read_screen_returns_cursor() {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
         let vt = crate::state::VtLogBuffer::new(24, 80, 10_000);
-        state.vt_log_buffers.insert("rs-test".to_string(), parking_lot::Mutex::new(vt));
-        let result = dispatch(&state, "rs-test", "read_screen", &json!({
-            "session_id": "rs-test"
-        })).await;
+        state
+            .vt_log_buffers
+            .insert("rs-test".to_string(), parking_lot::Mutex::new(vt));
+        let result = dispatch(
+            &state,
+            "rs-test",
+            "read_screen",
+            &json!({
+                "session_id": "rs-test"
+            }),
+        )
+        .await;
         assert!(result.success, "should succeed: {}", result.output);
         let parsed: serde_json::Value = serde_json::from_str(&result.output).unwrap();
-        assert!(parsed["cursor"].is_number(), "response must include cursor field");
+        assert!(
+            parsed["cursor"].is_number(),
+            "response must include cursor field"
+        );
     }
 
     #[tokio::test]
@@ -2291,11 +2445,19 @@ mod tests {
         for i in 30..40u32 {
             vt.process(format!("new {i}\r\n").as_bytes());
         }
-        state.vt_log_buffers.insert("rs-delta".to_string(), parking_lot::Mutex::new(vt));
-        let result = dispatch(&state, "rs-delta", "read_screen", &json!({
-            "session_id": "rs-delta",
-            "since_cursor": cursor_before
-        })).await;
+        state
+            .vt_log_buffers
+            .insert("rs-delta".to_string(), parking_lot::Mutex::new(vt));
+        let result = dispatch(
+            &state,
+            "rs-delta",
+            "read_screen",
+            &json!({
+                "session_id": "rs-delta",
+                "since_cursor": cursor_before
+            }),
+        )
+        .await;
         assert!(result.success, "should succeed: {}", result.output);
         let parsed: serde_json::Value = serde_json::from_str(&result.output).unwrap();
         assert!(parsed["cursor"].is_number(), "response must include cursor");
@@ -2308,34 +2470,59 @@ mod tests {
     async fn dispatch_send_input_sudo_needs_approval() {
         // sudo moved from Block to NeedsApproval in the local-trust-boundary model.
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
-        let result = dispatch(&state, "test", "send_input", &json!({
-            "session_id": "test",
-            "command": "sudo rm -rf /"
-        })).await;
+        let result = dispatch(
+            &state,
+            "test",
+            "send_input",
+            &json!({
+                "session_id": "test",
+                "command": "sudo rm -rf /"
+            }),
+        )
+        .await;
         assert!(!result.success);
-        assert!(result.needs_approval, "expected needs_approval: {:?}", result);
+        assert!(
+            result.needs_approval,
+            "expected needs_approval: {:?}",
+            result
+        );
     }
 
     #[tokio::test]
     async fn dispatch_send_input_needs_approval_for_rm_rf() {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
-        let result = dispatch(&state, "test", "send_input", &json!({
-            "session_id": "test",
-            "command": "rm -rf /tmp/build"
-        })).await;
+        let result = dispatch(
+            &state,
+            "test",
+            "send_input",
+            &json!({
+                "session_id": "test",
+                "command": "rm -rf /tmp/build"
+            }),
+        )
+        .await;
         assert!(!result.success);
         assert!(result.needs_approval);
         assert!(result.approval_reason.is_some());
-        assert_eq!(result.approval_command.as_deref(), Some("rm -rf /tmp/build"));
+        assert_eq!(
+            result.approval_command.as_deref(),
+            Some("rm -rf /tmp/build")
+        );
     }
 
     #[tokio::test]
     async fn dispatch_send_key_needs_approval_for_ctrl_d() {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
-        let result = dispatch(&state, "test", "send_key", &json!({
-            "session_id": "test",
-            "key": "ctrl-d"
-        })).await;
+        let result = dispatch(
+            &state,
+            "test",
+            "send_key",
+            &json!({
+                "session_id": "test",
+                "key": "ctrl-d"
+            }),
+        )
+        .await;
         assert!(!result.success);
         assert!(result.needs_approval);
         assert!(result.approval_reason.unwrap().contains("high-risk"));
@@ -2345,16 +2532,28 @@ mod tests {
     async fn dispatch_approved_bypasses_safety() {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
         // Normal dispatch returns needs_approval
-        let result = dispatch(&state, "test", "send_input", &json!({
-            "session_id": "test",
-            "command": "rm -rf /tmp/build"
-        })).await;
+        let result = dispatch(
+            &state,
+            "test",
+            "send_input",
+            &json!({
+                "session_id": "test",
+                "command": "rm -rf /tmp/build"
+            }),
+        )
+        .await;
         assert!(result.needs_approval);
         // Approved dispatch skips safety (will fail on missing session, not safety)
-        let result = dispatch_approved(&state, "test", "send_input", &json!({
-            "session_id": "test",
-            "command": "rm -rf /tmp/build"
-        })).await;
+        let result = dispatch_approved(
+            &state,
+            "test",
+            "send_input",
+            &json!({
+                "session_id": "test",
+                "command": "rm -rf /tmp/build"
+            }),
+        )
+        .await;
         assert!(!result.needs_approval);
         assert!(!result.success); // fails because session doesn't exist, not safety
         assert!(result.output.contains("Session not found"));
@@ -2395,7 +2594,13 @@ mod tests {
     #[tokio::test]
     async fn dispatch_get_context_missing_session() {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
-        let result = dispatch(&state, "test", "get_context", &json!({"session_id": "nope"})).await;
+        let result = dispatch(
+            &state,
+            "test",
+            "get_context",
+            &json!({"session_id": "nope"}),
+        )
+        .await;
         assert!(result.success); // Returns defaults for missing session
         assert!(result.output.contains("shell_state"));
     }
@@ -2403,10 +2608,16 @@ mod tests {
     #[tokio::test]
     async fn dispatch_wait_for_invalid_regex() {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
-        let result = dispatch(&state, "test", "wait_for", &json!({
-            "session_id": "test",
-            "pattern": "[invalid"
-        })).await;
+        let result = dispatch(
+            &state,
+            "test",
+            "wait_for",
+            &json!({
+                "session_id": "test",
+                "pattern": "[invalid"
+            }),
+        )
+        .await;
         assert!(!result.success);
         assert!(result.output.contains("Invalid regex"));
     }
@@ -2426,21 +2637,37 @@ mod tests {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
         // Read-only drive_agent (no command) should be allowed cross-session
         // but fail with VT buffer error for nonexistent session
-        let result = dispatch(&state, "test", "drive_agent", &json!({
-            "session_id": "nonexistent",
-            "timeout_ms": 200
-        })).await;
+        let result = dispatch(
+            &state,
+            "test",
+            "drive_agent",
+            &json!({
+                "session_id": "nonexistent",
+                "timeout_ms": 200
+            }),
+        )
+        .await;
         assert!(!result.success, "should fail: {}", result.output);
-        assert!(result.output.contains("No VT buffer"), "expected VT buffer error: {}", result.output);
+        assert!(
+            result.output.contains("No VT buffer"),
+            "expected VT buffer error: {}",
+            result.output
+        );
     }
 
     #[tokio::test]
     async fn drive_agent_invalid_wait_pattern() {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
-        let result = dispatch(&state, "test", "drive_agent", &json!({
-            "session_id": "test",
-            "wait_pattern": "[bad"
-        })).await;
+        let result = dispatch(
+            &state,
+            "test",
+            "drive_agent",
+            &json!({
+                "session_id": "test",
+                "wait_pattern": "[bad"
+            }),
+        )
+        .await;
         assert!(!result.success);
         assert!(result.output.contains("Invalid wait_pattern regex"));
     }
@@ -2448,23 +2675,42 @@ mod tests {
     #[tokio::test]
     async fn drive_agent_safety_check_on_command() {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
-        let result = dispatch(&state, "test", "drive_agent", &json!({
-            "session_id": "test",
-            "command": "sudo rm -rf /"
-        })).await;
+        let result = dispatch(
+            &state,
+            "test",
+            "drive_agent",
+            &json!({
+                "session_id": "test",
+                "command": "sudo rm -rf /"
+            }),
+        )
+        .await;
         assert!(!result.success);
-        assert!(result.needs_approval, "dangerous command should require approval");
+        assert!(
+            result.needs_approval,
+            "dangerous command should require approval"
+        );
     }
 
     #[tokio::test]
     async fn drive_agent_cross_session_write_blocked_without_unrestricted() {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
-        let result = dispatch(&state, "session-A", "drive_agent", &json!({
-            "session_id": "session-B",
-            "command": "echo hi"
-        })).await;
+        let result = dispatch(
+            &state,
+            "session-A",
+            "drive_agent",
+            &json!({
+                "session_id": "session-B",
+                "command": "echo hi"
+            }),
+        )
+        .await;
         assert!(!result.success);
-        assert!(result.output.contains("Permission denied"), "write should be blocked: {}", result.output);
+        assert!(
+            result.output.contains("Permission denied"),
+            "write should be blocked: {}",
+            result.output
+        );
     }
 
     #[tokio::test]
@@ -2472,12 +2718,22 @@ mod tests {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
         // No command = read-only, should NOT be blocked by cross-session guard
         // (will fail for other reasons like missing VT buffer, but not Permission denied)
-        let result = dispatch(&state, "session-A", "drive_agent", &json!({
-            "session_id": "session-B",
-            "timeout_ms": 200
-        })).await;
+        let result = dispatch(
+            &state,
+            "session-A",
+            "drive_agent",
+            &json!({
+                "session_id": "session-B",
+                "timeout_ms": 200
+            }),
+        )
+        .await;
         assert!(!result.success);
-        assert!(!result.output.contains("Permission denied"), "read-only should not be blocked: {}", result.output);
+        assert!(
+            !result.output.contains("Permission denied"),
+            "read-only should not be blocked: {}",
+            result.output
+        );
     }
 
     #[tokio::test]
@@ -2485,17 +2741,29 @@ mod tests {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
         // Insert a VtLogBuffer so the wait loop can read it
         let vt = crate::state::VtLogBuffer::new(24, 80, 10_000);
-        state.vt_log_buffers.insert("test-read".to_string(), parking_lot::Mutex::new(vt));
+        state
+            .vt_log_buffers
+            .insert("test-read".to_string(), parking_lot::Mutex::new(vt));
         // Set shell state to idle so it returns immediately
         state.shell_states.insert(
             "test-read".to_string(),
             std::sync::atomic::AtomicU8::new(0), // 0 = idle
         );
-        let result = dispatch(&state, "test-read", "drive_agent", &json!({
-            "session_id": "test-read",
-            "timeout_ms": 500
-        })).await;
-        assert!(result.success, "read-only drive_agent should succeed: {}", result.output);
+        let result = dispatch(
+            &state,
+            "test-read",
+            "drive_agent",
+            &json!({
+                "session_id": "test-read",
+                "timeout_ms": 500
+            }),
+        )
+        .await;
+        assert!(
+            result.success,
+            "read-only drive_agent should succeed: {}",
+            result.output
+        );
         let parsed: serde_json::Value = serde_json::from_str(&result.output).unwrap();
         assert!(parsed["shell_state"].is_string());
         assert!(parsed["screen"].is_string());
@@ -2505,18 +2773,28 @@ mod tests {
     async fn drive_agent_response_includes_cursor() {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
         let vt = crate::state::VtLogBuffer::new(24, 80, 10_000);
-        state.vt_log_buffers.insert("cur-test".to_string(), parking_lot::Mutex::new(vt));
-        state.shell_states.insert(
-            "cur-test".to_string(),
-            std::sync::atomic::AtomicU8::new(0),
-        );
-        let result = dispatch(&state, "cur-test", "drive_agent", &json!({
-            "session_id": "cur-test",
-            "timeout_ms": 200
-        })).await;
+        state
+            .vt_log_buffers
+            .insert("cur-test".to_string(), parking_lot::Mutex::new(vt));
+        state
+            .shell_states
+            .insert("cur-test".to_string(), std::sync::atomic::AtomicU8::new(0));
+        let result = dispatch(
+            &state,
+            "cur-test",
+            "drive_agent",
+            &json!({
+                "session_id": "cur-test",
+                "timeout_ms": 200
+            }),
+        )
+        .await;
         assert!(result.success, "should succeed: {}", result.output);
         let parsed: serde_json::Value = serde_json::from_str(&result.output).unwrap();
-        assert!(parsed["cursor"].is_number(), "response must include cursor field");
+        assert!(
+            parsed["cursor"].is_number(),
+            "response must include cursor field"
+        );
     }
 
     #[tokio::test]
@@ -2528,26 +2806,40 @@ mod tests {
             vt.process(format!("line {i}\r\n").as_bytes());
         }
         let cursor_before = vt.total_lines();
-        assert!(cursor_before > 0, "scrollback must have lines after overflow");
+        assert!(
+            cursor_before > 0,
+            "scrollback must have lines after overflow"
+        );
         // Feed more lines after recording cursor
         for i in 30..40u32 {
             vt.process(format!("new {i}\r\n").as_bytes());
         }
-        state.vt_log_buffers.insert("delta-test".to_string(), parking_lot::Mutex::new(vt));
+        state
+            .vt_log_buffers
+            .insert("delta-test".to_string(), parking_lot::Mutex::new(vt));
         state.shell_states.insert(
             "delta-test".to_string(),
             std::sync::atomic::AtomicU8::new(0),
         );
-        let result = dispatch(&state, "delta-test", "drive_agent", &json!({
-            "session_id": "delta-test",
-            "since_cursor": cursor_before,
-            "timeout_ms": 200
-        })).await;
+        let result = dispatch(
+            &state,
+            "delta-test",
+            "drive_agent",
+            &json!({
+                "session_id": "delta-test",
+                "since_cursor": cursor_before,
+                "timeout_ms": 200
+            }),
+        )
+        .await;
         assert!(result.success, "should succeed: {}", result.output);
         let parsed: serde_json::Value = serde_json::from_str(&result.output).unwrap();
         assert!(parsed["cursor"].is_number(), "response must include cursor");
         let new_cursor = parsed["cursor"].as_u64().unwrap();
-        assert!(new_cursor > cursor_before as u64, "cursor must advance after new lines");
+        assert!(
+            new_cursor > cursor_before as u64,
+            "cursor must advance after new lines"
+        );
     }
 
     // ── Filesystem tools ───────────────────────────────────────
@@ -2565,7 +2857,13 @@ mod tests {
     #[tokio::test]
     async fn read_file_requires_sandbox() {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
-        let r = dispatch(&state, "nosession", "read_file", &json!({ "file_path": "x.txt" })).await;
+        let r = dispatch(
+            &state,
+            "nosession",
+            "read_file",
+            &json!({ "file_path": "x.txt" }),
+        )
+        .await;
         assert!(!r.success);
         assert!(r.output.contains("No filesystem sandbox"));
     }
@@ -2641,7 +2939,13 @@ mod tests {
         let path = dir.path().join("big.txt");
         let f = std::fs::File::create(&path).unwrap();
         f.set_len(MAX_FILE_BYTES + 1).unwrap();
-        let r = dispatch(&state, "s1", "read_file", &json!({ "file_path": "big.txt" })).await;
+        let r = dispatch(
+            &state,
+            "s1",
+            "read_file",
+            &json!({ "file_path": "big.txt" }),
+        )
+        .await;
         assert!(!r.success);
         assert!(r.output.contains("too large"));
     }
@@ -2787,7 +3091,10 @@ mod tests {
         assert!(r.output.contains("old_string_not_unique"));
         assert!(r.output.contains("\"occurrences\":3"));
         // Verify file is unchanged.
-        assert_eq!(std::fs::read_to_string(dir.path().join("a.txt")).unwrap(), "x x x");
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+            "x x x"
+        );
     }
 
     #[tokio::test]
@@ -2886,7 +3193,10 @@ mod tests {
                 _ => json!({ "file_path": "nope" }),
             };
             let r = dispatch(&state, "s1", name, &args).await;
-            assert!(!r.output.contains("Unknown tool"), "tool {name} did not route");
+            assert!(
+                !r.output.contains("Unknown tool"),
+                "tool {name} did not route"
+            );
         }
     }
 
@@ -2921,7 +3231,10 @@ mod tests {
         assert_eq!(entries.len(), 2);
         assert_eq!(parsed["total"], 2);
         assert_eq!(parsed["truncated"], false);
-        let paths: Vec<&str> = entries.iter().map(|e| e["path"].as_str().unwrap()).collect();
+        let paths: Vec<&str> = entries
+            .iter()
+            .map(|e| e["path"].as_str().unwrap())
+            .collect();
         assert!(paths.iter().any(|p| p.ends_with("a.rs")));
         assert!(paths.iter().any(|p| p.ends_with("b.rs")));
         assert!(!paths.iter().any(|p| p.ends_with("c.txt")));
@@ -2955,7 +3268,13 @@ mod tests {
     #[tokio::test]
     async fn list_files_rejects_invalid_glob() {
         let (_d, state) = fs_test_state("s1");
-        let r = dispatch(&state, "s1", "list_files", &json!({ "pattern": "[unterminated" })).await;
+        let r = dispatch(
+            &state,
+            "s1",
+            "list_files",
+            &json!({ "pattern": "[unterminated" }),
+        )
+        .await;
         assert!(!r.success);
         assert!(r.output.contains("invalid glob"));
     }
@@ -3030,7 +3349,13 @@ mod tests {
         let (dir, state) = fs_test_state("s1");
         let body: String = (0..60).map(|_| "needle\n").collect();
         std::fs::write(dir.path().join("a.txt"), body).unwrap();
-        let r = dispatch(&state, "s1", "search_files", &json!({ "pattern": "needle" })).await;
+        let r = dispatch(
+            &state,
+            "s1",
+            "search_files",
+            &json!({ "pattern": "needle" }),
+        )
+        .await;
         assert!(r.success, "{}", r.output);
         let parsed: Value = serde_json::from_str(&r.output).unwrap();
         assert_eq!(parsed["matches"].as_array().unwrap().len(), 50);
@@ -3048,12 +3373,26 @@ mod tests {
         std::fs::write(dir.path().join("visible.txt"), "needle\n").unwrap();
         // Init a git repo so ignore respects .gitignore.
         std::fs::create_dir_all(dir.path().join(".git")).unwrap();
-        let r = dispatch(&state, "s1", "search_files", &json!({ "pattern": "needle" })).await;
+        let r = dispatch(
+            &state,
+            "s1",
+            "search_files",
+            &json!({ "pattern": "needle" }),
+        )
+        .await;
         assert!(r.success, "{}", r.output);
         let parsed: Value = serde_json::from_str(&r.output).unwrap();
         let files = parsed["files_with_matches"].as_array().unwrap();
-        assert!(files.iter().any(|f| f.as_str().unwrap().ends_with("visible.txt")));
-        assert!(!files.iter().any(|f| f.as_str().unwrap().ends_with("ignored.txt")));
+        assert!(
+            files
+                .iter()
+                .any(|f| f.as_str().unwrap().ends_with("visible.txt"))
+        );
+        assert!(
+            !files
+                .iter()
+                .any(|f| f.as_str().unwrap().ends_with("ignored.txt"))
+        );
     }
 
     #[tokio::test]
@@ -3080,7 +3419,13 @@ mod tests {
         let (dir, state) = fs_test_state("s1");
         std::fs::write(dir.path().join("bin"), [0xff, 0xfe, 0xff, 0xfe]).unwrap();
         std::fs::write(dir.path().join("a.txt"), "needle\n").unwrap();
-        let r = dispatch(&state, "s1", "search_files", &json!({ "pattern": "needle" })).await;
+        let r = dispatch(
+            &state,
+            "s1",
+            "search_files",
+            &json!({ "pattern": "needle" }),
+        )
+        .await;
         assert!(r.success, "{}", r.output);
         let parsed: Value = serde_json::from_str(&r.output).unwrap();
         assert_eq!(parsed["total_matches"], 1);
@@ -3105,7 +3450,13 @@ mod tests {
     #[tokio::test]
     async fn run_command_requires_sandbox() {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
-        let r = dispatch(&state, "none", "run_command", &json!({ "command": "echo hi" })).await;
+        let r = dispatch(
+            &state,
+            "none",
+            "run_command",
+            &json!({ "command": "echo hi" }),
+        )
+        .await;
         assert!(!r.success);
         assert!(r.output.contains("No filesystem sandbox"));
     }
@@ -3129,7 +3480,13 @@ mod tests {
     #[tokio::test]
     async fn run_command_captures_stdout() {
         let (_d, state) = fs_test_state("s1");
-        let r = dispatch(&state, "s1", "run_command", &json!({ "command": "echo hello_world" })).await;
+        let r = dispatch(
+            &state,
+            "s1",
+            "run_command",
+            &json!({ "command": "echo hello_world" }),
+        )
+        .await;
         assert!(r.success, "{}", r.output);
         let parsed: Value = serde_json::from_str(&r.output).unwrap();
         assert_eq!(parsed["exit_code"], 0);
@@ -3155,7 +3512,13 @@ mod tests {
     #[tokio::test]
     async fn run_command_returns_exit_code() {
         let (_d, state) = fs_test_state("s1");
-        let r = dispatch(&state, "s1", "run_command", &json!({ "command": "exit 42" })).await;
+        let r = dispatch(
+            &state,
+            "s1",
+            "run_command",
+            &json!({ "command": "exit 42" }),
+        )
+        .await;
         assert!(r.success, "{}", r.output);
         let parsed: Value = serde_json::from_str(&r.output).unwrap();
         assert_eq!(parsed["exit_code"], 42);
@@ -3327,7 +3690,13 @@ mod tests {
     #[tokio::test]
     async fn search_code_requires_sandbox() {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
-        let r = dispatch(&state, "none", "search_code", &json!({ "query": "authentication" })).await;
+        let r = dispatch(
+            &state,
+            "none",
+            "search_code",
+            &json!({ "query": "authentication" }),
+        )
+        .await;
         assert!(!r.success);
         assert!(r.output.contains("No filesystem sandbox"));
     }
@@ -3360,7 +3729,13 @@ mod tests {
             .content_indices
             .insert(canonical_root.to_string_lossy().to_string(), index_arc);
 
-        let r = dispatch(&state, "s1", "search_code", &json!({ "query": "authentication" })).await;
+        let r = dispatch(
+            &state,
+            "s1",
+            "search_code",
+            &json!({ "query": "authentication" }),
+        )
+        .await;
         assert!(r.success, "{}", r.output);
         let parsed: Value = serde_json::from_str(&r.output).unwrap();
         let results = parsed["results"].as_array().unwrap();
@@ -3409,7 +3784,13 @@ mod tests {
     #[tokio::test]
     async fn search_tools_response_has_required_fields() {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
-        let r = dispatch(&state, "s1", "search_tools", &json!({ "query": "jira", "limit": 5 })).await;
+        let r = dispatch(
+            &state,
+            "s1",
+            "search_tools",
+            &json!({ "query": "jira", "limit": 5 }),
+        )
+        .await;
         assert!(r.success, "{}", r.output);
         let parsed: Value = serde_json::from_str(&r.output).unwrap();
         assert!(parsed["tools"].is_array());
@@ -3429,9 +3810,18 @@ mod tests {
     #[tokio::test]
     async fn call_tool_unknown_upstream_returns_error() {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
-        let r = dispatch(&state, "s1", "call_tool", &json!({ "tool_name": "no_such__tool" })).await;
+        let r = dispatch(
+            &state,
+            "s1",
+            "call_tool",
+            &json!({ "tool_name": "no_such__tool" }),
+        )
+        .await;
         assert!(!r.success);
-        assert!(!r.output.contains("Unknown tool:"), "should route call_tool, not fall through to unknown-tool handler");
+        assert!(
+            !r.output.contains("Unknown tool:"),
+            "should route call_tool, not fall through to unknown-tool handler"
+        );
     }
 
     // ── schedule_task validation ────────────────────────────────

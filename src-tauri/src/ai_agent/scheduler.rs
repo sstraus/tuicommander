@@ -16,8 +16,7 @@ use crate::state::AppState;
 
 const CONFIG_FILE: &str = "ai-cron.json";
 const TICK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
-const DEFAULT_MAX_DURATION_SECS: u64 = 300;
-pub(crate) const DEFAULT_MAX_DURATION_SECS_PUB: u64 = DEFAULT_MAX_DURATION_SECS;
+pub(crate) const DEFAULT_MAX_DURATION_SECS: u64 = 300;
 
 // ── Job definition ───────────────────────────────────────────────
 
@@ -107,9 +106,9 @@ impl Scheduler {
 
             self.last_fire.lock().insert(job.id.clone(), now);
 
-            if super::conversation_engine::ACTIVE_CONVERSATIONS.contains_key(
-                job.target_session.as_deref().unwrap_or(""),
-            ) {
+            if super::conversation_engine::ACTIVE_CONVERSATIONS
+                .contains_key(job.target_session.as_deref().unwrap_or(""))
+            {
                 tracing::info!(job_id = %job.id, "Skipping: target session busy");
                 continue;
             }
@@ -156,11 +155,18 @@ impl Scheduler {
         let one_shot = job.one_shot;
         let state = self.state.clone();
 
-        match start_conversation(self.state.clone(), session_id.clone(), job.goal.clone(), config).await {
+        match start_conversation(
+            self.state.clone(),
+            session_id.clone(),
+            job.goal.clone(),
+            config,
+        )
+        .await
+        {
             Ok(mut rx) => {
                 tracing::info!(job_id = %job_id, session_id, "Scheduled agent started");
                 // Consume events in a background task; enforce max_duration_secs.
-                tauri::async_runtime::spawn(async move {
+                tokio::spawn(async move {
                     let deadline = tokio::time::sleep(timeout);
                     tokio::pin!(deadline);
                     let mut timed_out = false;
@@ -191,7 +197,8 @@ impl Scheduler {
                     }
                     // Disable one-shot jobs after completion.
                     if one_shot {
-                        let mut cfg = crate::config::load_json_config::<SchedulerConfig>(CONFIG_FILE);
+                        let mut cfg =
+                            crate::config::load_json_config::<SchedulerConfig>(CONFIG_FILE);
                         if let Some(j) = cfg.jobs.iter_mut().find(|j| j.id == job_id) {
                             j.enabled = false;
                         }
@@ -199,15 +206,13 @@ impl Scheduler {
                             tracing::warn!(job_id = %job_id, "Failed to disable one-shot job: {e}");
                         }
                     }
-                    // Emit completion event for frontend toast.
-                    use tauri::Emitter as _;
-                    if let Some(ref app) = *state.app_handle.read() {
-                        let _ = app.emit("scheduled-job-completed", serde_json::json!({
-                            "job_id": job_id,
-                            "goal": job_goal,
-                            "timed_out": timed_out,
-                        }));
-                    }
+                    let _ = state
+                        .event_bus
+                        .send(crate::state::AppEvent::ScheduledJobCompleted {
+                            job_id: job_id.clone(),
+                            goal: job_goal,
+                            timed_out,
+                        });
                 });
             }
             Err(e) => {
@@ -230,10 +235,7 @@ fn should_fire(
         .unwrap_or(now - chrono::Duration::seconds(TICK_INTERVAL.as_secs() as i64 + 1));
     drop(guard);
 
-    schedule
-        .after(&after)
-        .take(1)
-        .any(|next| next <= now)
+    schedule.after(&after).take(1).any(|next| next <= now)
 }
 
 // ── Config persistence commands ──────────────────────────────────

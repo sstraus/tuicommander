@@ -131,9 +131,9 @@ impl FileSandbox {
                             // Create intermediate dirs and return resolved path.
                             std::fs::create_dir_all(parent)
                                 .map_err(|e| format!("create_dir_all failed: {e}"))?;
-                            let file_name = p.file_name().ok_or_else(|| {
-                                format!("path has no file name: {}", p.display())
-                            })?;
+                            let file_name = p
+                                .file_name()
+                                .ok_or_else(|| format!("path has no file name: {}", p.display()))?;
                             return Ok(canon_parent.join(file_name));
                         }
                     }

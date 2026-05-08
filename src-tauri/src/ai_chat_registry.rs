@@ -6,8 +6,8 @@
 
 use dashmap::DashMap;
 use serde::Serialize;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::Mutex;
 
 // ---------------------------------------------------------------------------
@@ -77,14 +77,19 @@ struct ChatSlot {
 #[cfg(not(feature = "desktop"))]
 impl ChatSlot {
     fn new() -> Self {
-        Self { state: ConversationState::default() }
+        Self {
+            state: ConversationState::default(),
+        }
     }
 }
 
 #[cfg(feature = "desktop")]
 impl ChatSlot {
     fn new() -> Self {
-        Self { state: ConversationState::default(), subscribers: Vec::new() }
+        Self {
+            state: ConversationState::default(),
+            subscribers: Vec::new(),
+        }
     }
 }
 
@@ -133,9 +138,7 @@ impl ChatRegistry {
     fn get_or_create(&self, chat_id: &str) -> Arc<Mutex<ChatSlot>> {
         self.chats
             .entry(chat_id.to_string())
-            .or_insert_with(|| {
-                Arc::new(Mutex::new(ChatSlot::new()))
-            })
+            .or_insert_with(|| Arc::new(Mutex::new(ChatSlot::new())))
             .clone()
     }
 
@@ -175,10 +178,7 @@ impl ChatRegistry {
         let mut guard = slot.lock().await;
         let id = self.next_sub_id.fetch_add(1, Ordering::Relaxed);
         let snapshot = guard.state.snapshot();
-        guard.subscribers.push(Subscriber {
-            id,
-            channel,
-        });
+        guard.subscribers.push(Subscriber { id, channel });
         SubscribeResult {
             subscription_id: id,
             snapshot,
@@ -266,8 +266,13 @@ impl ChatRegistry {
             let mut guard = slot.lock().await;
             guard.state.streaming_text.push_str(delta);
         }
-        self.fan_out(chat_id, ChatEvent::Chunk { delta: delta.to_string() })
-            .await;
+        self.fan_out(
+            chat_id,
+            ChatEvent::Chunk {
+                delta: delta.to_string(),
+            },
+        )
+        .await;
     }
 
     /// Clear conversation state and notify subscribers.
@@ -303,12 +308,14 @@ impl ChatRegistry {
 // Tauri commands
 // ---------------------------------------------------------------------------
 
-
 fn validate_id(id: &str) -> Result<(), String> {
     if id.is_empty() || id.len() > 64 {
         return Err("ID must be 1-64 characters".to_string());
     }
-    if !id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+    if !id
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
         return Err("ID must be alphanumeric, dash, or underscore".to_string());
     }
     Ok(())

@@ -1,22 +1,22 @@
 use parking_lot::Mutex;
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use serde::Serialize;
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(feature = "desktop")]
 use tauri::{AppHandle, State};
 use uuid::Uuid;
 
 use crate::pty::spawn_reader_thread;
 use crate::state::{
-    AgentConfig, AppState, OutputRingBuffer, PtyConfig, PtySession, VtLogBuffer,
-    OUTPUT_RING_BUFFER_CAPACITY, VT_LOG_BUFFER_CAPACITY,
+    AgentConfig, AppState, OUTPUT_RING_BUFFER_CAPACITY, OutputRingBuffer, PtyConfig, PtySession,
+    VT_LOG_BUFFER_CAPACITY, VtLogBuffer,
 };
 
 // resolve_cli and has_cli are now in crate::cli — re-export for backwards compatibility
-pub(crate) use crate::cli::resolve_cli;
 use crate::cli::has_cli;
+pub(crate) use crate::cli::resolve_cli;
 
 /// Format a path with line/col for --goto style editors (vscode, cursor, windsurf)
 fn format_goto_arg(path: &str, line: Option<u32>, col: Option<u32>) -> String {
@@ -31,8 +31,7 @@ fn format_goto_arg(path: &str, line: Option<u32>, col: Option<u32>) -> String {
 /// Falls back to `open -a` on macOS when the CLI binary isn't installed.
 fn goto_editor_cmd(
     cli_name: &str,
-    #[cfg_attr(not(target_os = "macos"), allow(unused))]
-    app_name: &str,
+    #[cfg_attr(not(target_os = "macos"), allow(unused))] app_name: &str,
     path: &str,
     line: Option<u32>,
     col: Option<u32>,
@@ -40,14 +39,24 @@ fn goto_editor_cmd(
     let resolved = resolve_cli(cli_name);
     if resolved != cli_name || has_cli(cli_name) {
         let mut c = Command::new(&resolved);
-        if line.is_some() { c.arg("--goto"); }
+        if line.is_some() {
+            c.arg("--goto");
+        }
         c.arg(format_goto_arg(path, line, col));
         return c;
     }
     #[cfg(target_os = "macos")]
-    { let mut c = Command::new("open"); c.arg("-a").arg(app_name).arg(path); c }
+    {
+        let mut c = Command::new("open");
+        c.arg("-a").arg(app_name).arg(path);
+        c
+    }
     #[cfg(not(target_os = "macos"))]
-    { let mut c = Command::new(cli_name); c.arg(format_goto_arg(path, line, col)); c }
+    {
+        let mut c = Command::new(cli_name);
+        c.arg(format_goto_arg(path, line, col));
+        c
+    }
 }
 
 /// Open a path in an IDE or application.
@@ -73,14 +82,24 @@ pub(crate) fn open_in_app(
         // Neovim uses +line
         "neovim" => {
             let mut c = Command::new(resolve_cli("nvim"));
-            if let Some(l) = line { c.arg(format!("+{l}")); }
+            if let Some(l) = line {
+                c.arg(format!("+{l}"));
+            }
             c.arg(&path);
             c
         }
-        "smerge" => { let mut c = Command::new(resolve_cli("smerge")); c.arg(&path); c }
+        "smerge" => {
+            let mut c = Command::new(resolve_cli("smerge"));
+            c.arg(&path);
+            c
+        }
 
         // Terminal emulators with CLI (cross-platform)
-        "kitty" => { let mut c = Command::new(resolve_cli("kitty")); c.arg("--directory").arg(&path); c }
+        "kitty" => {
+            let mut c = Command::new(resolve_cli("kitty"));
+            c.arg("--directory").arg(&path);
+            c
+        }
         "wezterm" if has_cli("wezterm") => {
             let mut c = Command::new(resolve_cli("wezterm"));
             c.arg("start").arg("--cwd").arg(&path);
@@ -93,38 +112,90 @@ pub(crate) fn open_in_app(
         }
 
         // macOS .app bundles (use 'open -a')
-        app_name if cfg!(target_os = "macos") => {
-            match app_name {
-                "xcode" => { let mut c = Command::new("open"); c.arg("-a").arg("Xcode").arg(&path); c }
-                "sourcetree" => { let mut c = Command::new("open"); c.arg("-a").arg("Sourcetree").arg(&path); c }
-                "github-desktop" => { let mut c = Command::new("open"); c.arg("-a").arg("GitHub Desktop").arg(&path); c }
-                "fork" => { let mut c = Command::new("open"); c.arg("-a").arg("Fork").arg(&path); c }
-                "gitkraken" => { let mut c = Command::new("open"); c.arg("-a").arg("GitKraken").arg(&path); c }
-                "ghostty" => { let mut c = Command::new("open"); c.arg("-a").arg("Ghostty").arg(&path); c }
-                "wezterm" => { let mut c = Command::new("open"); c.arg("-a").arg("WezTerm").arg(&path); c }
-                "alacritty" => { let mut c = Command::new("open"); c.arg("-a").arg("Alacritty").arg(&path); c }
-                "warp" => { let mut c = Command::new("open"); c.arg("-a").arg("Warp").arg(&path); c }
-                "terminal" => { let mut c = Command::new("open"); c.arg("-a").arg("Terminal").arg(&path); c }
-                "finder" => { let mut c = Command::new("open"); c.arg(&path); c }
-                "editor" => {
-                    if let Ok(editor) = std::env::var("EDITOR") {
-                        let mut c = Command::new(&editor);
-                        if let Some(l) = line { c.arg(format!("+{l}")); }
-                        c.arg(&path);
-                        c
-                    } else {
-                        return Err("$EDITOR not set".to_string());
-                    }
-                }
-                _ => return Err(format!("Unknown app: {app_name}")),
+        app_name if cfg!(target_os = "macos") => match app_name {
+            "xcode" => {
+                let mut c = Command::new("open");
+                c.arg("-a").arg("Xcode").arg(&path);
+                c
             }
-        }
+            "sourcetree" => {
+                let mut c = Command::new("open");
+                c.arg("-a").arg("Sourcetree").arg(&path);
+                c
+            }
+            "github-desktop" => {
+                let mut c = Command::new("open");
+                c.arg("-a").arg("GitHub Desktop").arg(&path);
+                c
+            }
+            "fork" => {
+                let mut c = Command::new("open");
+                c.arg("-a").arg("Fork").arg(&path);
+                c
+            }
+            "gitkraken" => {
+                let mut c = Command::new("open");
+                c.arg("-a").arg("GitKraken").arg(&path);
+                c
+            }
+            "ghostty" => {
+                let mut c = Command::new("open");
+                c.arg("-a").arg("Ghostty").arg(&path);
+                c
+            }
+            "wezterm" => {
+                let mut c = Command::new("open");
+                c.arg("-a").arg("WezTerm").arg(&path);
+                c
+            }
+            "alacritty" => {
+                let mut c = Command::new("open");
+                c.arg("-a").arg("Alacritty").arg(&path);
+                c
+            }
+            "warp" => {
+                let mut c = Command::new("open");
+                c.arg("-a").arg("Warp").arg(&path);
+                c
+            }
+            "terminal" => {
+                let mut c = Command::new("open");
+                c.arg("-a").arg("Terminal").arg(&path);
+                c
+            }
+            "finder" => {
+                let mut c = Command::new("open");
+                c.arg(&path);
+                c
+            }
+            "editor" => {
+                if let Ok(editor) = std::env::var("EDITOR") {
+                    let mut c = Command::new(&editor);
+                    if let Some(l) = line {
+                        c.arg(format!("+{l}"));
+                    }
+                    c.arg(&path);
+                    c
+                } else {
+                    return Err("$EDITOR not set".to_string());
+                }
+            }
+            _ => return Err(format!("Unknown app: {app_name}")),
+        },
 
         // Linux: system terminal + file manager
         #[cfg(target_os = "linux")]
         "terminal" => {
             // Try common terminals in order
-            let terminals = ["ghostty", "wezterm", "alacritty", "kitty", "gnome-terminal", "konsole", "xterm"];
+            let terminals = [
+                "ghostty",
+                "wezterm",
+                "alacritty",
+                "kitty",
+                "gnome-terminal",
+                "konsole",
+                "xterm",
+            ];
             if let Some(term) = terminals.iter().find(|t| has_cli(t)) {
                 let mut c = Command::new(term);
                 c.arg(&path);
@@ -134,7 +205,11 @@ pub(crate) fn open_in_app(
             }
         }
         #[cfg(target_os = "linux")]
-        "finder" => { let mut c = Command::new("xdg-open"); c.arg(&path); c }
+        "finder" => {
+            let mut c = Command::new("xdg-open");
+            c.arg(&path);
+            c
+        }
 
         // Windows: system terminal, file manager, and app launchers
         #[cfg(target_os = "windows")]
@@ -151,12 +226,23 @@ pub(crate) fn open_in_app(
             }
         }
         #[cfg(target_os = "windows")]
-        "finder" => { let mut c = Command::new("explorer"); c.arg(&path); c }
+        "finder" => {
+            let mut c = Command::new("explorer");
+            c.arg(&path);
+            c
+        }
         #[cfg(target_os = "windows")]
-        app_name if matches!(app_name, "sourcetree" | "github-desktop" | "fork" | "gitkraken") => {
+        app_name
+            if matches!(
+                app_name,
+                "sourcetree" | "github-desktop" | "fork" | "gitkraken"
+            ) =>
+        {
             let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
             let exe = match app_name {
-                "sourcetree" => format!("{}\\Atlassian\\SourceTree\\SourceTree.exe", local_app_data),
+                "sourcetree" => {
+                    format!("{}\\Atlassian\\SourceTree\\SourceTree.exe", local_app_data)
+                }
                 "github-desktop" => format!("{}\\GitHubDesktop\\GitHubDesktop.exe", local_app_data),
                 "fork" => format!("{}\\Fork\\Fork.exe", local_app_data),
                 "gitkraken" => format!("{}\\gitkraken\\gitkraken.exe", local_app_data),
@@ -248,28 +334,43 @@ pub(crate) fn detect_installed_ides() -> Vec<String> {
         let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
         let program_files = std::env::var("ProgramFiles").unwrap_or_default();
         let win_apps: &[(&str, Vec<String>)] = &[
-            ("vscode", vec![
-                format!("{}\\Programs\\Microsoft VS Code\\Code.exe", local_app_data),
-                format!("{}\\Microsoft VS Code\\Code.exe", program_files),
-            ]),
-            ("cursor", vec![
-                format!("{}\\Programs\\cursor\\Cursor.exe", local_app_data),
-            ]),
-            ("windsurf", vec![
-                format!("{}\\Programs\\windsurf\\Windsurf.exe", local_app_data),
-            ]),
-            ("sourcetree", vec![
-                format!("{}\\Atlassian\\SourceTree\\SourceTree.exe", local_app_data),
-            ]),
-            ("github-desktop", vec![
-                format!("{}\\GitHubDesktop\\GitHubDesktop.exe", local_app_data),
-            ]),
-            ("fork", vec![
-                format!("{}\\Fork\\Fork.exe", local_app_data),
-            ]),
-            ("gitkraken", vec![
-                format!("{}\\gitkraken\\gitkraken.exe", local_app_data),
-            ]),
+            (
+                "vscode",
+                vec![
+                    format!("{}\\Programs\\Microsoft VS Code\\Code.exe", local_app_data),
+                    format!("{}\\Microsoft VS Code\\Code.exe", program_files),
+                ],
+            ),
+            (
+                "cursor",
+                vec![format!("{}\\Programs\\cursor\\Cursor.exe", local_app_data)],
+            ),
+            (
+                "windsurf",
+                vec![format!(
+                    "{}\\Programs\\windsurf\\Windsurf.exe",
+                    local_app_data
+                )],
+            ),
+            (
+                "sourcetree",
+                vec![format!(
+                    "{}\\Atlassian\\SourceTree\\SourceTree.exe",
+                    local_app_data
+                )],
+            ),
+            (
+                "github-desktop",
+                vec![format!(
+                    "{}\\GitHubDesktop\\GitHubDesktop.exe",
+                    local_app_data
+                )],
+            ),
+            ("fork", vec![format!("{}\\Fork\\Fork.exe", local_app_data)]),
+            (
+                "gitkraken",
+                vec![format!("{}\\gitkraken\\gitkraken.exe", local_app_data)],
+            ),
         ];
         for (id, paths) in win_apps {
             if !installed.contains(&id.to_string())
@@ -282,9 +383,10 @@ pub(crate) fn detect_installed_ides() -> Vec<String> {
 
     // $EDITOR support
     if let Ok(editor) = std::env::var("EDITOR")
-        && !editor.is_empty() {
-            installed.push("editor".to_string());
-        }
+        && !editor.is_empty()
+    {
+        installed.push("editor".to_string());
+    }
 
     // System utilities (always available)
     installed.push("terminal".to_string());
@@ -322,11 +424,15 @@ pub(crate) fn detect_agent_binary(binary: String) -> AgentBinaryDetection {
 
     #[cfg(windows)]
     let candidates = {
-        let program_files = std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".to_string());
+        let program_files =
+            std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".to_string());
         let mut v = vec![
             format!("{}\\.cargo\\bin\\{}.exe", home, binary),
             format!("{}\\go\\bin\\{}.exe", home, binary),
-            format!("{}\\AppData\\Local\\Programs\\{}\\{}.exe", home, binary, binary),
+            format!(
+                "{}\\AppData\\Local\\Programs\\{}\\{}.exe",
+                home, binary, binary
+            ),
             format!("{}\\scoop\\shims\\{}.exe", home, binary),
             format!("{}\\{}.exe", program_files, binary),
             format!("{}\\{}\\{}.exe", program_files, binary, binary),
@@ -345,23 +451,28 @@ pub(crate) fn detect_agent_binary(binary: String) -> AgentBinaryDetection {
     };
 
     // Use platform-appropriate PATH lookup (which on Unix, where on Windows)
-    let checker = if cfg!(target_os = "windows") { "where" } else { "which" };
+    let checker = if cfg!(target_os = "windows") {
+        "where"
+    } else {
+        "which"
+    };
     let mut checker_cmd = Command::new(checker);
     checker_cmd.arg(&binary);
     crate::cli::apply_no_window(&mut checker_cmd);
     if let Ok(output) = checker_cmd.output()
-        && output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            // `where` on Windows may return multiple lines; take the first
-            let path = path.lines().next().unwrap_or("").to_string();
-            if !path.is_empty() && std::path::Path::new(&path).exists() {
-                let version = get_binary_version(&path);
-                return AgentBinaryDetection {
-                    path: Some(path),
-                    version,
-                };
-            }
+        && output.status.success()
+    {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        // `where` on Windows may return multiple lines; take the first
+        let path = path.lines().next().unwrap_or("").to_string();
+        if !path.is_empty() && std::path::Path::new(&path).exists() {
+            let version = get_binary_version(&path);
+            return AgentBinaryDetection {
+                path: Some(path),
+                version,
+            };
         }
+    }
 
     // Fall back to known locations
     for candidate in &candidates {
@@ -494,25 +605,27 @@ fn get_binary_version(path: &str) -> Option<String> {
     cmd.arg("--version");
     crate::cli::apply_no_window(&mut cmd);
     if let Ok(output) = cmd.output()
-        && output.status.success() {
-            let version = String::from_utf8_lossy(&output.stdout);
-            let first_line = version.lines().next().unwrap_or("").trim();
-            if !first_line.is_empty() {
-                return Some(first_line.to_string());
-            }
+        && output.status.success()
+    {
+        let version = String::from_utf8_lossy(&output.stdout);
+        let first_line = version.lines().next().unwrap_or("").trim();
+        if !first_line.is_empty() {
+            return Some(first_line.to_string());
         }
+    }
     // Try -v
     let mut cmd = Command::new(path);
     cmd.arg("-v");
     crate::cli::apply_no_window(&mut cmd);
     if let Ok(output) = cmd.output()
-        && output.status.success() {
-            let version = String::from_utf8_lossy(&output.stdout);
-            let first_line = version.lines().next().unwrap_or("").trim();
-            if !first_line.is_empty() {
-                return Some(first_line.to_string());
-            }
+        && output.status.success()
+    {
+        let version = String::from_utf8_lossy(&output.stdout);
+        let first_line = version.lines().next().unwrap_or("").trim();
+        if !first_line.is_empty() {
+            return Some(first_line.to_string());
         }
+    }
     None
 }
 
@@ -521,7 +634,8 @@ fn get_binary_version(path: &str) -> Option<String> {
 pub(crate) fn detect_claude_binary() -> Result<String, String> {
     let detection = detect_agent_binary("claude".to_string());
     detection.path.ok_or_else(|| {
-        "Claude binary not found. Install with: npm install -g @anthropic-ai/claude-code".to_string()
+        "Claude binary not found. Install with: npm install -g @anthropic-ai/claude-code"
+            .to_string()
     })
 }
 
@@ -547,9 +661,9 @@ pub(crate) async fn spawn_agent(
         expanded
     } else if let Some(ref agent_type) = agent_config.agent_type {
         let detection = detect_agent_binary(agent_type.clone());
-        detection.path.ok_or_else(|| {
-            format!("Agent binary '{agent_type}' not found")
-        })?
+        detection
+            .path
+            .ok_or_else(|| format!("Agent binary '{agent_type}' not found"))?
     } else {
         detect_claude_binary()?
     };
@@ -636,7 +750,10 @@ pub(crate) async fn spawn_agent(
         }),
     );
     state.metrics.total_spawned.fetch_add(1, Ordering::Relaxed);
-    state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .active_sessions
+        .fetch_add(1, Ordering::Relaxed);
 
     // Create ring buffer and VT log buffer for this session
     state.output_buffers.insert(
@@ -647,7 +764,9 @@ pub(crate) async fn spawn_agent(
         session_id.clone(),
         Mutex::new(VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY)),
     );
-    state.last_output_ms.insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
+    state
+        .last_output_ms
+        .insert(session_id.clone(), std::sync::atomic::AtomicU64::new(0));
 
     spawn_reader_thread(
         reader,
