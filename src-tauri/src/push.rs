@@ -6,12 +6,12 @@ use std::path::PathBuf;
 
 /// Known push service host suffixes. Endpoints not matching these are rejected (SSRF prevention).
 const ALLOWED_PUSH_HOSTS: &[&str] = &[
-    ".googleapis.com",   // Google FCM
-    ".google.com",       // Google FCM alternate
-    ".mozilla.com",      // Mozilla autopush
-    ".windows.com",      // Windows Push Notification Service
+    ".googleapis.com", // Google FCM
+    ".google.com",     // Google FCM alternate
+    ".mozilla.com",    // Mozilla autopush
+    ".windows.com",    // Windows Push Notification Service
     ".notify.windows.com",
-    ".apple.com",        // Apple Push Notification Service
+    ".apple.com", // Apple Push Notification Service
     ".push.apple.com",
     ".web.push.apple.com",
 ];
@@ -48,8 +48,13 @@ pub(crate) fn validate_push_endpoint(endpoint: &str) -> Result<(), String> {
     let host = uri.host().ok_or("Push endpoint has no host")?;
     let host_lower = host.to_lowercase();
 
-    if !ALLOWED_PUSH_HOSTS.iter().any(|suffix| host_lower.ends_with(suffix)) {
-        return Err(format!("Push endpoint host '{host}' is not a known push service"));
+    if !ALLOWED_PUSH_HOSTS
+        .iter()
+        .any(|suffix| host_lower.ends_with(suffix))
+    {
+        return Err(format!(
+            "Push endpoint host '{host}' is not a known push service"
+        ));
     }
 
     Ok(())
@@ -125,7 +130,6 @@ impl PushStore {
         self.subs.read().is_empty()
     }
 
-
     fn persist(&self, subs: &[PushSubscription]) {
         match serde_json::to_string_pretty(subs) {
             Ok(json) => {
@@ -175,7 +179,10 @@ pub(crate) async fn send_push_batch(
 
     let mut stale_endpoints: Vec<String> = Vec::new();
 
-    if !config.services.push.enabled || config.services.push.vapid_private_key.is_empty() || subs.is_empty() {
+    if !config.services.push.enabled
+        || config.services.push.vapid_private_key.is_empty()
+        || subs.is_empty()
+    {
         return stale_endpoints;
     }
 
@@ -201,7 +208,12 @@ pub(crate) async fn send_push_batch(
     let futures: Vec<_> = subs
         .iter()
         .filter_map(|sub| {
-            build_push_request(sub, &vapid_kp, &config.services.push.vapid_subject, &payload_bytes)
+            build_push_request(
+                sub,
+                &vapid_kp,
+                &config.services.push.vapid_subject,
+                &payload_bytes,
+            )
         })
         .map(|(endpoint, request)| {
             let client = http_client.clone();
@@ -218,7 +230,10 @@ pub(crate) async fn send_push_batch(
 
                 match req_builder.body(body).send().await {
                     Ok(resp) if resp.status().as_u16() == 410 => {
-                        tracing::info!(source = "push", "Subscription revoked (410 Gone), removing");
+                        tracing::info!(
+                            source = "push",
+                            "Subscription revoked (410 Gone), removing"
+                        );
                         Some(endpoint)
                     }
                     Ok(resp) if resp.status().is_success() || resp.status().as_u16() == 201 => {
@@ -231,10 +246,16 @@ pub(crate) async fn send_push_batch(
                         // VAPID key mismatch means the subscription was created with
                         // a different server key — it will never work again, treat as stale.
                         if body_text.contains("VapidPkHashMismatch") || status == 403 {
-                            tracing::warn!(source = "push", "Subscription stale (status={status}), removing: {body_text}");
+                            tracing::warn!(
+                                source = "push",
+                                "Subscription stale (status={status}), removing: {body_text}"
+                            );
                             return Some(endpoint);
                         }
-                        tracing::warn!(source = "push", "Push delivery failed: status={status} body={body_text}");
+                        tracing::warn!(
+                            source = "push",
+                            "Push delivery failed: status={status} body={body_text}"
+                        );
                         None
                     }
                     Err(e) => {
@@ -325,7 +346,10 @@ mod tests {
 
         let sub = PushSubscription {
             endpoint: "https://fcm.googleapis.com/fcm/send/test".to_string(),
-            keys: PushSubscriptionKeys { p256dh: "test-key".to_string(), auth: "test-auth".to_string() },
+            keys: PushSubscriptionKeys {
+                p256dh: "test-key".to_string(),
+                auth: "test-auth".to_string(),
+            },
             created_at: chrono::Utc::now(),
         };
         store.upsert(sub.clone());
@@ -351,7 +375,10 @@ mod tests {
             let store = PushStore::load(dir.path());
             store.upsert(PushSubscription {
                 endpoint: "https://example.com/push".to_string(),
-                keys: PushSubscriptionKeys { p256dh: "key".to_string(), auth: "auth".to_string() },
+                keys: PushSubscriptionKeys {
+                    p256dh: "key".to_string(),
+                    auth: "auth".to_string(),
+                },
                 created_at: chrono::Utc::now(),
             });
         }
@@ -364,8 +391,13 @@ mod tests {
     #[test]
     fn validate_push_endpoint_accepts_known_services() {
         assert!(validate_push_endpoint("https://fcm.googleapis.com/fcm/send/abc").is_ok());
-        assert!(validate_push_endpoint("https://updates.push.services.mozilla.com/wpush/v2/abc").is_ok());
-        assert!(validate_push_endpoint("https://wns2-par02p.notify.windows.com/w/?token=abc").is_ok());
+        assert!(
+            validate_push_endpoint("https://updates.push.services.mozilla.com/wpush/v2/abc")
+                .is_ok()
+        );
+        assert!(
+            validate_push_endpoint("https://wns2-par02p.notify.windows.com/w/?token=abc").is_ok()
+        );
         assert!(validate_push_endpoint("https://web.push.apple.com/abc").is_ok());
     }
 

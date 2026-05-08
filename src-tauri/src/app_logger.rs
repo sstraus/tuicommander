@@ -136,7 +136,11 @@ impl LogRingBuffer {
             return Vec::new();
         }
 
-        let effective_limit = if limit == 0 { self.count } else { limit.min(self.count) };
+        let effective_limit = if limit == 0 {
+            self.count
+        } else {
+            limit.min(self.count)
+        };
 
         // Start index: oldest entry in the buffer
         let start = if self.count < self.capacity {
@@ -215,12 +219,7 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for RingBufferLayer {
         }
 
         let mut buf = self.buffer.lock();
-        buf.push(
-            level.to_string(),
-            source,
-            message,
-            None,
-        );
+        buf.push(level.to_string(), source, message, None);
     }
 }
 
@@ -306,14 +305,18 @@ pub(crate) fn init_tracing(buffer: Arc<Mutex<LogRingBuffer>>) {
 fn cleanup_old_logs(log_dir: &std::path::Path) {
     let cutoff = std::time::SystemTime::now()
         - std::time::Duration::from_secs(LOG_RETENTION_DAYS * 24 * 3600);
-    let Ok(entries) = std::fs::read_dir(log_dir) else { return };
+    let Ok(entries) = std::fs::read_dir(log_dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("log") {
             continue;
         }
         let Ok(meta) = path.metadata() else { continue };
-        let Ok(modified) = meta.modified() else { continue };
+        let Ok(modified) = meta.modified() else {
+            continue;
+        };
         if modified < cutoff {
             let _ = std::fs::remove_file(&path);
         }
@@ -341,10 +344,7 @@ pub(crate) fn push_log(
 /// Retrieve log entries. Returns up to `limit` most recent entries (0 = all).
 #[cfg(feature = "desktop")]
 #[tauri::command]
-pub(crate) fn get_logs(
-    state: State<'_, Arc<AppState>>,
-    limit: Option<usize>,
-) -> Vec<LogEntry> {
+pub(crate) fn get_logs(state: State<'_, Arc<AppState>>, limit: Option<usize>) -> Vec<LogEntry> {
     let buf = state.log_buffer.lock();
     buf.get_entries(limit.unwrap_or(0))
 }
@@ -363,26 +363,26 @@ pub(crate) fn clear_logs(state: State<'_, Arc<AppState>>) {
 /// Use this in contexts where you have an `AppHandle` but not a `State<>` extractor
 /// (e.g. watcher callbacks, plugin lifecycle hooks). Falls back silently if state
 /// is not yet initialised.
-pub(crate) fn log_via_handle(
-    handle: &tauri::AppHandle,
-    level: &str,
-    source: &str,
-    message: &str,
-) {
+pub(crate) fn log_via_handle(handle: &tauri::AppHandle, level: &str, source: &str, message: &str) {
     let state = handle.state::<Arc<AppState>>();
     let mut buf = state.log_buffer.lock();
-    buf.push(level.to_string(), source.to_string(), message.to_string(), None);
+    buf.push(
+        level.to_string(),
+        source.to_string(),
+        message.to_string(),
+        None,
+    );
 }
 
 /// Push a log entry from internal Rust code using an AppState reference directly.
-pub(crate) fn log_via_state(
-    state: &Arc<AppState>,
-    level: &str,
-    source: &str,
-    message: &str,
-) {
+pub(crate) fn log_via_state(state: &Arc<AppState>, level: &str, source: &str, message: &str) {
     let mut buf = state.log_buffer.lock();
-    buf.push(level.to_string(), source.to_string(), message.to_string(), None);
+    buf.push(
+        level.to_string(),
+        source.to_string(),
+        message.to_string(),
+        None,
+    );
 }
 
 // ---------------------------------------------------------------------------

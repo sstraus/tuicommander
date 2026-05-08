@@ -2,15 +2,14 @@ use serde::Serialize;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
 #[cfg(feature = "desktop")]
 use tauri::State;
 
 use crate::error_classification::calculate_backoff_delay;
 use crate::state::{AppState, GIT_CACHE_TTL, GITHUB_CACHE_TTL};
-
 
 /// Resolve a GitHub API token from all available sources.
 /// Delegates to `github_auth::resolve_token_with_source()` — single source of truth
@@ -130,7 +129,11 @@ impl GitHubCircuitBreaker {
     pub(crate) fn record_rate_limit(&self, wait_secs: u64) {
         let delay = std::time::Duration::from_secs(wait_secs);
         *self.rate_limit_until.write() = Some(Instant::now() + delay);
-        tracing::warn!(source = "github", backoff_secs = wait_secs, "Rate limited — backing off");
+        tracing::warn!(
+            source = "github",
+            backoff_secs = wait_secs,
+            "Rate limited — backing off"
+        );
     }
 
     /// Record a failed API call. Opens the circuit after threshold failures.
@@ -145,7 +148,12 @@ impl GitHubCircuitBreaker {
             );
             let delay = std::time::Duration::from_millis(delay_ms as u64);
             *self.open_until.write() = Some(Instant::now() + delay);
-            tracing::warn!(source = "github", failures = count, backoff_secs = delay.as_secs_f64(), "Circuit breaker open");
+            tracing::warn!(
+                source = "github",
+                failures = count,
+                backoff_secs = delay.as_secs_f64(),
+                "Circuit breaker open"
+            );
         }
     }
 }
@@ -205,11 +213,13 @@ pub(crate) fn check_graphql_errors(
     };
 
     // Rate-limit errors always bubble up — partial data is stale anyway
-    let has_rate_limit_error = errors.iter().any(|e| {
-        e["type"].as_str() == Some("RATE_LIMITED")
-    });
+    let has_rate_limit_error = errors
+        .iter()
+        .any(|e| e["type"].as_str() == Some("RATE_LIMITED"));
     if has_rate_limit_error {
-        let msg = errors[0]["message"].as_str().unwrap_or("GraphQL rate limit");
+        let msg = errors[0]["message"]
+            .as_str()
+            .unwrap_or("GraphQL rate limit");
         return Err(GqlError::RateLimit {
             reset_at: ratelimit_reset,
             retry_after,
@@ -223,7 +233,9 @@ pub(crate) fn check_graphql_errors(
         return Ok(());
     }
 
-    let msg = errors[0]["message"].as_str().unwrap_or("Unknown GraphQL error");
+    let msg = errors[0]["message"]
+        .as_str()
+        .unwrap_or("Unknown GraphQL error");
     Err(GqlError::Other(format!("GraphQL error: {msg}")))
 }
 
@@ -361,13 +373,20 @@ pub(crate) async fn graphql_with_retry(
             state.github_circuit_breaker.record_success();
             Ok(response)
         }
-        Err(GqlError::RateLimit { reset_at, retry_after, message }) => {
+        Err(GqlError::RateLimit {
+            reset_at,
+            retry_after,
+            message,
+        }) => {
             let wait = rate_limit_wait_secs(reset_at, retry_after);
             state.github_circuit_breaker.record_rate_limit(wait);
             Err(format!("rate-limit: {message}"))
         }
         Err(GqlError::Auth(msg)) => {
-            tracing::warn!(source = "github", "401 with current token, trying fallback candidates");
+            tracing::warn!(
+                source = "github",
+                "401 with current token, trying fallback candidates"
+            );
             // Try other candidates
             let candidates = resolve_github_token_candidates();
             for (candidate, candidate_source) in &candidates {
@@ -383,7 +402,11 @@ pub(crate) async fn graphql_with_retry(
                         return Ok(response);
                     }
                     Err(GqlError::Auth(_)) => continue, // Try next candidate
-                    Err(GqlError::RateLimit { reset_at, retry_after, message }) => {
+                    Err(GqlError::RateLimit {
+                        reset_at,
+                        retry_after,
+                        message,
+                    }) => {
                         let wait = rate_limit_wait_secs(reset_at, retry_after);
                         state.github_circuit_breaker.record_rate_limit(wait);
                         return Err(format!("rate-limit: {message}"));
@@ -591,8 +614,12 @@ fn parse_pr_node(v: &serde_json::Value) -> Option<BranchPrStatus> {
             let count = entry["count"].as_u64().unwrap_or(0) as u32;
             match entry["state"].as_str().unwrap_or("") {
                 "SUCCESS" | "NEUTRAL" | "SKIPPED" => passed += count,
-                "FAILURE" | "ERROR" | "TIMED_OUT" | "CANCELLED" | "STARTUP_FAILURE" => failed += count,
-                "ACTION_REQUIRED" | "STALE" | "QUEUED" | "IN_PROGRESS" | "WAITING" | "PENDING" => pending += count,
+                "FAILURE" | "ERROR" | "TIMED_OUT" | "CANCELLED" | "STARTUP_FAILURE" => {
+                    failed += count
+                }
+                "ACTION_REQUIRED" | "STALE" | "QUEUED" | "IN_PROGRESS" | "WAITING" | "PENDING" => {
+                    pending += count
+                }
                 _ => pending += count,
             }
         }
@@ -612,26 +639,38 @@ fn parse_pr_node(v: &serde_json::Value) -> Option<BranchPrStatus> {
     let total = passed + failed + pending;
 
     let mergeable = v["mergeable"].as_str().unwrap_or("UNKNOWN").to_string();
-    let merge_state_status = v["mergeStateStatus"].as_str().unwrap_or("UNKNOWN").to_string();
+    let merge_state_status = v["mergeStateStatus"]
+        .as_str()
+        .unwrap_or("UNKNOWN")
+        .to_string();
     let review_decision = v["reviewDecision"].as_str().unwrap_or("").to_string();
     let is_draft = v["isDraft"].as_bool().unwrap_or(false);
 
-    let labels = v["labels"]["nodes"].as_array()
-        .map(|arr| arr.iter().filter_map(|l| {
-            let color = l["color"].as_str().unwrap_or("").to_string();
-            let (text_color, background_color) = if color.len() == 6 {
-                let text = if is_light_color(&color) { "#1e1e1e" } else { "#e5e5e5" };
-                (text.to_string(), hex_to_rgba(&color, LABEL_BG_OPACITY))
-            } else {
-                (String::new(), String::new())
-            };
-            Some(PrLabel {
-                name: l["name"].as_str()?.to_string(),
-                color,
-                text_color,
-                background_color,
-            })
-        }).collect())
+    let labels = v["labels"]["nodes"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|l| {
+                    let color = l["color"].as_str().unwrap_or("").to_string();
+                    let (text_color, background_color) = if color.len() == 6 {
+                        let text = if is_light_color(&color) {
+                            "#1e1e1e"
+                        } else {
+                            "#e5e5e5"
+                        };
+                        (text.to_string(), hex_to_rgba(&color, LABEL_BG_OPACITY))
+                    } else {
+                        (String::new(), String::new())
+                    };
+                    Some(PrLabel {
+                        name: l["name"].as_str()?.to_string(),
+                        color,
+                        text_color,
+                        background_color,
+                    })
+                })
+                .collect()
+        })
         .unwrap_or_default();
 
     let base_ref_name = v["baseRefName"].as_str().unwrap_or("").to_string();
@@ -639,13 +678,13 @@ fn parse_pr_node(v: &serde_json::Value) -> Option<BranchPrStatus> {
     let created_at = v["createdAt"].as_str().unwrap_or("").to_string();
     let updated_at = v["updatedAt"].as_str().unwrap_or("").to_string();
 
-    let merge_state_label = classify_merge_state(
-        Some(mergeable.as_str()),
-        Some(merge_state_status.as_str()),
-    );
-    let review_state_label = classify_review_state(
-        if review_decision.is_empty() { None } else { Some(review_decision.as_str()) },
-    );
+    let merge_state_label =
+        classify_merge_state(Some(mergeable.as_str()), Some(merge_state_status.as_str()));
+    let review_state_label = classify_review_state(if review_decision.is_empty() {
+        None
+    } else {
+        Some(review_decision.as_str())
+    });
 
     Some(BranchPrStatus {
         branch,
@@ -655,7 +694,12 @@ fn parse_pr_node(v: &serde_json::Value) -> Option<BranchPrStatus> {
         url,
         additions,
         deletions,
-        checks: CheckSummary { passed, failed, pending, total },
+        checks: CheckSummary {
+            passed,
+            failed,
+            pending,
+            total,
+        },
         check_details: vec![], // Populated on-demand via per-PR query
         author,
         commits,
@@ -696,11 +740,8 @@ async fn get_viewer_login(state: &AppState) -> Result<String, String> {
     if let Some(login) = state.github_viewer_login.read().as_ref() {
         return Ok(login.clone());
     }
-    let response = graphql_with_retry(
-        state,
-        "query { viewer { login } }",
-        serde_json::Value::Null,
-    ).await?;
+    let response =
+        graphql_with_retry(state, "query { viewer { login } }", serde_json::Value::Null).await?;
     let login = response["data"]["viewer"]["login"]
         .as_str()
         .ok_or_else(|| "Could not resolve viewer login".to_string())?
@@ -716,10 +757,10 @@ async fn get_viewer_login(state: &AppState) -> Result<String, String> {
 pub(crate) struct GitHubIssue {
     pub(crate) number: i32,
     pub(crate) title: String,
-    pub(crate) state: String,        // OPEN, CLOSED
+    pub(crate) state: String, // OPEN, CLOSED
     pub(crate) url: String,
     pub(crate) author: String,
-    pub(crate) labels: Vec<PrLabel>,  // Reuse PrLabel — same GitHub schema
+    pub(crate) labels: Vec<PrLabel>, // Reuse PrLabel — same GitHub schema
     pub(crate) assignees: Vec<String>,
     pub(crate) milestone: Option<String>,
     pub(crate) comments_count: i32,
@@ -735,26 +776,40 @@ fn parse_issue_node(v: &serde_json::Value) -> Option<GitHubIssue> {
     let url = v["url"].as_str().unwrap_or("").to_string();
     let author = v["author"]["login"].as_str().unwrap_or("").to_string();
 
-    let labels = v["labels"]["nodes"].as_array()
-        .map(|arr| arr.iter().filter_map(|l| {
-            let color = l["color"].as_str().unwrap_or("").to_string();
-            let (text_color, background_color) = if color.len() == 6 {
-                let text = if is_light_color(&color) { "#1e1e1e" } else { "#e5e5e5" };
-                (text.to_string(), hex_to_rgba(&color, LABEL_BG_OPACITY))
-            } else {
-                (String::new(), String::new())
-            };
-            Some(PrLabel {
-                name: l["name"].as_str()?.to_string(),
-                color,
-                text_color,
-                background_color,
-            })
-        }).collect())
+    let labels = v["labels"]["nodes"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|l| {
+                    let color = l["color"].as_str().unwrap_or("").to_string();
+                    let (text_color, background_color) = if color.len() == 6 {
+                        let text = if is_light_color(&color) {
+                            "#1e1e1e"
+                        } else {
+                            "#e5e5e5"
+                        };
+                        (text.to_string(), hex_to_rgba(&color, LABEL_BG_OPACITY))
+                    } else {
+                        (String::new(), String::new())
+                    };
+                    Some(PrLabel {
+                        name: l["name"].as_str()?.to_string(),
+                        color,
+                        text_color,
+                        background_color,
+                    })
+                })
+                .collect()
+        })
         .unwrap_or_default();
 
-    let assignees = v["assignees"]["nodes"].as_array()
-        .map(|arr| arr.iter().filter_map(|a| a["login"].as_str().map(String::from)).collect())
+    let assignees = v["assignees"]["nodes"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|a| a["login"].as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
 
     let milestone = v["milestone"]["title"].as_str().map(String::from);
@@ -836,7 +891,10 @@ pub(crate) async fn get_all_issues_impl(
     }
 
     let now = Instant::now();
-    state.git_cache.github_repo_cooldown.retain(|_key, expiry| *expiry > now);
+    state
+        .git_cache
+        .github_repo_cooldown
+        .retain(|_key, expiry| *expiry > now);
 
     let repos: Vec<(String, String, String)> = paths
         .iter()
@@ -845,7 +903,11 @@ pub(crate) async fn get_all_issues_impl(
             let url = get_github_remote_url(&repo_path)?;
             let (owner, name) = parse_remote_url(&url)?;
             let cooldown_key = format!("{owner}/{name}");
-            if state.git_cache.github_repo_cooldown.contains_key(&cooldown_key) {
+            if state
+                .git_cache
+                .github_repo_cooldown
+                .contains_key(&cooldown_key)
+            {
                 return None;
             }
             Some((path.clone(), owner, name))
@@ -889,7 +951,11 @@ fn build_unified_batch_query(
     filter_mode: &str,
     viewer: &str,
 ) -> (String, Vec<(String, String)>) {
-    let states = if include_merged { "[OPEN, MERGED]" } else { "[OPEN]" };
+    let states = if include_merged {
+        "[OPEN, MERGED]"
+    } else {
+        "[OPEN]"
+    };
     let pr_node_fields = r#"number title state url headRefName headRefOid baseRefName isDraft
         additions deletions mergeable mergeStateStatus reviewDecision
         createdAt updatedAt
@@ -949,11 +1015,17 @@ pub(crate) async fn get_all_batch_impl(
     etag_cache: Option<&mut std::collections::HashMap<String, String>>,
 ) -> Result<BatchPollResult, String> {
     if state.github_token.read().is_none() {
-        return Ok(BatchPollResult { prs: Default::default(), issues: Default::default() });
+        return Ok(BatchPollResult {
+            prs: Default::default(),
+            issues: Default::default(),
+        });
     }
 
     let now = Instant::now();
-    state.git_cache.github_repo_cooldown.retain(|_key, expiry| *expiry > now);
+    state
+        .git_cache
+        .github_repo_cooldown
+        .retain(|_key, expiry| *expiry > now);
 
     let all_repos: Vec<(String, String, String)> = paths
         .iter()
@@ -962,7 +1034,11 @@ pub(crate) async fn get_all_batch_impl(
             let url = get_github_remote_url(&repo_path)?;
             let (owner, name) = parse_remote_url(&url)?;
             let cooldown_key = format!("{owner}/{name}");
-            if state.git_cache.github_repo_cooldown.contains_key(&cooldown_key) {
+            if state
+                .git_cache
+                .github_repo_cooldown
+                .contains_key(&cooldown_key)
+            {
                 return None;
             }
             Some((path.clone(), owner, name))
@@ -970,13 +1046,19 @@ pub(crate) async fn get_all_batch_impl(
         .collect();
 
     if all_repos.is_empty() {
-        return Ok(BatchPollResult { prs: Default::default(), issues: Default::default() });
+        return Ok(BatchPollResult {
+            prs: Default::default(),
+            issues: Default::default(),
+        });
     }
 
     let repos = if let Some(cache) = etag_cache {
         let changed = filter_changed_repos(&all_repos, cache, state).await;
         if changed.is_empty() {
-            return Ok(BatchPollResult { prs: Default::default(), issues: Default::default() });
+            return Ok(BatchPollResult {
+                prs: Default::default(),
+                issues: Default::default(),
+            });
         }
         changed
     } else {
@@ -995,10 +1077,9 @@ pub(crate) async fn get_all_batch_impl(
 
     // Store rate-limit budget for proactive throttling in the poller
     if let Some(remaining) = response["data"]["rateLimit"]["remaining"].as_u64() {
-        state.github_rate_limit_remaining.store(
-            remaining as u32,
-            std::sync::atomic::Ordering::Relaxed,
-        );
+        state
+            .github_rate_limit_remaining
+            .store(remaining as u32, std::sync::atomic::Ordering::Relaxed);
     }
 
     let alias_repo_names: std::collections::HashMap<&str, (&str, &str)> = repos
@@ -1016,11 +1097,18 @@ pub(crate) async fn get_all_batch_impl(
         if repo_json.is_null() {
             if let Some((owner, name)) = alias_repo_names.get(alias.as_str()) {
                 let cooldown_key = format!("{owner}/{name}");
-                let was_known = state.git_cache.github_repo_cooldown.contains_key(&cooldown_key);
+                let was_known = state
+                    .git_cache
+                    .github_repo_cooldown
+                    .contains_key(&cooldown_key);
                 let expiry = Instant::now() + std::time::Duration::from_secs(24 * 3600);
-                state.git_cache.github_repo_cooldown.insert(cooldown_key, expiry);
+                state
+                    .git_cache
+                    .github_repo_cooldown
+                    .insert(cooldown_key, expiry);
                 if !was_known {
-                    let msg = format!("Repository {owner}/{name} not found on GitHub — cooldown 24h");
+                    let msg =
+                        format!("Repository {owner}/{name} not found on GitHub — cooldown 24h");
                     let mut buf = state.log_buffer.lock();
                     buf.push("warn".into(), "github".into(), msg, None);
                 }
@@ -1029,13 +1117,16 @@ pub(crate) async fn get_all_batch_impl(
         }
 
         if let Some(nodes) = repo_json["pullRequests"]["nodes"].as_array() {
-            let mut statuses: Vec<BranchPrStatus> = nodes.iter().filter_map(parse_pr_node).collect();
+            let mut statuses: Vec<BranchPrStatus> =
+                nodes.iter().filter_map(parse_pr_node).collect();
             stamp_merge_policy(&mut statuses, repo_json);
 
             if include_merged && statuses.iter().any(|s| s.state == "MERGED") {
                 let branch_tips = local_branch_tips(Path::new(path));
                 statuses.retain(|s| {
-                    if s.state != "MERGED" || s.head_ref_oid.is_empty() { return true; }
+                    if s.state != "MERGED" || s.head_ref_oid.is_empty() {
+                        return true;
+                    }
                     match branch_tips.get(&s.branch) {
                         Some(tip) => tip == &s.head_ref_oid,
                         None => true,
@@ -1043,19 +1134,24 @@ pub(crate) async fn get_all_batch_impl(
                 });
             }
 
-            AppState::set_cached(&state.git_cache.github_status, path.clone(), statuses.clone());
+            AppState::set_cached(
+                &state.git_cache.github_status,
+                path.clone(),
+                statuses.clone(),
+            );
             pr_results.insert(path.clone(), statuses);
         }
 
-        if include_issues
-            && let Some(nodes) = repo_json["issues"]["nodes"].as_array()
-        {
+        if include_issues && let Some(nodes) = repo_json["issues"]["nodes"].as_array() {
             let issues: Vec<GitHubIssue> = nodes.iter().filter_map(parse_issue_node).collect();
             issue_results.insert(path.clone(), issues);
         }
     }
 
-    Ok(BatchPollResult { prs: pr_results, issues: issue_results })
+    Ok(BatchPollResult {
+        prs: pr_results,
+        issues: issue_results,
+    })
 }
 
 /// Fetch issues for a single repo (Tauri command).
@@ -1090,7 +1186,10 @@ pub(crate) async fn close_issue_impl(
     issue_number: i64,
     state: &AppState,
 ) -> Result<(), String> {
-    let token = state.github_token.read().clone()
+    let token = state
+        .github_token
+        .read()
+        .clone()
         .ok_or_else(|| "No GitHub token available".to_string())?;
     let remote_url = get_github_remote_url(std::path::Path::new(repo_path))
         .ok_or_else(|| "No GitHub remote URL found".to_string())?;
@@ -1100,7 +1199,8 @@ pub(crate) async fn close_issue_impl(
     let url = format!("https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}");
     let body = serde_json::json!({ "state": "closed" });
 
-    let response = state.http_client
+    let response = state
+        .http_client
         .patch(&url)
         .header("Authorization", format!("Bearer {token}"))
         .header("User-Agent", "tuicommander")
@@ -1138,7 +1238,10 @@ pub(crate) async fn reopen_issue_impl(
     issue_number: i64,
     state: &AppState,
 ) -> Result<(), String> {
-    let token = state.github_token.read().clone()
+    let token = state
+        .github_token
+        .read()
+        .clone()
         .ok_or_else(|| "No GitHub token available".to_string())?;
     let remote_url = get_github_remote_url(std::path::Path::new(repo_path))
         .ok_or_else(|| "No GitHub remote URL found".to_string())?;
@@ -1148,7 +1251,8 @@ pub(crate) async fn reopen_issue_impl(
     let url = format!("https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}");
     let body = serde_json::json!({ "state": "open" });
 
-    let response = state.http_client
+    let response = state
+        .http_client
         .patch(&url)
         .header("Authorization", format!("Bearer {token}"))
         .header("User-Agent", "tuicommander")
@@ -1311,13 +1415,18 @@ pub(crate) async fn get_repo_pr_statuses(
     let state = state.inner().clone();
     // Skip cache when include_merged is true (startup poll only)
     if !include_merged
-        && let Some(cached) = AppState::get_cached(&state.git_cache.github_status, &path, GITHUB_CACHE_TTL)
+        && let Some(cached) =
+            AppState::get_cached(&state.git_cache.github_status, &path, GITHUB_CACHE_TTL)
     {
         return Ok(cached);
     }
 
     let statuses = get_repo_pr_statuses_impl(&path, include_merged, &state).await?;
-    AppState::set_cached(&state.git_cache.github_status, path.clone(), statuses.clone());
+    AppState::set_cached(
+        &state.git_cache.github_status,
+        path.clone(),
+        statuses.clone(),
+    );
     Ok(statuses)
 }
 
@@ -1326,7 +1435,11 @@ pub(crate) async fn get_repo_pr_statuses(
 fn local_branch_tips(repo_path: &Path) -> std::collections::HashMap<String, String> {
     let mut tips = std::collections::HashMap::new();
     let output = crate::git_cli::git_cmd(repo_path)
-        .args(["for-each-ref", "--format=%(refname:short)\t%(objectname)", "refs/heads/"])
+        .args([
+            "for-each-ref",
+            "--format=%(refname:short)\t%(objectname)",
+            "refs/heads/",
+        ])
         .run_silent();
     if let Some(out) = output {
         for line in out.stdout.lines() {
@@ -1345,7 +1458,11 @@ fn build_multi_repo_pr_query(
     repos: &[(String, String, String)], // Vec<(path, owner, name)>
     include_merged: bool,
 ) -> (String, Vec<(String, String)>) {
-    let states = if include_merged { "[OPEN, MERGED]" } else { "[OPEN]" };
+    let states = if include_merged {
+        "[OPEN, MERGED]"
+    } else {
+        "[OPEN]"
+    };
     let node_fields = r#"number title state url headRefName headRefOid baseRefName isDraft
         additions deletions mergeable mergeStateStatus reviewDecision
         createdAt updatedAt
@@ -1415,8 +1532,7 @@ pub(crate) fn get_github_status_impl(path: &str) -> GitHubStatus {
     let has_remote = get_github_remote_url(&repo_path).is_some();
 
     // Read current branch from .git/HEAD (no subprocess)
-    let current_branch = crate::git::read_branch_from_head(&repo_path)
-        .unwrap_or_default();
+    let current_branch = crate::git::read_branch_from_head(&repo_path).unwrap_or_default();
 
     if !has_remote {
         return GitHubStatus {
@@ -1517,7 +1633,11 @@ pub(crate) fn get_github_status_cached(state: &AppState, path: &str) -> GitHubSt
         return cached;
     }
     let status = get_github_status_impl(path);
-    AppState::set_cached(&state.git_cache.git_status, path.to_string(), status.clone());
+    AppState::set_cached(
+        &state.git_cache.git_status,
+        path.to_string(),
+        status.clone(),
+    );
     status
 }
 
@@ -1530,7 +1650,9 @@ pub(crate) async fn get_github_status(
 ) -> Result<GitHubStatus, String> {
     let state = state.inner().clone();
     tokio::task::spawn_blocking(move || {
-        if let Some(cached) = AppState::get_cached(&state.git_cache.git_status, &path, GIT_CACHE_TTL) {
+        if let Some(cached) =
+            AppState::get_cached(&state.git_cache.git_status, &path, GIT_CACHE_TTL)
+        {
             return cached;
         }
         let status = get_github_status_impl(&path);
@@ -1545,9 +1667,7 @@ pub(crate) async fn get_github_status(
 /// Returns Ok(true) if requests are allowed, Ok(false) if blocked.
 #[cfg(feature = "desktop")]
 #[tauri::command]
-pub(crate) async fn check_github_circuit(
-    state: State<'_, Arc<AppState>>,
-) -> Result<bool, String> {
+pub(crate) async fn check_github_circuit(state: State<'_, Arc<AppState>>) -> Result<bool, String> {
     Ok(state.github_circuit_breaker.check().is_ok())
 }
 
@@ -1588,32 +1708,35 @@ fn parse_pr_check_contexts(data: &serde_json::Value) -> Vec<serde_json::Value> {
         None => return vec![],
     };
 
-    context_nodes.iter().map(|ctx| {
-        let typename = ctx["__typename"].as_str().unwrap_or("");
-        if typename == "CheckRun" {
-            serde_json::json!({
-                "name": ctx["name"].as_str().unwrap_or(""),
-                "status": ctx["status"].as_str().unwrap_or("").to_lowercase(),
-                "conclusion": ctx["conclusion"].as_str().unwrap_or("").to_lowercase(),
-                "html_url": ctx["detailsUrl"].as_str().unwrap_or(""),
-            })
-        } else {
-            // StatusContext
-            let state = ctx["state"].as_str().unwrap_or("").to_lowercase();
-            let conclusion = match state.as_str() {
-                "success" => "success",
-                "failure" | "error" => "failure",
-                "pending" | "expected" => "",
-                _ => "",
-            };
-            serde_json::json!({
-                "name": ctx["context"].as_str().unwrap_or(""),
-                "status": if conclusion.is_empty() { "in_progress" } else { "completed" },
-                "conclusion": conclusion,
-                "html_url": ctx["targetUrl"].as_str().unwrap_or(""),
-            })
-        }
-    }).collect()
+    context_nodes
+        .iter()
+        .map(|ctx| {
+            let typename = ctx["__typename"].as_str().unwrap_or("");
+            if typename == "CheckRun" {
+                serde_json::json!({
+                    "name": ctx["name"].as_str().unwrap_or(""),
+                    "status": ctx["status"].as_str().unwrap_or("").to_lowercase(),
+                    "conclusion": ctx["conclusion"].as_str().unwrap_or("").to_lowercase(),
+                    "html_url": ctx["detailsUrl"].as_str().unwrap_or(""),
+                })
+            } else {
+                // StatusContext
+                let state = ctx["state"].as_str().unwrap_or("").to_lowercase();
+                let conclusion = match state.as_str() {
+                    "success" => "success",
+                    "failure" | "error" => "failure",
+                    "pending" | "expected" => "",
+                    _ => "",
+                };
+                serde_json::json!({
+                    "name": ctx["context"].as_str().unwrap_or(""),
+                    "status": if conclusion.is_empty() { "in_progress" } else { "completed" },
+                    "conclusion": conclusion,
+                    "html_url": ctx["targetUrl"].as_str().unwrap_or(""),
+                })
+            }
+        })
+        .collect()
 }
 
 /// Core logic for fetching CI check details via GitHub GraphQL API (no caching).
@@ -1695,7 +1818,10 @@ pub(crate) async fn merge_pr_github_impl(
     if (200..300).contains(&status) {
         Ok(json["sha"].as_str().unwrap_or("").to_string())
     } else {
-        let msg = json["message"].as_str().unwrap_or("Unknown error").to_string();
+        let msg = json["message"]
+            .as_str()
+            .unwrap_or("Unknown error")
+            .to_string();
         Err(format!("GitHub merge failed ({status}): {msg}"))
     }
 }
@@ -2016,7 +2142,10 @@ mod tests {
         let result = classify_merge_state(Some("CONFLICTING"), Some("CLEAN"));
         assert_eq!(
             result,
-            Some(StateLabel { label: "Conflicts".to_string(), css_class: "conflicting".to_string() })
+            Some(StateLabel {
+                label: "Conflicts".to_string(),
+                css_class: "conflicting".to_string()
+            })
         );
     }
 
@@ -2025,7 +2154,10 @@ mod tests {
         let result = classify_merge_state(Some("MERGEABLE"), Some("CLEAN"));
         assert_eq!(
             result,
-            Some(StateLabel { label: "Ready to merge".to_string(), css_class: "clean".to_string() })
+            Some(StateLabel {
+                label: "Ready to merge".to_string(),
+                css_class: "clean".to_string()
+            })
         );
     }
 
@@ -2034,7 +2166,10 @@ mod tests {
         let result = classify_merge_state(Some("MERGEABLE"), Some("BEHIND"));
         assert_eq!(
             result,
-            Some(StateLabel { label: "Behind base".to_string(), css_class: "behind".to_string() })
+            Some(StateLabel {
+                label: "Behind base".to_string(),
+                css_class: "behind".to_string()
+            })
         );
     }
 
@@ -2043,7 +2178,10 @@ mod tests {
         let result = classify_merge_state(Some("MERGEABLE"), Some("BLOCKED"));
         assert_eq!(
             result,
-            Some(StateLabel { label: "Blocked".to_string(), css_class: "blocked".to_string() })
+            Some(StateLabel {
+                label: "Blocked".to_string(),
+                css_class: "blocked".to_string()
+            })
         );
     }
 
@@ -2052,7 +2190,10 @@ mod tests {
         let result = classify_merge_state(Some("MERGEABLE"), Some("UNSTABLE"));
         assert_eq!(
             result,
-            Some(StateLabel { label: "Unstable".to_string(), css_class: "blocked".to_string() })
+            Some(StateLabel {
+                label: "Unstable".to_string(),
+                css_class: "blocked".to_string()
+            })
         );
     }
 
@@ -2061,7 +2202,10 @@ mod tests {
         let result = classify_merge_state(Some("MERGEABLE"), Some("DRAFT"));
         assert_eq!(
             result,
-            Some(StateLabel { label: "Draft".to_string(), css_class: "behind".to_string() })
+            Some(StateLabel {
+                label: "Draft".to_string(),
+                css_class: "behind".to_string()
+            })
         );
     }
 
@@ -2070,7 +2214,10 @@ mod tests {
         let result = classify_merge_state(Some("MERGEABLE"), Some("DIRTY"));
         assert_eq!(
             result,
-            Some(StateLabel { label: "Conflicts".to_string(), css_class: "conflicting".to_string() })
+            Some(StateLabel {
+                label: "Conflicts".to_string(),
+                css_class: "conflicting".to_string()
+            })
         );
     }
 
@@ -2096,7 +2243,10 @@ mod tests {
         let result = classify_review_state(Some("APPROVED"));
         assert_eq!(
             result,
-            Some(StateLabel { label: "Approved".to_string(), css_class: "approved".to_string() })
+            Some(StateLabel {
+                label: "Approved".to_string(),
+                css_class: "approved".to_string()
+            })
         );
     }
 
@@ -2105,7 +2255,10 @@ mod tests {
         let result = classify_review_state(Some("CHANGES_REQUESTED"));
         assert_eq!(
             result,
-            Some(StateLabel { label: "Changes requested".to_string(), css_class: "changes-requested".to_string() })
+            Some(StateLabel {
+                label: "Changes requested".to_string(),
+                css_class: "changes-requested".to_string()
+            })
         );
     }
 
@@ -2114,7 +2267,10 @@ mod tests {
         let result = classify_review_state(Some("REVIEW_REQUIRED"));
         assert_eq!(
             result,
-            Some(StateLabel { label: "Review required".to_string(), css_class: "review-required".to_string() })
+            Some(StateLabel {
+                label: "Review required".to_string(),
+                css_class: "review-required".to_string()
+            })
         );
     }
 
@@ -2150,13 +2306,16 @@ mod tests {
         labels: &[(&str, &str)],
         base_ref_name: &str,
     ) -> serde_json::Value {
-        let check_run_counts_json: Vec<serde_json::Value> = check_run_counts.iter()
+        let check_run_counts_json: Vec<serde_json::Value> = check_run_counts
+            .iter()
             .map(|(s, c)| serde_json::json!({"state": s, "count": c}))
             .collect();
-        let status_context_counts_json: Vec<serde_json::Value> = status_context_counts.iter()
+        let status_context_counts_json: Vec<serde_json::Value> = status_context_counts
+            .iter()
             .map(|(s, c)| serde_json::json!({"state": s, "count": c}))
             .collect();
-        let labels_json: Vec<serde_json::Value> = labels.iter()
+        let labels_json: Vec<serde_json::Value> = labels
+            .iter()
             .map(|(name, color)| serde_json::json!({"name": name, "color": color}))
             .collect();
 
@@ -2211,18 +2370,42 @@ mod tests {
     #[test]
     fn test_parse_graphql_prs_basic() {
         let response = graphql_response(vec![
-            graphql_pr_node(42, "Add feature X", "OPEN", "feature/x",
-                150, 30, "alice", 5,
+            graphql_pr_node(
+                42,
+                "Add feature X",
+                "OPEN",
+                "feature/x",
+                150,
+                30,
+                "alice",
+                5,
                 &[("SUCCESS", 2), ("FAILURE", 1)],
                 &[("PENDING", 1)],
-                "MERGEABLE", "BLOCKED", Some("CHANGES_REQUESTED"), false,
-                &[], "main"),
-            graphql_pr_node(43, "Fix bug Y", "OPEN", "fix/y",
-                10, 5, "bob", 1,
+                "MERGEABLE",
+                "BLOCKED",
+                Some("CHANGES_REQUESTED"),
+                false,
+                &[],
+                "main",
+            ),
+            graphql_pr_node(
+                43,
+                "Fix bug Y",
+                "OPEN",
+                "fix/y",
+                10,
+                5,
+                "bob",
+                1,
                 &[("SUCCESS", 2)],
                 &[],
-                "MERGEABLE", "CLEAN", Some("APPROVED"), false,
-                &[], "main"),
+                "MERGEABLE",
+                "CLEAN",
+                Some("APPROVED"),
+                false,
+                &[],
+                "main",
+            ),
         ]);
 
         let result = parse_graphql_prs(&response);
@@ -2268,8 +2451,24 @@ mod tests {
 
     #[test]
     fn test_parse_graphql_prs_missing_branch_skips() {
-        let mut node = graphql_pr_node(1, "No branch", "OPEN", "test", 0, 0, "alice", 1,
-            &[], &[], "UNKNOWN", "UNKNOWN", None, false, &[], "main");
+        let mut node = graphql_pr_node(
+            1,
+            "No branch",
+            "OPEN",
+            "test",
+            0,
+            0,
+            "alice",
+            1,
+            &[],
+            &[],
+            "UNKNOWN",
+            "UNKNOWN",
+            None,
+            false,
+            &[],
+            "main",
+        );
         // Remove headRefName
         node.as_object_mut().unwrap().remove("headRefName");
         let response = graphql_response(vec![node]);
@@ -2279,12 +2478,24 @@ mod tests {
 
     #[test]
     fn test_parse_graphql_prs_no_checks() {
-        let response = graphql_response(vec![
-            graphql_pr_node(10, "Draft PR", "OPEN", "draft/feature",
-                0, 0, "carol", 1,
-                &[], &[],
-                "UNKNOWN", "DRAFT", None, true, &[], "main"),
-        ]);
+        let response = graphql_response(vec![graphql_pr_node(
+            10,
+            "Draft PR",
+            "OPEN",
+            "draft/feature",
+            0,
+            0,
+            "carol",
+            1,
+            &[],
+            &[],
+            "UNKNOWN",
+            "DRAFT",
+            None,
+            true,
+            &[],
+            "main",
+        )]);
 
         let result = parse_graphql_prs(&response);
         assert_eq!(result.len(), 1);
@@ -2294,13 +2505,24 @@ mod tests {
 
     #[test]
     fn test_parse_graphql_prs_labels_with_colors() {
-        let response = graphql_response(vec![
-            graphql_pr_node(1, "Labels PR", "OPEN", "label-branch",
-                0, 0, "alice", 1,
-                &[], &[],
-                "UNKNOWN", "UNKNOWN", None, false,
-                &[("bug", "d73a4a"), ("enhancement", "a2eeef")], "main"),
-        ]);
+        let response = graphql_response(vec![graphql_pr_node(
+            1,
+            "Labels PR",
+            "OPEN",
+            "label-branch",
+            0,
+            0,
+            "alice",
+            1,
+            &[],
+            &[],
+            "UNKNOWN",
+            "UNKNOWN",
+            None,
+            false,
+            &[("bug", "d73a4a"), ("enhancement", "a2eeef")],
+            "main",
+        )]);
 
         let result = parse_graphql_prs(&response);
         assert_eq!(result.len(), 1);
@@ -2320,14 +2542,42 @@ mod tests {
     #[test]
     fn test_parse_graphql_prs_merge_and_review_labels() {
         let response = graphql_response(vec![
-            graphql_pr_node(1, "Clean PR", "OPEN", "clean-branch",
-                0, 0, "alice", 1,
-                &[], &[],
-                "MERGEABLE", "CLEAN", Some("APPROVED"), false, &[], "main"),
-            graphql_pr_node(2, "Conflicting PR", "OPEN", "conflict-branch",
-                0, 0, "bob", 1,
-                &[], &[],
-                "CONFLICTING", "DIRTY", Some("CHANGES_REQUESTED"), false, &[], "main"),
+            graphql_pr_node(
+                1,
+                "Clean PR",
+                "OPEN",
+                "clean-branch",
+                0,
+                0,
+                "alice",
+                1,
+                &[],
+                &[],
+                "MERGEABLE",
+                "CLEAN",
+                Some("APPROVED"),
+                false,
+                &[],
+                "main",
+            ),
+            graphql_pr_node(
+                2,
+                "Conflicting PR",
+                "OPEN",
+                "conflict-branch",
+                0,
+                0,
+                "bob",
+                1,
+                &[],
+                &[],
+                "CONFLICTING",
+                "DIRTY",
+                Some("CHANGES_REQUESTED"),
+                false,
+                &[],
+                "main",
+            ),
         ]);
 
         let result = parse_graphql_prs(&response);
@@ -2335,28 +2585,48 @@ mod tests {
 
         assert_eq!(
             result[0].merge_state_label,
-            Some(StateLabel { label: "Ready to merge".to_string(), css_class: "clean".to_string() })
+            Some(StateLabel {
+                label: "Ready to merge".to_string(),
+                css_class: "clean".to_string()
+            })
         );
         assert_eq!(
             result[0].review_state_label,
-            Some(StateLabel { label: "Approved".to_string(), css_class: "approved".to_string() })
+            Some(StateLabel {
+                label: "Approved".to_string(),
+                css_class: "approved".to_string()
+            })
         );
 
         assert_eq!(
             result[1].merge_state_label,
-            Some(StateLabel { label: "Conflicts".to_string(), css_class: "conflicting".to_string() })
+            Some(StateLabel {
+                label: "Conflicts".to_string(),
+                css_class: "conflicting".to_string()
+            })
         );
     }
 
     #[test]
     fn test_parse_graphql_prs_error_check_states() {
-        let response = graphql_response(vec![
-            graphql_pr_node(99, "Error checks", "OPEN", "error-branch",
-                0, 0, "eve", 1,
-                &[("ERROR", 1), ("TIMED_OUT", 1), ("CANCELLED", 1)],
-                &[("ERROR", 1)],
-                "UNKNOWN", "UNKNOWN", None, false, &[], "main"),
-        ]);
+        let response = graphql_response(vec![graphql_pr_node(
+            99,
+            "Error checks",
+            "OPEN",
+            "error-branch",
+            0,
+            0,
+            "eve",
+            1,
+            &[("ERROR", 1), ("TIMED_OUT", 1), ("CANCELLED", 1)],
+            &[("ERROR", 1)],
+            "UNKNOWN",
+            "UNKNOWN",
+            None,
+            false,
+            &[],
+            "main",
+        )]);
 
         let result = parse_graphql_prs(&response);
         assert_eq!(result.len(), 1);
@@ -2366,14 +2636,42 @@ mod tests {
     #[test]
     fn test_parse_graphql_prs_merged_and_closed() {
         let response = graphql_response(vec![
-            graphql_pr_node(10, "Merged feature", "MERGED", "feature/merged",
-                0, 0, "alice", 3,
-                &[], &[],
-                "UNKNOWN", "UNKNOWN", None, false, &[], "main"),
-            graphql_pr_node(11, "Closed PR", "CLOSED", "feature/closed",
-                0, 0, "bob", 1,
-                &[], &[],
-                "UNKNOWN", "UNKNOWN", None, false, &[], "main"),
+            graphql_pr_node(
+                10,
+                "Merged feature",
+                "MERGED",
+                "feature/merged",
+                0,
+                0,
+                "alice",
+                3,
+                &[],
+                &[],
+                "UNKNOWN",
+                "UNKNOWN",
+                None,
+                false,
+                &[],
+                "main",
+            ),
+            graphql_pr_node(
+                11,
+                "Closed PR",
+                "CLOSED",
+                "feature/closed",
+                0,
+                0,
+                "bob",
+                1,
+                &[],
+                &[],
+                "UNKNOWN",
+                "UNKNOWN",
+                None,
+                false,
+                &[],
+                "main",
+            ),
         ]);
 
         let result = parse_graphql_prs(&response);
@@ -2384,15 +2682,30 @@ mod tests {
 
     #[test]
     fn test_parse_graphql_prs_head_ref_oid() {
-        let response = graphql_response(vec![
-            graphql_pr_node(42, "With OID", "OPEN", "feature/oid",
-                0, 0, "alice", 1,
-                &[], &[],
-                "UNKNOWN", "UNKNOWN", None, false, &[], "main"),
-        ]);
+        let response = graphql_response(vec![graphql_pr_node(
+            42,
+            "With OID",
+            "OPEN",
+            "feature/oid",
+            0,
+            0,
+            "alice",
+            1,
+            &[],
+            &[],
+            "UNKNOWN",
+            "UNKNOWN",
+            None,
+            false,
+            &[],
+            "main",
+        )]);
         let result = parse_graphql_prs(&response);
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].head_ref_oid, "abc0042", "headRefOid must be parsed");
+        assert_eq!(
+            result[0].head_ref_oid, "abc0042",
+            "headRefOid must be parsed"
+        );
     }
 
     // --- parse_remote_url tests ---
@@ -2608,10 +2921,9 @@ mod tests {
         // 2. Get repo info from local .git (same as production code)
         let manifest_dir = env!("CARGO_MANIFEST_DIR");
         let repo_root = PathBuf::from(manifest_dir).parent().unwrap().to_path_buf();
-        let remote_url = crate::git::read_remote_url(&repo_root)
-            .expect("No origin remote found");
-        let (owner, repo) = parse_remote_url(&remote_url)
-            .expect("Failed to parse remote URL into owner/repo");
+        let remote_url = crate::git::read_remote_url(&repo_root).expect("No origin remote found");
+        let (owner, repo) =
+            parse_remote_url(&remote_url).expect("Failed to parse remote URL into owner/repo");
 
         println!("Testing against {owner}/{repo}");
 
@@ -2623,17 +2935,28 @@ mod tests {
             "first": 50,
         });
         let graphql_result = graphql_request(&client, &token, BATCH_PR_QUERY, &variables).await;
-        assert!(graphql_result.is_ok(), "GraphQL request failed: {:?}", graphql_result.err());
+        assert!(
+            graphql_result.is_ok(),
+            "GraphQL request failed: {:?}",
+            graphql_result.err()
+        );
 
         let data = graphql_result.unwrap();
 
         // 4. Verify response structure
-        assert!(data["data"]["repository"].is_object(),
-            "Response should have data.repository: {}", serde_json::to_string_pretty(&data).unwrap());
-        assert!(data["data"]["repository"]["pullRequests"]["nodes"].is_array(),
-            "Response should have pullRequests.nodes array");
-        assert!(data["data"]["rateLimit"]["remaining"].is_number(),
-            "Response should include rateLimit info");
+        assert!(
+            data["data"]["repository"].is_object(),
+            "Response should have data.repository: {}",
+            serde_json::to_string_pretty(&data).unwrap()
+        );
+        assert!(
+            data["data"]["repository"]["pullRequests"]["nodes"].is_array(),
+            "Response should have pullRequests.nodes array"
+        );
+        assert!(
+            data["data"]["rateLimit"]["remaining"].is_number(),
+            "Response should include rateLimit info"
+        );
 
         let remaining = data["data"]["rateLimit"]["remaining"].as_i64().unwrap();
         println!("GraphQL rate limit remaining: {remaining}");
@@ -2646,8 +2969,14 @@ mod tests {
         let gh_output = Command::new(crate::agent::resolve_cli("gh"))
             .current_dir(&repo_root)
             .args([
-                "pr", "list", "--state", "all", "--limit", "50",
-                "--json", "number,title,state,headRefName,additions,deletions,isDraft",
+                "pr",
+                "list",
+                "--state",
+                "all",
+                "--limit",
+                "50",
+                "--json",
+                "number,title,state,headRefName,additions,deletions,isDraft",
             ])
             .output()
             .ok();
@@ -2659,8 +2988,11 @@ mod tests {
                 println!("gh CLI returned {} PRs", gh_json.len());
 
                 // PR counts should match
-                assert_eq!(graphql_prs.len(), gh_json.len(),
-                    "GraphQL and gh CLI should return the same number of PRs");
+                assert_eq!(
+                    graphql_prs.len(),
+                    gh_json.len(),
+                    "GraphQL and gh CLI should return the same number of PRs"
+                );
 
                 // For each PR, verify key fields match
                 for gh_pr in &gh_json {
@@ -2668,27 +3000,45 @@ mod tests {
                     let branch = gh_pr["headRefName"].as_str().unwrap();
 
                     let gql_pr = graphql_prs.iter().find(|p| p.number == number);
-                    assert!(gql_pr.is_some(),
-                        "PR #{number} ({branch}) found in gh CLI but not in GraphQL");
+                    assert!(
+                        gql_pr.is_some(),
+                        "PR #{number} ({branch}) found in gh CLI but not in GraphQL"
+                    );
 
                     let gql_pr = gql_pr.unwrap();
-                    assert_eq!(gql_pr.branch, branch,
-                        "PR #{number}: branch mismatch");
-                    assert_eq!(gql_pr.title, gh_pr["title"].as_str().unwrap(),
-                        "PR #{number}: title mismatch");
-                    assert_eq!(gql_pr.state, gh_pr["state"].as_str().unwrap(),
-                        "PR #{number}: state mismatch");
-                    assert_eq!(gql_pr.is_draft, gh_pr["isDraft"].as_bool().unwrap_or(false),
-                        "PR #{number}: isDraft mismatch");
-                    assert_eq!(gql_pr.additions, gh_pr["additions"].as_i64().unwrap_or(0) as i32,
-                        "PR #{number}: additions mismatch");
-                    assert_eq!(gql_pr.deletions, gh_pr["deletions"].as_i64().unwrap_or(0) as i32,
-                        "PR #{number}: deletions mismatch");
+                    assert_eq!(gql_pr.branch, branch, "PR #{number}: branch mismatch");
+                    assert_eq!(
+                        gql_pr.title,
+                        gh_pr["title"].as_str().unwrap(),
+                        "PR #{number}: title mismatch"
+                    );
+                    assert_eq!(
+                        gql_pr.state,
+                        gh_pr["state"].as_str().unwrap(),
+                        "PR #{number}: state mismatch"
+                    );
+                    assert_eq!(
+                        gql_pr.is_draft,
+                        gh_pr["isDraft"].as_bool().unwrap_or(false),
+                        "PR #{number}: isDraft mismatch"
+                    );
+                    assert_eq!(
+                        gql_pr.additions,
+                        gh_pr["additions"].as_i64().unwrap_or(0) as i32,
+                        "PR #{number}: additions mismatch"
+                    );
+                    assert_eq!(
+                        gql_pr.deletions,
+                        gh_pr["deletions"].as_i64().unwrap_or(0) as i32,
+                        "PR #{number}: deletions mismatch"
+                    );
                 }
 
                 println!("All {} PRs match between GraphQL and gh CLI", gh_json.len());
             } else {
-                println!("gh CLI not available — skipping comparison, GraphQL-only validation passed");
+                println!(
+                    "gh CLI not available — skipping comparison, GraphQL-only validation passed"
+                );
             }
         } else {
             println!("gh CLI not installed — skipping comparison, GraphQL-only validation passed");
@@ -2699,16 +3049,17 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires network + GitHub token
     async fn test_graphql_auth_and_rate_limit() {
-        let token = resolve_github_token()
-            .expect("No GitHub token found");
+        let token = resolve_github_token().expect("No GitHub token found");
 
         let client = reqwest::Client::new();
         // Minimal query just to verify auth works
         let result = graphql_request(
-            &client, &token,
+            &client,
+            &token,
             "query { viewer { login } rateLimit { remaining resetAt } }",
             &serde_json::json!({}),
-        ).await;
+        )
+        .await;
 
         assert!(result.is_ok(), "Auth failed: {:?}", result.err());
         let data = result.unwrap();
@@ -2764,8 +3115,10 @@ mod tests {
         let result = resolve_github_token();
         // Result should be either None (no gh CLI) or a non-empty token from CLI
         if let Some(ref token) = result {
-            assert!(!token.is_empty(),
-                "resolve_github_token must never return an empty string");
+            assert!(
+                !token.is_empty(),
+                "resolve_github_token must never return an empty string"
+            );
         }
 
         // Cleanup
@@ -2784,8 +3137,10 @@ mod tests {
 
         let candidates = resolve_github_token_candidates();
         for (token, _source) in &candidates {
-            assert!(!token.is_empty(),
-                "Candidates must never contain empty strings");
+            assert!(
+                !token.is_empty(),
+                "Candidates must never contain empty strings"
+            );
         }
 
         // Cleanup
@@ -2814,20 +3169,27 @@ mod tests {
         }
 
         let token = resolve_github_token();
-        assert!(token.is_some(),
-            "Should resolve token via gh CLI when env vars are empty");
+        assert!(
+            token.is_some(),
+            "Should resolve token via gh CLI when env vars are empty"
+        );
         let token = token.unwrap();
         assert!(!token.is_empty(), "Token from CLI should not be empty");
 
         // Verify the token actually works against GitHub API
         let client = reqwest::Client::new();
         let result = graphql_request(
-            &client, &token,
+            &client,
+            &token,
             "query { viewer { login } }",
             &serde_json::json!({}),
-        ).await;
-        assert!(result.is_ok(),
-            "Token from gh CLI should authenticate successfully: {:?}", result.err());
+        )
+        .await;
+        assert!(
+            result.is_ok(),
+            "Token from gh CLI should authenticate successfully: {:?}",
+            result.err()
+        );
 
         let data = result.unwrap();
         let login = data["data"]["viewer"]["login"].as_str();
@@ -2876,7 +3238,10 @@ mod tests {
         let cb = GitHubCircuitBreaker::new();
         cb.record_failure();
         cb.record_failure();
-        assert!(cb.check().is_ok(), "Should still be closed after 2 failures");
+        assert!(
+            cb.check().is_ok(),
+            "Should still be closed after 2 failures"
+        );
         cb.record_failure();
         assert!(cb.check().is_err(), "Should be open after 3 failures");
     }
@@ -2889,7 +3254,10 @@ mod tests {
         cb.record_success(); // Reset before threshold
         cb.record_failure();
         cb.record_failure();
-        assert!(cb.check().is_ok(), "Should be closed — success reset the count");
+        assert!(
+            cb.check().is_ok(),
+            "Should be closed — success reset the count"
+        );
     }
 
     #[test]
@@ -2910,8 +3278,10 @@ mod tests {
         cb.record_rate_limit(60);
         let result = cb.check();
         assert!(result.is_err());
-        assert!(result.unwrap_err().starts_with("rate-limit:"),
-            "Rate limit check should return error starting with 'rate-limit:'");
+        assert!(
+            result.unwrap_err().starts_with("rate-limit:"),
+            "Rate limit check should return error starting with 'rate-limit:'"
+        );
     }
 
     #[test]
@@ -2925,8 +3295,10 @@ mod tests {
         // Wait for rate limit to expire
         std::thread::sleep(std::time::Duration::from_millis(1100));
         // Should still be open for requests (only 2 failures, threshold is 3)
-        assert!(cb.check().is_ok(),
-            "Rate limit should not inflate failure count");
+        assert!(
+            cb.check().is_ok(),
+            "Rate limit should not inflate failure count"
+        );
     }
 
     #[test]
@@ -2936,7 +3308,10 @@ mod tests {
         *cb.rate_limit_until.write() = Some(Instant::now() + std::time::Duration::from_millis(50));
         assert!(cb.check().is_err(), "Should be rate limited initially");
         std::thread::sleep(std::time::Duration::from_millis(60));
-        assert!(cb.check().is_ok(), "Should be open after rate limit expires");
+        assert!(
+            cb.check().is_ok(),
+            "Should be open after rate limit expires"
+        );
     }
 
     #[test]
@@ -2948,8 +3323,10 @@ mod tests {
         let result = cb.check();
         assert!(result.is_err());
         // Rate limit message should take priority
-        assert!(result.unwrap_err().starts_with("rate-limit:"),
-            "Rate limit should take priority in error message");
+        assert!(
+            result.unwrap_err().starts_with("rate-limit:"),
+            "Rate limit should take priority in error message"
+        );
     }
 
     // --- GqlError display tests for RateLimit ---
@@ -3081,7 +3458,9 @@ mod tests {
         );
         // Evict expired
         let now = Instant::now();
-        cache.github_repo_cooldown.retain(|_k, expiry| *expiry > now);
+        cache
+            .github_repo_cooldown
+            .retain(|_k, expiry| *expiry > now);
 
         assert!(!cache.github_repo_cooldown.contains_key("owner/expired"));
         assert!(cache.github_repo_cooldown.contains_key("owner/active"));
@@ -3196,9 +3575,7 @@ mod tests {
 
     #[test]
     fn test_build_multi_repo_issues_query_assigned() {
-        let repos = vec![
-            ("path1".to_string(), "owner".to_string(), "repo".to_string()),
-        ];
+        let repos = vec![("path1".to_string(), "owner".to_string(), "repo".to_string())];
         let (query, aliases) = build_multi_repo_issues_query(&repos, "octocat", "assigned");
         // New format uses repository().issues(filterBy:) instead of search()
         assert!(query.contains("filterBy: { assignee: \"octocat\" }"));
@@ -3210,9 +3587,7 @@ mod tests {
 
     #[test]
     fn test_build_multi_repo_issues_query_all() {
-        let repos = vec![
-            ("p".to_string(), "o".to_string(), "r".to_string()),
-        ];
+        let repos = vec![("p".to_string(), "o".to_string(), "r".to_string())];
         let (query, _) = build_multi_repo_issues_query(&repos, "viewer", "all");
         // "all" mode should NOT include filterBy qualifier
         assert!(!query.contains("filterBy"));

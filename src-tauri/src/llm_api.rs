@@ -36,24 +36,20 @@ impl LlmApiConfig {
 pub(crate) fn build_client(config: &LlmApiConfig, api_key: &str) -> genai::Client {
     use genai::resolver::{AuthData, AuthResolver};
 
-    let has_custom_url = config
-        .base_url
-        .as_ref()
-        .is_some_and(|u| !u.is_empty());
+    let has_custom_url = config.base_url.as_ref().is_some_and(|u| !u.is_empty());
 
     if has_custom_url {
         // Custom base URL (OpenRouter, Ollama, custom) — use ServiceTargetResolver
         // which overrides both endpoint and auth in one resolver.
+        use genai::ModelIden;
+        use genai::ServiceTarget;
         use genai::adapter::AdapterKind;
         use genai::resolver::{Endpoint, ServiceTargetResolver};
-        use genai::ServiceTarget;
-        use genai::ModelIden;
 
         let url = config.base_url.clone().unwrap();
         let key = api_key.to_string();
         let target_resolver = ServiceTargetResolver::from_resolver_fn(
-            move |service_target: ServiceTarget| -> Result<ServiceTarget, genai::resolver::Error>
-            {
+            move |service_target: ServiceTarget| -> Result<ServiceTarget, genai::resolver::Error> {
                 let ServiceTarget { model, .. } = service_target;
                 let endpoint = Endpoint::from_owned(url.clone());
                 let auth = AuthData::from_single(key.clone());
@@ -101,8 +97,13 @@ pub(crate) async fn execute_api_prompt(
     }
 
     let registry = crate::provider_registry::load_registry();
-    let resolved = crate::provider_registry::resolve_slot(&registry, crate::provider_registry::SlotName::Headless)
-        .map_err(|_| "LLM API not configured — set provider and model in Settings > Agents".to_string())?;
+    let resolved = crate::provider_registry::resolve_slot(
+        &registry,
+        crate::provider_registry::SlotName::Headless,
+    )
+    .map_err(|_| {
+        "LLM API not configured — set provider and model in Settings > Agents".to_string()
+    })?;
 
     let config = resolved.config;
     let api_key = resolved.api_key;

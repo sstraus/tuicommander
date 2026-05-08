@@ -1,7 +1,7 @@
 use serde::Serialize;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 #[cfg(feature = "desktop")]
 use tauri::Emitter;
 
@@ -81,7 +81,10 @@ fn validate_path(repo_path: &str, relative: &str) -> Result<(PathBuf, PathBuf), 
 
 /// Validate a path that may not exist yet (for write/create operations).
 /// Canonicalizes the parent directory and checks it's within the repo.
-fn validate_path_for_creation(repo_path: &str, relative: &str) -> Result<(PathBuf, PathBuf), String> {
+fn validate_path_for_creation(
+    repo_path: &str,
+    relative: &str,
+) -> Result<(PathBuf, PathBuf), String> {
     let repo = PathBuf::from(repo_path);
     let target = repo.join(relative);
 
@@ -115,10 +118,24 @@ fn validate_path_for_creation(repo_path: &str, relative: &str) -> Result<(PathBu
 /// heavy build/cache outputs that are useless to search and often bypass `.gitignore`
 /// (missing, incomplete, or outside-of-git).
 pub(crate) const ALWAYS_EXCLUDED_DIRS: &[&str] = &[
-    ".git", ".hg", ".svn", ".jj",
-    "node_modules", "target", "dist", "build", "out",
-    ".next", ".nuxt", ".svelte-kit", ".turbo", ".parcel-cache",
-    ".cache", ".venv", "venv", "__pycache__",
+    ".git",
+    ".hg",
+    ".svn",
+    ".jj",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    "out",
+    ".next",
+    ".nuxt",
+    ".svelte-kit",
+    ".turbo",
+    ".parcel-cache",
+    ".cache",
+    ".venv",
+    "venv",
+    "__pycache__",
 ];
 
 /// Returns `true` when the entry is a directory whose name matches one of
@@ -128,11 +145,16 @@ pub(crate) fn is_always_excluded_dir(entry: &ignore::DirEntry) -> bool {
         return false;
     }
     let name = entry.file_name();
-    ALWAYS_EXCLUDED_DIRS.iter().any(|d| name == std::ffi::OsStr::new(d))
+    ALWAYS_EXCLUDED_DIRS
+        .iter()
+        .any(|d| name == std::ffi::OsStr::new(d))
 }
 
 /// Parse `git status --porcelain -z` output into a map of relative_path -> status string.
-pub(crate) fn parse_git_status(repo_path: &str, subdir: &str) -> std::collections::HashMap<String, String> {
+pub(crate) fn parse_git_status(
+    repo_path: &str,
+    subdir: &str,
+) -> std::collections::HashMap<String, String> {
     let mut statuses = std::collections::HashMap::new();
 
     let mut args = vec!["status", "--porcelain", "-z"];
@@ -190,7 +212,10 @@ pub(crate) fn parse_git_status(repo_path: &str, subdir: &str) -> std::collection
 }
 
 /// Get a set of ignored paths within a directory using `git check-ignore`.
-pub(crate) fn get_ignored_paths(repo_path: &str, paths: &[String]) -> std::collections::HashSet<String> {
+pub(crate) fn get_ignored_paths(
+    repo_path: &str,
+    paths: &[String],
+) -> std::collections::HashSet<String> {
     let mut ignored = std::collections::HashSet::new();
     if paths.is_empty() {
         return ignored;
@@ -233,11 +258,20 @@ pub(crate) fn stat_path_impl(path: String) -> PathStat {
     // untrusted callers (plugins, frontend bugs) probe arbitrary files outside
     // any repo scope. Mirrors resolve_terminal_path's guard.
     if is_tcc_protected_path(&p) {
-        return PathStat { exists: false, is_dir: false };
+        return PathStat {
+            exists: false,
+            is_dir: false,
+        };
     }
     match std::fs::metadata(&p) {
-        Ok(meta) => PathStat { exists: true, is_dir: meta.is_dir() },
-        Err(_) => PathStat { exists: false, is_dir: false },
+        Ok(meta) => PathStat {
+            exists: true,
+            is_dir: meta.is_dir(),
+        },
+        Err(_) => PathStat {
+            exists: false,
+            is_dir: false,
+        },
     }
 }
 
@@ -253,7 +287,10 @@ pub async fn list_directory(repo_path: String, subdir: String) -> Result<Vec<Dir
     list_directory_impl(repo_path, subdir)
 }
 
-pub(crate) fn list_directory_impl(repo_path: String, subdir: String) -> Result<Vec<DirEntry>, String> {
+pub(crate) fn list_directory_impl(
+    repo_path: String,
+    subdir: String,
+) -> Result<Vec<DirEntry>, String> {
     let repo = PathBuf::from(&repo_path);
 
     // Canonicalize repo root ONCE — all relative paths derived via join + strip_prefix
@@ -287,8 +324,8 @@ pub(crate) fn list_directory_impl(repo_path: String, subdir: String) -> Result<V
     };
 
     let mut entries = Vec::new();
-    let read_dir = std::fs::read_dir(&dir_to_read)
-        .map_err(|e| format!("Failed to read directory: {e}"))?;
+    let read_dir =
+        std::fs::read_dir(&dir_to_read).map_err(|e| format!("Failed to read directory: {e}"))?;
 
     for entry in read_dir {
         let entry = entry.map_err(|e| format!("Failed to read entry: {e}"))?;
@@ -321,7 +358,8 @@ pub(crate) fn list_directory_impl(repo_path: String, subdir: String) -> Result<V
 
         // Check gitignore status without subprocess
         let is_ignored = gitignore.as_ref().is_some_and(|gi| {
-            gi.matched_path_or_any_parents(&abs_path, is_dir).is_ignore()
+            gi.matched_path_or_any_parents(&abs_path, is_dir)
+                .is_ignore()
         });
 
         // Look up git status — for dirs, propagate the most relevant child status
@@ -429,11 +467,19 @@ pub async fn search_content(
     tokio::task::spawn_blocking(move || {
         let _throttle_guard = throttle_guard;
         match search_content_indexed(
-            &index_arc, repo_path, query, case_sensitive, use_regex, whole_word, limit,
+            &index_arc,
+            repo_path,
+            query,
+            case_sensitive,
+            use_regex,
+            whole_word,
+            limit,
         ) {
             Ok(result) => {
                 // Check cancellation
-                if cancel_token.load(Ordering::Relaxed) { return; }
+                if cancel_token.load(Ordering::Relaxed) {
+                    return;
+                }
 
                 // Emit results in batches of 50
                 let batch_size = 50;
@@ -441,7 +487,9 @@ pub async fn search_content(
                 let mut sent = 0;
 
                 for chunk in result.matches.chunks(batch_size) {
-                    if cancel_token.load(Ordering::Relaxed) { return; }
+                    if cancel_token.load(Ordering::Relaxed) {
+                        return;
+                    }
 
                     sent += chunk.len();
                     let is_final = sent >= total_matches;
@@ -499,7 +547,14 @@ fn search_content_indexed(
     }
 
     // Index not ready or not applicable — fall back to full grep
-    search_content_impl(repo_path, query, case_sensitive, use_regex, whole_word, limit)
+    search_content_impl(
+        repo_path,
+        query,
+        case_sensitive,
+        use_regex,
+        whole_word,
+        limit,
+    )
 }
 
 /// Search using the pre-built BM25 index: rank files, then grep only the top candidates.
@@ -662,7 +717,7 @@ pub(crate) fn search_files_impl(
             size: metadata.len(),
             modified_at,
             git_status: String::new(), // populated below
-            is_ignored: false, // walker already filtered gitignored entries
+            is_ignored: false,         // walker already filtered gitignored entries
         });
     }
 
@@ -895,8 +950,6 @@ fn build_search_pattern(query: &str) -> regex::Regex {
     })
 }
 
-
-
 /// Read a file's content within a repository.
 /// Re-uses the existing `read_file_impl` from lib.rs.
 #[cfg_attr(feature = "desktop", tauri::command)]
@@ -913,8 +966,7 @@ pub fn write_file(repo_path: String, file: String, content: String) -> Result<()
         validate_path_for_creation(&repo_path, &file)?
     };
 
-    std::fs::write(&canonical_target, &content)
-        .map_err(|e| format!("Failed to write file: {e}"))
+    std::fs::write(&canonical_target, &content).map_err(|e| format!("Failed to write file: {e}"))
 }
 
 /// Create a directory (and parents) within a repository.
@@ -945,8 +997,7 @@ pub fn create_directory(repo_path: String, dir: String) -> Result<(), String> {
         }
     }
 
-    std::fs::create_dir_all(&target)
-        .map_err(|e| format!("Failed to create directory: {e}"))
+    std::fs::create_dir_all(&target).map_err(|e| format!("Failed to create directory: {e}"))
 }
 
 /// Delete a file or directory within a repository.
@@ -958,18 +1009,13 @@ pub fn delete_path(repo_path: String, path: String) -> Result<(), String> {
         std::fs::remove_dir_all(&canonical_target)
             .map_err(|e| format!("Failed to delete directory: {e}"))
     } else {
-        std::fs::remove_file(&canonical_target)
-            .map_err(|e| format!("Failed to delete file: {e}"))
+        std::fs::remove_file(&canonical_target).map_err(|e| format!("Failed to delete file: {e}"))
     }
 }
 
 /// Rename/move a file or directory within a repository.
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub fn rename_path(
-    repo_path: String,
-    from: String,
-    to: String,
-) -> Result<(), String> {
+pub fn rename_path(repo_path: String, from: String, to: String) -> Result<(), String> {
     let (_canonical_repo, canonical_from) = validate_path(&repo_path, &from)?;
     let (_, canonical_to) = if PathBuf::from(&repo_path).join(&to).exists() {
         validate_path(&repo_path, &to)?
@@ -977,17 +1023,12 @@ pub fn rename_path(
         validate_path_for_creation(&repo_path, &to)?
     };
 
-    std::fs::rename(&canonical_from, &canonical_to)
-        .map_err(|e| format!("Failed to rename: {e}"))
+    std::fs::rename(&canonical_from, &canonical_to).map_err(|e| format!("Failed to rename: {e}"))
 }
 
 /// Copy a file within a repository.
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub fn copy_path(
-    repo_path: String,
-    from: String,
-    to: String,
-) -> Result<(), String> {
+pub fn copy_path(repo_path: String, from: String, to: String) -> Result<(), String> {
     let (_canonical_repo, canonical_from) = validate_path(&repo_path, &from)?;
     let (_, canonical_to) = if PathBuf::from(&repo_path).join(&to).exists() {
         validate_path(&repo_path, &to)?
@@ -1192,7 +1233,9 @@ pub fn strip_line_col_suffix(candidate: &str) -> &str {
 
     // Try stripping `:col` (rightmost numeric segment)
     if let Some(colon_pos) = candidate[..end].rfind(':')
-        && candidate[colon_pos + 1..end].chars().all(|c| c.is_ascii_digit())
+        && candidate[colon_pos + 1..end]
+            .chars()
+            .all(|c| c.is_ascii_digit())
         && colon_pos + 1 < end
     {
         end = colon_pos;
@@ -1214,13 +1257,21 @@ pub fn strip_line_col_suffix(candidate: &str) -> &str {
 /// macOS TCC-protected directory names under $HOME.
 /// Probing these with `.exists()` or `.canonicalize()` triggers permission dialogs.
 const TCC_PROTECTED_DIRS: &[&str] = &[
-    "Desktop", "Documents", "Downloads", "Movies", "Music", "Pictures",
-    "Library", "Photos Library.photoslibrary",
+    "Desktop",
+    "Documents",
+    "Downloads",
+    "Movies",
+    "Music",
+    "Pictures",
+    "Library",
+    "Photos Library.photoslibrary",
 ];
 
 /// Returns true if `path` falls under a macOS TCC-protected directory.
 fn is_tcc_protected_path(path: &std::path::Path) -> bool {
-    let Some(home) = dirs::home_dir() else { return false };
+    let Some(home) = dirs::home_dir() else {
+        return false;
+    };
     if !path.starts_with(&home) {
         return false;
     }
@@ -1228,7 +1279,9 @@ fn is_tcc_protected_path(path: &std::path::Path) -> bool {
         && let Some(first) = rel.components().next()
     {
         let name = first.as_os_str().to_string_lossy();
-        return TCC_PROTECTED_DIRS.iter().any(|d| d.eq_ignore_ascii_case(&name));
+        return TCC_PROTECTED_DIRS
+            .iter()
+            .any(|d| d.eq_ignore_ascii_case(&name));
     }
     false
 }
@@ -1304,8 +1357,7 @@ pub fn add_to_gitignore(repo_path: String, pattern: String) -> Result<(), String
     content.push_str(pattern.trim());
     content.push('\n');
 
-    std::fs::write(&gitignore, &content)
-        .map_err(|e| format!("Failed to write .gitignore: {e}"))
+    std::fs::write(&gitignore, &content).map_err(|e| format!("Failed to write .gitignore: {e}"))
 }
 
 /// Validate that `path` is a safe target for `write_external_file`.
@@ -1352,9 +1404,7 @@ pub(crate) fn validate_external_write_path(
         .canonicalize()
         .map_err(|e| format!("Failed to resolve home directory: {e}"))?;
     if !canonical_parent.starts_with(&canonical_home) {
-        return Err(
-            "Access denied: path must be within the user's home directory".to_string(),
-        );
+        return Err("Access denied: path must be within the user's home directory".to_string());
     }
     Ok(())
 }
@@ -1370,9 +1420,18 @@ mod tests {
         let repo_path = dir.path();
 
         // Initialize a git repo
-        crate::git_cli::git_cmd(repo_path).args(["init"]).run().unwrap();
-        crate::git_cli::git_cmd(repo_path).args(["config", "user.email", "test@test.com"]).run().unwrap();
-        crate::git_cli::git_cmd(repo_path).args(["config", "user.name", "Test"]).run().unwrap();
+        crate::git_cli::git_cmd(repo_path)
+            .args(["init"])
+            .run()
+            .unwrap();
+        crate::git_cli::git_cmd(repo_path)
+            .args(["config", "user.email", "test@test.com"])
+            .run()
+            .unwrap();
+        crate::git_cli::git_cmd(repo_path)
+            .args(["config", "user.name", "Test"])
+            .run()
+            .unwrap();
 
         // Create some files and directories
         fs::write(repo_path.join("README.md"), "# Test").unwrap();
@@ -1381,8 +1440,14 @@ mod tests {
         fs::write(repo_path.join("src/lib.rs"), "pub fn hello() {}").unwrap();
 
         // Commit everything
-        crate::git_cli::git_cmd(repo_path).args(["add", "-A"]).run().unwrap();
-        crate::git_cli::git_cmd(repo_path).args(["commit", "-m", "init"]).run().unwrap();
+        crate::git_cli::git_cmd(repo_path)
+            .args(["add", "-A"])
+            .run()
+            .unwrap();
+        crate::git_cli::git_cmd(repo_path)
+            .args(["commit", "-m", "init"])
+            .run()
+            .unwrap();
 
         dir
     }
@@ -1485,12 +1550,28 @@ mod tests {
     /// Guard returns {exists:false, is_dir:false} unconditionally.
     #[test]
     fn test_stat_path_tcc_protected_returns_nonexistent() {
-        let Some(home) = dirs::home_dir() else { return; };
-        for protected in &["Desktop", "Documents", "Downloads", "Library", "Movies", "Music", "Pictures"] {
+        let Some(home) = dirs::home_dir() else {
+            return;
+        };
+        for protected in &[
+            "Desktop",
+            "Documents",
+            "Downloads",
+            "Library",
+            "Movies",
+            "Music",
+            "Pictures",
+        ] {
             let candidate = home.join(protected).join("stat_path_tcc_probe");
             let stat = stat_path_impl(candidate.to_string_lossy().to_string());
-            assert!(!stat.exists, "TCC-protected path {candidate:?} must report exists=false");
-            assert!(!stat.is_dir, "TCC-protected path {candidate:?} must report is_dir=false");
+            assert!(
+                !stat.exists,
+                "TCC-protected path {candidate:?} must report exists=false"
+            );
+            assert!(
+                !stat.is_dir,
+                "TCC-protected path {candidate:?} must report is_dir=false"
+            );
         }
     }
 
@@ -1498,7 +1579,9 @@ mod tests {
     /// the guard — no metadata call, no TCC dialog.
     #[test]
     fn test_stat_path_tcc_protected_dir_itself() {
-        let Some(home) = dirs::home_dir() else { return; };
+        let Some(home) = dirs::home_dir() else {
+            return;
+        };
         let desktop = home.join("Desktop");
         let stat = stat_path_impl(desktop.to_string_lossy().to_string());
         assert!(!stat.exists);
@@ -1511,12 +1594,23 @@ mod tests {
         let repo_path = dir.path().to_string_lossy().to_string();
 
         // Write a new file
-        write_file(repo_path.clone(), "new.txt".to_string(), "hello".to_string()).unwrap();
-        assert_eq!(fs::read_to_string(dir.path().join("new.txt")).unwrap(), "hello");
+        write_file(
+            repo_path.clone(),
+            "new.txt".to_string(),
+            "hello".to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(dir.path().join("new.txt")).unwrap(),
+            "hello"
+        );
 
         // Overwrite
         write_file(repo_path, "new.txt".to_string(), "world".to_string()).unwrap();
-        assert_eq!(fs::read_to_string(dir.path().join("new.txt")).unwrap(), "world");
+        assert_eq!(
+            fs::read_to_string(dir.path().join("new.txt")).unwrap(),
+            "world"
+        );
     }
 
     #[test]
@@ -1562,12 +1656,7 @@ mod tests {
         let dir = setup_test_repo();
         let repo_path = dir.path().to_string_lossy().to_string();
 
-        rename_path(
-            repo_path,
-            "main.rs".to_string(),
-            "app.rs".to_string(),
-        )
-        .unwrap();
+        rename_path(repo_path, "main.rs".to_string(), "app.rs".to_string()).unwrap();
 
         assert!(!dir.path().join("main.rs").exists());
         assert!(dir.path().join("app.rs").exists());
@@ -1593,12 +1682,20 @@ mod tests {
 
         let entries = list_directory_impl(repo_path.clone(), "src".to_string()).unwrap();
         for entry in &entries {
-            assert!(!entry.path.contains('\\'), "Path should use / not \\: {}", entry.path);
+            assert!(
+                !entry.path.contains('\\'),
+                "Path should use / not \\: {}",
+                entry.path
+            );
         }
 
         let root_entries = list_directory_impl(repo_path, ".".to_string()).unwrap();
         for entry in &root_entries {
-            assert!(!entry.path.contains('\\'), "Path should use / not \\: {}", entry.path);
+            assert!(
+                !entry.path.contains('\\'),
+                "Path should use / not \\: {}",
+                entry.path
+            );
         }
     }
 
@@ -1610,7 +1707,11 @@ mod tests {
         let entries = list_directory_impl(repo_path, ".".to_string()).unwrap();
 
         for entry in &entries {
-            assert!(entry.modified_at > 0, "modified_at should be non-zero for {}", entry.name);
+            assert!(
+                entry.modified_at > 0,
+                "modified_at should be non-zero for {}",
+                entry.name
+            );
         }
     }
 
@@ -1626,7 +1727,10 @@ mod tests {
         let entries = list_directory_impl(repo_path, ".".to_string()).unwrap();
 
         let build_log = entries.iter().find(|e| e.name == "build.log");
-        assert!(build_log.is_some(), "build.log should still appear in listing");
+        assert!(
+            build_log.is_some(),
+            "build.log should still appear in listing"
+        );
         assert!(
             build_log.unwrap().is_ignored,
             "build.log should be marked as ignored"
@@ -1656,7 +1760,11 @@ mod tests {
         );
         // All results should have forward-slash paths
         for entry in &results {
-            assert!(!entry.path.contains('\\'), "Path should use / not \\: {}", entry.path);
+            assert!(
+                !entry.path.contains('\\'),
+                "Path should use / not \\: {}",
+                entry.path
+            );
         }
     }
 
@@ -1704,10 +1812,15 @@ mod tests {
 
         for sub in [".git/objects", "node_modules/foo", "target/debug", "dist"] {
             fs::create_dir_all(dir.path().join(sub)).unwrap();
-            fs::write(dir.path().join(sub).join("haystack.txt"), "needle in haystack").unwrap();
+            fs::write(
+                dir.path().join(sub).join("haystack.txt"),
+                "needle in haystack",
+            )
+            .unwrap();
         }
 
-        let result = search_content_impl(repo_path, "needle".to_string(), true, false, false, None).unwrap();
+        let result =
+            search_content_impl(repo_path, "needle".to_string(), true, false, false, None).unwrap();
         assert!(
             result.matches.iter().all(|m| {
                 !m.path.starts_with(".git/")
@@ -1747,8 +1860,12 @@ mod tests {
         let repo_path = dir.path().to_string_lossy().to_string();
 
         // src/lib.rs already contains "pub fn hello() {}"
-        let result = search_content_impl(repo_path, "hello".to_string(), true, false, false, None).unwrap();
-        assert!(result.matches.iter().any(|m| m.path == "src/lib.rs"), "Expected match in src/lib.rs");
+        let result =
+            search_content_impl(repo_path, "hello".to_string(), true, false, false, None).unwrap();
+        assert!(
+            result.matches.iter().any(|m| m.path == "src/lib.rs"),
+            "Expected match in src/lib.rs"
+        );
         assert!(result.files_searched > 0);
     }
 
@@ -1757,8 +1874,12 @@ mod tests {
         let dir = setup_test_repo();
         let repo_path = dir.path().to_string_lossy().to_string();
 
-        let result = search_content_impl(repo_path, "HELLO".to_string(), false, false, false, None).unwrap();
-        assert!(result.matches.iter().any(|m| m.path == "src/lib.rs"), "HELLO should match hello case-insensitively");
+        let result =
+            search_content_impl(repo_path, "HELLO".to_string(), false, false, false, None).unwrap();
+        assert!(
+            result.matches.iter().any(|m| m.path == "src/lib.rs"),
+            "HELLO should match hello case-insensitively"
+        );
     }
 
     #[test]
@@ -1766,8 +1887,12 @@ mod tests {
         let dir = setup_test_repo();
         let repo_path = dir.path().to_string_lossy().to_string();
 
-        let result = search_content_impl(repo_path, "HELLO".to_string(), true, false, false, None).unwrap();
-        assert!(result.matches.is_empty(), "HELLO should NOT match hello when case_sensitive=true");
+        let result =
+            search_content_impl(repo_path, "HELLO".to_string(), true, false, false, None).unwrap();
+        assert!(
+            result.matches.is_empty(),
+            "HELLO should NOT match hello when case_sensitive=true"
+        );
     }
 
     #[test]
@@ -1776,17 +1901,25 @@ mod tests {
         let repo_path = dir.path().to_string_lossy().to_string();
 
         // src/lib.rs has "pub fn hello()" and main.rs has "fn main()"
-        let result = search_content_impl(repo_path, r"fn\s+\w+".to_string(), true, true, false, None).unwrap();
-        assert!(!result.matches.is_empty(), "Regex fn\\s+\\w+ should match function definitions");
+        let result =
+            search_content_impl(repo_path, r"fn\s+\w+".to_string(), true, true, false, None)
+                .unwrap();
+        assert!(
+            !result.matches.is_empty(),
+            "Regex fn\\s+\\w+ should match function definitions"
+        );
     }
 
     #[test]
     fn test_search_content_whole_word() {
         let dir = setup_test_repo();
 
-
         // Create a file with both "test" and "testing"
-        fs::write(dir.path().join("words.txt"), "this is a test\nbut not testing\n").unwrap();
+        fs::write(
+            dir.path().join("words.txt"),
+            "this is a test\nbut not testing\n",
+        )
+        .unwrap();
 
         let result = search_content_impl(
             dir.path().to_string_lossy().to_string(),
@@ -1795,12 +1928,27 @@ mod tests {
             false,
             true,
             None,
-        ).unwrap();
+        )
+        .unwrap();
 
-        let matches: Vec<&ContentMatch> = result.matches.iter().filter(|m| m.path == "words.txt").collect();
+        let matches: Vec<&ContentMatch> = result
+            .matches
+            .iter()
+            .filter(|m| m.path == "words.txt")
+            .collect();
         // "test" (whole word) should match the first line but not "testing"
-        assert!(matches.iter().any(|m| m.line_text.contains("this is a test")), "Should match line with standalone 'test'");
-        assert!(!matches.iter().any(|m| m.line_text.trim() == "but not testing"), "Should NOT match 'testing' with whole_word=true");
+        assert!(
+            matches
+                .iter()
+                .any(|m| m.line_text.contains("this is a test")),
+            "Should match line with standalone 'test'"
+        );
+        assert!(
+            !matches
+                .iter()
+                .any(|m| m.line_text.trim() == "but not testing"),
+            "Should NOT match 'testing' with whole_word=true"
+        );
     }
 
     #[test]
@@ -1813,12 +1961,16 @@ mod tests {
         content.extend_from_slice(b"\0\0\0");
         fs::write(dir.path().join("binary.bin"), &content).unwrap();
 
-        let result = search_content_impl(repo_path, "hello".to_string(), true, false, false, None).unwrap();
+        let result =
+            search_content_impl(repo_path, "hello".to_string(), true, false, false, None).unwrap();
         assert!(
             result.matches.iter().all(|m| m.path != "binary.bin"),
             "Binary file should be skipped"
         );
-        assert!(result.files_skipped > 0, "files_skipped should be incremented for binary file");
+        assert!(
+            result.files_skipped > 0,
+            "files_skipped should be incremented for binary file"
+        );
     }
 
     #[test]
@@ -1830,12 +1982,16 @@ mod tests {
         let large_content = vec![b'a'; 1_048_577];
         fs::write(dir.path().join("large.txt"), &large_content).unwrap();
 
-        let result = search_content_impl(repo_path, "a".to_string(), true, false, false, None).unwrap();
+        let result =
+            search_content_impl(repo_path, "a".to_string(), true, false, false, None).unwrap();
         assert!(
             result.matches.iter().all(|m| m.path != "large.txt"),
             "Large file should be skipped"
         );
-        assert!(result.files_skipped > 0, "files_skipped should be incremented for large file");
+        assert!(
+            result.files_skipped > 0,
+            "files_skipped should be incremented for large file"
+        );
     }
 
     #[test]
@@ -1845,10 +2001,22 @@ mod tests {
 
         // Create an ignored directory with a file containing a unique string
         fs::create_dir(dir.path().join("ignored_dir")).unwrap();
-        fs::write(dir.path().join("ignored_dir/secret.txt"), "supersecretstring").unwrap();
+        fs::write(
+            dir.path().join("ignored_dir/secret.txt"),
+            "supersecretstring",
+        )
+        .unwrap();
         fs::write(dir.path().join(".gitignore"), "ignored_dir/\n").unwrap();
 
-        let result = search_content_impl(repo_path, "supersecretstring".to_string(), true, false, false, None).unwrap();
+        let result = search_content_impl(
+            repo_path,
+            "supersecretstring".to_string(),
+            true,
+            false,
+            false,
+            None,
+        )
+        .unwrap();
         assert!(
             result.matches.is_empty(),
             "Should not search inside gitignored directory"
@@ -1862,14 +2030,23 @@ mod tests {
 
         fs::write(dir.path().join("offsets.txt"), "hello world\n").unwrap();
 
-        let result = search_content_impl(repo_path, "world".to_string(), true, false, false, None).unwrap();
-        let m = result.matches.iter().find(|m| m.path == "offsets.txt").expect("Should find match in offsets.txt");
+        let result =
+            search_content_impl(repo_path, "world".to_string(), true, false, false, None).unwrap();
+        let m = result
+            .matches
+            .iter()
+            .find(|m| m.path == "offsets.txt")
+            .expect("Should find match in offsets.txt");
 
         assert_eq!(m.line_number, 1);
         let line = &m.line_text;
         let start = m.match_start as usize;
         let end = m.match_end as usize;
-        assert_eq!(&line[start..end], "world", "Offsets should point to 'world' in the line");
+        assert_eq!(
+            &line[start..end],
+            "world",
+            "Offsets should point to 'world' in the line"
+        );
     }
 
     #[test]
@@ -1879,12 +2056,25 @@ mod tests {
 
         // Create multiple files each with the search term
         for i in 0..5 {
-            fs::write(dir.path().join(format!("match{i}.txt")), format!("target line {i}\ntarget line again {i}\n")).unwrap();
+            fs::write(
+                dir.path().join(format!("match{i}.txt")),
+                format!("target line {i}\ntarget line again {i}\n"),
+            )
+            .unwrap();
         }
 
-        let result = search_content_impl(repo_path, "target".to_string(), true, false, false, Some(2)).unwrap();
-        assert_eq!(result.matches.len(), 2, "Should return exactly 2 matches when limit=2");
-        assert!(result.truncated, "truncated should be true when limit is hit");
+        let result =
+            search_content_impl(repo_path, "target".to_string(), true, false, false, Some(2))
+                .unwrap();
+        assert_eq!(
+            result.matches.len(),
+            2,
+            "Should return exactly 2 matches when limit=2"
+        );
+        assert!(
+            result.truncated,
+            "truncated should be true when limit is hit"
+        );
     }
 
     #[test]
@@ -1892,8 +2082,12 @@ mod tests {
         let dir = setup_test_repo();
         let repo_path = dir.path().to_string_lossy().to_string();
 
-        let result = search_content_impl(repo_path, String::new(), true, false, false, None).unwrap();
-        assert!(result.matches.is_empty(), "Empty query should return no matches");
+        let result =
+            search_content_impl(repo_path, String::new(), true, false, false, None).unwrap();
+        assert!(
+            result.matches.is_empty(),
+            "Empty query should return no matches"
+        );
     }
 
     #[test]
@@ -1901,8 +2095,20 @@ mod tests {
         let dir = setup_test_repo();
         let repo_path = dir.path().to_string_lossy().to_string();
 
-        let result = search_content_impl(repo_path, "xyzzy_no_such_string_9999".to_string(), true, false, false, None).unwrap();
-        assert_eq!(result.matches.len(), 0, "Should return 0 matches for non-existent string");
+        let result = search_content_impl(
+            repo_path,
+            "xyzzy_no_such_string_9999".to_string(),
+            true,
+            false,
+            false,
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            result.matches.len(),
+            0,
+            "Should return 0 matches for non-existent string"
+        );
         assert!(!result.truncated);
     }
 
@@ -1919,27 +2125,18 @@ mod tests {
             "lorem ipsum dolor sit amet consectetur database adipiscing elit sed do\n",
         )
         .unwrap();
-        fs::write(
-            dir.path().join("b.txt"),
-            "database database database\n",
-        )
-        .unwrap();
+        fs::write(dir.path().join("b.txt"), "database database database\n").unwrap();
 
         let repo_path = dir.path().to_string_lossy().to_string();
-        let result = search_content_impl(
-            repo_path,
-            "database".to_string(),
-            false,
-            false,
-            false,
-            None,
-        )
-        .unwrap();
+        let result =
+            search_content_impl(repo_path, "database".to_string(), false, false, false, None)
+                .unwrap();
 
         assert!(result.matches.len() >= 2, "expected hits from both files");
         // After rerank, the high-TF / short-line match in b.txt must win.
         assert_eq!(
-            result.matches[0].path, "b.txt",
+            result.matches[0].path,
+            "b.txt",
             "BM25 rerank should put the highest-tf line first, got order: {:?}",
             result.matches.iter().map(|m| &m.path).collect::<Vec<_>>()
         );
@@ -1959,7 +2156,10 @@ mod tests {
 
         // Should not panic or return an error
         let result = search_content_impl(repo_path, "valid".to_string(), true, false, false, None);
-        assert!(result.is_ok(), "Non-UTF-8 file should be handled gracefully, not panic");
+        assert!(
+            result.is_ok(),
+            "Non-UTF-8 file should be handled gracefully, not panic"
+        );
     }
 
     // --- strip_line_col_suffix tests ---
@@ -1983,7 +2183,10 @@ mod tests {
     #[test]
     fn test_strip_preserves_non_numeric_colons() {
         // Windows-style C: drive prefix should be preserved
-        assert_eq!(strip_line_col_suffix("C:\\Users\\file.rs"), "C:\\Users\\file.rs");
+        assert_eq!(
+            strip_line_col_suffix("C:\\Users\\file.rs"),
+            "C:\\Users\\file.rs"
+        );
         // Colon followed by non-digits should be preserved
         assert_eq!(strip_line_col_suffix("src/lib.rs:abc"), "src/lib.rs:abc");
     }
@@ -2068,10 +2271,8 @@ mod tests {
         let dir = TempDir::new().unwrap();
         fs::create_dir(dir.path().join("src")).unwrap();
 
-        let result = resolve_terminal_path(
-            dir.path().to_string_lossy().to_string(),
-            "src".to_string(),
-        );
+        let result =
+            resolve_terminal_path(dir.path().to_string_lossy().to_string(), "src".to_string());
         assert!(result.is_some());
         assert!(result.unwrap().is_directory);
     }
@@ -2085,10 +2286,7 @@ mod tests {
     #[test]
     fn validate_external_write_rejects_relative_path() {
         let home = TempDir::new().unwrap();
-        let result = validate_external_write_path(
-            std::path::Path::new("foo.txt"),
-            home.path(),
-        );
+        let result = validate_external_write_path(std::path::Path::new("foo.txt"), home.path());
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("absolute path"));
     }
@@ -2097,7 +2295,13 @@ mod tests {
     fn validate_external_write_rejects_parent_dir_component() {
         let home = TempDir::new().unwrap();
         // Path starts inside home but escapes via `..`.
-        let escaping = home.path().join("sub").join("..").join("..").join("etc").join("passwd");
+        let escaping = home
+            .path()
+            .join("sub")
+            .join("..")
+            .join("..")
+            .join("etc")
+            .join("passwd");
         let result = validate_external_write_path(&escaping, home.path());
         assert!(result.is_err());
         assert!(result.unwrap_err().contains(".."));
@@ -2107,10 +2311,7 @@ mod tests {
     fn validate_external_write_rejects_path_outside_home() {
         let home = TempDir::new().unwrap();
         let other = TempDir::new().unwrap(); // sibling tempdir, NOT inside `home`
-        let result = validate_external_write_path(
-            &other.path().join("victim.txt"),
-            home.path(),
-        );
+        let result = validate_external_write_path(&other.path().join("victim.txt"), home.path());
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("within the user's home"));
     }
@@ -2185,7 +2386,10 @@ mod tests {
         assert!(res.errors.is_empty(), "errors: {:?}", res.errors);
         assert!(!res.needs_confirm);
         assert!(!src_file.exists(), "source should be gone after move");
-        assert_eq!(fs::read_to_string(dst_dir.path().join("a.txt")).unwrap(), "hello");
+        assert_eq!(
+            fs::read_to_string(dst_dir.path().join("a.txt")).unwrap(),
+            "hello"
+        );
     }
 
     #[test]
@@ -2205,7 +2409,10 @@ mod tests {
 
         assert_eq!(res.moved, 1);
         assert!(src_file.exists(), "source should still exist after copy");
-        assert_eq!(fs::read_to_string(dst_dir.path().join("a.txt")).unwrap(), "hello");
+        assert_eq!(
+            fs::read_to_string(dst_dir.path().join("a.txt")).unwrap(),
+            "hello"
+        );
     }
 
     #[test]
@@ -2251,7 +2458,10 @@ mod tests {
         )
         .unwrap();
 
-        assert!(res.needs_confirm, "dir without allow_recursive must request confirm");
+        assert!(
+            res.needs_confirm,
+            "dir without allow_recursive must request confirm"
+        );
         assert_eq!(res.moved, 0);
         assert!(
             !dst_dir.path().join("folder").exists(),
@@ -2279,7 +2489,10 @@ mod tests {
 
         assert_eq!(res.moved, 1);
         assert!(res.errors.is_empty(), "errors: {:?}", res.errors);
-        assert_eq!(fs::read_to_string(dst_dir.path().join("folder/a.txt")).unwrap(), "1");
+        assert_eq!(
+            fs::read_to_string(dst_dir.path().join("folder/a.txt")).unwrap(),
+            "1"
+        );
         assert_eq!(
             fs::read_to_string(dst_dir.path().join("folder/nested/b.txt")).unwrap(),
             "2"
@@ -2326,7 +2539,10 @@ mod tests {
 
         assert_eq!(res.moved, 0);
         assert_eq!(res.errors.len(), 1, "got errors: {:?}", res.errors);
-        assert!(parent.exists(), "source must remain untouched on self-nest error");
+        assert!(
+            parent.exists(),
+            "source must remain untouched on self-nest error"
+        );
     }
 
     #[test]

@@ -18,6 +18,6 @@ async fn main() -> anyhow::Result<()> {
 
 #[cfg(feature = "desktop")]
 fn main() {
-    eprintln!("tuicommander-remote requires --no-default-features (desktop feature must be disabled)");
+    eprintln!("tuic-remote requires --no-default-features (desktop feature must be disabled)");
     std::process::exit(1);
 }

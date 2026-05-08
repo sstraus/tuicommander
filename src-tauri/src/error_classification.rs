@@ -191,6 +191,9 @@ mod tests {
     #[test]
     fn backoff_delay_zero_retry() {
         let delay = calculate_backoff_delay(0, 1000.0, 30000.0, 2.0);
-        assert!((950.0..=1050.0).contains(&delay), "retry 0 direct: got {delay}");
+        assert!(
+            (950.0..=1050.0).contains(&delay),
+            "retry 0 direct: got {delay}"
+        );
     }
 }

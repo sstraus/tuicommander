@@ -48,7 +48,12 @@ impl ProviderType {
             Self::Zai => Some("https://open.bigmodel.cn/api/paas/v4/"),
             Self::Requesty => Some("https://router.requesty.ai/v1/"),
             Self::LiteLlm => Some("http://localhost:4000/v1/"),
-            Self::Anthropic | Self::OpenAi | Self::Gemini | Self::Bedrock | Self::Vertex | Self::Custom => None,
+            Self::Anthropic
+            | Self::OpenAi
+            | Self::Gemini
+            | Self::Bedrock
+            | Self::Vertex
+            | Self::Custom => None,
         }
     }
 
@@ -167,7 +172,10 @@ pub(crate) fn load_registry() -> ProviderRegistry {
             return ProviderRegistry::default();
         }
     };
-    let version = json.get("schema_version").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
+    let version = json
+        .get("schema_version")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(1) as u32;
     if version < 2 {
         migrate_slots_v1_to_v2(&mut json);
     }
@@ -209,22 +217,37 @@ fn migrate_slots_v1_to_v2(json: &mut serde_json::Value) {
 /// Migrate from 5-slot schema (chat/agent_mid/agent_low/agent_high/headless) to
 /// 3-slot schema (main/triage/headless). agent_low/agent_high move to phase_overrides.
 fn migrate_slots_v2_to_v3(json: &mut serde_json::Value) {
-    let slots = match json.get_mut("slots").and_then(|v| v.as_object_mut()) {
-        Some(m) => m,
-        None => return,
-    };
+    let (low, high) = {
+        let slots = match json.get_mut("slots").and_then(|v| v.as_object_mut()) {
+            Some(m) => m,
+            None => return,
+        };
 
-    // chat and agent_mid both map to main; prefer an explicitly-set main
-    for old in ["chat", "agent_mid"] {
-        if let Some(val) = slots.remove(old) {
-            slots.entry("main").or_insert(val);
+        // chat and agent_mid both map to main; prefer an explicitly-set main
+        for old in ["chat", "agent_mid"] {
+            if let Some(val) = slots.remove(old) {
+                slots.entry("main").or_insert(val);
+            }
         }
-    }
 
-    // agent_low → phase_overrides.search + phase_overrides.read
-    // agent_high → phase_overrides.write
-    let low = slots.remove("agent_low");
-    let high = slots.remove("agent_high");
+        // agent_low → phase_overrides.search + phase_overrides.read
+        // agent_high → phase_overrides.write
+        let low = slots.remove("agent_low");
+        let high = slots.remove("agent_high");
+
+        // Strip any slot keys not in the v3 schema (e.g. "enrichment" from earlier builds)
+        let valid = ["main", "triage", "headless"];
+        let stale: Vec<String> = slots
+            .keys()
+            .filter(|k| !valid.contains(&k.as_str()))
+            .cloned()
+            .collect();
+        for k in stale {
+            slots.remove(&k);
+        }
+
+        (low, high)
+    };
 
     if low.is_some() || high.is_some() {
         let overrides = json
@@ -288,8 +311,12 @@ fn migrate_from_legacy() -> ProviderRegistry {
 
         reg.slots.insert(SlotName::Main, model_id.clone());
 
-        if let Ok(Some(key)) = crate::credentials::get(crate::credentials::Credential::AiChatApiKey) {
-            let _ = crate::credentials::set(crate::credentials::Credential::Provider(&provider_id), &key);
+        if let Ok(Some(key)) = crate::credentials::get(crate::credentials::Credential::AiChatApiKey)
+        {
+            let _ = crate::credentials::set(
+                crate::credentials::Credential::Provider(&provider_id),
+                &key,
+            );
         }
 
         if let Some(overrides) = &chat_cfg.agent_model_overrides {
@@ -303,17 +330,27 @@ fn migrate_from_legacy() -> ProviderRegistry {
                         tier: ModelTier::Standard,
                     });
                 }
-                let mid = reg.models.iter().find(|m| m.model_name == *override_model)
-                    .map(|m| m.id.clone()).unwrap_or(override_id);
+                let mid = reg
+                    .models
+                    .iter()
+                    .find(|m| m.model_name == *override_model)
+                    .map(|m| m.id.clone())
+                    .unwrap_or(override_id);
                 match phase {
-                    ToolPhase::Search => { reg.phase_overrides.insert(ToolPhase::Search, mid.clone()); reg.phase_overrides.insert(ToolPhase::Read, mid); }
-                    ToolPhase::Read => { reg.phase_overrides.insert(ToolPhase::Read, mid); }
-                    ToolPhase::Write => { reg.phase_overrides.insert(ToolPhase::Write, mid); }
+                    ToolPhase::Search => {
+                        reg.phase_overrides.insert(ToolPhase::Search, mid.clone());
+                        reg.phase_overrides.insert(ToolPhase::Read, mid);
+                    }
+                    ToolPhase::Read => {
+                        reg.phase_overrides.insert(ToolPhase::Read, mid);
+                    }
+                    ToolPhase::Write => {
+                        reg.phase_overrides.insert(ToolPhase::Write, mid);
+                    }
                     ToolPhase::Plan => {} // plan uses main slot
                 }
             }
         }
-
     }
 
     if llm_cfg.is_configured() {
@@ -332,8 +369,12 @@ fn migrate_from_legacy() -> ProviderRegistry {
                     tier: ModelTier::Standard,
                 });
             }
-            let mid = reg.models.iter().find(|m| m.model_name == llm_cfg.model)
-                .map(|m| m.id.clone()).unwrap_or(headless_model_id);
+            let mid = reg
+                .models
+                .iter()
+                .find(|m| m.model_name == llm_cfg.model)
+                .map(|m| m.id.clone())
+                .unwrap_or(headless_model_id);
             reg.slots.insert(SlotName::Headless, mid);
         } else {
             let ptype = infer_provider_type(&llm_cfg.provider);
@@ -356,8 +397,13 @@ fn migrate_from_legacy() -> ProviderRegistry {
 
             reg.slots.insert(SlotName::Headless, model_id);
 
-            if let Ok(Some(key)) = crate::credentials::get(crate::credentials::Credential::LlmApiKey) {
-                let _ = crate::credentials::set(crate::credentials::Credential::Provider(&provider_id), &key);
+            if let Ok(Some(key)) =
+                crate::credentials::get(crate::credentials::Credential::LlmApiKey)
+            {
+                let _ = crate::credentials::set(
+                    crate::credentials::Credential::Provider(&provider_id),
+                    &key,
+                );
             }
         }
     }
@@ -589,13 +635,22 @@ mod tests {
         assert!(loaded.providers[0].base_url.is_none());
         assert_eq!(loaded.providers[1].id, "ollama-local");
         assert_eq!(loaded.providers[1].provider_type, ProviderType::Ollama);
-        assert_eq!(loaded.providers[1].base_url.as_deref(), Some("http://localhost:11434/v1/"));
+        assert_eq!(
+            loaded.providers[1].base_url.as_deref(),
+            Some("http://localhost:11434/v1/")
+        );
         assert_eq!(loaded.models.len(), 2);
         assert_eq!(loaded.models[0].model_name, "claude-sonnet-4-5-20241022");
         assert_eq!(loaded.models[0].tier, ModelTier::Standard);
         assert_eq!(loaded.models[1].tier, ModelTier::Economic);
-        assert_eq!(loaded.slots.get(&SlotName::Main), Some(&"sonnet-4".to_string()));
-        assert_eq!(loaded.phase_overrides.get(&ToolPhase::Search), Some(&"haiku".to_string()));
+        assert_eq!(
+            loaded.slots.get(&SlotName::Main),
+            Some(&"sonnet-4".to_string())
+        );
+        assert_eq!(
+            loaded.phase_overrides.get(&ToolPhase::Search),
+            Some(&"haiku".to_string())
+        );
     }
 
     #[test]
@@ -634,7 +689,12 @@ mod tests {
 
         for (variant, expected_str) in &variants {
             let json = serde_json::to_string(variant).unwrap();
-            assert_eq!(json, format!("\"{}\"", expected_str), "serialize {:?}", variant);
+            assert_eq!(
+                json,
+                format!("\"{}\"", expected_str),
+                "serialize {:?}",
+                variant
+            );
             let back: ProviderType = serde_json::from_str(&json).unwrap();
             assert_eq!(&back, variant, "deserialize {}", expected_str);
         }
@@ -642,18 +702,54 @@ mod tests {
 
     #[test]
     fn provider_type_default_base_urls() {
-        assert_eq!(ProviderType::Ollama.default_base_url(), Some("http://localhost:11434/v1/"));
-        assert_eq!(ProviderType::LmStudio.default_base_url(), Some("http://localhost:1234/v1/"));
-        assert_eq!(ProviderType::OpenRouter.default_base_url(), Some("https://openrouter.ai/api/v1/"));
-        assert_eq!(ProviderType::DeepSeek.default_base_url(), Some("https://api.deepseek.com/v1/"));
-        assert_eq!(ProviderType::Mistral.default_base_url(), Some("https://api.mistral.ai/v1/"));
-        assert_eq!(ProviderType::Fireworks.default_base_url(), Some("https://api.fireworks.ai/inference/v1/"));
-        assert_eq!(ProviderType::SambaNova.default_base_url(), Some("https://api.sambanova.ai/v1/"));
-        assert_eq!(ProviderType::Moonshot.default_base_url(), Some("https://api.moonshot.cn/v1/"));
-        assert_eq!(ProviderType::Xai.default_base_url(), Some("https://api.x.ai/v1/"));
-        assert_eq!(ProviderType::Zai.default_base_url(), Some("https://open.bigmodel.cn/api/paas/v4/"));
-        assert_eq!(ProviderType::Requesty.default_base_url(), Some("https://router.requesty.ai/v1/"));
-        assert_eq!(ProviderType::LiteLlm.default_base_url(), Some("http://localhost:4000/v1/"));
+        assert_eq!(
+            ProviderType::Ollama.default_base_url(),
+            Some("http://localhost:11434/v1/")
+        );
+        assert_eq!(
+            ProviderType::LmStudio.default_base_url(),
+            Some("http://localhost:1234/v1/")
+        );
+        assert_eq!(
+            ProviderType::OpenRouter.default_base_url(),
+            Some("https://openrouter.ai/api/v1/")
+        );
+        assert_eq!(
+            ProviderType::DeepSeek.default_base_url(),
+            Some("https://api.deepseek.com/v1/")
+        );
+        assert_eq!(
+            ProviderType::Mistral.default_base_url(),
+            Some("https://api.mistral.ai/v1/")
+        );
+        assert_eq!(
+            ProviderType::Fireworks.default_base_url(),
+            Some("https://api.fireworks.ai/inference/v1/")
+        );
+        assert_eq!(
+            ProviderType::SambaNova.default_base_url(),
+            Some("https://api.sambanova.ai/v1/")
+        );
+        assert_eq!(
+            ProviderType::Moonshot.default_base_url(),
+            Some("https://api.moonshot.cn/v1/")
+        );
+        assert_eq!(
+            ProviderType::Xai.default_base_url(),
+            Some("https://api.x.ai/v1/")
+        );
+        assert_eq!(
+            ProviderType::Zai.default_base_url(),
+            Some("https://open.bigmodel.cn/api/paas/v4/")
+        );
+        assert_eq!(
+            ProviderType::Requesty.default_base_url(),
+            Some("https://router.requesty.ai/v1/")
+        );
+        assert_eq!(
+            ProviderType::LiteLlm.default_base_url(),
+            Some("http://localhost:4000/v1/")
+        );
         assert!(ProviderType::Anthropic.default_base_url().is_none());
         assert!(ProviderType::OpenAi.default_base_url().is_none());
         assert!(ProviderType::Gemini.default_base_url().is_none());
@@ -869,7 +965,8 @@ mod tests {
         crate::credentials::set(
             crate::credentials::Credential::Provider("anthropic-main"),
             "sk-ant-test",
-        ).unwrap();
+        )
+        .unwrap();
 
         let reg = test_registry();
         let resolved = resolve_slot(&reg, SlotName::Main).unwrap();
@@ -883,8 +980,14 @@ mod tests {
     fn phase_overrides_in_registry() {
         use crate::ai_agent::engine::ToolPhase;
         let reg = test_registry();
-        assert_eq!(reg.phase_overrides.get(&ToolPhase::Search), Some(&"haiku".to_string()));
-        assert_eq!(reg.phase_overrides.get(&ToolPhase::Write), Some(&"gpt4o".to_string()));
+        assert_eq!(
+            reg.phase_overrides.get(&ToolPhase::Search),
+            Some(&"haiku".to_string())
+        );
+        assert_eq!(
+            reg.phase_overrides.get(&ToolPhase::Write),
+            Some(&"gpt4o".to_string())
+        );
         assert!(reg.phase_overrides.get(&ToolPhase::Plan).is_none());
     }
 
@@ -896,7 +999,10 @@ mod tests {
 
         let resolved = resolve_slot(&reg, SlotName::Headless).unwrap();
         assert_eq!(resolved.config.model, "llama3.2");
-        assert_eq!(resolved.config.base_url.as_deref(), Some("http://localhost:11434/v1/"));
+        assert_eq!(
+            resolved.config.base_url.as_deref(),
+            Some("http://localhost:11434/v1/")
+        );
         assert_eq!(resolved.api_key, "local");
         assert_eq!(resolved.provider_type, ProviderType::Ollama);
     }
@@ -913,7 +1019,8 @@ mod tests {
     #[test]
     fn resolve_slot_error_dangling_model_ref() {
         let mut reg = test_registry();
-        reg.slots.insert(SlotName::Headless, "nonexistent".to_string());
+        reg.slots
+            .insert(SlotName::Headless, "nonexistent".to_string());
 
         let result = resolve_slot(&reg, SlotName::Headless);
         assert!(result.is_err());
@@ -933,7 +1040,11 @@ mod tests {
 
         let result = resolve_slot(&reg, SlotName::Headless);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Provider 'deleted-provider' not found"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("Provider 'deleted-provider' not found")
+        );
     }
 
     #[test]
@@ -954,7 +1065,10 @@ mod tests {
         reg.slots.insert(SlotName::Main, "m1".to_string());
 
         let resolved = resolve_slot(&reg, SlotName::Main).unwrap();
-        assert_eq!(resolved.config.base_url.as_deref(), Some("http://my-llm:8080/v1/"));
+        assert_eq!(
+            resolved.config.base_url.as_deref(),
+            Some("http://my-llm:8080/v1/")
+        );
     }
 
     // -- migration tests --
@@ -1013,9 +1127,15 @@ mod tests {
         // v1 chat/agent_default → v2 chat/agent_mid → v3 main
         assert_eq!(reg.slots.get(&SlotName::Main), Some(&"sonnet".to_string()));
         // v1 agent_search → v2 agent_low → v3 phase_overrides.search/read
-        assert_eq!(reg.phase_overrides.get(&ToolPhase::Search), Some(&"sonnet".to_string()));
+        assert_eq!(
+            reg.phase_overrides.get(&ToolPhase::Search),
+            Some(&"sonnet".to_string())
+        );
         // v1 agent_write → v2 agent_high → v3 phase_overrides.write
-        assert_eq!(reg.phase_overrides.get(&ToolPhase::Write), Some(&"sonnet".to_string()));
+        assert_eq!(
+            reg.phase_overrides.get(&ToolPhase::Write),
+            Some(&"sonnet".to_string())
+        );
         assert!(reg.slots.get(&SlotName::Headless).is_none());
     }
 
@@ -1058,9 +1178,11 @@ mod tests {
         std::fs::write(
             dir.path().join("ai-chat.json"),
             r#"{"temperature":0.7,"provider":"anthropic","model":"claude-sonnet-4-5-20241022"}"#,
-        ).unwrap();
+        )
+        .unwrap();
 
-        crate::credentials::set(crate::credentials::Credential::AiChatApiKey, "sk-ant-old").unwrap();
+        crate::credentials::set(crate::credentials::Credential::AiChatApiKey, "sk-ant-old")
+            .unwrap();
 
         let reg = load_registry();
         assert_eq!(reg.providers.len(), 1);
@@ -1070,9 +1192,9 @@ mod tests {
         assert_eq!(reg.models[0].model_name, "claude-sonnet-4-5-20241022");
         assert!(reg.slots.contains_key(&SlotName::Main));
 
-        let migrated_key = crate::credentials::get(
-            crate::credentials::Credential::Provider("anthropic-chat")
-        ).unwrap();
+        let migrated_key =
+            crate::credentials::get(crate::credentials::Credential::Provider("anthropic-chat"))
+                .unwrap();
         assert_eq!(migrated_key, Some("sk-ant-old".to_string()));
     }
 
@@ -1099,9 +1221,9 @@ mod tests {
         assert!(reg.slots.contains_key(&SlotName::Headless));
         assert!(!reg.slots.contains_key(&SlotName::Main));
 
-        let migrated_key = crate::credentials::get(
-            crate::credentials::Credential::Provider("openai-headless")
-        ).unwrap();
+        let migrated_key =
+            crate::credentials::get(crate::credentials::Credential::Provider("openai-headless"))
+                .unwrap();
         assert_eq!(migrated_key, Some("sk-oai-old".to_string()));
     }
 
@@ -1114,7 +1236,8 @@ mod tests {
         std::fs::write(
             dir.path().join("ai-chat.json"),
             r#"{"temperature":0.7,"provider":"openai","model":"gpt-4o"}"#,
-        ).unwrap();
+        )
+        .unwrap();
         let llm = crate::llm_api::LlmApiConfig {
             provider: "openai".to_string(),
             model: "gpt-4o-mini".to_string(),
@@ -1139,7 +1262,8 @@ mod tests {
         std::fs::write(
             dir.path().join("ai-chat.json"),
             r#"{"temperature":0.7,"provider":"anthropic","model":"claude-sonnet-4-5-20241022"}"#,
-        ).unwrap();
+        )
+        .unwrap();
         let llm = crate::llm_api::LlmApiConfig {
             provider: "openai".to_string(),
             model: "gpt-4o-mini".to_string(),
@@ -1173,7 +1297,11 @@ mod tests {
         // Write override uses the same model as default — phase_overrides.write set
         assert!(reg.phase_overrides.contains_key(&ToolPhase::Write));
         // Haiku model should be added
-        assert!(reg.models.iter().any(|m| m.model_name == "claude-haiku-4-5-20241022"));
+        assert!(
+            reg.models
+                .iter()
+                .any(|m| m.model_name == "claude-haiku-4-5-20241022")
+        );
     }
 
     #[test]
@@ -1185,7 +1313,8 @@ mod tests {
         std::fs::write(
             dir.path().join("ai-chat.json"),
             r#"{"temperature":0.7,"provider":"anthropic","model":"claude-sonnet-4-5-20241022"}"#,
-        ).unwrap();
+        )
+        .unwrap();
 
         let _ = load_registry();
         // providers.json should now exist

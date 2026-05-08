@@ -102,8 +102,11 @@ impl ContentIndex {
     /// Create an empty, not-yet-built index for a repo.
     pub fn empty(repo_root: PathBuf) -> Self {
         Self {
-            engine: SearchEngineBuilder::<u32>::with_corpus(Language::English, Vec::<String>::new())
-                .build(),
+            engine: SearchEngineBuilder::<u32>::with_corpus(
+                Language::English,
+                Vec::<String>::new(),
+            )
+            .build(),
             entries: Vec::new(),
             path_to_idx: HashMap::new(),
             repo_root,
@@ -220,10 +223,12 @@ impl ContentIndex {
         results
             .into_iter()
             .filter_map(|r| {
-                self.entries.get(r.document.id as usize).map(|e| RankedFile {
-                    rel_path: e.rel_path.clone(),
-                    score: r.score,
-                })
+                self.entries
+                    .get(r.document.id as usize)
+                    .map(|e| RankedFile {
+                        rel_path: e.rel_path.clone(),
+                        score: r.score,
+                    })
             })
             .collect()
     }
@@ -292,11 +297,15 @@ pub fn ensure_index(
     // Low-priority: spawn_blocking uses the Tokio blocking pool.
     // Cooperative yielding via `throttle` keeps CPU usage gentle and
     // pauses indexing while the user is running a search.
-    spawn_build(repo_for_log, move || {
-        let built = ContentIndex::build(PathBuf::from(&repo), Some(&throttle));
-        *index_ref.write() = built;
-        tracing::info!(repo = %repo, "content index built");
-    }, None);
+    spawn_build(
+        repo_for_log,
+        move || {
+            let built = ContentIndex::build(PathBuf::from(&repo), Some(&throttle));
+            *index_ref.write() = built;
+            tracing::info!(repo = %repo, "content index built");
+        },
+        None,
+    );
 
     index
 }
@@ -324,11 +333,15 @@ pub fn rebuild_index(
     let repo = repo_path.to_string();
     let throttle = Arc::clone(&state.indexer_throttle);
     let repo_for_log = repo.clone();
-    spawn_build(repo_for_log, move || {
-        let built = ContentIndex::build(PathBuf::from(&repo), Some(&throttle));
-        *index.write() = built;
-        tracing::debug!(repo = %repo, "content index rebuilt");
-    }, Some(Arc::clone(in_flight)));
+    spawn_build(
+        repo_for_log,
+        move || {
+            let built = ContentIndex::build(PathBuf::from(&repo), Some(&throttle));
+            *index.write() = built;
+            tracing::debug!(repo = %repo, "content index rebuilt");
+        },
+        Some(Arc::clone(in_flight)),
+    );
 }
 
 /// Spawn a background task that listens to the event bus and rebuilds
@@ -378,17 +391,33 @@ mod tests {
         let root = dir.path();
 
         // Create a few text files with known content
-        fs::write(root.join("main.rs"), "fn main() {\n    println!(\"hello world\");\n}\n").unwrap();
-        fs::write(root.join("lib.rs"), "pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n").unwrap();
+        fs::write(
+            root.join("main.rs"),
+            "fn main() {\n    println!(\"hello world\");\n}\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("lib.rs"),
+            "pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n",
+        )
+        .unwrap();
         fs::write(
             root.join("search.rs"),
             "use bm25::SearchEngine;\nfn search_content(query: &str) {\n    // BM25 search implementation\n}\n",
         ).unwrap();
-        fs::write(root.join("README.md"), "# My Project\n\nA project about search and indexing.\n").unwrap();
+        fs::write(
+            root.join("README.md"),
+            "# My Project\n\nA project about search and indexing.\n",
+        )
+        .unwrap();
 
         // Create a subdirectory with a file
         fs::create_dir_all(root.join("src")).unwrap();
-        fs::write(root.join("src/utils.rs"), "pub fn format_result(s: &str) -> String {\n    s.to_uppercase()\n}\n").unwrap();
+        fs::write(
+            root.join("src/utils.rs"),
+            "pub fn format_result(s: &str) -> String {\n    s.to_uppercase()\n}\n",
+        )
+        .unwrap();
 
         dir
     }

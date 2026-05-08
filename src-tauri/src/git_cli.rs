@@ -21,10 +21,7 @@ pub(crate) enum GitError {
     /// The git process could not be spawned (missing binary, permission error).
     SpawnFailed(std::io::Error),
     /// Git exited with a non-zero status code.
-    NonZeroExit {
-        code: Option<i32>,
-        stderr: String,
-    },
+    NonZeroExit { code: Option<i32>, stderr: String },
 }
 
 impl fmt::Display for GitError {
@@ -124,7 +121,11 @@ impl GitCmd {
                 // Use warn for "No such file or directory" — stale worktree entries are expected.
                 // Reserve error for unexpected spawn failures (broken git installation).
                 if e.kind() == std::io::ErrorKind::NotFound {
-                    tracing::warn!(source = "git_cli", "Spawn failed (dir missing): {}", cwd.display());
+                    tracing::warn!(
+                        source = "git_cli",
+                        "Spawn failed (dir missing): {}",
+                        cwd.display()
+                    );
                 } else {
                     tracing::error!(source = "git_cli", "Spawn failed in {}: {e}", cwd.display());
                 }
@@ -155,7 +156,8 @@ fn remove_stale_index_lock(cwd: &Path) {
     let lock = cwd.join(".git/index.lock");
     match std::fs::metadata(&lock) {
         Ok(meta) if meta.len() == 0 => {
-            let is_old = meta.modified()
+            let is_old = meta
+                .modified()
                 .ok()
                 .and_then(|t| t.elapsed().ok())
                 .map(|d| d.as_secs() >= 5)
@@ -165,10 +167,18 @@ fn remove_stale_index_lock(cwd: &Path) {
             }
             match std::fs::remove_file(&lock) {
                 Ok(()) => {
-                    tracing::info!(source = "git_cli", "Removed stale 0-byte index.lock in {}", cwd.display());
+                    tracing::info!(
+                        source = "git_cli",
+                        "Removed stale 0-byte index.lock in {}",
+                        cwd.display()
+                    );
                 }
                 Err(e) => {
-                    tracing::warn!(source = "git_cli", "Failed to remove stale index.lock in {}: {e}", cwd.display());
+                    tracing::warn!(
+                        source = "git_cli",
+                        "Failed to remove stale index.lock in {}: {e}",
+                        cwd.display()
+                    );
                 }
             }
         }
@@ -184,7 +194,10 @@ pub(crate) fn git_cmd(cwd: &Path) -> GitCmd {
     cmd.env("GIT_TERMINAL_PROMPT", "0");
     cmd.arg("--no-optional-locks");
     crate::cli::apply_no_window(&mut cmd);
-    GitCmd { cmd, cwd: cwd.to_path_buf() }
+    GitCmd {
+        cmd,
+        cwd: cwd.to_path_buf(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -250,7 +263,10 @@ mod tests {
         let mut cmd = Command::new("/nonexistent/git-binary-that-does-not-exist");
         cmd.current_dir(&path);
         cmd.args(["status"]);
-        let gc = GitCmd { cmd, cwd: path.clone() };
+        let gc = GitCmd {
+            cmd,
+            cwd: path.clone(),
+        };
         let result = gc.run();
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -305,7 +321,10 @@ mod tests {
             code: None,
             stderr: "killed".to_string(),
         };
-        assert_eq!(err_signal.to_string(), "git exited with code signal: killed");
+        assert_eq!(
+            err_signal.to_string(),
+            "git exited with code signal: killed"
+        );
     }
 
     #[test]

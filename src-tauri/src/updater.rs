@@ -22,15 +22,13 @@ struct ChannelConfig {
     release_page: &'static str,
 }
 
-const CHANNELS: &[(&str, ChannelConfig)] = &[
-    (
-        "nightly",
-        ChannelConfig {
-            manifest_url: "https://github.com/sstraus/tuicommander/releases/download/nightly/latest.json",
-            release_page: "https://github.com/sstraus/tuicommander/releases/tag/nightly",
-        },
-    ),
-];
+const CHANNELS: &[(&str, ChannelConfig)] = &[(
+    "nightly",
+    ChannelConfig {
+        manifest_url: "https://github.com/sstraus/tuicommander/releases/download/nightly/latest.json",
+        release_page: "https://github.com/sstraus/tuicommander/releases/tag/nightly",
+    },
+)];
 
 /// Maximum manifest size (64 KB). Anything larger is rejected.
 const MAX_MANIFEST_BYTES: usize = 64 * 1024;
@@ -244,11 +242,8 @@ mod tests {
     #[tokio::test]
     async fn test_check_update_channel_network_error() {
         // Use a URL that will fail to connect (port 1 is almost certainly closed)
-        let result = fetch_channel_manifest(
-            "http://127.0.0.1:1/nonexistent",
-            "https://example.com",
-        )
-        .await;
+        let result =
+            fetch_channel_manifest("http://127.0.0.1:1/nonexistent", "https://example.com").await;
 
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -270,11 +265,8 @@ mod tests {
             .create_async()
             .await;
 
-        let result = fetch_channel_manifest(
-            &format!("{}/big", server.url()),
-            "https://example.com",
-        )
-        .await;
+        let result =
+            fetch_channel_manifest(&format!("{}/big", server.url()), "https://example.com").await;
 
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -295,11 +287,9 @@ mod tests {
             .create_async()
             .await;
 
-        let result = fetch_channel_manifest(
-            &format!("{}/garbage", server.url()),
-            "https://example.com",
-        )
-        .await;
+        let result =
+            fetch_channel_manifest(&format!("{}/garbage", server.url()), "https://example.com")
+                .await;
 
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Invalid JSON"));
@@ -374,11 +364,8 @@ mod tests {
             .create_async()
             .await;
 
-        let result = fetch_channel_manifest(
-            &format!("{}/error", server.url()),
-            "https://example.com",
-        )
-        .await;
+        let result =
+            fetch_channel_manifest(&format!("{}/error", server.url()), "https://example.com").await;
 
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("HTTP 500"));

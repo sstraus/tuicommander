@@ -28,7 +28,8 @@ static CACHE: Mutex<Option<HashMap<String, CachedEntry>>> = Mutex::new(None);
 /// Validate service name format: alphanumeric, dots, hyphens, underscores, spaces.
 /// Prevents shell injection when service_name is passed to macOS `security` CLI.
 fn is_valid_service_name(name: &str) -> bool {
-    name.chars().all(|c| c.is_alphanumeric() || matches!(c, '.' | '-' | '_' | ' '))
+    name.chars()
+        .all(|c| c.is_alphanumeric() || matches!(c, '.' | '-' | '_' | ' '))
 }
 
 /// Read a credential by service name.
@@ -54,7 +55,9 @@ fn plugin_read_credential_inner(service_name: &str) -> Result<Option<String>, St
         return Err("Service name is empty".into());
     }
     if !is_valid_service_name(service_name) {
-        return Err("Service name contains invalid characters (allow: a-z A-Z 0-9 . - _ space)".into());
+        return Err(
+            "Service name contains invalid characters (allow: a-z A-Z 0-9 . - _ space)".into(),
+        );
     }
 
     cached_read(service_name)
@@ -77,7 +80,10 @@ pub(crate) fn cached_read(service_name: &str) -> Result<Option<String>, String> 
     let map = guard.get_or_insert_with(HashMap::new);
     map.insert(
         service_name.to_string(),
-        CachedEntry { value: value.clone(), fetched_at: Instant::now() },
+        CachedEntry {
+            value: value.clone(),
+            fetched_at: Instant::now(),
+        },
     );
     Ok(value)
 }

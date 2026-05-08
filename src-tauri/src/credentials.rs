@@ -197,8 +197,10 @@ pub(crate) fn delete(cred: Credential<'_>) -> Result<(), String> {
 #[cfg(all(debug_assertions, not(test)))]
 mod dev_store {
     use keyring::{
-        credential::{CredentialApi, CredentialBuilder, CredentialBuilderApi, CredentialPersistence},
         Error,
+        credential::{
+            CredentialApi, CredentialBuilder, CredentialBuilderApi, CredentialPersistence,
+        },
     };
     use std::collections::HashMap;
     use std::path::PathBuf;
@@ -250,7 +252,12 @@ mod dev_store {
             self.set_password(s)
         }
         fn get_password(&self) -> keyring::Result<String> {
-            store().lock().unwrap().get(&self.key).cloned().ok_or(Error::NoEntry)
+            store()
+                .lock()
+                .unwrap()
+                .get(&self.key)
+                .cloned()
+                .ok_or(Error::NoEntry)
         }
         fn get_secret(&self) -> keyring::Result<Vec<u8>> {
             self.get_password().map(|s| s.into_bytes())
@@ -309,8 +316,10 @@ mod dev_store {
 #[cfg(test)]
 fn ensure_mock_keyring() {
     use keyring::{
-        credential::{CredentialApi, CredentialBuilder, CredentialBuilderApi, CredentialPersistence},
         Error,
+        credential::{
+            CredentialApi, CredentialBuilder, CredentialBuilderApi, CredentialPersistence,
+        },
     };
     use std::sync::{Once, OnceLock};
 
@@ -507,7 +516,10 @@ mod tests {
         assert_eq!(result, Some("legacy-chat-key".to_string()));
 
         // Legacy entry must be deleted after migration
-        assert!(matches!(legacy.get_password(), Err(keyring::Error::NoEntry)));
+        assert!(matches!(
+            legacy.get_password(),
+            Err(keyring::Error::NoEntry)
+        ));
     }
 
     #[test]
@@ -524,7 +536,10 @@ mod tests {
         // Vault value wins (or_insert, not insert)
         assert_eq!(result, Some("vault-key".to_string()));
         // Legacy still cleaned up
-        assert!(matches!(legacy.get_password(), Err(keyring::Error::NoEntry)));
+        assert!(matches!(
+            legacy.get_password(),
+            Err(keyring::Error::NoEntry)
+        ));
     }
 
     #[test]

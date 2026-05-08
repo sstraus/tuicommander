@@ -15,10 +15,7 @@ pub(crate) enum TailscaleState {
     /// Binary found but daemon is not running or unreachable.
     NotRunning,
     /// Daemon running. FQDN and HTTPS availability reported.
-    Running {
-        fqdn: String,
-        https_enabled: bool,
-    },
+    Running { fqdn: String, https_enabled: bool },
 }
 
 /// Subset of `tailscale status --json` we care about.
@@ -148,7 +145,9 @@ fn strip_trailing_dot(name: &str) -> String {
 fn is_valid_fqdn(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 253
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
 }
 
 /// Provision a TLS certificate from the Tailscale Local API.
@@ -174,7 +173,9 @@ pub(crate) async fn provision_cert(fqdn: &str) -> anyhow::Result<(Vec<u8>, Vec<u
     }
     #[cfg(not(any(unix, windows)))]
     {
-        Err(anyhow::anyhow!("TLS certificate provisioning is not supported on this platform"))
+        Err(anyhow::anyhow!(
+            "TLS certificate provisioning is not supported on this platform"
+        ))
     }
 }
 
@@ -185,9 +186,9 @@ async fn provision_cert_unix(fqdn: &str) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
     use tokio::net::UnixStream;
 
     let socket_path = "/var/run/tailscale/tailscaled.sock";
-    let mut stream = UnixStream::connect(socket_path).await.map_err(|e| {
-        anyhow::anyhow!("Cannot connect to Tailscale socket at {socket_path}: {e}")
-    })?;
+    let mut stream = UnixStream::connect(socket_path)
+        .await
+        .map_err(|e| anyhow::anyhow!("Cannot connect to Tailscale socket at {socket_path}: {e}"))?;
 
     // Request cert PEM
     let cert_req = format!(
@@ -227,9 +228,11 @@ async fn provision_cert_cli(fqdn: &str) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
     let cert_path = temp_dir.join(format!("{fqdn}.crt"));
     let key_path = temp_dir.join(format!("{fqdn}.key"));
 
-    let cert_path_str = cert_path.to_str()
+    let cert_path_str = cert_path
+        .to_str()
         .ok_or_else(|| anyhow::anyhow!("cert path is not valid UTF-8: {cert_path:?}"))?;
-    let key_path_str = key_path.to_str()
+    let key_path_str = key_path
+        .to_str()
         .ok_or_else(|| anyhow::anyhow!("key path is not valid UTF-8: {key_path:?}"))?;
 
     let output = tokio::process::Command::new(&binary)
@@ -275,14 +278,15 @@ pub(crate) async fn cert_renewal_loop(
 
         tracing::info!(source = "tailscale", "Checking TLS cert renewal for {fqdn}");
         match provision_cert(&fqdn).await {
-            Ok((cert_pem, key_pem)) => {
-                match tls_config.reload_from_pem(cert_pem, key_pem).await {
-                    Ok(()) => tracing::info!(source = "tailscale", "TLS cert renewed for {fqdn}"),
-                    Err(e) => tracing::error!(source = "tailscale", "TLS reload failed: {e}"),
-                }
-            }
+            Ok((cert_pem, key_pem)) => match tls_config.reload_from_pem(cert_pem, key_pem).await {
+                Ok(()) => tracing::info!(source = "tailscale", "TLS cert renewed for {fqdn}"),
+                Err(e) => tracing::error!(source = "tailscale", "TLS reload failed: {e}"),
+            },
             Err(e) => {
-                tracing::warn!(source = "tailscale", "Cert renewal failed (will retry in 24h): {e}");
+                tracing::warn!(
+                    source = "tailscale",
+                    "Cert renewal failed (will retry in 24h): {e}"
+                );
             }
         }
     }
@@ -467,7 +471,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn extract_http_body_success() {
-        let response = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n-----BEGIN CERTIFICATE-----\nMIIB";
+        let response =
+            b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n-----BEGIN CERTIFICATE-----\nMIIB";
         let body = extract_http_body(response).unwrap();
         assert_eq!(body, b"-----BEGIN CERTIFICATE-----\nMIIB");
     }

@@ -159,10 +159,9 @@ fn assign_lanes(commits: &[RawCommit]) -> Vec<GraphNode> {
             // Other parents: find a free lane or create one
             for parent_hash in commit.parents.iter().skip(1) {
                 // Check if any lane already expects this parent (another branch)
-                let parent_lane =
-                    active_lanes
-                        .iter()
-                        .position(|slot| slot.as_deref() == Some(parent_hash.as_str()));
+                let parent_lane = active_lanes
+                    .iter()
+                    .position(|slot| slot.as_deref() == Some(parent_hash.as_str()));
 
                 let parent_col = if let Some(col) = parent_lane {
                     // Lane already expects this parent, just record connection
@@ -215,7 +214,10 @@ fn assign_lanes(commits: &[RawCommit]) -> Vec<GraphNode> {
 // ---------------------------------------------------------------------------
 
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub(crate) async fn get_commit_graph(path: String, count: Option<u32>) -> Result<Vec<GraphNode>, String> {
+pub(crate) async fn get_commit_graph(
+    path: String,
+    count: Option<u32>,
+) -> Result<Vec<GraphNode>, String> {
     tokio::task::spawn_blocking(move || {
         let count = count.unwrap_or(200).min(1000);
         let repo_path = Path::new(&path);
@@ -375,10 +377,7 @@ mod tests {
         assert_eq!(nodes[2].column, 0, "B inherits A's lane");
 
         // D is expected by C's lane
-        assert_eq!(
-            nodes[3].column, nodes[1].column,
-            "D inherits C's lane"
-        );
+        assert_eq!(nodes[3].column, nodes[1].column, "D inherits C's lane");
     }
 
     #[test]
@@ -412,10 +411,7 @@ mod tests {
 
         assert_eq!(commits[0].hash, "abc123");
         assert_eq!(commits[0].parents, vec!["def456", "ghi789"]);
-        assert_eq!(
-            commits[0].refs,
-            vec!["HEAD -> main", "origin/main"]
-        );
+        assert_eq!(commits[0].refs, vec!["HEAD -> main", "origin/main"]);
 
         assert_eq!(commits[1].hash, "aaa111");
         assert!(commits[1].parents.is_empty());
@@ -563,7 +559,12 @@ mod tests {
 
         let nodes = result.unwrap();
         // Only main branch commits are visible (3 commits on main, 1 on feature)
-        assert_eq!(nodes.len(), 3, "Expected 3 commits (HEAD only), got {}", nodes.len());
+        assert_eq!(
+            nodes.len(),
+            3,
+            "Expected 3 commits (HEAD only), got {}",
+            nodes.len()
+        );
 
         // All nodes should have valid columns and rows
         for (i, node) in nodes.iter().enumerate() {

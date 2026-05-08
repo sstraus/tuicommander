@@ -6,9 +6,9 @@ use std::time::Duration;
 #[cfg(feature = "desktop")]
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::state::AppEvent;
 use crate::AppState;
 use crate::repo_watcher::WatchHandle;
+use crate::state::AppEvent;
 
 /// Debounce interval for directory content changes.
 const DEBOUNCE_MS: u64 = 500;
@@ -21,10 +21,7 @@ pub(crate) struct DirChangedPayload {
 
 /// Start watching a directory non-recursively for content changes.
 /// Emits `"dir-changed"` when files are created, deleted, or renamed.
-pub(crate) fn start_watching(
-    dir_path: &str,
-    state: &Arc<AppState>,
-) -> Result<(), String> {
+pub(crate) fn start_watching(dir_path: &str, state: &Arc<AppState>) -> Result<(), String> {
     let path = PathBuf::from(dir_path);
     if !path.is_dir() {
         return Err(format!("Directory does not exist: {dir_path}"));
@@ -39,9 +36,13 @@ pub(crate) fn start_watching(
     let event_bus = state.event_bus.clone();
     let rt = {
         #[cfg(feature = "desktop")]
-        { tauri::async_runtime::handle().inner().clone() }
+        {
+            tauri::async_runtime::handle().inner().clone()
+        }
         #[cfg(not(feature = "desktop"))]
-        { tokio::runtime::Handle::current() }
+        {
+            tokio::runtime::Handle::current()
+        }
     };
     let pending: Arc<Mutex<Option<tokio::task::AbortHandle>>> = Arc::new(Mutex::new(None));
 
@@ -86,7 +87,9 @@ pub(crate) fn start_watching(
         .watch(path.as_path(), RecursiveMode::NonRecursive)
         .map_err(|e| format!("Failed to watch directory: {e}"))?;
 
-    state.dir_watchers.insert(dir_path.to_string(), WatchHandle(Mutex::new(watcher)));
+    state
+        .dir_watchers
+        .insert(dir_path.to_string(), WatchHandle(Mutex::new(watcher)));
     Ok(())
 }
 

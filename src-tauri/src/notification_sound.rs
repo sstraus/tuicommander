@@ -48,41 +48,79 @@ fn sound_sequence(sound: NotificationSound) -> SoundSequence {
         // Gentle two-note ascending chime: C5 -> E5
         NotificationSound::Question => SoundSequence {
             notes: vec![
-                Note { frequency: 523.0, duration: Duration::from_millis(120), waveform: Waveform::Sine },
-                Note { frequency: 659.0, duration: Duration::from_millis(120), waveform: Waveform::Sine },
+                Note {
+                    frequency: 523.0,
+                    duration: Duration::from_millis(120),
+                    waveform: Waveform::Sine,
+                },
+                Note {
+                    frequency: 659.0,
+                    duration: Duration::from_millis(120),
+                    waveform: Waveform::Sine,
+                },
             ],
             gap: Duration::from_millis(30),
         },
         // Satisfying major triad arpeggio: C5 -> E5 -> G5
         NotificationSound::Completion => SoundSequence {
             notes: vec![
-                Note { frequency: 523.0, duration: Duration::from_millis(100), waveform: Waveform::Sine },
-                Note { frequency: 659.0, duration: Duration::from_millis(100), waveform: Waveform::Sine },
-                Note { frequency: 784.0, duration: Duration::from_millis(100), waveform: Waveform::Sine },
+                Note {
+                    frequency: 523.0,
+                    duration: Duration::from_millis(100),
+                    waveform: Waveform::Sine,
+                },
+                Note {
+                    frequency: 659.0,
+                    duration: Duration::from_millis(100),
+                    waveform: Waveform::Sine,
+                },
+                Note {
+                    frequency: 784.0,
+                    duration: Duration::from_millis(100),
+                    waveform: Waveform::Sine,
+                },
             ],
             gap: Duration::from_millis(30),
         },
         // Low descending minor interval: E4 -> C4 (triangle = warmer)
         NotificationSound::Error => SoundSequence {
             notes: vec![
-                Note { frequency: 330.0, duration: Duration::from_millis(150), waveform: Waveform::Triangle },
-                Note { frequency: 262.0, duration: Duration::from_millis(150), waveform: Waveform::Triangle },
+                Note {
+                    frequency: 330.0,
+                    duration: Duration::from_millis(150),
+                    waveform: Waveform::Triangle,
+                },
+                Note {
+                    frequency: 262.0,
+                    duration: Duration::from_millis(150),
+                    waveform: Waveform::Triangle,
+                },
             ],
             gap: Duration::from_millis(40),
         },
         // Quick double-tap: A4 x 2 (triangle = softer)
         NotificationSound::Warning => SoundSequence {
             notes: vec![
-                Note { frequency: 440.0, duration: Duration::from_millis(80), waveform: Waveform::Triangle },
-                Note { frequency: 440.0, duration: Duration::from_millis(80), waveform: Waveform::Triangle },
+                Note {
+                    frequency: 440.0,
+                    duration: Duration::from_millis(80),
+                    waveform: Waveform::Triangle,
+                },
+                Note {
+                    frequency: 440.0,
+                    duration: Duration::from_millis(80),
+                    waveform: Waveform::Triangle,
+                },
             ],
             gap: Duration::from_millis(60),
         },
         // Soft single pluck: G5
         NotificationSound::Info => SoundSequence {
-            notes: vec![
-                Note { frequency: 784.0, duration: Duration::from_millis(80), waveform: Waveform::Sine },
-            ],
+            notes: vec![Note {
+                frequency: 784.0,
+                duration: Duration::from_millis(80),
+                waveform: Waveform::Sine,
+            }],
             gap: Duration::ZERO,
         },
     }
@@ -110,12 +148,7 @@ struct EnvelopedTone {
 }
 
 impl EnvelopedTone {
-    fn new(
-        frequency: f32,
-        duration: Duration,
-        volume: f32,
-        waveform: Waveform,
-    ) -> Self {
+    fn new(frequency: f32, duration: Duration, volume: f32, waveform: Waveform) -> Self {
         let attack = Duration::from_millis(10);
         let release = Duration::from_millis(30);
 
@@ -235,10 +268,7 @@ pub(crate) fn play(sound: NotificationSound, volume: f32) {
             ));
             // Insert silence gap between notes (not after the last one)
             if i < seq.notes.len() - 1 && !seq.gap.is_zero() {
-                sink.append(
-                    rodio::source::Zero::<f32>::new(1, SAMPLE_RATE)
-                        .take_duration(seq.gap),
-                );
+                sink.append(rodio::source::Zero::<f32>::new(1, SAMPLE_RATE).take_duration(seq.gap));
             }
         }
 
@@ -267,10 +297,19 @@ mod tests {
         ];
         for sound in types {
             let seq = sound_sequence(sound);
-            assert!(!seq.notes.is_empty(), "{sound:?} should have at least one note");
+            assert!(
+                !seq.notes.is_empty(),
+                "{sound:?} should have at least one note"
+            );
             for note in &seq.notes {
-                assert!(note.frequency > 0.0, "{sound:?} note frequency must be positive");
-                assert!(!note.duration.is_zero(), "{sound:?} note duration must be non-zero");
+                assert!(
+                    note.frequency > 0.0,
+                    "{sound:?} note frequency must be positive"
+                );
+                assert!(
+                    !note.duration.is_zero(),
+                    "{sound:?} note duration must be non-zero"
+                );
             }
         }
     }
@@ -284,7 +323,10 @@ mod tests {
         let mut tone = tone;
         tone.sample_index = 240;
         let env = tone.envelope();
-        assert!((env - 0.5).abs() < 0.01, "Expected ~0.5 at half-attack, got {env}");
+        assert!(
+            (env - 0.5).abs() < 0.01,
+            "Expected ~0.5 at half-attack, got {env}"
+        );
     }
 
     #[test]
@@ -305,7 +347,10 @@ mod tests {
         let mut tone = tone;
         tone.sample_index = release_mid;
         let env = tone.envelope();
-        assert!((env - 0.5).abs() < 0.02, "Expected ~0.5 at mid-release, got {env}");
+        assert!(
+            (env - 0.5).abs() < 0.02,
+            "Expected ~0.5 at mid-release, got {env}"
+        );
 
         // At the very end, should be ~0
         tone.sample_index = total - 1;
@@ -349,10 +394,16 @@ mod tests {
         let error_seq = sound_sequence(NotificationSound::Error);
         let warning_seq = sound_sequence(NotificationSound::Warning);
         for note in &error_seq.notes {
-            assert!(matches!(note.waveform, Waveform::Triangle), "Error notes should use triangle");
+            assert!(
+                matches!(note.waveform, Waveform::Triangle),
+                "Error notes should use triangle"
+            );
         }
         for note in &warning_seq.notes {
-            assert!(matches!(note.waveform, Waveform::Triangle), "Warning notes should use triangle");
+            assert!(
+                matches!(note.waveform, Waveform::Triangle),
+                "Warning notes should use triangle"
+            );
         }
     }
 
@@ -366,7 +417,10 @@ mod tests {
         for sound in types {
             let seq = sound_sequence(sound);
             for note in &seq.notes {
-                assert!(matches!(note.waveform, Waveform::Sine), "{sound:?} should use sine");
+                assert!(
+                    matches!(note.waveform, Waveform::Sine),
+                    "{sound:?} should use sine"
+                );
             }
         }
     }

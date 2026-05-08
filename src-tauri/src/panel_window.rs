@@ -4,9 +4,7 @@ use std::collections::HashMap;
 use tauri::{Emitter, Manager};
 
 fn validate_panel_id(id: &str) -> Result<(), String> {
-    if id.is_empty()
-        || id.len() > 64
-        || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    if id.is_empty() || id.len() > 64 || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
     {
         return Err(format!("Invalid panel_id: {id}"));
     }
@@ -97,10 +95,7 @@ mod tests {
     #[test]
     fn test_validate_panel_id_rejects_invalid() {
         assert!(validate_panel_id("").is_err(), "empty string");
-        assert!(
-            validate_panel_id(&"a".repeat(65)).is_err(),
-            ">64 chars"
-        );
+        assert!(validate_panel_id(&"a".repeat(65)).is_err(), ">64 chars");
         assert!(validate_panel_id("has spaces").is_err(), "spaces");
         assert!(validate_panel_id("has/slash").is_err(), "slash");
         assert!(validate_panel_id("has.dot").is_err(), "dot");

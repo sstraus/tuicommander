@@ -49,8 +49,8 @@ fn extra_bin_dirs() -> &'static [String] {
         {
             let program_files =
                 std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".to_string());
-            let local_app_data = std::env::var("LOCALAPPDATA")
-                .unwrap_or_else(|_| format!("{home}\\AppData\\Local"));
+            let local_app_data =
+                std::env::var("LOCALAPPDATA").unwrap_or_else(|_| format!("{home}\\AppData\\Local"));
             dirs.extend([
                 format!("{home}\\.cargo\\bin"),
                 format!("{local_app_data}\\Programs\\Microsoft VS Code\\bin"),
@@ -139,10 +139,7 @@ pub(crate) fn has_cli(name: &str) -> bool {
     let mut cmd = std::process::Command::new(checker);
     cmd.arg(name);
     apply_no_window(&mut cmd);
-    if cmd.output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-    {
+    if cmd.output().map(|o| o.status.success()).unwrap_or(false) {
         return true;
     }
     // Also check extra_bin_dirs

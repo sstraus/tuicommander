@@ -230,19 +230,21 @@ const FORMAT_CONFIG_FILES: &[&str] = &[
 
 // 5. Static assets — binary or non-code, never need LLM
 const ASSET_EXTENSIONS: &[&str] = &[
-    "png", "jpg", "jpeg", "gif", "svg", "ico", "webp", "avif",
-    "woff", "woff2", "ttf", "eot", "otf",
-    "mp3", "mp4", "wav", "ogg", "webm",
-    "pdf", "zip", "tar", "gz",
+    "png", "jpg", "jpeg", "gif", "svg", "ico", "webp", "avif", "woff", "woff2", "ttf", "eot",
+    "otf", "mp3", "mp4", "wav", "ogg", "webm", "pdf", "zip", "tar", "gz",
 ];
 
 // 4. Documentation extensions
 const DOC_EXTENSIONS: &[&str] = &["md", "mdx", "txt", "rst", "adoc"];
 
 const DOC_FILES: &[&str] = &[
-    "LICENSE", "LICENSE.md", "LICENSE.txt",
-    "CHANGELOG", "CHANGELOG.md",
-    "CONTRIBUTING", "CONTRIBUTING.md",
+    "LICENSE",
+    "LICENSE.md",
+    "LICENSE.txt",
+    "CHANGELOG",
+    "CHANGELOG.md",
+    "CONTRIBUTING",
+    "CONTRIBUTING.md",
     "CODE_OF_CONDUCT.md",
     "SECURITY.md",
 ];
@@ -298,8 +300,7 @@ fn is_ci_file(path: &str) -> bool {
 }
 
 fn is_doc_file(_path: &str, filename: &str, ext: &str) -> bool {
-    DOC_FILES.contains(&filename)
-        || DOC_EXTENSIONS.contains(&ext)
+    DOC_FILES.contains(&filename) || DOC_EXTENSIONS.contains(&ext)
 }
 
 fn is_asset(ext: &str) -> bool {
@@ -329,50 +330,90 @@ pub fn heuristic_classify(
 
     // 1. Lock files — always low, never interesting
     if LOCK_FILES.contains(&filename) {
-        return Some(make(path, Relevance::Low, Category::Boilerplate, Risk::Cosmetic,
-            "Lock file updated"));
+        return Some(make(
+            path,
+            Relevance::Low,
+            Category::Boilerplate,
+            Risk::Cosmetic,
+            "Lock file updated",
+        ));
     }
 
     // 2. Generated/vendored code — machine output
     if is_generated(path, filename) {
-        return Some(make(path, Relevance::Low, Category::Boilerplate, Risk::Cosmetic,
-            "Generated file updated"));
+        return Some(make(
+            path,
+            Relevance::Low,
+            Category::Boilerplate,
+            Risk::Cosmetic,
+            "Generated file updated",
+        ));
     }
 
     // 3. CI/CD pipeline config
     if is_ci_file(path) {
-        return Some(make(path, Relevance::Low, Category::Config, Risk::Cosmetic,
-            "CI/CD pipeline change"));
+        return Some(make(
+            path,
+            Relevance::Low,
+            Category::Config,
+            Risk::Cosmetic,
+            "CI/CD pipeline change",
+        ));
     }
 
     // 4. Documentation and legal
     if is_doc_file(path, filename, ext) {
-        return Some(make(path, Relevance::Low, Category::Style, Risk::Cosmetic,
-            "Documentation updated"));
+        return Some(make(
+            path,
+            Relevance::Low,
+            Category::Style,
+            Risk::Cosmetic,
+            "Documentation updated",
+        ));
     }
 
     // 5. Static assets (images, fonts, media)
     if is_asset(ext) {
-        return Some(make(path, Relevance::Low, Category::Style, Risk::Cosmetic,
-            "Static asset updated"));
+        return Some(make(
+            path,
+            Relevance::Low,
+            Category::Style,
+            Risk::Cosmetic,
+            "Static asset updated",
+        ));
     }
 
     // 6. SQL migrations — ALWAYS high, schema changes need review
     if is_migration(path, ext) {
-        return Some(make(path, Relevance::High, Category::Schema, Risk::BehavioralChange,
-            "Database migration"));
+        return Some(make(
+            path,
+            Relevance::High,
+            Category::Schema,
+            Risk::BehavioralChange,
+            "Database migration",
+        ));
     }
 
     // 7. Config files with minor edits (≤5 lines)
     if CONFIG_FILES.contains(&filename) && additions + deletions <= 5 {
-        return Some(make(path, Relevance::Low, Category::Config, Risk::Cosmetic,
-            "Minor config change"));
+        return Some(make(
+            path,
+            Relevance::Low,
+            Category::Config,
+            Risk::Cosmetic,
+            "Minor config change",
+        ));
     }
 
     // 8. Formatting/linting config files
     if FORMAT_CONFIG_FILES.contains(&filename) {
-        return Some(make(path, Relevance::Low, Category::Style, Risk::Cosmetic,
-            "Formatting config updated"));
+        return Some(make(
+            path,
+            Relevance::Low,
+            Category::Style,
+            Risk::Cosmetic,
+            "Formatting config updated",
+        ));
     }
 
     // Not classifiable by heuristic — send to LLM for context-aware analysis
@@ -386,7 +427,6 @@ pub fn heuristic_classify(
 const MAX_LINES_PER_FILE: usize = 300;
 const MAX_FILES_TO_LLM: usize = 30;
 const LLM_TIMEOUT: Duration = Duration::from_secs(60);
-
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -506,22 +546,38 @@ fn analyze_diff(diff: &str) -> DiffSignals {
             || trimmed.starts_with("pub mod ")
             || trimmed.starts_with("pub const ")
         {
-            if added { s.api_surface_added += 1; } else { s.api_surface_removed += 1; }
+            if added {
+                s.api_surface_added += 1;
+            } else {
+                s.api_surface_removed += 1;
+            }
         }
         // API surface — TS/JS
         if trimmed.starts_with("export ") {
-            if added { s.api_surface_added += 1; } else { s.api_surface_removed += 1; }
+            if added {
+                s.api_surface_added += 1;
+            } else {
+                s.api_surface_removed += 1;
+            }
         }
         // API surface — Go (exported = uppercase first letter after "func ")
         if let Some(rest) = trimmed.strip_prefix("func ") {
             let first = rest.chars().next().unwrap_or('a');
             if first.is_ascii_uppercase() {
-                if added { s.api_surface_added += 1; } else { s.api_surface_removed += 1; }
+                if added {
+                    s.api_surface_added += 1;
+                } else {
+                    s.api_surface_removed += 1;
+                }
             }
         }
         // API surface — Java
         if trimmed.starts_with("public ") || trimmed.starts_with("protected ") {
-            if added { s.api_surface_added += 1; } else { s.api_surface_removed += 1; }
+            if added {
+                s.api_surface_added += 1;
+            } else {
+                s.api_surface_removed += 1;
+            }
         }
         // Test signals
         if trimmed.contains("#[test]")
@@ -563,7 +619,9 @@ fn build_fallback_summary(signals: &DiffSignals, additions: u32, deletions: u32)
     let lines_str = format!("+{additions} -{deletions} lines");
 
     if signals.api_surface_removed > 0 {
-        let ctx = signals.hunk_context.as_deref()
+        let ctx = signals
+            .hunk_context
+            .as_deref()
             .map(|c| format!(" in {c}"))
             .unwrap_or_default();
         return format!("Removed public API{ctx}; {lines_str}");
@@ -573,7 +631,9 @@ fn build_fallback_summary(signals: &DiffSignals, additions: u32, deletions: u32)
     }
     if signals.api_surface_added > 0 {
         let n = signals.api_surface_added;
-        let ctx = signals.hunk_context.as_deref()
+        let ctx = signals
+            .hunk_context
+            .as_deref()
             .map(|c| format!(" in {c}"))
             .unwrap_or_default();
         return format!(
@@ -646,7 +706,10 @@ fn fallback_classification(
         if total > 20
             && deletions > 0
             && (f64::from(deletions) / f64::from(total)) > 0.5
-            && !matches!(category, Category::Style | Category::Test | Category::Config)
+            && !matches!(
+                category,
+                Category::Style | Category::Test | Category::Config
+            )
         {
             risk = Risk::BreakingChange;
         }
@@ -705,10 +768,7 @@ Relate files to each other. ONLY output the JSON line.";
 
 /// Builds the overview user message for the first turn of a multi-turn session.
 /// Includes file list + any heuristic-classified file names for context.
-fn build_overview(
-    llm_files: &[&str],
-    heuristic_names: &[(&str, &str)],
-) -> String {
+fn build_overview(llm_files: &[&str], heuristic_names: &[(&str, &str)]) -> String {
     let mut msg = String::from("Changeset overview — files to review:\n");
     for path in llm_files {
         msg.push_str(&format!("  {path}\n"));
@@ -767,8 +827,8 @@ fn build_chat_request(
         req = req.append_message(cm);
     }
 
-    let final_user = ChatMessage::user(new_user_msg)
-        .with_options(MessageOptions::from(CacheControl::Ephemeral));
+    let final_user =
+        ChatMessage::user(new_user_msg).with_options(MessageOptions::from(CacheControl::Ephemeral));
     req.append_message(final_user)
 }
 
@@ -952,13 +1012,15 @@ async fn do_turn(
         let tool_calls = response.into_tool_calls();
 
         if tool_calls.is_empty() {
-            session
-                .messages
-                .push(SessionMsg { role: MsgRole::User, content: user_msg });
+            session.messages.push(SessionMsg {
+                role: MsgRole::User,
+                content: user_msg,
+            });
             if let Some(ref t) = text {
-                session
-                    .messages
-                    .push(SessionMsg { role: MsgRole::Assistant, content: t.clone() });
+                session.messages.push(SessionMsg {
+                    role: MsgRole::Assistant,
+                    content: t.clone(),
+                });
             }
             return text;
         }
@@ -970,9 +1032,10 @@ async fn do_turn(
         }
     }
 
-    session
-        .messages
-        .push(SessionMsg { role: MsgRole::User, content: user_msg });
+    session.messages.push(SessionMsg {
+        role: MsgRole::User,
+        content: user_msg,
+    });
     None
 }
 
@@ -996,7 +1059,9 @@ async fn classify_multi_turn(
 
     // Detect file-set change and reset summary so LLM gets a fresh overview
     let mut fsh = std::collections::hash_map::DefaultHasher::new();
-    for p in &file_paths { p.hash(&mut fsh); }
+    for p in &file_paths {
+        p.hash(&mut fsh);
+    }
     let current_fsh = fsh.finish();
     if current_fsh != session.file_set_hash {
         session.summary = None;
@@ -1005,13 +1070,28 @@ async fn classify_multi_turn(
 
     if session.summary.is_none() {
         let overview_msg = build_overview(&file_paths, heuristic_names);
-        if let Some(text) =
-            do_turn(client, model, session, overview_msg, repo_path, &tools, system_prompt).await
+        if let Some(text) = do_turn(
+            client,
+            model,
+            session,
+            overview_msg,
+            repo_path,
+            &tools,
+            system_prompt,
+        )
+        .await
             && let JsonlParsed::Summary(s) = parse_jsonl_line(&text)
         {
             session.summary = Some(s.clone());
             emit_progress(
-                app, repo_path, Some(&s), &[], "llm-overview", false, true, Some(model),
+                app,
+                repo_path,
+                Some(&s),
+                &[],
+                "llm-overview",
+                false,
+                true,
+                Some(model),
             );
         }
     }
@@ -1028,33 +1108,50 @@ async fn classify_multi_turn(
             fc.additions = *additions;
             fc.deletions = *deletions;
             emit_progress(
-                app, repo_path, session.summary.as_deref(), &[fc.clone()], "cached",
-                false, true, Some(model),
+                app,
+                repo_path,
+                session.summary.as_deref(),
+                &[fc.clone()],
+                "cached",
+                false,
+                true,
+                Some(model),
             );
             classified.push(fc);
             continue;
         }
 
         let file_msg = build_file_msg(path, diff, *additions, *deletions);
-        let mut fc =
-            match do_turn(client, model, session, file_msg, repo_path, &tools, system_prompt).await {
-                Some(text) => match parse_jsonl_line(&text) {
-                    JsonlParsed::File(mut fc) => {
-                        fc.path = path.clone();
-                        fc.additions = *additions;
-                        fc.deletions = *deletions;
-                        fc
-                    }
-                    _ => {
-                        tracing::warn!("triage: LLM response for {path} did not parse as file classification: {text:?}");
-                        fallback_classification(path, Some(diff), *additions, *deletions)
-                    }
-                },
-                None => {
-                    tracing::warn!("triage: LLM returned no response for {path} (timeout or error)");
+        let mut fc = match do_turn(
+            client,
+            model,
+            session,
+            file_msg,
+            repo_path,
+            &tools,
+            system_prompt,
+        )
+        .await
+        {
+            Some(text) => match parse_jsonl_line(&text) {
+                JsonlParsed::File(mut fc) => {
+                    fc.path = path.clone();
+                    fc.additions = *additions;
+                    fc.deletions = *deletions;
+                    fc
+                }
+                _ => {
+                    tracing::warn!(
+                        "triage: LLM response for {path} did not parse as file classification: {text:?}"
+                    );
                     fallback_classification(path, Some(diff), *additions, *deletions)
                 }
-            };
+            },
+            None => {
+                tracing::warn!("triage: LLM returned no response for {path} (timeout or error)");
+                fallback_classification(path, Some(diff), *additions, *deletions)
+            }
+        };
 
         if let Some(&(a, d)) = stats.get(fc.path.as_str()) {
             fc.additions = a;
@@ -1069,15 +1166,23 @@ async fn classify_multi_turn(
             "fallback"
         };
         emit_progress(
-            app, repo_path, session.summary.as_deref(), &[fc.clone()], phase, false,
-            true, Some(model),
+            app,
+            repo_path,
+            session.summary.as_deref(),
+            &[fc.clone()],
+            phase,
+            false,
+            true,
+            Some(model),
         );
         classified.push(fc);
     }
 
-    LlmParsed { summary: session.summary.clone(), files: classified }
+    LlmParsed {
+        summary: session.summary.clone(),
+        files: classified,
+    }
 }
-
 
 #[cfg(feature = "desktop")]
 #[derive(Debug, Clone, Serialize)]
@@ -1164,9 +1269,18 @@ pub(crate) async fn run_diff_triage(
     // Emit heuristic results immediately so UI is responsive
     if !heuristic.is_empty() {
         emit_progress(
-            &app, &repo_path, None, &heuristic,
-            if needs_llm.is_empty() { "done" } else { "heuristic" },
-            needs_llm.is_empty(), false, None,
+            &app,
+            &repo_path,
+            None,
+            &heuristic,
+            if needs_llm.is_empty() {
+                "done"
+            } else {
+                "heuristic"
+            },
+            needs_llm.is_empty(),
+            false,
+            None,
         );
     }
 
@@ -1211,13 +1325,15 @@ pub(crate) async fn run_diff_triage(
         if refresh.unwrap_or(false) {
             sessions.remove(&repo_path);
         }
-        if let Some(s) = sessions.get(&repo_path) {
-            if s.is_valid(&model_name_for_session) {
-                sessions.remove(&repo_path).unwrap()
-            } else {
-                TriageSession::new(model_name_for_session.clone())
-            }
+        if sessions
+            .get(&repo_path)
+            .is_some_and(|s| s.is_valid(&model_name_for_session))
+        {
+            sessions
+                .remove(&repo_path)
+                .unwrap_or_else(|| TriageSession::new(model_name_for_session.clone()))
         } else {
+            sessions.remove(&repo_path);
             TriageSession::new(model_name_for_session.clone())
         }
     };
@@ -1242,8 +1358,10 @@ pub(crate) async fn run_diff_triage(
             (c.path.clone(), label)
         })
         .collect();
-    let heuristic_names: Vec<(&str, &str)> =
-        heuristic_labels.iter().map(|(p, l)| (p.as_str(), l.as_str())).collect();
+    let heuristic_names: Vec<(&str, &str)> = heuristic_labels
+        .iter()
+        .map(|(p, l)| (p.as_str(), l.as_str()))
+        .collect();
 
     let mut all_classified = heuristic;
 
@@ -1286,8 +1404,12 @@ pub(crate) async fn run_diff_triage(
     // Prune session entries for files no longer in the changeset
     let current_paths: std::collections::HashSet<&str> =
         changed_files.iter().map(|f| f.path.as_str()).collect();
-    session.file_hashes.retain(|k, _| current_paths.contains(k.as_str()));
-    session.classifications.retain(|k, _| current_paths.contains(k.as_str()));
+    session
+        .file_hashes
+        .retain(|k, _| current_paths.contains(k.as_str()));
+    session
+        .classifications
+        .retain(|k, _| current_paths.contains(k.as_str()));
 
     // Store session back
     if let Ok(mut sessions) = triage_sessions().lock() {
@@ -1347,7 +1469,10 @@ mod tests {
             "tests/integration_test.rs",
             "spec/models/user_spec.rb",
         ] {
-            assert!(classify(path).is_none(), "{path} should go to LLM for context-aware classification");
+            assert!(
+                classify(path).is_none(),
+                "{path} should go to LLM for context-aware classification"
+            );
         }
     }
 
@@ -1524,8 +1649,14 @@ mod tests {
     fn parse_jsonl_empty_and_malformed() {
         assert!(matches!(parse_jsonl_line(""), JsonlParsed::Skip));
         assert!(matches!(parse_jsonl_line("  \n"), JsonlParsed::Skip));
-        assert!(matches!(parse_jsonl_line("not json at all"), JsonlParsed::Skip));
-        assert!(matches!(parse_jsonl_line("{\"bad\": true}"), JsonlParsed::Skip));
+        assert!(matches!(
+            parse_jsonl_line("not json at all"),
+            JsonlParsed::Skip
+        ));
+        assert!(matches!(
+            parse_jsonl_line("{\"bad\": true}"),
+            JsonlParsed::Skip
+        ));
     }
 
     #[test]
@@ -1565,18 +1696,12 @@ mod tests {
 
     #[test]
     fn extract_json_fenced() {
-        assert_eq!(
-            extract_json("```json\n{\"a\": 1}\n```"),
-            "{\"a\": 1}",
-        );
+        assert_eq!(extract_json("```json\n{\"a\": 1}\n```"), "{\"a\": 1}",);
     }
 
     #[test]
     fn extract_json_with_preamble() {
-        assert_eq!(
-            extract_json("Here: {\"a\": 1} done"),
-            "{\"a\": 1}",
-        );
+        assert_eq!(extract_json("Here: {\"a\": 1} done"), "{\"a\": 1}",);
     }
 
     #[test]
@@ -1592,7 +1717,10 @@ mod tests {
     fn build_overview_includes_heuristic_context() {
         let msg = build_overview(
             &["src/app.rs"],
-            &[("Cargo.lock", "boilerplate"), (".github/workflows/ci.yml", "config")],
+            &[
+                ("Cargo.lock", "boilerplate"),
+                (".github/workflows/ci.yml", "config"),
+            ],
         );
         assert!(msg.contains("Pre-classified by heuristic"));
         assert!(msg.contains("Cargo.lock"));
@@ -1602,7 +1730,10 @@ mod tests {
 
     #[test]
     fn build_file_msg_truncates_long_diffs() {
-        let long_diff = (0..500).map(|i| format!("+line {i}")).collect::<Vec<_>>().join("\n");
+        let long_diff = (0..500)
+            .map(|i| format!("+line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let msg = build_file_msg("big.rs", &long_diff, 500, 0);
         assert!(msg.contains("[... truncated at"));
         let line_count = msg.lines().filter(|l| l.starts_with("+line")).count();
@@ -1624,8 +1755,14 @@ mod tests {
         // system_msg + final_user = 2 messages (no session history)
         assert_eq!(req.messages.len(), 2);
         // Both system and final user have cache options
-        assert!(req.messages[0].options.is_some(), "system msg must have CacheControl");
-        assert!(req.messages[1].options.is_some(), "final user msg must have CacheControl");
+        assert!(
+            req.messages[0].options.is_some(),
+            "system msg must have CacheControl"
+        );
+        assert!(
+            req.messages[1].options.is_some(),
+            "final user msg must have CacheControl"
+        );
     }
 
     #[test]
@@ -1634,7 +1771,11 @@ mod tests {
         // Add 42 messages to trigger midpoint caching (> 40)
         for i in 0..42 {
             session.messages.push(SessionMsg {
-                role: if i % 2 == 0 { MsgRole::User } else { MsgRole::Assistant },
+                role: if i % 2 == 0 {
+                    MsgRole::User
+                } else {
+                    MsgRole::Assistant
+                },
                 content: format!("msg {i}"),
             });
         }
@@ -1643,9 +1784,15 @@ mod tests {
         assert_eq!(req.messages.len(), 44);
         let cached_count = req.messages.iter().filter(|m| m.options.is_some()).count();
         // system + midpoint session msg + final user = 3 with cache options
-        assert_eq!(cached_count, 3, "expected system + midpoint + final to have cache options; got {cached_count}");
+        assert_eq!(
+            cached_count, 3,
+            "expected system + midpoint + final to have cache options; got {cached_count}"
+        );
         // midpoint of 42 session msgs = index 21 in session → index 22 in req.messages
-        assert!(req.messages[22].options.is_some(), "midpoint session msg must have cache options");
+        assert!(
+            req.messages[22].options.is_some(),
+            "midpoint session msg must have cache options"
+        );
     }
 
     #[test]
@@ -1700,10 +1847,20 @@ mod tests {
         s.classifications.insert("src/foo.rs".to_string(), fc);
 
         // Same hash → cache hit
-        assert!(s.file_hashes.get("src/foo.rs").filter(|&&ch| ch == h).is_some());
+        assert!(
+            s.file_hashes
+                .get("src/foo.rs")
+                .filter(|&&ch| ch == h)
+                .is_some()
+        );
         // Different hash → miss
         let other = hash_diff("different diff");
-        assert!(s.file_hashes.get("src/foo.rs").filter(|&&ch| ch == other).is_none());
+        assert!(
+            s.file_hashes
+                .get("src/foo.rs")
+                .filter(|&&ch| ch == other)
+                .is_none()
+        );
     }
 
     #[test]
@@ -1743,11 +1900,7 @@ mod tests {
 
     #[test]
     fn fallback_ignore_files_are_config() {
-        for path in &[
-            "src-tauri/.taurignore",
-            ".dockerignore",
-            ".gitignore",
-        ] {
+        for path in &["src-tauri/.taurignore", ".dockerignore", ".gitignore"] {
             let c = fallback_classification(path, None, 0, 0);
             assert_eq!(c.category, Category::Config, "{path}");
             assert_eq!(c.risk, Risk::Cosmetic, "{path}");
@@ -1760,7 +1913,11 @@ mod tests {
     fn fallback_with_pub_fn_diff_is_api_surface() {
         let diff = "@@ -1,3 +1,5 @@ mod handler\n+pub fn handle_request(req: Request) -> Response {\n+    todo!()\n+}";
         let c = fallback_classification("src/handler.rs", Some(diff), 3, 0);
-        assert_eq!(c.category, Category::ApiSurface, "pub fn should → ApiSurface");
+        assert_eq!(
+            c.category,
+            Category::ApiSurface,
+            "pub fn should → ApiSurface"
+        );
         assert_eq!(c.relevance, Relevance::High);
     }
 
@@ -1768,7 +1925,11 @@ mod tests {
     fn fallback_with_pub_fn_removal_is_breaking() {
         let diff = "-pub fn old_api() {}";
         let c = fallback_classification("src/api.rs", Some(diff), 0, 5);
-        assert_eq!(c.risk, Risk::BreakingChange, "removal of pub fn → BreakingChange");
+        assert_eq!(
+            c.risk,
+            Risk::BreakingChange,
+            "removal of pub fn → BreakingChange"
+        );
     }
 
     #[test]
@@ -1796,12 +1957,17 @@ mod tests {
     #[test]
     fn fallback_with_heavy_deletions_is_breaking() {
         // 5 additions, 30 deletions — ratio > 0.5 and total > 20
-        let diff = (0..5).map(|i| format!("+line{i}"))
+        let diff = (0..5)
+            .map(|i| format!("+line{i}"))
             .chain((0..30).map(|i| format!("-old{i}")))
             .collect::<Vec<_>>()
             .join("\n");
         let c = fallback_classification("src/core.rs", Some(&diff), 5, 30);
-        assert_eq!(c.risk, Risk::BreakingChange, "heavy deletions → BreakingChange");
+        assert_eq!(
+            c.risk,
+            Risk::BreakingChange,
+            "heavy deletions → BreakingChange"
+        );
     }
 
     #[test]
@@ -1815,7 +1981,10 @@ mod tests {
     fn fallback_with_hunk_context_generates_summary() {
         let diff = "@@ -10,5 +10,7 @@ fn process_event\n+    do_stuff();";
         let c = fallback_classification("src/events.rs", Some(diff), 1, 0);
-        assert!(!c.summary.is_empty(), "should generate a summary from hunk context");
+        assert!(
+            !c.summary.is_empty(),
+            "should generate a summary from hunk context"
+        );
     }
 
     #[test]
@@ -1830,22 +1999,35 @@ mod tests {
     fn fallback_schema_wins_over_api_surface() {
         let diff = "+pub fn run_migration() {\n+    CREATE TABLE users (id INT);\n+}";
         let c = fallback_classification("src/db.rs", Some(diff), 3, 0);
-        assert_eq!(c.category, Category::Schema, "Schema has priority over ApiSurface");
+        assert_eq!(
+            c.category,
+            Category::Schema,
+            "Schema has priority over ApiSurface"
+        );
         assert_eq!(c.relevance, Relevance::High);
     }
 
     #[test]
     fn fallback_schema_wins_over_test_signals() {
-        let diff = "+ALTER TABLE users ADD COLUMN x TEXT;\n+#[test]\n+fn verify() { assert!(true); }";
+        let diff =
+            "+ALTER TABLE users ADD COLUMN x TEXT;\n+#[test]\n+fn verify() { assert!(true); }";
         let c = fallback_classification("src/db.rs", Some(diff), 3, 0);
-        assert_eq!(c.category, Category::Schema, "Schema has priority over Test");
+        assert_eq!(
+            c.category,
+            Category::Schema,
+            "Schema has priority over Test"
+        );
     }
 
     #[test]
     fn fallback_api_surface_wins_over_test_signals() {
         let diff = "+export function createTestUser() {}\n+describe('user', () => {});";
         let c = fallback_classification("tests/helpers.ts", Some(diff), 5, 0);
-        assert_eq!(c.category, Category::ApiSurface, "ApiSurface has priority over Test");
+        assert_eq!(
+            c.category,
+            Category::ApiSurface,
+            "ApiSurface has priority over Test"
+        );
     }
 
     #[test]
@@ -1853,28 +2035,42 @@ mod tests {
         let diff = "+.password-input { color: red; }";
         let c = fallback_classification("styles/auth.scss", Some(diff), 2, 0);
         assert_eq!(c.relevance, Relevance::High);
-        assert_eq!(c.risk, Risk::BehavioralChange, "auth upgrades Cosmetic → BehavioralChange");
+        assert_eq!(
+            c.risk,
+            Risk::BehavioralChange,
+            "auth upgrades Cosmetic → BehavioralChange"
+        );
     }
 
     #[test]
     fn fallback_heavy_deletions_not_breaking_for_style() {
-        let diff = (0..5).map(|i| format!("+a{i}"))
+        let diff = (0..5)
+            .map(|i| format!("+a{i}"))
             .chain((0..30).map(|i| format!("-b{i}")))
             .collect::<Vec<_>>()
             .join("\n");
         let c = fallback_classification("styles/theme.css", Some(&diff), 5, 30);
         assert_eq!(c.category, Category::Style);
-        assert_ne!(c.risk, Risk::BreakingChange, "deletion ratio should not fire on Style");
+        assert_ne!(
+            c.risk,
+            Risk::BreakingChange,
+            "deletion ratio should not fire on Style"
+        );
     }
 
     #[test]
     fn fallback_heavy_deletions_boundary_total_20_does_not_trigger() {
-        let diff = (0..9).map(|i| format!("+a{i}"))
+        let diff = (0..9)
+            .map(|i| format!("+a{i}"))
             .chain((0..11).map(|i| format!("-b{i}")))
             .collect::<Vec<_>>()
             .join("\n");
         let c = fallback_classification("src/core.rs", Some(&diff), 9, 11);
-        assert_ne!(c.risk, Risk::BreakingChange, "total=20 should not trigger (need >20)");
+        assert_ne!(
+            c.risk,
+            Risk::BreakingChange,
+            "total=20 should not trigger (need >20)"
+        );
     }
 
     #[test]
@@ -1924,7 +2120,10 @@ mod tests {
         let repo = make_repo();
         let args = serde_json::json!({});
         let result = dispatch_tool("read_file", &args, repo.path().to_str().unwrap());
-        assert!(result.starts_with("error:"), "expected error, got: {result}");
+        assert!(
+            result.starts_with("error:"),
+            "expected error, got: {result}"
+        );
     }
 
     #[test]
@@ -1932,7 +2131,10 @@ mod tests {
         let repo = make_repo();
         let args = serde_json::json!({"path": "nope.rs"});
         let result = dispatch_tool("read_file", &args, repo.path().to_str().unwrap());
-        assert!(result.starts_with("error:"), "expected error, got: {result}");
+        assert!(
+            result.starts_with("error:"),
+            "expected error, got: {result}"
+        );
     }
 
     #[test]
@@ -2049,7 +2251,10 @@ mod tests {
         };
 
         let output = dispatch_tool(&tc.fn_name, &tc.fn_arguments, repo.path().to_str().unwrap());
-        assert_eq!(output, "fn main() {}", "dispatch_tool returned unexpected content");
+        assert_eq!(
+            output, "fn main() {}",
+            "dispatch_tool returned unexpected content"
+        );
 
         // Verify ToolResponse can be constructed (round-trip complete)
         let response = ToolResponse::new(&tc.call_id, output.clone());
@@ -2062,7 +2267,10 @@ mod tests {
         use genai::chat::{ToolCall, ToolResponse};
 
         let repo = make_repo();
-        let content: String = (1..=10).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+        let content: String = (1..=10)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         std::fs::write(repo.path().join("numbered.txt"), &content).unwrap();
 
         let tc = ToolCall {
@@ -2194,7 +2402,8 @@ mod tests {
 
     #[test]
     fn analyze_diff_hunk_header_extracts_context() {
-        let diff = "@@ -10,5 +10,7 @@ fn process_event(event: &Event) -> Result<()> {\n+    do_stuff();";
+        let diff =
+            "@@ -10,5 +10,7 @@ fn process_event(event: &Event) -> Result<()> {\n+    do_stuff();";
         let s = analyze_diff(diff);
         assert!(s.hunk_context.is_some());
         assert!(s.hunk_context.as_deref().unwrap().contains("process_event"));
@@ -2232,21 +2441,30 @@ mod tests {
     #[test]
     fn fallback_summary_api_removed_with_context() {
         let signals = DiffSignals {
-            api_surface_added: 0, api_surface_removed: 1,
-            test_signals: 0, schema_signals: 0, auth_signals: 0,
+            api_surface_added: 0,
+            api_surface_removed: 1,
+            test_signals: 0,
+            schema_signals: 0,
+            auth_signals: 0,
             hunk_context: Some("handle_request".to_string()),
             hunk_count: 1,
         };
         let s = build_fallback_summary(&signals, 2, 14);
-        assert!(s.contains("Removed") && s.contains("handle_request"), "got: {s}");
+        assert!(
+            s.contains("Removed") && s.contains("handle_request"),
+            "got: {s}"
+        );
         assert!(s.contains("+2") && s.contains("-14"), "got: {s}");
     }
 
     #[test]
     fn fallback_summary_api_removed_no_context() {
         let signals = DiffSignals {
-            api_surface_added: 0, api_surface_removed: 1,
-            test_signals: 0, schema_signals: 0, auth_signals: 0,
+            api_surface_added: 0,
+            api_surface_removed: 1,
+            test_signals: 0,
+            schema_signals: 0,
+            auth_signals: 0,
             hunk_context: None,
             hunk_count: 1,
         };
@@ -2257,8 +2475,11 @@ mod tests {
     #[test]
     fn fallback_summary_schema_change() {
         let signals = DiffSignals {
-            api_surface_added: 0, api_surface_removed: 0,
-            test_signals: 0, schema_signals: 1, auth_signals: 0,
+            api_surface_added: 0,
+            api_surface_removed: 0,
+            test_signals: 0,
+            schema_signals: 1,
+            auth_signals: 0,
             hunk_context: None,
             hunk_count: 1,
         };
@@ -2269,20 +2490,30 @@ mod tests {
     #[test]
     fn fallback_summary_api_added() {
         let signals = DiffSignals {
-            api_surface_added: 2, api_surface_removed: 0,
-            test_signals: 0, schema_signals: 0, auth_signals: 0,
+            api_surface_added: 2,
+            api_surface_removed: 0,
+            test_signals: 0,
+            schema_signals: 0,
+            auth_signals: 0,
             hunk_context: None,
             hunk_count: 1,
         };
         let s = build_fallback_summary(&signals, 20, 0);
-        assert!(s.contains("2") && (s.contains("public") || s.contains("symbol") || s.contains("added")), "got: {s}");
+        assert!(
+            s.contains("2")
+                && (s.contains("public") || s.contains("symbol") || s.contains("added")),
+            "got: {s}"
+        );
     }
 
     #[test]
     fn fallback_summary_context_only() {
         let signals = DiffSignals {
-            api_surface_added: 0, api_surface_removed: 0,
-            test_signals: 0, schema_signals: 0, auth_signals: 0,
+            api_surface_added: 0,
+            api_surface_removed: 0,
+            test_signals: 0,
+            schema_signals: 0,
+            auth_signals: 0,
             hunk_context: Some("process_event".to_string()),
             hunk_count: 1,
         };
@@ -2293,8 +2524,11 @@ mod tests {
     #[test]
     fn fallback_summary_stats_only() {
         let signals = DiffSignals {
-            api_surface_added: 0, api_surface_removed: 0,
-            test_signals: 0, schema_signals: 0, auth_signals: 0,
+            api_surface_added: 0,
+            api_surface_removed: 0,
+            test_signals: 0,
+            schema_signals: 0,
+            auth_signals: 0,
             hunk_context: None,
             hunk_count: 2,
         };

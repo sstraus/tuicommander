@@ -8,6 +8,6 @@ fn main() {
 
 #[cfg(not(feature = "desktop"))]
 fn main() {
-    eprintln!("The desktop GUI requires the 'desktop' feature. Use tuicommander-remote for headless mode.");
+    eprintln!("The desktop GUI requires the 'desktop' feature. Use tuic-remote for headless mode.");
     std::process::exit(1);
 }

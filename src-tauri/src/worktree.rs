@@ -96,10 +96,7 @@ pub(crate) fn resolve_worktree_dir(
 
 /// Resolve the effective worktree directory for a repo by loading config from disk.
 /// Per-repo `worktree_storage` overrides the global default from repo-defaults.
-pub(crate) fn resolve_worktree_dir_for_repo(
-    repo_path: &Path,
-    app_worktrees_dir: &Path,
-) -> PathBuf {
+pub(crate) fn resolve_worktree_dir_for_repo(repo_path: &Path, app_worktrees_dir: &Path) -> PathBuf {
     let repo_path_str = repo_path.to_string_lossy();
     let repo_settings = crate::config::load_repo_settings();
     let strategy = repo_settings
@@ -157,25 +154,28 @@ pub(crate) fn create_worktree_internal(
     let mut args: Vec<String> = vec!["worktree".into(), "add".into()];
 
     if config.create_branch
-        && let Some(ref branch) = config.branch {
-            args.push("-b".into());
-            args.push(branch.clone());
-        }
+        && let Some(ref branch) = config.branch
+    {
+        args.push("-b".into());
+        args.push(branch.clone());
+    }
 
     args.push(wt_path_str);
 
     if let Some(ref branch) = config.branch
-        && !config.create_branch {
-            args.push(branch.clone());
-        }
+        && !config.create_branch
+    {
+        args.push(branch.clone());
+    }
 
     // Append base_ref as start-point when creating a new branch
     if config.create_branch
-        && let Some(start_point) = base_ref {
-            // Auto-fetch if the base ref is a remote tracking branch
-            fetch_if_remote(&config.base_repo, start_point)?;
-            args.push(start_point.to_string());
-        }
+        && let Some(start_point) = base_ref
+    {
+        // Auto-fetch if the base ref is a remote tracking branch
+        fetch_if_remote(&config.base_repo, start_point)?;
+        args.push(start_point.to_string());
+    }
 
     let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     match git_cmd(&base_repo_path).args(&args_str).run() {
@@ -232,7 +232,10 @@ pub(crate) fn remove_worktree_internal(worktree: &WorktreeInfo) -> Result<(), St
     }
 
     // Prune worktrees (non-fatal: stale entries are harmless)
-    if let Err(e) = git_cmd(&worktree.base_repo).args(["worktree", "prune"]).run() {
+    if let Err(e) = git_cmd(&worktree.base_repo)
+        .args(["worktree", "prune"])
+        .run()
+    {
         tracing::warn!(source = "worktree", "git worktree prune failed: {e}");
     }
 
@@ -242,19 +245,53 @@ pub(crate) fn remove_worktree_internal(worktree: &WorktreeInfo) -> Result<(), St
 /// Adjective + sci-fi character worktree name generator
 pub(crate) fn generate_worktree_name(existing: &[String]) -> String {
     let adjectives = [
-        "brave", "calm", "dark", "eager", "fair", "glad", "happy", "keen",
-        "lush", "mild", "neat", "proud", "quick", "rare", "safe", "tall",
-        "vast", "warm", "wise", "bold", "cool", "deep", "fast", "gold",
-        "huge", "iron", "jade", "kind", "lean", "mint", "nova", "open",
-        "pale", "red", "slim", "tidy", "ultra", "vivid", "wild", "zen",
+        "brave", "calm", "dark", "eager", "fair", "glad", "happy", "keen", "lush", "mild", "neat",
+        "proud", "quick", "rare", "safe", "tall", "vast", "warm", "wise", "bold", "cool", "deep",
+        "fast", "gold", "huge", "iron", "jade", "kind", "lean", "mint", "nova", "open", "pale",
+        "red", "slim", "tidy", "ultra", "vivid", "wild", "zen",
     ];
 
     let names = [
-        "neo", "ripley", "deckard", "morpheus", "trinity", "cypher", "nexus", "cortex",
-        "tron", "hal", "skynet", "muad", "atreides", "harkonnen", "seldon", "daneel",
-        "solaris", "neuro", "winter", "armitage", "molly", "case", "hiro", "kovacs",
-        "takeshi", "quell", "pris", "batty", "zhora", "gaff", "tyrell", "gibson",
-        "asimov", "vance", "rama", "ender", "bean", "valentine", "petra", "revan",
+        "neo",
+        "ripley",
+        "deckard",
+        "morpheus",
+        "trinity",
+        "cypher",
+        "nexus",
+        "cortex",
+        "tron",
+        "hal",
+        "skynet",
+        "muad",
+        "atreides",
+        "harkonnen",
+        "seldon",
+        "daneel",
+        "solaris",
+        "neuro",
+        "winter",
+        "armitage",
+        "molly",
+        "case",
+        "hiro",
+        "kovacs",
+        "takeshi",
+        "quell",
+        "pris",
+        "batty",
+        "zhora",
+        "gaff",
+        "tyrell",
+        "gibson",
+        "asimov",
+        "vance",
+        "rama",
+        "ender",
+        "bean",
+        "valentine",
+        "petra",
+        "revan",
     ];
 
     // Simple PRNG using current time
@@ -264,8 +301,10 @@ pub(crate) fn generate_worktree_name(existing: &[String]) -> String {
         .as_nanos();
 
     for attempt in 0..100u128 {
-        let adj_idx = ((seed.wrapping_add(attempt.wrapping_mul(7))) % adjectives.len() as u128) as usize;
-        let name_idx = ((seed.wrapping_add(attempt.wrapping_mul(13)).wrapping_add(3)) % names.len() as u128) as usize;
+        let adj_idx =
+            ((seed.wrapping_add(attempt.wrapping_mul(7))) % adjectives.len() as u128) as usize;
+        let name_idx = ((seed.wrapping_add(attempt.wrapping_mul(13)).wrapping_add(3))
+            % names.len() as u128) as usize;
         let num = ((seed.wrapping_add(attempt.wrapping_mul(31))) % 1000) as u16;
         let name = format!("{}-{}-{:03}", adjectives[adj_idx], names[name_idx], num);
         if !existing.contains(&name) {
@@ -316,10 +355,8 @@ pub(crate) fn create_worktree(
         create_branch: create_branch.unwrap_or(true),
     };
 
-    let worktrees_dir = resolve_worktree_dir_for_repo(
-        Path::new(&config.base_repo),
-        &state.worktrees_dir,
-    );
+    let worktrees_dir =
+        resolve_worktree_dir_for_repo(Path::new(&config.base_repo), &state.worktrees_dir);
     let worktree = create_worktree_internal(&worktrees_dir, &config, base_ref.as_deref())?;
     state.invalidate_repo_caches(&config.base_repo);
 
@@ -335,7 +372,10 @@ pub(crate) fn create_worktree(
 /// When `repo_path` is provided, resolves the effective storage strategy for the repo.
 #[cfg(feature = "desktop")]
 #[tauri::command]
-pub(crate) fn get_worktrees_dir(state: State<'_, Arc<AppState>>, repo_path: Option<String>) -> String {
+pub(crate) fn get_worktrees_dir(
+    state: State<'_, Arc<AppState>>,
+    repo_path: Option<String>,
+) -> String {
     match repo_path {
         Some(rp) => resolve_worktree_dir_for_repo(Path::new(&rp), &state.worktrees_dir)
             .to_string_lossy()
@@ -348,7 +388,12 @@ pub(crate) fn get_worktrees_dir(state: State<'_, Arc<AppState>>, repo_path: Opti
 ///
 /// When `delete_branch` is true, also deletes the local branch after removing
 /// the worktree directory. When false, the branch is preserved.
-pub(crate) fn remove_worktree_by_branch(repo_path: &str, branch_name: &str, delete_branch: bool, archive_script: Option<&str>) -> Result<(), String> {
+pub(crate) fn remove_worktree_by_branch(
+    repo_path: &str,
+    branch_name: &str,
+    delete_branch: bool,
+    archive_script: Option<&str>,
+) -> Result<(), String> {
     let base_repo = PathBuf::from(repo_path);
 
     // List worktrees to find the path for this branch
@@ -383,9 +428,9 @@ pub(crate) fn remove_worktree_by_branch(repo_path: &str, branch_name: &str, dele
         && let Err(e) = git_cmd(&worktree.base_repo)
             .args(["branch", "-d", branch_name])
             .run()
-        {
-            tracing::warn!(source = "worktree", branch = %branch_name, "git branch -d failed: {e}");
-        }
+    {
+        tracing::warn!(source = "worktree", branch = %branch_name, "git branch -d failed: {e}");
+    }
 
     Ok(())
 }
@@ -395,9 +440,19 @@ pub(crate) fn remove_worktree_by_branch(repo_path: &str, branch_name: &str, dele
 /// `delete_branch` defaults to `true` when omitted (preserving existing behavior).
 #[cfg(feature = "desktop")]
 #[tauri::command]
-pub(crate) fn remove_worktree(state: State<'_, Arc<AppState>>, repo_path: String, branch_name: String, delete_branch: Option<bool>) -> Result<(), String> {
+pub(crate) fn remove_worktree(
+    state: State<'_, Arc<AppState>>,
+    repo_path: String,
+    branch_name: String,
+    delete_branch: Option<bool>,
+) -> Result<(), String> {
     let script = resolve_archive_script(&repo_path);
-    remove_worktree_by_branch(&repo_path, &branch_name, delete_branch.unwrap_or(true), script.as_deref())?;
+    remove_worktree_by_branch(
+        &repo_path,
+        &branch_name,
+        delete_branch.unwrap_or(true),
+        script.as_deref(),
+    )?;
     crate::config::remove_branch_label(&repo_path, &branch_name);
     state.invalidate_repo_caches(&repo_path);
     Ok(())
@@ -435,7 +490,8 @@ pub(crate) fn check_worktree_dirty(repo_path: String, branch_name: String) -> Re
 /// Uses `git branch -d` (safe delete) which fails if the branch has unmerged commits.
 pub(crate) fn delete_local_branch_impl(repo_path: &str, branch_name: &str) -> Result<(), String> {
     // Refuse to delete the default branch
-    let default_branch = get_remote_default_branch(repo_path).unwrap_or_else(|_| "main".to_string());
+    let default_branch =
+        get_remote_default_branch(repo_path).unwrap_or_else(|_| "main".to_string());
     if branch_name == default_branch {
         return Err(format!("Refusing to delete default branch '{branch_name}'"));
     }
@@ -466,7 +522,11 @@ pub(crate) fn delete_local_branch_impl(repo_path: &str, branch_name: &str) -> Re
 /// Tauri command: delete a local branch (and its worktree if linked).
 #[cfg(feature = "desktop")]
 #[tauri::command]
-pub(crate) fn delete_local_branch(state: State<'_, Arc<AppState>>, repo_path: String, branch_name: String) -> Result<(), String> {
+pub(crate) fn delete_local_branch(
+    state: State<'_, Arc<AppState>>,
+    repo_path: String,
+    branch_name: String,
+) -> Result<(), String> {
     delete_local_branch_impl(&repo_path, &branch_name)?;
     state.invalidate_repo_caches(&repo_path);
     Ok(())
@@ -643,7 +703,10 @@ pub(crate) fn generate_worktree_name_cmd(existing_names: Vec<String>) -> String 
 
 /// Generate a hybrid clone branch name: `{sanitized_source}--{random_name}`
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub(crate) fn generate_clone_branch_name_cmd(source_branch: String, existing_names: Vec<String>) -> String {
+pub(crate) fn generate_clone_branch_name_cmd(
+    source_branch: String,
+    existing_names: Vec<String>,
+) -> String {
     generate_clone_branch_name(&source_branch, &existing_names)
 }
 
@@ -655,7 +718,8 @@ pub(crate) fn list_local_branches(repo_path: String) -> Result<Vec<String>, Stri
         .run()
         .map_err(|e| format!("git branch failed: {e}"))?;
 
-    let branches: Vec<String> = out.stdout
+    let branches: Vec<String> = out
+        .stdout
         .lines()
         .map(|l| l.trim().to_string())
         .filter(|l| !l.is_empty())
@@ -715,7 +779,11 @@ pub(crate) fn fetch_if_remote(repo_path: &str, ref_name: &str) -> Result<(), Str
 
 /// Persist the base ref for a branch in git config.
 /// Stored as `branch.<name>.tuicommander-base` in `.git/config`.
-pub(crate) fn set_branch_base(repo_path: &str, branch_name: &str, base_ref: &str) -> Result<(), String> {
+pub(crate) fn set_branch_base(
+    repo_path: &str,
+    branch_name: &str,
+    base_ref: &str,
+) -> Result<(), String> {
     let key = format!("branch.{branch_name}.tuicommander-base");
     git_cmd(Path::new(repo_path))
         .args(["config", &key, base_ref])
@@ -757,7 +825,12 @@ pub(crate) fn list_base_ref_options(repo_path: String) -> Result<Vec<BaseRefOpti
 
     // Get all refs (local + remote) in one git call
     let out = git_cmd(repo)
-        .args(["for-each-ref", "--format=%(refname:short)\t%(refname)", "refs/heads/", "refs/remotes/"])
+        .args([
+            "for-each-ref",
+            "--format=%(refname:short)\t%(refname)",
+            "refs/heads/",
+            "refs/remotes/",
+        ])
         .run()
         .map_err(|e| format!("git for-each-ref failed: {e}"))?;
 
@@ -767,10 +840,14 @@ pub(crate) fn list_base_ref_options(repo_path: String) -> Result<Vec<BaseRefOpti
 
     for line in out.stdout.lines() {
         let line = line.trim();
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
 
         let parts: Vec<&str> = line.splitn(2, '\t').collect();
-        if parts.len() != 2 { continue; }
+        if parts.len() != 2 {
+            continue;
+        }
 
         let short_name = parts[0].to_string();
         let full_ref = parts[1];
@@ -786,7 +863,9 @@ pub(crate) fn list_base_ref_options(repo_path: String) -> Result<Vec<BaseRefOpti
             }
         } else if full_ref.starts_with("refs/remotes/") {
             // Skip origin/HEAD (synthetic ref)
-            if short_name.ends_with("/HEAD") { continue; }
+            if short_name.ends_with("/HEAD") {
+                continue;
+            }
             remote_refs.push(BaseRefOption {
                 name: short_name,
                 kind: "remote".to_string(),
@@ -843,8 +922,7 @@ pub(crate) fn switch_branch(
     let base_repo = PathBuf::from(&repo_path);
 
     // Read current branch before switching
-    let previous_branch = crate::git::read_branch_from_head(&base_repo)
-        .unwrap_or_default();
+    let previous_branch = crate::git::read_branch_from_head(&base_repo).unwrap_or_default();
 
     if previous_branch == branch_name {
         return Ok(SwitchBranchResult {
@@ -967,7 +1045,9 @@ pub(crate) fn finalize_merged_worktree(
                 archive_path: None,
             })
         }
-        _ => Err(format!("Unknown action '{action}': expected 'archive' or 'delete'")),
+        _ => Err(format!(
+            "Unknown action '{action}': expected 'archive' or 'delete'"
+        )),
     }
 }
 
@@ -1042,7 +1122,11 @@ pub(crate) fn merge_and_archive_worktree(
 ///
 /// If `archive_script` is provided (non-empty), it runs in the worktree directory
 /// before archiving. A non-zero exit code aborts the operation.
-pub(crate) fn archive_worktree(base_repo: &Path, branch_name: &str, archive_script: Option<&str>) -> Result<String, String> {
+pub(crate) fn archive_worktree(
+    base_repo: &Path,
+    branch_name: &str,
+    archive_script: Option<&str>,
+) -> Result<String, String> {
     // Find worktree path for this branch
     let wt_list_out = git_cmd(base_repo)
         .args(["worktree", "list", "--porcelain"])
@@ -1056,8 +1140,7 @@ pub(crate) fn archive_worktree(base_repo: &Path, branch_name: &str, archive_scri
     if let Some(script) = archive_script
         && !script.is_empty()
     {
-        run_script_in_dir(script, &wt_path)
-            .map_err(|e| format!("Archive script failed: {e}"))?;
+        run_script_in_dir(script, &wt_path).map_err(|e| format!("Archive script failed: {e}"))?;
     }
     let parent_dir = wt_path.parent().ok_or("Worktree has no parent directory")?;
     let archive_dir = parent_dir.join("__archived");
@@ -1074,7 +1157,10 @@ pub(crate) fn archive_worktree(base_repo: &Path, branch_name: &str, archive_scri
         .args(["worktree", "remove", "--force", &wt_path_str])
         .run()
     {
-        tracing::warn!(source = "worktree", "Archive: failed to remove worktree link: {e}");
+        tracing::warn!(
+            source = "worktree",
+            "Archive: failed to remove worktree link: {e}"
+        );
     }
 
     // Move the directory if it still exists (worktree remove may have deleted it)
@@ -1108,13 +1194,16 @@ fn run_script_in_dir(script: &str, cwd: &Path) -> Result<(), String> {
     let mut cmd = std::process::Command::new(shell);
     cmd.arg(flag).arg(script).current_dir(cwd);
     crate::cli::apply_no_window(&mut cmd);
-    let output = cmd.output()
+    let output = cmd
+        .output()
         .map_err(|e| format!("Failed to execute script: {e}"))?;
 
     let exit_code = output.status.code().unwrap_or(-1);
     if exit_code != 0 {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Script failed with exit code {exit_code}: {stderr}"));
+        return Err(format!(
+            "Script failed with exit code {exit_code}: {stderr}"
+        ));
     }
     Ok(())
 }
@@ -1142,7 +1231,8 @@ pub(crate) fn run_setup_script(script: String, cwd: String) -> Result<serde_json
     let mut cmd = std::process::Command::new(shell);
     cmd.arg(flag).arg(&script).current_dir(cwd_path);
     crate::cli::apply_no_window(&mut cmd);
-    let output = cmd.output()
+    let output = cmd
+        .output()
         .map_err(|e| format!("Failed to execute script: {e}"))?;
 
     Ok(serde_json::json!({
@@ -1163,13 +1253,28 @@ mod tests {
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
         let repo_path = temp_dir.path();
 
-        git_cmd(repo_path).args(["init"]).run().expect("Failed to init git repo");
-        git_cmd(repo_path).args(["config", "user.email", "test@test.com"]).run().expect("Failed to config git");
-        git_cmd(repo_path).args(["config", "user.name", "Test"]).run().expect("Failed to config git");
+        git_cmd(repo_path)
+            .args(["init"])
+            .run()
+            .expect("Failed to init git repo");
+        git_cmd(repo_path)
+            .args(["config", "user.email", "test@test.com"])
+            .run()
+            .expect("Failed to config git");
+        git_cmd(repo_path)
+            .args(["config", "user.name", "Test"])
+            .run()
+            .expect("Failed to config git");
 
         fs::write(repo_path.join("README.md"), "# Test").expect("Failed to write file");
-        git_cmd(repo_path).args(["add", "."]).run().expect("Failed to git add");
-        git_cmd(repo_path).args(["commit", "-m", "Initial commit"]).run().expect("Failed to git commit");
+        git_cmd(repo_path)
+            .args(["add", "."])
+            .run()
+            .expect("Failed to git add");
+        git_cmd(repo_path)
+            .args(["commit", "-m", "Initial commit"])
+            .run()
+            .expect("Failed to git commit");
 
         temp_dir
     }
@@ -1179,7 +1284,10 @@ mod tests {
         assert_eq!(sanitize_name("my-task"), "my-task");
         assert_eq!(sanitize_name("My Task Name"), "my-task-name");
         assert_eq!(sanitize_name("task/with/slashes"), "task-with-slashes");
-        assert_eq!(sanitize_name("task_with_underscores"), "task_with_underscores");
+        assert_eq!(
+            sanitize_name("task_with_underscores"),
+            "task_with_underscores"
+        );
         assert_eq!(sanitize_name("UPPERCASE"), "uppercase");
         assert_eq!(sanitize_name("special!@#chars"), "special---chars");
     }
@@ -1217,7 +1325,11 @@ mod tests {
         };
 
         let result = create_worktree_internal(&worktrees_dir, &config, None);
-        assert!(result.is_ok(), "Failed to create worktree with branch: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Failed to create worktree with branch: {:?}",
+            result
+        );
 
         let worktree = result.unwrap();
         assert_eq!(worktree.branch, Some("feature/new-feature".to_string()));
@@ -1261,12 +1373,18 @@ mod tests {
         let worktree = create_worktree_internal(&worktrees_dir, &config, None)
             .expect("Failed to create worktree");
 
-        assert!(worktree.path.exists(), "Worktree should exist before removal");
+        assert!(
+            worktree.path.exists(),
+            "Worktree should exist before removal"
+        );
 
         let result = remove_worktree_internal(&worktree);
         assert!(result.is_ok(), "Failed to remove worktree: {:?}", result);
 
-        assert!(!worktree.path.exists(), "Worktree path should not exist after removal");
+        assert!(
+            !worktree.path.exists(),
+            "Worktree path should not exist after removal"
+        );
     }
 
     #[test]
@@ -1282,7 +1400,10 @@ mod tests {
 
         // Should not error when removing non-existent worktree
         let result = remove_worktree_internal(&worktree);
-        assert!(result.is_ok(), "Removing nonexistent worktree should succeed");
+        assert!(
+            result.is_ok(),
+            "Removing nonexistent worktree should succeed"
+        );
     }
 
     #[test]
@@ -1381,7 +1502,10 @@ mod tests {
         let repo_path = repo.path().to_string_lossy().to_string();
 
         // Create a second branch
-        git_cmd(repo.path()).args(["branch", "feature-x"]).run().expect("Failed to create branch");
+        git_cmd(repo.path())
+            .args(["branch", "feature-x"])
+            .run()
+            .expect("Failed to create branch");
 
         let refs = list_base_ref_options(repo_path).unwrap();
         assert!(refs.len() >= 2, "Expected at least 2 refs, got: {refs:?}");
@@ -1395,7 +1519,10 @@ mod tests {
         assert_eq!(refs[0].kind, "local");
         // feature-x should be in the list
         let names: Vec<&str> = refs.iter().map(|r| r.name.as_str()).collect();
-        assert!(names.contains(&"feature-x"), "feature-x not found in {names:?}");
+        assert!(
+            names.contains(&"feature-x"),
+            "feature-x not found in {names:?}"
+        );
         // No duplicate names
         let unique: std::collections::HashSet<&str> = names.iter().copied().collect();
         assert_eq!(unique.len(), refs.len(), "Duplicate refs found: {names:?}");
@@ -1421,7 +1548,10 @@ mod tests {
         // Make a commit on the feature branch so merge has something to do
         fs::write(wt.path.join("feature.txt"), "feature work").expect("write feature");
         git_cmd(&wt.path).args(["add", "."]).run().expect("git add");
-        git_cmd(&wt.path).args(["commit", "-m", "feat: add feature"]).run().expect("git commit");
+        git_cmd(&wt.path)
+            .args(["commit", "-m", "feat: add feature"])
+            .run()
+            .expect("git commit");
 
         // Archive the worktree
         let result = archive_worktree(repo.path(), "feat-archive-test", None);
@@ -1448,8 +1578,7 @@ mod tests {
             branch: Some("feat-delete-branch".to_string()),
             create_branch: true,
         };
-        create_worktree_internal(&worktrees_dir, &config, None)
-            .expect("Failed to create worktree");
+        create_worktree_internal(&worktrees_dir, &config, None).expect("Failed to create worktree");
 
         // Remove with delete_branch=true
         remove_worktree_by_branch(&repo_path, "feat-delete-branch", true, None)
@@ -1480,8 +1609,7 @@ mod tests {
             branch: Some("feat-keep-branch".to_string()),
             create_branch: true,
         };
-        create_worktree_internal(&worktrees_dir, &config, None)
-            .expect("Failed to create worktree");
+        create_worktree_internal(&worktrees_dir, &config, None).expect("Failed to create worktree");
 
         // Remove with delete_branch=false
         remove_worktree_by_branch(&repo_path, "feat-keep-branch", false, None)
@@ -1601,7 +1729,10 @@ branch refs/heads/feat
         let repo_path = repo.path().to_string_lossy().to_string();
 
         // Create a branch from current HEAD
-        git_cmd(repo.path()).args(["branch", "feat-to-delete"]).run().expect("Failed to create branch");
+        git_cmd(repo.path())
+            .args(["branch", "feat-to-delete"])
+            .run()
+            .expect("Failed to create branch");
 
         // Verify it exists
         let branches = list_local_branches(repo_path.clone()).unwrap();
@@ -1609,7 +1740,11 @@ branch refs/heads/feat
 
         // Delete it
         let result = delete_local_branch_impl(&repo_path, "feat-to-delete");
-        assert!(result.is_ok(), "delete_local_branch_impl failed: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "delete_local_branch_impl failed: {:?}",
+            result
+        );
 
         // Verify it's gone
         let branches = list_local_branches(repo_path).unwrap();
@@ -1624,7 +1759,11 @@ branch refs/heads/feat
         let default_branch = get_remote_default_branch(&repo_path).unwrap();
         let result = delete_local_branch_impl(&repo_path, &default_branch);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Refusing to delete default branch"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("Refusing to delete default branch")
+        );
     }
 
     #[test]
@@ -1648,7 +1787,11 @@ branch refs/heads/feat
 
         // Delete via delete_local_branch_impl
         let result = delete_local_branch_impl(&repo_path, &wt.name);
-        assert!(result.is_ok(), "delete_local_branch_impl failed: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "delete_local_branch_impl failed: {:?}",
+            result
+        );
 
         // Worktree directory should be removed
         assert!(!wt.path.exists(), "Worktree directory should be gone");
@@ -1694,7 +1837,10 @@ branch refs/heads/feat
 
         let dirty = check_worktree_dirty(repo_path, wt.name);
         assert!(dirty.is_ok());
-        assert!(dirty.unwrap(), "Worktree with uncommitted changes should be dirty");
+        assert!(
+            dirty.unwrap(),
+            "Worktree with uncommitted changes should be dirty"
+        );
     }
 
     #[test]
@@ -1703,11 +1849,17 @@ branch refs/heads/feat
         let repo_path = repo.path().to_string_lossy().to_string();
 
         // Create a branch without a worktree
-        git_cmd(repo.path()).args(["branch", "bare-branch"]).run().expect("Failed to create branch");
+        git_cmd(repo.path())
+            .args(["branch", "bare-branch"])
+            .run()
+            .expect("Failed to create branch");
 
         let dirty = check_worktree_dirty(repo_path, "bare-branch".to_string());
         assert!(dirty.is_ok());
-        assert!(!dirty.unwrap(), "Branch without worktree should not be dirty");
+        assert!(
+            !dirty.unwrap(),
+            "Branch without worktree should not be dirty"
+        );
     }
 
     #[test]
@@ -1726,7 +1878,8 @@ branch refs/heads/feat
         let dir = TempDir::new().expect("temp dir");
         let cwd = dir.path().to_string_lossy().to_string();
 
-        let result = run_setup_script("exit 42".to_string(), cwd).expect("should return result even on non-zero exit");
+        let result = run_setup_script("exit 42".to_string(), cwd)
+            .expect("should return result even on non-zero exit");
         assert_eq!(result["exit_code"], 42);
     }
 
@@ -1735,7 +1888,8 @@ branch refs/heads/feat
         let dir = TempDir::new().expect("temp dir");
         let cwd = dir.path().to_string_lossy().to_string();
 
-        let result = run_setup_script("echo oops >&2; exit 1".to_string(), cwd).expect("should return result");
+        let result = run_setup_script("echo oops >&2; exit 1".to_string(), cwd)
+            .expect("should return result");
         assert_eq!(result["exit_code"], 1);
         assert_eq!(result["stderr"].as_str().unwrap().trim(), "oops");
     }
@@ -1791,13 +1945,16 @@ branch refs/heads/feat
             branch: None,
             create_branch: false,
         };
-        let _wt = create_worktree_internal(&worktrees_dir, &config, None)
-            .expect("create worktree");
+        let _wt = create_worktree_internal(&worktrees_dir, &config, None).expect("create worktree");
         // Script creates a marker file inside the worktree dir; archive should still succeed
         let marker = worktrees_dir.join("archive-marker.txt");
         let script = format!("touch {}", marker.display());
         let result = archive_worktree(repo.path(), "archive-script-test", Some(&script));
-        assert!(result.is_ok(), "archive with script should succeed: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "archive with script should succeed: {:?}",
+            result
+        );
     }
 
     #[test]
@@ -1810,14 +1967,16 @@ branch refs/heads/feat
             branch: None,
             create_branch: false,
         };
-        let wt = create_worktree_internal(&worktrees_dir, &config, None)
-            .expect("create worktree");
+        let wt = create_worktree_internal(&worktrees_dir, &config, None).expect("create worktree");
         // Script exits non-zero — archive should be blocked
         let result = archive_worktree(repo.path(), "archive-block-test", Some("exit 1"));
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Archive script failed"));
         // Worktree should still exist (not archived)
-        assert!(wt.path.exists(), "worktree should still exist after failed script");
+        assert!(
+            wt.path.exists(),
+            "worktree should still exist after failed script"
+        );
     }
 
     #[test]
@@ -1830,11 +1989,14 @@ branch refs/heads/feat
             branch: None,
             create_branch: false,
         };
-        create_worktree_internal(&worktrees_dir, &config, None)
-            .expect("create worktree");
+        create_worktree_internal(&worktrees_dir, &config, None).expect("create worktree");
         // None script — should proceed normally
         let result = archive_worktree(repo.path(), "archive-noscript-test", None);
-        assert!(result.is_ok(), "archive without script should succeed: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "archive without script should succeed: {:?}",
+            result
+        );
     }
 
     #[test]
@@ -1844,7 +2006,11 @@ branch refs/heads/feat
 
         // Initially no base set
         let base = get_branch_base(&path, "main");
-        assert!(base.is_none(), "expected no base initially, got: {:?}", base);
+        assert!(
+            base.is_none(),
+            "expected no base initially, got: {:?}",
+            base
+        );
 
         // Set a base
         set_branch_base(&path, "main", "develop").unwrap();
@@ -1913,23 +2079,39 @@ branch refs/heads/feat
         let path = repo.path().to_string_lossy().to_string();
 
         // Create extra local branches
-        git_cmd(repo.path()).args(["branch", "feature-a"]).run().unwrap();
-        git_cmd(repo.path()).args(["branch", "feature-b"]).run().unwrap();
+        git_cmd(repo.path())
+            .args(["branch", "feature-a"])
+            .run()
+            .unwrap();
+        git_cmd(repo.path())
+            .args(["branch", "feature-b"])
+            .run()
+            .unwrap();
 
         let refs = list_base_ref_options(path).unwrap();
 
         // Should have at least the default + 2 feature branches
-        assert!(refs.len() >= 3, "expected at least 3 refs, got {}", refs.len());
+        assert!(
+            refs.len() >= 3,
+            "expected at least 3 refs, got {}",
+            refs.len()
+        );
 
         // First ref should be the default branch, flagged is_default
         let default_ref = &refs[0];
-        assert!(default_ref.is_default, "first ref should be the default branch");
+        assert!(
+            default_ref.is_default,
+            "first ref should be the default branch"
+        );
         assert_eq!(default_ref.kind, "local");
 
         // All refs should have non-empty names
         for r in &refs {
             assert!(!r.name.is_empty(), "ref name should not be empty");
-            assert!(r.kind == "local" || r.kind == "remote", "kind should be local or remote");
+            assert!(
+                r.kind == "local" || r.kind == "remote",
+                "kind should be local or remote"
+            );
         }
 
         // feature-a and feature-b should be present as local
@@ -1938,7 +2120,10 @@ branch refs/heads/feat
         assert!(names.contains(&"feature-b"), "feature-b should be in refs");
 
         // No origin/HEAD should appear
-        assert!(!names.contains(&"origin/HEAD"), "origin/HEAD should be filtered out");
+        assert!(
+            !names.contains(&"origin/HEAD"),
+            "origin/HEAD should be filtered out"
+        );
     }
 
     #[test]
@@ -1948,30 +2133,65 @@ branch refs/heads/feat
 
         // Create a bare remote and push to it to get remote tracking refs
         let remote_dir = TempDir::new().unwrap();
-        git_cmd(remote_dir.path()).args(["init", "--bare"]).run().unwrap();
+        git_cmd(remote_dir.path())
+            .args(["init", "--bare"])
+            .run()
+            .unwrap();
         git_cmd(repo.path())
-            .args(["remote", "add", "origin", &remote_dir.path().to_string_lossy()])
-            .run().unwrap();
-        git_cmd(repo.path()).args(["push", "-u", "origin", "main"]).run()
-            .or_else(|_| git_cmd(repo.path()).args(["push", "-u", "origin", "master"]).run())
+            .args([
+                "remote",
+                "add",
+                "origin",
+                &remote_dir.path().to_string_lossy(),
+            ])
+            .run()
+            .unwrap();
+        git_cmd(repo.path())
+            .args(["push", "-u", "origin", "main"])
+            .run()
+            .or_else(|_| {
+                git_cmd(repo.path())
+                    .args(["push", "-u", "origin", "master"])
+                    .run()
+            })
             .unwrap();
 
         // Create a remote-only branch
-        git_cmd(repo.path()).args(["branch", "remote-only"]).run().unwrap();
-        git_cmd(repo.path()).args(["push", "origin", "remote-only"]).run().unwrap();
-        git_cmd(repo.path()).args(["branch", "-D", "remote-only"]).run().unwrap();
+        git_cmd(repo.path())
+            .args(["branch", "remote-only"])
+            .run()
+            .unwrap();
+        git_cmd(repo.path())
+            .args(["push", "origin", "remote-only"])
+            .run()
+            .unwrap();
+        git_cmd(repo.path())
+            .args(["branch", "-D", "remote-only"])
+            .run()
+            .unwrap();
 
         // Fetch so we have remote tracking refs
-        git_cmd(repo.path()).args(["fetch", "origin"]).run().unwrap();
+        git_cmd(repo.path())
+            .args(["fetch", "origin"])
+            .run()
+            .unwrap();
 
         let refs = list_base_ref_options(path_str).unwrap();
 
         // Should include remote refs
         let remote_refs: Vec<&BaseRefOption> = refs.iter().filter(|r| r.kind == "remote").collect();
-        assert!(!remote_refs.is_empty(), "should include remote refs, got: {:?}", refs);
+        assert!(
+            !remote_refs.is_empty(),
+            "should include remote refs, got: {:?}",
+            refs
+        );
 
         // origin/remote-only should appear as remote
         let names: Vec<&str> = refs.iter().map(|r| r.name.as_str()).collect();
-        assert!(names.contains(&"origin/remote-only"), "origin/remote-only should be in refs, got: {:?}", names);
+        assert!(
+            names.contains(&"origin/remote-only"),
+            "origin/remote-only should be in refs, got: {:?}",
+            names
+        );
     }
 }

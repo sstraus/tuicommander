@@ -102,7 +102,12 @@ pub async fn set_global_hotkey(
     if let Some(ref old) = current
         && let Err(e) = unregister(&app, old)
     {
-        tracing::warn!(source = "global-hotkey", "Failed to unregister old hotkey '{}': {}", old, e);
+        tracing::warn!(
+            source = "global-hotkey",
+            "Failed to unregister old hotkey '{}': {}",
+            old,
+            e
+        );
     }
 
     // Register new hotkey (if provided)

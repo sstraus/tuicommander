@@ -58,58 +58,30 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
         .item(&PredefinedMenuItem::paste(app, None)?)
         .item(&PredefinedMenuItem::select_all(app, None)?)
         .separator()
-        .item(&item!(
-            "clear-terminal",
-            "Clear Terminal",
-            "CmdOrCtrl+L"
-        ))
+        .item(&item!("clear-terminal", "Clear Terminal", "CmdOrCtrl+L"))
         .build()?;
 
     // ---------- View ----------
     let view = SubmenuBuilder::new(app, "&View")
-        .item(&item!(
-            "toggle-sidebar",
-            "Toggle Sidebar",
-            "CmdOrCtrl+["
-        ))
+        .item(&item!("toggle-sidebar", "Toggle Sidebar", "CmdOrCtrl+["))
         .separator()
         .item(&item!("split-right", "Split Right", "CmdOrCtrl+\\"))
-        .item(&item!(
-            "split-down",
-            "Split Down",
-            "CmdOrCtrl+Alt+\\"
-        ))
+        .item(&item!("split-down", "Split Down", "CmdOrCtrl+Alt+\\"))
         .separator()
         .item(&item!("zoom-in", "Zoom In", "CmdOrCtrl+="))
         .item(&item!("zoom-out", "Zoom Out", "CmdOrCtrl+-"))
         .item(&item!("zoom-reset", "Reset Zoom", "CmdOrCtrl+0"))
         .separator()
         .item(&item!("diff-panel", "Diff Panel", "CmdOrCtrl+D"))
-        .item(&item!(
-            "markdown-panel",
-            "Markdown Panel",
-            "CmdOrCtrl+M"
-        ))
-        .item(&item!(
-            "notes-panel",
-            "Notes Panel",
-            "CmdOrCtrl+N"
-        ))
+        .item(&item!("markdown-panel", "Markdown Panel", "CmdOrCtrl+M"))
+        .item(&item!("notes-panel", "Notes Panel", "CmdOrCtrl+N"))
         .build()?;
 
     // ---------- Go ----------
     let mut go = SubmenuBuilder::new(app, "&Go");
     go = go
-        .item(&item!(
-            "next-tab",
-            "Next Tab",
-            "CmdOrCtrl+Shift+]"
-        ))
-        .item(&item!(
-            "prev-tab",
-            "Previous Tab",
-            "CmdOrCtrl+Shift+["
-        ))
+        .item(&item!("next-tab", "Next Tab", "CmdOrCtrl+Shift+]"))
+        .item(&item!("prev-tab", "Previous Tab", "CmdOrCtrl+Shift+["))
         .separator();
 
     // Tab 1-9 shortcuts
@@ -124,43 +96,23 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
 
     // ---------- Tools ----------
     let tools = SubmenuBuilder::new(app, "&Tools")
-        .item(&item!(
-            "command-palette",
-            "Command Palette",
-            "CmdOrCtrl+P"
-        ))
+        .item(&item!("command-palette", "Command Palette", "CmdOrCtrl+P"))
         .separator()
         .item(&item!(
             "prompt-library",
             "Prompt Library",
             "CmdOrCtrl+Shift+K"
         ))
-        .item(&item!(
-            "run-command",
-            "Run Command",
-            "CmdOrCtrl+R"
-        ))
+        .item(&item!("run-command", "Run Command", "CmdOrCtrl+R"))
         .item(&item!(
             "edit-run-command",
             "Edit && Run Command",
             "CmdOrCtrl+Shift+R"
         ))
         .separator()
-        .item(&item!(
-            "git-operations",
-            "Git Panel",
-            "CmdOrCtrl+Shift+D"
-        ))
-        .item(&item!(
-            "branches",
-            "Branches",
-            "CmdOrCtrl+G"
-        ))
-        .item(&item!(
-            "diff-scroll",
-            "Diff Scroll",
-            "CmdOrCtrl+Shift+G"
-        ))
+        .item(&item!("git-operations", "Git Panel", "CmdOrCtrl+Shift+D"))
+        .item(&item!("branches", "Branches", "CmdOrCtrl+G"))
+        .item(&item!("diff-scroll", "Diff Scroll", "CmdOrCtrl+Shift+G"))
         .item(&item!(
             "worktree-manager",
             "Worktree Manager",
@@ -177,16 +129,8 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
             "Activity Dashboard",
             "CmdOrCtrl+Shift+A"
         ))
-        .item(&item!(
-            "mcp-popup",
-            "MCP Servers",
-            "CmdOrCtrl+Shift+I"
-        ))
-        .item(&item!(
-            "error-log",
-            "Error Log",
-            "CmdOrCtrl+Shift+E"
-        ))
+        .item(&item!("mcp-popup", "MCP Servers", "CmdOrCtrl+Shift+I"))
+        .item(&item!("error-log", "Error Log", "CmdOrCtrl+Shift+E"))
         .item(&item!("task-queue", "Task Queue", "CmdOrCtrl+J"))
         .build()?;
 
@@ -198,9 +142,7 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
     if !is_macos {
         help = help.item(&item!("check-for-updates", "Check for Updates…"));
     }
-    let help = help
-        .item(&item!("about", "About TUICommander"))
-        .build()?;
+    let help = help.item(&item!("about", "About TUICommander")).build()?;
 
     // ---------- Assemble ----------
     let mut menu = MenuBuilder::new(app);
@@ -208,7 +150,11 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
     if is_macos {
         // macOS: App menu with standard items
         let app_menu = SubmenuBuilder::new(app, "TUICommander")
-            .item(&PredefinedMenuItem::about(app, Some("About TUICommander"), None)?)
+            .item(&PredefinedMenuItem::about(
+                app,
+                Some("About TUICommander"),
+                None,
+            )?)
             .separator()
             .item(&item!("check-for-updates", "Check for Updates…"))
             .separator()

@@ -46,7 +46,11 @@ fn validate_url(url: &str, allowed_urls: &[String]) -> Result<(), String> {
     // Block unsafe schemes
     match parsed.scheme() {
         "http" | "https" => {}
-        scheme => return Err(format!("Scheme \"{scheme}\" is not allowed; use http or https")),
+        scheme => {
+            return Err(format!(
+                "Scheme \"{scheme}\" is not allowed; use http or https"
+            ));
+        }
     }
 
     // Block localhost and private/RFC1918 IPs unless explicitly allowed.
@@ -59,7 +63,8 @@ fn validate_url(url: &str, allowed_urls: &[String]) -> Result<(), String> {
             || host == "0.0.0.0";
 
         // Check if host is a private IP (RFC1918, CGNAT/Tailscale, IPv6 ULA/link-local)
-        let is_private = host.parse::<std::net::IpAddr>()
+        let is_private = host
+            .parse::<std::net::IpAddr>()
             .map(|ip| crate::mcp_http::auth::is_private_ip(&ip))
             .unwrap_or(false);
 
@@ -67,8 +72,14 @@ fn validate_url(url: &str, allowed_urls: &[String]) -> Result<(), String> {
             // Only allow if the host is explicitly declared in allowedUrls
             let host_allowed = allowed_urls.iter().any(|pattern| pattern.contains(host));
             if !host_allowed {
-                let kind = if is_localhost { "Localhost" } else { "Private network" };
-                return Err(format!("{kind} URLs require explicit allowedUrls declaration"));
+                let kind = if is_localhost {
+                    "Localhost"
+                } else {
+                    "Private network"
+                };
+                return Err(format!(
+                    "{kind} URLs require explicit allowedUrls declaration"
+                ));
             }
         }
     }
@@ -195,7 +206,6 @@ pub async fn plugin_http_fetch(
 /// Internal frontend command — no SSRF restrictions (localhost, private IPs all valid).
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn fetch_tab_html(url: String) -> Result<String, String> {
-
     let response = shared_client()
         .get(&url)
         .send()

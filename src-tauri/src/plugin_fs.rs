@@ -47,7 +47,9 @@ fn set_home_dir_override(dir: PathBuf) -> impl Drop {
 fn effective_home_dir() -> Result<PathBuf, String> {
     #[cfg(test)]
     if let Some(dir) = HOME_DIR_OVERRIDE.read().unwrap().clone() {
-        return dir.canonicalize().map_err(|e| format!("Failed to resolve home override: {e}"));
+        return dir
+            .canonicalize()
+            .map_err(|e| format!("Failed to resolve home override: {e}"));
     }
     dirs::home_dir().ok_or("Cannot determine home directory".into())
 }
@@ -95,8 +97,8 @@ pub async fn plugin_read_file(
     let canonical = validate_within_home(&path)?;
 
     // Check file size before reading
-    let metadata = std::fs::metadata(&canonical)
-        .map_err(|e| format!("Failed to stat file: {e}"))?;
+    let metadata =
+        std::fs::metadata(&canonical).map_err(|e| format!("Failed to stat file: {e}"))?;
 
     if !metadata.is_file() {
         return Err("Path is not a file".into());
@@ -110,8 +112,7 @@ pub async fn plugin_read_file(
         ));
     }
 
-    std::fs::read_to_string(&canonical)
-        .map_err(|e| format!("Failed to read file: {e}"))
+    std::fs::read_to_string(&canonical).map_err(|e| format!("Failed to read file: {e}"))
 }
 
 /// List filenames in a directory, optionally filtered by a glob pattern.
@@ -145,8 +146,8 @@ async fn plugin_list_directory_inner(
         .map(|p| glob::Pattern::new(p).map_err(|e| format!("Invalid glob pattern: {e}")))
         .transpose()?;
 
-    let entries = std::fs::read_dir(&canonical)
-        .map_err(|e| format!("Failed to read directory: {e}"))?;
+    let entries =
+        std::fs::read_dir(&canonical).map_err(|e| format!("Failed to read directory: {e}"))?;
 
     // Sort mode: "name" (default, alphabetical) or "mtime" (newest first).
     // mtime mode enables plugins to efficiently find recently-modified files
@@ -194,16 +195,13 @@ pub async fn plugin_read_file_tail(
     plugin_read_file_tail_inner(path, max_bytes).await
 }
 
-async fn plugin_read_file_tail_inner(
-    path: String,
-    max_bytes: u64,
-) -> Result<String, String> {
+async fn plugin_read_file_tail_inner(path: String, max_bytes: u64) -> Result<String, String> {
     use std::io::{Read, Seek, SeekFrom};
 
     let canonical = validate_within_home(&path)?;
 
-    let metadata = std::fs::metadata(&canonical)
-        .map_err(|e| format!("Failed to stat file: {e}"))?;
+    let metadata =
+        std::fs::metadata(&canonical).map_err(|e| format!("Failed to stat file: {e}"))?;
 
     if !metadata.is_file() {
         return Err("Path is not a file".into());
@@ -217,8 +215,8 @@ async fn plugin_read_file_tail_inner(
             .map_err(|e| format!("Failed to read file: {e}"));
     }
 
-    let mut file = std::fs::File::open(&canonical)
-        .map_err(|e| format!("Failed to open file: {e}"))?;
+    let mut file =
+        std::fs::File::open(&canonical).map_err(|e| format!("Failed to open file: {e}"))?;
 
     let seek_pos = file_size - max_bytes;
     file.seek(SeekFrom::Start(seek_pos))
@@ -321,7 +319,12 @@ fn debounce_loop(
         let first = match rx.recv() {
             Ok(Ok(event)) => event,
             Ok(Err(e)) => {
-                crate::app_logger::log_via_handle(app, "warn", "plugin", &format!("[plugin_fs] Watcher error: {e}"));
+                crate::app_logger::log_via_handle(
+                    app,
+                    "warn",
+                    "plugin",
+                    &format!("[plugin_fs] Watcher error: {e}"),
+                );
                 continue;
             }
             Err(_) => break, // Channel closed — watcher was dropped
@@ -339,7 +342,12 @@ fn debounce_loop(
             }
             match rx.recv_timeout(remaining) {
                 Ok(Ok(event)) => classify_event(&event, &mut events_by_path),
-                Ok(Err(e)) => crate::app_logger::log_via_handle(app, "warn", "plugin", &format!("[plugin_fs] Watcher error: {e}")),
+                Ok(Err(e)) => crate::app_logger::log_via_handle(
+                    app,
+                    "warn",
+                    "plugin",
+                    &format!("[plugin_fs] Watcher error: {e}"),
+                ),
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => break,
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
             }
@@ -398,10 +406,7 @@ pub async fn plugin_write_file(
 }
 
 /// Core write logic, separated from the Tauri command wrapper for testability.
-async fn plugin_write_file_inner(
-    path: String,
-    content: String,
-) -> Result<(), String> {
+async fn plugin_write_file_inner(path: String, content: String) -> Result<(), String> {
     if content.len() > MAX_WRITE_SIZE {
         return Err(format!(
             "Content exceeds maximum size ({} bytes > {} bytes)",
@@ -428,7 +433,9 @@ async fn plugin_write_file_inner(
             return Err("Cannot overwrite a directory".into());
         }
     } else {
-        let parent = file_path.parent().ok_or("Cannot determine parent directory")?;
+        let parent = file_path
+            .parent()
+            .ok_or("Cannot determine parent directory")?;
         if !parent.exists() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| format!("Failed to create parent directories: {e}"))?;
@@ -441,8 +448,7 @@ async fn plugin_write_file_inner(
         }
     }
 
-    std::fs::write(&file_path, &content)
-        .map_err(|e| format!("Failed to write file: {e}"))
+    std::fs::write(&file_path, &content).map_err(|e| format!("Failed to write file: {e}"))
 }
 
 /// Rename/move a file within $HOME.
@@ -459,10 +465,7 @@ pub async fn plugin_rename_path(
     plugin_rename_path_inner(from, to).await
 }
 
-async fn plugin_rename_path_inner(
-    from: String,
-    to: String,
-) -> Result<(), String> {
+async fn plugin_rename_path_inner(from: String, to: String) -> Result<(), String> {
     let from_path = validate_within_home(&from)?;
 
     let to_path = PathBuf::from(&to);
@@ -472,7 +475,9 @@ async fn plugin_rename_path_inner(
 
     let home = effective_home_dir()?;
 
-    let to_parent = to_path.parent().ok_or("Cannot determine destination parent directory")?;
+    let to_parent = to_path
+        .parent()
+        .ok_or("Cannot determine destination parent directory")?;
     if !to_parent.exists() {
         std::fs::create_dir_all(to_parent)
             .map_err(|e| format!("Failed to create destination parent directories: {e}"))?;
@@ -484,8 +489,7 @@ async fn plugin_rename_path_inner(
         return Err("Destination must be within the user's home directory".into());
     }
 
-    std::fs::rename(&from_path, &to_path)
-        .map_err(|e| format!("Failed to rename: {e}"))
+    std::fs::rename(&from_path, &to_path).map_err(|e| format!("Failed to rename: {e}"))
 }
 
 // ---------------------------------------------------------------------------
@@ -760,7 +764,9 @@ mod tests {
             let rt = tokio::runtime::Runtime::new().unwrap();
             let result = rt.block_on(plugin_rename_path_inner(
                 "/tmp/.tuic-test-rename.txt".to_string(),
-                home.join(".tuic-test-rename-dest.txt").to_string_lossy().to_string(),
+                home.join(".tuic-test-rename-dest.txt")
+                    .to_string_lossy()
+                    .to_string(),
             ));
             assert!(result.is_err());
         }

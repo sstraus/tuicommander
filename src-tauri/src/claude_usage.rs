@@ -252,13 +252,21 @@ fn claude_projects_dir() -> Option<PathBuf> {
 /// macOS TCC-protected directories under $HOME that we must never probe.
 /// Calling `.exists()` on these triggers the "would like to access" system dialog.
 const TCC_PROTECTED_DIRS: &[&str] = &[
-    "Desktop", "Documents", "Downloads", "Movies", "Music", "Pictures",
-    "Library", "Photos Library.photoslibrary",
+    "Desktop",
+    "Documents",
+    "Downloads",
+    "Movies",
+    "Music",
+    "Pictures",
+    "Library",
+    "Photos Library.photoslibrary",
 ];
 
 /// Returns true if `path` is a TCC-protected directory (or inside one).
 fn is_tcc_protected(path: &std::path::Path) -> bool {
-    let Some(home) = dirs::home_dir() else { return false };
+    let Some(home) = dirs::home_dir() else {
+        return false;
+    };
     if !path.starts_with(&home) {
         return false;
     }
@@ -266,7 +274,9 @@ fn is_tcc_protected(path: &std::path::Path) -> bool {
         && let Some(first) = rel.components().next()
     {
         let name = first.as_os_str().to_string_lossy();
-        return TCC_PROTECTED_DIRS.iter().any(|d| d.eq_ignore_ascii_case(&name));
+        return TCC_PROTECTED_DIRS
+            .iter()
+            .any(|d| d.eq_ignore_ascii_case(&name));
     }
     false
 }
@@ -354,29 +364,48 @@ fn resolve_slug_to_path(slug: &str) -> Option<String> {
 /// Returns a `LineInfo` so the caller can correlate assistant tokens
 /// with the timestamp from the next `turn_duration` line.
 fn parse_jsonl_line(line: &str, stats: &mut CachedFileStats) -> LineInfo {
-    let empty = LineInfo { timestamp: None, assistant_tokens: None };
+    let empty = LineInfo {
+        timestamp: None,
+        assistant_tokens: None,
+    };
 
     // Fast pre-filter: skip lines that can't contain useful data
     if line.len() < 10 {
         return empty;
     }
 
-    let Some(v) = serde_json::from_str::<serde_json::Value>(line).ok() else { return empty };
-    let Some(obj) = v.as_object() else { return empty };
-    let Some(line_type) = obj.get("type").and_then(|t| t.as_str()) else { return empty };
+    let Some(v) = serde_json::from_str::<serde_json::Value>(line).ok() else {
+        return empty;
+    };
+    let Some(obj) = v.as_object() else {
+        return empty;
+    };
+    let Some(line_type) = obj.get("type").and_then(|t| t.as_str()) else {
+        return empty;
+    };
 
     match line_type {
         "assistant" => {
-            let Some(message) = obj.get("message").and_then(|m| m.as_object()) else { return empty };
+            let Some(message) = obj.get("message").and_then(|m| m.as_object()) else {
+                return empty;
+            };
             let model = message
                 .get("model")
                 .and_then(|m| m.as_str())
                 .unwrap_or("unknown")
                 .to_string();
-            let Some(usage) = message.get("usage").and_then(|u| u.as_object()) else { return empty };
+            let Some(usage) = message.get("usage").and_then(|u| u.as_object()) else {
+                return empty;
+            };
 
-            let input = usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-            let output = usage.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+            let input = usage
+                .get("input_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let output = usage
+                .get("output_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
             let cache_creation = usage
                 .get("cache_creation_input_tokens")
                 .and_then(|v| v.as_u64())
@@ -399,7 +428,10 @@ fn parse_jsonl_line(line: &str, stats: &mut CachedFileStats) -> LineInfo {
             model_entry.cache_read_tokens += cache_read;
             model_entry.message_count += 1;
 
-            LineInfo { timestamp: None, assistant_tokens: Some((input, output)) }
+            LineInfo {
+                timestamp: None,
+                assistant_tokens: Some((input, output)),
+            }
         }
         "user" => {
             stats.user_message_count += 1;
@@ -423,7 +455,12 @@ fn parse_jsonl_line(line: &str, stats: &mut CachedFileStats) -> LineInfo {
                 }
 
                 // Track session ID for counting unique sessions
-                if obj.get("sessionId").and_then(|s| s.as_str()).filter(|sid| stats.session_ids.insert(sid.to_string())).is_some() {
+                if obj
+                    .get("sessionId")
+                    .and_then(|s| s.as_str())
+                    .filter(|sid| stats.session_ids.insert(sid.to_string()))
+                    .is_some()
+                {
                     // Bump session count for the day
                     let date = &ts[..10.min(ts.len())];
                     if date.len() == 10 {
@@ -450,7 +487,10 @@ fn parse_jsonl_line(line: &str, stats: &mut CachedFileStats) -> LineInfo {
             // Return timestamp from any system subtype that has one,
             // so the caller can flush pending assistant tokens
             if timestamp.is_some() {
-                return LineInfo { timestamp, assistant_tokens: None };
+                return LineInfo {
+                    timestamp,
+                    assistant_tokens: None,
+                };
             }
             empty
         }
@@ -577,8 +617,7 @@ fn read_claude_credentials() -> Result<(Option<String>, Option<PlanInfo>), Strin
     let raw_json = {
         #[cfg(target_os = "macos")]
         {
-            let keychain_result =
-                crate::plugin_credentials::cached_read("Claude Code-credentials");
+            let keychain_result = crate::plugin_credentials::cached_read("Claude Code-credentials");
             match keychain_result {
                 Ok(Some(json)) => Some(json),
                 _ => {
@@ -612,12 +651,22 @@ fn read_claude_credentials() -> Result<(Option<String>, Option<PlanInfo>), Strin
         .map(|s| s.to_string());
 
     let plan = oauth.map(|o| PlanInfo {
-        subscription_type: o.get("subscriptionType").and_then(|v| v.as_str()).map(String::from),
-        rate_limit_tier: o.get("rateLimitTier").and_then(|v| v.as_str()).map(String::from),
+        subscription_type: o
+            .get("subscriptionType")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        rate_limit_tier: o
+            .get("rateLimitTier")
+            .and_then(|v| v.as_str())
+            .map(String::from),
         scopes: o
             .get("scopes")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|s| s.as_str().map(String::from)).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|s| s.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default(),
     });
 
@@ -689,14 +738,11 @@ async fn fetch_usage_from_api(token: &str) -> Result<UsageApiResponse, FetchErro
         });
     }
 
-    let body = resp
-        .text()
-        .await
-        .map_err(|e| FetchError {
-            status: 0,
-            message: format!("Failed to read API response: {e}"),
-            retry_after_secs: None,
-        })?;
+    let body = resp.text().await.map_err(|e| FetchError {
+        status: 0,
+        message: format!("Failed to read API response: {e}"),
+        retry_after_secs: None,
+    })?;
 
     serde_json::from_str(&body).map_err(|e| {
         tracing::error!(source = "claude_usage", "Parse error: {e}\nBody: {body}");
@@ -721,10 +767,16 @@ fn header_str<'a>(headers: &'a reqwest::header::HeaderMap, name: &str) -> Option
 /// Utilization in headers is 0.0–1.0; we convert to 0–100 percentage.
 /// Reset is a unix epoch seconds timestamp; we convert to ISO8601.
 fn parse_claim_bucket(headers: &reqwest::header::HeaderMap, abbrev: &str) -> Option<RateBucket> {
-    let util_str = header_str(headers, &format!("anthropic-ratelimit-unified-{abbrev}-utilization"))?;
+    let util_str = header_str(
+        headers,
+        &format!("anthropic-ratelimit-unified-{abbrev}-utilization"),
+    )?;
     let utilization_frac: f64 = util_str.parse().ok()?;
-    let reset_epoch = header_str(headers, &format!("anthropic-ratelimit-unified-{abbrev}-reset"))
-        .and_then(|v| v.parse::<i64>().ok());
+    let reset_epoch = header_str(
+        headers,
+        &format!("anthropic-ratelimit-unified-{abbrev}-reset"),
+    )
+    .and_then(|v| v.parse::<i64>().ok());
     let resets_at = reset_epoch.map(|epoch| {
         chrono::DateTime::from_timestamp(epoch, 0)
             .map(|dt| dt.to_rfc3339())
@@ -755,10 +807,12 @@ fn parse_unified_rate_limit_headers(headers: &reqwest::header::HeaderMap) -> Usa
     let overage_in_use = header_str(headers, "anthropic-ratelimit-unified-overage-in-use")
         .map(|v| v == "true")
         .unwrap_or(false);
-    let overage_utilization = header_str(headers, "anthropic-ratelimit-unified-overage-utilization")
-        .and_then(|v| v.parse::<f64>().ok())
-        .map(|f| f * 100.0);
-    let overage_resets_at = header_epoch_to_iso(headers, "anthropic-ratelimit-unified-overage-reset");
+    let overage_utilization =
+        header_str(headers, "anthropic-ratelimit-unified-overage-utilization")
+            .and_then(|v| v.parse::<f64>().ok())
+            .map(|f| f * 100.0);
+    let overage_resets_at =
+        header_epoch_to_iso(headers, "anthropic-ratelimit-unified-overage-reset");
     let extra_usage = if overage_status.is_some() || overage_in_use {
         Some(ExtraUsage {
             is_enabled: true,
@@ -773,8 +827,10 @@ fn parse_unified_rate_limit_headers(headers: &reqwest::header::HeaderMap) -> Usa
     };
 
     // Global rate-limit meta — status + representative claim (which bucket is the bottleneck).
-    let unified_status = header_str(headers, "anthropic-ratelimit-unified-status").map(String::from);
-    let representative_claim = header_str(headers, "anthropic-ratelimit-unified-representative-claim").map(String::from);
+    let unified_status =
+        header_str(headers, "anthropic-ratelimit-unified-status").map(String::from);
+    let representative_claim =
+        header_str(headers, "anthropic-ratelimit-unified-representative-claim").map(String::from);
     let meta = if unified_status.is_some() || representative_claim.is_some() {
         Some(RateLimitMeta {
             unified_status,
@@ -827,7 +883,9 @@ async fn fetch_usage_from_headers(token: &str) -> Result<UsageApiResponse, Fetch
         let body = resp.text().await.unwrap_or_default();
         return Err(FetchError {
             status,
-            message: format!("Headers fallback: no rate limit headers in {status} response: {body}"),
+            message: format!(
+                "Headers fallback: no rate limit headers in {status} response: {body}"
+            ),
             retry_after_secs: None,
         });
     }
@@ -929,25 +987,39 @@ pub async fn get_claude_usage_api() -> Result<UsageApiResponse, String> {
     // Set backoff so next poll doesn't hammer a rate-limited endpoint
     if was_rate_limited {
         *RATE_LIMITED_UNTIL.lock() = Some(Instant::now() + RATE_LIMIT_BACKOFF);
-        tracing::warn!(source = "claude_usage", backoff_secs = RATE_LIMIT_BACKOFF.as_secs(), "Rate limited — backing off");
+        tracing::warn!(
+            source = "claude_usage",
+            backoff_secs = RATE_LIMIT_BACKOFF.as_secs(),
+            "Rate limited — backing off"
+        );
     }
 
     // Fallback: extract rate limits from /v1/messages response headers (Haiku, ~9 tokens)
     match fetch_usage_from_headers(&token).await {
         Ok(mut data) => {
-            tracing::info!(source = "claude_usage", "Primary API failed, using headers fallback");
+            tracing::info!(
+                source = "claude_usage",
+                "Primary API failed, using headers fallback"
+            );
             data.plan = plan.clone();
             cache_response(&data);
             return Ok(data);
         }
         Err(e) => {
-            tracing::warn!(source = "claude_usage", "Headers fallback also failed: {}", e.message);
+            tracing::warn!(
+                source = "claude_usage",
+                "Headers fallback also failed: {}",
+                e.message
+            );
         }
     }
 
     // On error, return stale cache if available
     if let Some(stale) = get_stale_cache() {
-        tracing::info!(source = "claude_usage", "Returning stale cache after error: {last_err_msg}");
+        tracing::info!(
+            source = "claude_usage",
+            "Returning stale cache after error: {last_err_msg}"
+        );
         return Ok(stale);
     }
 
@@ -1021,15 +1093,13 @@ pub async fn get_claude_session_stats(
     state: State<'_, Arc<crate::AppState>>,
     scope: String,
 ) -> Result<SessionStats, String> {
-    let cache_mutex = state
-        .claude_usage_cache
-        .lock();
+    let cache_mutex = state.claude_usage_cache.lock();
     // Clone the cache so we can release the lock during I/O
     let mut cache = cache_mutex.clone();
     drop(cache_mutex);
 
-    let projects_dir = claude_projects_dir()
-        .ok_or_else(|| "Cannot determine home directory".to_string())?;
+    let projects_dir =
+        claude_projects_dir().ok_or_else(|| "Cannot determine home directory".to_string())?;
 
     if !projects_dir.exists() {
         return Ok(SessionStats::default());
@@ -1252,11 +1322,7 @@ pub async fn get_claude_session_stats(
     }
 
     // Total sessions = sum of per-project unique sessions
-    result.total_sessions = result
-        .per_project
-        .values()
-        .map(|p| p.session_count)
-        .sum();
+    result.total_sessions = result.per_project.values().map(|p| p.session_count).sum();
 
     result.active_hours = all_active_hours.len() as u32;
 
@@ -1266,8 +1332,8 @@ pub async fn get_claude_session_stats(
 /// List available Claude project slugs for the scope dropdown.
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn get_claude_project_list() -> Result<Vec<ProjectEntry>, String> {
-    let projects_dir = claude_projects_dir()
-        .ok_or_else(|| "Cannot determine home directory".to_string())?;
+    let projects_dir =
+        claude_projects_dir().ok_or_else(|| "Cannot determine home directory".to_string())?;
 
     if !projects_dir.exists() {
         return Ok(Vec::new());
@@ -1287,10 +1353,7 @@ pub async fn get_claude_project_list() -> Result<Vec<ProjectEntry>, String> {
                         entries
                             .filter_map(|e| e.ok())
                             .filter(|e| {
-                                e.path()
-                                    .extension()
-                                    .and_then(|s| s.to_str())
-                                    == Some("jsonl")
+                                e.path().extension().and_then(|s| s.to_str()) == Some("jsonl")
                             })
                             .count()
                     })
@@ -1523,8 +1586,7 @@ mod tests {
             .unwrap();
 
         use std::io::Write;
-        let new_size =
-            parse_jsonl_file_from_offset(&path, final_size, &mut stats).unwrap();
+        let new_size = parse_jsonl_file_from_offset(&path, final_size, &mut stats).unwrap();
 
         assert_eq!(stats.assistant_message_count, 2);
         assert_eq!(stats.total_input_tokens, 300);
@@ -1568,7 +1630,11 @@ mod tests {
         // Second assistant (200+80) should be flushed by stop_hook_summary at 10:05 (same hour)
         // Third assistant (150+60) has NO following timestamp — should be flushed
         // using last_timestamp fallback (10:05, same hour bucket)
-        assert_eq!(h10.input_tokens, 100 + 200 + 150, "all tokens should be bucketed in hour 10");
+        assert_eq!(
+            h10.input_tokens,
+            100 + 200 + 150,
+            "all tokens should be bucketed in hour 10"
+        );
         assert_eq!(h10.output_tokens, 50 + 80 + 60);
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -1631,7 +1697,10 @@ mod tests {
             );
         }
         // The path should at least start with /Users
-        assert!(resolved.starts_with("/Users"), "Expected /Users prefix, got: {resolved}");
+        assert!(
+            resolved.starts_with("/Users"),
+            "Expected /Users prefix, got: {resolved}"
+        );
     }
 
     #[test]
@@ -1737,12 +1806,30 @@ mod tests {
     #[test]
     fn parse_unified_headers_full() {
         let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert("anthropic-ratelimit-unified-status", "allowed_warning".parse().unwrap());
-        headers.insert("anthropic-ratelimit-unified-reset", "1773200000".parse().unwrap());
-        headers.insert("anthropic-ratelimit-unified-5h-utilization", "0.73".parse().unwrap());
-        headers.insert("anthropic-ratelimit-unified-5h-reset", "1773180000".parse().unwrap());
-        headers.insert("anthropic-ratelimit-unified-7d-utilization", "0.42".parse().unwrap());
-        headers.insert("anthropic-ratelimit-unified-7d-reset", "1773200000".parse().unwrap());
+        headers.insert(
+            "anthropic-ratelimit-unified-status",
+            "allowed_warning".parse().unwrap(),
+        );
+        headers.insert(
+            "anthropic-ratelimit-unified-reset",
+            "1773200000".parse().unwrap(),
+        );
+        headers.insert(
+            "anthropic-ratelimit-unified-5h-utilization",
+            "0.73".parse().unwrap(),
+        );
+        headers.insert(
+            "anthropic-ratelimit-unified-5h-reset",
+            "1773180000".parse().unwrap(),
+        );
+        headers.insert(
+            "anthropic-ratelimit-unified-7d-utilization",
+            "0.42".parse().unwrap(),
+        );
+        headers.insert(
+            "anthropic-ratelimit-unified-7d-reset",
+            "1773200000".parse().unwrap(),
+        );
 
         let resp = parse_unified_rate_limit_headers(&headers);
         let five = resp.five_hour.unwrap();
@@ -1764,16 +1851,33 @@ mod tests {
     #[test]
     fn parse_unified_headers_rejected_with_representative_claim() {
         let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert("anthropic-ratelimit-unified-status", "rejected".parse().unwrap());
-        headers.insert("anthropic-ratelimit-unified-representative-claim", "five_hour".parse().unwrap());
-        headers.insert("anthropic-ratelimit-unified-reset", "1773180000".parse().unwrap());
-        headers.insert("anthropic-ratelimit-unified-5h-utilization", "1.0".parse().unwrap());
-        headers.insert("anthropic-ratelimit-unified-5h-reset", "1773180000".parse().unwrap());
+        headers.insert(
+            "anthropic-ratelimit-unified-status",
+            "rejected".parse().unwrap(),
+        );
+        headers.insert(
+            "anthropic-ratelimit-unified-representative-claim",
+            "five_hour".parse().unwrap(),
+        );
+        headers.insert(
+            "anthropic-ratelimit-unified-reset",
+            "1773180000".parse().unwrap(),
+        );
+        headers.insert(
+            "anthropic-ratelimit-unified-5h-utilization",
+            "1.0".parse().unwrap(),
+        );
+        headers.insert(
+            "anthropic-ratelimit-unified-5h-reset",
+            "1773180000".parse().unwrap(),
+        );
 
         let resp = parse_unified_rate_limit_headers(&headers);
         let five = resp.five_hour.unwrap();
         assert!((five.utilization - 100.0).abs() < 0.01);
-        let meta = resp.meta.expect("meta should be populated from status headers");
+        let meta = resp
+            .meta
+            .expect("meta should be populated from status headers");
         assert_eq!(meta.unified_status.as_deref(), Some("rejected"));
         assert_eq!(meta.representative_claim.as_deref(), Some("five_hour"));
     }
@@ -1781,11 +1885,26 @@ mod tests {
     #[test]
     fn parse_unified_headers_overage() {
         let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert("anthropic-ratelimit-unified-status", "allowed".parse().unwrap());
-        headers.insert("anthropic-ratelimit-unified-overage-status", "allowed_warning".parse().unwrap());
-        headers.insert("anthropic-ratelimit-unified-overage-reset", "1773200000".parse().unwrap());
-        headers.insert("anthropic-ratelimit-unified-overage-utilization", "0.039".parse().unwrap());
-        headers.insert("anthropic-ratelimit-unified-overage-in-use", "true".parse().unwrap());
+        headers.insert(
+            "anthropic-ratelimit-unified-status",
+            "allowed".parse().unwrap(),
+        );
+        headers.insert(
+            "anthropic-ratelimit-unified-overage-status",
+            "allowed_warning".parse().unwrap(),
+        );
+        headers.insert(
+            "anthropic-ratelimit-unified-overage-reset",
+            "1773200000".parse().unwrap(),
+        );
+        headers.insert(
+            "anthropic-ratelimit-unified-overage-utilization",
+            "0.039".parse().unwrap(),
+        );
+        headers.insert(
+            "anthropic-ratelimit-unified-overage-in-use",
+            "true".parse().unwrap(),
+        );
 
         let resp = parse_unified_rate_limit_headers(&headers);
         let extra = resp.extra_usage.unwrap();
@@ -1853,7 +1972,10 @@ mod tests {
                 eprintln!("Skipping live API test: network error ({})", e.message);
             }
             Err(e) => {
-                panic!("Live API call failed: status={} msg={}", e.status, e.message);
+                panic!(
+                    "Live API call failed: status={} msg={}",
+                    e.status, e.message
+                );
             }
         }
     }

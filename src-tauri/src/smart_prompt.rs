@@ -13,9 +13,22 @@ use tokio::time::timeout;
 /// are applied on top of the allowlist (see [`apply_clean_env`]).
 const ENV_ALLOWLIST: &[&str] = &[
     // POSIX essentials
-    "PATH", "HOME", "SHELL", "TERM", "USER", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE",
+    "PATH",
+    "HOME",
+    "SHELL",
+    "TERM",
+    "USER",
+    "TMPDIR",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
     // Windows equivalents
-    "TMP", "TEMP", "USERPROFILE", "USERNAME", "SYSTEMROOT", "COMSPEC",
+    "TMP",
+    "TEMP",
+    "USERPROFILE",
+    "USERNAME",
+    "SYSTEMROOT",
+    "COMSPEC",
 ];
 
 /// Clear the child's env, re-populate from the allowlist inherited from the
@@ -81,7 +94,11 @@ pub(crate) async fn execute_headless_prompt(
     let mut cmd = Command::new(&command);
     cmd.args(&args)
         .current_dir(&repo_path)
-        .stdin(if needs_stdin { std::process::Stdio::piped() } else { std::process::Stdio::null() })
+        .stdin(if needs_stdin {
+            std::process::Stdio::piped()
+        } else {
+            std::process::Stdio::null()
+        })
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
@@ -90,7 +107,8 @@ pub(crate) async fn execute_headless_prompt(
     // See ENV_ALLOWLIST for the rationale.
     apply_clean_env(&mut cmd, env.as_ref());
 
-    let mut child = cmd.spawn()
+    let mut child = cmd
+        .spawn()
         .map_err(|e| format!("Failed to spawn process: {e}"))?;
 
     // Pipe prompt content via stdin to avoid shell injection
@@ -128,8 +146,16 @@ pub(crate) async fn execute_shell_script(
 ) -> Result<String, String> {
     let duration = Duration::from_millis(timeout_ms.min(60_000)); // Cap at 60 seconds
 
-    let shell = if cfg!(target_os = "windows") { "cmd" } else { "sh" };
-    let shell_flag = if cfg!(target_os = "windows") { "/C" } else { "-c" };
+    let shell = if cfg!(target_os = "windows") {
+        "cmd"
+    } else {
+        "sh"
+    };
+    let shell_flag = if cfg!(target_os = "windows") {
+        "/C"
+    } else {
+        "-c"
+    };
 
     let repo_path = crate::cli::expand_tilde(&repo_path);
     let mut cmd = Command::new(shell);
@@ -176,7 +202,8 @@ mod tests {
             5000,
             "/tmp".to_string(),
             None,
-        ).await;
+        )
+        .await;
         assert_eq!(result.unwrap(), "hello");
     }
 
@@ -189,7 +216,8 @@ mod tests {
             5000,
             "/tmp".to_string(),
             None,
-        ).await;
+        )
+        .await;
         assert_eq!(result.unwrap(), "hello from stdin");
     }
 
@@ -202,7 +230,8 @@ mod tests {
             5000,
             "/tmp".to_string(),
             None,
-        ).await;
+        )
+        .await;
         assert!(result.is_err());
     }
 
@@ -215,14 +244,19 @@ mod tests {
             100,
             "/tmp".to_string(),
             None,
-        ).await;
+        )
+        .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Timed out"));
     }
 
     #[tokio::test]
     async fn headless_env_vars_injected() {
-        let env = Some([("TUIC_TEST_VAR".to_string(), "injected_value".to_string())].into_iter().collect());
+        let env = Some(
+            [("TUIC_TEST_VAR".to_string(), "injected_value".to_string())]
+                .into_iter()
+                .collect(),
+        );
         // printenv reads env directly — no shell interpolation needed.
         let result = execute_headless_prompt(
             "printenv".to_string(),
@@ -231,7 +265,8 @@ mod tests {
             5000,
             "/tmp".to_string(),
             env,
-        ).await;
+        )
+        .await;
         assert_eq!(result.unwrap(), "injected_value");
     }
 
@@ -249,7 +284,8 @@ mod tests {
             5000,
             "/tmp".to_string(),
             None,
-        ).await;
+        )
+        .await;
         assert_eq!(result.unwrap(), injection);
         // Confirm the would-be created file does not exist.
         assert!(!std::path::Path::new("/tmp/tuictest_inject").exists());
@@ -264,15 +300,15 @@ mod tests {
             5000,
             "/tmp".to_string(),
             None,
-        ).await;
+        )
+        .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("command must not be empty"));
     }
 
     #[tokio::test]
     async fn shell_script_echo() {
-        let result =
-            execute_shell_script("echo hello".to_string(), 5000, "/tmp".to_string()).await;
+        let result = execute_shell_script("echo hello".to_string(), 5000, "/tmp".to_string()).await;
         assert_eq!(result.unwrap(), "hello");
     }
 
@@ -282,29 +318,27 @@ mod tests {
             "echo line1\necho line2".to_string(),
             5000,
             "/tmp".to_string(),
-        ).await;
+        )
+        .await;
         assert_eq!(result.unwrap(), "line1\nline2");
     }
 
     #[tokio::test]
     async fn shell_script_nonzero_exit() {
-        let result =
-            execute_shell_script("exit 1".to_string(), 5000, "/tmp".to_string()).await;
+        let result = execute_shell_script("exit 1".to_string(), 5000, "/tmp".to_string()).await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn shell_script_timeout() {
-        let result =
-            execute_shell_script("sleep 10".to_string(), 100, "/tmp".to_string()).await;
+        let result = execute_shell_script("sleep 10".to_string(), 100, "/tmp".to_string()).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Timed out"));
     }
 
     #[tokio::test]
     async fn shell_script_uses_cwd() {
-        let result =
-            execute_shell_script("pwd".to_string(), 5000, "/tmp".to_string()).await;
+        let result = execute_shell_script("pwd".to_string(), 5000, "/tmp".to_string()).await;
         // macOS resolves /tmp → /private/tmp
         assert!(result.unwrap().contains("tmp"));
     }

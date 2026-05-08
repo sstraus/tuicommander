@@ -72,9 +72,7 @@ fn parse_git_config_remote_url(config: &str, remote_name: &str) -> Option<String
             in_section = trimmed == section_header;
             continue;
         }
-        if in_section
-            && let Some(rest) = trimmed.strip_prefix("url")
-        {
+        if in_section && let Some(rest) = trimmed.strip_prefix("url") {
             let rest = rest.trim_start();
             if let Some(value) = rest.strip_prefix('=') {
                 return Some(value.trim().to_string());
@@ -118,7 +116,9 @@ pub(crate) fn get_repo_info_impl(path: &str) -> RepoInfo {
     // Check if it's a git repo
     let git_dir = repo_path.join(".git");
     if !git_dir.exists() && !repo_path.join("../.git").exists() {
-        let name = repo_path.file_name().map_or_else(|| path.to_string(), |n| n.to_string_lossy().to_string());
+        let name = repo_path
+            .file_name()
+            .map_or_else(|| path.to_string(), |n| n.to_string_lossy().to_string());
         let initials = get_repo_initials(&name);
         return RepoInfo {
             path: path.to_string(),
@@ -131,8 +131,7 @@ pub(crate) fn get_repo_info_impl(path: &str) -> RepoInfo {
     }
 
     // Read branch from .git/HEAD (no subprocess)
-    let branch = read_branch_from_head(&repo_path)
-        .unwrap_or_else(|| "unknown".to_string());
+    let branch = read_branch_from_head(&repo_path).unwrap_or_else(|| "unknown".to_string());
 
     // Get status
     let status = git_cmd(&repo_path)
@@ -141,7 +140,8 @@ pub(crate) fn get_repo_info_impl(path: &str) -> RepoInfo {
         .map(|o| {
             if o.stdout.is_empty() {
                 "clean".to_string()
-            } else if o.stdout.contains("UU") || o.stdout.contains("AA") || o.stdout.contains("DD") {
+            } else if o.stdout.contains("UU") || o.stdout.contains("AA") || o.stdout.contains("DD")
+            {
                 "conflict".to_string()
             } else {
                 "dirty".to_string()
@@ -149,7 +149,9 @@ pub(crate) fn get_repo_info_impl(path: &str) -> RepoInfo {
         })
         .unwrap_or_else(|| "unknown".to_string());
 
-    let name = repo_path.file_name().map_or_else(|| path.to_string(), |n| n.to_string_lossy().to_string());
+    let name = repo_path
+        .file_name()
+        .map_or_else(|| path.to_string(), |n| n.to_string_lossy().to_string());
     let initials = get_repo_initials(&name);
 
     RepoInfo {
@@ -175,7 +177,10 @@ pub(crate) fn get_repo_info_cached(state: &AppState, path: &str) -> RepoInfo {
 /// Get git repository info for a path (cached, 5s TTL)
 #[cfg(feature = "desktop")]
 #[tauri::command]
-pub(crate) async fn get_repo_info(state: State<'_, Arc<AppState>>, path: String) -> Result<RepoInfo, String> {
+pub(crate) async fn get_repo_info(
+    state: State<'_, Arc<AppState>>,
+    path: String,
+) -> Result<RepoInfo, String> {
     if let Some(cached) = AppState::get_cached(&state.git_cache.repo_info, &path, GIT_CACHE_TTL) {
         return Ok(cached);
     }
@@ -224,7 +229,10 @@ pub(crate) fn rename_branch_impl(path: &str, old_name: &str, new_name: &str) -> 
     validate_branch_name(new_name)?;
 
     // Execute git branch -m oldname newname
-    match git_cmd(&repo_path).args(["branch", "-m", old_name, new_name]).run() {
+    match git_cmd(&repo_path)
+        .args(["branch", "-m", old_name, new_name])
+        .run()
+    {
         Ok(_) => Ok(()),
         Err(crate::git_cli::GitError::NonZeroExit { stderr, .. }) => {
             if stderr.contains("not found") || stderr.contains("does not exist") {
@@ -242,7 +250,12 @@ pub(crate) fn rename_branch_impl(path: &str, old_name: &str, new_name: &str) -> 
 /// Rename a git branch (Tauri command with cache invalidation)
 #[cfg(feature = "desktop")]
 #[tauri::command]
-pub(crate) async fn rename_branch(state: State<'_, Arc<AppState>>, path: String, old_name: String, new_name: String) -> Result<(), String> {
+pub(crate) async fn rename_branch(
+    state: State<'_, Arc<AppState>>,
+    path: String,
+    old_name: String,
+    new_name: String,
+) -> Result<(), String> {
     let state_arc = state.inner().clone();
     tokio::task::spawn_blocking(move || {
         rename_branch_impl(&path, &old_name, &new_name)?;
@@ -254,7 +267,12 @@ pub(crate) async fn rename_branch(state: State<'_, Arc<AppState>>, path: String,
 }
 
 /// Core logic for creating a git branch.
-pub(crate) fn create_branch_impl(path: &str, name: &str, start_point: Option<&str>, checkout: bool) -> Result<(), String> {
+pub(crate) fn create_branch_impl(
+    path: &str,
+    name: &str,
+    start_point: Option<&str>,
+    checkout: bool,
+) -> Result<(), String> {
     let repo_path = PathBuf::from(path);
 
     validate_branch_name(name)?;
@@ -303,7 +321,13 @@ pub(crate) fn create_branch_impl(path: &str, name: &str, start_point: Option<&st
 /// Create a git branch (Tauri command with cache invalidation)
 #[cfg(feature = "desktop")]
 #[tauri::command]
-pub(crate) async fn create_branch(state: State<'_, Arc<AppState>>, path: String, name: String, start_point: Option<String>, checkout: bool) -> Result<(), String> {
+pub(crate) async fn create_branch(
+    state: State<'_, Arc<AppState>>,
+    path: String,
+    name: String,
+    start_point: Option<String>,
+    checkout: bool,
+) -> Result<(), String> {
     let state_arc = state.inner().clone();
     tokio::task::spawn_blocking(move || {
         create_branch_impl(&path, &name, start_point.as_deref(), checkout)?;
@@ -316,7 +340,10 @@ pub(crate) async fn create_branch(state: State<'_, Arc<AppState>>, path: String,
 
 /// Read the stored base ref for a branch (Tauri command).
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub(crate) async fn get_branch_base(path: String, branch_name: String) -> Result<Option<String>, String> {
+pub(crate) async fn get_branch_base(
+    path: String,
+    branch_name: String,
+) -> Result<Option<String>, String> {
     tokio::task::spawn_blocking(move || crate::worktree::get_branch_base(&path, &branch_name))
         .await
         .map_err(|e| format!("spawn_blocking join error: {e}"))
@@ -340,10 +367,9 @@ pub(crate) async fn update_from_base(
         let strategy = strategy.as_deref().unwrap_or("rebase");
 
         // Read stored base, fall back to default branch
-        let base = crate::worktree::get_branch_base(&path, &branch_name)
-            .unwrap_or_else(|| {
-                crate::worktree::get_remote_default_branch(&path).unwrap_or_else(|_| "main".to_string())
-            });
+        let base = crate::worktree::get_branch_base(&path, &branch_name).unwrap_or_else(|| {
+            crate::worktree::get_remote_default_branch(&path).unwrap_or_else(|_| "main".to_string())
+        });
 
         // Fetch if remote
         crate::worktree::fetch_if_remote(&path, &base)?;
@@ -366,7 +392,10 @@ pub(crate) async fn update_from_base(
                 }
             }
             "merge" => {
-                match git_cmd(&repo_path).args(["merge", &base, "--no-edit"]).run() {
+                match git_cmd(&repo_path)
+                    .args(["merge", &base, "--no-edit"])
+                    .run()
+                {
                     Ok(_) => Ok(format!("Merged {base} into {branch_name}")),
                     Err(crate::git_cli::GitError::NonZeroExit { stderr, .. }) => {
                         let _ = git_cmd(&repo_path).args(["merge", "--abort"]).run();
@@ -379,7 +408,9 @@ pub(crate) async fn update_from_base(
                     }
                 }
             }
-            _ => Err(format!("Unknown strategy: {strategy}. Use 'rebase' or 'merge'.")),
+            _ => Err(format!(
+                "Unknown strategy: {strategy}. Use 'rebase' or 'merge'."
+            )),
         }
     })
     .await
@@ -398,7 +429,11 @@ pub(crate) struct DeleteBranchResult {
 ///
 /// Refuses to delete protected main branches or the currently checked-out branch.
 /// Use `force=true` to delete branches with unmerged commits (`git branch -D`).
-pub(crate) fn delete_branch_impl(path: &str, name: &str, force: bool) -> Result<DeleteBranchResult, String> {
+pub(crate) fn delete_branch_impl(
+    path: &str,
+    name: &str,
+    force: bool,
+) -> Result<DeleteBranchResult, String> {
     let repo_path = PathBuf::from(path);
 
     if name.is_empty() {
@@ -414,7 +449,9 @@ pub(crate) fn delete_branch_impl(path: &str, name: &str, force: bool) -> Result<
     if let Some(current) = read_branch_from_head(&repo_path)
         && current == name
     {
-        return Err(format!("Cannot delete the currently checked-out branch '{name}'"));
+        return Err(format!(
+            "Cannot delete the currently checked-out branch '{name}'"
+        ));
     }
 
     let flag = if force { "-D" } else { "-d" };
@@ -434,7 +471,12 @@ pub(crate) fn delete_branch_impl(path: &str, name: &str, force: bool) -> Result<
 /// Delete a git branch (Tauri command with cache invalidation)
 #[cfg(feature = "desktop")]
 #[tauri::command]
-pub(crate) async fn delete_branch(state: State<'_, Arc<AppState>>, path: String, name: String, force: bool) -> Result<DeleteBranchResult, String> {
+pub(crate) async fn delete_branch(
+    state: State<'_, Arc<AppState>>,
+    path: String,
+    name: String,
+    force: bool,
+) -> Result<DeleteBranchResult, String> {
     let state_arc = state.inner().clone();
     tokio::task::spawn_blocking(move || {
         let result = delete_branch_impl(&path, &name, force)?;
@@ -455,7 +497,10 @@ pub(crate) struct RecentCommit {
 
 /// Get the N most recent commits
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub(crate) async fn get_recent_commits(path: String, count: Option<u32>) -> Result<Vec<RecentCommit>, String> {
+pub(crate) async fn get_recent_commits(
+    path: String,
+    count: Option<u32>,
+) -> Result<Vec<RecentCommit>, String> {
     tokio::task::spawn_blocking(move || {
         let repo_path = PathBuf::from(&path);
         let n = count.unwrap_or(5).min(20).to_string();
@@ -465,7 +510,8 @@ pub(crate) async fn get_recent_commits(path: String, count: Option<u32>) -> Resu
             .run()
             .map_err(|e| format!("git log failed: {e}"))?;
 
-        let commits = out.stdout
+        let commits = out
+            .stdout
             .lines()
             .filter_map(|line| {
                 let parts: Vec<&str> = line.splitn(3, '\0').collect();
@@ -599,7 +645,12 @@ pub(crate) fn get_diff_stats_impl(path: &str, scope: Option<&str>) -> DiffStats 
 
     let args = match diff_base_args(&scope_owned) {
         Ok(a) => a,
-        Err(_) => return DiffStats { additions: 0, deletions: 0 },
+        Err(_) => {
+            return DiffStats {
+                additions: 0,
+                deletions: 0,
+            };
+        }
     };
     let mut args = args;
     args.push("--shortstat".into());
@@ -616,19 +667,29 @@ pub(crate) fn get_diff_stats_impl(path: &str, scope: Option<&str>) -> DiffStats 
                     additions = num.parse().unwrap_or(0);
                 }
             } else if part.contains("deletion")
-                && let Some(num) = part.split_whitespace().next() {
-                    deletions = num.parse().unwrap_or(0);
-                }
+                && let Some(num) = part.split_whitespace().next()
+            {
+                deletions = num.parse().unwrap_or(0);
+            }
         }
 
-        return DiffStats { additions, deletions };
+        return DiffStats {
+            additions,
+            deletions,
+        };
     }
 
-    DiffStats { additions: 0, deletions: 0 }
+    DiffStats {
+        additions: 0,
+        deletions: 0,
+    }
 }
 
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub(crate) async fn get_diff_stats(path: String, scope: Option<String>) -> Result<DiffStats, String> {
+pub(crate) async fn get_diff_stats(
+    path: String,
+    scope: Option<String>,
+) -> Result<DiffStats, String> {
     tokio::task::spawn_blocking(move || get_diff_stats_impl(&path, scope.as_deref()))
         .await
         .map_err(|e| format!("spawn_blocking join error: {e}"))
@@ -636,7 +697,10 @@ pub(crate) async fn get_diff_stats(path: String, scope: Option<String>) -> Resul
 
 /// Get list of changed files with status and stats
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub(crate) async fn get_changed_files(path: String, scope: Option<String>) -> Result<Vec<ChangedFile>, String> {
+pub(crate) async fn get_changed_files(
+    path: String,
+    scope: Option<String>,
+) -> Result<Vec<ChangedFile>, String> {
     tokio::task::spawn_blocking(move || {
         let repo_path = PathBuf::from(&path);
 
@@ -687,14 +751,27 @@ pub(crate) async fn get_changed_files(path: String, scope: Option<String>) -> Re
         }
 
         // Combine stats and status. Use stats_map as primary (has all diffed files).
-        let mut files: Vec<ChangedFile> = stats_map.into_iter().map(|(path, (additions, deletions))| {
-            let status = status_map.remove(&path).unwrap_or_else(|| "M".to_string());
-            ChangedFile { path, status, additions, deletions }
-        }).collect();
+        let mut files: Vec<ChangedFile> = stats_map
+            .into_iter()
+            .map(|(path, (additions, deletions))| {
+                let status = status_map.remove(&path).unwrap_or_else(|| "M".to_string());
+                ChangedFile {
+                    path,
+                    status,
+                    additions,
+                    deletions,
+                }
+            })
+            .collect();
 
         // Any remaining status_map entries (no stats) — shouldn't happen but handle gracefully
         for (path, status) in status_map {
-            files.push(ChangedFile { path, status, additions: 0, deletions: 0 });
+            files.push(ChangedFile {
+                path,
+                status,
+                additions: 0,
+                deletions: 0,
+            });
         }
 
         // For working tree scope, also include untracked files
@@ -748,7 +825,12 @@ const NULL_DEVICE: &str = "NUL";
 /// When `untracked` is `Some(true)`, skip the `ls-files` probe and go directly
 /// to `--no-index` diff (the frontend already knows the file status).
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub(crate) async fn get_file_diff(path: String, file: String, scope: Option<String>, untracked: Option<bool>) -> Result<String, String> {
+pub(crate) async fn get_file_diff(
+    path: String,
+    file: String,
+    scope: Option<String>,
+    untracked: Option<bool>,
+) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
         let repo_path = PathBuf::from(&path);
 
@@ -757,9 +839,11 @@ pub(crate) async fn get_file_diff(path: String, file: String, scope: Option<Stri
             let full_path = repo_path.join(&file);
 
             // Security: prevent path traversal (e.g. "../../etc/passwd")
-            let canonical_repo = repo_path.canonicalize()
+            let canonical_repo = repo_path
+                .canonicalize()
                 .map_err(|e| format!("Failed to resolve repo path: {e}"))?;
-            let canonical_file = full_path.canonicalize()
+            let canonical_file = full_path
+                .canonicalize()
                 .map_err(|e| format!("Failed to resolve file path: {e}"))?;
             if !canonical_file.starts_with(&canonical_repo) {
                 return Err("Access denied: file is outside repository".to_string());
@@ -784,13 +868,22 @@ pub(crate) async fn get_file_diff(path: String, file: String, scope: Option<Stri
             if is_untracked {
                 let full_path_str = full_path.to_string_lossy();
                 let raw = git_cmd(&repo_path)
-                    .args(["diff", "--color=never", "--no-index", "--", NULL_DEVICE, &full_path_str])
+                    .args([
+                        "diff",
+                        "--color=never",
+                        "--no-index",
+                        "--",
+                        NULL_DEVICE,
+                        &full_path_str,
+                    ])
                     .run_raw()
                     .map_err(|e| format!("Failed to diff untracked file: {e}"))?;
                 let code = raw.status.code().unwrap_or(-1);
                 if code > 1 {
                     let stderr = String::from_utf8_lossy(&raw.stderr);
-                    return Err(format!("git diff --no-index failed (exit {code}): {stderr}"));
+                    return Err(format!(
+                        "git diff --no-index failed (exit {code}): {stderr}"
+                    ));
                 }
                 return Ok(String::from_utf8_lossy(&raw.stdout).to_string());
             }
@@ -840,7 +933,8 @@ pub(crate) fn get_initials(name: String) -> String {
 
 /// Canonical list of branch names considered "main" / primary.
 /// Used by both `is_main_branch()` and `get_merged_branches_impl()`.
-pub(crate) const MAIN_BRANCH_CANDIDATES: &[&str] = &["main", "master", "develop", "development", "dev"];
+pub(crate) const MAIN_BRANCH_CANDIDATES: &[&str] =
+    &["main", "master", "develop", "development", "dev"];
 
 /// Check if a branch name is a main/primary branch
 pub(crate) fn is_main_branch(branch_name: &str) -> bool {
@@ -909,17 +1003,22 @@ fn detect_default_branch(git_dir: &Path) -> Option<String> {
 pub(crate) fn get_merged_branches_impl(repo_path: &Path) -> Result<Vec<String>, String> {
     let git_dir = match resolve_git_dir(repo_path) {
         Some(d) => d,
-        None => return Ok(vec![]),  // Not a git repo — graceful no-op
+        None => return Ok(vec![]), // Not a git repo — graceful no-op
     };
 
     let main_branch = match detect_default_branch(&git_dir) {
         Some(b) => b,
-        None => return Ok(vec![]),  // No default branch — graceful no-op
+        None => return Ok(vec![]), // No default branch — graceful no-op
     };
 
     // Single command: get branch name + SHA together, plus main SHA for filtering
     let out = git_cmd(repo_path)
-        .args(["branch", "--merged", &main_branch, "--format=%(objectname) %(refname:short)"])
+        .args([
+            "branch",
+            "--merged",
+            &main_branch,
+            "--format=%(objectname) %(refname:short)",
+        ])
         .run()
         .map_err(|e| format!("git branch --merged failed: {e}"))?;
 
@@ -930,13 +1029,19 @@ pub(crate) fn get_merged_branches_impl(repo_path: &Path) -> Result<Vec<String>, 
         .unwrap_or_default();
 
     // Filter out branches whose tip SHA matches main — they never diverged
-    Ok(out.stdout.lines()
+    Ok(out
+        .stdout
+        .lines()
         .filter_map(|line| {
             let line = line.trim();
             let (sha, name) = line.split_once(' ')?;
-            if name.is_empty() { return None; }
+            if name.is_empty() {
+                return None;
+            }
             // Exclude branches at the exact same SHA as main
-            if !main_sha.is_empty() && sha == main_sha { return None; }
+            if !main_sha.is_empty() && sha == main_sha {
+                return None;
+            }
             Some(name.to_string())
         })
         .collect())
@@ -946,10 +1051,12 @@ pub(crate) fn get_merged_branches_impl(repo_path: &Path) -> Result<Vec<String>, 
 fn packed_ref_exists(git_dir: &Path, ref_name: &str) -> bool {
     let packed_refs = git_dir.join("packed-refs");
     fs::read_to_string(packed_refs)
-        .map(|content| content.lines().any(|line| {
-            // Lines are "<sha> <ref>" or comments starting with '#'/'^'
-            line.split_whitespace().nth(1) == Some(ref_name)
-        }))
+        .map(|content| {
+            content.lines().any(|line| {
+                // Lines are "<sha> <ref>" or comments starting with '#'/'^'
+                line.split_whitespace().nth(1) == Some(ref_name)
+            })
+        })
         .unwrap_or(false)
 }
 
@@ -960,17 +1067,18 @@ pub(crate) async fn get_merged_branches(
     state: State<'_, Arc<AppState>>,
     path: String,
 ) -> Result<Vec<String>, String> {
-    if let Some(cached) = AppState::get_cached(&state.git_cache.merged_branches, &path, GIT_CACHE_TTL) {
+    if let Some(cached) =
+        AppState::get_cached(&state.git_cache.merged_branches, &path, GIT_CACHE_TTL)
+    {
         return Ok(cached);
     }
 
     let state_arc = state.inner().clone();
     let path_clone = path.clone();
-    let result = tokio::task::spawn_blocking(move || {
-        get_merged_branches_impl(Path::new(&path_clone))
-    })
-    .await
-    .map_err(|e| format!("spawn_blocking join error: {e}"))??;
+    let result =
+        tokio::task::spawn_blocking(move || get_merged_branches_impl(Path::new(&path_clone)))
+            .await
+            .map_err(|e| format!("spawn_blocking join error: {e}"))??;
     AppState::set_cached(&state_arc.git_cache.merged_branches, path, result.clone());
     Ok(result)
 }
@@ -1010,13 +1118,15 @@ fn get_last_commit_timestamps(
     repo_path: &Path,
     branches: &[String],
 ) -> HashMap<String, Option<i64>> {
-    let mut result: HashMap<String, Option<i64>> = branches
-        .iter()
-        .map(|b| (b.clone(), None))
-        .collect();
+    let mut result: HashMap<String, Option<i64>> =
+        branches.iter().map(|b| (b.clone(), None)).collect();
 
     let out = match git_cmd(repo_path)
-        .args(["for-each-ref", "--format=%(refname:short)\t%(creatordate:unix)", "refs/heads/"])
+        .args([
+            "for-each-ref",
+            "--format=%(refname:short)\t%(creatordate:unix)",
+            "refs/heads/",
+        ])
         .run()
     {
         Ok(out) => out,
@@ -1036,23 +1146,30 @@ fn get_last_commit_timestamps(
 
 /// Core implementation of get_repo_summary, callable from both Tauri command and HTTP route.
 /// Runs worktree_paths + merged_branches concurrently, then diff stats for each path concurrently.
-pub(crate) async fn get_repo_summary_impl(state: &AppState, repo_path: String) -> Result<RepoSummary, String> {
+pub(crate) async fn get_repo_summary_impl(
+    state: &AppState,
+    repo_path: String,
+) -> Result<RepoSummary, String> {
     // Spawn worktree_paths concurrently while we fetch/check merged_branches cache.
     let wt_path = repo_path.clone();
-    let worktree_handle = tokio::task::spawn_blocking(move || {
-        crate::worktree::get_worktree_paths(wt_path)
-    });
+    let worktree_handle =
+        tokio::task::spawn_blocking(move || crate::worktree::get_worktree_paths(wt_path));
 
-    let merged_branches = if let Some(cached) = AppState::get_cached(&state.git_cache.merged_branches, &repo_path, GIT_CACHE_TTL) {
+    let merged_branches = if let Some(cached) =
+        AppState::get_cached(&state.git_cache.merged_branches, &repo_path, GIT_CACHE_TTL)
+    {
         cached
     } else {
         let mb_path = repo_path.clone();
-        let branches = tokio::task::spawn_blocking(move || {
-            get_merged_branches_impl(Path::new(&mb_path))
-        })
-        .await
-        .map_err(|e| format!("spawn_blocking error: {e}"))??;
-        AppState::set_cached(&state.git_cache.merged_branches, repo_path.clone(), branches.clone());
+        let branches =
+            tokio::task::spawn_blocking(move || get_merged_branches_impl(Path::new(&mb_path)))
+                .await
+                .map_err(|e| format!("spawn_blocking error: {e}"))??;
+        AppState::set_cached(
+            &state.git_cache.merged_branches,
+            repo_path.clone(),
+            branches.clone(),
+        );
         branches
     };
 
@@ -1089,7 +1206,12 @@ pub(crate) async fn get_repo_summary_impl(state: &AppState, repo_path: String) -
         .await
         .map_err(|e| format!("spawn_blocking error: {e}"))?;
 
-    Ok(RepoSummary { worktree_paths, merged_branches, diff_stats, last_commit_ts })
+    Ok(RepoSummary {
+        worktree_paths,
+        merged_branches,
+        diff_stats,
+        last_commit_ts,
+    })
 }
 
 /// Single IPC replacement for the N+2 calls in refreshAllBranchStats.
@@ -1104,22 +1226,29 @@ pub(crate) async fn get_repo_summary(
 
 /// Fast structural snapshot: worktree paths + merged branches only.
 /// Used by progressive loading Phase 1 — returns before expensive diff stats.
-pub(crate) async fn get_repo_structure_impl(state: &AppState, repo_path: String) -> Result<RepoStructure, String> {
+pub(crate) async fn get_repo_structure_impl(
+    state: &AppState,
+    repo_path: String,
+) -> Result<RepoStructure, String> {
     let wt_path = repo_path.clone();
-    let worktree_handle = tokio::task::spawn_blocking(move || {
-        crate::worktree::get_worktree_paths(wt_path)
-    });
+    let worktree_handle =
+        tokio::task::spawn_blocking(move || crate::worktree::get_worktree_paths(wt_path));
 
-    let merged_branches = if let Some(cached) = AppState::get_cached(&state.git_cache.merged_branches, &repo_path, GIT_CACHE_TTL) {
+    let merged_branches = if let Some(cached) =
+        AppState::get_cached(&state.git_cache.merged_branches, &repo_path, GIT_CACHE_TTL)
+    {
         cached
     } else {
         let mb_path = repo_path.clone();
-        let branches = tokio::task::spawn_blocking(move || {
-            get_merged_branches_impl(Path::new(&mb_path))
-        })
-        .await
-        .map_err(|e| format!("spawn_blocking error: {e}"))??;
-        AppState::set_cached(&state.git_cache.merged_branches, repo_path.clone(), branches.clone());
+        let branches =
+            tokio::task::spawn_blocking(move || get_merged_branches_impl(Path::new(&mb_path)))
+                .await
+                .map_err(|e| format!("spawn_blocking error: {e}"))??;
+        AppState::set_cached(
+            &state.git_cache.merged_branches,
+            repo_path.clone(),
+            branches.clone(),
+        );
         branches
     };
 
@@ -1128,7 +1257,10 @@ pub(crate) async fn get_repo_structure_impl(state: &AppState, repo_path: String)
         .map_err(|e| format!("spawn_blocking error: {e}"))?
         .map_err(|e| format!("get_worktree_paths failed: {e}"))?;
 
-    Ok(RepoStructure { worktree_paths, merged_branches })
+    Ok(RepoStructure {
+        worktree_paths,
+        merged_branches,
+    })
 }
 
 #[cfg(feature = "desktop")]
@@ -1142,15 +1274,17 @@ pub(crate) async fn get_repo_structure(
 
 /// Per-worktree diff stats + last-commit timestamps.
 /// Used by progressive loading Phase 2 — runs after structure is already displayed.
-pub(crate) async fn get_repo_diff_stats_impl(_state: &AppState, repo_path: String) -> Result<RepoDiffStats, String> {
+pub(crate) async fn get_repo_diff_stats_impl(
+    _state: &AppState,
+    repo_path: String,
+) -> Result<RepoDiffStats, String> {
     // Need worktree paths to know which directories to diff
     let wt_path = repo_path.clone();
-    let worktree_paths = tokio::task::spawn_blocking(move || {
-        crate::worktree::get_worktree_paths(wt_path)
-    })
-    .await
-    .map_err(|e| format!("spawn_blocking error: {e}"))?
-    .map_err(|e| format!("get_worktree_paths failed: {e}"))?;
+    let worktree_paths =
+        tokio::task::spawn_blocking(move || crate::worktree::get_worktree_paths(wt_path))
+            .await
+            .map_err(|e| format!("spawn_blocking error: {e}"))?
+            .map_err(|e| format!("get_worktree_paths failed: {e}"))?;
 
     let paths: Vec<String> = worktree_paths.values().cloned().collect();
     let mut diff_handles = Vec::with_capacity(paths.len());
@@ -1179,7 +1313,10 @@ pub(crate) async fn get_repo_diff_stats_impl(_state: &AppState, repo_path: Strin
         .await
         .map_err(|e| format!("spawn_blocking error: {e}"))?;
 
-    Ok(RepoDiffStats { diff_stats, last_commit_ts })
+    Ok(RepoDiffStats {
+        diff_stats,
+        last_commit_ts,
+    })
 }
 
 #[cfg(feature = "desktop")]
@@ -1202,7 +1339,8 @@ pub(crate) async fn get_git_branches(path: String) -> Result<Vec<serde_json::Val
             .run()
             .map_err(|e| format!("git branch failed: {e}"))?;
 
-        let mut branches: Vec<serde_json::Value> = out.stdout
+        let mut branches: Vec<serde_json::Value> = out
+            .stdout
             .lines()
             .filter(|line| !line.is_empty())
             .map(|line| {
@@ -1238,8 +1376,8 @@ pub(crate) struct BranchDetail {
     pub ahead: Option<u32>,
     pub behind: Option<u32>,
     pub upstream: Option<String>,
-    pub last_commit_date: Option<String>,     // ISO 8601
-    pub last_commit_message: Option<String>,  // first line only
+    pub last_commit_date: Option<String>,    // ISO 8601
+    pub last_commit_message: Option<String>, // first line only
     pub last_commit_author: Option<String>,
     /// Commits ahead of the stored base branch (tuicommander-base)
     pub base_ahead: Option<u32>,
@@ -1266,7 +1404,12 @@ pub(crate) fn get_branches_detail_impl(path: &Path) -> Result<Vec<BranchDetail>,
     );
 
     let out = git_cmd(path)
-        .args(["for-each-ref", &format!("--format={fmt}"), "refs/heads/", "refs/remotes/"])
+        .args([
+            "for-each-ref",
+            &format!("--format={fmt}"),
+            "refs/heads/",
+            "refs/remotes/",
+        ])
         .run()
         .map_err(|e| format!("git for-each-ref failed: {e}"))?;
 
@@ -1279,18 +1422,23 @@ pub(crate) fn get_branches_detail_impl(path: &Path) -> Result<Vec<BranchDetail>,
         }
     };
 
-    let mut branches: Vec<BranchDetail> = out.stdout
+    let mut branches: Vec<BranchDetail> = out
+        .stdout
         .lines()
         .filter(|line| !line.is_empty())
         .filter_map(|line| {
             let parts: Vec<&str> = line.splitn(8, BRANCH_FIELD_SEP).collect();
-            if parts.len() < 8 { return None; }
+            if parts.len() < 8 {
+                return None;
+            }
 
             let refname = parts[0].trim();
             let name = parts[1].trim().to_string();
 
             // Skip the synthetic origin/HEAD pointer
-            if name == "origin/HEAD" || name.ends_with("/HEAD") { return None; }
+            if name == "origin/HEAD" || name.ends_with("/HEAD") {
+                return None;
+            }
 
             let is_current = parts[2].trim() == "*";
             // Use the full refname (refs/remotes/…) to reliably detect remote branches,
@@ -1298,7 +1446,11 @@ pub(crate) fn get_branches_detail_impl(path: &Path) -> Result<Vec<BranchDetail>,
             let is_remote = refname.starts_with("refs/remotes/");
 
             let upstream_raw = parts[3].trim();
-            let upstream = if upstream_raw.is_empty() { None } else { Some(upstream_raw.to_string()) };
+            let upstream = if upstream_raw.is_empty() {
+                None
+            } else {
+                Some(upstream_raw.to_string())
+            };
 
             // upstream:track looks like "[ahead 2, behind 3]", "[ahead 1]", "[behind 4]", or ""
             let track = parts[4].trim();
@@ -1306,13 +1458,25 @@ pub(crate) fn get_branches_detail_impl(path: &Path) -> Result<Vec<BranchDetail>,
             let behind = parse_track_value(track, "behind");
 
             let commit_date_raw = parts[5].trim();
-            let last_commit_date = if commit_date_raw.is_empty() { None } else { Some(commit_date_raw.to_string()) };
+            let last_commit_date = if commit_date_raw.is_empty() {
+                None
+            } else {
+                Some(commit_date_raw.to_string())
+            };
 
             let subject = parts[6].trim();
-            let last_commit_message = if subject.is_empty() { None } else { Some(subject.to_string()) };
+            let last_commit_message = if subject.is_empty() {
+                None
+            } else {
+                Some(subject.to_string())
+            };
 
             let author = parts[7].trim();
-            let last_commit_author = if author.is_empty() { None } else { Some(author.to_string()) };
+            let last_commit_author = if author.is_empty() {
+                None
+            } else {
+                Some(author.to_string())
+            };
 
             let is_merged = merged_set.contains(&name);
 
@@ -1339,10 +1503,15 @@ pub(crate) fn get_branches_detail_impl(path: &Path) -> Result<Vec<BranchDetail>,
     // Uses --left-right to get both counts in a single subprocess per branch.
     let path_str = path.to_string_lossy();
     for branch in &mut branches {
-        if branch.is_remote { continue; }
+        if branch.is_remote {
+            continue;
+        }
         if let Some(base) = crate::worktree::get_branch_base(&path_str, &branch.name) {
             let range = format!("{base}...{}", branch.name);
-            if let Ok(out) = git_cmd(path).args(["rev-list", "--count", "--left-right", &range]).run() {
+            if let Ok(out) = git_cmd(path)
+                .args(["rev-list", "--count", "--left-right", &range])
+                .run()
+            {
                 let parts: Vec<&str> = out.stdout.trim().split('\t').collect();
                 if parts.len() == 2 {
                     branch.base_behind = parts[0].trim().parse().ok();
@@ -1354,12 +1523,10 @@ pub(crate) fn get_branches_detail_impl(path: &Path) -> Result<Vec<BranchDetail>,
     }
 
     // Sort: main/primary branches first, then alphabetical
-    branches.sort_by(|a, b| {
-        match (a.is_main, b.is_main) {
-            (true, false) => std::cmp::Ordering::Less,
-            (false, true) => std::cmp::Ordering::Greater,
-            _ => a.name.cmp(&b.name),
-        }
+    branches.sort_by(|a, b| match (a.is_main, b.is_main) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.name.cmp(&b.name),
     });
 
     Ok(branches)
@@ -1374,7 +1541,9 @@ fn parse_track_value(track: &str, key: &str) -> Option<u32> {
     let start = track.find(&search)? + search.len();
     let rest = &track[start..];
     // Number ends at the next comma, closing bracket, or end of string
-    let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+    let end = rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len());
     rest[..end].parse().ok()
 }
 
@@ -1385,17 +1554,18 @@ pub(crate) async fn get_branches_detail(
     state: State<'_, Arc<AppState>>,
     path: String,
 ) -> Result<Vec<BranchDetail>, String> {
-    if let Some(cached) = AppState::get_cached(&state.git_cache.branches_detail, &path, GIT_CACHE_TTL) {
+    if let Some(cached) =
+        AppState::get_cached(&state.git_cache.branches_detail, &path, GIT_CACHE_TTL)
+    {
         return Ok(cached);
     }
 
     let state_arc = state.inner().clone();
     let path_clone = path.clone();
-    let result = tokio::task::spawn_blocking(move || {
-        get_branches_detail_impl(Path::new(&path_clone))
-    })
-    .await
-    .map_err(|e| format!("spawn_blocking join error: {e}"))??;
+    let result =
+        tokio::task::spawn_blocking(move || get_branches_detail_impl(Path::new(&path_clone)))
+            .await
+            .map_err(|e| format!("spawn_blocking join error: {e}"))??;
     AppState::set_cached(&state_arc.git_cache.branches_detail, path, result.clone());
     Ok(result)
 }
@@ -1435,10 +1605,15 @@ pub(crate) fn get_recent_branches_impl(path: &Path, limit: usize) -> Result<Vec<
 
 /// Get recently checked-out branch names for a repository (most recent first).
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub(crate) async fn get_recent_branches(path: String, limit: Option<usize>) -> Result<Vec<String>, String> {
-    tokio::task::spawn_blocking(move || get_recent_branches_impl(Path::new(&path), limit.unwrap_or(5)))
-        .await
-        .map_err(|e| format!("spawn_blocking join error: {e}"))?
+pub(crate) async fn get_recent_branches(
+    path: String,
+    limit: Option<usize>,
+) -> Result<Vec<String>, String> {
+    tokio::task::spawn_blocking(move || {
+        get_recent_branches_impl(Path::new(&path), limit.unwrap_or(5))
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 /// Rich context for the Git Operations Panel (single IPC round-trip).
@@ -1531,15 +1706,17 @@ pub(crate) fn get_git_panel_context_impl(path: &Path) -> GitPanelContext {
     // Ahead/behind (only when there's an upstream)
     let (ahead, behind) = if !is_detached {
         git_cmd(path)
-            .args(["rev-list", "--left-right", "--count", &format!("{branch}...{branch}@{{u}}")])
+            .args([
+                "rev-list",
+                "--left-right",
+                "--count",
+                &format!("{branch}...{branch}@{{u}}"),
+            ])
             .run_silent()
             .and_then(|o| {
                 let parts: Vec<&str> = o.stdout.trim().split('\t').collect();
                 if parts.len() == 2 {
-                    Some((
-                        parts[0].parse::<u32>().ok(),
-                        parts[1].parse::<u32>().ok(),
-                    ))
+                    Some((parts[0].parse::<u32>().ok(), parts[1].parse::<u32>().ok()))
                 } else {
                     None
                 }
@@ -1604,15 +1781,18 @@ pub(crate) async fn get_git_panel_context(
     state: State<'_, Arc<AppState>>,
     path: String,
 ) -> Result<GitPanelContext, String> {
-    if let Some(cached) = AppState::get_cached(&state.git_cache.git_panel_context, &path, GIT_CACHE_TTL) {
+    if let Some(cached) =
+        AppState::get_cached(&state.git_cache.git_panel_context, &path, GIT_CACHE_TTL)
+    {
         return Ok(cached);
     }
 
     let state_arc = state.inner().clone();
     let path_clone = path.clone();
-    let ctx = tokio::task::spawn_blocking(move || get_git_panel_context_impl(Path::new(&path_clone)))
-        .await
-        .map_err(|e| format!("spawn_blocking join error: {e}"))?;
+    let ctx =
+        tokio::task::spawn_blocking(move || get_git_panel_context_impl(Path::new(&path_clone)))
+            .await
+            .map_err(|e| format!("spawn_blocking join error: {e}"))?;
     AppState::set_cached(&state_arc.git_cache.git_panel_context, path, ctx.clone());
     Ok(ctx)
 }
@@ -1776,7 +1956,11 @@ pub(crate) fn parse_porcelain_v2(output: &str) -> WorkingTreeStatus {
 
     for line in output.lines() {
         if let Some(rest) = line.strip_prefix("# branch.head ") {
-            branch = if rest == "(detached)" { None } else { Some(rest.to_string()) };
+            branch = if rest == "(detached)" {
+                None
+            } else {
+                Some(rest.to_string())
+            };
         } else if let Some(rest) = line.strip_prefix("# branch.upstream ") {
             upstream = Some(rest.to_string());
         } else if let Some(rest) = line.strip_prefix("# branch.ab ") {
@@ -1802,7 +1986,16 @@ pub(crate) fn parse_porcelain_v2(output: &str) -> WorkingTreeStatus {
         // We ignore "u " (unmerged) entries for now — they are conflict markers
     }
 
-    WorkingTreeStatus { branch, upstream, ahead, behind, stash_count, staged, unstaged, untracked }
+    WorkingTreeStatus {
+        branch,
+        upstream,
+        ahead,
+        behind,
+        stash_count,
+        staged,
+        unstaged,
+        untracked,
+    }
 }
 
 /// Map a porcelain v2 status character to a human-readable status code.
@@ -1820,23 +2013,43 @@ fn status_char_to_code(c: char) -> Option<&'static str> {
 }
 
 /// Parse an ordinary (type 1) porcelain v2 entry.
-fn parse_ordinary_entry(rest: &str, staged: &mut Vec<StatusEntry>, unstaged: &mut Vec<StatusEntry>) {
+fn parse_ordinary_entry(
+    rest: &str,
+    staged: &mut Vec<StatusEntry>,
+    unstaged: &mut Vec<StatusEntry>,
+) {
     // Fields are space-separated: XY sub mH mI mW hH hI path
     // We need XY (index 0), sub (index 1), and path (index 7)
     let fields: Vec<&str> = rest.splitn(8, ' ').collect();
-    if fields.len() < 8 { return; }
+    if fields.len() < 8 {
+        return;
+    }
     // Skip submodule entries (sub field starts with 'S')
-    if fields[1].starts_with('S') { return; }
+    if fields[1].starts_with('S') {
+        return;
+    }
     let xy = fields[0];
     let path = fields[7].to_string();
     let mut chars = xy.chars();
     let x = chars.next().unwrap_or('.');
     let y = chars.next().unwrap_or('.');
     if let Some(code) = status_char_to_code(x) {
-        staged.push(StatusEntry { path: path.clone(), status: code.to_string(), original_path: None, additions: 0, deletions: 0 });
+        staged.push(StatusEntry {
+            path: path.clone(),
+            status: code.to_string(),
+            original_path: None,
+            additions: 0,
+            deletions: 0,
+        });
     }
     if let Some(code) = status_char_to_code(y) {
-        unstaged.push(StatusEntry { path, status: code.to_string(), original_path: None, additions: 0, deletions: 0 });
+        unstaged.push(StatusEntry {
+            path,
+            status: code.to_string(),
+            original_path: None,
+            additions: 0,
+            deletions: 0,
+        });
     }
 }
 
@@ -1845,7 +2058,9 @@ fn parse_rename_entry(rest: &str, staged: &mut Vec<StatusEntry>, unstaged: &mut 
     // Fields: XY sub mH mI mW hH hI Xscore path\torigPath
     // 9 space-separated fields, but last contains tab-separated path pair
     let fields: Vec<&str> = rest.splitn(9, ' ').collect();
-    if fields.len() < 9 { return; }
+    if fields.len() < 9 {
+        return;
+    }
     let xy = fields[0];
     let path_part = fields[8]; // "newpath\torigpath"
     let (path, orig) = match path_part.split_once('\t') {
@@ -1856,10 +2071,22 @@ fn parse_rename_entry(rest: &str, staged: &mut Vec<StatusEntry>, unstaged: &mut 
     let x = chars.next().unwrap_or('.');
     let y = chars.next().unwrap_or('.');
     if let Some(code) = status_char_to_code(x) {
-        staged.push(StatusEntry { path: path.clone(), status: code.to_string(), original_path: orig.clone(), additions: 0, deletions: 0 });
+        staged.push(StatusEntry {
+            path: path.clone(),
+            status: code.to_string(),
+            original_path: orig.clone(),
+            additions: 0,
+            deletions: 0,
+        });
     }
     if let Some(code) = status_char_to_code(y) {
-        unstaged.push(StatusEntry { path, status: code.to_string(), original_path: orig, additions: 0, deletions: 0 });
+        unstaged.push(StatusEntry {
+            path,
+            status: code.to_string(),
+            original_path: orig,
+            additions: 0,
+            deletions: 0,
+        });
     }
 }
 
@@ -1868,7 +2095,9 @@ fn parse_numstat(output: &str) -> HashMap<String, (u32, u32)> {
     let mut map = HashMap::new();
     for line in output.lines() {
         let parts: Vec<&str> = line.splitn(3, '\t').collect();
-        if parts.len() != 3 { continue; }
+        if parts.len() != 3 {
+            continue;
+        }
         // Binary files show "-" for additions/deletions
         let add = parts[0].parse::<u32>().unwrap_or(0);
         let del = parts[1].parse::<u32>().unwrap_or(0);
@@ -1883,7 +2112,9 @@ pub(crate) fn enrich_with_numstat(repo_path: &Path, entries: &mut [StatusEntry],
     if staged {
         args.push("--cached");
     }
-    let Ok(out) = git_cmd(repo_path).args(&args).run() else { return };
+    let Ok(out) = git_cmd(repo_path).args(&args).run() else {
+        return;
+    };
     let stats = parse_numstat(&out.stdout);
     for entry in entries.iter_mut() {
         if let Some(&(add, del)) = stats.get(&entry.path) {
@@ -1916,12 +2147,16 @@ pub(crate) async fn get_working_tree_status(path: String) -> Result<WorkingTreeS
 /// Validate that all file paths stay within the repo root.
 /// Returns an error message if any path escapes.
 fn validate_paths_within_repo(repo_path: &Path, files: &[String]) -> Result<(), String> {
-    let canonical_repo = repo_path.canonicalize()
+    let canonical_repo = repo_path
+        .canonicalize()
         .map_err(|e| format!("Failed to resolve repo path: {e}"))?;
     for file in files {
         // Reject absolute paths — all file args must be relative to repo root
         if Path::new(file).is_absolute() {
-            return Err(format!("Access denied: absolute path '{}' not allowed", file));
+            return Err(format!(
+                "Access denied: absolute path '{}' not allowed",
+                file
+            ));
         }
         let full = repo_path.join(file);
         // For files that don't exist yet (e.g. deleted), canonicalize will fail.
@@ -1929,7 +2164,10 @@ fn validate_paths_within_repo(repo_path: &Path, files: &[String]) -> Result<(), 
         match full.canonicalize() {
             Ok(canonical) => {
                 if !canonical.starts_with(&canonical_repo) {
-                    return Err(format!("Access denied: path '{}' is outside repository", file));
+                    return Err(format!(
+                        "Access denied: path '{}' is outside repository",
+                        file
+                    ));
                 }
             }
             Err(_) => {
@@ -1939,15 +2177,23 @@ fn validate_paths_within_repo(repo_path: &Path, files: &[String]) -> Result<(), 
                 let mut depth: usize = 0;
                 for component in Path::new(file).components() {
                     match component {
-                        std::path::Component::Normal(_) => { depth += 1; }
+                        std::path::Component::Normal(_) => {
+                            depth += 1;
+                        }
                         std::path::Component::ParentDir => {
                             if depth == 0 {
-                                return Err(format!("Access denied: path '{}' is outside repository", file));
+                                return Err(format!(
+                                    "Access denied: path '{}' is outside repository",
+                                    file
+                                ));
                             }
                             depth -= 1;
                         }
                         std::path::Component::RootDir | std::path::Component::Prefix(_) => {
-                            return Err(format!("Access denied: path '{}' is outside repository", file));
+                            return Err(format!(
+                                "Access denied: path '{}' is outside repository",
+                                file
+                            ));
                         }
                         std::path::Component::CurDir => {}
                     }
@@ -2025,7 +2271,11 @@ pub(crate) async fn git_discard_files(path: String, files: Vec<String>) -> Resul
 /// The `patch` must be a valid unified diff (starting with `diff --git` or `---`).
 /// Pipe the patch via stdin to avoid temp files.
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub(crate) async fn git_apply_reverse_patch(path: String, patch: String, scope: Option<String>) -> Result<(), String> {
+pub(crate) async fn git_apply_reverse_patch(
+    path: String,
+    patch: String,
+    scope: Option<String>,
+) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         let repo_path = PathBuf::from(&path);
 
@@ -2042,11 +2292,16 @@ pub(crate) async fn git_apply_reverse_patch(path: String, patch: String, scope: 
         match scope.as_deref() {
             None => {}
             Some("staged") => args.push("--cached"),
-            Some(other) => return Err(format!("Invalid scope: {:?}. Expected None or \"staged\"", other)),
+            Some(other) => {
+                return Err(format!(
+                    "Invalid scope: {:?}. Expected None or \"staged\"",
+                    other
+                ));
+            }
         }
 
-        use std::process::{Command, Stdio};
         use std::io::Write;
+        use std::process::{Command, Stdio};
 
         let git_bin = crate::cli::resolve_cli("git");
         let mut child = Command::new(&git_bin)
@@ -2061,11 +2316,13 @@ pub(crate) async fn git_apply_reverse_patch(path: String, patch: String, scope: 
             .map_err(|e| format!("Failed to spawn git apply: {e}"))?;
 
         if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(patch.as_bytes())
+            stdin
+                .write_all(patch.as_bytes())
                 .map_err(|e| format!("Failed to write patch to stdin: {e}"))?;
         }
 
-        let output = child.wait_with_output()
+        let output = child
+            .wait_with_output()
             .map_err(|e| format!("Failed to wait for git apply: {e}"))?;
 
         if !output.status.success() {
@@ -2083,7 +2340,11 @@ pub(crate) async fn git_apply_reverse_patch(path: String, patch: String, scope: 
 
 /// Commit staged changes and return the new commit hash.
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub(crate) async fn git_commit(path: String, message: String, amend: Option<bool>) -> Result<String, String> {
+pub(crate) async fn git_commit(
+    path: String,
+    message: String,
+    amend: Option<bool>,
+) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
         let repo_path = PathBuf::from(&path);
         let mut args: Vec<String> = vec!["commit".into(), "-m".into(), message];
@@ -2158,9 +2419,15 @@ fn validate_git_hash(hash: &str) -> Result<(), String> {
 }
 
 /// Sync implementation of commit log retrieval.
-pub(crate) fn get_commit_log_impl(path: String, count: Option<u32>, after: Option<String>) -> Result<Vec<CommitLogEntry>, String> {
+pub(crate) fn get_commit_log_impl(
+    path: String,
+    count: Option<u32>,
+    after: Option<String>,
+) -> Result<Vec<CommitLogEntry>, String> {
     let repo_path = PathBuf::from(&path);
-    let n = count.unwrap_or(COMMIT_LOG_DEFAULT_COUNT).min(COMMIT_LOG_MAX_COUNT);
+    let n = count
+        .unwrap_or(COMMIT_LOG_DEFAULT_COUNT)
+        .min(COMMIT_LOG_MAX_COUNT);
     let n_str = n.to_string();
 
     let mut args = vec![
@@ -2346,7 +2613,9 @@ pub(crate) async fn get_file_history(
     tokio::task::spawn_blocking(move || {
         let repo_path = PathBuf::from(&path);
         validate_paths_within_repo(&repo_path, std::slice::from_ref(&file))?;
-        let n = count.unwrap_or(COMMIT_LOG_DEFAULT_COUNT).min(COMMIT_LOG_MAX_COUNT);
+        let n = count
+            .unwrap_or(COMMIT_LOG_DEFAULT_COUNT)
+            .min(COMMIT_LOG_MAX_COUNT);
         let n_str = n.to_string();
 
         let mut args = vec![
@@ -2422,7 +2691,14 @@ fn parse_blame_porcelain(output: &str) -> Vec<BlameLine> {
             });
 
             expecting_hash = true;
-        } else if expecting_hash && line.len() >= 40 && line.as_bytes().iter().take(40).all(|b| b.is_ascii_hexdigit()) {
+        } else if expecting_hash
+            && line.len() >= 40
+            && line
+                .as_bytes()
+                .iter()
+                .take(40)
+                .all(|b| b.is_ascii_hexdigit())
+        {
             // Hash line: "<hash> <orig_line> <final_line> [<num_lines>]"
             let parts: Vec<&str> = line.split(' ').collect();
             current_hash = parts[0].to_string();
@@ -2452,10 +2728,7 @@ fn parse_blame_porcelain(output: &str) -> Vec<BlameLine> {
 
 /// Get per-line blame information for a file.
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub(crate) async fn get_file_blame(
-    path: String,
-    file: String,
-) -> Result<Vec<BlameLine>, String> {
+pub(crate) async fn get_file_blame(path: String, file: String) -> Result<Vec<BlameLine>, String> {
     tokio::task::spawn_blocking(move || {
         let repo_path = PathBuf::from(&path);
         validate_paths_within_repo(&repo_path, std::slice::from_ref(&file))?;
@@ -2466,7 +2739,9 @@ pub(crate) async fn get_file_blame(
             .args(["ls-files", "--error-unmatch", &file])
             .run();
         if tracked.is_err() {
-            return Err(format!("File is not tracked by git — blame unavailable: {file}"));
+            return Err(format!(
+                "File is not tracked by git — blame unavailable: {file}"
+            ));
         }
 
         let out = git_cmd(&repo_path)
@@ -2559,7 +2834,10 @@ mod tests {
     }
 
     fn branch_names(branches: &[serde_json::Value]) -> Vec<&str> {
-        branches.iter().map(|b| b["name"].as_str().unwrap()).collect()
+        branches
+            .iter()
+            .map(|b| b["name"].as_str().unwrap())
+            .collect()
     }
 
     #[test]
@@ -2570,7 +2848,10 @@ mod tests {
             make_branch("feature/a", false),
         ];
         sort_branches(&mut branches);
-        assert_eq!(branch_names(&branches), vec!["main", "feature/a", "feature/z"]);
+        assert_eq!(
+            branch_names(&branches),
+            vec!["main", "feature/a", "feature/z"]
+        );
     }
 
     #[test]
@@ -2582,7 +2863,10 @@ mod tests {
             make_branch("main", true),
         ];
         sort_branches(&mut branches);
-        assert_eq!(branch_names(&branches), vec!["develop", "main", "master", "feature/x"]);
+        assert_eq!(
+            branch_names(&branches),
+            vec!["develop", "main", "master", "feature/x"]
+        );
     }
 
     #[test]
@@ -2593,7 +2877,10 @@ mod tests {
             make_branch("feature/b", false),
         ];
         sort_branches(&mut branches);
-        assert_eq!(branch_names(&branches), vec!["feature/a", "feature/b", "feature/c"]);
+        assert_eq!(
+            branch_names(&branches),
+            vec!["feature/a", "feature/b", "feature/c"]
+        );
     }
 
     #[test]
@@ -2613,14 +2900,20 @@ mod tests {
     #[test]
     fn get_repo_initials_strips_null_bytes() {
         let result = get_repo_initials("my\0repo");
-        assert!(!result.contains('\0'), "initials must not contain null bytes");
+        assert!(
+            !result.contains('\0'),
+            "initials must not contain null bytes"
+        );
         assert_eq!(result, "MY");
     }
 
     #[test]
     fn get_repo_initials_null_byte_at_word_start() {
         let result = get_repo_initials("\0my-repo");
-        assert!(!result.contains('\0'), "initials must not contain null bytes");
+        assert!(
+            !result.contains('\0'),
+            "initials must not contain null bytes"
+        );
         assert_eq!(result, "MR");
     }
 
@@ -2633,7 +2926,11 @@ mod tests {
     fn get_repo_initials_strips_control_characters() {
         let result = get_repo_initials("he\x01llo-wo\x02rld");
         for ch in result.chars() {
-            assert!(!ch.is_control(), "initials must not contain control characters: {:?}", ch);
+            assert!(
+                !ch.is_control(),
+                "initials must not contain control characters: {:?}",
+                ch
+            );
         }
         assert_eq!(result, "HW");
     }
@@ -2736,8 +3033,10 @@ mod tests {
                 if b == "HEAD" { None } else { Some(b) }
             });
 
-        assert_eq!(file_branch, git_branch,
-            "read_branch_from_head() must match `git rev-parse --abbrev-ref HEAD`");
+        assert_eq!(
+            file_branch, git_branch,
+            "read_branch_from_head() must match `git rev-parse --abbrev-ref HEAD`"
+        );
     }
 
     #[test]
@@ -2754,8 +3053,10 @@ mod tests {
             .run_silent()
             .map(|o| o.stdout.trim().to_string());
 
-        assert_eq!(file_url, git_url,
-            "read_remote_url() must match `git remote get-url origin`");
+        assert_eq!(
+            file_url, git_url,
+            "read_remote_url() must match `git remote get-url origin`"
+        );
     }
 
     #[test]
@@ -2765,7 +3066,10 @@ mod tests {
 
         let git_dir = resolve_git_dir(&repo_root);
         assert!(git_dir.is_some(), "Should resolve .git dir for this repo");
-        assert!(git_dir.unwrap().join("HEAD").exists(), ".git dir should contain HEAD");
+        assert!(
+            git_dir.unwrap().join("HEAD").exists(),
+            ".git dir should contain HEAD"
+        );
     }
 
     #[test]
@@ -2778,25 +3082,41 @@ mod tests {
 
         // The main branch should NOT appear — it has the same SHA as itself,
         // so the "never diverged" filter correctly excludes it.
-        let has_main = merged.iter().any(|b| MAIN_BRANCH_CANDIDATES.contains(&b.as_str()));
-        assert!(!has_main, "main branch should not appear in its own merged list, got: {merged:?}");
+        let has_main = merged
+            .iter()
+            .any(|b| MAIN_BRANCH_CANDIDATES.contains(&b.as_str()));
+        assert!(
+            !has_main,
+            "main branch should not appear in its own merged list, got: {merged:?}"
+        );
 
         // All returned branches should be truly merged (not main itself)
         for branch in &merged {
-            assert!(!is_main_branch(branch), "main branch should not be in merged list");
+            assert!(
+                !is_main_branch(branch),
+                "main branch should not be in merged list"
+            );
         }
     }
 
     #[test]
     fn test_get_merged_branches_returns_empty_for_nonexistent_path() {
         let result = get_merged_branches_impl(Path::new("/nonexistent/path/xyz"));
-        assert_eq!(result.unwrap(), Vec::<String>::new(), "should return empty vec for nonexistent path");
+        assert_eq!(
+            result.unwrap(),
+            Vec::<String>::new(),
+            "should return empty vec for nonexistent path"
+        );
     }
 
     #[test]
     fn test_get_merged_branches_returns_empty_for_non_git_directory() {
         let result = get_merged_branches_impl(&std::env::temp_dir());
-        assert_eq!(result.unwrap(), Vec::<String>::new(), "should return empty vec for non-git directory");
+        assert_eq!(
+            result.unwrap(),
+            Vec::<String>::new(),
+            "should return empty vec for non-git directory"
+        );
     }
 
     #[test]
@@ -2806,7 +3126,10 @@ mod tests {
         let git_dir = resolve_git_dir(&repo_root).expect("should resolve git dir");
 
         let branch = detect_default_branch(&git_dir);
-        assert!(branch.is_some(), "should detect a default branch for this repo");
+        assert!(
+            branch.is_some(),
+            "should detect a default branch for this repo"
+        );
         // This repo uses 'main'
         assert_eq!(branch.unwrap(), "main");
     }
@@ -2828,7 +3151,8 @@ mod tests {
             "../../etc/passwd".to_string(),
             None,
             None,
-        ).await;
+        )
+        .await;
         let err = result.unwrap_err();
         assert!(
             err.contains("outside repository") || err.contains("Failed to resolve"),
@@ -2943,7 +3267,10 @@ mod tests {
         assert_eq!(status.staged.len(), 1);
         assert_eq!(status.staged[0].path, "new_name.rs");
         assert_eq!(status.staged[0].status, "R");
-        assert_eq!(status.staged[0].original_path, Some("old_name.rs".to_string()));
+        assert_eq!(
+            status.staged[0].original_path,
+            Some("old_name.rs".to_string())
+        );
     }
 
     #[test]
@@ -3032,13 +3359,33 @@ mod tests {
     fn setup_test_repo_with_commit() -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().to_path_buf();
-        std::process::Command::new("git").current_dir(&path).args(["init"]).output().expect("git init");
-        std::process::Command::new("git").current_dir(&path).args(["config", "user.email", "test@test.com"]).output().expect("config email");
-        std::process::Command::new("git").current_dir(&path).args(["config", "user.name", "Test"]).output().expect("config name");
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["init"])
+            .output()
+            .expect("git init");
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["config", "user.email", "test@test.com"])
+            .output()
+            .expect("config email");
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["config", "user.name", "Test"])
+            .output()
+            .expect("config name");
         // Create an initial file and commit
         std::fs::write(path.join("initial.txt"), "hello").expect("write initial");
-        std::process::Command::new("git").current_dir(&path).args(["add", "initial.txt"]).output().expect("add");
-        std::process::Command::new("git").current_dir(&path).args(["commit", "-m", "initial"]).output().expect("commit");
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["add", "initial.txt"])
+            .output()
+            .expect("add");
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["commit", "-m", "initial"])
+            .output()
+            .expect("commit");
         (dir, path)
     }
 
@@ -3046,24 +3393,49 @@ mod tests {
     async fn stage_files_adds_to_index() {
         let (_dir, path) = setup_test_repo_with_commit();
         std::fs::write(path.join("new.txt"), "content").expect("write");
-        let result = git_stage_files(path.to_string_lossy().to_string(), vec!["new.txt".to_string()]).await;
+        let result = git_stage_files(
+            path.to_string_lossy().to_string(),
+            vec!["new.txt".to_string()],
+        )
+        .await;
         assert!(result.is_ok());
         // Verify it's staged
-        let status = get_working_tree_status(path.to_string_lossy().to_string()).await.unwrap();
-        assert!(status.staged.iter().any(|e| e.path == "new.txt"), "new.txt should be staged");
+        let status = get_working_tree_status(path.to_string_lossy().to_string())
+            .await
+            .unwrap();
+        assert!(
+            status.staged.iter().any(|e| e.path == "new.txt"),
+            "new.txt should be staged"
+        );
     }
 
     #[tokio::test]
     async fn unstage_files_removes_from_index() {
         let (_dir, path) = setup_test_repo_with_commit();
         std::fs::write(path.join("staged.txt"), "content").expect("write");
-        std::process::Command::new("git").current_dir(&path).args(["add", "staged.txt"]).output().expect("add");
-        let result = git_unstage_files(path.to_string_lossy().to_string(), vec!["staged.txt".to_string()]).await;
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["add", "staged.txt"])
+            .output()
+            .expect("add");
+        let result = git_unstage_files(
+            path.to_string_lossy().to_string(),
+            vec!["staged.txt".to_string()],
+        )
+        .await;
         assert!(result.is_ok());
         // Verify it's no longer staged (should be untracked now)
-        let status = get_working_tree_status(path.to_string_lossy().to_string()).await.unwrap();
-        assert!(!status.staged.iter().any(|e| e.path == "staged.txt"), "staged.txt should not be staged");
-        assert!(status.untracked.contains(&"staged.txt".to_string()), "staged.txt should be untracked");
+        let status = get_working_tree_status(path.to_string_lossy().to_string())
+            .await
+            .unwrap();
+        assert!(
+            !status.staged.iter().any(|e| e.path == "staged.txt"),
+            "staged.txt should not be staged"
+        );
+        assert!(
+            status.untracked.contains(&"staged.txt".to_string()),
+            "staged.txt should be untracked"
+        );
     }
 
     #[tokio::test]
@@ -3071,7 +3443,11 @@ mod tests {
         let (_dir, path) = setup_test_repo_with_commit();
         // Modify the initial file
         std::fs::write(path.join("initial.txt"), "modified").expect("write");
-        let result = git_discard_files(path.to_string_lossy().to_string(), vec!["initial.txt".to_string()]).await;
+        let result = git_discard_files(
+            path.to_string_lossy().to_string(),
+            vec!["initial.txt".to_string()],
+        )
+        .await;
         assert!(result.is_ok());
         // Content should be restored
         let content = std::fs::read_to_string(path.join("initial.txt")).expect("read");
@@ -3081,7 +3457,11 @@ mod tests {
     #[tokio::test]
     async fn stage_files_rejects_path_traversal() {
         let (_dir, path) = setup_test_repo_with_commit();
-        let result = git_stage_files(path.to_string_lossy().to_string(), vec!["../../etc/passwd".to_string()]).await;
+        let result = git_stage_files(
+            path.to_string_lossy().to_string(),
+            vec!["../../etc/passwd".to_string()],
+        )
+        .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("outside repository"));
     }
@@ -3089,14 +3469,22 @@ mod tests {
     #[tokio::test]
     async fn unstage_files_rejects_path_traversal() {
         let (_dir, path) = setup_test_repo_with_commit();
-        let result = git_unstage_files(path.to_string_lossy().to_string(), vec!["../../etc/passwd".to_string()]).await;
+        let result = git_unstage_files(
+            path.to_string_lossy().to_string(),
+            vec!["../../etc/passwd".to_string()],
+        )
+        .await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn discard_files_rejects_path_traversal() {
         let (_dir, path) = setup_test_repo_with_commit();
-        let result = git_discard_files(path.to_string_lossy().to_string(), vec!["../../etc/passwd".to_string()]).await;
+        let result = git_discard_files(
+            path.to_string_lossy().to_string(),
+            vec!["../../etc/passwd".to_string()],
+        )
+        .await;
         assert!(result.is_err());
     }
 
@@ -3106,28 +3494,53 @@ mod tests {
     async fn git_commit_creates_commit_and_returns_hash() {
         let (_dir, path) = setup_test_repo_with_commit();
         std::fs::write(path.join("commit_test.txt"), "data").expect("write");
-        std::process::Command::new("git").current_dir(&path).args(["add", "commit_test.txt"]).output().expect("add");
-        let result = git_commit(path.to_string_lossy().to_string(), "test commit".to_string(), None).await;
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["add", "commit_test.txt"])
+            .output()
+            .expect("add");
+        let result = git_commit(
+            path.to_string_lossy().to_string(),
+            "test commit".to_string(),
+            None,
+        )
+        .await;
         assert!(result.is_ok());
         let hash = result.unwrap();
         assert_eq!(hash.len(), 40, "should return full 40-char SHA");
-        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()), "hash should be hex");
+        assert!(
+            hash.chars().all(|c| c.is_ascii_hexdigit()),
+            "hash should be hex"
+        );
     }
 
     #[tokio::test]
     async fn git_commit_amend_works() {
         let (_dir, path) = setup_test_repo_with_commit();
-        let result = git_commit(path.to_string_lossy().to_string(), "amended message".to_string(), Some(true)).await;
+        let result = git_commit(
+            path.to_string_lossy().to_string(),
+            "amended message".to_string(),
+            Some(true),
+        )
+        .await;
         assert!(result.is_ok());
         // Verify the commit message changed
-        let out = git_cmd(&path).args(["log", "--format=%s", "-1"]).run().unwrap();
+        let out = git_cmd(&path)
+            .args(["log", "--format=%s", "-1"])
+            .run()
+            .unwrap();
         assert_eq!(out.stdout.trim(), "amended message");
     }
 
     #[tokio::test]
     async fn git_commit_fails_with_nothing_staged() {
         let (_dir, path) = setup_test_repo_with_commit();
-        let result = git_commit(path.to_string_lossy().to_string(), "empty commit".to_string(), None).await;
+        let result = git_commit(
+            path.to_string_lossy().to_string(),
+            "empty commit".to_string(),
+            None,
+        )
+        .await;
         assert!(result.is_err(), "commit with nothing staged should fail");
     }
 
@@ -3142,16 +3555,16 @@ mod tests {
         let ts = result["main"];
         assert!(ts.is_some(), "main branch should have a commit timestamp");
         // Timestamp should be reasonable (after 2024-01-01 = 1704067200)
-        assert!(ts.unwrap() > 1_704_067_200, "timestamp should be after 2024");
+        assert!(
+            ts.unwrap() > 1_704_067_200,
+            "timestamp should be after 2024"
+        );
     }
 
     #[test]
     fn get_last_commit_timestamps_nonexistent_branch_returns_none() {
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-        let result = get_last_commit_timestamps(
-            &repo,
-            &["nonexistent-branch-abc123".to_string()],
-        );
+        let result = get_last_commit_timestamps(&repo, &["nonexistent-branch-abc123".to_string()]);
         assert!(result.contains_key("nonexistent-branch-abc123"));
         assert!(result["nonexistent-branch-abc123"].is_none());
     }
@@ -3244,16 +3657,23 @@ mod tests {
         let repo_str = repo.to_string_lossy().to_string();
 
         // Get first page
-        let page1 = get_commit_log(repo_str.clone(), Some(3), None).await.expect("page 1");
+        let page1 = get_commit_log(repo_str.clone(), Some(3), None)
+            .await
+            .expect("page 1");
         assert!(page1.len() >= 3, "need at least 3 commits for this test");
 
         // Get second page starting from the last commit of page 1
         let last_hash = &page1[2].hash;
-        let page2 = get_commit_log(repo_str, Some(3), Some(last_hash.clone())).await.expect("page 2");
+        let page2 = get_commit_log(repo_str, Some(3), Some(last_hash.clone()))
+            .await
+            .expect("page 2");
         assert!(!page2.is_empty(), "page 2 should have commits");
 
         // First commit of page 2 should be the same as last of page 1 (the `after` hash)
-        assert_eq!(page2[0].hash, *last_hash, "pagination should start from the `after` commit");
+        assert_eq!(
+            page2[0].hash, *last_hash,
+            "pagination should start from the `after` commit"
+        );
     }
 
     #[tokio::test]
@@ -3281,7 +3701,8 @@ mod tests {
             "src-tauri/src/git.rs".to_string(),
             Some(5),
             None,
-        ).await;
+        )
+        .await;
         let commits = result.expect("should succeed for a file in the repo");
         assert!(!commits.is_empty(), "git.rs should have commit history");
         assert!(commits.len() <= 5);
@@ -3295,7 +3716,8 @@ mod tests {
             "nonexistent-file-xyz.txt".to_string(),
             Some(5),
             None,
-        ).await;
+        )
+        .await;
         // git log with a nonexistent file returns empty output, not an error
         let commits = result.expect("should not error");
         assert!(commits.is_empty());
@@ -3308,7 +3730,8 @@ mod tests {
             "file.txt".to_string(),
             None,
             None,
-        ).await;
+        )
+        .await;
         assert!(result.is_err());
     }
 
@@ -3544,7 +3967,8 @@ filename test.txt
         let result = get_file_blame(
             repo.to_string_lossy().to_string(),
             "src-tauri/src/git.rs".to_string(),
-        ).await;
+        )
+        .await;
         let lines = result.expect("should succeed for a file in the repo");
         assert!(!lines.is_empty(), "git.rs should have blame lines");
         // Every line should have a 40-char hex hash
@@ -3556,7 +3980,11 @@ filename test.txt
         }
         // Line numbers should be sequential
         for (i, bl) in lines.iter().enumerate() {
-            assert_eq!(bl.line_number, (i + 1) as u32, "line numbers should be sequential");
+            assert_eq!(
+                bl.line_number,
+                (i + 1) as u32,
+                "line numbers should be sequential"
+            );
         }
     }
 
@@ -3566,7 +3994,8 @@ filename test.txt
         let result = get_file_blame(
             repo.to_string_lossy().to_string(),
             "nonexistent-file-xyz.txt".to_string(),
-        ).await;
+        )
+        .await;
         assert!(result.is_err(), "blame on nonexistent file should fail");
     }
 
@@ -3580,7 +4009,8 @@ filename test.txt
         let result = get_file_blame(
             repo.to_string_lossy().to_string(),
             "_blame_test_untracked.tmp".to_string(),
-        ).await;
+        )
+        .await;
         std::fs::remove_file(&tmp).ok();
         let err = result.unwrap_err();
         assert!(
@@ -3591,10 +4021,7 @@ filename test.txt
 
     #[tokio::test]
     async fn get_file_blame_fails_for_nonexistent_repo() {
-        let result = get_file_blame(
-            "/nonexistent/repo".to_string(),
-            "file.txt".to_string(),
-        ).await;
+        let result = get_file_blame("/nonexistent/repo".to_string(), "file.txt".to_string()).await;
         assert!(result.is_err());
     }
 
@@ -3615,8 +4042,8 @@ filename test.txt
             .output()
             .expect("create branch");
 
-        let merged = get_merged_branches_impl(&path)
-            .expect("get_merged_branches_impl should succeed");
+        let merged =
+            get_merged_branches_impl(&path).expect("get_merged_branches_impl should succeed");
 
         // The new branch has the same SHA as main — it should NOT be in the merged list
         assert!(
@@ -3662,8 +4089,8 @@ filename test.txt
             .output()
             .expect("merge");
 
-        let merged = get_merged_branches_impl(&path)
-            .expect("get_merged_branches_impl should succeed");
+        let merged =
+            get_merged_branches_impl(&path).expect("get_merged_branches_impl should succeed");
 
         // feat-merged is truly merged — it should be in the list
         assert!(
@@ -3680,17 +4107,29 @@ filename test.txt
         let result = create_branch_impl(path.to_str().unwrap(), "feature-x", None, false);
         assert!(result.is_ok(), "should create branch: {result:?}");
         // Verify branch exists
-        let out = git_cmd(&path).args(["branch", "--list", "feature-x"]).run().unwrap();
-        assert!(out.stdout.contains("feature-x"), "branch should exist after creation");
+        let out = git_cmd(&path)
+            .args(["branch", "--list", "feature-x"])
+            .run()
+            .unwrap();
+        assert!(
+            out.stdout.contains("feature-x"),
+            "branch should exist after creation"
+        );
     }
 
     #[test]
     fn test_create_branch_with_checkout() {
         let (_dir, path) = setup_test_repo_with_commit();
         let result = create_branch_impl(path.to_str().unwrap(), "feature-checkout", None, true);
-        assert!(result.is_ok(), "should create and checkout branch: {result:?}");
+        assert!(
+            result.is_ok(),
+            "should create and checkout branch: {result:?}"
+        );
         // Verify HEAD points to the new branch
-        let out = git_cmd(&path).args(["rev-parse", "--abbrev-ref", "HEAD"]).run().unwrap();
+        let out = git_cmd(&path)
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .run()
+            .unwrap();
         assert_eq!(out.stdout.trim(), "feature-checkout");
     }
 
@@ -3700,10 +4139,21 @@ filename test.txt
         // Get HEAD commit hash to use as start point
         let out = git_cmd(&path).args(["rev-parse", "HEAD"]).run().unwrap();
         let commit_hash = out.stdout.trim().to_string();
-        let result = create_branch_impl(path.to_str().unwrap(), "from-ref", Some(&commit_hash), false);
+        let result = create_branch_impl(
+            path.to_str().unwrap(),
+            "from-ref",
+            Some(&commit_hash),
+            false,
+        );
         assert!(result.is_ok(), "should create branch from ref: {result:?}");
-        let out = git_cmd(&path).args(["branch", "--list", "from-ref"]).run().unwrap();
-        assert!(out.stdout.contains("from-ref"), "branch should exist after creation from ref");
+        let out = git_cmd(&path)
+            .args(["branch", "--list", "from-ref"])
+            .run()
+            .unwrap();
+        assert!(
+            out.stdout.contains("from-ref"),
+            "branch should exist after creation from ref"
+        );
     }
 
     #[test]
@@ -3711,15 +4161,22 @@ filename test.txt
         let (_dir, path) = setup_test_repo_with_commit();
         let result = create_branch_impl(path.to_str().unwrap(), "", None, false);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("empty"), "error should mention empty name");
+        assert!(
+            result.unwrap_err().contains("empty"),
+            "error should mention empty name"
+        );
     }
 
     #[test]
     fn test_create_branch_refuses_invalid_name() {
         let (_dir, path) = setup_test_repo_with_commit();
-        let result = create_branch_impl(path.to_str().unwrap(), "bad name with spaces", None, false);
+        let result =
+            create_branch_impl(path.to_str().unwrap(), "bad name with spaces", None, false);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("spaces"), "error should mention spaces");
+        assert!(
+            result.unwrap_err().contains("spaces"),
+            "error should mention spaces"
+        );
     }
 
     #[test]
@@ -3731,7 +4188,10 @@ filename test.txt
         // Create again — should fail
         let second = create_branch_impl(path.to_str().unwrap(), "dup-branch", None, false);
         assert!(second.is_err(), "duplicate branch creation should fail");
-        assert!(second.unwrap_err().contains("already exists"), "error should mention already exists");
+        assert!(
+            second.unwrap_err().contains("already exists"),
+            "error should mention already exists"
+        );
     }
 
     // --- get_branches_detail tests ---
@@ -3752,9 +4212,11 @@ filename test.txt
         }
 
         // Exactly one branch must be current
-        let current_branches: Vec<&BranchDetail> = branches.iter().filter(|b| b.is_current).collect();
+        let current_branches: Vec<&BranchDetail> =
+            branches.iter().filter(|b| b.is_current).collect();
         assert_eq!(
-            current_branches.len(), 1,
+            current_branches.len(),
+            1,
             "exactly one branch should be current, got: {:?}",
             current_branches.iter().map(|b| &b.name).collect::<Vec<_>>()
         );
@@ -3797,12 +4259,23 @@ filename test.txt
         let (_dir, path) = setup_test_repo_with_commit();
         let path_str = path.to_string_lossy().to_string();
         // Ensure we're on main
-        std::process::Command::new("git").current_dir(&path).args(["branch", "-M", "main"]).output().expect("rename to main");
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["branch", "-M", "main"])
+            .output()
+            .expect("rename to main");
         // Create a branch to delete at same commit as main (fully merged)
-        std::process::Command::new("git").current_dir(&path).args(["branch", "to-delete"]).output().expect("create branch");
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["branch", "to-delete"])
+            .output()
+            .expect("create branch");
 
         let result = delete_branch_impl(&path_str, "to-delete", false);
-        assert!(result.is_ok(), "safe delete of merged branch should succeed: {result:?}");
+        assert!(
+            result.is_ok(),
+            "safe delete of merged branch should succeed: {result:?}"
+        );
         let r = result.unwrap();
         assert_eq!(r.branch, "to-delete");
         assert!(!r.was_force);
@@ -3813,18 +4286,41 @@ filename test.txt
     fn test_delete_branch_force() {
         let (_dir, path) = setup_test_repo_with_commit();
         let path_str = path.to_string_lossy().to_string();
-        std::process::Command::new("git").current_dir(&path).args(["branch", "-M", "main"]).output().expect("rename to main");
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["branch", "-M", "main"])
+            .output()
+            .expect("rename to main");
         // Create a branch with unmerged commits
-        std::process::Command::new("git").current_dir(&path).args(["checkout", "-b", "unmerged-branch"]).output().expect("checkout -b");
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["checkout", "-b", "unmerged-branch"])
+            .output()
+            .expect("checkout -b");
         std::fs::write(path.join("unmerged.txt"), "data").expect("write");
-        std::process::Command::new("git").current_dir(&path).args(["add", "unmerged.txt"]).output().expect("add");
-        std::process::Command::new("git").current_dir(&path).args(["commit", "-m", "unmerged commit"]).output().expect("commit");
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["add", "unmerged.txt"])
+            .output()
+            .expect("add");
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["commit", "-m", "unmerged commit"])
+            .output()
+            .expect("commit");
         // Switch back to main so we can delete the unmerged branch
-        std::process::Command::new("git").current_dir(&path).args(["checkout", "main"]).output().expect("checkout main");
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["checkout", "main"])
+            .output()
+            .expect("checkout main");
 
         // Safe delete should fail (unmerged)
         let safe_result = delete_branch_impl(&path_str, "unmerged-branch", false);
-        assert!(safe_result.is_err(), "safe delete of unmerged branch should fail");
+        assert!(
+            safe_result.is_err(),
+            "safe delete of unmerged branch should fail"
+        );
 
         // Force delete should succeed
         let result = delete_branch_impl(&path_str, "unmerged-branch", true);
@@ -3839,12 +4335,19 @@ filename test.txt
     fn test_delete_branch_refuses_main() {
         let (_dir, path) = setup_test_repo_with_commit();
         let path_str = path.to_string_lossy().to_string();
-        std::process::Command::new("git").current_dir(&path).args(["branch", "-M", "main"]).output().expect("rename to main");
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["branch", "-M", "main"])
+            .output()
+            .expect("rename to main");
 
         let result = delete_branch_impl(&path_str, "main", false);
         assert!(result.is_err(), "should refuse to delete main branch");
         let err = result.unwrap_err();
-        assert!(err.contains("main") || err.contains("protected"), "error should mention protection: {err}");
+        assert!(
+            err.contains("main") || err.contains("protected"),
+            "error should mention protection: {err}"
+        );
     }
 
     #[test]
@@ -3852,12 +4355,19 @@ filename test.txt
         let (_dir, path) = setup_test_repo_with_commit();
         let path_str = path.to_string_lossy().to_string();
         // Rename to something non-main so is_main_branch check doesn't fire first
-        std::process::Command::new("git").current_dir(&path).args(["branch", "-M", "feature-branch"]).output().expect("rename");
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["branch", "-M", "feature-branch"])
+            .output()
+            .expect("rename");
 
         let result = delete_branch_impl(&path_str, "feature-branch", false);
         assert!(result.is_err(), "should refuse to delete current branch");
         let err = result.unwrap_err();
-        assert!(err.contains("current") || err.contains("checked out"), "error should mention current branch: {err}");
+        assert!(
+            err.contains("current") || err.contains("checked out"),
+            "error should mention current branch: {err}"
+        );
     }
 
     #[test]
@@ -3868,7 +4378,10 @@ filename test.txt
         let result = delete_branch_impl(&path_str, "", false);
         assert!(result.is_err(), "empty branch name should fail");
         let err = result.unwrap_err();
-        assert!(err.to_lowercase().contains("empty"), "error should mention empty: {err}");
+        assert!(
+            err.to_lowercase().contains("empty"),
+            "error should mention empty: {err}"
+        );
     }
 
     // --- get_recent_branches_impl tests ---
@@ -3879,7 +4392,10 @@ filename test.txt
         let repo_root = PathBuf::from(manifest_dir).parent().unwrap().to_path_buf();
 
         let result = get_recent_branches_impl(&repo_root, 5);
-        assert!(result.is_ok(), "should not error on a real repo: {result:?}");
+        assert!(
+            result.is_ok(),
+            "should not error on a real repo: {result:?}"
+        );
         // Result may be empty on a fresh repo, but it must be a Vec
         let branches = result.unwrap();
         // Branch names must not be empty strings
@@ -3918,7 +4434,10 @@ filename test.txt
         let result = get_recent_branches_impl(&path, 2);
         assert!(result.is_ok(), "should succeed: {result:?}");
         let branches = result.unwrap();
-        assert!(branches.len() <= 2, "limit of 2 must be respected, got: {branches:?}");
+        assert!(
+            branches.len() <= 2,
+            "limit of 2 must be respected, got: {branches:?}"
+        );
     }
 
     #[test]
@@ -3935,22 +4454,36 @@ filename test.txt
         let (_dir, path) = setup_test_repo_with_commit();
         // Write a multi-line file and commit it
         std::fs::write(path.join("multi.txt"), "line1\nline2\nline3\n").expect("write");
-        std::process::Command::new("git").current_dir(&path).args(["add", "multi.txt"]).output().expect("add");
-        std::process::Command::new("git").current_dir(&path).args(["commit", "-m", "add multi"]).output().expect("commit");
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["add", "multi.txt"])
+            .output()
+            .expect("add");
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["commit", "-m", "add multi"])
+            .output()
+            .expect("commit");
 
         // Modify the file (working tree change)
         std::fs::write(path.join("multi.txt"), "line1\nMODIFIED\nline3\n").expect("modify");
 
         // Build a patch that represents this change (get it from git diff)
-        let diff_out = std::process::Command::new("git").current_dir(&path)
+        let diff_out = std::process::Command::new("git")
+            .current_dir(&path)
             .args(["diff", "--color=never", "--", "multi.txt"])
-            .output().expect("diff");
+            .output()
+            .expect("diff");
         let patch = String::from_utf8_lossy(&diff_out.stdout).to_string();
         assert!(!patch.is_empty(), "diff should produce output");
 
         // Apply the reverse patch to revert the hunk
         let result = git_apply_reverse_patch(path.to_string_lossy().to_string(), patch, None).await;
-        assert!(result.is_ok(), "reverse patch should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "reverse patch should succeed: {:?}",
+            result.err()
+        );
 
         // Verify file is restored to committed state
         let content = std::fs::read_to_string(path.join("multi.txt")).expect("read");
@@ -3961,17 +4494,31 @@ filename test.txt
     async fn apply_reverse_patch_unstages_cached_hunk() {
         let (_dir, path) = setup_test_repo_with_commit();
         std::fs::write(path.join("staged.txt"), "original\n").expect("write");
-        std::process::Command::new("git").current_dir(&path).args(["add", "staged.txt"]).output().expect("add");
-        std::process::Command::new("git").current_dir(&path).args(["commit", "-m", "add staged"]).output().expect("commit");
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["add", "staged.txt"])
+            .output()
+            .expect("add");
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["commit", "-m", "add staged"])
+            .output()
+            .expect("commit");
 
         // Modify and stage the change
         std::fs::write(path.join("staged.txt"), "modified\n").expect("modify");
-        std::process::Command::new("git").current_dir(&path).args(["add", "staged.txt"]).output().expect("stage");
+        std::process::Command::new("git")
+            .current_dir(&path)
+            .args(["add", "staged.txt"])
+            .output()
+            .expect("stage");
 
         // Get the staged diff
-        let diff_out = std::process::Command::new("git").current_dir(&path)
+        let diff_out = std::process::Command::new("git")
+            .current_dir(&path)
             .args(["diff", "--cached", "--color=never", "--", "staged.txt"])
-            .output().expect("diff --cached");
+            .output()
+            .expect("diff --cached");
         let patch = String::from_utf8_lossy(&diff_out.stdout).to_string();
         assert!(!patch.is_empty(), "staged diff should produce output");
 
@@ -3980,16 +4527,25 @@ filename test.txt
             path.to_string_lossy().to_string(),
             patch,
             Some("staged".to_string()),
-        ).await;
-        assert!(result.is_ok(), "reverse patch --cached should succeed: {:?}", result.err());
+        )
+        .await;
+        assert!(
+            result.is_ok(),
+            "reverse patch --cached should succeed: {:?}",
+            result.err()
+        );
 
         // Verify: staged diff should now be empty (unstaged)
-        let verify = std::process::Command::new("git").current_dir(&path)
+        let verify = std::process::Command::new("git")
+            .current_dir(&path)
             .args(["diff", "--cached", "--name-only"])
-            .output().expect("verify");
+            .output()
+            .expect("verify");
         let staged_files = String::from_utf8_lossy(&verify.stdout).trim().to_string();
-        assert!(staged_files.is_empty() || !staged_files.contains("staged.txt"),
-            "staged.txt should no longer be staged");
+        assert!(
+            staged_files.is_empty() || !staged_files.contains("staged.txt"),
+            "staged.txt should no longer be staged"
+        );
     }
 
     #[tokio::test]
@@ -3999,18 +4555,16 @@ filename test.txt
             path.to_string_lossy().to_string(),
             "this is not a valid patch".to_string(),
             None,
-        ).await;
+        )
+        .await;
         assert!(result.is_err(), "malformed patch should be rejected");
     }
 
     #[tokio::test]
     async fn apply_reverse_patch_rejects_empty_patch() {
         let (_dir, path) = setup_test_repo_with_commit();
-        let result = git_apply_reverse_patch(
-            path.to_string_lossy().to_string(),
-            "".to_string(),
-            None,
-        ).await;
+        let result =
+            git_apply_reverse_patch(path.to_string_lossy().to_string(), "".to_string(), None).await;
         assert!(result.is_err(), "empty patch should be rejected");
     }
 

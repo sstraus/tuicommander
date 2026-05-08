@@ -21,11 +21,16 @@ pub fn rank_lines(query: &str, lines: &[&str]) -> Vec<(usize, f32)> {
     // index ids stay aligned with the caller's slice indices.
     let corpus: Vec<String> = lines
         .iter()
-        .map(|l| if l.is_empty() { " ".to_string() } else { l.to_string() })
+        .map(|l| {
+            if l.is_empty() {
+                " ".to_string()
+            } else {
+                l.to_string()
+            }
+        })
         .collect();
 
-    let engine =
-        SearchEngineBuilder::<u32>::with_corpus(Language::English, corpus).build();
+    let engine = SearchEngineBuilder::<u32>::with_corpus(Language::English, corpus).build();
 
     let results: Vec<SearchResult<u32>> = engine.search(query, lines.len());
     results
@@ -60,7 +65,10 @@ mod tests {
         let ranked = rank_lines("fox", &lines);
         assert!(!ranked.is_empty());
         // Line 1 mentions "fox" three times → should beat line 0 which has it once.
-        assert_eq!(ranked[0].0, 1, "expected line index 1 at top, got {ranked:?}");
+        assert_eq!(
+            ranked[0].0, 1,
+            "expected line index 1 at top, got {ranked:?}"
+        );
     }
 
     #[test]

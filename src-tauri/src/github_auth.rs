@@ -47,10 +47,7 @@ pub(crate) enum PollResult {
     SlowDown,
     /// User authorized — token received.
     #[serde(rename = "success")]
-    Success {
-        access_token: String,
-        scope: String,
-    },
+    Success { access_token: String, scope: String },
     /// Device code expired (15 min) — must restart flow.
     #[serde(rename = "expired")]
     Expired,
@@ -134,8 +131,7 @@ pub(crate) async fn start_device_flow(
         ));
     }
 
-    serde_json::from_str(&body)
-        .map_err(|e| format!("Failed to parse Device Flow response: {e}"))
+    serde_json::from_str(&body).map_err(|e| format!("Failed to parse Device Flow response: {e}"))
 }
 
 /// Make a single poll attempt to exchange the device code for an access token.
@@ -146,10 +142,7 @@ pub(crate) async fn poll_device_flow(
     let params = [
         ("client_id", CLIENT_ID),
         ("device_code", device_code),
-        (
-            "grant_type",
-            "urn:ietf:params:oauth:grant-type:device_code",
-        ),
+        ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
     ];
 
     let response = client
@@ -242,9 +235,7 @@ pub(crate) async fn github_poll_login(
 /// the runtime state. Falls back to env/gh CLI tokens if available.
 #[cfg(feature = "desktop")]
 #[tauri::command]
-pub(crate) async fn github_logout(
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+pub(crate) async fn github_logout(state: State<'_, Arc<AppState>>) -> Result<(), String> {
     tokio::task::spawn_blocking(delete_github_oauth_token)
         .await
         .map_err(|e| format!("keyring task panicked: {e}"))??;
@@ -256,7 +247,11 @@ pub(crate) async fn github_logout(
     *state.github_token.write() = token;
     *state.github_token_source.write() = source;
 
-    tracing::info!(source = "github", ?source, "OAuth logout — fell back to {source:?}");
+    tracing::info!(
+        source = "github",
+        ?source,
+        "OAuth logout — fell back to {source:?}"
+    );
     Ok(())
 }
 
@@ -265,9 +260,7 @@ pub(crate) async fn github_logout(
 /// in-memory token so the app stops using it until restart or re-login.
 #[cfg(feature = "desktop")]
 #[tauri::command]
-pub(crate) async fn github_disconnect(
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
+pub(crate) async fn github_disconnect(state: State<'_, Arc<AppState>>) -> Result<(), String> {
     // Delete OAuth token from keyring if present
     if let Err(e) = tokio::task::spawn_blocking(delete_github_oauth_token)
         .await
@@ -279,7 +272,10 @@ pub(crate) async fn github_disconnect(
     // Clear runtime state entirely
     *state.github_token.write() = None;
     *state.github_token_source.write() = TokenSource::None;
-    tracing::info!(source = "github", "GitHub disconnected (runtime token cleared)");
+    tracing::info!(
+        source = "github",
+        "GitHub disconnected (runtime token cleared)"
+    );
     Ok(())
 }
 
@@ -396,7 +392,8 @@ pub(crate) async fn github_auth_status(
         }
         Ok(r) if r.status() == 401 => {
             // Token is invalid — clear it if it was an OAuth token
-            let error_msg = format!("Token rejected by GitHub (HTTP 401). The {} token may be expired or revoked.",
+            let error_msg = format!(
+                "Token rejected by GitHub (HTTP 401). The {} token may be expired or revoked.",
                 match source {
                     TokenSource::Env => "environment variable",
                     TokenSource::OAuth => "OAuth",
@@ -441,7 +438,10 @@ pub(crate) async fn github_auth_status(
                 avatar_url: None,
                 source,
                 scopes: None,
-                error: Some(format!("GitHub API error (HTTP {status}): {}", body.lines().next().unwrap_or("unknown error"))),
+                error: Some(format!(
+                    "GitHub API error (HTTP {status}): {}",
+                    body.lines().next().unwrap_or("unknown error")
+                )),
             })
         }
         Err(e) => {
@@ -647,7 +647,10 @@ mod tests {
             "scope": "repo read:org"
         }"#;
         let resp: GithubTokenResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(resp.access_token, "gho_16C7e42F292c6912E7710c838347Ae178B4a");
+        assert_eq!(
+            resp.access_token,
+            "gho_16C7e42F292c6912E7710c838347Ae178B4a"
+        );
         assert_eq!(resp.scope, "repo read:org");
     }
 

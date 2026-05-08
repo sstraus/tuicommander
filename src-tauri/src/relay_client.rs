@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use aes_gcm::aead::{Aead, OsRng};
-use aes_gcm::{Aes256Gcm, AeadCore, KeyInit};
+use aes_gcm::{AeadCore, Aes256Gcm, KeyInit};
 use futures_util::{SinkExt, StreamExt};
 use hkdf::Hkdf;
 use sha2::Sha256;
@@ -95,10 +95,7 @@ fn decrypt(cipher: &Aes256Gcm, data: &[u8]) -> anyhow::Result<Vec<u8>> {
 /// agent transitions from working to awaiting input (i.e. a "question" event
 /// while not already awaiting).
 fn evaluate_push_hint(parsed: &serde_json::Value, was_awaiting: bool) -> (bool, bool) {
-    let event_type = parsed
-        .get("type")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let event_type = parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
     let new_awaiting = match event_type {
         "question" => true,
         "user-input" => false,
@@ -122,31 +119,67 @@ const INITIAL_BACKOFF: Duration = Duration::from_secs(1);
 /// Returns when the shutdown signal is received.
 pub(crate) async fn run(state: Arc<AppState>, mut shutdown_rx: oneshot::Receiver<()>) {
     let config = state.config.read().clone();
-    if !config.services.relay.enabled || config.services.relay.url.is_empty() || config.services.relay.token.is_empty() {
+    if !config.services.relay.enabled
+        || config.services.relay.url.is_empty()
+        || config.services.relay.token.is_empty()
+    {
         log_via_state(&state, "info", "relay", "disabled or not configured");
         return;
     }
 
     let cipher = derive_cipher(&config.services.relay.token);
-    let ws_url = format!("{}/ws/{}", config.services.relay.url, config.services.relay.session_id);
+    let ws_url = format!(
+        "{}/ws/{}",
+        config.services.relay.url, config.services.relay.session_id
+    );
     let mut backoff = INITIAL_BACKOFF;
 
     loop {
         log_via_state(&state, "info", "relay", &format!("connecting to {ws_url}"));
 
-        match connect_and_run(&state, &ws_url, &config.services.relay.token, &cipher, &mut shutdown_rx).await {
+        match connect_and_run(
+            &state,
+            &ws_url,
+            &config.services.relay.token,
+            &cipher,
+            &mut shutdown_rx,
+        )
+        .await
+        {
             Ok(ShutdownReason::Signal) => {
-                state.relay.connected.store(false, std::sync::atomic::Ordering::Relaxed);
+                state
+                    .relay
+                    .connected
+                    .store(false, std::sync::atomic::Ordering::Relaxed);
                 log_via_state(&state, "info", "relay", "shutting down");
                 return;
             }
             Ok(ShutdownReason::Disconnected) => {
-                state.relay.connected.store(false, std::sync::atomic::Ordering::Relaxed);
-                log_via_state(&state, "warn", "relay", &format!("disconnected, reconnecting in {}s", backoff.as_secs()));
+                state
+                    .relay
+                    .connected
+                    .store(false, std::sync::atomic::Ordering::Relaxed);
+                log_via_state(
+                    &state,
+                    "warn",
+                    "relay",
+                    &format!("disconnected, reconnecting in {}s", backoff.as_secs()),
+                );
             }
             Err(e) => {
-                state.relay.connected.store(false, std::sync::atomic::Ordering::Relaxed);
-                log_via_state(&state, "error", "relay", &format!("connection error: {e}, reconnecting in {}s", backoff.as_secs()));
+                state
+                    .relay
+                    .connected
+                    .store(false, std::sync::atomic::Ordering::Relaxed);
+                log_via_state(
+                    &state,
+                    "error",
+                    "relay",
+                    &format!(
+                        "connection error: {e}, reconnecting in {}s",
+                        backoff.as_secs()
+                    ),
+                );
             }
         }
 
@@ -185,8 +218,16 @@ async fn connect_and_run(
         .send(Message::Text(format!("Bearer {relay_token}").into()))
         .await?;
 
-    log_via_state(state, "info", "relay", "authenticated, starting event bridge");
-    state.relay.connected.store(true, std::sync::atomic::Ordering::Relaxed);
+    log_via_state(
+        state,
+        "info",
+        "relay",
+        "authenticated, starting event bridge",
+    );
+    state
+        .relay
+        .connected
+        .store(true, std::sync::atomic::Ordering::Relaxed);
 
     // Subscribe to event bus — reset backoff on successful connection
     let mut event_rx = state.event_bus.subscribe();
@@ -406,38 +447,61 @@ mod tests {
     fn deserialize_status_connected() {
         let json = r#"{"type":"relay:status","peer":"connected"}"#;
         let msg: RelayMessage = serde_json::from_str(json).unwrap();
-        assert_eq!(msg, RelayMessage::Status { peer: PeerStatus::Connected });
+        assert_eq!(
+            msg,
+            RelayMessage::Status {
+                peer: PeerStatus::Connected
+            }
+        );
     }
 
     #[test]
     fn deserialize_status_disconnected() {
         let json = r#"{"type":"relay:status","peer":"disconnected"}"#;
         let msg: RelayMessage = serde_json::from_str(json).unwrap();
-        assert_eq!(msg, RelayMessage::Status { peer: PeerStatus::Disconnected });
+        assert_eq!(
+            msg,
+            RelayMessage::Status {
+                peer: PeerStatus::Disconnected
+            }
+        );
     }
 
     #[test]
     fn deserialize_status_waiting() {
         let json = r#"{"type":"relay:status","peer":"waiting"}"#;
         let msg: RelayMessage = serde_json::from_str(json).unwrap();
-        assert_eq!(msg, RelayMessage::Status { peer: PeerStatus::Waiting });
+        assert_eq!(
+            msg,
+            RelayMessage::Status {
+                peer: PeerStatus::Waiting
+            }
+        );
     }
 
     #[test]
     fn deserialize_status_timeout() {
         let json = r#"{"type":"relay:status","peer":"timeout"}"#;
         let msg: RelayMessage = serde_json::from_str(json).unwrap();
-        assert_eq!(msg, RelayMessage::Status { peer: PeerStatus::Timeout });
+        assert_eq!(
+            msg,
+            RelayMessage::Status {
+                peer: PeerStatus::Timeout
+            }
+        );
     }
 
     #[test]
     fn deserialize_push_message() {
         let json = r#"{"type":"relay:push","reason":"awaiting_input","session_name":"s1"}"#;
         let msg: RelayMessage = serde_json::from_str(json).unwrap();
-        assert_eq!(msg, RelayMessage::Push {
-            reason: "awaiting_input".to_string(),
-            session_name: "s1".to_string(),
-        });
+        assert_eq!(
+            msg,
+            RelayMessage::Push {
+                reason: "awaiting_input".to_string(),
+                session_name: "s1".to_string(),
+            }
+        );
     }
 
     #[test]
@@ -457,15 +521,11 @@ mod tests {
         //   salt = b"tuicommander-relay-v1"
         //   info = b"aes-256-gcm-key"
         // by comparing against a manually-computed reference.
-        let hk = Hkdf::<Sha256>::new(
-            Some(b"tuicommander-relay-v1"),
-            b"test_token",
-        );
+        let hk = Hkdf::<Sha256>::new(Some(b"tuicommander-relay-v1"), b"test_token");
         let mut expected = [0u8; 32];
         hk.expand(b"aes-256-gcm-key", &mut expected).unwrap();
 
-        let reference_cipher =
-            Aes256Gcm::new(aes_gcm::Key::<Aes256Gcm>::from_slice(&expected));
+        let reference_cipher = Aes256Gcm::new(aes_gcm::Key::<Aes256Gcm>::from_slice(&expected));
         let cipher = derive_cipher("test_token");
 
         // If derive_cipher uses the same HKDF params, cross-decryption works

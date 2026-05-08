@@ -1,4 +1,4 @@
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -17,7 +17,9 @@ static CONFIG_DIR_EXCLUSIVE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// All callers across all test modules are automatically serialized.
 #[cfg(test)]
 pub(crate) fn set_config_dir_override(dir: PathBuf) -> impl Drop {
-    let lock = CONFIG_DIR_EXCLUSIVE.lock().unwrap_or_else(|e| e.into_inner());
+    let lock = CONFIG_DIR_EXCLUSIVE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     *CONFIG_DIR_OVERRIDE.lock().unwrap() = Some(dir);
     struct Guard {
         _lock: std::sync::MutexGuard<'static, ()>,
@@ -99,14 +101,14 @@ fn copy_dir_recursive(from: &std::path::Path, to: &std::path::Path) -> Result<()
     {
         let entry = entry.map_err(|e| format!("Dir entry error: {e}"))?;
         let dest = to.join(entry.file_name());
-        let file_type = entry.file_type()
+        let file_type = entry
+            .file_type()
             .map_err(|e| format!("File type error: {e}"))?;
 
         if file_type.is_symlink() {
             recreate_symlink(&entry.path(), &dest)?;
         } else if file_type.is_file() {
-            std::fs::copy(entry.path(), &dest)
-                .map_err(|e| format!("Copy error: {e}"))?;
+            std::fs::copy(entry.path(), &dest).map_err(|e| format!("Copy error: {e}"))?;
         } else if file_type.is_dir() {
             copy_dir_recursive(&entry.path(), &dest)?;
         }
@@ -124,7 +126,9 @@ fn recreate_symlink(source: &std::path::Path, dest: &std::path::Path) -> Result<
     #[cfg(windows)]
     {
         // Windows requires different calls for file vs directory symlinks
-        let is_dir = std::fs::metadata(&target).map(|m| m.is_dir()).unwrap_or(false);
+        let is_dir = std::fs::metadata(&target)
+            .map(|m| m.is_dir())
+            .unwrap_or(false);
         if is_dir {
             std::os::windows::fs::symlink_dir(&target, dest)
         } else {
@@ -162,12 +166,10 @@ pub(crate) fn load_json_config<T: DeserializeOwned + Default>(filename: &str) ->
 /// Atomically write `data` to `target` via temp+rename with 0600 perms.
 pub(crate) fn persist_atomic(target: &std::path::Path, data: &[u8]) -> Result<(), String> {
     if let Some(dir) = target.parent() {
-        std::fs::create_dir_all(dir)
-            .map_err(|e| format!("Failed to create directory: {e}"))?;
+        std::fs::create_dir_all(dir).map_err(|e| format!("Failed to create directory: {e}"))?;
     }
     let temp = target.with_extension(format!("tmp.{}", std::process::id()));
-    std::fs::write(&temp, data)
-        .map_err(|e| format!("Failed to write temp file: {e}"))?;
+    std::fs::write(&temp, data).map_err(|e| format!("Failed to write temp file: {e}"))?;
 
     #[cfg(unix)]
     {
@@ -177,11 +179,10 @@ pub(crate) fn persist_atomic(target: &std::path::Path, data: &[u8]) -> Result<()
             .map_err(|e| format!("Failed to set permissions: {e}"))?;
     }
 
-    std::fs::rename(&temp, target)
-        .map_err(|e| {
-            let _ = std::fs::remove_file(&temp);
-            format!("Failed to commit file: {e}")
-        })?;
+    std::fs::rename(&temp, target).map_err(|e| {
+        let _ = std::fs::remove_file(&temp);
+        format!("Failed to commit file: {e}")
+    })?;
     Ok(())
 }
 
@@ -310,8 +311,12 @@ pub(crate) struct AuthConfig {
     pub(crate) auth_rate_limit_window_secs: u64,
 }
 
-fn default_auth_rate_limit_max() -> u32 { 5 }
-fn default_auth_rate_limit_window_secs() -> u64 { 300 }
+fn default_auth_rate_limit_max() -> u32 {
+    5
+}
+fn default_auth_rate_limit_window_secs() -> u64 {
+    300
+}
 
 impl Default for AuthConfig {
     fn default() -> Self {
@@ -342,13 +347,26 @@ impl<'de> serde::Deserialize<'de> for TlsConfig {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let val = serde_json::Value::deserialize(deserializer)?;
         match val.as_object() {
-            Some(obj) if obj.is_empty() || obj.get("mode").and_then(|v| v.as_str()) == Some("off") => {
+            Some(obj)
+                if obj.is_empty() || obj.get("mode").and_then(|v| v.as_str()) == Some("off") =>
+            {
                 Ok(TlsConfig::Off)
             }
             Some(obj) if obj.get("mode").and_then(|v| v.as_str()) == Some("manual") => {
-                let cert_path = obj.get("cert_path").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-                let key_path = obj.get("key_path").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-                Ok(TlsConfig::Manual { cert_path, key_path })
+                let cert_path = obj
+                    .get("cert_path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                let key_path = obj
+                    .get("key_path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                Ok(TlsConfig::Manual {
+                    cert_path,
+                    key_path,
+                })
             }
             _ => Ok(TlsConfig::Off),
         }
@@ -408,10 +426,7 @@ impl ServicesConfig {
     #[allow(dead_code)]
     pub(crate) fn validate(&self) -> Vec<String> {
         let mut warnings = Vec::new();
-        if self.server.enabled
-            && self.auth.password_hash.is_empty()
-            && !self.auth.lan_auth_bypass
-        {
+        if self.server.enabled && self.auth.password_hash.is_empty() && !self.auth.lan_auth_bypass {
             warnings.push(
                 "Remote access enabled with no password and LAN bypass off — \
                  all connections will require auth but no password is set"
@@ -772,12 +787,24 @@ impl Default for UIPrefsConfig {
     }
 }
 
-fn default_sidebar_width() -> u32 { 260 }
-fn default_panel_width() -> u32 { 400 }
-fn default_notes_panel_width() -> u32 { 350 }
-fn default_plan_panel_width() -> u32 { 350 }
-fn default_git_panel_width() -> u32 { 380 }
-fn default_settings_nav_width() -> u32 { 180 }
+fn default_sidebar_width() -> u32 {
+    260
+}
+fn default_panel_width() -> u32 {
+    400
+}
+fn default_notes_panel_width() -> u32 {
+    350
+}
+fn default_plan_panel_width() -> u32 {
+    350
+}
+fn default_git_panel_width() -> u32 {
+    380
+}
+fn default_settings_nav_width() -> u32 {
+    180
+}
 
 // ---------------------------------------------------------------------------
 // RepoLocalConfig — team-shareable settings loaded from .tuic.json in repo root
@@ -820,7 +847,9 @@ const REPO_LOCAL_CONFIG_FILE: &str = ".tuic.json";
 
 /// Load `.tuic.json` from a repository root.
 /// Returns `None` if the file doesn't exist or is malformed.
-pub(crate) fn load_repo_local_config_from_path(repo_path: &std::path::Path) -> Option<RepoLocalConfig> {
+pub(crate) fn load_repo_local_config_from_path(
+    repo_path: &std::path::Path,
+) -> Option<RepoLocalConfig> {
     let path = repo_path.join(REPO_LOCAL_CONFIG_FILE);
     match std::fs::read_to_string(&path) {
         Ok(contents) => match serde_json::from_str::<RepoLocalConfig>(&contents) {
@@ -1148,13 +1177,16 @@ fn migrate_flat_services(val: &mut serde_json::Value) {
         "vapid_subject": take(obj, "vapid_subject"),
     });
 
-    obj.insert("services".to_string(), serde_json::json!({
-        "server": server,
-        "auth": auth,
-        "tls": { "mode": "off" },
-        "relay": relay,
-        "push": push,
-    }));
+    obj.insert(
+        "services".to_string(),
+        serde_json::json!({
+            "server": server,
+            "auth": auth,
+            "tls": { "mode": "off" },
+            "relay": relay,
+            "push": push,
+        }),
+    );
 }
 
 #[cfg_attr(feature = "desktop", tauri::command)]
@@ -1228,12 +1260,22 @@ pub(crate) fn save_repo_settings(config: RepoSettingsMap) -> Result<(), String> 
 /// Set or clear a human-readable label for a branch/worktree within a repo.
 /// `label = None` removes the label. Idempotent; no-ops on unknown repo paths.
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub(crate) fn set_branch_label(repo_path: String, branch_name: String, label: Option<String>) -> Result<(), String> {
+pub(crate) fn set_branch_label(
+    repo_path: String,
+    branch_name: String,
+    label: Option<String>,
+) -> Result<(), String> {
     let mut settings: RepoSettingsMap = load_json_config(REPO_SETTINGS_FILE);
     if let Some(entry) = settings.repos.get_mut(&repo_path) {
         match label {
-            Some(l) if !l.trim().is_empty() => { entry.branch_labels.insert(branch_name, l.trim().to_string()); }
-            _ => { entry.branch_labels.remove(&branch_name); }
+            Some(l) if !l.trim().is_empty() => {
+                entry
+                    .branch_labels
+                    .insert(branch_name, l.trim().to_string());
+            }
+            _ => {
+                entry.branch_labels.remove(&branch_name);
+            }
         }
         save_json_config(REPO_SETTINGS_FILE, &settings)
     } else {
@@ -1255,7 +1297,10 @@ pub(crate) fn remove_branch_label(repo_path: &str, branch_name: &str) {
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn check_has_custom_settings(path: String) -> bool {
     let settings: RepoSettingsMap = load_json_config(REPO_SETTINGS_FILE);
-    settings.repos.get(&path).is_some_and(|entry| entry.has_custom_settings())
+    settings
+        .repos
+        .get(&path)
+        .is_some_and(|entry| entry.has_custom_settings())
 }
 
 // Repo local config (.tuic.json in repo root)
@@ -1396,7 +1441,7 @@ pub(crate) fn save_note_image(
     data_base64: String,
     extension: String,
 ) -> Result<String, String> {
-    use base64::{engine::general_purpose, Engine as _};
+    use base64::{Engine as _, engine::general_purpose};
 
     validate_note_id(&note_id)?;
 
@@ -1417,11 +1462,14 @@ pub(crate) fn save_note_image(
         .chars()
         .filter(|c| c.is_ascii_alphanumeric())
         .collect::<String>();
-    let ext = if ext.is_empty() { "png".to_string() } else { ext };
+    let ext = if ext.is_empty() {
+        "png".to_string()
+    } else {
+        ext
+    };
 
     let dir = config_dir().join(NOTE_IMAGES_DIR).join(&note_id);
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("Failed to create note-images dir: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create note-images dir: {e}"))?;
 
     let filename = format!(
         "{}.{}",
@@ -1433,8 +1481,7 @@ pub(crate) fn save_note_image(
     );
     let path = dir.join(&filename);
 
-    std::fs::write(&path, &bytes)
-        .map_err(|e| format!("Failed to write image: {e}"))?;
+    std::fs::write(&path, &bytes).map_err(|e| format!("Failed to write image: {e}"))?;
 
     Ok(path.to_string_lossy().to_string())
 }
@@ -1446,8 +1493,7 @@ pub(crate) fn delete_note_assets(note_id: String) -> Result<(), String> {
 
     let dir = config_dir().join(NOTE_IMAGES_DIR).join(&note_id);
     if dir.exists() {
-        std::fs::remove_dir_all(&dir)
-            .map_err(|e| format!("Failed to delete note assets: {e}"))?;
+        std::fs::remove_dir_all(&dir).map_err(|e| format!("Failed to delete note assets: {e}"))?;
     }
     Ok(())
 }
@@ -1581,12 +1627,18 @@ mod tests {
         assert!(loaded.prevent_sleep_when_busy);
         assert!(!loaded.auto_update_enabled);
         assert_eq!(loaded.language, "it");
-        assert_eq!(loaded.disabled_plugin_ids, vec!["test-disabled".to_string()]);
+        assert_eq!(
+            loaded.disabled_plugin_ids,
+            vec!["test-disabled".to_string()]
+        );
         assert_eq!(loaded.update_channel, "nightly");
         assert_eq!(loaded.services.auth.session_token_duration_secs, 3600);
         assert!(loaded.services.server.ipv6_enabled);
         assert!(loaded.services.auth.lan_auth_bypass);
-        assert_eq!(loaded.disabled_native_tools, vec!["plugin_dev_guide".to_string()]);
+        assert_eq!(
+            loaded.disabled_native_tools,
+            vec!["plugin_dev_guide".to_string()]
+        );
         assert!(!loaded.intent_tab_title);
         assert!(!loaded.suggest_followups);
     }
@@ -1707,10 +1759,14 @@ mod tests {
 
         // Manual variant
         let manual: TlsConfig = serde_json::from_str(
-            r#"{"mode":"manual","cert_path":"/etc/cert.pem","key_path":"/etc/key.pem"}"#
-        ).unwrap();
+            r#"{"mode":"manual","cert_path":"/etc/cert.pem","key_path":"/etc/key.pem"}"#,
+        )
+        .unwrap();
         match manual {
-            TlsConfig::Manual { cert_path, key_path } => {
+            TlsConfig::Manual {
+                cert_path,
+                key_path,
+            } => {
                 assert_eq!(cert_path, "/etc/cert.pem");
                 assert_eq!(key_path, "/etc/key.pem");
             }
@@ -1721,7 +1777,8 @@ mod tests {
         let json = serde_json::to_string(&TlsConfig::Manual {
             cert_path: "/a.pem".into(),
             key_path: "/b.pem".into(),
-        }).unwrap();
+        })
+        .unwrap();
         let rt: TlsConfig = serde_json::from_str(&json).unwrap();
         assert!(matches!(rt, TlsConfig::Manual { .. }));
     }
@@ -1740,8 +1797,7 @@ mod tests {
                 info: true,
             },
         };
-        let loaded: NotificationConfig =
-            round_trip_in_dir(dir.path(), "notifications.json", &cfg);
+        let loaded: NotificationConfig = round_trip_in_dir(dir.path(), "notifications.json", &cfg);
         assert!(!loaded.enabled);
         assert!((loaded.volume - 0.8).abs() < f64::EPSILON);
         assert!(loaded.sounds.question);
@@ -1767,16 +1823,20 @@ mod tests {
             git_panel_width: 380,
             settings_nav_width: 200,
             diff_view_mode: "split".to_string(),
-            detached_panels: std::collections::HashMap::from([
-                ("activity".to_string(), "panel-activity".to_string()),
-            ]),
+            detached_panels: std::collections::HashMap::from([(
+                "activity".to_string(),
+                "panel-activity".to_string(),
+            )]),
         };
         let loaded: UIPrefsConfig = round_trip_in_dir(dir.path(), "ui-prefs.json", &cfg);
         assert!(!loaded.sidebar_visible);
         assert_eq!(loaded.sidebar_width, 300);
         assert_eq!(loaded.diff_panel_width, 500);
         assert_eq!(loaded.markdown_panel_width, 450);
-        assert_eq!(loaded.detached_panels.get("activity").map(|s| s.as_str()), Some("panel-activity"));
+        assert_eq!(
+            loaded.detached_panels.get("activity").map(|s| s.as_str()),
+            Some("panel-activity")
+        );
         assert_eq!(loaded.notes_panel_width, 320);
         assert_eq!(loaded.settings_nav_width, 200);
         assert_eq!(loaded.diff_view_mode, "split");
@@ -1811,8 +1871,7 @@ mod tests {
                 branch_labels: HashMap::new(),
             },
         );
-        let loaded: RepoSettingsMap =
-            round_trip_in_dir(dir.path(), "repo-settings.json", &map);
+        let loaded: RepoSettingsMap = round_trip_in_dir(dir.path(), "repo-settings.json", &map);
         assert_eq!(loaded.repos.len(), 1);
         let entry = loaded.repos.get("/my/repo").unwrap();
         assert_eq!(entry.display_name, "my-repo");
@@ -1846,8 +1905,7 @@ mod tests {
         let cfg = AiPromptsConfig {
             diff_triage_system_prompt: Some("Custom triage prompt".to_string()),
         };
-        let loaded: AiPromptsConfig =
-            round_trip_in_dir(dir.path(), "ai-prompts.json", &cfg);
+        let loaded: AiPromptsConfig = round_trip_in_dir(dir.path(), "ai-prompts.json", &cfg);
         assert_eq!(
             loaded.diff_triage_system_prompt.as_deref(),
             Some("Custom triage prompt")
@@ -1877,14 +1935,22 @@ mod tests {
         let target = dir.path().join(filename);
 
         // Write initial content
-        let initial = NotificationConfig { enabled: false, ..NotificationConfig::default() };
+        let initial = NotificationConfig {
+            enabled: false,
+            ..NotificationConfig::default()
+        };
         let json = serde_json::to_string_pretty(&initial).unwrap();
         fs::write(&target, json).unwrap();
 
         // Overwrite with new content using save_json_config pattern
-        let updated = NotificationConfig { enabled: true, ..NotificationConfig::default() };
+        let updated = NotificationConfig {
+            enabled: true,
+            ..NotificationConfig::default()
+        };
         let json2 = serde_json::to_string_pretty(&updated).unwrap();
-        let temp = dir.path().join(format!("{}.tmp.{}", filename, std::process::id()));
+        let temp = dir
+            .path()
+            .join(format!("{}.tmp.{}", filename, std::process::id()));
         fs::write(&temp, &json2).unwrap();
         fs::rename(&temp, &target).unwrap();
 
@@ -1908,7 +1974,9 @@ mod tests {
 
         let cfg = NotificationConfig::default();
         let json = serde_json::to_string_pretty(&cfg).unwrap();
-        let temp = dir.path().join(format!("{}.tmp.{}", filename, std::process::id()));
+        let temp = dir
+            .path()
+            .join(format!("{}.tmp.{}", filename, std::process::id()));
         fs::write(&temp, &json).unwrap();
 
         let perms = std::fs::Permissions::from_mode(0o600);
@@ -1999,7 +2067,10 @@ mod tests {
         // which load_json_config handles by returning Default
         let json = r#"{"shell":null,"font_family":"JetBrains Mono","font_size":14,"theme":"tokyo-night","worktree_dir":null,"split_tab_mode":"bogus"}"#;
         let result: Result<AppConfig, _> = serde_json::from_str(json);
-        assert!(result.is_err(), "Invalid split_tab_mode should fail deserialization");
+        assert!(
+            result.is_err(),
+            "Invalid split_tab_mode should fail deserialization"
+        );
     }
 
     #[test]
@@ -2036,7 +2107,11 @@ mod tests {
                     AgentRunConfig {
                         name: "Sonnet Print".to_string(),
                         command: "claude".to_string(),
-                        args: vec!["--model".to_string(), "sonnet".to_string(), "--print".to_string()],
+                        args: vec![
+                            "--model".to_string(),
+                            "sonnet".to_string(),
+                            "--print".to_string(),
+                        ],
                         env,
                         is_default: false,
                     },
@@ -2055,8 +2130,14 @@ mod tests {
         assert_eq!(claude.run_configs[0].name, "Default");
         assert!(claude.run_configs[0].is_default);
         assert_eq!(claude.run_configs[1].name, "Sonnet Print");
-        assert_eq!(claude.run_configs[1].args, vec!["--model", "sonnet", "--print"]);
-        assert_eq!(claude.run_configs[1].env.get("ANTHROPIC_API_KEY").unwrap(), "sk-test");
+        assert_eq!(
+            claude.run_configs[1].args,
+            vec!["--model", "sonnet", "--print"]
+        );
+        assert_eq!(
+            claude.run_configs[1].env.get("ANTHROPIC_API_KEY").unwrap(),
+            "sk-test"
+        );
         assert!(!claude.run_configs[1].is_default);
         assert_eq!(claude.intent_tab_title, Some(false));
         assert_eq!(claude.suggest_followups, None);
@@ -2072,32 +2153,98 @@ mod tests {
 
     #[test]
     fn worktree_enums_serialize_as_expected() {
-        assert_eq!(serde_json::to_string(&WorktreeStorage::Sibling).unwrap(), r#""sibling""#);
-        assert_eq!(serde_json::to_string(&WorktreeStorage::AppDir).unwrap(), r#""app-dir""#);
-        assert_eq!(serde_json::to_string(&WorktreeStorage::InsideRepo).unwrap(), r#""inside-repo""#);
-        assert_eq!(serde_json::to_string(&WorktreeStorage::ClaudeCodeDefault).unwrap(), r#""claude-code-default""#);
-        assert_eq!(serde_json::to_string(&OrphanCleanup::Ask).unwrap(), r#""ask""#);
-        assert_eq!(serde_json::to_string(&OrphanCleanup::On).unwrap(), r#""on""#);
-        assert_eq!(serde_json::to_string(&MergeStrategy::Squash).unwrap(), r#""squash""#);
-        assert_eq!(serde_json::to_string(&WorktreeAfterMerge::Archive).unwrap(), r#""archive""#);
-        assert_eq!(serde_json::to_string(&WorktreeAfterMerge::Delete).unwrap(), r#""delete""#);
-        assert_eq!(serde_json::to_string(&AutoDeleteOnPrClose::Off).unwrap(), r#""off""#);
-        assert_eq!(serde_json::to_string(&AutoDeleteOnPrClose::Ask).unwrap(), r#""ask""#);
-        assert_eq!(serde_json::to_string(&AutoDeleteOnPrClose::Auto).unwrap(), r#""auto""#);
+        assert_eq!(
+            serde_json::to_string(&WorktreeStorage::Sibling).unwrap(),
+            r#""sibling""#
+        );
+        assert_eq!(
+            serde_json::to_string(&WorktreeStorage::AppDir).unwrap(),
+            r#""app-dir""#
+        );
+        assert_eq!(
+            serde_json::to_string(&WorktreeStorage::InsideRepo).unwrap(),
+            r#""inside-repo""#
+        );
+        assert_eq!(
+            serde_json::to_string(&WorktreeStorage::ClaudeCodeDefault).unwrap(),
+            r#""claude-code-default""#
+        );
+        assert_eq!(
+            serde_json::to_string(&OrphanCleanup::Ask).unwrap(),
+            r#""ask""#
+        );
+        assert_eq!(
+            serde_json::to_string(&OrphanCleanup::On).unwrap(),
+            r#""on""#
+        );
+        assert_eq!(
+            serde_json::to_string(&MergeStrategy::Squash).unwrap(),
+            r#""squash""#
+        );
+        assert_eq!(
+            serde_json::to_string(&WorktreeAfterMerge::Archive).unwrap(),
+            r#""archive""#
+        );
+        assert_eq!(
+            serde_json::to_string(&WorktreeAfterMerge::Delete).unwrap(),
+            r#""delete""#
+        );
+        assert_eq!(
+            serde_json::to_string(&AutoDeleteOnPrClose::Off).unwrap(),
+            r#""off""#
+        );
+        assert_eq!(
+            serde_json::to_string(&AutoDeleteOnPrClose::Ask).unwrap(),
+            r#""ask""#
+        );
+        assert_eq!(
+            serde_json::to_string(&AutoDeleteOnPrClose::Auto).unwrap(),
+            r#""auto""#
+        );
     }
 
     #[test]
     fn worktree_enums_deserialize() {
-        assert_eq!(serde_json::from_str::<WorktreeStorage>(r#""sibling""#).unwrap(), WorktreeStorage::Sibling);
-        assert_eq!(serde_json::from_str::<WorktreeStorage>(r#""app-dir""#).unwrap(), WorktreeStorage::AppDir);
-        assert_eq!(serde_json::from_str::<WorktreeStorage>(r#""inside-repo""#).unwrap(), WorktreeStorage::InsideRepo);
-        assert_eq!(serde_json::from_str::<WorktreeStorage>(r#""claude-code-default""#).unwrap(), WorktreeStorage::ClaudeCodeDefault);
-        assert_eq!(serde_json::from_str::<OrphanCleanup>(r#""ask""#).unwrap(), OrphanCleanup::Ask);
-        assert_eq!(serde_json::from_str::<MergeStrategy>(r#""rebase""#).unwrap(), MergeStrategy::Rebase);
-        assert_eq!(serde_json::from_str::<WorktreeAfterMerge>(r#""ask""#).unwrap(), WorktreeAfterMerge::Ask);
-        assert_eq!(serde_json::from_str::<AutoDeleteOnPrClose>(r#""off""#).unwrap(), AutoDeleteOnPrClose::Off);
-        assert_eq!(serde_json::from_str::<AutoDeleteOnPrClose>(r#""ask""#).unwrap(), AutoDeleteOnPrClose::Ask);
-        assert_eq!(serde_json::from_str::<AutoDeleteOnPrClose>(r#""auto""#).unwrap(), AutoDeleteOnPrClose::Auto);
+        assert_eq!(
+            serde_json::from_str::<WorktreeStorage>(r#""sibling""#).unwrap(),
+            WorktreeStorage::Sibling
+        );
+        assert_eq!(
+            serde_json::from_str::<WorktreeStorage>(r#""app-dir""#).unwrap(),
+            WorktreeStorage::AppDir
+        );
+        assert_eq!(
+            serde_json::from_str::<WorktreeStorage>(r#""inside-repo""#).unwrap(),
+            WorktreeStorage::InsideRepo
+        );
+        assert_eq!(
+            serde_json::from_str::<WorktreeStorage>(r#""claude-code-default""#).unwrap(),
+            WorktreeStorage::ClaudeCodeDefault
+        );
+        assert_eq!(
+            serde_json::from_str::<OrphanCleanup>(r#""ask""#).unwrap(),
+            OrphanCleanup::Ask
+        );
+        assert_eq!(
+            serde_json::from_str::<MergeStrategy>(r#""rebase""#).unwrap(),
+            MergeStrategy::Rebase
+        );
+        assert_eq!(
+            serde_json::from_str::<WorktreeAfterMerge>(r#""ask""#).unwrap(),
+            WorktreeAfterMerge::Ask
+        );
+        assert_eq!(
+            serde_json::from_str::<AutoDeleteOnPrClose>(r#""off""#).unwrap(),
+            AutoDeleteOnPrClose::Off
+        );
+        assert_eq!(
+            serde_json::from_str::<AutoDeleteOnPrClose>(r#""ask""#).unwrap(),
+            AutoDeleteOnPrClose::Ask
+        );
+        assert_eq!(
+            serde_json::from_str::<AutoDeleteOnPrClose>(r#""auto""#).unwrap(),
+            AutoDeleteOnPrClose::Auto
+        );
     }
 
     #[test]
@@ -2168,7 +2315,10 @@ mod tests {
         assert_eq!(entry.orphan_cleanup, Some(OrphanCleanup::Off));
         assert_eq!(entry.pr_merge_strategy, Some(MergeStrategy::Rebase));
         assert_eq!(entry.after_merge, Some(WorktreeAfterMerge::Ask));
-        assert_eq!(entry.auto_delete_on_pr_close, Some(AutoDeleteOnPrClose::Ask));
+        assert_eq!(
+            entry.auto_delete_on_pr_close,
+            Some(AutoDeleteOnPrClose::Ask)
+        );
     }
 
     #[test]
@@ -2206,7 +2356,7 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn save_note_image_creates_file() {
-        use base64::{engine::general_purpose, Engine as _};
+        use base64::{Engine as _, engine::general_purpose};
 
         let dir = TempDir::new().unwrap();
         let _guard = set_config_dir_override(dir.path().to_path_buf());
@@ -2221,7 +2371,11 @@ mod tests {
         let b64 = general_purpose::STANDARD.encode(png_bytes);
 
         let result = save_note_image("test-note-1".to_string(), b64, "png".to_string());
-        assert!(result.is_ok(), "save_note_image should succeed: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "save_note_image should succeed: {:?}",
+            result
+        );
 
         let path = std::path::PathBuf::from(result.unwrap());
         assert!(path.exists(), "Image file should exist on disk");
@@ -2236,7 +2390,7 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn save_note_image_rejects_oversized() {
-        use base64::{engine::general_purpose, Engine as _};
+        use base64::{Engine as _, engine::general_purpose};
 
         let dir = TempDir::new().unwrap();
         let _guard = set_config_dir_override(dir.path().to_path_buf());
@@ -2275,8 +2429,7 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("invalid characters"));
 
-        let result2 =
-            save_note_image("foo/bar".to_string(), "AAAA".to_string(), "png".to_string());
+        let result2 = save_note_image("foo/bar".to_string(), "AAAA".to_string(), "png".to_string());
         assert!(result2.is_err());
     }
 
@@ -2376,7 +2529,10 @@ mod tests {
         }"#;
         fs::write(dir.path().join(".tuic.json"), json).unwrap();
         let config = load_repo_local_config_from_path(dir.path());
-        assert!(config.is_some(), "config should parse despite unknown script fields");
+        assert!(
+            config.is_some(),
+            "config should parse despite unknown script fields"
+        );
         let config = config.unwrap();
         assert_eq!(config.base_branch.as_deref(), Some("develop"));
         // RepoLocalConfig has no script fields — they are silently dropped by serde
@@ -2421,16 +2577,35 @@ mod tests {
 
         // Verify the file symlink was recreated (not copied as a regular file)
         let dest_link = dest.join("link.txt");
-        assert!(dest_link.symlink_metadata().unwrap().file_type().is_symlink());
+        assert!(
+            dest_link
+                .symlink_metadata()
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
         assert_eq!(fs::read_link(&dest_link).unwrap(), real_file);
 
         // Verify the dir symlink was recreated
         let dest_dir_link = dest.join("dir-link");
-        assert!(dest_dir_link.symlink_metadata().unwrap().file_type().is_symlink());
+        assert!(
+            dest_dir_link
+                .symlink_metadata()
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
         assert_eq!(fs::read_link(&dest_dir_link).unwrap(), sub);
 
         // Verify the real file was copied normally
-        assert!(!dest.join("real.txt").symlink_metadata().unwrap().file_type().is_symlink());
+        assert!(
+            !dest
+                .join("real.txt")
+                .symlink_metadata()
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
         assert_eq!(fs::read_to_string(dest.join("real.txt")).unwrap(), "hello");
     }
 
@@ -2444,5 +2619,4 @@ mod tests {
         assert!(cfg.is_experimental_enabled(true));
         assert!(!cfg.is_experimental_enabled(false));
     }
-
 }

@@ -60,10 +60,7 @@ pub(crate) fn install_cli(app: tauri::AppHandle) -> Result<String, String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(
-            &install_path,
-            std::fs::Permissions::from_mode(0o755),
-        );
+        let _ = std::fs::set_permissions(&install_path, std::fs::Permissions::from_mode(0o755));
     }
 
     tracing::info!(source = "tuic_cli", path = %install_path, "CLI installed");
@@ -112,14 +109,14 @@ pub(crate) fn auto_update_cli(app: &tauri::AppHandle) {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(
-                &install_path,
-                std::fs::Permissions::from_mode(0o755),
-            );
+            let _ = std::fs::set_permissions(&install_path, std::fs::Permissions::from_mode(0o755));
         }
         tracing::info!(source = "tuic_cli", "CLI auto-updated at {install_path}");
     } else {
-        tracing::debug!(source = "tuic_cli", "CLI auto-update skipped (permission denied)");
+        tracing::debug!(
+            source = "tuic_cli",
+            "CLI auto-update skipped (permission denied)"
+        );
     }
 }
 
@@ -130,11 +127,15 @@ pub(crate) fn auto_update_cli(app: &tauri::AppHandle) {
 fn resolve_install_path() -> String {
     // macOS: /usr/local/bin (in default PATH, standard for user-installed CLIs)
     #[cfg(target_os = "macos")]
-    { "/usr/local/bin/tuic".to_string() }
+    {
+        "/usr/local/bin/tuic".to_string()
+    }
 
     // Linux: /usr/local/bin (FHS standard for locally installed software)
     #[cfg(target_os = "linux")]
-    { "/usr/local/bin/tuic".to_string() }
+    {
+        "/usr/local/bin/tuic".to_string()
+    }
 
     // Windows: add to user-scoped PATH via %LOCALAPPDATA%\Microsoft\WindowsApps
     // (writable without admin, automatically in PATH on modern Windows)
@@ -147,7 +148,11 @@ fn resolve_install_path() -> String {
 
 fn resolve_sidecar_path(app: &tauri::AppHandle) -> Result<String, String> {
     let target = current_target_triple();
-    let ext = if cfg!(target_os = "windows") { ".exe" } else { "" };
+    let ext = if cfg!(target_os = "windows") {
+        ".exe"
+    } else {
+        ""
+    };
 
     // Release mode: sidecar embedded in app bundle resources
     if let Ok(resource_dir) = app.path().resource_dir() {
@@ -158,15 +163,15 @@ fn resolve_sidecar_path(app: &tauri::AppHandle) -> Result<String, String> {
     }
 
     // Dev mode: try the workspace target directory
-    let dev_binary = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join(format!("target/debug/tuic{ext}"));
+    let dev_binary =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("target/debug/tuic{ext}"));
     if dev_binary.exists() {
         return Ok(dev_binary.to_string_lossy().to_string());
     }
 
     // Also try release build in dev
-    let release_binary = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join(format!("target/release/tuic{ext}"));
+    let release_binary =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("target/release/tuic{ext}"));
     if release_binary.exists() {
         return Ok(release_binary.to_string_lossy().to_string());
     }
@@ -262,9 +267,7 @@ fn remove_with_elevation(path: &str) -> Result<(), String> {
 
     #[cfg(target_os = "macos")]
     {
-        let script = format!(
-            "do shell script \"rm -f '{path}'\" with administrator privileges"
-        );
+        let script = format!("do shell script \"rm -f '{path}'\" with administrator privileges");
         let status = std::process::Command::new("osascript")
             .arg("-e")
             .arg(&script)

@@ -17,19 +17,52 @@ use crate::state::{AppEvent, AppState};
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub(crate) enum PrTransition {
-    Merged { repo_path: String, branch: String, pr_number: i32, title: String },
-    Closed { repo_path: String, branch: String, pr_number: i32, title: String },
-    Blocked { repo_path: String, branch: String, pr_number: i32, title: String },
-    CiFailed { repo_path: String, branch: String, pr_number: i32, title: String },
-    CiRecovered { repo_path: String, branch: String, pr_number: i32, title: String },
-    ChangesRequested { repo_path: String, branch: String, pr_number: i32, title: String },
-    Ready { repo_path: String, branch: String, pr_number: i32, title: String },
+    Merged {
+        repo_path: String,
+        branch: String,
+        pr_number: i32,
+        title: String,
+    },
+    Closed {
+        repo_path: String,
+        branch: String,
+        pr_number: i32,
+        title: String,
+    },
+    Blocked {
+        repo_path: String,
+        branch: String,
+        pr_number: i32,
+        title: String,
+    },
+    CiFailed {
+        repo_path: String,
+        branch: String,
+        pr_number: i32,
+        title: String,
+    },
+    CiRecovered {
+        repo_path: String,
+        branch: String,
+        pr_number: i32,
+        title: String,
+    },
+    ChangesRequested {
+        repo_path: String,
+        branch: String,
+        pr_number: i32,
+        title: String,
+    },
+    Ready {
+        repo_path: String,
+        branch: String,
+        pr_number: i32,
+        title: String,
+    },
 }
 
 fn is_ready(pr: &BranchPrStatus) -> bool {
-    pr.mergeable == "MERGEABLE"
-        && pr.review_decision == "APPROVED"
-        && pr.checks.failed == 0
+    pr.mergeable == "MERGEABLE" && pr.review_decision == "APPROVED" && pr.checks.failed == 0
 }
 
 pub(crate) fn detect_transitions(
@@ -51,25 +84,57 @@ pub(crate) fn detect_transitions(
     // Terminal transitions
     if old_state != "MERGED" && new_state == "MERGED" {
         primary_type = Some("merged");
-        out.push(PrTransition::Merged { repo_path: rp.clone(), branch: branch.clone(), pr_number, title: title.clone() });
+        out.push(PrTransition::Merged {
+            repo_path: rp.clone(),
+            branch: branch.clone(),
+            pr_number,
+            title: title.clone(),
+        });
     } else if old_state != "CLOSED" && new_state == "CLOSED" {
         primary_type = Some("closed");
-        out.push(PrTransition::Closed { repo_path: rp.clone(), branch: branch.clone(), pr_number, title: title.clone() });
+        out.push(PrTransition::Closed {
+            repo_path: rp.clone(),
+            branch: branch.clone(),
+            pr_number,
+            title: title.clone(),
+        });
     }
     // Actionable transitions (only for OPEN PRs)
     else if new_state == "OPEN" {
         if old.mergeable != "CONFLICTING" && new.mergeable == "CONFLICTING" {
             primary_type = Some("blocked");
-            out.push(PrTransition::Blocked { repo_path: rp.clone(), branch: branch.clone(), pr_number, title: title.clone() });
+            out.push(PrTransition::Blocked {
+                repo_path: rp.clone(),
+                branch: branch.clone(),
+                pr_number,
+                title: title.clone(),
+            });
         } else if old.checks.failed == 0 && new.checks.failed > 0 {
             primary_type = Some("ci_failed");
-            out.push(PrTransition::CiFailed { repo_path: rp.clone(), branch: branch.clone(), pr_number, title: title.clone() });
-        } else if old.review_decision != "CHANGES_REQUESTED" && new.review_decision == "CHANGES_REQUESTED" {
+            out.push(PrTransition::CiFailed {
+                repo_path: rp.clone(),
+                branch: branch.clone(),
+                pr_number,
+                title: title.clone(),
+            });
+        } else if old.review_decision != "CHANGES_REQUESTED"
+            && new.review_decision == "CHANGES_REQUESTED"
+        {
             primary_type = Some("changes_requested");
-            out.push(PrTransition::ChangesRequested { repo_path: rp.clone(), branch: branch.clone(), pr_number, title: title.clone() });
+            out.push(PrTransition::ChangesRequested {
+                repo_path: rp.clone(),
+                branch: branch.clone(),
+                pr_number,
+                title: title.clone(),
+            });
         } else if !is_ready(old) && is_ready(new) {
             primary_type = Some("ready");
-            out.push(PrTransition::Ready { repo_path: rp.clone(), branch: branch.clone(), pr_number, title: title.clone() });
+            out.push(PrTransition::Ready {
+                repo_path: rp.clone(),
+                branch: branch.clone(),
+                pr_number,
+                title: title.clone(),
+            });
         }
     }
 
@@ -79,7 +144,12 @@ pub(crate) fn detect_transitions(
         let new_failed = new.checks.failed;
         let new_pending = new.checks.pending;
         if old_failed > 0 && new_failed == 0 && new_pending == 0 {
-            out.push(PrTransition::CiRecovered { repo_path: rp, branch, pr_number, title });
+            out.push(PrTransition::CiRecovered {
+                repo_path: rp,
+                branch,
+                pr_number,
+                title,
+            });
         }
     }
 
@@ -139,11 +209,7 @@ struct PollMutableState {
 }
 
 #[cfg(feature = "desktop")]
-async fn poll_loop(
-    state: Arc<AppState>,
-    handle: AppHandle,
-    mut rx: mpsc::Receiver<PollerCmd>,
-) {
+async fn poll_loop(state: Arc<AppState>, handle: AppHandle, mut rx: mpsc::Receiver<PollerCmd>) {
     let mut visible = true;
     let mut paths: Vec<String> = Vec::new();
     let mut issue_filter = String::new();
@@ -239,8 +305,9 @@ fn tiered_paths(
     cycle: u32,
 ) -> Vec<String> {
     let now = Instant::now();
-    all_paths.iter().filter(|p| {
-        match last_changed.get(p.as_str()) {
+    all_paths
+        .iter()
+        .filter(|p| match last_changed.get(p.as_str()) {
             None => true,
             Some(t) => {
                 if now.duration_since(*t) < ACTIVE_WINDOW {
@@ -249,8 +316,9 @@ fn tiered_paths(
                     cycle.is_multiple_of(IDLE_POLL_DIVISOR)
                 }
             }
-        }
-    }).cloned().collect()
+        })
+        .cloned()
+        .collect()
 }
 
 /// Compute the next poll interval based on visibility, failure count, and rate-limit budget.
@@ -285,11 +353,20 @@ async fn poll_batch(
     ps: &mut PollMutableState,
     use_etag: bool,
 ) {
-    if paths.is_empty() { return; }
-    if state.github_circuit_breaker.check().is_err() { return; }
+    if paths.is_empty() {
+        return;
+    }
+    if state.github_circuit_breaker.check().is_err() {
+        return;
+    }
 
-    let etag = if use_etag { Some(&mut ps.etag_cache) } else { None };
-    match crate::github::get_all_batch_impl(paths, include_merged, issue_filter, state, etag).await {
+    let etag = if use_etag {
+        Some(&mut ps.etag_cache)
+    } else {
+        None
+    };
+    match crate::github::get_all_batch_impl(paths, include_merged, issue_filter, state, etag).await
+    {
         Ok(result) => {
             ps.fail_count = 0;
             let now = Instant::now();
@@ -303,19 +380,30 @@ async fn poll_batch(
                 }
             }
             for (repo_path, statuses) in result.prs {
-                let _ = handle.emit("github-pr-update", PrUpdatePayload {
-                    repo_path: repo_path.clone(),
-                    statuses: statuses.clone(),
+                let _ = handle.emit(
+                    "github-pr-update",
+                    PrUpdatePayload {
+                        repo_path: repo_path.clone(),
+                        statuses: statuses.clone(),
+                    },
+                );
+                let _ = state.event_bus.send(AppEvent::GitHubPrUpdate {
+                    repo_path,
+                    statuses,
                 });
-                let _ = state.event_bus.send(AppEvent::GitHubPrUpdate { repo_path, statuses });
             }
 
             for (repo_path, issues) in result.issues {
-                let _ = handle.emit("github-issues-update", IssuesUpdatePayload {
-                    repo_path: repo_path.clone(),
-                    issues: issues.clone(),
-                });
-                let _ = state.event_bus.send(AppEvent::GitHubIssuesUpdate { repo_path, issues });
+                let _ = handle.emit(
+                    "github-issues-update",
+                    IssuesUpdatePayload {
+                        repo_path: repo_path.clone(),
+                        issues: issues.clone(),
+                    },
+                );
+                let _ = state
+                    .event_bus
+                    .send(AppEvent::GitHubIssuesUpdate { repo_path, issues });
             }
         }
         Err(e) => {
@@ -347,7 +435,9 @@ fn process_repo_update(
             }
             for t in transitions {
                 let _ = handle.emit("github-transition", &t);
-                let _ = state.event_bus.send(AppEvent::GitHubTransition { transition: t });
+                let _ = state
+                    .event_bus
+                    .send(AppEvent::GitHubTransition { transition: t });
             }
             old_pr.updated_at != new_pr.updated_at
                 || old_pr.checks != new_pr.checks
@@ -355,10 +445,14 @@ fn process_repo_update(
         } else {
             true
         };
-        if is_new { changed = true; }
+        if is_new {
+            changed = true;
+        }
         old_map.insert(new_pr.branch.clone(), new_pr.clone());
     }
-    if old_map.len() != statuses.len() { changed = true; }
+    if old_map.len() != statuses.len() {
+        changed = true;
+    }
     changed
 }
 
@@ -378,14 +472,37 @@ pub(crate) async fn github_start_polling(
     if guard.is_some() {
         // Already running — just update paths and filter
         if let Some(poller) = guard.as_ref() {
-            let _ = poller.cmd_tx.try_send(PollerCmd::UpdatePaths(paths));
-            let _ = poller.cmd_tx.try_send(PollerCmd::SetIssueFilter(issue_filter));
+            if let Err(e) = poller.cmd_tx.try_send(PollerCmd::UpdatePaths(paths)) {
+                tracing::warn!(
+                    source = "github",
+                    "Failed to send UpdatePaths to poller: {e}"
+                );
+            }
+            if let Err(e) = poller
+                .cmd_tx
+                .try_send(PollerCmd::SetIssueFilter(issue_filter))
+            {
+                tracing::warn!(
+                    source = "github",
+                    "Failed to send SetIssueFilter to poller: {e}"
+                );
+            }
         }
         return Ok(());
     }
     let poller = GitHubPoller::start(Arc::clone(&state), app);
-    let _ = poller.cmd_tx.try_send(PollerCmd::UpdatePaths(paths));
-    let _ = poller.cmd_tx.try_send(PollerCmd::SetIssueFilter(issue_filter));
+    if let Err(e) = poller.cmd_tx.try_send(PollerCmd::UpdatePaths(paths)) {
+        tracing::warn!(source = "github", "Failed to send initial UpdatePaths: {e}");
+    }
+    if let Err(e) = poller
+        .cmd_tx
+        .try_send(PollerCmd::SetIssueFilter(issue_filter))
+    {
+        tracing::warn!(
+            source = "github",
+            "Failed to send initial SetIssueFilter: {e}"
+        );
+    }
     *guard = Some(poller);
     Ok(())
 }
@@ -408,8 +525,10 @@ pub(crate) async fn github_set_visibility(
     state: tauri::State<'_, Arc<AppState>>,
     visible: bool,
 ) -> Result<(), String> {
-    if let Some(poller) = state.github_poller.lock().as_ref() {
-        let _ = poller.cmd_tx.try_send(PollerCmd::SetVisibility(visible));
+    if let Some(poller) = state.github_poller.lock().as_ref()
+        && let Err(e) = poller.cmd_tx.try_send(PollerCmd::SetVisibility(visible))
+    {
+        tracing::warn!(source = "github", "Failed to send SetVisibility: {e}");
     }
     Ok(())
 }
@@ -420,8 +539,10 @@ pub(crate) async fn github_poll_repo(
     state: tauri::State<'_, Arc<AppState>>,
     path: String,
 ) -> Result<(), String> {
-    if let Some(poller) = state.github_poller.lock().as_ref() {
-        let _ = poller.cmd_tx.try_send(PollerCmd::PollRepo(path));
+    if let Some(poller) = state.github_poller.lock().as_ref()
+        && let Err(e) = poller.cmd_tx.try_send(PollerCmd::PollRepo(path))
+    {
+        tracing::warn!(source = "github", "Failed to send PollRepo: {e}");
     }
     Ok(())
 }
@@ -432,8 +553,10 @@ pub(crate) async fn github_update_paths(
     state: tauri::State<'_, Arc<AppState>>,
     paths: Vec<String>,
 ) -> Result<(), String> {
-    if let Some(poller) = state.github_poller.lock().as_ref() {
-        let _ = poller.cmd_tx.try_send(PollerCmd::UpdatePaths(paths));
+    if let Some(poller) = state.github_poller.lock().as_ref()
+        && let Err(e) = poller.cmd_tx.try_send(PollerCmd::UpdatePaths(paths))
+    {
+        tracing::warn!(source = "github", "Failed to send UpdatePaths: {e}");
     }
     Ok(())
 }
@@ -444,8 +567,10 @@ pub(crate) async fn github_set_issue_filter(
     state: tauri::State<'_, Arc<AppState>>,
     filter: String,
 ) -> Result<(), String> {
-    if let Some(poller) = state.github_poller.lock().as_ref() {
-        let _ = poller.cmd_tx.try_send(PollerCmd::SetIssueFilter(filter));
+    if let Some(poller) = state.github_poller.lock().as_ref()
+        && let Err(e) = poller.cmd_tx.try_send(PollerCmd::SetIssueFilter(filter))
+    {
+        tracing::warn!(source = "github", "Failed to send SetIssueFilter: {e}");
     }
     Ok(())
 }
@@ -475,7 +600,13 @@ mod tests {
     use super::*;
     use crate::github::CheckSummary;
 
-    fn make_pr(state: &str, mergeable: &str, review: &str, failed: u32, pending: u32) -> BranchPrStatus {
+    fn make_pr(
+        state: &str,
+        mergeable: &str,
+        review: &str,
+        failed: u32,
+        pending: u32,
+    ) -> BranchPrStatus {
         BranchPrStatus {
             branch: "feat/test".to_string(),
             number: 42,
@@ -484,7 +615,12 @@ mod tests {
             url: String::new(),
             additions: 0,
             deletions: 0,
-            checks: CheckSummary { passed: 0, failed, pending, total: failed + pending },
+            checks: CheckSummary {
+                passed: 0,
+                failed,
+                pending,
+                total: failed + pending,
+            },
             check_details: vec![],
             author: String::new(),
             commits: 1,

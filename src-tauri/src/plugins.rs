@@ -26,9 +26,7 @@ use tauri::{AppHandle, Emitter};
 /// Built-in plugins and their allowed capabilities.
 /// Hardcoded in Rust to maintain the security model — the frontend cannot
 /// self-register arbitrary capabilities for built-in plugins.
-const BUILTIN_PLUGIN_CAPABILITIES: &[(&str, &[&str])] = &[
-    ("plan", &["fs:read"]),
-];
+const BUILTIN_PLUGIN_CAPABILITIES: &[(&str, &[&str])] = &[("plan", &["fs:read"])];
 
 fn check_plugin_capability_inner(
     loaded_plugins: &dashmap::DashMap<String, Vec<String>>,
@@ -119,14 +117,10 @@ const BLOCKED_BINARY_PREFIXES: &[&str] = &[
     // Shell interpreters
     "bash", "sh", "zsh", "fish", "ksh", "dash", "csh", "tcsh",
     // Scripting runtimes (prefix catches python3.11, nodejs, ruby3, etc.)
-    "python", "ruby", "perl", "node", "deno", "bun", "pypy", "jruby",
-    // Network tools
-    "curl", "wget", "nc", "netcat", "socat",
-    // Destructive filesystem tools
-    "rm", "mv", "cp", "chmod", "chown", "dd",
-    // Privilege escalation
-    "sudo", "su", "doas",
-    // Build / package tools (can run arbitrary scripts)
+    "python", "ruby", "perl", "node", "deno", "bun", "pypy", "jruby", // Network tools
+    "curl", "wget", "nc", "netcat", "socat", // Destructive filesystem tools
+    "rm", "mv", "cp", "chmod", "chown", "dd", // Privilege escalation
+    "sudo", "su", "doas", // Build / package tools (can run arbitrary scripts)
     "make", "cargo", "npm", "yarn", "pnpm", "pip", "go",
 ];
 
@@ -179,7 +173,10 @@ fn validate_manifest(manifest: &PluginManifest, dir_name: &str) -> Result<(), St
     }
     // main must not escape the plugin directory
     if is_path_escape(&manifest.main) {
-        return Err(format!("main \"{}\" attempts path traversal", manifest.main));
+        return Err(format!(
+            "main \"{}\" attempts path traversal",
+            manifest.main
+        ));
     }
     // Validate capabilities
     for cap in &manifest.capabilities {
@@ -190,12 +187,17 @@ fn validate_manifest(manifest: &PluginManifest, dir_name: &str) -> Result<(), St
     // Validate declared binaries
     for binary in &manifest.binaries {
         if binary.contains('/') || binary.contains('\\') || binary.contains("..") {
-            return Err(format!("binary name \"{binary}\" must not contain path separators"));
+            return Err(format!(
+                "binary name \"{binary}\" must not contain path separators"
+            ));
         }
         if binary.is_empty() {
             return Err("binary name must not be empty".into());
         }
-        if BLOCKED_BINARY_PREFIXES.iter().any(|prefix| binary.starts_with(prefix)) {
+        if BLOCKED_BINARY_PREFIXES
+            .iter()
+            .any(|prefix| binary.starts_with(prefix))
+        {
             return Err(format!(
                 "binary \"{binary}\" is blocked — shell interpreters, scripting runtimes, \
                  and destructive system tools are not permitted"
@@ -518,8 +520,7 @@ pub fn write_plugin_data(plugin_id: String, path: String, content: String) -> Re
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("Failed to create data directory: {e}"))?;
     }
-    std::fs::write(&file_path, &content)
-        .map_err(|e| format!("Failed to write plugin data: {e}"))
+    std::fs::write(&file_path, &content).map_err(|e| format!("Failed to write plugin data: {e}"))
 }
 
 #[cfg_attr(feature = "desktop", tauri::command)]
@@ -585,8 +586,7 @@ pub async fn install_plugin_from_url(
 
     let temp_dir = std::env::temp_dir();
     let temp_path = temp_dir.join(format!("tuic-plugin-{}.zip", uuid::Uuid::new_v4()));
-    std::fs::write(&temp_path, &bytes)
-        .map_err(|e| format!("Failed to write temp file: {e}"))?;
+    std::fs::write(&temp_path, &bytes).map_err(|e| format!("Failed to write temp file: {e}"))?;
 
     let result = install_zip_inner(&temp_path, &app_handle);
     let _ = std::fs::remove_file(&temp_path);
@@ -625,7 +625,10 @@ fn prepare_plugin_target(manifest: &PluginManifest) -> Result<PreparedTarget, St
     std::fs::create_dir_all(&target_dir)
         .map_err(|e| format!("Failed to create plugin dir: {e}"))?;
 
-    Ok(PreparedTarget { path: target_dir, data_backup })
+    Ok(PreparedTarget {
+        path: target_dir,
+        data_backup,
+    })
 }
 
 #[cfg(feature = "desktop")]
@@ -642,7 +645,9 @@ fn finalize_plugin_install(
 
     let _ = app_handle.emit("plugin-changed", vec![manifest.id.clone()]);
     crate::app_logger::log_via_handle(
-        app_handle, "info", "plugin",
+        app_handle,
+        "info",
+        "plugin",
         &format!("Installed plugin \"{}\" v{}", manifest.id, manifest.version),
     );
     Ok(manifest.clone())
@@ -652,7 +657,9 @@ fn finalize_plugin_install(
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
     for entry in std::fs::read_dir(src).map_err(|e| format!("Failed to read dir: {e}"))? {
         let entry = entry.map_err(|e| format!("Dir entry error: {e}"))?;
-        let file_type = entry.file_type().map_err(|e| format!("File type error: {e}"))?;
+        let file_type = entry
+            .file_type()
+            .map_err(|e| format!("File type error: {e}"))?;
         let name = entry.file_name();
 
         // Skip data/ — it's handled by the backup/restore flow
@@ -695,10 +702,11 @@ pub async fn install_plugin_from_folder(
 
     let manifest_data = std::fs::read_to_string(&manifest_path)
         .map_err(|e| format!("Failed to read manifest.json: {e}"))?;
-    let manifest: PluginManifest = serde_json::from_str(&manifest_data)
-        .map_err(|e| format!("Invalid manifest.json: {e}"))?;
+    let manifest: PluginManifest =
+        serde_json::from_str(&manifest_data).map_err(|e| format!("Invalid manifest.json: {e}"))?;
 
-    let dir_name = src_dir.file_name()
+    let dir_name = src_dir
+        .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or(&manifest.id);
     validate_manifest(&manifest, dir_name)?;
@@ -715,10 +723,9 @@ fn install_zip_inner(
     zip_path: &std::path::Path,
     app_handle: &AppHandle,
 ) -> Result<PluginManifest, String> {
-    let file = std::fs::File::open(zip_path)
-        .map_err(|e| format!("Failed to open ZIP: {e}"))?;
-    let mut archive = zip::ZipArchive::new(file)
-        .map_err(|e| format!("Invalid ZIP archive: {e}"))?;
+    let file = std::fs::File::open(zip_path).map_err(|e| format!("Failed to open ZIP: {e}"))?;
+    let mut archive =
+        zip::ZipArchive::new(file).map_err(|e| format!("Invalid ZIP archive: {e}"))?;
 
     // Find manifest.json — may be at root or inside a single top-level dir
     let manifest_path = find_manifest_in_zip(&archive)?;
@@ -738,8 +745,8 @@ fn install_zip_inner(
         buf
     };
 
-    let manifest: PluginManifest = serde_json::from_str(&manifest_data)
-        .map_err(|e| format!("Invalid manifest.json: {e}"))?;
+    let manifest: PluginManifest =
+        serde_json::from_str(&manifest_data).map_err(|e| format!("Invalid manifest.json: {e}"))?;
 
     validate_manifest(&manifest, &manifest.id)?;
 
@@ -843,11 +850,15 @@ pub fn uninstall_plugin(id: String, app_handle: AppHandle) -> Result<(), String>
         return Ok(()); // Already gone
     }
 
-    std::fs::remove_dir_all(&dir)
-        .map_err(|e| format!("Failed to remove plugin directory: {e}"))?;
+    std::fs::remove_dir_all(&dir).map_err(|e| format!("Failed to remove plugin directory: {e}"))?;
 
     let _ = app_handle.emit("plugin-changed", vec![id.clone()]);
-    crate::app_logger::log_via_handle(&app_handle, "info", "plugin", &format!("Uninstalled plugin \"{id}\""));
+    crate::app_logger::log_via_handle(
+        &app_handle,
+        "info",
+        "plugin",
+        &format!("Uninstalled plugin \"{id}\""),
+    );
     Ok(())
 }
 
@@ -861,13 +872,18 @@ pub fn uninstall_plugin(id: String, app_handle: AppHandle) -> Result<(), String>
 pub fn start_plugin_watcher(app_handle: &AppHandle) {
     let dir = plugins_dir();
     if let Err(e) = std::fs::create_dir_all(&dir) {
-        crate::app_logger::log_via_handle(app_handle, "error", "plugin", &format!("[plugins] Failed to create plugins dir: {e}"));
+        crate::app_logger::log_via_handle(
+            app_handle,
+            "error",
+            "plugin",
+            &format!("[plugins] Failed to create plugins dir: {e}"),
+        );
         return;
     }
 
     let handle = app_handle.clone();
     std::thread::spawn(move || {
-        use notify::{Watcher, RecursiveMode};
+        use notify::{RecursiveMode, Watcher};
         use std::time::Duration;
 
         let (tx, rx) = std::sync::mpsc::channel();
@@ -879,17 +895,32 @@ pub fn start_plugin_watcher(app_handle: &AppHandle) {
         ) {
             Ok(w) => w,
             Err(e) => {
-                crate::app_logger::log_via_handle(&handle, "error", "plugin", &format!("[plugins] Failed to create watcher: {e}"));
+                crate::app_logger::log_via_handle(
+                    &handle,
+                    "error",
+                    "plugin",
+                    &format!("[plugins] Failed to create watcher: {e}"),
+                );
                 return;
             }
         };
 
         if let Err(e) = watcher.watch(&dir, RecursiveMode::Recursive) {
-            crate::app_logger::log_via_handle(&handle, "error", "plugin", &format!("[plugins] Failed to watch plugins dir: {e}"));
+            crate::app_logger::log_via_handle(
+                &handle,
+                "error",
+                "plugin",
+                &format!("[plugins] Failed to watch plugins dir: {e}"),
+            );
             return;
         }
 
-        crate::app_logger::log_via_handle(&handle, "info", "plugin", &format!("[plugins] Watching {dir:?} for changes"));
+        crate::app_logger::log_via_handle(
+            &handle,
+            "info",
+            "plugin",
+            &format!("[plugins] Watching {dir:?} for changes"),
+        );
 
         // Simple debounce: collect events for 500ms of quiet, then emit
         let debounce = Duration::from_millis(500);
@@ -900,7 +931,12 @@ pub fn start_plugin_watcher(app_handle: &AppHandle) {
             let event = match rx.recv() {
                 Ok(Ok(e)) => e,
                 Ok(Err(err)) => {
-                    crate::app_logger::log_via_handle(&handle, "warn", "plugin", &format!("[plugins] Watcher error: {err}"));
+                    crate::app_logger::log_via_handle(
+                        &handle,
+                        "warn",
+                        "plugin",
+                        &format!("[plugins] Watcher error: {err}"),
+                    );
                     continue;
                 }
                 Err(_) => break,
@@ -936,7 +972,12 @@ pub fn start_plugin_watcher(app_handle: &AppHandle) {
 
             // Debounce window expired — emit
             if !changed_ids.is_empty() {
-                crate::app_logger::log_via_handle(&handle, "info", "plugin", &format!("[plugins] Change detected in: {changed_ids:?}"));
+                crate::app_logger::log_via_handle(
+                    &handle,
+                    "info",
+                    "plugin",
+                    &format!("[plugins] Change detected in: {changed_ids:?}"),
+                );
                 let _ = handle.emit("plugin-changed", changed_ids.clone());
                 changed_ids.clear();
             }
@@ -1127,7 +1168,10 @@ mod tests {
         m.capabilities = vec!["exec:cli".into()];
         m.binaries = vec!["../../bin/bash".into()];
         let err = validate_manifest(&m, "test").unwrap_err();
-        assert!(err.contains("path separator"), "should reject path traversal: {err}");
+        assert!(
+            err.contains("path separator"),
+            "should reject path traversal: {err}"
+        );
     }
 
     #[test]
@@ -1266,10 +1310,7 @@ mod tests {
     #[test]
     fn find_manifest_missing() {
         let dir = tempfile::TempDir::new().unwrap();
-        let zip_path = create_test_zip(
-            dir.path(),
-            &[("main.js", "export default {}")],
-        );
+        let zip_path = create_test_zip(dir.path(), &[("main.js", "export default {}")]);
         let file = std::fs::File::open(&zip_path).unwrap();
         let archive = zip::ZipArchive::new(file).unwrap();
         let result = find_manifest_in_zip(&archive);
@@ -1293,15 +1334,18 @@ mod tests {
     #[test]
     fn check_capability_rejects_missing_capability() {
         let plugins = dashmap::DashMap::new();
-        plugins.insert(
-            "test-plugin".to_string(),
-            vec!["fs:read".to_string()],
-        );
+        plugins.insert("test-plugin".to_string(), vec!["fs:read".to_string()]);
         let result = check_plugin_capability_inner(&plugins, "test-plugin", "exec:cli");
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(err.contains("test-plugin"), "Error should mention plugin ID");
-        assert!(err.contains("exec:cli"), "Error should mention missing capability");
+        assert!(
+            err.contains("test-plugin"),
+            "Error should mention plugin ID"
+        );
+        assert!(
+            err.contains("exec:cli"),
+            "Error should mention missing capability"
+        );
     }
 
     #[test]
@@ -1310,7 +1354,10 @@ mod tests {
         let result = check_plugin_capability_inner(&plugins, "nonexistent", "fs:read");
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(err.contains("nonexistent"), "Error should mention unknown plugin ID");
+        assert!(
+            err.contains("nonexistent"),
+            "Error should mention unknown plugin ID"
+        );
     }
 
     #[test]

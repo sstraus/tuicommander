@@ -17,7 +17,7 @@ pub(crate) fn install(app_handle: tauri::AppHandle) {
     use block2::RcBlock;
     use objc2_app_kit::{NSEvent, NSEventMask, NSEventModifierFlags};
     use std::ptr::{self, NonNull};
-#[cfg(feature = "desktop")]
+    #[cfg(feature = "desktop")]
     use tauri::Emitter;
 
     let block = RcBlock::new(move |event: NonNull<NSEvent>| -> *mut NSEvent {
@@ -57,7 +57,10 @@ pub(crate) fn install(app_handle: tauri::AppHandle) {
     if monitor.is_some() {
         tracing::info!(source = "tab-shortcut", "Ctrl+Tab monitor installed");
     } else {
-        tracing::warn!(source = "tab-shortcut", "Failed to install Ctrl+Tab monitor");
+        tracing::warn!(
+            source = "tab-shortcut",
+            "Failed to install Ctrl+Tab monitor"
+        );
     }
 }
 

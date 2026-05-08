@@ -47,7 +47,10 @@ fn check_rate_limit(plugin_id: &str) -> Result<(), String> {
     let window = Duration::from_secs(60);
 
     // Evict timestamps older than the window
-    while timestamps.front().is_some_and(|t| now.duration_since(*t) > window) {
+    while timestamps
+        .front()
+        .is_some_and(|t| now.duration_since(*t) > window)
+    {
         timestamps.pop_front();
     }
 
@@ -85,10 +88,7 @@ fn trusted_dirs() -> Vec<std::path::PathBuf> {
 #[cfg(windows)]
 fn trusted_dirs() -> Vec<std::path::PathBuf> {
     let home = dirs::home_dir().unwrap_or_default();
-    vec![
-        home.join(".cargo\\bin"),
-        home.join(".local\\bin"),
-    ]
+    vec![home.join(".cargo\\bin"), home.join(".local\\bin")]
 }
 
 /// Resolve a binary name to an absolute path using known install locations
@@ -196,7 +196,11 @@ async fn plugin_exec_cli_inner(
     if !allowed_binaries.iter().any(|b| b == &binary) {
         return Err(format!(
             "Binary \"{binary}\" is not declared in plugin \"{plugin_id}\" manifest binaries. Declared: {}",
-            if allowed_binaries.is_empty() { "(none)".to_string() } else { allowed_binaries.join(", ") }
+            if allowed_binaries.is_empty() {
+                "(none)".to_string()
+            } else {
+                allowed_binaries.join(", ")
+            }
         ));
     }
 
@@ -229,24 +233,33 @@ async fn plugin_exec_cli_inner(
     let first_arg = args.first().cloned().unwrap_or_default();
 
     // Spawn and wait with timeout — kill child on timeout
-    let mut child = cmd.spawn()
+    let mut child = cmd
+        .spawn()
         .map_err(|e| format!("Failed to execute \"{binary}\": {e}"))?;
 
     // Take stdout/stderr handles before waiting so we can read them after wait()
-    let mut stdout_pipe = child.stdout.take()
+    let mut stdout_pipe = child
+        .stdout
+        .take()
         .ok_or_else(|| "Failed to capture stdout".to_string())?;
-    let mut stderr_pipe = child.stderr.take()
+    let mut stderr_pipe = child
+        .stderr
+        .take()
         .ok_or_else(|| "Failed to capture stderr".to_string())?;
 
     let status = match tokio::time::timeout(
         Duration::from_secs(MAX_EXEC_TIMEOUT_SECS),
         child.wait(),
-    ).await {
+    )
+    .await
+    {
         Ok(s) => s.map_err(|e| format!("Failed to execute \"{binary}\": {e}"))?,
         Err(_) => {
             // Timeout: kill the child process to prevent zombies
             let _ = child.kill().await;
-            return Err(format!("Command \"{binary}\" timed out after {MAX_EXEC_TIMEOUT_SECS}s"));
+            return Err(format!(
+                "Command \"{binary}\" timed out after {MAX_EXEC_TIMEOUT_SECS}s"
+            ));
         }
     };
 
@@ -306,7 +319,10 @@ mod tests {
             let p = std::path::Path::new(&path);
             assert!(p.exists(), "Resolved path must exist");
             // Verify the resolved path is within a trusted directory
-            assert!(is_in_trusted_dir(p), "Resolved path must be in a trusted dir");
+            assert!(
+                is_in_trusted_dir(p),
+                "Resolved path must be in a trusted dir"
+            );
         }
     }
 
