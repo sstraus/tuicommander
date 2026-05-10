@@ -1351,6 +1351,15 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 		currentFrame = frame;
 
+		if (selectionStart && cachedSelectionText && frame.rows.length >= screenRowCount) {
+			const nowText = getLocalSelectionText();
+			if (nowText !== cachedSelectionText) {
+				selectionStart = null;
+				selectionEnd = null;
+				cachedSelectionText = "";
+			}
+		}
+
 		// Ack on receive, not after paint. Otherwise the backend is forced to wait
 		// until the frontend has displayed an intermediate PTY state (for example a
 		// newline carrying the previous SGR background before the CLI writes reset/text).

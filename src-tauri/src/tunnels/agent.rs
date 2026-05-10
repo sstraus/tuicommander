@@ -60,28 +60,26 @@ pub fn agent_socket_env(socket: &Path) -> Vec<(String, String)> {
 /// Return the 1Password agent socket path for the current platform, without
 /// checking whether it exists.
 fn one_password_socket() -> Option<PathBuf> {
-    let home = home_dir()?;
-
     #[cfg(target_os = "macos")]
     {
-        Some(
+        let home = home_dir()?;
+        return Some(
             home.join("Library")
                 .join("Group Containers")
                 .join("2BUA8C4S2C.com.1password")
                 .join("t")
                 .join("agent.sock"),
-        )
+        );
     }
 
     #[cfg(target_os = "linux")]
     {
-        Some(home.join(".1password").join("agent.sock"))
+        let home = home_dir()?;
+        return Some(home.join(".1password").join("agent.sock"));
     }
 
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-    {
-        None
-    }
+    #[allow(unreachable_code)]
+    None
 }
 
 /// Returns the home directory as a `PathBuf`.
@@ -121,7 +119,6 @@ fn keyring_socket() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use tempfile::NamedTempFile;
 
     /// `SSH_AUTH_SOCK` pointing at an existing file is returned immediately.

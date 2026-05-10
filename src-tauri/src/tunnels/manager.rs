@@ -45,7 +45,14 @@ impl TunnelManager {
                 TunnelStatus::Error { .. } => EventKind::Error,
                 TunnelStatus::Starting => return, // Starting is logged via Started below
             };
-            let detail = serde_json::json!({ "status": format!("{status:?}") });
+            let detail = match &status {
+                TunnelStatus::Error { message } => serde_json::json!({ "message": message }),
+                TunnelStatus::Stopped { reason } => serde_json::json!({ "reason": reason }),
+                TunnelStatus::Reconnecting { attempt, reason } => {
+                    serde_json::json!({ "attempt": attempt, "reason": reason })
+                }
+                _ => serde_json::json!({}),
+            };
             let _ = audit_cb.lock().insert(&cb_id, kind, detail);
         };
 
@@ -151,6 +158,7 @@ mod tests {
             identity_file: None,
             forwards: Vec::new(),
             options: super::super::profile::ProfileOptions::default(),
+            auto_connect: false,
         }
     }
 
@@ -181,7 +189,14 @@ mod tests {
                 TunnelStatus::Error { .. } => EventKind::Error,
                 TunnelStatus::Starting => return,
             };
-            let detail = serde_json::json!({ "status": format!("{status:?}") });
+            let detail = match &status {
+                TunnelStatus::Error { message } => serde_json::json!({ "message": message }),
+                TunnelStatus::Stopped { reason } => serde_json::json!({ "reason": reason }),
+                TunnelStatus::Reconnecting { attempt, reason } => {
+                    serde_json::json!({ "attempt": attempt, "reason": reason })
+                }
+                _ => serde_json::json!({}),
+            };
             let _ = audit_cb.lock().insert(&cb_id, kind, detail);
         };
 

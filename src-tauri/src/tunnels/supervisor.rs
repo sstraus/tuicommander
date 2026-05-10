@@ -12,7 +12,7 @@ use super::agent::discover_agent_socket;
 use super::backoff::BackoffCalculator;
 use super::classifier::{ExitReason, classify_exit};
 use super::command::{build_ssh_args, build_ssh_env};
-use super::port::is_local_port_free;
+use super::port::{check_local_port, kill_ssh_on_port};
 use super::profile::{ForwardSpec, TunnelProfile};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -66,20 +66,24 @@ impl TunnelSupervisor {
         }
 
         // Check port availability for all Local forwards.
+        // If a port is in use, try to kill orphaned SSH processes holding it.
         for forward in &profile.forwards {
             if let ForwardSpec::Local { bind_port, .. } = forward
-                && !is_local_port_free(*bind_port).await
+                && check_local_port(*bind_port).await.is_err()
             {
-                let msg = format!("local port {bind_port} is already in use");
-                let error_status = TunnelStatus::Error { message: msg };
-                *status.lock() = error_status.clone();
-                status_callback(error_status);
-                return Self {
-                    profile,
-                    status,
-                    shutdown_tx: None,
-                    ssh_binary,
-                };
+                kill_ssh_on_port(*bind_port).await;
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                if let Err(msg) = check_local_port(*bind_port).await {
+                    let error_status = TunnelStatus::Error { message: msg };
+                    *status.lock() = error_status.clone();
+                    status_callback(error_status);
+                    return Self {
+                        profile,
+                        status,
+                        shutdown_tx: None,
+                        ssh_binary,
+                    };
+                }
             }
         }
 
@@ -310,34 +314,32 @@ async fn read_stderr(child: &mut tokio::process::Child) -> String {
 
 /// Send SIGTERM, wait 5s, escalate to SIGKILL.
 async fn graceful_kill(child: &mut tokio::process::Child) {
+    #[cfg(unix)]
     if let Some(id) = child.id() {
-        #[cfg(unix)]
-        {
-            match i32::try_from(id) {
-                Ok(pid) => {
-                    // SAFETY: `pid` is from `child.id()` which returns the OS PID of
-                    // a child process we spawned and have not yet waited on.
-                    // SIGTERM has no preconditions beyond a valid PID.
-                    unsafe {
-                        libc::kill(pid, libc::SIGTERM);
-                    }
-                }
-                Err(_) => {
-                    tracing::warn!(
-                        source = "tunnel_supervisor",
-                        raw_pid = id,
-                        "PID overflows i32, escalating to SIGKILL"
-                    );
-                    let _ = child.kill().await;
-                    return;
+        match i32::try_from(id) {
+            Ok(pid) => {
+                // SAFETY: `pid` is from `child.id()` which returns the OS PID of
+                // a child process we spawned and have not yet waited on.
+                // SIGTERM has no preconditions beyond a valid PID.
+                unsafe {
+                    libc::kill(pid, libc::SIGTERM);
                 }
             }
+            Err(_) => {
+                tracing::warn!(
+                    source = "tunnel_supervisor",
+                    raw_pid = id,
+                    "PID overflows i32, escalating to SIGKILL"
+                );
+                let _ = child.kill().await;
+                return;
+            }
         }
-        #[cfg(not(unix))]
-        {
-            let _ = child.kill().await;
-            return;
-        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = child.kill().await;
+        return;
     }
 
     // Wait up to 5s for clean exit, then escalate.
@@ -354,7 +356,7 @@ mod tests {
     use super::*;
     use std::io::Write;
     use std::net::SocketAddr;
-    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::atomic::AtomicU32;
     use tempfile::NamedTempFile;
     use tokio::net::TcpListener;
 
@@ -380,6 +382,7 @@ mod tests {
             identity_file: None,
             forwards: Vec::new(),
             options: super::super::profile::ProfileOptions::default(),
+            auto_connect: false,
         }
     }
 
@@ -517,7 +520,7 @@ mod tests {
     async fn graceful_shutdown() {
         // Script that sleeps forever.
         let script = fake_ssh_script("sleep 3600");
-        let (cb, statuses) = status_collector();
+        let (cb, _statuses) = status_collector();
 
         let mut sup =
             TunnelSupervisor::start_with_binary(test_profile(), script.path().to_path_buf(), cb)

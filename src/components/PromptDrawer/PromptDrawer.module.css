@@ -266,6 +266,7 @@
   border-radius: var(--radius-lg);
   color: var(--fg-primary);
   font-size: var(--font-base);
+  outline: none;
 }
 
 .variableActions {
@@ -347,6 +348,7 @@
   font-size: var(--font-base);
   font-family: inherit;
   box-sizing: border-box;
+  outline: none;
 }
 
 .editorField textarea {

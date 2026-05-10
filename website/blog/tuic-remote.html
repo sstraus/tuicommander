@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>One daemon, every environment: meet tuicommander-remote — TUICommander Blog</title>
+  <meta name="description" content="A headless Rust daemon that brings TUICommander into WSL, Docker dev containers, and remote servers. One protocol, no path translation, no cross-OS shims." />
+
+  <meta property="og:title" content="One daemon, every environment: meet tuicommander-remote — TUICommander" />
+  <meta property="og:description" content="A headless Rust daemon that brings TUICommander into WSL, Docker dev containers, and remote servers. One protocol, no path translation, no cross-OS shims." />
+  <meta property="og:type" content="article" />
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/style.css" />
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PCXPSMR9JZ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-PCXPSMR9JZ');
+  </script>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="/" class="nav-logo">
+        <img src="/logo.png" alt="TUICommander" width="28" height="28" />
+        <span>TUICommander</span>
+      </a>
+      <div class="nav-links">
+        <a href="/#features">Features</a>
+        <a href="/blog.html" class="nav-active">Blog</a>
+        <a href="/#faq">FAQ</a>
+        <a href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary btn-sm" rel="noopener noreferrer">Download</a>
+      </div>
+    </div>
+  </nav>
+
+  <article class="blog-post">
+    <header class="blog-post-header">
+      <a href="/blog.html" class="blog-back">&larr; Blog</a>
+      <time>May 8, 2026</time>
+      <h1>One daemon, every environment: meet tuicommander-remote</h1>
+      <p class="blog-post-summary">A headless Rust daemon that runs <em>inside</em> WSL, Docker dev containers, and remote servers — and lets the desktop app drive them as if they were local. No path translation. No cross-OS shims. One protocol the frontend already speaks.</p>
+    </header>
+
+    <div class="blog-section">
+      <h2>The problem: TUICommander only saw the local machine</h2>
+      <p>For most users, "where the agent runs" and "where the desktop app runs" are the same machine. For a growing chunk of users, they aren't.</p>
+      <p>The clearest case came in <a href="https://github.com/sstraus/tuicommander/issues/20" rel="noopener noreferrer">issue #20</a>: a Windows user with WSL2 as their development environment. Claude Code, Codex CLI, Gemini CLI — all installed inside WSL because that's where the toolchain, the repos, and the project's <code>node_modules</code> live. TUICommander on Windows could spawn a <code>wsl.exe</code> shell, but that's where the integration ended:</p>
+      <ul>
+        <li>Agent detection ran <code>where claude</code> on Windows paths and missed <code>~/.local/bin/claude</code> in WSL.</li>
+        <li>MCP configs were written to <code>C:\Users\&lt;name&gt;\.claude.json</code> — the WSL agent reads from <code>/home/&lt;user&gt;/.claude.json</code> and never saw them.</li>
+        <li>The MCP bridge listened on a Windows named pipe (<code>\\.\pipe\tuicommander-mcp</code>) that WSL processes can't reach without extra plumbing.</li>
+        <li>UNC paths like <code>\\wsl.localhost\Ubuntu\home\user\project</code> can't be used as a working directory by <code>CreateProcessW</code> at all.</li>
+      </ul>
+      <p>The same shape of problem keeps showing up:</p>
+      <ul>
+        <li><strong>Docker dev containers.</strong> The agent should run inside the container so dependencies, env vars, and filesystem isolation match the project. From the desktop side, you're looking at a separate Linux userspace with its own paths.</li>
+        <li><strong>Remote servers.</strong> Beefy VPS, cloud dev machines, internal lab servers. SSH gets you a shell, but the parsed terminal state, agent detection, MCP bridge, repo/PR awareness — all of that lives in the desktop process and never makes it across.</li>
+      </ul>
+      <p>We could have shipped three special cases — a WSL mode, a Docker mode, an SSH mode — each with its own path translation, each fragile in different ways. Instead we built one thing.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>The shape of the answer: run the backend where the code lives</h2>
+      <p><code>tuicommander-remote</code> is a headless Rust binary that contains the same backend the desktop app uses, minus the desktop bits. It runs <em>inside</em> the target environment — the WSL distro, the Docker container, the remote host — and the desktop app talks to it over HTTP/WebSocket.</p>
+      <pre><code>TUIC Desktop / PWA (client)
+    &#9500;&#9472; localhost            (embedded backend, today &mdash; no change)
+    &#9500;&#9472; wsl-ubuntu:9877      (tuicommander-remote in WSL)
+    &#9500;&#9472; container:9877       (tuicommander-remote in a dev container)
+    &#9492;&#9472; vps.example.com:9877 (tuicommander-remote on a server)</code></pre>
+      <p>The key insight: <strong>185 of ~200 backend commands already had HTTP mappings</strong>. We built them months ago for the PWA / browser mode that powers couch-from-the-iPad and phone access. The remote daemon isn't a new protocol — it's the existing protocol pointed at a different host.</p>
+      <p>The Axum HTTP server already runs unconditionally inside the desktop app. Two fields on <code>AppState</code> were Tauri-specific (<code>app_handle</code>, <code>grid_channels</code>) and both already had non-Tauri equivalents bypassed in browser mode. So "extracting a daemon" mostly meant: take what already runs, drop the WebView shell, ship it as a separate binary.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Use case 1: WSL on Windows</h2>
+      <p>You install <code>tuicommander-remote</code> inside your WSL distro. It binds to <code>127.0.0.1:9877</code> — invisible to the public internet, reachable from Windows because WSL2's loopback is shared. The Windows desktop app adds a connection pointing at it, and that connection becomes a routing target for any repo you flag as "lives in WSL".</p>
+      <p>Every problem in issue #20 dissolves the same way: <strong>there is no cross-OS boundary in the execution path.</strong></p>
+      <table class="blog-compare">
+        <thead>
+          <tr><th>Problem</th><th>Resolution under tuicommander-remote</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Agent detection misses WSL binaries</td><td>Daemon runs <code>which claude</code> natively inside WSL</td></tr>
+          <tr><td>MCP config written to wrong filesystem</td><td>Daemon writes to <code>~/.claude.json</code> inside WSL — same FS the agent reads from</td></tr>
+          <tr><td>MCP bridge unreachable from WSL agents</td><td>Bridge runs in WSL, agents connect via plain localhost</td></tr>
+          <tr><td>PTY env vars (TERM_PROGRAM, COLORTERM) skipped on Windows</td><td>Daemon spawns Linux PTYs natively with full env</td></tr>
+          <tr><td>UNC paths fail as <code>cwd</code> for <code>CreateProcessW</code></td><td>No path translation — daemon uses native Linux paths</td></tr>
+        </tbody>
+      </table>
+      <p>The only cross-OS hop is the WebSocket from the Windows desktop to the WSL daemon. That's TCP over a virtual loopback. It's the boring part.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Use case 2: isolated Docker dev containers</h2>
+      <p>If you've ever run <code>npm install</code> in a project and then watched your global Node version get sideways, you know why people care about dev containers. The agent should run where the project's dependencies, lockfiles, and runtime versions are pinned — not on your laptop's host.</p>
+      <p>With the daemon, the workflow is:</p>
+      <ol>
+        <li>Build a container image with <code>tuicommander-remote</code> baked in (or <code>docker cp</code> it into a running one).</li>
+        <li>Start it with the project mounted, port <code>9877</code> exposed to the host.</li>
+        <li>Add the connection in TUICommander Settings.</li>
+      </ol>
+      <p>From there, agents you spawn against that repo run inside the container. Their <code>node_modules</code> is the container's. Their <code>$PATH</code> is the container's. Their MCP bridge is the container's. If you tear the container down, nothing leaks back to the host. Spin up three containers with three different toolchains, point the desktop at all three, and run agents against each in parallel — the desktop app doesn't care that they're separate userspaces.</p>
+      <p>The daemon is small enough that this is reasonable: estimated ~15-20 MB, statically linked, no system dependencies. It runs on Alpine.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Use case 3: remote servers</h2>
+      <p>The use cases here run together. A VPS where you actually have CPU and bandwidth for long agent runs. A lab server with a GPU and a private dataset. A cloud dev machine that's always-on so you can pick up where you left off from any laptop. A teammate's machine you've been invited to pair on.</p>
+      <p>SSH gets you a terminal. It does not get you the parsed state, the agent detection, the activity dashboard, the repo-aware UI, or the MCP bridge. Those all live in the backend process. Run the backend on the remote box and they all come with you.</p>
+      <p>Auth scales with the threat model:</p>
+      <ul>
+        <li><strong>Bearer token + localhost binding</strong> for LAN and WSL — the simple case.</li>
+        <li><strong>Tailscale</strong> for "anywhere on my devices" — TLS via <code>tailscale cert</code>, identity via WireGuard. We already implemented this for PWA access.</li>
+        <li><strong>mTLS</strong> for public-internet exposure without Tailscale — ephemeral CA, pinned client cert exchanged once at setup.</li>
+        <li><strong>SSH tunnel</strong> for environments where you only have SSH — daemon binds localhost, you forward the port. Zero custom auth.</li>
+      </ul>
+      <p>One hard rule, enforced in code: the daemon binds to <code>127.0.0.1</code> by default. Public binding requires Tailscale or mTLS — there's no setting that turns a token-only daemon into a publicly-reachable service. That mistake should be impossible to make.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Why a separate binary, not "Tauri in headless mode"</h2>
+      <p>Running the desktop app with the GUI hidden was the obvious shortcut. We didn't take it. The Tauri shell bundles a WebView runtime, a clipboard plugin, an updater, deep-link handling, a global-shortcut subsystem, a single-instance lock, the Whisper model loader for dictation, and a system tray. None of that belongs in a daemon you're going to deploy to an Alpine container.</p>
+      <p>So we extracted the shared core into a workspace crate, <code>tuic-core</code>, and built two binaries against it:</p>
+      <pre><code>tuicommander/
+&#9500;&#9472;&#9472; src-tauri/                    # Desktop app (Tauri shell + plugins)
+&#9500;&#9472;&#9472; tuicommander-remote/          # Headless daemon (Axum only)
+&#9492;&#9472;&#9472; crates/
+    &#9492;&#9472;&#9472; tuic-core/                # Shared: state, PTY, git, MCP, file ops, HTTP routes</code></pre>
+      <p>This is the same pattern Zed uses (<code>zed-remote-server</code>) and the same shape Warp ships. Same code, two builds, zero divergence risk because there's only one place the logic lives.</p>
+      <p>The size and surface differences are real:</p>
+      <table class="blog-compare">
+        <thead>
+          <tr><th></th><th>Desktop</th><th>tuicommander-remote</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Binary size</td><td>~50–80 MB</td><td>~15–20 MB (static)</td></tr>
+          <tr><td>System deps</td><td>WebView2 / WebKitGTK</td><td>None</td></tr>
+          <tr><td>Startup</td><td>Seconds</td><td>Milliseconds</td></tr>
+          <tr><td>Attack surface</td><td>Clipboard, opener, hotkeys, mic</td><td>PTY, git, MCP, file ops</td></tr>
+          <tr><td>Container-friendly</td><td>No</td><td>Yes</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="blog-section">
+      <h2>What's already on <code>main</code>, and what's next</h2>
+      <p>Phase 1 — the <code>tuic-core</code> extraction and a working headless binary — landed on the <code>feat/remote-daemon</code> branch and is being merged in stages. The Tauri-specific fields on <code>AppState</code> are <code>cfg</code>-gated, the binary entry point exists, and the daemon serves requests against the same Axum routes the desktop uses.</p>
+      <p>Phase 2 is the connection manager UI — adding remote hosts in Settings, tagging repos with a connection, transport routing. That's the work that turns "the daemon runs" into "you can actually use it from the GUI without editing config files."</p>
+      <p>Phase 3 is deployment ergonomics: <code>tuic remote install &lt;host&gt;</code> to copy the binary over SSH or <code>docker cp</code>, generate a one-time pairing token, register it in the desktop. The goal is that adding a new environment is a single command, not a checklist.</p>
+      <p>And there are two quick wins from issue #20 that are independent of the daemon and worth shipping anyway: parsing shell arguments (so <code>wsl.exe -d Ubuntu -- /bin/zsh -l</code> works as a shell setting) and injecting <code>TERM_PROGRAM</code>/<code>COLORTERM</code>/<code>KITTY_WINDOW_ID</code> when spawning WSL shells. Those land sooner.</p>
+      <p>The bigger arc, though, is that "where TUICommander runs" stops mattering. You have a single window. You have a sidebar with repos. Some of them happen to live on your laptop, some inside a container, some on a server in a different country. The agents run where the code is. The desktop drives them. The line between local and remote becomes a connection setting in the same panel as your theme.</p>
+    </div>
+  </article>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sstraus/tuicommander" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/sstraus/tuicommander/releases" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/FEATURES.md" rel="noopener noreferrer">Docs</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin API</a>
+      </div>
+      <p>Apache License 2.0 &copy; 2026 Stefano Straus</p>
+      <p class="footer-tech">Built with Rust, Tauri v2, SolidJS</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

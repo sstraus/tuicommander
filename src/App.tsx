@@ -25,6 +25,7 @@ import { editorTabsStore } from "./stores/editorTabs";
 
 const SettingsPanel = lazy(() => import("./components/SettingsPanel").then((m) => ({ default: m.SettingsPanel })));
 
+import releaseNotes from "./assets/release-notes.json";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ContextMenu, type ContextMenuItem, createContextMenu } from "./components/ContextMenu";
 import { CreateWorktreeDialog } from "./components/CreateWorktreeDialog";
@@ -41,7 +42,6 @@ import { TaskQueuePanel } from "./components/TaskQueuePanel";
 import { getCompletionSuppression } from "./components/Terminal/completionDecision";
 import { UpdateProgressDialog } from "./components/UpdateProgressDialog";
 import { WhatsNewDialog } from "./components/WhatsNewDialog/WhatsNewDialog";
-import releaseNotes from "./assets/release-notes.json";
 import { executeCleanup } from "./hooks/usePostMergeCleanup";
 
 const HelpPanel = lazy(() => import("./components/HelpPanel").then((m) => ({ default: m.HelpPanel })));
@@ -292,11 +292,10 @@ const App: Component = () => {
 		const v = whatsNewVersion();
 		if (!v) return null;
 		return (
-			releaseNotes as Record<
-				string,
-				{ highlights: string[]; contributions?: { text: string; author: string }[] }
-			>
-		)[v] ?? null;
+			(releaseNotes as Record<string, { highlights: string[]; contributions?: { text: string; author: string }[] }>)[
+				v
+			] ?? null
+		);
 	};
 
 	// Drop on folder: when source is a directory, we pause to ask for confirmation.

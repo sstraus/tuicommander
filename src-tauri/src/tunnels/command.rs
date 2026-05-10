@@ -114,6 +114,7 @@ mod tests {
             identity_file: None,
             forwards: Vec::new(),
             options: ProfileOptions::default(),
+            auto_connect: false,
         }
     }
 

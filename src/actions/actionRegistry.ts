@@ -9,6 +9,7 @@ import type { ShortcutHandlers } from "../hooks/useKeyboardShortcuts";
 import type { ActionName } from "../keybindingDefaults";
 import { keybindingsStore } from "../stores/keybindings";
 import { settingsStore } from "../stores/settings";
+import { tunnelPanelStore } from "../stores/tunnelPanel";
 import { comboToDisplay } from "../utils/hotkey";
 
 export interface ActionEntry {
@@ -86,6 +87,7 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
 	"command-overview": { label: "Command overview", category: "Panels" },
 	"ai-triage": { label: "AI Triage", category: "Panels" },
 	"detach-activity-dashboard": { label: "Open Activity Dashboard in separate window", category: "Navigation" },
+	"toggle-tunnels": { label: "SSH Tunnels", category: "Panels" },
 };
 
 /**
@@ -152,6 +154,7 @@ export function getActionEntries(handlers: ShortcutHandlers): ActionEntry[] {
 		"command-overview": handlers.toggleCommandOverview,
 		"ai-triage": handlers.openAiTriage,
 		"detach-activity-dashboard": handlers.detachActivityDashboard,
+		"toggle-tunnels": () => tunnelPanelStore.toggle(),
 	};
 
 	// Defensive dedup-by-id — today ACTION_META is a Record so ids are unique by

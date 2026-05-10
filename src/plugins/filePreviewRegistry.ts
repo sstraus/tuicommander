@@ -14,11 +14,7 @@ export interface FilePreviewContext {
 function createFilePreviewRegistry() {
 	const registry = new Map<string, FilePreviewHandler>();
 
-	function register(
-		pluginId: string,
-		extensions: string[],
-		handler: FilePreviewHandler["onOpen"],
-	): Disposable {
+	function register(pluginId: string, extensions: string[], handler: FilePreviewHandler["onOpen"]): Disposable {
 		const normalized = extensions.map((e) => e.toLowerCase());
 		for (const ext of normalized) {
 			registry.set(ext, { pluginId, onOpen: handler });

@@ -16,6 +16,7 @@ export interface TunnelProfile {
 	identity_file: string | null;
 	forwards: ForwardSpec[];
 	options: ProfileOptions;
+	auto_connect: boolean;
 }
 
 export interface ForwardSpec {
@@ -93,6 +94,15 @@ function createTunnelsStore() {
 				});
 
 				hydrated = true;
+
+				// Auto-connect profiles that aren't already active
+				for (const profile of profiles ?? []) {
+					if (profile.auto_connect && !activeTunnelsMap[profile.id]) {
+						actions.startTunnel(profile.id).catch((err) => {
+							appLogger.error("store", `Auto-connect failed for ${profile.name}`, err);
+						});
+					}
+				}
 			} catch (err) {
 				appLogger.error("store", "Failed to hydrate tunnels", err);
 				// hydrated stays false — safe to retry

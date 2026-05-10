@@ -3572,7 +3572,10 @@ mod tests {
         let git_dir = resolve_git_dir(&repo).expect("should resolve git dir");
         let main_ref = detect_default_branch(&git_dir).expect("should detect a default branch");
         let result = get_last_commit_timestamps(&repo, &[main_ref.clone()]);
-        assert!(result.contains_key(&main_ref), "should contain the main ref key");
+        assert!(
+            result.contains_key(&main_ref),
+            "should contain the main ref key"
+        );
         let ts = result[&main_ref];
         assert!(ts.is_some(), "main branch should have a commit timestamp");
         // Timestamp should be reasonable (after 2024-01-01 = 1704067200)

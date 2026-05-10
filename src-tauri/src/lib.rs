@@ -1501,7 +1501,17 @@ pub fn run() {
             tuic_cli::uninstall_cli,
             tuic_cli::dismiss_cli_prompt,
             tuic_cli::get_last_seen_version,
-            tuic_cli::set_last_seen_version
+            tuic_cli::set_last_seen_version,
+            tunnels::tauri_commands::list_tunnel_profiles,
+            tunnels::tauri_commands::save_tunnel_profile,
+            tunnels::tauri_commands::delete_tunnel_profile,
+            tunnels::tauri_commands::start_tunnel,
+            tunnels::tauri_commands::stop_tunnel,
+            tunnels::tauri_commands::list_active_tunnels,
+            tunnels::tauri_commands::get_tunnel_status,
+            tunnels::tauri_commands::list_ssh_config_hosts,
+            tunnels::tauri_commands::list_ssh_agent_keys,
+            tunnels::tauri_commands::get_tunnel_audit
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -1545,10 +1555,9 @@ pub fn run() {
                     if let Some(dictation) = app_handle.try_state::<dictation::DictationState>() {
                         dictation.shutdown();
                     }
-                    // Drain any remaining dirty knowledge entries to disk
-                    // before the process exits. Without this, outcomes
-                    // recorded in the last <2s window are lost. (#1374-b298)
+                    // Kill all SSH tunnel processes so ports are freed for restart
                     if let Some(state) = app_handle.try_state::<Arc<AppState>>() {
+                        state.tunnel_manager.shutdown_all();
                         crate::ai_agent::knowledge::flush_dirty(state.inner());
                     }
                 }

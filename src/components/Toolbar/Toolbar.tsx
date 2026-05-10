@@ -1,4 +1,5 @@
 import { type Component, createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import releaseNotes from "../../assets/release-notes.json";
 import { useGitHub } from "../../hooks/useGitHub";
 import { t } from "../../i18n";
 import type { ActivityItem } from "../../plugins/types";
@@ -12,7 +13,6 @@ import { repositoriesStore } from "../../stores/repositories";
 import { settingsStore } from "../../stores/settings";
 import { uiStore } from "../../stores/ui";
 import { updaterStore } from "../../stores/updater";
-import releaseNotes from "../../assets/release-notes.json";
 import { cx } from "../../utils";
 import { keyFor } from "../../utils/hotkey";
 import { getRepoColor } from "../../utils/repoColor";
@@ -402,9 +402,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 										<Show
 											when={
 												updaterStore.state.version &&
-												(releaseNotes as Record<string, unknown>)[
-													updaterStore.state.version.replace(/[-+].*$/, "")
-												] &&
+												(releaseNotes as Record<string, unknown>)[updaterStore.state.version.replace(/[-+].*$/, "")] &&
 												props.onShowWhatsNew
 											}
 										>

@@ -1,8 +1,22 @@
+import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { type Component, createSignal, For, onMount, Show } from "solid-js";
 import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
 import type { ForwardSpec, ProfileOptions, TunnelProfile } from "../../stores/tunnels";
 import { tunnelsStore } from "../../stores/tunnels";
+import s from "../SettingsPanel/Settings.module.css";
+import d from "../shared/dialog.module.css";
+
+interface AgentKey {
+	fingerprint: string;
+	comment: string;
+	key_type: string;
+}
+
+interface SshAgentInfo {
+	keys: AgentKey[];
+	agent_type: string;
+}
 
 interface TunnelEditorModalProps {
 	profile?: TunnelProfile;
@@ -30,21 +44,37 @@ export const TunnelEditorModal: Component<TunnelEditorModalProps> = (props) => {
 	const [user, setUser] = createSignal(props.profile?.user ?? "");
 	const [identityFile, setIdentityFile] = createSignal(props.profile?.identity_file ?? "");
 	const [forwards, setForwards] = createSignal<ForwardSpec[]>(props.profile?.forwards ?? []);
+	const [autoConnect, setAutoConnect] = createSignal(props.profile?.auto_connect ?? false);
 	const [options, setOptions] = createSignal<ProfileOptions>(props.profile?.options ?? defaultOptions());
 	const [saving, setSaving] = createSignal(false);
 	const [error, setError] = createSignal("");
 	const [sshHosts, setSshHosts] = createSignal<string[]>([]);
+	const [agentInfo, setAgentInfo] = createSignal<SshAgentInfo>({ keys: [], agent_type: "" });
 
 	onMount(async () => {
 		try {
-			const hosts = await invoke<string[]>("list_ssh_config_hosts");
+			const [hosts, info] = await Promise.all([
+				invoke<string[]>("list_ssh_config_hosts").catch(() => []),
+				invoke<SshAgentInfo>("list_ssh_agent_keys").catch(() => ({ keys: [], agent_type: "" })),
+			]);
 			if (hosts?.length) setSshHosts(hosts);
+			setAgentInfo(info);
 		} catch {
-			// ssh config parsing is best-effort
+			// best-effort
 		}
 	});
 
-	const addForward = () => setForwards((f) => [...f, emptyForward()]);
+	const browseIdentityFile = async () => {
+		const home = await invoke<string | null>("resolve_terminal_path", { path: "~/.ssh" }).catch(() => null);
+		const selected = await openFileDialog({
+			title: "Select SSH Identity File",
+			defaultPath: home ?? undefined,
+			multiple: false,
+		});
+		if (selected) setIdentityFile(selected);
+	};
+
+	const addForward = () => setForwards((f) => [...f, { ...emptyForward(), remote_host: host().trim() || undefined }]);
 	const removeForward = (idx: number) => setForwards((f) => f.filter((_, i) => i !== idx));
 	const updateForward = (idx: number, patch: Partial<ForwardSpec>) => {
 		setForwards((f) => f.map((fw, i) => (i === idx ? { ...fw, ...patch } : fw)));
@@ -72,6 +102,7 @@ export const TunnelEditorModal: Component<TunnelEditorModalProps> = (props) => {
 				identity_file: identityFile().trim() || null,
 				forwards: forwards(),
 				options: options(),
+				auto_connect: autoConnect(),
 			};
 
 			if (isEdit() && props.profile) {
@@ -89,165 +120,116 @@ export const TunnelEditorModal: Component<TunnelEditorModalProps> = (props) => {
 		}
 	};
 
-	const overlayStyle = {
-		position: "fixed",
-		inset: "0",
-		background: "rgba(0,0,0,0.6)",
-		display: "flex",
-		"align-items": "center",
-		"justify-content": "center",
-		"z-index": "1100",
-	} as const;
-
-	const modalStyle = {
-		width: "520px",
-		"max-width": "90vw",
-		"max-height": "80vh",
-		background: "var(--bg-secondary)",
-		"border-radius": "var(--radius-xl)",
-		border: "1px solid var(--border)",
-		"box-shadow": "var(--shadow-popup)",
-		display: "flex",
-		"flex-direction": "column",
-		overflow: "hidden",
-	} as const;
-
-	const headerStyle = {
-		padding: "12px 16px",
-		"border-bottom": "1px solid var(--border)",
-		"font-size": "var(--font-lg)",
-		"font-weight": "600",
-		margin: "0",
-	} as const;
-
-	const bodyStyle = {
-		padding: "16px",
-		"overflow-y": "auto",
-		flex: "1",
-		display: "flex",
-		"flex-direction": "column",
-		gap: "12px",
-	} as const;
-
-	const labelStyle = {
-		display: "flex",
-		"flex-direction": "column",
-		gap: "4px",
-		"font-size": "var(--font-sm)",
-		color: "var(--fg-secondary)",
-	} as const;
-
-	const inputStyle = {
-		background: "var(--bg-primary)",
-		border: "1px solid var(--border)",
-		"border-radius": "var(--radius-sm)",
-		padding: "6px 8px",
-		color: "var(--fg-primary)",
-		"font-size": "var(--font-md)",
-	} as const;
-
-	const rowStyle = {
-		display: "flex",
-		gap: "8px",
-		"align-items": "flex-end",
-	} as const;
-
-	const footerStyle = {
-		display: "flex",
-		"align-items": "center",
-		"justify-content": "flex-end",
-		gap: "8px",
-		padding: "12px 16px",
-		"border-top": "1px solid var(--border)",
-	} as const;
-
-	const btnStyle = (primary?: boolean) =>
-		({
-			padding: "6px 16px",
-			"border-radius": "var(--radius-sm)",
-			border: primary ? "none" : "1px solid var(--border)",
-			background: primary ? "var(--accent)" : "var(--bg-tertiary)",
-			color: primary ? "#fff" : "var(--fg-primary)",
-			cursor: "pointer",
-			"font-size": "var(--font-sm)",
-		}) as const;
-
-	const smallBtnStyle = {
-		background: "none",
-		border: "none",
-		color: "var(--fg-muted)",
-		cursor: "pointer",
-		"font-size": "var(--font-sm)",
-		padding: "2px 6px",
-	} as const;
-
 	return (
-		<div style={overlayStyle} onClick={(e) => e.target === e.currentTarget && props.onClose()}>
-			<div style={modalStyle}>
-				<h3 style={headerStyle}>{isEdit() ? "Edit Tunnel" : "New Tunnel"}</h3>
+		<div class={d.overlay} onClick={(e) => e.target === e.currentTarget && props.onClose()}>
+			<div class={d.popover} style={{ width: "520px" }}>
+				<div class={d.header}>
+					<h4>{isEdit() ? "Edit Tunnel" : "New Tunnel"}</h4>
+				</div>
 
-				<div style={bodyStyle}>
-					{/* Name */}
-					<label style={labelStyle}>
-						Name
-						<input style={inputStyle} value={name()} onInput={(e) => setName(e.currentTarget.value)} />
-					</label>
+				<div
+					class={d.body}
+					style={{
+						display: "flex",
+						"flex-direction": "column",
+						gap: "12px",
+						"max-height": "60vh",
+						"overflow-y": "auto",
+					}}
+				>
+					<div class={s.group}>
+						<label class={s.label}>Name</label>
+						<input value={name()} onInput={(e) => setName(e.currentTarget.value)} />
+					</div>
 
-					{/* Host + Port */}
-					<div style={rowStyle}>
-						<label style={{ ...labelStyle, flex: "1" }}>
-							Host
-							<input
-								style={inputStyle}
-								value={host()}
-								onInput={(e) => setHost(e.currentTarget.value)}
-								list="ssh-hosts-list"
-							/>
+					<div style={{ display: "flex", gap: "8px" }}>
+						<div class={s.group} style={{ flex: "1" }}>
+							<label class={s.label}>Host</label>
+							<input value={host()} onInput={(e) => setHost(e.currentTarget.value)} list="ssh-hosts-list" />
 							<datalist id="ssh-hosts-list">
 								<For each={sshHosts()}>{(h) => <option value={h} />}</For>
 							</datalist>
-						</label>
-						<label style={{ ...labelStyle, width: "80px" }}>
-							Port
+						</div>
+						<div class={s.group} style={{ width: "80px" }}>
+							<label class={s.label}>Port</label>
 							<input
-								style={inputStyle}
 								type="number"
 								value={port()}
 								onInput={(e) => setPort(Number.parseInt(e.currentTarget.value, 10) || 22)}
 							/>
-						</label>
+						</div>
 					</div>
 
-					{/* User */}
-					<label style={labelStyle}>
-						User
-						<input style={inputStyle} value={user()} onInput={(e) => setUser(e.currentTarget.value)} />
-					</label>
+					<div class={s.group}>
+						<label class={s.label}>User</label>
+						<input value={user()} onInput={(e) => setUser(e.currentTarget.value)} />
+					</div>
 
-					{/* Identity File */}
-					<label style={labelStyle}>
-						Identity File (optional)
-						<input
-							style={inputStyle}
-							value={identityFile()}
-							onInput={(e) => setIdentityFile(e.currentTarget.value)}
-							placeholder="~/.ssh/id_rsa"
-						/>
-					</label>
+					<div class={s.group}>
+						<label class={s.label}>Identity / Authentication</label>
+						<div style={{ display: "flex", gap: "6px" }}>
+							<input
+								style={{ flex: "1" }}
+								value={identityFile()}
+								onInput={(e) => setIdentityFile(e.currentTarget.value)}
+								placeholder="Leave empty to use SSH agent"
+							/>
+							<button
+								type="button"
+								class={d.cancelBtn}
+								style={{
+									flex: "none",
+									padding: "4px 10px",
+									"font-size": "var(--font-sm)",
+									border: "none",
+									"border-radius": "var(--radius-md)",
+									cursor: "pointer",
+								}}
+								onClick={browseIdentityFile}
+								title="Browse for key file"
+							>
+								Browse…
+							</button>
+						</div>
+						<Show when={agentInfo().agent_type}>
+							<div style={{ "margin-top": "6px", "font-size": "var(--font-sm)", color: "var(--fg-muted)" }}>
+								<span style={{ color: agentInfo().keys.length > 0 ? "var(--success)" : "var(--fg-muted)" }}>
+									{agentInfo().agent_type}:
+								</span>{" "}
+								<Show when={agentInfo().keys.length > 0} fallback="no keys loaded">
+									{agentInfo()
+										.keys.map((k) => `${k.comment} (${k.key_type})`)
+										.join(", ")}
+								</Show>
+							</div>
+						</Show>
+					</div>
 
-					{/* Forwards */}
+					{/* Port Forwards */}
 					<div style={{ display: "flex", "flex-direction": "column", gap: "6px" }}>
 						<div style={{ display: "flex", "align-items": "center", "justify-content": "space-between" }}>
-							<span style={{ "font-size": "var(--font-sm)", color: "var(--fg-secondary)" }}>Port Forwards</span>
-							<button type="button" style={smallBtnStyle} onClick={addForward}>
+							<label class={s.label}>Port Forwards</label>
+							<button
+								type="button"
+								class={d.cancelBtn}
+								style={{
+									flex: "none",
+									padding: "2px 10px",
+									"font-size": "var(--font-sm)",
+									border: "none",
+									"border-radius": "var(--radius-md)",
+									cursor: "pointer",
+								}}
+								onClick={addForward}
+							>
 								+ Add
 							</button>
 						</div>
 						<For each={forwards()}>
 							{(fw, idx) => (
-								<div style={{ ...rowStyle, "align-items": "center" }}>
+								<div class={s.group} style={{ display: "flex", gap: "6px", "align-items": "center" }}>
 									<select
-										style={{ ...inputStyle, width: "80px" }}
+										style={{ width: "80px" }}
 										value={fw.type}
 										onChange={(e) => updateForward(idx(), { type: e.currentTarget.value as "Local" | "Remote" })}
 									>
@@ -255,9 +237,10 @@ export const TunnelEditorModal: Component<TunnelEditorModalProps> = (props) => {
 										<option value="Remote">Remote</option>
 									</select>
 									<input
-										style={{ ...inputStyle, width: "70px" }}
-										type="number"
+										inputMode="numeric"
+										pattern="[0-9]*"
 										placeholder="bind"
+										style={{ width: "70px" }}
 										value={fw.bind_port || ""}
 										onInput={(e) =>
 											updateForward(idx(), {
@@ -265,18 +248,19 @@ export const TunnelEditorModal: Component<TunnelEditorModalProps> = (props) => {
 											})
 										}
 									/>
-									<span style={{ color: "var(--fg-muted)", "font-size": "var(--font-sm)" }}>:</span>
+									<span style={{ color: "var(--fg-muted)" }}>:</span>
 									<input
-										style={{ ...inputStyle, flex: "1" }}
 										placeholder="remote host"
+										style={{ flex: "1" }}
 										value={fw.remote_host ?? ""}
 										onInput={(e) => updateForward(idx(), { remote_host: e.currentTarget.value })}
 									/>
-									<span style={{ color: "var(--fg-muted)", "font-size": "var(--font-sm)" }}>:</span>
+									<span style={{ color: "var(--fg-muted)" }}>:</span>
 									<input
-										style={{ ...inputStyle, width: "70px" }}
-										type="number"
+										inputMode="numeric"
+										pattern="[0-9]*"
 										placeholder="port"
+										style={{ width: "70px" }}
 										value={fw.remote_port ?? ""}
 										onInput={(e) =>
 											updateForward(idx(), {
@@ -284,7 +268,19 @@ export const TunnelEditorModal: Component<TunnelEditorModalProps> = (props) => {
 											})
 										}
 									/>
-									<button type="button" style={smallBtnStyle} onClick={() => removeForward(idx())}>
+									<button
+										type="button"
+										class={d.cancelBtn}
+										style={{
+											flex: "none",
+											padding: "2px 8px",
+											"font-size": "var(--font-sm)",
+											border: "none",
+											"border-radius": "var(--radius-md)",
+											cursor: "pointer",
+										}}
+										onClick={() => removeForward(idx())}
+									>
 										x
 									</button>
 								</div>
@@ -293,54 +289,57 @@ export const TunnelEditorModal: Component<TunnelEditorModalProps> = (props) => {
 					</div>
 
 					{/* Options */}
-					<div style={{ display: "flex", "flex-direction": "column", gap: "6px" }}>
-						<span style={{ "font-size": "var(--font-sm)", color: "var(--fg-secondary)" }}>Options</span>
-						<div style={rowStyle}>
-							<label style={{ ...labelStyle, flex: "1" }}>
-								ServerAliveInterval
-								<input
-									style={inputStyle}
-									type="number"
-									value={options().server_alive_interval}
-									onInput={(e) =>
-										setOptions((o) => ({
-											...o,
-											server_alive_interval: Number.parseInt(e.currentTarget.value, 10) || 15,
-										}))
-									}
-								/>
-							</label>
-							<label style={{ ...labelStyle, width: "140px" }}>
-								StrictHostKeyChecking
-								<select
-									style={inputStyle}
-									value={options().strict_host_key_checking}
-									onChange={(e) =>
-										setOptions((o) => ({
-											...o,
-											strict_host_key_checking: e.currentTarget.value as "Yes" | "AcceptNew",
-										}))
-									}
-								>
-									<option value="AcceptNew">AcceptNew</option>
-									<option value="Yes">Yes</option>
-								</select>
-							</label>
+					<div style={{ display: "flex", gap: "8px" }}>
+						<div class={s.group} style={{ flex: "1" }}>
+							<label class={s.label}>ServerAliveInterval</label>
+							<input
+								type="number"
+								value={options().server_alive_interval}
+								onInput={(e) =>
+									setOptions((o) => ({
+										...o,
+										server_alive_interval: Number.parseInt(e.currentTarget.value, 10) || 15,
+									}))
+								}
+							/>
+						</div>
+						<div class={s.group} style={{ width: "160px" }}>
+							<label class={s.label}>StrictHostKeyChecking</label>
+							<select
+								value={options().strict_host_key_checking}
+								onChange={(e) =>
+									setOptions((o) => ({
+										...o,
+										strict_host_key_checking: e.currentTarget.value as "Yes" | "AcceptNew",
+									}))
+								}
+							>
+								<option value="AcceptNew">AcceptNew</option>
+								<option value="Yes">Yes</option>
+							</select>
 						</div>
 					</div>
 
-					{/* Error */}
+					<label class={s.toggle}>
+						<input type="checkbox" checked={autoConnect()} onChange={(e) => setAutoConnect(e.currentTarget.checked)} />
+						<span>Connect automatically on startup</span>
+					</label>
+
 					<Show when={error()}>
-						<div style={{ color: "var(--accent-red, #ef4444)", "font-size": "var(--font-sm)" }}>{error()}</div>
+						<div
+							class={d.error}
+							ref={(el) => requestAnimationFrame(() => el.scrollIntoView({ behavior: "smooth", block: "nearest" }))}
+						>
+							{error()}
+						</div>
 					</Show>
 				</div>
 
-				{/* Footer */}
-				<div style={footerStyle}>
-					<button type="button" style={btnStyle()} onClick={props.onClose}>
+				<div class={d.actions}>
+					<button class={d.cancelBtn} onClick={props.onClose}>
 						Cancel
 					</button>
-					<button type="button" style={btnStyle(true)} onClick={handleSave} disabled={saving()}>
+					<button class={d.primaryBtn} onClick={handleSave} disabled={saving()}>
 						{saving() ? "Saving..." : "Save"}
 					</button>
 				</div>

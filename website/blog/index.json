@@ -1,6 +1,15 @@
 {
   "posts": [
     {
+      "slug": "beta-features",
+      "title": "SSH tunnels, remote access, and the beta features you can try today",
+      "date": "2026-05-10",
+      "status": "published",
+      "feature": "SSH tunnels / tuicommander-remote / AI Triage / AI Watchers / AI Chat / beta",
+      "summary": "A tour of the features behind the Experimental toggle: SSH tunnel management, the tuicommander-remote daemon, AI-powered code triage, terminal watchers, and chat. All in beta — feedback welcome.",
+      "screenshots": []
+    },
+    {
       "slug": "tuic-remote",
       "title": "One daemon, every environment: meet tuicommander-remote",
       "date": "2026-05-08",

@@ -6,27 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-05-10
+
 ### Added
-- **SSH tunnel manager + remote connections** — Full remote access layer: SSH tunnel supervision with auto-reconnect, slim `tuicommander-remote` headless binary for remote machines, and desktop connection manager UI. Includes protocol versioning, health checks, token rotation, TLS configuration, and rate-limited auth. Gated behind experimental features flag.
+- **SSH tunnel manager + remote connections** — Full remote access layer: SSH tunnel supervision with auto-reconnect, slim `tuicommander-remote` headless binary for remote machines, and desktop connection manager UI. Includes protocol versioning, health checks, token rotation, TLS configuration, and rate-limited auth.
 - **CSV/TSV/PSV/SSV file preview plugin** — Opening tabular data files (.csv, .tsv, .psv, .ssv) in the file browser shows a sortable HTML table with sticky headers, rainbow column tinting, and an "Edit" button to open in CodeMirror. Plugin API: `host.registerFilePreview()` and `host.openEditorTab()` with new `"ui:file-preview"` capability.
 - **"What's New" dialog** — AI-generated release notes shown once after stable version updates, with community contributor attribution. `make bump` now auto-generates notes via Claude CLI with interactive approval.
 - **Nightly rolling changelog** — CI generates changelog from git log since last stable tag for nightly releases.
-
-### Fixed
-- **GitHub badge always visible** — Sidebar GitHub badge now hidden correctly without `:has()` CSS support.
-- **Tab URL resolution** — Plugin tabs with `file://` URLs resolved via IPC instead of direct iframe src. MCP session root used for repo-scoped tab URLs.
-
-## [1.2.0] - 2026-05-08
-
-### Added
 - **AI Triage feature flag** — AI-powered diff triage is now an experimental sub-feature that can be independently toggled under Settings > General > Experimental Features.
 - **AI Watchers feature flag** — Terminal watchers are now an experimental sub-feature with independent toggle. The watcher toolbar button is hidden when disabled.
 - **Watcher cooldown field** — Configurable minimum seconds between consecutive watcher fires, with a `?` tooltip explaining the setting.
 - **Reusable settings components** — Extracted `SettingToggle`, `SettingSelect`, `SettingSlider`, `SettingInput` to reduce duplication across all settings tabs.
 - **AI Prompts save/revert** — Explicit Save and Revert to Default buttons replace the implicit on-blur auto-save behavior.
 - **Code editor enhancements** — Undo/redo history, code folding, auto-close brackets, scroll past end, block selection (Alt+drag), drop cursor, special character highlighting, and CSS color preview swatches (`@replit/codemirror-css-color-picker`).
+- **Blog post: beta features tour** — Overview of SSH tunnels, tuicommander-remote, AI Triage, AI Watchers, and AI Chat with instructions to enable and a call for feedback.
 
 ### Fixed
+- **GitHub badge always visible** — Sidebar GitHub badge now hidden correctly without `:has()` CSS support.
+- **Tab URL resolution** — Plugin tabs with `file://` URLs resolved via IPC instead of direct iframe src. MCP session root used for repo-scoped tab URLs.
 - **Watcher session ID mismatch** — Watcher attach was passing frontend tab IDs instead of PTY session UUIDs, causing watchers to never trigger. Now correctly uses the PTY session UUID.
 - **Watcher update validation** — `update_rule` now delegates to `validate_rule` after applying partial updates, eliminating duplicated inline checks and inconsistent error messages.
 - **Search input autocorrect** — Disabled `autocomplete`, `autocorrect`, and `spellcheck` on all search/filter inputs (11 components). macOS WebKit was autocorrecting search queries.

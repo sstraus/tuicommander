@@ -14,6 +14,8 @@ pub struct TunnelProfile {
     pub identity_file: Option<PathBuf>,
     pub forwards: Vec<ForwardSpec>,
     pub options: ProfileOptions,
+    #[serde(default)]
+    pub auto_connect: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,6 +57,7 @@ impl TunnelProfile {
             identity_file: None,
             forwards: Vec::new(),
             options: ProfileOptions::default(),
+            auto_connect: false,
         }
     }
 

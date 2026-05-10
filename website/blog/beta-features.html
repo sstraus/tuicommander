@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SSH tunnels, remote access, and the beta features you can try today — TUICommander Blog</title>
+  <meta name="description" content="SSH tunnel manager, tuicommander-remote daemon, AI Triage, AI Watchers, and AI Chat — what they do, where they are, and why we want your feedback." />
+
+  <meta property="og:title" content="SSH tunnels, remote access, and the beta features you can try today — TUICommander" />
+  <meta property="og:description" content="A tour of the features behind the Experimental toggle: SSH tunnels, remote daemon, AI-powered code review, terminal watchers, and chat." />
+  <meta property="og:type" content="article" />
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/style.css" />
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PCXPSMR9JZ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-PCXPSMR9JZ');
+  </script>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="/" class="nav-logo">
+        <img src="/logo.png" alt="TUICommander" width="28" height="28" />
+        <span>TUICommander</span>
+      </a>
+      <div class="nav-links">
+        <a href="/#features">Features</a>
+        <a href="/blog.html" class="nav-active">Blog</a>
+        <a href="/#faq">FAQ</a>
+        <a href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary btn-sm" rel="noopener noreferrer">Download</a>
+      </div>
+    </div>
+  </nav>
+
+  <article class="blog-post">
+    <header class="blog-post-header">
+      <a href="/blog.html" class="blog-back">&larr; Blog</a>
+      <time>May 10, 2026</time>
+      <h1>SSH tunnels, remote access, and the beta features you can try today</h1>
+      <p class="blog-post-summary">TUICommander has a growing set of features behind the Experimental toggle. SSH tunnel management, the <code>tuicommander-remote</code> daemon, AI-powered code triage, terminal watchers, and an AI chat panel. Here's what each one does, how to turn them on, and why your feedback matters.</p>
+    </header>
+
+    <div class="blog-section">
+      <h2>How to enable experimental features</h2>
+      <p>Everything described in this post lives behind a single toggle: <strong>Settings &gt; General &gt; Experimental Features</strong>. Flip it on and the sub-features appear. Each one has its own toggle so you can pick what you want.</p>
+      <p>These features are functional and tested, but the interfaces are still evolving and edge cases are still being discovered. That's why they're behind a flag — not because they're unstable, but because we're not ready to lock in the UX. <strong>If something feels wrong, confusing, or broken, we genuinely want to hear about it.</strong> Open an issue on <a href="https://github.com/sstraus/tuicommander/issues" rel="noopener noreferrer">GitHub</a> or reach out directly.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>SSH tunnel manager</h2>
+      <p>The SSH tunnel manager lives in the sidebar and is available without the experimental flag — it graduated to stable in v1.2.0. It lets you define named SSH port-forwarding profiles and keeps them alive automatically.</p>
+      <p>Each profile specifies a host, local/remote port pair, and optional SSH key. TUICommander supervises the tunnel with exponential backoff (1s to 30s, with jitter) and classifies exit reasons — auth failure, host key mismatch, port conflict, network timeout — so the UI shows you what happened instead of a generic "disconnected."</p>
+      <p>The sidebar shows each tunnel with a status badge: green for connected, yellow for reconnecting, red for failed. Click to edit or view the audit log. Every connect, disconnect, and error is recorded in a local SQLite database.</p>
+      <p>The primary use case is port-forwarding to a <code>tuicommander-remote</code> daemon on a server you can only reach via SSH. But the tunnel manager is generic — it forwards any port for any service.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>tuicommander-remote: your backend, anywhere</h2>
+      <p><code>tuicommander-remote</code> is a headless Rust binary that runs the TUICommander backend without the desktop shell. Install it inside WSL, a Docker container, or a remote server, and the desktop app connects to it over HTTP/WebSocket — driving terminals, agents, git operations, and the MCP bridge as if everything were local.</p>
+      <p>We wrote a <a href="/blog/tuic-remote.html">deep dive on tuicommander-remote</a> that covers the architecture, the WSL/Docker/remote use cases, and the security model. The short version: the same Axum routes that power the PWA now power remote access, so there's no new protocol to learn or debug.</p>
+      <p>What's in beta right now:</p>
+      <ul>
+        <li><strong>Connection manager UI</strong> — Add remote hosts in Settings &gt; Services, with health polling and status indicators.</li>
+        <li><strong>Transport routing</strong> — Tag a repo with a connection. All terminal, git, and agent operations for that repo route through the remote daemon.</li>
+        <li><strong>SSE event bridge</strong> — Real-time events (agent status changes, file watcher triggers) stream back to the desktop over Server-Sent Events.</li>
+        <li><strong>Protocol versioning</strong> — Desktop and daemon negotiate a protocol version on connect, so mismatched versions fail loudly instead of silently.</li>
+      </ul>
+      <p>What's coming next: <code>tuic remote install &lt;host&gt;</code> — a single command that copies the binary, generates a pairing token, and registers the connection. The goal is that adding a new environment takes 30 seconds, not a checklist.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>AI Triage: code review that reads the diff</h2>
+      <p>AI Triage takes a git diff — staged, unstaged, or between branches — and classifies every changed file by risk, relevance, and category. It streams results as the LLM works through the changes, so you see the first assessments within seconds even on large diffs.</p>
+      <p>The intended use: before you commit or open a PR, triage the diff. It catches the files you forgot to look at, flags the ones where a one-line change has outsized blast radius, and groups everything so you review in priority order instead of alphabetical.</p>
+      <p>Enable it under <strong>Settings &gt; General &gt; Experimental Features &gt; AI Triage</strong>. The triage button appears in the command palette and in the git panel toolbar. You can customize the system prompt in <strong>Settings &gt; Agents &gt; AI Prompts</strong>.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>AI Watchers: terminals that watch themselves</h2>
+      <p>Watchers are rules you attach to a terminal session. Each rule has a pattern (regex or plain text) and an action — notify, run a command, or trigger a smart prompt. When the terminal output matches the pattern, the action fires.</p>
+      <p>The simplest use case: watch for <code>error</code> or <code>failed</code> in a CI terminal and get a desktop notification. A more advanced one: watch for a test failure pattern and auto-trigger a smart prompt that analyzes the failure and suggests a fix.</p>
+      <p>Each watcher has a configurable cooldown (minimum seconds between consecutive fires) to prevent notification storms on chatty output. The watcher toolbar button appears next to the terminal search when the feature is enabled.</p>
+      <p>Enable it under <strong>Settings &gt; General &gt; Experimental Features &gt; AI Watchers</strong>.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>AI Chat: conversation alongside the terminal</h2>
+      <p>The AI Chat panel gives you a conversational interface alongside your terminals. It has access to your current repository context — file tree, git state, recent changes — so you can ask questions about the codebase without leaving TUICommander.</p>
+      <p>This is the earliest of the experimental features. The interface and the context it has access to are both evolving. We're particularly interested in feedback on what context should be automatically included vs. explicitly attached.</p>
+      <p>Enable it under <strong>Settings &gt; General &gt; Experimental Features &gt; AI Chat</strong>.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Your feedback shapes what ships</h2>
+      <p>Every feature behind the experimental flag is there because it works but isn't finished. The best way to help us finish it is to use it and tell us what's wrong.</p>
+      <ul>
+        <li><strong>Something crashed or behaved unexpectedly?</strong> Open an issue on <a href="https://github.com/sstraus/tuicommander/issues" rel="noopener noreferrer">GitHub</a> with the steps to reproduce.</li>
+        <li><strong>The UX is confusing or friction-heavy?</strong> Tell us what you expected vs. what happened.</li>
+        <li><strong>A feature is close but missing one thing?</strong> That's the most valuable kind of feedback — it tells us what to prioritize.</li>
+      </ul>
+      <p>Features that get used and reported on graduate to stable. Features that don't stay behind the flag. Your testing directly decides which is which.</p>
+    </div>
+  </article>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sstraus/tuicommander" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/sstraus/tuicommander/releases" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/FEATURES.md" rel="noopener noreferrer">Docs</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin API</a>
+      </div>
+      <p>Apache License 2.0 &copy; 2026 Stefano Straus</p>
+      <p class="footer-tech">Built with Rust, Tauri v2, SolidJS</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

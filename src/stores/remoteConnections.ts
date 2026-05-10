@@ -200,6 +200,7 @@ function createRemoteConnectionsStore() {
 							server_alive_count_max: 3,
 							strict_host_key_checking: "AcceptNew",
 						},
+						auto_connect: false,
 					});
 
 					// Find the profile ID we just created (by name)
