@@ -121,6 +121,45 @@ export function keyToSequence(e: KeyboardEvent): string | null {
 }
 
 /**
+ * State machine for dead-key / IME composition through a hidden <input>.
+ *
+ * Canvas elements in WKWebView don't participate in macOS text input, so dead
+ * keys (quotes, accents, ç, ã …) fail when listeners live on the canvas.
+ * Routing input through a real <input> fixes composition.
+ *
+ * Two WKWebView quirks this handles:
+ * 1. `compositionend` may fire with empty data → we return null (no write).
+ * 2. WKWebView fires a spurious keydown for the resolution key right after
+ *    compositionend (e.g. `'` + `c` → `ç` but also a trailing `c` keydown).
+ *    `shouldSuppressKeydown` eats that duplicate.
+ *
+ * `scheduleReset` defaults to `setTimeout(..., 0)` — injectable for tests.
+ */
+export function createCompositionState(scheduleReset: (cb: () => void) => void = (cb) => setTimeout(cb, 0)): {
+	onCompositionEnd(data: string | null | undefined): string | null;
+	shouldSuppressKeydown(isComposing: boolean): boolean;
+} {
+	let suppressNext = false;
+	return {
+		onCompositionEnd(data) {
+			suppressNext = true;
+			scheduleReset(() => {
+				suppressNext = false;
+			});
+			return data || null;
+		},
+		shouldSuppressKeydown(isComposing) {
+			if (isComposing) return true;
+			if (suppressNext) {
+				suppressNext = false;
+				return true;
+			}
+			return false;
+		},
+	};
+}
+
+/**
  * macOS Alt/Option key handling via e.code.
  * On macOS, Alt+letter produces dead-key characters in e.key (e.g. π for Alt+P).
  * Terminal emulators need ESC + base letter instead.

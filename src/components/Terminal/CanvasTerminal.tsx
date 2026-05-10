@@ -27,7 +27,7 @@ import { acquireCache, getSharedMetrics, invalidateGlyphCache, releaseCache } fr
 import { kittySequenceForKey } from "./kittyKeyboard";
 import { filePathRegex, fileUrlRegex } from "./linkProvider";
 import { continuationRowsAfterSuggest, isSuggestBlock } from "./suggestOverlay";
-import { altSequenceFromCode, keyToSequence } from "./terminalInput";
+import { altSequenceFromCode, createCompositionState, keyToSequence } from "./terminalInput";
 
 // Re-export for external consumers
 export type { CellMetrics, CursorShape, DecodedFrame };
@@ -65,6 +65,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	let canvasRef!: HTMLCanvasElement;
 	let overlayCanvasRef!: HTMLCanvasElement;
 	let touchTextareaRef!: HTMLTextAreaElement;
+	let keyInputRef!: HTMLInputElement;
 	let scrollbarRef!: HTMLDivElement;
 	let scrollThumbRef!: HTMLDivElement;
 	let overlayRef!: HTMLDivElement;
@@ -1665,33 +1666,51 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		dprMediaQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
 		dprMediaQuery.addEventListener("change", dprChangeHandler);
 
+		// Keyboard input is routed through keyInputRef (a hidden <input>) so that
+		// macOS dead-key composition and IME work correctly. Canvas elements in
+		// WKWebView don't fully participate in the macOS text input system, so dead
+		// keys (quotes, accents, etc.) fail when keydown listeners live on the canvas.
+		// When the canvas gains focus, we redirect to keyInputRef.
 		canvasRef.addEventListener("focus", () => {
+			keyInputRef.focus();
+		});
+		keyInputRef.addEventListener("focus", () => {
 			setFocused(true);
 			startBlink();
 			props.onFocus?.();
 			if (currentFrame?.focusReporting) writePty("\x1b[I");
 		});
-		canvasRef.addEventListener("blur", () => {
+		keyInputRef.addEventListener("blur", () => {
 			setFocused(false);
 			stopBlink();
 			repaintCursorIfNeeded();
 			if (currentFrame?.focusReporting) writePty("\x1b[O");
 		});
 
-		// --- Keyboard ---
-		let composing = false;
-		canvasRef.addEventListener("compositionstart", () => {
-			composing = true;
+		// Clear stray text outside of composition. During composition the input
+		// must hold the in-progress text or compositionend will never resolve.
+		keyInputRef.addEventListener("input", (e) => {
+			if ((e as InputEvent).isComposing) return;
+			keyInputRef.value = "";
 		});
-		canvasRef.addEventListener("compositionend", (e) => {
-			composing = false;
-			if (e.data) writePty(e.data);
+
+		// --- Keyboard ---
+		const composition = createCompositionState();
+		keyInputRef.addEventListener("compositionend", (e) => {
+			const data = composition.onCompositionEnd(e.data);
+			if (data) writePty(data);
+			queueMicrotask(() => {
+				keyInputRef.value = "";
+			});
 		});
 
 		let leftOptionHeld = false;
 
-		canvasRef.addEventListener("keydown", (e: KeyboardEvent) => {
-			if (composing) return;
+		keyInputRef.addEventListener("keydown", (e: KeyboardEvent) => {
+			if (composition.shouldSuppressKeydown(e.isComposing)) {
+				e.preventDefault();
+				return;
+			}
 			resetBlink();
 
 			// Arrow Down with no modifiers: snap to bottom when scrolled up
@@ -1904,11 +1923,11 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		});
 
 		// Track Alt key release for macOS left-option state
-		canvasRef.addEventListener("keyup", (e: KeyboardEvent) => {
+		keyInputRef.addEventListener("keyup", (e: KeyboardEvent) => {
 			if (e.code === "AltLeft") leftOptionHeld = false;
 		});
 
-		canvasRef.addEventListener("paste", (e: ClipboardEvent) => {
+		keyInputRef.addEventListener("paste", (e: ClipboardEvent) => {
 			if (e.clipboardData) {
 				const items = e.clipboardData.items;
 				for (let i = 0; i < items.length; i++) {
@@ -1929,7 +1948,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		let lastClickTime = 0;
 
 		canvasRef.addEventListener("mousedown", (e: MouseEvent) => {
-			canvasRef.focus();
+			keyInputRef.focus();
 			if (currentFrame && currentFrame.mouseMode > 0 && !e.shiftKey) {
 				const pos = canvasToGrid(e);
 				if (currentFrame.sgrMouse) {
@@ -2246,7 +2265,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		}
 
 		props.onRef?.({
-			focus: () => canvasRef.focus(),
+			focus: () => keyInputRef.focus(),
 			getSelectionText: () => cachedSelectionText,
 			refresh: () => {
 				rowMap.clear();
@@ -2382,7 +2401,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				e.preventDefault();
 				const quoted = `'${path.replace(/'/g, "'\\''")}' `;
 				writePty(quoted);
-				canvasRef.focus();
+				keyInputRef.focus();
 			}}
 		>
 			{/* Offscreen textarea for mobile virtual keyboard input */}
@@ -2402,6 +2421,34 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				autocapitalize="off"
 				spellcheck={false}
 				tabIndex={-1}
+			/>
+			{/* Hidden input that receives all keyboard events including dead-key composition.
+			    Canvas elements in WKWebView don't participate in the macOS text input system,
+			    so dead keys (quotes, accents, etc.) are lost when listeners live on the canvas.
+			    Using a real <input> fixes composition on macOS without affecting rendering. */}
+			<input
+				ref={keyInputRef!}
+				type="text"
+				aria-hidden="true"
+				style={{
+					position: "fixed",
+					top: "-9999px",
+					left: "-9999px",
+					width: "0",
+					height: "0",
+					opacity: "0",
+					border: "none",
+					outline: "none",
+					padding: "0",
+					margin: "0",
+					"pointer-events": "none",
+					"font-size": "1px",
+				}}
+				tabIndex={-1}
+				autocomplete="off"
+				autocorrect="off"
+				autocapitalize="off"
+				spellcheck={false}
 			/>
 			<canvas
 				ref={canvasRef!}

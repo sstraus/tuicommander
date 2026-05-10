@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { altSequenceFromCode, keyToSequence } from "../../components/Terminal/terminalInput";
+import { describe, expect, it, vi } from "vitest";
+import { altSequenceFromCode, createCompositionState, keyToSequence } from "../../components/Terminal/terminalInput";
 
 describe("keyToSequence", () => {
 	const evt = (key: string, opts: Partial<KeyboardEvent> = {}): KeyboardEvent =>
@@ -240,5 +240,99 @@ describe("altSequenceFromCode", () => {
 
 	it("returns null for unknown codes", () => {
 		expect(altSequenceFromCode(evt("IntlBackslash"))).toBeNull();
+	});
+});
+
+describe("createCompositionState — dead-key / IME composition", () => {
+	function makeState() {
+		// Capture the reset callback so tests can fire it manually.
+		let pendingReset: (() => void) | undefined;
+		const scheduleReset = vi.fn((cb: () => void) => {
+			pendingReset = cb;
+		});
+		const state = createCompositionState(scheduleReset);
+		const fireReset = () => {
+			pendingReset?.();
+			pendingReset = undefined;
+		};
+		return { state, scheduleReset, fireReset };
+	}
+
+	// --- compositionend ---
+
+	it("onCompositionEnd returns composed data and schedules reset", () => {
+		const { state, scheduleReset } = makeState();
+		expect(state.onCompositionEnd("ç")).toBe("ç");
+		expect(scheduleReset).toHaveBeenCalledOnce();
+	});
+
+	it("onCompositionEnd returns null for empty string", () => {
+		const { state } = makeState();
+		expect(state.onCompositionEnd("")).toBeNull();
+	});
+
+	it("onCompositionEnd returns null for null/undefined", () => {
+		const { state } = makeState();
+		expect(state.onCompositionEnd(null)).toBeNull();
+		expect(state.onCompositionEnd(undefined)).toBeNull();
+	});
+
+	// --- shouldSuppressKeydown during composition ---
+
+	it("suppresses keydown when isComposing=true (dead key in progress)", () => {
+		const { state } = makeState();
+		expect(state.shouldSuppressKeydown(true)).toBe(true);
+	});
+
+	it("does NOT suppress normal keydown when not composing", () => {
+		const { state } = makeState();
+		expect(state.shouldSuppressKeydown(false)).toBe(false);
+	});
+
+	// --- WKWebView duplicate keydown suppression ---
+
+	it("suppresses the duplicate keydown immediately after compositionend", () => {
+		const { state } = makeState();
+		state.onCompositionEnd("ç");
+		// Simulates WKWebView's spurious keydown(key="c", isComposing=false)
+		expect(state.shouldSuppressKeydown(false)).toBe(true);
+	});
+
+	it("suppresses only ONE duplicate keydown after compositionend", () => {
+		const { state } = makeState();
+		state.onCompositionEnd("ç");
+		state.shouldSuppressKeydown(false); // consume the one suppressed duplicate
+		expect(state.shouldSuppressKeydown(false)).toBe(false);
+	});
+
+	it("stops suppressing after reset fires (next event-loop task)", () => {
+		const { state, fireReset } = makeState();
+		state.onCompositionEnd("á");
+		fireReset(); // simulate setTimeout(0) completing
+		expect(state.shouldSuppressKeydown(false)).toBe(false);
+	});
+
+	it("full sequence: dead-key compositionend then duplicate then next real key", () => {
+		const { state, fireReset } = makeState();
+
+		// '  + c → ç
+		const written = state.onCompositionEnd("ç");
+		expect(written).toBe("ç");
+
+		// WKWebView duplicate keydown(key="c", isComposing=false) — must be eaten
+		expect(state.shouldSuppressKeydown(false)).toBe(true);
+
+		// setTimeout(0) fires
+		fireReset();
+
+		// Next real keystroke must pass through
+		expect(state.shouldSuppressKeydown(false)).toBe(false);
+	});
+
+	it("isComposing=true keydown during composition is always blocked", () => {
+		const { state } = makeState();
+		// No compositionend yet — user is mid dead-key sequence
+		expect(state.shouldSuppressKeydown(true)).toBe(true);
+		expect(state.shouldSuppressKeydown(true)).toBe(true);
 	});
 });
