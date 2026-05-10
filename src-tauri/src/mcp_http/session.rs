@@ -44,6 +44,7 @@ pub(super) async fn health(State(state): State<Arc<AppState>>) -> Json<HealthRes
         ok: true,
         uptime_secs: uptime,
         session_count,
+        protocol_version: 1,
         socket_path,
     })
 }

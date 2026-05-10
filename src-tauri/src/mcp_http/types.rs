@@ -7,6 +7,7 @@ pub(super) struct HealthResponse {
     pub ok: bool,
     pub uptime_secs: u64,
     pub session_count: usize,
+    pub protocol_version: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub socket_path: Option<String>,
 }
