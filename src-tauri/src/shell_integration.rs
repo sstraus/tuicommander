@@ -55,6 +55,10 @@ if [[ -n "$TUIC_SESSION" ]]; then
     esac
   }
 fi
+# Ensure zsh completion is active (ZDOTDIR trick + edge cases can skip system compinit)
+if [[ -o interactive ]] && ! type compdef >/dev/null 2>&1; then
+  autoload -Uz compinit && compinit
+fi
 "#;
 
 /// Bash shell integration script.
