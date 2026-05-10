@@ -152,6 +152,21 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `save_activity` | `config` | `()` | Save activity dashboard state |
 | `load_repo_local_config` | `repo_path` | `RepoLocalConfig?` | Read `.tuic.json` from repo root; returns null if absent or malformed |
 
+## SSH Tunnels (`tunnels/tauri_commands.rs`)
+
+| Command | Args | Returns | Description |
+|---------|------|---------|-------------|
+| `list_tunnel_profiles` | -- | `Vec<TunnelProfile>` | Load all tunnel profiles (global + per-repo merged) |
+| `save_tunnel_profile` | `profile: JSON` | `String` (profile ID) | Create or update a tunnel profile. Auto-generates UUID if `id` is empty. Validates before saving |
+| `delete_tunnel_profile` | `id` | `bool` | Delete a tunnel profile by ID. Stops the tunnel if running |
+| `start_tunnel` | `id` | `String` | Start a tunnel by profile ID. Loads the profile, validates, and spawns the SSH process |
+| `stop_tunnel` | `id` | `()` | Stop a running tunnel by profile ID |
+| `list_active_tunnels` | -- | `Vec<JSON>` | List all active tunnels with ID, status, and started_at |
+| `get_tunnel_status` | `id` | `JSON` | Get the current status of a specific tunnel (starting, connected, reconnecting, stopped, error) |
+| `list_ssh_config_hosts` | -- | `Vec<String>` | Parse `~/.ssh/config` and return all non-negated, non-wildcard Host entries |
+| `get_tunnel_audit` | `id, limit?` | `Vec<JSON>` | Query audit log events for a tunnel (default limit 20). Returns timestamp, kind, and extracted message |
+| `list_ssh_agent_keys` | -- | `SshAgentInfo` | Detect SSH agent type (1Password, Secretive, GPG, generic) and list loaded keys via `ssh-add -l` |
+
 ## Agent Detection (`agent.rs`)
 
 | Command | Args | Returns | Description |

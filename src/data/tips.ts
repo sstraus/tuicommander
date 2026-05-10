@@ -374,4 +374,16 @@ export const TIPS: Tip[] = [
 			"Open files in TUICommander from the terminal: 'tuic file.rs:42' opens at line 42. 'tuic .' opens the current directory as a repo.",
 		shortcut: null,
 	},
+	{
+		feature: "SSH Tunnel Auto-Connect",
+		description:
+			"Enable Auto-Connect on a tunnel profile to have it start automatically when TUICommander launches — no manual clicks needed.",
+		shortcut: null,
+	},
+	{
+		feature: "Toggle Tunnels Panel",
+		description:
+			"Open the command palette and type 'tunnels' to toggle the SSH Tunnels panel without navigating to Settings.",
+		shortcut: `${mod}+P`,
+	},
 ];

@@ -1771,10 +1771,39 @@ TUICommander aggregates upstream MCP servers and exposes them through its own `/
 - Validation: duplicate bind ports, empty fields, port range (1-65535)
 - Pre-spawn port availability check for local forwards
 
-### 23.6 UI
+### 23.6 Tauri IPC Commands
+- All tunnel management exposed as native Tauri IPC commands (`tunnels/tauri_commands.rs`) — profile CRUD, start/stop, status, audit log, SSH config host parsing, SSH agent key listing
+- Desktop app uses IPC directly; browser mode falls back to HTTP endpoints
+
+### 23.7 Auto-Connect
+- Profiles with `auto_connect: true` start automatically on app launch
+- Hydration runs once during startup, guarded against duplicate calls
+- Non-blocking: failures are logged but don't prevent app startup
+
+### 23.8 SSH Agent Detection
+- Auto-detects SSH agent type from `SSH_AUTH_SOCK`: 1Password, Secretive, GPG Agent, generic SSH Agent
+- Lists loaded keys via `ssh-add -l` (fingerprint, comment, key type)
+- Shown in the tunnel editor for identity verification
+
+### 23.9 Orphan SSH Process Cleanup
+- `check_local_port()` distinguishes `PermissionDenied` (privileged ports) from `AddrInUse`
+- `kill_ssh_on_port()` finds SSH processes holding a port via `lsof`, verifies with `ps`, sends SIGTERM
+- Only kills confirmed `ssh` processes — never unrelated services
+
+### 23.10 Statusbar Shield
+- Grey shield icon when tunnel profiles exist but none are connected
+- Green shield with count badge when tunnels are connected
+- Clicking the shield opens the Tunnels Panel
+
+### 23.11 Shutdown on Exit
+- `TunnelManager::shutdown_all()` called on `RunEvent::Exit`
+- Stops all supervisors and clears the tunnel map — no orphaned SSH processes after app close
+
+### 23.12 UI
 - **TunnelsPanel** — List of tunnel profiles with status badges and start/stop controls
-- **TunnelEditorModal** — Create and edit tunnel profiles with form validation
+- **TunnelEditorModal** — Create and edit tunnel profiles with form validation; file browse dialog for identity file; remote host pre-populated from tunnel host when adding forwards; numeric input mode for port fields
 - **TunnelStatusBadge** — Color-coded status indicator (green=connected, blue=starting, orange=reconnecting, red=error, grey=stopped)
+- **Command Palette** — `toggle-tunnels` action registered for quick access
 
 ## 24. Remote Connection Manager
 

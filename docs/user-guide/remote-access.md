@@ -97,18 +97,49 @@ TUICommander can manage persistent SSH tunnels with automatic reconnection, port
    - **Host** — Remote SSH host
    - **Port** — SSH port (default 22)
    - **User** — SSH username
-   - **Identity File** — Optional path to SSH private key
-   - **Port Forwards** — Local or remote port forwarding rules (e.g., local 8080 → remote 80)
+   - **Identity File** — Optional path to SSH private key (use the Browse button to select)
+   - **Port Forwards** — Local or remote port forwarding rules (e.g., local 8080 → remote 80). The remote host is pre-populated from the tunnel host when adding a forward
    - **Options** — ServerAliveInterval (default 15s), ServerAliveCountMax (default 3), StrictHostKeyChecking (Yes or AcceptNew)
 4. Save the profile
 
 Tunnel profiles are stored as TOML files. **Global profiles** live in `<config_dir>/tunnels/` and are available across all repos. **Per-repo profiles** are stored in `<repo>/.tuic/tunnels/` and override global profiles with the same ID.
+
+### Auto-Connect
+
+Enable **Auto-Connect** on a tunnel profile to have it start automatically when TUICommander launches. Useful for tunnels you always need (database access, internal services).
+
+Toggle auto-connect in the tunnel editor — profiles marked with auto-connect are started during app hydration before you interact with the UI.
+
+### Statusbar Indicator
+
+The status bar shows a shield icon for SSH tunnels:
+
+- **Grey shield** — You have tunnel profiles configured but none are currently connected
+- **Green shield with badge** — Shows the number of active tunnel connections
+
+Click the shield to open the Tunnels Panel.
+
+### Command Palette
+
+Open the command palette (`Cmd+P` / `Ctrl+P`) and type "tunnels" to toggle the Tunnels Panel without navigating to Settings.
 
 ### Starting and Stopping Tunnels
 
 - In the **Tunnels Panel**, click the **Start** button next to a profile to launch the SSH tunnel
 - The **TunnelStatusBadge** shows the current state: Starting, Connected, Reconnecting, Stopped, or Error
 - Click **Stop** to gracefully terminate the SSH process (SIGTERM with 5s grace period, then SIGKILL)
+- On app exit, all active tunnels are automatically stopped — no orphaned SSH processes
+
+### SSH Agent Detection
+
+TUICommander automatically detects your SSH agent and shows the agent type and loaded keys in the tunnel editor. Supported agents:
+
+- **1Password** — Detected via the 1Password SSH agent socket
+- **Secretive** — Detected via the Secretive agent socket
+- **GPG Agent** — Detected via gpg-agent socket
+- **Generic SSH Agent** — Any other `SSH_AUTH_SOCK` value
+
+The key listing shows fingerprint, comment, and key type for each loaded key, helping you verify that the correct identity is available before connecting.
 
 ### Automatic Reconnection
 

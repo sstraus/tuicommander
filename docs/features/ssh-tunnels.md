@@ -39,6 +39,7 @@ host = "bastion.example.com"
 port = 2222
 user = "deploy"
 identity_file = "/home/deploy/.ssh/id_ed25519"
+auto_connect = true
 
 [[forwards]]
 type = "Local"
@@ -193,4 +194,55 @@ When creating an SSH remote connection (`RemoteConnection` with `RemoteTransport
 | `tunnels/supervisor.rs` | Per-tunnel supervision loop |
 | `tunnels/storage.rs` | TOML profile persistence (global + per-repo) |
 | `tunnels/manager.rs` | Orchestrate multiple supervisors |
-| `tunnels/commands.rs` | Tauri command handlers |
+| `tunnels/tauri_commands.rs` | Tauri IPC command handlers (desktop) |
+| `tunnels/commands.rs` | HTTP command handlers (browser mode) |
+
+## Auto-Connect
+
+Profiles with `auto_connect: true` are started automatically on app launch. The tunnel store's `hydrate()` method loads all profiles, checks which are marked for auto-connect, and starts them if not already active. Hydration runs once and is guarded against duplicate calls.
+
+The `auto_connect` field is persisted in the TOML profile:
+
+```toml
+auto_connect = true
+```
+
+## SSH Agent Detection
+
+`detect_agent_type()` inspects `SSH_AUTH_SOCK` to identify the running SSH agent:
+
+| Pattern in `SSH_AUTH_SOCK` | Detected Agent |
+|---------------------------|----------------|
+| `1password` or `2BUA8C4S2C` | 1Password |
+| `secretive` | Secretive |
+| `gpg` or `gnupg` | GPG Agent |
+| (1Password socket exists but not active) | SSH Agent (1Password available) |
+| (empty) | Not available |
+| (other) | SSH Agent |
+
+`list_ssh_agent_keys()` runs `ssh-add -l` to enumerate loaded keys, returning fingerprint, comment, and key type for each.
+
+## Orphan SSH Process Cleanup
+
+When `check_local_port()` reports `AddrInUse`, the supervisor calls `kill_ssh_on_port()` before retrying:
+
+1. `lsof -ti tcp:<port> -sTCP:LISTEN` finds PIDs listening on the port
+2. `ps -p <pid> -o comm=` verifies each PID is an `ssh` process
+3. Only confirmed SSH processes receive `SIGTERM`
+
+This handles stale SSH tunnels left over from a previous app crash without killing unrelated processes.
+
+`check_local_port()` also distinguishes `PermissionDenied` (ports below 1024 on macOS/Linux require root) from `AddrInUse`, providing specific error messages for each case.
+
+## Statusbar Shield
+
+The status bar shows an SSH tunnel indicator:
+
+- **Grey shield** — Tunnel profiles exist but none are currently connected
+- **Green shield with count badge** — N tunnels are connected; the badge shows the count
+
+Clicking the shield opens the Tunnels Panel.
+
+## Shutdown on Exit
+
+When the app exits (`RunEvent::Exit`), `TunnelManager::shutdown_all()` iterates all active supervisors, sends stop signals, and clears the tunnel map. This ensures no orphaned SSH child processes survive after the app closes
