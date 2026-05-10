@@ -618,7 +618,7 @@ export const RepoSection: Component<{
 					<Show when={props.repo.connectionId}>
 						<span class={s.remoteBadge}>remote</span>
 					</Show>
-					<div class={s.repoActions}>
+					<div class={cx(s.repoActions, ghBadgeCount() > 0 && s.repoActionsWithBadge)}>
 						<Show when={ghBadgeCount() > 0}>
 							<button
 								class={cx(s.repoActionBtn, s.ghBadgeBtn)}

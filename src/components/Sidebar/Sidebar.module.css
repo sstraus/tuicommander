@@ -837,28 +837,28 @@
   pointer-events: none;
 }
 
-/* ── Remote-only PR badge button ── */
-/* Always visible (overrides the opacity:0 of repoActions on non-hover) */
-.repoActions:has(.remoteOnlyBadgeBtn),
-.repoActions:has(.ghBadgeBtn) {
+/* GitHub badge always visible (replaces broken :has() with LightningCSS Modules) */
+.repoActionsWithBadge {
   opacity: 1;
   pointer-events: auto;
 }
 
-.remoteOnlyBadgeBtn {
-  min-width: 20px;
-  width: auto;
-  padding: 0 4px;
-  font-size: var(--font-2xs);
-  font-weight: 700;
-  color: var(--accent);
-  border: 1px solid var(--accent);
-  border-radius: var(--radius-lg);
+/* Hide non-badge action buttons; only the ghBadgeBtn stays visible */
+.repoActionsWithBadge .repoActionBtn {
+  opacity: 0;
+  pointer-events: none;
 }
 
-.remoteOnlyBadgeBtn:hover {
-  background: var(--accent);
-  color: var(--text-on-accent);
+.repoActionsWithBadge .ghBadgeBtn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: hover) {
+  .repoHeader:hover .repoActionsWithBadge .repoActionBtn {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 /* ── Remote-only PR popover ── */
