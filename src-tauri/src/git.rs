@@ -979,7 +979,16 @@ fn detect_default_branch(git_dir: &Path) -> Option<String> {
         return Some(name.to_string());
     }
 
-    // 2. Read origin/HEAD symref (e.g. "ref: refs/remotes/origin/main\n")
+    // 2. Check well-known candidate names in remote tracking refs (CI detached-HEAD: no local
+    //    branches exist, only refs/remotes/origin/* which may live in packed-refs)
+    if let Some(name) = MAIN_BRANCH_CANDIDATES.iter().find(|name| {
+        git_dir.join("refs/remotes/origin").join(name).exists()
+            || packed_ref_exists(git_dir, &format!("refs/remotes/origin/{name}"))
+    }) {
+        return Some(format!("origin/{name}"));
+    }
+
+    // 3. Read origin/HEAD symref (e.g. "ref: refs/remotes/origin/main\n")
     let origin_head = git_dir.join("refs/remotes/origin/HEAD");
     if let Ok(content) = fs::read_to_string(&origin_head)
         && let Some(target) = content.trim().strip_prefix("ref: refs/remotes/origin/")
@@ -990,7 +999,6 @@ fn detect_default_branch(git_dir: &Path) -> Option<String> {
         {
             return Some(branch.to_string());
         }
-        // No local branch (e.g. CI detached-HEAD checkout) — fall back to remote tracking ref
         if git_dir.join("refs/remotes/origin").join(branch).exists()
             || packed_ref_exists(git_dir, &format!("refs/remotes/origin/{branch}"))
         {
