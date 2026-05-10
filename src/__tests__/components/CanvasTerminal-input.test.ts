@@ -329,6 +329,26 @@ describe("createCompositionState — dead-key / IME composition", () => {
 		expect(state.shouldSuppressKeydown(false)).toBe(false);
 	});
 
+	// --- Cancelled composition must NOT suppress next keydown ---
+
+	it("does not suppress next keydown after empty compositionend", () => {
+		const { state } = makeState();
+		state.onCompositionEnd("");
+		expect(state.shouldSuppressKeydown(false)).toBe(false);
+	});
+
+	it("does not suppress next keydown after null compositionend", () => {
+		const { state } = makeState();
+		state.onCompositionEnd(null);
+		expect(state.shouldSuppressKeydown(false)).toBe(false);
+	});
+
+	it("does not suppress next keydown after undefined compositionend", () => {
+		const { state } = makeState();
+		state.onCompositionEnd(undefined);
+		expect(state.shouldSuppressKeydown(false)).toBe(false);
+	});
+
 	it("isComposing=true keydown during composition is always blocked", () => {
 		const { state } = makeState();
 		// No compositionend yet — user is mid dead-key sequence

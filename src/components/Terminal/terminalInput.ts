@@ -142,11 +142,12 @@ export function createCompositionState(scheduleReset: (cb: () => void) => void =
 	let suppressNext = false;
 	return {
 		onCompositionEnd(data) {
+			if (!data) return null;
 			suppressNext = true;
 			scheduleReset(() => {
 				suppressNext = false;
 			});
-			return data || null;
+			return data;
 		},
 		shouldSuppressKeydown(isComposing) {
 			if (isComposing) return true;
