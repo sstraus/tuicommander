@@ -1,3 +1,7 @@
+import { filePreviewRegistry } from "../plugins/filePreviewRegistry";
+import { editorTabsStore } from "../stores/editorTabs";
+import { mdTabsStore } from "../stores/mdTabs";
+
 /** Classification of how a file should be opened in the UI. */
 export type FileOpenTarget = "markdown" | "preview" | "editor";
 
@@ -49,4 +53,37 @@ export function classifyFile(filePath: string): FileOpenTarget {
 	if (MD_EXTS.has(ext)) return "markdown";
 	if (PREVIEW_EXTS.has(ext)) return "preview";
 	return "editor";
+}
+
+/**
+ * Open a file using the best available handler:
+ * 1. Plugin file preview (if registered and no line target)
+ * 2. Markdown tab for .md/.mdx
+ * 3. HTML preview for media/document files
+ * 4. CodeMirror editor (fallback)
+ */
+export function openFileAction(
+	filePath: string,
+	repoPath: string,
+	fsRoot?: string,
+	line?: number,
+	onEditorTab?: (tabId: string) => void,
+): void {
+	if (line === undefined) {
+		const handler = filePreviewRegistry.getHandler(filePath);
+		if (handler) {
+			handler.onOpen({ filePath, repoPath, fsRoot: fsRoot || repoPath });
+			return;
+		}
+	}
+
+	const target = classifyFile(filePath);
+	if (target === "markdown" && line === undefined) {
+		mdTabsStore.add(repoPath, filePath, fsRoot);
+	} else if (target === "preview" && line === undefined) {
+		mdTabsStore.addHtmlPreview(repoPath, filePath, fsRoot);
+	} else {
+		const tabId = editorTabsStore.add(repoPath, filePath, line, { fsRoot: fsRoot || repoPath });
+		onEditorTab?.(tabId);
+	}
 }
