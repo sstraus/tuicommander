@@ -4,6 +4,7 @@ import "../../mocks/tauri";
 
 vi.mock("../../../stores/settings", () => ({
 	settingsStore: { state: {} },
+	FONT_FAMILIES: {},
 }));
 
 vi.mock("../../../stores/ui", () => ({

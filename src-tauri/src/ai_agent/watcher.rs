@@ -1142,7 +1142,7 @@ mod tests {
 
     #[test]
     fn detach_rejects_template() {
-        let config = WatcherConfig::default();
+        let _config = WatcherConfig::default();
         let t = make_template("not attached");
         assert!(
             t.session_id.is_none(),

@@ -979,17 +979,30 @@ fn detect_default_branch(git_dir: &Path) -> Option<String> {
         return Some(name.to_string());
     }
 
-    // 2. Read origin/HEAD symref (e.g. "ref: refs/remotes/origin/main\n")
+    // 2. Check well-known candidate names in remote tracking refs (CI detached-HEAD: no local
+    //    branches exist, only refs/remotes/origin/* which may live in packed-refs)
+    if let Some(name) = MAIN_BRANCH_CANDIDATES.iter().find(|name| {
+        git_dir.join("refs/remotes/origin").join(name).exists()
+            || packed_ref_exists(git_dir, &format!("refs/remotes/origin/{name}"))
+    }) {
+        return Some(format!("origin/{name}"));
+    }
+
+    // 3. Read origin/HEAD symref (e.g. "ref: refs/remotes/origin/main\n")
     let origin_head = git_dir.join("refs/remotes/origin/HEAD");
     if let Ok(content) = fs::read_to_string(&origin_head)
         && let Some(target) = content.trim().strip_prefix("ref: refs/remotes/origin/")
     {
         let branch = target.trim();
-        // Verify the branch exists locally before using it
         if git_dir.join("refs/heads").join(branch).exists()
             || packed_ref_exists(git_dir, &format!("refs/heads/{branch}"))
         {
             return Some(branch.to_string());
+        }
+        if git_dir.join("refs/remotes/origin").join(branch).exists()
+            || packed_ref_exists(git_dir, &format!("refs/remotes/origin/{branch}"))
+        {
+            return Some(format!("origin/{branch}"));
         }
     }
 
@@ -1126,6 +1139,7 @@ fn get_last_commit_timestamps(
             "for-each-ref",
             "--format=%(refname:short)\t%(creatordate:unix)",
             "refs/heads/",
+            "refs/remotes/",
         ])
         .run()
     {
@@ -3130,8 +3144,12 @@ mod tests {
             branch.is_some(),
             "should detect a default branch for this repo"
         );
-        // This repo uses 'main'
-        assert_eq!(branch.unwrap(), "main");
+        // Local checkout uses "main"; CI detached-HEAD checkout uses "origin/main"
+        let branch_name = branch.unwrap();
+        assert!(
+            branch_name == "main" || branch_name == "origin/main",
+            "expected 'main' or 'origin/main', got: {branch_name}"
+        );
     }
 
     #[test]
@@ -3549,10 +3567,13 @@ mod tests {
     #[test]
     fn get_last_commit_timestamps_returns_timestamp_for_main() {
         // Uses the current repo (tuicommander) as a real git repo.
+        // In CI (detached HEAD), detect_default_branch returns "origin/main" instead of "main".
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-        let result = get_last_commit_timestamps(&repo, &["main".to_string()]);
-        assert!(result.contains_key("main"), "should contain 'main' key");
-        let ts = result["main"];
+        let git_dir = resolve_git_dir(&repo).expect("should resolve git dir");
+        let main_ref = detect_default_branch(&git_dir).expect("should detect a default branch");
+        let result = get_last_commit_timestamps(&repo, &[main_ref.clone()]);
+        assert!(result.contains_key(&main_ref), "should contain the main ref key");
+        let ts = result[&main_ref];
         assert!(ts.is_some(), "main branch should have a commit timestamp");
         // Timestamp should be reasonable (after 2024-01-01 = 1704067200)
         assert!(
@@ -4211,22 +4232,27 @@ filename test.txt
             assert!(!b.name.is_empty(), "branch name should not be empty");
         }
 
-        // Exactly one branch must be current
-        let current_branches: Vec<&BranchDetail> =
-            branches.iter().filter(|b| b.is_current).collect();
-        assert_eq!(
-            current_branches.len(),
-            1,
-            "exactly one branch should be current, got: {:?}",
-            current_branches.iter().map(|b| &b.name).collect::<Vec<_>>()
-        );
+        // In CI (detached HEAD), no branch is current — skip those assertions
+        let is_detached = git_cmd(&repo_root)
+            .args(["symbolic-ref", "--quiet", "HEAD"])
+            .run()
+            .is_err();
 
-        // The current branch must have a last_commit_date
-        let current = current_branches[0];
-        assert!(
-            current.last_commit_date.is_some(),
-            "current branch should have a last_commit_date"
-        );
+        if !is_detached {
+            let current_branches: Vec<&BranchDetail> =
+                branches.iter().filter(|b| b.is_current).collect();
+            assert_eq!(
+                current_branches.len(),
+                1,
+                "exactly one branch should be current, got: {:?}",
+                current_branches.iter().map(|b| &b.name).collect::<Vec<_>>()
+            );
+            let current = current_branches[0];
+            assert!(
+                current.last_commit_date.is_some(),
+                "current branch should have a last_commit_date"
+            );
+        }
 
         // At least one branch should have a non-empty last_commit_date
         assert!(
