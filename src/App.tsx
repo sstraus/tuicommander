@@ -40,6 +40,8 @@ import { RunCommandDialog } from "./components/RunCommandDialog";
 import { TaskQueuePanel } from "./components/TaskQueuePanel";
 import { getCompletionSuppression } from "./components/Terminal/completionDecision";
 import { UpdateProgressDialog } from "./components/UpdateProgressDialog";
+import { WhatsNewDialog } from "./components/WhatsNewDialog/WhatsNewDialog";
+import releaseNotes from "./assets/release-notes.json";
 import { executeCleanup } from "./hooks/usePostMergeCleanup";
 
 const HelpPanel = lazy(() => import("./components/HelpPanel").then((m) => ({ default: m.HelpPanel })));
@@ -53,6 +55,7 @@ const ActivityDashboard = lazy(() =>
 
 const TunnelsPanel = lazy(() => import("./components/TunnelsPanel").then((m) => ({ default: m.TunnelsPanel })));
 
+import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { getActionEntries } from "./actions/actionRegistry";
@@ -212,6 +215,7 @@ const App: Component = () => {
 			prNotifications: prNotificationsStore,
 			updater: updaterStore,
 			tasks: tasksStore,
+			showWhatsNew: (v: string) => setWhatsNewVersion(v),
 			dictation: dictationStore,
 			userActivity: userActivityStore,
 			contextMenuActions: contextMenuActionsStore,
@@ -282,6 +286,18 @@ const App: Component = () => {
 	const pty = usePty();
 	const repo = useRepository();
 	const dialogs = useConfirmDialog();
+
+	const [whatsNewVersion, setWhatsNewVersion] = createSignal<string | null>(null);
+	const whatsNewEntry = () => {
+		const v = whatsNewVersion();
+		if (!v) return null;
+		return (
+			releaseNotes as Record<
+				string,
+				{ highlights: string[]; contributions?: { text: string; author: string }[] }
+			>
+		)[v] ?? null;
+	};
 
 	// Drop on folder: when source is a directory, we pause to ask for confirmation.
 	const [pendingFolderDrop, setPendingFolderDrop] = createSignal<
@@ -629,6 +645,22 @@ const App: Component = () => {
 		// Check for updates after hydration (non-blocking)
 		if (settingsStore.state.autoUpdateEnabled) {
 			updaterStore.checkForUpdate().catch((err) => appLogger.debug("app", "Updater auto-check failed", err));
+		}
+
+		// "What's New" dialog — shown once after a stable version update
+		if (isTauri()) {
+			Promise.all([getVersion(), invoke<string | null>("get_last_seen_version")])
+				.then(([currentVersion, lastSeen]) => {
+					const baseVersion = currentVersion.replace(/[-+].*$/, "");
+					if (!lastSeen) {
+						invoke("set_last_seen_version", { version: baseVersion }).catch(() => {});
+						return;
+					}
+					if (lastSeen !== baseVersion && !currentVersion.includes("nightly")) {
+						setWhatsNewVersion(baseVersion);
+					}
+				})
+				.catch((err) => appLogger.debug("app", "Version check for What's New failed", err));
 		}
 
 		// First-run CLI install prompt (one-time)
@@ -2147,6 +2179,7 @@ const App: Component = () => {
 				onRun={(shiftKey) => gitOps.handleRunCommand(shiftKey, () => setRunCommandDialogVisible(true))}
 				onReviewPr={gitOps.handleReviewPr}
 				onOpenSettings={() => setSettingsPanelVisible(true)}
+				onShowWhatsNew={(v) => setWhatsNewVersion(v)}
 			/>
 
 			{/* Body: sidebar + main content side by side */}
@@ -2481,6 +2514,19 @@ const App: Component = () => {
 					if (!req) return;
 					const { confirmFolderDrop } = await import("./hooks/useFileDrop");
 					await confirmFolderDrop(req);
+				}}
+			/>
+
+			{/* What's New dialog — shown once after stable version update */}
+			<WhatsNewDialog
+				visible={whatsNewVersion() !== null && (whatsNewEntry()?.highlights.length ?? 0) > 0}
+				version={whatsNewVersion() ?? ""}
+				highlights={whatsNewEntry()?.highlights ?? []}
+				contributions={whatsNewEntry()?.contributions ?? []}
+				onClose={() => {
+					const v = whatsNewVersion();
+					if (v) invoke("set_last_seen_version", { version: v }).catch(() => {});
+					setWhatsNewVersion(null);
 				}}
 			/>
 

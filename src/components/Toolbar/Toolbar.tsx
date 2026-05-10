@@ -12,6 +12,7 @@ import { repositoriesStore } from "../../stores/repositories";
 import { settingsStore } from "../../stores/settings";
 import { uiStore } from "../../stores/ui";
 import { updaterStore } from "../../stores/updater";
+import releaseNotes from "../../assets/release-notes.json";
 import { cx } from "../../utils";
 import { keyFor } from "../../utils/hotkey";
 import { getRepoColor } from "../../utils/repoColor";
@@ -68,6 +69,7 @@ export interface ToolbarProps {
 	onRun?: (shiftKey: boolean) => void;
 	onReviewPr?: (repoPath: string, branchName: string, command: string) => void;
 	onOpenSettings?: () => void;
+	onShowWhatsNew?: (version: string) => void;
 }
 
 export const Toolbar: Component<ToolbarProps> = (props) => {
@@ -397,6 +399,27 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 												? `${t("statusBar.updating", "Updating")} ${updaterStore.state.progress}%`
 												: t("toolbar.clickToUpdate", "Click to update")}
 										</span>
+										<Show
+											when={
+												updaterStore.state.version &&
+												(releaseNotes as Record<string, unknown>)[
+													updaterStore.state.version.replace(/[-+].*$/, "")
+												] &&
+												props.onShowWhatsNew
+											}
+										>
+											<span
+												class={s.notifBranch}
+												style={{ color: "var(--accent)", cursor: "pointer" }}
+												onClick={(e) => {
+													e.stopPropagation();
+													const v = updaterStore.state.version?.replace(/[-+].*$/, "");
+													if (v) props.onShowWhatsNew?.(v);
+												}}
+											>
+												What's new?
+											</span>
+										</Show>
 									</div>
 								</div>
 							</Show>

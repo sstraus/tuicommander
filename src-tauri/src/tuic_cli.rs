@@ -88,6 +88,18 @@ pub(crate) fn dismiss_cli_prompt() {
     let _ = std::fs::write(&marker, "");
 }
 
+#[tauri::command]
+pub(crate) fn get_last_seen_version() -> Option<String> {
+    let path = crate::config::config_dir().join(".whats-new-seen");
+    std::fs::read_to_string(path).ok().filter(|s| !s.is_empty())
+}
+
+#[tauri::command]
+pub(crate) fn set_last_seen_version(version: String) {
+    let path = crate::config::config_dir().join(".whats-new-seen");
+    let _ = std::fs::write(path, version);
+}
+
 /// Auto-update: if the CLI is installed, overwrite it with the current sidecar.
 /// Called at app startup — silent, no elevation prompt (relies on existing permissions).
 pub(crate) fn auto_update_cli(app: &tauri::AppHandle) {

@@ -2,14 +2,12 @@
 
 When Boss asks to tag a release:
 
-1. **Update version**: run `make bump V=x.y.z` (updates `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, `package.json`)
-2. **Update SPEC.md** header version and date
-3. **Update CHANGELOG.md** — move Unreleased items under the new version heading
-4. **Commit** with message `chore: bump version to vX.Y.Z`
-5. **Tag** with `git tag vX.Y.Z`
-6. **Community credits** — check `gh issue list --state all --label "" --search "is:issue"` and git log for external contributors since last release. Add a `### Community` section to the release notes thanking contributors with links to their issues/PRs
-7. **GitHub release** — create via `gh release create vX.Y.Z --generate-notes`, include the Community section
-8. **Milestone** — close the matching milestone if one exists, create the next one
+1. **Update version**: run `make bump V=x.y.z` (updates all manifests, CHANGELOG, SPEC.md, and generates AI release notes with contributor extraction via `scripts/generate-release-notes.sh`)
+2. **Review release notes** — the script shows AI-generated notes for approval (Y/edit/regenerate/quit). Ensure `### Community` section in CHANGELOG lists all external contributors with PR links
+3. **Commit** with message `chore: bump version to vX.Y.Z`
+4. **Tag** with `git tag vX.Y.Z`
+5. **GitHub release** — create via `gh release create vX.Y.Z --generate-notes`
+6. **Milestone** — close the matching milestone if one exists, create the next one
 
 ## GitHub Issue Management
 

@@ -47,6 +47,7 @@ CLAUDE.md
 .mdkb
 scripts/*
 !scripts/dev-install.sh
+!scripts/generate-release-notes.sh
 !scripts/perf/
 scripts/perf/results/
 competitor-analysis

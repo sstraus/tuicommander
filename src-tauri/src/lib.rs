@@ -1499,7 +1499,9 @@ pub fn run() {
             tuic_cli::get_cli_status,
             tuic_cli::install_cli,
             tuic_cli::uninstall_cli,
-            tuic_cli::dismiss_cli_prompt
+            tuic_cli::dismiss_cli_prompt,
+            tuic_cli::get_last_seen_version,
+            tuic_cli::set_last_seen_version
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

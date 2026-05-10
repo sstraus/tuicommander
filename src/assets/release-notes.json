@@ -1,0 +1,16 @@
+{
+  "1.2.0": {
+    "highlights": [
+      "AI Triage and AI Watchers are now independent experimental features with their own toggles",
+      "Watchers support a configurable cooldown to control minimum seconds between fires",
+      "AI prompt settings now have explicit Save and Revert to Default buttons",
+      "Code editor gains undo/redo, code folding, block selection, bracket auto-close, and CSS color previews",
+      "Watchers now correctly attach to PTY sessions and fire as expected",
+      "Search and filter inputs no longer get mangled by macOS autocorrect"
+    ],
+    "contributions": [
+      { "text": "Dead-key composition (accents, quotes) now works correctly on macOS", "author": "paulovitin" }
+    ],
+    "date": "2026-05-08"
+  }
+}

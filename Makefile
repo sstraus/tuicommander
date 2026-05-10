@@ -22,7 +22,7 @@ export MACOSX_DEPLOYMENT_TARGET ?= 10.15
 DIST_DIR=dist-release
 
 .PHONY: all clean dev test build build-dmg check fmt sign verify-sign notarize release dist \
-       nightly github-release preview bump
+       nightly github-release preview bump release-notes
 
 all: build sign
 
@@ -154,7 +154,15 @@ bump:
 	TODAY=$$(date +%Y-%m-%d); \
 	sed -i '' 's/^## \[Unreleased\]/## [Unreleased]\n\n## [$(V)] - '"$$TODAY"'/' CHANGELOG.md; \
 	echo "  CHANGELOG.md          → $(V) ($$TODAY)"; \
+	echo "  release-notes.json   → generating..."; \
+	./scripts/generate-release-notes.sh $(V); \
 	echo "==> Done. Run 'cargo check' or 'make github-release' to continue."
+
+# Generate AI-written release notes for a specific version.
+# Usage: make release-notes V=1.3.0
+release-notes:
+	@if [ -z "$(V)" ]; then echo "ERROR: specify version with V=x.y.z" && exit 1; fi; \
+	./scripts/generate-release-notes.sh $(V)
 
 # Full versioned release: tag current version, push, wait for CI, publish.
 # To bump first: make bump BUMP=patch (or minor|major), then make github-release.
