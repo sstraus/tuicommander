@@ -970,9 +970,12 @@ pub fn build_remote_router(state: Arc<AppState>) -> Router {
         .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
         .allow_headers([AUTHORIZATION, CONTENT_TYPE]);
 
-    let routes = Router::new()
-        // Health & version
+    let public_routes = Router::new()
         .route("/health", get(session::health))
+        .with_state(state.clone());
+
+    let routes = Router::new()
+        // Version (authenticated)
         .route("/api/version", get(session::app_version))
         // Session lifecycle
         .route(
@@ -1199,10 +1202,12 @@ pub fn build_remote_router(state: Arc<AppState>) -> Router {
             CompressionLayer::new().compress_when(DefaultPredicate::new().and(SizeAbove::new(860))),
         );
 
-    routes.layer(axum::middleware::from_fn_with_state(
+    let authed = routes.layer(axum::middleware::from_fn_with_state(
         state,
         auth::basic_auth_middleware,
-    ))
+    ));
+
+    public_routes.merge(authed)
 }
 
 /// Start the HTTP API server.
