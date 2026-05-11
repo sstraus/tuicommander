@@ -180,6 +180,7 @@ pub(crate) enum PollerCmd {
     PollRepo(String),
     UpdatePaths(Vec<String>),
     SetIssueFilter(String),
+    SetPrHideDrafts(bool),
     Stop,
 }
 
@@ -213,6 +214,7 @@ async fn poll_loop(state: Arc<AppState>, handle: AppHandle, mut rx: mpsc::Receiv
     let mut visible = true;
     let mut paths: Vec<String> = Vec::new();
     let mut issue_filter = String::new();
+    let mut pr_hide_drafts = false;
     let mut ps = PollMutableState {
         prev: HashMap::new(),
         fail_count: 0,
@@ -241,7 +243,7 @@ async fn poll_loop(state: Arc<AppState>, handle: AppHandle, mut rx: mpsc::Receiv
             _ = pending_sleep => {
                 pending_poll_at = None;
                 let rate_budget = state.github_rate_limit_remaining.load(std::sync::atomic::Ordering::Relaxed);
-                poll_batch(&state, &handle, &paths, false, &issue_filter, &mut ps, false).await;
+                poll_batch(&state, &handle, &paths, false, &issue_filter, pr_hide_drafts, &mut ps, false).await;
                 interval = tokio::time::interval(current_interval(visible, ps.fail_count, rate_budget));
                 interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             }
@@ -253,7 +255,7 @@ async fn poll_loop(state: Arc<AppState>, handle: AppHandle, mut rx: mpsc::Receiv
                     tiered_paths(&paths, &ps.last_changed, poll_cycle)
                 };
                 let use_etag = !startup;
-                poll_batch(&state, &handle, &batch_paths, startup, &issue_filter, &mut ps, use_etag).await;
+                poll_batch(&state, &handle, &batch_paths, startup, &issue_filter, pr_hide_drafts, &mut ps, use_etag).await;
                 startup = false;
                 poll_cycle = poll_cycle.wrapping_add(1);
                 pending_poll_at = None;
@@ -286,6 +288,10 @@ async fn poll_loop(state: Arc<AppState>, handle: AppHandle, mut rx: mpsc::Receiv
                         issue_filter = filter;
                         // Fire immediately so the new filter takes effect without waiting
                         // for the next scheduled tick.
+                        pending_poll_at = Some(tokio::time::Instant::now());
+                    }
+                    Some(PollerCmd::SetPrHideDrafts(hide)) => {
+                        pr_hide_drafts = hide;
                         pending_poll_at = Some(tokio::time::Instant::now());
                     }
                     Some(PollerCmd::Stop) | None => break,
@@ -350,6 +356,7 @@ async fn poll_batch(
     paths: &[String],
     include_merged: bool,
     issue_filter: &str,
+    pr_hide_drafts: bool,
     ps: &mut PollMutableState,
     use_etag: bool,
 ) {
@@ -365,7 +372,7 @@ async fn poll_batch(
     } else {
         None
     };
-    match crate::github::get_all_batch_impl(paths, include_merged, issue_filter, state, etag).await
+    match crate::github::get_all_batch_impl(paths, include_merged, issue_filter, pr_hide_drafts, state, etag).await
     {
         Ok(result) => {
             ps.fail_count = 0;
@@ -467,6 +474,7 @@ pub(crate) async fn github_start_polling(
     app: AppHandle,
     paths: Vec<String>,
     issue_filter: String,
+    pr_hide_drafts: bool,
 ) -> Result<(), String> {
     let mut guard = state.github_poller.lock();
     if guard.is_some() {
@@ -487,6 +495,15 @@ pub(crate) async fn github_start_polling(
                     "Failed to send SetIssueFilter to poller: {e}"
                 );
             }
+            if let Err(e) = poller
+                .cmd_tx
+                .try_send(PollerCmd::SetPrHideDrafts(pr_hide_drafts))
+            {
+                tracing::warn!(
+                    source = "github",
+                    "Failed to send SetPrHideDrafts to poller: {e}"
+                );
+            }
         }
         return Ok(());
     }
@@ -501,6 +518,15 @@ pub(crate) async fn github_start_polling(
         tracing::warn!(
             source = "github",
             "Failed to send initial SetIssueFilter: {e}"
+        );
+    }
+    if let Err(e) = poller
+        .cmd_tx
+        .try_send(PollerCmd::SetPrHideDrafts(pr_hide_drafts))
+    {
+        tracing::warn!(
+            source = "github",
+            "Failed to send initial SetPrHideDrafts: {e}"
         );
     }
     *guard = Some(poller);
@@ -571,6 +597,20 @@ pub(crate) async fn github_set_issue_filter(
         && let Err(e) = poller.cmd_tx.try_send(PollerCmd::SetIssueFilter(filter))
     {
         tracing::warn!(source = "github", "Failed to send SetIssueFilter: {e}");
+    }
+    Ok(())
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) async fn github_set_pr_hide_drafts(
+    state: tauri::State<'_, Arc<AppState>>,
+    hide: bool,
+) -> Result<(), String> {
+    if let Some(poller) = state.github_poller.lock().as_ref()
+        && let Err(e) = poller.cmd_tx.try_send(PollerCmd::SetPrHideDrafts(hide))
+    {
+        tracing::warn!(source = "github", "Failed to send SetPrHideDrafts: {e}");
     }
     Ok(())
 }

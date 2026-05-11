@@ -39,6 +39,9 @@ interface RustAppConfig {
 	bell_style: string;
 	global_hotkey: string | null;
 	issue_filter?: string;
+	pr_hide_drafts?: boolean;
+	pr_hide_conflicting?: boolean;
+	pr_hide_ci_failing?: boolean;
 	experimental_features_enabled?: boolean;
 	ai_chat_enabled?: boolean;
 	ai_triage_enabled?: boolean;
@@ -281,6 +284,9 @@ interface SettingsStoreState {
 	bellStyle: "none" | "visual" | "sound" | "both";
 	globalHotkey: string | null;
 	issueFilter: IssueFilterMode;
+	prHideDrafts: boolean;
+	prHideConflicting: boolean;
+	prHideCiFailing: boolean;
 	experimentalFeaturesEnabled: boolean;
 	aiChatEnabled: boolean;
 	aiTriageEnabled: boolean;
@@ -317,6 +323,9 @@ function createSettingsStore() {
 		bellStyle: "visual",
 		globalHotkey: null,
 		issueFilter: "assigned",
+		prHideDrafts: false,
+		prHideConflicting: false,
+		prHideCiFailing: false,
 		experimentalFeaturesEnabled: false,
 		aiChatEnabled: false,
 		aiTriageEnabled: false,
@@ -358,6 +367,9 @@ function createSettingsStore() {
 			bell_style: state.bellStyle,
 			global_hotkey: state.globalHotkey,
 			issue_filter: state.issueFilter,
+			pr_hide_drafts: state.prHideDrafts,
+			pr_hide_conflicting: state.prHideConflicting,
+			pr_hide_ci_failing: state.prHideCiFailing,
 			experimental_features_enabled: state.experimentalFeaturesEnabled,
 			ai_chat_enabled: state.aiChatEnabled,
 			ai_triage_enabled: state.aiTriageEnabled,
@@ -426,6 +438,9 @@ function createSettingsStore() {
 				setState("suggestFollowups", config.suggest_followups ?? true);
 				setState("globalHotkey", config.global_hotkey ?? null);
 				setState("issueFilter", validateIssueFilter(config.issue_filter || null));
+				setState("prHideDrafts", config.pr_hide_drafts ?? false);
+				setState("prHideConflicting", config.pr_hide_conflicting ?? false);
+				setState("prHideCiFailing", config.pr_hide_ci_failing ?? false);
 				setState("experimentalFeaturesEnabled", config.experimental_features_enabled ?? false);
 				setState("aiChatEnabled", config.ai_chat_enabled ?? false);
 				setState("aiTriageEnabled", config.ai_triage_enabled ?? false);
@@ -566,6 +581,21 @@ function createSettingsStore() {
 		/** Set issue filter mode */
 		setIssueFilter(filter: IssueFilterMode): void {
 			setState("issueFilter", filter);
+			save();
+		},
+
+		setPrHideDrafts(v: boolean): void {
+			setState("prHideDrafts", v);
+			save();
+		},
+
+		setPrHideConflicting(v: boolean): void {
+			setState("prHideConflicting", v);
+			save();
+		},
+
+		setPrHideCiFailing(v: boolean): void {
+			setState("prHideCiFailing", v);
 			save();
 		},
 
