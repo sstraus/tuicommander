@@ -23,11 +23,12 @@ import { type Component, createEffect, createSignal, on, onCleanup, Show } from 
 import { useFileBrowser } from "../../hooks/useFileBrowser";
 import { t } from "../../i18n";
 import { invoke } from "../../invoke";
-import { shortenHomePath } from "../../platform";
+import { isMacOS, shortenHomePath } from "../../platform";
 import { appLogger } from "../../stores/appLogger";
 import { diffTabsStore } from "../../stores/diffTabs";
 import { editorTabsStore } from "../../stores/editorTabs";
 import { repositoriesStore } from "../../stores/repositories";
+import { openFileAction } from "../../utils/filePreview";
 import { isAbsolutePath } from "../../utils/pathUtils";
 import { ContextMenu, createContextMenu } from "../ContextMenu";
 import e from "../shared/editor-header.module.css";
@@ -233,6 +234,30 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 	);
 	createExtension(search());
 	createExtension(highlightSelectionMatches());
+
+	// Cmd+Click (Mac) / Ctrl+Click (other) → go to definition via mdkb
+	createExtension(
+		EditorView.domEventHandlers({
+			click(event: MouseEvent, view: EditorView) {
+				const modKey = isMacOS() ? event.metaKey : event.ctrlKey;
+				if (!modKey) return false;
+				const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+				if (pos === null) return false;
+				const line = view.state.doc.lineAt(pos);
+				const col = pos - line.from;
+				invoke<{ filePath: string; line: number } | null>("mdkb_goto_definition", {
+					repoPath: props.repoPath,
+					filePath: props.filePath,
+					line: line.number,
+					col,
+				}).then((result) => {
+					if (!result) return;
+					openFileAction(result.filePath, props.repoPath, fsRoot(), result.line);
+				}).catch(() => {});
+				return true;
+			},
+		}),
+	);
 
 	// Reactive language extension
 	createExtension((): Extension => langSupport() ?? []);
