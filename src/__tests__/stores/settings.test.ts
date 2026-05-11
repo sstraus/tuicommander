@@ -426,4 +426,70 @@ describe("settingsStore", () => {
 			});
 		});
 	});
+
+	describe("PR visibility filters", () => {
+		it("defaults prHideDrafts, prHideConflicting, prHideCiFailing to false", () => {
+			testInScope(() => {
+				expect(store.state.prHideDrafts).toBe(false);
+				expect(store.state.prHideConflicting).toBe(false);
+				expect(store.state.prHideCiFailing).toBe(false);
+			});
+		});
+
+		it("setPrHideDrafts updates state", () => {
+			testInScope(() => {
+				store.setPrHideDrafts(true);
+				expect(store.state.prHideDrafts).toBe(true);
+				store.setPrHideDrafts(false);
+				expect(store.state.prHideDrafts).toBe(false);
+			});
+		});
+
+		it("setPrHideDrafts persists via debounced save_config", async () => {
+			await testInScopeAsync(async () => {
+				store.setPrHideDrafts(true);
+				vi.advanceTimersByTime(600);
+				await vi.runAllTimersAsync();
+				expect(mockInvoke).toHaveBeenCalledWith("save_config", {
+					config: expect.objectContaining({ pr_hide_drafts: true }),
+				});
+			});
+		});
+
+		it("setPrHideConflicting updates state", () => {
+			testInScope(() => {
+				store.setPrHideConflicting(true);
+				expect(store.state.prHideConflicting).toBe(true);
+			});
+		});
+
+		it("setPrHideCiFailing updates state", () => {
+			testInScope(() => {
+				store.setPrHideCiFailing(true);
+				expect(store.state.prHideCiFailing).toBe(true);
+			});
+		});
+
+		it("hydrate restores pr filter flags from config", async () => {
+			mockInvoke.mockResolvedValueOnce({
+				shell: null,
+				font_family: "JetBrains Mono",
+				font_size: 14,
+				theme: "dark",
+				mcp_server_enabled: false,
+				ide: "vscode",
+				pr_hide_drafts: true,
+				pr_hide_conflicting: true,
+				pr_hide_ci_failing: false,
+			});
+			mockInvoke.mockResolvedValueOnce({ primary_agent: "claude" });
+
+			await testInScopeAsync(async () => {
+				await store.hydrate();
+				expect(store.state.prHideDrafts).toBe(true);
+				expect(store.state.prHideConflicting).toBe(true);
+				expect(store.state.prHideCiFailing).toBe(false);
+			});
+		});
+	});
 });

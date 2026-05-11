@@ -950,12 +950,15 @@ fn build_unified_batch_query(
     include_merged: bool,
     filter_mode: &str,
     viewer: &str,
+    hide_drafts: bool,
 ) -> (String, Vec<(String, String)>) {
     let states = if include_merged {
         "[OPEN, MERGED]"
     } else {
         "[OPEN]"
     };
+    // Fetch more items when drafts are hidden so filtering leaves enough valid PRs.
+    let pr_first = if hide_drafts { 40 } else { 20 };
     let pr_node_fields = r#"number title state url headRefName headRefOid baseRefName isDraft
         additions deletions mergeable mergeStateStatus reviewDecision
         createdAt updatedAt
@@ -988,10 +991,26 @@ fn build_unified_batch_query(
             String::new()
         };
         parts.push(format!(
-            "  {alias}: repository(owner: \"{owner}\", name: \"{name}\") {{\n    mergeCommitAllowed\n    squashMergeAllowed\n    rebaseMergeAllowed\n    pullRequests(first: 20, states: {states}, orderBy: {{field: UPDATED_AT, direction: DESC}}) {{\n      nodes {{ {pr_node_fields} }}\n    }}{issues_section}\n  }}"
+            "  {alias}: repository(owner: \"{owner}\", name: \"{name}\") {{\n    mergeCommitAllowed\n    squashMergeAllowed\n    rebaseMergeAllowed\n    pullRequests(first: {pr_first}, states: {states}, orderBy: {{field: UPDATED_AT, direction: DESC}}) {{\n      nodes {{ {pr_node_fields} }}\n    }}{issues_section}\n  }}"
         ));
         aliases.push((alias, path.clone()));
     }
+
+    // Supplemental search for viewer's own open PRs across all queried repos.
+    // Guarantees the current user's PRs appear even if outside the top-20 by activity.
+    if !viewer.is_empty() {
+        let repo_filters: String = repos
+            .iter()
+            .map(|(_, owner, name)| format!("repo:{owner}/{name}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let draft_filter = if hide_drafts { " -is:draft" } else { "" };
+        let search_query = format!("is:pr is:open author:{viewer}{draft_filter} {repo_filters}");
+        parts.push(format!(
+            "  viewerPrs: search(query: \"{search_query}\", type: ISSUE, first: 30) {{\n    nodes {{\n      ... on PullRequest {{\n        repository {{ nameWithOwner }}\n        {pr_node_fields}\n      }}\n    }}\n  }}"
+        ));
+    }
+
     parts.push("  rateLimit { cost remaining resetAt }".to_string());
     parts.push("}".to_string());
 
@@ -1011,6 +1030,7 @@ pub(crate) async fn get_all_batch_impl(
     paths: &[String],
     include_merged: bool,
     filter_mode: &str,
+    pr_hide_drafts: bool,
     state: &AppState,
     etag_cache: Option<&mut std::collections::HashMap<String, String>>,
 ) -> Result<BatchPollResult, String> {
@@ -1066,13 +1086,10 @@ pub(crate) async fn get_all_batch_impl(
     };
 
     let include_issues = !matches!(filter_mode, "" | "disabled");
-    let viewer = if include_issues && !matches!(filter_mode, "all") {
-        get_viewer_login(state).await.unwrap_or_default()
-    } else {
-        String::new()
-    };
+    // Always fetch viewer login — needed for both issue filtering and viewer PR search.
+    let viewer = get_viewer_login(state).await.unwrap_or_default();
 
-    let (query, aliases) = build_unified_batch_query(&repos, include_merged, filter_mode, &viewer);
+    let (query, aliases) = build_unified_batch_query(&repos, include_merged, filter_mode, &viewer, pr_hide_drafts);
     let response = graphql_with_retry(state, &query, serde_json::Value::Null).await?;
 
     // Store rate-limit budget for proactive throttling in the poller
@@ -1145,6 +1162,39 @@ pub(crate) async fn get_all_batch_impl(
         if include_issues && let Some(nodes) = repo_json["issues"]["nodes"].as_array() {
             let issues: Vec<GitHubIssue> = nodes.iter().filter_map(parse_issue_node).collect();
             issue_results.insert(path.clone(), issues);
+        }
+    }
+
+    // Merge viewer's own PRs (from supplemental search) into pr_results.
+    // These may be outside the top-20 by activity so would otherwise be missing.
+    if !viewer.is_empty() {
+        // Multiple local paths can map to the same owner/name (e.g. two worktrees
+        // of the same repo imported as separate workspace entries).
+        let mut name_to_paths: std::collections::HashMap<String, Vec<&str>> =
+            std::collections::HashMap::new();
+        for (path, owner, name) in &repos {
+            name_to_paths
+                .entry(format!("{owner}/{name}"))
+                .or_default()
+                .push(path.as_str());
+        }
+
+        if let Some(nodes) = response["data"]["viewerPrs"]["nodes"].as_array() {
+            for node in nodes {
+                let repo_name = node["repository"]["nameWithOwner"].as_str().unwrap_or("");
+                let Some(paths) = name_to_paths.get(repo_name) else {
+                    continue;
+                };
+                let Some(pr) = parse_pr_node(node) else {
+                    continue;
+                };
+                for path in paths {
+                    let entry = pr_results.entry(path.to_string()).or_default();
+                    if !entry.iter().any(|existing| existing.branch == pr.branch) {
+                        entry.push(pr.clone());
+                    }
+                }
+            }
         }
     }
 
@@ -1505,7 +1555,7 @@ pub(crate) async fn get_all_pr_statuses_impl(
     include_merged: bool,
     state: &AppState,
 ) -> Result<std::collections::HashMap<String, Vec<BranchPrStatus>>, String> {
-    let result = get_all_batch_impl(paths, include_merged, "disabled", state, None).await?;
+    let result = get_all_batch_impl(paths, include_merged, "disabled", false, state, None).await?;
     Ok(result.prs)
 }
 
@@ -1669,6 +1719,17 @@ pub(crate) async fn get_github_status(
 #[tauri::command]
 pub(crate) async fn check_github_circuit(state: State<'_, Arc<AppState>>) -> Result<bool, String> {
     Ok(state.github_circuit_breaker.check().is_ok())
+}
+
+/// Get the authenticated GitHub viewer's login (username).
+/// Cached after first successful call.
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) async fn get_github_viewer_login(
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    let state = state.inner().clone();
+    get_viewer_login(&state).await
 }
 
 const PR_CHECKS_QUERY: &str = r#"
@@ -3592,5 +3653,45 @@ mod tests {
         // "all" mode should NOT include filterBy qualifier
         assert!(!query.contains("filterBy"));
         assert!(query.contains("issues("));
+    }
+
+    // --- build_unified_batch_query: hide_drafts tests ---
+
+    #[test]
+    fn test_build_unified_batch_query_hide_drafts_adds_filter() {
+        let repos = vec![("/path".to_string(), "owner".to_string(), "repo".to_string())];
+        let (query, _) = build_unified_batch_query(&repos, false, "disabled", "alice", true);
+        assert!(query.contains("-is:draft"), "draft filter should appear in viewer search");
+    }
+
+    #[test]
+    fn test_build_unified_batch_query_show_drafts_no_filter() {
+        let repos = vec![("/path".to_string(), "owner".to_string(), "repo".to_string())];
+        let (query, _) = build_unified_batch_query(&repos, false, "disabled", "alice", false);
+        assert!(!query.contains("-is:draft"), "draft filter should not appear when hide_drafts is false");
+    }
+
+    #[test]
+    fn test_build_unified_batch_query_hide_drafts_fetches_more() {
+        let repos = vec![("/path".to_string(), "owner".to_string(), "repo".to_string())];
+        let (query_hide, _) = build_unified_batch_query(&repos, false, "disabled", "", true);
+        let (query_show, _) = build_unified_batch_query(&repos, false, "disabled", "", false);
+        assert!(query_hide.contains("first: 40"), "hide_drafts should fetch 40 PRs");
+        assert!(query_show.contains("first: 20"), "show_drafts should fetch 20 PRs");
+    }
+
+    #[test]
+    fn test_build_unified_batch_query_no_viewer_prs_section_without_viewer() {
+        let repos = vec![("/path".to_string(), "owner".to_string(), "repo".to_string())];
+        let (query, _) = build_unified_batch_query(&repos, false, "disabled", "", true);
+        assert!(!query.contains("viewerPrs"), "no viewerPrs section when viewer is empty");
+    }
+
+    #[test]
+    fn test_build_unified_batch_query_viewer_prs_section_with_viewer() {
+        let repos = vec![("/path".to_string(), "owner".to_string(), "repo".to_string())];
+        let (query, _) = build_unified_batch_query(&repos, false, "disabled", "alice", false);
+        assert!(query.contains("viewerPrs"), "viewerPrs section present when viewer is set");
+        assert!(query.contains("author:alice"), "viewer search targets alice");
     }
 }

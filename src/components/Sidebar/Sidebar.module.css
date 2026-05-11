@@ -1505,6 +1505,11 @@
   color: var(--text-on-accent);
 }
 
+.ghBadgeSep {
+  opacity: 0.5;
+  font-size: 0.7em;
+}
+
 .ghBadgeBtn svg {
   width: 10px;
   height: 10px;

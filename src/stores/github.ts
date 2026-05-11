@@ -28,6 +28,7 @@ interface GitHubStoreState {
 	repos: Record<string, RepoGitHubData>;
 	issuesLoading: boolean;
 	circuitBreakerOpen: boolean;
+	viewerLogin: string | null;
 }
 
 function createGitHubStore() {
@@ -35,6 +36,7 @@ function createGitHubStore() {
 		repos: {},
 		issuesLoading: false,
 		circuitBreakerOpen: false,
+		viewerLogin: null,
 	});
 
 	const unlisteners: (() => void)[] = [];
@@ -122,6 +124,13 @@ function createGitHubStore() {
 		return Object.values(repo.branches).filter(
 			(pr) => pr.state?.toUpperCase() === "OPEN" && !localBranches.has(pr.branch),
 		);
+	}
+
+	/** Get all open PRs regardless of local branch presence */
+	function getAllOpenPrs(repoPath: string): BranchPrStatus[] {
+		const repo = state.repos[repoPath];
+		if (!repo) return [];
+		return Object.values(repo.branches).filter((pr) => pr.state?.toUpperCase() === "OPEN");
 	}
 
 	/** Get full branch PR data */
@@ -268,14 +277,22 @@ function createGitHubStore() {
 		}
 	}
 
+	function fetchViewerLogin(): void {
+		invoke<string>("get_github_viewer_login")
+			.then((login) => setState("viewerLogin", login))
+			.catch((err) => appLogger.debug("github", "Failed to fetch viewer login", err));
+	}
+
 	/** Start Rust poller and set up event listeners */
 	function startPolling(): void {
 		const paths = repositoriesStore.getActivePaths();
 		const issueFilter = settingsStore.state.issueFilter ?? "disabled";
 
-		invoke("github_start_polling", { paths, issueFilter }).catch((err) =>
+		const prHideDrafts = settingsStore.state.prHideDrafts;
+		invoke("github_start_polling", { paths, issueFilter, prHideDrafts }).catch((err) =>
 			appLogger.warn("github", "Failed to start GitHub poller", err),
 		);
+		fetchViewerLogin();
 
 		listen<{ repo_path: string; statuses: BranchPrStatus[] }>("github-pr-update", (event) => {
 			updateRepoData(event.payload.repo_path, event.payload.statuses);
@@ -319,6 +336,7 @@ function createGitHubStore() {
 		getCheckDetails,
 		getBranchPrData,
 		getRemoteOnlyPrs,
+		getAllOpenPrs,
 		getRemoteStatus,
 		setRemoteStatus,
 		getRepoIssues,
@@ -327,6 +345,11 @@ function createGitHubStore() {
 			const filter = settingsStore.state.issueFilter ?? "disabled";
 			invoke("github_set_issue_filter", { filter }).catch((err) =>
 				appLogger.debug("github", "Failed to trigger issues re-poll", err),
+			);
+		},
+		setPrHideDrafts(hide: boolean): void {
+			invoke("github_set_pr_hide_drafts", { hide }).catch((err) =>
+				appLogger.debug("github", "Failed to set pr_hide_drafts", err),
 			);
 		},
 		loadCheckDetails,

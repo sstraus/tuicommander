@@ -98,6 +98,8 @@ vi.mock("../../stores/github", () => ({
 		getPrStatus: mockGetPrStatus,
 		getRemoteOnlyPrs: vi.fn(() => []),
 		getRepoIssues: vi.fn(() => []),
+		getAllOpenPrs: vi.fn(() => []),
+		state: { viewerLogin: null, issuesLoading: false, circuitBreakerOpen: false },
 	},
 }));
 

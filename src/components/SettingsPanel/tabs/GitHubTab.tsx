@@ -386,6 +386,30 @@ export const GitHubTab: Component = () => {
 					hint="Automatically open the PR panel when a branch has an associated pull request"
 				/>
 
+				<SettingToggle
+					checked={settingsStore.state.prHideDrafts}
+					onChange={(v) => {
+						settingsStore.setPrHideDrafts(v);
+						githubStore.setPrHideDrafts(v);
+					}}
+					label="Hide Draft PRs"
+					hint="Exclude draft pull requests from the Pull Requests list"
+				/>
+
+				<SettingToggle
+					checked={settingsStore.state.prHideConflicting}
+					onChange={(v) => settingsStore.setPrHideConflicting(v)}
+					label="Hide Conflicting PRs"
+					hint="Exclude pull requests with merge conflicts from the Pull Requests list"
+				/>
+
+				<SettingToggle
+					checked={settingsStore.state.prHideCiFailing}
+					onChange={(v) => settingsStore.setPrHideCiFailing(v)}
+					label="Hide CI Failing PRs"
+					hint="Exclude pull requests with failing CI checks from the Pull Requests list"
+				/>
+
 				<SettingSelect
 					label="Auto-Delete on PR Close"
 					value={repoDefaultsStore.state.autoDeleteOnPrClose}
