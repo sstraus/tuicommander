@@ -83,6 +83,28 @@ describe("registryStore", () => {
 				expect(result).not.toBeNull();
 			});
 		});
+
+		it("returns null when installed version is newer than registry (no downgrade)", async () => {
+			const entry = makeEntry({ id: "my-plugin", latestVersion: "1.0.0" });
+			mockInvoke.mockResolvedValueOnce([entry]);
+
+			await testInScopeAsync(async () => {
+				await store.fetch();
+				const result = store.hasUpdate("my-plugin", "2.0.0");
+				expect(result).toBeNull();
+			});
+		});
+
+		it("returns entry when versions differ by patch version", async () => {
+			const entry = makeEntry({ id: "my-plugin", latestVersion: "1.0.1" });
+			mockInvoke.mockResolvedValueOnce([entry]);
+
+			await testInScopeAsync(async () => {
+				await store.fetch();
+				const result = store.hasUpdate("my-plugin", "1.0.0");
+				expect(result).not.toBeNull();
+			});
+		});
 	});
 
 	describe("fetch() TTL cache", () => {

@@ -135,10 +135,11 @@ import { tasksStore } from "./stores/tasks";
 import { terminalsStore } from "./stores/terminals";
 import { toastsStore } from "./stores/toasts";
 import { uiStore } from "./stores/ui";
+import { registryStore } from "./stores/registryStore";
 import { updaterStore } from "./stores/updater";
 import { userActivityStore } from "./stores/userActivity";
 import { worktreeManagerStore } from "./stores/worktreeManager";
-import { applyAppTheme, applyFontFamily } from "./themes";
+import { applyAppTheme, applyFontFamily, themesLoaded } from "./themes";
 import { isTauri } from "./transport";
 import { buildAgentLaunchCommand } from "./utils/agentSession";
 import { openFileAction } from "./utils/filePreview";
@@ -647,6 +648,9 @@ const App: Component = () => {
 		if (settingsStore.state.autoUpdateEnabled) {
 			updaterStore.checkForUpdate().catch((err) => appLogger.debug("app", "Updater auto-check failed", err));
 		}
+		if (settingsStore.state.autoUpdatePluginsEnabled) {
+			registryStore.fetch().catch((err) => appLogger.debug("app", "Plugin registry fetch failed", err));
+		}
 
 		// "What's New" dialog — shown once after a stable version update
 		if (isTauri()) {
@@ -698,7 +702,12 @@ const App: Component = () => {
 	});
 
 	// Apply the active theme to the entire app chrome (sidebar, tabs, toolbar, etc.)
-	createEffect(() => applyAppTheme(settingsStore.state.theme));
+	// Read theme BEFORE the guard so SolidJS always tracks it as a dependency.
+	// The explicit call in initApp handles the initial apply after loading.
+	createEffect(() => {
+		const theme = settingsStore.state.theme;
+		if (themesLoaded()) applyAppTheme(theme);
+	});
 
 	// Sync --font-mono CSS variable when font selection changes
 	createEffect(() => applyFontFamily(settingsStore.state.font));

@@ -1,5 +1,6 @@
 import { createStore } from "solid-js/store";
 import { invoke } from "../invoke";
+import { compareSemver } from "../plugins/pluginLoader";
 
 /** A plugin entry from the remote registry */
 export interface RegistryEntry {
@@ -50,12 +51,11 @@ async function refresh(): Promise<void> {
 	await fetch();
 }
 
-/** Check if a plugin has an update available */
+/** Check if a plugin has an update available (semver-aware) */
 function hasUpdate(installedId: string, installedVersion: string): RegistryEntry | null {
 	const entry = state.entries.find((e) => e.id === installedId);
 	if (!entry) return null;
-	// Simple string comparison — semver-aware comparison could be added later
-	return entry.latestVersion !== installedVersion ? entry : null;
+	return compareSemver(entry.latestVersion, installedVersion) > 0 ? entry : null;
 }
 
 export const registryStore = {

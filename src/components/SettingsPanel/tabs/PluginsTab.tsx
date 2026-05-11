@@ -1,6 +1,6 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { type Component, createSignal, For, Show } from "solid-js";
+import { type Component, createMemo, createSignal, For, onMount, Show } from "solid-js";
 import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
 import { invoke } from "../../../invoke";
 import { dashboardRegistry } from "../../../plugins/dashboardRegistry";
@@ -10,8 +10,10 @@ import { mdTabsStore } from "../../../stores/mdTabs";
 import type { PluginState } from "../../../stores/pluginStore";
 import { pluginStore } from "../../../stores/pluginStore";
 import { type RegistryEntry, registryStore } from "../../../stores/registryStore";
+import { settingsStore } from "../../../stores/settings";
 import { isTauri } from "../../../transport";
 import { ConfirmDialog } from "../../ConfirmDialog";
+import { SettingToggle } from "../SettingFields";
 import s from "../Settings.module.css";
 import ps from "./PluginsTab.module.css";
 
@@ -96,6 +98,25 @@ const PluginRow: Component<{ plugin: PluginState; onClose?: () => void }> = (pro
 		}
 	};
 
+	const updateEntry = createMemo(() => {
+		const v = props.plugin.manifest?.version;
+		return v ? registryStore.hasUpdate(props.plugin.id, v) : null;
+	});
+	const [updating, setUpdating] = createSignal(false);
+
+	const handleUpdate = async () => {
+		const entry = updateEntry();
+		if (!entry || updating()) return;
+		setUpdating(true);
+		try {
+			await pluginStore.installFromUrl(entry.downloadUrl);
+		} catch (err) {
+			appLogger.error("plugin", `Failed to update "${props.plugin.id}"`, err);
+		} finally {
+			setUpdating(false);
+		}
+	};
+
 	const errorCount = () => props.plugin.logger.errorCount;
 	const version = () => props.plugin.manifest?.version ?? "—";
 	const description = () => props.plugin.manifest?.description ?? "";
@@ -123,6 +144,9 @@ const PluginRow: Component<{ plugin: PluginState; onClose?: () => void }> = (pro
 								{errorCount()} error{errorCount() > 1 ? "s" : ""}
 							</span>
 						</Show>
+						<Show when={updateEntry()}>
+							<span class={ps.updateBadge}>v{updateEntry()!.latestVersion}</span>
+						</Show>
 					</div>
 					<Show when={description()}>
 						<p class={ps.pluginDescription}>{description()}</p>
@@ -137,6 +161,11 @@ const PluginRow: Component<{ plugin: PluginState; onClose?: () => void }> = (pro
 
 				<div class={ps.pluginActions}>
 					<div class={ps.pluginActionsRow}>
+						<Show when={updateEntry()}>
+							<button class={ps.installBtn} onClick={handleUpdate} disabled={updating()}>
+								{updating() ? "..." : "Update"}
+							</button>
+						</Show>
 						<Show when={hasReadme()}>
 							<button class={ps.docsBtn} onClick={handleOpenReadme} title="View plugin documentation">
 								?
@@ -297,6 +326,13 @@ export const PluginsTab: Component<{ onClose?: () => void }> = (props) => {
 	const [fileInstallError, setFileInstallError] = createSignal<string | null>(null);
 	const [activeSubTab, setActiveSubTab] = createSignal<"installed" | "browse">("installed");
 
+	// Pre-warm registry data so update badges are visible on Installed tab
+	onMount(() => {
+		if (settingsStore.state.autoUpdatePluginsEnabled) {
+			registryStore.fetch();
+		}
+	});
+
 	// Fetch registry when Browse tab is first shown
 	const handleBrowse = () => {
 		setActiveSubTab("browse");
@@ -383,6 +419,13 @@ export const PluginsTab: Component<{ onClose?: () => void }> = (props) => {
 
 			{/* Installed tab */}
 			<Show when={activeSubTab() === "installed"}>
+				<SettingToggle
+					checked={settingsStore.state.autoUpdatePluginsEnabled}
+					onChange={(v) => settingsStore.setAutoUpdatePluginsEnabled(v)}
+					label="Check for plugin updates"
+					hint="Fetch the registry at startup and show available updates"
+				/>
+
 				<Show
 					when={plugins().length > 0}
 					fallback={

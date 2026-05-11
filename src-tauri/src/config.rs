@@ -490,6 +490,9 @@ pub(crate) struct AppConfig {
     /// Automatically check for app updates on startup
     #[serde(default = "default_true")]
     pub(crate) auto_update_enabled: bool,
+    /// Automatically check for plugin updates on startup
+    #[serde(default = "default_true")]
+    pub(crate) auto_update_plugins_enabled: bool,
     /// UI language code (e.g. "en", "it", "de")
     #[serde(default = "default_language")]
     pub(crate) language: String,
@@ -637,6 +640,7 @@ impl Default for AppConfig {
             auto_show_pr_popover: true,
             prevent_sleep_when_busy: false,
             auto_update_enabled: true,
+            auto_update_plugins_enabled: true,
             language: default_language(),
             disabled_plugin_ids: Vec::new(),
             update_channel: default_update_channel(),
@@ -1618,6 +1622,7 @@ mod tests {
             ai_terminal_mcp_enabled: false,
             cursor_style: "bar".to_string(),
             terminal_renderer: "webgl".to_string(),
+            auto_update_plugins_enabled: false,
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
         assert_eq!(loaded.shell.as_deref(), Some("/bin/zsh"));

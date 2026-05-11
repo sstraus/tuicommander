@@ -27,6 +27,7 @@ interface RustAppConfig {
 	auto_show_pr_popover: boolean;
 	prevent_sleep_when_busy: boolean;
 	auto_update_enabled: boolean;
+	auto_update_plugins_enabled: boolean;
 	language: string;
 	update_channel: string;
 	services: {
@@ -275,6 +276,7 @@ interface SettingsStoreState {
 	autoShowPrPopover: boolean;
 	preventSleepWhenBusy: boolean;
 	autoUpdateEnabled: boolean;
+	autoUpdatePluginsEnabled: boolean;
 	language: string;
 	updateChannel: UpdateChannel;
 	disabledAgents: string[];
@@ -314,6 +316,7 @@ function createSettingsStore() {
 		autoShowPrPopover: true,
 		preventSleepWhenBusy: false,
 		autoUpdateEnabled: true,
+		autoUpdatePluginsEnabled: true,
 		language: "en",
 		updateChannel: "stable" as UpdateChannel,
 		disabledAgents: [],
@@ -358,6 +361,7 @@ function createSettingsStore() {
 			auto_show_pr_popover: state.autoShowPrPopover,
 			prevent_sleep_when_busy: state.preventSleepWhenBusy,
 			auto_update_enabled: state.autoUpdateEnabled,
+			auto_update_plugins_enabled: state.autoUpdatePluginsEnabled,
 			language: state.language,
 			update_channel: state.updateChannel,
 			disabled_agents: [...state.disabledAgents],
@@ -427,6 +431,7 @@ function createSettingsStore() {
 				setState("autoShowPrPopover", config.auto_show_pr_popover ?? true);
 				setState("preventSleepWhenBusy", config.prevent_sleep_when_busy ?? false);
 				setState("autoUpdateEnabled", config.auto_update_enabled ?? true);
+				setState("autoUpdatePluginsEnabled", config.auto_update_plugins_enabled ?? true);
 				setState("language", config.language || "en");
 				setLocale(config.language || "en");
 				const channel = config.update_channel;
@@ -523,6 +528,12 @@ function createSettingsStore() {
 		/** Set auto-update-enabled preference */
 		setAutoUpdateEnabled(enabled: boolean): void {
 			setState("autoUpdateEnabled", enabled);
+			save();
+		},
+
+		/** Set auto-update-plugins-enabled preference */
+		setAutoUpdatePluginsEnabled(enabled: boolean): void {
+			setState("autoUpdatePluginsEnabled", enabled);
 			save();
 		},
 

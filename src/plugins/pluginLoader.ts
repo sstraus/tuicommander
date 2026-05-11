@@ -56,7 +56,7 @@ export interface PluginManifest {
 // ---------------------------------------------------------------------------
 
 /** Simple semver comparison: returns -1, 0, or 1 */
-function compareSemver(a: string, b: string): number {
+export function compareSemver(a: string, b: string): number {
 	const pa = a.split(".").map(Number);
 	const pb = b.split(".").map(Number);
 	for (let i = 0; i < 3; i++) {
