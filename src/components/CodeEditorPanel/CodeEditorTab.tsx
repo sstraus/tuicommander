@@ -269,7 +269,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 				}).then((result) => {
 					if (!result) return;
 					openFileAction(result.filePath, props.repoPath, fsRoot(), result.line);
-				}).catch(() => {});
+				}).catch((e) => appLogger.debug("editor", "go-to-definition failed", { error: String(e) }));
 				return true;
 			},
 		}),

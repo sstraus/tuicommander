@@ -1,5 +1,6 @@
 import { type Component, createResource, For, Show } from "solid-js";
 import { invoke } from "../../invoke";
+import { appLogger } from "../../stores/appLogger";
 import { editorTabsStore } from "../../stores/editorTabs";
 import { cx } from "../../utils";
 import { openFileAction } from "../../utils/filePreview";
@@ -58,14 +59,17 @@ export const OutlinePanel: Component<OutlinePanelProps> = (props) => {
 		return { repoPath: tab.repoPath, fsRoot: tab.fsRoot, filePath: tab.filePath };
 	};
 
-	const [symbols] = createResource(activeFile, async (file) => {
+	const resourceSource = () => (props.visible ? activeFile() : null);
+
+	const [symbols] = createResource(resourceSource, async (file) => {
 		if (!file) return [];
 		try {
 			return await invoke<OutlineSymbol[]>("mdkb_outline", {
 				repoPath: file.repoPath,
 				filePath: file.filePath,
 			});
-		} catch {
+		} catch (e) {
+			appLogger.debug("outline", "mdkb_outline failed", { error: String(e) });
 			return [];
 		}
 	});

@@ -8,7 +8,7 @@ export async function initPanelWindow(): Promise<void> {
 		appLogger.warn("panel", "Failed to hydrate settings in panel window — using defaults", e);
 	});
 	await loadThemes();
-	listenForThemeChanges();
+	void listenForThemeChanges();
 	applyAppTheme(settingsStore.state.theme);
 	applyFontFamily(settingsStore.state.font);
 }

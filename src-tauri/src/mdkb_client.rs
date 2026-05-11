@@ -139,19 +139,6 @@ impl MdkbClient {
         })).await
     }
 
-    pub async fn search_symbols(
-        &mut self,
-        root: &str,
-        query: &str,
-        limit: usize,
-    ) -> Result<Value> {
-        self.call("search", json!({
-            "root": root,
-            "query": query,
-            "scope": "symbols",
-            "limit": limit,
-        })).await
-    }
 }
 
 #[cfg(test)]

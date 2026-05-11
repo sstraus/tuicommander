@@ -64,7 +64,7 @@ export const FloatingTerminal: Component = () => {
 			.hydrate()
 			.catch((e) => appLogger.warn("settings", "Failed to hydrate floating terminal settings", { error: String(e) }));
 		await loadThemes();
-		listenForThemeChanges();
+		void listenForThemeChanges();
 
 		// Set window title
 		try {

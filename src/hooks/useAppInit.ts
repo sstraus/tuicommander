@@ -156,7 +156,7 @@ export async function initApp(deps: AppInitDeps) {
 
 	// Load themes from Rust backend (must complete before applyAppTheme fires)
 	await loadThemes();
-	listenForThemeChanges();
+	void listenForThemeChanges();
 
 	// Load .tuic.json local configs for all repos (fire-and-forget, non-blocking)
 	for (const repoPath of repositoriesStore.getPaths()) {

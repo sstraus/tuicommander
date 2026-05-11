@@ -1,5 +1,4 @@
 use anyhow::{Result, bail};
-use serde_json::Value;
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::process::Command;
@@ -27,6 +26,10 @@ impl MdkbDaemon {
 
     pub fn is_available(&self) -> bool {
         self.binary_path.is_some()
+    }
+
+    pub fn is_connected(&self) -> bool {
+        self.client.is_some()
     }
 
     pub async fn ensure_running(&mut self) -> Result<&mut MdkbClient> {
@@ -58,15 +61,17 @@ impl MdkbDaemon {
 
         Command::new(bin)
             .args(["serve", "--daemon", "--detach"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .spawn()?;
 
-        let socket_path = MdkbClient::socket_path();
         let deadline = tokio::time::Instant::now() + DAEMON_SPAWN_TIMEOUT;
 
         while tokio::time::Instant::now() < deadline {
-            if socket_path.exists() {
-                tokio::time::sleep(POLL_INTERVAL).await;
-                return Ok(());
+            if let Ok(mut c) = MdkbClient::connect().await {
+                if c.ping().await.is_ok() {
+                    return Ok(());
+                }
             }
             tokio::time::sleep(POLL_INTERVAL).await;
         }
@@ -74,10 +79,6 @@ impl MdkbDaemon {
         bail!("mdkb daemon did not start within {}s", DAEMON_SPAWN_TIMEOUT.as_secs());
     }
 
-    pub async fn call(&mut self, method: &str, params: Value) -> Result<Value> {
-        let client = self.ensure_running().await?;
-        client.call(method, params).await
-    }
 }
 
 pub type SharedMdkbDaemon = Mutex<MdkbDaemon>;

@@ -42,7 +42,10 @@ export type AppLogSource =
 	| "ai-agent"
 	| "conversation"
 	| "panel"
-	| "panel-sync";
+	| "panel-sync"
+	| "editor"
+	| "outline"
+	| "references";
 
 export interface AppLogEntry {
 	id: number;

@@ -185,12 +185,15 @@ export function themesLoaded(): boolean {
 	return loaded;
 }
 
-/** Listen for hot-reload events from the themes/ directory watcher. */
-export function listenForThemeChanges(): void {
-	listen("themes-changed", async () => {
-		appLogger.info("app", "Themes directory changed, reloading");
-		await loadThemes();
-		applyAppTheme(settingsStore.state.theme);
+let unlistenThemeChanges: (() => void) | undefined;
+
+/** Listen for hot-reload events from the themes/ directory watcher. Idempotent — safe to call multiple times. */
+export async function listenForThemeChanges(): Promise<void> {
+	unlistenThemeChanges?.();
+	unlistenThemeChanges = await listen("themes-changed", () => {
+		loadThemes()
+			.then(() => applyAppTheme(settingsStore.state.theme))
+			.catch((e) => appLogger.warn("app", "Theme hot-reload failed", { error: String(e) }));
 	});
 }
 

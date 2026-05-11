@@ -1,5 +1,6 @@
 import { type Component, createSignal, For, Show } from "solid-js";
 import { invoke } from "../../invoke";
+import { appLogger } from "../../stores/appLogger";
 import { openFileAction } from "../../utils/filePreview";
 import p from "../shared/panel.module.css";
 import s from "./ReferencesPanel.module.css";
@@ -15,6 +16,8 @@ export interface ReferencesPanelProps {
 	onClose: () => void;
 }
 
+// DEFERRED (2026-05-11) — migrate to referencesStore.ts to avoid module-level singleton
+// signals. Current approach works with single panel instance but breaks with detach/multi-window.
 const [references, setReferences] = createSignal<ReferenceLocation[]>([]);
 const [querySymbol, setQuerySymbol] = createSignal<string | null>(null);
 const [repoPath, setRepoPath] = createSignal<string>("");
@@ -32,7 +35,8 @@ export async function findReferences(repo: string, fs: string, symbolName: strin
 			symbolName,
 		});
 		setReferences(results);
-	} catch {
+	} catch (e) {
+		appLogger.debug("references", "mdkb_references failed", { error: String(e) });
 		setReferences([]);
 	} finally {
 		setLoading(false);

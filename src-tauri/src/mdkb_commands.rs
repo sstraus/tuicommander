@@ -60,7 +60,10 @@ pub async fn mdkb_outline(
     let mut daemon = state.mdkb_daemon.lock().await;
     let client = match daemon.ensure_running().await {
         Ok(c) => c,
-        Err(_) => return Ok(vec![]),
+        Err(e) => {
+            tracing::debug!("mdkb unavailable: {e}");
+            return Ok(vec![]);
+        }
     };
     match client.symbols_in_file(&repo_path, &file_path).await {
         Ok(symbols) => Ok(symbols.into_iter().map(OutlineSymbol::from).collect()),
@@ -82,7 +85,10 @@ pub async fn mdkb_goto_definition(
     let mut daemon = state.mdkb_daemon.lock().await;
     let client = match daemon.ensure_running().await {
         Ok(c) => c,
-        Err(_) => return Ok(None),
+        Err(e) => {
+            tracing::debug!("mdkb unavailable: {e}");
+            return Ok(None);
+        }
     };
     match client.symbol_at_position(&repo_path, &file_path, line, col).await {
         Ok(Some(sym)) => Ok(Some(DefinitionLocation {
@@ -106,13 +112,18 @@ pub async fn mdkb_references(
     let mut daemon = state.mdkb_daemon.lock().await;
     let client = match daemon.ensure_running().await {
         Ok(c) => c,
-        Err(_) => return Ok(vec![]),
+        Err(e) => {
+            tracing::debug!("mdkb unavailable: {e}");
+            return Ok(vec![]);
+        }
     };
     match client.code_graph(&repo_path, &symbol_name, "callers").await {
         Ok(value) => {
-            let refs = value
-                .as_array()
-                .unwrap_or(&vec![])
+            let Some(arr) = value.as_array() else {
+                tracing::warn!("mdkb_references: expected array, got {}", value);
+                return Ok(vec![]);
+            };
+            let refs = arr
                 .iter()
                 .filter_map(|v| {
                     Some(ReferenceLocation {
@@ -135,13 +146,9 @@ pub async fn mdkb_references(
 pub async fn mdkb_status(
     state: State<'_, Arc<AppState>>,
 ) -> Result<MdkbStatus, String> {
-    let mut daemon = state.mdkb_daemon.lock().await;
+    let daemon = state.mdkb_daemon.lock().await;
     let available = daemon.is_available();
-    let connected = if available {
-        daemon.ensure_running().await.is_ok()
-    } else {
-        false
-    };
+    let connected = daemon.is_connected();
     Ok(MdkbStatus { available, connected })
 }
 
