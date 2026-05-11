@@ -877,6 +877,9 @@ pub struct AppState {
     pub(crate) app_handle: parking_lot::RwLock<Option<AppHandle>>,
     /// Plugin filesystem watchers: watch_id → (plugin_id, watcher)
     pub plugin_watchers: DashMap<String, (String, notify::RecommendedWatcher)>,
+    /// Current ANSI color overrides from the frontend theme (indices 0-15).
+    /// Applied to new VtLogBuffers at creation time.
+    pub(crate) ansi_colors: parking_lot::RwLock<Option<[[u8; 3]; 16]>>,
     /// Per-session VT100 log buffers for clean mobile/REST output (session_id → buffer).
     /// Separate DashMap to avoid writer contention on PtySession.
     pub(crate) vt_log_buffers: DashMap<String, Mutex<VtLogBuffer>>,
@@ -1100,6 +1103,7 @@ impl AppState {
             #[cfg(feature = "desktop")]
             app_handle: parking_lot::RwLock::new(None),
             plugin_watchers: DashMap::new(),
+            ansi_colors: parking_lot::RwLock::new(None),
             vt_log_buffers: DashMap::new(),
             #[cfg(feature = "desktop")]
             grid_channels: DashMap::new(),
@@ -2093,6 +2097,10 @@ impl VtLogBuffer {
         self.grid.reflow_history = enabled;
     }
 
+    pub fn set_ansi_colors(&mut self, colors: &[[u8; 3]; 16]) {
+        self.grid.set_ansi_colors(colors);
+    }
+
     /// Feed raw PTY bytes into the terminal grid.
     ///
     /// Returns the screen rows that changed since the previous call.  Changed
@@ -2997,6 +3005,7 @@ mod tests {
             #[cfg(feature = "desktop")]
             app_handle: parking_lot::RwLock::new(None),
             plugin_watchers: dashmap::DashMap::new(),
+            ansi_colors: parking_lot::RwLock::new(None),
             vt_log_buffers: dashmap::DashMap::new(),
             #[cfg(feature = "desktop")]
             grid_channels: dashmap::DashMap::new(),

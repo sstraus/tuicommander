@@ -1,3 +1,4 @@
+import { invoke } from "./invoke";
 import { appLogger } from "./stores/appLogger";
 import { FONT_FAMILIES, type FontType } from "./stores/settings";
 
@@ -648,10 +649,19 @@ export function applyAppTheme(key: string): void {
 		root.setProperty(camelToKebab(prop), value);
 	}
 	const termTheme = getTerminalTheme(key);
+	const ansiRgb: [number, number, number][] = [];
 	for (const k of ANSI_KEYS) {
 		const val = termTheme[k];
 		if (typeof val === "string") {
 			root.setProperty(`--ansi-${camelToKebab(k).slice(2)}`, val);
+			ansiRgb.push(hexToRgb(val));
+		} else {
+			ansiRgb.push([0, 0, 0]);
 		}
+	}
+	if (ansiRgb.length === 16) {
+		invoke("set_ansi_colors", { colors: ansiRgb }).catch((e: unknown) => {
+			appLogger.warn("app", "Failed to sync ANSI colors to backend", { error: e });
+		});
 	}
 }

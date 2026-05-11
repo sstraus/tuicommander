@@ -1599,6 +1599,7 @@ mod tests {
             #[cfg(feature = "desktop")]
             app_handle: parking_lot::RwLock::new(None),
             plugin_watchers: DashMap::new(),
+            ansi_colors: parking_lot::RwLock::new(None),
             vt_log_buffers: DashMap::new(),
             #[cfg(feature = "desktop")]
             grid_channels: DashMap::new(),

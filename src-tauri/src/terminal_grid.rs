@@ -163,87 +163,23 @@ const ATTR_DEFAULT_BG: u8 = 0b1000_0000;
 /// Standard xterm 256-color palette (16 ANSI + 216 color cube + 24 grayscale).
 fn xterm_color_rgb(index: u8) -> Rgb {
     match index {
-        // 16 standard ANSI colors — match "commander" xterm.js theme
-        0 => Rgb {
-            r: 0x1e,
-            g: 0x1e,
-            b: 0x1e,
-        },
-        1 => Rgb {
-            r: 0xf1,
-            g: 0x4c,
-            b: 0x4c,
-        },
-        2 => Rgb {
-            r: 0x23,
-            g: 0xd1,
-            b: 0x8b,
-        },
-        3 => Rgb {
-            r: 0xe5,
-            g: 0xe5,
-            b: 0x10,
-        },
-        4 => Rgb {
-            r: 0x3b,
-            g: 0x8e,
-            b: 0xea,
-        },
-        5 => Rgb {
-            r: 0xd6,
-            g: 0x70,
-            b: 0xd6,
-        },
-        6 => Rgb {
-            r: 0x29,
-            g: 0xb8,
-            b: 0xdb,
-        },
-        7 => Rgb {
-            r: 0xd4,
-            g: 0xd4,
-            b: 0xd4,
-        },
-        8 => Rgb {
-            r: 0x66,
-            g: 0x66,
-            b: 0x66,
-        },
-        9 => Rgb {
-            r: 0xf1,
-            g: 0x4c,
-            b: 0x4c,
-        },
-        10 => Rgb {
-            r: 0x23,
-            g: 0xd1,
-            b: 0x8b,
-        },
-        11 => Rgb {
-            r: 0xf5,
-            g: 0xf5,
-            b: 0x43,
-        },
-        12 => Rgb {
-            r: 0x3b,
-            g: 0x8e,
-            b: 0xea,
-        },
-        13 => Rgb {
-            r: 0xd6,
-            g: 0x70,
-            b: 0xd6,
-        },
-        14 => Rgb {
-            r: 0x29,
-            g: 0xb8,
-            b: 0xdb,
-        },
-        15 => Rgb {
-            r: 0xff,
-            g: 0xff,
-            b: 0xff,
-        },
+        // 16 standard ANSI colors — Tango/GNOME palette (xterm.js default)
+        0 => Rgb { r: 0x2e, g: 0x34, b: 0x36 },
+        1 => Rgb { r: 0xcc, g: 0x00, b: 0x00 },
+        2 => Rgb { r: 0x4e, g: 0x9a, b: 0x06 },
+        3 => Rgb { r: 0xc4, g: 0xa0, b: 0x00 },
+        4 => Rgb { r: 0x34, g: 0x65, b: 0xa4 },
+        5 => Rgb { r: 0x75, g: 0x50, b: 0x7b },
+        6 => Rgb { r: 0x06, g: 0x98, b: 0x9a },
+        7 => Rgb { r: 0xd3, g: 0xd7, b: 0xcf },
+        8 => Rgb { r: 0x55, g: 0x57, b: 0x53 },
+        9 => Rgb { r: 0xef, g: 0x29, b: 0x29 },
+        10 => Rgb { r: 0x8a, g: 0xe2, b: 0x34 },
+        11 => Rgb { r: 0xfc, g: 0xe9, b: 0x4f },
+        12 => Rgb { r: 0x73, g: 0x9f, b: 0xcf },
+        13 => Rgb { r: 0xad, g: 0x7f, b: 0xa8 },
+        14 => Rgb { r: 0x34, g: 0xe2, b: 0xe2 },
+        15 => Rgb { r: 0xee, g: 0xee, b: 0xec },
         // 216-color cube (indices 16-231)
         16..=231 => {
             let n = index - 16;
@@ -496,6 +432,17 @@ impl TerminalGrid {
             ReflowMode::None
         };
         self.term.resize_reflow(size, mode);
+        self.prev_rows.clear();
+        self.term.mark_fully_damaged();
+    }
+
+    /// Override ANSI colors 0-15 with theme values.
+    /// Each entry is `[r, g, b]`. Indices 0-7 = normal, 8-15 = bright.
+    pub fn set_ansi_colors(&mut self, colors: &[[u8; 3]; 16]) {
+        let term_colors = self.term.colors_mut();
+        for (i, &[r, g, b]) in colors.iter().enumerate() {
+            term_colors[i] = Some(Rgb { r, g, b });
+        }
         self.prev_rows.clear();
         self.term.mark_fully_damaged();
     }
@@ -1381,9 +1328,9 @@ mod tests {
         let cell0 = TEST_HEADER_SIZE + 4;
         let (ch, fg_r, fg_g, fg_b, _, _, _, attrs) = decode_cell(&buf, cell0);
         assert_eq!(ch, 'X');
-        assert_eq!(fg_r, 0xf1); // commander theme red
-        assert_eq!(fg_g, 0x4c);
-        assert_eq!(fg_b, 0x4c);
+        assert_eq!(fg_r, 0xcc); // Tango palette red
+        assert_eq!(fg_g, 0x00);
+        assert_eq!(fg_b, 0x00);
         assert_eq!(attrs & super::ATTR_DEFAULT_FG, 0, "fg is NOT default");
         assert_ne!(attrs & super::ATTR_DEFAULT_BG, 0, "bg IS default");
     }

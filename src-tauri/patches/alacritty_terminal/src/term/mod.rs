@@ -967,6 +967,10 @@ impl<T> Term<T> {
         &self.colors
     }
 
+    pub fn colors_mut(&mut self) -> &mut Colors {
+        &mut self.colors
+    }
+
     /// Insert a linebreak at the current cursor position.
     #[inline]
     fn wrapline(&mut self)

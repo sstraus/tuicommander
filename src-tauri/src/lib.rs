@@ -1189,6 +1189,7 @@ pub fn run() {
             pty::write_pty,
             pty::get_input_buffer_content,
             pty::resize_pty,
+            pty::set_ansi_colors,
             pty::pause_pty,
             pty::resume_pty,
             pty::get_kitty_flags,

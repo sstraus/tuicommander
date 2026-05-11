@@ -3117,6 +3117,9 @@ pub(crate) async fn create_pty(
             vt_log.set_reflow_history(true);
         }
     }
+    if let Some(colors) = state.ansi_colors.read().as_ref() {
+        vt_log.set_ansi_colors(colors);
+    }
     state
         .vt_log_buffers
         .insert(session_id.clone(), Mutex::new(vt_log));
@@ -3222,6 +3225,9 @@ pub(crate) async fn spawn_session_for_agent(
         if cfg.is_experimental_enabled(cfg.scrollback_reflow) {
             vt_log.set_reflow_history(true);
         }
+    }
+    if let Some(colors) = state.ansi_colors.read().as_ref() {
+        vt_log.set_ansi_colors(colors);
     }
     state
         .vt_log_buffers
@@ -3378,6 +3384,9 @@ pub(crate) async fn create_pty_with_worktree(
         if cfg.is_experimental_enabled(cfg.scrollback_reflow) {
             vt_log.set_reflow_history(true);
         }
+    }
+    if let Some(colors) = state.ansi_colors.read().as_ref() {
+        vt_log.set_ansi_colors(colors);
     }
     state
         .vt_log_buffers
@@ -3658,6 +3667,21 @@ pub(crate) fn resize_pty(
     // from the shell's prompt redraw triggered by SIGWINCH.
     if let Some(ss) = state.silence_states.get(&session_id) {
         ss.lock().on_resize();
+    }
+    Ok(())
+}
+
+/// Apply theme ANSI colors (indices 0-15) to all terminal grids.
+/// Each color is a `[r, g, b]` triple. Called by the frontend when the theme changes.
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) fn set_ansi_colors(
+    state: State<'_, Arc<AppState>>,
+    colors: [[u8; 3]; 16],
+) -> Result<(), String> {
+    *state.ansi_colors.write() = Some(colors);
+    for entry in state.vt_log_buffers.iter() {
+        entry.value().lock().set_ansi_colors(&colors);
     }
     Ok(())
 }
