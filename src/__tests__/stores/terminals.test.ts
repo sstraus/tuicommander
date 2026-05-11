@@ -565,4 +565,21 @@ describe("terminalsStore", () => {
 			});
 		});
 	});
+
+	describe("nextDefaultName()", () => {
+		it("returns Terminal 1 when store is empty", () => {
+			testInScope(() => {
+				expect(store.nextDefaultName()).toBe("Terminal 1");
+			});
+		});
+
+		it("increments with each added terminal", () => {
+			testInScope(() => {
+				store.add(makeTerminal({ name: "T1" }));
+				expect(store.nextDefaultName()).toBe("Terminal 2");
+				store.add(makeTerminal({ name: "T2" }));
+				expect(store.nextDefaultName()).toBe("Terminal 3");
+			});
+		});
+	});
 });

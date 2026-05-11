@@ -74,11 +74,10 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
 		}
 
 		const activeTerminal = terminalsStore.getActive();
-		const count = terminalsStore.getCount();
 		const id = terminalsStore.add({
 			sessionId: null,
 			fontSize: activeTerminal?.fontSize ?? deps.getDefaultFontSize(),
-			name: `Terminal ${count + 1}`,
+			name: terminalsStore.nextDefaultName(),
 			cwd: activeTerminal?.cwd ?? repositoriesStore.state.activeRepoPath ?? null,
 			awaitingInput: null,
 		});

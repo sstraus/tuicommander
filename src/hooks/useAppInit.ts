@@ -493,7 +493,7 @@ export async function initApp(deps: AppInitDeps) {
 			const id = terminalsStore.add({
 				sessionId: session.session_id,
 				fontSize: deps.getDefaultFontSize(),
-				name: session.display_name || `Terminal ${terminalsStore.getCount() + 1}`,
+				name: session.display_name || terminalsStore.nextDefaultName(),
 				cwd: session.cwd,
 				awaitingInput: null,
 			});

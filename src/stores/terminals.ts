@@ -603,6 +603,11 @@ function createTerminalsStore() {
 			return Object.keys(state.terminals).length;
 		},
 
+		/** Default name for the next terminal tab */
+		nextDefaultName(): string {
+			return `Terminal ${Object.keys(state.terminals).length + 1}`;
+		},
+
 		/** Debounced busy: true while shellState is "busy" and for 2s after it transitions to idle */
 		isBusy(id: string): boolean {
 			return state.debouncedBusy[id] ?? false;

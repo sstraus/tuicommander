@@ -244,11 +244,10 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
 					appLogger.warn("plugin", `tuic:terminal repo not in repo list: ${repoPath}`);
 					return;
 				}
-				const count = terminalsStore.getCount();
 				const id = terminalsStore.add({
 					sessionId: null,
 					fontSize: settingsStore.state.defaultFontSize,
-					name: `Terminal ${count + 1}`,
+					name: terminalsStore.nextDefaultName(),
 					cwd: repoPath,
 					awaitingInput: null,
 				});
