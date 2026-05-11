@@ -55,10 +55,6 @@ if [[ -n "$TUIC_SESSION" ]]; then
     esac
   }
 fi
-# Ensure zsh completion is active (ZDOTDIR trick + edge cases can skip system compinit)
-if [[ -o interactive ]] && ! type compdef >/dev/null 2>&1; then
-  autoload -Uz compinit && compinit
-fi
 "#;
 
 /// Bash shell integration script.
@@ -233,11 +229,19 @@ fn inject_zsh(base: &Path, cmd: &mut portable_pty::CommandBuilder) {
 
     // Passthrough wrappers for other dotfiles (so user config still loads)
     for dotfile in ZSH_DOTFILES {
-        let wrapper = format!(
+        let mut wrapper = format!(
             "# TUIC passthrough — load real {dotfile}\n\
              [[ -f \"${{TUIC_ORIGINAL_ZDOTDIR:-$HOME}}/{dotfile}\" ]] && \
              source \"${{TUIC_ORIGINAL_ZDOTDIR:-$HOME}}/{dotfile}\"\n"
         );
+        if dotfile == &".zshrc" {
+            wrapper.push_str(
+                "# Ensure completion is active (ZDOTDIR trick can skip system compinit)\n\
+                 if [[ -o interactive ]] && ! type compdef >/dev/null 2>&1; then\n\
+                 \x20 autoload -Uz compinit && compinit -C\n\
+                 fi\n",
+            );
+        }
         write_if_changed(&zdotdir.join(dotfile), &wrapper);
     }
 
