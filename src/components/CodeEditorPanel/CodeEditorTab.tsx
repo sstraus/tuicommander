@@ -30,7 +30,7 @@ import { editorTabsStore } from "../../stores/editorTabs";
 import { repositoriesStore } from "../../stores/repositories";
 import { uiStore } from "../../stores/ui";
 import { openFileAction } from "../../utils/filePreview";
-import { findReferences } from "../ReferencesPanel";
+import { referencesStore } from "../../stores/references";
 import { isAbsolutePath } from "../../utils/pathUtils";
 import { ContextMenu, createContextMenu } from "../ContextMenu";
 import e from "../shared/editor-header.module.css";
@@ -283,7 +283,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 				run(view: EditorView) {
 					const word = wordAtCursor(view);
 					if (!word) return false;
-					void findReferences(props.repoPath, fsRoot(), word);
+					void referencesStore.findReferences(props.repoPath, fsRoot(), word);
 					uiStore.setReferencesPanelVisible(true);
 					return true;
 				},
@@ -483,7 +483,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 							if (!view) return;
 							const word = wordAtCursor(view);
 							if (!word) return;
-							void findReferences(props.repoPath, fsRoot(), word);
+							void referencesStore.findReferences(props.repoPath, fsRoot(), word);
 							uiStore.setReferencesPanelVisible(true);
 						},
 					},

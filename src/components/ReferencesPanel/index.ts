@@ -1,1 +1,1 @@
-export { findReferences, ReferencesPanel } from "./ReferencesPanel";
+export { ReferencesPanel } from "./ReferencesPanel";
