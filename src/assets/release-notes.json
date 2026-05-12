@@ -1,4 +1,18 @@
 {
+  "1.2.1": {
+    "highlights": [
+      "Terminal no longer snaps to bottom when clicking in scrolled-up output",
+      "OSC 8 hyperlinks now show hover underline across the full link span",
+      "Per-repo PR visibility filters: override global draft/conflicting/CI-failing settings per repository",
+      "Auto-heal CI toggle restyled to match the rest of the UI"
+    ],
+    "contributions": [
+      { "text": "PR visibility filters and viewer PR guarantee", "author": "paulovitin" },
+      { "text": "Fix zsh compinit with ZDOTDIR trick", "author": "paulovitin" },
+      { "text": "Extract nextDefaultName() to eliminate tab naming duplication", "author": "paulovitin" }
+    ],
+    "date": "2026-05-12"
+  },
   "1.2.0": {
     "highlights": [
       "AI Triage and AI Watchers are now independent experimental features with their own toggles",

@@ -23,6 +23,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Community
 - [@paulovitin](https://github.com/paulovitin) — extract `nextDefaultName()` to eliminate tab naming duplication (#35)
+- [@paulovitin](https://github.com/paulovitin) — PR visibility filters + viewer PR guarantee (#34)
+- [@paulovitin](https://github.com/paulovitin) — fix zsh compinit with ZDOTDIR trick (#32)
 
 ## [1.2.0] - 2026-05-10
 
