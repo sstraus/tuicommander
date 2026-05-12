@@ -2,32 +2,6 @@ use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::UnixStream;
-
-static REQUEST_ID: AtomicU64 = AtomicU64::new(1);
-
-const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
-
-#[derive(Debug)]
-pub struct MdkbClient {
-    stream: UnixStream,
-}
-
-#[derive(Debug, Deserialize)]
-struct RpcResponse {
-    #[allow(dead_code)]
-    id: Value,
-    result: Option<Value>,
-    error: Option<RpcError>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RpcError {
-    code: i32,
-    message: String,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MdkbSymbol {
@@ -40,127 +14,209 @@ pub struct MdkbSymbol {
     pub scope_context: Option<String>,
 }
 
-impl MdkbClient {
-    pub fn socket_path() -> PathBuf {
-        dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("/tmp"))
-            .join(".mdkb/daemon-hook.sock")
-    }
+// Unix sockets are not available on Windows
+#[cfg(not(unix))]
+mod platform {
+    use super::*;
 
-    pub async fn connect() -> Result<Self> {
-        let path = Self::socket_path();
-        let stream = UnixStream::connect(&path)
-            .await
-            .with_context(|| format!("mdkb: connect to {}", path.display()))?;
-        Ok(Self { stream })
-    }
+    #[derive(Debug)]
+    pub struct MdkbClient;
 
-    pub async fn call(&mut self, method: &str, params: Value) -> Result<Value> {
-        let id = REQUEST_ID.fetch_add(1, Ordering::Relaxed);
-        let req = json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "method": method,
-            "params": params,
-        });
-        let body = serde_json::to_vec(&req)?;
-        let len = u32::try_from(body.len()).context("request too large")?;
-
-        self.stream.write_all(&len.to_le_bytes()).await?;
-        self.stream.write_all(&body).await?;
-        self.stream.flush().await?;
-
-        let mut hdr = [0u8; 4];
-        self.stream
-            .read_exact(&mut hdr)
-            .await
-            .context("mdkb: read response header")?;
-        let resp_len = u32::from_le_bytes(hdr) as usize;
-        if resp_len == 0 || resp_len > MAX_RESPONSE_BYTES {
-            bail!("mdkb: invalid response length {resp_len}");
+    impl MdkbClient {
+        pub fn socket_path() -> PathBuf {
+            PathBuf::new()
         }
 
-        let mut resp_buf = vec![0u8; resp_len];
-        self.stream
-            .read_exact(&mut resp_buf)
-            .await
-            .context("mdkb: read response body")?;
-
-        let resp: RpcResponse =
-            serde_json::from_slice(&resp_buf).context("mdkb: parse response")?;
-
-        if let Some(err) = resp.error {
-            bail!("mdkb RPC error {}: {}", err.code, err.message);
+        pub async fn connect() -> Result<Self> {
+            bail!("mdkb: Unix socket client not available on this platform")
         }
 
-        resp.result
-            .ok_or_else(|| anyhow::anyhow!("mdkb: response missing both result and error"))
-    }
-
-    pub async fn ping(&mut self) -> Result<bool> {
-        let resp = self.call("ping", json!({})).await?;
-        Ok(resp.get("pong").and_then(|v| v.as_bool()).unwrap_or(false))
-    }
-
-    pub async fn symbols_in_file(&mut self, root: &str, file: &str) -> Result<Vec<MdkbSymbol>> {
-        let resp = self
-            .call(
-                "symbols_in_file",
-                json!({
-                    "root": root,
-                    "file": file,
-                }),
-            )
-            .await?;
-        let symbols: Vec<MdkbSymbol> =
-            serde_json::from_value(resp).context("mdkb: parse symbols_in_file response")?;
-        Ok(symbols)
-    }
-
-    pub async fn symbol_at_position(
-        &mut self,
-        root: &str,
-        file: &str,
-        line: u32,
-        col: Option<u32>,
-    ) -> Result<Option<MdkbSymbol>> {
-        let resp = self
-            .call(
-                "symbol_at_position",
-                json!({
-                    "root": root,
-                    "file": file,
-                    "line": line,
-                    "col": col,
-                }),
-            )
-            .await?;
-        if resp.is_null() {
-            return Ok(None);
+        pub async fn call(&mut self, _method: &str, _params: Value) -> Result<Value> {
+            bail!("mdkb: not available on this platform")
         }
-        let sym: MdkbSymbol =
-            serde_json::from_value(resp).context("mdkb: parse symbol_at_position response")?;
-        Ok(Some(sym))
-    }
 
-    pub async fn code_graph(&mut self, root: &str, name: &str, direction: &str) -> Result<Value> {
-        self.call(
-            "code_graph",
-            json!({
-                "root": root,
-                "name": name,
-                "direction": direction,
-            }),
-        )
-        .await
+        pub async fn ping(&mut self) -> Result<bool> {
+            Ok(false)
+        }
+
+        pub async fn symbols_in_file(&mut self, _root: &str, _file: &str) -> Result<Vec<MdkbSymbol>> {
+            Ok(vec![])
+        }
+
+        pub async fn symbol_at_position(
+            &mut self,
+            _root: &str,
+            _file: &str,
+            _line: u32,
+            _col: Option<u32>,
+        ) -> Result<Option<MdkbSymbol>> {
+            Ok(None)
+        }
+
+        pub async fn code_graph(&mut self, _root: &str, _name: &str, _direction: &str) -> Result<Value> {
+            bail!("mdkb: not available on this platform")
+        }
     }
 }
 
-#[cfg(test)]
+#[cfg(unix)]
+mod platform {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::UnixStream;
+
+    static REQUEST_ID: AtomicU64 = AtomicU64::new(1);
+
+    const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+
+    #[derive(Debug)]
+    pub struct MdkbClient {
+        #[cfg(not(test))]
+        stream: UnixStream,
+        #[cfg(test)]
+        pub(super) stream: UnixStream,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct RpcResponse {
+        #[allow(dead_code)]
+        id: Value,
+        result: Option<Value>,
+        error: Option<RpcError>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct RpcError {
+        code: i32,
+        message: String,
+    }
+
+    impl MdkbClient {
+        pub fn socket_path() -> PathBuf {
+            dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from("/tmp"))
+                .join(".mdkb/daemon-hook.sock")
+        }
+
+        pub async fn connect() -> Result<Self> {
+            let path = Self::socket_path();
+            let stream = UnixStream::connect(&path)
+                .await
+                .with_context(|| format!("mdkb: connect to {}", path.display()))?;
+            Ok(Self { stream })
+        }
+
+        pub async fn call(&mut self, method: &str, params: Value) -> Result<Value> {
+            let id = REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+            let req = json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "method": method,
+                "params": params,
+            });
+            let body = serde_json::to_vec(&req)?;
+            let len = u32::try_from(body.len()).context("request too large")?;
+
+            self.stream.write_all(&len.to_le_bytes()).await?;
+            self.stream.write_all(&body).await?;
+            self.stream.flush().await?;
+
+            let mut hdr = [0u8; 4];
+            self.stream
+                .read_exact(&mut hdr)
+                .await
+                .context("mdkb: read response header")?;
+            let resp_len = u32::from_le_bytes(hdr) as usize;
+            if resp_len == 0 || resp_len > MAX_RESPONSE_BYTES {
+                bail!("mdkb: invalid response length {resp_len}");
+            }
+
+            let mut resp_buf = vec![0u8; resp_len];
+            self.stream
+                .read_exact(&mut resp_buf)
+                .await
+                .context("mdkb: read response body")?;
+
+            let resp: RpcResponse =
+                serde_json::from_slice(&resp_buf).context("mdkb: parse response")?;
+
+            if let Some(err) = resp.error {
+                bail!("mdkb RPC error {}: {}", err.code, err.message);
+            }
+
+            resp.result
+                .ok_or_else(|| anyhow::anyhow!("mdkb: response missing both result and error"))
+        }
+
+        pub async fn ping(&mut self) -> Result<bool> {
+            let resp = self.call("ping", json!({})).await?;
+            Ok(resp.get("pong").and_then(|v| v.as_bool()).unwrap_or(false))
+        }
+
+        pub async fn symbols_in_file(&mut self, root: &str, file: &str) -> Result<Vec<MdkbSymbol>> {
+            let resp = self
+                .call(
+                    "symbols_in_file",
+                    json!({
+                        "root": root,
+                        "file": file,
+                    }),
+                )
+                .await?;
+            let symbols: Vec<MdkbSymbol> =
+                serde_json::from_value(resp).context("mdkb: parse symbols_in_file response")?;
+            Ok(symbols)
+        }
+
+        pub async fn symbol_at_position(
+            &mut self,
+            root: &str,
+            file: &str,
+            line: u32,
+            col: Option<u32>,
+        ) -> Result<Option<MdkbSymbol>> {
+            let resp = self
+                .call(
+                    "symbol_at_position",
+                    json!({
+                        "root": root,
+                        "file": file,
+                        "line": line,
+                        "col": col,
+                    }),
+                )
+                .await?;
+            if resp.is_null() {
+                return Ok(None);
+            }
+            let sym: MdkbSymbol =
+                serde_json::from_value(resp).context("mdkb: parse symbol_at_position response")?;
+            Ok(Some(sym))
+        }
+
+        pub async fn code_graph(&mut self, root: &str, name: &str, direction: &str) -> Result<Value> {
+            self.call(
+                "code_graph",
+                json!({
+                    "root": root,
+                    "name": name,
+                    "direction": direction,
+                }),
+            )
+            .await
+        }
+    }
+}
+
+pub use platform::MdkbClient;
+
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use std::path::Path;
-    use tokio::net::UnixListener;
+    use tokio::net::{UnixListener, UnixStream};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     async fn spawn_mock_server() -> (PathBuf, tokio::task::JoinHandle<()>) {
         let dir = tempfile::tempdir().unwrap();
@@ -217,9 +273,9 @@ mod tests {
         (path, handle)
     }
 
-    async fn connect_to_mock(path: &Path) -> MdkbClient {
+    async fn connect_to_mock(path: &Path) -> platform::MdkbClient {
         let stream = UnixStream::connect(path).await.unwrap();
-        MdkbClient { stream }
+        platform::MdkbClient { stream }
     }
 
     #[tokio::test]
