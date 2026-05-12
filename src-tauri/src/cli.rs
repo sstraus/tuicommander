@@ -129,6 +129,21 @@ pub(crate) fn expand_tilde(path: &str) -> String {
     path.to_string()
 }
 
+/// Return a PATH string that prepends extra bin dirs to the current PATH.
+///
+/// Used to enrich subprocess environments so git hooks and other child
+/// processes can find tools (pnpm, node, etc.) that desktop-launched apps
+/// don't have on PATH.
+pub(crate) fn enriched_path() -> String {
+    let current = std::env::var("PATH").unwrap_or_default();
+    let extra = extra_bin_dirs().join(":");
+    if current.is_empty() {
+        extra
+    } else {
+        format!("{extra}:{current}")
+    }
+}
+
 /// Check if a CLI tool exists on PATH or in well-known directories.
 pub(crate) fn has_cli(name: &str) -> bool {
     let checker = if cfg!(target_os = "windows") {

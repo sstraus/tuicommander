@@ -9,7 +9,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::cli::resolve_cli;
+use crate::cli::{enriched_path, resolve_cli};
 
 // ---------------------------------------------------------------------------
 // Error type
@@ -192,6 +192,7 @@ pub(crate) fn git_cmd(cwd: &Path) -> GitCmd {
     let mut cmd = Command::new(resolve_cli("git"));
     cmd.current_dir(cwd);
     cmd.env("GIT_TERMINAL_PROMPT", "0");
+    cmd.env("PATH", enriched_path());
     cmd.arg("--no-optional-locks");
     crate::cli::apply_no_window(&mut cmd);
     GitCmd {
