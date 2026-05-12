@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { testInScopeAsync } from "./helpers/store";
 
 // Mock invoke to handle the prompt template commands
@@ -69,6 +69,10 @@ describe("promptLibrary pure functions", () => {
 
 		const mod = await import("../stores/promptLibrary");
 		store = mod.promptLibraryStore;
+	});
+
+	afterEach(() => {
+		store._testCancelPendingSave();
 	});
 
 	describe("extractVariables()", () => {

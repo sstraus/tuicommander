@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock @tauri-apps/api/core
 vi.mock("@tauri-apps/api/core", () => {
@@ -117,8 +117,13 @@ describe("canvasTerminalTransport", () => {
 		}
 
 		beforeEach(() => {
+			vi.useFakeTimers();
 			wsInstances = [];
 			(globalThis as Record<string, unknown>).WebSocket = MockWebSocket as unknown as typeof WebSocket;
+		});
+
+		afterEach(() => {
+			vi.useRealTimers();
 		});
 
 		it("connects to /sessions/{id}/stream?format=grid", async () => {
@@ -157,7 +162,6 @@ describe("canvasTerminalTransport", () => {
 		});
 
 		it("reconnects on unexpected close", async () => {
-			vi.useFakeTimers();
 			const transport = new WsTransport("sess-1");
 			const subscribePromise = transport.subscribe(vi.fn());
 			wsInstances[0].onopen!();
@@ -171,11 +175,12 @@ describe("canvasTerminalTransport", () => {
 			vi.advanceTimersByTime(1000);
 			expect(wsInstances).toHaveLength(2);
 
-			vi.useRealTimers();
+			// Settle the reconnect connect promise to avoid leak
+			wsInstances[1].onopen!();
+			transport.unsubscribe();
 		});
 
 		it("does not reconnect after explicit unsubscribe", async () => {
-			vi.useFakeTimers();
 			const transport = new WsTransport("sess-1");
 			const subscribePromise = transport.subscribe(vi.fn());
 			wsInstances[0].onopen!();
@@ -186,7 +191,6 @@ describe("canvasTerminalTransport", () => {
 
 			vi.advanceTimersByTime(2000);
 			expect(wsInstances).toHaveLength(1); // no new instance
-			vi.useRealTimers();
 		});
 
 		it("delegates invoke to rpc()", async () => {

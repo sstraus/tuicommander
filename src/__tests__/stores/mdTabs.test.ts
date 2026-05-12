@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { testInScope } from "../helpers/store";
 
 const mockInvoke = vi.fn().mockResolvedValue(undefined);
@@ -20,6 +20,10 @@ describe("mdTabsStore", () => {
 		uiStore = (await import("../../stores/ui")).uiStore;
 		repositoriesStore = (await import("../../stores/repositories")).repositoriesStore;
 		repositoriesStore._testSetHydrated(true);
+	});
+
+	afterEach(() => {
+		repositoriesStore._testCancelPendingSave();
 	});
 
 	describe("add()", () => {

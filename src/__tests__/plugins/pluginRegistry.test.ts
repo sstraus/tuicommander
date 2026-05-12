@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { markdownProviderRegistry } from "../../plugins/markdownProviderRegistry";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
 import type { PluginHost, TuiPlugin } from "../../plugins/types";
@@ -39,6 +39,10 @@ beforeEach(() => {
 	markdownProviderRegistry.clear();
 	pluginStore.clear();
 	mdTabsStore.clearAll();
+});
+
+afterEach(() => {
+	repositoriesStore._testCancelPendingSave();
 });
 
 // ---------------------------------------------------------------------------

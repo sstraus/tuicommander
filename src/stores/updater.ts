@@ -56,10 +56,19 @@ const TIMEOUT_SENTINEL = Symbol("timeout");
 
 /** Run Tauri's built-in stable update check with a 10-second timeout. */
 function checkStableWithTimeout(): Promise<Update | null | typeof TIMEOUT_SENTINEL> {
-	return Promise.race([
-		check(),
-		new Promise<typeof TIMEOUT_SENTINEL>((resolve) => setTimeout(() => resolve(TIMEOUT_SENTINEL), 10_000)),
-	]);
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(() => resolve(TIMEOUT_SENTINEL), 10_000);
+		check().then(
+			(v) => {
+				clearTimeout(timer);
+				resolve(v);
+			},
+			(e) => {
+				clearTimeout(timer);
+				reject(e);
+			},
+		);
+	});
 }
 
 function createUpdaterStore() {

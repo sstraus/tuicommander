@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useTerminalLifecycle } from "../../hooks/useTerminalLifecycle";
 import { diffTabsStore } from "../../stores/diffTabs";
 import { editorTabsStore } from "../../stores/editorTabs";
@@ -31,7 +31,7 @@ function resetStores() {
 }
 
 /** Flush pending requestAnimationFrame callbacks (used by closeTerminal to defer focus) */
-const flushRAF = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+const flushRAF = () => vi.advanceTimersByTimeAsync(16);
 
 describe("useTerminalLifecycle", () => {
 	const mockPty = {
@@ -49,6 +49,7 @@ describe("useTerminalLifecycle", () => {
 	let lifecycle: ReturnType<typeof useTerminalLifecycle>;
 
 	beforeEach(() => {
+		vi.useFakeTimers();
 		resetStores();
 		mockPty.canSpawn.mockReset().mockResolvedValue(true);
 		mockPty.close.mockReset().mockResolvedValue(undefined);
@@ -64,6 +65,12 @@ describe("useTerminalLifecycle", () => {
 			setStatusInfo: mockSetStatusInfo,
 			getDefaultFontSize: () => 14,
 		});
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		repositoriesStore._testCancelPendingSave();
+		paneLayoutStore._testCancelPendingSave();
 	});
 
 	describe("zoom", () => {

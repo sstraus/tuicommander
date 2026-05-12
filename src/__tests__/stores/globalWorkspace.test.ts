@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../invoke", () => ({
 	invoke: vi.fn(() => Promise.resolve(null)),
@@ -24,6 +24,10 @@ describe("globalWorkspaceStore", () => {
 		terminalsStore = (await import("../../stores/terminals")).terminalsStore;
 		resetGroupCounter();
 		savedPaneLayouts.clear();
+	});
+
+	afterEach(() => {
+		paneLayoutStore._testCancelPendingSave();
 	});
 
 	describe("isActive", () => {

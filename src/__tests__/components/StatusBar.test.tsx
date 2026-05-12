@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../mocks/tauri";
 import { fireEvent, render, waitFor } from "@solidjs/testing-library";
 
@@ -138,6 +138,7 @@ describe("StatusBar", () => {
 	};
 
 	beforeEach(() => {
+		vi.useFakeTimers();
 		vi.clearAllMocks();
 		mockGitHubStatus.mockReturnValue(null);
 		mockGetActive.mockReturnValue(null);
@@ -147,6 +148,10 @@ describe("StatusBar", () => {
 		mockDictationState.processing = false;
 		mockDictationState.loading = false;
 		mockLastActivityAt.mockReturnValue(0);
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
 	});
 
 	it("renders status info text", () => {
@@ -363,7 +368,6 @@ describe("StatusBar", () => {
 	});
 
 	it("shows PrBadge for MERGED PR with recent user activity", () => {
-		vi.useFakeTimers();
 		vi.setSystemTime(10000);
 		mockLastActivityAt.mockReturnValue(9000); // active 1s ago
 		mockGitHubStatus.mockReturnValue({
@@ -377,11 +381,9 @@ describe("StatusBar", () => {
 		const badges = githubStatus!.querySelectorAll(".status-badge");
 		const prBadge = Array.from(badges).find((b) => b.textContent?.includes("PR #42"));
 		expect(prBadge).toBeDefined();
-		vi.useRealTimers();
 	});
 
 	it("hides PrBadge for MERGED PR after 5 min of accumulated activity", () => {
-		vi.useFakeTimers();
 		vi.setSystemTime(400_000); // 400s in
 		// Simulate: last activity was long ago, and accumulated activity exceeds 5 min
 		// This tests the mergedActivityMs accumulation logic
@@ -404,7 +406,6 @@ describe("StatusBar", () => {
 		// After 5+ min of accumulated activity, the entire github section is hidden
 		const githubStatus = container.querySelector(".githubStatus");
 		expect(githubStatus).toBeNull();
-		vi.useRealTimers();
 	});
 
 	it("OPEN PR still renders normally", () => {

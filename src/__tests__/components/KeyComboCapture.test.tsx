@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../mocks/tauri";
 import { fireEvent, render } from "@solidjs/testing-library";
 
@@ -17,8 +17,13 @@ import { KeyComboCapture } from "../../components/shared/KeyComboCapture";
 
 describe("KeyComboCapture", () => {
 	beforeEach(() => {
+		vi.useFakeTimers();
 		vi.clearAllMocks();
 		mockKeybindingsStore.getActionForCombo.mockReturnValue(undefined);
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
 	});
 
 	it("shows current value in display button", () => {

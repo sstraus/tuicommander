@@ -92,6 +92,7 @@ describe("useKeyboardShortcuts", () => {
 	const originalPlatform = navigator.platform;
 
 	beforeEach(() => {
+		vi.useFakeTimers();
 		Object.defineProperty(navigator, "platform", { value: "MacIntel", configurable: true });
 		resetStores();
 		handlers = createMockHandlers();
@@ -99,8 +100,11 @@ describe("useKeyboardShortcuts", () => {
 	});
 
 	afterEach(() => {
+		vi.useRealTimers();
 		cleanup?.();
 		Object.defineProperty(navigator, "platform", { value: originalPlatform, configurable: true });
+		settingsStore._testCancelPendingSave();
+		paneLayoutStore._testCancelPendingSave();
 	});
 
 	describe("zoom shortcuts", () => {

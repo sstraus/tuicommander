@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import "../mocks/tauri";
 import { terminalsStore } from "../../stores/terminals";
 
@@ -7,6 +7,10 @@ describe("terminalsStore - lastDataAt", () => {
 		for (const id of terminalsStore.getIds()) {
 			terminalsStore.remove(id);
 		}
+	});
+
+	afterEach(() => {
+		terminalsStore._testCancelPendingTimers();
 	});
 
 	it("new terminals have lastDataAt set to null", () => {

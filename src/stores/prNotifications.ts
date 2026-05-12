@@ -117,6 +117,9 @@ function createPrNotificationsStore() {
 		dismissAll,
 		getActive,
 		clearAll,
+		_testCancelPendingTimers(): void {
+			stopFocusTimer();
+		},
 	};
 }
 

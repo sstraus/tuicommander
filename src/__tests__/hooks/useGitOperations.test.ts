@@ -70,6 +70,7 @@ describe("useGitOperations", () => {
 	let gitOps: ReturnType<typeof useGitOperations>;
 
 	beforeEach(() => {
+		vi.useFakeTimers();
 		resetStores();
 		paneLayoutStore.reset();
 		resetGroupCounter();
@@ -88,6 +89,12 @@ describe("useGitOperations", () => {
 			getDefaultFontSize: () => 14,
 			getMaxTabNameLength: () => 25,
 		});
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		paneLayoutStore._testCancelPendingSave();
+		repositoriesStore._testCancelPendingSave();
 	});
 
 	describe("handleBranchSelect", () => {
@@ -1517,7 +1524,6 @@ describe("useGitOperations", () => {
 			repositoriesStore.setActive("/repo");
 			repositoriesStore.setActiveBranch("/repo", "main");
 
-			vi.useFakeTimers();
 			await gitOps.executeRunCommand("npm test");
 
 			// Should save command and create terminal
@@ -1532,7 +1538,6 @@ describe("useGitOperations", () => {
 			await vi.advanceTimersByTimeAsync(500);
 
 			expect(mockPty.write).toHaveBeenCalledWith("sess-run", "npm test\n");
-			vi.useRealTimers();
 		});
 
 		it("does nothing when no active repo/branch", async () => {
@@ -2002,7 +2007,7 @@ describe("useGitOperations", () => {
 			const p = askGitOps.refreshAllBranchStats();
 
 			// Yield microtasks so both repos reach handleOrphanCleanup
-			await new Promise((r) => setTimeout(r, 0));
+			await vi.advanceTimersByTimeAsync(0);
 			resolveDialog(true);
 			await p;
 
@@ -2076,7 +2081,6 @@ describe("useGitOperations", () => {
 
 			mockPty.write.mockRejectedValue(new Error("write failed"));
 
-			vi.useFakeTimers();
 			const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 			await gitOps.executeRunCommand("failing-cmd");
 
@@ -2087,7 +2091,6 @@ describe("useGitOperations", () => {
 
 			expect(errSpy).toHaveBeenCalledWith("[terminal]", "Failed to send run command", expect.any(Error));
 			errSpy.mockRestore();
-			vi.useRealTimers();
 		});
 	});
 
@@ -2103,15 +2106,10 @@ describe("useGitOperations", () => {
 		};
 
 		beforeEach(() => {
-			vi.useFakeTimers();
 			// Set up repo with main branch and a worktree branch
 			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
 			repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
 			repositoriesStore.setBranch("/repo", "feature-x", { worktreePath: "/repo/.worktrees/feature-x" });
-		});
-
-		afterEach(() => {
-			vi.useRealTimers();
 		});
 
 		it("reassigns terminal from main to worktree branch on cwd change", async () => {

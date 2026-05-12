@@ -1,5 +1,5 @@
 import { fireEvent, render } from "@solidjs/testing-library";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../mocks/tauri";
 
 const {
@@ -180,12 +180,17 @@ function setRepos(repos: Record<string, unknown>, activeRepoPath?: string) {
 
 describe("Sidebar", () => {
 	beforeEach(() => {
+		vi.useFakeTimers();
 		vi.clearAllMocks();
 		setRepos({});
 		mockGetActive.mockReturnValue(null);
 		mockTerminalsGet.mockReturnValue(null);
 		mockLastActivityAt.mockReturnValue(0);
 		_resetMergedActivityAccum();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
 	});
 
 	describe("empty state", () => {

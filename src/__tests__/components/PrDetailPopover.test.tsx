@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockInvoke } from "../mocks/tauri";
 import "../mocks/tauri";
 import { fireEvent, render, waitFor } from "@solidjs/testing-library";
@@ -30,10 +30,15 @@ describe("PrDetailPopover", () => {
 	};
 
 	beforeEach(() => {
+		vi.useFakeTimers();
 		vi.clearAllMocks();
 		mockGetBranchPrData.mockReturnValue(null);
 		mockGetCheckSummary.mockReturnValue(null);
 		mockGetCheckDetails.mockReturnValue([]);
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
 	});
 
 	it("renders PR metadata correctly", () => {
@@ -605,7 +610,6 @@ describe("PrDetailPopover", () => {
 	});
 
 	it("shows relative timestamps for creation and update", () => {
-		vi.useFakeTimers();
 		vi.setSystemTime(new Date("2026-01-15T15:00:00Z"));
 
 		mockGetBranchPrData.mockReturnValue({
@@ -632,8 +636,6 @@ describe("PrDetailPopover", () => {
 		expect(timestamps).not.toBeNull();
 		expect(timestamps!.textContent).toContain("5h ago");
 		expect(timestamps!.textContent).toContain("3h ago");
-
-		vi.useRealTimers();
 	});
 
 	it("does not show merge direction when base_ref_name is empty", () => {

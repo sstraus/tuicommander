@@ -119,6 +119,7 @@ describe("repositoriesStore.removeTerminalFromBranch() — batch() coalescing", 
 
 	afterEach(() => {
 		dispose?.();
+		store._testCancelPendingSave();
 	});
 
 	it("coalesces terminals filter + savedTerminals clear into one notification", async () => {

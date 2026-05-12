@@ -2,9 +2,13 @@ import { createSignal } from "solid-js";
 import { type PaneLayoutState, paneLayoutStore } from "../stores/paneLayout";
 import { terminalsStore } from "../stores/terminals";
 
+let refitTimer: ReturnType<typeof setTimeout> | null = null;
+
 /** Re-fit terminals in all pane groups after CSS flex layout settles (~150ms). */
 function refitPaneTerminals() {
-	setTimeout(() => {
+	if (refitTimer) clearTimeout(refitTimer);
+	refitTimer = setTimeout(() => {
+		refitTimer = null;
 		for (const groupId of paneLayoutStore.getAllGroupIds()) {
 			const group = paneLayoutStore.state.groups[groupId];
 			if (!group) continue;
@@ -15,6 +19,13 @@ function refitPaneTerminals() {
 			}
 		}
 	}, 150);
+}
+
+export function _testCancelPendingTimers(): void {
+	if (refitTimer) {
+		clearTimeout(refitTimer);
+		refitTimer = null;
+	}
 }
 
 /** Split pane management using recursive pane tree */

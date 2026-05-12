@@ -27,6 +27,7 @@ export default defineConfig({
     },
     environment: "happy-dom",
     globals: true,
+    detectAsyncLeaks: true,
     setupFiles: ["src/__tests__/setup.ts", "src/__tests__/mocks/tauri.ts"],
     alias: {
       "\\.svg$": path.resolve(__dirname, "src/__tests__/mocks/svg.ts"),

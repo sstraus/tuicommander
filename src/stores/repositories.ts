@@ -857,6 +857,12 @@ function createRepositoriesStore() {
 		_testSetHydrated(value: boolean): void {
 			hydrated = value;
 		},
+		_testCancelPendingSave(): void {
+			if (saveTimer) {
+				clearTimeout(saveTimer);
+				saveTimer = null;
+			}
+		},
 	};
 }
 

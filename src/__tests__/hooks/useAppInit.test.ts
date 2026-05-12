@@ -52,7 +52,14 @@ function createMockDeps(overrides: Partial<AppInitDeps> = {}): AppInitDeps {
 
 describe("initApp", () => {
 	beforeEach(() => {
+		vi.useFakeTimers();
 		resetStores();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		repositoriesStore._testCancelPendingSave();
+		paneLayoutStore._testCancelPendingSave();
 	});
 
 	it("hydrates stores and detects platform", async () => {
@@ -392,8 +399,6 @@ describe("initApp", () => {
 	});
 
 	it("repo-changed event triggers debounced refreshAllBranchStats", async () => {
-		vi.useFakeTimers();
-
 		// Capture the "repo-changed" listener callback
 		const listenMock = vi.mocked(listen);
 		let repoChangedCallback: ((event: { payload: { repo_path: string } }) => void) | null = null;
@@ -420,13 +425,9 @@ describe("initApp", () => {
 		// After debounce period (500ms), should fire
 		await vi.advanceTimersByTimeAsync(500);
 		expect(deps.refreshAllBranchStats).toHaveBeenCalledTimes(2);
-
-		vi.useRealTimers();
 	});
 
 	it("repo-changed debounce coalesces rapid events", async () => {
-		vi.useFakeTimers();
-
 		const listenMock = vi.mocked(listen);
 		let repoChangedCallback: ((event: { payload: { repo_path: string } }) => void) | null = null;
 		listenMock.mockImplementation(((event: string, handler: (event: { payload: unknown }) => void) => {
@@ -447,15 +448,12 @@ describe("initApp", () => {
 		// After debounce (500ms), should only have called refreshAllBranchStats once more (not 5 times)
 		await vi.advanceTimersByTimeAsync(500);
 		expect(deps.refreshAllBranchStats).toHaveBeenCalledTimes(2); // 1 init + 1 debounced
-
-		vi.useRealTimers();
 	});
 
 	it("repo-changed bumps revision synchronously on every event (not debounced)", async () => {
 		// Regression: bumpRevision used to live inside the branchStatsTimer setTimeout,
 		// so when a second repo-changed arrived within the debounce window the first
 		// timer was cleared and its bump was lost — panel data went stale.
-		vi.useFakeTimers();
 
 		const listenMock = vi.mocked(listen);
 		let repoChangedCallback: ((event: { payload: { repo_path: string } }) => void) | null = null;
@@ -484,8 +482,6 @@ describe("initApp", () => {
 		expect(deps.refreshAllBranchStats).toHaveBeenCalledTimes(1); // init only
 		await vi.advanceTimersByTimeAsync(500);
 		expect(deps.refreshAllBranchStats).toHaveBeenCalledTimes(2);
-
-		vi.useRealTimers();
 	});
 
 	describe("scoped cache invalidation", () => {
@@ -509,7 +505,6 @@ describe("initApp", () => {
 		});
 
 		it("repo-changed calls clear_repo_caches with repo path, not clear_caches", async () => {
-			vi.useFakeTimers();
 			const { getRepoChanged } = captureRepoAndHeadChanged();
 			const deps = createMockDeps();
 			await initApp(deps);
@@ -521,8 +516,6 @@ describe("initApp", () => {
 			expect(mockInvoke).toHaveBeenCalledWith("clear_repo_caches", { path: "/my/repo" });
 			// Should NOT call the global clear_caches
 			expect(mockInvoke).not.toHaveBeenCalledWith("clear_caches");
-
-			vi.useRealTimers();
 		});
 
 		it("head-changed calls clear_repo_caches with repo path, not clear_caches", async () => {
@@ -542,7 +535,6 @@ describe("initApp", () => {
 		});
 
 		it("repo-changed scopes invalidation to the specific repo that changed", async () => {
-			vi.useFakeTimers();
 			const { getRepoChanged } = captureRepoAndHeadChanged();
 			const deps = createMockDeps();
 			await initApp(deps);
@@ -554,8 +546,6 @@ describe("initApp", () => {
 			// Each repo gets its own scoped invalidation call
 			expect(mockInvoke).toHaveBeenCalledWith("clear_repo_caches", { path: "/repo-a" });
 			expect(mockInvoke).toHaveBeenCalledWith("clear_repo_caches", { path: "/repo-b" });
-
-			vi.useRealTimers();
 		});
 	});
 
@@ -767,12 +757,7 @@ describe("initApp", () => {
 			};
 		}
 
-		afterEach(() => {
-			vi.useRealTimers();
-		});
-
 		it("auto-removes an agent tab after AGENT_TAB_AUTOCLOSE_MS when agent_type is set", async () => {
-			vi.useFakeTimers();
 			const { getCreated, getClosed } = captureCreatedAndClosed();
 			const deps = createMockDeps();
 			await initApp(deps);
@@ -796,7 +781,6 @@ describe("initApp", () => {
 		});
 
 		it("auto-removes a remote tab after REMOTE_TAB_AUTOCLOSE_MS when agent_type is absent", async () => {
-			vi.useFakeTimers();
 			const { getCreated, getClosed } = captureCreatedAndClosed();
 			const deps = createMockDeps();
 			await initApp(deps);

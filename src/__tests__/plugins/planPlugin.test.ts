@@ -38,6 +38,10 @@ beforeEach(() => {
 	repositoriesStore.setActive(null);
 });
 
+afterEach(() => {
+	repositoriesStore._testCancelPendingSave();
+});
+
 // ---------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 import { fireEvent, render } from "@solidjs/testing-library";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/api/core", () => ({
 	invoke: vi.fn().mockResolvedValue(undefined),
@@ -71,6 +71,10 @@ describe("WorktreeManager", () => {
 		for (const path of Object.keys(repositoriesStore.state.repositories)) {
 			repositoriesStore.remove(path);
 		}
+	});
+
+	afterEach(() => {
+		repositoriesStore._testCancelPendingSave();
 	});
 
 	it("renders nothing when store is closed", () => {

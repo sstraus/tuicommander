@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { repositoriesStore as StoreType } from "../../stores/repositories";
 import { testInScope } from "../helpers/store";
 
@@ -17,6 +17,10 @@ describe("setBranch isMain defaulting", () => {
 
 		store = (await import("../../stores/repositories")).repositoriesStore;
 		store._testSetHydrated(true);
+	});
+
+	afterEach(() => {
+		store._testCancelPendingSave();
 	});
 
 	it("defaults isMain=true for main branches", () => {

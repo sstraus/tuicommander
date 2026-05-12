@@ -1,5 +1,5 @@
 import { fireEvent, render, waitFor } from "@solidjs/testing-library";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getModifierSymbol } from "../../platform";
 
 // Mock IdeLauncher to avoid Tauri invoke calls from that component
@@ -53,6 +53,11 @@ describe("Toolbar", () => {
 		uiStore.setSidebarVisible(true);
 		prNotificationsStore.clearAll();
 		activityStore.clearAll();
+	});
+
+	afterEach(() => {
+		prNotificationsStore._testCancelPendingTimers();
+		repositoriesStore._testCancelPendingSave();
 	});
 
 	function addTestNotif(overrides: Partial<Parameters<typeof prNotificationsStore.add>[0]> = {}) {

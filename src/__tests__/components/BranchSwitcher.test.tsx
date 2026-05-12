@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../mocks/tauri";
 import { fireEvent, render, waitFor } from "@solidjs/testing-library";
 import { BranchSwitcher } from "../../components/BranchSwitcher/BranchSwitcher";
@@ -24,12 +24,17 @@ function defaultProps(overrides: Partial<Parameters<typeof BranchSwitcher>[0]> =
 
 describe("BranchSwitcher", () => {
 	beforeEach(() => {
+		vi.useFakeTimers();
 		branchSwitcherStore.close();
 		mockInvoke.mockReset();
 		mockInvoke.mockImplementation((cmd: string) => {
 			if (cmd === "get_git_branches") return Promise.resolve(MOCK_BRANCHES);
 			return Promise.resolve(undefined);
 		});
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
 	});
 
 	it("does not render when closed", () => {

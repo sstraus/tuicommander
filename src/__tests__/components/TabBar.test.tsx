@@ -1,5 +1,5 @@
 import { fireEvent, render } from "@solidjs/testing-library";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getModifierSymbol } from "../../platform";
 import type { AwaitingInputType } from "../../stores/terminals";
 
@@ -28,11 +28,13 @@ import { TabBar } from "../../components/TabBar/TabBar";
 import { diffTabsStore } from "../../stores/diffTabs";
 import { globalWorkspaceStore } from "../../stores/globalWorkspace";
 import { mdTabsStore } from "../../stores/mdTabs";
+import { paneLayoutStore } from "../../stores/paneLayout";
 import { repositoriesStore } from "../../stores/repositories";
 import { terminalsStore } from "../../stores/terminals";
 
 describe("TabBar", () => {
 	beforeEach(() => {
+		vi.useFakeTimers();
 		localStorage.clear();
 		// Clean up any terminals from previous tests
 		for (const id of terminalsStore.getIds()) {
@@ -57,6 +59,12 @@ describe("TabBar", () => {
 		for (const id of globalWorkspaceStore.getPromotedIds()) {
 			globalWorkspaceStore.unpromote(id);
 		}
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		paneLayoutStore._testCancelPendingSave();
+		repositoriesStore._testCancelPendingSave();
 	});
 
 	function addTerminal(

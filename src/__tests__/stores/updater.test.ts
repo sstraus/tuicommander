@@ -1,5 +1,15 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { testInScope, testInScopeAsync } from "../helpers/store";
+
+/** Creates a promise that never resolves on its own, but can be settled via .settle() to avoid leak detection. */
+function hangingPromise(): Promise<null> & { settle: () => void } {
+	let resolve!: (v: null) => void;
+	const p = new Promise<null>((r) => {
+		resolve = r;
+	}) as Promise<null> & { settle: () => void };
+	p.settle = () => resolve(null);
+	return p;
+}
 
 // Mocks must be defined before module import
 const mockCheck = vi.fn();
@@ -32,6 +42,8 @@ vi.mock("../../stores/settings", () => ({
 describe("updaterStore", () => {
 	let store: typeof import("../../stores/updater").updaterStore;
 
+	const pendingPromises: Array<{ settle: () => void }> = [];
+
 	beforeEach(async () => {
 		vi.resetModules();
 		vi.useFakeTimers();
@@ -39,6 +51,7 @@ describe("updaterStore", () => {
 		mockRelaunch.mockReset().mockResolvedValue(undefined);
 		mockRpc.mockReset().mockResolvedValue(undefined);
 		mockSettingsState.updateChannel = "stable";
+		pendingPromises.length = 0;
 
 		vi.doMock("@tauri-apps/plugin-updater", () => ({ check: mockCheck }));
 		vi.doMock("@tauri-apps/plugin-process", () => ({ relaunch: mockRelaunch }));
@@ -49,6 +62,12 @@ describe("updaterStore", () => {
 		}));
 
 		store = (await import("../../stores/updater")).updaterStore;
+	});
+
+	afterEach(() => {
+		for (const p of pendingPromises) p.settle();
+		pendingPromises.length = 0;
+		vi.useRealTimers();
 	});
 
 	describe("initial state", () => {
@@ -106,7 +125,7 @@ describe("updaterStore", () => {
 
 		it("times out after 10s and shows error", async () => {
 			// check() never resolves
-			mockCheck.mockReturnValue(new Promise(() => {}));
+			{ const p = hangingPromise(); pendingPromises.push(p); mockCheck.mockReturnValue(p); }
 
 			await testInScopeAsync(async () => {
 				const checkPromise = store.checkForUpdate();
@@ -148,7 +167,7 @@ describe("updaterStore", () => {
 		});
 
 		it("is a no-op when already checking", async () => {
-			mockCheck.mockReturnValue(new Promise(() => {})); // never resolves
+			{ const p = hangingPromise(); pendingPromises.push(p); mockCheck.mockReturnValue(p); } // never resolves
 
 			await testInScopeAsync(async () => {
 				store.checkForUpdate(); // starts check
@@ -264,7 +283,7 @@ describe("updaterStore", () => {
 		it("handles stable check timeout gracefully and falls back to nightly", async () => {
 			mockSettingsState.updateChannel = "nightly";
 			// Stable: times out
-			mockCheck.mockReturnValue(new Promise(() => {}));
+			{ const p = hangingPromise(); pendingPromises.push(p); mockCheck.mockReturnValue(p); }
 			// Nightly: available
 			mockRpc.mockResolvedValue({
 				available: true,

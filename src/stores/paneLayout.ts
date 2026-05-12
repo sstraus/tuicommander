@@ -633,7 +633,15 @@ function createPaneLayoutStore() {
 		},
 	};
 
-	return result; // eslint-disable-line @typescript-eslint/no-use-before-define
+	return {
+		...result,
+		_testCancelPendingSave(): void {
+			if (saveTimer) {
+				clearTimeout(saveTimer);
+				saveTimer = null;
+			}
+		},
+	};
 }
 
 export const paneLayoutStore = createPaneLayoutStore();

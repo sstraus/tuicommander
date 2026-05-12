@@ -1,11 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/api/core", () => ({
 	invoke: vi.fn().mockResolvedValue(undefined),
 }));
 
+import { repositoriesStore } from "../../stores/repositories";
+
 const mockInvoke = vi.mocked(invoke);
+
+afterEach(() => {
+	repositoriesStore._testCancelPendingSave();
+});
 
 describe("get_initials Rust command", () => {
 	it("calls the Rust get_initials command", async () => {

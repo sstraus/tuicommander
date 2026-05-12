@@ -710,7 +710,16 @@ function createTerminalsStore() {
 		},
 	};
 
-	return { state, ...actions };
+	return {
+		state,
+		...actions,
+		_testCancelPendingTimers(): void {
+			if (lastDataAtFlushTimer) {
+				clearInterval(lastDataAtFlushTimer);
+				lastDataAtFlushTimer = null;
+			}
+		},
+	};
 }
 
 export const terminalsStore = createTerminalsStore();

@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import "../mocks/tauri";
-import { useSplitPanes } from "../../hooks/useSplitPanes";
+import { _testCancelPendingTimers, useSplitPanes } from "../../hooks/useSplitPanes";
 import { paneLayoutStore, resetGroupCounter } from "../../stores/paneLayout";
 import { terminalsStore } from "../../stores/terminals";
 
@@ -18,6 +18,11 @@ describe("useSplitPanes", () => {
 	beforeEach(() => {
 		resetStores();
 		splitPanes = useSplitPanes();
+	});
+
+	afterEach(() => {
+		paneLayoutStore._testCancelPendingSave();
+		_testCancelPendingTimers();
 	});
 
 	describe("handleSplit", () => {

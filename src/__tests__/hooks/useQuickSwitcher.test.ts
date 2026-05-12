@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../mocks/tauri";
 import { useQuickSwitcher } from "../../hooks/useQuickSwitcher";
 import { repositoriesStore } from "../../stores/repositories";
@@ -21,6 +21,10 @@ describe("useQuickSwitcher", () => {
 		switcher = useQuickSwitcher({
 			handleBranchSelect: mockHandleBranchSelect,
 		});
+	});
+
+	afterEach(() => {
+		repositoriesStore._testCancelPendingSave();
 	});
 
 	describe("switchToBranchByIndex", () => {

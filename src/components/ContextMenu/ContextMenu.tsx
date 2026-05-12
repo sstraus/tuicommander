@@ -169,7 +169,8 @@ export const ContextMenu: Component<ContextMenuProps> = (props) => {
 
 	createEffect(() => {
 		if (!props.visible || !menuRef) return;
-		requestAnimationFrame(clampToViewport);
+		const raf = requestAnimationFrame(clampToViewport);
+		onCleanup(() => cancelAnimationFrame(raf));
 	});
 
 	return (
@@ -210,10 +211,12 @@ export function createContextMenu() {
 		setVisible(true);
 	};
 
+	let closeRaf = 0;
 	const close = () => {
 		setVisible(false);
+		cancelAnimationFrame(closeRaf);
 		if (previousFocus) {
-			requestAnimationFrame(() => previousFocus?.focus());
+			closeRaf = requestAnimationFrame(() => previousFocus?.focus());
 			previousFocus = null;
 		}
 	};

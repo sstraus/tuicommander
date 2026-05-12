@@ -65,6 +65,7 @@ describe("PluginPanel", () => {
 	let removeEventListenerSpy: ReturnType<typeof vi.spyOn>;
 
 	beforeEach(() => {
+		vi.useFakeTimers();
 		insideOnMount = false;
 		messageListenerCalledInsideOnMount = null;
 
@@ -84,6 +85,7 @@ describe("PluginPanel", () => {
 	});
 
 	afterEach(() => {
+		vi.useRealTimers();
 		addEventListenerSpy.mockRestore();
 		removeEventListenerSpy.mockRestore();
 	});

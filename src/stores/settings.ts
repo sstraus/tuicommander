@@ -694,7 +694,16 @@ function createSettingsStore() {
 		},
 	};
 
-	return { state, ...actions };
+	return {
+		state,
+		...actions,
+		_testCancelPendingSave(): void {
+			if (saveTimer) {
+				clearTimeout(saveTimer);
+				saveTimer = null;
+			}
+		},
+	};
 }
 
 export const settingsStore = createSettingsStore();

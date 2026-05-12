@@ -1,7 +1,7 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
-import { type Component, createEffect, createMemo, Show } from "solid-js";
+import { type Component, createEffect, createMemo, onCleanup, Show } from "solid-js";
 import { appLogger } from "../../stores/appLogger";
 import { stripAnsi } from "../../utils/stripAnsi";
 import { applyTweakHighlights } from "../../utils/tweakComments";
@@ -178,11 +178,13 @@ export const ContentRenderer: Component<ContentRendererProps> = (props) => {
 	createEffect(() => {
 		processedContent(); // subscribe to re-renders
 		if (!containerRef) return;
-		requestAnimationFrame(() => {
-			containerRef!.querySelectorAll<HTMLInputElement>(`input[${TILDE_SENTINEL}]`).forEach((cb) => {
+		const raf = requestAnimationFrame(() => {
+			if (!containerRef) return;
+			containerRef.querySelectorAll<HTMLInputElement>(`input[${TILDE_SENTINEL}]`).forEach((cb) => {
 				cb.indeterminate = true;
 			});
 		});
+		onCleanup(() => cancelAnimationFrame(raf));
 	});
 
 	return (
