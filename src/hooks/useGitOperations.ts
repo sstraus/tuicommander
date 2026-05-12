@@ -413,10 +413,20 @@ export function useGitOperations(deps: GitOperationsDeps) {
 		}
 		if (orphanPaths.length === 0) return;
 
+		const closeTerminalsInWorktree = async (wtPath: string) => {
+			for (const termId of terminalsStore.getIds()) {
+				const terminal = terminalsStore.get(termId);
+				if (terminal?.cwd && (terminal.cwd === wtPath || terminal.cwd.startsWith(wtPath + "/"))) {
+					await deps.closeTerminal(termId, true);
+				}
+			}
+		};
+
 		if (orphanCleanup === "on") {
 			// Auto-remove silently
 			for (const wtPath of orphanPaths) {
 				try {
+					await closeTerminalsInWorktree(wtPath);
 					await deps.repo.removeOrphanWorktree(repoPath, wtPath);
 				} catch (err) {
 					appLogger.warn("git", `Failed to auto-remove orphan worktree ${wtPath}`, err);
@@ -439,6 +449,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
 
 		for (const wtPath of orphanPaths) {
 			try {
+				await closeTerminalsInWorktree(wtPath);
 				await deps.repo.removeOrphanWorktree(repoPath, wtPath);
 			} catch (err) {
 				appLogger.warn("git", `Failed to remove orphan worktree ${wtPath}`, err);
