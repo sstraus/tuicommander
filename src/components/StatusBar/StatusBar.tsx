@@ -111,6 +111,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 	let infoTextRef: HTMLSpanElement | undefined;
 	const [tickerActive, setTickerActive] = createSignal(false);
 	const [infoBalloonOpen, setInfoBalloonOpen] = createSignal(false);
+	const [infoPulse, setInfoPulse] = createSignal(false);
 
 	// Close balloon on Escape
 	onMount(() => {
@@ -123,8 +124,15 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 
 	createEffect(() => {
 		// Subscribe to statusInfo changes to re-measure overflow and close balloon
-		void props.statusInfo;
+		const text = props.statusInfo;
 		setInfoBalloonOpen(false);
+
+		if (text && text !== "Ready") {
+			setInfoPulse(true);
+			const tid = setTimeout(() => setInfoPulse(false), 600);
+			onCleanup(() => clearTimeout(tid));
+		}
+
 		// Defer measurement to after DOM update
 		const rafId = requestAnimationFrame(() => {
 			if (!infoContainerRef || !infoTextRef) return;
@@ -195,7 +203,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 				<ZoomIndicator fontSize={props.fontSize} defaultFontSize={props.defaultFontSize} />
 				<Show when={props.statusInfo}>
 					<span
-						class={s.info}
+						class={cx(s.info, infoPulse() && s.infoPulse)}
 						ref={infoContainerRef}
 						onClick={() => {
 							if (tickerActive()) setInfoBalloonOpen((v) => !v);

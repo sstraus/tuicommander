@@ -14,7 +14,6 @@
   padding: 0 12px;
   font-size: var(--font-sm);
   gap: 8px;
-  overflow: hidden;
 }
 
 .section {
@@ -32,6 +31,7 @@
   gap: 6px;
   margin-left: auto;
   flex: 0 0 auto;
+  overflow: visible;
 }
 
 .githubStatus {
@@ -51,6 +51,15 @@
   flex: 1 1 0;
   min-width: 60px;
   overflow: hidden;
+}
+
+.infoPulse {
+  animation: statusPulse 600ms ease-out;
+}
+
+@keyframes statusPulse {
+  0% { color: var(--accent); }
+  100% { color: var(--fg-secondary); }
 }
 
 /* Pendulum ticker for overflowing notifications */
@@ -124,20 +133,21 @@
 
 .toggleBadge {
   position: absolute;
-  top: -2px;
-  right: 0;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
+  top: -3px;
+  right: -3px;
+  min-width: 12px;
+  height: 12px;
+  padding: 0 2px;
   border-radius: var(--radius-lg);
   background: var(--accent);
   color: var(--text-on-accent);
-  font-size: var(--font-2xs);
+  font-size: 9px;
   font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
   pointer-events: none;
+  line-height: 1;
 }
 
 .tickerMessage {
