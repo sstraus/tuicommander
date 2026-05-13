@@ -80,16 +80,16 @@ export default defineConfig(async () => ({
   build: {
     target: "esnext",
     cssMinify: "lightningcss",
-    rollupOptions: {
+    rolldownOptions: {
       input: {
         main: "index.html",
         mobile: "mobile.html",
       },
       output: {
-        manualChunks: {
-          codemirror: ["@codemirror/state", "@codemirror/view", "@codemirror/language", "@codemirror/language-data", "@codemirror/commands", "@codemirror/search", "@lezer/common", "@lezer/highlight"],
-          "diff-view": ["@git-diff-view/core"],
-          markdown: ["marked", "dompurify"],
+        manualChunks(id: string) {
+          if (id.includes("@codemirror/") || id.includes("@lezer/")) return "codemirror";
+          if (id.includes("@git-diff-view/core")) return "diff-view";
+          if (id.includes("/marked/") || id.includes("/dompurify/")) return "markdown";
         },
       },
     },
