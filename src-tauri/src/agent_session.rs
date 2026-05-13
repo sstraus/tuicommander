@@ -75,10 +75,15 @@ fn resolve_env_overrides(
 }
 
 /// Env vars that affect session storage paths, keyed by agent type.
+///
+/// Covers all 10 AI agents. Agents without entries here have no known env var
+/// that changes their session storage path (amp, cursor, warp, droid use
+/// cloud or hardcoded paths; aider writes to CWD; goose has no override).
 const AGENT_ENV_VARS: &[(&str, &[&str])] = &[
     ("claude", &["CLAUDE_CONFIG_DIR"]),
     ("gemini", &["GEMINI_CLI_HOME"]),
     ("codex", &["CODEX_HOME"]),
+    ("opencode", &["OPENCODE_DATA_DIR"]),
 ];
 
 /// Read session-relevant env vars from a running agent process.
