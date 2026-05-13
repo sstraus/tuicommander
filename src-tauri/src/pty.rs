@@ -4070,7 +4070,6 @@ pub(crate) fn classify_agent(process_name: &str) -> Option<&'static str> {
         "codex" => Some("codex"),
         "amp" => Some("amp"),
         "cursor-agent" => Some("cursor"),
-        "oz" => Some("warp"),
         "goose" => Some("goose"),
         _ => None,
     }

@@ -512,7 +512,6 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
 | Amp | `amp` | `amp threads continue` |
 | Cursor Agent | `cursor-agent` | `cursor-agent resume` |
 | Goose | `goose` | `goose session --resume --name <uuid>` (session-aware) / `goose session --resume` (fallback) |
-| Warp Oz | `oz` | — |
 | Droid (Factory) | `droid` | — |
 | Git (background) | `git` | — |
 

@@ -154,7 +154,7 @@ See `src/hooks/` for full signatures — the above is a representative summary.
 ## Agent Types
 
 ```typescript
-type AgentType = "claude" | "gemini" | "opencode" | "aider" | "codex" | "amp" | "cursor" | "warp" | "droid" | "git";
+type AgentType = "claude" | "gemini" | "opencode" | "aider" | "codex" | "amp" | "cursor" | "droid" | "git";
 ```
 
 Full agent configuration (binary, resume command, session discovery, detection patterns) lives in `src/agents.ts`.

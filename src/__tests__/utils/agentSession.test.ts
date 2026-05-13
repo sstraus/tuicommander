@@ -80,7 +80,6 @@ describe("buildResumeCommand", () => {
 	});
 
 	it("returns null for agents without resume support", () => {
-		expect(buildResumeCommand("warp", null)).toBeNull();
 		expect(buildResumeCommand("droid", null)).toBeNull();
 		expect(buildResumeCommand("git", null)).toBeNull();
 	});
@@ -111,10 +110,6 @@ describe("sessionDiscovery in AgentConfig", () => {
 
 	it("amp has null sessionDiscovery (cloud-only)", () => {
 		expect(AGENTS.amp.sessionDiscovery).toBeNull();
-	});
-
-	it("warp has null sessionDiscovery", () => {
-		expect(AGENTS.warp.sessionDiscovery).toBeNull();
 	});
 
 	it("opencode has null sessionDiscovery (SQLite, not implemented)", () => {
@@ -171,7 +166,7 @@ describe("verifyAndBuildResumeCommand", () => {
 	});
 
 	it("returns null for agents without resume support", async () => {
-		const result = await verifyAndBuildResumeCommand("warp", "/tmp/repo", "tuic-uuid-1", null);
+		const result = await verifyAndBuildResumeCommand("droid", "/tmp/repo", "tuic-uuid-1", null);
 		expect(result).toBeNull();
 	});
 

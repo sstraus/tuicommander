@@ -13,7 +13,6 @@ TUICommander detects, monitors, and manages AI coding agents running in your ter
 | OpenCode | `opencode` | `opencode -c` | — |
 | Amp | `amp` | `amp threads continue` | — |
 | Cursor Agent | `cursor-agent` | `cursor-agent resume` | — |
-| Warp Oz | `oz` | — | — |
 | Droid (Factory) | `droid` | — | — |
 
 ## Agent Detection

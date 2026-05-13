@@ -95,7 +95,7 @@ fn get_mcp_config_spec(agent_type: &str) -> Option<McpConfigSpec> {
         "codex" => None,
         // Agents that don't support MCP config files
         // Goose uses YAML config — auto-install not supported (JSON-only)
-        "aider" | "warp" | "opencode" | "droid" | "goose" => None,
+        "aider" | "opencode" | "droid" | "goose" => None,
         _ => None,
     }
 }
@@ -801,7 +801,7 @@ mod tests {
             );
         }
         // Verify unsupported agents don't (codex uses TOML, not JSON — handled separately)
-        for agent in &["aider", "warp", "opencode", "droid", "codex"] {
+        for agent in &["aider", "opencode", "droid", "codex"] {
             assert!(
                 get_mcp_config_spec(agent).is_none(),
                 "{agent} should not have a JSON config spec"
