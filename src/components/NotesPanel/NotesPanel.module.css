@@ -25,7 +25,7 @@
   padding: 20px;
   text-align: center;
   color: var(--fg-muted);
-  font-size: var(--font-base);
+  font-size: var(--font-sm);
 }
 
 .item {
@@ -57,7 +57,7 @@
 }
 
 .text {
-  font-size: var(--font-base);
+  font-size: var(--font-sm);
   color: var(--fg-primary);
   white-space: pre-wrap;
   word-break: break-word;
@@ -170,7 +170,7 @@
   border-radius: var(--radius-lg);
   color: var(--fg-primary);
   padding: 8px 12px;
-  font-size: var(--font-base);
+  font-size: var(--font-sm);
   font-family: inherit;
   resize: vertical;
   box-sizing: border-box;
