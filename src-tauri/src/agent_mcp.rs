@@ -300,7 +300,7 @@ fn read_toml_file(path: &std::path::Path) -> toml::Value {
         return toml::Value::Table(Default::default());
     }
     match std::fs::read_to_string(path) {
-        Ok(content) => content.parse().unwrap_or_else(|e| {
+        Ok(content) => toml::from_str(&content).unwrap_or_else(|e| {
             tracing::error!(source = "mcp", path = %path.display(), "TOML parse error: {e}");
             toml::Value::Table(Default::default())
         }),

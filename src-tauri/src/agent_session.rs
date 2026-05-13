@@ -13,6 +13,7 @@
 //! | codex  | `~/.codex/sessions/YYYY/MM/DD/rollout-*-<UUID>.jsonl` | UUID in filename |
 //! | goose  | SQLite `~/Library/Application Support/Block/goose/sessions/sessions.db` | name field (TUIC_SESSION) |
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
@@ -23,22 +24,82 @@ use std::time::SystemTime;
 /// - `agent_type`: one of `"claude"`, `"gemini"`, `"codex"`, `"goose"`
 /// - `cwd`: the terminal's working directory (used to compute project-scoped paths)
 /// - `claimed_ids`: session IDs already assigned to other terminals — excluded from results
+/// - `agent_pid`: PID of the running agent process. When provided, env vars that affect
+///   session storage paths (`CLAUDE_CONFIG_DIR`, `GEMINI_CLI_HOME`, `CODEX_HOME`) are read
+///   directly from the process's initial environment — the ground-truth source.
+/// - `env_overrides`: fallback env overrides from the TUIC run config. Only used for keys
+///   NOT found in the process env (i.e. process env takes precedence).
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn discover_agent_session(
     agent_type: String,
     cwd: String,
     claimed_ids: Vec<String>,
-    claude_config_dir: Option<String>,
+    agent_pid: Option<u32>,
+    env_overrides: HashMap<String, String>,
 ) -> Option<String> {
+    let env = resolve_env_overrides(&agent_type, agent_pid, &env_overrides);
     match agent_type.as_str() {
-        "claude" => discover_claude_session(&cwd, &claimed_ids, claude_config_dir.as_deref()),
-        "gemini" => discover_gemini_session(&cwd, &claimed_ids),
-        "codex" => discover_codex_session(&claimed_ids),
+        "claude" => discover_claude_session(
+            &cwd,
+            &claimed_ids,
+            env.get("CLAUDE_CONFIG_DIR").map(|s| s.as_str()),
+        ),
+        "gemini" => discover_gemini_session(
+            &cwd,
+            &claimed_ids,
+            env.get("GEMINI_CLI_HOME").map(|s| s.as_str()),
+        ),
+        "codex" => discover_codex_session(
+            &claimed_ids,
+            env.get("CODEX_HOME").map(|s| s.as_str()),
+        ),
         // Goose stores sessions in SQLite — no filesystem discovery.
         // Shell wrapper injects --name $TUIC_SESSION for deterministic binding.
         "goose" => None,
         _ => None,
     }
+}
+
+/// Merge env overrides: process env (ground truth) takes precedence over run config fallback.
+fn resolve_env_overrides(
+    agent_type: &str,
+    agent_pid: Option<u32>,
+    run_config_env: &HashMap<String, String>,
+) -> HashMap<String, String> {
+    let mut merged = run_config_env.clone();
+    if let Some(pid) = agent_pid {
+        let process_env = read_agent_env_overrides(agent_type, pid);
+        merged.extend(process_env);
+    }
+    merged
+}
+
+/// Env vars that affect session storage paths, keyed by agent type.
+const AGENT_ENV_VARS: &[(&str, &[&str])] = &[
+    ("claude", &["CLAUDE_CONFIG_DIR"]),
+    ("gemini", &["GEMINI_CLI_HOME"]),
+    ("codex", &["CODEX_HOME"]),
+];
+
+/// Read session-relevant env vars from a running agent process.
+///
+/// Uses the process's initial environment (set at exec time) via platform-specific
+/// APIs: `KERN_PROCARGS2` on macOS, `/proc/pid/environ` on Linux, PEB on Windows.
+///
+/// Returns a map suitable for passing to `discover_agent_session`/`verify_agent_session`.
+pub(crate) fn read_agent_env_overrides(agent_type: &str, pid: u32) -> HashMap<String, String> {
+    let mut overrides = HashMap::new();
+    let vars = AGENT_ENV_VARS
+        .iter()
+        .find(|(t, _)| *t == agent_type)
+        .map(|(_, vars)| *vars)
+        .unwrap_or(&[]);
+    for var in vars {
+        if let Some(val) = crate::process_env::read_process_env_var(pid, var) {
+            overrides.insert((*var).to_string(), val);
+        }
+    }
+    overrides
 }
 
 /// Return the absolute path to Claude Code's project directory for a given CWD.
@@ -104,11 +165,23 @@ fn discover_claude_session(
                 .map(|stem| stem.to_string())
         },
         claimed_ids,
-        Some(std::time::Duration::from_secs(60)),
+        Some(std::time::Duration::from_secs(300)),
     )
 }
 
 // ─── Gemini ──────────────────────────────────────────────────────────────────
+
+/// Base directory for Gemini session temp files.
+///
+/// When `cli_home` is set (from `GEMINI_CLI_HOME`), uses `<cli_home>/.gemini/tmp/`.
+/// Otherwise defaults to `~/.gemini/tmp/`.
+fn gemini_tmp_dir(cli_home: Option<&str>) -> Option<PathBuf> {
+    if let Some(home) = cli_home {
+        Some(PathBuf::from(home).join(".gemini").join("tmp"))
+    } else {
+        dirs::home_dir().map(|h| h.join(".gemini").join("tmp"))
+    }
+}
 
 /// Gemini CLI stores sessions under `~/.gemini/tmp/<project-hash>/chats/`.
 /// The hash is a SHA-256 of the absolute project path. Rather than recomputing
@@ -116,8 +189,15 @@ fn discover_claude_session(
 /// project directories under `~/.gemini/tmp/` and look for the newest session
 /// file across all of them. This is correct because Gemini is project-scoped:
 /// a session in a different project dir won't be in a directory we visit.
-fn discover_gemini_session(_cwd: &str, claimed_ids: &[String]) -> Option<String> {
-    let tmp_dir = dirs::home_dir()?.join(".gemini").join("tmp");
+///
+/// When `cli_home` is set (from `GEMINI_CLI_HOME` in the agent's process env),
+/// uses `<cli_home>/.gemini/tmp/`. Otherwise defaults to `~/.gemini/tmp/`.
+fn discover_gemini_session(
+    _cwd: &str,
+    claimed_ids: &[String],
+    cli_home: Option<&str>,
+) -> Option<String> {
+    let tmp_dir = gemini_tmp_dir(cli_home)?;
     if !tmp_dir.exists() {
         return None;
     }
@@ -176,10 +256,22 @@ fn extract_json_string_field(json: &str, field: &str) -> Option<String> {
 
 // ─── Codex ───────────────────────────────────────────────────────────────────
 
+/// Base directory for Codex session files.
+///
+/// When `codex_home` is set (from `CODEX_HOME`), uses `<codex_home>/sessions/`.
+/// Otherwise defaults to `~/.codex/sessions/`.
+fn codex_sessions_dir(codex_home: Option<&str>) -> Option<PathBuf> {
+    if let Some(home) = codex_home {
+        Some(PathBuf::from(home).join("sessions"))
+    } else {
+        dirs::home_dir().map(|h| h.join(".codex").join("sessions"))
+    }
+}
+
 /// Codex CLI stores sessions under `~/.codex/sessions/YYYY/MM/DD/`.
 /// Files are named `rollout-<timestamp>-<UUID>.jsonl`.
-fn discover_codex_session(claimed_ids: &[String]) -> Option<String> {
-    let sessions_root = dirs::home_dir()?.join(".codex").join("sessions");
+fn discover_codex_session(claimed_ids: &[String], codex_home: Option<&str>) -> Option<String> {
+    let sessions_root = codex_sessions_dir(codex_home)?;
 
     if !sessions_root.exists() {
         return None;
@@ -247,52 +339,27 @@ pub(crate) fn verify_agent_session(
     agent_type: String,
     session_id: String,
     cwd: String,
-    claude_config_dir: Option<String>,
+    agent_pid: Option<u32>,
+    env_overrides: HashMap<String, String>,
 ) -> bool {
+    let env = resolve_env_overrides(&agent_type, agent_pid, &env_overrides);
     match agent_type.as_str() {
-        "claude" => verify_claude_session(&session_id, &cwd, claude_config_dir.as_deref()),
-        "gemini" => verify_gemini_session(&session_id, &cwd),
-        "codex" => verify_codex_session(&session_id),
+        "claude" => verify_claude_session(
+            &session_id,
+            &cwd,
+            env.get("CLAUDE_CONFIG_DIR").map(|s| s.as_str()),
+        ),
+        "gemini" => verify_gemini_session(
+            &session_id,
+            &cwd,
+            env.get("GEMINI_CLI_HOME").map(|s| s.as_str()),
+        ),
+        "codex" => verify_codex_session(
+            &session_id,
+            env.get("CODEX_HOME").map(|s| s.as_str()),
+        ),
         "goose" => verify_goose_session(),
         _ => false,
-    }
-}
-
-/// Pre-create the `no-session-inject` flag when a restored tab's Claude session
-/// file no longer exists on disk. Prevents the shell wrapper from injecting
-/// `--session-id <stale-uuid>` on the first manual `claude` invocation, which
-/// would cause Claude to exit immediately and leak VT probe responses (DA1,
-/// DECRPM) as visible garbage in the shell.
-#[cfg_attr(feature = "desktop", tauri::command)]
-pub(crate) fn preflight_session_inject(
-    tuic_session: String,
-    cwd: String,
-    claude_config_dir: Option<String>,
-) {
-    if !tuic_session
-        .chars()
-        .all(|c| c.is_ascii_hexdigit() || c == '-')
-        || tuic_session.len() != 36
-    {
-        return;
-    }
-    if verify_claude_session(&tuic_session, &cwd, claude_config_dir.as_deref()) {
-        return;
-    }
-    let flag = crate::config::config_dir().join(format!("no-session-inject.{tuic_session}"));
-    if !flag.exists() {
-        if let Err(e) = std::fs::write(&flag, b"") {
-            tracing::warn!(
-                tuic_session = %tuic_session,
-                error = %e,
-                "Failed to pre-create no-session-inject flag"
-            );
-        } else {
-            tracing::info!(
-                tuic_session = %tuic_session,
-                "Pre-created no-session-inject flag (session file gone)"
-            );
-        }
     }
 }
 
@@ -310,11 +377,11 @@ fn verify_claude_session(session_id: &str, cwd: &str, config_dir: Option<&str>) 
 }
 
 /// Check if any session file under `~/.gemini/tmp/*/chats/` contains this sessionId.
-fn verify_gemini_session(session_id: &str, _cwd: &str) -> bool {
+fn verify_gemini_session(session_id: &str, _cwd: &str, cli_home: Option<&str>) -> bool {
     if !is_uuid(session_id) {
         return false;
     }
-    let Some(tmp_dir) = dirs::home_dir().map(|h| h.join(".gemini").join("tmp")) else {
+    let Some(tmp_dir) = gemini_tmp_dir(cli_home) else {
         return false;
     };
     if !tmp_dir.exists() {
@@ -344,11 +411,11 @@ fn verify_gemini_session(session_id: &str, _cwd: &str) -> bool {
 }
 
 /// Check if any Codex session file has this UUID in its filename.
-fn verify_codex_session(session_id: &str) -> bool {
+fn verify_codex_session(session_id: &str, codex_home: Option<&str>) -> bool {
     if !is_uuid(session_id) {
         return false;
     }
-    let Some(sessions_root) = dirs::home_dir().map(|h| h.join(".codex").join("sessions")) else {
+    let Some(sessions_root) = codex_sessions_dir(codex_home) else {
         return false;
     };
     if !sessions_root.exists() {
@@ -841,6 +908,7 @@ mod tests {
             "af467730-5e79-49d9-8a17-ebd94c99f262".to_string(),
             "/tmp".to_string(),
             None,
+            HashMap::new(),
         ));
     }
 }

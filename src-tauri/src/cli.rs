@@ -136,12 +136,16 @@ pub(crate) fn expand_tilde(path: &str) -> String {
 /// don't have on PATH.
 pub(crate) fn enriched_path() -> String {
     let current = std::env::var("PATH").unwrap_or_default();
-    let extra = extra_bin_dirs().join(":");
-    if current.is_empty() {
-        extra
-    } else {
-        format!("{extra}:{current}")
+    let extra = extra_bin_dirs();
+    if extra.is_empty() {
+        return current;
     }
+    let mut dirs: Vec<&str> = extra.iter().map(String::as_str).collect();
+    if !current.is_empty() {
+        dirs.push(&current);
+    }
+    let sep = if cfg!(windows) { ";" } else { ":" };
+    dirs.join(sep)
 }
 
 /// Check if a CLI tool exists on PATH or in well-known directories.

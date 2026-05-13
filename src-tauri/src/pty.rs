@@ -4165,6 +4165,32 @@ pub(crate) fn get_session_foreground_process(
     effective
 }
 
+/// Get the PID of the deepest foreground process in a PTY session.
+///
+/// On Unix: uses the process group leader to find the foreground process.
+/// On Windows: walks the process tree from the child PID to the deepest descendant.
+///
+/// Returns `None` if the session doesn't exist or the process has exited.
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) fn get_session_leaf_pid(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+) -> Option<u32> {
+    let entry = state.sessions.get(&session_id)?;
+    let session = entry.value().lock();
+    #[cfg(not(windows))]
+    {
+        let pgid = session.master.process_group_leader()?;
+        Some(pgid as u32)
+    }
+    #[cfg(windows)]
+    {
+        let child_pid = session._child.process_id()?;
+        deepest_descendant_pid(child_pid)
+    }
+}
+
 /// Check if a PTY session has a non-shell foreground process running.
 /// Returns the process name (e.g. "htop", "node", "claude") or None if
 /// the foreground is the shell itself (zsh, bash, fish, etc.).

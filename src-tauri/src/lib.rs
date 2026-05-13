@@ -55,6 +55,7 @@ pub(crate) mod plugin_fs;
 pub(crate) mod plugin_http;
 pub(crate) mod plugin_pty;
 pub(crate) mod plugins;
+pub(crate) mod process_env;
 pub(crate) mod prompt;
 pub(crate) mod provider_registry;
 pub(crate) mod pty;
@@ -1066,7 +1067,8 @@ pub fn run() {
         .manage(ai_chat_registry::ChatRegistry::new())
         .manage(crate::fs::ContentSearchCancel(std::sync::Mutex::new(None)))
         .plugin(tauri_plugin_deep_link::init())
-        .plugin(tauri_plugin_clipboard_manager::init());
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_drag::init());
 
     #[cfg(feature = "desktop")]
     let builder = builder
@@ -1245,6 +1247,7 @@ pub fn run() {
             pty::update_session_cwd,
             pty::set_session_name,
             pty::get_session_foreground_process,
+            pty::get_session_leaf_pid,
             pty::has_foreground_process,
             pty::debug_agent_detection,
             load_config,
@@ -1262,7 +1265,6 @@ pub fn run() {
             agent::spawn_agent,
             agent_session::discover_agent_session,
             agent_session::verify_agent_session,
-            agent_session::preflight_session_inject,
             agent_session::claude_project_dir,
             worktree::remove_worktree,
             worktree::check_worktree_dirty,
@@ -1506,6 +1508,7 @@ pub fn run() {
             plugin_pty::plugin_read_session_output,
             plugin_exec::plugin_exec_cli,
             plugin_credentials::plugin_read_credential,
+            plugin_credentials::plugin_invalidate_credential_cache,
             registry::fetch_plugin_registry,
             claude_usage::get_claude_usage_api,
             claude_usage::get_claude_usage_timeline,

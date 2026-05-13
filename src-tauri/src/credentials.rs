@@ -17,6 +17,49 @@ type VaultGuard<'a> = MutexGuard<'a, Option<Vault>>;
 
 static VAULT: Mutex<Option<Vault>> = Mutex::new(None);
 
+use std::time::{Duration, Instant};
+
+const CIRCUIT_BREAKER_COOLDOWN: Duration = Duration::from_secs(60);
+const CIRCUIT_BREAKER_THRESHOLD: u32 = 3;
+
+struct CircuitBreaker {
+    failures: u32,
+    last_failure: Option<Instant>,
+}
+
+static CIRCUIT: Mutex<CircuitBreaker> = Mutex::new(CircuitBreaker {
+    failures: 0,
+    last_failure: None,
+});
+
+fn circuit_check() -> Result<(), String> {
+    let cb = CIRCUIT.lock().unwrap_or_else(|e| e.into_inner());
+    if cb.failures >= CIRCUIT_BREAKER_THRESHOLD {
+        if let Some(last) = cb.last_failure {
+            if last.elapsed() < CIRCUIT_BREAKER_COOLDOWN {
+                return Err(format!(
+                    "Keyring unavailable (failed {} times). Retrying in {}s.",
+                    cb.failures,
+                    (CIRCUIT_BREAKER_COOLDOWN - last.elapsed()).as_secs()
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn circuit_record_success() {
+    let mut cb = CIRCUIT.lock().unwrap_or_else(|e| e.into_inner());
+    cb.failures = 0;
+    cb.last_failure = None;
+}
+
+fn circuit_record_failure() {
+    let mut cb = CIRCUIT.lock().unwrap_or_else(|e| e.into_inner());
+    cb.failures += 1;
+    cb.last_failure = Some(Instant::now());
+}
+
 const KEYRING_SERVICE: &str = "tuicommander";
 const KEYRING_USER: &str = "vault";
 
@@ -70,12 +113,24 @@ fn lock() -> VaultGuard<'static> {
 }
 
 fn read_keyring_entry(service: &str, user: &str) -> Result<Option<String>, String> {
-    let entry = keyring::Entry::new(service, user)
-        .map_err(|e| format!("Failed to create keyring entry: {e}"))?;
+    circuit_check()?;
+    let entry = keyring::Entry::new(service, user).map_err(|e| {
+        circuit_record_failure();
+        format!("Failed to create keyring entry: {e}")
+    })?;
     match entry.get_password() {
-        Ok(v) => Ok(Some(v)),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(format!("Failed to read keyring ({service}/{user}): {e}")),
+        Ok(v) => {
+            circuit_record_success();
+            Ok(Some(v))
+        }
+        Err(keyring::Error::NoEntry) => {
+            circuit_record_success();
+            Ok(None)
+        }
+        Err(e) => {
+            circuit_record_failure();
+            Err(format!("Failed to read keyring ({service}/{user}): {e}"))
+        }
     }
 }
 
@@ -86,13 +141,18 @@ fn delete_keyring_entry(service: &str, user: &str) {
 }
 
 fn persist(vault: &Vault) -> Result<(), String> {
+    circuit_check()?;
     let json =
         serde_json::to_string(vault).map_err(|e| format!("Failed to serialize vault: {e}"))?;
-    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
-        .map_err(|e| format!("Failed to create keyring entry: {e}"))?;
-    entry
-        .set_password(&json)
-        .map_err(|e| format!("Failed to save vault: {e}"))?;
+    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).map_err(|e| {
+        circuit_record_failure();
+        format!("Failed to create keyring entry: {e}")
+    })?;
+    entry.set_password(&json).map_err(|e| {
+        circuit_record_failure();
+        format!("Failed to save vault: {e}")
+    })?;
+    circuit_record_success();
     Ok(())
 }
 
@@ -108,9 +168,17 @@ fn load(guard: &mut VaultGuard<'_>) -> Result<(), String> {
     ensure_mock_keyring();
 
     let mut vault: Vault = match read_keyring_entry(KEYRING_SERVICE, KEYRING_USER)? {
-        Some(json) => {
-            serde_json::from_str(&json).map_err(|e| format!("Failed to parse vault: {e}"))?
-        }
+        Some(json) => match serde_json::from_str(&json) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!(
+                    source = "credentials",
+                    "Vault JSON corrupt ({e}), starting fresh. Corrupt data ({} bytes) discarded.",
+                    json.len()
+                );
+                HashMap::new()
+            }
+        },
         None => HashMap::new(),
     };
 
@@ -561,5 +629,68 @@ mod tests {
             get(Credential::McpUpstream("a")).unwrap(),
             Some("mcp-a".to_string())
         );
+    }
+
+    fn reset_circuit_breaker() {
+        let mut cb = CIRCUIT.lock().unwrap();
+        cb.failures = 0;
+        cb.last_failure = None;
+    }
+
+    #[test]
+    fn circuit_breaker_trips_after_threshold() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        reset_circuit_breaker();
+
+        for _ in 0..CIRCUIT_BREAKER_THRESHOLD {
+            circuit_record_failure();
+        }
+        let result = circuit_check();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Keyring unavailable"));
+
+        reset_circuit_breaker();
+    }
+
+    #[test]
+    fn circuit_breaker_resets_on_success() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        reset_circuit_breaker();
+
+        for _ in 0..CIRCUIT_BREAKER_THRESHOLD - 1 {
+            circuit_record_failure();
+        }
+        circuit_record_success();
+        assert!(circuit_check().is_ok());
+
+        reset_circuit_breaker();
+    }
+
+    #[test]
+    fn vault_corruption_recovers_gracefully() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        reset_circuit_breaker();
+        reset_vault();
+
+        // Plant corrupt JSON directly in keyring
+        let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).unwrap();
+        entry.set_password("not-valid-json{{{").unwrap();
+
+        // Clear in-memory vault so load() reads from keyring
+        *lock() = None;
+
+        // get() should recover instead of failing
+        let result = get(Credential::AiChatApiKey);
+        assert!(result.is_ok(), "corrupt vault should recover, got: {result:?}");
+        assert_eq!(result.unwrap(), None);
+
+        // Setting a new credential should work (fresh vault)
+        set(Credential::AiChatApiKey, "fresh-key").unwrap();
+        assert_eq!(
+            get(Credential::AiChatApiKey).unwrap(),
+            Some("fresh-key".to_string())
+        );
+
+        reset_circuit_breaker();
     }
 }

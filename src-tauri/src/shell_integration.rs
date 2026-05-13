@@ -32,19 +32,8 @@ __tuic_preexec() {
 tuic_state()   { printf '\e]7770;state=%s\a' "$1"; }
 tuic_suggest() { printf '\e]7770;suggest=%s\a' "$*"; }
 tuic_intent()  { printf '\e]7770;intent=%s\a' "$*"; }
-# Auto-inject --session-id for Claude Code so tab↔session mapping is deterministic
+# Auto-inject --name for Goose so tab↔session mapping is deterministic
 if [[ -n "$TUIC_SESSION" ]]; then
-  claude() {
-    local a; for a in "$@"; do
-      case "$a" in --session-id|--resume|--continue) command claude "$@"; return;; esac
-    done
-    if [[ -n "$TUIC_CONFIG_DIR" && -f "$TUIC_CONFIG_DIR/no-session-inject.$TUIC_SESSION" ]]; then
-      command claude "$@"
-    else
-      command claude --session-id "$TUIC_SESSION" "$@"
-    fi
-  }
-  # Auto-inject --name for Goose so tab↔session mapping is deterministic
   goose() {
     local a; for a in "$@"; do
       case "$a" in --name|-n|--resume|-r) command goose "$@"; return;; esac
@@ -83,19 +72,8 @@ fi
 tuic_state()   { printf '\e]7770;state=%s\a' "$1"; }
 tuic_suggest() { printf '\e]7770;suggest=%s\a' "$*"; }
 tuic_intent()  { printf '\e]7770;intent=%s\a' "$*"; }
-# Auto-inject --session-id for Claude Code so tab↔session mapping is deterministic
+# Auto-inject --name for Goose so tab↔session mapping is deterministic
 if [[ -n "$TUIC_SESSION" ]]; then
-  claude() {
-    local a; for a in "$@"; do
-      case "$a" in --session-id|--resume|--continue) command claude "$@"; return;; esac
-    done
-    if [[ -n "$TUIC_CONFIG_DIR" && -f "$TUIC_CONFIG_DIR/no-session-inject.$TUIC_SESSION" ]]; then
-      command claude "$@"
-    else
-      command claude --session-id "$TUIC_SESSION" "$@"
-    fi
-  }
-  # Auto-inject --name for Goose so tab↔session mapping is deterministic
   goose() {
     local a; for a in "$@"; do
       case "$a" in --name|-n|--resume|-r) command goose "$@"; return;; esac
@@ -126,23 +104,8 @@ end
 function tuic_state;   printf '\e]7770;state=%s\a' $argv[1]; end
 function tuic_suggest; printf '\e]7770;suggest=%s\a' (string join " " $argv); end
 function tuic_intent;  printf '\e]7770;intent=%s\a' (string join " " $argv); end
-# Auto-inject --session-id for Claude Code so tab↔session mapping is deterministic
+# Auto-inject --name for Goose so tab↔session mapping is deterministic
 if set -q TUIC_SESSION
-  function claude --wraps claude
-    for a in $argv
-      switch $a
-        case --session-id --resume --continue
-          command claude $argv
-          return
-      end
-    end
-    if set -q TUIC_CONFIG_DIR; and test -f "$TUIC_CONFIG_DIR/no-session-inject.$TUIC_SESSION"
-      command claude $argv
-    else
-      command claude --session-id $TUIC_SESSION $argv
-    end
-  end
-  # Auto-inject --name for Goose so tab↔session mapping is deterministic
   function goose --wraps goose
     for a in $argv
       switch $a

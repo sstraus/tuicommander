@@ -201,15 +201,25 @@ pub(super) async fn verify_agent_session_http(
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
-    let claude_config_dir = body
-        .get("claudeConfigDir")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+    let agent_pid = body
+        .get("agentPid")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as u32);
+    let env_overrides = body
+        .get("envOverrides")
+        .and_then(|v| v.as_object())
+        .map(|obj| {
+            obj.iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                .collect()
+        })
+        .unwrap_or_default();
     Json(crate::agent_session::verify_agent_session(
         agent_type,
         session_id,
         cwd,
-        claude_config_dir,
+        agent_pid,
+        env_overrides,
     ))
 }
 
