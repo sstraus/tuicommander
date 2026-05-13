@@ -147,19 +147,12 @@ impl PushStore {
 /// Generate a new ES256 VAPID key pair for Web Push.
 /// Returns (private_key_base64url, public_key_base64url).
 pub(crate) fn generate_vapid_keys() -> Result<(String, String), String> {
-    use web_push_native::jwt_simple::algorithms::ES256KeyPair;
-    use web_push_native::p256::elliptic_curve::sec1::ToEncodedPoint;
+    use p256::ecdsa::SigningKey;
+    use rand_core::OsRng;
 
-    let kp = ES256KeyPair::generate();
-    let private_bytes = kp.to_bytes();
-    let private_b64 = Base64UrlUnpadded::encode_string(&private_bytes);
-
-    // ES256PublicKey::to_bytes() returns compressed (33 bytes); VAPID needs
-    // uncompressed (65 bytes). Re-parse via p256 crate and decompress.
-    let compressed = kp.public_key().to_bytes();
-    let p256_key = web_push_native::p256::PublicKey::from_sec1_bytes(&compressed)
-        .map_err(|e| format!("Failed to parse public key: {e}"))?;
-    let uncompressed = p256_key.to_encoded_point(false);
+    let signing_key = SigningKey::random(&mut OsRng);
+    let private_b64 = Base64UrlUnpadded::encode_string(signing_key.to_bytes().as_ref());
+    let uncompressed = signing_key.verifying_key().to_encoded_point(false);
     let public_b64 = Base64UrlUnpadded::encode_string(uncompressed.as_bytes());
 
     Ok((private_b64, public_b64))
@@ -175,7 +168,7 @@ pub(crate) async fn send_push_batch(
     body: &str,
     url: &str,
 ) -> Vec<String> {
-    use web_push_native::jwt_simple::algorithms::ES256KeyPair;
+    use p256::ecdsa::SigningKey;
 
     let mut stale_endpoints: Vec<String> = Vec::new();
 
@@ -196,7 +189,10 @@ pub(crate) async fn send_push_batch(
             return stale_endpoints;
         }
     };
-    let vapid_kp = match ES256KeyPair::from_bytes(&kp_bytes) {
+    let vapid_kp = match p256::SecretKey::from_slice(&kp_bytes)
+        .map(|sk| SigningKey::from(&sk))
+        .map_err(|e| e.to_string())
+    {
         Ok(kp) => kp,
         Err(e) => {
             tracing::error!(source = "push", "Failed to load VAPID key pair: {e}");
@@ -275,15 +271,56 @@ pub(crate) async fn send_push_batch(
     stale_endpoints
 }
 
+/// Build an RFC 8292 VAPID `Authorization` header value.
+/// JWT header+claims are ES256-signed with the P-256 key; signature is IEEE P1363 (r||s).
+fn build_vapid_authorization(
+    signing_key: &p256::ecdsa::SigningKey,
+    endpoint: &axum::http::Uri,
+    subject: &str,
+    valid_secs: u64,
+) -> Result<axum::http::HeaderValue, String> {
+    use p256::ecdsa::{signature::Signer, Signature};
+
+    let jwt_header = Base64UrlUnpadded::encode_string(br#"{"alg":"ES256","typ":"JWT"}"#);
+
+    let exp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+        + valid_secs;
+    let audience = format!(
+        "{}://{}",
+        endpoint.scheme_str().ok_or("endpoint missing scheme")?,
+        endpoint.host().ok_or("endpoint missing host")?,
+    );
+    let claims_json = serde_json::to_string(&serde_json::json!({
+        "aud": audience,
+        "exp": exp,
+        "sub": subject,
+    }))
+    .map_err(|e| format!("VAPID claims serialization failed: {e}"))?;
+    let jwt_claims = Base64UrlUnpadded::encode_string(claims_json.as_bytes());
+
+    let signing_input = format!("{jwt_header}.{jwt_claims}");
+    let sig: Signature = signing_key.sign(signing_input.as_bytes());
+    let sig_b64 = Base64UrlUnpadded::encode_string(&sig.to_bytes());
+    let jwt = format!("{signing_input}.{sig_b64}");
+
+    let public_b64 = Base64UrlUnpadded::encode_string(
+        signing_key.verifying_key().to_encoded_point(false).as_bytes(),
+    );
+
+    axum::http::HeaderValue::try_from(format!("vapid t={jwt}, k={public_b64}"))
+        .map_err(|e| format!("Invalid VAPID header value: {e}"))
+}
+
 /// Build a single push request for a subscription. Returns None if the subscription is invalid.
 fn build_push_request(
     sub: &PushSubscription,
-    vapid_kp: &web_push_native::jwt_simple::algorithms::ES256KeyPair,
+    vapid_signing_key: &p256::ecdsa::SigningKey,
     vapid_subject: &str,
     payload_bytes: &[u8],
 ) -> Option<(String, axum::http::Request<Vec<u8>>)> {
-    use web_push_native::p256;
-
     let p256dh_bytes = match Base64UrlUnpadded::decode_vec(&sub.keys.p256dh) {
         Ok(b) => b,
         Err(e) => {
@@ -322,11 +359,20 @@ fn build_push_request(
         arr.into()
     };
 
-    let builder = web_push_native::WebPushBuilder::new(endpoint, ua_public, ua_auth)
-        .with_vapid(vapid_kp, vapid_subject);
+    let auth_header = match build_vapid_authorization(vapid_signing_key, &endpoint, vapid_subject, 12 * 3600) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(source = "push", endpoint = %sub.endpoint, "VAPID signing failed: {e}");
+            return None;
+        }
+    };
 
+    let builder = web_push_native::WebPushBuilder::new(endpoint, ua_public, ua_auth);
     match builder.build(payload_bytes.to_vec()) {
-        Ok(request) => Some((sub.endpoint.clone(), request)),
+        Ok(mut request) => {
+            request.headers_mut().insert(axum::http::header::AUTHORIZATION, auth_header);
+            Some((sub.endpoint.clone(), request))
+        }
         Err(e) => {
             tracing::warn!(source = "push", "Failed to build push request: {e}");
             None
@@ -407,5 +453,71 @@ mod tests {
         assert!(validate_push_endpoint("https://169.254.169.254/metadata").is_err());
         assert!(validate_push_endpoint("http://fcm.googleapis.com/fcm/send/abc").is_err()); // http not https
         assert!(validate_push_endpoint("https://10.0.0.1/internal").is_err());
+    }
+
+    #[test]
+    fn generate_vapid_keys_produces_valid_p256_pair() {
+        use p256::elliptic_curve::sec1::ToEncodedPoint;
+
+        let (priv_b64, pub_b64) = generate_vapid_keys().unwrap();
+
+        // Private key: 32 bytes (P-256 scalar)
+        let priv_bytes = base64ct::Base64UrlUnpadded::decode_vec(&priv_b64).unwrap();
+        assert_eq!(priv_bytes.len(), 32, "private key must be 32 bytes");
+
+        // Public key: 65 bytes uncompressed (0x04 prefix + X + Y)
+        let pub_bytes = base64ct::Base64UrlUnpadded::decode_vec(&pub_b64).unwrap();
+        assert_eq!(pub_bytes.len(), 65, "public key must be 65 bytes uncompressed");
+        assert_eq!(pub_bytes[0], 0x04, "uncompressed point must start with 0x04");
+
+        // Key round-trip: private → load → same public key
+        let sk = p256::SecretKey::from_slice(&priv_bytes).unwrap();
+        let loaded_pub = sk.public_key().to_encoded_point(false);
+        assert_eq!(loaded_pub.as_bytes(), pub_bytes.as_slice());
+    }
+
+    #[test]
+    fn build_vapid_authorization_produces_valid_jwt_structure() {
+        use base64ct::Encoding;
+        use p256::ecdsa::SigningKey;
+        use rand_core::OsRng;
+
+        let signing_key = SigningKey::random(&mut OsRng);
+        let endpoint: axum::http::Uri = "https://fcm.googleapis.com/fcm/send/test".parse().unwrap();
+        let header_val =
+            build_vapid_authorization(&signing_key, &endpoint, "mailto:test@example.com", 3600)
+                .unwrap();
+
+        let header_str = header_val.to_str().unwrap();
+        assert!(header_str.starts_with("vapid t="), "must start with 'vapid t='");
+        assert!(header_str.contains(", k="), "must contain ', k=' separator");
+
+        // Extract and decode the JWT
+        let t_part = header_str
+            .split("vapid t=")
+            .nth(1)
+            .unwrap()
+            .split(", k=")
+            .next()
+            .unwrap();
+        let parts: Vec<&str> = t_part.split('.').collect();
+        assert_eq!(parts.len(), 3, "JWT must have 3 dot-separated parts");
+
+        // Header must declare ES256
+        let jwt_header_json = base64ct::Base64UrlUnpadded::decode_vec(parts[0]).unwrap();
+        let jwt_header: serde_json::Value = serde_json::from_slice(&jwt_header_json).unwrap();
+        assert_eq!(jwt_header["alg"], "ES256");
+        assert_eq!(jwt_header["typ"], "JWT");
+
+        // Claims must contain aud, exp, sub
+        let jwt_claims_json = base64ct::Base64UrlUnpadded::decode_vec(parts[1]).unwrap();
+        let jwt_claims: serde_json::Value = serde_json::from_slice(&jwt_claims_json).unwrap();
+        assert_eq!(jwt_claims["aud"], "https://fcm.googleapis.com");
+        assert!(jwt_claims["exp"].as_u64().unwrap() > 0);
+        assert_eq!(jwt_claims["sub"], "mailto:test@example.com");
+
+        // Signature must be 64 bytes (IEEE P1363 r||s)
+        let sig_bytes = base64ct::Base64UrlUnpadded::decode_vec(parts[2]).unwrap();
+        assert_eq!(sig_bytes.len(), 64, "ES256 signature must be 64 bytes (r||s)");
     }
 }

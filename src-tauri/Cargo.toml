@@ -141,7 +141,9 @@ sha2 = "0.10"
 hkdf = "0.12"
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 axum-server-dual-protocol = "0.7"
-web-push-native = "0.4"
+web-push-native = { version = "0.4", default-features = false, features = ["serialization"] }
+p256 = { version = "0.13", features = ["ecdsa"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
 base64ct = { version = "1", features = ["alloc"] }
 anyhow = "1"
 oauth2 = "5"
