@@ -15,7 +15,7 @@ describe("Dropdown", () => {
 		const { container } = render(() => (
 			<Dropdown items={sampleItems} visible={false} onSelect={() => {}} onClose={() => {}} />
 		));
-		const dropdown = container.querySelector(".dropdown");
+		const dropdown = container.querySelector("[data-testid='dropdown']");
 		expect(dropdown).toBeNull();
 	});
 
@@ -23,19 +23,19 @@ describe("Dropdown", () => {
 		const { container } = render(() => (
 			<Dropdown items={sampleItems} visible={true} onSelect={() => {}} onClose={() => {}} />
 		));
-		const items = container.querySelectorAll(".dropdown-item");
+		const items = container.querySelectorAll("[data-testid='dropdown-item']");
 		expect(items.length).toBe(3);
-		expect(items[0].querySelector(".dropdown-item-label")!.textContent).toBe("Alpha");
-		expect(items[1].querySelector(".dropdown-item-label")!.textContent).toBe("Beta");
+		expect(items[0].querySelector("[data-testid='dropdown-item-label']")!.textContent).toBe("Alpha");
+		expect(items[1].querySelector("[data-testid='dropdown-item-label']")!.textContent).toBe("Beta");
 	});
 
 	it("applies selected class to selected item", () => {
 		const { container } = render(() => (
 			<Dropdown items={sampleItems} selected="b" visible={true} onSelect={() => {}} onClose={() => {}} />
 		));
-		const items = container.querySelectorAll(".dropdown-item");
-		expect(items[0].classList.contains("selected")).toBe(false);
-		expect(items[1].classList.contains("selected")).toBe(true);
+		const items = container.querySelectorAll("[data-testid='dropdown-item']");
+		expect(items[0].hasAttribute("data-selected")).toBe(false);
+		expect(items[1].hasAttribute("data-selected")).toBe(true);
 	});
 
 	it("calls onSelect when non-disabled item is clicked", () => {
@@ -43,7 +43,7 @@ describe("Dropdown", () => {
 		const { container } = render(() => (
 			<Dropdown items={sampleItems} visible={true} onSelect={handleSelect} onClose={() => {}} />
 		));
-		const items = container.querySelectorAll(".dropdown-item");
+		const items = container.querySelectorAll("[data-testid='dropdown-item']");
 		fireEvent.click(items[0]);
 		expect(handleSelect).toHaveBeenCalledWith("a");
 	});
@@ -53,7 +53,7 @@ describe("Dropdown", () => {
 		const { container } = render(() => (
 			<Dropdown items={sampleItems} visible={true} onSelect={handleSelect} onClose={() => {}} />
 		));
-		const items = container.querySelectorAll(".dropdown-item");
+		const items = container.querySelectorAll("[data-testid='dropdown-item']");
 		fireEvent.click(items[2]); // disabled item
 		expect(handleSelect).not.toHaveBeenCalled();
 	});
@@ -62,8 +62,8 @@ describe("Dropdown", () => {
 		const { container } = render(() => (
 			<Dropdown items={sampleItems} visible={true} onSelect={() => {}} onClose={() => {}} />
 		));
-		const items = container.querySelectorAll(".dropdown-item");
-		expect(items[2].classList.contains("disabled")).toBe(true);
+		const items = container.querySelectorAll("[data-testid='dropdown-item']");
+		expect(items[2].hasAttribute("data-disabled")).toBe(true);
 	});
 
 	it("closes on Escape key", () => {
@@ -92,8 +92,8 @@ describe("Dropdown", () => {
 		const { container } = render(() => (
 			<Dropdown items={sampleItems} visible={true} onSelect={() => {}} onClose={() => {}} position="top" />
 		));
-		const dropdown = container.querySelector(".dropdown");
-		expect(dropdown!.classList.contains("dropdown-top")).toBe(true);
+		const dropdown = container.querySelector("[data-testid='dropdown']");
+		expect(dropdown!.getAttribute("data-position")).toBe("top");
 	});
 
 	it("renders items with icons", () => {
@@ -101,7 +101,7 @@ describe("Dropdown", () => {
 		const { container } = render(() => (
 			<Dropdown items={itemsWithIcon} visible={true} onSelect={() => {}} onClose={() => {}} />
 		));
-		const icon = container.querySelector(".dropdown-item-icon");
+		const icon = container.querySelector("[data-testid='dropdown-item-icon']");
 		expect(icon).not.toBeNull();
 	});
 
@@ -114,7 +114,7 @@ describe("Dropdown", () => {
 		const { container } = render(() => (
 			<Dropdown items={itemsWithDivider} visible={true} onSelect={() => {}} onClose={() => {}} />
 		));
-		const dividers = container.querySelectorAll(".dropdown-divider");
+		const dividers = container.querySelectorAll("[data-testid='dropdown-divider']");
 		expect(dividers.length).toBe(1);
 	});
 });

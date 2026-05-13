@@ -1,4 +1,5 @@
 import type { Component } from "solid-js";
+import s from "./ZoomIndicator.module.css";
 
 export interface ZoomIndicatorProps {
 	fontSize: number;
@@ -8,5 +9,5 @@ export interface ZoomIndicatorProps {
 export const ZoomIndicator: Component<ZoomIndicatorProps> = (props) => {
 	const percentage = () => Math.round((props.fontSize / props.defaultFontSize) * 100);
 
-	return <span id="zoom-indicator">{percentage()}%</span>;
+	return <span class={s.indicator} data-testid="zoom-indicator">{percentage()}%</span>;
 };

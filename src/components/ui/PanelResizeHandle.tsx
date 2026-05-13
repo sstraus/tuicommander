@@ -1,4 +1,5 @@
 import type { Component } from "solid-js";
+import s from "./PanelResizeHandle.module.css";
 
 export interface PanelResizeHandleProps {
 	/** CSS selector of the panel element to resize */
@@ -49,5 +50,5 @@ export const PanelResizeHandle: Component<PanelResizeHandleProps> = (props) => {
 		document.body.style.userSelect = "none";
 	};
 
-	return <div class="panel-resize-handle" onMouseDown={handleMouseDown} />;
+	return <div class={s.handle} onMouseDown={handleMouseDown} />;
 };

@@ -1,4 +1,5 @@
 import { type Component, createEffect, createMemo, For, type JSX, Show } from "solid-js";
+import s from "./TerminalArea.module.css";
 import noTuiOpenImg from "../assets/no-tui-open.png";
 import { useFileDrop } from "../hooks/useFileDrop";
 import { diffTabsStore } from "../stores/diffTabs";
@@ -101,8 +102,8 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
 						!editorTabsStore.state.activeId
 					}
 				>
-					<div class="empty-terminal-state">
-						<img src={noTuiOpenImg} alt="No TUI Open" class="empty-terminal-icon" />
+					<div class={s.emptyState}>
+						<img src={noTuiOpenImg} alt="No TUI Open" class={s.emptyIcon} />
 						<TipOfTheDay />
 					</div>
 				</Show>
@@ -248,8 +249,8 @@ export const TerminalArea: Component<TerminalAreaProps> = (props) => {
 
 				{/* Drop overlay for external file drag & drop */}
 				<Show when={isDragging()}>
-					<div class="file-drop-overlay">
-						<div class="file-drop-overlay-content">
+					<div class={s.fileDropOverlay}>
+						<div class={s.fileDropContent}>
 							<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
 								<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
 								<polyline points="14 2 14 8 20 8" />

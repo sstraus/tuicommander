@@ -148,6 +148,7 @@ import { createPanelSyncProvider, type PanelAction } from "./utils/panelSync";
 import { initPaneTabAssignment } from "./utils/paneTabAssign";
 import { pathBasename, pathStartsWith, pathStripPrefix } from "./utils/pathUtils";
 import { getShellFamily, sendCommand } from "./utils/sendCommand";
+import qd from "./components/QuitDialog/QuitDialog.module.css";
 
 const getDefaultFontSize = () => settingsStore.state.defaultFontSize;
 const getMaxTabNameLength = () => settingsStore.state.maxTabNameLength;
@@ -2598,18 +2599,18 @@ const App: Component = () => {
 
 			{/* Quit confirmation dialog (Story 057) */}
 			<Show when={quitDialogVisible()}>
-				<div class="quit-dialog-overlay" onClick={() => setQuitDialogVisible(false)}>
-					<div class="quit-dialog" onClick={(e) => e.stopPropagation()}>
+				<div class={qd.overlay} onClick={() => setQuitDialogVisible(false)}>
+					<div class={qd.dialog} onClick={(e) => e.stopPropagation()}>
 						<h3>Quit TUICommander?</h3>
 						<p>
 							You have {terminalsStore.getIds().filter((id) => terminalsStore.get(id)?.sessionId).length} active
 							terminal session(s). Quitting will close all sessions.
 						</p>
-						<div class="quit-dialog-actions">
-							<button class="quit-dialog-cancel" onClick={() => setQuitDialogVisible(false)}>
+						<div class={qd.actions}>
+							<button class={qd.cancel} onClick={() => setQuitDialogVisible(false)}>
 								Cancel
 							</button>
-							<button class="quit-dialog-quit" onClick={forceQuit}>
+							<button class={qd.quit} onClick={forceQuit}>
 								Quit
 							</button>
 						</div>

@@ -1,5 +1,7 @@
 import type { JSX } from "solid-js";
 import { type Component, createEffect, For, onCleanup, Show } from "solid-js";
+import { cx } from "../../utils";
+import s from "./Dropdown.module.css";
 
 export interface DropdownItem {
 	id: string;
@@ -65,18 +67,21 @@ export const Dropdown: Component<DropdownProps> = (props) => {
 
 	return (
 		<Show when={props.visible}>
-			<div ref={dropdownRef} class={`dropdown ${props.position === "top" ? "dropdown-top" : ""} ${props.class || ""}`}>
+			<div ref={dropdownRef} class={cx(s.dropdown, props.position === "top" && s.top, props.class)} data-testid="dropdown" data-position={props.position || "bottom"}>
 				<For each={props.items}>
 					{(item) => (
-						<Show when={!item.divider} fallback={<div class="dropdown-divider" />}>
+						<Show when={!item.divider} fallback={<div class={s.divider} data-testid="dropdown-divider" />}>
 							<div
-								class={`dropdown-item ${item.id === props.selected ? "selected" : ""} ${item.disabled ? "disabled" : ""}`}
+								class={cx(s.item, item.id === props.selected && s.selected)}
+								data-testid="dropdown-item"
+								data-selected={item.id === props.selected || undefined}
+								data-disabled={item.disabled || undefined}
 								onClick={() => !item.disabled && props.onSelect(item.id)}
 							>
 								<Show when={item.icon}>
-									<span class="dropdown-item-icon">{item.icon}</span>
+									<span class={s.itemIcon} data-testid="dropdown-item-icon">{item.icon}</span>
 								</Show>
-								<span class="dropdown-item-label">{item.label}</span>
+								<span class={s.itemLabel} data-testid="dropdown-item-label">{item.label}</span>
 							</div>
 						</Show>
 					)}

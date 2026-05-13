@@ -1,0 +1,42 @@
+.emptyState {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.emptyIcon {
+  width: 1000px;
+  max-width: 80%;
+  height: auto;
+  opacity: 0.15;
+}
+
+.fileDropOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+.fileDropContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 48px;
+  border: 2px dashed var(--accent);
+  border-radius: 12px;
+  color: var(--fg-primary);
+  font-size: 14px;
+  opacity: 0.9;
+}

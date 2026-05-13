@@ -377,3 +377,67 @@
   cursor: default;
   animation: pulse-opacity 2s ease-in-out infinite;
 }
+
+.toggleBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--fg-secondary);
+  padding: 2px 8px;
+  border-radius: var(--radius-md);
+  font-size: var(--font-xs);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  overflow: hidden;
+}
+
+.toggleBtn:focus-visible {
+  outline: none;
+}
+
+.toggleBtn:hover {
+  background: var(--bg-highlight);
+  border-color: var(--accent);
+  color: var(--fg-primary);
+}
+
+.micIcon {
+  vertical-align: middle;
+}
+
+.micRecording {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  color: var(--text-on-accent) !important;
+  animation: mic-pulse 1s ease-in-out infinite;
+}
+
+.micLoading {
+  animation: mic-loading-pulse 0.8s ease-in-out infinite;
+  cursor: wait !important;
+  color: var(--warning, #e5c07b) !important;
+}
+
+.micProcessing {
+  opacity: 0.6;
+  cursor: wait !important;
+}
+
+@keyframes mic-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes mic-loading-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .micRecording,
+  .micLoading {
+    animation: none;
+  }
+}

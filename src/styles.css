@@ -1,5 +1,6 @@
-/* TUICommander — Global styles: cross-component layout, JS-applied classes,
-   and legacy styles pending migration to CSS modules. */
+/* TUICommander — Global layout styles.
+   Only cross-component layout rules, JS-applied classes, and library overrides.
+   Component-specific styles live in *.module.css next to each component. */
 
 /* Sidebar hidden state (cross-component: App.tsx controls sidebar visibility) */
 #app.sidebar-hidden #sidebar {
@@ -48,7 +49,6 @@
   background: var(--bg-primary);
 }
 
-
 /* Tab Bar wrapper (used by App.tsx) */
 #tab-bar {
   height: var(--tab-bar-height);
@@ -60,76 +60,6 @@
   padding: 0;
 }
 
-#zoom-indicator {
-  font-family: var(--font-mono);
-  font-size: var(--font-sm);
-  color: var(--fg-muted);
-  min-width: 40px;
-  text-align: center;
-}
-
-
-
-.dropdown {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  margin-top: 4px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  min-width: 140px;
-  box-shadow: var(--shadow-dropdown);
-  z-index: 100;
-  overflow: hidden;
-}
-
-
-.dropdown-top {
-  top: auto;
-  bottom: 100%;
-  margin-top: 0;
-  margin-bottom: 4px;
-}
-
-.dropdown-item-icon {
-  flex-shrink: 0;
-  width: 16px;
-  text-align: center;
-}
-
-.dropdown-item-label {
-  flex: 1;
-  min-width: 0;
-}
-
-.dropdown-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  font-size: var(--font-md);
-  color: var(--fg-secondary);
-  cursor: pointer;
-  transition: background 0.1s;
-}
-
-.dropdown-item:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-}
-
-.dropdown-item.selected {
-  background: var(--accent);
-  color: var(--text-on-accent);
-}
-
-.dropdown-divider {
-  height: 1px;
-  background: var(--border);
-  margin: 4px 0;
-}
-
 /* Terminal Container */
 #terminal-container {
   flex: 1;
@@ -137,37 +67,6 @@
   overflow: hidden;
   background: var(--bg-primary);
   position: relative;
-}
-
-.empty-terminal-state {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  z-index: 1;
-  pointer-events: none;
-}
-
-.empty-terminal-icon {
-  width: 1000px;
-  max-width: 80%;
-  height: auto;
-  opacity: 0.15;
-}
-
-/* File drag & drop overlay */
-.file-drop-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.5);
-  pointer-events: none;
 }
 
 /* Highlight applied (via JS) to the folder row under a Tauri drag-drop cursor.
@@ -178,34 +77,11 @@
   outline-offset: -1px;
 }
 
-.file-drop-overlay-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 32px 48px;
-  border: 2px dashed var(--accent);
-  border-radius: 12px;
-  color: var(--fg-primary);
-  font-size: 14px;
-  opacity: 0.9;
-}
-
 #terminal-panes {
   flex: 1;
   min-width: 200px;
   position: relative;
   background: var(--bg-secondary);
-}
-
-#terminal-panes.split-vertical {
-  display: flex;
-  flex-direction: row;
-}
-
-#terminal-panes.split-horizontal {
-  display: flex;
-  flex-direction: column;
 }
 
 .terminal-pane {
@@ -221,82 +97,10 @@
   z-index: 20;
 }
 
-/* Split pane overrides — both panes visible with flex sizing */
-.terminal-pane.split-pane {
-  position: relative;
-  inset: auto;
-  display: block;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-
-/* Active pane indicator — inset shadow avoids layout shift and bleed */
-.terminal-pane.split-pane-active {
-  box-shadow: inset 2px 0 0 var(--accent);
-}
-
-#terminal-panes.split-horizontal .terminal-pane.split-pane-active {
-  box-shadow: inset 0 2px 0 var(--accent);
-}
-
-/* Panel resize handle (right-side panels) */
-.panel-resize-handle {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 4px;
-  height: 100%;
-  cursor: col-resize;
-  z-index: 10;
-}
-
-.panel-resize-handle:hover {
-  background: var(--accent);
-  opacity: 0.5;
-}
-
-/* Split resize handle */
-.split-resize-handle {
-  flex: 0 0 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1;
-}
-
-.split-resize-handle.vertical {
-  cursor: col-resize;
-  width: 8px;
-}
-
-.split-resize-handle.horizontal {
-  cursor: row-resize;
-  height: 8px;
-}
-
-.split-resize-handle::after {
-  content: "";
-  background: var(--border);
-}
-
-.split-resize-handle.vertical::after {
-  width: 1px;
-  height: 100%;
-}
-
-.split-resize-handle.horizontal::after {
-  height: 1px;
-  width: 100%;
-}
-
-.split-resize-handle:hover::after {
-  background: var(--accent);
-}
-
-/* Keep native viewport scrollable — xterm v6 reads scrollTop from this element
-   to compute viewportY. overflow-y:hidden breaks viewportY (always returns 0).
-   Selector uses [data-terminal-id] so it works in both flat and split (PaneTree) modes. */
+/* xterm scrollbar overrides — keep native viewport scrollable.
+   xterm v6 reads scrollTop from this element to compute viewportY.
+   overflow-y:hidden breaks viewportY (always returns 0).
+   Selector uses [data-terminal-id] so it works in both flat and split modes. */
 [data-terminal-id] .xterm-viewport {
   overflow-y: auto;
 }
@@ -318,15 +122,12 @@
   background: var(--fg-muted);
 }
 
-/* Hide xterm v6 scroll shadow — the dark overlay bar that appears at the top
-   when scrolled down. Inherited from VS Code's ScrollableElement, not useful
-   in our context and visually jarring. */
+/* Hide xterm v6 scroll shadow */
 [data-terminal-id] .xterm .xterm-scrollable-element > .shadow {
   display: none !important;
 }
 
-/* Match xterm custom scrollbar widget to app-wide thin style.
-   xterm v6 renders .xterm-scrollable-element > .scrollbar with inline ~14px. */
+/* Match xterm custom scrollbar widget to app-wide thin style */
 [data-terminal-id] .xterm .xterm-scrollable-element > .scrollbar.vertical {
   width: 8px !important;
 }
@@ -335,140 +136,7 @@
   border-radius: var(--radius-md);
 }
 
-/* Scrollbar visibility is forced from JS (installScrollbarVisibilityFix in
-   Terminal.tsx) because xterm's `_hide(e)` early-returns when `_isVisible`
-   was never set, so the `.fade` class is NOT added on the first scrollback
-   accumulation of an untouched terminal — a CSS-only override on `.fade`
-   misses that case. The JS fix inspects the slider's inline height to
-   detect real overflow and sets inline opacity !important, which trumps
-   xterm's class-based rules without fighting over className. */
-
-/* Awaiting Input Visual Indicators */
-@keyframes pulse-question {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(232, 152, 76, 0); }
-  50% { box-shadow: 0 0 12px 4px rgba(232, 152, 76, 0.4); }
-}
-
-@keyframes pulse-error {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(247, 118, 142, 0); }
-  50% { box-shadow: 0 0 12px 4px rgba(247, 118, 142, 0.4); }
-}
-
-@keyframes pulse-confirmation {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(224, 175, 104, 0); }
-  50% { box-shadow: 0 0 12px 4px rgba(224, 175, 104, 0.4); }
-}
-
-.terminal-pane.awaiting-question {
-  animation: pulse-question 2s ease-in-out infinite;
-  border: 2px solid var(--attention);
-  border-radius: var(--radius-md);
-}
-
-.terminal-pane.awaiting-error {
-  animation: pulse-error 2s ease-in-out infinite;
-  border: 2px solid var(--error);
-  border-radius: var(--radius-md);
-}
-
-.terminal-pane.awaiting-confirmation {
-  animation: pulse-confirmation 2s ease-in-out infinite;
-  border: 2px solid var(--warning);
-  border-radius: var(--radius-md);
-}
-
-
-/* Status Bar - single inline flow (Story 069) */
-.toggle-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  color: var(--fg-secondary);
-  padding: 2px 8px;
-  border-radius: var(--radius-md);
-  font-size: var(--font-xs);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-  overflow: hidden;
-}
-
-.toggle-btn:hover {
-  background: var(--bg-highlight);
-  border-color: var(--accent);
-  color: var(--fg-primary);
-}
-
-.toggle-btn.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--text-on-accent);
-}
-
-
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 6px;
-  border-radius: var(--radius-md);
-  font-size: var(--font-xs);
-  font-family: var(--font-mono);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.status-badge.branch {
-  background: var(--bg-tertiary);
-  color: var(--fg-secondary);
-  flex-shrink: 1;
-  min-width: 0;
-}
-
-.status-badge.branch.ahead {
-  background: rgba(122, 162, 247, 0.12);
-  color: var(--accent);
-}
-
-.status-badge.pr {
-  background: var(--accent);
-  color: var(--text-on-accent);
-}
-
-.status-badge.merged {
-  background: #a371f7;
-  color: var(--text-on-accent);
-}
-
-.status-badge.closed {
-  background: var(--error);
-  color: var(--text-on-error);
-}
-
-.status-badge.ci {
-  background: var(--bg-tertiary);
-  color: var(--fg-secondary);
-}
-
-.status-badge.ci.success {
-  background: rgba(158, 206, 106, 0.2);
-  color: var(--success);
-}
-
-.status-badge.ci.failure {
-  background: rgba(247, 118, 142, 0.2);
-  color: var(--error);
-}
-
-.status-badge.ci.pending {
-  background: rgba(224, 175, 104, 0.2);
-  color: var(--warning);
-}
-
-
-/* diff-content and diff-line styles still used by DiffTab inline rendering */
+/* Diff viewer overrides */
 #diff-content {
   padding: 8px 0;
   font-family: var(--font-mono);
@@ -490,7 +158,7 @@
   --diff-hunk-content-color--: var(--fg-muted);
 }
 
-/* Compact line number columns — library defaults are too wide (40px min + 10px padding each side) */
+/* Compact line number columns */
 .diff-tailwindcss-wrapper .diff-line-old-num,
 .diff-tailwindcss-wrapper .diff-line-new-num,
 .diff-tailwindcss-wrapper .diff-line-num {
@@ -499,135 +167,15 @@
   padding-right: 6px !important;
 }
 
-/* Diff Tab Content Pane */
+/* Tab content pane backgrounds */
 .terminal-pane.diff-pane {
   background: var(--bg-primary);
 }
 
-/* Editor Tab Content Pane */
 .terminal-pane.edit-pane {
   background: var(--bg-primary);
 }
 
-/* Markdown Tab Content Pane */
 .terminal-pane.md-pane {
   background: var(--bg-primary);
 }
-
-/* Mic button */
-#mic-toggle {
-  display: flex;
-  align-items: center;
-}
-
-.mic-icon {
-  vertical-align: middle;
-}
-
-.mic-recording {
-  background: var(--accent) !important;
-  border-color: var(--accent) !important;
-  color: var(--text-on-accent) !important;
-  animation: mic-pulse 1s ease-in-out infinite;
-}
-
-.mic-loading {
-  animation: mic-loading-pulse 0.8s ease-in-out infinite;
-  cursor: wait !important;
-  color: var(--warning, #e5c07b) !important;
-}
-
-.mic-processing {
-  opacity: 0.6;
-  cursor: wait !important;
-}
-
-@keyframes mic-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-@keyframes mic-loading-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .mic-recording,
-  .mic-loading {
-    animation: none;
-  }
-}
-
-
-/* Quit Confirmation Dialog */
-
-.quit-dialog-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2000;
-}
-
-.quit-dialog {
-  width: 380px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-popup);
-  padding: 20px;
-}
-
-.quit-dialog h3 {
-  margin: 0 0 12px;
-  font-size: var(--font-xl);
-  font-weight: 600;
-}
-
-.quit-dialog p {
-  margin: 0 0 20px;
-  font-size: var(--font-base);
-  color: var(--fg-secondary);
-  line-height: 1.5;
-}
-
-.quit-dialog-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
-.quit-dialog-actions button {
-  padding: 8px 16px;
-  border: none;
-  border-radius: var(--radius-lg);
-  font-size: var(--font-md);
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-
-.quit-dialog-cancel {
-  background: var(--bg-highlight);
-  color: var(--fg-secondary);
-}
-
-.quit-dialog-cancel:hover {
-  background: var(--border);
-  color: var(--fg-primary);
-}
-
-.quit-dialog-quit {
-  background: var(--error);
-  color: var(--text-on-error);
-}
-
-.quit-dialog-quit:hover {
-  filter: brightness(1.1);
-}
-
-
-

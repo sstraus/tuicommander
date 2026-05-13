@@ -1,0 +1,66 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.dialog {
+  width: 380px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-popup);
+  padding: 20px;
+}
+
+.dialog h3 {
+  margin: 0 0 12px;
+  font-size: var(--font-xl);
+  font-weight: 600;
+}
+
+.dialog p {
+  margin: 0 0 20px;
+  font-size: var(--font-base);
+  color: var(--fg-secondary);
+  line-height: 1.5;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.actions button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--radius-lg);
+  font-size: var(--font-md);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.cancel {
+  background: var(--bg-highlight);
+  color: var(--fg-secondary);
+}
+
+.cancel:hover {
+  background: var(--border);
+  color: var(--fg-primary);
+}
+
+.quit {
+  background: var(--error);
+  color: var(--text-on-error);
+}
+
+.quit:hover {
+  filter: brightness(1.1);
+}

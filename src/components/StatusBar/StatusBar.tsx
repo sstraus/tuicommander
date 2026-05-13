@@ -328,7 +328,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 				{/* Toggle buttons */}
 				<Show when={appLogger.unseenErrorCount() > 0}>
 					<button
-						class="toggle-btn"
+						class={s.toggleBtn}
 						onClick={() => props.onToggleErrorLog?.()}
 						title={`Error Log (${keyFor("toggle-error-log")})`}
 						style={{ position: "relative" }}
@@ -342,7 +342,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 					</button>
 				</Show>
 				<button
-					class="toggle-btn"
+					class={s.toggleBtn}
 					onClick={() => props.onToggleNotes?.()}
 					title={`${t("statusBar.toggleNotes", "Toggle Ideas Panel")} (${keyFor("toggle-notes")})`}
 					style={{ position: "relative" }}
@@ -355,7 +355,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 					</Show>
 				</button>
 				<button
-					class="toggle-btn"
+					class={s.toggleBtn}
 					onClick={() => props.onToggleFileBrowser?.()}
 					title={`${t("statusBar.fileBrowser", "File Browser")} (${keyFor("toggle-file-browser")})`}
 					style={{ position: "relative" }}
@@ -365,7 +365,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 					</svg>
 				</button>
 				<button
-					class="toggle-btn"
+					class={s.toggleBtn}
 					onClick={props.onToggleMarkdown}
 					title={`${t("statusBar.markdown", "Markdown")} (${keyFor("toggle-markdown")})`}
 					style={{ position: "relative" }}
@@ -376,7 +376,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 					</svg>
 				</button>
 				<button
-					class="toggle-btn"
+					class={s.toggleBtn}
 					onClick={props.onToggleDiff}
 					title={`${t("statusBar.git", "Git")} (${keyFor("toggle-git-ops")})`}
 					style={{ position: "relative" }}
@@ -391,7 +391,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 
 				<Show when={settingsStore.isAiChatEnabled()}>
 					<button
-						class="toggle-btn"
+						class={s.toggleBtn}
 						onClick={() => props.onToggleAiChat?.()}
 						title={`AI Chat (${keyFor("toggle-ai-chat")})`}
 						style={{ position: "relative" }}
@@ -405,12 +405,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 				{/* Mic button - hold to talk (rightmost) */}
 				<Show when={dictationStore.state.enabled}>
 					<button
-						class="toggle-btn"
-						classList={{
-							"mic-recording": dictationStore.state.recording,
-							"mic-processing": dictationStore.state.processing,
-							"mic-loading": dictationStore.state.loading,
-						}}
+						class={cx(s.toggleBtn, dictationStore.state.recording && s.micRecording, dictationStore.state.processing && s.micProcessing, dictationStore.state.loading && s.micLoading)}
 						onMouseDown={(e) => {
 							if (e.button === 0) props.onDictationStart();
 						}}
@@ -423,7 +418,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 						title={`${t("statusBar.voiceDictation", "Voice Dictation")} (${dictationStore.state.hotkey})`}
 						style={{ position: "relative" }}
 					>
-						<svg class="mic-icon" viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+						<svg class={s.micIcon} viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
 							<path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
 							<path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
 						</svg>

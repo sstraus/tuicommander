@@ -1,0 +1,7 @@
+.indicator {
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+  min-width: 40px;
+  text-align: center;
+}

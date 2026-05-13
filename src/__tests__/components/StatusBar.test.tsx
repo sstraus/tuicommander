@@ -114,7 +114,7 @@ function makePrData(overrides: Record<string, unknown> = {}) {
 
 /** Find the CI badge wrapper span (the one with the onClick handler) */
 function findCiBadgeWrapper(container: HTMLElement): HTMLElement {
-	const badges = container.querySelectorAll(".githubStatus .status-badge");
+	const badges = container.querySelectorAll(".githubStatus [data-testid='status-badge']");
 	const ciBadgeEl = Array.from(badges).find((b) => b.textContent?.includes("CI"));
 	if (!ciBadgeEl?.parentElement) throw new Error("CI badge wrapper not found");
 	return ciBadgeEl.parentElement;
@@ -122,7 +122,7 @@ function findCiBadgeWrapper(container: HTMLElement): HTMLElement {
 
 /** Find a toggle button by its title text */
 function findToggleByTitle(container: HTMLElement, titlePart: string): HTMLElement | null {
-	const buttons = container.querySelectorAll(".toggle-btn");
+	const buttons = container.querySelectorAll("button[title]");
 	return (Array.from(buttons).find((b) => b.getAttribute("title")?.includes(titlePart)) as HTMLElement) ?? null;
 }
 
@@ -193,7 +193,7 @@ describe("StatusBar", () => {
 		const { container } = render(() => <StatusBar {...defaultProps} currentRepoPath="/repo" />);
 		const githubStatus = container.querySelector(".githubStatus");
 		expect(githubStatus).not.toBeNull();
-		const badges = githubStatus!.querySelectorAll(".status-badge");
+		const badges = githubStatus!.querySelectorAll("[data-testid='status-badge']");
 		const prBadge = Array.from(badges).find((b) => b.textContent?.includes("PR #42"));
 		expect(prBadge).toBeDefined();
 	});
@@ -212,7 +212,7 @@ describe("StatusBar", () => {
 		const { container } = render(() => <StatusBar {...defaultProps} currentRepoPath="/repo" />);
 		const githubStatus = container.querySelector(".githubStatus");
 		expect(githubStatus).not.toBeNull();
-		const badges = githubStatus!.querySelectorAll(".status-badge");
+		const badges = githubStatus!.querySelectorAll("[data-testid='status-badge']");
 		const ciBadge = Array.from(badges).find((b) => b.textContent?.includes("CI passed"));
 		expect(ciBadge).toBeDefined();
 	});
@@ -253,7 +253,7 @@ describe("StatusBar", () => {
 		);
 		const { container } = render(() => <StatusBar {...defaultProps} />);
 
-		const badges = container.querySelectorAll(".githubStatus .status-badge");
+		const badges = container.querySelectorAll(".githubStatus [data-testid='status-badge']");
 		const ciBadge = Array.from(badges).find((b) => b.textContent?.includes("CI"));
 		expect(ciBadge).toBeUndefined();
 	});
@@ -270,7 +270,7 @@ describe("StatusBar", () => {
 			}),
 		);
 		const { container } = render(() => <StatusBar {...defaultProps} currentRepoPath="/repo" />);
-		const badges = container.querySelectorAll(".status-badge");
+		const badges = container.querySelectorAll("[data-testid='status-badge']");
 		const ciBadge = Array.from(badges).find((b) => b.textContent?.includes("CI failed"));
 		expect(ciBadge).toBeDefined();
 	});
@@ -283,7 +283,7 @@ describe("StatusBar", () => {
 		});
 		mockGetBranchPrData.mockReturnValue(makePrData());
 		const { container } = render(() => <StatusBar {...defaultProps} currentRepoPath="/repo" />);
-		const badges = container.querySelectorAll(".status-badge");
+		const badges = container.querySelectorAll("[data-testid='status-badge']");
 		const prBadge = Array.from(badges).find((b) => b.textContent?.includes("PR #42"))!;
 		fireEvent.click(prBadge);
 		const popover = container.querySelector(".popover");
@@ -378,7 +378,7 @@ describe("StatusBar", () => {
 		mockGetBranchPrData.mockReturnValue(makePrData({ state: "MERGED" }));
 		const { container } = render(() => <StatusBar {...defaultProps} currentRepoPath="/repo" />);
 		const githubStatus = container.querySelector(".githubStatus");
-		const badges = githubStatus!.querySelectorAll(".status-badge");
+		const badges = githubStatus!.querySelectorAll("[data-testid='status-badge']");
 		const prBadge = Array.from(badges).find((b) => b.textContent?.includes("PR #42"));
 		expect(prBadge).toBeDefined();
 	});
@@ -417,7 +417,7 @@ describe("StatusBar", () => {
 		mockGetBranchPrData.mockReturnValue(makePrData({ state: "OPEN" }));
 		const { container } = render(() => <StatusBar {...defaultProps} currentRepoPath="/repo" />);
 		const githubStatus = container.querySelector(".githubStatus");
-		const badges = githubStatus!.querySelectorAll(".status-badge");
+		const badges = githubStatus!.querySelectorAll("[data-testid='status-badge']");
 		const prBadge = Array.from(badges).find((b) => b.textContent?.includes("PR #42"));
 		expect(prBadge).toBeDefined();
 	});

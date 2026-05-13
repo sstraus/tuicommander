@@ -1,4 +1,6 @@
 import type { Component } from "solid-js";
+import { cx } from "../../utils";
+import s from "./StatusBadge.module.css";
 
 export type BadgeVariant =
 	| "default"
@@ -19,12 +21,26 @@ export interface StatusBadgeProps {
 	onClick?: () => void;
 }
 
+const VARIANT_MAP: Record<string, string> = {
+	branch: s.branch,
+	pr: s.pr,
+	merged: s.merged,
+	closed: s.closed,
+	ci: s.ci,
+	info: s.info,
+	success: s.success,
+	error: s.error,
+	warning: s.warning,
+};
+
 export const StatusBadge: Component<StatusBadgeProps> = (props) => {
 	const variant = () => props.variant || "default";
 
 	return (
 		<span
-			class={`status-badge ${variant()}`}
+			class={cx(s.badge, VARIANT_MAP[variant()])}
+			data-testid="status-badge"
+			data-variant={variant()}
 			title={props.title}
 			onClick={props.onClick}
 			style={{ cursor: props.onClick ? "pointer" : "default" }}

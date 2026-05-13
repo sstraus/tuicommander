@@ -41,8 +41,6 @@ export default defineConfig(async () => ({
         /^cm-/,
         /^ͼ/,
         // Dynamic classList patterns used via SolidJS classList={{}}
-        /^split-/,
-        /^awaiting-/,
         /^platform-/,
       ],
     }),
