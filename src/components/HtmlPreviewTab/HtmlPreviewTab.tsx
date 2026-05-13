@@ -1,12 +1,13 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { openPath } from "@tauri-apps/plugin-opener";
-import { type Component, createEffect, createSignal, Match, Show, Switch } from "solid-js";
+import { type Component, createEffect, createSignal, Match, onCleanup, Show, Switch } from "solid-js";
 import { useRepository } from "../../hooks/useRepository";
 import { invoke } from "../../invoke";
 import { shortenHomePath } from "../../platform";
 import { appLogger } from "../../stores/appLogger";
 import { type HtmlPreviewTab as HtmlPreviewTabData, mdTabsStore } from "../../stores/mdTabs";
 import { repositoriesStore } from "../../stores/repositories";
+import { attachIframeKeyForwarder } from "../../utils/iframeKeyForwarder";
 import { isAbsolutePath, joinPath } from "../../utils/pathUtils";
 import e from "../shared/editor-header.module.css";
 import s from "./HtmlPreviewTab.module.css";
@@ -50,6 +51,15 @@ export const HtmlPreviewTab: Component<HtmlPreviewTabProps> = (props) => {
 	const [error, setError] = createSignal<string | null>(null);
 	const repo = useRepository();
 	let wrapperRef: HTMLDivElement | undefined;
+	let cleanupKeyForwarder: (() => void) | undefined;
+
+	const handleIframeLoad = (e: Event) => {
+		cleanupKeyForwarder?.();
+		const iframe = e.target as HTMLIFrameElement;
+		cleanupKeyForwarder = attachIframeKeyForwarder(iframe);
+	};
+
+	onCleanup(() => cleanupKeyForwarder?.());
 
 	const focusWrapper = () => requestAnimationFrame(() => wrapperRef?.focus({ preventScroll: true }));
 
@@ -139,10 +149,11 @@ export const HtmlPreviewTab: Component<HtmlPreviewTabProps> = (props) => {
 							sandbox="allow-scripts allow-same-origin"
 							srcdoc={content()}
 							title={props.tab.fileName}
+							onLoad={handleIframeLoad}
 						/>
 					</Match>
 					<Match when={kind() === "pdf"}>
-						<iframe class={s.iframe} src={assetUrl()} title={props.tab.fileName} />
+						<iframe class={s.iframe} src={assetUrl()} title={props.tab.fileName} onLoad={handleIframeLoad} />
 					</Match>
 					<Match when={kind() === "image"}>
 						<div class={s.mediaContainer}>
