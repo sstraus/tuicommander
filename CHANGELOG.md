@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **MCP panel screenshot** — MCP agents can capture plugin panel content as WebP images via `ui(action=screenshot, id=<pluginId>)`. Enables agents to visually verify rendered HTML dashboards.
+- **Iframe keyboard shortcut forwarding** — TUIC keyboard shortcuts now work when an iframe (plugin panel, HTML preview) has focus. A key forwarder re-dispatches matching shortcut events to the parent document.
+- **Bracketed paste mode** — Terminal paste now respects the application's bracketed paste mode flag. Escape sequences are only wrapped when the terminal app has activated bracketed paste, fixing raw escape bytes leaking into apps like `psql` password prompts.
+- **Git log time-of-day** — Commits within 7 days now show "1d ago · 14:32" instead of just "1d ago". Hover shows the full timestamp. Helps distinguish same-day commits when deciding what to revert.
+- **Terminal text selection API** — New `terminal_get_selection_text` Tauri command extracts text from a row/column range in the terminal grid.
+- **Double-click word selection** — Double-clicking in the terminal now includes hyphens (`-`) and underscores (`_`) in word boundaries, matching common shell identifiers.
 - **Native drag to external apps** — Drag files from the File Browser to Finder, email clients, and other external applications using OS-level drag via `tauri-plugin-drag`.
 - **Mermaid diagram rendering** — Fenced ` ```mermaid ` code blocks in markdown tabs are rendered as interactive SVG diagrams. Mermaid.js is lazy-loaded on first use with dark theme and strict security.
 - **Group park/unpark** — Park or unpark all repositories in a sidebar group at once via context menu or command palette.
@@ -16,6 +22,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`terminal_hyperlink_span`** — New Tauri command that returns the full contiguous span of an OSC 8 hyperlink at a given cell, enabling correct hover underlines across the entire link.
 
 ### Fixed
+- **Dictation to CanvasTerminal** — Transcribed text from dictation is now correctly routed to the PTY when using CanvasTerminal, instead of silently dropping.
+- **Notes panel font size** — Notes panel text, empty state, and input aligned to `--font-sm` (12px) to match GitPanel and other side panels.
 - **Compose panel text persistence** — Text in the compose panel is preserved when closing and reopening the panel, instead of being lost.
 - **External API hidden from agent menu** — The "External API" entry no longer appears in the "Add Agent" sidebar submenu since it's not a CLI agent.
 - **Terminal scroll-to-bottom on click** — Clicking in a scrolled-up terminal no longer snaps to bottom. Mouse events (SGR reports, focus/blur) now use `writePtyNoScroll()` which writes to the PTY without resetting scroll position.
@@ -25,10 +33,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Vitest localStorage shim** — Test setup now handles `localStorage` being fully undefined (not just missing `.clear()`), fixing 524 test failures in environments without `--localstorage-file`.
 
 ### Changed
+- **Warp agent type removed** — Warp as an AI agent type has been removed from the agent configuration, detection, and documentation. Warp as a terminal application (Open in Warp) remains supported.
+- **OpenCode env override** — OpenCode agent now supports `OPENCODE_BIN` environment variable to override binary detection.
+- **CSS modules migration** — Migrated QuitDialog, Dropdown, StatusBadge, ZoomIndicator, PanelResizeHandle, TerminalArea, and StatusBar from global CSS classes to scoped CSS modules. ~470 lines of dead global CSS removed.
 - **Markdown CSS extraction** — All `#markdown-content` styles moved from the monolithic `styles.css` to a dedicated `markdown-content.css` file next to ContentRenderer. Dead CSS sections cleaned from styles.css (~200 lines removed).
 - **Cell width rounding** — `measureFont()` now uses `Math.round()` instead of `Math.ceil()` for cell width calculation, producing tighter character spacing.
 
 ### Community
+- [@paulovitin](https://github.com/paulovitin) — fix git worktree hook path resolution (#36)
+- [@paulovitin](https://github.com/paulovitin) — close orphan worktree terminals on removal (#37)
+- [@paulovitin](https://github.com/paulovitin) — replace RSA with direct ECDSA for key exchange (#38)
 - [@paulovitin](https://github.com/paulovitin) — extract `nextDefaultName()` to eliminate tab naming duplication (#35)
 - [@paulovitin](https://github.com/paulovitin) — PR visibility filters + viewer PR guarantee (#34)
 - [@paulovitin](https://github.com/paulovitin) — fix zsh compinit with ZDOTDIR trick (#32)
