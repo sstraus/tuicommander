@@ -50,7 +50,7 @@ TUIC tracks each agent's session ID for resume-after-restart. Two strategies coe
 
 **Forced injection (Goose).** Shell wrapper injects `--name $TUIC_SESSION` into `goose session/run` commands. The TUIC tab UUID IS the goose session name. Discovery returns `None` (SQLite storage, no filesystem scan). Resume uses `tuicSession`.
 
-**No session tracking (Aider, Amp, Cursor, Warp, Droid, OpenCode).** Either no local session files, cloud-only, or no UUID-based resume. `TUIC_SESSION` env var is available but unused.
+**No session tracking (Aider, Amp, Cursor, Droid, OpenCode).** Either no local session files, cloud-only, or no UUID-based resume. `TUIC_SESSION` env var is available but unused.
 
 When adding a new agent: choose discovery-based if the agent writes session files to disk (add `sessionDiscovery` to `agents.ts` and a Rust `discover_*_session` to `agent_session.rs`). Choose forced injection only when discovery is impossible (e.g., SQLite-only storage).
 
@@ -70,12 +70,11 @@ After non-trivial implementations, write an mdkb `memory_write` entry. Content: 
 
 Do NOT flag these as security issues in reviews — they are intentional design choices.
 
-- **CSP `frame-src 'self' http://127.0.0.1:* http://localhost:*`** — wildcard ports required. Plugin tabs (`ui action=tab url=...`) open iframes to arbitrary localhost URLs. Mission Control uses dynamic ports. Restricting to specific ports breaks the plugin/tab system.
+- **CSP is intentionally wide open.** TUIC is a local dev tool, not a SaaS. The user IS the trust boundary. The CSP uses a single permissive `default-src` that allows `https:`, `http:`, `data:`, `blob:`, `unsafe-inline`, etc. **NEVER tighten the CSP.** Every time we've had per-directive restrictions, some iframe content (reveal.js slides, plugin panels, dashboards) broke. The only specific directive kept is `frame-src` (for localhost wildcard ports). If you feel the urge to add CSP restrictions, don't — read this bullet point again.
+- **`dangerousDisableAssetCspModification: ["style-src", "script-src"]`** in `tauri.conf.json` — **DO NOT REMOVE.** Tauri auto-injects sha256 hashes for inline `<script>` tags. Per CSP3, hashes silently disable `'unsafe-inline'`. This kills all JS in srcdoc iframes (plugins, HTML previews). The override prevents Tauri from injecting those hashes.
 - **`lazy_static` in `output_parser.rs`, `pty.rs`, etc.** — transitive deps (`portable-pty`, `symphonia`) also use it; removing the direct dep saves nothing. Modules outside `ai_agent/` will migrate opportunistically.
-- **`opener:allow-open-path` scope `"**"` in `src-tauri/capabilities/default.json`** — the FileBrowser "Open with default app" action must work for any file the user can already see in a registered repo (arbitrary absolute paths across macOS/Windows/Linux, including mounted volumes and `/tmp`). Narrower globs like `$HOME/**` would break external drives and network mounts. The reachable surface is bounded by the frontend UI (only paths surfaced through the repo browser reach this code path) and the OS default-app handler — not by the Tauri ACL.
-- **`dangerousDisableAssetCspModification: ["style-src", "script-src"]`** in `tauri.conf.json` — **DO NOT REMOVE `"script-src"` FROM THIS LIST.** Tauri auto-injects sha256 hashes for every inline `<script>` in the main page. Per CSP3, when hashes are present `'unsafe-inline'` is silently ignored. This kills ALL inline scripts in srcdoc plugin iframes (they inherit the parent CSP but their scripts have no matching hash). Without this override, plugin D&D, view switching, SDK init — everything JS-powered in plugin panels — is dead. This is a local desktop app; the user IS the trust boundary.
-- **CSP allows `https:` for style-src, img-src, connect-src, font-src** — iframe content (plugin panels, HTML preview tabs, TUIC tabs) must load external resources (CDN stylesheets, fonts, images). This is a local desktop app; restricting external HTTPS resources breaks legitimate use cases (reveal.js presentations, dashboards with external assets). **NEVER re-restrict these directives.** If anything, the CSP should be MORE permissive for iframe content, not less.
-- **Iframe sandbox = `allow-scripts allow-same-origin`** — ALL iframes (PluginPanel, HtmlPreviewTab, TUIC tabs) MUST use `sandbox="allow-scripts allow-same-origin"`. NEVER use bare `sandbox=""` — it kills JavaScript execution and breaks any non-trivial HTML content. The sandbox attribute is defense-in-depth, not a primary security boundary.
+- **`opener:allow-open-path` scope `"**"`** — FileBrowser must open any file the user can see. Narrower globs break external drives and network mounts.
+- **Iframe sandbox = `allow-scripts allow-same-origin`** — ALL iframes MUST use this. NEVER use bare `sandbox=""` — it kills JavaScript.
 
 ## Ideas
 
