@@ -179,7 +179,7 @@ function createMdTabsStore() {
 				fsRoot: effectiveRoot,
 				pinned: true,
 			};
-			base._setState("tabs", id, tab);
+			base._addTabBackground(tab);
 			return id;
 		},
 
@@ -213,7 +213,7 @@ function createMdTabsStore() {
 			// Add to store without changing activeId
 			const tab: VirtualTab = { type: "virtual", id, title, contentUri, pinned: true };
 			if (repoPath) tab.repoPath = repoPath;
-			base._setState("tabs", id, tab);
+			base._addTabBackground(tab);
 			return id;
 		},
 
@@ -276,7 +276,7 @@ function createMdTabsStore() {
 			if (focus) {
 				return base._addTab(tab);
 			}
-			base._setState("tabs", id, tab);
+			base._addTabBackground(tab);
 			return id;
 		},
 

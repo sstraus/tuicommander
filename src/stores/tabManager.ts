@@ -67,6 +67,13 @@ export function createTabManager<T extends BaseTab>(storeName: string = "unknown
 			return tab.id;
 		},
 
+		/** Internal: add a tab without changing activeId (background/silent open). */
+		_addTabBackground(tab: T): string {
+			setState("tabs", tab.id, tab);
+			setState("_order", (o) => [...o, tab.id]);
+			return tab.id;
+		},
+
 		/** Internal: get next auto-increment id with the given prefix (e.g. "diff-1"). */
 		_nextId(prefix: string): string {
 			setState("counter", (c) => c + 1);
