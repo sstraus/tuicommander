@@ -1264,6 +1264,30 @@ describe("useGitOperations", () => {
 		});
 	});
 
+	describe("handleRemoveBranch (main worktree)", () => {
+		const MAIN_ERROR = "worktree_is_main:fatal: '/repo' is a main working tree";
+
+		it("keeps branch in store when worktree is the main repo directory", async () => {
+			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+			repositoriesStore.setBranch("/repo", "feat/main-checkout", { worktreePath: "/repo" });
+			mockRepo.removeWorktree.mockRejectedValueOnce(new Error(MAIN_ERROR));
+
+			await gitOps.handleRemoveBranch("/repo", "feat/main-checkout");
+
+			expect(repositoriesStore.get("/repo")?.branches["feat/main-checkout"]).toBeDefined();
+		});
+
+		it("shows descriptive status message when worktree is main repo", async () => {
+			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+			repositoriesStore.setBranch("/repo", "feat/main-checkout", { worktreePath: "/repo" });
+			mockRepo.removeWorktree.mockRejectedValueOnce(new Error(MAIN_ERROR));
+
+			await gitOps.handleRemoveBranch("/repo", "feat/main-checkout");
+
+			expect(mockSetStatusInfo).toHaveBeenCalledWith(expect.stringContaining("main worktree"));
+		});
+	});
+
 	describe("handleRemoveRepo (edge cases)", () => {
 		it("closes all branch terminals", async () => {
 			repositoriesStore.add({ path: "/repo", displayName: "Repo" });

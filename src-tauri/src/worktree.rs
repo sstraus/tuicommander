@@ -1615,6 +1615,27 @@ mod tests {
     }
 
     #[test]
+    fn test_remove_main_worktree_returns_main_prefix_error() {
+        let repo = setup_test_repo();
+
+        // The main worktree IS the repo path itself — git refuses to remove it
+        let main_worktree = WorktreeInfo {
+            name: "main".to_string(),
+            path: repo.path().to_path_buf(),
+            branch: Some("main".to_string()),
+            base_repo: repo.path().to_path_buf(),
+        };
+
+        let result = remove_worktree_internal(&main_worktree, false);
+        assert!(result.is_err(), "Removing main worktree should fail");
+        let err = result.unwrap_err();
+        assert!(
+            err.starts_with(MAIN_WORKTREE_PREFIX),
+            "Error should start with MAIN_WORKTREE_PREFIX, got: {err}"
+        );
+    }
+
+    #[test]
     fn test_worktree_name_with_special_characters() {
         let repo = setup_test_repo();
         let worktrees_dir = repo.path().join("worktrees");
