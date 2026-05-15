@@ -250,6 +250,7 @@ fn skip_leading_nulls(data: &[u8]) -> &[u8] {
     &data[n..]
 }
 
+#[cfg(target_os = "macos")]
 fn collect_cstrings(mut data: &[u8]) -> Vec<String> {
     let mut result = Vec::new();
     loop {
