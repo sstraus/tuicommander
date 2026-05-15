@@ -1205,20 +1205,6 @@ pub(crate) async fn get_all_batch_impl(
     })
 }
 
-/// Fetch issues for a single repo (Tauri command).
-#[cfg(feature = "desktop")]
-#[tauri::command]
-pub(crate) async fn get_repo_issues(
-    state: State<'_, Arc<AppState>>,
-    path: String,
-    filter_mode: Option<String>,
-) -> Result<Vec<GitHubIssue>, String> {
-    let state = state.inner().clone();
-    let filter = filter_mode.as_deref().unwrap_or("assigned");
-    let mut results = get_all_issues_impl(std::slice::from_ref(&path), filter, &state).await?;
-    Ok(results.remove(&path).unwrap_or_default())
-}
-
 /// Fetch issues for multiple repos (Tauri command).
 #[cfg(feature = "desktop")]
 #[tauri::command]
@@ -1712,14 +1698,6 @@ pub(crate) async fn get_github_status(
     })
     .await
     .map_err(|e| format!("Task failed: {e}"))
-}
-
-/// Check if the GitHub API circuit breaker is open (rate-limited or failure-based).
-/// Returns Ok(true) if requests are allowed, Ok(false) if blocked.
-#[cfg(feature = "desktop")]
-#[tauri::command]
-pub(crate) async fn check_github_circuit(state: State<'_, Arc<AppState>>) -> Result<bool, String> {
-    Ok(state.github_circuit_breaker.check().is_ok())
 }
 
 /// Get the authenticated GitHub viewer's login (username).

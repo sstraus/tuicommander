@@ -9,7 +9,6 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use crate::config::{load_json_config, save_json_config};
-use crate::llm_api;
 use crate::state::AppState;
 
 pub(crate) const CONFIG_FILE: &str = "ai-chat.json";
@@ -187,128 +186,6 @@ pub(crate) fn assemble_terminal_context_for_engine(
     }
 
     section
-}
-
-/// Quick connection test: first validate the API key, then send a minimal completion.
-#[cfg_attr(feature = "desktop", tauri::command)]
-pub(crate) async fn test_ai_chat_connection() -> Result<String, String> {
-    let registry = crate::provider_registry::load_registry();
-    let resolved =
-        crate::provider_registry::resolve_slot(&registry, crate::provider_registry::SlotName::Main)
-            .map_err(|_| {
-                "AI Chat not configured — set provider and model in Settings > AI Chat".to_string()
-            })?;
-
-    let llm_config = &resolved.config;
-    let api_key = &resolved.api_key;
-
-    // Step 1: lightweight key validation via provider-specific endpoint
-    let http = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()
-        .map_err(|e| format!("HTTP client error: {e}"))?;
-
-    let base = llm_config.base_url.clone().unwrap_or_default();
-    let key_check = match llm_config.provider.as_str() {
-        "openrouter" => {
-            let url = format!(
-                "{}auth/key",
-                if base.is_empty() {
-                    "https://openrouter.ai/api/v1/"
-                } else {
-                    &base
-                }
-            );
-            Some(http.get(&url).bearer_auth(api_key).send().await)
-        }
-        "anthropic" => {
-            let url = "https://api.anthropic.com/v1/models";
-            Some(
-                http.get(url)
-                    .header("x-api-key", api_key)
-                    .header("anthropic-version", "2023-06-01")
-                    .send()
-                    .await,
-            )
-        }
-        "openai" => {
-            let url = format!(
-                "{}models",
-                if base.is_empty() {
-                    "https://api.openai.com/v1/"
-                } else {
-                    &base
-                }
-            );
-            Some(http.get(&url).bearer_auth(api_key).send().await)
-        }
-        "ollama" => {
-            let url = format!(
-                "{}models",
-                if base.is_empty() {
-                    "http://localhost:11434/v1/"
-                } else {
-                    &base
-                }
-            );
-            Some(http.get(&url).send().await)
-        }
-        _ => {
-            // Custom/unknown provider — skip key check, go straight to completion
-            None
-        }
-    };
-
-    // For known providers, verify the key check response
-    if let Some(key_check) = key_check {
-        match key_check {
-            Ok(resp) => {
-                let status = resp.status();
-                if status == reqwest::StatusCode::UNAUTHORIZED
-                    || status == reqwest::StatusCode::FORBIDDEN
-                {
-                    return Err("API key is invalid or expired".to_string());
-                }
-                if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                    return Err("Rate limited — try again in a moment".to_string());
-                }
-                if !status.is_success() {
-                    let body = resp.text().await.unwrap_or_default();
-                    return Err(format!(
-                        "Key check failed (HTTP {}): {}",
-                        status.as_u16(),
-                        &body[..body.len().min(200)]
-                    ));
-                }
-            }
-            Err(e) => {
-                return Err(format!("Cannot reach {} API: {e}", llm_config.provider));
-            }
-        }
-    }
-
-    // Step 2: actual completion test to verify model works
-    let client = llm_api::build_client(llm_config, api_key);
-
-    use genai::chat::{ChatMessage, ChatRequest};
-    let chat_req = ChatRequest::default()
-        .with_system("Reply with exactly: OK")
-        .append_message(ChatMessage::user("Test connection"));
-
-    let result = tokio::time::timeout(
-        Duration::from_secs(15),
-        client.exec_chat(&llm_config.model, chat_req, None),
-    )
-    .await
-    .map_err(|_| "Connection timed out after 15s".to_string())?
-    .map_err(|e| format!("Connection failed: {e}"))?;
-
-    let text = result
-        .first_text()
-        .map(|s| s.trim().to_string())
-        .unwrap_or_default();
-
-    Ok(format!("Key valid — model replied: {text}"))
 }
 
 // ---------------------------------------------------------------------------

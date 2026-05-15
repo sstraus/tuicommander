@@ -4238,6 +4238,8 @@ pub(crate) fn has_foreground_process(
 
 /// Debug: diagnose agent detection for a PTY session.
 /// Returns each step of the detection pipeline so failures can be pinpointed.
+/// Diagnostic-only command — no frontend caller; kept as a debug escape hatch
+/// for investigating agent classification mismatches in production.
 #[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn debug_agent_detection(
@@ -4317,6 +4319,8 @@ pub(crate) struct ActiveSessionInfo {
 /// Update the working directory of a running PTY session.
 /// Called from the frontend when an OSC 7 escape sequence is detected,
 /// keeping the Rust-side cwd in sync for restart recovery.
+// DEFERRED (2026-05-14) — wire to frontend OSC 7 handler (handleTerminalCwdChange).
+// Without this, restart recovery uses stale launch-time cwd.
 #[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn update_session_cwd(
@@ -4392,6 +4396,7 @@ pub struct VtLogChunk {
 /// This is the desktop IPC equivalent of the PWA WebSocket `format=log` path.
 /// `lines` are finalized scrollback lines (each appears once, oldest first).
 /// `screen` is the current visible screen with agent chrome trimmed.
+/// Desktop IPC equivalent of PWA WebSocket format=log — no frontend caller yet.
 #[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn read_vt_log(

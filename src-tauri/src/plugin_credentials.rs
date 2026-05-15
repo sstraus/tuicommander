@@ -50,16 +50,6 @@ pub async fn plugin_read_credential(
     plugin_read_credential_inner(&service_name)
 }
 
-#[cfg(feature = "desktop")]
-#[tauri::command]
-pub async fn plugin_invalidate_credential_cache(service_name: String) -> Result<(), String> {
-    if service_name.is_empty() {
-        return Err("Service name is empty".into());
-    }
-    invalidate_cache(&service_name);
-    Ok(())
-}
-
 fn plugin_read_credential_inner(service_name: &str) -> Result<Option<String>, String> {
     if service_name.is_empty() {
         return Err("Service name is empty".into());
@@ -98,6 +88,7 @@ pub(crate) fn cached_read(service_name: &str) -> Result<Option<String>, String> 
     Ok(value)
 }
 
+#[allow(dead_code)]
 pub(crate) fn invalidate_cache(service_name: &str) {
     let mut guard = CACHE.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(map) = guard.as_mut() {
