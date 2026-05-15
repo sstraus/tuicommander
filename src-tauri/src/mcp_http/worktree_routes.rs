@@ -103,6 +103,7 @@ pub(super) async fn remove_worktree_http(
         &branch,
         q.delete_branch.unwrap_or(true),
         None,
+        false,
     ) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response(),
         Err(e) => err_500(&e),
@@ -149,7 +150,7 @@ pub(super) async fn remove_orphan_worktree_http(
         branch: None,
         base_repo: std::path::PathBuf::from(&body.repo_path),
     };
-    match crate::worktree::remove_worktree_internal(&worktree) {
+    match crate::worktree::remove_worktree_internal(&worktree, false) {
         Ok(()) => {
             state.invalidate_repo_caches(&body.repo_path);
             (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response()
@@ -232,6 +233,7 @@ pub(super) async fn finalize_merged_worktree_http(
             &body.branch_name,
             true,
             None,
+            false,
         )
         .map(|_| serde_json::json!({"merged": true, "action": "deleted", "archive_path": null})),
         other => Err(format!(

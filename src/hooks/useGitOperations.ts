@@ -46,7 +46,7 @@ export interface GitOperationsDeps {
 			diff_stats: Record<string, { additions: number; deletions: number }>;
 			last_commit_ts: Record<string, number | null>;
 		}>;
-		removeWorktree: (repoPath: string, branchName: string, deleteBranch: boolean) => Promise<void>;
+		removeWorktree: (repoPath: string, branchName: string, deleteBranch: boolean, force?: boolean) => Promise<void>;
 		createWorktree: (
 			baseRepo: string,
 			branchName: string,
@@ -89,6 +89,7 @@ export interface GitOperationsDeps {
 	dialogs: {
 		confirmRemoveRepo: (repoName: string) => Promise<boolean>;
 		confirmRemoveWorktree: (branchName: string) => Promise<boolean>;
+		confirmRemoveLockedWorktree?: (branchName: string) => Promise<boolean>;
 		confirmStashAndSwitch?: (branchName: string) => Promise<boolean>;
 		confirmOrphanCleanup?: (paths: string[]) => Promise<boolean>;
 		/** Browser mode only: show an in-app text-input dialog to enter a repo path */
@@ -832,19 +833,47 @@ export function useGitOperations(deps: GitOperationsDeps) {
 			worktreePath: branch.worktreePath,
 			deleteBranch,
 		});
+		// Tracks whether to remove the branch from the store at the end.
+		// Set to true on success or non-fatal non-lock errors (old "remove from UI" behavior).
+		// Stays false when: locked+cancelled, or force-remove failed (worktree still in git).
+		let shouldRemoveFromStore = false;
 		try {
 			await deps.repo.removeWorktree(repoPath, branchName, deleteBranch);
 			appLogger.info("git", `handleRemoveBranch: remove_worktree SUCCESS`, { branchName });
+			shouldRemoveFromStore = true;
 			deps.setStatusInfo(`Removed ${branchName}`);
 		} catch (err) {
 			const reason = err instanceof Error ? err.message : String(err);
-			appLogger.error("git", `handleRemoveBranch: remove_worktree FAILED — branch will be removed from UI only`, {
-				branchName,
-				reason,
-			});
-			deps.setStatusInfo(`Removed ${branchName} from UI (worktree removal failed)`);
+			if (reason.startsWith("worktree_locked:")) {
+				// Worktree is locked by a Claude agent — ask user to confirm force removal
+				appLogger.warn("git", `handleRemoveBranch: worktree locked — showing confirmation dialog`, { branchName, reason });
+				const forceConfirmed = await (deps.dialogs.confirmRemoveLockedWorktree?.(branchName) ?? false);
+				if (!forceConfirmed) {
+					appLogger.info("git", `handleRemoveBranch: user cancelled force removal of locked worktree`, { branchName });
+					return; // user cancelled — do NOT touch the store
+				}
+				try {
+					await deps.repo.removeWorktree(repoPath, branchName, deleteBranch, true);
+					appLogger.info("git", `handleRemoveBranch: force remove_worktree SUCCESS`, { branchName });
+					shouldRemoveFromStore = true;
+					deps.setStatusInfo(`Removed ${branchName}`);
+				} catch (forceErr) {
+					const forceReason = forceErr instanceof Error ? forceErr.message : String(forceErr);
+					appLogger.error("git", `handleRemoveBranch: force remove_worktree FAILED`, { branchName, reason: forceReason });
+					deps.setStatusInfo(`Failed to remove ${branchName}: ${forceReason}`);
+					return; // worktree still exists in git — don't remove from store or it'll resurrect
+				}
+			} else {
+				appLogger.error("git", `handleRemoveBranch: remove_worktree FAILED — branch will be removed from UI only`, {
+					branchName,
+					reason,
+				});
+				shouldRemoveFromStore = true; // preserve old behavior for non-lock failures
+				deps.setStatusInfo(`Removed ${branchName} from UI (worktree removal failed)`);
+			}
 		}
 
+		if (!shouldRemoveFromStore) return;
 		appLogger.info("git", `handleRemoveBranch: calling removeBranch on store`, { branchName });
 		repositoriesStore.removeBranch(repoPath, branchName);
 		repoSettingsStore.setLabel(repoPath, branchName, null);

@@ -71,6 +71,17 @@ export function useConfirmDialog() {
 		});
 	}
 
+	/** Confirm force-removing a worktree that is locked by an active agent */
+	async function confirmRemoveLockedWorktree(branchName: string): Promise<boolean> {
+		return await confirm({
+			title: "Worktree is locked by an agent",
+			message: `"${branchName}" is currently locked by an active Claude agent.\n\nForce-removing it may interrupt the agent mid-task. Continue anyway?`,
+			okLabel: "Force Remove",
+			cancelLabel: "Cancel",
+			kind: "warning",
+		});
+	}
+
 	/** Confirm closing a terminal */
 	async function confirmCloseTerminal(terminalName: string): Promise<boolean> {
 		return await confirm({
@@ -119,6 +130,7 @@ export function useConfirmDialog() {
 	return {
 		confirm,
 		confirmRemoveWorktree,
+		confirmRemoveLockedWorktree,
 		confirmCloseTerminal,
 		confirmRemoveRepo,
 		confirmStashAndSwitch,

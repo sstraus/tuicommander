@@ -1471,6 +1471,7 @@ fn handle_worktree(
                 &branch,
                 true,
                 archive.as_deref(),
+                false,
             ) {
                 Ok(()) => {
                     state.invalidate_repo_caches(&path);

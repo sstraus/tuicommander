@@ -209,25 +209,32 @@ pub(crate) fn create_worktree_internal(
 }
 
 /// Remove a git worktree
-pub(crate) fn remove_worktree_internal(worktree: &WorktreeInfo) -> Result<(), String> {
+/// Error prefix returned when a worktree is git-locked and `force` is false.
+/// The JS layer checks for this prefix to show a confirmation dialog before retrying.
+pub(crate) const LOCKED_WORKTREE_PREFIX: &str = "worktree_locked:";
+
+pub(crate) fn remove_worktree_internal(worktree: &WorktreeInfo, force: bool) -> Result<(), String> {
     let wt_path_str = worktree.path.to_string_lossy().to_string();
     tracing::info!(
         source = "worktree",
         branch = %worktree.name,
         path = %wt_path_str,
+        force = %force,
         "remove_worktree_internal: start"
     );
 
-    // First attempt: single --force (handles dirty working trees).
-    // If the worktree is locked (e.g. by a Claude agent), git requires a
-    // second --force to override the lock — retry automatically so the user
-    // doesn't need to know about git's lock mechanism.
+    let force_args: &[&str] = if force {
+        &["worktree", "remove", "--force", "--force"]
+    } else {
+        &["worktree", "remove", "--force"]
+    };
+
     match git_cmd(&worktree.base_repo)
-        .args(["worktree", "remove", "--force", &wt_path_str])
+        .args(force_args.iter().chain(std::iter::once(&wt_path_str.as_str())))
         .run()
     {
         Ok(_) => {
-            tracing::info!(source = "worktree", branch = %worktree.name, "git worktree remove --force: OK");
+            tracing::info!(source = "worktree", branch = %worktree.name, force = %force, "git worktree remove: OK");
         }
         Err(crate::git_cli::GitError::NonZeroExit { ref stderr, .. })
             if stderr.contains("not a working tree") || stderr.contains("No such file") =>
@@ -235,41 +242,25 @@ pub(crate) fn remove_worktree_internal(worktree: &WorktreeInfo) -> Result<(), St
             tracing::info!(
                 source = "worktree",
                 branch = %worktree.name,
-                stderr = %stderr,
-                "git worktree remove --force: worktree already gone (treating as success)"
+                "git worktree remove: worktree already gone (treating as success)"
             );
         }
         Err(crate::git_cli::GitError::NonZeroExit { ref stderr, .. })
-            if stderr.contains("locked working tree") || stderr.contains("cannot remove a locked") =>
+            if !force && (stderr.contains("locked working tree") || stderr.contains("cannot remove a locked")) =>
         {
-            // Worktree is locked (e.g. by a Claude agent). The user explicitly
-            // requested deletion, so force-override the lock with a second --force.
+            // Worktree is locked and caller did not request force. Surface a
+            // distinctive error so the JS layer can prompt the user to confirm
+            // before retrying with force=true.
             tracing::warn!(
                 source = "worktree",
                 branch = %worktree.name,
                 stderr = %stderr,
-                "git worktree remove --force: worktree locked — retrying with --force --force"
+                "git worktree remove: locked — returning error for JS confirmation prompt"
             );
-            match git_cmd(&worktree.base_repo)
-                .args(["worktree", "remove", "--force", "--force", &wt_path_str])
-                .run()
-            {
-                Ok(_) => {
-                    tracing::info!(source = "worktree", branch = %worktree.name, "git worktree remove --force --force: OK");
-                }
-                Err(crate::git_cli::GitError::NonZeroExit { ref stderr, .. })
-                    if stderr.contains("not a working tree") || stderr.contains("No such file") =>
-                {
-                    tracing::info!(source = "worktree", branch = %worktree.name, "git worktree remove --force --force: already gone");
-                }
-                Err(e) => {
-                    tracing::error!(source = "worktree", branch = %worktree.name, "git worktree remove --force --force FAILED: {e}");
-                    return Err(format!("Git worktree remove failed (locked): {e}"));
-                }
-            }
+            return Err(format!("{LOCKED_WORKTREE_PREFIX}{stderr}"));
         }
         Err(e) => {
-            tracing::error!(source = "worktree", branch = %worktree.name, "git worktree remove --force FAILED: {e}");
+            tracing::error!(source = "worktree", branch = %worktree.name, "git worktree remove FAILED: {e}");
             return Err(format!("Git worktree remove failed: {e}"));
         }
     }
@@ -454,6 +445,7 @@ pub(crate) fn remove_worktree_by_branch(
     branch_name: &str,
     delete_branch: bool,
     archive_script: Option<&str>,
+    force: bool,
 ) -> Result<(), String> {
     let base_repo = PathBuf::from(repo_path);
 
@@ -503,7 +495,7 @@ pub(crate) fn remove_worktree_by_branch(
         base_repo,
     };
 
-    remove_worktree_internal(&worktree)?;
+    remove_worktree_internal(&worktree, force)?;
 
     // Delete the local branch when requested. Use -D (force) because the user
     // explicitly chose to delete this worktree — unmerged branches should be
@@ -532,17 +524,20 @@ pub(crate) fn remove_worktree(
     repo_path: String,
     branch_name: String,
     delete_branch: Option<bool>,
+    force: Option<bool>,
 ) -> Result<(), String> {
     let delete_branch = delete_branch.unwrap_or(true);
+    let force = force.unwrap_or(false);
     tracing::info!(
         source = "worktree",
         branch = %branch_name,
         repo = %repo_path,
         delete_branch = %delete_branch,
+        force = %force,
         "remove_worktree command: invoked"
     );
     let script = resolve_archive_script(&repo_path);
-    match remove_worktree_by_branch(&repo_path, &branch_name, delete_branch, script.as_deref()) {
+    match remove_worktree_by_branch(&repo_path, &branch_name, delete_branch, script.as_deref(), force) {
         Ok(()) => {
             tracing::info!(source = "worktree", branch = %branch_name, "remove_worktree command: SUCCESS — invalidating caches");
             crate::config::remove_branch_label(&repo_path, &branch_name);
@@ -633,7 +628,7 @@ pub(crate) fn delete_local_branch_impl(
         }
         (Some(_), false) => {
             // Remove worktree + branch in one go
-            remove_worktree_by_branch(repo_path, branch_name, true, None)?;
+            remove_worktree_by_branch(repo_path, branch_name, true, None, false)?;
         }
         (None, _) => {
             // Bare branch — no worktree to consider
@@ -795,7 +790,7 @@ pub(crate) fn remove_orphan_worktree(
         branch: None,
         base_repo,
     };
-    remove_worktree_internal(&worktree)?;
+    remove_worktree_internal(&worktree, false)?;
     state.invalidate_repo_caches(&repo_path);
     Ok(())
 }
@@ -1171,7 +1166,7 @@ pub(crate) fn finalize_merged_worktree(
             })
         }
         "delete" => {
-            remove_worktree_by_branch(&repo_path, &branch_name, true, script.as_deref())?;
+            remove_worktree_by_branch(&repo_path, &branch_name, true, script.as_deref(), false)?;
             state.invalidate_repo_caches(&repo_path);
             Ok(MergeArchiveResult {
                 merged: true,
@@ -1231,7 +1226,7 @@ pub(crate) fn merge_and_archive_worktree(
             })
         }
         "delete" => {
-            remove_worktree_by_branch(&repo_path, &branch_name, true, script.as_deref())?;
+            remove_worktree_by_branch(&repo_path, &branch_name, true, script.as_deref(), false)?;
             state.invalidate_repo_caches(&repo_path);
             Ok(MergeArchiveResult {
                 merged: true,

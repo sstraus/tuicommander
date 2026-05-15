@@ -3341,7 +3341,7 @@ pub(crate) async fn create_pty_with_worktree(
         Ok(result) => result,
         Err(e) => {
             // Clean up the worktree since PTY creation failed
-            if let Err(cleanup_err) = remove_worktree_internal(&worktree) {
+            if let Err(cleanup_err) = remove_worktree_internal(&worktree, false) {
                 tracing::warn!("Failed to cleanup worktree after PTY failure: {cleanup_err}");
             }
             return Err(e);
@@ -3866,7 +3866,7 @@ pub(crate) fn close_pty(
     cleanup_worktree: bool,
 ) -> Result<(), String> {
     if let Some(worktree) = close_pty_core(&state, &session_id, cleanup_worktree)
-        && let Err(e) = remove_worktree_internal(&worktree)
+        && let Err(e) = remove_worktree_internal(&worktree, false)
     {
         tracing::warn!("Failed to cleanup worktree: {e}");
     }
