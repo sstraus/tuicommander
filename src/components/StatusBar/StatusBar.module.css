@@ -379,6 +379,7 @@
 }
 
 .toggleBtn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -390,7 +391,7 @@
   font-size: var(--font-xs);
   cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .toggleBtn:focus-visible {
