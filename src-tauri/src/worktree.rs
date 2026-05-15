@@ -218,7 +218,10 @@ pub(crate) fn remove_worktree_internal(worktree: &WorktreeInfo) -> Result<(), St
         "remove_worktree_internal: start"
     );
 
-    // First, run git worktree remove
+    // First attempt: single --force (handles dirty working trees).
+    // If the worktree is locked (e.g. by a Claude agent), git requires a
+    // second --force to override the lock — retry automatically so the user
+    // doesn't need to know about git's lock mechanism.
     match git_cmd(&worktree.base_repo)
         .args(["worktree", "remove", "--force", &wt_path_str])
         .run()
@@ -235,6 +238,35 @@ pub(crate) fn remove_worktree_internal(worktree: &WorktreeInfo) -> Result<(), St
                 stderr = %stderr,
                 "git worktree remove --force: worktree already gone (treating as success)"
             );
+        }
+        Err(crate::git_cli::GitError::NonZeroExit { ref stderr, .. })
+            if stderr.contains("locked working tree") || stderr.contains("cannot remove a locked") =>
+        {
+            // Worktree is locked (e.g. by a Claude agent). The user explicitly
+            // requested deletion, so force-override the lock with a second --force.
+            tracing::warn!(
+                source = "worktree",
+                branch = %worktree.name,
+                stderr = %stderr,
+                "git worktree remove --force: worktree locked — retrying with --force --force"
+            );
+            match git_cmd(&worktree.base_repo)
+                .args(["worktree", "remove", "--force", "--force", &wt_path_str])
+                .run()
+            {
+                Ok(_) => {
+                    tracing::info!(source = "worktree", branch = %worktree.name, "git worktree remove --force --force: OK");
+                }
+                Err(crate::git_cli::GitError::NonZeroExit { ref stderr, .. })
+                    if stderr.contains("not a working tree") || stderr.contains("No such file") =>
+                {
+                    tracing::info!(source = "worktree", branch = %worktree.name, "git worktree remove --force --force: already gone");
+                }
+                Err(e) => {
+                    tracing::error!(source = "worktree", branch = %worktree.name, "git worktree remove --force --force FAILED: {e}");
+                    return Err(format!("Git worktree remove failed (locked): {e}"));
+                }
+            }
         }
         Err(e) => {
             tracing::error!(source = "worktree", branch = %worktree.name, "git worktree remove --force FAILED: {e}");
