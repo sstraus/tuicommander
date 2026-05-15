@@ -171,6 +171,31 @@ export function useGitOperations(deps: GitOperationsDeps) {
 	// blocked indefinitely.
 	const recentlyProcessedBranches = new Map<string, number>();
 	const PROCESS_DEDUP_WINDOW_MS = 2000;
+
+	// Grace period: branches just created via setupNewWorktree are protected from
+	// refresh-triggered removal for CREATION_GRACE_WINDOW_MS. This guards against
+	// the race where git hasn't fully registered the new worktree by the time the
+	// first repo-changed refresh fires (idempotent dir-exists path, slow FS, etc.).
+	const recentlyCreatedBranches = new Map<string, number>();
+	const CREATION_GRACE_WINDOW_MS = 5000;
+	const markRecentlyCreated = (repoPath: string, branchName: string): void => {
+		const now = Date.now();
+		for (const [k, ts] of recentlyCreatedBranches) {
+			if (now - ts > CREATION_GRACE_WINDOW_MS) recentlyCreatedBranches.delete(k);
+		}
+		recentlyCreatedBranches.set(`${repoPath}::${branchName}`, now);
+	};
+	const isRecentlyCreated = (repoPath: string, branchName: string): boolean => {
+		const key = `${repoPath}::${branchName}`;
+		const ts = recentlyCreatedBranches.get(key);
+		if (ts === undefined) return false;
+		if (Date.now() - ts > CREATION_GRACE_WINDOW_MS) {
+			recentlyCreatedBranches.delete(key);
+			return false;
+		}
+		return true;
+	};
+
 	const alreadyProcessed = (repoPath: string, branchName: string): boolean => {
 		const key = `${repoPath}::${branchName}`;
 		const ts = recentlyProcessedBranches.get(key);
@@ -282,6 +307,16 @@ export function useGitOperations(deps: GitOperationsDeps) {
 						// The store removal may not have settled yet (batch scheduled), so
 						// we'd otherwise re-enqueue the same close+remove.
 						if (alreadyProcessed(repoPath, branchName)) continue;
+						// Skip branches just created — git may not have fully registered the
+						// worktree by the time the first repo-changed refresh fires.
+						if (isRecentlyCreated(repoPath, branchName)) {
+							appLogger.info(
+								"git",
+								`refreshAllBranchStats: CREATION GRACE skipping "${branchName}" (just created)`,
+								{ repoPath },
+							);
+							continue;
+						}
 						// If this is the stale activeBranch and we found a replacement, allow removal
 						if (branchName === active && activeBranchReplacement) {
 							appLogger.info(
@@ -1095,6 +1130,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
 		result: { name: string; path: string; branch: string; base_repo: string },
 		displayName: string,
 	) => {
+		markRecentlyCreated(repoPath, result.branch);
 		repositoriesStore.setBranch(repoPath, result.branch, { worktreePath: result.path });
 		repositoriesStore.setActiveBranch(repoPath, result.branch);
 
