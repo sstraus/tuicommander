@@ -863,6 +863,12 @@ export function useGitOperations(deps: GitOperationsDeps) {
 					deps.setStatusInfo(`Failed to remove ${branchName}: ${forceReason}`);
 					return; // worktree still exists in git — don't remove from store or it'll resurrect
 				}
+			} else if (reason.startsWith("worktree_is_main:")) {
+				// Branch is checked out in the main repo directory, not a linked worktree.
+				// Do NOT remove from store — the branch is legitimately there.
+				appLogger.warn("git", `handleRemoveBranch: branch is in main worktree — cannot remove as worktree`, { branchName });
+				deps.setStatusInfo(`Cannot remove ${branchName}: branch is in the main worktree, not a linked worktree`);
+				return;
 			} else {
 				appLogger.error("git", `handleRemoveBranch: remove_worktree FAILED — branch will be removed from UI only`, {
 					branchName,

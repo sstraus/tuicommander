@@ -213,6 +213,11 @@ pub(crate) fn create_worktree_internal(
 /// The JS layer checks for this prefix to show a confirmation dialog before retrying.
 pub(crate) const LOCKED_WORKTREE_PREFIX: &str = "worktree_locked:";
 
+/// Error prefix returned when trying to `git worktree remove` the main working tree.
+/// The JS layer treats this as a non-fatal condition and does NOT remove the branch
+/// from the store (to avoid resurrection on the next refresh).
+pub(crate) const MAIN_WORKTREE_PREFIX: &str = "worktree_is_main:";
+
 pub(crate) fn remove_worktree_internal(worktree: &WorktreeInfo, force: bool) -> Result<(), String> {
     let wt_path_str = worktree.path.to_string_lossy().to_string();
     tracing::info!(
@@ -258,6 +263,20 @@ pub(crate) fn remove_worktree_internal(worktree: &WorktreeInfo, force: bool) -> 
                 "git worktree remove: locked — returning error for JS confirmation prompt"
             );
             return Err(format!("{LOCKED_WORKTREE_PREFIX}{stderr}"));
+        }
+        Err(crate::git_cli::GitError::NonZeroExit { ref stderr, .. })
+            if stderr.contains("is a main working tree") =>
+        {
+            // The branch is checked out in the main repo directory, not a linked
+            // worktree. `git worktree remove` is not the right tool here.
+            // Return a distinctive prefix so the JS layer can show a clear message
+            // and NOT remove the branch from the store (avoiding resurrection).
+            tracing::warn!(
+                source = "worktree",
+                branch = %worktree.name,
+                "git worktree remove: branch is in main worktree, cannot remove"
+            );
+            return Err(format!("{MAIN_WORKTREE_PREFIX}{stderr}"));
         }
         Err(e) => {
             tracing::error!(source = "worktree", branch = %worktree.name, "git worktree remove FAILED: {e}");
