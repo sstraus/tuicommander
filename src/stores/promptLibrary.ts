@@ -1,5 +1,6 @@
 import { createMemo } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
+import { AGENT_TYPES } from "../agents";
 import { SMART_PROMPTS_BUILTIN } from "../data/smartPromptsBuiltIn";
 import { invoke } from "../invoke";
 import { isTauri } from "../transport";
@@ -47,6 +48,7 @@ export interface SavedPrompt {
 	builtInVersion?: number;
 	icon?: string;
 	executionMode?: "inject" | "headless" | "api" | "shell";
+	preferredAgent?: import("../agents").AgentType;
 	outputTarget?: "clipboard" | "commit-message" | "toast" | "panel";
 	systemPrompt?: string;
 	enabled?: boolean;
@@ -142,6 +144,15 @@ function createPromptLibraryStore() {
 								);
 								full.executionMode = "inject";
 							}
+							if (full.preferredAgent) {
+								if (!AGENT_TYPES.includes(full.preferredAgent)) {
+									appLogger.warn(
+										"store",
+										`Prompt "${entry.id}" has invalid preferredAgent "${full.preferredAgent}", removing`,
+									);
+									delete full.preferredAgent;
+								}
+							}
 							if (full.placement && !Array.isArray(full.placement)) {
 								full.placement = undefined;
 							}
@@ -190,6 +201,7 @@ function createPromptLibraryStore() {
 							placement: existing.placement,
 							autoExecute: existing.autoExecute,
 							executionMode: existing.executionMode,
+							preferredAgent: existing.preferredAgent ?? builtin.preferredAgent,
 							isFavorite: existing.isFavorite,
 							lastUsed: existing.lastUsed,
 						};

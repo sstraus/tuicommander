@@ -67,7 +67,7 @@ function builtin(
 		category: "custom",
 		isFavorite: false,
 		builtIn: true,
-		builtInVersion: 2,
+		builtInVersion: 3,
 		autoExecute: true,
 		requiresIdle: true,
 		executionMode: "inject",
