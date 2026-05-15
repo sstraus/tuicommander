@@ -1268,6 +1268,8 @@ pub fn run() {
             mdkb_commands::mdkb_goto_definition,
             mdkb_commands::mdkb_references,
             mdkb_commands::mdkb_status,
+            mdkb_commands::install_mdkb,
+            mdkb_commands::uninstall_mdkb,
             hash_password,
             agent::open_in_app,
             agent::detect_claude_binary,

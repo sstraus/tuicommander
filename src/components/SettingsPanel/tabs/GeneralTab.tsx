@@ -16,9 +16,18 @@ interface CliStatus {
 	prompt_dismissed: boolean;
 }
 
+interface MdkbStatus {
+	available: boolean;
+	connected: boolean;
+	binaryPath: string | null;
+	version: string | null;
+}
+
 export const GeneralTab: Component = () => {
 	const [cliStatus, setCliStatus] = createSignal<CliStatus | null>(null);
 	const [cliInstalling, setCliInstalling] = createSignal(false);
+	const [mdkbStatus, setMdkbStatus] = createSignal<MdkbStatus | null>(null);
+	const [mdkbInstalling, setMdkbInstalling] = createSignal(false);
 
 	const refreshCliStatus = async () => {
 		if (!isTauri()) return;
@@ -30,7 +39,20 @@ export const GeneralTab: Component = () => {
 		}
 	};
 
-	onMount(refreshCliStatus);
+	const refreshMdkbStatus = async () => {
+		if (!isTauri()) return;
+		try {
+			const status = await invoke<MdkbStatus>("mdkb_status");
+			setMdkbStatus(status);
+		} catch (err) {
+			appLogger.error("app", "Failed to get mdkb status", err);
+		}
+	};
+
+	onMount(() => {
+		refreshCliStatus();
+		refreshMdkbStatus();
+	});
 
 	const handleInstallCli = async () => {
 		setCliInstalling(true);
@@ -50,6 +72,27 @@ export const GeneralTab: Component = () => {
 			await refreshCliStatus();
 		} catch (err) {
 			appLogger.error("app", "Failed to uninstall CLI", err);
+		}
+	};
+
+	const handleInstallMdkb = async () => {
+		setMdkbInstalling(true);
+		try {
+			await invoke<string>("install_mdkb");
+			await refreshMdkbStatus();
+		} catch (err) {
+			appLogger.error("app", "Failed to install mdkb", err);
+		} finally {
+			setMdkbInstalling(false);
+		}
+	};
+
+	const handleUninstallMdkb = async () => {
+		try {
+			await invoke("uninstall_mdkb");
+			await refreshMdkbStatus();
+		} catch (err) {
+			appLogger.error("app", "Failed to uninstall mdkb", err);
 		}
 	};
 
@@ -111,6 +154,50 @@ export const GeneralTab: Component = () => {
 						</p>
 						<button class={s.testBtn} onClick={handleUninstallCli} style={{ "margin-top": "8px" }}>
 							{t("general.btn.uninstallCli", "Uninstall")}
+						</button>
+					</Show>
+				</div>
+			</Show>
+
+			<Show when={isTauri()}>
+				<h3>{t("general.heading.codeIntelligence", "Code Intelligence")}</h3>
+
+				<div class={s.group}>
+					<Show
+						when={mdkbStatus()?.available}
+						fallback={
+							<>
+								<p class={s.hint}>
+									{t(
+										"general.hint.mdkbNotInstalled",
+										"Install mdkb to enable outline, go-to-definition, and find references in the code editor.",
+									)}
+								</p>
+								<button
+									class={s.testBtn}
+									onClick={handleInstallMdkb}
+									disabled={mdkbInstalling()}
+									style={{ "margin-top": "8px" }}
+								>
+									{mdkbInstalling()
+										? t("general.btn.installing", "Installing...")
+										: t("general.btn.installMdkb", "Install mdkb")}
+								</button>
+							</>
+						}
+					>
+						<p class={s.hint} style={{ color: "var(--success)" }}>
+							{t("general.hint.mdkbInstalled", "Installed at {path}", {
+								path: mdkbStatus()!.binaryPath ?? "unknown",
+							})}
+							{mdkbStatus()!.version && (
+								<span style={{ "margin-left": "8px", color: "var(--fg-muted)" }}>
+									v{mdkbStatus()!.version}
+								</span>
+							)}
+						</p>
+						<button class={s.testBtn} onClick={handleUninstallMdkb} style={{ "margin-top": "8px" }}>
+							{t("general.btn.uninstallMdkb", "Uninstall")}
 						</button>
 					</Show>
 				</div>

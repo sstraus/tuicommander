@@ -32,6 +32,21 @@ impl MdkbDaemon {
         self.client.is_some()
     }
 
+    pub fn binary_path(&self) -> Option<&std::path::Path> {
+        self.binary_path.as_deref()
+    }
+
+    pub fn version(&self) -> Option<String> {
+        let bin = self.binary_path.as_ref()?;
+        let output = std::process::Command::new(bin)
+            .arg("--version")
+            .output()
+            .ok()?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let version = stdout.trim().strip_prefix("mdkb ").unwrap_or(stdout.trim());
+        Some(version.to_string())
+    }
+
     pub async fn ensure_running(&mut self) -> Result<&mut MdkbClient> {
         if let Some(ref mut c) = self.client {
             if c.ping().await.is_ok() {

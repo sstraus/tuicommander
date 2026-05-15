@@ -843,3 +843,13 @@ Features to test when TUICommander is more usable.
 ## Sidebar: External API Hidden from Agent Menu (2026-05-13)
 - [ ] Right-click branch → Add Agent submenu → "External API" is NOT listed
 - [ ] Tab bar Add Agent menu → "External API" is NOT listed (was already filtered)
+
+## AST Navigation via mdkb (2026-05-15)
+- [ ] Outline panel: open a file in editor → toggle outline → symbols listed with kind badges and line numbers
+- [ ] Outline panel: click a symbol → editor scrolls to that line
+- [ ] Outline panel: empty file or non-indexed language → shows "No symbols found"
+- [ ] Go-to-definition: Cmd+Click on a symbol name in editor → opens definition file at correct line
+- [ ] Go-to-definition: Cmd+Click on unknown symbol → nothing happens (no error)
+- [ ] Find references: Shift+F12 on a symbol → References panel opens with callers list
+- [ ] Find references: right-click → "Find References" context menu item works
+- [ ] mdkb_status: DevTools `await __TAURI__.core.invoke("mdkb_status")` → `{available: true, connected: true}`
