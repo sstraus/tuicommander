@@ -484,11 +484,22 @@ pub(crate) fn check_worktree_dirty(repo_path: String, branch_name: String) -> Re
     Ok(!status_out.stdout.trim().is_empty())
 }
 
-/// Delete a local branch, removing its worktree first if one exists.
+/// Delete a local branch.
+///
+/// When the branch has a linked worktree, behaviour depends on `keep_worktree`:
+/// - `false` (default): remove the worktree directory together with the branch
+///   ref via `remove_worktree_by_branch`.
+/// - `true`: detach the worktree HEAD (so the branch ref is no longer checked
+///   out anywhere), then delete the branch ref with `git branch -d`. The
+///   worktree directory and its files are preserved.
 ///
 /// Safety: refuses to delete the repository's default branch.
 /// Uses `git branch -d` (safe delete) which fails if the branch has unmerged commits.
-pub(crate) fn delete_local_branch_impl(repo_path: &str, branch_name: &str) -> Result<(), String> {
+pub(crate) fn delete_local_branch_impl(
+    repo_path: &str,
+    branch_name: &str,
+    keep_worktree: bool,
+) -> Result<(), String> {
     // Refuse to delete the default branch
     let default_branch =
         get_remote_default_branch(repo_path).unwrap_or_else(|_| "main".to_string());
@@ -498,36 +509,61 @@ pub(crate) fn delete_local_branch_impl(repo_path: &str, branch_name: &str) -> Re
 
     let base_repo = PathBuf::from(repo_path);
 
-    // Check if branch has a linked worktree
-    let has_worktree = git_cmd(&base_repo)
+    // Resolve linked-worktree path for this branch, if any
+    let worktree_path = git_cmd(&base_repo)
         .args(["worktree", "list", "--porcelain"])
         .run_silent()
-        .map(|o| find_worktree_path_for_branch(&o.stdout, branch_name).is_some())
-        .unwrap_or(false);
+        .and_then(|o| find_worktree_path_for_branch(&o.stdout, branch_name));
 
-    if has_worktree {
-        // Remove worktree + branch in one go
-        remove_worktree_by_branch(repo_path, branch_name, true, None)?;
-    } else {
-        // Just delete the branch ref
-        git_cmd(&base_repo)
-            .args(["branch", "-d", branch_name])
-            .run()
-            .map_err(|e| format!("git branch -d {branch_name} failed: {e}"))?;
+    match (worktree_path, keep_worktree) {
+        (Some(wt_path), true) => {
+            // Detach the worktree HEAD so `git branch -d` will accept the
+            // branch as deletable while leaving the worktree files on disk.
+            git_cmd(&wt_path)
+                .args(["checkout", "--detach"])
+                .run()
+                .map_err(|e| {
+                    format!(
+                        "git checkout --detach in worktree {} failed: {e}",
+                        wt_path.display()
+                    )
+                })?;
+            git_cmd(&base_repo)
+                .args(["branch", "-d", branch_name])
+                .run()
+                .map_err(|e| format!("git branch -d {branch_name} failed: {e}"))?;
+        }
+        (Some(_), false) => {
+            // Remove worktree + branch in one go
+            remove_worktree_by_branch(repo_path, branch_name, true, None)?;
+        }
+        (None, _) => {
+            // Bare branch — no worktree to consider
+            git_cmd(&base_repo)
+                .args(["branch", "-d", branch_name])
+                .run()
+                .map_err(|e| format!("git branch -d {branch_name} failed: {e}"))?;
+        }
     }
 
     Ok(())
 }
 
-/// Tauri command: delete a local branch (and its worktree if linked).
+/// Tauri command: delete a local branch.
+///
+/// `keep_worktree` (optional, default `false`): when `true`, preserves the
+/// linked worktree directory by detaching its HEAD before removing the branch
+/// ref. Used by the post-merge cleanup dialog when the user unchecks the
+/// "Archive/Delete worktree" step.
 #[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn delete_local_branch(
     state: State<'_, Arc<AppState>>,
     repo_path: String,
     branch_name: String,
+    keep_worktree: Option<bool>,
 ) -> Result<(), String> {
-    delete_local_branch_impl(&repo_path, &branch_name)?;
+    delete_local_branch_impl(&repo_path, &branch_name, keep_worktree.unwrap_or(false))?;
     state.invalidate_repo_caches(&repo_path);
     Ok(())
 }
@@ -1739,7 +1775,7 @@ branch refs/heads/feat
         assert!(branches.contains(&"feat-to-delete".to_string()));
 
         // Delete it
-        let result = delete_local_branch_impl(&repo_path, "feat-to-delete");
+        let result = delete_local_branch_impl(&repo_path, "feat-to-delete", false);
         assert!(
             result.is_ok(),
             "delete_local_branch_impl failed: {:?}",
@@ -1757,7 +1793,7 @@ branch refs/heads/feat
         let repo_path = repo.path().to_string_lossy().to_string();
 
         let default_branch = get_remote_default_branch(&repo_path).unwrap();
-        let result = delete_local_branch_impl(&repo_path, &default_branch);
+        let result = delete_local_branch_impl(&repo_path, &default_branch, false);
         assert!(result.is_err());
         assert!(
             result
@@ -1785,8 +1821,8 @@ branch refs/heads/feat
         // Verify worktree exists
         assert!(wt.path.exists());
 
-        // Delete via delete_local_branch_impl
-        let result = delete_local_branch_impl(&repo_path, &wt.name);
+        // Delete via delete_local_branch_impl (default cascade: keep_worktree = false)
+        let result = delete_local_branch_impl(&repo_path, &wt.name, false);
         assert!(
             result.is_ok(),
             "delete_local_branch_impl failed: {:?}",
@@ -1795,6 +1831,52 @@ branch refs/heads/feat
 
         // Worktree directory should be removed
         assert!(!wt.path.exists(), "Worktree directory should be gone");
+    }
+
+    /// Regression test for the "Keep worktree" bug.
+    ///
+    /// PostMergeCleanupDialog lets the user uncheck the "Archive/Delete worktree"
+    /// step (intent: keep the worktree on disk) while leaving the "Delete local
+    /// branch" step checked. With `keep_worktree = true`, `delete_local_branch_impl`
+    /// must detach the worktree HEAD and remove only the branch ref, leaving the
+    /// worktree directory and its files intact.
+    #[test]
+    fn delete_local_branch_should_preserve_worktree_when_user_keeps_it() {
+        let repo = setup_test_repo();
+        let repo_path = repo.path().to_string_lossy().to_string();
+        let worktrees_dir = repo.path().join("worktrees");
+
+        let config = WorktreeConfig {
+            task_name: "wt-keep".to_string(),
+            base_repo: repo_path.clone(),
+            branch: None,
+            create_branch: false,
+        };
+        let wt = create_worktree_internal(&worktrees_dir, &config, None)
+            .expect("Failed to create worktree");
+        assert!(wt.path.exists(), "precondition: worktree should exist");
+
+        // Simulates PostMergeCleanupDialog flow with the worktree step
+        // unchecked but delete-local checked. `keep_worktree = true` must
+        // detach the worktree HEAD and remove only the branch ref.
+        let result = delete_local_branch_impl(&repo_path, &wt.name, true);
+        assert!(
+            result.is_ok(),
+            "delete_local_branch_impl with keep_worktree=true failed: {:?}",
+            result
+        );
+
+        assert!(
+            wt.path.exists(),
+            "Worktree directory was deleted despite keep_worktree=true"
+        );
+
+        // Branch ref must be gone
+        let branches = list_local_branches(repo_path).unwrap();
+        assert!(
+            !branches.contains(&wt.name),
+            "Branch ref should have been deleted"
+        );
     }
 
     #[test]

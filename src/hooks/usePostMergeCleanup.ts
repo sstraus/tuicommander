@@ -23,6 +23,14 @@ export async function executeCleanup(config: CleanupConfig): Promise<void> {
 	let didDeleteLocal = false;
 	let hadError = false;
 
+	// When the "worktree" step is present in the list but unchecked, the user
+	// explicitly chose to keep the worktree on disk. The "delete-local" step
+	// must communicate that to the Rust side, otherwise `delete_local_branch`
+	// will cascade through `remove_worktree_by_branch` and destroy the
+	// worktree directory regardless of the user's intent.
+	const worktreeStep = steps.find((s) => s.id === "worktree");
+	const keepWorktree = worktreeStep !== undefined && !worktreeStep.checked;
+
 	for (const step of steps) {
 		if (!step.checked) continue;
 		if (hadError) break;
@@ -69,6 +77,7 @@ export async function executeCleanup(config: CleanupConfig): Promise<void> {
 						await invoke("delete_local_branch", {
 							repoPath,
 							branchName,
+							keepWorktree,
 						});
 					} catch (e) {
 						const msg = String(e);

@@ -140,6 +140,7 @@ describe("executeCleanup", () => {
 		expect(mockInvoke).toHaveBeenCalledWith("delete_local_branch", {
 			repoPath: "/repo",
 			branchName: "feature/login",
+			keepWorktree: false,
 		});
 		// closeTerminals was called before delete
 		const closeOrder = closeTerminals.mock.invocationCallOrder[0];
@@ -340,6 +341,35 @@ describe("executeCleanup", () => {
 		await executeCleanup(config);
 
 		expect(mockInvoke).not.toHaveBeenCalledWith("finalize_merged_worktree", expect.anything());
+	});
+
+	/**
+	 * Regression test for the "Keep worktree" bug.
+	 *
+	 * When the user unchecks the "Archive/Delete worktree" step in
+	 * PostMergeCleanupDialog while leaving "Delete local branch" checked,
+	 * executeCleanup must pass `keepWorktree: true` to the
+	 * `delete_local_branch` command so the Rust side skips its cascade and
+	 * preserves the worktree directory.
+	 */
+	it("passes keepWorktree: true when user unchecks the worktree step", async () => {
+		const config = makeConfig({
+			steps: [
+				{ id: "worktree", checked: false }, // user KEEPS the worktree
+				{ id: "switch", checked: false },
+				{ id: "pull", checked: false },
+				{ id: "delete-local", checked: true }, // still wants branch gone
+				{ id: "delete-remote", checked: false },
+			],
+			worktreeAction: "archive",
+		});
+		await executeCleanup(config);
+
+		expect(mockInvoke).toHaveBeenCalledWith("delete_local_branch", {
+			repoPath: "/repo",
+			branchName: "feature/login",
+			keepWorktree: true,
+		});
 	});
 
 	it("calls bumpRevision at the end even without local delete", async () => {
