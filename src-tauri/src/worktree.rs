@@ -505,14 +505,16 @@ pub(crate) fn remove_worktree_by_branch(
 
     remove_worktree_internal(&worktree)?;
 
-    // Delete the local branch when requested (non-fatal: branch may still be useful)
+    // Delete the local branch when requested. Use -D (force) because the user
+    // explicitly chose to delete this worktree — unmerged branches should be
+    // removed too, not silently left behind.
     if delete_branch {
         match git_cmd(&worktree.base_repo)
-            .args(["branch", "-d", branch_name])
+            .args(["branch", "-D", branch_name])
             .run()
         {
-            Ok(_) => tracing::info!(source = "worktree", branch = %branch_name, "git branch -d: OK"),
-            Err(e) => tracing::warn!(source = "worktree", branch = %branch_name, "git branch -d failed: {e}"),
+            Ok(_) => tracing::info!(source = "worktree", branch = %branch_name, "git branch -D: OK"),
+            Err(e) => tracing::warn!(source = "worktree", branch = %branch_name, "git branch -D failed: {e}"),
         }
     }
 
