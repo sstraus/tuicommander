@@ -61,6 +61,7 @@ describe("useGitOperations", () => {
 	const mockDialogs = {
 		confirmRemoveRepo: vi.fn().mockResolvedValue(true),
 		confirmRemoveWorktree: vi.fn().mockResolvedValue(true),
+		confirmRemoveLockedWorktree: vi.fn().mockResolvedValue(true),
 	};
 
 	const mockCloseTerminal = vi.fn().mockResolvedValue(undefined);
@@ -78,6 +79,7 @@ describe("useGitOperations", () => {
 		mockPty.canSpawn.mockResolvedValue(true);
 		mockDialogs.confirmRemoveRepo.mockResolvedValue(true);
 		mockDialogs.confirmRemoveWorktree.mockResolvedValue(true);
+		mockDialogs.confirmRemoveLockedWorktree.mockResolvedValue(true);
 
 		gitOps = useGitOperations({
 			repo: mockRepo,
@@ -1205,6 +1207,60 @@ describe("useGitOperations", () => {
 			await gitOps.handleRemoveBranch("/repo", "feature");
 
 			expect(repositoriesStore.get("/repo")?.branches["feature"]).toBeDefined();
+		});
+	});
+
+	describe("handleRemoveBranch (locked worktree)", () => {
+		const LOCKED_ERROR = "worktree_locked:fatal: cannot remove a locked working tree, lock reason: claude agent";
+
+		it("shows confirmation dialog when worktree is locked by agent", async () => {
+			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+			repositoriesStore.setBranch("/repo", "feature", { worktreePath: "/repo/wt" });
+			mockRepo.removeWorktree.mockRejectedValueOnce(new Error(LOCKED_ERROR));
+
+			await gitOps.handleRemoveBranch("/repo", "feature");
+
+			expect(mockDialogs.confirmRemoveLockedWorktree).toHaveBeenCalledWith("feature");
+		});
+
+		it("retries with force=true when user confirms force removal of locked worktree", async () => {
+			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+			repositoriesStore.setBranch("/repo", "feature", { worktreePath: "/repo/wt" });
+			mockRepo.removeWorktree
+				.mockRejectedValueOnce(new Error(LOCKED_ERROR)) // first attempt: locked
+				.mockResolvedValueOnce(undefined); // second attempt (force): success
+
+			await gitOps.handleRemoveBranch("/repo", "feature");
+
+			expect(mockRepo.removeWorktree).toHaveBeenCalledTimes(2);
+			expect(mockRepo.removeWorktree).toHaveBeenLastCalledWith("/repo", "feature", true, true);
+			expect(repositoriesStore.get("/repo")?.branches["feature"]).toBeUndefined();
+		});
+
+		it("keeps branch in store when user cancels force removal of locked worktree", async () => {
+			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+			repositoriesStore.setBranch("/repo", "feature", { worktreePath: "/repo/wt" });
+			mockRepo.removeWorktree.mockRejectedValueOnce(new Error(LOCKED_ERROR));
+			mockDialogs.confirmRemoveLockedWorktree.mockResolvedValue(false);
+
+			await gitOps.handleRemoveBranch("/repo", "feature");
+
+			expect(mockRepo.removeWorktree).toHaveBeenCalledTimes(1); // no retry
+			expect(repositoriesStore.get("/repo")?.branches["feature"]).toBeDefined();
+		});
+
+		it("keeps branch in store when force removal also fails", async () => {
+			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+			repositoriesStore.setBranch("/repo", "feature", { worktreePath: "/repo/wt" });
+			mockRepo.removeWorktree
+				.mockRejectedValueOnce(new Error(LOCKED_ERROR))
+				.mockRejectedValueOnce(new Error("git worktree remove failed (locked): permission denied"));
+
+			await gitOps.handleRemoveBranch("/repo", "feature");
+
+			expect(mockRepo.removeWorktree).toHaveBeenCalledTimes(2);
+			expect(repositoriesStore.get("/repo")?.branches["feature"]).toBeDefined();
+			expect(mockSetStatusInfo).toHaveBeenCalledWith(expect.stringContaining("Failed to remove"));
 		});
 	});
 

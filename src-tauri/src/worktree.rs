@@ -1376,6 +1376,7 @@ mod tests {
     use super::*;
     use crate::config::WorktreeStorage;
     use std::fs;
+    use std::process::Command;
     use tempfile::TempDir;
 
     fn setup_test_repo() -> TempDir {
@@ -1507,7 +1508,7 @@ mod tests {
             "Worktree should exist before removal"
         );
 
-        let result = remove_worktree_internal(&worktree);
+        let result = remove_worktree_internal(&worktree, false);
         assert!(result.is_ok(), "Failed to remove worktree: {:?}", result);
 
         assert!(
@@ -1528,11 +1529,70 @@ mod tests {
         };
 
         // Should not error when removing non-existent worktree
-        let result = remove_worktree_internal(&worktree);
+        let result = remove_worktree_internal(&worktree, false);
         assert!(
             result.is_ok(),
             "Removing nonexistent worktree should succeed"
         );
+    }
+
+    #[test]
+    fn test_remove_locked_worktree_without_force_returns_locked_error() {
+        let repo = setup_test_repo();
+        let worktrees_dir = repo.path().join("worktrees");
+
+        let config = WorktreeConfig {
+            task_name: "locked-branch".to_string(),
+            base_repo: repo.path().to_string_lossy().to_string(),
+            branch: None,
+            create_branch: false,
+        };
+
+        let worktree = create_worktree_internal(&worktrees_dir, &config, None)
+            .expect("Failed to create worktree");
+
+        // Lock the worktree simulating an active agent
+        Command::new("git")
+            .current_dir(repo.path())
+            .args(["worktree", "lock", "--reason", "claude agent test-lock", worktree.path.to_str().unwrap()])
+            .output()
+            .expect("git worktree lock failed");
+
+        let result = remove_worktree_internal(&worktree, false);
+        assert!(result.is_err(), "Should fail on locked worktree without force");
+        let err = result.unwrap_err();
+        assert!(
+            err.starts_with(LOCKED_WORKTREE_PREFIX),
+            "Error should start with LOCKED_WORKTREE_PREFIX, got: {err}"
+        );
+        assert!(worktree.path.exists(), "Worktree directory should still exist after failed removal");
+    }
+
+    #[test]
+    fn test_remove_locked_worktree_with_force_succeeds() {
+        let repo = setup_test_repo();
+        let worktrees_dir = repo.path().join("worktrees");
+
+        let config = WorktreeConfig {
+            task_name: "locked-branch-force".to_string(),
+            base_repo: repo.path().to_string_lossy().to_string(),
+            branch: None,
+            create_branch: false,
+        };
+
+        let worktree = create_worktree_internal(&worktrees_dir, &config, None)
+            .expect("Failed to create worktree");
+
+        // Lock the worktree
+        Command::new("git")
+            .current_dir(repo.path())
+            .args(["worktree", "lock", "--reason", "claude agent force-test", worktree.path.to_str().unwrap()])
+            .output()
+            .expect("git worktree lock failed");
+
+        let result = remove_worktree_internal(&worktree, true);
+        assert!(result.is_ok(), "Force removal of locked worktree should succeed: {:?}", result);
+        assert!(!worktree.path.exists(), "Worktree directory should be gone after force removal");
     }
 
     #[test]
@@ -1710,7 +1770,7 @@ mod tests {
         create_worktree_internal(&worktrees_dir, &config, None).expect("Failed to create worktree");
 
         // Remove with delete_branch=true
-        remove_worktree_by_branch(&repo_path, "feat-delete-branch", true, None)
+        remove_worktree_by_branch(&repo_path, "feat-delete-branch", true, None, false)
             .expect("Failed to remove worktree");
 
         // Branch should be gone
@@ -1741,7 +1801,7 @@ mod tests {
         create_worktree_internal(&worktrees_dir, &config, None).expect("Failed to create worktree");
 
         // Remove with delete_branch=false
-        remove_worktree_by_branch(&repo_path, "feat-keep-branch", false, None)
+        remove_worktree_by_branch(&repo_path, "feat-keep-branch", false, None, false)
             .expect("Failed to remove worktree");
 
         // Branch should still exist
