@@ -210,25 +210,51 @@ pub(crate) fn create_worktree_internal(
 
 /// Remove a git worktree
 pub(crate) fn remove_worktree_internal(worktree: &WorktreeInfo) -> Result<(), String> {
-    // First, run git worktree remove
     let wt_path_str = worktree.path.to_string_lossy().to_string();
+    tracing::info!(
+        source = "worktree",
+        branch = %worktree.name,
+        path = %wt_path_str,
+        "remove_worktree_internal: start"
+    );
+
+    // First, run git worktree remove
     match git_cmd(&worktree.base_repo)
         .args(["worktree", "remove", "--force", &wt_path_str])
         .run()
     {
-        Ok(_) => {}
+        Ok(_) => {
+            tracing::info!(source = "worktree", branch = %worktree.name, "git worktree remove --force: OK");
+        }
         Err(crate::git_cli::GitError::NonZeroExit { ref stderr, .. })
             if stderr.contains("not a working tree") || stderr.contains("No such file") =>
         {
-            // Worktree doesn't exist — that's fine
+            tracing::info!(
+                source = "worktree",
+                branch = %worktree.name,
+                stderr = %stderr,
+                "git worktree remove --force: worktree already gone (treating as success)"
+            );
         }
-        Err(e) => return Err(format!("Git worktree remove failed: {e}")),
+        Err(e) => {
+            tracing::error!(source = "worktree", branch = %worktree.name, "git worktree remove --force FAILED: {e}");
+            return Err(format!("Git worktree remove failed: {e}"));
+        }
     }
 
     // Cleanup the directory if it still exists
     if worktree.path.exists() {
+        tracing::warn!(
+            source = "worktree",
+            branch = %worktree.name,
+            path = %wt_path_str,
+            "directory still exists after git worktree remove — running rm -rf"
+        );
         std::fs::remove_dir_all(&worktree.path)
             .map_err(|e| format!("Failed to remove worktree directory: {e}"))?;
+        tracing::info!(source = "worktree", branch = %worktree.name, "directory removed");
+    } else {
+        tracing::info!(source = "worktree", branch = %worktree.name, "directory already gone after git worktree remove");
     }
 
     // Prune worktrees (non-fatal: stale entries are harmless)
@@ -237,8 +263,11 @@ pub(crate) fn remove_worktree_internal(worktree: &WorktreeInfo) -> Result<(), St
         .run()
     {
         tracing::warn!(source = "worktree", "git worktree prune failed: {e}");
+    } else {
+        tracing::info!(source = "worktree", branch = %worktree.name, "git worktree prune: OK");
     }
 
+    tracing::info!(source = "worktree", branch = %worktree.name, "remove_worktree_internal: done");
     Ok(())
 }
 
@@ -396,6 +425,13 @@ pub(crate) fn remove_worktree_by_branch(
 ) -> Result<(), String> {
     let base_repo = PathBuf::from(repo_path);
 
+    tracing::info!(
+        source = "worktree",
+        branch = %branch_name,
+        delete_branch = %delete_branch,
+        "remove_worktree_by_branch: start"
+    );
+
     // List worktrees to find the path for this branch
     let out = git_cmd(&base_repo)
         .args(["worktree", "list", "--porcelain"])
@@ -403,7 +439,21 @@ pub(crate) fn remove_worktree_by_branch(
         .map_err(|e| format!("git worktree list failed: {e}"))?;
 
     let worktree_path = find_worktree_path_for_branch(&out.stdout, branch_name)
-        .ok_or_else(|| format!("No worktree found for branch '{branch_name}'"))?;
+        .ok_or_else(|| {
+            tracing::error!(
+                source = "worktree",
+                branch = %branch_name,
+                "remove_worktree_by_branch: no worktree found for branch"
+            );
+            format!("No worktree found for branch '{branch_name}'")
+        })?;
+
+    tracing::info!(
+        source = "worktree",
+        branch = %branch_name,
+        path = %worktree_path.display(),
+        "remove_worktree_by_branch: worktree path resolved"
+    );
 
     // Run archive/cleanup script before deletion (if configured)
     if let Some(script) = archive_script
@@ -424,14 +474,17 @@ pub(crate) fn remove_worktree_by_branch(
     remove_worktree_internal(&worktree)?;
 
     // Delete the local branch when requested (non-fatal: branch may still be useful)
-    if delete_branch
-        && let Err(e) = git_cmd(&worktree.base_repo)
+    if delete_branch {
+        match git_cmd(&worktree.base_repo)
             .args(["branch", "-d", branch_name])
             .run()
-    {
-        tracing::warn!(source = "worktree", branch = %branch_name, "git branch -d failed: {e}");
+        {
+            Ok(_) => tracing::info!(source = "worktree", branch = %branch_name, "git branch -d: OK"),
+            Err(e) => tracing::warn!(source = "worktree", branch = %branch_name, "git branch -d failed: {e}"),
+        }
     }
 
+    tracing::info!(source = "worktree", branch = %branch_name, "remove_worktree_by_branch: done");
     Ok(())
 }
 
@@ -446,16 +499,27 @@ pub(crate) fn remove_worktree(
     branch_name: String,
     delete_branch: Option<bool>,
 ) -> Result<(), String> {
+    let delete_branch = delete_branch.unwrap_or(true);
+    tracing::info!(
+        source = "worktree",
+        branch = %branch_name,
+        repo = %repo_path,
+        delete_branch = %delete_branch,
+        "remove_worktree command: invoked"
+    );
     let script = resolve_archive_script(&repo_path);
-    remove_worktree_by_branch(
-        &repo_path,
-        &branch_name,
-        delete_branch.unwrap_or(true),
-        script.as_deref(),
-    )?;
-    crate::config::remove_branch_label(&repo_path, &branch_name);
-    state.invalidate_repo_caches(&repo_path);
-    Ok(())
+    match remove_worktree_by_branch(&repo_path, &branch_name, delete_branch, script.as_deref()) {
+        Ok(()) => {
+            tracing::info!(source = "worktree", branch = %branch_name, "remove_worktree command: SUCCESS — invalidating caches");
+            crate::config::remove_branch_label(&repo_path, &branch_name);
+            state.invalidate_repo_caches(&repo_path);
+            Ok(())
+        }
+        Err(e) => {
+            tracing::error!(source = "worktree", branch = %branch_name, "remove_worktree command: FAILED — {e}");
+            Err(e)
+        }
+    }
 }
 
 /// Check whether a branch's working directory has uncommitted changes.

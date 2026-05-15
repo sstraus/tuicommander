@@ -351,8 +351,13 @@ export function useGitOperations(deps: GitOperationsDeps) {
 					// Create new worktree branches first so mergeBranchState has a target
 					for (const [branchName, wtPath] of Object.entries(worktreePaths)) {
 						if (priorBranchKeys.has(branchName) && !liveRepo?.branches[branchName]) {
+							appLogger.info("git", `refreshAllBranchStats: RACE GUARD blocked resurrection of "${branchName}"`, {
+								repoPath,
+								worktreePath: wtPath,
+							});
 							continue;
 						}
+						appLogger.debug("git", `refreshAllBranchStats: setBranch "${branchName}"`, { worktreePath: wtPath });
 						repositoriesStore.setBranch(repoPath, branchName, {
 							worktreePath: wtPath,
 							isMerged: mergedSet.has(branchName),
@@ -821,15 +826,26 @@ export function useGitOperations(deps: GitOperationsDeps) {
 
 		const effective = repoSettingsStore.getEffective(repoPath);
 		const deleteBranch = effective?.deleteBranchOnRemove ?? true;
+		appLogger.info("git", `handleRemoveBranch: invoking remove_worktree`, {
+			repoPath,
+			branchName,
+			worktreePath: branch.worktreePath,
+			deleteBranch,
+		});
 		try {
 			await deps.repo.removeWorktree(repoPath, branchName, deleteBranch);
+			appLogger.info("git", `handleRemoveBranch: remove_worktree SUCCESS`, { branchName });
 			deps.setStatusInfo(`Removed ${branchName}`);
 		} catch (err) {
 			const reason = err instanceof Error ? err.message : String(err);
-			appLogger.error("git", `Failed to remove worktree for ${branchName}: ${reason}`);
+			appLogger.error("git", `handleRemoveBranch: remove_worktree FAILED — branch will be removed from UI only`, {
+				branchName,
+				reason,
+			});
 			deps.setStatusInfo(`Removed ${branchName} from UI (worktree removal failed)`);
 		}
 
+		appLogger.info("git", `handleRemoveBranch: calling removeBranch on store`, { branchName });
 		repositoriesStore.removeBranch(repoPath, branchName);
 		repoSettingsStore.setLabel(repoPath, branchName, null);
 	};
