@@ -200,6 +200,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
 
 				const repo = repositoriesStore.get(repoPath);
 				if (!repo) return;
+				// Snapshot branch keys before any await so we can detect user-triggered
+				// removals that happen while async ops are in-flight (race condition guard).
+				const priorBranchKeys = new Set(Object.keys(repo.branches));
 				// Non-git directories: check if they became a git repo
 				if (repo.isGitRepo === false) {
 					try {
@@ -341,8 +344,15 @@ export function useGitOperations(deps: GitOperationsDeps) {
 				}
 
 				batch(() => {
+					// Guard against race: if a branch was present before our async ops
+					// but is now gone from the live store, the user deleted it while we
+					// were in-flight. Don't resurrect it via stale worktreePaths data.
+					const liveRepo = repositoriesStore.get(repoPath);
 					// Create new worktree branches first so mergeBranchState has a target
 					for (const [branchName, wtPath] of Object.entries(worktreePaths)) {
+						if (priorBranchKeys.has(branchName) && !liveRepo?.branches[branchName]) {
+							continue;
+						}
 						repositoriesStore.setBranch(repoPath, branchName, {
 							worktreePath: wtPath,
 							isMerged: mergedSet.has(branchName),

@@ -1029,6 +1029,63 @@ describe("useGitOperations", () => {
 			// Branch should have been removed from the store
 			expect(repositoriesStore.get("/repo")?.branches["worktree-agent-abc"]).toBeUndefined();
 		});
+
+		it("does not resurrect a branch deleted by user while refresh was in-flight", async () => {
+			// Regression: refreshAllBranchStats fetches worktree_paths before the deletion
+			// completes. When the batch runs with stale data (deleted branch still in
+			// worktree_paths), setBranch must not re-add it if the user already removed it.
+			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+			repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+			repositoriesStore.setBranch("/repo", "feature", { worktreePath: "/repo/.worktrees/feature" });
+
+			// Hold getRepoStructure so we can inject a user deletion before it resolves
+			let resolveStructure!: (v: unknown) => void;
+			mockRepo.getRepoStructure.mockReturnValueOnce(new Promise((r) => (resolveStructure = r)));
+			mockRepo.getRepoDiffStats.mockResolvedValue({ diff_stats: {}, last_commit_ts: {} });
+
+			const refreshPromise = gitOps.refreshAllBranchStats();
+
+			// User deletes "feature" while refresh is awaiting getRepoStructure
+			repositoriesStore.removeBranch("/repo", "feature");
+
+			// Resolve with STALE data: "feature" still present in worktree_paths
+			resolveStructure({
+				worktree_paths: { main: "/repo", feature: "/repo/.worktrees/feature" },
+				merged_branches: [],
+			});
+
+			await refreshPromise;
+
+			// Refresh must not resurrect the user-deleted branch
+			expect(repositoriesStore.get("/repo")?.branches["feature"]).toBeUndefined();
+			expect(repositoriesStore.get("/repo")?.branches["main"]).toBeDefined();
+		});
+
+		it("still adds genuinely new external worktrees that were not in the snapshot", async () => {
+			// Guard: the race-condition fix must only skip branches that were in the
+			// snapshot AND are now gone. A brand-new external worktree (never in snapshot)
+			// must still be discovered and added.
+			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+			repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+
+			mockRepo.getRepoStructure.mockResolvedValue({
+				worktree_paths: { main: "/repo", "external-new": "/repo/.worktrees/external-new" },
+				merged_branches: [],
+			});
+			mockRepo.getRepoDiffStats.mockResolvedValue({
+				diff_stats: {
+					"/repo": { additions: 0, deletions: 0 },
+					"/repo/.worktrees/external-new": { additions: 2, deletions: 1 },
+				},
+				last_commit_ts: {},
+			});
+
+			await gitOps.refreshAllBranchStats();
+
+			const newBranch = repositoriesStore.get("/repo")?.branches["external-new"];
+			expect(newBranch).toBeDefined();
+			expect(newBranch?.worktreePath).toBe("/repo/.worktrees/external-new");
+		});
 	});
 
 	describe("refreshAllBranchStats — progressive loading", () => {
