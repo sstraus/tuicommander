@@ -24,6 +24,7 @@ interface RustAppConfig {
 	confirm_before_closing_tab: boolean;
 	max_tab_name_length: number;
 	split_tab_mode: string;
+	tab_ordering_mode: string;
 	auto_show_pr_popover: boolean;
 	prevent_sleep_when_busy: boolean;
 	auto_update_enabled: boolean;
@@ -255,6 +256,9 @@ function validateTerminalRenderer(value: string | null): TerminalRenderer {
 /** Split tab mode */
 export type SplitTabMode = "separate" | "unified";
 
+/** Tab ordering mode */
+export type TabOrderingMode = "grouped-by-type" | "terminals-first" | "free";
+
 /** Terminal renderer backend */
 export type TerminalRenderer = "webgl" | "canvas" | "native";
 
@@ -273,6 +277,7 @@ interface SettingsStoreState {
 	confirmBeforeClosingTab: boolean;
 	maxTabNameLength: number;
 	splitTabMode: SplitTabMode;
+	tabOrderingMode: TabOrderingMode;
 	autoShowPrPopover: boolean;
 	preventSleepWhenBusy: boolean;
 	autoUpdateEnabled: boolean;
@@ -313,6 +318,7 @@ function createSettingsStore() {
 		confirmBeforeClosingTab: true,
 		maxTabNameLength: 25,
 		splitTabMode: "separate",
+		tabOrderingMode: "grouped-by-type",
 		autoShowPrPopover: true,
 		preventSleepWhenBusy: false,
 		autoUpdateEnabled: true,
@@ -358,6 +364,7 @@ function createSettingsStore() {
 			confirm_before_closing_tab: state.confirmBeforeClosingTab,
 			max_tab_name_length: state.maxTabNameLength,
 			split_tab_mode: state.splitTabMode,
+			tab_ordering_mode: state.tabOrderingMode,
 			auto_show_pr_popover: state.autoShowPrPopover,
 			prevent_sleep_when_busy: state.preventSleepWhenBusy,
 			auto_update_enabled: state.autoUpdateEnabled,
@@ -428,6 +435,8 @@ function createSettingsStore() {
 				setState("confirmBeforeClosingTab", config.confirm_before_closing_tab ?? true);
 				setState("maxTabNameLength", config.max_tab_name_length || 25);
 				setState("splitTabMode", config.split_tab_mode === "unified" ? "unified" : "separate");
+				const tom = config.tab_ordering_mode;
+				setState("tabOrderingMode", tom === "terminals-first" || tom === "free" ? tom : "grouped-by-type");
 				setState("autoShowPrPopover", config.auto_show_pr_popover ?? true);
 				setState("preventSleepWhenBusy", config.prevent_sleep_when_busy ?? false);
 				setState("autoUpdateEnabled", config.auto_update_enabled ?? true);
@@ -510,6 +519,11 @@ function createSettingsStore() {
 		/** Set split tab mode preference */
 		setSplitTabMode(mode: SplitTabMode): void {
 			setState("splitTabMode", mode);
+			save();
+		},
+
+		setTabOrderingMode(mode: TabOrderingMode): void {
+			setState("tabOrderingMode", mode);
 			save();
 		},
 

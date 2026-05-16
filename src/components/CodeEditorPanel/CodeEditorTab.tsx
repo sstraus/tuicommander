@@ -3,8 +3,10 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirro
 import type { LanguageSupport } from "@codemirror/language";
 import { bracketMatching, foldGutter, foldKeymap, indentOnInput } from "@codemirror/language";
 import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
-import type { Extension } from "@codemirror/state";
+import { type Extension, StateEffect, StateField } from "@codemirror/state";
 import {
+	Decoration,
+	type DecorationSet,
 	crosshairCursor,
 	drawSelection,
 	dropCursor,
@@ -65,6 +67,79 @@ function wordAtCursor(view: EditorView): string | null {
 
 /** Large file threshold — skip syntax highlighting above this size */
 const LARGE_FILE_BYTES = 500 * 1024;
+
+// --- Cmd+Hover underline (VS Code-style go-to-definition hint) ---
+
+const setHoverLink = StateEffect.define<{ from: number; to: number } | null>();
+
+const hoverLinkMark = Decoration.mark({ class: "cm-hover-link" });
+
+const hoverLinkField = StateField.define<DecorationSet>({
+	create: () => Decoration.none,
+	update(decos, tr) {
+		for (const e of tr.effects) {
+			if (e.is(setHoverLink)) {
+				return e.value ? Decoration.set([hoverLinkMark.range(e.value.from, e.value.to)]) : Decoration.none;
+			}
+		}
+		return decos;
+	},
+	provide: (f) => EditorView.decorations.from(f),
+});
+
+const hoverLinkTheme = EditorView.baseTheme({
+	".cm-hover-link": {
+		textDecoration: "underline",
+		cursor: "pointer",
+		color: "var(--fg-link, #4fc1ff)",
+	},
+});
+
+function wordRangeAt(view: EditorView, pos: number): { from: number; to: number } | null {
+	const line = view.state.doc.lineAt(pos);
+	const text = line.text;
+	const col = pos - line.from;
+	const wordChars = /[\w$]/;
+	let start = col;
+	let end = col;
+	while (start > 0 && wordChars.test(text[start - 1])) start--;
+	while (end < text.length && wordChars.test(text[end])) end++;
+	if (start === end) return null;
+	return { from: line.from + start, to: line.from + end };
+}
+
+function hoverLinkHandlers(): Extension {
+	return EditorView.domEventHandlers({
+		mousemove(event: MouseEvent, view: EditorView) {
+			const modKey = isMacOS() ? event.metaKey : event.ctrlKey;
+			if (!modKey) {
+				if (view.state.field(hoverLinkField) !== Decoration.none) {
+					view.dispatch({ effects: setHoverLink.of(null) });
+				}
+				return false;
+			}
+			const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+			if (pos === null) {
+				view.dispatch({ effects: setHoverLink.of(null) });
+				return false;
+			}
+			const range = wordRangeAt(view, pos);
+			view.dispatch({ effects: setHoverLink.of(range) });
+			return false;
+		},
+		mouseleave(_event: MouseEvent, view: EditorView) {
+			view.dispatch({ effects: setHoverLink.of(null) });
+			return false;
+		},
+		keyup(event: KeyboardEvent, view: EditorView) {
+			const modKey = isMacOS() ? "Meta" : "Control";
+			if (event.key === modKey) {
+				view.dispatch({ effects: setHoverLink.of(null) });
+			}
+			return false;
+		},
+	});
+}
 
 export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 	const [langSupport, setLangSupport] = createSignal<LanguageSupport | null>(null);
@@ -250,6 +325,11 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 	);
 	createExtension(search());
 	createExtension(highlightSelectionMatches());
+
+	// Cmd+Hover underline (VS Code-style link hint)
+	createExtension(hoverLinkField);
+	createExtension(hoverLinkTheme);
+	createExtension(hoverLinkHandlers());
 
 	// Cmd+Click (Mac) / Ctrl+Click (other) → go to definition via mdkb
 	createExtension(
