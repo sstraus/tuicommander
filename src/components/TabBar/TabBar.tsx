@@ -444,9 +444,14 @@ export const TabBar: Component<TabBarProps> = (props) => {
 	const visibleEditIds = () => editorTabsStore.getVisibleIds(activeBranchKey());
 
 	const isGroupedMode = () => settingsStore.state.tabOrderingMode === "grouped-by-type";
+	const isFreeMode = () => settingsStore.state.tabOrderingMode === "free";
 
 	const mergedNonTerminalIds = () => {
 		if (isGroupedMode()) return [];
+		if (isFreeMode()) {
+			const allIds = new Set([...activeTerminals(), ...visibleDiffIds(), ...visibleMdIds(), ...visibleEditIds()]);
+			return tabOrderingStore.getOrdered(allIds);
+		}
 		const allIds = new Set([...visibleDiffIds(), ...visibleMdIds(), ...visibleEditIds()]);
 		return tabOrderingStore.getOrdered(allIds);
 	};
@@ -500,6 +505,8 @@ export const TabBar: Component<TabBarProps> = (props) => {
 					setDragOverSide(x < rect.left + rect.width / 2 ? "left" : "right");
 					if (isGroupedMode()) {
 						setDragInvalid(tabTypeOf(id) !== tabTypeOf(targetId));
+					} else if (isFreeMode()) {
+						setDragInvalid(false);
 					} else {
 						const srcType = tabTypeOf(id);
 						const tgtType = tabTypeOf(targetId);
@@ -520,7 +527,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
 					const termIds = activeTerminals();
 					const fromIndex = termIds.indexOf(sourceId);
 					const toIndex = termIds.indexOf(overId);
-					if (fromIndex !== -1 && toIndex !== -1) {
+					if (fromIndex !== -1 && toIndex !== -1 && !isFreeMode()) {
 						let adjustedTo = toIndex;
 						if (overSide === "left" && fromIndex < toIndex) adjustedTo--;
 						else if (overSide === "right" && fromIndex > toIndex) adjustedTo++;
@@ -540,11 +547,16 @@ export const TabBar: Component<TabBarProps> = (props) => {
 							editorTabsStore.reorderByIds(sourceId, overId, side);
 						}
 					} else {
-						const srcIsTerminal = termIds.includes(sourceId);
-						const tgtIsTerminal = termIds.includes(overId);
-						if (!srcIsTerminal && !tgtIsTerminal) {
-							const side = overSide === "left" ? "before" : "after";
-							tabOrderingStore.reorder(sourceId, overId, side);
+						const side = overSide === "left" ? "before" : "after";
+						tabOrderingStore.reorder(sourceId, overId, side);
+						if (fromIndex !== -1 && toIndex !== -1) {
+							let adjustedTo = toIndex;
+							if (overSide === "left" && fromIndex < toIndex) adjustedTo--;
+							else if (overSide === "right" && fromIndex > toIndex) adjustedTo++;
+							const clampedTo = Math.max(0, Math.min(adjustedTo, termIds.length - 1));
+							if (fromIndex !== clampedTo) {
+								props.onReorder?.(fromIndex, clampedTo);
+							}
 						}
 					}
 					resetDragState();
@@ -749,7 +761,8 @@ export const TabBar: Component<TabBarProps> = (props) => {
 				<div class={cx(s.fadeGradient, s.fadeLeft, canScrollLeft() && s.visible)} />
 
 				<div class={s.tabs} ref={tabsRef} onScroll={updateScrollState}>
-					{/* Terminal tabs */}
+					{/* Terminal tabs (not rendered here in free mode — included in merged list) */}
+					<Show when={!isFreeMode()}>
 					<For each={activeTerminals()}>
 						{(id, index) => {
 							const terminal = () => terminalsStore.get(id);
@@ -898,6 +911,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
 							);
 						}}
 					</For>
+					</Show>
 
 					{/* Non-terminal tabs: grouped mode renders 3 separate For blocks */}
 					<Show when={isGroupedMode()}>
@@ -1147,6 +1161,127 @@ export const TabBar: Component<TabBarProps> = (props) => {
 							const type = () => tabTypeOf(id);
 							return (
 								<Switch>
+									<Match when={type() === "terminal"}>
+										{(() => {
+											const terminal = () => terminalsStore.get(id);
+											const isActive = () => terminalsStore.state.activeId === id;
+											const isDetached = () => terminalsStore.isDetached(id);
+											const isBusy = () => terminalsStore.isBusy(id);
+											const isIdle = () => !isBusy() && terminal()?.shellState === "idle";
+											const isExited = () => terminal()?.shellState === "exited";
+											const isUnseen = () => !isActive() && terminal()?.unseen;
+											const awaitingInput = () => terminal()?.awaitingInput;
+											const isDragging = () => draggingId() === id;
+											const isDragOver = () => dragOverId() === id && draggingId() !== id;
+											const progress = () => terminal()?.progress;
+											const isRemote = () => terminal()?.isRemote;
+											const isEditing = () => editingId() === id;
+											const termIndex = () => activeTerminals().indexOf(id);
+
+											const handleTabClick = () => {
+												if (isDetached()) {
+													props.onFocusDetachedTab?.(id);
+												} else {
+													props.onTabSelect(id);
+												}
+											};
+
+											const handleCloseTab = (e: Event) => {
+												e.preventDefault();
+												e.stopPropagation();
+												props.onTabClose(id);
+											};
+
+											return (
+												<Show when={terminal()}>
+													<div
+														class={cx(
+															s.tab,
+															isActive() && !isDetached() && s.active,
+															isDetached() && s.detached,
+															awaitingInput() && s.awaitingInput,
+															awaitingInput() && AWAITING_CLASSES[awaitingInput()!],
+															!awaitingInput() && isBusy() && s.shellBusy,
+															!awaitingInput() && !isBusy() && isUnseen() && s.shellUnseen,
+															!awaitingInput() && isIdle() && !isUnseen() && s.shellIdle,
+															isExited() && s.shellExited,
+															isRemote() && s.remoteTab,
+															isDragging() && s.dragging,
+															isDragOver() && dragOverSide() === "left" && s.dragOverLeft,
+															isDragOver() && dragOverSide() === "right" && s.dragOverRight,
+															isDragOver() && dragInvalid() && s.dragInvalid,
+														)}
+														data-tab-id={id}
+														onClick={handleTabClick}
+														onAuxClick={(e) => {
+															if (e.button === 1) handleCloseTab(e);
+														}}
+														onContextMenu={(e) => openTabContextMenu(e, id)}
+														title={`${terminal()?.alias ?? `Terminal ${termIndex() + 1}`}${termIndex() < 9 ? ` (${keyFor(`switch-tab-${termIndex() + 1}`)})` : ""}`}
+														onMouseDown={(e) => !isEditing() && handleMouseDrag(e, id)}
+														onDblClick={(e) => {
+															e.stopPropagation();
+															setEditingId(id);
+														}}
+													>
+														<span class={s.tabIcon}>●</span>
+														<Show
+															when={isEditing()}
+															fallback={
+																<span class={s.tabName}>
+																	{terminal()?.name}
+																	<Show when={isDetached()}>
+																		<svg
+																			class={s.detachedIcon}
+																			viewBox="0 0 12 12"
+																			width="10"
+																			height="10"
+																			fill="none"
+																			stroke="currentColor"
+																			stroke-width="1.5"
+																		>
+																			<path d="M7 1h4v4M11 1L6 6M5 2H2v8h8V7" />
+																		</svg>
+																	</Show>
+																</span>
+															}
+														>
+															<input
+																class={s.tabNameInput}
+																type="text"
+																value={terminal()?.name || ""}
+																ref={(el) => {
+																	requestAnimationFrame(() => {
+																		el.focus();
+																		el.select();
+																	});
+																}}
+																onClick={(e) => e.stopPropagation()}
+																onBlur={(e) => commitRename(id, e.currentTarget)}
+																onKeyDown={(e) => {
+																	if (e.key === "Enter") {
+																		commitRename(id, e.currentTarget);
+																	} else if (e.key === "Escape") {
+																		setEditingId(null);
+																	}
+																}}
+															/>
+														</Show>
+														{progress() !== null && progress() !== undefined && (
+															<div class={s.progress} style={{ width: `${progress()}%` }} />
+														)}
+														<PanePositionIcon tabId={id} rects={paneRects()} />
+														<Show when={props.quickSwitcherActive && termIndex() < 9}>
+															<span class={s.shortcutBadge}>{keyFor(`switch-tab-${termIndex() + 1}`)}</span>
+														</Show>
+														<button class={s.tabClose} title={t("tabBar.close", "Close")} onClick={handleCloseTab}>
+															×
+														</button>
+													</div>
+												</Show>
+											);
+										})()}
+									</Match>
 									<Match when={type() === "diff"}>
 										{(() => {
 											const diffTab = () => diffTabsStore.get(id);
