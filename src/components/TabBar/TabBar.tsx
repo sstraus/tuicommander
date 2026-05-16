@@ -73,7 +73,7 @@ const AWAITING_CLASSES: Record<string, string> = {
 export interface TabBarProps {
 	quickSwitcherActive?: boolean;
 	onTabSelect: (id: string) => void;
-	onTabClose: (id: string) => void;
+	onTabClose: (id: string, skipConfirm?: boolean) => void;
 	onCloseOthers: (id: string) => void;
 	onCloseToRight: (id: string) => void;
 	onNewTab: () => void;
@@ -825,7 +825,11 @@ export const TabBar: Component<TabBarProps> = (props) => {
 										style={repoColor() ? ({ "--repo-color": repoColor() } as Record<string, string>) : undefined}
 										onClick={handleTabClick}
 										onAuxClick={(e) => {
-											if (e.button === 1) handleCloseTab(e);
+											if (e.button === 1) {
+												e.preventDefault();
+												e.stopPropagation();
+												props.onTabClose(id, true);
+											}
 										}}
 										onContextMenu={(e) => openTabContextMenu(e, id)}
 										title={`${terminal()?.alias ?? `Terminal ${index() + 1}`}${index() < 9 ? ` (${keyFor(`switch-tab-${index() + 1}`)})` : ""}`}
@@ -942,7 +946,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
 											if (e.button === 1) {
 												e.preventDefault();
 												diffTabsStore.remove(id);
-												props.onTabClose(id);
+												props.onTabClose(id, true);
 											}
 										}}
 										onContextMenu={(e) => openTabContextMenu(e, id)}
@@ -1020,7 +1024,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
 											if (e.button === 1) {
 												e.preventDefault();
 												mdTabsStore.remove(id);
-												props.onTabClose(id);
+												props.onTabClose(id, true);
 											}
 										}}
 										onContextMenu={(e) => openTabContextMenu(e, id)}
@@ -1109,7 +1113,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
 										onAuxClick={(e) => {
 											if (e.button === 1) {
 												e.preventDefault();
-												props.onTabClose(id);
+												props.onTabClose(id, true);
 											}
 										}}
 										onContextMenu={(e) => openTabContextMenu(e, id)}
@@ -1214,7 +1218,11 @@ export const TabBar: Component<TabBarProps> = (props) => {
 														data-tab-id={id}
 														onClick={handleTabClick}
 														onAuxClick={(e) => {
-															if (e.button === 1) handleCloseTab(e);
+															if (e.button === 1) {
+																e.preventDefault();
+																e.stopPropagation();
+																props.onTabClose(id, true);
+															}
 														}}
 														onContextMenu={(e) => openTabContextMenu(e, id)}
 														title={`${terminal()?.alias ?? `Terminal ${termIndex() + 1}`}${termIndex() < 9 ? ` (${keyFor(`switch-tab-${termIndex() + 1}`)})` : ""}`}
@@ -1307,7 +1315,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
 															if (e.button === 1) {
 																e.preventDefault();
 																diffTabsStore.remove(id);
-																props.onTabClose(id);
+																props.onTabClose(id, true);
 															}
 														}}
 														onContextMenu={(e) => openTabContextMenu(e, id)}
@@ -1368,7 +1376,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
 															if (e.button === 1) {
 																e.preventDefault();
 																mdTabsStore.remove(id);
-																props.onTabClose(id);
+																props.onTabClose(id, true);
 															}
 														}}
 														onContextMenu={(e) => openTabContextMenu(e, id)}
@@ -1437,7 +1445,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
 														onAuxClick={(e) => {
 															if (e.button === 1) {
 																e.preventDefault();
-																props.onTabClose(id);
+																props.onTabClose(id, true);
 															}
 														}}
 														onContextMenu={(e) => openTabContextMenu(e, id)}
