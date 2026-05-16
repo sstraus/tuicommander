@@ -890,7 +890,9 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 						<For each={breadcrumbs()}>
 							{(segment, index) => (
 								<>
-									<span class={s.breadcrumbSep}>/</span>
+									<Show when={index() > 0}>
+										<span class={s.breadcrumbSep}>/</span>
+									</Show>
 									<span
 										class={cx(s.breadcrumbSegment, index() === breadcrumbs().length - 1 && s.breadcrumbCurrent)}
 										onClick={() => handleBreadcrumbClick(index())}
