@@ -51,16 +51,14 @@
   flex: 1 1 0;
   min-width: 60px;
   overflow: hidden;
+  transition: color 600ms ease-out;
 }
 
 .infoPulse {
-  animation: statusPulse 600ms ease-out;
+  color: var(--accent);
+  transition: color 600ms ease-out;
 }
 
-@keyframes statusPulse {
-  0% { color: var(--accent); }
-  100% { color: var(--fg-secondary); }
-}
 
 /* Pendulum ticker for overflowing notifications */
 .infoTicker {
