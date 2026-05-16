@@ -967,7 +967,6 @@ impl TerminalGrid {
         let grid = self.term.grid();
         let history_size = grid.history_size();
         let num_cols = grid.columns();
-        let mut lines = Vec::new();
 
         let (r0, c0, r1, c1) =
             if start_row < end_row || (start_row == end_row && start_col <= end_col) {
@@ -976,10 +975,12 @@ impl TerminalGrid {
                 (end_row, end_col, start_row, start_col)
             };
 
+        let mut result = String::new();
+
         for abs_row in r0..=r1 {
             let line = Line(abs_row as i32 - history_size as i32);
             if line < grid.topmost_line() || line > grid.bottommost_line() {
-                lines.push(String::new());
+                result.push('\n');
                 continue;
             }
 
@@ -1003,14 +1004,19 @@ impl TerminalGrid {
             }
             let trimmed_len = text.trim_end().len();
             text.truncate(trimmed_len);
-            lines.push(text);
+            result.push_str(&text);
+
+            if abs_row < r1 {
+                let last_col = num_cols.saturating_sub(1);
+                let is_wrapped = grid[line][Column(last_col)].flags.contains(Flags::WRAPLINE);
+                if !is_wrapped {
+                    result.push('\n');
+                }
+            }
         }
 
-        while lines.last().is_some_and(|l| l.is_empty()) {
-            lines.pop();
-        }
-
-        lines.join("\n")
+        let trimmed = result.trim_end_matches('\n');
+        trimmed.to_owned()
     }
 
     /// Serialize dirty rows as a compact binary frame.
@@ -1824,6 +1830,26 @@ mod tests {
         // end before start — should still work
         let text = grid.get_selection_text(0, 10, 0, 6);
         assert_eq!(text, "world");
+    }
+
+    #[test]
+    fn get_selection_text_unwraps_soft_wrapped_lines() {
+        // 10-col terminal: "abcdefghijklmno" wraps at col 10 → two visual rows, one logical line
+        let mut grid = TerminalGrid::new(3, 10, 0);
+        let _ = grid.process(b"abcdefghijklmno");
+        // Row 0 has WRAPLINE (cols 0-9 = "abcdefghij"), row 1 = "klmno"
+        let text = grid.get_selection_text(0, 0, 1, 4);
+        assert_eq!(text, "abcdefghijklmno");
+    }
+
+    #[test]
+    fn get_selection_text_mixed_wrap_and_newline() {
+        // 10-col terminal: wrap + explicit newline
+        let mut grid = TerminalGrid::new(5, 10, 0);
+        let _ = grid.process(b"abcdefghijklmno\r\nsecond");
+        // Row 0: "abcdefghij" (WRAPLINE), Row 1: "klmno" (no wrap), Row 2: "second"
+        let text = grid.get_selection_text(0, 0, 2, 5);
+        assert_eq!(text, "abcdefghijklmno\nsecond");
     }
 
     // --- Scrollback reading tests ---

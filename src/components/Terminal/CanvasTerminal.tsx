@@ -538,6 +538,8 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			lines.pop();
 		}
 
+		// DEFERRED (2026-05-16) — JS fallback doesn't unwrap soft-wrapped lines (no WRAPLINE flag
+		// available client-side). Primary path uses Rust terminal_get_selection_text which handles it.
 		return lines.join("\n");
 	}
 
