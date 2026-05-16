@@ -113,6 +113,7 @@ impl<T: Default> Row<T> {
         }
 
         self.occ = 0;
+        self.reflow_wrap = false;
     }
 }
 

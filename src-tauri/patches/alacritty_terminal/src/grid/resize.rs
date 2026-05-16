@@ -224,6 +224,7 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
                 let line_delta = self.cursor.point.line - target.line;
 
                 if row.is_clear() {
+                    last_row.reflow_wrap = row.reflow_wrap;
                     if line_delta != 0 {
                         continue;
                     }
@@ -237,6 +238,8 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
 
                 cursor_line_delta += line_delta.0 as usize;
             } else if row.is_clear() {
+                last_row.reflow_wrap = row.reflow_wrap;
+
                 if i < self.display_offset {
                     // Since we removed a line, rotate down the viewport.
                     self.display_offset = self.display_offset.saturating_sub(1);
@@ -436,7 +439,6 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
                         wrapped.resize_with(columns, T::default);
                     }
                     row = Row::from_vec(wrapped, occ);
-                    row.reflow_wrap = true;
 
                     if i < self.display_offset {
                         // Since we added a new line, rotate up the viewport.
