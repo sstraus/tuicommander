@@ -595,7 +595,9 @@ const CategoryGroup: Component<{ category: string; prompts: SavedPrompt[]; headl
 				<span class={sp.categoryCount}>{props.prompts.length}</span>
 			</div>
 			<Show when={open()}>
-				<For each={props.prompts}>{(prompt) => <PromptRow prompt={prompt} headlessAgents={props.headlessAgents} />}</For>
+				<For each={props.prompts}>
+					{(prompt) => <PromptRow prompt={prompt} headlessAgents={props.headlessAgents} />}
+				</For>
 			</Show>
 		</>
 	);
@@ -660,7 +662,9 @@ export const SmartPromptsTab: Component = () => {
 					value={agentConfigsStore.getHeadlessAgent() ?? ""}
 					onChange={(e) => {
 						const val = e.currentTarget.value;
-						agentConfigsStore.setHeadlessAgent(val && AGENT_TYPES.includes(val as AgentType) ? (val as AgentType) : null);
+						agentConfigsStore.setHeadlessAgent(
+							val && AGENT_TYPES.includes(val as AgentType) ? (val as AgentType) : null,
+						);
 					}}
 				>
 					<option value="">— Not configured —</option>
@@ -693,7 +697,9 @@ export const SmartPromptsTab: Component = () => {
 			</div>
 
 			<div class={sp.promptList}>
-				<For each={orderedCategories()}>{(cat) => <CategoryGroup category={cat} prompts={groups().get(cat)!} headlessAgents={headlessAgents()} />}</For>
+				<For each={orderedCategories()}>
+					{(cat) => <CategoryGroup category={cat} prompts={groups().get(cat)!} headlessAgents={headlessAgents()} />}
+				</For>
 			</div>
 
 			<button class={sp.addBtn} onClick={handleNewPrompt}>

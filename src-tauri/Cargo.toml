@@ -10,7 +10,12 @@ edition = "2024"
 default-run = "tuicommander"
 
 [profile.release]
-incremental = true
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"
+
+[profile.release.package."*"]
+codegen-units = 16
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
@@ -125,7 +130,7 @@ tauri-plugin-process = { version = "2", optional = true }
 tauri-plugin-deep-link = { version = "2", optional = true }
 tauri-plugin-clipboard-manager = { version = "2", optional = true }
 tauri-plugin-global-shortcut = { version = "2", optional = true }
-tauri-plugin-drag = { version = "2", optional = true }
+drag = { version = "2.1", features = ["serde"], optional = true }
 zip = "8"
 glob = "0.3"
 ignore = "0.4"
@@ -174,7 +179,7 @@ desktop = [
     "dep:tauri-plugin-deep-link",
     "dep:tauri-plugin-clipboard-manager",
     "dep:tauri-plugin-global-shortcut",
-    "dep:tauri-plugin-drag",
+    "dep:drag",
     "dep:whisper-rs",
     "dep:cpal",
     "dep:rodio",

@@ -1428,12 +1428,16 @@ mod tests {
         #[test]
         fn data_stats_json_is_not_code() {
             // Under <plugin_id>/data/ — runtime data, must NOT trigger hot-reload
-            assert!(!is_plugin_code_change(Path::new("my-plugin/data/stats.json")));
+            assert!(!is_plugin_code_change(Path::new(
+                "my-plugin/data/stats.json"
+            )));
         }
 
         #[test]
         fn data_subdir_any_file_is_not_code() {
-            assert!(!is_plugin_code_change(Path::new("my-plugin/data/sub/counts.json")));
+            assert!(!is_plugin_code_change(Path::new(
+                "my-plugin/data/sub/counts.json"
+            )));
         }
 
         #[test]

@@ -226,6 +226,8 @@ async fn poll_loop(state: Arc<AppState>, handle: AppHandle, mut rx: mpsc::Receiv
     // Pending on-demand poll: set by PollRepo/SetIssueFilter to fire the batch
     // early rather than spawning a separate single-repo API call.
     let mut pending_poll_at: Option<tokio::time::Instant> = None;
+    // Scoped paths for on-demand polls (PollRepo). Empty = use all paths.
+    let mut pending_poll_paths: Vec<String> = Vec::new();
 
     let mut interval = tokio::time::interval(current_interval(visible, ps.fail_count, u32::MAX));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -243,7 +245,9 @@ async fn poll_loop(state: Arc<AppState>, handle: AppHandle, mut rx: mpsc::Receiv
             _ = pending_sleep => {
                 pending_poll_at = None;
                 let rate_budget = state.github_rate_limit_remaining.load(std::sync::atomic::Ordering::Relaxed);
-                poll_batch(&state, &handle, &paths, false, &issue_filter, pr_hide_drafts, &mut ps, false).await;
+                let batch = if pending_poll_paths.is_empty() { &paths } else { &pending_poll_paths };
+                poll_batch(&state, &handle, batch, false, &issue_filter, pr_hide_drafts, &mut ps, true).await;
+                pending_poll_paths.clear();
                 interval = tokio::time::interval(current_interval(visible, ps.fail_count, rate_budget));
                 interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             }
@@ -259,6 +263,7 @@ async fn poll_loop(state: Arc<AppState>, handle: AppHandle, mut rx: mpsc::Receiv
                 startup = false;
                 poll_cycle = poll_cycle.wrapping_add(1);
                 pending_poll_at = None;
+                pending_poll_paths.clear();
                 interval = tokio::time::interval(current_interval(visible, ps.fail_count, rate_budget));
                 interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             }
@@ -272,10 +277,10 @@ async fn poll_loop(state: Arc<AppState>, handle: AppHandle, mut rx: mpsc::Receiv
                             pending_poll_at = Some(tokio::time::Instant::now());
                         }
                     }
-                    Some(PollerCmd::PollRepo(_path)) => {
-                        // Coalesce into the next batch rather than firing a separate
-                        // single-repo API call. Advance the timer by DEBOUNCE_WINDOW
-                        // so rapid UI actions (merge, approve) still get a quick refresh.
+                    Some(PollerCmd::PollRepo(path)) => {
+                        if !pending_poll_paths.contains(&path) {
+                            pending_poll_paths.push(path);
+                        }
                         let at = tokio::time::Instant::now() + DEBOUNCE_WINDOW;
                         if pending_poll_at.is_none_or(|existing| at < existing) {
                             pending_poll_at = Some(at);

@@ -134,8 +134,7 @@ export function useSmartPrompts() {
 					};
 				return { ok: true };
 			}
-			if (!resolved.agent)
-				return { ok: false, reason: "No headless agent configured — set one in Settings → Agents" };
+			if (!resolved.agent) return { ok: false, reason: "No headless agent configured — set one in Settings → Agents" };
 			return { ok: true };
 		}
 

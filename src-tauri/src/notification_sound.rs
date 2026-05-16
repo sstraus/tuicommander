@@ -252,9 +252,7 @@ pub(crate) struct AudioOutputDevice {
 
 pub(crate) fn list_output_devices() -> Vec<AudioOutputDevice> {
     let host = rodio::cpal::default_host();
-    let default_name: Option<String> = host
-        .default_output_device()
-        .and_then(|d| d.name().ok());
+    let default_name: Option<String> = host.default_output_device().and_then(|d| d.name().ok());
 
     host.output_devices()
         .map(|devices| {
@@ -281,9 +279,10 @@ fn resolve_output_stream(
 ) -> Option<(OutputStream, rodio::OutputStreamHandle)> {
     if let Some(name) = device_name {
         let host = rodio::cpal::default_host();
-        let device = host.output_devices().ok()?.find(|d| {
-            d.name().map(|n| n == name).unwrap_or(false)
-        });
+        let device = host
+            .output_devices()
+            .ok()?
+            .find(|d| d.name().map(|n| n == name).unwrap_or(false));
         if let Some(dev) = device {
             match OutputStream::try_from_device(&dev) {
                 Ok(pair) => return Some(pair),

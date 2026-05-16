@@ -205,9 +205,7 @@ fn mdkb_asset_name() -> &'static str {
 #[tauri::command]
 pub async fn install_mdkb(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     let asset = mdkb_asset_name();
-    let url = format!(
-        "https://github.com/sstraus/mdkb/releases/latest/download/{asset}"
-    );
+    let url = format!("https://github.com/sstraus/mdkb/releases/latest/download/{asset}");
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(120))
@@ -249,8 +247,7 @@ pub async fn install_mdkb(state: State<'_, Arc<AppState>>) -> Result<String, Str
         let tmp_dir = std::env::temp_dir().join("mdkb-install");
         let _ = std::fs::create_dir_all(&tmp_dir);
         let staged = tmp_dir.join(asset);
-        std::fs::write(&staged, &bytes)
-            .map_err(|e| format!("Failed to stage binary: {e}"))?;
+        std::fs::write(&staged, &bytes).map_err(|e| format!("Failed to stage binary: {e}"))?;
 
         crate::tuic_cli::copy_with_elevation(
             &staged.to_string_lossy(),
@@ -286,11 +283,20 @@ pub async fn uninstall_mdkb(state: State<'_, Arc<AppState>>) -> Result<(), Strin
 
     // Refuse to uninstall if managed by a package manager
     let path_str = actual_path.to_string_lossy();
-    if path_str.contains("/homebrew/") || path_str.contains("/Cellar/") || path_str.contains("/linuxbrew/") {
-        return Err("mdkb appears to be installed via Homebrew. Use `brew uninstall mdkb` instead.".to_string());
+    if path_str.contains("/homebrew/")
+        || path_str.contains("/Cellar/")
+        || path_str.contains("/linuxbrew/")
+    {
+        return Err(
+            "mdkb appears to be installed via Homebrew. Use `brew uninstall mdkb` instead."
+                .to_string(),
+        );
     }
     if path_str.contains("/.cargo/") {
-        return Err("mdkb appears to be installed via cargo. Use `cargo uninstall mdkb` instead.".to_string());
+        return Err(
+            "mdkb appears to be installed via cargo. Use `cargo uninstall mdkb` instead."
+                .to_string(),
+        );
     }
 
     if std::fs::remove_file(&actual_path).is_err() {

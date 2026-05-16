@@ -68,9 +68,9 @@ vi.mock("../usePty", () => ({
 
 import { agentConfigsStore } from "../../stores/agentConfigs";
 import { appLogger } from "../../stores/appLogger";
+import type { SavedPrompt } from "../../stores/promptLibrary";
 import { providerRegistryStore } from "../../stores/providerRegistry";
 import { useSmartPrompts } from "../useSmartPrompts";
-import type { SavedPrompt } from "../../stores/promptLibrary";
 
 const mockedGetHeadlessAgent = vi.mocked(agentConfigsStore.getHeadlessAgent);
 const mockedGetHeadlessTemplate = vi.mocked(agentConfigsStore.getHeadlessTemplate);
@@ -154,10 +154,7 @@ describe("resolveHeadlessAgent — preferred agent with no template", () => {
 		mockedGetHeadlessAgent.mockReturnValue("gemini");
 		const { canExecute } = useSmartPrompts();
 		canExecute(makePrompt({ preferredAgent: "claude" }));
-		expect(mockedWarn).toHaveBeenCalledWith(
-			"prompts",
-			expect.stringContaining("claude"),
-		);
+		expect(mockedWarn).toHaveBeenCalledWith("prompts", expect.stringContaining("claude"));
 	});
 
 	it("returns ok=false when preferred has no template and global is null", () => {

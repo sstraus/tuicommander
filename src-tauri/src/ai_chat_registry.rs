@@ -349,7 +349,6 @@ pub(crate) async fn chat_unsubscribe(
     Ok(())
 }
 
-
 // Expose ConversationState fields for update closures in other modules
 #[allow(dead_code)]
 impl ConversationState {

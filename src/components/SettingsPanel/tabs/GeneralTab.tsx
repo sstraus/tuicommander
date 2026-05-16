@@ -191,9 +191,7 @@ export const GeneralTab: Component = () => {
 								path: mdkbStatus()!.binaryPath ?? "unknown",
 							})}
 							{mdkbStatus()!.version && (
-								<span style={{ "margin-left": "8px", color: "var(--fg-muted)" }}>
-									v{mdkbStatus()!.version}
-								</span>
+								<span style={{ "margin-left": "8px", color: "var(--fg-muted)" }}>v{mdkbStatus()!.version}</span>
 							)}
 						</p>
 						<button class={s.testBtn} onClick={handleUninstallMdkb} style={{ "margin-top": "8px" }}>

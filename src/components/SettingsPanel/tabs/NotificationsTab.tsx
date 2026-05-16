@@ -1,4 +1,4 @@
-import { type Component, For, Show, createResource } from "solid-js";
+import { type Component, createResource, For, Show } from "solid-js";
 import { t } from "../../../i18n";
 import { invoke } from "../../../invoke";
 import type { NotificationSound } from "../../../notifications";
@@ -140,16 +140,13 @@ export const NotificationsTab: Component = () => {
 							<For each={devices()}>
 								{(device) => (
 									<option value={device.name}>
-										{device.name}{device.is_default ? ` (${t("notifications.option.currentDefault", "current default")})` : ""}
+										{device.name}
+										{device.is_default ? ` (${t("notifications.option.currentDefault", "current default")})` : ""}
 									</option>
 								)}
 							</For>
 						</select>
-						<button
-							class={s.testBtn}
-							style={{ "margin-top": "6px" }}
-							onClick={refetchDevices}
-						>
+						<button class={s.testBtn} style={{ "margin-top": "6px" }} onClick={refetchDevices}>
 							{t("notifications.btn.refreshDevices", "Refresh")}
 						</button>
 					</div>

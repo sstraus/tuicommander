@@ -83,13 +83,13 @@ export const HtmlPreviewTab: Component<HtmlPreviewTabProps> = (props) => {
 			: await invoke<string>("read_external_file", { path: filePath });
 	};
 
-	// Load text content for html/text kinds
+	// Load text content for plain-text previews (HTML uses src= via asset protocol)
 	createEffect(() => {
 		const { repoPath, filePath, fsRoot } = props.tab;
 		void (repoPath ? repositoriesStore.getRevision(repoPath) : 0);
 		const k = kind();
 
-		if (!filePath || (k !== "html" && k !== "text")) {
+		if (!filePath || k !== "text") {
 			setContent("");
 			return;
 		}
@@ -158,7 +158,7 @@ export const HtmlPreviewTab: Component<HtmlPreviewTabProps> = (props) => {
 						<iframe
 							class={s.iframe}
 							sandbox="allow-scripts allow-same-origin"
-							srcdoc={content()}
+							src={assetUrl()}
 							title={props.tab.fileName}
 							onLoad={handleIframeLoad}
 						/>
