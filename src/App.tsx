@@ -510,7 +510,9 @@ const App: Component = () => {
 	{
 		let unlisten: (() => void) | undefined;
 		listen<string>("panel-window-closed", (event) => {
-			uiStore.clearDetached(event.payload);
+			const panelId = event.payload;
+			uiStore.clearDetached(panelId);
+			panelRegistry[panelId]?.toggle?.();
 		}).then((fn) => {
 			unlisten = fn;
 		});
@@ -2387,9 +2389,11 @@ const App: Component = () => {
 			/>
 
 			{/* Activity dashboard */}
-			<Suspense>
-				<ActivityDashboard onSelect={terminalLifecycle.handleTerminalSelect} />
-			</Suspense>
+			<Show when={!uiStore.isDetached("activity")}>
+				<Suspense>
+					<ActivityDashboard onSelect={terminalLifecycle.handleTerminalSelect} />
+				</Suspense>
+			</Show>
 
 			{/* SSH Tunnels panel (experimental) */}
 			<Show when={settingsStore.state.experimentalFeaturesEnabled}>
