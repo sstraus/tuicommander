@@ -127,15 +127,16 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
         };
 
         // Check if a row needs to be unwrapped (joined with the row above).
-        // Only merge rows whose WRAPLINE was set by a prior shrink_columns
-        // (reflow_wrap=true), not stale natural terminal wraps.
+        // Screen rows merge on any WRAPLINE (standard terminal behavior — the
+        // shell expects this after SIGWINCH). History rows require reflow_wrap
+        // to avoid merging stale wraps from previous widths.
         let should_reflow = |row: &Row<T>, buf_idx: usize| -> bool {
             let len = Column(row.len());
             reflow_for(buf_idx)
                 && len.0 > 0
                 && len < columns
                 && row[len - 1].flags().contains(Flags::WRAPLINE)
-                && row.reflow_wrap
+                && (buf_idx < screen_lines || row.reflow_wrap)
         };
 
         self.columns = columns;
