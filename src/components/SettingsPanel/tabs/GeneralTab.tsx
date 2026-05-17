@@ -28,6 +28,7 @@ export const GeneralTab: Component = () => {
 	const [cliInstalling, setCliInstalling] = createSignal(false);
 	const [mdkbStatus, setMdkbStatus] = createSignal<MdkbStatus | null>(null);
 	const [mdkbInstalling, setMdkbInstalling] = createSignal(false);
+	const [mdkbError, setMdkbError] = createSignal<string | null>(null);
 
 	const refreshCliStatus = async () => {
 		if (!isTauri()) return;
@@ -88,10 +89,13 @@ export const GeneralTab: Component = () => {
 	};
 
 	const handleUninstallMdkb = async () => {
+		setMdkbError(null);
 		try {
 			await invoke("uninstall_mdkb");
 			await refreshMdkbStatus();
 		} catch (err) {
+			const msg = typeof err === "string" ? err : String(err);
+			setMdkbError(msg);
 			appLogger.error("app", "Failed to uninstall mdkb", err);
 		}
 	};
@@ -116,7 +120,18 @@ export const GeneralTab: Component = () => {
 			/>
 
 			<Show when={isTauri() && cliStatus()}>
-				<h3>{t("general.heading.cli", "Command Line Interface")}</h3>
+				<h3>
+					{t("general.heading.cli", "TUIC CLI")}
+					<span class={s.infoBadge}>
+						?
+						<span class={s.infoBadgeTip}>
+							{t(
+								"general.hint.cliInfo",
+								"The TUIC CLI lets you control TUICommander from any terminal or script. Open files and URLs as tabs, manage PTY sessions (create, list, send input, read output), and query repository status. Useful for scripting automation.",
+							)}
+						</span>
+					</span>
+				</h3>
 
 				<div class={s.group}>
 					<Show
@@ -126,7 +141,7 @@ export const GeneralTab: Component = () => {
 								<p class={s.hint}>
 									{t(
 										"general.hint.cliNotInstalled",
-										"Install the tuic command to control TUICommander from the terminal. Open files, manage sessions, and use it as a tmux replacement.",
+										"Install the TUIC CLI to control TUICommander from any terminal or script. Open files and URLs as tabs, manage PTY sessions, and query repository status. Useful for scripting automation.",
 									)}
 								</p>
 								<button
@@ -137,7 +152,7 @@ export const GeneralTab: Component = () => {
 								>
 									{cliInstalling()
 										? t("general.btn.installing", "Installing...")
-										: t("general.btn.installCli", "Install tuic CLI")}
+										: t("general.btn.installCli", "Install TUIC CLI")}
 								</button>
 							</>
 						}
@@ -160,7 +175,18 @@ export const GeneralTab: Component = () => {
 			</Show>
 
 			<Show when={isTauri()}>
-				<h3>{t("general.heading.codeIntelligence", "Code Intelligence")}</h3>
+				<h3>
+					{t("general.heading.codeIntelligence", "Code Intelligence")}
+					<span class={s.infoBadge}>
+						?
+						<span class={s.infoBadgeTip}>
+							{t(
+								"general.hint.codeIntelligenceInfo",
+								"Integrates with MDKB to provide code navigation features in the editor: Cmd+Click go-to-definition, Shift+F12 find references, and symbol outline. Also serves as a persistent memory manager for AI agents, fully integrated with TUICommander. MDKB indexes your repositories and exposes a local daemon for fast lookups.",
+							)}
+						</span>
+					</span>
+				</h3>
 
 				<div class={s.group}>
 					<Show
@@ -170,7 +196,7 @@ export const GeneralTab: Component = () => {
 								<p class={s.hint}>
 									{t(
 										"general.hint.mdkbNotInstalled",
-										"Install mdkb to enable outline, go-to-definition, and find references in the code editor.",
+										"Install MDKB to enable outline, go-to-definition, and find references in the code editor.",
 									)}
 								</p>
 								<button
@@ -181,7 +207,7 @@ export const GeneralTab: Component = () => {
 								>
 									{mdkbInstalling()
 										? t("general.btn.installing", "Installing...")
-										: t("general.btn.installMdkb", "Install mdkb")}
+										: t("general.btn.installMdkb", "Install MDKB")}
 								</button>
 							</>
 						}
@@ -197,6 +223,11 @@ export const GeneralTab: Component = () => {
 						<button class={s.testBtn} onClick={handleUninstallMdkb} style={{ "margin-top": "8px" }}>
 							{t("general.btn.uninstallMdkb", "Uninstall")}
 						</button>
+						<Show when={mdkbError()}>
+							<p class={s.hint} style={{ color: "var(--error)" }}>
+								{mdkbError()}
+							</p>
+						</Show>
 					</Show>
 				</div>
 			</Show>
@@ -355,16 +386,6 @@ export const GeneralTab: Component = () => {
 					hint={t(
 						"general.hint.aiWatchers",
 						"Enable terminal watchers that trigger AI actions on shell events (idle, busy, errors).",
-					)}
-				/>
-
-				<SettingToggle
-					checked={settingsStore.state.scrollbackReflow}
-					onChange={(v) => settingsStore.setScrollbackReflow(v)}
-					label={t("general.toggle.scrollbackReflow", "Scrollback reflow")}
-					hint={t(
-						"general.hint.scrollbackReflow",
-						"Reflow scrollback history when the terminal width changes. Keeps history readable after opening/closing side panels. New terminals only.",
 					)}
 				/>
 			</Show>
