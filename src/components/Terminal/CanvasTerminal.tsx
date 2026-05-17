@@ -37,6 +37,7 @@ export type { CellMetrics, CursorShape, DecodedFrame };
 export interface CanvasTerminalRef {
 	focus: () => void;
 	refresh: () => void;
+	resubscribe: () => Promise<void>;
 	getSelectionText: () => string;
 	searchFind: (query: string) => Promise<{ index: number; count: number }>;
 	searchNext: () => { index: number; count: number };
@@ -3117,6 +3118,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				lastDisplayOffset = -1;
 				remeasure();
 				invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(ipcErr("terminal_request_frame"));
+			},
+			resubscribe: async () => {
+				await transport?.resubscribe();
 			},
 			searchFind: async (query: string) => {
 				if (!query || !invokeRef) {

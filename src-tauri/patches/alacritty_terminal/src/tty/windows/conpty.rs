@@ -54,7 +54,7 @@ impl ConptyApi {
             Some(conpty) => {
                 info!("Using conpty.dll for pseudoconsole");
                 conpty
-            },
+            }
             None => {
                 // Cannot load conpty.dll - use the standard Windows API.
                 info!("Using Windows API for pseudoconsole");
@@ -63,7 +63,7 @@ impl ConptyApi {
                     resize: ResizePseudoConsole,
                     close: ClosePseudoConsole,
                 }
-            },
+            }
         }
     }
 
@@ -210,7 +210,7 @@ pub fn new(config: &Options, window_size: WindowSize) -> Result<Pty> {
         Some(custom_env_block) => {
             creation_flags |= CREATE_UNICODE_ENVIRONMENT;
             custom_env_block.as_ptr() as *mut std::ffi::c_void
-        },
+        }
         None => ptr::null_mut(),
     };
 
@@ -238,7 +238,10 @@ pub fn new(config: &Options, window_size: WindowSize) -> Result<Pty> {
     let conout = UnblockedReader::new(conout, PIPE_CAPACITY);
 
     let child_watcher = ChildExitWatcher::new(proc_info.hProcess)?;
-    let conpty = Conpty { handle: pty_handle as HPCON, api };
+    let conpty = Conpty {
+        handle: pty_handle as HPCON,
+        api,
+    };
 
     Ok(Pty::new(conpty, conout, conin, child_watcher))
 }
@@ -311,6 +314,9 @@ impl From<WindowSize> for COORD {
     fn from(window_size: WindowSize) -> Self {
         let lines = window_size.num_lines;
         let columns = window_size.num_cols;
-        COORD { X: columns as i16, Y: lines as i16 }
+        COORD {
+            X: columns as i16,
+            Y: lines as i16,
+        }
     }
 }

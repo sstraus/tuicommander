@@ -144,11 +144,13 @@ describe("SettingsPanel", () => {
 		// Default is General (Git Integration moved to GitHub tab)
 		const headings = container.querySelectorAll(".section h3");
 		expect(headings.length).toBeGreaterThanOrEqual(5);
-		expect(headings[0]!.textContent).toBe("General");
-		expect(headings[1]!.textContent).toBe("Confirmations");
-		expect(headings[2]!.textContent).toBe("Terminal");
-		expect(headings[3]!.textContent).toBe("Power Management");
-		expect(headings[4]!.textContent).toBe("Updates");
+		// Use childNodes[0] to get heading text without tooltip content
+		const headingTexts = Array.from(headings).map((h) => h.childNodes[0]?.textContent?.trim() ?? "");
+		expect(headingTexts).toContain("General");
+		expect(headingTexts).toContain("Confirmations");
+		expect(headingTexts).toContain("Terminal");
+		expect(headingTexts).toContain("Power Management");
+		expect(headingTexts).toContain("Updates");
 
 		// Click Notifications nav item
 		const navItems = container.querySelectorAll(".navItem");

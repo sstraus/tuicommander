@@ -1696,55 +1696,66 @@ impl ChunkProcessor {
         // Feed raw data (post-kitty-strip) into VT100 log buffer.
         // Also capture the post-process `total_lines` and `oldest_offset` so
         // we can emit a throttled growth/rotation event for the scrollback overlay.
-        let (changed_rows, vt_log_total, vt_log_oldest, term_events, screen_cache, cursor_row) =
-            if let Some(vt_log) = state.vt_log_buffers.get(session_id) {
-                let mut vt = vt_log.lock();
-                let changed = vt.process(data.as_bytes());
-                let total = vt.total_lines();
-                let oldest = vt.oldest_offset();
-                let tevts = vt.grid_drain_events();
+        let (
+            changed_rows,
+            vt_log_total,
+            vt_log_oldest,
+            term_events,
+            screen_cache,
+            cursor_row,
+            pre_filter_has_spinner,
+        ) = if let Some(vt_log) = state.vt_log_buffers.get(session_id) {
+            let mut vt = vt_log.lock();
+            let changed = vt.process(data.as_bytes());
+            let total = vt.total_lines();
+            let oldest = vt.oldest_offset();
+            let tevts = vt.grid_drain_events();
 
-                // Filter out changed rows below the input area border (horizontal rule).
-                // Claude Code (and similar agents) render a quota/budget status bar below
-                // the input box separator. Those rows are cosmetic chrome — processing them
-                // resets the silence timer and causes false busy→idle→question transitions.
-                //
-                // Use screen_rows_ref() to avoid cloning prev_rows for the chrome cutoff
-                // check. The owned snapshot is captured once below for slash-menu/choice-prompt
-                // parsing that happens after the lock is released.
-                let changed = if !changed.is_empty() {
-                    if let Some(screen) = vt.screen_rows_ref() {
-                        let refs: Vec<&str> = screen.iter().map(|s| s.as_str()).collect();
-                        if let Some(cutoff) = crate::chrome::find_chrome_cutoff(&refs) {
-                            changed
-                                .into_iter()
-                                .filter(|r| r.row_index < cutoff)
-                                .collect()
-                        } else {
-                            changed
-                        }
+            // Filter out changed rows below the input area border (horizontal rule).
+            // Claude Code (and similar agents) render a quota/budget status bar below
+            // the input box separator. Those rows are cosmetic chrome — processing them
+            // resets the silence timer and causes false busy→idle→question transitions.
+            //
+            // Use screen_rows_ref() to avoid cloning prev_rows for the chrome cutoff
+            // check. The owned snapshot is captured once below for slash-menu/choice-prompt
+            // parsing that happens after the lock is released.
+            let pre_filter_has_spinner = changed
+                .iter()
+                .any(|r| crate::chrome::is_spinner_row(&r.text));
+            let changed = if !changed.is_empty() {
+                if let Some(screen) = vt.screen_rows_ref() {
+                    let refs: Vec<&str> = screen.iter().map(|s| s.as_str()).collect();
+                    if let Some(cutoff) = crate::chrome::find_chrome_cutoff(&refs) {
+                        changed
+                            .into_iter()
+                            .filter(|r| r.row_index < cutoff)
+                            .collect()
                     } else {
                         changed
                     }
                 } else {
                     changed
-                };
-
-                // Single owned snapshot for downstream parsers (slash-menu, choice-prompt).
-                let screen = vt.screen_rows();
-                let cursor_row = vt.cursor_point().0;
-
-                (
-                    changed,
-                    Some(total),
-                    Some(oldest),
-                    tevts,
-                    Some(screen),
-                    cursor_row,
-                )
+                }
             } else {
-                (Vec::new(), None, None, Vec::new(), None, 0)
+                changed
             };
+
+            // Single owned snapshot for downstream parsers (slash-menu, choice-prompt).
+            let screen = vt.screen_rows();
+            let cursor_row = vt.cursor_point().0;
+
+            (
+                changed,
+                Some(total),
+                Some(oldest),
+                tevts,
+                Some(screen),
+                cursor_row,
+                pre_filter_has_spinner,
+            )
+        } else {
+            (Vec::new(), None, None, Vec::new(), None, 0, false)
+        };
 
         // Emit scrollback-overlay growth/rotation event (throttled to 100ms).
         // Frontend listens to `pty-vt-log-total-{session_id}` and updates
@@ -2184,9 +2195,10 @@ impl ChunkProcessor {
         // alive even though they are chrome-only — keeping the timestamp fresh
         // prevents should_transition_idle from firing mid-think.
         let has_spinner = chrome_only
-            && changed_rows
-                .iter()
-                .any(|r| crate::chrome::is_spinner_row(&r.text));
+            && (pre_filter_has_spinner
+                || changed_rows
+                    .iter()
+                    .any(|r| crate::chrome::is_spinner_row(&r.text)));
         if (!chrome_only || has_spinner)
             && let Some(ts) = state.last_output_ms.get(session_id)
         {

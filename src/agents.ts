@@ -345,7 +345,7 @@ export const AGENT_DISPLAY: Record<AgentType, { icon: string; color: string }> =
 	gemini: { icon: "G", color: "#4285f4" },
 	opencode: { icon: "O", color: "#10a37f" },
 	aider: { icon: "A", color: "#9333ea" },
-	codex: { icon: "X", color: "#ef4444" },
+	codex: { icon: "X", color: "#ffffff" },
 	amp: { icon: "A", color: "#ff5543" },
 	cursor: { icon: "C", color: "#000000" },
 	goose: { icon: "G", color: "#f59e0b" },

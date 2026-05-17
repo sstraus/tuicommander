@@ -163,12 +163,14 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
             // never be absorbed into a history row (HistoryOnly boundary guard).
             let last_buf_idx = reversed_idx.last().copied().unwrap_or(0);
             let last_row = match reversed.last_mut() {
-                Some(last_row) if should_reflow(last_row, last_buf_idx) && reflow_for(i) => last_row,
+                Some(last_row) if should_reflow(last_row, last_buf_idx) && reflow_for(i) => {
+                    last_row
+                }
                 _ => {
                     reversed.push(row);
                     reversed_idx.push(i);
                     continue;
-                },
+                }
             };
 
             // Remove wrap flag before appending additional cells.
@@ -179,7 +181,9 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
             // Remove leading spacers when reflowing wide char to the previous line.
             let mut last_len = last_row.len();
             if last_len >= 1
-                && last_row[Column(last_len - 1)].flags().contains(Flags::LEADING_WIDE_CHAR_SPACER)
+                && last_row[Column(last_len - 1)]
+                    .flags()
+                    .contains(Flags::LEADING_WIDE_CHAR_SPACER)
             {
                 last_row.shrink(last_len - 1);
                 last_len -= 1;
@@ -352,7 +356,10 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
                     Some(wrapped) if reflow_this => wrapped,
                     _ => {
                         let cursor_buffer_line = self.lines - self.cursor.point.line.0 as usize - 1;
-                        if reflow_this && i == cursor_buffer_line && self.cursor.point.column > columns {
+                        if reflow_this
+                            && i == cursor_buffer_line
+                            && self.cursor.point.column > columns
+                        {
                             // If there are empty cells before the cursor, we assume it is explicit
                             // whitespace and need to wrap it like normal content.
                             Vec::new()
@@ -361,7 +368,7 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
                             new_raw.push(row);
                             break;
                         }
-                    },
+                    }
                 };
 
                 // Insert spacer if a wide char would be wrapped into the last column.
@@ -377,7 +384,11 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
 
                 // Remove wide char spacer before shrinking.
                 let len = wrapped.len();
-                if len > 0 && wrapped[len - 1].flags().contains(Flags::LEADING_WIDE_CHAR_SPACER) {
+                if len > 0
+                    && wrapped[len - 1]
+                        .flags()
+                        .contains(Flags::LEADING_WIDE_CHAR_SPACER)
+                {
                     if len == 1 {
                         row[Column(columns - 1)].flags_mut().insert(Flags::WRAPLINE);
                         row.reflow_wrap = true;
@@ -461,7 +472,9 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
         if !any_screen_reflow {
             self.cursor.point.column = min(self.cursor.point.column, Column(columns - 1));
         } else if self.cursor.point.column == columns
-            && !self[self.cursor.point.line][Column(columns - 1)].flags().contains(Flags::WRAPLINE)
+            && !self[self.cursor.point.line][Column(columns - 1)]
+                .flags()
+                .contains(Flags::WRAPLINE)
         {
             self.cursor.input_needs_wrap = true;
             self.cursor.point.column -= 1;

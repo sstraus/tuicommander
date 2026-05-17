@@ -65,6 +65,15 @@ mod platform {
         ) -> Result<Value> {
             bail!("mdkb: not available on this platform")
         }
+
+        pub async fn code_find(
+            &mut self,
+            _root: &str,
+            _name: &str,
+            _kind: Option<&str>,
+        ) -> Result<Vec<MdkbSymbol>> {
+            Ok(vec![])
+        }
     }
 }
 
@@ -231,6 +240,23 @@ mod platform {
                 .await?;
             let text = unwrap_text_field(&resp)?;
             serde_json::from_str(&text).context("mdkb: parse code_graph response")
+        }
+
+        pub async fn code_find(
+            &mut self,
+            root: &str,
+            name: &str,
+            kind: Option<&str>,
+        ) -> Result<Vec<MdkbSymbol>> {
+            let mut params = json!({ "root": root, "name": name });
+            if let Some(k) = kind {
+                params["kind"] = json!(k);
+            }
+            let resp = self.call("code_find", params).await?;
+            let text = unwrap_text_field(&resp)?;
+            let symbols: Vec<MdkbSymbol> =
+                serde_json::from_str(&text).context("mdkb: parse code_find response")?;
+            Ok(symbols)
         }
     }
 }

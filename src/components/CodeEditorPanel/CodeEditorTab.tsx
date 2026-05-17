@@ -5,9 +5,9 @@ import { bracketMatching, foldGutter, foldKeymap, indentOnInput } from "@codemir
 import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
 import { type Extension, StateEffect, StateField } from "@codemirror/state";
 import {
+	crosshairCursor,
 	Decoration,
 	type DecorationSet,
-	crosshairCursor,
 	drawSelection,
 	dropCursor,
 	EditorView,
@@ -52,17 +52,9 @@ export interface CodeEditorTabProps {
 }
 
 function wordAtCursor(view: EditorView): string | null {
-	const pos = view.state.selection.main.head;
-	const line = view.state.doc.lineAt(pos);
-	const text = line.text;
-	const col = pos - line.from;
-	const wordChars = /[\w$]/;
-	let start = col;
-	let end = col;
-	while (start > 0 && wordChars.test(text[start - 1])) start--;
-	while (end < text.length && wordChars.test(text[end])) end++;
-	const word = text.slice(start, end);
-	return word || null;
+	const range = wordRangeAt(view, view.state.selection.main.head);
+	if (!range) return null;
+	return view.state.doc.sliceString(range.from, range.to) || null;
 }
 
 /** Large file threshold — skip syntax highlighting above this size */
@@ -155,6 +147,10 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 	const [diskConflict, setDiskConflict] = createSignal(false);
 	/** Reactive dirty flag — only transitions on save/load, not every keystroke */
 	const [dirty, setDirty] = createSignal(false);
+	/** Current symbol under cursor (for breadcrumb) */
+	const [currentSymbol, setCurrentSymbol] = createSignal<string | null>(null);
+	let outlineSymbols: { name: string; lineStart: number; lineEnd: number | null }[] = [];
+	let outlineGeneration = 0;
 	const contextMenu = createContextMenu();
 	const fb = useFileBrowser();
 
@@ -217,6 +213,31 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 					setDirty(false);
 				} finally {
 					setLoading(false);
+				}
+			},
+		),
+	);
+
+	// Fetch outline symbols for breadcrumb (non-blocking)
+	createEffect(
+		on(
+			() => [props.repoPath, props.filePath] as const,
+			async ([repoPath, filePath]) => {
+				if (!repoPath || !filePath) {
+					outlineSymbols = [];
+					setCurrentSymbol(null);
+					return;
+				}
+				const gen = ++outlineGeneration;
+				try {
+					const symbols = await invoke<{ name: string; lineStart: number; lineEnd: number | null }[]>("mdkb_outline", {
+						repoPath,
+						filePath,
+					});
+					if (gen === outlineGeneration) outlineSymbols = symbols;
+				} catch (err) {
+					if (gen === outlineGeneration) outlineSymbols = [];
+					appLogger.debug("editor", "mdkb_outline failed", err);
 				}
 			},
 		),
@@ -376,6 +397,21 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 	// Reactive language extension
 	createExtension((): Extension => langSupport() ?? []);
 
+	// Update breadcrumb on cursor movement
+	createExtension(
+		EditorView.updateListener.of((update) => {
+			if (!update.selectionSet || outlineSymbols.length === 0) return;
+			const line = update.state.doc.lineAt(update.state.selection.main.head).number;
+			let best: string | null = null;
+			for (const sym of outlineSymbols) {
+				if (line >= sym.lineStart && (sym.lineEnd === null || line <= sym.lineEnd)) {
+					best = sym.name;
+				}
+			}
+			setCurrentSymbol(best);
+		}),
+	);
+
 	// Force CodeMirror to recalculate layout when the editor container resizes.
 	// The container starts as display:none (.terminal-pane without .active),
 	// so CodeMirror computes zero dimensions during initial mount. When the
@@ -433,6 +469,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 			}
 		} catch (err) {
 			appLogger.error("app", "Failed to save file", err);
+			setError(String(err));
 		}
 	};
 
@@ -466,6 +503,12 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 				<span class={e.filename} title={props.filePath}>
 					{props.filePath}
 				</span>
+				<Show when={currentSymbol()}>
+					<span class={e.breadcrumb} title={currentSymbol()!}>
+						<span class={e.breadcrumbSep}>{"›"}</span>
+						{currentSymbol()}
+					</span>
+				</Show>
 				<Show when={dirty()}>
 					<span class={e.dirtyDot} title={t("codeEditor.unsaved", "Unsaved changes")} />
 				</Show>

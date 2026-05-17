@@ -44,7 +44,12 @@ impl Pty {
         conin: impl Into<WritePipe>,
         child_watcher: ChildExitWatcher,
     ) -> Self {
-        Self { backend: backend.into(), conout: conout.into(), conin: conin.into(), child_watcher }
+        Self {
+            backend: backend.into(),
+            conout: conout.into(),
+            conin: conin.into(),
+            child_watcher,
+        }
     }
 
     pub fn child_watcher(&self) -> &ChildExitWatcher {
@@ -68,9 +73,12 @@ impl EventedReadWrite for Pty {
         interest: polling::Event,
         poll_opts: polling::PollMode,
     ) -> io::Result<()> {
-        self.conin.register(poll, with_key(interest, PTY_READ_WRITE_TOKEN), poll_opts);
-        self.conout.register(poll, with_key(interest, PTY_READ_WRITE_TOKEN), poll_opts);
-        self.child_watcher.register(poll, with_key(interest, PTY_CHILD_EVENT_TOKEN));
+        self.conin
+            .register(poll, with_key(interest, PTY_READ_WRITE_TOKEN), poll_opts);
+        self.conout
+            .register(poll, with_key(interest, PTY_READ_WRITE_TOKEN), poll_opts);
+        self.child_watcher
+            .register(poll, with_key(interest, PTY_CHILD_EVENT_TOKEN));
 
         Ok(())
     }
@@ -82,9 +90,12 @@ impl EventedReadWrite for Pty {
         interest: polling::Event,
         poll_opts: polling::PollMode,
     ) -> io::Result<()> {
-        self.conin.register(poll, with_key(interest, PTY_READ_WRITE_TOKEN), poll_opts);
-        self.conout.register(poll, with_key(interest, PTY_READ_WRITE_TOKEN), poll_opts);
-        self.child_watcher.register(poll, with_key(interest, PTY_CHILD_EVENT_TOKEN));
+        self.conin
+            .register(poll, with_key(interest, PTY_READ_WRITE_TOKEN), poll_opts);
+        self.conout
+            .register(poll, with_key(interest, PTY_READ_WRITE_TOKEN), poll_opts);
+        self.child_watcher
+            .register(poll, with_key(interest, PTY_CHILD_EVENT_TOKEN));
 
         Ok(())
     }

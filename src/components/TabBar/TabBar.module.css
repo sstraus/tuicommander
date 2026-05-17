@@ -461,18 +461,17 @@
   opacity: 0.8;
 }
 
-/* Detached to floating window */
+/* Detached to floating window — dim name but keep status dot colors */
 .tab.detached {
-  opacity: 0.5;
   border-bottom: 2px dashed var(--text-secondary, #848d97);
 }
 
-.tab.detached:hover {
-  opacity: 0.75;
+.tab.detached .tabName {
+  opacity: 0.5;
 }
 
-.tab.detached .tabIcon {
-  opacity: 0.4;
+.tab.detached:hover .tabName {
+  opacity: 0.75;
 }
 
 .detachedIcon {

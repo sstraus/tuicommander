@@ -2,8 +2,10 @@ import { type Component, createEffect, createMemo, createSignal, For, onCleanup,
 import { activityDashboardStore } from "../../stores/activityDashboard";
 import { globalWorkspaceStore } from "../../stores/globalWorkspace";
 import { rateLimitStore } from "../../stores/ratelimit";
+import { repositoriesStore } from "../../stores/repositories";
 import { terminalsStore } from "../../stores/terminals";
 import { projectName, terminalStatusLabel } from "../../utils/activitySnapshot";
+import { getRepoColor } from "../../utils/repoColor";
 import { formatRelativeTime } from "../../utils/time";
 import { GlobeIcon } from "../GlobeIcon";
 import { PanelWindowControls } from "../ui/PanelWindowControls";
@@ -55,8 +57,10 @@ export type TerminalRow = {
 	id: string;
 	name: string;
 	project: string | null;
+	projectColor: string | undefined;
 	agent: string;
 	status: { label: string; className: string };
+	isWorking: boolean;
 	lastDataAt: number | null;
 	lastPrompt: string | null;
 	agentIntent: string | null;
@@ -120,12 +124,15 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
 		if (!term) return null;
 		const isRL = !!(term.sessionId && rateLimitStore.isRateLimited(term.sessionId));
 		const status = terminalStatusLabel(term.shellState, term.awaitingInput, isRL, statusClasses);
+		const repoPath = repositoriesStore.getRepoPathForTerminal(id);
 		return {
 			id,
 			name: term.name,
 			project: projectName(term.cwd),
+			projectColor: repoPath ? getRepoColor(repoPath) : undefined,
 			agent: term.agentType || "shell",
 			status,
+			isWorking: isRL || !!term.awaitingInput || terminalsStore.isBusy(id),
 			lastDataAt: terminalsStore.getLastDataAt(id),
 			lastPrompt: term.lastPrompt,
 			agentIntent: term.agentIntent,
@@ -137,13 +144,20 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
 		};
 	};
 
-	/** Order-only snapshot: list of ids sorted by lastDataAt. Row *contents*
-	 *  remain live — only the sort order is stabilised. */
+	/** Order-only snapshot: working terminals first, idle second; stable within groups. */
 	const liveOrder = createMemo(() => {
 		const ids = terminalsStore.getAttachedIds();
 		return ids
-			.map((id) => ({ id, t: terminalsStore.getLastDataAt(id) ?? 0 }))
-			.sort((a, b) => b.t - a.t)
+			.map((id) => {
+				const term = terminalsStore.get(id);
+				const isRL = !!(term?.sessionId && rateLimitStore.isRateLimited(term.sessionId));
+				const working = isRL || !!term?.awaitingInput || terminalsStore.isBusy(id);
+				return { id, working, t: terminalsStore.getLastDataAt(id) ?? 0 };
+			})
+			.sort((a, b) => {
+				if (a.working !== b.working) return a.working ? -1 : 1;
+				return b.t - a.t;
+			})
 			.map((x) => x.id);
 	});
 
@@ -195,7 +209,9 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
 								<div class={s.nameCell}>
 									<span class={s.termName}>{term.name}</span>
 									<Show when={term.project}>
-										<span class={s.project}>{term.project}</span>
+										<span class={s.project} style={term.projectColor ? { color: term.projectColor } : undefined}>
+											{term.project}
+										</span>
 									</Show>
 								</div>
 								<span class={s.agent}>{term.agent}</span>

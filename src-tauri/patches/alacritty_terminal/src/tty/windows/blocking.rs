@@ -71,39 +71,48 @@ impl<R: Read + Send + 'static> UnblockedReader<R> {
                         // Either the pipe is closed or the reader is at its EOF.
                         // In any case, we are done.
                         return;
-                    },
+                    }
 
                     Poll::Ready(Ok(_)) => {
                         // Keep reading.
                         continue;
-                    },
+                    }
 
                     Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::Interrupted => {
                         // We were interrupted; continue.
                         continue;
-                    },
+                    }
 
                     Poll::Ready(Err(e)) => {
                         log::error!("error writing to pipe: {}", e);
                         return;
-                    },
+                    }
 
                     Poll::Pending => {
                         // We are now waiting on the other end to advance. Park the
                         // thread until they do.
                         thread::park();
-                    },
+                    }
                 }
             }
         });
 
-        Self { interest, pipe: reader, first_register: true, _reader: PhantomData }
+        Self {
+            interest,
+            pipe: reader,
+            first_register: true,
+            _reader: PhantomData,
+        }
     }
 
     /// Register interest in the reader.
     pub fn register(&mut self, poller: &Arc<Poller>, event: Event, mode: PollMode) {
         let mut interest = self.interest.interest.lock().unwrap();
-        *interest = Some(Interest { event, poller: poller.clone(), mode });
+        *interest = Some(Interest {
+            event,
+            poller: poller.clone(),
+            mode,
+        });
 
         // Send the event to start off with if we have any data.
         if (!self.pipe.is_empty() && event.readable) || self.first_register {
@@ -122,7 +131,10 @@ impl<R: Read + Send + 'static> UnblockedReader<R> {
     pub fn try_read(&mut self, buf: &mut [u8]) -> usize {
         let waker = Waker::from(self.interest.clone());
 
-        match self.pipe.poll_drain_bytes(&mut Context::from_waker(&waker), buf) {
+        match self
+            .pipe
+            .poll_drain_bytes(&mut Context::from_waker(&waker), buf)
+        {
             Poll::Pending => 0,
             Poll::Ready(n) => n,
         }
@@ -169,39 +181,47 @@ impl<W: Write + Send + 'static> UnblockedWriter<W> {
                         // Either the pipe is closed or the writer is full.
                         // In any case, we are done.
                         return;
-                    },
+                    }
 
                     Poll::Ready(Ok(_)) => {
                         // Keep writing.
                         continue;
-                    },
+                    }
 
                     Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::Interrupted => {
                         // We were interrupted; continue.
                         continue;
-                    },
+                    }
 
                     Poll::Ready(Err(e)) => {
                         log::error!("error writing to pipe: {}", e);
                         return;
-                    },
+                    }
 
                     Poll::Pending => {
                         // We are now waiting on the other end to advance. Park the
                         // thread until they do.
                         thread::park();
-                    },
+                    }
                 }
             }
         });
 
-        Self { interest, pipe: writer, _reader: PhantomData }
+        Self {
+            interest,
+            pipe: writer,
+            _reader: PhantomData,
+        }
     }
 
     /// Register interest in the writer.
     pub fn register(&self, poller: &Arc<Poller>, event: Event, mode: PollMode) {
         let mut interest = self.interest.interest.lock().unwrap();
-        *interest = Some(Interest { event, poller: poller.clone(), mode });
+        *interest = Some(Interest {
+            event,
+            poller: poller.clone(),
+            mode,
+        });
 
         // Send the event to start off with if we have room for data.
         if !self.pipe.is_full() && event.writable {
@@ -219,7 +239,10 @@ impl<W: Write + Send + 'static> UnblockedWriter<W> {
     pub fn try_write(&mut self, buf: &[u8]) -> usize {
         let waker = Waker::from(self.interest.clone());
 
-        match self.pipe.poll_fill_bytes(&mut Context::from_waker(&waker), buf) {
+        match self
+            .pipe
+            .poll_fill_bytes(&mut Context::from_waker(&waker), buf)
+        {
             Poll::Pending => 0,
             Poll::Ready(n) => n,
         }
@@ -264,7 +287,10 @@ impl Wake for Registration {
             };
 
             if send_event {
-                interest.poller.post(CompletionPacket::new(interest.event)).ok();
+                interest
+                    .poller
+                    .post(CompletionPacket::new(interest.event))
+                    .ok();
 
                 // Clear the event if we're in oneshot mode.
                 if matches!(interest.mode, PollMode::Oneshot | PollMode::EdgeOneshot) {

@@ -2,6 +2,7 @@ import { emitTo } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { type Component, createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { Terminal } from "./components/Terminal";
+import { IconReattach } from "./components/ui/PanelWindowControls";
 import { isMacOS } from "./platform";
 import { appLogger } from "./stores/appLogger";
 import { settingsStore } from "./stores/settings";
@@ -227,25 +228,30 @@ export const FloatingTerminal: Component = () => {
 					<span style={{ flex: "1" }} />
 					<button
 						type="button"
-						onClick={() => {
+						onClick={async () => {
+							try {
+								await emitTo("main", "reattach-terminal", { tabId, sessionId });
+							} catch {
+								/* main window may already be gone */
+							}
 							getCurrentWebviewWindow()
 								.close()
 								.catch(() => {});
 						}}
+						title="Bring back to main window"
 						style={{
 							"-webkit-app-region": "no-drag",
 							background: "none",
 							border: "1px solid var(--border, #30363d)",
 							"border-radius": "3px",
 							color: "var(--text-secondary, #848d97)",
-							"font-size": "10px",
-							"font-family": "var(--font-mono, monospace)",
-							padding: "1px 6px",
+							padding: "2px 4px",
 							cursor: "pointer",
-							"line-height": "1.4",
+							display: "inline-flex",
+							"align-items": "center",
 						}}
 					>
-						Reattach
+						<IconReattach />
 					</button>
 				</div>
 				<div style={{ flex: "1", "min-height": "0" }}>

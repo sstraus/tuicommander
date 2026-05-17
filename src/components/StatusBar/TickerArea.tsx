@@ -23,17 +23,24 @@ export const TickerArea: Component = () => {
 	onMount(() => document.addEventListener("keydown", handleKeyDown));
 	onCleanup(() => document.removeEventListener("keydown", handleKeyDown));
 
-	// Rotation state (respects priority tiers)
+	// Rotation state — filters out claude-usage on agent tabs so the counter
+	// doesn't show "1/2" when only one visible ticker remains.
 	const rotation = () => {
 		const state = statusBarTicker.getRotationState();
 		if (!state.message) return null;
 
-		// Hide claude-usage ticker when it's already shown in the agent badge
 		const activeAgent = terminalsStore.getActive()?.agentType;
-		if (activeAgent === "claude" && state.message.pluginId === "claude-usage") {
-			// Recalculate without this message? No — the store handles the rotation.
-			// If the only message is claude-usage and it's absorbed, show nothing.
-			return null;
+		if (!activeAgent) return state;
+
+		// On agent tabs, claude-usage is irrelevant — hide it
+		if (state.message.pluginId === "claude-usage") return null;
+
+		// Adjust counter to exclude hidden claude-usage messages
+		const hiddenCount = statusBarTicker.getAll().filter((m) => m.pluginId === "claude-usage").length;
+		if (hiddenCount > 0) {
+			const adjusted = state.total - hiddenCount;
+			if (adjusted <= 0) return null;
+			return { ...state, total: adjusted, current: Math.max(1, Math.min(state.current, adjusted)) };
 		}
 		return state;
 	};

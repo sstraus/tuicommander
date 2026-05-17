@@ -67,6 +67,7 @@ describe("NotificationManager", () => {
 			expect(mockInvoke).toHaveBeenCalledWith("play_notification_sound", {
 				sound: "question",
 				volume: 0.5,
+				device: null,
 			});
 		});
 

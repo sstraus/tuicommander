@@ -434,6 +434,17 @@ Uses incremental parsing with a file-size-based cache (`claude-usage-cache.json`
 |---------|------|---------|-------------|
 | `plugin_http_fetch` | `url, method?, headers?, body?, allowed_urls, plugin_id` | `HttpResponse` | Make HTTP request (validated against allowed_urls) |
 
+## Code Intelligence / MDKB (`mdkb_commands.rs`)
+
+| Command | Args | Returns | Description |
+|---------|------|---------|-------------|
+| `mdkb_status` | — | `MdkbStatus` | Check if mdkb binary is available and daemon connected |
+| `mdkb_outline` | `repo_path, file_path` | `Vec<OutlineSymbol>` | Get symbol outline (functions, types) for a file |
+| `mdkb_goto_definition` | `repo_path, file_path, line, col?` | `DefinitionLocation?` | Find definition of symbol at position |
+| `mdkb_references` | `repo_path, symbol_name` | `Vec<ReferenceLocation>` | Find all callers of a symbol via code_graph |
+| `install_mdkb` | — | `String` | Download and install mdkb binary |
+| `uninstall_mdkb` | — | `()` | Remove mdkb binary (errors for homebrew/cargo installs) |
+
 ## Plugin CLI Execution (`plugin_exec.rs`)
 
 | Command | Args | Returns | Description |

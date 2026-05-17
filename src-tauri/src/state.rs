@@ -2102,7 +2102,6 @@ impl VtLogBuffer {
         }
     }
 
-
     pub fn set_ansi_colors(&mut self, colors: &[[u8; 3]; 16]) {
         self.grid.set_ansi_colors(colors);
     }

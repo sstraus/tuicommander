@@ -186,11 +186,11 @@ impl ContentIndex {
                 .map_or(0, |d| d.as_secs());
 
             // Skip binary files — use cached result if mtime unchanged
-            if let Some(&cached_mtime) = prior_binaries.get(&rel_path) {
-                if cached_mtime == mtime {
-                    known_binaries.insert(rel_path, mtime);
-                    continue;
-                }
+            if let Some(&cached_mtime) = prior_binaries.get(&rel_path)
+                && cached_mtime == mtime
+            {
+                known_binaries.insert(rel_path, mtime);
+                continue;
             }
             if is_binary(entry.path()) {
                 known_binaries.insert(rel_path, mtime);
@@ -354,8 +354,7 @@ pub fn rebuild_index(
     spawn_build(
         repo_for_log,
         move || {
-            let built =
-                ContentIndex::build(PathBuf::from(&repo), Some(&throttle), prior_binaries);
+            let built = ContentIndex::build(PathBuf::from(&repo), Some(&throttle), prior_binaries);
             *index.write() = built;
             tracing::debug!(repo = %repo, "content index rebuilt");
         },

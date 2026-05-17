@@ -149,6 +149,30 @@ pub async fn mdkb_references(
 }
 
 #[tauri::command]
+pub async fn mdkb_code_find(
+    state: State<'_, Arc<AppState>>,
+    repo_path: String,
+    name: String,
+    kind: Option<String>,
+) -> Result<Vec<OutlineSymbol>, String> {
+    let mut daemon = state.mdkb_daemon.lock().await;
+    let client = match daemon.ensure_running().await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::debug!("mdkb unavailable: {e}");
+            return Ok(vec![]);
+        }
+    };
+    match client.code_find(&repo_path, &name, kind.as_deref()).await {
+        Ok(symbols) => Ok(symbols.into_iter().map(OutlineSymbol::from).collect()),
+        Err(e) => {
+            tracing::warn!("mdkb_code_find failed: {e}");
+            Ok(vec![])
+        }
+    }
+}
+
+#[tauri::command]
 pub async fn mdkb_status(state: State<'_, Arc<AppState>>) -> Result<MdkbStatus, String> {
     let daemon = state.mdkb_daemon.lock().await;
     let available = daemon.is_available();
@@ -260,7 +284,14 @@ pub async fn install_mdkb(state: State<'_, Arc<AppState>>) -> Result<String, Str
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&install_path, std::fs::Permissions::from_mode(0o755));
+        std::fs::set_permissions(&install_path, std::fs::Permissions::from_mode(0o755)).map_err(
+            |e| {
+                format!(
+                    "Installed but failed to set executable bit: {e}. Try: chmod +x {}",
+                    install_path.display()
+                )
+            },
+        )?;
     }
 
     tracing::info!(source = "mdkb", path = %install_path.display(), "mdkb installed");

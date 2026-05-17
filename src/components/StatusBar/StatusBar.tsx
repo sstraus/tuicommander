@@ -229,6 +229,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 						{cwdCopied() ? t("statusBar.copied", "Copied!") : shortenedCwd()}
 					</span>
 				</Show>
+				<TickerArea />
 				<Show when={terminalsStore.getActive()?.agentType}>
 					{(agentType) => {
 						const display = () => AGENT_DISPLAY[agentType()];
@@ -285,7 +286,6 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 						);
 					}}
 				</Show>
-				<TickerArea />
 			</div>
 
 			{/* GitHub PR + CI badges */}

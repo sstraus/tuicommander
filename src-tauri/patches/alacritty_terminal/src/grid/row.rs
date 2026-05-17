@@ -58,7 +58,11 @@ impl<T: Default> Row<T> {
             inner.set_len(columns);
         }
 
-        Row { inner, occ: 0, reflow_wrap: false }
+        Row {
+            inner,
+            occ: 0,
+            reflow_wrap: false,
+        }
     }
 
     /// Increase the number of columns in the row.
@@ -84,12 +88,19 @@ impl<T: Default> Row<T> {
 
         // Split off cells for a new row.
         let mut new_row = self.inner.split_off(columns);
-        let index = new_row.iter().rposition(|c| !c.is_empty()).map_or(0, |i| i + 1);
+        let index = new_row
+            .iter()
+            .rposition(|c| !c.is_empty())
+            .map_or(0, |i| i + 1);
         new_row.truncate(index);
 
         self.occ = min(self.occ, columns);
 
-        if new_row.is_empty() { None } else { Some(new_row) }
+        if new_row.is_empty() {
+            None
+        } else {
+            Some(new_row)
+        }
     }
 
     /// Reset all cells in the row to the `template` cell.
@@ -121,7 +132,11 @@ impl<T: Default> Row<T> {
 impl<T> Row<T> {
     #[inline]
     pub fn from_vec(vec: Vec<T>, occ: usize) -> Row<T> {
-        Row { inner: vec, occ, reflow_wrap: false }
+        Row {
+            inner: vec,
+            occ,
+            reflow_wrap: false,
+        }
     }
 
     #[inline]

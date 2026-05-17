@@ -1177,7 +1177,16 @@ All data persisted to platform config directory via Rust:
 - Call graph queries (calls, callers, impact analysis) via `code_graph` tool
 - Requires `mdkb` binary on PATH (installed separately)
 
-### 14.8 macOS Dock Badge
+### 14.8 Code Intelligence (MDKB integration)
+- Go-to-definition: Cmd+Click on symbols in the editor navigates to the definition via `mdkb_goto_definition`
+- Find references: Shift+F12 finds all callers of a symbol via `mdkb_references` (uses code_graph callers query)
+- Symbol outline: file-level symbol tree via `mdkb_outline` (functions, types, structs)
+- Install/uninstall managed from Settings → General → Code Intelligence
+- `is_available()` checks binary existence on disk (not cached path) — survives external uninstalls
+- Homebrew-managed installs show `brew uninstall mdkb` guidance instead of silent failure
+- Graceful fallback: all commands return empty results when mdkb is unavailable
+
+### 14.9 macOS Dock Badge
 - Badge count for attention-requiring notifications (questions, errors)
 
 ### 14.9 Tailscale HTTPS

@@ -147,6 +147,7 @@ export const DEFAULT_BINDINGS: Record<ActionName, string> = {
 	"toggle-compose-panel": "Cmd+I",
 	"detach-activity-dashboard": "",
 	"toggle-tunnels": "",
+	"process-manager": "",
 	// Numbered tabs
 	...Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`switch-tab-${i + 1}`, `Cmd+${i + 1}`])),
 	// Numbered branches (Cmd+Ctrl on macOS, Ctrl+Alt on Win/Linux — we use Cmd+Ctrl here)

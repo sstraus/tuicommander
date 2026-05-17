@@ -13,19 +13,30 @@ const POLL_INTERVAL: Duration = Duration::from_millis(100);
 pub struct MdkbDaemon {
     client: Option<MdkbClient>,
     binary_path: Option<PathBuf>,
+    cached_version: Option<String>,
 }
 
 impl MdkbDaemon {
     pub fn new() -> Self {
         let binary_path = resolve_binary("mdkb").map(PathBuf::from);
+        let cached_version = binary_path.as_ref().and_then(|bin| {
+            let output = std::process::Command::new(bin)
+                .arg("--version")
+                .output()
+                .ok()?;
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let version = stdout.trim().strip_prefix("mdkb ").unwrap_or(stdout.trim());
+            Some(version.to_string())
+        });
         Self {
             client: None,
             binary_path,
+            cached_version,
         }
     }
 
     pub fn is_available(&self) -> bool {
-        self.binary_path.is_some()
+        self.binary_path.as_ref().is_some_and(|p| p.exists())
     }
 
     pub fn is_connected(&self) -> bool {
@@ -37,14 +48,7 @@ impl MdkbDaemon {
     }
 
     pub fn version(&self) -> Option<String> {
-        let bin = self.binary_path.as_ref()?;
-        let output = std::process::Command::new(bin)
-            .arg("--version")
-            .output()
-            .ok()?;
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let version = stdout.trim().strip_prefix("mdkb ").unwrap_or(stdout.trim());
-        Some(version.to_string())
+        self.cached_version.clone()
     }
 
     pub async fn ensure_running(&mut self) -> Result<&mut MdkbClient> {
@@ -116,17 +120,30 @@ mod tests {
         let daemon = MdkbDaemon {
             client: None,
             binary_path: None,
+            cached_version: None,
         };
         assert!(!daemon.is_available());
     }
 
     #[test]
     fn new_with_binary_is_available() {
+        // Use a path guaranteed to exist
         let daemon = MdkbDaemon {
             client: None,
-            binary_path: Some(PathBuf::from("/usr/local/bin/mdkb")),
+            binary_path: Some(PathBuf::from(env!("CARGO_MANIFEST_DIR"))),
+            cached_version: None,
         };
         assert!(daemon.is_available());
+    }
+
+    #[test]
+    fn stale_cached_path_not_available() {
+        let daemon = MdkbDaemon {
+            client: None,
+            binary_path: Some(PathBuf::from("/nonexistent/mdkb")),
+            cached_version: None,
+        };
+        assert!(!daemon.is_available());
     }
 
     #[tokio::test]
@@ -134,6 +151,7 @@ mod tests {
         let mut daemon = MdkbDaemon {
             client: None,
             binary_path: None,
+            cached_version: None,
         };
         let result = daemon.ensure_running().await;
         if MdkbClient::socket_path().exists() {
@@ -148,6 +166,7 @@ mod tests {
         let daemon = MdkbDaemon {
             client: None,
             binary_path: None,
+            cached_version: None,
         };
         let err = daemon.spawn_daemon().await.unwrap_err();
         assert!(err.to_string().contains("not found"));

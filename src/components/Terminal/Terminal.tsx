@@ -952,6 +952,25 @@ export const Terminal: Component<TerminalProps> = (props) => {
 		terminalsStore.update(props.id, { ref: refMethods });
 	});
 
+	// Re-register ref and resubscribe to grid channel when this terminal becomes
+	// visible again (e.g. after reattach from a floating window whose Terminal
+	// overwrote the grid channel subscription and ref in the store).
+	createEffect((prev: boolean) => {
+		const vis = isVisible();
+		if (vis && prev === false) {
+			terminalsStore.update(props.id, { ref: refMethods });
+			requestAnimationFrame(() => {
+				requestAnimationFrame(() => {
+					const ref = canvasTerminalRef();
+					if (ref) {
+						ref.resubscribe().then(() => ref.refresh());
+					}
+				});
+			});
+		}
+		return vis;
+	}, false);
+
 	const handleBell = () => {
 		const style = settingsStore.state.bellStyle;
 		if (style === "none") return;
