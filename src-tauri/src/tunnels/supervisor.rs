@@ -369,6 +369,7 @@ mod tests {
         let mut f = NamedTempFile::new().unwrap();
         writeln!(f, "#!/bin/sh").unwrap();
         writeln!(f, "{behavior}").unwrap();
+        f.as_file().sync_all().unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
