@@ -20,13 +20,29 @@ pub async fn start_native_drag(
 
     app.run_on_main_thread(move || {
         let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
-            drag::start_drag(
-                &window,
-                drag::DragItem::Files(items),
-                image,
-                |_result, _cursor_pos| {},
-                Default::default(),
-            )
+            #[cfg(target_os = "linux")]
+            {
+                let gtk_win = window.gtk_window().map_err(|e| {
+                    drag::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+                })?;
+                drag::start_drag(
+                    &gtk_win,
+                    drag::DragItem::Files(items),
+                    image,
+                    |_result, _cursor_pos| {},
+                    Default::default(),
+                )
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                drag::start_drag(
+                    &window,
+                    drag::DragItem::Files(items),
+                    image,
+                    |_result, _cursor_pos| {},
+                    Default::default(),
+                )
+            }
         }));
 
         let mapped = match result {

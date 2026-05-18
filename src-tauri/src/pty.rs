@@ -4478,25 +4478,28 @@ fn collect_descendant_pids(root: u32) -> Option<Vec<u32>> {
     {
         // On Windows, deepest_descendant_pid already walks the tree.
         // Reuse the snapshot logic to collect all descendants.
-        use windows::Win32::System::Diagnostics::ToolHelp::*;
-        let snap = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) }.ok()?;
-        let mut entry = PROCESSENTRY32W {
-            dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
-            ..Default::default()
-        };
+        use windows_sys::Win32::System::Diagnostics::ToolHelp::*;
+        use windows_sys::Win32::Foundation::CloseHandle;
+        let snap = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+        if snap.is_null() {
+            return None;
+        }
+        let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
+        entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
         let mut parent_map: std::collections::HashMap<u32, Vec<u32>> =
             std::collections::HashMap::new();
-        if unsafe { Process32FirstW(snap, &mut entry) }.is_ok() {
+        if unsafe { Process32FirstW(snap, &mut entry) } != 0 {
             loop {
                 parent_map
                     .entry(entry.th32ParentProcessID)
                     .or_default()
                     .push(entry.th32ProcessID);
-                if unsafe { Process32NextW(snap, &mut entry) }.is_err() {
+                if unsafe { Process32NextW(snap, &mut entry) } == 0 {
                     break;
                 }
             }
         }
+        let _ = unsafe { CloseHandle(snap) };
         let mut result = Vec::new();
         let mut stack = vec![root];
         while let Some(p) = stack.pop() {
@@ -4556,11 +4559,17 @@ fn query_process_stats(pids: &[u32]) -> std::collections::HashMap<u32, (u64, f32
 
 #[cfg(all(feature = "desktop", windows))]
 fn query_single_process_windows(pid: u32) -> Option<(u64, f32)> {
-    use windows::Win32::System::ProcessStatus::*;
-    use windows::Win32::System::Threading::*;
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
+    };
     let handle =
-        unsafe { OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid) }.ok()?;
-    let mut mem_info = PROCESS_MEMORY_COUNTERS::default();
+        unsafe { OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, pid) };
+    if handle.is_null() {
+        return None;
+    }
+    let mut mem_info: PROCESS_MEMORY_COUNTERS = unsafe { std::mem::zeroed() };
     mem_info.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
     let ok = unsafe {
         GetProcessMemoryInfo(
@@ -4570,11 +4579,10 @@ fn query_single_process_windows(pid: u32) -> Option<(u64, f32)> {
         )
     };
     let _ = unsafe { CloseHandle(handle) };
-    if ok.is_err() {
+    if ok == 0 {
         return None;
     }
     let rss_kb = mem_info.WorkingSetSize / 1024;
-    // CPU% is expensive on Windows (needs two snapshots); report 0 for now
     Some((rss_kb as u64, 0.0))
 }
 

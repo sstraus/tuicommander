@@ -202,7 +202,7 @@ block2 = { version = "0.6", optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 whisper-rs = { version = "0.16", features = ["vulkan"], optional = true }
-windows-sys = { version = "0.61", features = ["Win32_System_Diagnostics_ToolHelp", "Win32_System_Diagnostics_Debug", "Win32_System_Threading", "Win32_Foundation", "Wdk_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_System_Diagnostics_ToolHelp", "Win32_System_Diagnostics_Debug", "Win32_System_Threading", "Win32_Foundation", "Win32_System_ProcessStatus", "Wdk_System_Threading"] }
 
 [patch.crates-io]
 alacritty_terminal = { path = "patches/alacritty_terminal" }
