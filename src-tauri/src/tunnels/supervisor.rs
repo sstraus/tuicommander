@@ -347,9 +347,10 @@ async fn graceful_kill(child: &mut tokio::process::Child) {
         return;
     }
 
-    // Wait up to 5s for clean exit, then escalate.
+    // Wait up to 5s for clean exit after SIGTERM, then escalate.
+    #[cfg(unix)]
     tokio::select! {
-        _ = child.wait() => { /* clean exit after SIGTERM */ }
+        _ = child.wait() => {}
         () = tokio::time::sleep(Duration::from_secs(5)) => {
             let _ = child.kill().await;
         }

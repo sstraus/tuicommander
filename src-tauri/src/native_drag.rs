@@ -23,7 +23,7 @@ pub async fn start_native_drag(
             #[cfg(target_os = "linux")]
             {
                 let gtk_win = window.gtk_window().map_err(|e| {
-                    drag::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+                    drag::Error::Io(std::io::Error::other(e.to_string()))
                 })?;
                 drag::start_drag(
                     &gtk_win,

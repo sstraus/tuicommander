@@ -1,6 +1,6 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,6 +16,7 @@ pub struct MdkbSymbol {
 
 // Unix sockets are not available on Windows
 #[cfg(not(unix))]
+#[allow(dead_code)]
 mod platform {
     use super::*;
 
@@ -80,6 +81,8 @@ mod platform {
 #[cfg(unix)]
 mod platform {
     use super::*;
+    use anyhow::Context;
+    use serde_json::json;
     use std::sync::atomic::{AtomicU64, Ordering};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::UnixStream;
