@@ -505,8 +505,20 @@ function createTerminalsStore() {
 							exitCode: exitCode ?? null,
 							endedAt: now,
 						};
+						const MAX_BLOCKS = 500;
 						batch(() => {
-							setState("terminals", id, "commandBlocks", (prev) => [...prev, completed]);
+							setState("terminals", id, "commandBlocks", (prev) => {
+								const next = [...prev, completed];
+								if (next.length <= MAX_BLOCKS) return next;
+								const evicted = next.slice(0, next.length - MAX_BLOCKS);
+								const evictedLines = new Set(evicted.map((b) => b.promptLine));
+								setState("terminals", id, "foldedBlocks", (folds) => {
+									const cleaned = new Set(folds);
+									for (const line of evictedLines) cleaned.delete(line);
+									return cleaned;
+								});
+								return next.slice(-MAX_BLOCKS);
+							});
 							setState("terminals", id, "activeBlock", null);
 						});
 						appLogger.debug(
