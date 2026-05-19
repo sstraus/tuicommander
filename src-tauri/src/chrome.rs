@@ -72,6 +72,10 @@ pub fn is_chrome_row(text: &str) -> bool {
             | '\u{2591}'        // ░ — Aider Knight Rider spinner (light shade)
             | '\u{2588}'        // █ — Aider Knight Rider spinner (full block)
             | '\u{25A0}'        // ■ — Codex interrupt marker
+            | '\u{25D0}'        // ◐ — Claude Code tool progress spinner
+            | '\u{25D1}'        // ◑ — Claude Code tool progress spinner
+            | '\u{25D2}'        // ◒ — Claude Code tool progress spinner
+            | '\u{25D3}'        // ◓ — Claude Code tool progress spinner
             => return true,
             // Claude Code spinner dingbats (U+2720–U+273F): ✢✣✤...✻✼✽✾✿
             c if ('\u{2720}'..='\u{273F}').contains(&c) => return true,
@@ -96,6 +100,10 @@ pub fn is_spinner_row(text: &str) -> bool {
             '\u{00B7}'        // · — Claude Code middle-dot spinner prefix
             | '\u{2591}'      // ░ — Aider Knight Rider spinner (light shade)
             | '\u{2588}'      // █ — Aider Knight Rider spinner (full block)
+            | '\u{25D0}'      // ◐ — Claude Code tool progress spinner
+            | '\u{25D1}'      // ◑ — Claude Code tool progress spinner
+            | '\u{25D2}'      // ◒ — Claude Code tool progress spinner
+            | '\u{25D3}'      // ◓ — Claude Code tool progress spinner
             => return true,
             // Claude Code spinner dingbats (U+2720–U+273F): ✢✣✤...✻✼✽✾✿
             c if ('\u{2720}'..='\u{273F}').contains(&c) => return true,
@@ -423,6 +431,15 @@ mod tests {
         assert!(is_chrome_row(
             "■ Conversation interrupted - tell the model what to do differently."
         ));
+    }
+
+    // Claude Code tool progress spinner (◐ ◑ ◒ ◓)
+    #[test]
+    fn cc_tool_progress_spinner() {
+        assert!(is_chrome_row("◐ Bash: .../b... | ✓ Bash ×9 | ✓ Read ×5"));
+        assert!(is_chrome_row("◑ Read: src/main.rs"));
+        assert!(is_chrome_row("◒ Edit: src/lib.rs"));
+        assert!(is_chrome_row("◓ Write: output.txt"));
     }
 
     // Claude Code separators (captured 2026-03-21)
@@ -782,6 +799,14 @@ mod tests {
     #[test]
     fn spinner_row_codex_bullet() {
         assert!(is_spinner_row("• Working…"));
+    }
+
+    #[test]
+    fn spinner_row_tool_progress() {
+        assert!(is_spinner_row("◐ Bash: .../b... | ✓ Bash ×9 | ✓ Read ×5"));
+        assert!(is_spinner_row("◑ Read: src/main.rs"));
+        assert!(is_spinner_row("◒ Edit: src/lib.rs"));
+        assert!(is_spinner_row("◓ Write: output.txt"));
     }
 
     #[test]

@@ -5923,6 +5923,17 @@ mod tests {
         assert!(chrome_only, "Gemini braille spinner should be chrome");
     }
 
+    #[test]
+    fn test_chrome_only_tool_progress_spinner_is_chrome() {
+        let rows = make_rows(&["\u{25D0} Bash: .../b... | \u{2713} Bash \u{00D7}9"]);
+        let chrome_only = !rows.is_empty() && rows.iter().all(|r| is_chrome_row(&r.text));
+        assert!(chrome_only, "CC tool progress spinner should be chrome");
+        assert!(
+            crate::chrome::is_spinner_row(&rows[0].text),
+            "CC tool progress spinner should be detected as spinner (keepalive)"
+        );
+    }
+
     // --- chrome_only full formula tests (mirrors process_chunk logic) ---
 
     /// Helper: compute chrome_only using the same formula as process_chunk.
@@ -7638,6 +7649,9 @@ mod tests {
         // Spinner rows prove agent is alive
         assert!(crate::chrome::is_spinner_row("✻ Cogitated for 3m 47s"));
         assert!(crate::chrome::is_spinner_row("⠋ Generating..."));
+        // Tool progress spinners prove agent is alive
+        assert!(crate::chrome::is_spinner_row("◐ Bash: .../b..."));
+        assert!(crate::chrome::is_spinner_row("◑ Read: src/main.rs"));
         // Static chrome does NOT prove agent is alive
         assert!(!crate::chrome::is_spinner_row("⏵ auto mode"));
         assert!(!crate::chrome::is_spinner_row("▀▀▀▀▀▀▀▀"));
