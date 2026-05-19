@@ -4,6 +4,7 @@ import { pluginRegistry } from "../../plugins/pluginRegistry";
 import { appLogger } from "../../stores/appLogger";
 import { settingsStore } from "../../stores/settings";
 import { terminalsStore } from "../../stores/terminals";
+import { formatRelativeTime } from "../../utils/formatRelativeTime";
 import { handleOpenUrl } from "../../utils/openUrl";
 import { installTouchHandlers } from "./canvasTerminalTouch";
 import { createTransport, type TerminalTransport } from "./canvasTerminalTransport";
@@ -352,6 +353,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		paintSearchHighlights(m);
 		paintLinkUnderline(frame, m);
 		paintGutterMarkers(m);
+		paintBlockTimestamps(m);
 		paintCursor(frame, m);
 	}
 
@@ -465,6 +467,29 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			if (vpRow === null) continue;
 			octx.fillStyle = "#f85149";
 			octx.fillRect(-GUTTER_PX, vpRow * m.cellHeight, 3, m.cellHeight);
+		}
+	}
+
+	let blockTimestampsVisible = false;
+
+	function paintBlockTimestamps(m: CellMetrics) {
+		if (!blockTimestampsVisible) return;
+		const term = terminalsStore.get(props.terminalId);
+		if (!term) return;
+		const all = term.activeBlock ? [...term.commandBlocks, term.activeBlock] : term.commandBlocks;
+		if (all.length === 0) return;
+		const fontFamily = settingsStore.getFontFamily();
+		const fontSize = Math.round(m.cellHeight * 0.7);
+		octx.font = `${fontSize}px ${fontFamily}`;
+		octx.fillStyle = "rgba(150,150,150,0.5)";
+		const canvasW = overlayCanvasRef.width / m.dpr;
+		for (const block of all) {
+			const vpRow = absRowToViewport(block.promptLine);
+			if (vpRow === null) continue;
+			const y = vpRow * m.cellHeight;
+			const label = formatRelativeTime(Date.now() - block.startedAt);
+			const tw = octx.measureText(label).width;
+			octx.fillText(label, canvasW - tw - 8, y + m.cellHeight * 0.75);
 		}
 	}
 
@@ -2525,6 +2550,12 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			}
 			resetBlink();
 
+			if (e.ctrlKey && e.metaKey && !blockTimestampsVisible) {
+				blockTimestampsVisible = true;
+				fullRepaintNeeded = true;
+				if (currentFrame && metrics()) paintFrame(currentFrame, metrics()!);
+			}
+
 			// Arrow Down with no modifiers: snap to bottom when scrolled up
 			if (
 				e.key === "ArrowDown" &&
@@ -2743,6 +2774,11 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		// Track Alt key release for macOS left-option state
 		keyInputRef.addEventListener("keyup", (e: KeyboardEvent) => {
 			if (e.code === "AltLeft") leftOptionHeld = false;
+			if (blockTimestampsVisible && (!e.ctrlKey || !e.metaKey)) {
+				blockTimestampsVisible = false;
+				fullRepaintNeeded = true;
+				if (currentFrame && metrics()) paintFrame(currentFrame, metrics()!);
+			}
 		});
 
 		keyInputRef.addEventListener("paste", (e: ClipboardEvent) => {
