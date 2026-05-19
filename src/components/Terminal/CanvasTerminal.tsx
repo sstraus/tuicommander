@@ -2905,6 +2905,33 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			const pos = canvasToGrid(e);
 			const absRow = viewportRowToAbs(pos.row);
 			if (absRow === null) return;
+
+			// Gutter click: select entire block output
+			{
+				const rect = canvasRef.getBoundingClientRect();
+				const rawX = e.clientX - rect.left;
+				if (rawX < GUTTER_PX) {
+					const term = terminalsStore.get(props.terminalId);
+					if (term) {
+						const allBlocks = [...term.commandBlocks, term.activeBlock].filter(Boolean) as import("../../stores/terminals").CommandBlock[];
+						const block = allBlocks.find((b) => b.promptLine <= absRow && (b.endLine ?? Infinity) >= absRow);
+						if (block) {
+							const startRow = (block.executionLine ?? block.promptLine) + 1;
+							const endRow = (block.endLine ?? absRow) - 1;
+							if (endRow >= startRow) {
+								selectionStart = { row: startRow, col: 0 };
+								selectionEnd = { row: endRow, col: lastResizeCols - 1 };
+								selecting = false;
+								fullRepaintNeeded = true;
+								scheduleRepaint();
+								e.preventDefault();
+								return;
+							}
+						}
+					}
+				}
+			}
+
 			const absPos = { col: pos.col, row: absRow };
 
 			// Shift+click: extend selection from existing anchor
