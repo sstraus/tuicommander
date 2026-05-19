@@ -537,6 +537,9 @@ pub(crate) struct AppConfig {
     /// Auto-copy terminal selection to clipboard
     #[serde(default = "default_true")]
     pub(crate) copy_on_select: bool,
+    /// Show last prompt overlay bar at the top of the terminal
+    #[serde(default = "default_true")]
+    pub(crate) show_last_prompt: bool,
     /// Terminal bell style: "none", "visual", "sound", or "both"
     #[serde(default = "default_bell_style")]
     pub(crate) bell_style: String,
@@ -664,6 +667,7 @@ impl Default for AppConfig {
             intent_tab_title: true,
             suggest_followups: true,
             copy_on_select: true,
+            show_last_prompt: true,
             bell_style: default_bell_style(),
             global_hotkey: None,
             collapse_tools: false,
@@ -1629,6 +1633,7 @@ mod tests {
             suggest_followups: false,
             global_hotkey: Some("CommandOrControl+Shift+T".to_string()),
             copy_on_select: true,
+            show_last_prompt: false,
             bell_style: "visual".to_string(),
             collapse_tools: true,
             issue_filter: "assigned".to_string(),

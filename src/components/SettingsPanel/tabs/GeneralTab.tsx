@@ -257,6 +257,13 @@ export const GeneralTab: Component = () => {
 				hint={t("general.hint.copyOnSelect", "Automatically copy selected text to clipboard")}
 			/>
 
+			<SettingToggle
+				checked={settingsStore.state.showLastPrompt}
+				onChange={(v) => settingsStore.setShowLastPrompt(v)}
+				label="Show last prompt bar"
+				hint="Display a collapsible overlay at the top of the terminal showing the last prompt sent to an agent"
+			/>
+
 			<h3>{t("general.heading.powerManagement", "Power Management")}</h3>
 
 			<SettingToggle

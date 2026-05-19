@@ -18,6 +18,7 @@ import { getAwaitingInputSound } from "./awaitingInputSound";
 import CanvasTerminal, { type CanvasTerminalRef } from "./CanvasTerminal";
 import { snapLineHeight } from "./canvasTerminalUtils";
 import { getSharedMetrics } from "./glyphCache";
+import { LastPromptBar } from "./LastPromptBar";
 import s from "./Terminal.module.css";
 import { TerminalSearch } from "./TerminalSearch";
 
@@ -1034,6 +1035,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
 					canvasTerminalRef()?.focus();
 				}}
 			/>
+			<Show when={settingsStore.state.showLastPrompt && terminalsStore.get(props.id)?.lastPrompt}>
+				<LastPromptBar prompt={() => terminalsStore.get(props.id)?.lastPrompt ?? null} />
+			</Show>
 			<Show when={reconnecting()}>
 				{(info) => (
 					<div class={s.reconnectBanner}>

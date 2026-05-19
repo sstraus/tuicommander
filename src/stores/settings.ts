@@ -38,6 +38,7 @@ interface RustAppConfig {
 	intent_tab_title: boolean;
 	suggest_followups: boolean;
 	copy_on_select: boolean;
+	show_last_prompt: boolean;
 	bell_style: string;
 	global_hotkey: string | null;
 	issue_filter?: string;
@@ -288,6 +289,7 @@ interface SettingsStoreState {
 	intentTabTitle: boolean;
 	suggestFollowups: boolean;
 	copyOnSelect: boolean;
+	showLastPrompt: boolean;
 	bellStyle: "none" | "visual" | "sound" | "both";
 	globalHotkey: string | null;
 	issueFilter: IssueFilterMode;
@@ -329,6 +331,7 @@ function createSettingsStore() {
 		intentTabTitle: true,
 		suggestFollowups: true,
 		copyOnSelect: true,
+		showLastPrompt: true,
 		bellStyle: "visual",
 		globalHotkey: null,
 		issueFilter: "assigned",
@@ -375,6 +378,7 @@ function createSettingsStore() {
 			intent_tab_title: state.intentTabTitle,
 			suggest_followups: state.suggestFollowups,
 			copy_on_select: state.copyOnSelect,
+			show_last_prompt: state.showLastPrompt,
 			bell_style: state.bellStyle,
 			global_hotkey: state.globalHotkey,
 			issue_filter: state.issueFilter,
@@ -448,6 +452,7 @@ function createSettingsStore() {
 				setState("disabledAgents", config.disabled_agents ?? []);
 				setState("intentTabTitle", config.intent_tab_title ?? true);
 				setState("copyOnSelect", config.copy_on_select ?? true);
+				setState("showLastPrompt", config.show_last_prompt ?? false);
 				setState("bellStyle", (config.bell_style || "visual") as SettingsStoreState["bellStyle"]);
 				setState("suggestFollowups", config.suggest_followups ?? true);
 				setState("globalHotkey", config.global_hotkey ?? null);
@@ -600,6 +605,11 @@ function createSettingsStore() {
 		/** Set copy-on-select preference */
 		setCopyOnSelect(enabled: boolean): void {
 			setState("copyOnSelect", enabled);
+			save();
+		},
+
+		setShowLastPrompt(enabled: boolean): void {
+			setState("showLastPrompt", enabled);
 			save();
 		},
 
