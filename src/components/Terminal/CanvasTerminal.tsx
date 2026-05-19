@@ -657,6 +657,35 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 		scrollThumbRef.style.height = `${thumbHeight}px`;
 		scrollThumbRef.style.transform = `translateY(${scrollPos}px)`;
+
+		paintScrollbarMarks(total);
+	}
+
+	let scrollbarMarksContainer: HTMLDivElement | null = null;
+	let lastScrollbarMarksKey = "";
+
+	function paintScrollbarMarks(totalRows: number) {
+		if (!scrollbarRef) return;
+		if (!scrollbarMarksContainer) {
+			scrollbarMarksContainer = document.createElement("div");
+			scrollbarMarksContainer.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none";
+			scrollbarRef.appendChild(scrollbarMarksContainer);
+		}
+		const term = terminalsStore.get(props.terminalId);
+		if (!term) return;
+		const blocks = term.commandBlocks;
+		const key = `${blocks.length}:${totalRows}:${blocks[blocks.length - 1]?.exitCode ?? ""}`;
+		if (key === lastScrollbarMarksKey) return;
+		lastScrollbarMarksKey = key;
+
+		const trackH = scrollbarRef.clientHeight;
+		let html = "";
+		for (const block of blocks) {
+			const ratio = block.promptLine / totalRows;
+			const color = block.exitCode !== null && block.exitCode !== 0 ? "#f85149" : "rgba(88,166,255,0.5)";
+			html += `<div style="position:absolute;right:0;width:100%;height:2px;top:${ratio * trackH}px;background:${color}"></div>`;
+		}
+		scrollbarMarksContainer.innerHTML = html;
 	}
 
 	// --- Suggest / Intent overlay ---
