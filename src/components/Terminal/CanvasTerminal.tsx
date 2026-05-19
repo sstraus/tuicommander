@@ -354,6 +354,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		paintLinkUnderline(frame, m);
 		paintGutterMarkers(m);
 		paintBlockTimestamps(m);
+		paintFoldedBlocks(m);
 		paintCursor(frame, m);
 	}
 
@@ -467,6 +468,43 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			if (vpRow === null) continue;
 			octx.fillStyle = "#f85149";
 			octx.fillRect(-GUTTER_PX, vpRow * m.cellHeight, 3, m.cellHeight);
+		}
+	}
+
+	function paintFoldedBlocks(m: CellMetrics) {
+		const term = terminalsStore.get(props.terminalId);
+		if (!term || term.foldedBlocks.size === 0) return;
+		const fontFamily = settingsStore.getFontFamily();
+		const painted = new Set<number>();
+		for (const promptLine of term.foldedBlocks) {
+			if (painted.has(promptLine)) continue;
+			painted.add(promptLine);
+			const block = term.commandBlocks.find((b) => b.promptLine === promptLine);
+			if (!block?.endLine) continue;
+			const foldStart = (block.executionLine ?? block.promptLine) + 1;
+			const foldEnd = block.endLine;
+			const foldedCount = foldEnd - foldStart;
+			if (foldedCount <= 0) continue;
+			const startVp = absRowToViewport(foldStart);
+			if (startVp === null) continue;
+			const endVp = absRowToViewport(foldEnd - 1);
+			const lastVp = endVp ?? (lastResizeRows - 1);
+			const y = startVp * m.cellHeight;
+			const h = (lastVp - startVp + 1) * m.cellHeight;
+			octx.fillStyle = cachedBgDefault;
+			octx.globalAlpha = 0.85;
+			octx.fillRect(-GUTTER_PX, y, overlayCanvasRef.width / m.dpr, h);
+			octx.globalAlpha = 1.0;
+			const label = `  ··· ${foldedCount} lines folded ···`;
+			octx.font = `${Math.round(m.cellHeight * 0.7)}px ${fontFamily}`;
+			octx.fillStyle = "rgba(150,150,150,0.6)";
+			octx.fillText(label, 4, y + m.cellHeight * 0.75);
+			// Fold gutter indicator
+			octx.fillStyle = "rgba(88,166,255,0.5)";
+			const gutterVp = absRowToViewport(block.promptLine);
+			if (gutterVp !== null) {
+				octx.fillRect(-GUTTER_PX, gutterVp * m.cellHeight, 3, m.cellHeight);
+			}
 		}
 	}
 
@@ -2636,6 +2674,23 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 						return;
 					}
 				}
+			}
+
+			// Cmd+Shift+. (macOS) or Ctrl+Shift+. (Win/Linux): toggle fold on current block
+			if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "." && !e.altKey) {
+				const term = terminalsStore.get(props.terminalId);
+				if (term && currentFrame) {
+					const viewTop = currentFrame.historySize - currentFrame.displayOffset;
+					const blocks = [...term.commandBlocks, term.activeBlock].filter(Boolean) as import("../../stores/terminals").CommandBlock[];
+					const current = blocks.find((b) => b.promptLine <= viewTop + (lastResizeRows >> 1) && (b.endLine ?? Infinity) >= viewTop);
+					if (current) {
+						terminalsStore.toggleBlockFold(props.terminalId, current.promptLine);
+						fullRepaintNeeded = true;
+						if (metrics()) paintFrame(currentFrame, metrics()!);
+					}
+				}
+				e.preventDefault();
+				return;
 			}
 
 			// Force re-render: clear accumulated buffer and request fresh frame from Rust
