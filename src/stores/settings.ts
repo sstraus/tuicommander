@@ -52,6 +52,9 @@ interface RustAppConfig {
 	scrollback_reflow?: boolean;
 	cursor_style?: string;
 	terminal_renderer?: string;
+	show_block_timestamps?: boolean;
+	show_scrollbar_marks?: boolean;
+	block_folding_enabled?: boolean;
 }
 
 // Default values
@@ -303,6 +306,9 @@ interface SettingsStoreState {
 	scrollbackReflow: boolean;
 	cursorStyle: "bar" | "block" | "underline";
 	terminalRenderer: TerminalRenderer;
+	showBlockTimestamps: boolean;
+	showScrollbarMarks: boolean;
+	blockFoldingEnabled: boolean;
 }
 
 const SAVE_DEBOUNCE_MS = 500;
@@ -345,6 +351,9 @@ function createSettingsStore() {
 		scrollbackReflow: false,
 		cursorStyle: "bar" as SettingsStoreState["cursorStyle"],
 		terminalRenderer: "webgl",
+		showBlockTimestamps: true,
+		showScrollbarMarks: true,
+		blockFoldingEnabled: true,
 	});
 
 	// Shadow copy of the last loaded config — preserves fields not tracked in SolidJS store
@@ -392,6 +401,9 @@ function createSettingsStore() {
 			scrollback_reflow: state.scrollbackReflow,
 			cursor_style: state.cursorStyle,
 			terminal_renderer: state.terminalRenderer,
+			show_block_timestamps: state.showBlockTimestamps,
+			show_scrollbar_marks: state.showScrollbarMarks,
+			block_folding_enabled: state.blockFoldingEnabled,
 			services: baseConfig?.services ?? { auth: { session_token_duration_secs: 86400 } },
 			mcp_server_enabled: baseConfig?.mcp_server_enabled ?? true,
 		};
@@ -468,6 +480,9 @@ function createSettingsStore() {
 				const cs = config.cursor_style;
 				setState("cursorStyle", cs === "block" || cs === "underline" ? cs : "bar");
 				setState("terminalRenderer", validateTerminalRenderer(config.terminal_renderer || null));
+				setState("showBlockTimestamps", config.show_block_timestamps ?? true);
+				setState("showScrollbarMarks", config.show_scrollbar_marks ?? true);
+				setState("blockFoldingEnabled", config.block_folding_enabled ?? true);
 			} catch (err) {
 				appLogger.error("config", "Failed to hydrate settings", err);
 			}

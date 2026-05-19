@@ -68,6 +68,10 @@ export const ACTION_NAMES = [
 	"detach-activity-dashboard",
 	"toggle-tunnels",
 	"process-manager",
+	"block-fold-toggle",
+	"block-prev",
+	"block-next",
+	"block-search-toggle",
 	// Numbered tabs and branches
 	...Array.from({ length: 9 }, (_, i) => `switch-tab-${i + 1}`),
 	...Array.from({ length: 9 }, (_, i) => `switch-branch-${i + 1}`),
@@ -148,6 +152,10 @@ export const DEFAULT_BINDINGS: Record<ActionName, string> = {
 	"detach-activity-dashboard": "",
 	"toggle-tunnels": "",
 	"process-manager": "",
+	"block-fold-toggle": "Cmd+Shift+.",
+	"block-prev": "Cmd+Shift+ArrowUp",
+	"block-next": "Cmd+Shift+ArrowDown",
+	"block-search-toggle": "Cmd+Shift+B",
 	// Numbered tabs
 	...Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`switch-tab-${i + 1}`, `Cmd+${i + 1}`])),
 	// Numbered branches (Cmd+Ctrl on macOS, Ctrl+Alt on Win/Linux — we use Cmd+Ctrl here)

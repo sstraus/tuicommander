@@ -511,7 +511,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	let blockTimestampsVisible = false;
 
 	function paintBlockTimestamps(m: CellMetrics) {
-		if (!blockTimestampsVisible) return;
+		if (!blockTimestampsVisible || !settingsStore.state.showBlockTimestamps) return;
 		const term = terminalsStore.get(props.terminalId);
 		if (!term) return;
 		const all = term.activeBlock ? [...term.commandBlocks, term.activeBlock] : term.commandBlocks;
@@ -703,7 +703,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	let lastScrollbarMarksKey = "";
 
 	function paintScrollbarMarks(totalRows: number) {
-		if (!scrollbarRef) return;
+		if (!scrollbarRef || !settingsStore.state.showScrollbarMarks) return;
 		if (!scrollbarMarksContainer) {
 			scrollbarMarksContainer = document.createElement("div");
 			scrollbarMarksContainer.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none";
@@ -2677,7 +2677,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			}
 
 			// Cmd+Shift+. (macOS) or Ctrl+Shift+. (Win/Linux): toggle fold on current block
-			if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "." && !e.altKey) {
+			if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "." && !e.altKey && settingsStore.state.blockFoldingEnabled) {
 				const term = terminalsStore.get(props.terminalId);
 				if (term && currentFrame) {
 					const viewTop = currentFrame.historySize - currentFrame.displayOffset;
