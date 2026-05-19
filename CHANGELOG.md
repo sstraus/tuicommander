@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.3-nightly] - 2026-05-19
+
 ### Added
 - **Tab ordering modes** — New Appearance setting with 3 modes: "Grouped by Type" (default, current behavior), "Terminals First" (terminals grouped left, non-terminals freely interleaved), and "Free" (any tab draggable to any position). Settings > Appearance > Tabs.
 

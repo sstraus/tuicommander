@@ -3,7 +3,7 @@ members = [".", "crates/tuic-bridge", "crates/tuic-cli", "patches/alacritty_term
 
 [package]
 name = "tuicommander"
-version = "1.2.2"
+version = "1.2.3-nightly"
 description = "TUICommander - Native platform for AI coding agents"
 authors = ["Stefano Straus <github.com/sstraus>"]
 edition = "2024"
