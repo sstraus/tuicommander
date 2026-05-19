@@ -11,30 +11,6 @@ use tauri::State;
 use crate::error_classification::calculate_backoff_delay;
 use crate::state::{AppState, GIT_CACHE_TTL, GITHUB_CACHE_TTL};
 
-// ── GitHub API debug logging ────────────────────────────────────────────────
-static GITHUB_API_DEBUG: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
-pub(crate) fn github_api_debug_enabled() -> bool {
-    GITHUB_API_DEBUG.load(Ordering::Relaxed)
-}
-
-pub(crate) fn set_github_api_debug(enabled: bool) {
-    GITHUB_API_DEBUG.store(enabled, Ordering::Relaxed);
-    tracing::info!(source = "github", enabled, "API debug logging toggled");
-}
-
-pub(crate) fn log_github_api(method: &str, url: &str, caller: &str) {
-    if GITHUB_API_DEBUG.load(Ordering::Relaxed) {
-        tracing::info!(
-            source = "github_api",
-            method,
-            url,
-            caller,
-            "GitHub API call"
-        );
-    }
-}
 
 fn extract_graphql_name(query: &str) -> &str {
     // Extract name from "query FooBar {" or "mutation Baz(" patterns
@@ -390,7 +366,7 @@ pub(crate) async fn graphql_with_retry(
     // Check circuit breaker first
     state.github_circuit_breaker.check()?;
 
-    if GITHUB_API_DEBUG.load(Ordering::Relaxed) {
+    if crate::github_debug::enabled() {
         let query_name = extract_graphql_name(query);
         tracing::info!(
             source = "github_api",
@@ -1270,7 +1246,7 @@ pub(crate) async fn close_issue_impl(
         .ok_or_else(|| format!("Failed to parse remote URL: {remote_url}"))?;
 
     let url = format!("https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}");
-    log_github_api("PATCH", &url, "close_issue_impl");
+    crate::github_debug::log_api("PATCH", &url, "close_issue_impl");
     let body = serde_json::json!({ "state": "closed" });
 
     let response = state
@@ -1323,7 +1299,7 @@ pub(crate) async fn reopen_issue_impl(
         .ok_or_else(|| format!("Failed to parse remote URL: {remote_url}"))?;
 
     let url = format!("https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}");
-    log_github_api("PATCH", &url, "reopen_issue_impl");
+    crate::github_debug::log_api("PATCH", &url, "reopen_issue_impl");
     let body = serde_json::json!({ "state": "open" });
 
     let response = state
@@ -1815,7 +1791,7 @@ pub(crate) async fn merge_pr_github_impl(
         .ok_or_else(|| format!("Failed to parse GitHub remote URL: {remote_url}"))?;
 
     let url = format!("https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/merge");
-    log_github_api("PUT", &url, "merge_pr_github_impl");
+    crate::github_debug::log_api("PUT", &url, "merge_pr_github_impl");
     let body = serde_json::json!({ "merge_method": merge_method });
 
     let response = state
@@ -1892,7 +1868,7 @@ pub(crate) async fn approve_pr_impl(
         .ok_or_else(|| format!("Failed to parse GitHub remote URL: {remote_url}"))?;
 
     let url = format!("https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/reviews");
-    log_github_api("POST", &url, "approve_pr_impl");
+    crate::github_debug::log_api("POST", &url, "approve_pr_impl");
     let body = serde_json::json!({ "event": "APPROVE" });
 
     let response = state
@@ -1951,7 +1927,7 @@ pub(crate) async fn get_pr_diff_impl(
         .ok_or_else(|| format!("Failed to parse GitHub remote URL: {remote_url}"))?;
 
     let url = format!("https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}");
-    log_github_api("GET", &url, "get_pr_diff_impl");
+    crate::github_debug::log_api("GET", &url, "get_pr_diff_impl");
 
     let response = state
         .http_client
@@ -2008,7 +1984,7 @@ fn fetch_ci_failure_logs_impl(repo_path: &str, branch: &str) -> Result<String, S
     let gh = crate::agent::resolve_cli("gh");
 
     // Step 1: find the latest failed run for the branch
-    log_github_api("CLI", &format!("gh run list --repo {repo_slug} --branch {branch}"), "fetch_ci_failure_logs_impl");
+    crate::github_debug::log_api("CLI", &format!("gh run list --repo {repo_slug} --branch {branch}"), "fetch_ci_failure_logs_impl");
     let mut list_cmd = Command::new(&gh);
     list_cmd.args([
         "run",
@@ -2044,7 +2020,7 @@ fn fetch_ci_failure_logs_impl(repo_path: &str, branch: &str) -> Result<String, S
         .ok_or_else(|| "No failed workflow runs found for this branch".to_string())?;
 
     // Step 2: fetch failure logs for that run
-    log_github_api("CLI", &format!("gh run view {run_id} --repo {repo_slug} --log-failed"), "fetch_ci_failure_logs_impl");
+    crate::github_debug::log_api("CLI", &format!("gh run view {run_id} --repo {repo_slug} --log-failed"), "fetch_ci_failure_logs_impl");
     let mut view_cmd = Command::new(&gh);
     view_cmd.args([
         "run",
@@ -2092,20 +2068,6 @@ pub(crate) async fn get_pr_diff(
     get_pr_diff_impl(&repo_path, pr_number, &state).await
 }
 
-/// Toggle GitHub API debug logging at runtime.
-#[cfg(feature = "desktop")]
-#[tauri::command]
-pub(crate) async fn github_set_api_debug(enabled: bool) -> bool {
-    set_github_api_debug(enabled);
-    enabled
-}
-
-/// Query the current GitHub API debug state.
-#[cfg(feature = "desktop")]
-#[tauri::command]
-pub(crate) async fn github_get_api_debug() -> bool {
-    github_api_debug_enabled()
-}
 
 #[cfg(test)]
 mod tests {

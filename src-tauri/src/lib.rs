@@ -27,6 +27,7 @@ pub(crate) mod git_cli;
 pub(crate) mod git_graph;
 pub(crate) mod github;
 pub(crate) mod github_auth;
+pub(crate) mod github_debug;
 pub(crate) mod github_poller;
 #[cfg(feature = "desktop")]
 mod global_hotkey;
@@ -1337,8 +1338,6 @@ pub fn run() {
             github::get_all_issues,
             github::close_issue,
             github::reopen_issue,
-            github::github_set_api_debug,
-            github::github_get_api_debug,
             github_poller::github_start_polling,
             github_poller::github_stop_polling,
             github_poller::github_set_visibility,

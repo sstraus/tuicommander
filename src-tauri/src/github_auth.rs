@@ -110,7 +110,7 @@ pub(crate) async fn start_device_flow(
 ) -> Result<DeviceCodeResponse, String> {
     let params = [("client_id", CLIENT_ID), ("scope", OAUTH_SCOPES)];
 
-    crate::github::log_github_api("POST", "https://github.com/login/device/code", "start_device_flow");
+    crate::github_debug::log_api("POST", "https://github.com/login/device/code", "start_device_flow");
     let response = client
         .post("https://github.com/login/device/code")
         .header("Accept", "application/json")
@@ -145,7 +145,7 @@ pub(crate) async fn poll_device_flow(
         ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
     ];
 
-    crate::github::log_github_api("POST", "https://github.com/login/oauth/access_token", "poll_device_flow");
+    crate::github_debug::log_api("POST", "https://github.com/login/oauth/access_token", "poll_device_flow");
     let response = client
         .post("https://github.com/login/oauth/access_token")
         .header("Accept", "application/json")
@@ -360,7 +360,7 @@ pub(crate) async fn github_auth_status(
     };
 
     // Call GitHub /user to get login + avatar
-    crate::github::log_github_api("GET", "https://api.github.com/user", "validate_token_impl");
+    crate::github_debug::log_api("GET", "https://api.github.com/user", "validate_token_impl");
     let resp = state
         .http_client
         .get("https://api.github.com/user")

@@ -212,12 +212,12 @@ pub(super) async fn poller_update_paths(
 pub(super) async fn api_debug_set(
     Json(body): Json<super::types::SetApiDebugRequest>,
 ) -> Response {
-    crate::github::set_github_api_debug(body.enabled);
+    crate::github_debug::set(body.enabled);
     Json(serde_json::json!({"ok": true, "enabled": body.enabled})).into_response()
 }
 
 pub(super) async fn api_debug_get() -> Response {
-    let enabled = crate::github::github_api_debug_enabled();
+    let enabled = crate::github_debug::enabled();
     Json(serde_json::json!({"enabled": enabled})).into_response()
 }
 

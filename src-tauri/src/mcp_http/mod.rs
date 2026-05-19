@@ -639,7 +639,7 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
             post(github_routes::poller_set_issue_filter),
         )
         .route(
-            "/repo/github/api-debug",
+            "/repo/github-poller/api-debug",
             get(github_routes::api_debug_get).post(github_routes::api_debug_set),
         )
         // Watchers (for browser/mobile clients)
