@@ -40,10 +40,12 @@ pub(crate) mod mcp_upstream_config;
 #[allow(dead_code)] // Used by OAuth discovery (story 1193-7f78), not yet wired
 pub(crate) mod mcp_upstream_credentials;
 pub(crate) mod mdkb_client;
+#[cfg(feature = "desktop")]
 pub(crate) mod mdkb_commands;
 pub(crate) mod mdkb_daemon;
 #[cfg(feature = "desktop")]
 mod menu;
+#[cfg(feature = "desktop")]
 mod native_drag;
 #[cfg(feature = "desktop")]
 pub(crate) mod notification_sound;
@@ -1334,6 +1336,8 @@ pub fn run() {
             github::get_all_issues,
             github::close_issue,
             github::reopen_issue,
+            github::github_set_api_debug,
+            github::github_get_api_debug,
             github_poller::github_start_polling,
             github_poller::github_stop_polling,
             github_poller::github_set_visibility,

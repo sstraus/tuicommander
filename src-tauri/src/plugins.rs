@@ -888,8 +888,7 @@ fn is_plugin_code_change(relative: &std::path::Path) -> bool {
     )
 }
 
-/// Start watching the plugins directory for changes and emit `plugin-changed`
-/// events to the frontend. Uses the same debouncer pattern as repo_watcher.
+#[cfg(feature = "desktop")]
 pub fn start_plugin_watcher(app_handle: &AppHandle) {
     let dir = plugins_dir();
     if let Err(e) = std::fs::create_dir_all(&dir) {

@@ -1035,7 +1035,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 					canvasTerminalRef()?.focus();
 				}}
 			/>
-			<Show when={settingsStore.state.showLastPrompt && terminalsStore.get(props.id)?.lastPrompt}>
+			<Show when={settingsStore.state.showLastPrompt && terminalsStore.get(props.id)?.agentType && terminalsStore.get(props.id)?.lastPrompt}>
 				<LastPromptBar prompt={() => terminalsStore.get(props.id)?.lastPrompt ?? null} />
 			</Show>
 			<Show when={reconnecting()}>
