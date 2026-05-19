@@ -412,8 +412,7 @@ mod tests {
         let (cb, statuses) = status_collector();
 
         let mut sup =
-            TunnelSupervisor::start_with_binary(test_profile(), script.to_path_buf(), cb)
-                .await;
+            TunnelSupervisor::start_with_binary(test_profile(), script.to_path_buf(), cb).await;
 
         // Wait for the process to exit and supervisor to settle.
         tokio::time::sleep(Duration::from_secs(2)).await;
@@ -440,8 +439,7 @@ mod tests {
         let (cb, statuses) = status_collector();
 
         let mut sup =
-            TunnelSupervisor::start_with_binary(test_profile(), script.to_path_buf(), cb)
-                .await;
+            TunnelSupervisor::start_with_binary(test_profile(), script.to_path_buf(), cb).await;
 
         tokio::time::sleep(Duration::from_secs(2)).await;
 
@@ -483,8 +481,7 @@ mod tests {
         let (cb, statuses) = status_collector();
 
         let mut sup =
-            TunnelSupervisor::start_with_binary(test_profile(), script.to_path_buf(), cb)
-                .await;
+            TunnelSupervisor::start_with_binary(test_profile(), script.to_path_buf(), cb).await;
 
         // Wait long enough for at least 2 retry attempts (first backoff ~1s, second ~2s).
         tokio::time::sleep(Duration::from_secs(5)).await;
@@ -530,8 +527,7 @@ mod tests {
         let (cb, _statuses) = status_collector();
 
         let mut sup =
-            TunnelSupervisor::start_with_binary(test_profile(), script.to_path_buf(), cb)
-                .await;
+            TunnelSupervisor::start_with_binary(test_profile(), script.to_path_buf(), cb).await;
 
         // Wait for health check to pass.
         tokio::time::sleep(Duration::from_millis(800)).await;
@@ -574,8 +570,7 @@ mod tests {
         let script = fake_ssh_script("exit 0");
         let (cb, _statuses) = status_collector();
 
-        let sup =
-            TunnelSupervisor::start_with_binary(profile, script.to_path_buf(), cb).await;
+        let sup = TunnelSupervisor::start_with_binary(profile, script.to_path_buf(), cb).await;
 
         // Should immediately be in Error state — no spawn.
         let status = sup.status();

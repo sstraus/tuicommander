@@ -4478,8 +4478,8 @@ fn collect_descendant_pids(root: u32) -> Option<Vec<u32>> {
     {
         // On Windows, deepest_descendant_pid already walks the tree.
         // Reuse the snapshot logic to collect all descendants.
-        use windows_sys::Win32::System::Diagnostics::ToolHelp::*;
         use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::Diagnostics::ToolHelp::*;
         let snap = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
         if snap.is_null() {
             return None;
@@ -4560,12 +4560,13 @@ fn query_process_stats(pids: &[u32]) -> std::collections::HashMap<u32, (u64, f32
 #[cfg(all(feature = "desktop", windows))]
 fn query_single_process_windows(pid: u32) -> Option<(u64, f32)> {
     use windows_sys::Win32::Foundation::CloseHandle;
-    use windows_sys::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
+    use windows_sys::Win32::System::ProcessStatus::{
+        GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+    };
     use windows_sys::Win32::System::Threading::{
         OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
     };
-    let handle =
-        unsafe { OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, pid) };
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, pid) };
     if handle.is_null() {
         return None;
     }

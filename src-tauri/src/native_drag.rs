@@ -22,9 +22,9 @@ pub async fn start_native_drag(
         let result = catch_unwind(std::panic::AssertUnwindSafe(|| {
             #[cfg(target_os = "linux")]
             {
-                let gtk_win = window.gtk_window().map_err(|e| {
-                    drag::Error::Io(std::io::Error::other(e.to_string()))
-                })?;
+                let gtk_win = window
+                    .gtk_window()
+                    .map_err(|e| drag::Error::Io(std::io::Error::other(e.to_string())))?;
                 drag::start_drag(
                     &gtk_win,
                     drag::DragItem::Files(items),
