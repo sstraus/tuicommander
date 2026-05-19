@@ -431,6 +431,11 @@ pub(super) struct SetIssueFilterRequest {
     pub filter: String,
 }
 
+#[derive(Deserialize)]
+pub(super) struct SetApiDebugRequest {
+    pub enabled: bool,
+}
+
 // --- Terminal grid command types ---
 
 #[derive(Deserialize)]

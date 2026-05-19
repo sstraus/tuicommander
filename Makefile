@@ -22,7 +22,8 @@ export MACOSX_DEPLOYMENT_TARGET ?= 10.15
 DIST_DIR=dist-release
 
 .PHONY: all clean dev test build build-dmg check fmt sign verify-sign notarize release dist \
-       nightly github-release preview bump release-notes
+       nightly github-release preview bump release-notes \
+       gh-debug-on gh-debug-off gh-debug-status gh-debug-logs gh-rate
 
 all: build sign
 
@@ -65,6 +66,22 @@ check:
 	@rtk npx vitest run --reporter=dot 2>&1 | tail -3
 	@rtk npm audit --audit-level=high && echo "  npm audit ✓"
 	@cd src-tauri && rtk err cargo audit -q --ignore RUSTSEC-2026-0097 --ignore RUSTSEC-2023-0071 && echo "  cargo audit ✓"
+
+# GitHub API debug logging — toggle at runtime, view logs
+gh-debug-on:
+	@curl -s -X POST localhost:9876/repo/github/api-debug -H 'Content-Type: application/json' -d '{"enabled":true}' && echo ""
+
+gh-debug-off:
+	@curl -s -X POST localhost:9876/repo/github/api-debug -H 'Content-Type: application/json' -d '{"enabled":false}' && echo ""
+
+gh-debug-status:
+	@curl -s localhost:9876/repo/github/api-debug && echo ""
+
+gh-debug-logs:
+	@curl -s 'localhost:9876/logs?source=github_api&limit=30'
+
+gh-rate:
+	@curl -sH "Authorization: Bearer $$(gh auth token)" https://api.github.com/rate_limit | jq '.resources | {graphql, core}'
 
 # Sign the built .app bundle
 sign:

@@ -206,7 +206,10 @@ struct PollMutableState {
     prev: PrevState,
     fail_count: u32,
     last_changed: HashMap<String, Instant>,
-    etag_cache: HashMap<String, String>,
+    /// Per-repo max PR updated_at — `None` means known-empty PR set.
+    last_pr_updated_at: HashMap<String, Option<String>>,
+    /// Per-repo max issue updated_at — `None` means known-empty issue set.
+    last_issue_updated_at: HashMap<String, Option<String>>,
 }
 
 #[cfg(feature = "desktop")]
@@ -219,7 +222,8 @@ async fn poll_loop(state: Arc<AppState>, handle: AppHandle, mut rx: mpsc::Receiv
         prev: HashMap::new(),
         fail_count: 0,
         last_changed: HashMap::new(),
-        etag_cache: HashMap::new(),
+        last_pr_updated_at: HashMap::new(),
+        last_issue_updated_at: HashMap::new(),
     };
     let mut startup = true;
     let mut poll_cycle: u32 = 0;
@@ -246,7 +250,7 @@ async fn poll_loop(state: Arc<AppState>, handle: AppHandle, mut rx: mpsc::Receiv
                 pending_poll_at = None;
                 let rate_budget = state.github_rate_limit_remaining.load(std::sync::atomic::Ordering::Relaxed);
                 let batch = if pending_poll_paths.is_empty() { &paths } else { &pending_poll_paths };
-                poll_batch(&state, &handle, batch, false, &issue_filter, pr_hide_drafts, &mut ps, true).await;
+                poll_batch(&state, &handle, batch, false, &issue_filter, pr_hide_drafts, &mut ps).await;
                 pending_poll_paths.clear();
                 let dur = current_interval(visible, ps.fail_count, rate_budget);
                 interval = tokio::time::interval_at(tokio::time::Instant::now() + dur, dur);
@@ -259,8 +263,7 @@ async fn poll_loop(state: Arc<AppState>, handle: AppHandle, mut rx: mpsc::Receiv
                 } else {
                     tiered_paths(&paths, &ps.last_changed, poll_cycle)
                 };
-                let use_etag = !startup;
-                poll_batch(&state, &handle, &batch_paths, startup, &issue_filter, pr_hide_drafts, &mut ps, use_etag).await;
+                poll_batch(&state, &handle, &batch_paths, startup, &issue_filter, pr_hide_drafts, &mut ps).await;
                 startup = false;
                 poll_cycle = poll_cycle.wrapping_add(1);
                 pending_poll_at = None;
@@ -358,7 +361,6 @@ fn current_interval(visible: bool, fail_count: u32, rate_budget: u32) -> Duratio
 }
 
 #[cfg(feature = "desktop")]
-#[allow(clippy::too_many_arguments)]
 async fn poll_batch(
     state: &AppState,
     handle: &AppHandle,
@@ -367,7 +369,6 @@ async fn poll_batch(
     issue_filter: &str,
     pr_hide_drafts: bool,
     ps: &mut PollMutableState,
-    use_etag: bool,
 ) {
     if paths.is_empty() {
         return;
@@ -376,18 +377,12 @@ async fn poll_batch(
         return;
     }
 
-    let etag = if use_etag {
-        Some(&mut ps.etag_cache)
-    } else {
-        None
-    };
     match crate::github::get_all_batch_impl(
         paths,
         include_merged,
         issue_filter,
         pr_hide_drafts,
         state,
-        etag,
     )
     .await
     {
@@ -395,39 +390,62 @@ async fn poll_batch(
             ps.fail_count = 0;
             let now = Instant::now();
 
-            for (repo_path, statuses) in &result.prs {
-                let changed = process_repo_update(state, handle, repo_path, statuses, &mut ps.prev);
+            for (repo_path, statuses) in result.prs {
+                let changed = process_repo_update(state, handle, &repo_path, &statuses, &mut ps.prev);
                 if changed {
                     ps.last_changed.insert(repo_path.clone(), now);
                 } else {
                     ps.last_changed.entry(repo_path.clone()).or_insert(now);
                 }
-            }
-            for (repo_path, statuses) in result.prs {
-                let _ = handle.emit(
-                    "github-pr-update",
-                    PrUpdatePayload {
-                        repo_path: repo_path.clone(),
-                        statuses: statuses.clone(),
-                    },
-                );
-                let _ = state.event_bus.send(AppEvent::GitHubPrUpdate {
-                    repo_path,
-                    statuses,
-                });
+
+                let cur_ts = statuses
+                    .iter()
+                    .map(|s| s.updated_at.as_str())
+                    .filter(|s| !s.is_empty())
+                    .max()
+                    .map(|s| s.to_string());
+                let prev_ts = ps.last_pr_updated_at.get(&repo_path);
+                let data_changed = prev_ts.is_none_or(|p| *p != cur_ts);
+                ps.last_pr_updated_at.insert(repo_path.clone(), cur_ts);
+
+                if data_changed {
+                    let _ = handle.emit(
+                        "github-pr-update",
+                        PrUpdatePayload {
+                            repo_path: repo_path.clone(),
+                            statuses: statuses.clone(),
+                        },
+                    );
+                    let _ = state.event_bus.send(AppEvent::GitHubPrUpdate {
+                        repo_path,
+                        statuses,
+                    });
+                }
             }
 
             for (repo_path, issues) in result.issues {
-                let _ = handle.emit(
-                    "github-issues-update",
-                    IssuesUpdatePayload {
-                        repo_path: repo_path.clone(),
-                        issues: issues.clone(),
-                    },
-                );
-                let _ = state
-                    .event_bus
-                    .send(AppEvent::GitHubIssuesUpdate { repo_path, issues });
+                let cur_ts = issues
+                    .iter()
+                    .map(|i| i.updated_at.as_str())
+                    .filter(|s| !s.is_empty())
+                    .max()
+                    .map(|s| s.to_string());
+                let prev_ts = ps.last_issue_updated_at.get(&repo_path);
+                let data_changed = prev_ts.is_none_or(|p| *p != cur_ts);
+                ps.last_issue_updated_at.insert(repo_path.clone(), cur_ts);
+
+                if data_changed {
+                    let _ = handle.emit(
+                        "github-issues-update",
+                        IssuesUpdatePayload {
+                            repo_path: repo_path.clone(),
+                            issues: issues.clone(),
+                        },
+                    );
+                    let _ = state
+                        .event_bus
+                        .send(AppEvent::GitHubIssuesUpdate { repo_path, issues });
+                }
             }
         }
         Err(e) => {
@@ -472,9 +490,15 @@ fn process_repo_update(
         if is_new {
             changed = true;
         }
+    }
+    let old_len = old_map.len();
+    let new_branches: std::collections::HashSet<&str> =
+        statuses.iter().map(|s| s.branch.as_str()).collect();
+    old_map.retain(|branch, _| new_branches.contains(branch.as_str()));
+    for new_pr in statuses {
         old_map.insert(new_pr.branch.clone(), new_pr.clone());
     }
-    if old_map.len() != statuses.len() {
+    if old_len != statuses.len() {
         changed = true;
     }
     changed

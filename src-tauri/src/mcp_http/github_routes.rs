@@ -209,6 +209,18 @@ pub(super) async fn poller_update_paths(
     Json(serde_json::json!({"ok": true})).into_response()
 }
 
+pub(super) async fn api_debug_set(
+    Json(body): Json<super::types::SetApiDebugRequest>,
+) -> Response {
+    crate::github::set_github_api_debug(body.enabled);
+    Json(serde_json::json!({"ok": true, "enabled": body.enabled})).into_response()
+}
+
+pub(super) async fn api_debug_get() -> Response {
+    let enabled = crate::github::github_api_debug_enabled();
+    Json(serde_json::json!({"enabled": enabled})).into_response()
+}
+
 pub(super) async fn poller_set_issue_filter(
     State(state): State<Arc<AppState>>,
     Json(body): Json<super::types::SetIssueFilterRequest>,

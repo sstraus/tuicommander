@@ -1082,7 +1082,6 @@ pub(crate) async fn get_all_batch_impl(
     filter_mode: &str,
     pr_hide_drafts: bool,
     state: &AppState,
-    etag_cache: Option<&mut std::collections::HashMap<String, String>>,
 ) -> Result<BatchPollResult, String> {
     if state.github_token.read().is_none() {
         return Ok(BatchPollResult {
@@ -1097,7 +1096,7 @@ pub(crate) async fn get_all_batch_impl(
         .github_repo_cooldown
         .retain(|_key, expiry| *expiry > now);
 
-    let all_repos: Vec<(String, String, String)> = paths
+    let repos: Vec<(String, String, String)> = paths
         .iter()
         .filter_map(|path| {
             let repo_path = PathBuf::from(path);
@@ -1115,25 +1114,12 @@ pub(crate) async fn get_all_batch_impl(
         })
         .collect();
 
-    if all_repos.is_empty() {
+    if repos.is_empty() {
         return Ok(BatchPollResult {
             prs: Default::default(),
             issues: Default::default(),
         });
     }
-
-    let repos = if let Some(cache) = etag_cache {
-        let changed = filter_changed_repos(&all_repos, cache, state).await;
-        if changed.is_empty() {
-            return Ok(BatchPollResult {
-                prs: Default::default(),
-                issues: Default::default(),
-            });
-        }
-        changed
-    } else {
-        all_repos
-    };
 
     let include_issues = !matches!(filter_mode, "" | "disabled");
     // Always fetch viewer login — needed for both issue filtering and viewer PR search.
@@ -1594,7 +1580,7 @@ pub(crate) async fn get_all_pr_statuses_impl(
     include_merged: bool,
     state: &AppState,
 ) -> Result<std::collections::HashMap<String, Vec<BranchPrStatus>>, String> {
-    let result = get_all_batch_impl(paths, include_merged, "disabled", false, state, None).await?;
+    let result = get_all_batch_impl(paths, include_merged, "disabled", false, state).await?;
     Ok(result.prs)
 }
 
@@ -1655,66 +1641,6 @@ pub(crate) fn get_github_status_impl(path: &str) -> GitHubStatus {
         ahead,
         behind,
     }
-}
-
-/// Check which repos have changed PRs since the last poll using REST ETags.
-/// Returns the subset of `repos` where the PR list has actually changed (200).
-/// Repos returning 304 are filtered out (no change, zero rate-limit cost).
-/// On any error (network, auth), the repo is assumed changed (safe fallback).
-pub(crate) async fn filter_changed_repos(
-    repos: &[(String, String, String)],
-    etag_cache: &mut std::collections::HashMap<String, String>,
-    state: &AppState,
-) -> Vec<(String, String, String)> {
-    let token = {
-        let guard = state.github_token.read();
-        match guard.as_ref() {
-            Some(t) => t.clone(),
-            None => return repos.to_vec(),
-        }
-    };
-
-    let client = &state.http_client;
-
-    let futures: Vec<_> = repos.iter().map(|(path, owner, name)| {
-        let url = format!("https://api.github.com/repos/{owner}/{name}/pulls?state=open&sort=updated&direction=desc&per_page=1");
-        log_github_api("GET", &url, "filter_changed_repos");
-        let mut req = client.get(&url)
-            .header("Authorization", format!("Bearer {token}"))
-            .header("User-Agent", "tuicommander")
-            .header("Accept", "application/json");
-
-        let cache_key = format!("{owner}/{name}");
-        if let Some(etag) = etag_cache.get(&cache_key) {
-            req = req.header("If-None-Match", etag.as_str());
-        }
-
-        let path = path.clone();
-        let owner = owner.clone();
-        let name = name.clone();
-        async move { (req.send().await, path, owner, name, cache_key) }
-    }).collect();
-
-    let results = futures_util::future::join_all(futures).await;
-    let mut changed = Vec::new();
-    for (result, path, owner, name, cache_key) in results {
-        match result {
-            Ok(resp) => {
-                if resp.status().as_u16() == 304 {
-                    continue;
-                }
-                if let Some(etag) = resp.headers().get("etag").and_then(|v| v.to_str().ok()) {
-                    etag_cache.insert(cache_key, etag.to_string());
-                }
-                changed.push((path, owner, name));
-            }
-            Err(e) => {
-                tracing::debug!("ETag check failed for {owner}/{name}: {e}");
-                changed.push((path, owner, name));
-            }
-        }
-    }
-    changed
 }
 
 /// Cached github status for synchronous callers (MCP handlers, etc.).
