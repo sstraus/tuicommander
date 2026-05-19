@@ -2315,6 +2315,10 @@ impl VtLogBuffer {
         self.grid.total_lines()
     }
 
+    pub(crate) fn read_rows_in_range(&self, start_abs: usize, end_abs: usize) -> Vec<String> {
+        self.grid.read_rows_in_range(start_abs, end_abs)
+    }
+
     pub(crate) fn grid_screen_lines(&self) -> usize {
         self.grid.screen_lines()
     }

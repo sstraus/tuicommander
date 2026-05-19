@@ -66,6 +66,7 @@ export interface TerminalData {
 	suggestDismissed: boolean; // true after user dismissed/selected/typed — resets on shell-state:idle
 	commandBlocks: CommandBlock[]; // Completed command blocks from OSC 133
 	activeBlock: CommandBlock | null; // Current in-progress block (A received, D not yet)
+	foldedBlocks: Set<number>; // promptLine values of folded blocks
 	alias: string | null; // Human-friendly alias from Rust (e.g. "tc-1")
 }
 
@@ -95,6 +96,7 @@ type TerminalCreateData = Omit<
 	| "awaitingInputConfident"
 	| "commandBlocks"
 	| "activeBlock"
+	| "foldedBlocks"
 	| "alias"
 > & { tuicSession?: string | null; isRemote?: boolean; agentType?: AgentType | null; agentSessionId?: string | null };
 
@@ -305,6 +307,7 @@ function createTerminalsStore() {
 				awaitingInputConfident: false,
 				commandBlocks: [],
 				activeBlock: null,
+				foldedBlocks: new Set<number>(),
 				alias: null,
 				...data,
 			});
@@ -338,6 +341,7 @@ function createTerminalsStore() {
 				awaitingInputConfident: false,
 				commandBlocks: [],
 				activeBlock: null,
+				foldedBlocks: new Set<number>(),
 				alias: null,
 				...data,
 			});
@@ -513,6 +517,18 @@ function createTerminalsStore() {
 					break;
 				}
 			}
+		},
+
+		toggleBlockFold(id: string, promptLine: number): void {
+			const term = state.terminals[id];
+			if (!term) return;
+			const next = new Set(term.foldedBlocks);
+			if (next.has(promptLine)) {
+				next.delete(promptLine);
+			} else {
+				next.add(promptLine);
+			}
+			setState("terminals", id, "foldedBlocks", next);
 		},
 
 		/** Update agent-declared intent (via intent: token) */

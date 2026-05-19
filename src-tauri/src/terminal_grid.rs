@@ -847,6 +847,18 @@ impl TerminalGrid {
         self.term.grid().history_size() + self.term.grid().screen_lines()
     }
 
+    pub fn read_rows_in_range(&self, start_abs: usize, end_abs: usize) -> Vec<String> {
+        let history = self.term.grid().history_size();
+        let mut rows = Vec::new();
+        for abs in start_abs..=end_abs {
+            let line = Line(abs as i32 - history as i32);
+            if let Some(text) = self.row_to_text(line) {
+                rows.push(text);
+            }
+        }
+        rows
+    }
+
     // --- Search API ---
 
     /// Regex search across visible grid + scrollback using alacritty's native DFA engine.

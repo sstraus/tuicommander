@@ -4783,6 +4783,21 @@ pub(crate) fn terminal_scroll_to(state: State<'_, Arc<AppState>>, session_id: St
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
+pub(crate) fn terminal_get_block_rows(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+    start_line: usize,
+    end_line: usize,
+) -> Vec<String> {
+    state
+        .vt_log_buffers
+        .get(&session_id)
+        .map(|vt| vt.lock().read_rows_in_range(start_line, end_line))
+        .unwrap_or_default()
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
 pub(crate) fn terminal_scroll_info(
     state: State<'_, Arc<AppState>>,
     session_id: String,

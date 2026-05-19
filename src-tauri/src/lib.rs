@@ -1253,6 +1253,7 @@ pub fn run() {
             pty::terminal_exit_alt_screen,
             pty::terminal_scroll,
             pty::terminal_scroll_to,
+            pty::terminal_get_block_rows,
             pty::terminal_scroll_info,
             pty::terminal_search,
             pty::terminal_search_buffer,
