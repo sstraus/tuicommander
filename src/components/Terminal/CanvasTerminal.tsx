@@ -4,6 +4,7 @@ import { pluginRegistry } from "../../plugins/pluginRegistry";
 import { appLogger } from "../../stores/appLogger";
 import { settingsStore } from "../../stores/settings";
 import { terminalsStore } from "../../stores/terminals";
+import { filterMatchesToBlock } from "../../utils/blockSearchFilter";
 import { formatRelativeTime } from "../../utils/formatRelativeTime";
 import { handleOpenUrl } from "../../utils/openUrl";
 import { installTouchHandlers } from "./canvasTerminalTouch";
@@ -40,7 +41,7 @@ export interface CanvasTerminalRef {
 	refresh: () => void;
 	resubscribe: () => Promise<void>;
 	getSelectionText: () => string;
-	searchFind: (query: string) => Promise<{ index: number; count: number }>;
+	searchFind: (query: string, blockScope?: boolean) => Promise<{ index: number; count: number }>;
 	searchNext: () => { index: number; count: number };
 	searchPrev: () => { index: number; count: number };
 	searchClear: () => void;
@@ -3271,7 +3272,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			resubscribe: async () => {
 				await transport?.resubscribe();
 			},
-			searchFind: async (query: string) => {
+			searchFind: async (query: string, blockScope?: boolean) => {
 				if (!query || !invokeRef) {
 					searchMatches = [];
 					activeSearchIndex = -1;
@@ -3279,10 +3280,21 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 					if (currentFrame && m) paintFrame(currentFrame, m);
 					return { index: -1, count: 0 };
 				}
-				const matches = (await invokeRef("terminal_search", {
+				let matches = (await invokeRef("terminal_search", {
 					sessionId: props.sessionId,
 					query,
 				})) as { row: number; col_start: number; col_end: number }[];
+				if (blockScope && currentFrame) {
+					const term = terminalsStore.get(props.terminalId);
+					if (term) {
+						const allBlocks = term.activeBlock
+							? [...term.commandBlocks, term.activeBlock]
+							: term.commandBlocks;
+						const viewTop = currentFrame.historySize - currentFrame.displayOffset;
+						const viewCenter = viewTop + Math.floor(currentFrame.screenRows / 2);
+						matches = filterMatchesToBlock(matches, allBlocks, viewCenter);
+					}
+				}
 				searchMatches = matches;
 				if (matches.length > 0) {
 					activeSearchIndex = findNearestVisibleMatch(matches);

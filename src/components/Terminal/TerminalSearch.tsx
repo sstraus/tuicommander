@@ -12,10 +12,10 @@ export interface TerminalSearchProps {
 export const TerminalSearch: Component<TerminalSearchProps> = (props) => {
 	const [resultIndex, setResultIndex] = createSignal(-1);
 	const [resultCount, setResultCount] = createSignal(0);
+	const [blockScope, setBlockScope] = createSignal(false);
 
 	let lastTerm = "";
 
-	// Clear decorations when closing
 	createEffect(() => {
 		if (!props.visible) {
 			props.canvasRef?.searchClear();
@@ -28,7 +28,7 @@ export const TerminalSearch: Component<TerminalSearchProps> = (props) => {
 		lastTerm = term;
 		if (term) {
 			props.canvasRef
-				?.searchFind(term)
+				?.searchFind(term, blockScope())
 				.then(({ index, count }) => {
 					setResultIndex(index);
 					setResultCount(count);
@@ -57,6 +57,22 @@ export const TerminalSearch: Component<TerminalSearchProps> = (props) => {
 		setResultCount(count);
 	};
 
+	const handleToggleBlockScope = () => {
+		const newVal = !blockScope();
+		setBlockScope(newVal);
+		if (lastTerm) {
+			props.canvasRef
+				?.searchFind(lastTerm, newVal)
+				.then(({ index, count }) => {
+					setResultIndex(index);
+					setResultCount(count);
+				})
+				.catch((e) => {
+					appLogger.warn("terminal", "searchFind failed", { error: e });
+				});
+		}
+	};
+
 	return (
 		<SearchBar
 			visible={props.visible}
@@ -66,6 +82,19 @@ export const TerminalSearch: Component<TerminalSearchProps> = (props) => {
 			onClose={props.onClose}
 			matchIndex={resultIndex()}
 			matchCount={resultCount()}
+			extraToggles={[
+				{
+					active: blockScope(),
+					title: "Search in Block (Cmd+Shift+B)",
+					icon: () => (
+						<svg viewBox="0 0 16 16" fill="currentColor">
+							<path d="M2 3h12v1H2V3zm0 4h12v1H2V7zm0 4h8v1H2v-1z" />
+							<rect x="12" y="10" width="3" height="3" rx="0.5" />
+						</svg>
+					),
+					onToggle: handleToggleBlockScope,
+				},
+			]}
 		/>
 	);
 };
