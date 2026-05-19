@@ -30,6 +30,13 @@ pub(super) async fn repo_pr_statuses(
         return e.into_response();
     }
     let path = q.path;
+    if let Some(cached) = crate::state::AppState::get_cached(
+        &state.git_cache.github_status,
+        &path,
+        crate::state::GITHUB_CACHE_TTL,
+    ) {
+        return Json(cached).into_response();
+    }
     match crate::github::get_repo_pr_statuses_impl(&path, false, &state).await {
         Ok(statuses) => Json(statuses).into_response(),
         Err(e) => err_500(&format!("Task failed: {e}")),

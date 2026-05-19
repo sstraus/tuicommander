@@ -1475,7 +1475,9 @@ impl GitCacheState {
         self.repo_info.remove(path);
         self.merged_branches.remove(path);
         self.branches_detail.remove(path);
-        self.github_status.remove(path);
+        // github_status (remote PR/CI data) is NOT invalidated here — local git
+        // changes don't affect remote PRs. The poller and head-changed → pollRepo
+        // handle remote refreshes on their own cadence.
         self.git_status.remove(path);
         self.git_panel_context.remove(path);
         self.worktree_paths.remove(path);

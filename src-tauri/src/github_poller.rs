@@ -248,7 +248,8 @@ async fn poll_loop(state: Arc<AppState>, handle: AppHandle, mut rx: mpsc::Receiv
                 let batch = if pending_poll_paths.is_empty() { &paths } else { &pending_poll_paths };
                 poll_batch(&state, &handle, batch, false, &issue_filter, pr_hide_drafts, &mut ps, true).await;
                 pending_poll_paths.clear();
-                interval = tokio::time::interval(current_interval(visible, ps.fail_count, rate_budget));
+                let dur = current_interval(visible, ps.fail_count, rate_budget);
+                interval = tokio::time::interval_at(tokio::time::Instant::now() + dur, dur);
                 interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             }
             _ = interval.tick() => {
@@ -264,7 +265,8 @@ async fn poll_loop(state: Arc<AppState>, handle: AppHandle, mut rx: mpsc::Receiv
                 poll_cycle = poll_cycle.wrapping_add(1);
                 pending_poll_at = None;
                 pending_poll_paths.clear();
-                interval = tokio::time::interval(current_interval(visible, ps.fail_count, rate_budget));
+                let dur = current_interval(visible, ps.fail_count, rate_budget);
+                interval = tokio::time::interval_at(tokio::time::Instant::now() + dur, dur);
                 interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             }
             cmd = rx.recv() => {
@@ -290,14 +292,16 @@ async fn poll_loop(state: Arc<AppState>, handle: AppHandle, mut rx: mpsc::Receiv
                         paths = new_paths;
                     }
                     Some(PollerCmd::SetIssueFilter(filter)) => {
-                        issue_filter = filter;
-                        // Fire immediately so the new filter takes effect without waiting
-                        // for the next scheduled tick.
-                        pending_poll_at = Some(tokio::time::Instant::now());
+                        if filter != issue_filter {
+                            issue_filter = filter;
+                            pending_poll_at = Some(tokio::time::Instant::now());
+                        }
                     }
                     Some(PollerCmd::SetPrHideDrafts(hide)) => {
-                        pr_hide_drafts = hide;
-                        pending_poll_at = Some(tokio::time::Instant::now());
+                        if hide != pr_hide_drafts {
+                            pr_hide_drafts = hide;
+                            pending_poll_at = Some(tokio::time::Instant::now());
+                        }
                     }
                     Some(PollerCmd::Stop) | None => break,
                 }
