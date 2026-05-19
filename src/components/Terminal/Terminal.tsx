@@ -54,7 +54,8 @@ type ParsedEvent =
 	  }
 	| { type: "active-subtasks"; count: number; task_type: string }
 	| { type: "shell-state"; state: "busy" | "idle" }
-	| { type: "agent-session-conflict"; matched_text: string; kind: "in-use" | "not-found" };
+	| { type: "agent-session-conflict"; matched_text: string; kind: "in-use" | "not-found" }
+	| { type: "agent-block"; action: "start" | "end"; line: number; exit_code?: number };
 
 export interface TerminalProps {
 	id: string;
@@ -491,6 +492,14 @@ export const Terminal: Component<TerminalProps> = (props) => {
 					);
 					if (!isActive) {
 						notificationsStore.playWarning();
+					}
+					break;
+				}
+				case "agent-block": {
+					if (parsed.action === "start") {
+						terminalsStore.handleOsc133(props.id, "A", parsed.line);
+					} else if (parsed.action === "end") {
+						terminalsStore.handleOsc133(props.id, "D", parsed.line, parsed.exit_code ?? undefined);
 					}
 					break;
 				}

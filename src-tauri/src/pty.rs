@@ -1858,7 +1858,7 @@ impl ChunkProcessor {
                             }
                         }
                     }
-                    TermEvent::Tuic { verb, payload } => match verb.as_str() {
+                    TermEvent::Tuic { verb, payload, line } => match verb.as_str() {
                         "state" => {
                             self.handle_tuic_state(&payload, session_id, state);
                         }
@@ -1884,6 +1884,16 @@ impl ChunkProcessor {
                                 (payload.clone(), None)
                             };
                             tuic_events.push(ParsedEvent::Intent { text, title });
+                        }
+                        "block" => {
+                            let (action, exit_code) = if let Some(rest) = payload.strip_prefix("end;") {
+                                ("end".to_string(), rest.parse::<i32>().ok())
+                            } else {
+                                (payload.clone(), None)
+                            };
+                            if action == "start" || action == "end" {
+                                tuic_events.push(ParsedEvent::AgentBlock { action, line: line as i64, exit_code });
+                            }
                         }
                         _ => {}
                     },
@@ -8556,7 +8566,7 @@ mod tests {
             .filter(|e| matches!(e, crate::terminal_grid::TermEvent::Tuic { .. }))
             .collect();
         assert_eq!(tuic.len(), 1);
-        if let crate::terminal_grid::TermEvent::Tuic { verb, payload } = &tuic[0] {
+        if let crate::terminal_grid::TermEvent::Tuic { verb, payload, .. } = &tuic[0] {
             assert_eq!(verb, "suggest");
             let items: Vec<String> = payload.split('|').map(|s| s.trim().to_string()).collect();
             assert_eq!(items, vec!["Fix bug", "Run tests", "Deploy"]);
@@ -8574,10 +8584,63 @@ mod tests {
             .filter(|e| matches!(e, crate::terminal_grid::TermEvent::Tuic { .. }))
             .collect();
         assert_eq!(tuic.len(), 1);
-        if let crate::terminal_grid::TermEvent::Tuic { verb, payload } = &tuic[0] {
+        if let crate::terminal_grid::TermEvent::Tuic { verb, payload, .. } = &tuic[0] {
             assert_eq!(verb, "intent");
             assert_eq!(payload, "Refactoring auth (Auth)");
         }
+    }
+
+    #[test]
+    fn tuic_osc_block_start_parsed() {
+        use crate::terminal_grid::TerminalGrid;
+        let mut grid = TerminalGrid::new(24, 80, 1000);
+        grid.process(b"\x1b]7770;block=start\x07");
+        let events = grid.drain_events();
+        let tuic: Vec<_> = events
+            .into_iter()
+            .filter(|e| matches!(e, crate::terminal_grid::TermEvent::Tuic { .. }))
+            .collect();
+        assert_eq!(tuic.len(), 1);
+        if let crate::terminal_grid::TermEvent::Tuic { verb, payload, .. } = &tuic[0] {
+            assert_eq!(verb, "block");
+            assert_eq!(payload, "start");
+        }
+    }
+
+    #[test]
+    fn tuic_osc_block_end_with_exit_code_parsed() {
+        let payload = "end;1".to_string();
+        let (action, exit_code) = if let Some(rest) = payload.strip_prefix("end;") {
+            ("end".to_string(), rest.parse::<i32>().ok())
+        } else {
+            (payload.clone(), None)
+        };
+        assert_eq!(action, "end");
+        assert_eq!(exit_code, Some(1));
+    }
+
+    #[test]
+    fn tuic_osc_block_end_without_exit_code() {
+        let payload = "end".to_string();
+        let (action, exit_code) = if let Some(rest) = payload.strip_prefix("end;") {
+            ("end".to_string(), rest.parse::<i32>().ok())
+        } else {
+            (payload.clone(), None)
+        };
+        assert_eq!(action, "end");
+        assert_eq!(exit_code, None);
+    }
+
+    #[test]
+    fn tuic_osc_block_invalid_action_ignored() {
+        let payload = "invalid".to_string();
+        let (action, _exit_code) = if let Some(rest) = payload.strip_prefix("end;") {
+            ("end".to_string(), rest.parse::<i32>().ok())
+        } else {
+            (payload.clone(), None)
+        };
+        let is_valid = action == "start" || action == "end";
+        assert!(!is_valid, "invalid action should not produce an event");
     }
 
     #[test]

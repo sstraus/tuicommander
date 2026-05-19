@@ -112,6 +112,16 @@ pub enum ParsedEvent {
         #[serde(skip_serializing_if = "Option::is_none")]
         agent_type: Option<String>,
     },
+    /// Agent-emitted block boundary via OSC 7770;block=start|end.
+    /// Lets AI agents (Claude Code etc.) define their own block regions
+    /// independent of shell OSC 133 markers.
+    #[serde(rename = "agent-block")]
+    AgentBlock {
+        action: String, // "start" | "end"
+        line: i64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        exit_code: Option<i32>,
+    },
     /// Agent failed to start because of a session-id conflict or missing session.
     /// Emitted when Claude Code prints startup errors like
     /// "Session ID X is already in use." or "No conversation found with session ID: X".

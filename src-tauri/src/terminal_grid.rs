@@ -29,6 +29,7 @@ pub enum TermEvent {
     Tuic {
         verb: String,
         payload: String,
+        line: usize,
     },
 }
 
@@ -85,11 +86,11 @@ impl EventListener for TermEventCollector {
             Event::Osc7(url) => {
                 self.events.lock().unwrap().push(TermEvent::Osc7(url));
             }
-            Event::Tuic { verb, payload } => {
+            Event::Tuic { verb, payload, line } => {
                 self.events
                     .lock()
                     .unwrap()
-                    .push(TermEvent::Tuic { verb, payload });
+                    .push(TermEvent::Tuic { verb, payload, line });
             }
             Event::ClipboardLoad(..)
             | Event::ColorRequest(..)
@@ -2128,7 +2129,7 @@ mod tests {
             .collect();
         assert_eq!(tuic.len(), 1);
         match &tuic[0] {
-            TermEvent::Tuic { verb, payload } => {
+            TermEvent::Tuic { verb, payload, .. } => {
                 assert_eq!(verb, "state");
                 assert_eq!(payload, "idle");
             }
@@ -2148,7 +2149,7 @@ mod tests {
             .collect();
         assert_eq!(tuic.len(), 1);
         match &tuic[0] {
-            TermEvent::Tuic { verb, payload } => {
+            TermEvent::Tuic { verb, payload, .. } => {
                 assert_eq!(verb, "suggest");
                 assert_eq!(payload, "Fix the bug|Run tests|Deploy");
             }
@@ -2167,7 +2168,7 @@ mod tests {
             .collect();
         assert_eq!(tuic.len(), 1);
         match &tuic[0] {
-            TermEvent::Tuic { verb, payload } => {
+            TermEvent::Tuic { verb, payload, .. } => {
                 assert_eq!(verb, "intent");
                 assert_eq!(payload, "Refactoring auth module (Auth Refactor)");
             }
@@ -2198,7 +2199,7 @@ mod tests {
             .collect();
         assert_eq!(tuic.len(), 1);
         match &tuic[0] {
-            TermEvent::Tuic { verb, payload } => {
+            TermEvent::Tuic { verb, payload, .. } => {
                 assert_eq!(verb, "state");
                 assert_eq!(payload, "busy");
             }
@@ -2320,7 +2321,7 @@ mod tests {
             .collect();
         assert_eq!(tuic.len(), 1);
         match &tuic[0] {
-            TermEvent::Tuic { verb, payload } => {
+            TermEvent::Tuic { verb, payload, .. } => {
                 assert_eq!(verb, "state");
                 assert_eq!(payload, "");
             }

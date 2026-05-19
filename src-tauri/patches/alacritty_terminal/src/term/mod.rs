@@ -2518,9 +2518,12 @@ impl<T: EventListener> Handler for Term<T> {
 
     #[inline]
     fn osc7770(&mut self, verb: &str, payload: &str) {
+        let line =
+            self.grid.history_size() + usize::try_from(self.grid.cursor.point.line.0).unwrap_or(0);
         self.event_proxy.send_event(Event::Tuic {
             verb: verb.to_owned(),
             payload: payload.to_owned(),
+            line,
         });
     }
 }

@@ -71,7 +71,7 @@ pub enum Event {
     Osc7(String),
 
     /// OSC 7770 TUIC protocol event (verb=payload).
-    Tuic { verb: String, payload: String },
+    Tuic { verb: String, payload: String, line: usize },
 }
 
 impl Debug for Event {
@@ -96,7 +96,7 @@ impl Debug for Event {
                 line,
             } => write!(f, "Osc133({command}, {params:?}, line={line})"),
             Event::Osc7(url) => write!(f, "Osc7({url})"),
-            Event::Tuic { verb, payload } => write!(f, "Tuic({verb}={payload})"),
+            Event::Tuic { verb, payload, line } => write!(f, "Tuic({verb}={payload}, line={line})"),
         }
     }
 }
