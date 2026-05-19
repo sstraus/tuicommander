@@ -144,21 +144,19 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
 		};
 	};
 
-	/** Order-only snapshot: working terminals first, idle second; stable within groups. */
+	/** Order-only snapshot: working terminals first, idle second.
+	 *  Working group keeps store insertion order (stable); idle group sorts by most recent activity. */
 	const liveOrder = createMemo(() => {
 		const ids = terminalsStore.getAttachedIds();
-		return ids
-			.map((id) => {
-				const term = terminalsStore.get(id);
-				const isRL = !!(term?.sessionId && rateLimitStore.isRateLimited(term.sessionId));
-				const working = isRL || !!term?.awaitingInput || terminalsStore.isBusy(id);
-				return { id, working, t: terminalsStore.getLastDataAt(id) ?? 0 };
-			})
-			.sort((a, b) => {
-				if (a.working !== b.working) return a.working ? -1 : 1;
-				return b.t - a.t;
-			})
-			.map((x) => x.id);
+		const items = ids.map((id, idx) => {
+			const term = terminalsStore.get(id);
+			const isRL = !!(term?.sessionId && rateLimitStore.isRateLimited(term.sessionId));
+			const working = isRL || !!term?.awaitingInput || terminalsStore.isBusy(id);
+			return { id, working, idx, t: terminalsStore.getLastDataAt(id) ?? 0 };
+		});
+		const workingItems = items.filter((x) => x.working).sort((a, b) => a.idx - b.idx);
+		const idleItems = items.filter((x) => !x.working).sort((a, b) => b.t - a.t);
+		return [...workingItems, ...idleItems].map((x) => x.id);
 	});
 
 	// Snapshot sort order every 10s so rows don't reshuffle on every mutation.
