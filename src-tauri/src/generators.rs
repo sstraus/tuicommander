@@ -32,7 +32,7 @@ pub struct GeneratorResult {
     pub extra: Option<String>,
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn generate_value(request: GeneratorRequest) -> Result<GeneratorResult, String> {
     // SECURITY: do not log generated value
     match request {
