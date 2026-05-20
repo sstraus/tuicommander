@@ -69,13 +69,13 @@ check:
 
 # GitHub API debug logging — toggle at runtime, view logs
 gh-debug-on:
-	@curl -s -X POST localhost:9876/repo/github/api-debug -H 'Content-Type: application/json' -d '{"enabled":true}' && echo ""
+	@curl -s -X POST localhost:9876/repo/github-poller/api-debug -H 'Content-Type: application/json' -d '{"enabled":true}' && echo ""
 
 gh-debug-off:
-	@curl -s -X POST localhost:9876/repo/github/api-debug -H 'Content-Type: application/json' -d '{"enabled":false}' && echo ""
+	@curl -s -X POST localhost:9876/repo/github-poller/api-debug -H 'Content-Type: application/json' -d '{"enabled":false}' && echo ""
 
 gh-debug-status:
-	@curl -s localhost:9876/repo/github/api-debug && echo ""
+	@curl -s localhost:9876/repo/github-poller/api-debug && echo ""
 
 gh-debug-logs:
 	@curl -s 'localhost:9876/logs?source=github_api&limit=30'

@@ -86,11 +86,16 @@ impl EventListener for TermEventCollector {
             Event::Osc7(url) => {
                 self.events.lock().unwrap().push(TermEvent::Osc7(url));
             }
-            Event::Tuic { verb, payload, line } => {
-                self.events
-                    .lock()
-                    .unwrap()
-                    .push(TermEvent::Tuic { verb, payload, line });
+            Event::Tuic {
+                verb,
+                payload,
+                line,
+            } => {
+                self.events.lock().unwrap().push(TermEvent::Tuic {
+                    verb,
+                    payload,
+                    line,
+                });
             }
             Event::ClipboardLoad(..)
             | Event::ColorRequest(..)

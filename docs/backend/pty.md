@@ -56,6 +56,8 @@ close_pty(cleanup_worktree)
 | `can_spawn_session()` | Check if under MAX_CONCURRENT_SESSIONS (50). |
 | `list_active_sessions()` | List all sessions with cwd and worktree info. |
 | `list_worktrees()` | List all managed worktrees. |
+| `get_process_stats()` | CPU% and RSS for TUIC + all child process trees (desktop Tauri command). |
+| `collect_process_stats(state)` | Same logic, callable from HTTP routes and MCP tools. |
 
 ## Reader Thread
 

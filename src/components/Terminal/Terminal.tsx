@@ -864,13 +864,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
 				pty.write(sessionId, data).catch((err) => appLogger.error("terminal", "Failed to write to PTY", err));
 		},
 		writeln: (data: string) => {
-			if (sessionId) pty.write(sessionId, data + "\n").catch(() => {});
+			if (sessionId) pty.write(sessionId, data + "\n").catch((err) => appLogger.error("terminal", "writeln failed", err));
 		},
 		input: (data: string) => {
-			if (sessionId) pty.write(sessionId, data).catch(() => {});
+			if (sessionId) pty.write(sessionId, data).catch((err) => appLogger.error("terminal", "input failed", err));
 		},
 		clear: () => {
-			if (sessionId) pty.write(sessionId, "\x1b[2J\x1b[H\x1b[3J").catch(() => {});
+			if (sessionId) pty.write(sessionId, "\x1b[2J\x1b[H\x1b[3J").catch((err) => appLogger.error("terminal", "clear failed", err));
 		},
 		refresh: () => canvasTerminalRef()?.refresh(),
 		focus: () => {

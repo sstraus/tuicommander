@@ -1099,6 +1099,37 @@ fn parse_osc133_exit_code(command: char, params: &str) -> Option<i32> {
     }
 }
 
+/// Detect Claude Code tool call headers: `⏺ ToolName(args)`.
+/// The ⏺ (U+23FA) bullet followed by a capitalized word and `(` is unique to
+/// CC's expanded tool-call rendering — agent prose after ⏺ starts with a
+/// lowercase word or a proper noun without parens.
+fn is_cc_tool_call_header(text: &str) -> bool {
+    let trimmed = text.trim_start();
+    let rest = if let Some(r) = trimmed.strip_prefix('\u{23FA}') {
+        r
+    } else {
+        return false;
+    };
+    let rest = rest.trim_start();
+    if rest.is_empty() {
+        return false;
+    }
+    // Must start with uppercase ASCII (ToolName) or `mcp__` prefix.
+    let first = rest.as_bytes()[0];
+    if !first.is_ascii_uppercase() && !rest.starts_with("mcp__") {
+        return false;
+    }
+    // Find the opening paren — everything before it must be a single
+    // identifier (no spaces). Rejects prose like "Boss, ci sono (molti)".
+    rest.find('(').is_some_and(|pos| {
+        let before = &rest[..pos];
+        !before.is_empty()
+            && before
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    })
+}
+
 /// Emit an `Inferred` command outcome for shells that don't speak OSC 133.
 /// Called right after a busy→idle transition; no-op once we've ever observed
 /// a marker for this session (shell-integration path is authoritative then).
@@ -1395,6 +1426,9 @@ struct ChunkProcessor {
     /// an `AgentSessionConflict` event. Gates subsequent marks so a single
     /// burst of conflict output fires the mitigation exactly once.
     last_session_conflict_mark: Option<std::time::Instant>,
+    /// Absolute buffer line of the last heuristic agent-block start.
+    /// Used to emit AgentBlock end when the next block starts or agent exits.
+    last_agent_block_line: Option<usize>,
 }
 
 impl ChunkProcessor {
@@ -1418,6 +1452,7 @@ impl ChunkProcessor {
             pending_command_started: None,
             tuic_session,
             last_session_conflict_mark: None,
+            last_agent_block_line: None,
         }
     }
 
@@ -1704,11 +1739,13 @@ impl ChunkProcessor {
             screen_cache,
             cursor_row,
             pre_filter_has_spinner,
+            history_size,
         ) = if let Some(vt_log) = state.vt_log_buffers.get(session_id) {
             let mut vt = vt_log.lock();
             let changed = vt.process(data.as_bytes());
             let total = vt.total_lines();
             let oldest = vt.oldest_offset();
+            let hist = vt.grid_history_size();
             let tevts = vt.grid_drain_events();
 
             // Filter out changed rows below the input area border (horizontal rule).
@@ -1752,9 +1789,10 @@ impl ChunkProcessor {
                 Some(screen),
                 cursor_row,
                 pre_filter_has_spinner,
+                hist,
             )
         } else {
-            (Vec::new(), None, None, Vec::new(), None, 0, false)
+            (Vec::new(), None, None, Vec::new(), None, 0, false, 0)
         };
 
         // Emit scrollback-overlay growth/rotation event (throttled to 100ms).
@@ -1800,8 +1838,12 @@ impl ChunkProcessor {
                         if let Some(sess) = state.sessions.get(session_id)
                             && let Some(mut s) = sess.try_lock()
                         {
-                            let _ = s.writer.write_all(response.as_bytes());
-                            let _ = s.writer.flush();
+                            if let Err(e) = s.writer.write_all(response.as_bytes()) {
+                                tracing::warn!(source = "terminal", session_id = %session_id, "PtyWrite response failed: {e}");
+                            }
+                            if let Err(e) = s.writer.flush() {
+                                tracing::warn!(source = "terminal", session_id = %session_id, "PtyWrite flush failed: {e}");
+                            }
                         }
                     }
                     TermEvent::Title(title) =>
@@ -1858,7 +1900,11 @@ impl ChunkProcessor {
                             }
                         }
                     }
-                    TermEvent::Tuic { verb, payload, line } => match verb.as_str() {
+                    TermEvent::Tuic {
+                        verb,
+                        payload,
+                        line,
+                    } => match verb.as_str() {
                         "state" => {
                             self.handle_tuic_state(&payload, session_id, state);
                         }
@@ -1886,13 +1932,18 @@ impl ChunkProcessor {
                             tuic_events.push(ParsedEvent::Intent { text, title });
                         }
                         "block" => {
-                            let (action, exit_code) = if let Some(rest) = payload.strip_prefix("end;") {
-                                ("end".to_string(), rest.parse::<i32>().ok())
-                            } else {
-                                (payload.clone(), None)
-                            };
+                            let (action, exit_code) =
+                                if let Some(rest) = payload.strip_prefix("end;") {
+                                    ("end".to_string(), rest.parse::<i32>().ok())
+                                } else {
+                                    (payload.clone(), None)
+                                };
                             if action == "start" || action == "end" {
-                                tuic_events.push(ParsedEvent::AgentBlock { action, line: line as i64, exit_code });
+                                tuic_events.push(ParsedEvent::AgentBlock {
+                                    action,
+                                    line: line as i64,
+                                    exit_code,
+                                });
                             }
                         }
                         _ => {}
@@ -1964,6 +2015,41 @@ impl ChunkProcessor {
                 self.parser
                     .parse_clean_lines(&changed_rows, agent_active_for_parse),
             );
+        }
+
+        // Heuristic agent-block detection for Claude Code tool calls.
+        // CC renders tool calls as `⏺ ToolName(args)` — detect these and
+        // synthesize AgentBlock start/end events so the block system works
+        // without CC emitting OSC 7770;block= sequences.
+        if !agent_active_for_parse && let Some(prev) = self.last_agent_block_line.take() {
+            events.push(ParsedEvent::AgentBlock {
+                action: "end".into(),
+                line: prev as i64,
+                exit_code: None,
+            });
+        }
+        if agent_active_for_parse {
+            for row in &changed_rows {
+                if is_cc_tool_call_header(&row.text) {
+                    let abs_line = history_size + row.row_index;
+                    if Some(abs_line) == self.last_agent_block_line {
+                        continue;
+                    }
+                    if let Some(prev) = self.last_agent_block_line {
+                        events.push(ParsedEvent::AgentBlock {
+                            action: "end".into(),
+                            line: prev as i64,
+                            exit_code: None,
+                        });
+                    }
+                    events.push(ParsedEvent::AgentBlock {
+                        action: "start".into(),
+                        line: abs_line as i64,
+                        exit_code: None,
+                    });
+                    self.last_agent_block_line = Some(abs_line);
+                }
+            }
         }
 
         // screen_cache was computed once inside the vt_log lock scope above.
@@ -2278,11 +2364,15 @@ fn process_kitty_actions(kitty_actions: &[KittyAction], session_id: &str, state:
                 // (reader blocked → kernel buffer fills → write_pty blocks on write).
                 if let Some(sess) = state.sessions.get(session_id) {
                     if let Some(mut s) = sess.try_lock() {
-                        let _ = s.writer.write_all(response.as_bytes());
-                        let _ = s.writer.flush();
+                        if let Err(e) = s.writer.write_all(response.as_bytes()) {
+                            tracing::warn!(source = "terminal", session_id = %session_id, "kitty query write failed: {e}");
+                        }
+                        if let Err(e) = s.writer.flush() {
+                            tracing::warn!(source = "terminal", session_id = %session_id, "kitty query flush failed: {e}");
+                        }
                     } else {
-                        tracing::debug!(session_id = %session_id,
-                            "kitty query response dropped — session lock contended");
+                        tracing::warn!(source = "terminal", session_id = %session_id,
+                            "kitty query response dropped — session lock contended; agent input handling may degrade");
                     }
                 }
             }
@@ -4390,17 +4480,15 @@ pub(crate) fn list_active_sessions(state: State<'_, Arc<AppState>>) -> Vec<Activ
 /// Per-process resource usage for the process manager modal.
 #[derive(Clone, Serialize)]
 pub(crate) struct ProcessStats {
-    session_id: Option<String>,
-    name: String,
-    pid: u32,
-    rss_kb: u64,
-    cpu_pct: f32,
+    pub(crate) session_id: Option<String>,
+    pub(crate) name: String,
+    pub(crate) pid: u32,
+    pub(crate) rss_kb: u64,
+    pub(crate) cpu_pct: f32,
 }
 
 /// Collect CPU/memory stats for TUIC itself and all PTY child process trees.
-#[cfg(feature = "desktop")]
-#[tauri::command]
-pub(crate) fn get_process_stats(state: State<'_, Arc<AppState>>) -> Vec<ProcessStats> {
+pub(crate) fn collect_process_stats(state: &AppState) -> Vec<ProcessStats> {
     let mut pids: Vec<(Option<String>, String, u32)> = Vec::new();
 
     // TUIC's own process
@@ -4454,8 +4542,13 @@ pub(crate) fn get_process_stats(state: State<'_, Arc<AppState>>) -> Vec<ProcessS
         .collect()
 }
 
-/// Collect all descendant PIDs of a process (excluding the root itself).
 #[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) fn get_process_stats(state: State<'_, Arc<AppState>>) -> Vec<ProcessStats> {
+    collect_process_stats(&state)
+}
+
+/// Collect all descendant PIDs of a process (excluding the root itself).
 fn collect_descendant_pids(root: u32) -> Option<Vec<u32>> {
     #[cfg(not(windows))]
     {
@@ -4525,7 +4618,7 @@ fn collect_descendant_pids(root: u32) -> Option<Vec<u32>> {
 }
 
 /// Query RSS (KB) and CPU% for a batch of PIDs using `ps` on Unix.
-#[cfg(all(feature = "desktop", not(windows)))]
+#[cfg(not(windows))]
 fn query_process_stats(pids: &[u32]) -> std::collections::HashMap<u32, (u64, f32)> {
     let mut map = std::collections::HashMap::new();
     if pids.is_empty() {
@@ -4556,7 +4649,7 @@ fn query_process_stats(pids: &[u32]) -> std::collections::HashMap<u32, (u64, f32
 }
 
 /// Query RSS (KB) and CPU% for a batch of PIDs on Windows.
-#[cfg(all(feature = "desktop", windows))]
+#[cfg(windows)]
 fn query_process_stats(pids: &[u32]) -> std::collections::HashMap<u32, (u64, f32)> {
     let mut map = std::collections::HashMap::new();
     for &pid in pids {
@@ -4567,7 +4660,7 @@ fn query_process_stats(pids: &[u32]) -> std::collections::HashMap<u32, (u64, f32
     map
 }
 
-#[cfg(all(feature = "desktop", windows))]
+#[cfg(windows)]
 fn query_single_process_windows(pid: u32) -> Option<(u64, f32)> {
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::ProcessStatus::{
@@ -8869,5 +8962,74 @@ mod tests {
             current, SHELL_BUSY,
             "OSC 133 D alone should NOT transition — wait for A"
         );
+    }
+
+    // --- is_cc_tool_call_header tests ---
+
+    #[test]
+    fn cc_tool_call_bash() {
+        assert!(is_cc_tool_call_header(
+            "⏺ Bash(curl -s 'http://localhost:9876/logs')"
+        ));
+    }
+
+    #[test]
+    fn cc_tool_call_read() {
+        assert!(is_cc_tool_call_header("⏺ Read(src/foo.rs)"));
+    }
+
+    #[test]
+    fn cc_tool_call_edit() {
+        assert!(is_cc_tool_call_header("⏺ Edit(file_path=/tmp/a.rs)"));
+    }
+
+    #[test]
+    fn cc_tool_call_mcp() {
+        assert!(is_cc_tool_call_header(
+            "⏺ mcp__tuicommander__ui(action=tab)"
+        ));
+    }
+
+    #[test]
+    fn cc_tool_call_with_leading_whitespace() {
+        assert!(is_cc_tool_call_header("  ⏺ Bash(ls)"));
+    }
+
+    #[test]
+    fn cc_prose_not_tool_call() {
+        assert!(!is_cc_tool_call_header("⏺ Boss, ci sono molti tipi di OSC"));
+    }
+
+    #[test]
+    fn cc_prose_with_paren_not_tool_call() {
+        assert!(!is_cc_tool_call_header(
+            "⏺ Nessun errore (tutti i log puliti)"
+        ));
+    }
+
+    #[test]
+    fn cc_calling_collapsed_not_tool_call() {
+        assert!(!is_cc_tool_call_header(
+            "⏺ Calling tuicommander 2 times… (ctrl+o to expand)"
+        ));
+    }
+
+    #[test]
+    fn cc_mission_control_not_tool_call() {
+        assert!(!is_cc_tool_call_header(
+            "⏺ Mission Control: opened in TUIC tab"
+        ));
+    }
+
+    #[test]
+    fn cc_empty_after_bullet_not_tool_call() {
+        assert!(!is_cc_tool_call_header("⏺ "));
+        assert!(!is_cc_tool_call_header("⏺"));
+    }
+
+    #[test]
+    fn cc_no_bullet_not_tool_call() {
+        assert!(!is_cc_tool_call_header("Bash(ls)"));
+        assert!(!is_cc_tool_call_header("plain text"));
     }
 }

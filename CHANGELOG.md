@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Command block system** — Terminal output is segmented into command blocks (one per prompt+output cycle). Features include: semantic scrollbar marks with color-coded indicators, block timestamp overlay (hold `Ctrl+Cmd`), gutter click to select entire block output, block folding with `Cmd+Shift+.` toggle, block-scoped search with `Cmd+Shift+B` toggle, block navigation with `Cmd+Shift+Up/Down`, cap at 500 blocks per session (oldest evicted), and OSC 7770;block= agent-emitted block markers. Settings at `Settings > Terminal > Blocks`.
+- **Heuristic agent-block detection** — Claude Code tool calls (`⏺ ToolName(args)`) are now detected heuristically and synthesized into AgentBlock start/end events, so the block system works without CC emitting OSC 7770 sequences.
+- **Generators modal** — Secure value generators accessible from the command palette (`open-generators`). Generates: Password, UUID v4, UUID v7, ULID, CUID2, JWT Secret, TOTP Secret, Nano ID, Slug, Ed25519 Key Pair. All generation happens in the Rust backend via `ring` crate.
+- **Process stats & monitor** — New MCP session action `process_stats` and HTTP routes (`/process/stats`, `/process/monitor`) returning CPU% and RSS memory for TUIC and all child process trees. The monitor route serves a self-contained HTML dashboard.
+- **App logger extra fields** — Tracing events now capture all extra fields (beyond `message` and `source`) as a JSON `data` column, making structured logging queryable via the `/logs` endpoint.
+
+### Changed
+- **GitHub polling: updated_at change detection** — Replaced ETag-based HTTP caching with `updated_at` timestamp comparison, fixing stale data when GitHub CDN caches return 304 on changed content.
+- **GitHub module split** — Extracted `github_debug` module for API debug logging. Fixed route prefix (`github` → `github-poller`). Removed dead Tauri commands.
+- **PTY write error handling** — PTY writer `write_all`/`flush` failures are now logged via `tracing::warn` instead of silently ignored.
+- **Session write tracing** — `write_pty` slash_mode logging downgraded from `info` to `trace` to reduce log noise.
+
+### Fixed
+- **Idle keepalive spinner detection** — Tool progress spinners (◐◑◒◓) now detected for CC idle keepalive, preventing false idle transitions during tool execution.
+- **MCP default pinned=false** — MCP-created tabs no longer default to pinned, preventing unintended tab persistence across branch switches.
+- **Build: cfg-gate desktop modules** — Desktop-only modules properly gated for `tuic-remote` and agent-only builds.
+- **CI: check-remote job** — New CI job catches missing `cfg(desktop)` gates before they break remote builds.
+
 ## [1.2.3-nightly] - 2026-05-19
 
 ### Added

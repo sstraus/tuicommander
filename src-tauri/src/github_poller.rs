@@ -391,7 +391,8 @@ async fn poll_batch(
             let now = Instant::now();
 
             for (repo_path, statuses) in result.prs {
-                let changed = process_repo_update(state, handle, &repo_path, &statuses, &mut ps.prev);
+                let changed =
+                    process_repo_update(state, handle, &repo_path, &statuses, &mut ps.prev);
                 if changed {
                     ps.last_changed.insert(repo_path.clone(), now);
                 } else {

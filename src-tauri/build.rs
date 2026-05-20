@@ -4,7 +4,13 @@ fn main() {
     // strips it, so we must link it explicitly on macOS.
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos")
         && let Ok(out) = std::process::Command::new("xcrun")
-            .args(["--sdk", "macosx", "clang", "--print-file-name", "libclang_rt.osx.a"])
+            .args([
+                "--sdk",
+                "macosx",
+                "clang",
+                "--print-file-name",
+                "libclang_rt.osx.a",
+            ])
             .output()
     {
         let path = String::from_utf8_lossy(&out.stdout).trim().to_string();

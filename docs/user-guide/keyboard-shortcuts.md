@@ -66,6 +66,10 @@ A configurable OS-level shortcut to toggle TUICommander's visibility from any ap
 | `Cmd+End` | Scroll to bottom |
 | `Shift+PageUp` | Scroll page up |
 | `Shift+PageDown` | Scroll page down |
+| `Cmd+Shift+.` | Toggle block folding |
+| `Cmd+Shift+Up` | Jump to previous block |
+| `Cmd+Shift+Down` | Jump to next block |
+| `Cmd+Shift+B` | Toggle block-scoped search |
 
 ## Tab Navigation
 

@@ -864,6 +864,18 @@ Features to test when TUICommander is more usable.
 - [x] Find references: right-click → "Find References" context menu item works _(verified: CodeEditorTab.tsx:589 context menu "Find References (Shift+F12)" entry)_
 - [HUMAN] mdkb_status: DevTools `await __TAURI__.core.invoke("mdkb_status")` → `{available: true, connected: true}` _(requires DevTools console access)_
 
+## Command Block System (2026-05-20)
+- [HUMAN] Run a few commands → scrollbar shows color-coded marks at block boundaries
+- [HUMAN] Hold Ctrl+Cmd → timestamp overlay appears showing relative time for each block
+- [HUMAN] Click in the gutter area → selects the entire block output
+- [HUMAN] Cmd+Shift+. → toggles fold on the current block (collapses/expands)
+- [HUMAN] Cmd+Shift+Up/Down → jumps between block boundaries
+- [HUMAN] Cmd+Shift+B → toggles block-scoped search (search restricted to current block)
+- [HUMAN] Cmd+F with block-scoped toggle ON → only matches within current block shown
+- [HUMAN] Settings > Terminal > Blocks → toggle timestamps and folding on/off
+- [HUMAN] Run 500+ commands → oldest blocks evicted, no crash or memory growth
+- [HUMAN] Claude Code session: tool calls show as blocks without OSC 7770 (heuristic detection)
+
 ## Generators Modal (2026-05-20)
 - [HUMAN] Command palette → type "generator" → "Open generators" action appears in Generators category
 - [HUMAN] Modal opens — left sidebar shows 10 generators: Password, UUID v4, UUID v7, ULID, CUID2, JWT Secret, TOTP Secret, Nano ID, Slug, Ed25519 Key

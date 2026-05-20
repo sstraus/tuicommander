@@ -681,7 +681,8 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	function updateScrollbar(frame: DecodedFrame) {
 		if (!scrollbarRef || !scrollThumbRef) return;
 		const total = frame.historySize + (frame.screenRows || lastResizeRows || 24);
-		const visible = canvasRef.getBoundingClientRect().height / (metrics()?.cellHeight ?? 16);
+		const m = metrics();
+		const visible = m ? lastResizeRows || Math.floor(canvasRef.clientHeight / m.cellHeight) : (lastResizeRows || 24);
 
 		if (frame.historySize === 0) {
 			scrollbarRef.style.display = "none";

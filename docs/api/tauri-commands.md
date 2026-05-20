@@ -27,6 +27,13 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `debug_agent_detection` | `session_id: String` | `AgentDiagnostics` | Returns diagnostic breakdown of agent detection pipeline |
 | `set_session_name` | `session_id, name` | `()` | Set custom display name for a session |
 | `get_input_buffer_content` | `session_id` | `String` | Get the current content of the input line buffer (what the user is typing). Used by plugins with `pty:read` capability. |
+| `get_process_stats` | -- | `Vec<ProcessStat>` | CPU% and RSS memory for TUIC and all child process trees |
+
+## Generators (`generators.rs`)
+
+| Command | Args | Returns | Description |
+|---------|------|---------|-------------|
+| `generate_value` | `generator_id, options` | `GeneratedValue` | Generate a secure random value (password, uuid_v4, uuid_v7, ulid, cuid2, jwt_secret, totp_secret, nano_id, slug, ed25519_keypair) |
 
 ## Git Operations (`git.rs`)
 

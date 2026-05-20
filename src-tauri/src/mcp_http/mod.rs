@@ -587,6 +587,8 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         // Orchestrator
         .route("/stats", get(session::get_stats))
         .route("/metrics", get(session::get_metrics))
+        .route("/process/stats", get(session::get_process_stats))
+        .route("/process/monitor", get(session::process_monitor_panel))
         // Git/GitHub
         .route("/repo/info", get(git_routes::repo_info))
         .route("/repo/remote-url", get(git_routes::remote_url))
@@ -1050,6 +1052,8 @@ pub fn build_remote_router(state: Arc<AppState>) -> Router {
         // Orchestrator stats
         .route("/stats", get(session::get_stats))
         .route("/metrics", get(session::get_metrics))
+        .route("/process/stats", get(session::get_process_stats))
+        .route("/process/monitor", get(session::process_monitor_panel))
         // Git operations
         .route("/repo/info", get(git_routes::repo_info))
         .route("/repo/remote-url", get(git_routes::remote_url))

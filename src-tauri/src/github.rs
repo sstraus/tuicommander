@@ -11,13 +11,14 @@ use tauri::State;
 use crate::error_classification::calculate_backoff_delay;
 use crate::state::{AppState, GIT_CACHE_TTL, GITHUB_CACHE_TTL};
 
-
 fn extract_graphql_name(query: &str) -> &str {
     // Extract name from "query FooBar {" or "mutation Baz(" patterns
     for keyword in &["query ", "mutation "] {
         if let Some(rest) = query.trim_start().strip_prefix(keyword) {
             let rest = rest.trim_start();
-            let end = rest.find(|c: char| !c.is_alphanumeric() && c != '_').unwrap_or(rest.len());
+            let end = rest
+                .find(|c: char| !c.is_alphanumeric() && c != '_')
+                .unwrap_or(rest.len());
             if end > 0 {
                 return &rest[..end];
             }
@@ -1984,7 +1985,11 @@ fn fetch_ci_failure_logs_impl(repo_path: &str, branch: &str) -> Result<String, S
     let gh = crate::agent::resolve_cli("gh");
 
     // Step 1: find the latest failed run for the branch
-    crate::github_debug::log_api("CLI", &format!("gh run list --repo {repo_slug} --branch {branch}"), "fetch_ci_failure_logs_impl");
+    crate::github_debug::log_api(
+        "CLI",
+        &format!("gh run list --repo {repo_slug} --branch {branch}"),
+        "fetch_ci_failure_logs_impl",
+    );
     let mut list_cmd = Command::new(&gh);
     list_cmd.args([
         "run",
@@ -2020,7 +2025,11 @@ fn fetch_ci_failure_logs_impl(repo_path: &str, branch: &str) -> Result<String, S
         .ok_or_else(|| "No failed workflow runs found for this branch".to_string())?;
 
     // Step 2: fetch failure logs for that run
-    crate::github_debug::log_api("CLI", &format!("gh run view {run_id} --repo {repo_slug} --log-failed"), "fetch_ci_failure_logs_impl");
+    crate::github_debug::log_api(
+        "CLI",
+        &format!("gh run view {run_id} --repo {repo_slug} --log-failed"),
+        "fetch_ci_failure_logs_impl",
+    );
     let mut view_cmd = Command::new(&gh);
     view_cmd.args([
         "run",
@@ -2067,7 +2076,6 @@ pub(crate) async fn get_pr_diff(
     let state = state.inner().clone();
     get_pr_diff_impl(&repo_path, pr_number, &state).await
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -3660,7 +3668,10 @@ mod tests {
 
     #[test]
     fn test_extract_named_query() {
-        assert_eq!(extract_graphql_name("query BatchPoll { viewer { login } }"), "BatchPoll");
+        assert_eq!(
+            extract_graphql_name("query BatchPoll { viewer { login } }"),
+            "BatchPoll"
+        );
     }
 
     #[test]
@@ -3670,11 +3681,17 @@ mod tests {
 
     #[test]
     fn test_extract_mutation() {
-        assert_eq!(extract_graphql_name("mutation ClosePR($id: ID!) { ... }"), "ClosePR");
+        assert_eq!(
+            extract_graphql_name("mutation ClosePR($id: ID!) { ... }"),
+            "ClosePR"
+        );
     }
 
     #[test]
     fn test_extract_inline_query_keyword() {
-        assert_eq!(extract_graphql_name("query { viewer { login } }"), "<inline>");
+        assert_eq!(
+            extract_graphql_name("query { viewer { login } }"),
+            "<inline>"
+        );
     }
 }

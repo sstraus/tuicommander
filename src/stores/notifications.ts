@@ -178,7 +178,7 @@ function createNotificationsStore() {
 			try {
 				if (isTauri()) {
 					const { getCurrentWindow } = await import("@tauri-apps/api/window");
-					await getCurrentWindow().setBadgeCount(0);
+					await getCurrentWindow().setBadgeCount();
 				} else if ("clearAppBadge" in navigator) {
 					await (navigator as Navigator & { clearAppBadge: () => Promise<void> }).clearAppBadge();
 				}

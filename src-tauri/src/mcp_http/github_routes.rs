@@ -209,9 +209,7 @@ pub(super) async fn poller_update_paths(
     Json(serde_json::json!({"ok": true})).into_response()
 }
 
-pub(super) async fn api_debug_set(
-    Json(body): Json<super::types::SetApiDebugRequest>,
-) -> Response {
+pub(super) async fn api_debug_set(Json(body): Json<super::types::SetApiDebugRequest>) -> Response {
     crate::github_debug::set(body.enabled);
     Json(serde_json::json!({"ok": true, "enabled": body.enabled})).into_response()
 }

@@ -187,9 +187,16 @@ export function CommandInput(props: CommandInputProps) {
 
 	async function handleChoiceSelect(key: string) {
 		try {
-			await sendPtyKey((data) => rpc("write_pty", { sessionId: props.sessionId, data }), key);
+			const write = (data: string) => rpc<void>("write_pty", { sessionId: props.sessionId, data });
+			await sendPtyKey(write, key);
+			// Raw-mode prompts (edit-confirm, bash-confirm) have a footer with
+			// dismiss_key — a single key press suffices. Line-mode prompts (LSP
+			// install, etc.) lack the footer and need Enter to submit.
+			if (!props.choicePrompt?.dismiss_key) {
+				await write("\r");
+			}
 		} catch (err) {
-			appLogger.warn("terminal", "ChoicePrompt sendPtyKey failed", err);
+			appLogger.warn("terminal", "ChoicePrompt sendPtyKey failed", { error: err });
 		}
 	}
 
