@@ -370,13 +370,14 @@ mod tests {
         writeln!(f, "#!/bin/sh").unwrap();
         writeln!(f, "{behavior}").unwrap();
         f.as_file().sync_all().unwrap();
-        let path = f.into_temp_path();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            f.as_file()
+                .set_permissions(std::fs::Permissions::from_mode(0o755))
+                .unwrap();
         }
-        path
+        f.into_temp_path()
     }
 
     fn test_profile() -> TunnelProfile {
