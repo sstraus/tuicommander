@@ -522,13 +522,16 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		octx.font = `${fontSize}px ${fontFamily}`;
 		octx.fillStyle = "rgba(150,150,150,0.5)";
 		const canvasW = overlayCanvasRef.width / m.dpr;
+		let lastLabelBottom = -Infinity;
 		for (const block of all) {
 			const vpRow = absRowToViewport(block.promptLine);
 			if (vpRow === null) continue;
 			const y = vpRow * m.cellHeight;
+			if (y < lastLabelBottom) continue;
 			const label = formatRelativeTime(Date.now() - block.startedAt);
 			const tw = octx.measureText(label).width;
 			octx.fillText(label, canvasW - tw - 8, y + m.cellHeight * 0.75);
+			lastLabelBottom = y + m.cellHeight;
 		}
 	}
 
@@ -715,7 +718,8 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		const term = terminalsStore.get(props.terminalId);
 		if (!term) return;
 		const blocks = term.commandBlocks;
-		const key = `${blocks.length}:${totalRows}:${blocks[blocks.length - 1]?.exitCode ?? ""}`;
+		const searchCount = searchMatches.length;
+		const key = `${blocks.length}:${totalRows}:${blocks[blocks.length - 1]?.exitCode ?? ""}:s${searchCount}:${searchCount > 0 ? searchMatches[0].row : ""}`;
 		if (key === lastScrollbarMarksKey) return;
 		lastScrollbarMarksKey = key;
 
@@ -725,6 +729,15 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			const ratio = block.promptLine / totalRows;
 			const color = block.exitCode !== null && block.exitCode !== 0 ? "#f85149" : "rgba(88,166,255,0.5)";
 			html += `<div style="position:absolute;right:0;width:100%;height:2px;top:${ratio * trackH}px;background:${color}"></div>`;
+		}
+		if (searchCount > 0) {
+			const seen = new Set<number>();
+			for (const match of searchMatches) {
+				const rounded = Math.round((match.row / totalRows) * trackH);
+				if (seen.has(rounded)) continue;
+				seen.add(rounded);
+				html += `<div style="position:absolute;right:0;width:100%;height:2px;top:${rounded}px;background:#e8984c"></div>`;
+			}
 		}
 		scrollbarMarksContainer.innerHTML = html;
 	}
