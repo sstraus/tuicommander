@@ -370,6 +370,16 @@ Features to test when TUICommander is more usable.
 - [x] Polling resumes immediately when window becomes visible _(verified: github_poller.rs uses normal BASE_INTERVAL=60s when visible)_
 - [HUMAN] No excessive API calls visible in network
 
+### GitHub API Debug & updated_at Optimization (062b)
+- [x] `make gh-debug-on` enables debug logging (returns `{"enabled":true}`) _(verified 2026-05-19: curl POST returns `{"enabled":true,"ok":true}`. NOTE: Makefile route was stale `/repo/github/api-debug` — fixed to `/repo/github-poller/api-debug`)_
+- [x] `make gh-debug-off` disables debug logging (returns `{"enabled":false}`) _(verified 2026-05-19: returns `{"enabled":false,"ok":true}`)_
+- [x] `make gh-debug-status` shows current state _(verified 2026-05-19: GET returns `{"enabled":true}` or `{"enabled":false}`)_
+- [x] With debug on, `make gh-debug-logs` shows GraphQL and REST calls with method/url/caller _(verified 2026-05-19: GraphQL requests logged with source=github_api. NOTE: extra fields method/url/caller were silently dropped by LogVisitor — fixed: app_logger.rs now captures extra tracing fields into data_json)_
+- [HUMAN] No REST ETag pre-filter calls visible (removed — previously 1 GET per repo per tick)
+- [HUMAN] Poller emits `github-pr-statuses` only when `updated_at` actually changes (not every tick)
+- [x] `make gh-rate` shows GraphQL+core rate usage — compare before/after a few poll cycles _(verified 2026-05-19: returns `{graphql: {used:41, remaining:4959}, core: {used:0, remaining:5000}}`)_
+- [HUMAN] After toggling debug off, no API log entries appear for subsequent polls
+
 ### Hotkey Hints (064)
 - [x] Sidebar toggle shows ⌘[ hint
 - [x] MD/Diff toggle buttons show ⌘M/⌘D hints
@@ -853,3 +863,24 @@ Features to test when TUICommander is more usable.
 - [x] Find references: Shift+F12 on a symbol → References panel opens with callers list _(verified: CodeEditorTab.tsx:362-366 Shift-F12 keybinding triggers mdkb_references)_
 - [x] Find references: right-click → "Find References" context menu item works _(verified: CodeEditorTab.tsx:589 context menu "Find References (Shift+F12)" entry)_
 - [HUMAN] mdkb_status: DevTools `await __TAURI__.core.invoke("mdkb_status")` → `{available: true, connected: true}` _(requires DevTools console access)_
+
+## Generators Modal (2026-05-20)
+- [HUMAN] Command palette → type "generator" → "Open generators" action appears in Generators category
+- [HUMAN] Modal opens — left sidebar shows 10 generators: Password, UUID v4, UUID v7, ULID, CUID2, JWT Secret, TOTP Secret, Nano ID, Slug, Ed25519 Key
+- [HUMAN] Selecting each generator auto-generates a value immediately (no manual click needed)
+- [HUMAN] Password: length slider (4–128) and charset checkboxes (A–Z, a–z, 0–9, !@#…) work; slider updates label live; changing options regenerates
+- [HUMAN] Nano ID: length number input (4–64) works; changing length regenerates
+- [HUMAN] Ed25519 Key: shows two textareas (Private key PKCS#8 / Public key SPKI) + "Copy Private" + "Copy Public" buttons
+- [HUMAN] Copy button → clipboard contains the generated value; button shows "Copied!" for 2s then resets
+- [HUMAN] Regenerate button produces a new value each click
+- [HUMAN] Escape key closes modal; clicking overlay closes modal
+- [HUMAN] No generated value appears in app logs (`curl http://localhost:9876/logs | grep -i "password\|secret\|key"` returns nothing)
+
+## Process Monitor
+- [HUMAN] HTTP endpoint: `curl http://localhost:<port>/process/stats` returns JSON array of `{session_id, name, pid, rss_kb, cpu_pct}`
+- [HUMAN] HTTP panel: `curl http://localhost:<port>/process/monitor` returns HTML dashboard
+- [HUMAN] MCP tool: `session action=process_stats` returns `{processes: [...]}` with TUIC + child stats
+- [HUMAN] Panel: open `/process/monitor` in TUIC tab — shows summary stats + process tree table
+- [HUMAN] Panel: auto-refresh at 5s interval shows live CPU/memory updates
+- [HUMAN] Panel: changing refresh interval to Manual stops auto-polling
+- [HUMAN] Panel: Refresh button triggers immediate data fetch

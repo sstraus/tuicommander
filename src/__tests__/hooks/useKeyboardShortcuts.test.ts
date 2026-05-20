@@ -72,6 +72,7 @@ function createMockHandlers(): ShortcutHandlers {
 		toggleComposePanel: vi.fn(),
 		detachActivityDashboard: vi.fn(),
 		toggleProcessManager: vi.fn(),
+		toggleGenerators: vi.fn(),
 		refreshTerminal: vi.fn(),
 	};
 }

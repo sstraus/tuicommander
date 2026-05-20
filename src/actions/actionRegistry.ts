@@ -90,6 +90,7 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
 	"detach-activity-dashboard": { label: "Open Activity Dashboard in separate window", category: "Navigation" },
 	"toggle-tunnels": { label: "SSH Tunnels", category: "Panels" },
 	"process-manager": { label: "Process Manager", category: "Navigation" },
+	"open-generators": { label: "Open generators", category: "Generators" },
 };
 
 /**
@@ -159,6 +160,7 @@ export function getActionEntries(handlers: ShortcutHandlers): ActionEntry[] {
 		"detach-activity-dashboard": handlers.detachActivityDashboard,
 		"toggle-tunnels": () => tunnelPanelStore.toggle(),
 		"process-manager": handlers.toggleProcessManager,
+		"open-generators": handlers.toggleGenerators,
 	};
 
 	// Defensive dedup-by-id — today ACTION_META is a Record so ids are unique by

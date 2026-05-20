@@ -29,6 +29,7 @@ import releaseNotes from "./assets/release-notes.json";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ContextMenu, type ContextMenuItem, createContextMenu } from "./components/ContextMenu";
 import { CreateWorktreeDialog } from "./components/CreateWorktreeDialog";
+import { GeneratorsModal } from "./components/GeneratorsModal";
 import {
 	type CleanupStep,
 	PostMergeCleanupDialog,
@@ -293,6 +294,7 @@ const App: Component = () => {
 	const dialogs = useConfirmDialog();
 
 	const [showProcessManager, setShowProcessManager] = createSignal(false);
+	const [showGenerators, setShowGenerators] = createSignal(false);
 	const [whatsNewVersion, setWhatsNewVersion] = createSignal<string | null>(null);
 	const whatsNewEntry = () => {
 		const v = whatsNewVersion();
@@ -1704,6 +1706,7 @@ const App: Component = () => {
 			);
 		},
 		toggleProcessManager: () => setShowProcessManager((v) => !v),
+		toggleGenerators: () => setShowGenerators((v) => !v),
 		newFile: () => {
 			const defaultPath = gitOps.activeWorktreePath() || repositoriesStore.state.activeRepoPath || undefined;
 			(async () => {
@@ -2570,6 +2573,11 @@ const App: Component = () => {
 			{/* Process Manager modal */}
 			<Show when={showProcessManager()}>
 				<ProcessManagerModal onClose={() => setShowProcessManager(false)} />
+			</Show>
+
+			{/* Generators modal */}
+			<Show when={showGenerators()}>
+				<GeneratorsModal onClose={() => setShowGenerators(false)} />
 			</Show>
 
 			{/* What's New dialog — shown once after stable version update */}

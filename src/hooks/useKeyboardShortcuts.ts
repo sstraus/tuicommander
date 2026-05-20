@@ -86,6 +86,7 @@ export interface ShortcutHandlers {
 	toggleComposePanel: () => void;
 	detachActivityDashboard: () => void;
 	toggleProcessManager: () => void;
+	toggleGenerators: () => void;
 }
 
 /** Keys that are modifiers only — not real shortcut targets */

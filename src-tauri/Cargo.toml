@@ -103,7 +103,13 @@ dashmap = "6"
 parking_lot = "0.12"
 regex = "1"
 lazy_static = "1"
-uuid = { version = "1", features = ["v4"] }
+uuid = { version = "1", features = ["v4", "v7"] }
+ulid = "1"
+cuid2 = "0.1"
+base32 = "0.4"
+zeroize = { version = "1", features = ["alloc"] }
+hex = "0.4"
+ring = "0.17"
 dirs = "6"
 tauri-plugin-dialog = { version = "2.7", optional = true }
 tauri-plugin-single-instance = { version = "2", optional = true }
