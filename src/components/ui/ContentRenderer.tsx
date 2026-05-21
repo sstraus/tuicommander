@@ -1,6 +1,7 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
+import AnsiToHtml from "ansi-to-html";
 import DOMPurify from "dompurify";
-import { marked } from "marked";
+import { marked, type Tokens } from "marked";
 import "./markdown-content.css";
 import { type Component, createEffect, createMemo, onCleanup, Show } from "solid-js";
 import { appLogger } from "../../stores/appLogger";
@@ -37,6 +38,44 @@ marked.setOptions({
 	gfm: true, // GitHub Flavored Markdown
 	breaks: true, // Convert \n to <br>
 });
+
+const ansiConverter = new AnsiToHtml({ escapeXML: true });
+const ANSI_CSI_RE = /\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]/;
+
+// Custom renderer: code blocks with ANSI sequences render with colors.
+marked.use({
+	renderer: {
+		code(token: Tokens.Code) {
+			const lang = token.lang ?? "";
+			const baseCls = lang ? `language-${lang}` : "";
+			if (ANSI_CSI_RE.test(token.text)) {
+				const cls = [baseCls, "ansi-block"].filter(Boolean).join(" ");
+				return `<pre><code class="${cls}">${ansiConverter.toHtml(token.text)}</code></pre>\n`;
+			}
+			const escaped = token.text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+			return `<pre><code${baseCls ? ` class="${baseCls}"` : ""}>${escaped}</code></pre>\n`;
+		},
+	},
+});
+
+/**
+ * Strips ANSI escape sequences from prose sections only, leaving code fence
+ * content intact so the custom marked renderer can colorize it.
+ */
+function stripAnsiOutsideCodeBlocks(source: string): string {
+	const lines = source.split("\n");
+	const out: string[] = [];
+	let inFence = false;
+	for (const line of lines) {
+		if (/^\s*(`{3,}|~{3,})/.test(line)) {
+			inFence = !inFence;
+			out.push(line);
+		} else {
+			out.push(inFence ? line : stripAnsi(line));
+		}
+	}
+	return out.join("\n");
+}
 
 const TILDE_SENTINEL = "data-checkbox-indeterminate";
 
@@ -120,7 +159,7 @@ async function renderMermaidBlocks(container: HTMLElement): Promise<void> {
 export const ContentRenderer: Component<ContentRendererProps> = (props) => {
 	// Memoize processed markdown to avoid re-parsing on every render
 	const processedContent = createMemo(() => {
-		const raw = stripAnsi(props.content ?? "");
+		const raw = stripAnsiOutsideCodeBlocks(props.content ?? "");
 		try {
 			// 1. Convert [~] to [ ] so marked renders them as standard GFM task-list items.
 			//    Track which source lines had tilde for indeterminate styling later.
@@ -163,7 +202,7 @@ export const ContentRenderer: Component<ContentRendererProps> = (props) => {
 			});
 
 			return DOMPurify.sanitize(stripEventHandlers(html), {
-				ADD_ATTR: ["data-tweak-id", "data-tweak-at", "data-tweak-comment", "data-source-line", TILDE_SENTINEL],
+				ADD_ATTR: ["data-tweak-id", "data-tweak-at", "data-tweak-comment", "data-source-line", TILDE_SENTINEL, "style"],
 			});
 		} catch (err) {
 			appLogger.error("app", "Markdown parsing error", err);
