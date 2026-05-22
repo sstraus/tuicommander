@@ -465,10 +465,12 @@ describe("initApp", () => {
 		}) as unknown as typeof listen);
 
 		repositoriesStore.add({ path: "/repo", displayName: "Repo" });
-		const before = repositoriesStore.getRevision("/repo");
 
 		const deps = createMockDeps();
 		await initApp(deps);
+
+		// Capture baseline AFTER initApp — setActive() may bump revision for non-hot repos.
+		const before = repositoriesStore.getRevision("/repo");
 
 		// Two rapid events — without the decoupling fix, the second event's
 		// clearTimeout drops the first bump and the counter only advances once.

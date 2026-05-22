@@ -178,6 +178,44 @@ function createTerminalsStore() {
 	// Used to distinguish "busy from .zshrc startup" from "busy from a user-launched process".
 	const reachedIdleSet = new Set<string>();
 
+	// OSC133 block-completed batching: during burst replay (e.g. session restore),
+	// hundreds of D markers arrive in a single event loop tick. Buffer completed
+	// blocks and flush once per animation frame to avoid N separate setState calls.
+	const _osc133Pending = new Map<string, CommandBlock[]>();
+	const _osc133FlushTimers = new Map<string, number>();
+	const MAX_BLOCKS = 500;
+
+	function _scheduleOsc133Flush(id: string): void {
+		if (_osc133FlushTimers.has(id)) return;
+		_osc133FlushTimers.set(
+			id,
+			requestAnimationFrame(() => {
+				_osc133FlushTimers.delete(id);
+				const pending = _osc133Pending.get(id);
+				if (!pending?.length) return;
+				_osc133Pending.delete(id);
+				batch(() => {
+					setState("terminals", id, "commandBlocks", (prev) => {
+						const next = [...prev, ...pending];
+						if (next.length <= MAX_BLOCKS) return next;
+						const evicted = next.slice(0, next.length - MAX_BLOCKS);
+						const evictedLines = new Set(evicted.map((b) => b.promptLine));
+						setState("terminals", id, "foldedBlocks", (folds) => {
+							const cleaned = new Set(folds);
+							for (const line of evictedLines) cleaned.delete(line);
+							return cleaned;
+						});
+						return next.slice(-MAX_BLOCKS);
+					});
+				});
+				appLogger.debug(
+					"terminal",
+					`[OSC133] ${id} flushed ${pending.length} blocks, total=${state.terminals[id]?.commandBlocks.length ?? 0}`,
+				);
+			}) as unknown as number,
+		);
+	}
+
 	/** Guard: check terminal exists before mutating. SolidJS setState creates keys
 	 *  implicitly — calling setState("terminals", id, ...) on a removed terminal
 	 *  resurrects it as a ghost entry with partial data. */
@@ -483,7 +521,8 @@ function createTerminalsStore() {
 					// without a D marker (e.g. Ctrl+C), finalize it first.
 					if (term.activeBlock) {
 						const completed: CommandBlock = { ...term.activeBlock, endedAt: now };
-						setState("terminals", id, "commandBlocks", (prev) => [...prev, completed]);
+						_osc133Pending.get(id)?.push(completed) ?? _osc133Pending.set(id, [completed]);
+						_scheduleOsc133Flush(id);
 					}
 					setState("terminals", id, "activeBlock", {
 						promptLine: line,
@@ -516,26 +555,9 @@ function createTerminalsStore() {
 							exitCode: exitCode ?? null,
 							endedAt: now,
 						};
-						const MAX_BLOCKS = 500;
-						batch(() => {
-							setState("terminals", id, "commandBlocks", (prev) => {
-								const next = [...prev, completed];
-								if (next.length <= MAX_BLOCKS) return next;
-								const evicted = next.slice(0, next.length - MAX_BLOCKS);
-								const evictedLines = new Set(evicted.map((b) => b.promptLine));
-								setState("terminals", id, "foldedBlocks", (folds) => {
-									const cleaned = new Set(folds);
-									for (const line of evictedLines) cleaned.delete(line);
-									return cleaned;
-								});
-								return next.slice(-MAX_BLOCKS);
-							});
-							setState("terminals", id, "activeBlock", null);
-						});
-						appLogger.debug(
-							"terminal",
-							`[OSC133] ${id} block completed, exit=${exitCode ?? "?"}, blocks=${term.commandBlocks.length + 1}`,
-						);
+						_osc133Pending.get(id)?.push(completed) ?? _osc133Pending.set(id, [completed]);
+						_scheduleOsc133Flush(id);
+						setState("terminals", id, "activeBlock", null);
 					}
 					break;
 				}
