@@ -836,7 +836,10 @@ mod tests {
     fn dormant_repo_appears_every_10th_cycle() {
         let paths = vec!["/cold/repo".to_string()];
         let mut last_changed = HashMap::new();
-        last_changed.insert("/cold/repo".to_string(), Instant::now() - Duration::from_secs(3600));
+        last_changed.insert(
+            "/cold/repo".to_string(),
+            Instant::now() - Duration::from_secs(3600),
+        );
         let hot_paths = HashSet::new();
 
         let offset = path_hash("/cold/repo") % DORMANT_POLL_DIVISOR;
@@ -847,7 +850,11 @@ mod tests {
                 included_cycles.push(cycle);
             }
         }
-        assert_eq!(included_cycles.len(), 2, "dormant repo should appear twice in 20 cycles");
+        assert_eq!(
+            included_cycles.len(),
+            2,
+            "dormant repo should appear twice in 20 cycles"
+        );
         assert_eq!(included_cycles[0], offset);
         assert_eq!(included_cycles[1], offset + DORMANT_POLL_DIVISOR);
     }
@@ -856,7 +863,10 @@ mod tests {
     fn hot_repo_uses_idle_divisor_not_dormant() {
         let paths = vec!["/hot/repo".to_string()];
         let mut last_changed = HashMap::new();
-        last_changed.insert("/hot/repo".to_string(), Instant::now() - Duration::from_secs(3600));
+        last_changed.insert(
+            "/hot/repo".to_string(),
+            Instant::now() - Duration::from_secs(3600),
+        );
         let mut hot_paths = HashSet::new();
         hot_paths.insert("/hot/repo".to_string());
 
@@ -867,7 +877,10 @@ mod tests {
                 count += 1;
             }
         }
-        assert_eq!(count, 2, "hot idle repo should appear every 5th cycle = 2 times in 10");
+        assert_eq!(
+            count, 2,
+            "hot idle repo should appear every 5th cycle = 2 times in 10"
+        );
     }
 
     #[test]
@@ -876,6 +889,9 @@ mod tests {
             .iter()
             .map(|p| path_hash(p) % DORMANT_POLL_DIVISOR)
             .collect();
-        assert!(offsets.len() >= 2, "hash should produce at least 2 distinct offsets for 5 paths");
+        assert!(
+            offsets.len() >= 2,
+            "hash should produce at least 2 distinct offsets for 5 paths"
+        );
     }
 }

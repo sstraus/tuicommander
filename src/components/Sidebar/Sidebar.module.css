@@ -3,6 +3,7 @@
   50% { opacity: 1; }
 }
 
+
 /* Sidebar */
 .sidebar {
   width: var(--sidebar-width);

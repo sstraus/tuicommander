@@ -87,6 +87,10 @@ export interface ShortcutHandlers {
 	detachActivityDashboard: () => void;
 	toggleProcessManager: () => void;
 	toggleGenerators: () => void;
+	blockPrev: () => void;
+	blockNext: () => void;
+	blockFoldToggle: () => void;
+	blockSearchToggle: () => void;
 }
 
 /** Keys that are modifiers only — not real shortcut targets */
@@ -337,6 +341,18 @@ function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean
 			return true;
 		case "detach-activity-dashboard":
 			handlers.detachActivityDashboard();
+			return true;
+		case "block-fold-toggle":
+			handlers.blockFoldToggle();
+			return true;
+		case "block-prev":
+			handlers.blockPrev();
+			return true;
+		case "block-next":
+			handlers.blockNext();
+			return true;
+		case "block-search-toggle":
+			handlers.blockSearchToggle();
 			return true;
 
 		// Tab navigation

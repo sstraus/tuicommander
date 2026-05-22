@@ -9,6 +9,12 @@ authors = ["Stefano Straus <github.com/sstraus>"]
 edition = "2024"
 default-run = "tuicommander"
 
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

@@ -137,6 +137,7 @@ import { paneLayoutKey } from "./stores/savedPaneLayouts";
 import { settingsStore } from "./stores/settings";
 import { tasksStore } from "./stores/tasks";
 import { terminalsStore } from "./stores/terminals";
+import { tunnelPanelStore } from "./stores/tunnelPanel";
 import { toastsStore } from "./stores/toasts";
 import { uiStore } from "./stores/ui";
 import { updaterStore } from "./stores/updater";
@@ -1707,6 +1708,69 @@ const App: Component = () => {
 		},
 		toggleProcessManager: () => setShowProcessManager((v) => !v),
 		toggleGenerators: () => setShowGenerators((v) => !v),
+		blockPrev: () => {
+			const term = terminalsStore.getActive();
+			if (!term?.ref || term.commandBlocks.length === 0) return;
+			const sessionId = term.ref.getSessionId();
+			if (!sessionId) return;
+			invoke<[number, number, number]>("terminal_scroll_info", { sessionId })
+				.then(([offset, total]) => {
+					const viewTop = total - offset;
+					const blocks = term.commandBlocks;
+					for (let i = blocks.length - 1; i >= 0; i--) {
+						if (blocks[i].promptLine < viewTop - 1) {
+							term.ref!.scrollToLine(blocks[i].promptLine);
+							return;
+						}
+					}
+				})
+				.catch(() => {});
+		},
+		blockNext: () => {
+			const term = terminalsStore.getActive();
+			if (!term?.ref || term.commandBlocks.length === 0) return;
+			const sessionId = term.ref.getSessionId();
+			if (!sessionId) return;
+			invoke<[number, number, number]>("terminal_scroll_info", { sessionId })
+				.then(([offset, total]) => {
+					const viewTop = total - offset;
+					const blocks = term.commandBlocks;
+					for (const block of blocks) {
+						if (block.promptLine > viewTop + 1) {
+							term.ref!.scrollToLine(block.promptLine);
+							return;
+						}
+					}
+					term.ref!.scrollToBottom();
+				})
+				.catch(() => {});
+		},
+		blockFoldToggle: () => {
+			const term = terminalsStore.getActive();
+			if (!term?.ref || term.commandBlocks.length === 0) return;
+			const sessionId = term.ref.getSessionId();
+			if (!sessionId) return;
+			invoke<[number, number, number]>("terminal_scroll_info", { sessionId })
+				.then(([offset, total, screenRows]) => {
+					const viewCenter = total - offset + Math.floor(screenRows / 2);
+					const blocks = term.commandBlocks;
+					let nearest = blocks[0];
+					let bestDist = Math.abs(nearest.promptLine - viewCenter);
+					for (let i = 1; i < blocks.length; i++) {
+						const dist = Math.abs(blocks[i].promptLine - viewCenter);
+						if (dist < bestDist) {
+							nearest = blocks[i];
+							bestDist = dist;
+						}
+					}
+					terminalsStore.toggleBlockFold(term.id, nearest.promptLine);
+				})
+				.catch(() => {});
+		},
+		blockSearchToggle: () => {
+			const active = terminalsStore.getActive();
+			active?.ref?.openSearch();
+		},
 		newFile: () => {
 			const defaultPath = gitOps.activeWorktreePath() || repositoriesStore.state.activeRepoPath || undefined;
 			(async () => {
@@ -1940,6 +2004,9 @@ const App: Component = () => {
 				case "reopen-closed-tab":
 					terminalLifecycle.reopenClosedTab();
 					break;
+				case "new-file":
+					shortcutHandlers.newFile();
+					break;
 				case "open-file":
 					shortcutHandlers.openFile();
 					break;
@@ -1967,6 +2034,15 @@ const App: Component = () => {
 				// Edit
 				case "clear-terminal":
 					terminalLifecycle.clearTerminal();
+					break;
+				case "clear-scrollback":
+					terminalLifecycle.clearScrollback();
+					break;
+				case "refresh-terminal":
+					terminalLifecycle.refreshTerminal();
+					break;
+				case "find-in-terminal":
+					shortcutHandlers.findInTerminal();
 					break;
 
 				// View
@@ -2012,6 +2088,21 @@ const App: Component = () => {
 				case "outline-panel":
 					uiStore.toggleOutlinePanel();
 					break;
+				case "ai-chat":
+					if (settingsStore.isAiChatEnabled()) shortcutHandlers.toggleAiChatPanel();
+					break;
+				case "compose-panel":
+					shortcutHandlers.toggleComposePanel();
+					break;
+				case "zoom-pane":
+					splitPanes.toggleZoomPane();
+					break;
+				case "focus-mode":
+					uiStore.toggleFocusMode();
+					break;
+				case "global-workspace":
+					shortcutHandlers.toggleGlobalWorkspace();
+					break;
 
 				// Go
 				case "next-tab":
@@ -2019,6 +2110,19 @@ const App: Component = () => {
 					break;
 				case "prev-tab":
 					terminalLifecycle.navigateTab("prev");
+					break;
+
+				case "block-prev":
+					shortcutHandlers.blockPrev();
+					break;
+				case "block-next":
+					shortcutHandlers.blockNext();
+					break;
+				case "block-fold-toggle":
+					shortcutHandlers.blockFoldToggle();
+					break;
+				case "block-search-toggle":
+					shortcutHandlers.blockSearchToggle();
 					break;
 
 				// Tools
@@ -2053,6 +2157,16 @@ const App: Component = () => {
 					break;
 				case "task-queue":
 					setTaskQueueVisible((v) => !v);
+					break;
+				case "content-search":
+					commandPaletteStore.open();
+					commandPaletteStore.setQuery("?");
+					break;
+				case "tunnels":
+					tunnelPanelStore.toggle();
+					break;
+				case "process-manager":
+					setShowProcessManager((v) => !v);
 					break;
 
 				// Help
@@ -2404,8 +2518,8 @@ const App: Component = () => {
 				onCheckoutRemote={gitOps.handleCheckoutRemoteBranch}
 			/>
 
-			{/* Activity dashboard */}
-			<Show when={!uiStore.isDetached("activity")}>
+			{/* Activity dashboard — unmount when closed to release memos/subscriptions */}
+			<Show when={!uiStore.isDetached("activity") && activityDashboardStore.state.isOpen}>
 				<Suspense>
 					<ActivityDashboard onSelect={terminalLifecycle.handleTerminalSelect} />
 				</Suspense>

@@ -6,7 +6,16 @@ import { t } from "../../i18n";
 import { invoke, listen } from "../../invoke";
 import { getModifierSymbol, shortenHomePath } from "../../platform";
 import { appLogger } from "../../stores/appLogger";
-import { markInternalDragEnd, markInternalDragStart, startNativeDrag } from "../../stores/dragDrop";
+import {
+	clearFileBrowserDragSource,
+	findFolderTargetAtPoint,
+	getFileBrowserDragSource,
+	getLastDragPosition,
+	markInternalDragEnd,
+	markInternalDragStart,
+	setFileBrowserDragSource,
+	startNativeDrag,
+} from "../../stores/dragDrop";
 import { repositoriesStore } from "../../stores/repositories";
 import { uiStore } from "../../stores/ui";
 import type { ContentMatch, DirEntry } from "../../types/fs";
@@ -589,6 +598,42 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 		}
 	};
 
+	const handleFileBrowserDragEnd = () => {
+		const pos = getLastDragPosition();
+		if (pos && getFileBrowserDragSource()) {
+			const target = findFolderTargetAtPoint(pos.x, pos.y);
+			if (target) handleFileBrowserDrop(target);
+		}
+		clearFileBrowserDragSource();
+		markInternalDragEnd();
+	};
+
+	const handleFileBrowserDrop = async (targetFolderAbsPath: string) => {
+		const sourcePath = getFileBrowserDragSource();
+		clearFileBrowserDragSource();
+		markInternalDragEnd();
+		const fsRoot = root();
+		if (!sourcePath || !fsRoot) return;
+
+		// Don't drop onto the source's own parent, onto itself, or into a descendant
+		const sourceDir = sourcePath.slice(0, sourcePath.lastIndexOf("/"));
+		if (targetFolderAbsPath === sourceDir || targetFolderAbsPath === sourcePath) return;
+		if (targetFolderAbsPath.startsWith(`${sourcePath}/`)) return;
+
+		const prefix = fsRoot.endsWith("/") ? fsRoot : `${fsRoot}/`;
+		const relSource = sourcePath.startsWith(prefix) ? sourcePath.slice(prefix.length) : sourcePath;
+		const fileName = sourcePath.slice(sourcePath.lastIndexOf("/") + 1);
+		const relTarget = targetFolderAbsPath.startsWith(prefix) ? targetFolderAbsPath.slice(prefix.length) : targetFolderAbsPath;
+		const relDest = `${relTarget}/${fileName}`;
+
+		try {
+			await fb.renamePath(fsRoot, relSource, relDest);
+			refresh();
+		} catch (err) {
+			appLogger.error("app", "Failed to move file via drag", err);
+		}
+	};
+
 	const handleCopyPath = (entry: DirEntry) => {
 		const fsRoot = root();
 		if (!fsRoot) return;
@@ -1058,6 +1103,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 										onToggleExpand={toggleExpand}
 										onFileOpen={props.onFileOpen}
 										onContextMenu={handleContextMenu}
+										onFileDrop={handleFileBrowserDrop}
 										childrenCache={treeCache()}
 										onChildrenLoaded={onChildrenLoaded}
 									/>
@@ -1111,11 +1157,26 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 												const p = absPath();
 												e.dataTransfer!.setData("application/x-tuic-path", p);
 												e.dataTransfer!.setData("text/plain", p);
-												e.dataTransfer!.effectAllowed = "copy";
+												e.dataTransfer!.effectAllowed = "copyMove";
 												markInternalDragStart();
+												setFileBrowserDragSource(p);
 												startNativeDrag([p]);
 											}}
-											onDragEnd={() => markInternalDragEnd()}
+											onDragOver={(e) => {
+												if (entry.is_dir && getFileBrowserDragSource()) {
+													e.preventDefault();
+													e.currentTarget.classList.add("drop-target-hover");
+												}
+											}}
+											onDragLeave={(e) => {
+												e.currentTarget.classList.remove("drop-target-hover");
+											}}
+											onDrop={(e) => {
+												e.preventDefault();
+												e.currentTarget.classList.remove("drop-target-hover");
+												if (entry.is_dir) handleFileBrowserDrop(absPath());
+											}}
+											onDragEnd={handleFileBrowserDragEnd}
 											onClick={() => {
 												setSelectedIndex(index());
 												handleEntryClick(entry);

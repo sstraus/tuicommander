@@ -166,6 +166,7 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
 	const [orderSnapshot, setOrderSnapshot] = createSignal<string[]>(liveOrder());
 	createEffect(() => {
 		if (!isOpen()) return;
+		setOrderSnapshot(liveOrder());
 		const interval = setInterval(() => setOrderSnapshot(liveOrder()), 10_000);
 		onCleanup(() => clearInterval(interval));
 	});

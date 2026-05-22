@@ -73,16 +73,25 @@ function createPrNotificationsStore() {
 		// Don't duplicate — if same notification already active, skip
 		if (state.notifications.some((n) => n.id === id && !n.dismissed)) return;
 
-		setState("notifications", (prev) => [
-			...prev.filter((n) => n.id !== id), // Remove old dismissed one if exists
-			{
-				...notification,
-				id,
-				createdAt: Date.now(),
-				focusedTimeMs: 0,
-				dismissed: false,
-			},
-		]);
+		setState("notifications", (prev) => {
+			const filtered = prev.filter((n) => n.id !== id);
+			const next = [
+				...filtered,
+				{
+					...notification,
+					id,
+					createdAt: Date.now(),
+					focusedTimeMs: 0,
+					dismissed: false,
+				},
+			];
+			if (next.length > 200) {
+				const dismissed = next.filter((n) => n.dismissed);
+				const active = next.filter((n) => !n.dismissed);
+				return [...dismissed.slice(-50), ...active];
+			}
+			return next;
+		});
 
 		// Restart focus timer if it was stopped due to no active notifications
 		if (!tickTimer) startFocusTimer();

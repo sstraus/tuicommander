@@ -10,9 +10,7 @@ const LEGACY_STORAGE_KEY = "tui-commander-repos";
 /** Returns paths of repos that have at least one active terminal. */
 function getHotRepoPaths(repositories: Record<string, RepositoryState>): string[] {
 	return Object.entries(repositories)
-		.filter(([, repo]) =>
-			Object.values(repo.branches).some((b) => b.terminals.length > 0),
-		)
+		.filter(([, repo]) => Object.values(repo.branches).some((b) => b.terminals.length > 0))
 		.map(([path]) => path);
 }
 
@@ -292,6 +290,7 @@ function createRepositoriesStore() {
 			setState(
 				produce((s) => {
 					delete s.repositories[path];
+					delete s.revisions[path];
 					s.repoOrder = s.repoOrder.filter((p) => p !== path);
 					// Clean up group membership
 					for (const group of Object.values(s.groups)) {

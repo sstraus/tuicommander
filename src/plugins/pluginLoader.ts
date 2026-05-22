@@ -250,7 +250,15 @@ async function handlePluginChanged(event: { payload: string[] }): Promise<void> 
 	const changedIds = event.payload;
 	if (!Array.isArray(changedIds) || changedIds.length === 0) return;
 
+	let anyReloaded = false;
+
 	for (const pluginId of changedIds) {
+		// Skip disabled plugins early — no IPC, no store churn
+		if (disabledPluginIds.has(pluginId)) {
+			appLogger.debug("plugin", `Plugin "${pluginId}" changed but disabled, skipping`);
+			continue;
+		}
+
 		appLogger.info("plugin", `Plugin "${pluginId}" changed, reloading...`);
 
 		// Unregister if previously loaded
@@ -284,26 +292,13 @@ async function handlePluginChanged(event: { payload: string[] }): Promise<void> 
 			continue;
 		}
 
-		// Don't reload disabled plugins
-		if (disabledPluginIds.has(pluginId)) {
-			pluginStore.registerPlugin(pluginId, {
-				manifest,
-				builtIn: false,
-				enabled: false,
-				loaded: false,
-			});
-			continue;
-		}
-
 		await loadPlugin(manifest);
+		anyReloaded = true;
 	}
 
-	// After hot-reload, replay agent-started + shell-state for all
-	// terminals with running agents. The plugin lost its in-memory
-	// session map on unload; without replay it never re-discovers
-	// sessions that were already active. Called once after all changed
-	// plugins have been reloaded to avoid duplicate dispatches.
-	replayActiveAgents(terminalsStore);
+	if (anyReloaded) {
+		replayActiveAgents(terminalsStore);
+	}
 }
 
 /** Replay agent-started events for terminals that already have a running agent. */

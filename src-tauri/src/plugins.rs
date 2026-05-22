@@ -942,12 +942,36 @@ pub fn start_plugin_watcher(app_handle: &AppHandle) {
             &format!("[plugins] Watching {dir:?} for changes"),
         );
 
-        // Simple debounce: collect events for 500ms of quiet, then emit
         let debounce = Duration::from_millis(500);
         let mut changed_ids: Vec<String> = Vec::new();
 
+        let collect_changes =
+            |event: &notify::Event, dir: &std::path::Path, ids: &mut Vec<String>| {
+                if !matches!(
+                    event.kind,
+                    notify::EventKind::Create(_)
+                        | notify::EventKind::Modify(notify::event::ModifyKind::Data(_))
+                        | notify::EventKind::Modify(notify::event::ModifyKind::Name(_))
+                        | notify::EventKind::Remove(_)
+                ) {
+                    return;
+                }
+                for path in &event.paths {
+                    if let Ok(relative) = path.strip_prefix(dir) {
+                        if !is_plugin_code_change(relative) {
+                            continue;
+                        }
+                        if let Some(first) = relative.components().next() {
+                            let id = first.as_os_str().to_string_lossy().to_string();
+                            if !id.starts_with('.') && !ids.contains(&id) {
+                                ids.push(id);
+                            }
+                        }
+                    }
+                }
+            };
+
         loop {
-            // Wait for first event or channel close
             let event = match rx.recv() {
                 Ok(Ok(e)) => e,
                 Ok(Err(err)) => {
@@ -962,43 +986,14 @@ pub fn start_plugin_watcher(app_handle: &AppHandle) {
                 Err(_) => break,
             };
 
-            // Process this event — only JS code and manifest changes
-            // trigger hot-reload. Data files (stats, caches, config)
-            // written at runtime must not cause a reload.
-            for path in &event.paths {
-                if let Ok(relative) = path.strip_prefix(&dir) {
-                    if !is_plugin_code_change(relative) {
-                        continue;
-                    }
-                    if let Some(first) = relative.components().next() {
-                        let id = first.as_os_str().to_string_lossy().to_string();
-                        if !id.starts_with('.') && !changed_ids.contains(&id) {
-                            changed_ids.push(id);
-                        }
-                    }
-                }
-            }
+            collect_changes(&event, &dir, &mut changed_ids);
 
-            // Drain any additional events within the debounce window
             while let Ok(result) = rx.recv_timeout(debounce) {
                 if let Ok(event) = result {
-                    for path in &event.paths {
-                        if let Ok(relative) = path.strip_prefix(&dir) {
-                            if !is_plugin_code_change(relative) {
-                                continue;
-                            }
-                            if let Some(first) = relative.components().next() {
-                                let id = first.as_os_str().to_string_lossy().to_string();
-                                if !id.starts_with('.') && !changed_ids.contains(&id) {
-                                    changed_ids.push(id);
-                                }
-                            }
-                        }
-                    }
+                    collect_changes(&event, &dir, &mut changed_ids);
                 }
             }
 
-            // Debounce window expired — emit
             if !changed_ids.is_empty() {
                 crate::app_logger::log_via_handle(
                     &handle,

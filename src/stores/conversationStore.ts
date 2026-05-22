@@ -178,6 +178,7 @@ export interface PerTerminalConversationState {
 // ---------------------------------------------------------------------------
 
 const MAX_MESSAGES = 100;
+const MAX_TOOL_CALLS = 500;
 const PERSIST_DEBOUNCE_MS = 500;
 const DEFAULT_KEY = "__default__";
 
@@ -522,7 +523,10 @@ function applyConversationEvent(s: PerTerminalConversationState, event: Conversa
 				args: event.args as Record<string, unknown>,
 				startedAt: Date.now(),
 			};
-			s.setToolCalls((prev) => [...prev, entry]);
+			s.setToolCalls((prev) => {
+					const next = [...prev, entry];
+					return next.length > MAX_TOOL_CALLS ? next.slice(next.length - MAX_TOOL_CALLS) : next;
+				});
 			break;
 		}
 
@@ -820,7 +824,10 @@ function processEvent(raw: unknown): void {
 				args: event.args,
 				startedAt: Date.now(),
 			};
-			s.setToolCalls((prev) => [...prev, entry]);
+			s.setToolCalls((prev) => {
+					const next = [...prev, entry];
+					return next.length > MAX_TOOL_CALLS ? next.slice(next.length - MAX_TOOL_CALLS) : next;
+				});
 			break;
 		}
 		case "tool_result":

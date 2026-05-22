@@ -644,7 +644,8 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	function paintCursor(frame: DecodedFrame, m: CellMetrics) {
 		if (frame.displayOffset > 0) return;
 		if (!frame.cursorVisible) return;
-		if (!cursorBlinkOn && focused()) return;
+		if (!focused()) return;
+		if (!cursorBlinkOn) return;
 
 		const settingShape: CursorShape =
 			settingsStore.state.cursorStyle === "block"
@@ -654,13 +655,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 					: "beam";
 		const shape: CursorShape = frame.cursorShape !== "block" ? frame.cursorShape : settingShape;
 		const rect = computeCursorRect(shape, frame.cursorRow, frame.cursorCol, m);
-
-		if (!focused()) {
-			octx.strokeStyle = cachedFgDefault;
-			octx.lineWidth = 1;
-			octx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
-			return;
-		}
 
 		octx.fillStyle = cachedFgDefault;
 		octx.fillRect(rect.x, rect.y, rect.w, rect.h);
@@ -720,16 +714,19 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		if (!term) return;
 		const blocks = term.commandBlocks;
 		const searchCount = searchMatches.length;
-		const key = `${blocks.length}:${totalRows}:${blocks[blocks.length - 1]?.exitCode ?? ""}:s${searchCount}:${searchCount > 0 ? searchMatches[0].row : ""}`;
+		const showBlocks = blockTimestampsVisible;
+		const key = `${showBlocks ? blocks.length : 0}:${totalRows}:${showBlocks ? blocks[blocks.length - 1]?.exitCode ?? "" : ""}:s${searchCount}:${searchCount > 0 ? searchMatches[0].row : ""}`;
 		if (key === lastScrollbarMarksKey) return;
 		lastScrollbarMarksKey = key;
 
 		const trackH = scrollbarRef.clientHeight;
 		let html = "";
-		for (const block of blocks) {
-			const ratio = block.promptLine / totalRows;
-			const color = block.exitCode !== null && block.exitCode !== 0 ? "#f85149" : "rgba(88,166,255,0.5)";
-			html += `<div style="position:absolute;right:0;width:100%;height:2px;top:${ratio * trackH}px;background:${color}"></div>`;
+		if (showBlocks) {
+			for (const block of blocks) {
+				const ratio = block.promptLine / totalRows;
+				const color = block.exitCode !== null && block.exitCode !== 0 ? "#f85149" : "rgba(88,166,255,0.5)";
+				html += `<div style="position:absolute;right:0;width:100%;height:2px;top:${ratio * trackH}px;background:${color}"></div>`;
+			}
 		}
 		if (searchCount > 0) {
 			const seen = new Set<number>();
@@ -2574,9 +2571,17 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 					currentFrame = null;
 					lastDisplayOffset = -1;
 					remeasure();
+					if (focused()) startBlink();
 					invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(ipcErr("terminal_request_frame"));
 				} else if (!isVisible && !hidden) {
 					hidden = true;
+					stopBlink();
+					canvasRef.width = 1;
+					canvasRef.height = 1;
+					overlayCanvasRef.width = 1;
+					overlayCanvasRef.height = 1;
+					rowMap.clear();
+					fileLinkCache.clear();
 				}
 			},
 			{ threshold: 0 },

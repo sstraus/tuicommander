@@ -122,11 +122,14 @@ export async function initDragDrop(): Promise<void> {
 				if ((payload.type === "enter" || payload.type === "over") && payload.position) {
 					_lastDragCssPosition = tauriPhysicalToCss(payload.position.x, payload.position.y);
 					if (_pendingInternalDrag) updatePaneDropHover(payload.position.x, payload.position.y);
+					if (_fileBrowserDragSource) updateDropHover(payload.position.x, payload.position.y);
 				} else if (payload.type === "drop" && payload.position) {
 					_lastDragCssPosition = tauriPhysicalToCss(payload.position.x, payload.position.y);
 					if (_pendingInternalDrag) clearPaneDropHover();
+					if (_fileBrowserDragSource) clearDropHover();
 				} else if (payload.type === "leave") {
 					if (_pendingInternalDrag) clearPaneDropHover();
+					if (_fileBrowserDragSource) clearDropHover();
 				}
 				return;
 			}
@@ -171,6 +174,34 @@ export function markInternalDragEnd(): void {
 }
 export function isInternalDrag(): boolean {
 	return internalDragCount > 0;
+}
+
+// ---- File browser intra-tree drag state ----
+let _fileBrowserDragSource: string | null = null;
+
+/** Called on dragstart for file browser entries to track the source path. */
+export function setFileBrowserDragSource(absPath: string): void {
+	_fileBrowserDragSource = absPath;
+}
+
+export function getFileBrowserDragSource(): string | null {
+	return _fileBrowserDragSource;
+}
+
+export function clearFileBrowserDragSource(): void {
+	_fileBrowserDragSource = null;
+}
+
+/** Find the folder drop target at CSS pixel coordinates. Returns abs path or null. */
+export function findFolderTargetAtPoint(x: number, y: number): string | null {
+	const el = document.elementFromPoint(x, y);
+	let cur: Element | null = el;
+	while (cur) {
+		const dt = (cur as HTMLElement).dataset;
+		if (dt?.dropTarget === "folder" && dt.absPath) return dt.absPath;
+		cur = cur.parentElement;
+	}
+	return null;
 }
 
 // ---- Internal drag tracking (Tauri dragDropEnabled=true workaround) ----

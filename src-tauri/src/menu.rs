@@ -27,6 +27,7 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
     let mut file = SubmenuBuilder::new(app, "&File");
     file = file
         .item(&item!("new-tab", "New Tab", "CmdOrCtrl+T"))
+        .item(&item!("new-file", "New File…", "CmdOrCtrl+N"))
         .item(&item!("close-tab", "Close Tab", "CmdOrCtrl+W"))
         .item(&item!(
             "reopen-closed-tab",
@@ -58,7 +59,23 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
         .item(&PredefinedMenuItem::paste(app, None)?)
         .item(&PredefinedMenuItem::select_all(app, None)?)
         .separator()
+        .item(&item!(
+            "find-in-terminal",
+            "Find in Content",
+            "CmdOrCtrl+F"
+        ))
+        .separator()
         .item(&item!("clear-terminal", "Clear Terminal", "CmdOrCtrl+L"))
+        .item(&item!(
+            "clear-scrollback",
+            "Clear Scrollback",
+            "CmdOrCtrl+K"
+        ))
+        .item(&item!(
+            "refresh-terminal",
+            "Refresh Terminal",
+            "CmdOrCtrl+Shift+L"
+        ))
         .build()?;
 
     // ---------- View ----------
@@ -67,14 +84,57 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
         .separator()
         .item(&item!("split-right", "Split Right", "CmdOrCtrl+\\"))
         .item(&item!("split-down", "Split Down", "CmdOrCtrl+Alt+\\"))
+        .item(&item!(
+            "zoom-pane",
+            "Maximize/Restore Pane",
+            "CmdOrCtrl+Shift+Enter"
+        ))
+        .item(&item!(
+            "focus-mode",
+            "Toggle Focus Mode",
+            "CmdOrCtrl+Alt+Enter"
+        ))
         .separator()
         .item(&item!("zoom-in", "Zoom In", "CmdOrCtrl+="))
         .item(&item!("zoom-out", "Zoom Out", "CmdOrCtrl+-"))
         .item(&item!("zoom-reset", "Reset Zoom", "CmdOrCtrl+0"))
         .separator()
+        .item(&item!(
+            "zoom-in-all",
+            "Zoom In All Terminals",
+            "CmdOrCtrl+Shift+="
+        ))
+        .item(&item!(
+            "zoom-out-all",
+            "Zoom Out All Terminals",
+            "CmdOrCtrl+Shift+-"
+        ))
+        .item(&item!(
+            "zoom-reset-all",
+            "Reset Zoom All Terminals",
+            "CmdOrCtrl+Shift+0"
+        ))
+        .separator()
+        .item(&item!("file-browser", "File Browser", "CmdOrCtrl+E"))
         .item(&item!("diff-panel", "Diff Panel", "CmdOrCtrl+D"))
         .item(&item!("markdown-panel", "Markdown Panel", "CmdOrCtrl+M"))
         .item(&item!("notes-panel", "Notes Panel", "CmdOrCtrl+N"))
+        .item(&item!(
+            "outline-panel",
+            "Outline Panel",
+            "CmdOrCtrl+Alt+L"
+        ))
+        .item(&item!("ai-chat", "AI Chat", "CmdOrCtrl+Alt+A"))
+        .item(&item!(
+            "compose-panel",
+            "Compose Panel",
+            "CmdOrCtrl+I"
+        ))
+        .item(&item!(
+            "global-workspace",
+            "Global Workspace",
+            "CmdOrCtrl+Shift+X"
+        ))
         .build()?;
 
     // ---------- Go ----------
@@ -92,6 +152,30 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
             format!("CmdOrCtrl+{i}")
         ));
     }
+
+    go = go
+        .separator()
+        .item(&item!(
+            "block-prev",
+            "Previous Command Block",
+            "CmdOrCtrl+Shift+Up"
+        ))
+        .item(&item!(
+            "block-next",
+            "Next Command Block",
+            "CmdOrCtrl+Shift+Down"
+        ))
+        .item(&item!(
+            "block-fold-toggle",
+            "Toggle Block Fold",
+            "CmdOrCtrl+Shift+."
+        ))
+        .item(&item!(
+            "block-search-toggle",
+            "Search in Block",
+            "CmdOrCtrl+Shift+B"
+        ));
+
     let go = go.build()?;
 
     // ---------- Tools ----------
@@ -108,6 +192,11 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
             "edit-run-command",
             "Edit && Run Command",
             "CmdOrCtrl+Shift+R"
+        ))
+        .item(&item!(
+            "content-search",
+            "Search File Contents",
+            "CmdOrCtrl+Shift+F"
         ))
         .separator()
         .item(&item!("git-operations", "Git Panel", "CmdOrCtrl+Shift+D"))
@@ -132,6 +221,8 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
         .item(&item!("mcp-popup", "MCP Servers", "CmdOrCtrl+Shift+I"))
         .item(&item!("error-log", "Error Log", "CmdOrCtrl+Shift+E"))
         .item(&item!("task-queue", "Task Queue", "CmdOrCtrl+J"))
+        .item(&item!("tunnels", "SSH Tunnels"))
+        .item(&item!("process-manager", "Process Manager"))
         .build()?;
 
     // ---------- Help ----------

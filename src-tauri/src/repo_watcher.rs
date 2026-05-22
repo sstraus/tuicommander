@@ -394,10 +394,7 @@ pub(crate) fn stop_repo_watcher(repo_path: String, app_handle: AppHandle) {
 }
 
 #[tauri::command]
-pub(crate) fn set_hot_repos(
-    paths: Vec<String>,
-    state: tauri::State<'_, std::sync::Arc<AppState>>,
-) {
+pub(crate) fn set_hot_repos(paths: Vec<String>, state: tauri::State<'_, std::sync::Arc<AppState>>) {
     let mut hot = state.hot_repo_paths.write();
     hot.clear();
     hot.extend(paths);

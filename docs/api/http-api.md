@@ -856,6 +856,16 @@ DELETE /watchers/dir?path=/path/to/directory
 
 Start/stop watching a directory (non-recursive) for file changes (create/delete/rename). Emits `dir-changed` SSE event. Used by File Browser panel for auto-refresh.
 
+### Hot Repos
+
+```
+PUT /watchers/hot-repos
+```
+
+Body: `{"paths": ["/path/to/repo", ...]}`
+
+Updates the set of "hot" repository paths (repos with active terminals). Cold repos (not in this set) get throttled watcher debounce (15s vs 1.5s) and reduced GitHub polling frequency (~10min vs ~1min). Browser-only mode equivalent of the `set_hot_repos` Tauri command.
+
 ## Agent Endpoints
 
 ### Detect All Agents

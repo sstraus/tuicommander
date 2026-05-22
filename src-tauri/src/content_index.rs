@@ -20,6 +20,9 @@ use std::time::{Duration, SystemTime};
 /// Maximum file size to index (1 MB).
 const MAX_FILE_SIZE: u64 = 1_048_576;
 
+/// Minimum interval between consecutive index rebuilds for the same repo.
+const REBUILD_COOLDOWN: Duration = Duration::from_secs(60);
+
 /// Files processed between throttle checkpoints during index build.
 const THROTTLE_CHECKPOINT_INTERVAL: usize = 50;
 /// Poll interval while an indexer is paused waiting for searches to finish.
@@ -88,6 +91,8 @@ pub struct ContentIndex {
     repo_root: PathBuf,
     /// Whether the index has been built at least once.
     ready: bool,
+    /// When the last successful build completed.
+    built_at: std::time::Instant,
     /// Files confirmed binary (rel_path → mtime). Carried across rebuilds
     /// so we skip the 8KB read probe for files whose mtime hasn't changed.
     known_binaries: HashMap<String, u64>,
@@ -114,6 +119,7 @@ impl ContentIndex {
             path_to_idx: HashMap::new(),
             repo_root,
             ready: false,
+            built_at: std::time::Instant::now(),
             known_binaries: HashMap::new(),
         }
     }
@@ -219,6 +225,7 @@ impl ContentIndex {
             path_to_idx,
             repo_root: canonical,
             ready: true,
+            built_at: std::time::Instant::now(),
             known_binaries,
         }
     }
@@ -338,9 +345,16 @@ pub fn rebuild_index(
     let index = if let Some(existing) = state.content_indices.get(repo_path) {
         Arc::clone(existing.value())
     } else {
-        // No index yet — nothing to rebuild
         return;
     };
+
+    {
+        let idx = index.read();
+        if idx.ready && idx.built_at.elapsed() < REBUILD_COOLDOWN {
+            tracing::trace!(repo = %repo_path, "content index rebuild skipped (cooldown)");
+            return;
+        }
+    }
 
     if !in_flight.insert(repo_path.to_string()) {
         tracing::debug!(repo = %repo_path, "content index rebuild skipped (already in-flight)");

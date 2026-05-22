@@ -29,6 +29,10 @@
 }
 
 .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
   background: none;
   border: 1px solid var(--border);
   color: var(--fg-secondary);
@@ -44,7 +48,7 @@
 }
 
 .btn svg {
-  display: block;
+  flex-shrink: 0;
 }
 
 .breadcrumb {

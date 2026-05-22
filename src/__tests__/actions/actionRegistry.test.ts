@@ -62,6 +62,10 @@ function createMockHandlers(): ShortcutHandlers {
 		toggleProcessManager: vi.fn(),
 		toggleGenerators: vi.fn(),
 		refreshTerminal: vi.fn(),
+		blockPrev: vi.fn(),
+		blockNext: vi.fn(),
+		blockFoldToggle: vi.fn(),
+		blockSearchToggle: vi.fn(),
 	};
 }
 
