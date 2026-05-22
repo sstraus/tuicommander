@@ -715,7 +715,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		const blocks = term.commandBlocks;
 		const searchCount = searchMatches.length;
 		const showBlocks = blockTimestampsVisible;
-		const key = `${showBlocks ? blocks.length : 0}:${totalRows}:${showBlocks ? blocks[blocks.length - 1]?.exitCode ?? "" : ""}:s${searchCount}:${searchCount > 0 ? searchMatches[0].row : ""}`;
+		const key = `${showBlocks ? blocks.length : 0}:${totalRows}:${showBlocks ? (blocks[blocks.length - 1]?.exitCode ?? "") : ""}:s${searchCount}:${searchCount > 0 ? searchMatches[0].row : ""}`;
 		if (key === lastScrollbarMarksKey) return;
 		lastScrollbarMarksKey = key;
 

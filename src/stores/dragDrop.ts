@@ -117,19 +117,16 @@ export async function initDragDrop(): Promise<void> {
 			const payload = event.payload;
 
 			// Internal drag (tab/pane/sidebar move) — only handle hover highlight,
-			// don't treat as file drop. The actual move happens via dragend fallback.
+			// File browser uses pointer events instead (see FileBrowserPanel.tsx).
 			if (isInternalDrag()) {
 				if ((payload.type === "enter" || payload.type === "over") && payload.position) {
 					_lastDragCssPosition = tauriPhysicalToCss(payload.position.x, payload.position.y);
 					if (_pendingInternalDrag) updatePaneDropHover(payload.position.x, payload.position.y);
-					if (_fileBrowserDragSource) updateDropHover(payload.position.x, payload.position.y);
 				} else if (payload.type === "drop" && payload.position) {
 					_lastDragCssPosition = tauriPhysicalToCss(payload.position.x, payload.position.y);
 					if (_pendingInternalDrag) clearPaneDropHover();
-					if (_fileBrowserDragSource) clearDropHover();
 				} else if (payload.type === "leave") {
 					if (_pendingInternalDrag) clearPaneDropHover();
-					if (_fileBrowserDragSource) clearDropHover();
 				}
 				return;
 			}
@@ -174,22 +171,6 @@ export function markInternalDragEnd(): void {
 }
 export function isInternalDrag(): boolean {
 	return internalDragCount > 0;
-}
-
-// ---- File browser intra-tree drag state ----
-let _fileBrowserDragSource: string | null = null;
-
-/** Called on dragstart for file browser entries to track the source path. */
-export function setFileBrowserDragSource(absPath: string): void {
-	_fileBrowserDragSource = absPath;
-}
-
-export function getFileBrowserDragSource(): string | null {
-	return _fileBrowserDragSource;
-}
-
-export function clearFileBrowserDragSource(): void {
-	_fileBrowserDragSource = null;
 }
 
 /** Find the folder drop target at CSS pixel coordinates. Returns abs path or null. */
@@ -292,7 +273,7 @@ async function resolveDragIcon(): Promise<string> {
 	if (_dragIconPath) return _dragIconPath;
 	try {
 		const { resolveResource } = await import("@tauri-apps/api/path");
-		_dragIconPath = await resolveResource("icons/32x32.png");
+		_dragIconPath = await resolveResource("icons/drag-file.png");
 	} catch {
 		_dragIconPath = "";
 	}

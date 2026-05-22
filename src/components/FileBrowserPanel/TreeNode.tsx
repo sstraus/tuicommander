@@ -1,16 +1,6 @@
 import { type Component, createSignal, For, Show } from "solid-js";
 import { useFileBrowser } from "../../hooks/useFileBrowser";
 import { appLogger } from "../../stores/appLogger";
-import {
-	clearFileBrowserDragSource,
-	findFolderTargetAtPoint,
-	getFileBrowserDragSource,
-	getLastDragPosition,
-	markInternalDragEnd,
-	markInternalDragStart,
-	setFileBrowserDragSource,
-	startNativeDrag,
-} from "../../stores/dragDrop";
 import type { DirEntry } from "../../types/fs";
 import { cx } from "../../utils";
 import { isAbsolutePath, joinPath } from "../../utils/pathUtils";
@@ -28,7 +18,7 @@ export interface TreeNodeProps {
 	onToggleExpand: (path: string) => void;
 	onFileOpen: (repoPath: string, filePath: string) => void;
 	onContextMenu: (e: MouseEvent, entry: DirEntry) => void;
-	onFileDrop?: (targetFolderAbsPath: string) => void;
+	onPointerDragStart?: (absPath: string, e: PointerEvent) => void;
 	/** Cache of loaded children, keyed by dir path */
 	childrenCache: Map<string, DirEntry[]>;
 	onChildrenLoaded: (path: string, children: DirEntry[]) => void;
@@ -73,41 +63,7 @@ export const TreeNode: Component<TreeNodeProps> = (props) => {
 				style={{ "padding-left": `${8 + props.depth * 16}px` }}
 				onClick={handleClick}
 				onContextMenu={(e) => props.onContextMenu(e, props.entry)}
-				draggable={true}
-				onDragStart={(e) => {
-					const p = absPath();
-					e.dataTransfer!.setData("application/x-tuic-path", p);
-					e.dataTransfer!.setData("text/plain", p);
-					e.dataTransfer!.effectAllowed = "copyMove";
-					markInternalDragStart();
-					setFileBrowserDragSource(p);
-					startNativeDrag([p]);
-				}}
-				onDragOver={(e) => {
-					if (props.entry.is_dir && getFileBrowserDragSource()) {
-						e.preventDefault();
-						e.currentTarget.classList.add("drop-target-hover");
-					}
-				}}
-				onDragLeave={(e) => {
-					e.currentTarget.classList.remove("drop-target-hover");
-				}}
-				onDrop={(e) => {
-					e.preventDefault();
-					e.currentTarget.classList.remove("drop-target-hover");
-					if (props.entry.is_dir && props.onFileDrop) {
-						props.onFileDrop(absPath());
-					}
-				}}
-				onDragEnd={() => {
-					const pos = getLastDragPosition();
-					if (pos && getFileBrowserDragSource() && props.onFileDrop) {
-						const target = findFolderTargetAtPoint(pos.x, pos.y);
-						if (target) props.onFileDrop(target);
-					}
-					clearFileBrowserDragSource();
-					markInternalDragEnd();
-				}}
+				onPointerDown={(e) => props.onPointerDragStart?.(absPath(), e)}
 				data-drop-target={props.entry.is_dir ? "folder" : undefined}
 				data-abs-path={props.entry.is_dir ? absPath() : undefined}
 			>
@@ -152,7 +108,7 @@ export const TreeNode: Component<TreeNodeProps> = (props) => {
 							onToggleExpand={props.onToggleExpand}
 							onFileOpen={props.onFileOpen}
 							onContextMenu={props.onContextMenu}
-							onFileDrop={props.onFileDrop}
+							onPointerDragStart={props.onPointerDragStart}
 							childrenCache={props.childrenCache}
 							onChildrenLoaded={props.onChildrenLoaded}
 						/>

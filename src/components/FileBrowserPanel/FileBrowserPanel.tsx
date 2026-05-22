@@ -6,16 +6,7 @@ import { t } from "../../i18n";
 import { invoke, listen } from "../../invoke";
 import { getModifierSymbol, shortenHomePath } from "../../platform";
 import { appLogger } from "../../stores/appLogger";
-import {
-	clearFileBrowserDragSource,
-	findFolderTargetAtPoint,
-	getFileBrowserDragSource,
-	getLastDragPosition,
-	markInternalDragEnd,
-	markInternalDragStart,
-	setFileBrowserDragSource,
-	startNativeDrag,
-} from "../../stores/dragDrop";
+import { startNativeDrag } from "../../stores/dragDrop";
 import { repositoriesStore } from "../../stores/repositories";
 import { uiStore } from "../../stores/ui";
 import type { ContentMatch, DirEntry } from "../../types/fs";
@@ -598,24 +589,130 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 		}
 	};
 
-	const handleFileBrowserDragEnd = () => {
-		const pos = getLastDragPosition();
-		if (pos && getFileBrowserDragSource()) {
-			const target = findFolderTargetAtPoint(pos.x, pos.y);
-			if (target) handleFileBrowserDrop(target);
+	// Pointer-based drag: internal moves via pointer events (HTML5 DnD and
+	// startNativeDrag both broken in WKWebView with dragDropEnabled).
+	// When the pointer leaves the file browser panel, hands off to native drag
+	// for cross-app drops (Finder, Slack, etc.).
+	let _ptrSrc: string | null = null;
+	let _ptrActive = false;
+	let _ptrSuppressClick = false;
+	let _ptrHi: HTMLElement | null = null;
+	let _ptrGhost: HTMLElement | null = null;
+	let _ptrRaf = 0;
+
+	const ptrCleanup = () => {
+		if (_ptrRaf) {
+			cancelAnimationFrame(_ptrRaf);
+			_ptrRaf = 0;
 		}
-		clearFileBrowserDragSource();
-		markInternalDragEnd();
+		_ptrHi?.classList.remove("drop-target-hover");
+		_ptrHi = null;
+		_ptrGhost?.remove();
+		_ptrGhost = null;
+		document.body.style.cursor = "";
 	};
 
-	const handleFileBrowserDrop = async (targetFolderAbsPath: string) => {
-		const sourcePath = getFileBrowserDragSource();
-		clearFileBrowserDragSource();
-		markInternalDragEnd();
-		const fsRoot = root();
-		if (!sourcePath || !fsRoot) return;
+	const findDropFolder = (x: number, y: number, excludeSrc?: string | null): HTMLElement | null => {
+		let cur: Element | null = document.elementFromPoint(x, y);
+		while (cur) {
+			const dt = (cur as HTMLElement).dataset;
+			if (dt?.dropTarget === "folder" && dt.absPath && dt.absPath !== excludeSrc) return cur as HTMLElement;
+			cur = cur.parentElement;
+		}
+		return null;
+	};
 
-		// Don't drop onto the source's own parent, onto itself, or into a descendant
+	const ptrHighlight = (x: number, y: number) => {
+		const target = findDropFolder(x, y, _ptrSrc);
+		if (target === _ptrHi) return;
+		_ptrHi?.classList.remove("drop-target-hover");
+		_ptrHi = target;
+		_ptrHi?.classList.add("drop-target-hover");
+	};
+
+	const ptrGhost = (name: string, x: number, y: number) => {
+		if (!_ptrGhost) {
+			_ptrGhost = document.createElement("div");
+			_ptrGhost.className = "ptr-drag-ghost";
+			document.body.appendChild(_ptrGhost);
+		}
+		_ptrGhost.textContent = name;
+		_ptrGhost.style.left = `${x + 12}px`;
+		_ptrGhost.style.top = `${y - 8}px`;
+	};
+
+	const handlePointerDragStart = (absPath: string, e: PointerEvent) => {
+		if (e.button !== 0) return;
+		_ptrSrc = absPath;
+		_ptrActive = false;
+		const startX = e.clientX,
+			startY = e.clientY;
+		const name = absPath.slice(absPath.lastIndexOf("/") + 1);
+		const panel = document.getElementById("file-browser-panel");
+
+		const detachAll = () => {
+			document.removeEventListener("pointermove", onMove);
+			document.removeEventListener("pointerup", onUp);
+			document.removeEventListener("pointercancel", onAbort);
+			window.removeEventListener("blur", onAbort);
+		};
+
+		const onMove = (me: PointerEvent) => {
+			if (!_ptrActive) {
+				if (Math.hypot(me.clientX - startX, me.clientY - startY) < 5) return;
+				_ptrActive = true;
+				document.body.style.cursor = "grabbing";
+			}
+			if (panel && !panel.contains(document.elementFromPoint(me.clientX, me.clientY))) {
+				const src = _ptrSrc;
+				detachAll();
+				ptrCleanup();
+				_ptrSrc = null;
+				_ptrActive = false;
+				if (src) startNativeDrag([src]);
+				return;
+			}
+			if (!_ptrRaf) {
+				_ptrRaf = requestAnimationFrame(() => {
+					_ptrRaf = 0;
+					ptrHighlight(me.clientX, me.clientY);
+					ptrGhost(name, me.clientX, me.clientY);
+				});
+			}
+		};
+
+		const onUp = (ue: PointerEvent) => {
+			detachAll();
+			ptrCleanup();
+			if (_ptrActive && _ptrSrc) {
+				const target = findDropFolder(ue.clientX, ue.clientY);
+				if (target?.dataset.absPath) performFileMove(_ptrSrc, target.dataset.absPath);
+				_ptrSuppressClick = true;
+				requestAnimationFrame(() => {
+					_ptrSuppressClick = false;
+				});
+			}
+			_ptrSrc = null;
+			_ptrActive = false;
+		};
+
+		const onAbort = () => {
+			detachAll();
+			ptrCleanup();
+			_ptrSrc = null;
+			_ptrActive = false;
+		};
+
+		document.addEventListener("pointermove", onMove);
+		document.addEventListener("pointerup", onUp);
+		document.addEventListener("pointercancel", onAbort);
+		window.addEventListener("blur", onAbort);
+	};
+
+	const performFileMove = async (sourcePath: string, targetFolderAbsPath: string) => {
+		const fsRoot = root();
+		if (!fsRoot) return;
+
 		const sourceDir = sourcePath.slice(0, sourcePath.lastIndexOf("/"));
 		if (targetFolderAbsPath === sourceDir || targetFolderAbsPath === sourcePath) return;
 		if (targetFolderAbsPath.startsWith(`${sourcePath}/`)) return;
@@ -623,7 +720,9 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 		const prefix = fsRoot.endsWith("/") ? fsRoot : `${fsRoot}/`;
 		const relSource = sourcePath.startsWith(prefix) ? sourcePath.slice(prefix.length) : sourcePath;
 		const fileName = sourcePath.slice(sourcePath.lastIndexOf("/") + 1);
-		const relTarget = targetFolderAbsPath.startsWith(prefix) ? targetFolderAbsPath.slice(prefix.length) : targetFolderAbsPath;
+		const relTarget = targetFolderAbsPath.startsWith(prefix)
+			? targetFolderAbsPath.slice(prefix.length)
+			: targetFolderAbsPath;
 		const relDest = `${relTarget}/${fileName}`;
 
 		try {
@@ -1103,7 +1202,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 										onToggleExpand={toggleExpand}
 										onFileOpen={props.onFileOpen}
 										onContextMenu={handleContextMenu}
-										onFileDrop={handleFileBrowserDrop}
+										onPointerDragStart={handlePointerDragStart}
 										childrenCache={treeCache()}
 										onChildrenLoaded={onChildrenLoaded}
 									/>
@@ -1152,32 +1251,9 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 											)}
 											data-drop-target={entry.is_dir ? "folder" : undefined}
 											data-abs-path={entry.is_dir ? absPath() : undefined}
-											draggable={true}
-											onDragStart={(e) => {
-												const p = absPath();
-												e.dataTransfer!.setData("application/x-tuic-path", p);
-												e.dataTransfer!.setData("text/plain", p);
-												e.dataTransfer!.effectAllowed = "copyMove";
-												markInternalDragStart();
-												setFileBrowserDragSource(p);
-												startNativeDrag([p]);
-											}}
-											onDragOver={(e) => {
-												if (entry.is_dir && getFileBrowserDragSource()) {
-													e.preventDefault();
-													e.currentTarget.classList.add("drop-target-hover");
-												}
-											}}
-											onDragLeave={(e) => {
-												e.currentTarget.classList.remove("drop-target-hover");
-											}}
-											onDrop={(e) => {
-												e.preventDefault();
-												e.currentTarget.classList.remove("drop-target-hover");
-												if (entry.is_dir) handleFileBrowserDrop(absPath());
-											}}
-											onDragEnd={handleFileBrowserDragEnd}
+											onPointerDown={(e) => handlePointerDragStart(absPath(), e)}
 											onClick={() => {
+												if (_ptrSuppressClick) return;
 												setSelectedIndex(index());
 												handleEntryClick(entry);
 											}}

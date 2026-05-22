@@ -3889,7 +3889,12 @@ pub(crate) fn spawn_standby_checker(state: Arc<AppState>) {
 
             let vis_count = state.session_visibility.len();
             let sessions_count = state.sessions.len();
-            tracing::info!(vis_count, sessions_count, timeout_min, "Standby checker tick");
+            tracing::info!(
+                vis_count,
+                sessions_count,
+                timeout_min,
+                "Standby checker tick"
+            );
 
             for entry in state.session_visibility.iter() {
                 let session_id = entry.key();
@@ -3919,7 +3924,12 @@ pub(crate) fn spawn_standby_checker(state: Arc<AppState>) {
                     .unwrap_or(now_ms);
                 let idle_ms = now_ms.saturating_sub(idle_since);
                 if idle_ms < timeout_ms {
-                    tracing::info!(session_id = session_id.as_str(), idle_ms, timeout_ms, "Standby skip: not long enough");
+                    tracing::info!(
+                        session_id = session_id.as_str(),
+                        idle_ms,
+                        timeout_ms,
+                        "Standby skip: not long enough"
+                    );
                     continue;
                 }
 
@@ -3929,11 +3939,18 @@ pub(crate) fn spawn_standby_checker(state: Arc<AppState>) {
                     .map(|e| e.lock().startup_settled)
                     .unwrap_or(false);
                 if !settled {
-                    tracing::info!(session_id = session_id.as_str(), "Standby skip: not settled");
+                    tracing::info!(
+                        session_id = session_id.as_str(),
+                        "Standby skip: not settled"
+                    );
                     continue;
                 }
 
-                tracing::info!(session_id = session_id.as_str(), idle_ms, "Standby: all conditions met, stopping");
+                tracing::info!(
+                    session_id = session_id.as_str(),
+                    idle_ms,
+                    "Standby: all conditions met, stopping"
+                );
                 if let Err(e) = standby_session(&state, session_id) {
                     tracing::warn!(session_id, error = %e, "Standby failed");
                 }

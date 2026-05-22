@@ -59,11 +59,7 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
         .item(&PredefinedMenuItem::paste(app, None)?)
         .item(&PredefinedMenuItem::select_all(app, None)?)
         .separator()
-        .item(&item!(
-            "find-in-terminal",
-            "Find in Content",
-            "CmdOrCtrl+F"
-        ))
+        .item(&item!("find-in-terminal", "Find in Content", "CmdOrCtrl+F"))
         .separator()
         .item(&item!("clear-terminal", "Clear Terminal", "CmdOrCtrl+L"))
         .item(&item!(
@@ -119,17 +115,9 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
         .item(&item!("diff-panel", "Diff Panel", "CmdOrCtrl+D"))
         .item(&item!("markdown-panel", "Markdown Panel", "CmdOrCtrl+M"))
         .item(&item!("notes-panel", "Notes Panel", "CmdOrCtrl+N"))
-        .item(&item!(
-            "outline-panel",
-            "Outline Panel",
-            "CmdOrCtrl+Alt+L"
-        ))
+        .item(&item!("outline-panel", "Outline Panel", "CmdOrCtrl+Alt+L"))
         .item(&item!("ai-chat", "AI Chat", "CmdOrCtrl+Alt+A"))
-        .item(&item!(
-            "compose-panel",
-            "Compose Panel",
-            "CmdOrCtrl+I"
-        ))
+        .item(&item!("compose-panel", "Compose Panel", "CmdOrCtrl+I"))
         .item(&item!(
             "global-workspace",
             "Global Workspace",

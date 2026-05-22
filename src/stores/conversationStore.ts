@@ -524,9 +524,9 @@ function applyConversationEvent(s: PerTerminalConversationState, event: Conversa
 				startedAt: Date.now(),
 			};
 			s.setToolCalls((prev) => {
-					const next = [...prev, entry];
-					return next.length > MAX_TOOL_CALLS ? next.slice(next.length - MAX_TOOL_CALLS) : next;
-				});
+				const next = [...prev, entry];
+				return next.length > MAX_TOOL_CALLS ? next.slice(next.length - MAX_TOOL_CALLS) : next;
+			});
 			break;
 		}
 
@@ -825,9 +825,9 @@ function processEvent(raw: unknown): void {
 				startedAt: Date.now(),
 			};
 			s.setToolCalls((prev) => {
-					const next = [...prev, entry];
-					return next.length > MAX_TOOL_CALLS ? next.slice(next.length - MAX_TOOL_CALLS) : next;
-				});
+				const next = [...prev, entry];
+				return next.length > MAX_TOOL_CALLS ? next.slice(next.length - MAX_TOOL_CALLS) : next;
+			});
 			break;
 		}
 		case "tool_result":

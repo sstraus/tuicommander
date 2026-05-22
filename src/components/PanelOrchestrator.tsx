@@ -62,10 +62,7 @@ export const PanelOrchestrator: Component<PanelOrchestratorProps> = (props) => {
 			</Show>
 
 			<Show when={!uiStore.isDetached("references") && uiStore.state.referencesPanelVisible}>
-				<ReferencesPanel
-					visible={true}
-					onClose={() => uiStore.toggleReferencesPanel()}
-				/>
+				<ReferencesPanel visible={true} onClose={() => uiStore.toggleReferencesPanel()} />
 			</Show>
 
 			<Show when={!uiStore.isDetached("git")}>
@@ -84,11 +81,7 @@ export const PanelOrchestrator: Component<PanelOrchestratorProps> = (props) => {
 			</Show>
 
 			<Show when={uiStore.state.aiTriagePanelVisible}>
-				<AiTriagePanel
-					visible={true}
-					repoPath={props.repoPath}
-					onClose={() => uiStore.toggleAiTriagePanel()}
-				/>
+				<AiTriagePanel visible={true} repoPath={props.repoPath} onClose={() => uiStore.toggleAiTriagePanel()} />
 			</Show>
 		</>
 	);
