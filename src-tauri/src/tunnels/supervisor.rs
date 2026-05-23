@@ -159,19 +159,31 @@ async fn supervision_loop(
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true);
 
-        let spawn_result = cmd.spawn();
-        let mut child = match spawn_result {
-            Ok(c) => c,
-            Err(e) => {
-                set_status(
-                    &status,
-                    TunnelStatus::Error {
-                        message: format!("failed to spawn ssh: {e}"),
-                    },
-                    &callback,
-                );
-                return;
+        // Retry spawn briefly on transient OS errors (Linux ETXTBSY: race
+        // between closing a write fd and execve on the same temp script).
+        let mut child = 'spawn: {
+            let mut last_err = None;
+            for attempt in 0..3u8 {
+                match cmd.spawn() {
+                    Ok(c) => break 'spawn c,
+                    Err(e) if is_retryable_spawn_error(&e) && attempt < 2 => {
+                        last_err = Some(e);
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    }
+                    Err(e) => {
+                        last_err = Some(e);
+                        break;
+                    }
+                }
             }
+            set_status(
+                &status,
+                TunnelStatus::Error {
+                    message: format!("failed to spawn ssh: {}", last_err.unwrap()),
+                },
+                &callback,
+            );
+            return;
         };
 
         // Brief health check — if the process dies within 500ms it never connected.
@@ -353,6 +365,19 @@ async fn graceful_kill(child: &mut tokio::process::Child) {
         () = tokio::time::sleep(Duration::from_secs(5)) => {
             let _ = child.kill().await;
         }
+    }
+}
+
+/// ETXTBSY (26 on Linux) — exec on a file still open for writing.
+fn is_retryable_spawn_error(e: &std::io::Error) -> bool {
+    #[cfg(unix)]
+    {
+        e.raw_os_error() == Some(libc::ETXTBSY)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = e;
+        false
     }
 }
 

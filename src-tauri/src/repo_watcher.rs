@@ -393,6 +393,7 @@ pub(crate) fn stop_repo_watcher(repo_path: String, app_handle: AppHandle) {
     stop_watching(&repo_path, &state);
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn set_hot_repos(paths: Vec<String>, state: tauri::State<'_, std::sync::Arc<AppState>>) {
     let mut hot = state.hot_repo_paths.write();
