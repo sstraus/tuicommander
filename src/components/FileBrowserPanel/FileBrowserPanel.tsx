@@ -129,6 +129,19 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 	const [sortBy, setSortBy] = createSignal<SortMode>("name");
 	const [sortDropdownOpen, setSortDropdownOpen] = createSignal(false);
 
+	// Scroll position cache: saves scrollTop + selectedIndex per subdir path
+	const scrollCache = new Map<string, { scrollTop: number; selectedIndex: number }>();
+	let contentRef: HTMLDivElement | undefined;
+	let pendingScrollRestore: string | null = null;
+
+	const changeSubdir = (newSubdir: string) => {
+		if (contentRef) {
+			scrollCache.set(currentSubdir(), { scrollTop: contentRef.scrollTop, selectedIndex: selectedIndex() });
+		}
+		pendingScrollRestore = newSubdir;
+		setCurrentSubdir(newSubdir);
+	};
+
 	// Tree view state
 	const viewMode = () => uiStore.state.fileBrowserViewMode;
 	const [expandedDirs, setExpandedDirs] = createSignal<Set<string>>(new Set());
@@ -175,6 +188,8 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 		// Reset subdir when root changes (merged from separate effect to avoid double fetch)
 		if (fsRoot !== lastRepoPath) {
 			lastRepoPath = fsRoot;
+			scrollCache.clear();
+			pendingScrollRestore = null;
 			setCurrentSubdir(".");
 		}
 
@@ -220,8 +235,14 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 					});
 				if (changed) {
 					setEntries(result);
-					// Restore selection by path after auto-refresh, reset on initial load
-					if (prevSelectedPath) {
+					const cached = pendingScrollRestore !== null ? scrollCache.get(pendingScrollRestore) : undefined;
+					pendingScrollRestore = null;
+					if (cached) {
+						setSelectedIndex(Math.min(cached.selectedIndex, result.length - 1));
+						requestAnimationFrame(() => {
+							if (contentRef) contentRef.scrollTop = cached.scrollTop;
+						});
+					} else if (prevSelectedPath) {
 						const idx = result.findIndex((e) => e.path === prevSelectedPath);
 						setSelectedIndex(idx >= 0 ? idx : 0);
 					} else {
@@ -414,7 +435,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 	const refresh = () => setRefreshTrigger((n) => n + 1);
 
 	const navigateInto = (entry: DirEntry) => {
-		setCurrentSubdir(entry.path);
+		changeSubdir(entry.path);
 	};
 
 	const navigateUp = () => {
@@ -422,7 +443,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 		if (current === "." || current === "") return;
 		const parts = current.split("/");
 		parts.pop();
-		setCurrentSubdir(parts.length === 0 ? "." : parts.join("/"));
+		changeSubdir(parts.length === 0 ? "." : parts.join("/"));
 	};
 
 	const handleEntryClick = (entry: DirEntry) => {
@@ -443,9 +464,9 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 	const handleBreadcrumbClick = (index: number) => {
 		const segments = breadcrumbs();
 		if (index < 0) {
-			setCurrentSubdir(".");
+			changeSubdir(".");
 		} else {
-			setCurrentSubdir(segments.slice(0, index + 1).join("/"));
+			changeSubdir(segments.slice(0, index + 1).join("/"));
 		}
 	};
 
@@ -1119,7 +1140,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 				</div>
 			</Show>
 
-			<div class={p.content}>
+			<div class={p.content} ref={contentRef}>
 				<Show when={loading() || (searching() && searchMode() === "filename")}>
 					<div class={s.empty}>
 						{searching() ? t("fileBrowser.searching", "Searching\u2026") : t("fileBrowser.loading", "Loading...")}
