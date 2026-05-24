@@ -309,6 +309,9 @@ function createRepositoriesStore() {
 		setActive(path: string | null): void {
 			setState("activeRepoPath", path);
 			save();
+			if (path) {
+				invoke("warm_content_index", { repoPath: path }).catch(() => {});
+			}
 			if (path && !getHotRepoPaths(state.repositories).includes(path)) {
 				setState("revisions", path, (n) => (n ?? 0) + 1);
 				invoke("github_poll_repo", { path }).catch(() => {});

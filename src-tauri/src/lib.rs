@@ -1181,26 +1181,55 @@ pub fn run() {
             #[cfg(feature = "desktop")]
             tuic_cli::auto_update_cli(app.handle());
 
-            // Pre-warm content indices for known repos: one at a time, after a
-            // short delay, so boot UI stays responsive and the cooperative
-            // throttle in `ContentIndex::build_with_throttle` keeps CPU gentle.
+            // Pre-warm content indices based on index_strategy setting:
+            // - "active_only": only the active repo at boot
+            // - "active_and_switch": active repo at boot, others on repo switch (default)
+            // - "all_sequential": all repos sequentially (legacy behavior)
             if !known_repo_paths.is_empty() {
-                let state_for_prewarm = Arc::clone(app_state);
-                tauri::async_runtime::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                    for repo in known_repo_paths {
-                        // `ensure_index` is sync + spawns its own blocking task.
-                        // Awaiting JoinHandle here would require threading; instead
-                        // we serialize by waiting until the index flips to ready.
-                        let index_arc =
-                            crate::content_index::ensure_index(&state_for_prewarm, &repo);
-                        // Poll until this repo's build completes before starting the next.
-                        while !index_arc.read().is_ready() {
-                            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                let active_repo = repos_json
+                    .get("activeRepoPath")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_owned());
+
+                let strategy = config::load_app_config().index_strategy;
+
+                let repos_to_warm = match strategy.as_str() {
+                    "all_sequential" => {
+                        if let Some(ref active) = active_repo {
+                            if let Some(pos) = known_repo_paths.iter().position(|p| p == active) {
+                                known_repo_paths.swap(0, pos);
+                            }
+                        }
+                        known_repo_paths
+                    }
+                    _ => {
+                        // active_only and active_and_switch: only pre-warm the active repo
+                        if let Some(active) = active_repo {
+                            if known_repo_paths.contains(&active) {
+                                vec![active]
+                            } else {
+                                Vec::new()
+                            }
+                        } else {
+                            Vec::new()
                         }
                     }
-                    tracing::info!("content index pre-warm complete");
-                });
+                };
+
+                if !repos_to_warm.is_empty() {
+                    let state_for_prewarm = Arc::clone(app_state);
+                    tauri::async_runtime::spawn(async move {
+                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                        for repo in repos_to_warm {
+                            let index_arc =
+                                crate::content_index::ensure_index(&state_for_prewarm, &repo);
+                            while !index_arc.read().is_ready() {
+                                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                            }
+                        }
+                        tracing::info!("content index pre-warm complete");
+                    });
+                }
             }
 
             Ok(())
@@ -1495,6 +1524,7 @@ pub fn run() {
             fs::list_directory,
             fs::stat_path,
             fs::search_files,
+            fs::warm_content_index,
             fs::search_content,
             fs::fs_read_file,
             fs::write_file,

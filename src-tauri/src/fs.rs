@@ -428,6 +428,14 @@ pub async fn search_files(
     search_files_impl(repo_path, query, limit)
 }
 
+#[tauri::command]
+pub fn warm_content_index(
+    app_state: tauri::State<'_, std::sync::Arc<crate::state::AppState>>,
+    repo_path: String,
+) {
+    crate::content_index::ensure_index(&app_state, &repo_path);
+}
+
 #[cfg(feature = "desktop")]
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]

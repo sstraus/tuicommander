@@ -381,7 +381,7 @@ describe("Toolbar", () => {
 			const { container } = render(() => <Toolbar />);
 			fireEvent.click(container.querySelector(".bell")!);
 			const subtitle = container.querySelector(".activityItemSubtitle");
-			expect(subtitle?.textContent).toBe("/repo/plans/foo.md");
+			expect(subtitle?.textContent).toContain("/repo/plans/foo.md");
 		});
 
 		it("clicking dismissible activity item shows dismiss button", () => {

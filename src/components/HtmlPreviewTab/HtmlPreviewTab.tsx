@@ -70,8 +70,11 @@ export const HtmlPreviewTab: Component<HtmlPreviewTabProps> = (props) => {
 
 	const kind = () => detectKind(props.tab.fileName);
 
-	/** Asset URL for binary files (PDF, images, video, audio) */
-	const assetUrl = () => convertFileSrc(absolutePath(props.tab));
+	/** Asset URL for binary files (PDF, images, video, audio), cache-busted via repo revision */
+	const assetUrl = () => {
+		const rev = props.tab.repoPath ? repositoriesStore.getRevision(props.tab.repoPath) : 0;
+		return `${convertFileSrc(absolutePath(props.tab))}?v=${rev}`;
+	};
 
 	/** Read file content — used for HTML and text previews */
 	const readFileContent = async (fsRoot: string | undefined, filePath: string): Promise<string> => {

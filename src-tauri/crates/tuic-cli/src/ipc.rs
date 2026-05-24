@@ -94,13 +94,6 @@ pub fn request(method: &str, path: &str, body: Option<&str>) -> io::Result<Respo
     stream.write_all(req.as_bytes())?;
     stream.flush()?;
 
-    // Shutdown write side so server knows we're done
-    #[cfg(unix)]
-    {
-        use std::os::unix::net::UnixStream;
-        let _ = UnixStream::shutdown(&stream, std::net::Shutdown::Write);
-    }
-
     let mut reader = BufReader::new(&mut stream);
 
     // Parse status line

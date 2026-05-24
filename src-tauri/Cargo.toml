@@ -1,5 +1,6 @@
 [workspace]
 members = [".", "crates/tuic-bridge", "crates/tuic-cli", "patches/alacritty_terminal"]
+resolver = "2"
 
 [package]
 name = "tuicommander"

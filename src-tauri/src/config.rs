@@ -581,6 +581,9 @@ pub(crate) struct AppConfig {
     /// rejection after. Coordinate those call sites if live reload is ever added.
     #[serde(default)]
     pub(crate) ai_terminal_mcp_enabled: bool,
+    /// Content index pre-warm strategy: "active_and_switch" (default), "active_only", "all_sequential"
+    #[serde(default = "default_index_strategy")]
+    pub(crate) index_strategy: String,
     /// Minutes of idle + unfocused before SIGSTOP on process group. 0 = disabled.
     #[serde(default = "default_standby_timeout")]
     pub(crate) standby_timeout_minutes: u16,
@@ -600,6 +603,10 @@ fn default_update_channel() -> String {
 
 fn default_session_token_duration_secs() -> u64 {
     86400
+}
+
+fn default_index_strategy() -> String {
+    "active_and_switch".to_string()
 }
 
 fn default_standby_timeout() -> u16 {
@@ -687,6 +694,7 @@ impl Default for AppConfig {
             cursor_style: default_cursor_style(),
             terminal_renderer: default_terminal_renderer(),
             ai_terminal_mcp_enabled: false,
+            index_strategy: default_index_strategy(),
             standby_timeout_minutes: default_standby_timeout(),
         }
     }
@@ -1651,6 +1659,7 @@ mod tests {
             ai_watchers_enabled: false,
             scrollback_reflow: false,
             ai_terminal_mcp_enabled: false,
+            index_strategy: "active_and_switch".to_string(),
             cursor_style: "bar".to_string(),
             terminal_renderer: "webgl".to_string(),
             auto_update_plugins_enabled: false,

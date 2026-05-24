@@ -5,6 +5,7 @@ import { rateLimitStore } from "../../stores/ratelimit";
 import { repositoriesStore } from "../../stores/repositories";
 import { terminalsStore } from "../../stores/terminals";
 import { projectName, terminalStatusLabel } from "../../utils/activitySnapshot";
+import { navigateToTerminal } from "../../utils/navigateToTerminal";
 import { getRepoColor } from "../../utils/repoColor";
 import { formatRelativeTime } from "../../utils/time";
 import { GlobeIcon } from "../GlobeIcon";
@@ -111,8 +112,7 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
 		if (props.onSelect) {
 			props.onSelect(termId);
 		} else {
-			terminalsStore.setActive(termId);
-			requestAnimationFrame(() => terminalsStore.get(termId)?.ref?.focus());
+			navigateToTerminal(termId);
 		}
 		if (!props.embedded) activityDashboardStore.close();
 	};

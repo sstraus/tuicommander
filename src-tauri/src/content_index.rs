@@ -278,14 +278,22 @@ impl ContentIndex {
 /// swallowing panics (e.g. allocation failure, poisoned locks) and leaving
 /// the index in a stale/empty state with no diagnostic.
 ///
+/// `rt` must be a handle to the Tokio runtime — callers that may run on the
+/// Tauri main thread (which has no implicit runtime context) MUST pass this
+/// explicitly rather than relying on `Handle::current()`.
+///
 /// When `in_flight` is provided, the repo key is removed on completion
 /// (success or panic) so future rebuilds are not permanently blocked.
-fn spawn_build<F>(repo: String, build_fn: F, in_flight: Option<Arc<DashSet<String>>>)
-where
+fn spawn_build<F>(
+    rt: &tokio::runtime::Handle,
+    repo: String,
+    build_fn: F,
+    in_flight: Option<Arc<DashSet<String>>>,
+) where
     F: FnOnce() + Send + 'static,
 {
-    let handle = tokio::task::spawn_blocking(build_fn);
-    tokio::spawn(async move {
+    let handle = rt.spawn_blocking(build_fn);
+    rt.spawn(async move {
         if let Err(e) = handle.await {
             tracing::error!(repo = %repo, error = ?e, "content index build task panicked");
         }
@@ -321,7 +329,13 @@ pub fn ensure_index(
     // Low-priority: spawn_blocking uses the Tokio blocking pool.
     // Cooperative yielding via `throttle` keeps CPU usage gentle and
     // pauses indexing while the user is running a search.
+    //
+    // Use tauri::async_runtime::handle() so this is safe to call from the
+    // Tauri main thread (synchronous IPC handlers), which has no implicit
+    // tokio runtime context.
+    let rt = tauri::async_runtime::handle();
     spawn_build(
+        rt.inner(),
         repo_for_log,
         move || {
             let built = ContentIndex::build(PathBuf::from(&repo), Some(&throttle), HashMap::new());
@@ -365,7 +379,9 @@ pub fn rebuild_index(
     let throttle = Arc::clone(&state.indexer_throttle);
     let repo_for_log = repo.clone();
     let prior_binaries = index.read().known_binaries.clone();
+    let rt = tauri::async_runtime::handle();
     spawn_build(
+        rt.inner(),
         repo_for_log,
         move || {
             let built = ContentIndex::build(PathBuf::from(&repo), Some(&throttle), prior_binaries);

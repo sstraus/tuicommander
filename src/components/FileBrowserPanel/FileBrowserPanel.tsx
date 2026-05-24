@@ -6,7 +6,7 @@ import { t } from "../../i18n";
 import { invoke, listen } from "../../invoke";
 import { getModifierSymbol, shortenHomePath } from "../../platform";
 import { appLogger } from "../../stores/appLogger";
-import { startNativeDrag } from "../../stores/dragDrop";
+import { markInternalDragEnd, markInternalDragStart, startNativeDrag } from "../../stores/dragDrop";
 import { repositoriesStore } from "../../stores/repositories";
 import { uiStore } from "../../stores/ui";
 import type { ContentMatch, DirEntry } from "../../types/fs";
@@ -664,6 +664,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 
 	const handlePointerDragStart = (absPath: string, e: PointerEvent) => {
 		if (e.button !== 0) return;
+		markInternalDragStart();
 		_ptrSrc = absPath;
 		_ptrActive = false;
 		const startX = e.clientX,
@@ -690,6 +691,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 				ptrCleanup();
 				_ptrSrc = null;
 				_ptrActive = false;
+				markInternalDragEnd();
 				if (src) startNativeDrag([src]);
 				return;
 			}
@@ -703,6 +705,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 		};
 
 		const onUp = (ue: PointerEvent) => {
+			markInternalDragEnd();
 			detachAll();
 			ptrCleanup();
 			if (_ptrActive && _ptrSrc) {
@@ -718,6 +721,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 		};
 
 		const onAbort = () => {
+			markInternalDragEnd();
 			detachAll();
 			ptrCleanup();
 			_ptrSrc = null;

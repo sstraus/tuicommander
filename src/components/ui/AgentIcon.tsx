@@ -45,6 +45,13 @@ const AGENT_PATHS: Partial<Record<AgentType, { viewBox: string; d: string }>> = 
 	},
 };
 
+/** Returns an inline SVG string for the given agent, or null if no icon exists. */
+export function getAgentIconSvg(agent: AgentType, size = 14): string | null {
+	const icon = AGENT_PATHS[agent];
+	if (!icon) return null;
+	return `<svg viewBox="${icon.viewBox}" width="${size}" height="${size}" fill="currentColor" style="vertical-align:middle;flex-shrink:0"><path d="${icon.d}"/></svg>`;
+}
+
 /** Renders the brand icon for a given AI agent. Falls back to a capital letter when no SVG exists. */
 export const AgentIcon: Component<AgentIconProps> = (props): JSX.Element => {
 	const size = () => props.size ?? 14;

@@ -284,6 +284,18 @@ export const GeneralTab: Component = () => {
 				hint="Pause idle background sessions after this duration to save resources. 0 = disabled."
 			/>
 
+			<SettingSelect
+				label="Content Indexing"
+				value={settingsStore.state.indexStrategy}
+				onChange={(v) => settingsStore.setIndexStrategy(v as "active_only" | "active_and_switch" | "all_sequential")}
+				options={[
+					{ value: "active_only", label: "Active repo only" },
+					{ value: "active_and_switch", label: "Active + on switch" },
+					{ value: "all_sequential", label: "All repos at boot" },
+				]}
+				hint="When to build search indexes. 'Active + on switch' indexes a repo when you switch to it."
+			/>
+
 			<h3>{t("general.heading.updates", "Updates")}</h3>
 
 			<SettingToggle

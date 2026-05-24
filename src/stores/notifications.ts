@@ -41,9 +41,6 @@ function sendOsNotification(sound: NotificationSound, terminalId: string, tabNam
 	});
 	n.onclick = () => {
 		n.close();
-		import("./terminals").then(({ terminalsStore }) => {
-			terminalsStore.setActive(terminalId);
-		});
 		if (isTauri()) {
 			import("@tauri-apps/api/window").then(({ getCurrentWindow }) => {
 				getCurrentWindow().setFocus();
@@ -51,6 +48,9 @@ function sendOsNotification(sound: NotificationSound, terminalId: string, tabNam
 		} else {
 			window.focus();
 		}
+		import("../utils/navigateToTerminal").then(({ navigateToTerminal }) => {
+			navigateToTerminal(terminalId);
+		});
 	};
 }
 

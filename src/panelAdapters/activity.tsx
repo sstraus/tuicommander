@@ -5,7 +5,7 @@ import { invoke } from "../invoke";
 import type { PanelAdapter } from "../panelRouter";
 import { activityDashboardStore } from "../stores/activityDashboard";
 import { globalWorkspaceStore } from "../stores/globalWorkspace";
-import { terminalsStore } from "../stores/terminals";
+import { navigateToTerminal } from "../utils/navigateToTerminal";
 import {
 	type ActivitySnapshot,
 	buildActivitySnapshot,
@@ -71,8 +71,7 @@ export const activityPanelAdapter: PanelAdapter = {
 		const termId = d.termId;
 		if (action === "navigate") {
 			void invoke("focus_main_window");
-			terminalsStore.setActive(termId);
-			requestAnimationFrame(() => terminalsStore.get(termId)?.ref?.focus());
+			navigateToTerminal(termId);
 		} else if (action === "promote") {
 			globalWorkspaceStore.togglePromote(termId);
 		}
