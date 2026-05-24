@@ -900,19 +900,18 @@ fn handle_session(
                 Ok(id) => id,
                 Err(e) => return e,
             };
-            let mut data = String::new();
-            if let Some(input) = args["input"].as_str() {
-                data.push_str(input);
-            }
-            if let Some(key) = args["special_key"].as_str() {
+            let text = args["input"].as_str().unwrap_or("");
+            let key_seq: Option<&str> = if let Some(key) = args["special_key"].as_str() {
                 match translate_special_key(key) {
-                    Some(seq) => data.push_str(seq),
+                    Some(seq) => Some(seq),
                     None => {
                         return serde_json::json!({"error": format!("Unknown special key: {}", key)});
                     }
                 }
-            }
-            if data.is_empty() {
+            } else {
+                None
+            };
+            if text.is_empty() && key_seq.is_none() {
                 return serde_json::json!({"error": "Action 'input' requires 'input' (text) and/or 'special_key'"});
             }
             let entry = match state.sessions.get(session_id) {
@@ -920,11 +919,24 @@ fn handle_session(
                 None => return serde_json::json!({"error": "Session not found"}),
             };
             let mut session = entry.lock();
-            if let Err(e) = session.writer.write_all(data.as_bytes()) {
-                return serde_json::json!({"error": format!("Write failed: {}", e)});
+            // Write text and special_key as separate writes when both are present.
+            // Ink/raw-mode apps (Claude Code) process input character-by-character;
+            // concatenating text + "\r" into one write causes Enter to be missed.
+            if !text.is_empty() {
+                if let Err(e) = session.writer.write_all(text.as_bytes()) {
+                    return serde_json::json!({"error": format!("Write failed: {}", e)});
+                }
+                if let Err(e) = session.writer.flush() {
+                    tracing::warn!(session_id = %session_id, "PTY flush failed: {e}");
+                }
             }
-            if let Err(e) = session.writer.flush() {
-                tracing::warn!(session_id = %session_id, "PTY flush failed: {e}");
+            if let Some(seq) = key_seq {
+                if let Err(e) = session.writer.write_all(seq.as_bytes()) {
+                    return serde_json::json!({"error": format!("Write failed: {}", e)});
+                }
+                if let Err(e) = session.writer.flush() {
+                    tracing::warn!(session_id = %session_id, "PTY flush failed: {e}");
+                }
             }
             serde_json::json!({"ok": true})
         }
