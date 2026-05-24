@@ -412,7 +412,8 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
 			const text = await navigator.clipboard.readText();
 			const active = terminalsStore.getActive();
 			if (active?.ref && text) {
-				active.ref.write(text);
+				const payload = text.includes("\n") ? `\x1b[200~${text}\x1b[201~` : text;
+				active.ref.write(payload);
 			}
 		} catch (err) {
 			appLogger.error("terminal", "Failed to paste", err);
