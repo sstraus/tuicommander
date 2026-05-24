@@ -1965,6 +1965,12 @@ const App: Component = () => {
 				}
 
 				// Edit
+				case "copy":
+					terminalLifecycle.copyFromTerminal();
+					break;
+				case "paste":
+					terminalLifecycle.pasteToTerminal();
+					break;
 				case "clear-terminal":
 					terminalLifecycle.clearTerminal();
 					break;

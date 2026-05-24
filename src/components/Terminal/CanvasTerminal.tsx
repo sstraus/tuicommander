@@ -2761,7 +2761,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			}
 
 			// Ctrl/Cmd+C with selection → copy instead of interrupt
-			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c" && selectionStart && selectionEnd) {
+			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c" && ((selectionStart && selectionEnd) || cachedSelectionText)) {
 				e.preventDefault();
 				e.stopPropagation();
 				copySelection();
@@ -2786,14 +2786,18 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				return;
 			}
 
-			// Any keypress clears selection — full repaint to remove ghost highlights
-			// Skip pure modifier keys so Cmd+C / Ctrl+C can fire as a chord
-			if (selectionStart && e.key !== "Meta" && e.key !== "Control" && e.key !== "Alt" && e.key !== "Shift") {
-				selectionStart = null;
-				selectionEnd = null;
+			// Any keypress clears selection — full repaint to remove ghost highlights.
+			// Skip modifier keys so Cmd+C / Ctrl+C can fire as a chord.
+			// Skip "c"/"v" only when a modifier is held so copy/paste preserve selection.
+			if (e.key !== "Meta" && e.key !== "Control" && e.key !== "Alt" && e.key !== "Shift"
+				&& !((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === "c" || e.key.toLowerCase() === "v"))) {
+				if (selectionStart) {
+					selectionStart = null;
+					selectionEnd = null;
+					fullRepaintNeeded = true;
+					scheduleRepaint();
+				}
 				cachedSelectionText = "";
-				fullRepaintNeeded = true;
-				scheduleRepaint();
 			}
 
 			// Shift+Enter → ESC CR (multi-line for Claude Code, Ink, etc.)
@@ -3363,7 +3367,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			| undefined;
 		try {
 			let text: string;
-			if (selectionSpansOffscreen() && invokeRef && selectionStart && selectionEnd) {
+			if (cachedSelectionText) {
+				text = cachedSelectionText;
+			} else if (selectionSpansOffscreen() && invokeRef && selectionStart && selectionEnd) {
 				text = (await invokeRef("terminal_get_selection_text", {
 					sessionId: props.sessionId,
 					startRow: selectionStart.row,
