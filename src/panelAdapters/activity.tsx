@@ -5,13 +5,13 @@ import { invoke } from "../invoke";
 import type { PanelAdapter } from "../panelRouter";
 import { activityDashboardStore } from "../stores/activityDashboard";
 import { globalWorkspaceStore } from "../stores/globalWorkspace";
-import { navigateToTerminal } from "../utils/navigateToTerminal";
 import {
 	type ActivitySnapshot,
 	buildActivitySnapshot,
 	projectName,
 	terminalStatusLabel,
 } from "../utils/activitySnapshot";
+import { navigateToTerminal } from "../utils/navigateToTerminal";
 import { createPanelSyncReceiver } from "../utils/panelSync";
 
 function snapshotToRows(snap: ActivitySnapshot): TerminalRow[] {

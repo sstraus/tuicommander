@@ -2586,10 +2586,14 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 					if (rect.width <= 0 || rect.height <= 0) {
 						requestAnimationFrame(() => {
 							remeasure();
-							invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(ipcErr("terminal_request_frame"));
+							invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(
+								ipcErr("terminal_request_frame"),
+							);
 						});
 					} else {
-						invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(ipcErr("terminal_request_frame"));
+						invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(
+							ipcErr("terminal_request_frame"),
+						);
 					}
 				} else if (!isVisible && !hidden) {
 					hidden = true;
@@ -2805,7 +2809,11 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 			// Ctrl/Cmd+C with selection → copy instead of interrupt.
 			// Also fires when coords were cleared by mouseup (auto-copy) but cache is still warm.
-			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c" && ((selectionStart && selectionEnd) || cachedSelectionText)) {
+			if (
+				(e.ctrlKey || e.metaKey) &&
+				e.key.toLowerCase() === "c" &&
+				((selectionStart && selectionEnd) || cachedSelectionText)
+			) {
 				e.preventDefault();
 				e.stopPropagation();
 				copySelection();
@@ -2832,8 +2840,14 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 			// Any keypress clears selection — full repaint to remove ghost highlights.
 			// Skip modifier keys and Cmd+C/V so the chord completes before selection is dropped.
-			if (selectionStart && e.key !== "Meta" && e.key !== "Control" && e.key !== "Alt" && e.key !== "Shift"
-				&& !((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === "c" || e.key.toLowerCase() === "v"))) {
+			if (
+				selectionStart &&
+				e.key !== "Meta" &&
+				e.key !== "Control" &&
+				e.key !== "Alt" &&
+				e.key !== "Shift" &&
+				!((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === "c" || e.key.toLowerCase() === "v"))
+			) {
 				selectionStart = null;
 				selectionEnd = null;
 				cachedSelectionText = "";

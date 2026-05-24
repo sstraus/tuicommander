@@ -1195,10 +1195,11 @@ pub fn run() {
 
                 let repos_to_warm = match strategy.as_str() {
                     "all_sequential" => {
-                        if let Some(ref active) = active_repo {
-                            if let Some(pos) = known_repo_paths.iter().position(|p| p == active) {
-                                known_repo_paths.swap(0, pos);
-                            }
+                        if let Some(pos) = active_repo
+                            .as_deref()
+                            .and_then(|a| known_repo_paths.iter().position(|p| p == a))
+                        {
+                            known_repo_paths.swap(0, pos);
                         }
                         known_repo_paths
                     }

@@ -2,6 +2,33 @@
 
 Features to test when TUICommander is more usable.
 
+## Terminal Blank Screen Recovery (2026-05-24 — PR #46)
+- [HUMAN] Use terminal normally for extended period → no blank screen
+- [HUMAN] Switch between tabs rapidly → terminal content preserved, no blank flash
+- [HUMAN] Hide and show terminal tab → content visible immediately on restore
+- [HUMAN] Check logs for `grid_frame_in_flight stuck` warning — should NOT appear under normal use
+- [HUMAN] Force a decode failure (e.g. truncate a frame in dev) → terminal recovers within 500ms, no permanent blank
+
+## Content Index Strategy (2026-05-24)
+- [HUMAN] Settings → General → "Content Indexing" dropdown shows three options: Active repo only / Active + on switch / All repos at boot
+- [HUMAN] Set "Active + on switch" (default): switch to a cold repo → content search works after a few seconds (index built on switch)
+- [HUMAN] Set "Active repo only": switch repos → content search only works for the repo that was active at boot
+- [HUMAN] Set "All repos at boot": start app with 3+ repos → all indexed after ~2s delay (check logs for "content index pre-warm complete")
+- [HUMAN] Strategy persists across app restart
+- [HUMAN] "Active + on switch": warm_content_index fires on repo switch (check logs for index build for the new repo)
+
+## Toolbar Notification Relative Ages (2026-05-24)
+- [HUMAN] Bell dropdown: each notification item shows relative age ("just now", "5m ago", "2h ago", "3d ago")
+- [HUMAN] Keep the dropdown open for 30s+ → ages tick/update live without closing the popover
+- [HUMAN] New notification arrives → shows "just now"
+
+## File Browser Internal Drag (2026-05-24)
+- [HUMAN] Drag a file within the file browser to a folder → move succeeds; no native OS drag triggered mid-gesture
+- [HUMAN] Cancel an internal drag (release outside any target) → no lingering drag state in the app
+
+## HTML Preview Cache-Bust (2026-05-24)
+- [HUMAN] Open an image or PDF in the HTML preview tab → edit the file externally → switch away and back → preview shows updated file (not stale cached version)
+
 ## File Browser Intra-Tree Drag & Drop (2026-05-22)
 - [HUMAN] Drag a file onto a folder in the file browser → file moves into that folder
 - [HUMAN] Drag a file onto its own parent folder → no-op (no error)

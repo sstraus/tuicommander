@@ -104,7 +104,13 @@ type TerminalCreateData = Omit<
 	| "foldedBlocks"
 	| "alias"
 	| "standby"
-> & { tuicSession?: string | null; isRemote?: boolean; agentType?: AgentType | null; agentSessionId?: string | null; agentLaunchCommand?: string | null };
+> & {
+	tuicSession?: string | null;
+	isRemote?: boolean;
+	agentType?: AgentType | null;
+	agentSessionId?: string | null;
+	agentLaunchCommand?: string | null;
+};
 
 /** Terminal component ref interface */
 export interface TerminalRef {

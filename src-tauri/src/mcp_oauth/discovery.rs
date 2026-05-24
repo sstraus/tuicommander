@@ -155,7 +155,9 @@ async fn discover_auth_server_inner(
     let mut candidates: Vec<String> = Vec::with_capacity(4);
     candidates.push(format!("{base}/.well-known/oauth-authorization-server"));
     if has_path {
-        candidates.push(format!("{origin}/.well-known/oauth-authorization-server{path}"));
+        candidates.push(format!(
+            "{origin}/.well-known/oauth-authorization-server{path}"
+        ));
     }
     candidates.push(format!("{base}/.well-known/openid-configuration"));
     if has_path {
@@ -171,11 +173,14 @@ async fn discover_auth_server_inner(
             .with_context(|| format!("Failed to fetch AS metadata from {url}"))?;
 
         if resp.status() == reqwest::StatusCode::NOT_FOUND {
-            last_status = format!("HTTP 404 Not Found");
+            last_status = "HTTP 404 Not Found".to_string();
             continue;
         }
         if !resp.status().is_success() {
-            bail!("AS metadata endpoint returned HTTP {} for {url}", resp.status());
+            bail!(
+                "AS metadata endpoint returned HTTP {} for {url}",
+                resp.status()
+            );
         }
 
         let meta = resp
@@ -205,9 +210,7 @@ async fn discover_auth_server_inner(
         return Ok(meta);
     }
 
-    bail!(
-        "Both RFC 8414 (404) and OIDC discovery ({last_status}) failed for {base}"
-    );
+    bail!("Both RFC 8414 (404) and OIDC discovery ({last_status}) failed for {base}");
 }
 
 /// Validate that an endpoint URL uses HTTPS.
@@ -571,7 +574,9 @@ mod tests {
 
         let client = reqwest::Client::new();
         // Use relaxed variant since mockito runs on http://127.0.0.1 (localhost exempt)
-        let meta = discover_auth_server_relaxed(&client, &issuer).await.unwrap();
+        let meta = discover_auth_server_relaxed(&client, &issuer)
+            .await
+            .unwrap();
 
         assert_eq!(meta.issuer, issuer);
         assert_eq!(

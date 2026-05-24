@@ -1,7 +1,7 @@
 {
   "name": "tuicommander",
   "private": true,
-  "version": "1.2.4-nightly",
+  "version": "1.2.5-nightly",
   "description": "Multi-agent terminal orchestrator with native terminal and Tauri",
   "type": "module",
   "scripts": {

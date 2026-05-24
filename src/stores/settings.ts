@@ -491,7 +491,10 @@ function createSettingsStore() {
 				setState("showBlockTimestamps", config.show_block_timestamps ?? true);
 				setState("showScrollbarMarks", config.show_scrollbar_marks ?? true);
 				setState("blockFoldingEnabled", config.block_folding_enabled ?? true);
-				setState("indexStrategy", (config.index_strategy as SettingsStoreState["indexStrategy"]) ?? "active_and_switch");
+				setState(
+					"indexStrategy",
+					(config.index_strategy as SettingsStoreState["indexStrategy"]) ?? "active_and_switch",
+				);
 				setState("standbyTimeoutMinutes", config.standby_timeout_minutes ?? 5);
 			} catch (err) {
 				appLogger.error("config", "Failed to hydrate settings", err);
