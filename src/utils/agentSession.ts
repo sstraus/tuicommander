@@ -18,14 +18,26 @@ import { pathBasename } from "./pathUtils";
  * Returns the original command unchanged when there's no run config (keeps
  * fallback behaviour; used by tests that don't set up the store).
  */
-function applyDefaultRunConfig(agentType: AgentType, command: string): string {
-	const runConfig = agentConfigsStore.getDefaultConfig(agentType);
-	if (!runConfig) return command;
+/**
+ * Apply a run config to a resume command, preferring the original launch command
+ * over the current default. This ensures that e.g. resuming a session started
+ * with `c` (claude with custom flags/config-dir) doesn't switch to `c2`.
+ */
+function applyDefaultRunConfig(agentType: AgentType, command: string, launchCommand?: string | null): string {
+	const launchParts = launchCommand?.split(" ");
+	const runConfig = launchParts ? null : agentConfigsStore.getDefaultConfig(agentType);
+	if (!launchParts && !runConfig) return command;
 
 	const parts = command.split(" ");
 	const resumeFlags = parts.slice(1); // drop the hardcoded binary
-	const out = [runConfig.command, ...resumeFlags, ...runConfig.args];
-	return out.join(" ");
+
+	if (launchParts) {
+		// Use the original launch binary + its args, with resume flags in between
+		const [launchBinary, ...launchArgs] = launchParts;
+		return [launchBinary, ...resumeFlags, ...launchArgs].join(" ");
+	}
+	// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+	return [runConfig!.command, ...resumeFlags, ...runConfig!.args].join(" ");
 }
 
 /**
@@ -63,7 +75,11 @@ export function buildAgentLaunchCommand(
  * For Claude Code with a persisted session UUID, returns "claude --resume <uuid>".
  * For all other cases, falls back to the static resumeCommand from AGENTS config.
  */
-export function buildResumeCommand(agentType: AgentType, agentSessionId?: string | null): string | null {
+export function buildResumeCommand(
+	agentType: AgentType,
+	agentSessionId?: string | null,
+	launchCommand?: string | null,
+): string | null {
 	let base: string | null = null;
 	if (agentSessionId) {
 		const disc = AGENTS[agentType].sessionDiscovery;
@@ -71,7 +87,7 @@ export function buildResumeCommand(agentType: AgentType, agentSessionId?: string
 	}
 	if (base === null) base = AGENTS[agentType].resumeCommand;
 	if (base === null) return null;
-	return applyDefaultRunConfig(agentType, base);
+	return applyDefaultRunConfig(agentType, base, launchCommand);
 }
 
 /**
@@ -87,6 +103,7 @@ export async function verifyAndBuildResumeCommand(
 	cwd: string | null,
 	tuicSession?: string | null,
 	agentSessionId?: string | null,
+	launchCommand?: string | null,
 ): Promise<string | null> {
 	const disc = AGENTS[agentType].sessionDiscovery;
 
@@ -107,7 +124,7 @@ export async function verifyAndBuildResumeCommand(
 			});
 			if (exists) {
 				const cmd = disc.resumeWithId(sessionId);
-				return applyDefaultRunConfig(agentType, cmd);
+				return applyDefaultRunConfig(agentType, cmd, launchCommand);
 			}
 			return null;
 		} catch {
@@ -116,5 +133,5 @@ export async function verifyAndBuildResumeCommand(
 	}
 
 	// No verified session — fall back to static resumeCommand
-	return buildResumeCommand(agentType, agentSessionId);
+	return buildResumeCommand(agentType, agentSessionId, launchCommand);
 }

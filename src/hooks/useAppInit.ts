@@ -78,6 +78,7 @@ function collectTerminalSnapshots(): Map<string, Map<string, SavedTerminal[]>> {
 					agentType: t.agentType,
 					agentSessionId: t.agentSessionId ?? null,
 					tuicSession: t.tuicSession ?? null,
+					agentLaunchCommand: t.agentLaunchCommand ?? null,
 				});
 			}
 

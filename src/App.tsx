@@ -62,6 +62,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { getActionEntries } from "./actions/actionRegistry";
 import { AGENTS, type AgentType } from "./agents";
+import { getAgentIconSvg } from "./components/ui/AgentIcon";
 import { AIChatPanel } from "./components/AIChatPanel/AIChatPanel";
 import { registerAiChatContextActions } from "./components/AIChatPanel/contextMenuActions";
 import { DictationToast } from "./components/DictationToast/DictationToast";
@@ -150,6 +151,7 @@ import { openFileAction } from "./utils/filePreview";
 import { keyFor } from "./utils/hotkey";
 import { createPanelSyncProvider, type PanelAction } from "./utils/panelSync";
 import { initPaneTabAssignment } from "./utils/paneTabAssign";
+import { navigateToTerminal } from "./utils/navigateToTerminal";
 import { pathBasename, pathStartsWith, pathStripPrefix } from "./utils/pathUtils";
 import { getShellFamily, sendCommand } from "./utils/sendCommand";
 
@@ -440,6 +442,7 @@ const App: Component = () => {
 	});
 
 	// Register built-in activity sections for git and worktree notifications
+	activityStore.registerSection({ id: "terminals", label: "TERMINALS", priority: 10, canDismissAll: true });
 	activityStore.registerSection({ id: "git-ops", label: "GIT", priority: 30, canDismissAll: true });
 	activityStore.registerSection({ id: "worktrees", label: "WORKTREES", priority: 40, canDismissAll: true });
 
@@ -796,6 +799,17 @@ const App: Component = () => {
 		),
 	);
 
+	// Dismiss terminal completion activity item when user views the terminal
+	createEffect(
+		on(
+			() => terminalsStore.state.activeId,
+			(id) => {
+				if (id) activityStore.dismissItem(`terminal-done-${id}`);
+			},
+			{ defer: true },
+		),
+	);
+
 	// Wire terminal close → conversationStore cleanup
 	{
 		const dispose = terminalsStore.onRemove((id) => {
@@ -897,6 +911,30 @@ const App: Component = () => {
 			appLogger.info("terminal", `[Notify] ${id} completion — busy for ${Math.round(durationMs / 1000)}s then idle`);
 			terminalsStore.update(id, { activity: true, unseen: true });
 			notificationsStore.playCompletion(id);
+			const agentLabel = terminal.agentType
+				? terminal.agentType[0].toUpperCase() + terminal.agentType.slice(1)
+				: null;
+			const repoPath = repositoriesStore.getRepoPathForTerminal(id);
+			const repoName = repoPath ? pathBasename(repoPath) : null;
+			const durationStr = `ran for ${Math.round(durationMs / 1000)}s`;
+			const subtitleParts: string[] = [];
+			if (repoName) subtitleParts.push(repoName);
+			subtitleParts.push(durationStr);
+			if (terminal.agentIntent) subtitleParts.push(terminal.agentIntent);
+
+			const defaultIcon = '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M0 2.75C0 1.784.784 1 1.75 1h12.5c.966 0 1.75.784 1.75 1.75v10.5A1.75 1.75 0 0 1 14.25 15H1.75A1.75 1.75 0 0 1 0 13.25Zm1.75-.25a.25.25 0 0 0-.25.25v10.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25V2.75a.25.25 0 0 0-.25-.25ZM7.25 8a.749.749 0 0 1-.22.53l-2.25 2.25a.749.749 0 1 1-1.06-1.06L5.44 8 3.72 6.28a.749.749 0 1 1 1.06-1.06l2.25 2.25c.141.14.22.331.22.53Zm1.5 1.5h3a.75.75 0 0 1 0 1.5h-3a.75.75 0 0 1 0-1.5Z"/></svg>';
+
+			activityStore.addItem({
+				id: `terminal-done-${id}`,
+				pluginId: "core",
+				sectionId: "terminals",
+				title: `${agentLabel ?? terminal.name} finished`,
+				subtitle: subtitleParts.join(" · "),
+				icon: (terminal.agentType && getAgentIconSvg(terminal.agentType, 14)) || defaultIcon,
+				repoPath: repoPath ?? undefined,
+				dismissible: true,
+				onClick: () => navigateToTerminal(id),
+			});
 		};
 
 		const t = terminalsStore.get(id);
@@ -1005,6 +1043,7 @@ const App: Component = () => {
 		terminalsStore.update(active.id, {
 			name: AGENTS[agentType].name,
 			nameIsCustom: true,
+			agentLaunchCommand: cmd,
 		});
 	};
 
@@ -1067,6 +1106,7 @@ const App: Component = () => {
 						nameIsCustom: true,
 						pendingInitCommand: finalCmd,
 						agentType: agent.type,
+						agentLaunchCommand: cmd,
 					});
 				}
 			};

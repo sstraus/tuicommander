@@ -51,6 +51,7 @@ export interface TerminalData {
 	progress: number | null; // OSC 9;4 progress (0-100), null when inactive
 	shellState: ShellState;
 	agentType: AgentType | null; // Detected foreground agent process (e.g. "claude")
+	agentLaunchCommand: string | null; // Run-config command used to launch (e.g. "c"), for accurate resume
 	pendingResumeCommand: string | null; // Set at restore time, consumed on first shell idle
 	pendingInitCommand: string | null; // Setup/run script to auto-execute on first shell idle
 	usageLimit: { percentage: number; limitType: string } | null; // Claude Code usage limit
@@ -82,6 +83,7 @@ type TerminalCreateData = Omit<
 	| "shellState"
 	| "nameIsCustom"
 	| "agentType"
+	| "agentLaunchCommand"
 	| "pendingResumeCommand"
 	| "pendingInitCommand"
 	| "usageLimit"
@@ -102,7 +104,7 @@ type TerminalCreateData = Omit<
 	| "foldedBlocks"
 	| "alias"
 	| "standby"
-> & { tuicSession?: string | null; isRemote?: boolean; agentType?: AgentType | null; agentSessionId?: string | null };
+> & { tuicSession?: string | null; isRemote?: boolean; agentType?: AgentType | null; agentSessionId?: string | null; agentLaunchCommand?: string | null };
 
 /** Terminal component ref interface */
 export interface TerminalRef {
@@ -128,6 +130,8 @@ export interface TerminalRef {
 	scrollPages: (pages: number) => void;
 	/** Read buffer lines between two absolute line indices (exclusive end) */
 	getBufferLines: (startLine: number, endLine: number) => string[] | Promise<string[]>;
+	/** Paste text into the terminal, applying bracketed paste wrapping based on terminal state */
+	paste: (text: string) => void;
 }
 
 /** Combined terminal state */
@@ -336,6 +340,7 @@ function createTerminalsStore() {
 				shellState: null,
 				nameIsCustom: false,
 				agentType: null,
+				agentLaunchCommand: null,
 				pendingResumeCommand: null,
 				pendingInitCommand: null,
 				usageLimit: null,
@@ -372,6 +377,7 @@ function createTerminalsStore() {
 				shellState: null,
 				nameIsCustom: false,
 				agentType: null,
+				agentLaunchCommand: null,
 				pendingResumeCommand: null,
 				pendingInitCommand: null,
 				usageLimit: null,

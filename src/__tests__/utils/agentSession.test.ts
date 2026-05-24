@@ -83,6 +83,21 @@ describe("buildResumeCommand", () => {
 		expect(buildResumeCommand("droid", null)).toBeNull();
 		expect(buildResumeCommand("git", null)).toBeNull();
 	});
+
+	it("uses launchCommand binary instead of default when provided", () => {
+		// c is an alias for claude with custom flags; resume must use c, not claude
+		expect(buildResumeCommand("claude", "abc-123", "c --dangerously-skip-permissions")).toBe(
+			"c --resume abc-123 --dangerously-skip-permissions",
+		);
+	});
+
+	it("uses plain launchCommand binary when no extra args", () => {
+		expect(buildResumeCommand("claude", "abc-123", "c")).toBe("c --resume abc-123");
+	});
+
+	it("falls back to default when launchCommand is null", () => {
+		expect(buildResumeCommand("claude", "abc-123", null)).toBe("claude --resume abc-123");
+	});
 });
 
 describe("sessionDiscovery in AgentConfig", () => {
