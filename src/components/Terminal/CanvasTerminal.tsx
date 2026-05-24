@@ -2051,6 +2051,13 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 	function onFrame(data: ArrayBuffer | number[]) {
 		const buffer = data instanceof ArrayBuffer ? data : new Uint8Array(data).buffer;
+
+		// Ack BEFORE decode. If decodeBinaryFrame returns null (corrupt/truncated
+		// frame) or throws, the in-flight flag is still cleared so the backend
+		// can send the next frame. Previously a failed decode left in_flight
+		// stuck at true, permanently blocking frame delivery → blank terminal.
+		invokeRef?.("ack_terminal_frame", { sessionId: props.sessionId }).catch(ipcErr("ack_terminal_frame"));
+
 		const frame = decodeBinaryFrame(buffer);
 		if (!frame) return;
 
@@ -2110,11 +2117,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				cachedSelectionText = "";
 			}
 		}
-
-		// Ack on receive, not after paint. Otherwise the backend is forced to wait
-		// until the frontend has displayed an intermediate PTY state (for example a
-		// newline carrying the previous SGR background before the CLI writes reset/text).
-		invokeRef?.("ack_terminal_frame", { sessionId: props.sessionId }).catch(ipcErr("ack_terminal_frame"));
 
 		if (hidden) return;
 		scheduleRepaint();
@@ -2548,13 +2550,25 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				const isVisible = entries[0]?.isIntersecting ?? false;
 				if (isVisible && hidden) {
 					hidden = false;
-					rowMap.clear();
-					detectedLinks.clear();
 					fullRepaintNeeded = true;
-					currentFrame = null;
 					lastDisplayOffset = -1;
+					// Don't clear rowMap/currentFrame here — keep showing the
+					// last painted content until the fresh frame arrives.
+					// onFrame() replaces rowMap when a full frame arrives
+					// (rows.length >= screenRowCount), so stale data is
+					// naturally discarded without a blank flash.
 					remeasure();
-					invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(ipcErr("terminal_request_frame"));
+					// If remeasure saw 0x0 (layout not yet computed after
+					// display:none → display:block), retry after a frame.
+					const rect = containerRef.getBoundingClientRect();
+					if (rect.width <= 0 || rect.height <= 0) {
+						requestAnimationFrame(() => {
+							remeasure();
+							invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(ipcErr("terminal_request_frame"));
+						});
+					} else {
+						invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(ipcErr("terminal_request_frame"));
+					}
 				} else if (!isVisible && !hidden) {
 					hidden = true;
 				}
