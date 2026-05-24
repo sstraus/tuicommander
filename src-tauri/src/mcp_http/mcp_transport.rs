@@ -294,7 +294,7 @@ fn native_tool_definitions() -> serde_json::Value {
     let mut defs = serde_json::json!([
         {
             "name": "session",
-            "description": "PTY multiplexer (replaces tmux). Create terminals, send input (send-keys), read output (capture-pane), manage lifecycle.\n\nActions:\n- list: Active sessions with cwd, process info. Call first to discover IDs.\n- create: New PTY. Returns {session_id}. Optional: cwd, shell, rows, cols.\n- input: Send text and/or special_key to a session.\n- output: Read terminal output. Returns {data, cursor, total_written, exited, exit_code}. Delta reads: pass since_cursor from a previous response to get only new lines. First call: omit since_cursor for full snapshot. Subsequent calls: pass the returned cursor value.\n- status: Shell state for a session: {shell_state, idle_since_ms, busy_duration_ms, exit_code, agent_type}. Use to poll agent progress without streaming output.\n- resize: Change PTY dimensions.\n- close: Graceful shutdown (Ctrl+C, waits).\n- kill: Force SIGKILL (use when close fails).\n- pause: Pause output buffering. resume: Resume.\n- process_stats: CPU% and RSS memory for TUIC and all child process trees. Returns {processes: [{session_id, name, pid, rss_kb, cpu_pct}]}. Use to diagnose high CPU/memory.",
+            "description": "PTY multiplexer (replaces tmux). Create terminals, send input (send-keys), read output (capture-pane), manage lifecycle.\n\nActions:\n- list: Active sessions with cwd, process info. Call first to discover IDs.\n- create: New PTY. Returns {session_id}. Optional: cwd, shell, rows, cols.\n- input: Send text and/or special_key to a session.\n- output: Read terminal output. Returns {data, cursor, scrollback_lines, oldest_offset, exited, exit_code}. scrollback_lines = total lines in buffer (up to 10000); oldest_offset = first available line number. Patterns: (1) Snapshot: omit since_cursor, default limit=50 gives last 50 lines. (2) Delta poll: since_cursor=<previous cursor> returns only new lines — very cheap, use for monitoring. (3) Navigate backwards: from_line=oldest_offset reads from the beginning of the buffer. (4) Arbitrary window: from_line=N, limit=50 reads any 50-line slice.\n- status: Shell state for a session: {shell_state, idle_since_ms, busy_duration_ms, exit_code, agent_type}. Use to poll agent progress without streaming output.\n- resize: Change PTY dimensions.\n- close: Graceful shutdown (Ctrl+C, waits).\n- kill: Force SIGKILL (use when close fails).\n- pause: Pause output buffering. resume: Resume.\n- process_stats: CPU% and RSS memory for TUIC and all child process trees. Returns {processes: [{session_id, name, pid, rss_kb, cpu_pct}]}. Use to diagnose high CPU/memory.",
             "inputSchema": { "type": "object", "properties": {
                 "action": { "type": "string", "description": "One of: list, create, input, output, status, resize, close, kill, pause, resume, process_stats" },
                 "session_id": { "type": "string", "description": "Session ID (required for input, output, resize, close, pause, resume)" },
@@ -304,9 +304,10 @@ fn native_tool_definitions() -> serde_json::Value {
                 "cols": { "type": "integer", "description": "Terminal cols (action=create or resize)" },
                 "shell": { "type": "string", "description": "Shell binary path (action=create)" },
                 "cwd": { "type": "string", "description": "Working directory (action=create)" },
-                "limit": { "type": "integer", "description": "Bytes to read, default 8192 (action=output)" },
+                "limit": { "type": "integer", "description": "Max lines to return (default 50). Use 50-100 for snapshots; delta reads (since_cursor) are already bounded by new content (action=output)" },
+                "from_line": { "type": "integer", "description": "Absolute line number to start reading from. Use oldest_offset from a previous response to read from the beginning of the buffer. Omit to read the tail (action=output)" },
                 "format": { "type": "string", "description": "Output format: ANSI escape codes are stripped by default; pass 'raw' to preserve them (action=output)" },
-                "since_cursor": { "type": "integer", "description": "Cursor from a previous output response — returns only new lines since this position. Omit for full snapshot (action=output)" }
+                "since_cursor": { "type": "integer", "description": "Cursor from a previous output response — returns only new lines since this position. Most token-efficient for polling. Omit for snapshot (action=output)" }
             }, "required": ["action"] }
         },
         {
@@ -945,7 +946,7 @@ fn handle_session(
                 Ok(id) => id,
                 Err(e) => return e,
             };
-            let limit = args["limit"].as_u64().unwrap_or(8192) as usize;
+            let limit = args["limit"].as_u64().unwrap_or(50) as usize;
 
             // Resolve the session's lifecycle state.
             //
@@ -1004,16 +1005,23 @@ fn handle_session(
                 };
                 let buf = vt_log.lock();
                 let total = buf.total_lines();
+                let oldest = buf.oldest_offset();
+                let scrollback_lines = total - oldest;
 
                 // Delta read: if since_cursor provided, return only new scrollback lines.
                 if let Some(since) = args["since_cursor"].as_u64().map(|v| v as usize) {
                     let (log_lines, new_cursor) = buf.lines_since_owned(since, limit);
                     let data: Vec<String> = log_lines.iter().map(|ll| ll.text()).collect();
                     let data = data.join("\n");
-                    return serde_json::json!({"data": data, "data_length": data.len(), "cursor": new_cursor, "exited": exited, "exit_code": exit_code_json});
+                    return serde_json::json!({"data": data, "data_length": data.len(), "cursor": new_cursor, "scrollback_lines": scrollback_lines, "oldest_offset": oldest, "exited": exited, "exit_code": exit_code_json});
                 }
 
-                let offset = total.saturating_sub(limit);
+                // Absolute positioning: from_line overrides the default tail window.
+                let offset = if let Some(from) = args["from_line"].as_u64().map(|v| v as usize) {
+                    from.max(oldest)
+                } else {
+                    total.saturating_sub(limit)
+                };
                 let (log_lines, _) = buf.lines_since_owned(offset, limit);
                 let screen: Vec<String> = buf
                     .screen_rows()
@@ -1021,9 +1029,12 @@ fn handle_session(
                     .filter(|r| !r.is_empty())
                     .collect();
                 let mut all_lines: Vec<String> = log_lines.iter().map(|ll| ll.text()).collect();
-                all_lines.extend(screen);
+                // Only append screen rows when reading the tail (no from_line).
+                if args["from_line"].is_null() {
+                    all_lines.extend(screen);
+                }
                 let data = all_lines.join("\n");
-                return serde_json::json!({"data": data, "data_length": data.len(), "cursor": total, "total_written": total, "exited": exited, "exit_code": exit_code_json});
+                return serde_json::json!({"data": data, "data_length": data.len(), "cursor": total, "total_written": total, "scrollback_lines": scrollback_lines, "oldest_offset": oldest, "exited": exited, "exit_code": exit_code_json});
             }
             let ring = match state.output_buffers.get(session_id) {
                 Some(r) => r,
