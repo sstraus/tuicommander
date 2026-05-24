@@ -958,6 +958,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 			if (!sessionId) return [];
 			return invoke("terminal_get_lines", { sessionId, start: startLine, end: endLine }) as Promise<string[]>;
 		},
+		paste: (text: string) => canvasTerminalRef()?.paste(text),
 	};
 
 	onMount(() => {
@@ -1070,7 +1071,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 					</button>
 				</div>
 			</Show>
-			<div ref={containerRef} class={s.content} style={{ width: "100%", height: "100%" }}>
+			<div ref={containerRef} class={s.content}>
 				<Show when={_currentSessionId()}>
 					{(sid) => (
 						<CanvasTerminal

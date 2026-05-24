@@ -8,6 +8,7 @@ import { paneLayoutStore } from "../stores/paneLayout";
 import { currentBranchKey, repositoriesStore } from "../stores/repositories";
 import { settingsStore } from "../stores/settings";
 import { terminalsStore } from "../stores/terminals";
+import { navigateToTerminal } from "../utils/navigateToTerminal";
 import { assignTabToActiveGroup } from "../utils/paneTabAssign";
 import { filterValidTerminals } from "../utils/terminalFilter";
 
@@ -412,7 +413,7 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
 			const text = await navigator.clipboard.readText();
 			const active = terminalsStore.getActive();
 			if (active?.ref && text) {
-				active.ref.write(text);
+				active.ref.paste(text);
 			}
 		} catch (err) {
 			appLogger.error("terminal", "Failed to paste", err);
@@ -465,32 +466,7 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
 			terminalsStore.setActive(null);
 			activateInPaneGroup(id, "editor");
 		} else {
-			// Switch repo/branch context if the terminal belongs to a different one
-			const repoPath = repositoriesStore.getRepoPathForTerminal(id);
-			if (repoPath) {
-				const repo = repositoriesStore.state.repositories[repoPath];
-				if (repo) {
-					// Find which branch owns this terminal
-					for (const [branchName, branch] of Object.entries(repo.branches)) {
-						if (branch.terminals.includes(id)) {
-							if (repositoriesStore.state.activeRepoPath !== repoPath) {
-								repositoriesStore.setActive(repoPath);
-							}
-							if (repo.activeBranch !== branchName) {
-								repositoriesStore.setActiveBranch(repoPath, branchName);
-							}
-							break;
-						}
-					}
-				}
-			}
-			terminalsStore.setActive(id);
-			diffTabsStore.setActive(null);
-			mdTabsStore.setActive(null);
-			editorTabsStore.setActive(null);
-			activateInPaneGroup(id, "terminal");
-			const terminal = terminalsStore.get(id);
-			terminal?.ref?.focus();
+			navigateToTerminal(id);
 		}
 	};
 

@@ -555,6 +555,7 @@ describe("useTerminalLifecycle", () => {
 					clear: mockClear,
 					fit: vi.fn(),
 					write: vi.fn(),
+					paste: vi.fn(),
 					writeln: vi.fn(),
 					input: vi.fn(),
 					focus: vi.fn(),
@@ -722,8 +723,34 @@ describe("useTerminalLifecycle", () => {
 	});
 
 	describe("pasteToTerminal", () => {
-		it("pastes clipboard text to active terminal", async () => {
-			const mockWrite = vi.fn();
+		function makeRef(overrides: Partial<Record<string, unknown>> = {}) {
+			return {
+				write: vi.fn(),
+				paste: vi.fn(),
+				clear: vi.fn(),
+				fit: vi.fn(),
+				writeln: vi.fn(),
+				input: vi.fn(),
+				focus: vi.fn(),
+				getSessionId: vi.fn(),
+				getSelection: vi.fn(() => ""),
+				openSearch: vi.fn(),
+				closeSearch: vi.fn(),
+				toggleCompose: vi.fn(),
+				openComposeWithText: vi.fn(),
+				searchBuffer: vi.fn(() => []),
+				scrollToLine: vi.fn(),
+				scrollToTop: vi.fn(),
+				scrollToBottom: vi.fn(),
+				scrollPages: vi.fn(),
+				getBufferLines: vi.fn(() => []),
+				refresh: vi.fn(),
+				...overrides,
+			};
+		}
+
+		it("delegates to ref.paste(), not ref.write()", async () => {
+			const ref = makeRef();
 			Object.defineProperty(navigator, "clipboard", {
 				value: { readText: vi.fn().mockResolvedValue("pasted text"), writeText: vi.fn() },
 				writable: true,
@@ -732,33 +759,31 @@ describe("useTerminalLifecycle", () => {
 
 			const id = terminalsStore.add(makeTerminal({ name: "T1" }));
 			terminalsStore.setActive(id);
-			terminalsStore.update(id, {
-				ref: {
-					write: mockWrite,
-					clear: vi.fn(),
-					fit: vi.fn(),
-					writeln: vi.fn(),
-					input: vi.fn(),
-					focus: vi.fn(),
-					getSessionId: vi.fn(),
-					getSelection: vi.fn(() => ""),
-					openSearch: vi.fn(),
-					closeSearch: vi.fn(),
-					toggleCompose: vi.fn(),
-					openComposeWithText: vi.fn(),
-					searchBuffer: vi.fn(() => []),
-					scrollToLine: vi.fn(),
-					scrollToTop: vi.fn(),
-					scrollToBottom: vi.fn(),
-					scrollPages: vi.fn(),
-					getBufferLines: vi.fn(() => []),
-					refresh: vi.fn(),
-				},
-			});
+			terminalsStore.update(id, { ref });
 
 			await lifecycle.pasteToTerminal();
 
-			expect(mockWrite).toHaveBeenCalledWith("pasted text");
+			expect(ref.paste).toHaveBeenCalledWith("pasted text");
+			expect(ref.write).not.toHaveBeenCalled();
+		});
+
+		it("passes multi-line text to ref.paste() unchanged", async () => {
+			const ref = makeRef();
+			Object.defineProperty(navigator, "clipboard", {
+				value: { readText: vi.fn().mockResolvedValue("line1\nline2\nline3"), writeText: vi.fn() },
+				writable: true,
+				configurable: true,
+			});
+
+			const id = terminalsStore.add(makeTerminal({ name: "T1" }));
+			terminalsStore.setActive(id);
+			terminalsStore.update(id, { ref });
+
+			await lifecycle.pasteToTerminal();
+
+			// Bracketed paste wrapping is the responsibility of ref.paste() (Terminal/CanvasTerminal),
+			// which has access to the current bracketedPaste terminal state.
+			expect(ref.paste).toHaveBeenCalledWith("line1\nline2\nline3");
 		});
 	});
 

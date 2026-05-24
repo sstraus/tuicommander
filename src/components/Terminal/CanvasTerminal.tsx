@@ -45,6 +45,8 @@ export interface CanvasTerminalRef {
 	searchNext: () => { index: number; count: number };
 	searchPrev: () => { index: number; count: number };
 	searchClear: () => void;
+	/** Paste text with correct bracketed paste wrapping based on current terminal state */
+	paste: (text: string) => void;
 }
 
 export interface CanvasTerminalProps {
@@ -2119,7 +2121,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 		currentFrame = frame;
 
-		if (selectionStart && cachedSelectionText && frame.rows.length >= screenRowCount) {
+		// Only compare content when the selection is fully on-screen — off-screen rows return empty
+		// strings from getLocalSelectionText() causing spurious mismatches that clear the selection.
+		if (selectionStart && cachedSelectionText && frame.rows.length >= screenRowCount && !selectionSpansOffscreen()) {
 			const nowText = getLocalSelectionText();
 			if (nowText !== cachedSelectionText) {
 				selectionStart = null;
@@ -2785,8 +2789,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				return;
 			}
 
-			// Ctrl/Cmd+C with selection → copy instead of interrupt
-			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c" && selectionStart && selectionEnd) {
+			// Ctrl/Cmd+C with selection → copy instead of interrupt.
+			// Also fires when coords were cleared by mouseup (auto-copy) but cache is still warm.
+			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c" && ((selectionStart && selectionEnd) || cachedSelectionText)) {
 				e.preventDefault();
 				e.stopPropagation();
 				copySelection();
@@ -2811,9 +2816,10 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				return;
 			}
 
-			// Any keypress clears selection — full repaint to remove ghost highlights
-			// Skip pure modifier keys so Cmd+C / Ctrl+C can fire as a chord
-			if (selectionStart && e.key !== "Meta" && e.key !== "Control" && e.key !== "Alt" && e.key !== "Shift") {
+			// Any keypress clears selection — full repaint to remove ghost highlights.
+			// Skip modifier keys and Cmd+C/V so the chord completes before selection is dropped.
+			if (selectionStart && e.key !== "Meta" && e.key !== "Control" && e.key !== "Alt" && e.key !== "Shift"
+				&& !((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === "c" || e.key.toLowerCase() === "v"))) {
 				selectionStart = null;
 				selectionEnd = null;
 				cachedSelectionText = "";
@@ -3364,6 +3370,13 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				activeSearchIndex = -1;
 				const m = metrics();
 				if (currentFrame && m) paintFrame(currentFrame, m);
+			},
+			paste: (text: string) => {
+				if (currentFrame?.bracketedPaste) {
+					writePty(`\x1b[200~${text}\x1b[201~`);
+				} else {
+					writePty(text);
+				}
 			},
 		});
 	});
