@@ -2945,6 +2945,11 @@ pub(crate) fn spawn_reader_thread(
     let ticker_sid = session_id.clone();
     std::thread::spawn(move || {
         const TICK: std::time::Duration = std::time::Duration::from_millis(8);
+        // Safety net: if in_flight stays true for this long (~500 ms),
+        // force-reset it so frame delivery resumes. Prevents permanent blank
+        // terminal when the frontend fails to ack (crash, corrupt frame, etc.).
+        const MAX_IN_FLIGHT_MS: u64 = 500;
+        let mut stuck_since: Option<std::time::Instant> = None;
         while ticker_running.load(Ordering::Relaxed) {
             std::thread::sleep(TICK);
             if !ticker_dirty.swap(false, Ordering::Relaxed) {
@@ -2956,9 +2961,25 @@ pub(crate) fn spawn_reader_thread(
                 .map(|f| f.load(Ordering::Relaxed))
                 .unwrap_or(false);
             if in_flight {
-                // Re-set dirty so next tick retries
-                ticker_dirty.store(true, Ordering::Relaxed);
-                continue;
+                let now = std::time::Instant::now();
+                let since = stuck_since.get_or_insert(now);
+                let elapsed = now.duration_since(*since).as_millis() as u64;
+                if elapsed > MAX_IN_FLIGHT_MS {
+                    tracing::warn!(
+                        session_id = %ticker_sid,
+                        elapsed_ms = elapsed,
+                        "grid_frame_in_flight stuck, force-resetting"
+                    );
+                    if let Some(flag) = ticker_state.grid_frame_in_flight.get(&ticker_sid) {
+                        flag.store(false, Ordering::Relaxed);
+                    }
+                    stuck_since = None;
+                } else {
+                    ticker_dirty.store(true, Ordering::Relaxed);
+                    continue;
+                }
+            } else {
+                stuck_since = None;
             }
             if let Some(vt) = ticker_state.vt_log_buffers.get(&ticker_sid) {
                 let frame = vt.lock().serialize_dirty_rows();
@@ -5017,10 +5038,11 @@ pub(crate) fn ack_terminal_frame(state: State<'_, Arc<AppState>>, session_id: St
         // itself sends a frame that gets ACKed.
         if was_in_flight && let Some(vt) = state.vt_log_buffers.get(&session_id) {
             let frame = vt.lock().serialize_dirty_rows();
-            if !frame.is_empty()
-                && let Some(ch) = state.grid_channels.get(&session_id)
-            {
-                let _ = ch.send(frame);
+            if !frame.is_empty() {
+                // Use send_grid_frame instead of ch.send directly so that
+                // in_flight is properly tracked and the ticker doesn't send
+                // a duplicate frame concurrently.
+                send_grid_frame(&state, &session_id, frame);
             }
         }
     }

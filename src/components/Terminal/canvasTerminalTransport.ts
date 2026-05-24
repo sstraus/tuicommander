@@ -1,3 +1,4 @@
+import { appLogger } from "../../stores/appLogger";
 import { isTauri, rpc } from "../../transport";
 
 export interface TerminalTransport {
@@ -42,12 +43,13 @@ export class TauriTransport implements TerminalTransport {
 		Channel: new () => { onmessage: (data: ArrayBuffer | number[]) => void },
 	): Promise<void> {
 		const onFrame = this.onFrameHandler!;
+		const sessionId = this.sessionId;
 		const channel = new Channel();
 		channel.onmessage = (data: ArrayBuffer | number[]) => {
-			if (data instanceof ArrayBuffer) {
-				onFrame(data);
-			} else {
-				onFrame(new Uint8Array(data).buffer);
+			try {
+				onFrame(data instanceof ArrayBuffer ? data : new Uint8Array(data).buffer);
+			} catch (e) {
+				appLogger.error("terminal", "onFrame threw in channel callback", { sessionId, error: e });
 			}
 		};
 		await invoke("subscribe_terminal_grid", {
