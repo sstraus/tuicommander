@@ -376,10 +376,7 @@ pub fn ensure_index(
 /// Runs in background, does not block. Skips if a build is already in-flight
 /// for this repo (via `state.index_in_flight`) — the next `RepoChanged` will
 /// pick up any missed changes.
-pub fn rebuild_index(
-    state: &Arc<crate::state::AppState>,
-    repo_path: &str,
-) {
+pub fn rebuild_index(state: &Arc<crate::state::AppState>, repo_path: &str) {
     let in_flight = &state.index_in_flight;
     let index = if let Some(existing) = state.content_indices.get(repo_path) {
         Arc::clone(existing.value())

@@ -287,7 +287,9 @@ export const GeneralTab: Component = () => {
 			<SettingSelect
 				label="Content Indexing"
 				value={settingsStore.state.indexStrategy}
-				onChange={(v) => settingsStore.setIndexStrategy(v as "active_only" | "active_and_switch" | "all_sequential" | "disabled")}
+				onChange={(v) =>
+					settingsStore.setIndexStrategy(v as "active_only" | "active_and_switch" | "all_sequential" | "disabled")
+				}
 				options={[
 					{ value: "disabled", label: "Disabled" },
 					{ value: "active_only", label: "Active repo only" },

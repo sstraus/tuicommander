@@ -3523,6 +3523,8 @@ mod tests {
                 crate::tool_search::ToolSearchIndex::build(&[]),
             )),
             content_indices: dashmap::DashMap::new(),
+            index_in_flight: std::sync::Arc::new(dashmap::DashSet::new()),
+            index_build_sem: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
             indexer_throttle: std::sync::Arc::new(crate::content_index::IndexerThrottle::default()),
             slash_mode: dashmap::DashMap::new(),
             last_output_ms: dashmap::DashMap::new(),
