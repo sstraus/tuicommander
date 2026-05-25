@@ -223,6 +223,14 @@ pub(super) struct FsSearchContentQuery {
 }
 
 #[derive(Deserialize)]
+pub(super) struct FsSearchContentAllQuery {
+    pub query: String,
+    #[serde(rename = "caseSensitive")]
+    pub case_sensitive: Option<bool>,
+    pub limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
 pub(super) struct FsExternalFileQuery {
     pub path: String,
 }

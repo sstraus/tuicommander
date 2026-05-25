@@ -33,6 +33,9 @@ pub struct ContentMatch {
     pub match_start: u32,
     /// Byte offset of match end (exclusive) within `line_text`.
     pub match_end: u32,
+    /// Absolute repo root path — set only by cross-repo search; absent for single-repo results.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo_path: Option<String>,
 }
 
 /// Aggregated result of a full-text content search.
@@ -642,6 +645,7 @@ pub(crate) fn search_via_index(
                     line_text: line_trimmed.to_string(),
                     match_start,
                     match_end,
+                    repo_path: None,
                 });
                 Ok(true)
             }),
@@ -878,6 +882,7 @@ pub(crate) fn search_content_impl(
                     line_text: line_trimmed.to_string(),
                     match_start,
                     match_end,
+                    repo_path: None,
                 });
                 Ok(true)
             }),

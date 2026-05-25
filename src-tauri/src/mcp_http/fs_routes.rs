@@ -86,6 +86,65 @@ pub(super) async fn search_content_http(
     json_result(result)
 }
 
+/// BM25 semantic search across **all** indexed repos. Each match includes `repoPath`.
+/// Only searches repos whose index is already ready — repos still building are skipped.
+pub(super) async fn search_content_all_http(
+    axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::state::AppState>>,
+    Query(q): Query<FsSearchContentAllQuery>,
+) -> Response {
+    let case_sensitive = q.case_sensitive.unwrap_or(false);
+    let global_limit = q.limit.unwrap_or(100);
+
+    let repos: Vec<(
+        String,
+        std::sync::Arc<parking_lot::RwLock<crate::content_index::ContentIndex>>,
+    )> = state
+        .content_indices
+        .iter()
+        .map(|e| (e.key().clone(), std::sync::Arc::clone(e.value())))
+        .collect();
+
+    let n = repos.len().max(1);
+    let per_repo_limit = (global_limit / n).max(5);
+
+    let _guard = state.indexer_throttle.begin_search();
+
+    let mut all_matches = Vec::new();
+    let mut files_searched: u32 = 0;
+
+    for (repo_path, index_arc) in &repos {
+        let index = index_arc.read();
+        if !index.is_ready() {
+            continue;
+        }
+        if let Ok(result) =
+            crate::fs::search_via_index(&index, &q.query, case_sensitive, Some(per_repo_limit))
+        {
+            files_searched += result.files_searched;
+            for mut m in result.matches {
+                m.repo_path = Some(repo_path.clone());
+                all_matches.push(m);
+                if all_matches.len() >= global_limit {
+                    break;
+                }
+            }
+        }
+        if all_matches.len() >= global_limit {
+            break;
+        }
+    }
+
+    let truncated = all_matches.len() >= global_limit;
+    json_result(Ok::<crate::fs::ContentSearchResult, String>(
+        crate::fs::ContentSearchResult {
+            matches: all_matches,
+            files_searched,
+            files_skipped: 0,
+            truncated,
+        },
+    ))
+}
+
 pub(super) async fn fs_read_file_http(Query(q): Query<FsFileQuery>) -> Response {
     if let Err(e) = validate_repo_path(&q.repo_path) {
         return e.into_response();

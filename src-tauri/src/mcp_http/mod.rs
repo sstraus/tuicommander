@@ -839,6 +839,10 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/fs/list", get(fs_routes::list_directory_http))
         .route("/fs/search", get(fs_routes::search_files_http))
         .route("/fs/search-content", get(fs_routes::search_content_http))
+        .route(
+            "/fs/search-content-all",
+            get(fs_routes::search_content_all_http),
+        )
         .route("/fs/read", get(fs_routes::fs_read_file_http))
         .route("/fs/read-external", get(fs_routes::read_external_file_http))
         .route("/fs/write", post(fs_routes::write_file_http))
@@ -1166,6 +1170,10 @@ pub fn build_remote_router(state: Arc<AppState>) -> Router {
         .route("/fs/list", get(fs_routes::list_directory_http))
         .route("/fs/search", get(fs_routes::search_files_http))
         .route("/fs/search-content", get(fs_routes::search_content_http))
+        .route(
+            "/fs/search-content-all",
+            get(fs_routes::search_content_all_http),
+        )
         .route("/fs/read", get(fs_routes::fs_read_file_http))
         .route("/fs/read-external", get(fs_routes::read_external_file_http))
         .route("/fs/write", post(fs_routes::write_file_http))
