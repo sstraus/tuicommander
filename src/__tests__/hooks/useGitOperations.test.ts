@@ -1733,6 +1733,36 @@ describe("useGitOperations", () => {
 			const termId = branch!.terminals[0];
 			expect(terminalsStore.get(termId)?.pendingInitCommand).toBeNull();
 		});
+
+		it("handles pending status: shows placeholder with isPreparing=true, no setup script", async () => {
+			// Stale-dir cleanup races against setup script: when backend returns
+			// status:"pending", the worktree files don't exist yet, so calling
+			// setupNewWorktree (npm install etc.) would race with the background
+			// `rm -rf` + recreate.
+			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+			repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+			repositoriesStore.setActive("/repo");
+			repositoriesStore.setActiveBranch("/repo", "main");
+			repoSettingsStore.getOrCreate("/repo", "Repo");
+			repoSettingsStore.update("/repo", { setupScript: "npm ci" });
+
+			mockRepo.generateCloneBranchName.mockResolvedValue("main--wt-42");
+			mockRepo.createWorktree.mockResolvedValue({
+				status: "pending",
+				name: "main--wt-42",
+				path: "/repo/wt/main--wt-42",
+				branch: "main--wt-42",
+				base_repo: "/repo",
+			});
+
+			await gitOps.handleCreateWorktreeFromBranch("/repo", "main");
+
+			const branch = repositoriesStore.get("/repo")?.branches["main--wt-42"];
+			expect(branch?.isPreparing).toBe(true);
+			expect(branch?.worktreePath).toBe("/repo/wt/main--wt-42");
+			expect(mockRepo.runSetupScript).not.toHaveBeenCalled();
+			expect(mockSetStatusInfo).toHaveBeenCalledWith(expect.stringContaining("Preparing worktree"));
+		});
 	});
 
 	describe("executeRunCommand", () => {

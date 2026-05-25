@@ -1262,7 +1262,21 @@ export function useGitOperations(deps: GitOperationsDeps) {
 			deps.setStatusInfo(`Creating worktree ${cloneName}...`);
 			const result = await deps.repo.createWorktree(repoPath, cloneName, true, branchName);
 
-			await setupNewWorktree(repoPath, result, cloneName);
+			if (result.status === "pending") {
+				// Stale directory being cleaned up in background — show placeholder.
+				// Mirrors confirmCreateWorktree: do NOT call setupNewWorktree because
+				// the worktree files don't exist yet (setup script would race against
+				// the background `rm -rf` + recreate).
+				markRecentlyCreated(repoPath, result.branch);
+				repositoriesStore.setBranch(repoPath, result.branch, {
+					worktreePath: result.path,
+					isPreparing: true,
+				});
+				repositoriesStore.setActiveBranch(repoPath, result.branch);
+				deps.setStatusInfo(`Preparing worktree ${cloneName}...`);
+			} else {
+				await setupNewWorktree(repoPath, result, cloneName);
+			}
 		} catch (err) {
 			appLogger.error("git", "Failed to create worktree from branch", err);
 			deps.setStatusInfo(`Failed to create worktree: ${err}`);

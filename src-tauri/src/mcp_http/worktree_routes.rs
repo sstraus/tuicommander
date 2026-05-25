@@ -103,7 +103,7 @@ pub(super) async fn remove_worktree_http(
         &branch,
         q.delete_branch.unwrap_or(true),
         None,
-        false,
+        q.force.unwrap_or(false),
     ) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response(),
         Err(e) => err_500(&e),

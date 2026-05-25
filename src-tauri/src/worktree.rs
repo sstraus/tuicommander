@@ -133,16 +133,20 @@ pub(crate) fn create_worktree_internal(
     let worktree_name = sanitize_name(&config.task_name);
     let worktree_path = worktrees_dir.join(&worktree_name);
 
-    // Check if worktree already exists (idempotent return — stale cleanup is caller's responsibility)
+    // Check if worktree already exists (idempotent return — stale cleanup is caller's responsibility).
+    // Detached HEAD (actual_branch == None) is NOT treated as stale: it's a transient state during
+    // rebase/bisect/`git checkout <sha>` on a worktree we created. Forcing cleanup there would
+    // destroy an agent's in-progress work.
     if worktree_path.exists() {
         let actual_branch = crate::git::read_branch_from_head(&worktree_path);
         if let Some(ref expected) = config.branch
-            && actual_branch.as_deref() != Some(expected.as_str())
+            && let Some(ref actual) = actual_branch
+            && actual.as_str() != expected.as_str()
         {
             return Err(format!(
                 "STALE_DIR: directory '{}' is checked out on branch '{}', not '{}'",
                 worktree_path.display(),
-                actual_branch.as_deref().unwrap_or("<detached>"),
+                actual,
                 expected,
             ));
         }
@@ -256,7 +260,11 @@ pub(crate) fn remove_worktree_internal(worktree: &WorktreeInfo, force: bool) -> 
     };
 
     match git_cmd(&worktree.base_repo)
-        .args(force_args.iter().chain(std::iter::once(&wt_path_str.as_str())))
+        .args(
+            force_args
+                .iter()
+                .chain(std::iter::once(&wt_path_str.as_str())),
+        )
         .run()
     {
         Ok(_) => {
@@ -272,7 +280,9 @@ pub(crate) fn remove_worktree_internal(worktree: &WorktreeInfo, force: bool) -> 
             );
         }
         Err(crate::git_cli::GitError::NonZeroExit { ref stderr, .. })
-            if !force && (stderr.contains("locked working tree") || stderr.contains("cannot remove a locked")) =>
+            if !force
+                && (stderr.contains("locked working tree")
+                    || stderr.contains("cannot remove a locked")) =>
         {
             // Worktree is locked and caller did not request force. Surface a
             // distinctive error so the JS layer can prompt the user to confirm
@@ -495,9 +505,7 @@ pub(crate) async fn create_worktree(
                 .await
                 .unwrap_or(false);
 
-                if !git_ok
-                    && let Err(e) = tokio::fs::remove_dir_all(&stale_path).await
-                {
+                if !git_ok && let Err(e) = tokio::fs::remove_dir_all(&stale_path).await {
                     tracing::error!("create_worktree: failed to remove stale dir: {e}");
                     return;
                 }
@@ -511,23 +519,32 @@ pub(crate) async fn create_worktree(
                 })
                 .await;
 
-                match result {
-                    Ok(Ok(_)) => {
-                        state_arc.invalidate_repo_caches(&config_bg.base_repo);
-                        // Emit repo-changed so the JS refresh picks up the new worktree
-                        // and clears the isPreparing placeholder
-                        if let Some(ref handle) = *state_arc.app_handle.read() {
-                            use tauri::Emitter as _;
-                            let _ = handle.emit(
-                                "repo-changed",
-                                crate::repo_watcher::RepoChangedPayload {
-                                    repo_path: config_bg.base_repo.clone(),
-                                },
-                            );
-                        }
+                // Always emit repo-changed (success OR failure) so the JS layer
+                // clears the isPreparing placeholder. Without it on the failure
+                // arms, the branch stays dimmed and non-clickable forever.
+                let emit_repo_changed = || {
+                    state_arc.invalidate_repo_caches(&config_bg.base_repo);
+                    if let Some(ref handle) = *state_arc.app_handle.read() {
+                        use tauri::Emitter as _;
+                        let _ = handle.emit(
+                            "repo-changed",
+                            crate::repo_watcher::RepoChangedPayload {
+                                repo_path: config_bg.base_repo.clone(),
+                            },
+                        );
                     }
-                    Ok(Err(e)) => tracing::error!("create_worktree background: recreation failed: {e}"),
-                    Err(e) => tracing::error!("create_worktree background: task panicked: {e}"),
+                };
+
+                match result {
+                    Ok(Ok(_)) => emit_repo_changed(),
+                    Ok(Err(e)) => {
+                        tracing::error!("create_worktree background: recreation failed: {e}");
+                        emit_repo_changed();
+                    }
+                    Err(e) => {
+                        tracing::error!("create_worktree background: task panicked: {e}");
+                        emit_repo_changed();
+                    }
                 }
             });
 
@@ -586,8 +603,8 @@ pub(crate) fn remove_worktree_by_branch(
         .run()
         .map_err(|e| format!("git worktree list failed: {e}"))?;
 
-    let worktree_path = find_worktree_path_for_branch(&out.stdout, branch_name)
-        .ok_or_else(|| {
+    let worktree_path =
+        find_worktree_path_for_branch(&out.stdout, branch_name).ok_or_else(|| {
             tracing::error!(
                 source = "worktree",
                 branch = %branch_name,
@@ -621,16 +638,28 @@ pub(crate) fn remove_worktree_by_branch(
 
     remove_worktree_internal(&worktree, force)?;
 
-    // Delete the local branch when requested. Use -D (force) because the user
-    // explicitly chose to delete this worktree — unmerged branches should be
-    // removed too, not silently left behind.
+    // Delete the local branch when requested. Default uses `-d` (safe delete):
+    // unmerged branches are refused so unpushed commits aren't silently lost.
+    // Only when the caller passes `force=true` (e.g. the locked-worktree
+    // confirmation dialog already warned the user) do we use `-D`.
     if delete_branch {
+        let flag = if force { "-D" } else { "-d" };
         match git_cmd(&worktree.base_repo)
-            .args(["branch", "-D", branch_name])
+            .args(["branch", flag, branch_name])
             .run()
         {
-            Ok(_) => tracing::info!(source = "worktree", branch = %branch_name, "git branch -D: OK"),
-            Err(e) => tracing::warn!(source = "worktree", branch = %branch_name, "git branch -D failed: {e}"),
+            Ok(_) => tracing::info!(
+                source = "worktree",
+                branch = %branch_name,
+                flag = %flag,
+                "git branch delete: OK"
+            ),
+            Err(e) => tracing::warn!(
+                source = "worktree",
+                branch = %branch_name,
+                flag = %flag,
+                "git branch delete failed (branch ref preserved): {e}"
+            ),
         }
     }
 
@@ -664,7 +693,13 @@ pub(crate) async fn remove_worktree(
     let repo_path_clone = repo_path.clone();
     let branch_name_clone = branch_name.clone();
     let result = tokio::task::spawn_blocking(move || {
-        remove_worktree_by_branch(&repo_path_clone, &branch_name_clone, delete_branch, script.as_deref(), force)
+        remove_worktree_by_branch(
+            &repo_path_clone,
+            &branch_name_clone,
+            delete_branch,
+            script.as_deref(),
+            force,
+        )
     })
     .await
     .map_err(|e| format!("Task panic: {e}"))?;
@@ -1652,8 +1687,14 @@ mod tests {
             err.starts_with("STALE_DIR:"),
             "expected STALE_DIR prefix, got: {err}"
         );
-        assert!(err.contains("branch-a"), "expected actual branch 'branch-a' in error: {err}");
-        assert!(err.contains("branch-b"), "expected expected branch 'branch-b' in error: {err}");
+        assert!(
+            err.contains("branch-a"),
+            "expected actual branch 'branch-a' in error: {err}"
+        );
+        assert!(
+            err.contains("branch-b"),
+            "expected expected branch 'branch-b' in error: {err}"
+        );
     }
 
     #[test]
@@ -1677,6 +1718,44 @@ mod tests {
 
         assert_eq!(first.path, second.path);
         assert_eq!(second.branch, Some("feature/x".to_string()));
+    }
+
+    #[test]
+    fn test_create_worktree_detached_head_is_not_stale() {
+        // Scenario: worktree exists for `feature/x` but its HEAD is detached
+        // (mid-rebase, bisect, or `git checkout <sha>`). A subsequent
+        // create_worktree_internal call with the same branch must NOT return
+        // STALE_DIR and destroy the in-progress work.
+        let repo = setup_test_repo();
+        let worktrees_dir = repo.path().join("worktrees");
+
+        let config = WorktreeConfig {
+            task_name: "agent-task".to_string(),
+            base_repo: repo.path().to_string_lossy().to_string(),
+            branch: Some("feature/x".to_string()),
+            create_branch: true,
+        };
+        let wt = create_worktree_internal(&worktrees_dir, &config, None)
+            .expect("Failed to create worktree");
+
+        // Detach HEAD inside the worktree (simulates rebase/bisect)
+        git_cmd(&wt.path)
+            .args(["checkout", "--detach"])
+            .run()
+            .expect("detach failed");
+
+        let result = create_worktree_internal(&worktrees_dir, &config, None);
+        assert!(
+            result.is_ok(),
+            "Detached HEAD must not trigger STALE_DIR: {result:?}"
+        );
+        let returned = result.unwrap();
+        assert_eq!(returned.path, wt.path);
+        assert!(
+            returned.branch.is_none(),
+            "branch should reflect detached state (None), got {:?}",
+            returned.branch
+        );
     }
 
     #[test]
@@ -1745,18 +1824,30 @@ mod tests {
         // Lock the worktree simulating an active agent
         Command::new("git")
             .current_dir(repo.path())
-            .args(["worktree", "lock", "--reason", "claude agent test-lock", worktree.path.to_str().unwrap()])
+            .args([
+                "worktree",
+                "lock",
+                "--reason",
+                "claude agent test-lock",
+                worktree.path.to_str().unwrap(),
+            ])
             .output()
             .expect("git worktree lock failed");
 
         let result = remove_worktree_internal(&worktree, false);
-        assert!(result.is_err(), "Should fail on locked worktree without force");
+        assert!(
+            result.is_err(),
+            "Should fail on locked worktree without force"
+        );
         let err = result.unwrap_err();
         assert!(
             err.starts_with(LOCKED_WORKTREE_PREFIX),
             "Error should start with LOCKED_WORKTREE_PREFIX, got: {err}"
         );
-        assert!(worktree.path.exists(), "Worktree directory should still exist after failed removal");
+        assert!(
+            worktree.path.exists(),
+            "Worktree directory should still exist after failed removal"
+        );
     }
 
     #[test]
@@ -1777,13 +1868,26 @@ mod tests {
         // Lock the worktree
         Command::new("git")
             .current_dir(repo.path())
-            .args(["worktree", "lock", "--reason", "claude agent force-test", worktree.path.to_str().unwrap()])
+            .args([
+                "worktree",
+                "lock",
+                "--reason",
+                "claude agent force-test",
+                worktree.path.to_str().unwrap(),
+            ])
             .output()
             .expect("git worktree lock failed");
 
         let result = remove_worktree_internal(&worktree, true);
-        assert!(result.is_ok(), "Force removal of locked worktree should succeed: {:?}", result);
-        assert!(!worktree.path.exists(), "Worktree directory should be gone after force removal");
+        assert!(
+            result.is_ok(),
+            "Force removal of locked worktree should succeed: {:?}",
+            result
+        );
+        assert!(
+            !worktree.path.exists(),
+            "Worktree directory should be gone after force removal"
+        );
     }
 
     #[test]
@@ -1804,6 +1908,99 @@ mod tests {
         assert!(
             err.starts_with(MAIN_WORKTREE_PREFIX),
             "Error should start with MAIN_WORKTREE_PREFIX, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_remove_worktree_by_branch_safe_delete_preserves_unmerged_branch() {
+        // Scenario: branch has unmerged commits, user removes worktree WITHOUT force.
+        // Expected: worktree directory removed, but `git branch -d` refuses, so the
+        // branch ref survives as a safety net for unpushed commits.
+        let repo = setup_test_repo();
+        let worktrees_dir = repo.path().join("worktrees");
+
+        let config = WorktreeConfig {
+            task_name: "feat-unmerged".to_string(),
+            base_repo: repo.path().to_string_lossy().to_string(),
+            branch: Some("feat-unmerged".to_string()),
+            create_branch: true,
+        };
+        let wt = create_worktree_internal(&worktrees_dir, &config, None)
+            .expect("Failed to create worktree");
+
+        // Add an unmerged commit on the branch
+        std::fs::write(wt.path.join("new.txt"), "unmerged work").unwrap();
+        git_cmd(&wt.path).args(["add", "."]).run().unwrap();
+        git_cmd(&wt.path)
+            .args(["commit", "-m", "unmerged change"])
+            .run()
+            .unwrap();
+
+        // Safe remove (force=false): worktree gone, branch survives
+        let res = remove_worktree_by_branch(
+            repo.path().to_str().unwrap(),
+            "feat-unmerged",
+            true,
+            None,
+            false,
+        );
+        assert!(
+            res.is_ok(),
+            "remove should succeed even if -d refuses: {res:?}"
+        );
+        assert!(!wt.path.exists(), "worktree dir should be removed");
+
+        let branches = git_cmd(repo.path())
+            .args(["branch", "--list", "feat-unmerged"])
+            .run()
+            .unwrap();
+        assert!(
+            branches.stdout.contains("feat-unmerged"),
+            "branch ref should survive safe delete on unmerged branch (got: {})",
+            branches.stdout
+        );
+    }
+
+    #[test]
+    fn test_remove_worktree_by_branch_force_delete_removes_unmerged_branch() {
+        // Scenario: same as above but with force=true (user confirmed via locked-worktree dialog).
+        // Expected: branch ref is force-deleted via `git branch -D`.
+        let repo = setup_test_repo();
+        let worktrees_dir = repo.path().join("worktrees");
+
+        let config = WorktreeConfig {
+            task_name: "feat-force".to_string(),
+            base_repo: repo.path().to_string_lossy().to_string(),
+            branch: Some("feat-force".to_string()),
+            create_branch: true,
+        };
+        let wt = create_worktree_internal(&worktrees_dir, &config, None)
+            .expect("Failed to create worktree");
+
+        std::fs::write(wt.path.join("new.txt"), "unmerged work").unwrap();
+        git_cmd(&wt.path).args(["add", "."]).run().unwrap();
+        git_cmd(&wt.path)
+            .args(["commit", "-m", "unmerged change"])
+            .run()
+            .unwrap();
+
+        let res = remove_worktree_by_branch(
+            repo.path().to_str().unwrap(),
+            "feat-force",
+            true,
+            None,
+            true,
+        );
+        assert!(res.is_ok(), "force remove should succeed: {res:?}");
+
+        let branches = git_cmd(repo.path())
+            .args(["branch", "--list", "feat-force"])
+            .run()
+            .unwrap();
+        assert!(
+            !branches.stdout.contains("feat-force"),
+            "branch ref should be force-deleted (got: {})",
+            branches.stdout
         );
     }
 

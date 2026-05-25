@@ -129,6 +129,11 @@ pub(super) struct RemoveWorktreeQuery {
     /// When true, also delete the local branch. Defaults to true.
     #[serde(rename = "deleteBranch", default)]
     pub delete_branch: Option<bool>,
+    /// When true, force-remove a locked worktree (mirrors the desktop
+    /// confirmation dialog). Also switches the branch deletion from `git
+    /// branch -d` (safe) to `-D` (force). Defaults to false.
+    #[serde(default)]
+    pub force: Option<bool>,
 }
 
 #[derive(Deserialize)]

@@ -18,6 +18,7 @@ use crate::state::{
 };
 use crate::worktree::{
     WorktreeConfig, WorktreeResult, create_worktree_internal, remove_worktree_internal,
+    sanitize_name,
 };
 
 /// Get the platform-appropriate default shell when no override is configured.
@@ -3285,7 +3286,51 @@ pub(crate) async fn create_pty_with_worktree(
         std::path::Path::new(&worktree_config.base_repo),
         &state.worktrees_dir,
     );
-    let worktree = create_worktree_internal(&worktrees_dir, &worktree_config, None)?;
+    let worktree = match create_worktree_internal(&worktrees_dir, &worktree_config, None) {
+        Ok(wt) => wt,
+        Err(ref e) if e.starts_with("STALE_DIR:") => {
+            // Stale directory from a prior worktree on a different branch. Unlike the
+            // Tauri command (which returns `pending` and recreates in the background),
+            // PTY creation is synchronous — clean up inline and retry once.
+            let stale_path = worktrees_dir.join(sanitize_name(&worktree_config.task_name));
+            tracing::warn!(
+                source = "pty",
+                stale = %stale_path.display(),
+                "create_pty_with_worktree: STALE_DIR detected, cleaning up + retrying"
+            );
+
+            // Try `git worktree remove --force` first (for entries git still tracks)
+            let base_repo = std::path::PathBuf::from(&worktree_config.base_repo);
+            let stale_for_blocking = stale_path.clone();
+            let git_ok = tokio::task::spawn_blocking(move || {
+                crate::git_cli::git_cmd(&base_repo)
+                    .args([
+                        "worktree",
+                        "remove",
+                        "--force",
+                        &stale_for_blocking.to_string_lossy(),
+                    ])
+                    .run()
+                    .is_ok()
+            })
+            .await
+            .unwrap_or(false);
+
+            // Fall back to a plain rm -rf when git didn't know about the dir
+            if !git_ok
+                && let Err(err) = tokio::fs::remove_dir_all(&stale_path).await
+                && stale_path.exists()
+            {
+                return Err(format!(
+                    "STALE_DIR cleanup failed for '{}': {err}",
+                    stale_path.display()
+                ));
+            }
+
+            create_worktree_internal(&worktrees_dir, &worktree_config, None)?
+        }
+        Err(e) => return Err(e),
+    };
     let worktree_path = worktree.path.clone();
 
     // Wrap PTY creation so we can clean up the worktree on failure
