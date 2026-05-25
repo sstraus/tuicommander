@@ -136,15 +136,15 @@ pub(crate) fn create_worktree_internal(
     // Check if worktree already exists (idempotent return — stale cleanup is caller's responsibility)
     if worktree_path.exists() {
         let actual_branch = crate::git::read_branch_from_head(&worktree_path);
-        if let Some(ref expected) = config.branch {
-            if actual_branch.as_deref() != Some(expected.as_str()) {
-                return Err(format!(
-                    "STALE_DIR: directory '{}' is checked out on branch '{}', not '{}'",
-                    worktree_path.display(),
-                    actual_branch.as_deref().unwrap_or("<detached>"),
-                    expected,
-                ));
-            }
+        if let Some(ref expected) = config.branch
+            && actual_branch.as_deref() != Some(expected.as_str())
+        {
+            return Err(format!(
+                "STALE_DIR: directory '{}' is checked out on branch '{}', not '{}'",
+                worktree_path.display(),
+                actual_branch.as_deref().unwrap_or("<detached>"),
+                expected,
+            ));
         }
         return Ok(WorktreeInfo {
             name: worktree_name,
@@ -194,15 +194,15 @@ pub(crate) fn create_worktree_internal(
             if stderr.contains("already exists") || stderr.contains("already checked out") =>
         {
             let actual_branch = crate::git::read_branch_from_head(&worktree_path);
-            if let Some(ref expected) = config.branch {
-                if actual_branch.as_deref() != Some(expected.as_str()) {
-                    return Err(format!(
-                        "Directory '{}' already exists and is checked out on branch '{}', not '{}'",
-                        worktree_path.display(),
-                        actual_branch.as_deref().unwrap_or("<detached>"),
-                        expected,
-                    ));
-                }
+            if let Some(ref expected) = config.branch
+                && actual_branch.as_deref() != Some(expected.as_str())
+            {
+                return Err(format!(
+                    "Directory '{}' already exists and is checked out on branch '{}', not '{}'",
+                    worktree_path.display(),
+                    actual_branch.as_deref().unwrap_or("<detached>"),
+                    expected,
+                ));
             }
             return Ok(WorktreeInfo {
                 name: worktree_name,
@@ -495,11 +495,11 @@ pub(crate) async fn create_worktree(
                 .await
                 .unwrap_or(false);
 
-                if !git_ok {
-                    if let Err(e) = tokio::fs::remove_dir_all(&stale_path).await {
-                        tracing::error!("create_worktree: failed to remove stale dir: {e}");
-                        return;
-                    }
+                if !git_ok
+                    && let Err(e) = tokio::fs::remove_dir_all(&stale_path).await
+                {
+                    tracing::error!("create_worktree: failed to remove stale dir: {e}");
+                    return;
                 }
 
                 // Recreate worktree
