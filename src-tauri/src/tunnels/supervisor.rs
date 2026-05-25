@@ -159,19 +159,31 @@ async fn supervision_loop(
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true);
 
-        let spawn_result = cmd.spawn();
-        let mut child = match spawn_result {
-            Ok(c) => c,
-            Err(e) => {
-                set_status(
-                    &status,
-                    TunnelStatus::Error {
-                        message: format!("failed to spawn ssh: {e}"),
-                    },
-                    &callback,
-                );
-                return;
+        // Retry spawn briefly on transient OS errors (Linux ETXTBSY: race
+        // between closing a write fd and execve on the same temp script).
+        let mut child = 'spawn: {
+            let mut last_err = None;
+            for attempt in 0..3u8 {
+                match cmd.spawn() {
+                    Ok(c) => break 'spawn c,
+                    Err(e) if is_retryable_spawn_error(&e) && attempt < 2 => {
+                        last_err = Some(e);
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    }
+                    Err(e) => {
+                        last_err = Some(e);
+                        break;
+                    }
+                }
             }
+            set_status(
+                &status,
+                TunnelStatus::Error {
+                    message: format!("failed to spawn ssh: {}", last_err.unwrap()),
+                },
+                &callback,
+            );
+            return;
         };
 
         // Brief health check — if the process dies within 500ms it never connected.
@@ -344,15 +356,28 @@ async fn graceful_kill(child: &mut tokio::process::Child) {
     #[cfg(not(unix))]
     {
         let _ = child.kill().await;
-        return;
     }
 
-    // Wait up to 5s for clean exit, then escalate.
+    // Wait up to 5s for clean exit after SIGTERM, then escalate.
+    #[cfg(unix)]
     tokio::select! {
-        _ = child.wait() => { /* clean exit after SIGTERM */ }
+        _ = child.wait() => {}
         () = tokio::time::sleep(Duration::from_secs(5)) => {
             let _ = child.kill().await;
         }
+    }
+}
+
+/// ETXTBSY (26 on Linux) — exec on a file still open for writing.
+fn is_retryable_spawn_error(e: &std::io::Error) -> bool {
+    #[cfg(unix)]
+    {
+        e.raw_os_error() == Some(libc::ETXTBSY)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = e;
+        false
     }
 }
 
@@ -362,19 +387,22 @@ mod tests {
     use std::io::Write;
     use std::net::SocketAddr;
     use std::sync::atomic::AtomicU32;
-    use tempfile::NamedTempFile;
+    use tempfile::TempPath;
     use tokio::net::TcpListener;
 
-    fn fake_ssh_script(behavior: &str) -> NamedTempFile {
-        let mut f = NamedTempFile::new().unwrap();
+    fn fake_ssh_script(behavior: &str) -> TempPath {
+        let mut f = tempfile::NamedTempFile::new().unwrap();
         writeln!(f, "#!/bin/sh").unwrap();
         writeln!(f, "{behavior}").unwrap();
+        f.as_file().sync_all().unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(f.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+            f.as_file()
+                .set_permissions(std::fs::Permissions::from_mode(0o755))
+                .unwrap();
         }
-        f
+        f.into_temp_path()
     }
 
     fn test_profile() -> TunnelProfile {
@@ -410,8 +438,7 @@ mod tests {
         let (cb, statuses) = status_collector();
 
         let mut sup =
-            TunnelSupervisor::start_with_binary(test_profile(), script.path().to_path_buf(), cb)
-                .await;
+            TunnelSupervisor::start_with_binary(test_profile(), script.to_path_buf(), cb).await;
 
         // Wait for the process to exit and supervisor to settle.
         tokio::time::sleep(Duration::from_secs(2)).await;
@@ -438,8 +465,7 @@ mod tests {
         let (cb, statuses) = status_collector();
 
         let mut sup =
-            TunnelSupervisor::start_with_binary(test_profile(), script.path().to_path_buf(), cb)
-                .await;
+            TunnelSupervisor::start_with_binary(test_profile(), script.to_path_buf(), cb).await;
 
         tokio::time::sleep(Duration::from_secs(2)).await;
 
@@ -481,8 +507,7 @@ mod tests {
         let (cb, statuses) = status_collector();
 
         let mut sup =
-            TunnelSupervisor::start_with_binary(test_profile(), script.path().to_path_buf(), cb)
-                .await;
+            TunnelSupervisor::start_with_binary(test_profile(), script.to_path_buf(), cb).await;
 
         // Wait long enough for at least 2 retry attempts (first backoff ~1s, second ~2s).
         tokio::time::sleep(Duration::from_secs(5)).await;
@@ -528,8 +553,7 @@ mod tests {
         let (cb, _statuses) = status_collector();
 
         let mut sup =
-            TunnelSupervisor::start_with_binary(test_profile(), script.path().to_path_buf(), cb)
-                .await;
+            TunnelSupervisor::start_with_binary(test_profile(), script.to_path_buf(), cb).await;
 
         // Wait for health check to pass.
         tokio::time::sleep(Duration::from_millis(800)).await;
@@ -572,8 +596,7 @@ mod tests {
         let script = fake_ssh_script("exit 0");
         let (cb, _statuses) = status_collector();
 
-        let sup =
-            TunnelSupervisor::start_with_binary(profile, script.path().to_path_buf(), cb).await;
+        let sup = TunnelSupervisor::start_with_binary(profile, script.to_path_buf(), cb).await;
 
         // Should immediately be in Error state — no spawn.
         let status = sup.status();

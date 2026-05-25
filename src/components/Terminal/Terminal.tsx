@@ -18,6 +18,7 @@ import { getAwaitingInputSound } from "./awaitingInputSound";
 import CanvasTerminal, { type CanvasTerminalRef } from "./CanvasTerminal";
 import { snapLineHeight } from "./canvasTerminalUtils";
 import { getSharedMetrics } from "./glyphCache";
+import { LastPromptBar } from "./LastPromptBar";
 import s from "./Terminal.module.css";
 import { TerminalSearch } from "./TerminalSearch";
 
@@ -53,7 +54,8 @@ type ParsedEvent =
 	  }
 	| { type: "active-subtasks"; count: number; task_type: string }
 	| { type: "shell-state"; state: "busy" | "idle" }
-	| { type: "agent-session-conflict"; matched_text: string; kind: "in-use" | "not-found" };
+	| { type: "agent-session-conflict"; matched_text: string; kind: "in-use" | "not-found" }
+	| { type: "agent-block"; action: "start" | "end"; line: number; exit_code?: number };
 
 export interface TerminalProps {
 	id: string;
@@ -190,18 +192,18 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
 		if (sound === "error") {
 			appLogger.info("terminal", `[Notify] ${props.id} error — awaitingInput transition`);
-			notificationsStore.playError();
+			notificationsStore.playError(props.id);
 		} else if (sound === "question") {
 			if (confident) {
 				appLogger.info("terminal", `[Notify] ${props.id} question — awaitingInput transition`);
-				notificationsStore.playQuestion();
+				notificationsStore.playQuestion(props.id);
 			} else {
 				// Debounce low-confidence questions: if cleared within 500ms, skip notification
 				questionDebounceTimer = setTimeout(() => {
 					questionDebounceTimer = 0;
 					if (terminalsStore.get(props.id)?.awaitingInput === "question") {
 						appLogger.info("terminal", `[Notify] ${props.id} question — awaitingInput transition (debounced)`);
-						notificationsStore.playQuestion();
+						notificationsStore.playQuestion(props.id);
 					}
 				}, 500) as unknown as number;
 			}
@@ -490,6 +492,14 @@ export const Terminal: Component<TerminalProps> = (props) => {
 					);
 					if (!isActive) {
 						notificationsStore.playWarning();
+					}
+					break;
+				}
+				case "agent-block": {
+					if (parsed.action === "start") {
+						terminalsStore.handleOsc133(props.id, "A", parsed.line);
+					} else if (parsed.action === "end") {
+						terminalsStore.handleOsc133(props.id, "D", parsed.line, parsed.exit_code ?? undefined);
 					}
 					break;
 				}
@@ -854,13 +864,15 @@ export const Terminal: Component<TerminalProps> = (props) => {
 				pty.write(sessionId, data).catch((err) => appLogger.error("terminal", "Failed to write to PTY", err));
 		},
 		writeln: (data: string) => {
-			if (sessionId) pty.write(sessionId, data + "\n").catch(() => {});
+			if (sessionId)
+				pty.write(sessionId, data + "\n").catch((err) => appLogger.error("terminal", "writeln failed", err));
 		},
 		input: (data: string) => {
-			if (sessionId) pty.write(sessionId, data).catch(() => {});
+			if (sessionId) pty.write(sessionId, data).catch((err) => appLogger.error("terminal", "input failed", err));
 		},
 		clear: () => {
-			if (sessionId) pty.write(sessionId, "\x1b[2J\x1b[H\x1b[3J").catch(() => {});
+			if (sessionId)
+				pty.write(sessionId, "\x1b[2J\x1b[H\x1b[3J").catch((err) => appLogger.error("terminal", "clear failed", err));
 		},
 		refresh: () => canvasTerminalRef()?.refresh(),
 		focus: () => {
@@ -946,11 +958,31 @@ export const Terminal: Component<TerminalProps> = (props) => {
 			if (!sessionId) return [];
 			return invoke("terminal_get_lines", { sessionId, start: startLine, end: endLine }) as Promise<string[]>;
 		},
+		paste: (text: string) => canvasTerminalRef()?.paste(text),
 	};
 
 	onMount(() => {
 		terminalsStore.update(props.id, { ref: refMethods });
 	});
+
+	// Re-register ref and resubscribe to grid channel when this terminal becomes
+	// visible again (e.g. after reattach from a floating window whose Terminal
+	// overwrote the grid channel subscription and ref in the store).
+	createEffect((prev: boolean) => {
+		const vis = isVisible();
+		if (vis && prev === false) {
+			terminalsStore.update(props.id, { ref: refMethods });
+			requestAnimationFrame(() => {
+				requestAnimationFrame(() => {
+					const ref = canvasTerminalRef();
+					if (ref) {
+						ref.resubscribe().then(() => ref.refresh());
+					}
+				});
+			});
+		}
+		return vis;
+	}, false);
 
 	const handleBell = () => {
 		const style = settingsStore.state.bellStyle;
@@ -1015,6 +1047,15 @@ export const Terminal: Component<TerminalProps> = (props) => {
 					canvasTerminalRef()?.focus();
 				}}
 			/>
+			<Show
+				when={
+					settingsStore.state.showLastPrompt &&
+					terminalsStore.get(props.id)?.agentType &&
+					terminalsStore.get(props.id)?.lastPrompt
+				}
+			>
+				<LastPromptBar prompt={() => terminalsStore.get(props.id)?.lastPrompt ?? null} />
+			</Show>
 			<Show when={reconnecting()}>
 				{(info) => (
 					<div class={s.reconnectBanner}>
@@ -1030,7 +1071,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 					</button>
 				</div>
 			</Show>
-			<div ref={containerRef} class={s.content} style={{ width: "100%", height: "100%" }}>
+			<div ref={containerRef} class={s.content}>
 				<Show when={_currentSessionId()}>
 					{(sid) => (
 						<CanvasTerminal

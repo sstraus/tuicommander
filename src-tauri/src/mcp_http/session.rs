@@ -139,7 +139,7 @@ pub(super) async fn write_to_session(
                 .get(&session_id)
                 .is_some_and(|v| v.load(std::sync::atomic::Ordering::Relaxed))
     };
-    tracing::info!(
+    tracing::trace!(
         "write_pty slash_mode: in_slash={in_slash} buf='{}' data='{}'",
         buf.content(),
         body.data
@@ -546,6 +546,14 @@ pub(super) async fn get_stats(State(state): State<Arc<AppState>>) -> impl IntoRe
 
 pub(super) async fn get_metrics(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     Json(state.session_metrics_json())
+}
+
+pub(super) async fn get_process_stats(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    Json(crate::pty::collect_process_stats(&state))
+}
+
+pub(super) async fn process_monitor_panel() -> impl IntoResponse {
+    axum::response::Html(include_str!("process_monitor.html"))
 }
 
 pub(super) async fn create_session_with_worktree(

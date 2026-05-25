@@ -66,6 +66,13 @@ When adding or changing Tauri commands:
 | `docs/api/http-api.md` | HTTP endpoint mapping (if browser/remote mode) |
 | Domain backend doc | e.g. `docs/backend/pty.md`, `docs/backend/git.md` |
 
+#### Tauri events emitted by backend
+When adding a new `app.emit(event_name, payload)` call, document it here and listen in `useAppInit.ts`:
+
+| Event | Payload | Emitted from | Frontend listener |
+|-------|---------|-------------|-------------------|
+| `session-standby` | `{ session_id: string, standby: bool }` | `pty.rs emit_standby_event()` | `useAppInit.ts` → `terminalsStore.update(termId, { standby })` |
+
 ### HTTP & MCP Server
 When adding routes or changing server behavior:
 

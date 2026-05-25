@@ -317,6 +317,8 @@ async fn sse_listener(session_id: String) {
 }
 
 /// Spawn (or restart) the SSE listener background task.
+/// The spawned task auto-restarts the SSE connection when it drops,
+/// with exponential backoff (1s → 2s → 4s, capped at 8s).
 fn start_sse_listener(state: &Arc<BridgeState>) {
     let sid = state.session_id.lock().unwrap().clone();
     let Some(sid) = sid else { return };
@@ -326,8 +328,25 @@ fn start_sse_listener(state: &Arc<BridgeState>) {
         handle.abort();
     }
 
+    let bridge_state = Arc::clone(state);
     let handle = tokio::spawn(async move {
-        sse_listener(sid).await;
+        let mut backoff = std::time::Duration::from_secs(1);
+        const MAX_BACKOFF: std::time::Duration = std::time::Duration::from_secs(8);
+        loop {
+            sse_listener(sid.clone()).await;
+            if !bridge_state.connected.load(Ordering::Acquire) {
+                break;
+            }
+            eprintln!(
+                "tuic-bridge: SSE listener ended, reconnecting in {:?}",
+                backoff
+            );
+            tokio::time::sleep(backoff).await;
+            backoff = (backoff * 2).min(MAX_BACKOFF);
+            if !bridge_state.connected.load(Ordering::Acquire) {
+                break;
+            }
+        }
     });
     *state.sse_handle.lock().unwrap() = Some(handle);
 }

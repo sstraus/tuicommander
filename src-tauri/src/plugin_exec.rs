@@ -93,8 +93,8 @@ fn trusted_dirs() -> Vec<std::path::PathBuf> {
 
 /// Resolve a binary name to an absolute path using known install locations
 /// only. Does NOT use `which`/`where` to avoid PATH-based symlink attacks.
-/// After finding a candidate, canonicalizes (resolves symlinks) and verifies
-/// the canonical path is still within a trusted directory.
+/// Accepts if the symlink itself lives in a trusted dir (package-manager
+/// managed) OR if the canonical target does — covers homebrew Cellar symlinks.
 pub(crate) fn resolve_binary(name: &str) -> Option<String> {
     let ext = if cfg!(windows) { ".exe" } else { "" };
 
@@ -103,12 +103,11 @@ pub(crate) fn resolve_binary(name: &str) -> Option<String> {
         if !candidate.exists() {
             continue;
         }
-        // Resolve symlinks and verify the real path is in a trusted directory
         let canonical = match candidate.canonicalize() {
             Ok(p) => p,
             Err(_) => continue,
         };
-        if is_in_trusted_dir(&canonical) {
+        if is_in_trusted_dir(&candidate) || is_in_trusted_dir(&canonical) {
             return Some(canonical.to_string_lossy().to_string());
         }
     }
@@ -313,16 +312,13 @@ mod tests {
 
     #[test]
     fn resolve_binary_finds_mdkb_in_trusted_dir() {
-        // mdkb should be found via candidate paths, not `which`
         let result = resolve_binary("mdkb");
         if let Some(path) = result {
             let p = std::path::Path::new(&path);
             assert!(p.exists(), "Resolved path must exist");
-            // Verify the resolved path is within a trusted directory
-            assert!(
-                is_in_trusted_dir(p),
-                "Resolved path must be in a trusted dir"
-            );
+            let in_trusted =
+                is_in_trusted_dir(p) || trusted_dirs().iter().any(|d| d.join("mdkb").exists());
+            assert!(in_trusted, "mdkb must be reachable from a trusted dir");
         }
     }
 

@@ -1,7 +1,9 @@
+import { appLogger } from "../../stores/appLogger";
 import { isTauri, rpc } from "../../transport";
 
 export interface TerminalTransport {
 	subscribe(onFrame: (data: ArrayBuffer) => void): Promise<void>;
+	resubscribe(): Promise<void>;
 	unsubscribe(): void;
 	invoke(cmd: string, args: Record<string, unknown>): Promise<unknown>;
 	onEvent(type: string, handler: (payload: unknown) => void): Promise<void>;
@@ -16,20 +18,38 @@ export class TauriTransport implements TerminalTransport {
 	private sessionId: string;
 	private invokeRef: ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>) | null = null;
 	private unlisteners: (() => void)[] = [];
+	private onFrameHandler: ((data: ArrayBuffer) => void) | null = null;
 
 	constructor(sessionId: string) {
 		this.sessionId = sessionId;
 	}
 
 	async subscribe(onFrame: (data: ArrayBuffer) => void): Promise<void> {
+		this.onFrameHandler = onFrame;
 		const { invoke, Channel } = await import("@tauri-apps/api/core");
 		this.invokeRef = invoke;
-		const channel = new Channel<ArrayBuffer | number[]>();
-		channel.onmessage = (data) => {
-			if (data instanceof ArrayBuffer) {
-				onFrame(data);
-			} else {
-				onFrame(new Uint8Array(data).buffer);
+		await this.registerChannel(invoke, Channel);
+	}
+
+	async resubscribe(): Promise<void> {
+		if (!this.onFrameHandler) return;
+		const { invoke, Channel } = await import("@tauri-apps/api/core");
+		this.invokeRef = invoke;
+		await this.registerChannel(invoke, Channel);
+	}
+
+	private async registerChannel(
+		invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>,
+		Channel: new () => { onmessage: (data: ArrayBuffer | number[]) => void },
+	): Promise<void> {
+		const onFrame = this.onFrameHandler!;
+		const sessionId = this.sessionId;
+		const channel = new Channel();
+		channel.onmessage = (data: ArrayBuffer | number[]) => {
+			try {
+				onFrame(data instanceof ArrayBuffer ? data : new Uint8Array(data).buffer);
+			} catch (e) {
+				appLogger.error("terminal", "onFrame threw in channel callback", { sessionId, error: e });
 			}
 		};
 		await invoke("subscribe_terminal_grid", {
@@ -85,6 +105,14 @@ export class WsTransport implements TerminalTransport {
 		this.onFrameHandler = onFrame;
 		this.closed = false;
 		this.reconnectAttempts = 0;
+		await this.connect();
+	}
+
+	async resubscribe(): Promise<void> {
+		this.closed = false;
+		this.reconnectAttempts = 0;
+		this.ws?.close();
+		this.ws = null;
 		await this.connect();
 	}
 

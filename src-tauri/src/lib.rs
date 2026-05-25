@@ -22,11 +22,13 @@ pub(crate) mod diff_triage;
 pub(crate) mod dir_watcher;
 pub(crate) mod error_classification;
 pub(crate) mod fs;
+pub(crate) mod generators;
 pub(crate) mod git;
 pub(crate) mod git_cli;
 pub(crate) mod git_graph;
 pub(crate) mod github;
 pub(crate) mod github_auth;
+pub(crate) mod github_debug;
 pub(crate) mod github_poller;
 #[cfg(feature = "desktop")]
 mod global_hotkey;
@@ -45,6 +47,8 @@ pub(crate) mod mdkb_commands;
 pub(crate) mod mdkb_daemon;
 #[cfg(feature = "desktop")]
 mod menu;
+#[cfg(feature = "desktop")]
+mod native_drag;
 #[cfg(feature = "desktop")]
 pub(crate) mod notification_sound;
 mod output_parser;
@@ -1079,7 +1083,7 @@ pub fn run() {
         .manage(crate::fs::ContentSearchCancel(std::sync::Mutex::new(None)))
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_drag::init());
+;
 
     #[cfg(feature = "desktop")]
     let builder = builder
@@ -1177,31 +1181,66 @@ pub fn run() {
             #[cfg(feature = "desktop")]
             tuic_cli::auto_update_cli(app.handle());
 
-            // Pre-warm content indices for known repos: one at a time, after a
-            // short delay, so boot UI stays responsive and the cooperative
-            // throttle in `ContentIndex::build_with_throttle` keeps CPU gentle.
+            // Pre-warm content indices based on index_strategy setting:
+            // - "active_only": only the active repo at boot
+            // - "active_and_switch": active repo at boot, others on repo switch (default)
+            // - "all_sequential": all repos sequentially
+            // Global semaphore in AppState (capacity 1) serialises concurrent builds.
             if !known_repo_paths.is_empty() {
-                let state_for_prewarm = Arc::clone(app_state);
-                tauri::async_runtime::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                    for repo in known_repo_paths {
-                        // `ensure_index` is sync + spawns its own blocking task.
-                        // Awaiting JoinHandle here would require threading; instead
-                        // we serialize by waiting until the index flips to ready.
-                        let index_arc =
-                            crate::content_index::ensure_index(&state_for_prewarm, &repo);
-                        // Poll until this repo's build completes before starting the next.
-                        while !index_arc.read().is_ready() {
-                            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                let active_repo = repos_json
+                    .get("activeRepoPath")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_owned());
+
+                let strategy = config::load_app_config().index_strategy;
+
+                let repos_to_warm = match strategy.as_str() {
+                    "all_sequential" => {
+                        if let Some(ref active) = active_repo
+                            && let Some(pos) = known_repo_paths.iter().position(|p| p == active)
+                        {
+                            known_repo_paths.swap(0, pos);
+                        }
+                        known_repo_paths
+                    }
+                    _ => {
+                        // active_only and active_and_switch: only pre-warm the active repo
+                        if let Some(active) = active_repo {
+                            if known_repo_paths.contains(&active) {
+                                vec![active]
+                            } else {
+                                Vec::new()
+                            }
+                        } else {
+                            Vec::new()
                         }
                     }
-                    tracing::info!("content index pre-warm complete");
-                });
+                };
+
+                if !repos_to_warm.is_empty() {
+                    let state_for_prewarm = Arc::clone(app_state);
+                    tauri::async_runtime::spawn(async move {
+                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                        for repo in repos_to_warm {
+                            let index_arc =
+                                crate::content_index::ensure_index(&state_for_prewarm, &repo);
+                            while !index_arc.read().is_ready() {
+                                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                            }
+                        }
+                        tracing::info!("content index pre-warm complete");
+                    });
+                }
             }
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            generators::generate_value,
+            native_drag::start_native_drag,
+            remote_connection::list_remote_connections,
+            remote_connection::save_remote_connection,
+            remote_connection::delete_remote_connection,
             open_secondary_window,
             panel_window::open_panel_window,
             panel_window::focus_panel_window,
@@ -1238,6 +1277,7 @@ pub fn run() {
             pty::get_session_metrics,
             pty::can_spawn_session,
             pty::list_active_sessions,
+            pty::get_process_stats,
             pty::read_vt_log,
             pty::subscribe_terminal_grid,
             pty::unsubscribe_terminal_grid,
@@ -1246,10 +1286,12 @@ pub fn run() {
             pty::terminal_exit_alt_screen,
             pty::terminal_scroll,
             pty::terminal_scroll_to,
+            pty::terminal_get_block_rows,
             pty::terminal_scroll_info,
             pty::terminal_search,
             pty::terminal_search_buffer,
             pty::terminal_get_row_text,
+            pty::terminal_get_logical_line,
             pty::terminal_get_selection_text,
             pty::terminal_get_lines,
             pty::terminal_get_cursor_line,
@@ -1268,7 +1310,10 @@ pub fn run() {
             mdkb_commands::mdkb_outline,
             mdkb_commands::mdkb_goto_definition,
             mdkb_commands::mdkb_references,
+            mdkb_commands::mdkb_code_find,
             mdkb_commands::mdkb_status,
+            mdkb_commands::install_mdkb,
+            mdkb_commands::uninstall_mdkb,
             hash_password,
             agent::open_in_app,
             agent::detect_claude_binary,
@@ -1314,7 +1359,6 @@ pub fn run() {
             git::git_stash_show,
             git::get_file_history,
             git::get_file_blame,
-            github::check_github_circuit,
             github::get_github_viewer_login,
             github::get_ci_checks,
             github::get_repo_pr_statuses,
@@ -1323,7 +1367,6 @@ pub fn run() {
             github::get_pr_diff,
             github::approve_pr,
             github::fetch_ci_failure_logs,
-            github::get_repo_issues,
             github::get_all_issues,
             github::close_issue,
             github::reopen_issue,
@@ -1444,7 +1487,6 @@ pub fn run() {
             llm_api::execute_api_prompt,
             ai_chat::load_ai_chat_config,
             ai_chat::save_ai_chat_config,
-            ai_chat::test_ai_chat_connection,
             ai_chat::list_conversations,
             ai_chat::load_conversation,
             ai_chat::save_conversation,
@@ -1452,12 +1494,6 @@ pub fn run() {
             ai_chat::new_conversation_id,
             ai_chat_registry::chat_subscribe,
             ai_chat_registry::chat_unsubscribe,
-            ai_chat_registry::chat_get_state,
-            ai_chat_registry::chat_attach_terminal,
-            ai_chat_registry::chat_detach_terminal,
-            ai_chat_registry::chat_clear,
-            ai_chat_registry::chat_set_pinned,
-            ai_chat_registry::chat_push_message,
             ai_agent::commands::start_conversation,
             ai_agent::commands::cancel_conversation,
             ai_agent::commands::pause_conversation,
@@ -1480,6 +1516,7 @@ pub fn run() {
             ai_agent::commands::watcher_update,
             repo_watcher::start_repo_watcher,
             repo_watcher::stop_repo_watcher,
+            repo_watcher::set_hot_repos,
             dir_watcher::start_dir_watcher,
             dir_watcher::stop_dir_watcher,
             sleep_prevention::block_sleep,
@@ -1488,6 +1525,7 @@ pub fn run() {
             fs::list_directory,
             fs::stat_path,
             fs::search_files,
+            fs::warm_content_index,
             fs::search_content,
             fs::fs_read_file,
             fs::write_file,
@@ -1516,11 +1554,9 @@ pub fn run() {
             plugin_fs::plugin_watch_path,
             plugin_fs::plugin_unwatch,
             plugin_http::plugin_http_fetch,
-            plugin_http::fetch_tab_html,
             plugin_pty::plugin_read_session_output,
             plugin_exec::plugin_exec_cli,
             plugin_credentials::plugin_read_credential,
-            plugin_credentials::plugin_invalidate_credential_cache,
             registry::fetch_plugin_registry,
             claude_usage::get_claude_usage_api,
             claude_usage::get_claude_usage_timeline,
@@ -1531,6 +1567,7 @@ pub fn run() {
             app_logger::get_logs,
             app_logger::clear_logs,
             notification_sound::play_notification_sound,
+            notification_sound::list_audio_output_devices,
             git_graph::get_commit_graph,
             tuic_cli::get_cli_status,
             tuic_cli::install_cli,

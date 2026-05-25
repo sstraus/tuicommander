@@ -11,6 +11,22 @@ use tauri::State;
 use crate::error_classification::calculate_backoff_delay;
 use crate::state::{AppState, GIT_CACHE_TTL, GITHUB_CACHE_TTL};
 
+fn extract_graphql_name(query: &str) -> &str {
+    // Extract name from "query FooBar {" or "mutation Baz(" patterns
+    for keyword in &["query ", "mutation "] {
+        if let Some(rest) = query.trim_start().strip_prefix(keyword) {
+            let rest = rest.trim_start();
+            let end = rest
+                .find(|c: char| !c.is_alphanumeric() && c != '_')
+                .unwrap_or(rest.len());
+            if end > 0 {
+                return &rest[..end];
+            }
+        }
+    }
+    "<inline>"
+}
+
 /// Resolve a GitHub API token from all available sources.
 /// Delegates to `github_auth::resolve_token_with_source()` — single source of truth
 /// for the priority chain: GH_TOKEN env → GITHUB_TOKEN env → keyring OAuth → gh_token crate → gh CLI.
@@ -350,6 +366,17 @@ pub(crate) async fn graphql_with_retry(
 ) -> Result<serde_json::Value, String> {
     // Check circuit breaker first
     state.github_circuit_breaker.check()?;
+
+    if crate::github_debug::enabled() {
+        let query_name = extract_graphql_name(query);
+        tracing::info!(
+            source = "github_api",
+            method = "POST",
+            url = "https://api.github.com/graphql",
+            query = query_name,
+            "GraphQL request"
+        );
+    }
 
     let mut current_token = state.github_token.read().clone();
     // Lazy resolution: boot skips keychain, resolve on first use.
@@ -1032,7 +1059,6 @@ pub(crate) async fn get_all_batch_impl(
     filter_mode: &str,
     pr_hide_drafts: bool,
     state: &AppState,
-    etag_cache: Option<&mut std::collections::HashMap<String, String>>,
 ) -> Result<BatchPollResult, String> {
     if state.github_token.read().is_none() {
         return Ok(BatchPollResult {
@@ -1047,7 +1073,7 @@ pub(crate) async fn get_all_batch_impl(
         .github_repo_cooldown
         .retain(|_key, expiry| *expiry > now);
 
-    let all_repos: Vec<(String, String, String)> = paths
+    let repos: Vec<(String, String, String)> = paths
         .iter()
         .filter_map(|path| {
             let repo_path = PathBuf::from(path);
@@ -1065,25 +1091,12 @@ pub(crate) async fn get_all_batch_impl(
         })
         .collect();
 
-    if all_repos.is_empty() {
+    if repos.is_empty() {
         return Ok(BatchPollResult {
             prs: Default::default(),
             issues: Default::default(),
         });
     }
-
-    let repos = if let Some(cache) = etag_cache {
-        let changed = filter_changed_repos(&all_repos, cache, state).await;
-        if changed.is_empty() {
-            return Ok(BatchPollResult {
-                prs: Default::default(),
-                issues: Default::default(),
-            });
-        }
-        changed
-    } else {
-        all_repos
-    };
 
     let include_issues = !matches!(filter_mode, "" | "disabled");
     // Always fetch viewer login — needed for both issue filtering and viewer PR search.
@@ -1205,20 +1218,6 @@ pub(crate) async fn get_all_batch_impl(
     })
 }
 
-/// Fetch issues for a single repo (Tauri command).
-#[cfg(feature = "desktop")]
-#[tauri::command]
-pub(crate) async fn get_repo_issues(
-    state: State<'_, Arc<AppState>>,
-    path: String,
-    filter_mode: Option<String>,
-) -> Result<Vec<GitHubIssue>, String> {
-    let state = state.inner().clone();
-    let filter = filter_mode.as_deref().unwrap_or("assigned");
-    let mut results = get_all_issues_impl(std::slice::from_ref(&path), filter, &state).await?;
-    Ok(results.remove(&path).unwrap_or_default())
-}
-
 /// Fetch issues for multiple repos (Tauri command).
 #[cfg(feature = "desktop")]
 #[tauri::command]
@@ -1248,6 +1247,7 @@ pub(crate) async fn close_issue_impl(
         .ok_or_else(|| format!("Failed to parse remote URL: {remote_url}"))?;
 
     let url = format!("https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}");
+    crate::github_debug::log_api("PATCH", &url, "close_issue_impl");
     let body = serde_json::json!({ "state": "closed" });
 
     let response = state
@@ -1300,6 +1300,7 @@ pub(crate) async fn reopen_issue_impl(
         .ok_or_else(|| format!("Failed to parse remote URL: {remote_url}"))?;
 
     let url = format!("https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}");
+    crate::github_debug::log_api("PATCH", &url, "reopen_issue_impl");
     let body = serde_json::json!({ "state": "open" });
 
     let response = state
@@ -1556,7 +1557,7 @@ pub(crate) async fn get_all_pr_statuses_impl(
     include_merged: bool,
     state: &AppState,
 ) -> Result<std::collections::HashMap<String, Vec<BranchPrStatus>>, String> {
-    let result = get_all_batch_impl(paths, include_merged, "disabled", false, state, None).await?;
+    let result = get_all_batch_impl(paths, include_merged, "disabled", false, state).await?;
     Ok(result.prs)
 }
 
@@ -1619,65 +1620,6 @@ pub(crate) fn get_github_status_impl(path: &str) -> GitHubStatus {
     }
 }
 
-/// Check which repos have changed PRs since the last poll using REST ETags.
-/// Returns the subset of `repos` where the PR list has actually changed (200).
-/// Repos returning 304 are filtered out (no change, zero rate-limit cost).
-/// On any error (network, auth), the repo is assumed changed (safe fallback).
-pub(crate) async fn filter_changed_repos(
-    repos: &[(String, String, String)],
-    etag_cache: &mut std::collections::HashMap<String, String>,
-    state: &AppState,
-) -> Vec<(String, String, String)> {
-    let token = {
-        let guard = state.github_token.read();
-        match guard.as_ref() {
-            Some(t) => t.clone(),
-            None => return repos.to_vec(),
-        }
-    };
-
-    let client = &state.http_client;
-
-    let futures: Vec<_> = repos.iter().map(|(path, owner, name)| {
-        let url = format!("https://api.github.com/repos/{owner}/{name}/pulls?state=open&sort=updated&direction=desc&per_page=1");
-        let mut req = client.get(&url)
-            .header("Authorization", format!("Bearer {token}"))
-            .header("User-Agent", "tuicommander")
-            .header("Accept", "application/json");
-
-        let cache_key = format!("{owner}/{name}");
-        if let Some(etag) = etag_cache.get(&cache_key) {
-            req = req.header("If-None-Match", etag.as_str());
-        }
-
-        let path = path.clone();
-        let owner = owner.clone();
-        let name = name.clone();
-        async move { (req.send().await, path, owner, name, cache_key) }
-    }).collect();
-
-    let results = futures_util::future::join_all(futures).await;
-    let mut changed = Vec::new();
-    for (result, path, owner, name, cache_key) in results {
-        match result {
-            Ok(resp) => {
-                if resp.status().as_u16() == 304 {
-                    continue;
-                }
-                if let Some(etag) = resp.headers().get("etag").and_then(|v| v.to_str().ok()) {
-                    etag_cache.insert(cache_key, etag.to_string());
-                }
-                changed.push((path, owner, name));
-            }
-            Err(e) => {
-                tracing::debug!("ETag check failed for {owner}/{name}: {e}");
-                changed.push((path, owner, name));
-            }
-        }
-    }
-    changed
-}
-
 /// Cached github status for synchronous callers (MCP handlers, etc.).
 pub(crate) fn get_github_status_cached(state: &AppState, path: &str) -> GitHubStatus {
     if let Some(cached) = AppState::get_cached(&state.git_cache.git_status, path, GIT_CACHE_TTL) {
@@ -1712,14 +1654,6 @@ pub(crate) async fn get_github_status(
     })
     .await
     .map_err(|e| format!("Task failed: {e}"))
-}
-
-/// Check if the GitHub API circuit breaker is open (rate-limited or failure-based).
-/// Returns Ok(true) if requests are allowed, Ok(false) if blocked.
-#[cfg(feature = "desktop")]
-#[tauri::command]
-pub(crate) async fn check_github_circuit(state: State<'_, Arc<AppState>>) -> Result<bool, String> {
-    Ok(state.github_circuit_breaker.check().is_ok())
 }
 
 /// Get the authenticated GitHub viewer's login (username).
@@ -1858,6 +1792,7 @@ pub(crate) async fn merge_pr_github_impl(
         .ok_or_else(|| format!("Failed to parse GitHub remote URL: {remote_url}"))?;
 
     let url = format!("https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/merge");
+    crate::github_debug::log_api("PUT", &url, "merge_pr_github_impl");
     let body = serde_json::json!({ "merge_method": merge_method });
 
     let response = state
@@ -1934,6 +1869,7 @@ pub(crate) async fn approve_pr_impl(
         .ok_or_else(|| format!("Failed to parse GitHub remote URL: {remote_url}"))?;
 
     let url = format!("https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/reviews");
+    crate::github_debug::log_api("POST", &url, "approve_pr_impl");
     let body = serde_json::json!({ "event": "APPROVE" });
 
     let response = state
@@ -1992,6 +1928,7 @@ pub(crate) async fn get_pr_diff_impl(
         .ok_or_else(|| format!("Failed to parse GitHub remote URL: {remote_url}"))?;
 
     let url = format!("https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}");
+    crate::github_debug::log_api("GET", &url, "get_pr_diff_impl");
 
     let response = state
         .http_client
@@ -2048,6 +1985,11 @@ fn fetch_ci_failure_logs_impl(repo_path: &str, branch: &str) -> Result<String, S
     let gh = crate::agent::resolve_cli("gh");
 
     // Step 1: find the latest failed run for the branch
+    crate::github_debug::log_api(
+        "CLI",
+        &format!("gh run list --repo {repo_slug} --branch {branch}"),
+        "fetch_ci_failure_logs_impl",
+    );
     let mut list_cmd = Command::new(&gh);
     list_cmd.args([
         "run",
@@ -2083,6 +2025,11 @@ fn fetch_ci_failure_logs_impl(repo_path: &str, branch: &str) -> Result<String, S
         .ok_or_else(|| "No failed workflow runs found for this branch".to_string())?;
 
     // Step 2: fetch failure logs for that run
+    crate::github_debug::log_api(
+        "CLI",
+        &format!("gh run view {run_id} --repo {repo_slug} --log-failed"),
+        "fetch_ci_failure_logs_impl",
+    );
     let mut view_cmd = Command::new(&gh);
     view_cmd.args([
         "run",
@@ -3714,6 +3661,37 @@ mod tests {
         assert!(
             query.contains("author:alice"),
             "viewer search targets alice"
+        );
+    }
+
+    // --- extract_graphql_name tests ---
+
+    #[test]
+    fn test_extract_named_query() {
+        assert_eq!(
+            extract_graphql_name("query BatchPoll { viewer { login } }"),
+            "BatchPoll"
+        );
+    }
+
+    #[test]
+    fn test_extract_anonymous_query() {
+        assert_eq!(extract_graphql_name("{ viewer { login } }"), "<inline>");
+    }
+
+    #[test]
+    fn test_extract_mutation() {
+        assert_eq!(
+            extract_graphql_name("mutation ClosePR($id: ID!) { ... }"),
+            "ClosePR"
+        );
+    }
+
+    #[test]
+    fn test_extract_inline_query_keyword() {
+        assert_eq!(
+            extract_graphql_name("query { viewer { login } }"),
+            "<inline>"
         );
     }
 }

@@ -181,6 +181,8 @@ export interface SavedTerminal {
 	agentSessionId?: string | null;
 	/** Stable tab UUID — injected as TUIC_SESSION env var, persists across restarts */
 	tuicSession?: string | null;
+	/** Run-config command used to launch (e.g. "c"), ensures resume uses the same binary */
+	agentLaunchCommand?: string | null;
 }
 
 /** GitHub Issue from GraphQL API */

@@ -417,6 +417,23 @@ export const AppearanceTab: Component = () => {
 				hint={t("appearance.hint.splitTabMode", "How worktree tabs are arranged in the tab bar")}
 			/>
 
+			<SettingSelect
+				label={t("appearance.label.tabOrderingMode", "Tab Ordering")}
+				value={settingsStore.state.tabOrderingMode}
+				onChange={(v) => {
+					if (v === "grouped-by-type" || v === "terminals-first" || v === "free") settingsStore.setTabOrderingMode(v);
+				}}
+				options={[
+					{ value: "grouped-by-type", label: t("appearance.tabOrderingMode.grouped", "Grouped by Type") },
+					{ value: "terminals-first", label: t("appearance.tabOrderingMode.terminalsFirst", "Terminals First") },
+					{ value: "free", label: t("appearance.tabOrderingMode.free", "Free") },
+				]}
+				hint={t(
+					"appearance.hint.tabOrderingMode",
+					"How tabs are ordered: grouped by type, terminals first, or freely interleaved",
+				)}
+			/>
+
 			<SettingSlider
 				label={t("appearance.label.maxTabNameLength", "Max Tab Name Length")}
 				value={settingsStore.state.maxTabNameLength}

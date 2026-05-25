@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Process Monitor</title>
+<style>
+  body { margin:0; padding:12px; font-family:system-ui,-apple-system,sans-serif; font-size:13px; background:#1e1e2e; color:#cdd6f4; }
+  table { width:100%; border-collapse:collapse; }
+  th { text-align:left; padding:6px 8px; border-bottom:1px solid #45475a; color:#a6adc8; font-weight:500; font-size:11px; text-transform:uppercase; }
+  td { padding:5px 8px; border-bottom:1px solid #313244; white-space:nowrap; }
+  tr:hover td { background:#313244; }
+  .num { text-align:right; font-variant-numeric:tabular-nums; }
+  .session { color:#89b4fa; }
+  .warn { color:#fab387; }
+  .err { color:#f38ba8; }
+  #status { color:#6c7086; font-size:11px; margin-top:8px; }
+</style>
+</head>
+<body>
+<table>
+  <thead><tr><th>Process</th><th>PID</th><th>Session</th><th class="num">RSS</th><th class="num">CPU</th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<div id="status">Loading…</div>
+<script>
+const tbody = document.getElementById("rows");
+const status = document.getElementById("status");
+function fmt(kb) { return kb >= 1024 ? (kb/1024).toFixed(1)+" MB" : kb+" KB"; }
+async function refresh() {
+  try {
+    const r = await fetch("/process/stats");
+    const data = await r.json();
+    tbody.innerHTML = data.map(p =>
+      `<tr>
+        <td>${esc(p.name)}</td>
+        <td class="num">${p.pid}</td>
+        <td class="session">${p.session_id ? esc(p.session_id.slice(0,8)) : "–"}</td>
+        <td class="num">${fmt(p.rss_kb)}</td>
+        <td class="num ${p.cpu_pct>80?"err":p.cpu_pct>40?"warn":""}">${p.cpu_pct.toFixed(1)}%</td>
+      </tr>`
+    ).join("");
+    status.textContent = `${data.length} processes · updated ${new Date().toLocaleTimeString()}`;
+  } catch(e) { status.textContent = "Error: "+e.message; }
+}
+function esc(s) { const d=document.createElement("div"); d.textContent=s; return d.innerHTML; }
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

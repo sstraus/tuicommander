@@ -165,7 +165,7 @@ fn build_mcp_instructions(state: &Arc<AppState>, client_name: Option<&str>) -> S
         out.push_str("**Worktrees:** never `git worktree add/remove` — always use `repo action=worktree_create` / `worktree_remove` so TUIC tracks the worktree and can spawn a PTY inside.\n\n");
     } else {
         out.push_str("## Tools\n\n");
-        out.push_str("- `session` (PTY panes, tmux-equivalent): list, create, input, output, status, resize, close, kill, pause, resume\n");
+        out.push_str("- `session` (PTY panes, tmux-equivalent): list, create, input, output, status, resize, close, kill, pause, resume, process_stats\n");
         out.push_str("- `agent` (AI peers + messaging): spawn, detect, stats, metrics, register, list_peers, send, inbox\n");
         out.push_str("- `repo` (repos, PRs, worktrees): list, active, prs, status, worktree_list, worktree_create, worktree_remove\n");
         out.push_str("- `ui` (tabs, toasts, confirm dialogs): tab, toast, confirm\n");
@@ -265,7 +265,7 @@ fn validate_mcp_repo_path(path: &str) -> Result<(), serde_json::Value> {
 }
 
 const SESSION_ACTIONS: &str =
-    "list, create, input, output, resize, close, kill, pause, resume, status";
+    "list, create, input, output, resize, close, kill, pause, resume, status, process_stats";
 const AGENT_ACTIONS: &str = "spawn, detect, stats, metrics, register, list_peers, send, inbox";
 const REPO_ACTIONS: &str =
     "list, active, prs, status, worktree_list, worktree_create, worktree_remove";
@@ -294,9 +294,9 @@ fn native_tool_definitions() -> serde_json::Value {
     let mut defs = serde_json::json!([
         {
             "name": "session",
-            "description": "PTY multiplexer (replaces tmux). Create terminals, send input (send-keys), read output (capture-pane), manage lifecycle.\n\nActions:\n- list: Active sessions with cwd, process info. Call first to discover IDs.\n- create: New PTY. Returns {session_id}. Optional: cwd, shell, rows, cols.\n- input: Send text and/or special_key to a session.\n- output: Read terminal output. Returns {data, cursor, total_written, exited, exit_code}. Delta reads: pass since_cursor from a previous response to get only new lines. First call: omit since_cursor for full snapshot. Subsequent calls: pass the returned cursor value.\n- status: Shell state for a session: {shell_state, idle_since_ms, busy_duration_ms, exit_code, agent_type}. Use to poll agent progress without streaming output.\n- resize: Change PTY dimensions.\n- close: Graceful shutdown (Ctrl+C, waits).\n- kill: Force SIGKILL (use when close fails).\n- pause: Pause output buffering. resume: Resume.",
+            "description": "PTY multiplexer (replaces tmux). Create terminals, send input (send-keys), read output (capture-pane), manage lifecycle.\n\nActions:\n- list: Active sessions with cwd, process info. Call first to discover IDs.\n- create: New PTY. Returns {session_id}. Optional: cwd, shell, rows, cols.\n- input: Send text and/or special_key to a session.\n- output: Read terminal output. Returns {data, cursor, scrollback_lines, oldest_offset, exited, exit_code}. scrollback_lines = total lines in buffer (up to 10000); oldest_offset = first available line number. Patterns: (1) Snapshot: omit since_cursor, default limit=50 gives last 50 lines. (2) Delta poll: since_cursor=<previous cursor> returns only new lines — very cheap, use for monitoring. (3) Navigate backwards: from_line=oldest_offset reads from the beginning of the buffer. (4) Arbitrary window: from_line=N, limit=50 reads any 50-line slice.\n- status: Shell state for a session: {shell_state, idle_since_ms, busy_duration_ms, exit_code, agent_type}. Use to poll agent progress without streaming output.\n- resize: Change PTY dimensions.\n- close: Graceful shutdown (Ctrl+C, waits).\n- kill: Force SIGKILL (use when close fails).\n- pause: Pause output buffering. resume: Resume.\n- process_stats: CPU% and RSS memory for TUIC and all child process trees. Returns {processes: [{session_id, name, pid, rss_kb, cpu_pct}]}. Use to diagnose high CPU/memory.",
             "inputSchema": { "type": "object", "properties": {
-                "action": { "type": "string", "description": "One of: list, create, input, output, status, resize, close, kill, pause, resume" },
+                "action": { "type": "string", "description": "One of: list, create, input, output, status, resize, close, kill, pause, resume, process_stats" },
                 "session_id": { "type": "string", "description": "Session ID (required for input, output, resize, close, pause, resume)" },
                 "input": { "type": "string", "description": "Raw text to write (action=input)" },
                 "special_key": { "type": "string", "description": "Special key: enter, tab, ctrl+c, ctrl+d, ctrl+z, ctrl+l, ctrl+a, ctrl+e, ctrl+k, ctrl+u, ctrl+w, ctrl+r, up, down, left, right, home, end, backspace, delete, escape (action=input)" },
@@ -304,9 +304,10 @@ fn native_tool_definitions() -> serde_json::Value {
                 "cols": { "type": "integer", "description": "Terminal cols (action=create or resize)" },
                 "shell": { "type": "string", "description": "Shell binary path (action=create)" },
                 "cwd": { "type": "string", "description": "Working directory (action=create)" },
-                "limit": { "type": "integer", "description": "Bytes to read, default 8192 (action=output)" },
+                "limit": { "type": "integer", "description": "Max lines to return (default 50). Use 50-100 for snapshots; delta reads (since_cursor) are already bounded by new content (action=output)" },
+                "from_line": { "type": "integer", "description": "Absolute line number to start reading from. Use oldest_offset from a previous response to read from the beginning of the buffer. Omit to read the tail (action=output)" },
                 "format": { "type": "string", "description": "Output format: ANSI escape codes are stripped by default; pass 'raw' to preserve them (action=output)" },
-                "since_cursor": { "type": "integer", "description": "Cursor from a previous output response — returns only new lines since this position. Omit for full snapshot (action=output)" }
+                "since_cursor": { "type": "integer", "description": "Cursor from a previous output response — returns only new lines since this position. Most token-efficient for polling. Omit for snapshot (action=output)" }
             }, "required": ["action"] }
         },
         {
@@ -352,7 +353,7 @@ fn native_tool_definitions() -> serde_json::Value {
                 "title": { "type": "string", "description": "Tab or notification title (action=tab/toast/confirm, required)" },
                 "html": { "type": "string", "description": "Inline HTML content to render in sandboxed iframe (action=tab, mutually exclusive with url)" },
                 "url": { "type": "string", "description": "Tab URL (action=tab, xor html). http(s) → iframe. file:///path → read and inline. tuic://edit/<path>?line=N → native editor. tuic://open/<path> → markdown tab. Absolute paths need `//` prefix." },
-                "pinned": { "type": "boolean", "description": "Pin tab across all branches (default true)" },
+                "pinned": { "type": "boolean", "description": "Pin tab across all branches (default false)" },
                 "focus": { "type": "boolean", "description": "Switch to this tab after open/update (action=tab, default true). Pass false to update silently without stealing focus." },
                 "message": { "type": "string", "description": "Optional body text (action=toast/confirm)" },
                 "level": { "type": "string", "description": "Toast level: info, warn, error (default: info)" },
@@ -857,6 +858,10 @@ fn handle_session(
                     crate::pty::shell_state_str(atom.load(std::sync::atomic::Ordering::Relaxed))
                 });
                 let alias = state.term_aliases.get(&id).map(|e| e.value().clone());
+                #[cfg(unix)]
+                let standby = state.standby_sessions.contains_key(id.as_str());
+                #[cfg(not(unix))]
+                let standby = false;
                 serde_json::json!({
                     "session_id": id,
                     "alias": alias,
@@ -867,6 +872,7 @@ fn handle_session(
                     "foreground_pgid": pgid,
                     "foreground_process": process_name,
                     "shell_state": shell_state,
+                    "standby": standby,
                 })
             }).collect();
             serde_json::json!(sessions)
@@ -895,19 +901,18 @@ fn handle_session(
                 Ok(id) => id,
                 Err(e) => return e,
             };
-            let mut data = String::new();
-            if let Some(input) = args["input"].as_str() {
-                data.push_str(input);
-            }
-            if let Some(key) = args["special_key"].as_str() {
+            let text = args["input"].as_str().unwrap_or("");
+            let key_seq: Option<&str> = if let Some(key) = args["special_key"].as_str() {
                 match translate_special_key(key) {
-                    Some(seq) => data.push_str(seq),
+                    Some(seq) => Some(seq),
                     None => {
                         return serde_json::json!({"error": format!("Unknown special key: {}", key)});
                     }
                 }
-            }
-            if data.is_empty() {
+            } else {
+                None
+            };
+            if text.is_empty() && key_seq.is_none() {
                 return serde_json::json!({"error": "Action 'input' requires 'input' (text) and/or 'special_key'"});
             }
             let entry = match state.sessions.get(session_id) {
@@ -915,11 +920,24 @@ fn handle_session(
                 None => return serde_json::json!({"error": "Session not found"}),
             };
             let mut session = entry.lock();
-            if let Err(e) = session.writer.write_all(data.as_bytes()) {
-                return serde_json::json!({"error": format!("Write failed: {}", e)});
+            // Write text and special_key as separate writes when both are present.
+            // Ink/raw-mode apps (Claude Code) process input character-by-character;
+            // concatenating text + "\r" into one write causes Enter to be missed.
+            if !text.is_empty() {
+                if let Err(e) = session.writer.write_all(text.as_bytes()) {
+                    return serde_json::json!({"error": format!("Write failed: {}", e)});
+                }
+                if let Err(e) = session.writer.flush() {
+                    tracing::warn!(session_id = %session_id, "PTY flush failed: {e}");
+                }
             }
-            if let Err(e) = session.writer.flush() {
-                tracing::warn!(session_id = %session_id, "PTY flush failed: {e}");
+            if let Some(seq) = key_seq {
+                if let Err(e) = session.writer.write_all(seq.as_bytes()) {
+                    return serde_json::json!({"error": format!("Write failed: {}", e)});
+                }
+                if let Err(e) = session.writer.flush() {
+                    tracing::warn!(session_id = %session_id, "PTY flush failed: {e}");
+                }
             }
             serde_json::json!({"ok": true})
         }
@@ -928,7 +946,7 @@ fn handle_session(
                 Ok(id) => id,
                 Err(e) => return e,
             };
-            let limit = args["limit"].as_u64().unwrap_or(8192) as usize;
+            let limit = args["limit"].as_u64().unwrap_or(50) as usize;
 
             // Resolve the session's lifecycle state.
             //
@@ -987,16 +1005,23 @@ fn handle_session(
                 };
                 let buf = vt_log.lock();
                 let total = buf.total_lines();
+                let oldest = buf.oldest_offset();
+                let scrollback_lines = total - oldest;
 
                 // Delta read: if since_cursor provided, return only new scrollback lines.
                 if let Some(since) = args["since_cursor"].as_u64().map(|v| v as usize) {
                     let (log_lines, new_cursor) = buf.lines_since_owned(since, limit);
                     let data: Vec<String> = log_lines.iter().map(|ll| ll.text()).collect();
                     let data = data.join("\n");
-                    return serde_json::json!({"data": data, "data_length": data.len(), "cursor": new_cursor, "exited": exited, "exit_code": exit_code_json});
+                    return serde_json::json!({"data": data, "data_length": data.len(), "cursor": new_cursor, "scrollback_lines": scrollback_lines, "oldest_offset": oldest, "exited": exited, "exit_code": exit_code_json});
                 }
 
-                let offset = total.saturating_sub(limit);
+                // Absolute positioning: from_line overrides the default tail window.
+                let offset = if let Some(from) = args["from_line"].as_u64().map(|v| v as usize) {
+                    from.max(oldest)
+                } else {
+                    total.saturating_sub(limit)
+                };
                 let (log_lines, _) = buf.lines_since_owned(offset, limit);
                 let screen: Vec<String> = buf
                     .screen_rows()
@@ -1004,9 +1029,12 @@ fn handle_session(
                     .filter(|r| !r.is_empty())
                     .collect();
                 let mut all_lines: Vec<String> = log_lines.iter().map(|ll| ll.text()).collect();
-                all_lines.extend(screen);
+                // Only append screen rows when reading the tail (no from_line).
+                if args["from_line"].is_null() {
+                    all_lines.extend(screen);
+                }
                 let data = all_lines.join("\n");
-                return serde_json::json!({"data": data, "data_length": data.len(), "cursor": total, "total_written": total, "exited": exited, "exit_code": exit_code_json});
+                return serde_json::json!({"data": data, "data_length": data.len(), "cursor": total, "total_written": total, "scrollback_lines": scrollback_lines, "oldest_offset": oldest, "exited": exited, "exit_code": exit_code_json});
             }
             let ring = match state.output_buffers.get(session_id) {
                 Some(r) => r,
@@ -1169,6 +1197,10 @@ fn handle_session(
                     };
                     let is_idle = ss.shell_state.as_deref() == Some("idle");
                     let is_busy = ss.shell_state.as_deref() == Some("busy");
+                    #[cfg(unix)]
+                    let standby = state.standby_sessions.contains_key(session_id);
+                    #[cfg(not(unix))]
+                    let standby = false;
                     serde_json::json!({
                         "session_id": session_id,
                         "shell_state": ss.shell_state,
@@ -1179,10 +1211,15 @@ fn handle_session(
                         "exit_code": exit_code,
                         "idle_since_ms": if is_idle && elapsed > 0 { serde_json::json!(elapsed) } else { serde_json::Value::Null },
                         "busy_duration_ms": if is_busy && elapsed > 0 { serde_json::json!(elapsed) } else { serde_json::Value::Null },
+                        "standby": standby,
                     })
                 }
                 None => serde_json::json!({"error": format!("Session '{}' not found", session_id)}),
             }
+        }
+        "process_stats" => {
+            let stats = crate::pty::collect_process_stats(state);
+            serde_json::json!({ "processes": stats })
         }
         other => serde_json::json!({"error": format!(
             "Unknown action '{}' for tool 'session'. Available: {}", other, SESSION_ACTIONS
@@ -2003,6 +2040,11 @@ fn handle_messaging(
                     .or_insert(0) += 1;
             }
             inbox.push_back(msg);
+            drop(inbox);
+            #[cfg(unix)]
+            if let Err(e) = crate::pty::wake_session(state, to) {
+                tracing::debug!(session = %to, error = %e, "Wake on message delivery failed");
+            }
             serde_json::json!({"ok": true, "message_id": msg_id, "delivered_via_channel": pushed})
         }
         "inbox" => {
@@ -2511,7 +2553,7 @@ fn handle_ui(
                     "warning": format!("Session '{}' already has an active terminal. Use the terminal tab instead of creating an HTML tab.", sid)
                 });
             }
-            let pinned = args["pinned"].as_bool().unwrap_or(true);
+            let pinned = args["pinned"].as_bool().unwrap_or(false);
             let focus = args["focus"].as_bool().unwrap_or(true);
             // Resolve origin repo for the calling MCP session so the tab lands
             // in the repo where the agent is actually working, not whichever
@@ -3482,6 +3524,8 @@ mod tests {
                 crate::tool_search::ToolSearchIndex::build(&[]),
             )),
             content_indices: dashmap::DashMap::new(),
+            index_in_flight: std::sync::Arc::new(dashmap::DashSet::new()),
+            index_build_sem: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
             indexer_throttle: std::sync::Arc::new(crate::content_index::IndexerThrottle::default()),
             slash_mode: dashmap::DashMap::new(),
             last_output_ms: dashmap::DashMap::new(),
@@ -3536,6 +3580,8 @@ mod tests {
             )),
             connections_lock: tokio::sync::Mutex::new(()),
             screenshot_responses: dashmap::DashMap::new(),
+            standby_sessions: dashmap::DashMap::new(),
+            hot_repo_paths: parking_lot::RwLock::new(std::collections::HashSet::new()),
         });
         // Tests start with all native tools enabled (override production default
         // which disables config, knowledge, debug).
@@ -5011,7 +5057,7 @@ mod tests {
                 assert_eq!(title, "Test");
                 assert_eq!(html, "<p>hello</p>");
                 assert!(url.is_none(), "url should be None for html tab");
-                assert!(pinned, "pinned should default to true");
+                assert!(!pinned, "pinned should default to false");
                 assert!(focus, "focus should default to true");
                 assert!(
                     origin_repo_path.is_none(),

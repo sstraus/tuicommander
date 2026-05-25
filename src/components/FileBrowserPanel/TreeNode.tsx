@@ -1,7 +1,6 @@
 import { type Component, createSignal, For, Show } from "solid-js";
 import { useFileBrowser } from "../../hooks/useFileBrowser";
 import { appLogger } from "../../stores/appLogger";
-import { markInternalDragEnd, markInternalDragStart, startNativeDrag } from "../../stores/dragDrop";
 import type { DirEntry } from "../../types/fs";
 import { cx } from "../../utils";
 import { isAbsolutePath, joinPath } from "../../utils/pathUtils";
@@ -19,6 +18,7 @@ export interface TreeNodeProps {
 	onToggleExpand: (path: string) => void;
 	onFileOpen: (repoPath: string, filePath: string) => void;
 	onContextMenu: (e: MouseEvent, entry: DirEntry) => void;
+	onPointerDragStart?: (absPath: string, e: PointerEvent) => void;
 	/** Cache of loaded children, keyed by dir path */
 	childrenCache: Map<string, DirEntry[]>;
 	onChildrenLoaded: (path: string, children: DirEntry[]) => void;
@@ -63,16 +63,7 @@ export const TreeNode: Component<TreeNodeProps> = (props) => {
 				style={{ "padding-left": `${8 + props.depth * 16}px` }}
 				onClick={handleClick}
 				onContextMenu={(e) => props.onContextMenu(e, props.entry)}
-				draggable={true}
-				onDragStart={(e) => {
-					const p = absPath();
-					e.dataTransfer!.setData("application/x-tuic-path", p);
-					e.dataTransfer!.setData("text/plain", p);
-					e.dataTransfer!.effectAllowed = "copy";
-					markInternalDragStart();
-					startNativeDrag([p]);
-				}}
-				onDragEnd={() => markInternalDragEnd()}
+				onPointerDown={(e) => props.onPointerDragStart?.(absPath(), e)}
 				data-drop-target={props.entry.is_dir ? "folder" : undefined}
 				data-abs-path={props.entry.is_dir ? absPath() : undefined}
 			>
@@ -117,6 +108,7 @@ export const TreeNode: Component<TreeNodeProps> = (props) => {
 							onToggleExpand={props.onToggleExpand}
 							onFileOpen={props.onFileOpen}
 							onContextMenu={props.onContextMenu}
+							onPointerDragStart={props.onPointerDragStart}
 							childrenCache={props.childrenCache}
 							onChildrenLoaded={props.onChildrenLoaded}
 						/>

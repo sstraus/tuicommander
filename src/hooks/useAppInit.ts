@@ -78,6 +78,7 @@ function collectTerminalSnapshots(): Map<string, Map<string, SavedTerminal[]>> {
 					agentType: t.agentType,
 					agentSessionId: t.agentSessionId ?? null,
 					tuicSession: t.tuicSession ?? null,
+					agentLaunchCommand: t.agentLaunchCommand ?? null,
 				});
 			}
 
@@ -221,6 +222,8 @@ export async function initApp(deps: AppInitDeps) {
 		invoke("clear_repo_caches", { path: repo_path }).catch((err) =>
 			appLogger.debug("app", "Failed to clear repo caches", err),
 		);
+		// New branch may have a different PR — refresh GitHub status
+		githubStore.pollRepo(repo_path);
 	}).catch((err) => appLogger.error("app", "Failed to register head-changed listener", err));
 
 	// Listen for .git/ directory changes (index, refs, etc.) to refresh panels
@@ -240,8 +243,6 @@ export async function initApp(deps: AppInitDeps) {
 		);
 		// Reload .tuic.json (may have changed)
 		repoSettingsStore.loadLocalConfig(repo_path).catch(() => {});
-		// Trigger immediate PR refresh (debounced 2s to coalesce rapid git events)
-		githubStore.pollRepo(repo_path);
 		// Signal panels to re-fetch on EVERY event. Coalescing the bump into the
 		// setTimeout below loses updates when rapid events clear the pending timer,
 		// leaving panels stuck on stale data (story 1277-31a0).
@@ -352,6 +353,12 @@ export async function initApp(deps: AppInitDeps) {
 		const termId = terminalsStore.getTerminalForSession(session_id);
 		if (termId) terminalsStore.update(termId, { alias });
 	}).catch((err) => appLogger.error("app", "Failed to register term-alias-assigned listener", err));
+
+	listen<{ session_id: string; standby: boolean }>("session-standby", (event) => {
+		const { session_id, standby } = event.payload;
+		const termId = terminalsStore.getTerminalForSession(session_id);
+		if (termId) terminalsStore.update(termId, { standby });
+	}).catch((err) => appLogger.error("app", "Failed to register session-standby listener", err));
 
 	// Listen for UI tab open/update requests from MCP tools
 	listen<{

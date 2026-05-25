@@ -20,7 +20,9 @@
 #app.focus-mode #git-panel,
 #app.focus-mode #markdown-panel,
 #app.focus-mode #notes-panel,
-#app.focus-mode #file-browser-panel {
+#app.focus-mode #file-browser-panel,
+#app.focus-mode #outline-panel,
+#app.focus-mode #references-panel {
   display: none !important;
 }
 
@@ -75,6 +77,20 @@
   background: rgba(80, 160, 255, 0.18) !important;
   outline: 1px solid var(--accent);
   outline-offset: -1px;
+}
+
+.ptr-drag-ghost {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--bg-tertiary, #333);
+  color: var(--fg-primary, #eee);
+  font-size: 12px;
+  white-space: nowrap;
+  opacity: 0.9;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
 
 #terminal-panes {

@@ -1,9 +1,16 @@
-import { type Component, For, Show } from "solid-js";
+import { type Component, createResource, For, Show } from "solid-js";
 import { t } from "../../../i18n";
+import { invoke } from "../../../invoke";
 import type { NotificationSound } from "../../../notifications";
 import { notificationsStore } from "../../../stores/notifications";
+import { isTauri } from "../../../transport";
 import { SettingSlider, SettingToggle } from "../SettingFields";
 import s from "../Settings.module.css";
+
+interface AudioOutputDevice {
+	name: string;
+	is_default: boolean;
+}
 
 // ---------------------------------------------------------------------------
 // Sound pattern visualizations (inline SVG showing pitch contour)
@@ -79,6 +86,15 @@ export const NotificationsTab: Component = () => {
 		{ key: "info", label: t("notifications.sound.info", "Info") },
 	];
 
+	const [devices, { refetch: refetchDevices }] = createResource(async () => {
+		if (!isTauri()) return [];
+		try {
+			return await invoke<AudioOutputDevice[]>("list_audio_output_devices");
+		} catch {
+			return [];
+		}
+	});
+
 	return (
 		<div class={s.section}>
 			<h3>{t("notifications.heading.notificationSettings", "Notification Settings")}</h3>
@@ -106,6 +122,35 @@ export const NotificationsTab: Component = () => {
 					suffix="%"
 					hint={t("notifications.hint.masterVolume", "Overall volume for all notification sounds")}
 				/>
+
+				<Show when={isTauri() && (devices()?.length ?? 0) > 1}>
+					<div class={s.group}>
+						<label>{t("notifications.label.audioDevice", "Audio Output Device")}</label>
+						<p class={s.hint}>
+							{t("notifications.hint.audioDevice", "Choose which speaker or output to use for notification sounds")}
+						</p>
+						<select
+							value={notificationsStore.state.config.audio_device ?? ""}
+							onChange={(e) => {
+								const val = e.currentTarget.value;
+								notificationsStore.setAudioDevice(val || null);
+							}}
+						>
+							<option value="">{t("notifications.option.systemDefault", "System Default")}</option>
+							<For each={devices()}>
+								{(device) => (
+									<option value={device.name}>
+										{device.name}
+										{device.is_default ? ` (${t("notifications.option.currentDefault", "current default")})` : ""}
+									</option>
+								)}
+							</For>
+						</select>
+						<button class={s.testBtn} style={{ "margin-top": "6px" }} onClick={refetchDevices}>
+							{t("notifications.btn.refreshDevices", "Refresh")}
+						</button>
+					</div>
+				</Show>
 
 				<div class={s.group}>
 					<label>{t("notifications.label.notificationEvents", "Notification Events")}</label>

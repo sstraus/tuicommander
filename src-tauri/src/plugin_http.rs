@@ -202,44 +202,6 @@ pub async fn plugin_http_fetch(
     })
 }
 
-/// Fetch HTML content from a URL for rendering in a plugin panel tab.
-/// Internal frontend command — no SSRF restrictions (localhost, private IPs all valid).
-#[cfg_attr(feature = "desktop", tauri::command)]
-pub async fn fetch_tab_html(url: String) -> Result<String, String> {
-    let response = shared_client()
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("HTTP request failed: {e}"))?;
-
-    if !response.status().is_success() {
-        return Err(format!("HTTP {}: {}", response.status().as_u16(), url));
-    }
-
-    // Reject early if Content-Length advertises an oversized body
-    if let Some(cl) = response.content_length()
-        && cl as usize > MAX_RESPONSE_BYTES
-    {
-        return Err(format!(
-            "Response body exceeds maximum size ({cl} bytes > {MAX_RESPONSE_BYTES} bytes)"
-        ));
-    }
-
-    let body_bytes = response
-        .bytes()
-        .await
-        .map_err(|e| format!("Failed to read response body: {e}"))?;
-
-    if body_bytes.len() > MAX_RESPONSE_BYTES {
-        return Err(format!(
-            "Response body exceeds maximum size ({} bytes > {MAX_RESPONSE_BYTES} bytes)",
-            body_bytes.len(),
-        ));
-    }
-
-    Ok(String::from_utf8_lossy(&body_bytes).to_string())
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------

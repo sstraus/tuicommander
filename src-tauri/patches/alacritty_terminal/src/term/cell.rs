@@ -83,7 +83,10 @@ impl From<VteHyperlink> for Hyperlink {
 
 impl From<Hyperlink> for VteHyperlink {
     fn from(val: Hyperlink) -> Self {
-        VteHyperlink { id: Some(val.id().to_owned()), uri: val.uri().to_owned() }
+        VteHyperlink {
+            id: Some(val.id().to_owned()),
+            uri: val.uri().to_owned(),
+        }
     }
 }
 
@@ -102,10 +105,12 @@ impl HyperlinkInner {
         let id = match id {
             Some(id) => id.to_string(),
             None => {
-                let mut id = HYPERLINK_ID_SUFFIX.fetch_add(1, Ordering::Relaxed).to_string();
+                let mut id = HYPERLINK_ID_SUFFIX
+                    .fetch_add(1, Ordering::Relaxed)
+                    .to_string();
                 id.push_str("_alacritty");
                 id
-            },
+            }
         };
 
         Self { id, uri }
@@ -151,6 +156,7 @@ pub struct Cell {
     pub fg: Color,
     pub bg: Color,
     pub flags: Flags,
+    #[cfg_attr(feature = "serde", serde(default))]
     pub cell_type: Osc133CellType,
     pub extra: Option<Arc<CellExtra>>,
 }
@@ -267,14 +273,22 @@ impl GridCell for Cell {
 
     #[inline]
     fn reset(&mut self, template: &Self) {
-        *self = Cell { bg: template.bg, cell_type: template.cell_type, ..Cell::default() };
+        *self = Cell {
+            bg: template.bg,
+            cell_type: template.cell_type,
+            ..Cell::default()
+        };
     }
 }
 
 impl From<Color> for Cell {
     #[inline]
     fn from(color: Color) -> Self {
-        Self { bg: color, cell_type: Osc133CellType::None, ..Cell::default() }
+        Self {
+            bg: color,
+            cell_type: Osc133CellType::None,
+            ..Cell::default()
+        }
     }
 }
 

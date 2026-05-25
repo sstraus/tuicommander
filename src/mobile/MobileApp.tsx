@@ -43,6 +43,7 @@ export default function MobileApp() {
 			cancelAnimationFrame(raf);
 			raf = requestAnimationFrame(() => {
 				document.documentElement.style.setProperty("--app-height", `${vv.height}px`);
+				document.documentElement.style.setProperty("--app-top", `${vv.offsetTop}px`);
 			});
 		};
 		const pinScroll = () => {

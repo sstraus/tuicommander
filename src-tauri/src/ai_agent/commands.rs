@@ -618,6 +618,8 @@ pub(crate) fn toggle_ai_suggestions(state: State<'_, Arc<AppState>>, session_id:
     new_val
 }
 
+// DEFERRED (2026-05-14) — wire to frontend alongside toggle_ai_suggestions.
+// Getter needed so UI can restore suggestion toggle state on mount.
 #[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn get_ai_suggestions_enabled(

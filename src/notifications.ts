@@ -10,6 +10,7 @@ export interface NotificationConfig {
 	enabled: boolean;
 	volume: number; // 0.0 to 1.0
 	sounds: Record<NotificationSound, boolean>;
+	audio_device: string | null;
 }
 
 /** Default notification configuration */
@@ -23,6 +24,7 @@ export const DEFAULT_NOTIFICATION_CONFIG: NotificationConfig = {
 		warning: true,
 		info: true,
 	},
+	audio_device: null,
 };
 
 /** Notification manager — delegates audio playback to Rust via Tauri IPC.
@@ -60,6 +62,7 @@ export class NotificationManager {
 				await invoke("play_notification_sound", {
 					sound,
 					volume: this.config.volume,
+					device: this.config.audio_device,
 				});
 			} else {
 				playWebAudioTone(sound, this.config.volume);

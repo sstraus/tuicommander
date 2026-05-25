@@ -115,7 +115,7 @@ Each frame: 22-byte header + variable row data. Per cell: 4 bytes codepoint + 3 
 | macOS Left Option as Meta | OK | `altSequenceFromCode()` |
 | Windows Ctrl+V paste | OK | |
 | Cmd+Enter passthrough | OK | |
-| IME composition | OK | `compositionstart/compositionend` |
+| IME composition | OK | `compositionstart/compositionend`; hidden input positioned at cursor coords via `syncImePosition()` for East Asian IME candidate windows |
 | Bracketed paste | OK | `\x1b[200~...\x1b[201~` |
 | Image paste detection | OK | Checks `items[i].type.startsWith("image/")` |
 | Resume banner keyboard | OK | Space/Enter/Escape/printable |

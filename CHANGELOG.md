@@ -6,6 +6,54 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **IME candidate window positioning** — Hidden input element now tracks the terminal cursor position so East Asian IME candidate windows (Chinese Pinyin, Japanese, Korean) appear near the cursor instead of at the top-left corner of the screen. Also adds `compositionstart` handler for accurate position at composition onset. ([#42](https://github.com/sstraus/tuicommander/issues/42))
+- **Git diff crash on deleted files** — `get_file_diff` no longer attempts `--no-index` for files deleted from disk, falling through to standard `git diff` which reads from the index.
+- **Worktree stale directory** — Stale worktree directories now read the actual HEAD instead of echoing the originally requested branch; concurrent removal prevented via reentrancy guard. ([#47](https://github.com/sstraus/tuicommander/pull/47))
+
+## [1.2.6-nightly] - 2026-05-25
+
+### Added
+- **Command block system** — Terminal output is segmented into command blocks (one per prompt+output cycle). Features include: semantic scrollbar marks with color-coded indicators, block timestamp overlay (hold `Ctrl+Cmd`), gutter click to select entire block output, block folding with `Cmd+Shift+.` toggle, block-scoped search with `Cmd+Shift+B` toggle, block navigation with `Cmd+Shift+Up/Down`, cap at 500 blocks per session (oldest evicted), and OSC 7770;block= agent-emitted block markers. Settings at `Settings > Terminal > Blocks`.
+- **Heuristic agent-block detection** — Claude Code tool calls (`⏺ ToolName(args)`) are now detected heuristically and synthesized into AgentBlock start/end events, so the block system works without CC emitting OSC 7770 sequences.
+- **Generators modal** — Secure value generators accessible from the command palette (`open-generators`). Generates: Password, UUID v4, UUID v7, ULID, CUID2, JWT Secret, TOTP Secret, Nano ID, Slug, Ed25519 Key Pair. All generation happens in the Rust backend via `ring` crate.
+- **Process stats & monitor** — New MCP session action `process_stats` and HTTP routes (`/process/stats`, `/process/monitor`) returning CPU% and RSS memory for TUIC and all child process trees. The monitor route serves a self-contained HTML dashboard.
+- **App logger extra fields** — Tracing events now capture all extra fields (beyond `message` and `source`) as a JSON `data` column, making structured logging queryable via the `/logs` endpoint.
+- **Auto-standby** — SIGSTOP entire PTY process groups after configurable N minutes of being both unfocused and idle. SIGCONT on tab focus or agent message arrival. Settings at `Settings > General > Auto-Standby Timeout` (default 5 min, 0 = disabled). Pause badge in tab bar.
+- **ANSI colors in markdown code blocks** — Code fences containing ANSI escape sequences are now colorized using `ansi-to-html` instead of being stripped.
+- **Dormant repo throttling** — Cold repos (no active terminals) get 15s watcher debounce (vs 1.5s) and GitHub polling every ~10min with per-path jitter. Switching to a cold repo triggers immediate data refresh. New `set_hot_repos` command and `PUT /watchers/hot-repos` endpoint.
+- **File browser intra-tree drag & drop** — Drag files and folders between directories within the file browser tree. Uses `renamePath` for the actual move.
+- **Expanded menu bar** — New File, Find in Content, Clear Scrollback, Refresh Terminal, Maximize/Restore Pane, Focus Mode, Zoom All Terminals, File Browser, Outline, AI Chat, Compose, Global Workspace, Content Search, SSH Tunnels, Process Manager.
+- **`prefers-reduced-motion` support** — Global CSS media query disables animations and transitions for users who prefer reduced motion.
+
+### Changed
+- **GitHub polling: updated_at change detection** — Replaced ETag-based HTTP caching with `updated_at` timestamp comparison, fixing stale data when GitHub CDN caches return 304 on changed content.
+- **GitHub module split** — Extracted `github_debug` module for API debug logging. Fixed route prefix (`github` → `github-poller`). Removed dead Tauri commands.
+- **PTY write error handling** — PTY writer `write_all`/`flush` failures are now logged via `tracing::warn` instead of silently ignored.
+- **Session write tracing** — `write_pty` slash_mode logging downgraded from `info` to `trace` to reduce log noise.
+- **Panel unmounting** — Outline, References, AiTriage, and Activity Dashboard panels now unmount when closed, releasing memos/subscriptions.
+- **CanvasTerminal visibility** — Hidden terminals shrink canvas to 1x1px and clear caches. Cursor hidden when terminal is unfocused.
+- **Dev build profile** — `[profile.dev]` opt-level=1 with dependencies at opt-level=2 for faster dev builds.
+
+### Fixed
+- **Idle keepalive spinner detection** — Tool progress spinners (◐◑◒◓) now detected for CC idle keepalive, preventing false idle transitions during tool execution.
+- **MCP default pinned=false** — MCP-created tabs no longer default to pinned, preventing unintended tab persistence across branch switches.
+- **Build: cfg-gate desktop modules** — Desktop-only modules properly gated for `tuic-remote` and agent-only builds.
+- **CI: check-remote job** — New CI job catches missing `cfg(desktop)` gates before they break remote builds.
+- **Block timestamp overlap** — `paintBlockTimestamps` now skips labels that would overlap vertically, preventing consecutive close prompts from rendering on top of each other.
+- **Search scrollbar marks** — Orange markers for search match positions in the scrollbar, de-duplicated by pixel row, with cache key tied to search state.
+- **Plugin watcher spurious reload** (#43) — Watcher now filters by `EventKind` (only Create/Modify(Data)/Modify(Name)/Remove), ignoring access/metadata events that caused ~1s flash loops on some Linux configurations. Disabled plugins are skipped entirely (zero IPC, zero store updates).
+- **ContentIndex rebuild storm** — 60-second cooldown between consecutive index rebuilds for the same repo.
+- **Memory caps** — Tool calls capped at 500, activity items at 500, PR notifications at 200 to prevent unbounded memory growth in long sessions.
+
+## [1.2.3-nightly] - 2026-05-19
+
+### Added
+- **Tab ordering modes** — New Appearance setting with 3 modes: "Grouped by Type" (default, current behavior), "Terminals First" (terminals grouped left, non-terminals freely interleaved), and "Free" (any tab draggable to any position). Settings > Appearance > Tabs.
+
+### Fixed
+- **Clipboard soft-wrap** — Copying text from terminal no longer inserts spurious newlines at soft-wrap boundaries. The `WRAPLINE` flag is now respected during text extraction.
+
 ## [1.2.2-nightly] - 2026-05-13
 
 ### Added
@@ -15,6 +63,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Git log time-of-day** — Commits within 7 days now show "1d ago · 14:32" instead of just "1d ago". Hover shows the full timestamp. Helps distinguish same-day commits when deciding what to revert.
 - **Terminal text selection API** — New `terminal_get_selection_text` Tauri command extracts text from a row/column range in the terminal grid.
 - **Double-click word selection** — Double-clicking in the terminal now includes hyphens (`-`) and underscores (`_`) in word boundaries, matching common shell identifiers.
+- **Preview tab Edit button** — Preview tab header now has an Edit button (pencil icon) that opens the file in the built-in code editor.
 - **Native drag to external apps** — Drag files from the File Browser to Finder, email clients, and other external applications using OS-level drag via `tauri-plugin-drag`.
 - **Mermaid diagram rendering** — Fenced ` ```mermaid ` code blocks in markdown tabs are rendered as interactive SVG diagrams. Mermaid.js is lazy-loaded on first use with dark theme and strict security.
 - **Group park/unpark** — Park or unpark all repositories in a sidebar group at once via context menu or command palette.
@@ -31,6 +80,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Terminal scroll-to-bottom on click** — Clicking in a scrolled-up terminal no longer snaps to bottom. Mouse events (SGR reports, focus/blur) now use `writePtyNoScroll()` which writes to the PTY without resetting scroll position.
 - **OSC 8 hyperlink hover underline** — Hover underline now spans the full link instead of a single character, using the new `terminal_hyperlink_span` backend API.
 - **OSC 8 `file://` URI links** — Clicking `file:///path` links now correctly opens the file by stripping the `file://` prefix before path resolution.
+- **OSC 8 tilde path resolution** — OSC 8 hyperlinks with `~/` paths now resolve through `resolve_terminal_path`, expanding the home directory before opening.
+- **Offscreen selection copy** — Copying terminal text that extends beyond the visible viewport now delegates to the backend, which has full scrollback access. Previously, offscreen rows were silently dropped.
 - **Auto-heal CI toggle style** — Replaced native HTML checkbox with pill-switch toggle matching the CI check item row style (proper padding, hover, alignment).
 - **Vitest localStorage shim** — Test setup now handles `localStorage` being fully undefined (not just missing `.clear()`), fixing 524 test failures in environments without `--localstorage-file`.
 

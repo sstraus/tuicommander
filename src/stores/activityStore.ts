@@ -109,6 +109,9 @@ function createActivityStore() {
 				} else {
 					s.items.push(full);
 				}
+				if (s.items.length > 500) {
+					s.items = s.items.slice(-500);
+				}
 			}),
 		);
 		saveActivity(state.items);

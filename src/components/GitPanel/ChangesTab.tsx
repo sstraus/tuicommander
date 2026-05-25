@@ -141,6 +141,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 	const smartPrompts = useSmartPrompts();
 	const { canExecute: canExecPrompt, executeSmartPrompt } = smartPrompts;
 	const [generating, setGenerating] = createSignal(false);
+	let generateGeneration = 0;
 
 	// Listen for generated commit messages from headless smart prompts
 	const handleCommitMsg = (e: Event) => {
@@ -479,14 +480,23 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 		}
 		setCommitError(null);
 		setGenerating(true);
+		const gen = ++generateGeneration;
 		try {
 			const result = await executeSmartPrompt(prompt);
+			if (gen !== generateGeneration) return;
 			if (!result.ok) setCommitError(result.reason ?? "Failed to generate commit message");
 		} catch (err) {
+			if (gen !== generateGeneration) return;
 			setCommitError(String(err));
 		} finally {
-			setGenerating(false);
+			if (gen === generateGeneration) setGenerating(false);
 		}
+	}
+
+	function cancelGenerate() {
+		generateGeneration++;
+		setGenerating(false);
+		setCommitError(null);
 	}
 
 	async function doCommit() {
@@ -759,9 +769,9 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 						/>
 						<button
 							class={cx(s.generateBtn, generating() && s.generateBtnBusy)}
-							onClick={generateCommitMsg}
-							disabled={generating() || (staged().length === 0 && unstaged().length === 0)}
-							title="Generate commit message"
+							onClick={generating() ? cancelGenerate : generateCommitMsg}
+							disabled={!generating() && staged().length === 0 && unstaged().length === 0}
+							title={generating() ? "Cancel generation" : "Generate commit message"}
 						>
 							<Show when={generating()} fallback={<SparkleIcon />}>
 								<span class={s.spinner} />

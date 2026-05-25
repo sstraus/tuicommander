@@ -44,12 +44,15 @@ jobs:
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev mold
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -68,16 +71,64 @@ jobs:
       - name: Clippy
         working-directory: src-tauri
         env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
+          CARGO_INCREMENTAL: "0"
+          CMAKE_C_COMPILER_LAUNCHER: "sccache"
+          CMAKE_CXX_COMPILER_LAUNCHER: "sccache"
           CMAKE_C_FLAGS: '-fPIC'
           CMAKE_CXX_FLAGS: '-fPIC'
+          RUSTFLAGS: '-C link-arg=-fuse-ld=mold'
         run: cargo clippy -- -D warnings
 
       - name: Tests
         working-directory: src-tauri
         env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
+          CARGO_INCREMENTAL: "0"
+          CMAKE_C_COMPILER_LAUNCHER: "sccache"
+          CMAKE_CXX_COMPILER_LAUNCHER: "sccache"
           CMAKE_C_FLAGS: '-fPIC'
           CMAKE_CXX_FLAGS: '-fPIC'
+          RUSTFLAGS: '-C link-arg=-fuse-ld=mold'
         run: cargo test
+
+  # Verify tuic-remote compiles without the desktop feature (catches missing cfg gates)
+  check-remote:
+    name: Remote daemon (no-default-features)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev mold
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Check tuic-remote
+        working-directory: src-tauri
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
+          CARGO_INCREMENTAL: "0"
+          CMAKE_C_COMPILER_LAUNCHER: "sccache"
+          CMAKE_CXX_COMPILER_LAUNCHER: "sccache"
+          CMAKE_C_FLAGS: '-fPIC'
+          CMAKE_CXX_FLAGS: '-fPIC'
+          RUSTFLAGS: '-C link-arg=-fuse-ld=mold'
+        run: cargo check --no-default-features --bin tuic-remote
 
   # Push to main only: verify build on macOS and Windows.
   # GPU notes:
@@ -125,6 +176,9 @@ jobs:
         with:
           components: clippy
 
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
@@ -153,14 +207,24 @@ jobs:
       - name: Clippy
         working-directory: src-tauri
         env:
-          CMAKE_C_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || '' }}
-          CMAKE_CXX_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || '' }}
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
+          CARGO_INCREMENTAL: "0"
+          CMAKE_C_COMPILER_LAUNCHER: "sccache"
+          CMAKE_CXX_COMPILER_LAUNCHER: "sccache"
+          CMAKE_C_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Windows-x64' && '/Z7' || '' }}
+          CMAKE_CXX_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Windows-x64' && '/Z7' || '' }}
         run: cargo clippy -- -D warnings
 
       - name: Tests
         if: matrix.platform != 'windows-latest'
         working-directory: src-tauri
         env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
+          CARGO_INCREMENTAL: "0"
+          CMAKE_C_COMPILER_LAUNCHER: "sccache"
+          CMAKE_CXX_COMPILER_LAUNCHER: "sccache"
           CMAKE_C_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || '' }}
           CMAKE_CXX_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || '' }}
         run: cargo test

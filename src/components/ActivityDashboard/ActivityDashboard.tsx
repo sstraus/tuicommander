@@ -2,8 +2,11 @@ import { type Component, createEffect, createMemo, createSignal, For, onCleanup,
 import { activityDashboardStore } from "../../stores/activityDashboard";
 import { globalWorkspaceStore } from "../../stores/globalWorkspace";
 import { rateLimitStore } from "../../stores/ratelimit";
+import { repositoriesStore } from "../../stores/repositories";
 import { terminalsStore } from "../../stores/terminals";
 import { projectName, terminalStatusLabel } from "../../utils/activitySnapshot";
+import { navigateToTerminal } from "../../utils/navigateToTerminal";
+import { getRepoColor } from "../../utils/repoColor";
 import { formatRelativeTime } from "../../utils/time";
 import { GlobeIcon } from "../GlobeIcon";
 import { PanelWindowControls } from "../ui/PanelWindowControls";
@@ -55,9 +58,12 @@ export type TerminalRow = {
 	id: string;
 	name: string;
 	project: string | null;
+	projectColor: string | undefined;
 	agent: string;
 	status: { label: string; className: string };
+	isWorking: boolean;
 	lastDataAt: number | null;
+	idleSince: number | null;
 	lastPrompt: string | null;
 	agentIntent: string | null;
 	currentTask: string | null;
@@ -106,8 +112,7 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
 		if (props.onSelect) {
 			props.onSelect(termId);
 		} else {
-			terminalsStore.setActive(termId);
-			requestAnimationFrame(() => terminalsStore.get(termId)?.ref?.focus());
+			navigateToTerminal(termId);
 		}
 		if (!props.embedded) activityDashboardStore.close();
 	};
@@ -120,13 +125,17 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
 		if (!term) return null;
 		const isRL = !!(term.sessionId && rateLimitStore.isRateLimited(term.sessionId));
 		const status = terminalStatusLabel(term.shellState, term.awaitingInput, isRL, statusClasses);
+		const repoPath = repositoriesStore.getRepoPathForTerminal(id);
 		return {
 			id,
 			name: term.name,
 			project: projectName(term.cwd),
+			projectColor: repoPath ? getRepoColor(repoPath) : undefined,
 			agent: term.agentType || "shell",
 			status,
+			isWorking: isRL || !!term.awaitingInput || terminalsStore.isBusy(id),
 			lastDataAt: terminalsStore.getLastDataAt(id),
+			idleSince: term.idleSince,
 			lastPrompt: term.lastPrompt,
 			agentIntent: term.agentIntent,
 			// Claude Code spinner verbs are decorative garbage — suppress them
@@ -137,14 +146,19 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
 		};
 	};
 
-	/** Order-only snapshot: list of ids sorted by lastDataAt. Row *contents*
-	 *  remain live — only the sort order is stabilised. */
+	/** Order-only snapshot: working terminals first, idle second.
+	 *  Working group keeps store insertion order (stable); idle group sorts by most recent activity. */
 	const liveOrder = createMemo(() => {
 		const ids = terminalsStore.getAttachedIds();
-		return ids
-			.map((id) => ({ id, t: terminalsStore.getLastDataAt(id) ?? 0 }))
-			.sort((a, b) => b.t - a.t)
-			.map((x) => x.id);
+		const items = ids.map((id, idx) => {
+			const term = terminalsStore.get(id);
+			const isRL = !!(term?.sessionId && rateLimitStore.isRateLimited(term.sessionId));
+			const working = isRL || !!term?.awaitingInput || terminalsStore.isBusy(id);
+			return { id, working, idx, t: term?.idleSince ?? terminalsStore.getLastDataAt(id) ?? 0 };
+		});
+		const workingItems = items.filter((x) => x.working).sort((a, b) => a.idx - b.idx);
+		const idleItems = items.filter((x) => !x.working).sort((a, b) => b.t - a.t);
+		return [...workingItems, ...idleItems].map((x) => x.id);
 	});
 
 	// Snapshot sort order every 10s so rows don't reshuffle on every mutation.
@@ -152,6 +166,7 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
 	const [orderSnapshot, setOrderSnapshot] = createSignal<string[]>(liveOrder());
 	createEffect(() => {
 		if (!isOpen()) return;
+		setOrderSnapshot(liveOrder());
 		const interval = setInterval(() => setOrderSnapshot(liveOrder()), 10_000);
 		onCleanup(() => clearInterval(interval));
 	});
@@ -190,17 +205,22 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
 
 				<For each={terminals()}>
 					{(term) => (
-						<div class={`${s.row} ${term.isActive ? s.activeRow : ""}`} onClick={() => handleRowClick(term.id)}>
+						<div
+							class={`${s.row} ${term.isActive ? s.activeRow : ""} ${!term.isWorking ? s.idleRow : ""}`}
+							onClick={() => handleRowClick(term.id)}
+						>
 							<div class={s.rowMain}>
 								<div class={s.nameCell}>
 									<span class={s.termName}>{term.name}</span>
 									<Show when={term.project}>
-										<span class={s.project}>{term.project}</span>
+										<span class={s.project} style={term.projectColor ? { color: term.projectColor } : undefined}>
+											{term.project}
+										</span>
 									</Show>
 								</div>
 								<span class={s.agent}>{term.agent}</span>
 								<span class={`${s.status} ${term.status.className}`}>{term.status.label}</span>
-								<span class={s.lastActivity}>{formatRelativeTime(term.lastDataAt)}</span>
+								<span class={s.lastActivity}>{term.isWorking ? "" : formatRelativeTime(term.idleSince)}</span>
 								<button
 									class={`${s.promoteBtn} ${term.isPromoted ? s.promoted : ""}`}
 									title={term.isPromoted ? "Remove from Global Workspace" : "Promote to Global Workspace"}

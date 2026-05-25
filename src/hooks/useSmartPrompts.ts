@@ -82,6 +82,26 @@ export function shellSplit(input: string): string[] {
 	return tokens;
 }
 
+interface ResolvedAgent {
+	agent: string | null;
+	isApi: boolean;
+}
+
+function resolveHeadlessAgent(prompt: SavedPrompt): ResolvedAgent {
+	const preferred = prompt.preferredAgent;
+	const global = agentConfigsStore.getHeadlessAgent();
+
+	if (preferred) {
+		if (preferred === "api") return { agent: "api", isApi: true };
+		const template = agentConfigsStore.getHeadlessTemplate(preferred);
+		if (template) return { agent: preferred, isApi: false };
+		appLogger.warn("prompts", `Preferred agent "${preferred}" has no template, falling back to global`);
+	}
+
+	if (!global) return { agent: null, isApi: false };
+	return { agent: global, isApi: global === "api" };
+}
+
 export function useSmartPrompts() {
 	const pty = usePty();
 
@@ -104,10 +124,8 @@ export function useSmartPrompts() {
 		}
 
 		if (prompt.executionMode === "headless") {
-			const agentType = agentConfigsStore.getHeadlessAgent();
-			if (!agentType) return { ok: false, reason: "No headless agent configured — set one in Settings → Agents" };
-			// When headless agent is "api", validate API config instead of CLI template
-			if (agentType === "api") {
+			const resolved = resolveHeadlessAgent(prompt);
+			if (resolved.isApi) {
 				if (!providerRegistryStore.resolveSlot("headless"))
 					return {
 						ok: false,
@@ -116,8 +134,7 @@ export function useSmartPrompts() {
 					};
 				return { ok: true };
 			}
-			const template = agentConfigsStore.getHeadlessTemplate(agentType);
-			if (!template) return { ok: false, reason: `No headless template for ${agentType}` };
+			if (!resolved.agent) return { ok: false, reason: "No headless agent configured — set one in Settings → Agents" };
 			return { ok: true };
 		}
 
@@ -171,9 +188,9 @@ export function useSmartPrompts() {
 			return check;
 		}
 
-		// If prompt is headless but the configured headless agent is "api", upgrade to API mode
+		// If prompt is headless but the resolved agent is "api", upgrade to API mode
 		const rawMode = prompt.executionMode ?? "inject";
-		const effectiveMode = rawMode === "headless" && agentConfigsStore.getHeadlessAgent() === "api" ? "api" : rawMode;
+		const effectiveMode = rawMode === "headless" && resolveHeadlessAgent(prompt).isApi ? "api" : rawMode;
 
 		// Single IPC: extract needed variable names + resolve only those from git.
 		const activeRepo = repositoriesStore.getActive();
@@ -232,7 +249,8 @@ export function useSmartPrompts() {
 	}
 
 	async function executeHeadless(prompt: SavedPrompt, content: string): Promise<SmartPromptResult> {
-		const headlessVal = agentConfigsStore.getHeadlessAgent();
+		const resolved = resolveHeadlessAgent(prompt);
+		const headlessVal = resolved.agent;
 		if (!headlessVal) {
 			return { ok: false, reason: "No headless agent configured — set one in Settings → Agents" };
 		}
@@ -317,7 +335,7 @@ export function useSmartPrompts() {
 			const output = await invoke<string>("execute_api_prompt", {
 				systemPrompt: prompt.systemPrompt || null,
 				content,
-				timeoutMs: 60000,
+				timeoutMs: 120000,
 			});
 			promptLibraryStore.markAsUsed(prompt.id);
 			routeHeadlessOutput(prompt, output);

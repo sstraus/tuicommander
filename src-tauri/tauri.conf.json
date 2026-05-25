@@ -1,11 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "TUICommander",
-  "version": "1.2.2",
+  "version": "1.2.7-nightly",
   "identifier": "com.tuic.commander",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://127.0.0.1:1420",
+    "devUrl": "http://127.0.0.1:1421",
     "beforeBuildCommand": "npm run build && npm run build:sidecar",
     "frontendDist": "../dist"
   },
@@ -22,19 +22,30 @@
         "transparent": false,
         "resizable": true,
         "fullscreen": false,
-"hiddenTitle": true,
+        "hiddenTitle": true,
         "titleBarStyle": "Overlay",
-        "trafficLightPosition": { "x": 13, "y": 20 },
+        "trafficLightPosition": {
+          "x": 13,
+          "y": 20
+        },
         "backgroundColor": "#000000",
         "dragDropEnabled": true
       }
     ],
     "security": {
       "csp": "default-src 'self' 'unsafe-inline' https: http: data: blob: asset: http://asset.localhost ipc: tauri: plugin:; frame-src 'self' asset: http://asset.localhost http://127.0.0.1:* http://localhost:*",
-      "dangerousDisableAssetCspModification": ["style-src", "script-src"],
+      "dangerousDisableAssetCspModification": [
+        "style-src",
+        "script-src"
+      ],
       "assetProtocol": {
         "enable": true,
-        "scope": ["$APPDATA/**", "$APPDATA/**/*", "$HOME/**", "/**"]
+        "scope": [
+          "$APPDATA/**",
+          "$APPDATA/**/*",
+          "$HOME/**",
+          "/**"
+        ]
       }
     }
   },
@@ -48,7 +59,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["icons/32x32.png"],
+    "resources": [
+      "icons/32x32.png",
+      "icons/drag-file.png"
+    ],
     "createUpdaterArtifacts": true,
     "externalBin": [
       "binaries/tuic-bridge",
@@ -56,7 +70,10 @@
     ],
     "fileAssociations": [
       {
-        "ext": ["md", "mdx"],
+        "ext": [
+          "md",
+          "mdx"
+        ],
         "name": "Markdown Document",
         "role": "Viewer",
         "mimeType": "text/markdown"
@@ -69,7 +86,9 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["tuic"]
+        "schemes": [
+          "tuic"
+        ]
       }
     },
     "updater": {

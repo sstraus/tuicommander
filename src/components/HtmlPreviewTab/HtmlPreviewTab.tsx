@@ -70,8 +70,11 @@ export const HtmlPreviewTab: Component<HtmlPreviewTabProps> = (props) => {
 
 	const kind = () => detectKind(props.tab.fileName);
 
-	/** Asset URL for binary files (PDF, images, video, audio) */
-	const assetUrl = () => convertFileSrc(absolutePath(props.tab));
+	/** Asset URL for binary files (PDF, images, video, audio), cache-busted via repo revision */
+	const assetUrl = () => {
+		const rev = props.tab.repoPath ? repositoriesStore.getRevision(props.tab.repoPath) : 0;
+		return `${convertFileSrc(absolutePath(props.tab))}?v=${rev}`;
+	};
 
 	/** Read file content — used for HTML and text previews */
 	const readFileContent = async (fsRoot: string | undefined, filePath: string): Promise<string> => {
@@ -83,13 +86,13 @@ export const HtmlPreviewTab: Component<HtmlPreviewTabProps> = (props) => {
 			: await invoke<string>("read_external_file", { path: filePath });
 	};
 
-	// Load text content for html/text kinds
+	// Load text content for plain-text previews (HTML uses src= via asset protocol)
 	createEffect(() => {
 		const { repoPath, filePath, fsRoot } = props.tab;
 		void (repoPath ? repositoriesStore.getRevision(repoPath) : 0);
 		const k = kind();
 
-		if (!filePath || (k !== "html" && k !== "text")) {
+		if (!filePath || k !== "text") {
 			setContent("");
 			return;
 		}
@@ -158,7 +161,7 @@ export const HtmlPreviewTab: Component<HtmlPreviewTabProps> = (props) => {
 						<iframe
 							class={s.iframe}
 							sandbox="allow-scripts allow-same-origin"
-							srcdoc={content()}
+							src={assetUrl()}
 							title={props.tab.fileName}
 							onLoad={handleIframeLoad}
 						/>

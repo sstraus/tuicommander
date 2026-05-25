@@ -240,6 +240,10 @@
   margin-bottom: 18px;
 }
 
+.group + .group {
+  margin-top: 6px;
+}
+
 .group label {
   display: block;
   font-size: var(--font-sm);
@@ -893,6 +897,7 @@
   justify-content: center;
   width: 16px;
   height: 16px;
+  margin-left: 6px;
   border-radius: 50%;
   flex-shrink: 0;
   background: rgba(255, 255, 255, 0.08);
@@ -905,9 +910,8 @@
 .infoBadge .infoBadgeTip {
   display: none;
   position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
+  top: calc(100% + 6px);
+  left: 0;
   width: max-content;
   max-width: 320px;
   padding: 8px 12px;

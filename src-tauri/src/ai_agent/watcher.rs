@@ -454,6 +454,10 @@ impl WatcherEngine {
     }
 
     async fn on_idle(&self, session_id: &str) {
+        #[cfg(unix)]
+        if self.state.standby_sessions.contains_key(session_id) {
+            return;
+        }
         let last_exit_code = self.last_exit_code(session_id);
         let screen_tail = self.screen_tail(session_id);
         let tab_visible = self

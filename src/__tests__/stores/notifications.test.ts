@@ -369,7 +369,7 @@ describe("notificationsStore", () => {
 			});
 		});
 
-		it("clearBadge resets count and calls setBadgeCount(0)", async () => {
+		it("clearBadge resets count and calls setBadgeCount() with no args", async () => {
 			await testInScopeAsync(async () => {
 				await store.incrementBadge();
 				await store.incrementBadge();
@@ -377,7 +377,7 @@ describe("notificationsStore", () => {
 
 				await store.clearBadge();
 				expect(store.state.badgeCount).toBe(0);
-				expect(mockSetBadgeCount).toHaveBeenCalledWith(0);
+				expect(mockSetBadgeCount).toHaveBeenCalledWith();
 			});
 		});
 

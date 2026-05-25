@@ -1,13 +1,19 @@
 import { createSignal } from "solid-js";
 
+const ACTIVITY_THROTTLE_MS = 500;
+
 function createUserActivityStore() {
 	const [lastActivityAt, setLastActivityAt] = createSignal(0);
+	let lastRecordedAt = 0;
 
 	let clickHandler: (() => void) | null = null;
 	let keydownHandler: (() => void) | null = null;
 
 	function recordActivity(): void {
-		setLastActivityAt(Date.now());
+		const now = Date.now();
+		if (now - lastRecordedAt < ACTIVITY_THROTTLE_MS) return;
+		lastRecordedAt = now;
+		setLastActivityAt(now);
 	}
 
 	function msSinceLastActivity(): number {
@@ -36,6 +42,7 @@ function createUserActivityStore() {
 	}
 
 	function reset(): void {
+		lastRecordedAt = 0;
 		setLastActivityAt(0);
 	}
 

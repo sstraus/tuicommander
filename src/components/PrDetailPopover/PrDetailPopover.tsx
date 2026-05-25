@@ -75,6 +75,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
 	const [cleanupExecuting, setCleanupExecuting] = createSignal(false);
 	const [cleanupStepStatuses, setCleanupStepStatuses] = createSignal<Partial<Record<StepId, StepStatus>>>({});
 	const [cleanupStepErrors, setCleanupStepErrors] = createSignal<Partial<Record<StepId, string>>>({});
+	const [cleanupStepNotes, setCleanupStepNotes] = createSignal<Partial<Record<StepId, string>>>({});
 
 	/** Find a "review" run config from the branch's detected agent type */
 	const reviewCommand = createMemo(() => {
@@ -148,6 +149,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
 		setCleanupExecuting(true);
 		setCleanupStepStatuses({});
 		setCleanupStepErrors({});
+		setCleanupStepNotes({});
 
 		await executeCleanup({
 			repoPath: props.repoPath,
@@ -163,6 +165,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
 				setCleanupStepStatuses((prev) => ({ ...prev, [id]: result }));
 				if (error) setCleanupStepErrors((prev) => ({ ...prev, [id]: error }));
 			},
+			onStepNote: (id, note) => setCleanupStepNotes((prev) => ({ ...prev, [id]: note })),
 		});
 
 		setCleanupExecuting(false);
@@ -329,6 +332,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
 						executing={cleanupExecuting()}
 						stepStatuses={cleanupStepStatuses()}
 						stepErrors={cleanupStepErrors()}
+						stepNotes={cleanupStepNotes()}
 					/>
 				)}
 			</Show>

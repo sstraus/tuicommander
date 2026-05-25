@@ -1,0 +1,203 @@
+/**
+ * Tests for resolveHeadlessAgent logic inside useSmartPrompts.
+ *
+ * resolveHeadlessAgent is a private function — we exercise it through
+ * canExecute() with executionMode="headless", which is the only call site.
+ * We mock agentConfigsStore, providerRegistryStore, appLogger, and usePty
+ * to keep tests focused on the resolution logic.
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Must be declared BEFORE importing the module under test.
+vi.mock("../../invoke", () => ({
+	invoke: vi.fn().mockResolvedValue(undefined),
+	listen: vi.fn().mockResolvedValue(() => {}),
+}));
+
+vi.mock("../../stores/appLogger", () => ({
+	appLogger: { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
+}));
+
+vi.mock("../../stores/agentConfigs", () => ({
+	agentConfigsStore: {
+		getHeadlessAgent: vi.fn(),
+		getHeadlessTemplate: vi.fn(),
+	},
+}));
+
+vi.mock("../../stores/providerRegistry", () => ({
+	providerRegistryStore: { resolveSlot: vi.fn() },
+}));
+
+vi.mock("../../stores/terminals", () => ({
+	terminalsStore: { getActive: vi.fn(), isBusy: vi.fn() },
+}));
+
+vi.mock("../../stores/github", () => ({
+	githubStore: { getPrForBranch: vi.fn() },
+}));
+
+vi.mock("../../stores/repositories", () => ({
+	repositoriesStore: { getActive: vi.fn(), getRevision: vi.fn() },
+}));
+
+vi.mock("../../stores/promptLibrary", () => ({
+	promptLibraryStore: {},
+}));
+
+vi.mock("../../utils/promptContext", () => ({
+	prContextVariables: vi.fn().mockResolvedValue({}),
+}));
+
+vi.mock("../../transport", () => ({
+	isTauri: false,
+	rpc: {},
+}));
+
+vi.mock("../../platform", () => ({
+	isWindows: false,
+}));
+
+vi.mock("../usePty", () => ({
+	usePty: vi.fn(() => ({
+		createSession: vi.fn(),
+		closeSession: vi.fn(),
+		sendInput: vi.fn(),
+	})),
+}));
+
+import { agentConfigsStore } from "../../stores/agentConfigs";
+import { appLogger } from "../../stores/appLogger";
+import type { SavedPrompt } from "../../stores/promptLibrary";
+import { providerRegistryStore } from "../../stores/providerRegistry";
+import { useSmartPrompts } from "../useSmartPrompts";
+
+const mockedGetHeadlessAgent = vi.mocked(agentConfigsStore.getHeadlessAgent);
+const mockedGetHeadlessTemplate = vi.mocked(agentConfigsStore.getHeadlessTemplate);
+const mockedResolveSlot = vi.mocked(providerRegistryStore.resolveSlot);
+const mockedWarn = vi.mocked(appLogger.warn);
+
+/** Build a minimal SavedPrompt fixture with headless executionMode */
+function makePrompt(overrides: Partial<SavedPrompt> = {}): SavedPrompt {
+	return {
+		id: "test-prompt",
+		name: "Test Prompt",
+		content: "Do something",
+		category: "custom",
+		isFavorite: false,
+		createdAt: 1_000_000,
+		updatedAt: 1_000_000,
+		executionMode: "headless",
+		...overrides,
+	};
+}
+
+/** Minimal valid resolveSlot result — only the shape matters for canExecute checks */
+const CONFIGURED_SLOT = {
+	provider: { id: "p1", name: "Test", type: "openai" },
+	model: { id: "m1", name: "gpt-4o" },
+} as unknown as ReturnType<typeof providerRegistryStore.resolveSlot>;
+
+beforeEach(() => {
+	vi.clearAllMocks();
+	// Default: headless provider is configured
+	mockedResolveSlot.mockReturnValue(CONFIGURED_SLOT);
+});
+
+afterEach(() => {
+	vi.clearAllMocks();
+});
+
+describe("resolveHeadlessAgent — preferred='api'", () => {
+	it("returns isApi=true when preferred is 'api'", () => {
+		mockedGetHeadlessAgent.mockReturnValue(null);
+		const { canExecute } = useSmartPrompts();
+		// With isApi=true and a configured headless provider, canExecute returns ok
+		const result = canExecute(makePrompt({ preferredAgent: "api" }));
+		expect(result.ok).toBe(true);
+	});
+
+	it("returns ok=false when preferred='api' but no headless provider configured", () => {
+		mockedGetHeadlessAgent.mockReturnValue(null);
+		mockedResolveSlot.mockReturnValue(null);
+		const { canExecute } = useSmartPrompts();
+		const result = canExecute(makePrompt({ preferredAgent: "api" }));
+		expect(result.ok).toBe(false);
+		expect(result.reason).toMatch(/Headless provider not configured/);
+	});
+});
+
+describe("resolveHeadlessAgent — preferred agent with template", () => {
+	it("returns the preferred agent when it has a template", () => {
+		mockedGetHeadlessTemplate.mockReturnValue("claude --headless {prompt}");
+		mockedGetHeadlessAgent.mockReturnValue(null);
+		const { canExecute } = useSmartPrompts();
+		const result = canExecute(makePrompt({ preferredAgent: "claude" }));
+		expect(result.ok).toBe(true);
+		// getHeadlessTemplate must have been called with the preferred agent
+		expect(mockedGetHeadlessTemplate).toHaveBeenCalledWith("claude");
+	});
+});
+
+describe("resolveHeadlessAgent — preferred agent with no template", () => {
+	it("falls back to global when preferred has no template", () => {
+		mockedGetHeadlessTemplate.mockReturnValue(undefined);
+		mockedGetHeadlessAgent.mockReturnValue("gemini");
+		const { canExecute } = useSmartPrompts();
+		const result = canExecute(makePrompt({ preferredAgent: "claude" }));
+		// Falls back to global (gemini) which is non-null → ok=true
+		expect(result.ok).toBe(true);
+	});
+
+	it("logs a warning when falling back to global", () => {
+		mockedGetHeadlessTemplate.mockReturnValue(undefined);
+		mockedGetHeadlessAgent.mockReturnValue("gemini");
+		const { canExecute } = useSmartPrompts();
+		canExecute(makePrompt({ preferredAgent: "claude" }));
+		expect(mockedWarn).toHaveBeenCalledWith("prompts", expect.stringContaining("claude"));
+	});
+
+	it("returns ok=false when preferred has no template and global is null", () => {
+		mockedGetHeadlessTemplate.mockReturnValue(undefined);
+		mockedGetHeadlessAgent.mockReturnValue(null);
+		const { canExecute } = useSmartPrompts();
+		const result = canExecute(makePrompt({ preferredAgent: "claude" }));
+		expect(result.ok).toBe(false);
+		expect(result.reason).toMatch(/No headless agent configured/);
+	});
+});
+
+describe("resolveHeadlessAgent — no preferred agent", () => {
+	it("returns ok=false when no preferred and global is null", () => {
+		mockedGetHeadlessAgent.mockReturnValue(null);
+		const { canExecute } = useSmartPrompts();
+		const result = canExecute(makePrompt({ preferredAgent: undefined }));
+		expect(result.ok).toBe(false);
+		expect(result.reason).toMatch(/No headless agent configured/);
+	});
+
+	it("returns ok=true when no preferred and global is a valid agent", () => {
+		mockedGetHeadlessAgent.mockReturnValue("claude");
+		const { canExecute } = useSmartPrompts();
+		const result = canExecute(makePrompt({ preferredAgent: undefined }));
+		expect(result.ok).toBe(true);
+	});
+
+	it("returns isApi=true when no preferred and global='api'", () => {
+		mockedGetHeadlessAgent.mockReturnValue("api");
+		const { canExecute } = useSmartPrompts();
+		// isApi=true triggers the provider check
+		const result = canExecute(makePrompt({ preferredAgent: undefined }));
+		expect(result.ok).toBe(true);
+		expect(mockedResolveSlot).toHaveBeenCalledWith("headless");
+	});
+
+	it("returns ok=false when no preferred, global='api', but no headless provider", () => {
+		mockedGetHeadlessAgent.mockReturnValue("api");
+		mockedResolveSlot.mockReturnValue(null);
+		const { canExecute } = useSmartPrompts();
+		const result = canExecute(makePrompt({ preferredAgent: undefined }));
+		expect(result.ok).toBe(false);
+		expect(result.reason).toMatch(/Headless provider not configured/);
+	});
+});

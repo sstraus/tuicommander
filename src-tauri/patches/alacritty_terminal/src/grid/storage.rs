@@ -72,7 +72,12 @@ impl<T> Storage<T> {
         let mut inner = Vec::with_capacity(visible_lines);
         inner.resize_with(visible_lines, || Row::new(columns));
 
-        Storage { inner, zero: 0, visible_lines, len: visible_lines }
+        Storage {
+            inner,
+            zero: 0,
+            visible_lines,
+            len: visible_lines,
+        }
     }
 
     /// Increase the number of lines in the buffer.
@@ -151,7 +156,7 @@ impl<T> Storage<T> {
     /// instructions. This implementation achieves the swap in only 8 movups
     /// instructions.
     pub fn swap(&mut self, a: Line, b: Line) {
-        debug_assert_eq!(mem::size_of::<Row<T>>(), mem::size_of::<usize>() * 4);
+        debug_assert_eq!(mem::size_of::<Row<T>>(), mem::size_of::<usize>() * 5);
 
         let a = self.compute_index(a);
         let b = self.compute_index(b);
@@ -167,7 +172,7 @@ impl<T> Storage<T> {
             //
             // The optimizer unrolls this loop and vectorizes it.
             let mut tmp: MaybeUninit<usize>;
-            for i in 0..4 {
+            for i in 0..5 {
                 tmp = *a_ptr.offset(i);
                 *a_ptr.offset(i) = *b_ptr.offset(i);
                 *b_ptr.offset(i) = tmp;
@@ -230,7 +235,11 @@ impl<T> Storage<T> {
         //
         // Requires `zeroed` to be smaller than `self.inner.len() * 2`,
         // but both `self.zero` and `requested` are always smaller than `self.inner.len()`.
-        if zeroed >= self.inner.len() { zeroed - self.inner.len() } else { zeroed }
+        if zeroed >= self.inner.len() {
+            zeroed - self.inner.len()
+        } else {
+            zeroed
+        }
     }
 
     /// Rotate the ringbuffer to reset `self.zero` back to index `0`.
@@ -366,7 +375,9 @@ mod tests {
             visible_lines: 4,
             len: 4,
         };
-        expected.inner.append(&mut vec![filled_row('\0'); MAX_CACHE_SIZE]);
+        expected
+            .inner
+            .append(&mut vec![filled_row('\0'); MAX_CACHE_SIZE]);
 
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -407,7 +418,9 @@ mod tests {
             visible_lines: 4,
             len: 4,
         };
-        expected.inner.append(&mut vec![filled_row('\0'); MAX_CACHE_SIZE]);
+        expected
+            .inner
+            .append(&mut vec![filled_row('\0'); MAX_CACHE_SIZE]);
 
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -740,7 +753,12 @@ mod tests {
         ];
         let expected_init_size = std::cmp::max(init_size, MAX_CACHE_SIZE);
         expected_inner.append(&mut vec![filled_row('\0'); expected_init_size]);
-        let expected_storage = Storage { inner: expected_inner, zero: 0, visible_lines: 0, len: 9 };
+        let expected_storage = Storage {
+            inner: expected_inner,
+            zero: 0,
+            visible_lines: 0,
+            len: 9,
+        };
 
         assert_eq!(storage.len, expected_storage.len);
         assert_eq!(storage.zero, expected_storage.zero);

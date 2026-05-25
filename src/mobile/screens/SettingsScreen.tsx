@@ -234,6 +234,9 @@ export function SettingsScreen(props: SettingsScreenProps) {
 				<a href="/" class={styles.link}>
 					Open Desktop UI
 				</a>
+				<a href="/process/monitor" class={styles.link} target="_blank" rel="noopener">
+					Process Monitor
+				</a>
 			</section>
 
 			<div class={styles.footer}>TUICommander Mobile</div>

@@ -50,6 +50,21 @@ pub(super) async fn start_dir_watcher_http(
     }
 }
 
+/// Update the set of hot (active-terminal) repo paths via HTTP.
+pub(super) async fn set_hot_repos_http(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let paths: Vec<String> = body
+        .get("paths")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+    let mut hot = state.hot_repo_paths.write();
+    hot.clear();
+    hot.extend(paths);
+    (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response()
+}
+
 /// Stop a directory watcher via HTTP.
 pub(super) async fn stop_dir_watcher_http(
     State(state): State<Arc<AppState>>,

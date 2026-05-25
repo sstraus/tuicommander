@@ -27,6 +27,13 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `debug_agent_detection` | `session_id: String` | `AgentDiagnostics` | Returns diagnostic breakdown of agent detection pipeline |
 | `set_session_name` | `session_id, name` | `()` | Set custom display name for a session |
 | `get_input_buffer_content` | `session_id` | `String` | Get the current content of the input line buffer (what the user is typing). Used by plugins with `pty:read` capability. |
+| `get_process_stats` | -- | `Vec<ProcessStat>` | CPU% and RSS memory for TUIC and all child process trees |
+
+## Generators (`generators.rs`)
+
+| Command | Args | Returns | Description |
+|---------|------|---------|-------------|
+| `generate_value` | `generator_id, options` | `GeneratedValue` | Generate a secure random value (password, uuid_v4, uuid_v7, ulid, cuid2, jwt_secret, totp_secret, nano_id, slug, ed25519_keypair) |
 
 ## Git Operations (`git.rs`)
 
@@ -434,6 +441,17 @@ Uses incremental parsing with a file-size-based cache (`claude-usage-cache.json`
 |---------|------|---------|-------------|
 | `plugin_http_fetch` | `url, method?, headers?, body?, allowed_urls, plugin_id` | `HttpResponse` | Make HTTP request (validated against allowed_urls) |
 
+## Code Intelligence / MDKB (`mdkb_commands.rs`)
+
+| Command | Args | Returns | Description |
+|---------|------|---------|-------------|
+| `mdkb_status` | — | `MdkbStatus` | Check if mdkb binary is available and daemon connected |
+| `mdkb_outline` | `repo_path, file_path` | `Vec<OutlineSymbol>` | Get symbol outline (functions, types) for a file |
+| `mdkb_goto_definition` | `repo_path, file_path, line, col?` | `DefinitionLocation?` | Find definition of symbol at position |
+| `mdkb_references` | `repo_path, symbol_name` | `Vec<ReferenceLocation>` | Find all callers of a symbol via code_graph |
+| `install_mdkb` | — | `String` | Download and install mdkb binary |
+| `uninstall_mdkb` | — | `()` | Remove mdkb binary (errors for homebrew/cargo installs) |
+
 ## Plugin CLI Execution (`plugin_exec.rs`)
 
 | Command | Args | Returns | Description |
@@ -462,6 +480,7 @@ Uses incremental parsing with a file-size-based cache (`claude-usage-cache.json`
 | `stop_repo_watcher` | `path` | `()` | Stop watching .git/ |
 | `start_dir_watcher` | `path` | `()` | Watch directory for file changes (non-recursive) |
 | `stop_dir_watcher` | `path` | `()` | Stop watching directory |
+| `set_hot_repos` | `paths: Vec<String>` | `()` | Set repos with active terminals (cold repos get throttled watchers/polling) |
 
 ## System (`lib.rs`)
 

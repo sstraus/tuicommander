@@ -120,6 +120,7 @@ Clickable file paths in terminal output (absolute and relative paths with known 
 | `confirm_before_quit` | `true` | Show dialog when quitting with active terminals |
 | `confirm_before_closing_tab` | `true` | Show dialog when closing tab with running process |
 | `split_tab_mode` | `"separate"` | Tab bar mode for split panes |
+| `tab_ordering_mode` | `"grouped-by-type"` | Tab ordering: "grouped-by-type", "terminals-first", "free" |
 | `intent_tab_title` | `true` | Show agent intent as tab title |
 | `suggest_followups` | `true` | Show suggested follow-up actions from agents |
 | `bell_style` | `"visual"` | Terminal bell: "none", "visual", "sound", "both" |

@@ -32,7 +32,7 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev mold
 
       - name: Install Vulkan SDK (Windows)
         if: matrix.platform == 'windows-latest'
@@ -60,6 +60,9 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -112,6 +115,14 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # sccache
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
+          CARGO_INCREMENTAL: "0"
+          CMAKE_C_COMPILER_LAUNCHER: "sccache"
+          CMAKE_CXX_COMPILER_LAUNCHER: "sccache"
+          # mold linker on Linux
+          RUSTFLAGS: ${{ matrix.label == 'Linux-x64' && '-C link-arg=-fuse-ld=mold' || '' }}
           # macOS signing — uses certificate imported in previous step
           APPLE_CERTIFICATE: ${{ secrets.DEVELOPER_ID_CERT_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
@@ -126,12 +137,9 @@ jobs:
           # whisper.cpp build flags per platform:
           # - macOS: override -march to avoid i8mm detection mismatch on M-series < M4 (Metal GPU always active)
           # - Linux: -fPIC required for whisper-rs-sys static linking
-          # - Windows: Vulkan GPU support enabled via target-specific Cargo.toml dependency
-          #   (whisper-rs = { version = "0.16", features = ["vulkan"] } in [target.'cfg(windows)'.dependencies])
-          #   Vulkan SDK installed via jakoch/install-vulkan-sdk-action.
-          #   For optional CUDA support, add: Jimver/cuda-toolkit@v0.2.x + FEATURES=cuda cargo flag.
-          CMAKE_C_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Linux-x64' && '-fPIC' || '' }}
-          CMAKE_CXX_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Linux-x64' && '-fPIC' || '' }}
+          # - Windows: Vulkan GPU support enabled via target-specific Cargo.toml dependency + /Z7 for sccache MSVC compat
+          CMAKE_C_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Linux-x64' && '-fPIC' || matrix.label == 'Windows-x64' && '/Z7' || '' }}
+          CMAKE_CXX_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Linux-x64' && '-fPIC' || matrix.label == 'Windows-x64' && '/Z7' || '' }}
         with:
           tauriScript: npx tauri
           tagName: v__VERSION__
@@ -179,7 +187,7 @@ jobs:
         if: startsWith(matrix.platform, 'ubuntu')
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev mold
 
       - name: Install cross-compilation tools (aarch64)
         if: matrix.target == 'aarch64-unknown-linux-gnu'
@@ -194,6 +202,9 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
@@ -202,7 +213,11 @@ jobs:
       - name: Build tuic-remote
         working-directory: src-tauri
         env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
+          CARGO_INCREMENTAL: "0"
           CARGO_PROFILE_RELEASE_STRIP: 'true'
+          RUSTFLAGS: ${{ startsWith(matrix.platform, 'ubuntu') && matrix.target != 'aarch64-unknown-linux-gnu' && '-C link-arg=-fuse-ld=mold' || '' }}
         run: cargo build --release --no-default-features --bin tuic-remote --target ${{ matrix.target }}
 
       - name: Smoke test (Linux x64)

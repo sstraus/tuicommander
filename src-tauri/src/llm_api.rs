@@ -117,7 +117,7 @@ pub(crate) async fn execute_api_prompt(
     }
     chat_req = chat_req.append_message(ChatMessage::user(content));
 
-    let duration = Duration::from_millis(timeout_ms.min(60_000));
+    let duration = Duration::from_millis(timeout_ms.min(120_000));
 
     let result = tokio::time::timeout(duration, client.exec_chat(&config.model, chat_req, None))
         .await

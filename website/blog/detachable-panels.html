@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Detachable panels: stop letting overlays cover your work — TUICommander Blog</title>
+  <meta name="description" content="Modals cover the terminal you're working in. Detachable panels pop any panel out into its own window — park the Activity Dashboard on a second monitor and watch every agent without a single context switch." />
+
+  <meta property="og:title" content="Detachable panels: stop letting overlays cover your work" />
+  <meta property="og:description" content="An underrated TUICommander feature: pop any panel out into its own OS window. Put the Activity Dashboard on a spare monitor and keep an eye on every terminal while you work." />
+  <meta property="og:type" content="article" />
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/style.css" />
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PCXPSMR9JZ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-PCXPSMR9JZ');
+  </script>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="/" class="nav-logo">
+        <img src="/logo.png" alt="TUICommander" width="28" height="28" />
+        <span>TUICommander</span>
+      </a>
+      <div class="nav-links">
+        <a href="/#features">Features</a>
+        <a href="/blog.html" class="nav-active">Blog</a>
+        <a href="/#faq">FAQ</a>
+        <a href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary btn-sm" rel="noopener noreferrer">Download</a>
+      </div>
+    </div>
+  </nav>
+
+  <article class="blog-post">
+    <header class="blog-post-header">
+      <a href="/blog.html" class="blog-back">&larr; Blog</a>
+      <time>May 16, 2026</time>
+      <h1>Detachable panels: stop letting overlays cover your work</h1>
+      <p class="blog-post-summary">Modals cover the terminal you're working in. Detachable panels pop any panel out into its own OS window — park the Activity Dashboard on a second monitor and watch every agent without a single context switch.</p>
+    </header>
+
+    <div class="blog-section">
+      <h2>The overlay problem</h2>
+      <p>You're driving an agent in one terminal. You want to glance at what the other five are doing. So you hit a shortcut, an overlay slides in — and now it's covering the exact terminal you were reading.</p>
+      <p>To see the dashboard, you hide your work. To see your work, you hide the dashboard. The two things you most want to look at <em>at the same time</em> are mutually exclusive by design. Every overlay, every modal, every popup panel has this property: it borrows screen space from whatever is underneath it.</p>
+      <p>The result is a rhythm of small interruptions. Open the panel, read it, close it, find your place again. Repeat every few minutes. None of those interruptions is large, but together they tax exactly the kind of long, focused session TUICommander is built for.</p>
+    </div>
+
+    <figure class="blog-figure">
+      <img src="/public/blog/detachable-panels/hero.png" alt="TUICommander on a wide monitor: the main window on the left with an editor and terminal, and the Activity Dashboard detached into its own window on the right showing every terminal's status" />
+      <figcaption>The Activity Dashboard popped out into its own window — every terminal's status visible while the main window stays on the actual work.</figcaption>
+    </figure>
+
+    <div class="blog-section">
+      <h2>Detach it instead</h2>
+      <p>The fix is almost embarrassingly simple: don't draw the panel <em>over</em> the app. Draw it in its own window.</p>
+      <p>Every panel in TUICommander has a detach button. Click it and the panel pops out of the main window into a real, separate OS window — one you can move, resize, and place wherever you want. The overlay stops being an overlay. It becomes a second window you own.</p>
+      <p>Once it's out, the conflict disappears. The panel and your terminal are both visible, full size, all the time. No shortcut to toggle, no place to lose, no work hidden behind a modal.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>The Activity Dashboard, always on</h2>
+      <p>The clearest example is the Activity Dashboard. Press <code>Cmd+Shift+A</code> and you get a live list of every terminal you have open: which agent is in each one, whether it's working or idle or waiting for input, what it's currently doing, and when it last produced output.</p>
+      <p>As an overlay, it's useful but interruptive — a thing you check and dismiss. Detached, it becomes ambient. Park it on a spare monitor and it just sits there, updating in real time. You stop <em>checking</em> on your agents and start simply <em>seeing</em> them, the same way you see a clock on the wall without deciding to.</p>
+      <p>When one terminal goes idle and another starts waiting for input, the dashboard reorders itself — working agents float to the top, idle ones settle to the bottom — so the things that need you are always where your eye lands first. You switch to a terminal by clicking its row; the main window comes forward and focuses it.</p>
+      <p>It's an underrated feature. People discover the dashboard, use it as a popup, and never realize the most valuable thing about it is that it doesn't have to be a popup at all.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Not just the dashboard — every panel</h2>
+      <p>Detaching isn't special-cased for the Activity Dashboard. It's built into the panel system itself, so it applies across the board: the file browser, the git panel, markdown previews, the code outline, notes. If it's a panel, it detaches.</p>
+      <p>That means you can build the layout <em>you</em> want instead of the one a single window forces on you. Keep a markdown spec open in its own window next to the terminal implementing it. Float the git panel on a second monitor while you review a diff. Pull the file browser out so it isn't competing with your terminal for width. The main window goes back to doing one job well — being a terminal — and everything else lives where you put it.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Built for the monitors we actually have</h2>
+      <p>A decade ago, cramming everything into one window made sense — screens were small and a panel really did have to share space. That constraint is mostly gone. Most of us now work on large displays, often two of them, and a single-window app leaves all that real estate empty while stacking its own panels on top of each other.</p>
+      <p>Detachable panels treat your desk as the layout surface, not the app window. Spread things out. Put the work in the center, the reference material to the side, and the status display off in the corner of your vision. The app stops deciding where your tools go — you do.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>It stays live</h2>
+      <p>A detached panel isn't a frozen snapshot. The Activity Dashboard in its own window keeps updating exactly like the inline one — terminals change status, rows reorder, timestamps tick. Click a row in the detached window and the main window responds. It's the same panel, just in a frame you control.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>What's next</h2>
+      <p>Detachable panels remove a small friction that you stop noticing only once it's gone — the moment your status display and your work are finally on screen together. We're working on remembering window positions across restarts, so the layout you build once comes back the way you left it.</p>
+      <p>If you use the Activity Dashboard as a popup, try detaching it onto a spare monitor for a day. It's hard to go back.</p>
+    </div>
+  </article>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sstraus/tuicommander" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/sstraus/tuicommander/releases" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/FEATURES.md" rel="noopener noreferrer">Docs</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin API</a>
+      </div>
+      <p>Apache License 2.0 &copy; 2026 Stefano Straus</p>
+      <p class="footer-tech">Built with Rust, Tauri v2, SolidJS</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

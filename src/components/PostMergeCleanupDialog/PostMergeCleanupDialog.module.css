@@ -57,6 +57,13 @@
   margin-top: -2px;
 }
 
+.stepNote {
+  padding-left: 30px;
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+  margin-top: -2px;
+}
+
 .worktreeSelect {
   background: var(--bg-secondary);
   color: var(--fg-primary);

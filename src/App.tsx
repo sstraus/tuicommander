@@ -29,12 +29,14 @@ import releaseNotes from "./assets/release-notes.json";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ContextMenu, type ContextMenuItem, createContextMenu } from "./components/ContextMenu";
 import { CreateWorktreeDialog } from "./components/CreateWorktreeDialog";
+import { GeneratorsModal } from "./components/GeneratorsModal";
 import {
 	type CleanupStep,
 	PostMergeCleanupDialog,
 	type StepId,
 	type StepStatus,
 } from "./components/PostMergeCleanupDialog/PostMergeCleanupDialog";
+import { ProcessManagerModal } from "./components/ProcessManagerModal/ProcessManagerModal";
 import { PromptDialog } from "./components/PromptDialog";
 import { RenameBranchDialog } from "./components/RenameBranchDialog";
 import { RunCommandDialog } from "./components/RunCommandDialog";
@@ -68,6 +70,7 @@ import { McpPopup } from "./components/McpPopup/McpPopup";
 import { MobileViewBanner } from "./components/MobileViewBanner";
 import qd from "./components/QuitDialog/QuitDialog.module.css";
 import { ToastContainer } from "./components/ToastContainer/ToastContainer";
+import { getAgentIconSvg } from "./components/ui/AgentIcon";
 import { type WorktreeActions, WorktreeManager } from "./components/WorktreeManager";
 import { initDeepLinkHandler } from "./deep-link-handler";
 import { useAgentDetection } from "./hooks/useAgentDetection";
@@ -136,6 +139,7 @@ import { settingsStore } from "./stores/settings";
 import { tasksStore } from "./stores/tasks";
 import { terminalsStore } from "./stores/terminals";
 import { toastsStore } from "./stores/toasts";
+import { tunnelPanelStore } from "./stores/tunnelPanel";
 import { uiStore } from "./stores/ui";
 import { updaterStore } from "./stores/updater";
 import { userActivityStore } from "./stores/userActivity";
@@ -145,6 +149,7 @@ import { isTauri } from "./transport";
 import { buildAgentLaunchCommand } from "./utils/agentSession";
 import { openFileAction } from "./utils/filePreview";
 import { keyFor } from "./utils/hotkey";
+import { navigateToTerminal } from "./utils/navigateToTerminal";
 import { createPanelSyncProvider, type PanelAction } from "./utils/panelSync";
 import { initPaneTabAssignment } from "./utils/paneTabAssign";
 import { pathBasename, pathStartsWith, pathStripPrefix } from "./utils/pathUtils";
@@ -291,6 +296,8 @@ const App: Component = () => {
 	const repo = useRepository();
 	const dialogs = useConfirmDialog();
 
+	const [showProcessManager, setShowProcessManager] = createSignal(false);
+	const [showGenerators, setShowGenerators] = createSignal(false);
 	const [whatsNewVersion, setWhatsNewVersion] = createSignal<string | null>(null);
 	const whatsNewEntry = () => {
 		const v = whatsNewVersion();
@@ -351,6 +358,7 @@ const App: Component = () => {
 		Partial<Record<StepId, StepStatus>>
 	>({});
 	const [worktreeCleanupStepErrors, setWorktreeCleanupStepErrors] = createSignal<Partial<Record<StepId, string>>>({});
+	const [worktreeCleanupStepNotes, setWorktreeCleanupStepNotes] = createSignal<Partial<Record<StepId, string>>>({});
 	const [worktreeCleanupAction, setWorktreeCleanupAction] = createSignal<"archive" | "delete">("archive");
 
 	const handleWorktreeCleanupExecute = async (steps: CleanupStep[], options?: { unstash?: boolean }) => {
@@ -359,6 +367,7 @@ const App: Component = () => {
 		setWorktreeCleanupExecuting(true);
 		setWorktreeCleanupStepStatuses({});
 		setWorktreeCleanupStepErrors({});
+		setWorktreeCleanupStepNotes({});
 		await executeCleanup({
 			repoPath: ctx.repoPath,
 			branchName: ctx.branchName,
@@ -371,6 +380,7 @@ const App: Component = () => {
 				setWorktreeCleanupStepStatuses((prev) => ({ ...prev, [id]: result as StepStatus }));
 				if (error) setWorktreeCleanupStepErrors((prev) => ({ ...prev, [id]: error }));
 			},
+			onStepNote: (id, note) => setWorktreeCleanupStepNotes((prev) => ({ ...prev, [id]: note })),
 			closeTerminalsForBranch: gitOps.closeTerminalsForBranch,
 		});
 		// Brief delay so user sees final statuses
@@ -432,6 +442,7 @@ const App: Component = () => {
 	});
 
 	// Register built-in activity sections for git and worktree notifications
+	activityStore.registerSection({ id: "terminals", label: "TERMINALS", priority: 10, canDismissAll: true });
 	activityStore.registerSection({ id: "git-ops", label: "GIT", priority: 30, canDismissAll: true });
 	activityStore.registerSection({ id: "worktrees", label: "WORKTREES", priority: 40, canDismissAll: true });
 
@@ -505,7 +516,9 @@ const App: Component = () => {
 	{
 		let unlisten: (() => void) | undefined;
 		listen<string>("panel-window-closed", (event) => {
-			uiStore.clearDetached(event.payload);
+			const panelId = event.payload;
+			uiStore.clearDetached(panelId);
+			panelRegistry[panelId]?.toggle?.();
 		}).then((fn) => {
 			unlisten = fn;
 		});
@@ -786,6 +799,17 @@ const App: Component = () => {
 		),
 	);
 
+	// Dismiss terminal completion activity item when user views the terminal
+	createEffect(
+		on(
+			() => terminalsStore.state.activeId,
+			(id) => {
+				if (id) activityStore.dismissItem(`terminal-done-${id}`);
+			},
+			{ defer: true },
+		),
+	);
+
 	// Wire terminal close → conversationStore cleanup
 	{
 		const dispose = terminalsStore.onRemove((id) => {
@@ -886,7 +910,30 @@ const App: Component = () => {
 			}
 			appLogger.info("terminal", `[Notify] ${id} completion — busy for ${Math.round(durationMs / 1000)}s then idle`);
 			terminalsStore.update(id, { activity: true, unseen: true });
-			notificationsStore.playCompletion();
+			notificationsStore.playCompletion(id);
+			const agentLabel = terminal.agentType ? terminal.agentType[0].toUpperCase() + terminal.agentType.slice(1) : null;
+			const repoPath = repositoriesStore.getRepoPathForTerminal(id);
+			const repoName = repoPath ? pathBasename(repoPath) : null;
+			const durationStr = `ran for ${Math.round(durationMs / 1000)}s`;
+			const subtitleParts: string[] = [];
+			if (repoName) subtitleParts.push(repoName);
+			subtitleParts.push(durationStr);
+			if (terminal.agentIntent) subtitleParts.push(terminal.agentIntent);
+
+			const defaultIcon =
+				'<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M0 2.75C0 1.784.784 1 1.75 1h12.5c.966 0 1.75.784 1.75 1.75v10.5A1.75 1.75 0 0 1 14.25 15H1.75A1.75 1.75 0 0 1 0 13.25Zm1.75-.25a.25.25 0 0 0-.25.25v10.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25V2.75a.25.25 0 0 0-.25-.25ZM7.25 8a.749.749 0 0 1-.22.53l-2.25 2.25a.749.749 0 1 1-1.06-1.06L5.44 8 3.72 6.28a.749.749 0 1 1 1.06-1.06l2.25 2.25c.141.14.22.331.22.53Zm1.5 1.5h3a.75.75 0 0 1 0 1.5h-3a.75.75 0 0 1 0-1.5Z"/></svg>';
+
+			activityStore.addItem({
+				id: `terminal-done-${id}`,
+				pluginId: "core",
+				sectionId: "terminals",
+				title: `${agentLabel ?? terminal.name} finished`,
+				subtitle: subtitleParts.join(" · "),
+				icon: (terminal.agentType && getAgentIconSvg(terminal.agentType, 14)) || defaultIcon,
+				repoPath: repoPath ?? undefined,
+				dismissible: true,
+				onClick: () => navigateToTerminal(id),
+			});
 		};
 
 		const t = terminalsStore.get(id);
@@ -995,6 +1042,7 @@ const App: Component = () => {
 		terminalsStore.update(active.id, {
 			name: AGENTS[agentType].name,
 			nameIsCustom: true,
+			agentLaunchCommand: cmd,
 		});
 	};
 
@@ -1057,6 +1105,7 @@ const App: Component = () => {
 						nameIsCustom: true,
 						pendingInitCommand: finalCmd,
 						agentType: agent.type,
+						agentLaunchCommand: cmd,
 					});
 				}
 			};
@@ -1414,13 +1463,26 @@ const App: Component = () => {
 		const windowLabel = `floating-${tabId}`;
 		const url = `index.html#/floating?sessionId=${encodeURIComponent(term.sessionId)}&tabId=${encodeURIComponent(tabId)}&name=${encodeURIComponent(term.name)}`;
 
-		new WebviewWindow(windowLabel, {
+		const floatingWin = new WebviewWindow(windowLabel, {
 			url,
 			title: term.name || "Terminal",
 			width: 800,
 			height: 600,
 			center: true,
 			decorations: true,
+		});
+
+		floatingWin.once("tauri://destroyed", () => {
+			if (terminalsStore.isDetached(tabId)) {
+				reattachFallback(tabId);
+				setTimeout(() => {
+					const ref = terminalsStore.get(tabId)?.ref;
+					if (ref) {
+						ref.refresh();
+						ref.fit();
+					}
+				}, 150);
+			}
 		});
 
 		terminalsStore.detach(tabId, windowLabel);
@@ -1480,10 +1542,9 @@ const App: Component = () => {
 
 		listen<{ tabId: string; sessionId: string }>("reattach-terminal", (event) => {
 			const { tabId } = event.payload;
+			if (!terminalsStore.isDetached(tabId)) return;
 			reattachFallback(tabId);
 			setStatusInfo("Tab reattached");
-			// Force refresh after the pane becomes visible again — the terminal
-			// canvas may have lost its rendering context while hidden with display:none.
 			setTimeout(() => {
 				const ref = terminalsStore.get(tabId)?.ref;
 				if (ref) {
@@ -1683,6 +1744,71 @@ const App: Component = () => {
 			detachPanel("activity").catch((e) =>
 				appLogger.error("app", "Failed to detach Activity Dashboard", { error: String(e) }),
 			);
+		},
+		toggleProcessManager: () => setShowProcessManager((v) => !v),
+		toggleGenerators: () => setShowGenerators((v) => !v),
+		blockPrev: () => {
+			const term = terminalsStore.getActive();
+			if (!term?.ref || term.commandBlocks.length === 0) return;
+			const sessionId = term.ref.getSessionId();
+			if (!sessionId) return;
+			invoke<[number, number, number]>("terminal_scroll_info", { sessionId })
+				.then(([offset, total]) => {
+					const viewTop = total - offset;
+					const blocks = term.commandBlocks;
+					for (let i = blocks.length - 1; i >= 0; i--) {
+						if (blocks[i].promptLine < viewTop - 1) {
+							term.ref!.scrollToLine(blocks[i].promptLine);
+							return;
+						}
+					}
+				})
+				.catch(() => {});
+		},
+		blockNext: () => {
+			const term = terminalsStore.getActive();
+			if (!term?.ref || term.commandBlocks.length === 0) return;
+			const sessionId = term.ref.getSessionId();
+			if (!sessionId) return;
+			invoke<[number, number, number]>("terminal_scroll_info", { sessionId })
+				.then(([offset, total]) => {
+					const viewTop = total - offset;
+					const blocks = term.commandBlocks;
+					for (const block of blocks) {
+						if (block.promptLine > viewTop + 1) {
+							term.ref!.scrollToLine(block.promptLine);
+							return;
+						}
+					}
+					term.ref!.scrollToBottom();
+				})
+				.catch(() => {});
+		},
+		blockFoldToggle: () => {
+			const term = terminalsStore.getActive();
+			if (!term?.ref || term.commandBlocks.length === 0) return;
+			const sessionId = term.ref.getSessionId();
+			if (!sessionId) return;
+			invoke<[number, number, number]>("terminal_scroll_info", { sessionId })
+				.then(([offset, total, screenRows]) => {
+					const viewCenter = total - offset + Math.floor(screenRows / 2);
+					const blocks = term.commandBlocks;
+					let nearest = blocks[0];
+					let bestDist = Math.abs(nearest.promptLine - viewCenter);
+					for (let i = 1; i < blocks.length; i++) {
+						const dist = Math.abs(blocks[i].promptLine - viewCenter);
+						if (dist < bestDist) {
+							nearest = blocks[i];
+							bestDist = dist;
+						}
+					}
+					terminalsStore.toggleBlockFold(term.id, nearest.promptLine);
+				})
+				.catch(() => {});
+		},
+		blockSearchToggle: () => {
+			const active = terminalsStore.getActive();
+			active?.ref?.openSearch();
 		},
 		newFile: () => {
 			const defaultPath = gitOps.activeWorktreePath() || repositoriesStore.state.activeRepoPath || undefined;
@@ -1917,6 +2043,9 @@ const App: Component = () => {
 				case "reopen-closed-tab":
 					terminalLifecycle.reopenClosedTab();
 					break;
+				case "new-file":
+					shortcutHandlers.newFile();
+					break;
 				case "open-file":
 					shortcutHandlers.openFile();
 					break;
@@ -1944,6 +2073,15 @@ const App: Component = () => {
 				// Edit
 				case "clear-terminal":
 					terminalLifecycle.clearTerminal();
+					break;
+				case "clear-scrollback":
+					terminalLifecycle.clearScrollback();
+					break;
+				case "refresh-terminal":
+					terminalLifecycle.refreshTerminal();
+					break;
+				case "find-in-terminal":
+					shortcutHandlers.findInTerminal();
 					break;
 
 				// View
@@ -1989,6 +2127,21 @@ const App: Component = () => {
 				case "outline-panel":
 					uiStore.toggleOutlinePanel();
 					break;
+				case "ai-chat":
+					if (settingsStore.isAiChatEnabled()) shortcutHandlers.toggleAiChatPanel();
+					break;
+				case "compose-panel":
+					shortcutHandlers.toggleComposePanel();
+					break;
+				case "zoom-pane":
+					splitPanes.toggleZoomPane();
+					break;
+				case "focus-mode":
+					uiStore.toggleFocusMode();
+					break;
+				case "global-workspace":
+					shortcutHandlers.toggleGlobalWorkspace();
+					break;
 
 				// Go
 				case "next-tab":
@@ -1996,6 +2149,19 @@ const App: Component = () => {
 					break;
 				case "prev-tab":
 					terminalLifecycle.navigateTab("prev");
+					break;
+
+				case "block-prev":
+					shortcutHandlers.blockPrev();
+					break;
+				case "block-next":
+					shortcutHandlers.blockNext();
+					break;
+				case "block-fold-toggle":
+					shortcutHandlers.blockFoldToggle();
+					break;
+				case "block-search-toggle":
+					shortcutHandlers.blockSearchToggle();
 					break;
 
 				// Tools
@@ -2030,6 +2196,16 @@ const App: Component = () => {
 					break;
 				case "task-queue":
 					setTaskQueueVisible((v) => !v);
+					break;
+				case "content-search":
+					commandPaletteStore.open();
+					commandPaletteStore.setQuery("?");
+					break;
+				case "tunnels":
+					tunnelPanelStore.toggle();
+					break;
+				case "process-manager":
+					setShowProcessManager((v) => !v);
 					break;
 
 				// Help
@@ -2236,6 +2412,7 @@ const App: Component = () => {
 						gitOps.handleMergeAndArchive(repoPath, branchName, mainBranch, afterMerge);
 					}}
 					creatingWorktreeRepos={gitOps.creatingWorktreeRepos()}
+					removingBranches={gitOps.removingBranches()}
 					onAddRepo={gitOps.handleAddRepo}
 					onRepoSettings={(repoPath) =>
 						gitOps.handleRepoSettings(repoPath, (ctx) => {
@@ -2330,7 +2507,8 @@ const App: Component = () => {
 									: undefined
 								: gitOps.currentRepoPath()
 						}
-						cwd={gitOps.activeWorktreePath()}
+						cwd={terminalsStore.getActive()?.cwd || gitOps.activeWorktreePath()}
+						repoRoot={gitOps.activeWorktreePath()}
 						onBranchRenamed={(oldName, newName) => {
 							const repoPath = gitOps.currentRepoPath();
 							if (repoPath) {
@@ -2380,10 +2558,12 @@ const App: Component = () => {
 				onCheckoutRemote={gitOps.handleCheckoutRemoteBranch}
 			/>
 
-			{/* Activity dashboard */}
-			<Suspense>
-				<ActivityDashboard onSelect={terminalLifecycle.handleTerminalSelect} />
-			</Suspense>
+			{/* Activity dashboard — unmount when closed to release memos/subscriptions */}
+			<Show when={!uiStore.isDetached("activity") && activityDashboardStore.state.isOpen}>
+				<Suspense>
+					<ActivityDashboard onSelect={terminalLifecycle.handleTerminalSelect} />
+				</Suspense>
+			</Show>
 
 			{/* SSH Tunnels panel (experimental) */}
 			<Show when={settingsStore.state.experimentalFeaturesEnabled}>
@@ -2545,6 +2725,16 @@ const App: Component = () => {
 				}}
 			/>
 
+			{/* Process Manager modal */}
+			<Show when={showProcessManager()}>
+				<ProcessManagerModal onClose={() => setShowProcessManager(false)} />
+			</Show>
+
+			{/* Generators modal */}
+			<Show when={showGenerators()}>
+				<GeneratorsModal onClose={() => setShowGenerators(false)} />
+			</Show>
+
 			{/* What's New dialog — shown once after stable version update */}
 			<WhatsNewDialog
 				visible={whatsNewVersion() !== null && (whatsNewEntry()?.highlights.length ?? 0) > 0}
@@ -2585,6 +2775,7 @@ const App: Component = () => {
 							executing={worktreeCleanupExecuting()}
 							stepStatuses={worktreeCleanupStepStatuses()}
 							stepErrors={worktreeCleanupStepErrors()}
+							stepNotes={worktreeCleanupStepNotes()}
 							onExecute={handleWorktreeCleanupExecute}
 							onSkip={handleWorktreeCleanupSkip}
 						/>

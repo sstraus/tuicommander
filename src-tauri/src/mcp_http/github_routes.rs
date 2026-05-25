@@ -30,6 +30,13 @@ pub(super) async fn repo_pr_statuses(
         return e.into_response();
     }
     let path = q.path;
+    if let Some(cached) = crate::state::AppState::get_cached(
+        &state.git_cache.github_status,
+        &path,
+        crate::state::GITHUB_CACHE_TTL,
+    ) {
+        return Json(cached).into_response();
+    }
     match crate::github::get_repo_pr_statuses_impl(&path, false, &state).await {
         Ok(statuses) => Json(statuses).into_response(),
         Err(e) => err_500(&format!("Task failed: {e}")),
@@ -200,6 +207,16 @@ pub(super) async fn poller_update_paths(
         let _ = poller.cmd_tx.try_send(PollerCmd::UpdatePaths(body.paths));
     }
     Json(serde_json::json!({"ok": true})).into_response()
+}
+
+pub(super) async fn api_debug_set(Json(body): Json<super::types::SetApiDebugRequest>) -> Response {
+    crate::github_debug::set(body.enabled);
+    Json(serde_json::json!({"ok": true, "enabled": body.enabled})).into_response()
+}
+
+pub(super) async fn api_debug_get() -> Response {
+    let enabled = crate::github_debug::enabled();
+    Json(serde_json::json!({"enabled": enabled})).into_response()
 }
 
 pub(super) async fn poller_set_issue_filter(

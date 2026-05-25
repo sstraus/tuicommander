@@ -212,7 +212,7 @@ fn check_version_match(app: &tauri::AppHandle, installed_path: &str) -> bool {
     installed_size == sidecar_size
 }
 
-fn copy_with_elevation(src: &str, dst: &str) -> Result<(), String> {
+pub(crate) fn copy_with_elevation(src: &str, dst: &str) -> Result<(), String> {
     // Ensure parent directory exists
     if let Some(parent) = std::path::Path::new(dst).parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -272,7 +272,7 @@ fn copy_with_elevation(src: &str, dst: &str) -> Result<(), String> {
     Err("Unsupported platform".to_string())
 }
 
-fn remove_with_elevation(path: &str) -> Result<(), String> {
+pub(crate) fn remove_with_elevation(path: &str) -> Result<(), String> {
     if std::fs::remove_file(path).is_ok() {
         return Ok(());
     }

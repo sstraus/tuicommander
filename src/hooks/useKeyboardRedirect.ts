@@ -28,19 +28,12 @@ const EXCLUDED_KEYS = new Set([
 const INPUT_ELEMENTS = new Set(["INPUT", "TEXTAREA", "SELECT"]);
 
 /**
- * Check if an element is inside a terminal pane
+ * Check if an element is inside a terminal pane.
+ * Uses closest() for a single native call instead of a JS loop.
  */
 function isInsideTerminal(element: Element | null): boolean {
-	while (element) {
-		if (element.classList?.contains("terminal-pane")) {
-			return true;
-		}
-		if (element.classList?.contains("xterm")) {
-			return true;
-		}
-		element = element.parentElement;
-	}
-	return false;
+	if (!element) return false;
+	return element.closest(".terminal-pane, .xterm") !== null;
 }
 
 /**

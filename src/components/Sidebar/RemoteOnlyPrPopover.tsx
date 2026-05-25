@@ -60,6 +60,7 @@ export const RemoteOnlyPrPopover: Component<{
 	const [cleanupExecuting, setCleanupExecuting] = createSignal(false);
 	const [cleanupStepStatuses, setCleanupStepStatuses] = createSignal<Partial<Record<StepId, StepStatus>>>({});
 	const [cleanupStepErrors, setCleanupStepErrors] = createSignal<Partial<Record<StepId, string>>>({});
+	const [cleanupStepNotes, setCleanupStepNotes] = createSignal<Partial<Record<StepId, string>>>({});
 
 	// Notify parent when cleanup dialog is active so it keeps us mounted
 	createEffect(() => {
@@ -93,6 +94,7 @@ export const RemoteOnlyPrPopover: Component<{
 		setCleanupExecuting(true);
 		setCleanupStepStatuses({});
 		setCleanupStepErrors({});
+		setCleanupStepNotes({});
 
 		await executeCleanup({
 			repoPath: props.repoPath,
@@ -108,6 +110,7 @@ export const RemoteOnlyPrPopover: Component<{
 				setCleanupStepStatuses((prev) => ({ ...prev, [id]: result }));
 				if (error) setCleanupStepErrors((prev) => ({ ...prev, [id]: error }));
 			},
+			onStepNote: (id, note) => setCleanupStepNotes((prev) => ({ ...prev, [id]: note })),
 		});
 
 		setCleanupExecuting(false);
@@ -256,6 +259,7 @@ export const RemoteOnlyPrPopover: Component<{
 						executing={cleanupExecuting()}
 						stepStatuses={cleanupStepStatuses()}
 						stepErrors={cleanupStepErrors()}
+						stepNotes={cleanupStepNotes()}
 					/>
 				)}
 			</Show>

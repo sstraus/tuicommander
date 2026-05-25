@@ -143,6 +143,7 @@ impl ChatRegistry {
     }
 
     /// Take a snapshot of the current conversation state.
+    #[allow(dead_code)]
     pub async fn snapshot(&self, chat_id: &str) -> ConversationStateSnapshot {
         let slot = self.get_or_create(chat_id);
         let guard = slot.lock().await;
@@ -150,6 +151,7 @@ impl ChatRegistry {
     }
 
     /// Mutate conversation state via a closure and return the new snapshot.
+    #[allow(dead_code)]
     pub async fn update<F>(&self, chat_id: &str, f: F) -> ConversationStateSnapshot
     where
         F: FnOnce(&mut ConversationState),
@@ -242,6 +244,7 @@ impl ChatRegistry {
     pub async fn fan_out(&self, _chat_id: &str, _event: ChatEvent) {}
 
     /// Convenience: update state + fan_out a Snapshot event.
+    #[allow(dead_code)]
     pub async fn update_and_notify<F>(&self, chat_id: &str, f: F)
     where
         F: FnOnce(&mut ConversationState),
@@ -251,6 +254,7 @@ impl ChatRegistry {
     }
 
     /// Append a message to the chat.
+    #[allow(dead_code)]
     pub async fn append_message(&self, chat_id: &str, msg: ChatMessage) {
         self.update_and_notify(chat_id, |s| {
             s.messages.push(msg);
@@ -276,6 +280,7 @@ impl ChatRegistry {
     }
 
     /// Clear conversation state and notify subscribers.
+    #[allow(dead_code)]
     pub async fn clear(&self, chat_id: &str) {
         self.update(chat_id, |s| {
             s.messages.clear();
@@ -341,97 +346,6 @@ pub(crate) async fn chat_unsubscribe(
 ) -> Result<(), String> {
     validate_id(&chat_id)?;
     registry.unsubscribe(&chat_id, subscription_id).await;
-    Ok(())
-}
-
-#[cfg(feature = "desktop")]
-#[tauri::command]
-pub(crate) async fn chat_get_state(
-    registry: tauri::State<'_, ChatRegistry>,
-    chat_id: String,
-) -> Result<ConversationStateSnapshot, String> {
-    validate_id(&chat_id)?;
-    Ok(registry.snapshot(&chat_id).await)
-}
-
-#[cfg(feature = "desktop")]
-#[tauri::command]
-pub(crate) async fn chat_attach_terminal(
-    registry: tauri::State<'_, ChatRegistry>,
-    chat_id: String,
-    session_id: String,
-) -> Result<(), String> {
-    validate_id(&chat_id)?;
-    validate_id(&session_id)?;
-    registry
-        .update_and_notify(&chat_id, |s| {
-            s.set_attached_session_id(Some(session_id));
-        })
-        .await;
-    Ok(())
-}
-
-#[cfg(feature = "desktop")]
-#[tauri::command]
-pub(crate) async fn chat_detach_terminal(
-    registry: tauri::State<'_, ChatRegistry>,
-    chat_id: String,
-) -> Result<(), String> {
-    validate_id(&chat_id)?;
-    registry
-        .update_and_notify(&chat_id, |s| {
-            s.set_attached_session_id(None);
-        })
-        .await;
-    Ok(())
-}
-
-#[cfg(feature = "desktop")]
-#[tauri::command]
-pub(crate) async fn chat_clear(
-    registry: tauri::State<'_, ChatRegistry>,
-    chat_id: String,
-) -> Result<(), String> {
-    validate_id(&chat_id)?;
-    registry.clear(&chat_id).await;
-    Ok(())
-}
-
-#[cfg(feature = "desktop")]
-#[tauri::command]
-pub(crate) async fn chat_set_pinned(
-    registry: tauri::State<'_, ChatRegistry>,
-    chat_id: String,
-    pinned: bool,
-) -> Result<(), String> {
-    validate_id(&chat_id)?;
-    registry
-        .update_and_notify(&chat_id, |s| {
-            s.set_pinned(pinned);
-        })
-        .await;
-    Ok(())
-}
-
-#[cfg(feature = "desktop")]
-#[tauri::command]
-pub(crate) async fn chat_push_message(
-    registry: tauri::State<'_, ChatRegistry>,
-    chat_id: String,
-    role: String,
-    content: String,
-) -> Result<(), String> {
-    validate_id(&chat_id)?;
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64;
-    let msg = ChatMessage {
-        role,
-        content,
-        timestamp: ts,
-    };
-    registry.append_message(&chat_id, msg).await;
     Ok(())
 }
 

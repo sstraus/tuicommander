@@ -95,4 +95,26 @@ describe("createTabManager — reorderByIds", () => {
 			expect(mgr.getVisibleIds(null)).toEqual(["x", "y"]);
 		});
 	});
+
+	it("_addTabBackground adds to _order without changing activeId", () => {
+		testInScope(() => {
+			mgr._addTab(makeTab("a"));
+			mgr._addTabBackground(makeTab("b"));
+			mgr._addTabBackground(makeTab("c"));
+
+			expect(mgr.state.activeId).toBe("a");
+			expect(mgr.getVisibleIds(null)).toEqual(["a", "b", "c"]);
+		});
+	});
+
+	it("background tabs can be reordered", () => {
+		testInScope(() => {
+			mgr._addTab(makeTab("a"));
+			mgr._addTabBackground(makeTab("b"));
+			mgr._addTabBackground(makeTab("c"));
+
+			mgr.reorderByIds("c", "a", "before");
+			expect(mgr.getVisibleIds(null)).toEqual(["c", "a", "b"]);
+		});
+	});
 });

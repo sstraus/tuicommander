@@ -206,6 +206,21 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
 		sendToIframe({ type: "tuic:theme-changed", theme: extractThemeObject() });
 	};
 
+	// URL-mode iframes are cross-origin by design. If after a load event
+	// contentDocument becomes accessible, the iframe navigated to the
+	// TUIC app origin (e.g. via a relative link) — reset to about:blank.
+	const guardSameOriginNav = () => {
+		if (!iframeRef || !props.tab.url || props.tab.url.startsWith("file://")) return;
+		try {
+			if (iframeRef.contentDocument) {
+				appLogger.error("plugin", `Panel '${props.tab.id}' navigated to app origin — blocked`);
+				iframeRef.src = "about:blank";
+			}
+		} catch {
+			// Cross-origin — expected
+		}
+	};
+
 	/** Handle tuic:* SDK messages from the iframe */
 	const handleTuicMessage = (data: Record<string, unknown>) => {
 		switch (data.type) {
@@ -393,9 +408,14 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
 		const url = props.tab.url;
 		if (url?.startsWith("file://")) {
 			const filePath = decodeURIComponent(url.replace(/^file:\/\//, ""));
+			const dirPath = filePath.substring(0, filePath.lastIndexOf("/") + 1);
 			invoke<string>("read_external_file", { path: filePath })
 				.then((content) => {
-					setSrcdoc(injectThemeVars(content));
+					const baseTag = `<base href="http://asset.localhost${dirPath}">`;
+					const withBase = content.includes("<head")
+						? content.replace(/<head([^>]*)>/i, `<head$1>${baseTag}`)
+						: `${baseTag}${content}`;
+					setSrcdoc(injectThemeVars(withBase));
 				})
 				.catch((err) => {
 					appLogger.error("plugin", `Failed to read file:// tab content: ${filePath}`, err);
@@ -438,7 +458,10 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
 					ref={iframeRef}
 					src={props.tab.url}
 					sandbox="allow-scripts allow-same-origin"
-					onLoad={sendSdkInit}
+					onLoad={() => {
+						guardSameOriginNav();
+						sendSdkInit();
+					}}
 					style={iframeStyle}
 				/>
 			) : (

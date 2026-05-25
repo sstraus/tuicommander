@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agent-to-agent messaging: from terminal scraping to structured channels — TUICommander Blog</title>
+  <meta name="description" content="Two ways for AI agents to communicate through TUICommander: peer messaging for direct coordination, and MCP channels for real-time event push. No terminal scraping required." />
+
+  <meta property="og:title" content="Agent-to-agent messaging: from terminal scraping to structured channels" />
+  <meta property="og:description" content="Peer messaging and MCP channels give AI agents a direct communication path — faster and cheaper than reading each other's terminal output." />
+  <meta property="og:type" content="article" />
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/style.css" />
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PCXPSMR9JZ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-PCXPSMR9JZ');
+  </script>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="/" class="nav-logo">
+        <img src="/logo.png" alt="TUICommander" width="28" height="28" />
+        <span>TUICommander</span>
+      </a>
+      <div class="nav-links">
+        <a href="/#features">Features</a>
+        <a href="/blog.html" class="nav-active">Blog</a>
+        <a href="/#faq">FAQ</a>
+        <a href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary btn-sm" rel="noopener noreferrer">Download</a>
+      </div>
+    </div>
+  </nav>
+
+  <article class="blog-post">
+    <header class="blog-post-header">
+      <a href="/blog.html" class="blog-back">&larr; Blog</a>
+      <time>May 16, 2026</time>
+      <h1>Agent-to-agent messaging: from terminal scraping to structured channels</h1>
+      <p class="blog-post-summary">AI agents working together shouldn't have to read each other's terminal output. TUICommander provides two direct communication paths: peer messaging for structured coordination, and MCP channels for real-time event push. Here's how they work and when to use each.</p>
+    </header>
+
+    <div class="blog-section">
+      <h2>The evolution of agent communication</h2>
+      <p>In our <a href="/blog/cross-agent-orchestration.html">previous post</a>, we showed how one agent can drive another through TUICommander's <code>ai_terminal_*</code> tools. That approach works well when the orchestrator needs to literally type commands and read terminal output. But it has a fundamental limitation: communication is mediated by the terminal.</p>
+      <p>When Agent A wants to tell Agent B "the tests pass, move on to the next file," it has to:</p>
+      <ol>
+        <li>Send the text as a terminal command to B's PTY</li>
+        <li>Wait for B to process it</li>
+        <li>Read B's terminal output to confirm receipt</li>
+      </ol>
+      <p>This is like communicating by writing notes on a whiteboard and waiting for the other person to read them. It works, but there's a faster way: just talk directly.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Approach 1: Peer messaging</h2>
+      <p>TUICommander maintains a peer registry. Any agent connected via MCP can register itself, discover other agents, and send messages directly — without touching their terminal.</p>
+
+      <h3>The protocol</h3>
+      <pre><code>// Step 1: Register yourself (once, at session start)
+agent({ action: "register" })
+// TUIC uses your MCP session to identify you — no manual UUID needed
+
+// Step 2: Discover peers
+agent({ action: "list_peers" })
+→ [{ tuic_session: "abc-123", name: "claude-worker-1", project: "/code/myapp" },
+   { tuic_session: "def-456", name: "claude-worker-2", project: "/code/myapp" }]
+
+// Step 3: Send a message (max 64 KB)
+agent({ action: "send", to: "abc-123", message: "Tests pass. Proceed to auth module." })
+→ { ok: true, message_id: "msg-789", delivered_via_channel: true }
+
+// Step 4: Check your inbox
+agent({ action: "inbox", limit: 10, since: 1747400000000 })
+→ [{ from_name: "orchestrator", content: "Review complete. Ship it.", timestamp: ... }]</code></pre>
+
+      <h3>Delivery: push first, queue always</h3>
+      <p>When you send a message, TUICommander does two things:</p>
+      <ol>
+        <li><strong>Channel push</strong> — if the recipient has an active SSE stream (which Claude Code always does), the message is delivered instantly as a <code>notifications/claude/channel</code> event. It appears in the recipient's context immediately, as if the system injected a note mid-conversation.</li>
+        <li><strong>Inbox queue</strong> — the message is always stored in a FIFO queue (100 messages per agent, oldest evicted first). This handles cases where the push fails or the recipient reconnects later.</li>
+      </ol>
+      <p>The <code>delivered_via_channel: true</code> response tells you the message was pushed in real-time. If it's <code>false</code>, the recipient will see it on their next <code>inbox</code> poll — not a failure, just deferred delivery.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Approach 2: MCP channels (event push)</h2>
+      <p>MCP channels are a lower-level mechanism. Instead of agent-to-agent messaging, they let TUICommander push arbitrary events into an agent's context. The agent sees them as <code>&lt;channel&gt;</code> tags — structured metadata injected by the system.</p>
+      <p>TUICommander declares the <code>claude/channel</code> experimental capability when any Claude Code client connects:</p>
+      <pre><code>// In the MCP initialize response:
+{
+  "capabilities": {
+    "experimental": { "claude/channel": {} },
+    "tools": { ... }
+  }
+}</code></pre>
+      <p>When a peer message is sent, the recipient sees it as:</p>
+      <pre><code>&lt;channel source="tuicommander" from_tuic_session="abc-123"
+         from_name="orchestrator" message_id="msg-789"&gt;
+Message from orchestrator: Tests pass. Proceed to auth module.
+&lt;/channel&gt;</code></pre>
+      <p>This is powerful because it's <strong>interrupt-driven</strong>. The recipient doesn't need to poll an inbox — the message appears in their active conversation context as if a human typed it. Claude Code processes it in the current turn, not on the next tool call.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Example: Opus orchestrating three Sonnet workers</h2>
+      <p>A practical multi-agent setup: one Claude Opus session acts as an orchestrator, dispatching work to three Claude Sonnet sessions running in parallel.</p>
+
+      <h3>Setup</h3>
+      <pre><code>// Orchestrator (Opus) spawns three workers
+agent({ action: "spawn", agent_type: "claude", model: "sonnet",
+        prompt: "You are worker-1. Register with TUIC, then wait for instructions.",
+        cwd: "/code/myapp" })
+agent({ action: "spawn", agent_type: "claude", model: "sonnet",
+        prompt: "You are worker-2. Register with TUIC, then wait for instructions.",
+        cwd: "/code/myapp" })
+agent({ action: "spawn", agent_type: "claude", model: "sonnet",
+        prompt: "You are worker-3. Register with TUIC, then wait for instructions.",
+        cwd: "/code/myapp" })
+
+// Orchestrator registers itself
+agent({ action: "register" })
+
+// Wait a moment, then discover workers
+agent({ action: "list_peers", project: "/code/myapp" })
+→ [worker-1, worker-2, worker-3]</code></pre>
+
+      <h3>Dispatch</h3>
+      <pre><code>// Send parallel tasks
+agent({ action: "send", to: "worker-1-uuid",
+        message: "Refactor src/auth/ to use the new token format. Run tests when done." })
+agent({ action: "send", to: "worker-2-uuid",
+        message: "Add pagination to the /users endpoint. Include integration tests." })
+agent({ action: "send", to: "worker-3-uuid",
+        message: "Fix the 3 failing tests in src/billing/. Don't change the implementation." })</code></pre>
+
+      <h3>Coordination</h3>
+      <pre><code>// Workers send results back when done
+// (from worker-1's perspective, after finishing its task)
+agent({ action: "send", to: "orchestrator-uuid",
+        message: "Auth refactoring complete. All 12 tests pass. Changed 4 files." })
+
+// Orchestrator checks inbox periodically
+agent({ action: "inbox", since: last_check_timestamp })
+→ [{ from_name: "worker-1", content: "Auth refactoring complete..." },
+   { from_name: "worker-3", content: "Fixed 3 tests. Root cause was stale mock data." }]
+// worker-2 still working — no message yet</code></pre>
+
+      <p>The orchestrator can monitor progress without reading terminal output. If it needs details, it can still use <code>ai_terminal_read_screen</code> for a specific worker — but for coordination, peer messaging is faster and cheaper.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>When to use which approach</h2>
+      <table class="blog-table">
+        <thead>
+          <tr><th>Scenario</th><th>Best approach</th><th>Why</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Type a command into another agent's terminal</td>
+            <td><code>ai_terminal_drive_agent</code></td>
+            <td>You need PTY I/O — there's no alternative</td>
+          </tr>
+          <tr>
+            <td>Read what an agent produced</td>
+            <td><code>ai_terminal_read_screen</code></td>
+            <td>Terminal output is the source of truth</td>
+          </tr>
+          <tr>
+            <td>Tell an agent "move to the next task"</td>
+            <td>Peer messaging (<code>send</code>)</td>
+            <td>Coordination signal, not a terminal command</td>
+          </tr>
+          <tr>
+            <td>Broadcast "deploy succeeded" to all workers</td>
+            <td>Peer messaging (loop over <code>list_peers</code>)</td>
+            <td>Event notification to multiple recipients</td>
+          </tr>
+          <tr>
+            <td>React to another agent finishing</td>
+            <td>Channel push (automatic via <code>send</code>)</td>
+            <td>Interrupt-driven, zero polling</td>
+          </tr>
+          <tr>
+            <td>Monitor agent state without interacting</td>
+            <td><code>ai_terminal_get_state</code></td>
+            <td>Structured JSON about shell state, no messages needed</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>The key distinction: <strong>PTY tools</strong> are for when you need to interact with the terminal (type, read, wait). <strong>Peer messaging</strong> is for when you need to coordinate between agents (dispatch, report, synchronize). They're complementary — most real orchestration uses both.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Token cost comparison</h2>
+      <p>Coordinating three workers across 10 task cycles. Each cycle: dispatch a task, wait for completion, collect results.</p>
+      <table class="blog-table">
+        <thead>
+          <tr><th></th><th>PTY drive (read terminal)</th><th>Peer messaging</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Dispatch</td><td>~200 tokens (drive_agent call)</td><td>~100 tokens (send call)</td></tr>
+          <tr><td>Wait for completion</td><td>~150 tokens/poll &times; N polls</td><td>0 tokens (channel push arrives)</td></tr>
+          <tr><td>Collect results</td><td>~500 tokens (read_screen)</td><td>~150 tokens (inbox message)</td></tr>
+          <tr><td>Per-cycle total</td><td>~1000–2000 tokens</td><td>~250 tokens</td></tr>
+          <tr><td>10 cycles &times; 3 workers</td><td>~30,000–60,000 tokens</td><td>~7,500 tokens</td></tr>
+        </tbody>
+      </table>
+      <p>The savings come from two places: no terminal output parsing (messages are structured text, not screen dumps), and no polling (channel push delivers results the instant they're sent).</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Implementation details</h2>
+      <h3>Registration</h3>
+      <p>When an agent calls <code>agent({ action: "register" })</code>, TUICommander maps their MCP session ID to a <code>PeerAgent</code> record: display name, project path, and registration timestamp. The <code>TUIC_SESSION</code> environment variable (a stable UUID set when the terminal tab was created) serves as the peer's primary identifier.</p>
+
+      <h3>Message delivery</h3>
+      <p>Messages are stored in a per-agent FIFO queue (100 messages max, oldest evicted on overflow). On send, TUIC checks whether the recipient has an active SSE stream. If yes, it pushes the message as a JSON-RPC notification over that stream — Claude Code's MCP client receives it as a <code>claude/channel</code> event and injects it into the conversation context.</p>
+
+      <h3>Lifecycle</h3>
+      <p>When a terminal session closes, its peer registration is automatically removed. Pending messages in its inbox are preserved briefly (for reconnection scenarios) then garbage-collected. Other peers see the session disappear from <code>list_peers</code>.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>The tuic CLI: orchestration from the command line</h2>
+      <p>Everything above uses MCP tool calls — the natural interface for AI agents. But you can do the same from a shell script or a human terminal using the <code>tuic</code> CLI:</p>
+      <pre><code># Spawn a Claude Sonnet worker
+tuic agent spawn --type claude --model sonnet --prompt "Wait for instructions." --cwd /code/myapp
+
+# List active agent peers
+tuic agent list-peers --project /code/myapp
+
+# Send a message to a specific peer
+tuic agent send --to abc-123 --message "Run the integration tests and report back."
+
+# Read your inbox
+tuic agent inbox --limit 5
+
+# Or combine with session tools for hybrid workflows:
+tuic session list                          # See all terminals
+tuic session output --id abc-123           # Read clean terminal output
+tuic session input --id abc-123 "npm test" # Type a command</code></pre>
+      <p>This is the same protocol — the CLI is a thin wrapper over the MCP HTTP API. You can script an entire multi-agent pipeline in bash, use it from CI, or mix human commands with agent coordination. Install it from Settings &gt; General &gt; Command Line Interface.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Limitations and future work</h2>
+      <ul>
+        <li><strong>No broadcast primitive</strong> — to message all peers, the orchestrator loops over <code>list_peers</code> and sends individually. A native broadcast action is planned.</li>
+        <li><strong>Channel push requires SSE</strong> — if Claude Code disconnects its SSE stream (rare, but possible during reconnection), messages fall back to inbox-only delivery. The agent sees them on next <code>inbox</code> call.</li>
+        <li><strong>64 KB message limit</strong> — large payloads (full file contents, large diffs) should go through the filesystem or <code>ai_terminal_read_screen</code>. Peer messages are for coordination signals, not data transfer.</li>
+        <li><strong>No message acknowledgment</strong> — the sender knows if the channel push succeeded, but not whether the recipient acted on it. For critical workflows, agents should send explicit reply messages.</li>
+      </ul>
+      <p>We're exploring structured message types (task assignment, completion report, error escalation) with schemas that agents can parse without free-text interpretation. The goal: agent coordination with zero ambiguity and minimal tokens.</p>
+    </div>
+  </article>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sstraus/tuicommander" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/sstraus/tuicommander/releases" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/FEATURES.md" rel="noopener noreferrer">Docs</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin API</a>
+      </div>
+      <p>Apache License 2.0 &copy; 2026 Stefano Straus</p>
+      <p class="footer-tech">Built with Rust, Tauri v2, SolidJS</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

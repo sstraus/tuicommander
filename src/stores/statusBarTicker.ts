@@ -145,22 +145,6 @@ function createStatusBarTicker() {
 		},
 
 		/**
-		 * Get the current message to display. Returns the highest-priority
-		 * non-expired message, rotating among equal-priority messages.
-		 * @deprecated Use getRotationState() for richer display info.
-		 */
-		getCurrentMessage(): TickerMessage | null {
-			const active = activeMessages();
-			if (active.length === 0) return null;
-
-			const sorted = [...active].sort((a, b) => b.priority - a.priority);
-			const maxPriority = sorted[0].priority;
-			const topPriority = sorted.filter((m) => m.priority === maxPriority);
-			const idx = rotationIndex() % topPriority.length;
-			return topPriority[idx];
-		},
-
-		/**
 		 * Get rotation state for the TickerArea component.
 		 * Respects priority tiers: urgent pins, normal rotates, low is popover-only.
 		 */

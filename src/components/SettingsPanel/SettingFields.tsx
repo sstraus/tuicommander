@@ -50,6 +50,7 @@ export const SettingSlider: Component<{
 	max: number;
 	step?: number;
 	suffix?: string;
+	formatValue?: (value: number) => string;
 	hint?: string;
 }> = (props) => (
 	<div class={s.group}>
@@ -63,10 +64,7 @@ export const SettingSlider: Component<{
 				value={props.value}
 				onInput={(e) => props.onChange(parseInt(e.currentTarget.value, 10))}
 			/>
-			<span>
-				{props.value}
-				{props.suffix ?? ""}
-			</span>
+			<span>{props.formatValue ? props.formatValue(props.value) : `${props.value}${props.suffix ?? ""}`}</span>
 		</div>
 		<Show when={props.hint}>
 			<p class={s.hint}>{props.hint}</p>

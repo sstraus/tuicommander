@@ -1,5 +1,9 @@
 // --- Binary frame decoding and font measurement for CanvasTerminal ---
 
+// Layout constants
+export const GUTTER_PX = 6;
+export const SCROLLBAR_PX = 14;
+
 // Wire format constants (must match terminal_grid.rs)
 const HEADER_SIZE = 22;
 const CELL_SIZE = 11; // 4 (char u32) + 3 (fg) + 3 (bg) + 1 (attrs)

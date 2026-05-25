@@ -211,23 +211,41 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for RingBufferLayer {
 
         let source = visitor
             .source
+            .take()
             .unwrap_or_else(|| event.metadata().target().to_string());
 
-        let message = visitor.message.unwrap_or_default();
+        let message = visitor.message.take().unwrap_or_default();
         if message.is_empty() {
             return;
         }
 
+        let data_json = visitor.data_json();
         let mut buf = self.buffer.lock();
-        buf.push(level.to_string(), source, message, None);
+        buf.push(level.to_string(), source, message, data_json);
     }
 }
 
-/// Visitor that extracts `message` and `source` fields from a tracing event.
+/// Visitor that extracts `message`, `source`, and extra fields from a tracing event.
 #[derive(Default)]
 struct LogVisitor {
     message: Option<String>,
     source: Option<String>,
+    extra: Option<std::collections::BTreeMap<String, String>>,
+}
+
+impl LogVisitor {
+    fn data_json(&self) -> Option<String> {
+        let extra = self.extra.as_ref()?;
+        if extra.is_empty() {
+            return None;
+        }
+        serde_json::to_string(extra).ok()
+    }
+
+    fn extra_mut(&mut self) -> &mut std::collections::BTreeMap<String, String> {
+        self.extra
+            .get_or_insert_with(std::collections::BTreeMap::new)
+    }
 }
 
 impl tracing::field::Visit for LogVisitor {
@@ -235,7 +253,10 @@ impl tracing::field::Visit for LogVisitor {
         match field.name() {
             "message" => self.message = Some(value.to_string()),
             "source" => self.source = Some(value.to_string()),
-            _ => {}
+            _ => {
+                self.extra_mut()
+                    .insert(field.name().to_string(), value.to_string());
+            }
         }
     }
 
@@ -243,8 +264,26 @@ impl tracing::field::Visit for LogVisitor {
         match field.name() {
             "message" => self.message = Some(format!("{value:?}")),
             "source" => self.source = Some(format!("{value:?}")),
-            _ => {}
+            _ => {
+                self.extra_mut()
+                    .insert(field.name().to_string(), format!("{value:?}"));
+            }
         }
+    }
+
+    fn record_bool(&mut self, field: &tracing::field::Field, value: bool) {
+        self.extra_mut()
+            .insert(field.name().to_string(), value.to_string());
+    }
+
+    fn record_i64(&mut self, field: &tracing::field::Field, value: i64) {
+        self.extra_mut()
+            .insert(field.name().to_string(), value.to_string());
+    }
+
+    fn record_u64(&mut self, field: &tracing::field::Field, value: u64) {
+        self.extra_mut()
+            .insert(field.name().to_string(), value.to_string());
     }
 }
 

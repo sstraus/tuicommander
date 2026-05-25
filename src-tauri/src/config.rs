@@ -208,6 +208,16 @@ pub(crate) enum SplitTabMode {
     Unified,
 }
 
+/// Tab ordering mode for the tab bar
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum TabOrderingMode {
+    #[default]
+    GroupedByType,
+    TerminalsFirst,
+    Free,
+}
+
 /// Where to create worktree directories
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -481,6 +491,9 @@ pub(crate) struct AppConfig {
     /// Split tab mode: separate (each pane gets a tab) or unified (one shared tab)
     #[serde(default)]
     pub(crate) split_tab_mode: SplitTabMode,
+    /// Tab ordering mode: grouped-by-type, terminals-first, or free
+    #[serde(default)]
+    pub(crate) tab_ordering_mode: TabOrderingMode,
     /// Auto-show PR detail popover when a branch has PR data
     #[serde(default = "default_true")]
     pub(crate) auto_show_pr_popover: bool,
@@ -524,6 +537,9 @@ pub(crate) struct AppConfig {
     /// Auto-copy terminal selection to clipboard
     #[serde(default = "default_true")]
     pub(crate) copy_on_select: bool,
+    /// Show last prompt overlay bar at the top of the terminal
+    #[serde(default = "default_true")]
+    pub(crate) show_last_prompt: bool,
     /// Terminal bell style: "none", "visual", "sound", or "both"
     #[serde(default = "default_bell_style")]
     pub(crate) bell_style: String,
@@ -565,6 +581,12 @@ pub(crate) struct AppConfig {
     /// rejection after. Coordinate those call sites if live reload is ever added.
     #[serde(default)]
     pub(crate) ai_terminal_mcp_enabled: bool,
+    /// Content index pre-warm strategy: "active_and_switch" (default), "active_only", "all_sequential"
+    #[serde(default = "default_index_strategy")]
+    pub(crate) index_strategy: String,
+    /// Minutes of idle + unfocused before SIGSTOP on process group. 0 = disabled.
+    #[serde(default = "default_standby_timeout")]
+    pub(crate) standby_timeout_minutes: u16,
 }
 
 fn default_language() -> String {
@@ -581,6 +603,14 @@ fn default_update_channel() -> String {
 
 fn default_session_token_duration_secs() -> u64 {
     86400
+}
+
+fn default_index_strategy() -> String {
+    "active_and_switch".to_string()
+}
+
+fn default_standby_timeout() -> u16 {
+    5
 }
 
 fn default_bell_style() -> String {
@@ -637,6 +667,7 @@ impl Default for AppConfig {
             confirm_before_closing_tab: true,
             max_tab_name_length: default_max_tab_name_length(),
             split_tab_mode: SplitTabMode::default(),
+            tab_ordering_mode: TabOrderingMode::default(),
             auto_show_pr_popover: true,
             prevent_sleep_when_busy: false,
             auto_update_enabled: true,
@@ -650,6 +681,7 @@ impl Default for AppConfig {
             intent_tab_title: true,
             suggest_followups: true,
             copy_on_select: true,
+            show_last_prompt: true,
             bell_style: default_bell_style(),
             global_hotkey: None,
             collapse_tools: false,
@@ -662,6 +694,8 @@ impl Default for AppConfig {
             cursor_style: default_cursor_style(),
             terminal_renderer: default_terminal_renderer(),
             ai_terminal_mcp_enabled: false,
+            index_strategy: default_index_strategy(),
+            standby_timeout_minutes: default_standby_timeout(),
         }
     }
 }
@@ -711,6 +745,8 @@ pub(crate) struct NotificationConfig {
     pub(crate) volume: f64,
     #[serde(default)]
     pub(crate) sounds: NotificationSounds,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) audio_device: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -727,6 +763,7 @@ impl Default for NotificationConfig {
             enabled: true,
             volume: 0.5,
             sounds: NotificationSounds::default(),
+            audio_device: None,
         }
     }
 }
@@ -1598,6 +1635,7 @@ mod tests {
             confirm_before_closing_tab: true,
             max_tab_name_length: 40,
             split_tab_mode: SplitTabMode::Unified,
+            tab_ordering_mode: TabOrderingMode::TerminalsFirst,
             auto_show_pr_popover: true,
             prevent_sleep_when_busy: true,
             auto_update_enabled: false,
@@ -1611,6 +1649,7 @@ mod tests {
             suggest_followups: false,
             global_hotkey: Some("CommandOrControl+Shift+T".to_string()),
             copy_on_select: true,
+            show_last_prompt: false,
             bell_style: "visual".to_string(),
             collapse_tools: true,
             issue_filter: "assigned".to_string(),
@@ -1620,9 +1659,11 @@ mod tests {
             ai_watchers_enabled: false,
             scrollback_reflow: false,
             ai_terminal_mcp_enabled: false,
+            index_strategy: "active_and_switch".to_string(),
             cursor_style: "bar".to_string(),
             terminal_renderer: "webgl".to_string(),
             auto_update_plugins_enabled: false,
+            standby_timeout_minutes: 5,
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
         assert_eq!(loaded.shell.as_deref(), Some("/bin/zsh"));
@@ -1811,12 +1852,14 @@ mod tests {
                 warning: false,
                 info: true,
             },
+            audio_device: Some("Test Speaker".to_string()),
         };
         let loaded: NotificationConfig = round_trip_in_dir(dir.path(), "notifications.json", &cfg);
         assert!(!loaded.enabled);
         assert!((loaded.volume - 0.8).abs() < f64::EPSILON);
         assert!(loaded.sounds.question);
         assert!(!loaded.sounds.error);
+        assert_eq!(loaded.audio_device.as_deref(), Some("Test Speaker"));
     }
 
     #[test]
@@ -2100,6 +2143,38 @@ mod tests {
         let cfg2 = AppConfig::default();
         let json2 = serde_json::to_string(&cfg2).unwrap();
         assert!(json2.contains(r#""split_tab_mode":"separate""#));
+    }
+
+    #[test]
+    fn tab_ordering_mode_serializes_as_kebab_case() {
+        let cfg = AppConfig {
+            tab_ordering_mode: TabOrderingMode::TerminalsFirst,
+            ..AppConfig::default()
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert!(json.contains(r#""tab_ordering_mode":"terminals-first""#));
+
+        let cfg2 = AppConfig {
+            tab_ordering_mode: TabOrderingMode::Free,
+            ..AppConfig::default()
+        };
+        let json2 = serde_json::to_string(&cfg2).unwrap();
+        assert!(json2.contains(r#""tab_ordering_mode":"free""#));
+
+        let cfg3 = AppConfig::default();
+        let json3 = serde_json::to_string(&cfg3).unwrap();
+        assert!(json3.contains(r#""tab_ordering_mode":"grouped-by-type""#));
+    }
+
+    #[test]
+    fn tab_ordering_mode_round_trip() {
+        let cfg = AppConfig {
+            tab_ordering_mode: TabOrderingMode::Free,
+            ..AppConfig::default()
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        let loaded: AppConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(loaded.tab_ordering_mode, TabOrderingMode::Free);
     }
 
     #[test]

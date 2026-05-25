@@ -5,13 +5,13 @@ import { invoke } from "../invoke";
 import type { PanelAdapter } from "../panelRouter";
 import { activityDashboardStore } from "../stores/activityDashboard";
 import { globalWorkspaceStore } from "../stores/globalWorkspace";
-import { terminalsStore } from "../stores/terminals";
 import {
 	type ActivitySnapshot,
 	buildActivitySnapshot,
 	projectName,
 	terminalStatusLabel,
 } from "../utils/activitySnapshot";
+import { navigateToTerminal } from "../utils/navigateToTerminal";
 import { createPanelSyncReceiver } from "../utils/panelSync";
 
 function snapshotToRows(snap: ActivitySnapshot): TerminalRow[] {
@@ -19,9 +19,12 @@ function snapshotToRows(snap: ActivitySnapshot): TerminalRow[] {
 		id: t.id,
 		name: t.name,
 		project: projectName(t.cwd),
+		projectColor: undefined,
 		agent: t.agentType || "shell",
 		status: terminalStatusLabel(t.shellState, t.awaitingInput, t.isRateLimited, statusClasses),
+		isWorking: t.isRateLimited || !!t.awaitingInput || t.shellState === "busy",
 		lastDataAt: t.lastDataAt,
+		idleSince: t.idleSince,
 		lastPrompt: t.lastPrompt,
 		agentIntent: t.agentIntent,
 		currentTask: t.currentTask,
@@ -68,8 +71,7 @@ export const activityPanelAdapter: PanelAdapter = {
 		const termId = d.termId;
 		if (action === "navigate") {
 			void invoke("focus_main_window");
-			terminalsStore.setActive(termId);
-			requestAnimationFrame(() => terminalsStore.get(termId)?.ref?.focus());
+			navigateToTerminal(termId);
 		} else if (action === "promote") {
 			globalWorkspaceStore.togglePromote(termId);
 		}

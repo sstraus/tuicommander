@@ -93,10 +93,16 @@ pub(crate) async fn discover_protected_resource(
 
 /// Discover Authorization Server Metadata (RFC 8414 with OIDC fallback).
 ///
-/// 1. Tries `{issuer_url}/.well-known/oauth-authorization-server`
-/// 2. On 404, falls back to `{issuer_url}/.well-known/openid-configuration`
-/// 3. Validates that `issuer` in the response matches `issuer_url` (mix-up attack prevention)
-/// 4. Validates that authorization and token endpoints use HTTPS (localhost exempt)
+/// Tries candidates in order until one returns 200:
+/// 1. `{issuer_url}/.well-known/oauth-authorization-server` (simple append)
+/// 2. `{origin}/.well-known/oauth-authorization-server{path}` (RFC 8414 §3.1 insertion form,
+///    only when issuer has a non-trivial path — e.g. `https://access.stripe.com/mcp`)
+/// 3. `{issuer_url}/.well-known/openid-configuration` (OIDC fallback)
+/// 4. `{origin}/.well-known/openid-configuration{path}` (OIDC insertion form)
+///
+/// After a successful fetch:
+/// - Validates that `issuer` in the response matches `issuer_url` (mix-up attack prevention)
+/// - Validates that authorization and token endpoints use HTTPS (localhost exempt)
 pub(crate) async fn discover_auth_server(
     client: &reqwest::Client,
     issuer_url: &str,
@@ -129,65 +135,82 @@ async fn discover_auth_server_inner(
 
     let base = issuer_url.trim_end_matches('/');
 
-    // Try RFC 8414 first
-    let rfc8414_url = format!("{base}/.well-known/oauth-authorization-server");
-    let resp = client
-        .get(&rfc8414_url)
-        .send()
-        .await
-        .with_context(|| format!("Failed to fetch AS metadata from {rfc8414_url}"))?;
+    // RFC 8414 §3.1: for issuers with a path component (e.g.
+    // `https://access.stripe.com/mcp`), the well-known URL is formed by
+    // *inserting* `/.well-known/oauth-authorization-server` between the host
+    // and the path, not appending it at the end. Build the insertion-form
+    // candidates when the issuer has a non-trivial path.
+    //
+    // Candidate order (tried in sequence until one succeeds):
+    //   1. {issuer}/.well-known/oauth-authorization-server  (simple append, most servers)
+    //   2. {origin}/.well-known/oauth-authorization-server{path}  (RFC 8414 insertion form)
+    //   3. {issuer}/.well-known/openid-configuration  (OIDC simple append)
+    //   4. {origin}/.well-known/openid-configuration{path}  (OIDC RFC 8414 insertion form)
+    let parsed = url::Url::parse(issuer_url)
+        .with_context(|| format!("Invalid issuer URL '{issuer_url}'"))?;
+    let path = parsed.path();
+    let has_path = path != "/" && !path.is_empty();
+    let origin = parsed.origin().unicode_serialization();
 
-    let meta = if resp.status() == reqwest::StatusCode::NOT_FOUND {
-        // Fallback to OIDC discovery
-        let oidc_url = format!("{base}/.well-known/openid-configuration");
-        let oidc_resp = client
-            .get(&oidc_url)
+    let mut candidates: Vec<String> = Vec::with_capacity(4);
+    candidates.push(format!("{base}/.well-known/oauth-authorization-server"));
+    if has_path {
+        candidates.push(format!(
+            "{origin}/.well-known/oauth-authorization-server{path}"
+        ));
+    }
+    candidates.push(format!("{base}/.well-known/openid-configuration"));
+    if has_path {
+        candidates.push(format!("{origin}/.well-known/openid-configuration{path}"));
+    }
+
+    let mut last_status = String::new();
+    for url in &candidates {
+        let resp = client
+            .get(url)
             .send()
             .await
-            .with_context(|| format!("Failed to fetch OIDC metadata from {oidc_url}"))?;
+            .with_context(|| format!("Failed to fetch AS metadata from {url}"))?;
 
-        if !oidc_resp.status().is_success() {
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            last_status = "HTTP 404 Not Found".to_string();
+            continue;
+        }
+        if !resp.status().is_success() {
             bail!(
-                "Both RFC 8414 (404) and OIDC discovery (HTTP {}) failed for {base}",
-                oidc_resp.status()
+                "AS metadata endpoint returned HTTP {} for {url}",
+                resp.status()
             );
         }
 
-        oidc_resp
+        let meta = resp
             .json::<AuthServerMetadata>()
             .await
-            .context("Failed to parse OIDC discovery metadata JSON")?
-    } else if resp.status().is_success() {
-        resp.json::<AuthServerMetadata>()
-            .await
-            .context("Failed to parse AS metadata JSON")?
-    } else {
-        bail!(
-            "AS metadata endpoint returned HTTP {} for {rfc8414_url}",
-            resp.status()
-        );
-    };
+            .with_context(|| format!("Failed to parse AS metadata JSON from {url}"))?;
 
-    // Issuer validation (prevents mix-up attack)
-    if strict_issuer {
-        let expected_issuer = base.to_string();
-        if meta.issuer != expected_issuer {
-            bail!(
-                "Issuer mismatch: expected \"{expected_issuer}\", got \"{}\". \
-                 This may indicate an authorization server mix-up attack.",
-                meta.issuer
-            );
+        // Issuer validation (prevents mix-up attack)
+        if strict_issuer {
+            let expected_issuer = base.to_string();
+            if meta.issuer != expected_issuer {
+                bail!(
+                    "Issuer mismatch: expected \"{expected_issuer}\", got \"{}\". \
+                     This may indicate an authorization server mix-up attack.",
+                    meta.issuer
+                );
+            }
         }
+
+        // HTTPS enforcement for endpoints (localhost exempt for dev)
+        validate_endpoint_https(&meta.authorization_endpoint, "authorization_endpoint")?;
+        validate_endpoint_https(&meta.token_endpoint, "token_endpoint")?;
+        if let Some(ref reg) = meta.registration_endpoint {
+            validate_endpoint_https(reg, "registration_endpoint")?;
+        }
+
+        return Ok(meta);
     }
 
-    // HTTPS enforcement for endpoints (localhost exempt for dev)
-    validate_endpoint_https(&meta.authorization_endpoint, "authorization_endpoint")?;
-    validate_endpoint_https(&meta.token_endpoint, "token_endpoint")?;
-    if let Some(ref reg) = meta.registration_endpoint {
-        validate_endpoint_https(reg, "registration_endpoint")?;
-    }
-
-    Ok(meta)
+    bail!("Both RFC 8414 (404) and OIDC discovery ({last_status}) failed for {base}");
 }
 
 /// Validate that an endpoint URL uses HTTPS.
@@ -509,9 +532,95 @@ mod tests {
             .await
             .unwrap_err();
 
+        // RFC 8414 → 404 (skipped), OIDC → 500 (hard failure)
+        assert!(
+            err.to_string().contains("500"),
+            "should mention the 500 failure, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn discover_auth_server_rfc8414_path_insertion_form() {
+        // Simulates Stripe: issuer = https://access.stripe.com/mcp
+        // RFC 8414 §3.1 insertion form: {origin}/.well-known/oauth-authorization-server{path}
+        // i.e. /.well-known/oauth-authorization-server/mcp
+        let mut server = mockito::Server::new_async().await;
+        let origin = server.url(); // e.g. http://127.0.0.1:PORT
+        let issuer = format!("{origin}/mcp");
+
+        // Simple-append form → 404 (Stripe doesn't support this)
+        server
+            .mock("GET", "/mcp/.well-known/oauth-authorization-server")
+            .with_status(404)
+            .create_async()
+            .await;
+
+        // RFC 8414 insertion form → 200
+        server
+            .mock("GET", "/.well-known/oauth-authorization-server/mcp")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "issuer": &issuer,
+                    "authorization_endpoint": "https://access.stripe.com/mcp/oauth2/authorize",
+                    "token_endpoint": "https://access.stripe.com/mcp/oauth2/token",
+                    "code_challenge_methods_supported": ["S256"]
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let client = reqwest::Client::new();
+        // Use relaxed variant since mockito runs on http://127.0.0.1 (localhost exempt)
+        let meta = discover_auth_server_relaxed(&client, &issuer)
+            .await
+            .unwrap();
+
+        assert_eq!(meta.issuer, issuer);
+        assert_eq!(
+            meta.authorization_endpoint,
+            "https://access.stripe.com/mcp/oauth2/authorize"
+        );
+    }
+
+    #[tokio::test]
+    async fn discover_auth_server_all_candidates_404() {
+        let mut server = mockito::Server::new_async().await;
+        let origin = server.url();
+        let issuer = format!("{origin}/mcp");
+
+        // All four candidates → 404
+        server
+            .mock("GET", "/mcp/.well-known/oauth-authorization-server")
+            .with_status(404)
+            .create_async()
+            .await;
+        server
+            .mock("GET", "/.well-known/oauth-authorization-server/mcp")
+            .with_status(404)
+            .create_async()
+            .await;
+        server
+            .mock("GET", "/mcp/.well-known/openid-configuration")
+            .with_status(404)
+            .create_async()
+            .await;
+        server
+            .mock("GET", "/.well-known/openid-configuration/mcp")
+            .with_status(404)
+            .create_async()
+            .await;
+
+        let client = reqwest::Client::new();
+        let err = discover_auth_server_relaxed(&client, &issuer)
+            .await
+            .unwrap_err();
+
         assert!(
             err.to_string().contains("RFC 8414") && err.to_string().contains("OIDC"),
-            "should mention both failures, got: {err}"
+            "should mention both RFC 8414 and OIDC in final error, got: {err}"
         );
     }
 

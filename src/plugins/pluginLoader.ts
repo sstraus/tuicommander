@@ -9,6 +9,7 @@
 import { invoke, listen } from "../invoke";
 import { appLogger } from "../stores/appLogger";
 import { pluginStore } from "../stores/pluginStore";
+import { terminalsStore } from "../stores/terminals";
 import { isTauri } from "../transport";
 import { pluginRegistry } from "./pluginRegistry";
 import type { TuiPlugin } from "./types";
@@ -249,7 +250,15 @@ async function handlePluginChanged(event: { payload: string[] }): Promise<void> 
 	const changedIds = event.payload;
 	if (!Array.isArray(changedIds) || changedIds.length === 0) return;
 
+	let anyReloaded = false;
+
 	for (const pluginId of changedIds) {
+		// Skip disabled plugins early — no IPC, no store churn
+		if (disabledPluginIds.has(pluginId)) {
+			appLogger.debug("plugin", `Plugin "${pluginId}" changed but disabled, skipping`);
+			continue;
+		}
+
 		appLogger.info("plugin", `Plugin "${pluginId}" changed, reloading...`);
 
 		// Unregister if previously loaded
@@ -283,18 +292,29 @@ async function handlePluginChanged(event: { payload: string[] }): Promise<void> 
 			continue;
 		}
 
-		// Don't reload disabled plugins
-		if (disabledPluginIds.has(pluginId)) {
-			pluginStore.registerPlugin(pluginId, {
-				manifest,
-				builtIn: false,
-				enabled: false,
-				loaded: false,
-			});
-			continue;
-		}
-
 		await loadPlugin(manifest);
+		anyReloaded = true;
+	}
+
+	if (anyReloaded) {
+		replayActiveAgents(terminalsStore);
+	}
+}
+
+/** Replay agent-started events for terminals that already have a running agent. */
+function replayActiveAgents(store: typeof terminalsStore): void {
+	for (const id of store.getIds()) {
+		const t = store.get(id);
+		if (t?.agentType && t.sessionId) {
+			pluginRegistry.notifyStateChange({
+				type: "agent-started",
+				sessionId: t.sessionId,
+				terminalId: id,
+			});
+			if (t.shellState) {
+				pluginRegistry.dispatchStructuredEvent("shell-state", { state: t.shellState }, t.sessionId);
+			}
+		}
 	}
 }
 

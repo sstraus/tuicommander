@@ -81,7 +81,7 @@ export const OutlinePanel: Component<OutlinePanelProps> = (props) => {
 	};
 
 	return (
-		<div class={s.panel} data-visible={props.visible}>
+		<div id="outline-panel" class={s.panel} data-visible={props.visible}>
 			<div class={p.header}>
 				<div class={p.headerLeft}>
 					<span class={p.title}>Outline</span>

@@ -3723,7 +3723,11 @@ mod tests {
         // Build index synchronously and insert into state.
         // Use canonicalized path — FileSandbox::new canonicalizes, so the lookup key must match.
         let canonical_root = repo_root.canonicalize().unwrap();
-        let index = crate::content_index::ContentIndex::build(canonical_root.clone(), None);
+        let index = crate::content_index::ContentIndex::build(
+            canonical_root.clone(),
+            None,
+            std::collections::HashMap::new(),
+        );
         let index_arc = Arc::new(parking_lot::RwLock::new(index));
         state
             .content_indices

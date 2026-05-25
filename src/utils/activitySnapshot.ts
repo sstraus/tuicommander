@@ -37,6 +37,7 @@ export interface ActivityTerminalRow {
 	activeSubTasks: number;
 	cwd: string | null;
 	lastDataAt: number | null;
+	idleSince: number | null;
 	isActive: boolean;
 	isRateLimited: boolean;
 	isPromoted: boolean;
@@ -62,6 +63,7 @@ export function buildActivitySnapshot(): ActivitySnapshot {
 			activeSubTasks: t?.activeSubTasks ?? 0,
 			cwd: t?.cwd ?? null,
 			lastDataAt: terminalsStore.getLastDataAt(id),
+			idleSince: t?.idleSince ?? null,
 			isActive: terminalsStore.state.activeId === id,
 			isRateLimited: !!(t?.sessionId && rateLimitStore.isRateLimited(t.sessionId)),
 			isPromoted: globalWorkspaceStore.isPromoted(id),

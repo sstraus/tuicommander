@@ -23,6 +23,7 @@ import { useSidebarDragDrop } from "./useSidebarDragDrop";
 export interface SidebarProps {
 	quickSwitcherActive?: boolean;
 	creatingWorktreeRepos?: Set<string>;
+	removingBranches?: Set<string>;
 	onBranchSelect: (repoPath: string, branchName: string) => void;
 	onAddTerminal: (repoPath: string, branchName: string) => void;
 	onRemoveBranch: (repoPath: string, branchName: string) => void;
@@ -197,6 +198,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 				nameColor={nameColor()}
 				isDragging={drag.draggedRepoPath() === repo.path}
 				isCreatingWorktree={props.creatingWorktreeRepos?.has(repo.path)}
+				removingBranches={props.removingBranches}
 				dragOverClass={
 					drag.dragOverRepoPath() === repo.path && drag.draggedRepoPath() !== repo.path
 						? (DRAG_CLASSES[drag.dragOverSide() ?? ""] ?? undefined)

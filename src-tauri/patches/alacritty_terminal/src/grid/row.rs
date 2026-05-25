@@ -22,6 +22,12 @@ pub struct Row<T> {
     /// This is the upper bound on the number of elements in the row, which have been modified
     /// since the last reset. All cells after this point are guaranteed to be equal.
     pub(crate) occ: usize,
+
+    /// Set by shrink_columns when this row's WRAPLINE was created by a resize
+    /// operation. grow_columns only merges rows that have this flag, preventing
+    /// stale WRAPLINE from natural terminal wrapping from causing incorrect merges.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub reflow_wrap: bool,
 }
 
 impl<T: PartialEq> PartialEq for Row<T> {
@@ -52,7 +58,11 @@ impl<T: Default> Row<T> {
             inner.set_len(columns);
         }
 
-        Row { inner, occ: 0 }
+        Row {
+            inner,
+            occ: 0,
+            reflow_wrap: false,
+        }
     }
 
     /// Increase the number of columns in the row.
@@ -78,12 +88,19 @@ impl<T: Default> Row<T> {
 
         // Split off cells for a new row.
         let mut new_row = self.inner.split_off(columns);
-        let index = new_row.iter().rposition(|c| !c.is_empty()).map_or(0, |i| i + 1);
+        let index = new_row
+            .iter()
+            .rposition(|c| !c.is_empty())
+            .map_or(0, |i| i + 1);
         new_row.truncate(index);
 
         self.occ = min(self.occ, columns);
 
-        if new_row.is_empty() { None } else { Some(new_row) }
+        if new_row.is_empty() {
+            None
+        } else {
+            Some(new_row)
+        }
     }
 
     /// Reset all cells in the row to the `template` cell.
@@ -107,6 +124,7 @@ impl<T: Default> Row<T> {
         }
 
         self.occ = 0;
+        self.reflow_wrap = false;
     }
 }
 
@@ -114,7 +132,11 @@ impl<T: Default> Row<T> {
 impl<T> Row<T> {
     #[inline]
     pub fn from_vec(vec: Vec<T>, occ: usize) -> Row<T> {
-        Row { inner: vec, occ }
+        Row {
+            inner: vec,
+            occ,
+            reflow_wrap: false,
+        }
     }
 
     #[inline]

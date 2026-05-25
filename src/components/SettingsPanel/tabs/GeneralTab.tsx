@@ -6,7 +6,7 @@ import type { IdeType, UpdateChannel } from "../../../stores/settings";
 import { IDE_NAMES, settingsStore } from "../../../stores/settings";
 import { updaterStore } from "../../../stores/updater";
 import { isTauri } from "../../../transport";
-import { SettingInput, SettingSelect, SettingToggle } from "../SettingFields";
+import { SettingInput, SettingSelect, SettingSlider, SettingToggle } from "../SettingFields";
 import s from "../Settings.module.css";
 
 interface CliStatus {
@@ -16,9 +16,19 @@ interface CliStatus {
 	prompt_dismissed: boolean;
 }
 
+interface MdkbStatus {
+	available: boolean;
+	connected: boolean;
+	binaryPath: string | null;
+	version: string | null;
+}
+
 export const GeneralTab: Component = () => {
 	const [cliStatus, setCliStatus] = createSignal<CliStatus | null>(null);
 	const [cliInstalling, setCliInstalling] = createSignal(false);
+	const [mdkbStatus, setMdkbStatus] = createSignal<MdkbStatus | null>(null);
+	const [mdkbInstalling, setMdkbInstalling] = createSignal(false);
+	const [mdkbError, setMdkbError] = createSignal<string | null>(null);
 
 	const refreshCliStatus = async () => {
 		if (!isTauri()) return;
@@ -30,7 +40,20 @@ export const GeneralTab: Component = () => {
 		}
 	};
 
-	onMount(refreshCliStatus);
+	const refreshMdkbStatus = async () => {
+		if (!isTauri()) return;
+		try {
+			const status = await invoke<MdkbStatus>("mdkb_status");
+			setMdkbStatus(status);
+		} catch (err) {
+			appLogger.error("app", "Failed to get mdkb status", err);
+		}
+	};
+
+	onMount(() => {
+		refreshCliStatus();
+		refreshMdkbStatus();
+	});
 
 	const handleInstallCli = async () => {
 		setCliInstalling(true);
@@ -50,6 +73,30 @@ export const GeneralTab: Component = () => {
 			await refreshCliStatus();
 		} catch (err) {
 			appLogger.error("app", "Failed to uninstall CLI", err);
+		}
+	};
+
+	const handleInstallMdkb = async () => {
+		setMdkbInstalling(true);
+		try {
+			await invoke<string>("install_mdkb");
+			await refreshMdkbStatus();
+		} catch (err) {
+			appLogger.error("app", "Failed to install mdkb", err);
+		} finally {
+			setMdkbInstalling(false);
+		}
+	};
+
+	const handleUninstallMdkb = async () => {
+		setMdkbError(null);
+		try {
+			await invoke("uninstall_mdkb");
+			await refreshMdkbStatus();
+		} catch (err) {
+			const msg = typeof err === "string" ? err : String(err);
+			setMdkbError(msg);
+			appLogger.error("app", "Failed to uninstall mdkb", err);
 		}
 	};
 
@@ -73,7 +120,18 @@ export const GeneralTab: Component = () => {
 			/>
 
 			<Show when={isTauri() && cliStatus()}>
-				<h3>{t("general.heading.cli", "Command Line Interface")}</h3>
+				<h3>
+					{t("general.heading.cli", "TUIC CLI")}
+					<span class={s.infoBadge}>
+						?
+						<span class={s.infoBadgeTip}>
+							{t(
+								"general.hint.cliInfo",
+								"The TUIC CLI lets you control TUICommander from any terminal or script. Open files and URLs as tabs, manage PTY sessions (create, list, send input, read output), and query repository status. Useful for scripting automation.",
+							)}
+						</span>
+					</span>
+				</h3>
 
 				<div class={s.group}>
 					<Show
@@ -83,7 +141,7 @@ export const GeneralTab: Component = () => {
 								<p class={s.hint}>
 									{t(
 										"general.hint.cliNotInstalled",
-										"Install the tuic command to control TUICommander from the terminal. Open files, manage sessions, and use it as a tmux replacement.",
+										"Install the TUIC CLI to control TUICommander from any terminal or script. Open files and URLs as tabs, manage PTY sessions, and query repository status. Useful for scripting automation.",
 									)}
 								</p>
 								<button
@@ -94,7 +152,7 @@ export const GeneralTab: Component = () => {
 								>
 									{cliInstalling()
 										? t("general.btn.installing", "Installing...")
-										: t("general.btn.installCli", "Install tuic CLI")}
+										: t("general.btn.installCli", "Install TUIC CLI")}
 								</button>
 							</>
 						}
@@ -112,6 +170,64 @@ export const GeneralTab: Component = () => {
 						<button class={s.testBtn} onClick={handleUninstallCli} style={{ "margin-top": "8px" }}>
 							{t("general.btn.uninstallCli", "Uninstall")}
 						</button>
+					</Show>
+				</div>
+			</Show>
+
+			<Show when={isTauri()}>
+				<h3>
+					{t("general.heading.codeIntelligence", "Code Intelligence")}
+					<span class={s.infoBadge}>
+						?
+						<span class={s.infoBadgeTip}>
+							{t(
+								"general.hint.codeIntelligenceInfo",
+								"Integrates with MDKB to provide code navigation features in the editor: Cmd+Click go-to-definition, Shift+F12 find references, and symbol outline. Also serves as a persistent memory manager for AI agents, fully integrated with TUICommander. MDKB indexes your repositories and exposes a local daemon for fast lookups.",
+							)}
+						</span>
+					</span>
+				</h3>
+
+				<div class={s.group}>
+					<Show
+						when={mdkbStatus()?.available}
+						fallback={
+							<>
+								<p class={s.hint}>
+									{t(
+										"general.hint.mdkbNotInstalled",
+										"Install MDKB to enable outline, go-to-definition, and find references in the code editor.",
+									)}
+								</p>
+								<button
+									class={s.testBtn}
+									onClick={handleInstallMdkb}
+									disabled={mdkbInstalling()}
+									style={{ "margin-top": "8px" }}
+								>
+									{mdkbInstalling()
+										? t("general.btn.installing", "Installing...")
+										: t("general.btn.installMdkb", "Install MDKB")}
+								</button>
+							</>
+						}
+					>
+						<p class={s.hint} style={{ color: "var(--success)" }}>
+							{t("general.hint.mdkbInstalled", "Installed at {path}", {
+								path: mdkbStatus()!.binaryPath ?? "unknown",
+							})}
+							{mdkbStatus()!.version && (
+								<span style={{ "margin-left": "8px", color: "var(--fg-muted)" }}>v{mdkbStatus()!.version}</span>
+							)}
+						</p>
+						<button class={s.testBtn} onClick={handleUninstallMdkb} style={{ "margin-top": "8px" }}>
+							{t("general.btn.uninstallMdkb", "Uninstall")}
+						</button>
+						<Show when={mdkbError()}>
+							<p class={s.hint} style={{ color: "var(--error)" }}>
+								{mdkbError()}
+							</p>
+						</Show>
 					</Show>
 				</div>
 			</Show>
@@ -141,6 +257,13 @@ export const GeneralTab: Component = () => {
 				hint={t("general.hint.copyOnSelect", "Automatically copy selected text to clipboard")}
 			/>
 
+			<SettingToggle
+				checked={settingsStore.state.showLastPrompt}
+				onChange={(v) => settingsStore.setShowLastPrompt(v)}
+				label="Show last prompt bar"
+				hint="Display a collapsible overlay at the top of the terminal showing the last prompt sent to an agent"
+			/>
+
 			<h3>{t("general.heading.powerManagement", "Power Management")}</h3>
 
 			<SettingToggle
@@ -148,6 +271,32 @@ export const GeneralTab: Component = () => {
 				onChange={(v) => settingsStore.setPreventSleepWhenBusy(v)}
 				label={t("general.toggle.preventSleepWhenBusy", "Prevent sleep when busy")}
 				hint={t("general.hint.preventSleepWhenBusy", "Keep the system awake while scripts are running")}
+			/>
+
+			<SettingSlider
+				label="Auto-Standby Timeout"
+				value={settingsStore.state.standbyTimeoutMinutes}
+				onChange={(v) => settingsStore.setStandbyTimeoutMinutes(v)}
+				min={0}
+				max={60}
+				step={1}
+				formatValue={(v) => (v === 0 ? "Off" : `${v} min`)}
+				hint="Pause idle background sessions after this duration to save resources. 0 = disabled."
+			/>
+
+			<SettingSelect
+				label="Content Indexing"
+				value={settingsStore.state.indexStrategy}
+				onChange={(v) =>
+					settingsStore.setIndexStrategy(v as "active_only" | "active_and_switch" | "all_sequential" | "disabled")
+				}
+				options={[
+					{ value: "disabled", label: "Disabled" },
+					{ value: "active_only", label: "Active repo only" },
+					{ value: "active_and_switch", label: "Active + on switch" },
+					{ value: "all_sequential", label: "All repos at boot" },
+				]}
+				hint="When to build search indexes. Set to Disabled to turn off background indexing entirely."
 			/>
 
 			<h3>{t("general.heading.updates", "Updates")}</h3>
@@ -270,16 +419,6 @@ export const GeneralTab: Component = () => {
 					hint={t(
 						"general.hint.aiWatchers",
 						"Enable terminal watchers that trigger AI actions on shell events (idle, busy, errors).",
-					)}
-				/>
-
-				<SettingToggle
-					checked={settingsStore.state.scrollbackReflow}
-					onChange={(v) => settingsStore.setScrollbackReflow(v)}
-					label={t("general.toggle.scrollbackReflow", "Scrollback reflow")}
-					hint={t(
-						"general.hint.scrollbackReflow",
-						"Reflow scrollback history when the terminal width changes. Keeps history readable after opening/closing side panels. New terminals only.",
 					)}
 				/>
 			</Show>

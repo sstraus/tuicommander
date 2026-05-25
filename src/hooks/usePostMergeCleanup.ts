@@ -10,6 +10,7 @@ export interface CleanupConfig {
 	steps: { id: StepId; checked: boolean }[];
 	onStepStart: (id: StepId) => void;
 	onStepDone: (id: StepId, result: "success" | "error", error?: string) => void;
+	onStepNote?: (id: StepId, note: string) => void;
 	closeTerminalsForBranch: (repoPath: string, branchName: string) => Promise<void>;
 	/** When set, the "worktree" step calls finalize_merged_worktree with this action */
 	worktreeAction?: "archive" | "delete";
@@ -90,6 +91,9 @@ export async function executeCleanup(config: CleanupConfig): Promise<void> {
 						throw e;
 					}
 					didDeleteLocal = true;
+					if (keepWorktree) {
+						config.onStepNote?.(step.id, "Worktree kept — HEAD is now detached");
+					}
 					break;
 
 				case "delete-remote":

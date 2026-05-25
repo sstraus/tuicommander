@@ -1,5 +1,5 @@
 use alacritty_terminal::grid::ReflowMode;
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -947,6 +947,12 @@ pub struct AppState {
     /// Cooperative CPU throttle for content-index builders. Search handlers
     /// acquire a guard here so indexers pause and yield priority to the user.
     pub(crate) indexer_throttle: Arc<crate::content_index::IndexerThrottle>,
+    /// Repos whose content index build is currently in-flight (shared by
+    /// `ensure_index` and `rebuild_index` to prevent duplicate concurrent builds).
+    pub(crate) index_in_flight: Arc<DashSet<String>>,
+    /// Global semaphore limiting concurrent index builds to 1. Prevents startup
+    /// pre-warm from spawning N simultaneous BM25 builds that saturate the CPU.
+    pub(crate) index_build_sem: Arc<tokio::sync::Semaphore>,
     /// Per-session slash command mode (true when input starts with `/`).
     /// Used to suppress false-positive slash menu detection on PTY output.
     pub(crate) slash_mode: DashMap<String, std::sync::atomic::AtomicBool>,
@@ -1065,6 +1071,11 @@ pub struct AppState {
     /// Pending screenshot requests: request_id → oneshot sender for base64 image data.
     /// Populated by MCP `ui(action=screenshot)`, consumed by `screenshot_response` command.
     pub(crate) screenshot_responses: DashMap<String, tokio::sync::oneshot::Sender<Option<String>>>,
+    /// Sessions currently in standby (SIGSTOP'd). session_id → epoch ms when stopped.
+    #[cfg(unix)]
+    pub(crate) standby_sessions: DashMap<String, u64>,
+    /// Repos with active terminals — used to throttle watcher/polling for cold repos.
+    pub(crate) hot_repo_paths: parking_lot::RwLock<std::collections::HashSet<String>>,
 }
 
 impl AppState {
@@ -1139,6 +1150,8 @@ impl AppState {
             )),
             content_indices: DashMap::new(),
             indexer_throttle: Arc::new(crate::content_index::IndexerThrottle::default()),
+            index_in_flight: Arc::new(DashSet::new()),
+            index_build_sem: Arc::new(tokio::sync::Semaphore::new(1)),
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
             shell_states: DashMap::new(),
@@ -1178,6 +1191,9 @@ impl AppState {
             tunnel_audit,
             connections_lock: tokio::sync::Mutex::new(()),
             screenshot_responses: DashMap::new(),
+            #[cfg(unix)]
+            standby_sessions: DashMap::new(),
+            hot_repo_paths: parking_lot::RwLock::new(std::collections::HashSet::new()),
         }
     }
 
@@ -1475,7 +1491,9 @@ impl GitCacheState {
         self.repo_info.remove(path);
         self.merged_branches.remove(path);
         self.branches_detail.remove(path);
-        self.github_status.remove(path);
+        // github_status (remote PR/CI data) is NOT invalidated here — local git
+        // changes don't affect remote PRs. The poller and head-changed → pollRepo
+        // handle remote refreshes on their own cadence.
         self.git_status.remove(path);
         self.git_panel_context.remove(path);
         self.worktree_paths.remove(path);
@@ -2102,12 +2120,6 @@ impl VtLogBuffer {
         }
     }
 
-    /// Enable history-only reflow: scrollback rows are reflowed on column
-    /// resize while the visible screen stays untouched.
-    pub fn set_reflow_history(&mut self, enabled: bool) {
-        self.grid.reflow_history = enabled;
-    }
-
     pub fn set_ansi_colors(&mut self, colors: &[[u8; 3]; 16]) {
         self.grid.set_ansi_colors(colors);
     }
@@ -2175,12 +2187,12 @@ impl VtLogBuffer {
         self.resize_with_shell_state(rows, cols, crate::pty::SHELL_NULL);
     }
 
-    /// Resize with shell_state context for smarter reflow:
-    /// - alt_screen active → None (TUI programs handle layout)
-    /// - shell busy → HistoryOnly (Ink/command may use cursor positioning)
-    /// - shell idle → All (only old prompts on screen, safe to reflow)
-    /// - reflow_history disabled → None always
-    pub fn resize_with_shell_state(&mut self, rows: u16, cols: u16, shell_state: u8) {
+    /// Resize with reflow. The reflow_wrap flag on Row prevents stale
+    /// natural wraps from merging — only shrink-produced wraps get merged.
+    /// Alt screen and reflow_history=false disable reflow entirely.
+    // DEFERRED (2026-05-16) — shell_state param kept for call-site compat;
+    // may be needed if we reintroduce HistoryOnly for alt-screen-less TUIs.
+    pub fn resize_with_shell_state(&mut self, rows: u16, cols: u16, _shell_state: u8) {
         let prev = self.pty_cols;
         self.pty_cols = cols;
         if cols > self.max_cols {
@@ -2195,10 +2207,8 @@ impl VtLogBuffer {
         }
         let mode = if !self.grid.reflow_history || self.grid.is_alternate_screen() {
             ReflowMode::None
-        } else if shell_state == crate::pty::SHELL_IDLE {
-            ReflowMode::All
         } else {
-            ReflowMode::HistoryOnly
+            ReflowMode::All
         };
         self.grid.resize_with_mode(rows, cols, mode);
         self.scrollback_read = self.grid.scrollback_count();
@@ -2321,6 +2331,10 @@ impl VtLogBuffer {
         self.grid.total_lines()
     }
 
+    pub(crate) fn read_rows_in_range(&self, start_abs: usize, end_abs: usize) -> Vec<String> {
+        self.grid.read_rows_in_range(start_abs, end_abs)
+    }
+
     pub(crate) fn grid_screen_lines(&self) -> usize {
         self.grid.screen_lines()
     }
@@ -2346,6 +2360,10 @@ impl VtLogBuffer {
 
     pub(crate) fn grid_get_row_text(&self, row: usize) -> String {
         self.grid.get_row_text(row)
+    }
+
+    pub(crate) fn grid_get_logical_line(&self, row: usize) -> (usize, String) {
+        self.grid.get_logical_line(row)
     }
 
     pub(crate) fn grid_get_cursor_line(&self) -> String {
@@ -3083,6 +3101,8 @@ mod tests {
             )),
             content_indices: DashMap::new(),
             indexer_throttle: Arc::new(crate::content_index::IndexerThrottle::default()),
+            index_in_flight: Arc::new(DashSet::new()),
+            index_build_sem: Arc::new(tokio::sync::Semaphore::new(1)),
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
             shell_states: DashMap::new(),
@@ -3135,6 +3155,8 @@ mod tests {
             )),
             connections_lock: tokio::sync::Mutex::new(()),
             screenshot_responses: DashMap::new(),
+            standby_sessions: DashMap::new(),
+            hot_repo_paths: parking_lot::RwLock::new(std::collections::HashSet::new()),
         }
     }
 

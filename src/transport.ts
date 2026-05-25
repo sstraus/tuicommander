@@ -776,6 +776,9 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 	stop_repo_watcher: {
 		map: (_args, p) => ({ method: "DELETE", path: `/watchers/repo?path=${p("repoPath")}` }),
 	},
+	set_hot_repos: {
+		map: (args) => ({ method: "PUT", path: "/watchers/hot-repos", body: args }),
+	},
 	start_dir_watcher: {
 		map: (_args, p) => ({ method: "POST", path: `/watchers/dir?path=${p("path")}` }),
 	},

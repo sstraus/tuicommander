@@ -22,6 +22,16 @@ import { SmartPromptsDropdown } from "../SmartPromptsDropdown/SmartPromptsDropdo
 import { WatcherManager } from "../WatcherManager/WatcherManager";
 import s from "./Toolbar.module.css";
 
+function relativeAge(timestamp: number): string {
+	const seconds = Math.floor((Date.now() - timestamp) / 1000);
+	if (seconds < 60) return "just now";
+	const minutes = Math.floor(seconds / 60);
+	if (minutes < 60) return `${minutes}m ago`;
+	const hours = Math.floor(minutes / 60);
+	if (hours < 24) return `${hours}h ago`;
+	return `${Math.floor(hours / 24)}d ago`;
+}
+
 const NOTIFICATION_LABELS: Record<PrNotificationType, { label: string; icon: string; cls: string }> = {
 	merged: { label: "Merged", icon: "\u2714", cls: s.notifMerged },
 	closed: { label: "Closed", icon: "\u2716", cls: s.notifClosed },
@@ -92,6 +102,14 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 		};
 		document.addEventListener("mousedown", handler);
 		onCleanup(() => document.removeEventListener("mousedown", handler));
+	});
+
+	// Tick signal to refresh relative ages in the popover (every 30s while open)
+	const [ageTick, setAgeTick] = createSignal(0);
+	createEffect(() => {
+		if (!showNotifPopover()) return;
+		const interval = setInterval(() => setAgeTick((n) => n + 1), 30_000);
+		onCleanup(() => clearInterval(interval));
 	});
 
 	const activeNotifs = createMemo(() => prNotificationsStore.getActive());
@@ -483,9 +501,10 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 														<span class={s.activityItemIcon} innerHTML={item.icon} />
 														<div class={s.activityItemBody}>
 															<span class={s.activityItemTitle}>{item.title}</span>
-															<Show when={item.subtitle}>
-																<span class={s.activityItemSubtitle}>{item.subtitle}</span>
-															</Show>
+															<span class={s.activityItemSubtitle}>
+																{ageTick() >= 0 && relativeAge(item.createdAt)}
+																{item.subtitle ? ` · ${item.subtitle}` : ""}
+															</span>
 														</div>
 														<Show when={item.dismissible}>
 															<button

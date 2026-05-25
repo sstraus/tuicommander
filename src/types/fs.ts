@@ -20,6 +20,8 @@ export interface ContentMatch {
 	line_text: string;
 	match_start: number;
 	match_end: number;
+	/** Set only by cross-repo search (`/fs/search-content-all`); absent for single-repo results. */
+	repo_path?: string;
 }
 
 /** A batch of content search results, emitted progressively via events */

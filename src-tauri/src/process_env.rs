@@ -113,7 +113,6 @@ fn read_environ_raw(pid: u32) -> Result<Vec<String>, std::io::Error> {
 #[cfg(target_os = "windows")]
 fn read_environ_raw(pid: u32) -> Result<Vec<String>, std::io::Error> {
     use std::io::Error;
-    use windows_sys::Wdk::System::Threading::{NtQueryInformationProcess, ProcessBasicInformation};
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Threading::{
         OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
@@ -135,7 +134,7 @@ fn read_environ_raw(pid: u32) -> Result<Vec<String>, std::io::Error> {
 unsafe fn read_environ_from_handle(
     handle: windows_sys::Win32::Foundation::HANDLE,
 ) -> Result<Vec<String>, std::io::Error> {
-    use std::io::{Error, ErrorKind};
+    use std::io::Error;
     use windows_sys::Wdk::System::Threading::{NtQueryInformationProcess, ProcessBasicInformation};
     use windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory;
 
@@ -147,20 +146,21 @@ unsafe fn read_environ_from_handle(
         reserved2: [usize; 4],
     }
 
-    let mut pbi: ProcessBasicInfo = std::mem::zeroed();
+    let mut pbi: ProcessBasicInfo = unsafe { std::mem::zeroed() };
     let mut return_length: u32 = 0;
-    let status = NtQueryInformationProcess(
-        handle,
-        ProcessBasicInformation,
-        (&raw mut pbi).cast(),
-        std::mem::size_of::<ProcessBasicInfo>() as u32,
-        &mut return_length,
-    );
+    let status = unsafe {
+        NtQueryInformationProcess(
+            handle,
+            ProcessBasicInformation,
+            (&raw mut pbi).cast(),
+            std::mem::size_of::<ProcessBasicInfo>() as u32,
+            &mut return_length,
+        )
+    };
     if status != 0 {
-        return Err(Error::new(
-            ErrorKind::Other,
-            format!("NtQueryInformationProcess failed: {status:#x}"),
-        ));
+        return Err(Error::other(format!(
+            "NtQueryInformationProcess failed: {status:#x}"
+        )));
     }
 
     // Step 2: Read RTL_USER_PROCESS_PARAMETERS pointer from PEB
@@ -168,13 +168,15 @@ unsafe fn read_environ_from_handle(
     let params_ptr_addr = pbi.peb_base_address + 0x20;
     let mut params_ptr: usize = 0;
     let mut bytes_read: usize = 0;
-    if ReadProcessMemory(
-        handle,
-        params_ptr_addr as *const _,
-        (&raw mut params_ptr).cast(),
-        std::mem::size_of::<usize>(),
-        &mut bytes_read,
-    ) == 0
+    if unsafe {
+        ReadProcessMemory(
+            handle,
+            params_ptr_addr as *const _,
+            (&raw mut params_ptr).cast(),
+            std::mem::size_of::<usize>(),
+            &mut bytes_read,
+        )
+    } == 0
     {
         return Err(Error::last_os_error());
     }
@@ -184,13 +186,15 @@ unsafe fn read_environ_from_handle(
     // UNICODE_STRING at offset 0x60 is EnvironmentVersion, Environment is at 0x80
     let env_ptr_addr = params_ptr + 0x80;
     let mut env_ptr: usize = 0;
-    if ReadProcessMemory(
-        handle,
-        env_ptr_addr as *const _,
-        (&raw mut env_ptr).cast(),
-        std::mem::size_of::<usize>(),
-        &mut bytes_read,
-    ) == 0
+    if unsafe {
+        ReadProcessMemory(
+            handle,
+            env_ptr_addr as *const _,
+            (&raw mut env_ptr).cast(),
+            std::mem::size_of::<usize>(),
+            &mut bytes_read,
+        )
+    } == 0
     {
         return Err(Error::last_os_error());
     }
@@ -202,13 +206,15 @@ unsafe fn read_environ_from_handle(
     // Step 4: Read the environment block (UTF-16 null-terminated strings, double-null terminated)
     // Read in 32KB chunks until we find the double-null terminator
     let mut env_buf: Vec<u16> = vec![0u16; 16384];
-    if ReadProcessMemory(
-        handle,
-        env_ptr as *const _,
-        env_buf.as_mut_ptr().cast(),
-        env_buf.len() * 2,
-        &mut bytes_read,
-    ) == 0
+    if unsafe {
+        ReadProcessMemory(
+            handle,
+            env_ptr as *const _,
+            env_buf.as_mut_ptr().cast(),
+            env_buf.len() * 2,
+            &mut bytes_read,
+        )
+    } == 0
     {
         return Err(Error::last_os_error());
     }
@@ -250,6 +256,7 @@ fn skip_leading_nulls(data: &[u8]) -> &[u8] {
     &data[n..]
 }
 
+#[cfg(target_os = "macos")]
 fn collect_cstrings(mut data: &[u8]) -> Vec<String> {
     let mut result = Vec::new();
     loop {

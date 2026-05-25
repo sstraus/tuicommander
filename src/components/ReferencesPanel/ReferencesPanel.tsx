@@ -15,7 +15,7 @@ export const ReferencesPanel: Component<ReferencesPanelProps> = (props) => {
 	};
 
 	return (
-		<div class={s.panel} data-visible={props.visible}>
+		<div id="references-panel" class={s.panel} data-visible={props.visible}>
 			<div class={p.header}>
 				<div class={p.headerLeft}>
 					<span class={p.title}>References</span>

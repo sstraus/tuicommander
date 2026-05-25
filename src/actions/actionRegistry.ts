@@ -89,6 +89,13 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
 	"ai-triage": { label: "AI Triage", category: "Panels" },
 	"detach-activity-dashboard": { label: "Open Activity Dashboard in separate window", category: "Navigation" },
 	"toggle-tunnels": { label: "SSH Tunnels", category: "Panels" },
+	"process-manager": { label: "Process Manager", category: "Navigation" },
+	"open-generators": { label: "Open generators", category: "Generators" },
+	"block-prev": { label: "Previous command block", category: "Terminal" },
+	"block-next": { label: "Next command block", category: "Terminal" },
+	"block-fold-toggle": { label: "Toggle block fold", category: "Terminal" },
+	"block-search-toggle": { label: "Search in block", category: "Terminal" },
+	"toggle-compose-panel": { label: "Toggle compose panel", category: "Panels" },
 };
 
 /**
@@ -157,6 +164,13 @@ export function getActionEntries(handlers: ShortcutHandlers): ActionEntry[] {
 		"ai-triage": handlers.openAiTriage,
 		"detach-activity-dashboard": handlers.detachActivityDashboard,
 		"toggle-tunnels": () => tunnelPanelStore.toggle(),
+		"process-manager": handlers.toggleProcessManager,
+		"open-generators": handlers.toggleGenerators,
+		"block-prev": handlers.blockPrev,
+		"block-next": handlers.blockNext,
+		"block-fold-toggle": handlers.blockFoldToggle,
+		"block-search-toggle": handlers.blockSearchToggle,
+		"toggle-compose-panel": handlers.toggleComposePanel,
 	};
 
 	// Defensive dedup-by-id — today ACTION_META is a Record so ids are unique by

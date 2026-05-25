@@ -36,6 +36,7 @@ export interface StatusBarProps {
 	onDictationStop: () => void;
 	currentRepoPath?: string;
 	cwd?: string;
+	repoRoot?: string;
 	onBranchRenamed?: (oldName: string, newName: string) => void;
 	onReviewPr?: (repoPath: string, branchName: string, command: string) => void;
 }
@@ -99,11 +100,18 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 		}
 	};
 
-	// Shorten path: show ~/ for home, collapse middle segments
-	const shortenedCwd = () => {
+	// Split CWD into repo-root prefix and subpath suffix for two-tone display
+	const cwdParts = () => {
 		const cwd = props.cwd;
 		if (!cwd) return null;
-		return shortenHomePath(cwd);
+		const root = props.repoRoot;
+		if (root && cwd.startsWith(root) && cwd.length > root.length) {
+			return {
+				rootPart: shortenHomePath(root),
+				subPath: cwd.slice(root.length),
+			};
+		}
+		return { rootPart: shortenHomePath(cwd), subPath: null };
 	};
 
 	// Pendulum ticker: detect overflow on notification text
@@ -220,15 +228,23 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 						<div class={s.infoBalloon}>{props.statusInfo}</div>
 					</Show>
 				</Show>
-				<Show when={shortenedCwd()}>
+				<Show when={cwdParts()}>
 					<span
 						class={s.cwd}
 						title={`${t("statusBar.clickCopy", "Click to copy:")} ${props.cwd}`}
 						onClick={handleCopyCwd}
 					>
-						{cwdCopied() ? t("statusBar.copied", "Copied!") : shortenedCwd()}
+						{cwdCopied() ? (
+							t("statusBar.copied", "Copied!")
+						) : (
+							<>
+								<span class={s.cwdRoot}>{cwdParts()!.rootPart}</span>
+								{cwdParts()!.subPath && <span class={s.cwdSub}>{cwdParts()!.subPath}</span>}
+							</>
+						)}
 					</span>
 				</Show>
+				<TickerArea />
 				<Show when={terminalsStore.getActive()?.agentType}>
 					{(agentType) => {
 						const display = () => AGENT_DISPLAY[agentType()];
@@ -285,7 +301,6 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 						);
 					}}
 				</Show>
-				<TickerArea />
 			</div>
 
 			{/* GitHub PR + CI badges */}

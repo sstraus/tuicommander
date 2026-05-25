@@ -3,6 +3,7 @@ import { pluginStore } from "../stores/pluginStore";
 import { planPlugin } from "./planPlugin";
 import { isPluginDisabled, loadUserPlugins, registerBuiltInPlugin, syncDisabledList } from "./pluginLoader";
 import { pluginRegistry } from "./pluginRegistry";
+import { storiesTickerPlugin } from "./storiesTickerPlugin";
 import type { TuiPlugin } from "./types";
 
 /**
@@ -10,7 +11,7 @@ import type { TuiPlugin } from "./types";
  * Session prompts moved to native Rust (last_prompts in AppState, displayed in Activity Dashboard).
  * Claude Usage Dashboard was moved from plugin to native feature (src/features/claudeUsage.ts).
  */
-const BUILTIN_PLUGINS: TuiPlugin[] = [planPlugin];
+const BUILTIN_PLUGINS: TuiPlugin[] = [planPlugin, storiesTickerPlugin];
 
 /**
  * Register all built-in plugins, then discover and load user plugins.

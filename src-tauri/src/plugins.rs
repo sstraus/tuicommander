@@ -868,8 +868,27 @@ pub fn uninstall_plugin(id: String, app_handle: AppHandle) -> Result<(), String>
 // ---------------------------------------------------------------------------
 
 #[cfg(feature = "desktop")]
-/// Start watching the plugins directory for changes and emit `plugin-changed`
-/// events to the frontend. Uses the same debouncer pattern as repo_watcher.
+/// Check if a changed path within a plugin dir is source code (not runtime data).
+/// Plugin data is stored under `<plugin_id>/data/` — changes there must not
+/// trigger hot-reload (the plugin itself writes stats/config at runtime).
+fn is_plugin_code_change(relative: &std::path::Path) -> bool {
+    let components: Vec<_> = relative.components().collect();
+    // Need at least plugin_id + filename
+    if components.len() < 2 {
+        return false;
+    }
+    // Skip anything under <plugin_id>/data/
+    if components.len() > 2 && components[1].as_os_str() == "data" {
+        return false;
+    }
+    // Only reload for code files
+    matches!(
+        relative.extension().and_then(|e| e.to_str()),
+        Some("js" | "mjs" | "json")
+    )
+}
+
+#[cfg(feature = "desktop")]
 pub fn start_plugin_watcher(app_handle: &AppHandle) {
     let dir = plugins_dir();
     if let Err(e) = std::fs::create_dir_all(&dir) {
@@ -923,12 +942,36 @@ pub fn start_plugin_watcher(app_handle: &AppHandle) {
             &format!("[plugins] Watching {dir:?} for changes"),
         );
 
-        // Simple debounce: collect events for 500ms of quiet, then emit
         let debounce = Duration::from_millis(500);
         let mut changed_ids: Vec<String> = Vec::new();
 
+        let collect_changes =
+            |event: &notify::Event, dir: &std::path::Path, ids: &mut Vec<String>| {
+                if !matches!(
+                    event.kind,
+                    notify::EventKind::Create(_)
+                        | notify::EventKind::Modify(notify::event::ModifyKind::Data(_))
+                        | notify::EventKind::Modify(notify::event::ModifyKind::Name(_))
+                        | notify::EventKind::Remove(_)
+                ) {
+                    return;
+                }
+                for path in &event.paths {
+                    if let Ok(relative) = path.strip_prefix(dir) {
+                        if !is_plugin_code_change(relative) {
+                            continue;
+                        }
+                        if let Some(first) = relative.components().next() {
+                            let id = first.as_os_str().to_string_lossy().to_string();
+                            if !id.starts_with('.') && !ids.contains(&id) {
+                                ids.push(id);
+                            }
+                        }
+                    }
+                }
+            };
+
         loop {
-            // Wait for first event or channel close
             let event = match rx.recv() {
                 Ok(Ok(e)) => e,
                 Ok(Err(err)) => {
@@ -943,35 +986,14 @@ pub fn start_plugin_watcher(app_handle: &AppHandle) {
                 Err(_) => break,
             };
 
-            // Process this event
-            for path in &event.paths {
-                if let Ok(relative) = path.strip_prefix(&dir)
-                    && let Some(first) = relative.components().next()
-                {
-                    let id = first.as_os_str().to_string_lossy().to_string();
-                    if !id.starts_with('.') && !changed_ids.contains(&id) {
-                        changed_ids.push(id);
-                    }
-                }
-            }
+            collect_changes(&event, &dir, &mut changed_ids);
 
-            // Drain any additional events within the debounce window
             while let Ok(result) = rx.recv_timeout(debounce) {
                 if let Ok(event) = result {
-                    for path in &event.paths {
-                        if let Ok(relative) = path.strip_prefix(&dir)
-                            && let Some(first) = relative.components().next()
-                        {
-                            let id = first.as_os_str().to_string_lossy().to_string();
-                            if !id.starts_with('.') && !changed_ids.contains(&id) {
-                                changed_ids.push(id);
-                            }
-                        }
-                    }
+                    collect_changes(&event, &dir, &mut changed_ids);
                 }
             }
 
-            // Debounce window expired — emit
             if !changed_ids.is_empty() {
                 crate::app_logger::log_via_handle(
                     &handle,
@@ -1373,5 +1395,71 @@ mod tests {
         let result = check_plugin_capability_inner(&plugins, "plan", "exec:cli");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Built-in plugin"));
+    }
+
+    // -- is_plugin_code_change --
+
+    #[cfg(feature = "desktop")]
+    mod plugin_code_change {
+        use super::super::is_plugin_code_change;
+        use std::path::Path;
+
+        #[test]
+        fn main_js_is_code() {
+            assert!(is_plugin_code_change(Path::new("my-plugin/main.js")));
+        }
+
+        #[test]
+        fn mjs_is_code() {
+            assert!(is_plugin_code_change(Path::new("my-plugin/index.mjs")));
+        }
+
+        #[test]
+        fn json_is_code() {
+            assert!(is_plugin_code_change(Path::new("my-plugin/manifest.json")));
+        }
+
+        #[test]
+        fn data_stats_json_is_not_code() {
+            // Under <plugin_id>/data/ — runtime data, must NOT trigger hot-reload
+            assert!(!is_plugin_code_change(Path::new(
+                "my-plugin/data/stats.json"
+            )));
+        }
+
+        #[test]
+        fn data_subdir_any_file_is_not_code() {
+            assert!(!is_plugin_code_change(Path::new(
+                "my-plugin/data/sub/counts.json"
+            )));
+        }
+
+        #[test]
+        fn image_png_is_not_code() {
+            assert!(!is_plugin_code_change(Path::new("my-plugin/image.png")));
+        }
+
+        #[test]
+        fn css_file_is_not_code() {
+            // CSS is not in the allowed set — no hot-reload for stylesheets
+            assert!(!is_plugin_code_change(Path::new("my-plugin/styles.css")));
+        }
+
+        #[test]
+        fn bare_plugin_id_no_filename_is_not_code() {
+            // Only one component — fails the len < 2 guard
+            assert!(!is_plugin_code_change(Path::new("my-plugin")));
+        }
+
+        #[test]
+        fn empty_path_is_not_code() {
+            assert!(!is_plugin_code_change(Path::new("")));
+        }
+
+        #[test]
+        fn nested_js_not_in_data_is_code() {
+            // dist/ subfolder is code, not data
+            assert!(is_plugin_code_change(Path::new("my-plugin/dist/bundle.js")));
+        }
     }
 }

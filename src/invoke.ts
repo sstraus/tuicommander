@@ -145,7 +145,21 @@ function attachSseEventType(eventType: string) {
 }
 
 export function listen<T>(event: string, handler: (event: { payload: T }) => void): Promise<() => void> {
-	if (isTauri()) return tauriListen<T>(event, handler);
+	if (isTauri()) {
+		return tauriListen<T>(event, handler).then((unlisten) => {
+			let disposed = false;
+			return () => {
+				if (disposed) return;
+				disposed = true;
+				try {
+					unlisten();
+				} catch {
+					// Tauri's internal listener registry crashes on double-unregister
+					// (listeners[eventId] is undefined). Swallow — the listener is already gone.
+				}
+			};
+		});
+	}
 
 	// Browser mode: SSE via shared EventSource
 	const wrappedHandler = (payload: unknown) => handler({ payload: payload as T });

@@ -1,5 +1,6 @@
 use crate::AppState;
 use serde::Serialize;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::State;
 
@@ -35,6 +36,8 @@ pub struct ReferenceLocation {
 pub struct MdkbStatus {
     pub available: bool,
     pub connected: bool,
+    pub binary_path: Option<String>,
+    pub version: Option<String>,
 }
 
 impl From<crate::mdkb_client::MdkbSymbol> for OutlineSymbol {
@@ -146,14 +149,197 @@ pub async fn mdkb_references(
 }
 
 #[tauri::command]
+pub async fn mdkb_code_find(
+    state: State<'_, Arc<AppState>>,
+    repo_path: String,
+    name: String,
+    kind: Option<String>,
+) -> Result<Vec<OutlineSymbol>, String> {
+    let mut daemon = state.mdkb_daemon.lock().await;
+    let client = match daemon.ensure_running().await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::debug!("mdkb unavailable: {e}");
+            return Ok(vec![]);
+        }
+    };
+    match client.code_find(&repo_path, &name, kind.as_deref()).await {
+        Ok(symbols) => Ok(symbols.into_iter().map(OutlineSymbol::from).collect()),
+        Err(e) => {
+            tracing::warn!("mdkb_code_find failed: {e}");
+            Ok(vec![])
+        }
+    }
+}
+
+#[tauri::command]
 pub async fn mdkb_status(state: State<'_, Arc<AppState>>) -> Result<MdkbStatus, String> {
     let daemon = state.mdkb_daemon.lock().await;
     let available = daemon.is_available();
     let connected = daemon.is_connected();
+    let binary_path = daemon.binary_path().map(|p| p.display().to_string());
+    let version = daemon.version();
     Ok(MdkbStatus {
         available,
         connected,
+        binary_path,
+        version,
     })
+}
+
+fn mdkb_install_path() -> PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        PathBuf::from("/usr/local/bin/mdkb")
+    }
+    #[cfg(target_os = "linux")]
+    {
+        PathBuf::from("/usr/local/bin/mdkb")
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
+        PathBuf::from(format!("{local}\\Microsoft\\WindowsApps\\mdkb.exe"))
+    }
+}
+
+fn mdkb_asset_name() -> &'static str {
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    {
+        "mdkb-macos-arm64"
+    }
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    {
+        "mdkb-macos-x64"
+    }
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        "mdkb-linux-x64"
+    }
+    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+    {
+        "mdkb-linux-arm64"
+    }
+    #[cfg(target_os = "windows")]
+    {
+        "mdkb-windows-x64.exe"
+    }
+}
+
+#[tauri::command]
+pub async fn install_mdkb(state: State<'_, Arc<AppState>>) -> Result<String, String> {
+    let asset = mdkb_asset_name();
+    let url = format!("https://github.com/sstraus/mdkb/releases/latest/download/{asset}");
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .build()
+        .map_err(|e| format!("HTTP client error: {e}"))?;
+
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Download failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Download failed: HTTP {}", resp.status()));
+    }
+
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read response: {e}"))?;
+
+    let install_path = mdkb_install_path();
+    let tmp_path = install_path.with_extension("tmp");
+
+    if let Some(parent) = install_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    // Try direct write first
+    let direct_ok = std::fs::write(&tmp_path, &bytes).is_ok();
+
+    if direct_ok {
+        std::fs::rename(&tmp_path, &install_path)
+            .map_err(|e| format!("Failed to move binary: {e}"))?;
+    } else {
+        // Need elevation
+        let _ = std::fs::remove_file(&tmp_path);
+        let tmp_dir = std::env::temp_dir().join("mdkb-install");
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let staged = tmp_dir.join(asset);
+        std::fs::write(&staged, &bytes).map_err(|e| format!("Failed to stage binary: {e}"))?;
+
+        crate::tuic_cli::copy_with_elevation(
+            &staged.to_string_lossy(),
+            &install_path.to_string_lossy(),
+        )?;
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&install_path, std::fs::Permissions::from_mode(0o755)).map_err(
+            |e| {
+                format!(
+                    "Installed but failed to set executable bit: {e}. Try: chmod +x {}",
+                    install_path.display()
+                )
+            },
+        )?;
+    }
+
+    tracing::info!(source = "mdkb", path = %install_path.display(), "mdkb installed");
+
+    // Re-initialize daemon so it picks up the new binary
+    let mut daemon = state.mdkb_daemon.lock().await;
+    *daemon = crate::mdkb_daemon::MdkbDaemon::new();
+
+    Ok(install_path.display().to_string())
+}
+
+#[tauri::command]
+pub async fn uninstall_mdkb(state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let daemon = state.mdkb_daemon.lock().await;
+    let actual_path = daemon
+        .binary_path()
+        .map(|p| p.to_path_buf())
+        .ok_or_else(|| "mdkb is not installed".to_string())?;
+    drop(daemon);
+
+    // Refuse to uninstall if managed by a package manager
+    let path_str = actual_path.to_string_lossy();
+    if path_str.contains("/homebrew/")
+        || path_str.contains("/Cellar/")
+        || path_str.contains("/linuxbrew/")
+    {
+        return Err(
+            "mdkb appears to be installed via Homebrew. Use `brew uninstall mdkb` instead."
+                .to_string(),
+        );
+    }
+    if path_str.contains("/.cargo/") {
+        return Err(
+            "mdkb appears to be installed via cargo. Use `cargo uninstall mdkb` instead."
+                .to_string(),
+        );
+    }
+
+    if std::fs::remove_file(&actual_path).is_err() {
+        crate::tuic_cli::remove_with_elevation(&path_str)?;
+    }
+
+    tracing::info!(source = "mdkb", path = %actual_path.display(), "mdkb uninstalled");
+
+    let mut daemon = state.mdkb_daemon.lock().await;
+    *daemon = crate::mdkb_daemon::MdkbDaemon::new();
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -206,9 +392,13 @@ mod tests {
         let status = MdkbStatus {
             available: true,
             connected: false,
+            binary_path: Some("/usr/local/bin/mdkb".into()),
+            version: Some("3.1.0".into()),
         };
         let json = serde_json::to_value(&status).unwrap();
         assert_eq!(json["available"], true);
         assert_eq!(json["connected"], false);
+        assert_eq!(json["binaryPath"], "/usr/local/bin/mdkb");
+        assert_eq!(json["version"], "3.1.0");
     }
 }

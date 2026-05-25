@@ -4,7 +4,9 @@
 //! Each note uses a custom Source with selectable waveform (sine/triangle)
 //! and an integrated ADSR amplitude envelope for smooth, click-free playback.
 
-use rodio::{OutputStream, Sink, Source};
+use rodio::cpal::traits::HostTrait;
+use rodio::{DeviceTrait, OutputStream, Sink, Source};
+use serde::Serialize;
 use std::time::Duration;
 
 const SAMPLE_RATE: u32 = 48_000;
@@ -239,17 +241,79 @@ impl Source for EnvelopedTone {
 }
 
 // ---------------------------------------------------------------------------
+// Output device enumeration
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct AudioOutputDevice {
+    pub name: String,
+    pub is_default: bool,
+}
+
+pub(crate) fn list_output_devices() -> Vec<AudioOutputDevice> {
+    let host = rodio::cpal::default_host();
+    let default_name: Option<String> = host.default_output_device().and_then(|d| d.name().ok());
+
+    host.output_devices()
+        .map(|devices| {
+            devices
+                .filter_map(|d| {
+                    let name = d.name().ok()?;
+                    Some(AudioOutputDevice {
+                        is_default: default_name.as_deref() == Some(name.as_str()),
+                        name,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+// ---------------------------------------------------------------------------
 // Playback
 // ---------------------------------------------------------------------------
 
+/// Resolve an output device by name, falling back to default.
+fn resolve_output_stream(
+    device_name: Option<&str>,
+) -> Option<(OutputStream, rodio::OutputStreamHandle)> {
+    if let Some(name) = device_name {
+        let host = rodio::cpal::default_host();
+        let device = host
+            .output_devices()
+            .ok()?
+            .find(|d| d.name().map(|n| n == name).unwrap_or(false));
+        if let Some(dev) = device {
+            match OutputStream::try_from_device(&dev) {
+                Ok(pair) => return Some(pair),
+                Err(e) => {
+                    tracing::warn!(
+                        source = "notification_sound",
+                        device = name,
+                        "Failed to open selected device, falling back to default: {e}"
+                    );
+                }
+            }
+        } else {
+            tracing::warn!(
+                source = "notification_sound",
+                device = name,
+                "Configured device not found, falling back to default"
+            );
+        }
+    }
+    OutputStream::try_default().ok()
+}
+
 /// Play a notification sound on a background thread.
 ///
-/// Volume is 0.0-1.0. The function returns immediately; audio plays
+/// Volume is 0.0-1.0. `device_name` selects a specific output device;
+/// `None` uses the system default. Returns immediately; audio plays
 /// asynchronously on a short-lived thread.
-pub(crate) fn play(sound: NotificationSound, volume: f32) {
+pub(crate) fn play(sound: NotificationSound, volume: f32, device_name: Option<String>) {
     let volume = volume.clamp(0.0, 1.0);
     std::thread::spawn(move || {
-        let Ok((_stream, stream_handle)) = OutputStream::try_default() else {
+        let Some((_stream, stream_handle)) = resolve_output_stream(device_name.as_deref()) else {
             tracing::warn!(source = "notification_sound", "Failed to open audio output");
             return;
         };
@@ -278,8 +342,18 @@ pub(crate) fn play(sound: NotificationSound, volume: f32) {
 
 /// Tauri command: play a notification sound.
 #[tauri::command]
-pub(crate) fn play_notification_sound(sound: NotificationSound, volume: f32) {
-    play(sound, volume);
+pub(crate) fn play_notification_sound(
+    sound: NotificationSound,
+    volume: f32,
+    device: Option<String>,
+) {
+    play(sound, volume, device);
+}
+
+/// Tauri command: list available audio output devices.
+#[tauri::command]
+pub(crate) fn list_audio_output_devices() -> Vec<AudioOutputDevice> {
+    list_output_devices()
 }
 
 #[cfg(test)]

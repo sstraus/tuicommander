@@ -58,24 +58,6 @@ export const GitPanel: Component<GitPanelProps> = (props) => {
 		if (tab) setActiveTab(tab);
 	});
 
-	function handlePanelKeyDown(e: KeyboardEvent) {
-		if (e.key === "Escape") {
-			e.preventDefault();
-			props.onClose();
-			return;
-		}
-
-		const mod = e.metaKey || e.ctrlKey;
-		if (mod && e.key >= "1" && e.key <= String(TABS.length)) {
-			const idx = parseInt(e.key, 10) - 1;
-			if (idx < TABS.length) {
-				e.preventDefault();
-				e.stopPropagation();
-				setActiveTab(TABS[idx].id);
-			}
-		}
-	}
-
 	/** Split path into basename for compact display */
 	function basename(path: string): string {
 		const i = path.lastIndexOf("/");
@@ -86,8 +68,7 @@ export const GitPanel: Component<GitPanelProps> = (props) => {
 		<div
 			id="git-panel"
 			class={cx(s.panel, mode() === "detached" && s.detached, !props.visible && s.hidden)}
-			tabIndex={0}
-			onKeyDown={handlePanelKeyDown}
+			tabIndex={-1}
 		>
 			<Show when={mode() === "inline"}>
 				<PanelResizeHandle panelId="git-panel" />

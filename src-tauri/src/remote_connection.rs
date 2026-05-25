@@ -155,6 +155,48 @@ impl RemoteConnectionStore {
 }
 
 // ---------------------------------------------------------------------------
+// Tauri commands
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub async fn list_remote_connections(
+    state: tauri::State<'_, std::sync::Arc<crate::AppState>>,
+) -> Result<Vec<RemoteConnection>, String> {
+    RemoteConnectionStore::load(&state.data_dir).map_err(|e| e.to_string())
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub async fn save_remote_connection(
+    state: tauri::State<'_, std::sync::Arc<crate::AppState>>,
+    connection: RemoteConnection,
+) -> Result<(), String> {
+    let _guard = state.connections_lock.lock().await;
+    let mut connections =
+        RemoteConnectionStore::load(&state.data_dir).map_err(|e| e.to_string())?;
+    if let Some(existing) = connections.iter_mut().find(|c| c.id == connection.id) {
+        *existing = connection;
+    } else {
+        connections.push(connection);
+    }
+    RemoteConnectionStore::save(&state.data_dir, &connections).map_err(|e| e.to_string())
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub async fn delete_remote_connection(
+    state: tauri::State<'_, std::sync::Arc<crate::AppState>>,
+    id: String,
+) -> Result<(), String> {
+    let _guard = state.connections_lock.lock().await;
+    let mut connections =
+        RemoteConnectionStore::load(&state.data_dir).map_err(|e| e.to_string())?;
+    connections.retain(|c| c.id != id);
+    RemoteConnectionStore::save(&state.data_dir, &connections).map_err(|e| e.to_string())
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 

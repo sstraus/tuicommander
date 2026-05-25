@@ -1100,6 +1100,37 @@ fn parse_osc133_exit_code(command: char, params: &str) -> Option<i32> {
     }
 }
 
+/// Detect Claude Code tool call headers: `⏺ ToolName(args)`.
+/// The ⏺ (U+23FA) bullet followed by a capitalized word and `(` is unique to
+/// CC's expanded tool-call rendering — agent prose after ⏺ starts with a
+/// lowercase word or a proper noun without parens.
+fn is_cc_tool_call_header(text: &str) -> bool {
+    let trimmed = text.trim_start();
+    let rest = if let Some(r) = trimmed.strip_prefix('\u{23FA}') {
+        r
+    } else {
+        return false;
+    };
+    let rest = rest.trim_start();
+    if rest.is_empty() {
+        return false;
+    }
+    // Must start with uppercase ASCII (ToolName) or `mcp__` prefix.
+    let first = rest.as_bytes()[0];
+    if !first.is_ascii_uppercase() && !rest.starts_with("mcp__") {
+        return false;
+    }
+    // Find the opening paren — everything before it must be a single
+    // identifier (no spaces). Rejects prose like "Boss, ci sono (molti)".
+    rest.find('(').is_some_and(|pos| {
+        let before = &rest[..pos];
+        !before.is_empty()
+            && before
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    })
+}
+
 /// Emit an `Inferred` command outcome for shells that don't speak OSC 133.
 /// Called right after a busy→idle transition; no-op once we've ever observed
 /// a marker for this session (shell-integration path is authoritative then).
@@ -1396,6 +1427,9 @@ struct ChunkProcessor {
     /// an `AgentSessionConflict` event. Gates subsequent marks so a single
     /// burst of conflict output fires the mitigation exactly once.
     last_session_conflict_mark: Option<std::time::Instant>,
+    /// Absolute buffer line of the last heuristic agent-block start.
+    /// Used to emit AgentBlock end when the next block starts or agent exits.
+    last_agent_block_line: Option<usize>,
 }
 
 impl ChunkProcessor {
@@ -1419,6 +1453,7 @@ impl ChunkProcessor {
             pending_command_started: None,
             tuic_session,
             last_session_conflict_mark: None,
+            last_agent_block_line: None,
         }
     }
 
@@ -1697,55 +1732,69 @@ impl ChunkProcessor {
         // Feed raw data (post-kitty-strip) into VT100 log buffer.
         // Also capture the post-process `total_lines` and `oldest_offset` so
         // we can emit a throttled growth/rotation event for the scrollback overlay.
-        let (changed_rows, vt_log_total, vt_log_oldest, term_events, screen_cache, cursor_row) =
-            if let Some(vt_log) = state.vt_log_buffers.get(session_id) {
-                let mut vt = vt_log.lock();
-                let changed = vt.process(data.as_bytes());
-                let total = vt.total_lines();
-                let oldest = vt.oldest_offset();
-                let tevts = vt.grid_drain_events();
+        let (
+            changed_rows,
+            vt_log_total,
+            vt_log_oldest,
+            term_events,
+            screen_cache,
+            cursor_row,
+            pre_filter_has_spinner,
+            history_size,
+        ) = if let Some(vt_log) = state.vt_log_buffers.get(session_id) {
+            let mut vt = vt_log.lock();
+            let changed = vt.process(data.as_bytes());
+            let total = vt.total_lines();
+            let oldest = vt.oldest_offset();
+            let hist = vt.grid_history_size();
+            let tevts = vt.grid_drain_events();
 
-                // Filter out changed rows below the input area border (horizontal rule).
-                // Claude Code (and similar agents) render a quota/budget status bar below
-                // the input box separator. Those rows are cosmetic chrome — processing them
-                // resets the silence timer and causes false busy→idle→question transitions.
-                //
-                // Use screen_rows_ref() to avoid cloning prev_rows for the chrome cutoff
-                // check. The owned snapshot is captured once below for slash-menu/choice-prompt
-                // parsing that happens after the lock is released.
-                let changed = if !changed.is_empty() {
-                    if let Some(screen) = vt.screen_rows_ref() {
-                        let refs: Vec<&str> = screen.iter().map(|s| s.as_str()).collect();
-                        if let Some(cutoff) = crate::chrome::find_chrome_cutoff(&refs) {
-                            changed
-                                .into_iter()
-                                .filter(|r| r.row_index < cutoff)
-                                .collect()
-                        } else {
-                            changed
-                        }
+            // Filter out changed rows below the input area border (horizontal rule).
+            // Claude Code (and similar agents) render a quota/budget status bar below
+            // the input box separator. Those rows are cosmetic chrome — processing them
+            // resets the silence timer and causes false busy→idle→question transitions.
+            //
+            // Use screen_rows_ref() to avoid cloning prev_rows for the chrome cutoff
+            // check. The owned snapshot is captured once below for slash-menu/choice-prompt
+            // parsing that happens after the lock is released.
+            let pre_filter_has_spinner = changed
+                .iter()
+                .any(|r| crate::chrome::is_spinner_row(&r.text));
+            let changed = if !changed.is_empty() {
+                if let Some(screen) = vt.screen_rows_ref() {
+                    let refs: Vec<&str> = screen.iter().map(|s| s.as_str()).collect();
+                    if let Some(cutoff) = crate::chrome::find_chrome_cutoff(&refs) {
+                        changed
+                            .into_iter()
+                            .filter(|r| r.row_index < cutoff)
+                            .collect()
                     } else {
                         changed
                     }
                 } else {
                     changed
-                };
-
-                // Single owned snapshot for downstream parsers (slash-menu, choice-prompt).
-                let screen = vt.screen_rows();
-                let cursor_row = vt.cursor_point().0;
-
-                (
-                    changed,
-                    Some(total),
-                    Some(oldest),
-                    tevts,
-                    Some(screen),
-                    cursor_row,
-                )
+                }
             } else {
-                (Vec::new(), None, None, Vec::new(), None, 0)
+                changed
             };
+
+            // Single owned snapshot for downstream parsers (slash-menu, choice-prompt).
+            let screen = vt.screen_rows();
+            let cursor_row = vt.cursor_point().0;
+
+            (
+                changed,
+                Some(total),
+                Some(oldest),
+                tevts,
+                Some(screen),
+                cursor_row,
+                pre_filter_has_spinner,
+                hist,
+            )
+        } else {
+            (Vec::new(), None, None, Vec::new(), None, 0, false, 0)
+        };
 
         // Emit scrollback-overlay growth/rotation event (throttled to 100ms).
         // Frontend listens to `pty-vt-log-total-{session_id}` and updates
@@ -1790,8 +1839,12 @@ impl ChunkProcessor {
                         if let Some(sess) = state.sessions.get(session_id)
                             && let Some(mut s) = sess.try_lock()
                         {
-                            let _ = s.writer.write_all(response.as_bytes());
-                            let _ = s.writer.flush();
+                            if let Err(e) = s.writer.write_all(response.as_bytes()) {
+                                tracing::warn!(source = "terminal", session_id = %session_id, "PtyWrite response failed: {e}");
+                            }
+                            if let Err(e) = s.writer.flush() {
+                                tracing::warn!(source = "terminal", session_id = %session_id, "PtyWrite flush failed: {e}");
+                            }
                         }
                     }
                     TermEvent::Title(title) =>
@@ -1848,7 +1901,11 @@ impl ChunkProcessor {
                             }
                         }
                     }
-                    TermEvent::Tuic { verb, payload } => match verb.as_str() {
+                    TermEvent::Tuic {
+                        verb,
+                        payload,
+                        line,
+                    } => match verb.as_str() {
                         "state" => {
                             self.handle_tuic_state(&payload, session_id, state);
                         }
@@ -1874,6 +1931,21 @@ impl ChunkProcessor {
                                 (payload.clone(), None)
                             };
                             tuic_events.push(ParsedEvent::Intent { text, title });
+                        }
+                        "block" => {
+                            let (action, exit_code) =
+                                if let Some(rest) = payload.strip_prefix("end;") {
+                                    ("end".to_string(), rest.parse::<i32>().ok())
+                                } else {
+                                    (payload.clone(), None)
+                                };
+                            if action == "start" || action == "end" {
+                                tuic_events.push(ParsedEvent::AgentBlock {
+                                    action,
+                                    line: line as i64,
+                                    exit_code,
+                                });
+                            }
                         }
                         _ => {}
                     },
@@ -1944,6 +2016,41 @@ impl ChunkProcessor {
                 self.parser
                     .parse_clean_lines(&changed_rows, agent_active_for_parse),
             );
+        }
+
+        // Heuristic agent-block detection for Claude Code tool calls.
+        // CC renders tool calls as `⏺ ToolName(args)` — detect these and
+        // synthesize AgentBlock start/end events so the block system works
+        // without CC emitting OSC 7770;block= sequences.
+        if !agent_active_for_parse && let Some(prev) = self.last_agent_block_line.take() {
+            events.push(ParsedEvent::AgentBlock {
+                action: "end".into(),
+                line: prev as i64,
+                exit_code: None,
+            });
+        }
+        if agent_active_for_parse {
+            for row in &changed_rows {
+                if is_cc_tool_call_header(&row.text) {
+                    let abs_line = history_size + row.row_index;
+                    if Some(abs_line) == self.last_agent_block_line {
+                        continue;
+                    }
+                    if let Some(prev) = self.last_agent_block_line {
+                        events.push(ParsedEvent::AgentBlock {
+                            action: "end".into(),
+                            line: prev as i64,
+                            exit_code: None,
+                        });
+                    }
+                    events.push(ParsedEvent::AgentBlock {
+                        action: "start".into(),
+                        line: abs_line as i64,
+                        exit_code: None,
+                    });
+                    self.last_agent_block_line = Some(abs_line);
+                }
+            }
         }
 
         // screen_cache was computed once inside the vt_log lock scope above.
@@ -2185,9 +2292,10 @@ impl ChunkProcessor {
         // alive even though they are chrome-only — keeping the timestamp fresh
         // prevents should_transition_idle from firing mid-think.
         let has_spinner = chrome_only
-            && changed_rows
-                .iter()
-                .any(|r| crate::chrome::is_spinner_row(&r.text));
+            && (pre_filter_has_spinner
+                || changed_rows
+                    .iter()
+                    .any(|r| crate::chrome::is_spinner_row(&r.text)));
         if (!chrome_only || has_spinner)
             && let Some(ts) = state.last_output_ms.get(session_id)
         {
@@ -2257,11 +2365,15 @@ fn process_kitty_actions(kitty_actions: &[KittyAction], session_id: &str, state:
                 // (reader blocked → kernel buffer fills → write_pty blocks on write).
                 if let Some(sess) = state.sessions.get(session_id) {
                     if let Some(mut s) = sess.try_lock() {
-                        let _ = s.writer.write_all(response.as_bytes());
-                        let _ = s.writer.flush();
+                        if let Err(e) = s.writer.write_all(response.as_bytes()) {
+                            tracing::warn!(source = "terminal", session_id = %session_id, "kitty query write failed: {e}");
+                        }
+                        if let Err(e) = s.writer.flush() {
+                            tracing::warn!(source = "terminal", session_id = %session_id, "kitty query flush failed: {e}");
+                        }
                     } else {
-                        tracing::debug!(session_id = %session_id,
-                            "kitty query response dropped — session lock contended");
+                        tracing::warn!(source = "terminal", session_id = %session_id,
+                            "kitty query response dropped — session lock contended; agent input handling may degrade");
                     }
                 }
             }
@@ -2357,6 +2469,8 @@ fn tombstone_transient_cleanup(session_id: &str, state: &AppState) {
     state.terminal_rows.remove(session_id);
     // Swarm maps — inserted at spawn/register time, must be cleaned on exit.
     state.shell_state_since_ms.remove(session_id);
+    #[cfg(unix)]
+    state.standby_sessions.remove(session_id);
     state.session_parent.remove(session_id);
     // mcp_to_session maps mcp_session_id → tuic_session. The reverse index
     // session_to_mcp lets us drop O(k) entries (k = mcp sessions for this
@@ -2796,7 +2910,18 @@ pub(crate) fn spawn_reader_thread(
     let ticker_state = state.clone();
     let ticker_sid = session_id.clone();
     std::thread::spawn(move || {
-        const TICK: std::time::Duration = std::time::Duration::from_millis(8);
+        const TICK: std::time::Duration = std::time::Duration::from_millis(16);
+        // Safety net: if in_flight stays true for this long (~500 ms),
+        // force-reset it so frame delivery resumes. Prevents permanent blank
+        // terminal when the frontend fails to ack (crash, corrupt frame, etc.).
+        const MAX_IN_FLIGHT_MS: u64 = 500;
+        // After this many consecutive force-resets, sleep for STUCK_PAUSE_MS
+        // to let the JS event loop drain the Tauri channel backlog before
+        // sending more frames.
+        const MAX_STUCK_BEFORE_PAUSE: u32 = 3;
+        const STUCK_PAUSE_MS: u64 = 5_000;
+        let mut stuck_since: Option<std::time::Instant> = None;
+        let mut stuck_count: u32 = 0;
         while ticker_running.load(Ordering::Relaxed) {
             std::thread::sleep(TICK);
             if !ticker_dirty.swap(false, Ordering::Relaxed) {
@@ -2808,9 +2933,35 @@ pub(crate) fn spawn_reader_thread(
                 .map(|f| f.load(Ordering::Relaxed))
                 .unwrap_or(false);
             if in_flight {
-                // Re-set dirty so next tick retries
-                ticker_dirty.store(true, Ordering::Relaxed);
-                continue;
+                let now = std::time::Instant::now();
+                let since = stuck_since.get_or_insert(now);
+                let elapsed = now.duration_since(*since).as_millis() as u64;
+                if elapsed > MAX_IN_FLIGHT_MS {
+                    stuck_count += 1;
+                    tracing::warn!(
+                        session_id = %ticker_sid,
+                        elapsed_ms = elapsed,
+                        stuck_count,
+                        "grid_frame_in_flight stuck, force-resetting"
+                    );
+                    if let Some(flag) = ticker_state.grid_frame_in_flight.get(&ticker_sid) {
+                        flag.store(false, Ordering::Relaxed);
+                    }
+                    stuck_since = None;
+                    if stuck_count >= MAX_STUCK_BEFORE_PAUSE {
+                        // Pause to let JS drain the channel backlog before retrying
+                        stuck_count = 0;
+                        std::thread::sleep(std::time::Duration::from_millis(STUCK_PAUSE_MS));
+                    }
+                    ticker_dirty.store(true, Ordering::Relaxed);
+                    continue;
+                } else {
+                    ticker_dirty.store(true, Ordering::Relaxed);
+                    continue;
+                }
+            } else {
+                stuck_since = None;
+                stuck_count = 0;
             }
             if let Some(vt) = ticker_state.vt_log_buffers.get(&ticker_sid) {
                 let frame = vt.lock().serialize_dirty_rows();
@@ -3112,12 +3263,6 @@ pub(crate) async fn create_pty(
         Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
     );
     let mut vt_log = VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY);
-    {
-        let cfg = state.config.read();
-        if cfg.is_experimental_enabled(cfg.scrollback_reflow) {
-            vt_log.set_reflow_history(true);
-        }
-    }
     if let Some(colors) = state.ansi_colors.read().as_ref() {
         vt_log.set_ansi_colors(colors);
     }
@@ -3221,12 +3366,6 @@ pub(crate) async fn spawn_session_for_agent(
         Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
     );
     let mut vt_log = VtLogBuffer::new(rows, cols, VT_LOG_BUFFER_CAPACITY);
-    {
-        let cfg = state.config.read();
-        if cfg.is_experimental_enabled(cfg.scrollback_reflow) {
-            vt_log.set_reflow_history(true);
-        }
-    }
     if let Some(colors) = state.ansi_colors.read().as_ref() {
         vt_log.set_ansi_colors(colors);
     }
@@ -3424,12 +3563,6 @@ pub(crate) async fn create_pty_with_worktree(
         Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
     );
     let mut vt_log = VtLogBuffer::new(24, 220, VT_LOG_BUFFER_CAPACITY);
-    {
-        let cfg = state.config.read();
-        if cfg.is_experimental_enabled(cfg.scrollback_reflow) {
-            vt_log.set_reflow_history(true);
-        }
-    }
     if let Some(colors) = state.ansi_colors.read().as_ref() {
         vt_log.set_ansi_colors(colors);
     }
@@ -3768,8 +3901,178 @@ pub(crate) fn resume_pty(
         .get(&session_id)
         .ok_or_else(|| format!("Session not found: {session_id}"))?;
     entry.lock().paused.store(false, Ordering::Relaxed);
+    #[cfg(unix)]
+    if let Err(e) = wake_session(&state, &session_id) {
+        tracing::debug!(session_id = %session_id, error = %e, "Wake on resume (may not be in standby)");
+    }
     tracing::debug!(session_id = %session_id, "PTY reader resumed (flow control)");
     Ok(())
+}
+
+/// Periodically checks all sessions for standby eligibility.
+/// A session enters standby when:
+/// 1. standby_timeout_minutes > 0
+/// 2. session_visibility == false (tab not focused)
+/// 3. shell_state == SHELL_IDLE
+/// 4. idle duration >= timeout
+/// 5. not already in standby
+/// 6. startup_settled == true
+#[cfg(unix)]
+pub(crate) fn spawn_standby_checker(state: Arc<AppState>) {
+    use std::time::Duration;
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            let timeout_min = state.config.read().standby_timeout_minutes;
+            if timeout_min == 0 {
+                continue;
+            }
+            let timeout_ms = u64::from(timeout_min) * 60_000;
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+
+            let vis_count = state.session_visibility.len();
+            let sessions_count = state.sessions.len();
+            tracing::trace!(
+                vis_count,
+                sessions_count,
+                timeout_min,
+                "Standby checker tick"
+            );
+
+            for entry in state.session_visibility.iter() {
+                let session_id = entry.key();
+                let visible = *entry.value();
+                if visible {
+                    continue;
+                }
+                if state.standby_sessions.contains_key(session_id.as_str()) {
+                    continue;
+                }
+
+                let shell_raw = state
+                    .shell_states
+                    .get(session_id.as_str())
+                    .map(|a| a.load(Ordering::Acquire));
+                let is_idle = shell_raw == Some(SHELL_IDLE);
+                if !is_idle {
+                    continue;
+                }
+
+                let idle_since = state
+                    .shell_state_since_ms
+                    .get(session_id.as_str())
+                    .map(|a| a.load(Ordering::Acquire))
+                    .unwrap_or(now_ms);
+                let idle_ms = now_ms.saturating_sub(idle_since);
+                if idle_ms < timeout_ms {
+                    continue;
+                }
+
+                let settled = state
+                    .silence_states
+                    .get(session_id.as_str())
+                    .map(|e| e.lock().startup_settled)
+                    .unwrap_or(false);
+                if !settled {
+                    continue;
+                }
+
+                tracing::debug!(
+                    session_id = session_id.as_str(),
+                    idle_ms,
+                    "Standby: all conditions met, stopping"
+                );
+                if let Err(e) = standby_session(&state, session_id) {
+                    tracing::warn!(session_id, error = %e, "Standby failed");
+                }
+            }
+        }
+    });
+}
+
+/// SIGSTOP the entire process group of a session.
+/// Returns Ok(true) if stopped, Ok(false) if already in standby or session gone.
+#[cfg(unix)]
+pub(crate) fn standby_session(state: &AppState, session_id: &str) -> Result<bool, String> {
+    if state.standby_sessions.contains_key(session_id) {
+        return Ok(false);
+    }
+    let pgid = {
+        let entry = state
+            .sessions
+            .get(session_id)
+            .ok_or_else(|| format!("Session not found: {session_id}"))?;
+        let session = entry.value().lock();
+        session
+            .master
+            .process_group_leader()
+            .ok_or_else(|| "No process group leader".to_string())?
+    };
+    if pgid <= 1 || pgid == unsafe { libc::getpgid(0) } {
+        return Err(format!("Unsafe pgid {pgid} — refusing SIGSTOP"));
+    }
+    let ret = unsafe { libc::kill(-pgid, libc::SIGSTOP) };
+    if ret != 0 {
+        return Err(format!(
+            "SIGSTOP failed: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    state.standby_sessions.insert(session_id.to_string(), now);
+    tracing::info!(session_id, pgid, "Session entered standby (SIGSTOP)");
+    emit_standby_event(state, session_id, true);
+    Ok(true)
+}
+
+/// SIGCONT a session in standby. Returns Ok(true) if woken, Ok(false) if not in standby.
+#[cfg(unix)]
+pub(crate) fn wake_session(state: &AppState, session_id: &str) -> Result<bool, String> {
+    if state.standby_sessions.remove(session_id).is_none() {
+        return Ok(false);
+    }
+    let pgid = {
+        let entry = state
+            .sessions
+            .get(session_id)
+            .ok_or_else(|| format!("Session not found: {session_id}"))?;
+        let session = entry.value().lock();
+        session
+            .master
+            .process_group_leader()
+            .ok_or_else(|| "No process group leader".to_string())?
+    };
+    let ret = unsafe { libc::kill(-pgid, libc::SIGCONT) };
+    if ret != 0 {
+        return Err(format!(
+            "SIGCONT failed: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    tracing::info!(session_id, pgid, "Session woken from standby (SIGCONT)");
+    emit_standby_event(state, session_id, false);
+    Ok(true)
+}
+
+#[cfg(unix)]
+fn emit_standby_event(state: &AppState, session_id: &str, standby: bool) {
+    #[cfg(feature = "desktop")]
+    if let Some(ref app) = *state.app_handle.read() {
+        let _ = app.emit(
+            "session-standby",
+            serde_json::json!({
+                "session_id": session_id,
+                "standby": standby,
+            }),
+        );
+    }
 }
 
 /// Query current kitty keyboard protocol flags for a session.
@@ -4283,6 +4586,8 @@ pub(crate) fn has_foreground_process(
 
 /// Debug: diagnose agent detection for a PTY session.
 /// Returns each step of the detection pipeline so failures can be pinpointed.
+/// Diagnostic-only command — no frontend caller; kept as a debug escape hatch
+/// for investigating agent classification mismatches in production.
 #[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn debug_agent_detection(
@@ -4362,6 +4667,8 @@ pub(crate) struct ActiveSessionInfo {
 /// Update the working directory of a running PTY session.
 /// Called from the frontend when an OSC 7 escape sequence is detected,
 /// keeping the Rust-side cwd in sync for restart recovery.
+// DEFERRED (2026-05-14) — wire to frontend OSC 7 handler (handleTerminalCwdChange).
+// Without this, restart recovery uses stale launch-time cwd.
 #[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn update_session_cwd(
@@ -4424,6 +4731,219 @@ pub(crate) fn list_active_sessions(state: State<'_, Arc<AppState>>) -> Vec<Activ
         .collect()
 }
 
+/// Per-process resource usage for the process manager modal.
+#[derive(Clone, Serialize)]
+pub(crate) struct ProcessStats {
+    pub(crate) session_id: Option<String>,
+    pub(crate) name: String,
+    pub(crate) pid: u32,
+    pub(crate) rss_kb: u64,
+    pub(crate) cpu_pct: f32,
+}
+
+/// Collect CPU/memory stats for TUIC itself and all PTY child process trees.
+pub(crate) fn collect_process_stats(state: &AppState) -> Vec<ProcessStats> {
+    let mut pids: Vec<(Option<String>, String, u32)> = Vec::new();
+
+    // TUIC's own process
+    let own_pid = std::process::id();
+    pids.push((None, "TUICommander".to_string(), own_pid));
+
+    // Collect child PIDs from all PTY sessions
+    for entry in state.sessions.iter() {
+        let session_id = entry.key().clone();
+        let session = entry.value().lock();
+        let display = session
+            .display_name
+            .clone()
+            .unwrap_or_else(|| session_id.chars().take(8).collect());
+
+        #[cfg(not(windows))]
+        let child_pid = session.master.process_group_leader().map(|p| p as u32);
+        #[cfg(windows)]
+        let child_pid = session._child.process_id();
+
+        if let Some(pid) = child_pid {
+            pids.push((Some(session_id.clone()), display.clone(), pid));
+            // Walk descendants
+            if let Some(descendants) = collect_descendant_pids(pid) {
+                for dpid in descendants {
+                    let name = process_name_from_pid(dpid).unwrap_or_else(|| format!("pid:{dpid}"));
+                    pids.push((Some(session_id.clone()), name, dpid));
+                }
+            }
+        }
+    }
+
+    if pids.is_empty() {
+        return vec![];
+    }
+
+    let pid_list: Vec<u32> = pids.iter().map(|(_, _, p)| *p).collect();
+    let stats_map = query_process_stats(&pid_list);
+
+    pids.into_iter()
+        .map(|(sid, name, pid)| {
+            let (rss_kb, cpu_pct) = stats_map.get(&pid).copied().unwrap_or((0, 0.0));
+            ProcessStats {
+                session_id: sid,
+                name,
+                pid,
+                rss_kb,
+                cpu_pct,
+            }
+        })
+        .collect()
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) fn get_process_stats(state: State<'_, Arc<AppState>>) -> Vec<ProcessStats> {
+    collect_process_stats(&state)
+}
+
+/// Collect all descendant PIDs of a process (excluding the root itself).
+fn collect_descendant_pids(root: u32) -> Option<Vec<u32>> {
+    #[cfg(not(windows))]
+    {
+        let output = std::process::Command::new("ps")
+            .args(["-eo", "pid,ppid"])
+            .output()
+            .ok()?;
+        let text = String::from_utf8_lossy(&output.stdout);
+        let mut parent_map: std::collections::HashMap<u32, Vec<u32>> =
+            std::collections::HashMap::new();
+        for line in text.lines().skip(1) {
+            let mut parts = line.split_whitespace();
+            let pid: u32 = parts.next()?.parse().ok()?;
+            let ppid: u32 = parts.next()?.parse().ok()?;
+            parent_map.entry(ppid).or_default().push(pid);
+        }
+        let mut result = Vec::new();
+        let mut stack = vec![root];
+        while let Some(p) = stack.pop() {
+            if let Some(children) = parent_map.get(&p) {
+                for &child in children {
+                    result.push(child);
+                    stack.push(child);
+                }
+            }
+        }
+        Some(result)
+    }
+    #[cfg(windows)]
+    {
+        // On Windows, deepest_descendant_pid already walks the tree.
+        // Reuse the snapshot logic to collect all descendants.
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::Diagnostics::ToolHelp::*;
+        let snap = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+        if snap.is_null() {
+            return None;
+        }
+        let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
+        entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+        let mut parent_map: std::collections::HashMap<u32, Vec<u32>> =
+            std::collections::HashMap::new();
+        if unsafe { Process32FirstW(snap, &mut entry) } != 0 {
+            loop {
+                parent_map
+                    .entry(entry.th32ParentProcessID)
+                    .or_default()
+                    .push(entry.th32ProcessID);
+                if unsafe { Process32NextW(snap, &mut entry) } == 0 {
+                    break;
+                }
+            }
+        }
+        let _ = unsafe { CloseHandle(snap) };
+        let mut result = Vec::new();
+        let mut stack = vec![root];
+        while let Some(p) = stack.pop() {
+            if let Some(children) = parent_map.get(&p) {
+                for &child in children {
+                    result.push(child);
+                    stack.push(child);
+                }
+            }
+        }
+        Some(result)
+    }
+}
+
+/// Query RSS (KB) and CPU% for a batch of PIDs using `ps` on Unix.
+#[cfg(not(windows))]
+fn query_process_stats(pids: &[u32]) -> std::collections::HashMap<u32, (u64, f32)> {
+    let mut map = std::collections::HashMap::new();
+    if pids.is_empty() {
+        return map;
+    }
+    let pid_args: Vec<String> = pids.iter().map(|p| p.to_string()).collect();
+    let Ok(output) = std::process::Command::new("ps")
+        .args(["-o", "pid,rss,%cpu", "-p"])
+        .arg(pid_args.join(","))
+        .output()
+    else {
+        return map;
+    };
+    let text = String::from_utf8_lossy(&output.stdout);
+    for line in text.lines().skip(1) {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 3
+            && let (Ok(pid), Ok(rss), Ok(cpu)) = (
+                parts[0].parse::<u32>(),
+                parts[1].parse::<u64>(),
+                parts[2].parse::<f32>(),
+            )
+        {
+            map.insert(pid, (rss, cpu));
+        }
+    }
+    map
+}
+
+/// Query RSS (KB) and CPU% for a batch of PIDs on Windows.
+#[cfg(windows)]
+fn query_process_stats(pids: &[u32]) -> std::collections::HashMap<u32, (u64, f32)> {
+    let mut map = std::collections::HashMap::new();
+    for &pid in pids {
+        if let Some((rss, cpu)) = query_single_process_windows(pid) {
+            map.insert(pid, (rss, cpu));
+        }
+    }
+    map
+}
+
+#[cfg(windows)]
+fn query_single_process_windows(pid: u32) -> Option<(u64, f32)> {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::ProcessStatus::{
+        GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+    };
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
+    };
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, pid) };
+    if handle.is_null() {
+        return None;
+    }
+    let mut mem_info: PROCESS_MEMORY_COUNTERS = unsafe { std::mem::zeroed() };
+    mem_info.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+    let ok = unsafe {
+        GetProcessMemoryInfo(
+            handle,
+            &mut mem_info,
+            std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+        )
+    };
+    let _ = unsafe { CloseHandle(handle) };
+    if ok == 0 {
+        return None;
+    }
+    let rss_kb = mem_info.WorkingSetSize / 1024;
+    Some((rss_kb as u64, 0.0))
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct VtLogChunk {
     pub lines: Vec<crate::state::LogLine>,
@@ -4437,6 +4957,7 @@ pub struct VtLogChunk {
 /// This is the desktop IPC equivalent of the PWA WebSocket `format=log` path.
 /// `lines` are finalized scrollback lines (each appears once, oldest first).
 /// `screen` is the current visible screen with agent chrome trimmed.
+/// Desktop IPC equivalent of PWA WebSocket format=log — no frontend caller yet.
 #[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn read_vt_log(
@@ -4518,25 +5039,15 @@ pub(crate) fn subscribe_terminal_grid(
 }
 
 /// Acknowledge that the frontend has painted the last grid frame.
-/// Clears the in-flight flag so the PTY reader can send the next frame.
-/// If the VT grid has accumulated dirty rows while in-flight (PTY went idle
-/// before the reader could send another frame), flush them immediately.
+/// Clears the in-flight flag so the ticker can send the next frame.
+/// The ticker (8ms interval) is the sole frame sender — the ack path only
+/// releases the backpressure gate. This caps frame rate at ~125Hz and prevents
+/// the tight ack→flush→ack loop that saturated the main thread.
 #[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn ack_terminal_frame(state: State<'_, Arc<AppState>>, session_id: String) {
     if let Some(flag) = state.grid_frame_in_flight.get(&session_id) {
-        let was_in_flight = flag.swap(false, std::sync::atomic::Ordering::Relaxed);
-        // Only flush if this ACK corresponds to a real in-flight frame
-        // (reader set it). Prevents flush→ACK→flush loop when the flush
-        // itself sends a frame that gets ACKed.
-        if was_in_flight && let Some(vt) = state.vt_log_buffers.get(&session_id) {
-            let frame = vt.lock().serialize_dirty_rows();
-            if !frame.is_empty()
-                && let Some(ch) = state.grid_channels.get(&session_id)
-            {
-                let _ = ch.send(frame);
-            }
-        }
+        flag.store(false, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
@@ -4615,6 +5126,21 @@ pub(crate) fn terminal_scroll_to(state: State<'_, Arc<AppState>>, session_id: St
         };
         send_grid_frame(&state, &session_id, frame);
     }
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) fn terminal_get_block_rows(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+    start_line: usize,
+    end_line: usize,
+) -> Vec<String> {
+    state
+        .vt_log_buffers
+        .get(&session_id)
+        .map(|vt| vt.lock().read_rows_in_range(start_line, end_line))
+        .unwrap_or_default()
 }
 
 #[cfg(feature = "desktop")]
@@ -4701,6 +5227,20 @@ pub(crate) fn terminal_get_row_text(
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
+pub(crate) fn terminal_get_logical_line(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+    row: usize,
+) -> (usize, String) {
+    state
+        .vt_log_buffers
+        .get(&session_id)
+        .map(|vt| vt.lock().grid_get_logical_line(row))
+        .unwrap_or((row, String::new()))
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
 pub(crate) fn terminal_get_selection_text(
     state: State<'_, Arc<AppState>>,
     session_id: String,
@@ -4782,7 +5322,11 @@ pub(crate) async fn set_session_visible(
     session_id: String,
     visible: bool,
 ) -> Result<(), String> {
-    state.session_visibility.insert(session_id, visible);
+    state.session_visibility.insert(session_id.clone(), visible);
+    #[cfg(unix)]
+    if visible && let Err(e) = wake_session(&state, &session_id) {
+        tracing::warn!(session_id, error = %e, "Wake on focus failed");
+    }
     Ok(())
 }
 
@@ -5718,6 +6262,17 @@ mod tests {
         let rows = make_rows(&["\u{280B} Connecting to MCP servers..."]);
         let chrome_only = !rows.is_empty() && rows.iter().all(|r| is_chrome_row(&r.text));
         assert!(chrome_only, "Gemini braille spinner should be chrome");
+    }
+
+    #[test]
+    fn test_chrome_only_tool_progress_spinner_is_chrome() {
+        let rows = make_rows(&["\u{25D0} Bash: .../b... | \u{2713} Bash \u{00D7}9"]);
+        let chrome_only = !rows.is_empty() && rows.iter().all(|r| is_chrome_row(&r.text));
+        assert!(chrome_only, "CC tool progress spinner should be chrome");
+        assert!(
+            crate::chrome::is_spinner_row(&rows[0].text),
+            "CC tool progress spinner should be detected as spinner (keepalive)"
+        );
     }
 
     // --- chrome_only full formula tests (mirrors process_chunk logic) ---
@@ -7435,6 +7990,9 @@ mod tests {
         // Spinner rows prove agent is alive
         assert!(crate::chrome::is_spinner_row("✻ Cogitated for 3m 47s"));
         assert!(crate::chrome::is_spinner_row("⠋ Generating..."));
+        // Tool progress spinners prove agent is alive
+        assert!(crate::chrome::is_spinner_row("◐ Bash: .../b..."));
+        assert!(crate::chrome::is_spinner_row("◑ Read: src/main.rs"));
         // Static chrome does NOT prove agent is alive
         assert!(!crate::chrome::is_spinner_row("⏵ auto mode"));
         assert!(!crate::chrome::is_spinner_row("▀▀▀▀▀▀▀▀"));
@@ -8363,7 +8921,7 @@ mod tests {
             .filter(|e| matches!(e, crate::terminal_grid::TermEvent::Tuic { .. }))
             .collect();
         assert_eq!(tuic.len(), 1);
-        if let crate::terminal_grid::TermEvent::Tuic { verb, payload } = &tuic[0] {
+        if let crate::terminal_grid::TermEvent::Tuic { verb, payload, .. } = &tuic[0] {
             assert_eq!(verb, "suggest");
             let items: Vec<String> = payload.split('|').map(|s| s.trim().to_string()).collect();
             assert_eq!(items, vec!["Fix bug", "Run tests", "Deploy"]);
@@ -8381,10 +8939,63 @@ mod tests {
             .filter(|e| matches!(e, crate::terminal_grid::TermEvent::Tuic { .. }))
             .collect();
         assert_eq!(tuic.len(), 1);
-        if let crate::terminal_grid::TermEvent::Tuic { verb, payload } = &tuic[0] {
+        if let crate::terminal_grid::TermEvent::Tuic { verb, payload, .. } = &tuic[0] {
             assert_eq!(verb, "intent");
             assert_eq!(payload, "Refactoring auth (Auth)");
         }
+    }
+
+    #[test]
+    fn tuic_osc_block_start_parsed() {
+        use crate::terminal_grid::TerminalGrid;
+        let mut grid = TerminalGrid::new(24, 80, 1000);
+        grid.process(b"\x1b]7770;block=start\x07");
+        let events = grid.drain_events();
+        let tuic: Vec<_> = events
+            .into_iter()
+            .filter(|e| matches!(e, crate::terminal_grid::TermEvent::Tuic { .. }))
+            .collect();
+        assert_eq!(tuic.len(), 1);
+        if let crate::terminal_grid::TermEvent::Tuic { verb, payload, .. } = &tuic[0] {
+            assert_eq!(verb, "block");
+            assert_eq!(payload, "start");
+        }
+    }
+
+    #[test]
+    fn tuic_osc_block_end_with_exit_code_parsed() {
+        let payload = "end;1".to_string();
+        let (action, exit_code) = if let Some(rest) = payload.strip_prefix("end;") {
+            ("end".to_string(), rest.parse::<i32>().ok())
+        } else {
+            (payload.clone(), None)
+        };
+        assert_eq!(action, "end");
+        assert_eq!(exit_code, Some(1));
+    }
+
+    #[test]
+    fn tuic_osc_block_end_without_exit_code() {
+        let payload = "end".to_string();
+        let (action, exit_code) = if let Some(rest) = payload.strip_prefix("end;") {
+            ("end".to_string(), rest.parse::<i32>().ok())
+        } else {
+            (payload.clone(), None)
+        };
+        assert_eq!(action, "end");
+        assert_eq!(exit_code, None);
+    }
+
+    #[test]
+    fn tuic_osc_block_invalid_action_ignored() {
+        let payload = "invalid".to_string();
+        let (action, _exit_code) = if let Some(rest) = payload.strip_prefix("end;") {
+            ("end".to_string(), rest.parse::<i32>().ok())
+        } else {
+            (payload.clone(), None)
+        };
+        let is_valid = action == "start" || action == "end";
+        assert!(!is_valid, "invalid action should not produce an event");
     }
 
     #[test]
@@ -8599,5 +9210,74 @@ mod tests {
             current, SHELL_BUSY,
             "OSC 133 D alone should NOT transition — wait for A"
         );
+    }
+
+    // --- is_cc_tool_call_header tests ---
+
+    #[test]
+    fn cc_tool_call_bash() {
+        assert!(is_cc_tool_call_header(
+            "⏺ Bash(curl -s 'http://localhost:9876/logs')"
+        ));
+    }
+
+    #[test]
+    fn cc_tool_call_read() {
+        assert!(is_cc_tool_call_header("⏺ Read(src/foo.rs)"));
+    }
+
+    #[test]
+    fn cc_tool_call_edit() {
+        assert!(is_cc_tool_call_header("⏺ Edit(file_path=/tmp/a.rs)"));
+    }
+
+    #[test]
+    fn cc_tool_call_mcp() {
+        assert!(is_cc_tool_call_header(
+            "⏺ mcp__tuicommander__ui(action=tab)"
+        ));
+    }
+
+    #[test]
+    fn cc_tool_call_with_leading_whitespace() {
+        assert!(is_cc_tool_call_header("  ⏺ Bash(ls)"));
+    }
+
+    #[test]
+    fn cc_prose_not_tool_call() {
+        assert!(!is_cc_tool_call_header("⏺ Boss, ci sono molti tipi di OSC"));
+    }
+
+    #[test]
+    fn cc_prose_with_paren_not_tool_call() {
+        assert!(!is_cc_tool_call_header(
+            "⏺ Nessun errore (tutti i log puliti)"
+        ));
+    }
+
+    #[test]
+    fn cc_calling_collapsed_not_tool_call() {
+        assert!(!is_cc_tool_call_header(
+            "⏺ Calling tuicommander 2 times… (ctrl+o to expand)"
+        ));
+    }
+
+    #[test]
+    fn cc_mission_control_not_tool_call() {
+        assert!(!is_cc_tool_call_header(
+            "⏺ Mission Control: opened in TUIC tab"
+        ));
+    }
+
+    #[test]
+    fn cc_empty_after_bullet_not_tool_call() {
+        assert!(!is_cc_tool_call_header("⏺ "));
+        assert!(!is_cc_tool_call_header("⏺"));
+    }
+
+    #[test]
+    fn cc_no_bullet_not_tool_call() {
+        assert!(!is_cc_tool_call_header("Bash(ls)"));
+        assert!(!is_cc_tool_call_header("plain text"));
     }
 }

@@ -66,6 +66,19 @@ pub(crate) fn classify_path(
         return EventCategory::Noise;
     }
 
+    // Always-excluded directories — noise regardless of .gitignore
+    if let Ok(rel) = path.strip_prefix(repo_root)
+        && let Some(first) = rel.components().next()
+    {
+        let name = first.as_os_str();
+        if crate::fs::ALWAYS_EXCLUDED_DIRS
+            .iter()
+            .any(|d| name == std::ffi::OsStr::new(d))
+        {
+            return EventCategory::Noise;
+        }
+    }
+
     // Path is outside .git/ — check gitignore
     if let Ok(rel) = path.strip_prefix(repo_root) {
         let is_dir = path.is_dir();
@@ -87,6 +100,7 @@ pub(crate) fn classify_path(
 const HEAD_DEBOUNCE: Duration = Duration::from_millis(200);
 const GIT_STATE_DEBOUNCE: Duration = Duration::from_millis(500);
 const WORKING_TREE_DEBOUNCE: Duration = Duration::from_millis(1500);
+const COLD_WORKING_TREE_DEBOUNCE: Duration = Duration::from_secs(15);
 
 impl EventCategory {
     /// The debounce delay for this category.
@@ -122,10 +136,22 @@ impl CategoryEmitter {
         }
     }
 
-    /// Schedule a delayed emit for the given category. If a pending emit
-    /// exists for the same category, it is cancelled first (trailing debounce).
+    /// Schedule a delayed emit with the category's default debounce delay.
     pub(crate) fn trigger<F>(&self, category: &EventCategory, emit_fn: F)
     where
+        F: FnOnce() + Send + 'static,
+    {
+        self.trigger_with_delay(category, category.delay(), emit_fn);
+    }
+
+    /// Schedule a delayed emit with an explicit delay. If a pending emit
+    /// exists for the same category, it is cancelled first (trailing debounce).
+    pub(crate) fn trigger_with_delay<F>(
+        &self,
+        category: &EventCategory,
+        delay: Duration,
+        emit_fn: F,
+    ) where
         F: FnOnce() + Send + 'static,
     {
         let slot = match category {
@@ -134,7 +160,6 @@ impl CategoryEmitter {
             EventCategory::WorkingTree => &self.working_tree,
             EventCategory::Noise => return,
         };
-        let delay = category.delay();
         let mut guard = slot.lock();
         if let Some(handle) = guard.take() {
             handle.abort();
@@ -307,7 +332,12 @@ pub(crate) fn start_watching(repo_path: &str, state: &Arc<AppState>) -> Result<(
                 #[cfg(feature = "desktop")]
                 let h = handle.clone();
                 let st = Arc::clone(&state_cb);
-                emitter.trigger(&EventCategory::WorkingTree, move || {
+                let wt_delay = if st.hot_repo_paths.read().contains(&repo_path) {
+                    WORKING_TREE_DEBOUNCE
+                } else {
+                    COLD_WORKING_TREE_DEBOUNCE
+                };
+                emitter.trigger_with_delay(&EventCategory::WorkingTree, wt_delay, move || {
                     tracing::info!(source = "repo_watcher", path = %repo_path, "Emit repo-changed (working-tree)");
                     st.invalidate_repo_caches(&repo_path);
                     let _ = bus.send(AppEvent::RepoChanged {
@@ -361,6 +391,14 @@ pub(crate) fn start_repo_watcher(repo_path: String, app_handle: AppHandle) -> Re
 pub(crate) fn stop_repo_watcher(repo_path: String, app_handle: AppHandle) {
     let state = app_handle.state::<Arc<AppState>>();
     stop_watching(&repo_path, &state);
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) fn set_hot_repos(paths: Vec<String>, state: tauri::State<'_, std::sync::Arc<AppState>>) {
+    let mut hot = state.hot_repo_paths.write();
+    hot.clear();
+    hot.extend(paths);
 }
 
 #[cfg(test)]
@@ -625,5 +663,33 @@ mod tests {
         // After 600ms total, GitState should also have fired
         tokio::time::sleep(Duration::from_millis(300)).await;
         assert_eq!(git_count.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn test_cold_debounce_constant() {
+        assert_eq!(COLD_WORKING_TREE_DEBOUNCE, Duration::from_secs(15));
+        assert_eq!(
+            COLD_WORKING_TREE_DEBOUNCE.as_millis() / WORKING_TREE_DEBOUNCE.as_millis(),
+            10
+        );
+    }
+
+    #[tokio::test]
+    async fn test_trigger_with_delay_uses_explicit_duration() {
+        let emitter = CategoryEmitter::new(tokio::runtime::Handle::current());
+        let counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let c = Arc::clone(&counter);
+
+        emitter.trigger_with_delay(
+            &EventCategory::WorkingTree,
+            Duration::from_millis(50),
+            move || {
+                c.fetch_add(1, Ordering::Relaxed);
+            },
+        );
+
+        assert_eq!(counter.load(Ordering::Relaxed), 0);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(counter.load(Ordering::Relaxed), 1);
     }
 }

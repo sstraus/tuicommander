@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { createSignal } from "solid-js";
 import { isTauri } from "../transport";
 import { appLogger } from "./appLogger";
@@ -81,8 +82,9 @@ function isMac(): boolean {
 
 /** Update modifier state from a keyboard event. */
 function updateModifierFromEvent(e: KeyboardEvent) {
-	setCopyModifierHeld(isMac() ? e.altKey : e.ctrlKey);
-	setShiftHeld(e.shiftKey);
+	const nextCopy = isMac() ? e.altKey : e.ctrlKey;
+	if (nextCopy !== copyModifierHeld()) setCopyModifierHeld(nextCopy);
+	if (e.shiftKey !== shiftHeld()) setShiftHeld(e.shiftKey);
 }
 
 /**
@@ -115,7 +117,7 @@ export async function initDragDrop(): Promise<void> {
 			const payload = event.payload;
 
 			// Internal drag (tab/pane/sidebar move) — only handle hover highlight,
-			// don't treat as file drop. The actual move happens via dragend fallback.
+			// File browser uses pointer events instead (see FileBrowserPanel.tsx).
 			if (isInternalDrag()) {
 				if ((payload.type === "enter" || payload.type === "over") && payload.position) {
 					_lastDragCssPosition = tauriPhysicalToCss(payload.position.x, payload.position.y);
@@ -169,6 +171,18 @@ export function markInternalDragEnd(): void {
 }
 export function isInternalDrag(): boolean {
 	return internalDragCount > 0;
+}
+
+/** Find the folder drop target at CSS pixel coordinates. Returns abs path or null. */
+export function findFolderTargetAtPoint(x: number, y: number): string | null {
+	const el = document.elementFromPoint(x, y);
+	let cur: Element | null = el;
+	while (cur) {
+		const dt = (cur as HTMLElement).dataset;
+		if (dt?.dropTarget === "folder" && dt.absPath) return dt.absPath;
+		cur = cur.parentElement;
+	}
+	return null;
 }
 
 // ---- Internal drag tracking (Tauri dragDropEnabled=true workaround) ----
@@ -259,7 +273,7 @@ async function resolveDragIcon(): Promise<string> {
 	if (_dragIconPath) return _dragIconPath;
 	try {
 		const { resolveResource } = await import("@tauri-apps/api/path");
-		_dragIconPath = await resolveResource("icons/32x32.png");
+		_dragIconPath = await resolveResource("icons/drag-file.png");
 	} catch {
 		_dragIconPath = "";
 	}
@@ -269,9 +283,8 @@ async function resolveDragIcon(): Promise<string> {
 export async function startNativeDrag(paths: string[]): Promise<void> {
 	if (!isTauri() || paths.length === 0) return;
 	try {
-		const { startDrag } = await import("@crabnebula/tauri-plugin-drag");
 		const icon = await resolveDragIcon();
-		await startDrag({ item: paths, icon });
+		await invoke("start_native_drag", { paths, icon });
 	} catch (err) {
 		appLogger.warn("app", "Native drag failed", err);
 	}

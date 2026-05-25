@@ -4,6 +4,8 @@ import { pluginRegistry } from "../../plugins/pluginRegistry";
 import { appLogger } from "../../stores/appLogger";
 import { settingsStore } from "../../stores/settings";
 import { terminalsStore } from "../../stores/terminals";
+import { filterMatchesToBlock } from "../../utils/blockSearchFilter";
+import { formatRelativeTime } from "../../utils/formatRelativeTime";
 import { handleOpenUrl } from "../../utils/openUrl";
 import { installTouchHandlers } from "./canvasTerminalTouch";
 import { createTransport, type TerminalTransport } from "./canvasTerminalTransport";
@@ -21,6 +23,8 @@ import {
 	computeCursorRect,
 	type DecodedFrame,
 	decodeBinaryFrame,
+	GUTTER_PX,
+	SCROLLBAR_PX,
 	snapLineHeight,
 } from "./canvasTerminalUtils";
 import { acquireCache, getSharedMetrics, invalidateGlyphCache, releaseCache } from "./glyphCache";
@@ -35,11 +39,14 @@ export type { CellMetrics, CursorShape, DecodedFrame };
 export interface CanvasTerminalRef {
 	focus: () => void;
 	refresh: () => void;
+	resubscribe: () => Promise<void>;
 	getSelectionText: () => string;
-	searchFind: (query: string) => Promise<{ index: number; count: number }>;
+	searchFind: (query: string, blockScope?: boolean) => Promise<{ index: number; count: number }>;
 	searchNext: () => { index: number; count: number };
 	searchPrev: () => { index: number; count: number };
 	searchClear: () => void;
+	/** Paste text with correct bracketed paste wrapping based on current terminal state */
+	paste: (text: string) => void;
 }
 
 export interface CanvasTerminalProps {
@@ -83,6 +90,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	let activeSearchIndex = -1;
 	let cursorBlinkOn = true;
 	let blinkInterval: ReturnType<typeof setInterval> | undefined;
+	let blinkResetAt = 0;
 	let unsubscribe: (() => void) | undefined;
 	let resizeObserver: ResizeObserver | undefined;
 	let visibilityObserver: IntersectionObserver | undefined;
@@ -106,21 +114,28 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	let selectionStart: { col: number; row: number } | null = null;
 	let selectionEnd: { col: number; row: number } | null = null;
 	let cachedSelectionText = "";
+	let selectionScrollTimer: ReturnType<typeof setInterval> | null = null;
+	let selectionScrollDelta = 0;
 
 	// Link detection
 	const linkCache = new Map<
 		string,
 		{ text: string; path: string; line?: number; col?: number; index: number }[] | null
 	>();
-	let hoveredLink: { row: number; colStart: number; colEnd: number; path: string; line?: number; col?: number } | null =
-		null;
+	let hoveredLink: {
+		row: number;
+		colStart: number;
+		colEnd: number;
+		path: string;
+		line?: number;
+		col?: number;
+		spans?: { row: number; colStart: number; colEnd: number }[];
+	} | null = null;
 	const detectedLinks = new Map<number, { colStart: number; colEnd: number }[]>();
 
 	// Cached CSS custom properties (re-read on remeasure, not every frame)
 	let cachedBgDefault = "#1e1e1e";
 	let cachedFgDefault = "#d4d4d4";
-
-	const GUTTER_PX = 6;
 
 	// Pixel scroll accumulator: shared by wheel + touch handlers.
 	// Accumulates raw pixel delta; when it crosses cellHeight, emits a line scroll to backend.
@@ -190,6 +205,37 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		});
 	}
 
+	function startSelectionScroll(delta: number) {
+		if (selectionScrollTimer !== null && selectionScrollDelta === delta) return;
+		stopSelectionScroll();
+		selectionScrollDelta = delta;
+		const speed = Math.min(Math.abs(delta), 5);
+		const interval = Math.max(20, 80 - speed * 12);
+		selectionScrollTimer = setInterval(() => {
+			if (!selecting || !selectionStart || !currentFrame || !invokeRef) {
+				stopSelectionScroll();
+				return;
+			}
+			const scrollDir = delta > 0 ? 1 : -1;
+			invokeRef("terminal_scroll", { sessionId: props.sessionId, delta: scrollDir }).catch(ipcErr("terminal_scroll"));
+			const edgeRow = scrollDir > 0 ? 0 : (currentFrame.screenRows || lastResizeRows) - 1;
+			const absRow = viewportRowToAbs(edgeRow);
+			if (absRow !== null) {
+				selectionEnd = { col: scrollDir > 0 ? 0 : 9999, row: absRow + scrollDir };
+				const m = metrics();
+				if (m) paintFrame(currentFrame, m);
+			}
+		}, interval);
+	}
+
+	function stopSelectionScroll() {
+		if (selectionScrollTimer !== null) {
+			clearInterval(selectionScrollTimer);
+			selectionScrollTimer = null;
+			selectionScrollDelta = 0;
+		}
+	}
+
 	function canvasToGrid(e: MouseEvent): { col: number; row: number } {
 		const m = metrics();
 		if (!m) return { col: 0, row: 0 };
@@ -234,7 +280,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		cachedBgDefault = getComputedStyle(canvasRef).getPropertyValue("--bg-secondary").trim() || "#1e1e1e";
 		cachedFgDefault = getComputedStyle(canvasRef).getPropertyValue("--text-primary").trim() || "#d4d4d4";
 
-		const cols = Math.floor((rect.width - GUTTER_PX) / m.cellWidth);
+		const cols = Math.floor((rect.width - GUTTER_PX - SCROLLBAR_PX) / m.cellWidth);
 		const rows = Math.floor(rect.height / m.cellHeight);
 		if (cols <= 0 || rows <= 0) return;
 		const logicalW = cols * m.cellWidth + GUTTER_PX;
@@ -311,6 +357,8 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		paintSearchHighlights(m);
 		paintLinkUnderline(frame, m);
 		paintGutterMarkers(m);
+		paintBlockTimestamps(m);
+		paintFoldedBlocks(m);
 		paintCursor(frame, m);
 	}
 
@@ -339,15 +387,19 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 		// Solid underline for hovered link
 		if (hoveredLink) {
-			const vpRow = hoveredLink.row;
-			if (vpRow >= 0 && vpRow < maxRow) {
-				const x = hoveredLink.colStart * m.cellWidth;
-				const w = (hoveredLink.colEnd - hoveredLink.colStart) * m.cellWidth;
-				const y = vpRow * m.cellHeight + m.cellHeight - 1 + 0.5;
-				octx.beginPath();
-				octx.moveTo(x, y);
-				octx.lineTo(x + w, y);
-				octx.stroke();
+			const rowSpans = hoveredLink.spans || [
+				{ row: hoveredLink.row, colStart: hoveredLink.colStart, colEnd: hoveredLink.colEnd },
+			];
+			for (const span of rowSpans) {
+				if (span.row >= 0 && span.row < maxRow) {
+					const x = span.colStart * m.cellWidth;
+					const w = (span.colEnd - span.colStart) * m.cellWidth;
+					const y = span.row * m.cellHeight + m.cellHeight - 1 + 0.5;
+					octx.beginPath();
+					octx.moveTo(x, y);
+					octx.lineTo(x + w, y);
+					octx.stroke();
+				}
 			}
 		}
 	}
@@ -420,6 +472,69 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			if (vpRow === null) continue;
 			octx.fillStyle = "#f85149";
 			octx.fillRect(-GUTTER_PX, vpRow * m.cellHeight, 3, m.cellHeight);
+		}
+	}
+
+	function paintFoldedBlocks(m: CellMetrics) {
+		const term = terminalsStore.get(props.terminalId);
+		if (!term || term.foldedBlocks.size === 0) return;
+		const fontFamily = settingsStore.getFontFamily();
+		const painted = new Set<number>();
+		for (const promptLine of term.foldedBlocks) {
+			if (painted.has(promptLine)) continue;
+			painted.add(promptLine);
+			const block = term.commandBlocks.find((b) => b.promptLine === promptLine);
+			if (!block?.endLine) continue;
+			const foldStart = (block.executionLine ?? block.promptLine) + 1;
+			const foldEnd = block.endLine;
+			const foldedCount = foldEnd - foldStart;
+			if (foldedCount <= 0) continue;
+			const startVp = absRowToViewport(foldStart);
+			if (startVp === null) continue;
+			const endVp = absRowToViewport(foldEnd - 1);
+			const lastVp = endVp ?? lastResizeRows - 1;
+			const y = startVp * m.cellHeight;
+			const h = (lastVp - startVp + 1) * m.cellHeight;
+			octx.fillStyle = cachedBgDefault;
+			octx.globalAlpha = 0.85;
+			octx.fillRect(-GUTTER_PX, y, overlayCanvasRef.width / m.dpr, h);
+			octx.globalAlpha = 1.0;
+			const label = `  ··· ${foldedCount} lines folded ···`;
+			octx.font = `${Math.round(m.cellHeight * 0.7)}px ${fontFamily}`;
+			octx.fillStyle = "rgba(150,150,150,0.6)";
+			octx.fillText(label, 4, y + m.cellHeight * 0.75);
+			// Fold gutter indicator
+			octx.fillStyle = "rgba(88,166,255,0.5)";
+			const gutterVp = absRowToViewport(block.promptLine);
+			if (gutterVp !== null) {
+				octx.fillRect(-GUTTER_PX, gutterVp * m.cellHeight, 3, m.cellHeight);
+			}
+		}
+	}
+
+	let blockTimestampsVisible = false;
+
+	function paintBlockTimestamps(m: CellMetrics) {
+		if (!blockTimestampsVisible || !settingsStore.state.showBlockTimestamps) return;
+		const term = terminalsStore.get(props.terminalId);
+		if (!term) return;
+		const all = term.activeBlock ? [...term.commandBlocks, term.activeBlock] : term.commandBlocks;
+		if (all.length === 0) return;
+		const fontFamily = settingsStore.getFontFamily();
+		const fontSize = Math.round(m.cellHeight * 0.7);
+		octx.font = `${fontSize}px ${fontFamily}`;
+		octx.fillStyle = "rgba(150,150,150,0.5)";
+		const canvasW = overlayCanvasRef.width / m.dpr;
+		let lastLabelBottom = -Infinity;
+		for (const block of all) {
+			const vpRow = absRowToViewport(block.promptLine);
+			if (vpRow === null) continue;
+			const y = vpRow * m.cellHeight;
+			if (y < lastLabelBottom) continue;
+			const label = formatRelativeTime(Date.now() - block.startedAt);
+			const tw = octx.measureText(label).width;
+			octx.fillText(label, canvasW - tw - 8, y + m.cellHeight * 0.75);
+			lastLabelBottom = y + m.cellHeight;
 		}
 	}
 
@@ -505,6 +620,8 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			lines.pop();
 		}
 
+		// DEFERRED (2026-05-16) — JS fallback doesn't unwrap soft-wrapped lines (no WRAPLINE flag
+		// available client-side). Primary path uses Rust terminal_get_selection_text which handles it.
 		return lines.join("\n");
 	}
 
@@ -529,7 +646,8 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	function paintCursor(frame: DecodedFrame, m: CellMetrics) {
 		if (frame.displayOffset > 0) return;
 		if (!frame.cursorVisible) return;
-		if (!cursorBlinkOn && focused()) return;
+		if (!focused()) return;
+		if (!cursorBlinkOn) return;
 
 		const settingShape: CursorShape =
 			settingsStore.state.cursorStyle === "block"
@@ -539,13 +657,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 					: "beam";
 		const shape: CursorShape = frame.cursorShape !== "block" ? frame.cursorShape : settingShape;
 		const rect = computeCursorRect(shape, frame.cursorRow, frame.cursorCol, m);
-
-		if (!focused()) {
-			octx.strokeStyle = cachedFgDefault;
-			octx.lineWidth = 1;
-			octx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
-			return;
-		}
 
 		octx.fillStyle = cachedFgDefault;
 		octx.fillRect(rect.x, rect.y, rect.w, rect.h);
@@ -563,6 +674,17 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				}
 			}
 		}
+
+		syncImePosition(frame.cursorRow, frame.cursorCol, m);
+	}
+
+	function syncImePosition(row: number, col: number, m: CellMetrics) {
+		const x = GUTTER_PX + col * m.cellWidth;
+		const y = row * m.cellHeight;
+		keyInputRef.style.left = `${x}px`;
+		keyInputRef.style.top = `${y}px`;
+		keyInputRef.style.height = `${m.cellHeight}px`;
+		keyInputRef.style.fontSize = `${m.fontSize}px`;
 	}
 
 	// --- Scrollbar ---
@@ -570,7 +692,8 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	function updateScrollbar(frame: DecodedFrame) {
 		if (!scrollbarRef || !scrollThumbRef) return;
 		const total = frame.historySize + (frame.screenRows || lastResizeRows || 24);
-		const visible = canvasRef.getBoundingClientRect().height / (metrics()?.cellHeight ?? 16);
+		const m = metrics();
+		const visible = m ? lastResizeRows || Math.floor(canvasRef.clientHeight / m.cellHeight) : lastResizeRows || 24;
 
 		if (frame.historySize === 0) {
 			scrollbarRef.style.display = "none";
@@ -585,6 +708,49 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 		scrollThumbRef.style.height = `${thumbHeight}px`;
 		scrollThumbRef.style.transform = `translateY(${scrollPos}px)`;
+
+		paintScrollbarMarks(total);
+	}
+
+	let scrollbarMarksContainer: HTMLDivElement | null = null;
+	let lastScrollbarMarksKey = "";
+
+	function paintScrollbarMarks(totalRows: number) {
+		if (!scrollbarRef || !settingsStore.state.showScrollbarMarks) return;
+		if (!scrollbarMarksContainer) {
+			scrollbarMarksContainer = document.createElement("div");
+			scrollbarMarksContainer.style.cssText =
+				"position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none";
+			scrollbarRef.appendChild(scrollbarMarksContainer);
+		}
+		const term = terminalsStore.get(props.terminalId);
+		if (!term) return;
+		const blocks = term.commandBlocks;
+		const searchCount = searchMatches.length;
+		const showBlocks = blockTimestampsVisible;
+		const key = `${showBlocks ? blocks.length : 0}:${totalRows}:${showBlocks ? (blocks[blocks.length - 1]?.exitCode ?? "") : ""}:s${searchCount}:${searchCount > 0 ? searchMatches[0].row : ""}`;
+		if (key === lastScrollbarMarksKey) return;
+		lastScrollbarMarksKey = key;
+
+		const trackH = scrollbarRef.clientHeight;
+		let html = "";
+		if (showBlocks) {
+			for (const block of blocks) {
+				const ratio = block.promptLine / totalRows;
+				const color = block.exitCode !== null && block.exitCode !== 0 ? "#f85149" : "rgba(88,166,255,0.5)";
+				html += `<div style="position:absolute;right:0;width:100%;height:2px;top:${ratio * trackH}px;background:${color}"></div>`;
+			}
+		}
+		if (searchCount > 0) {
+			const seen = new Set<number>();
+			for (const match of searchMatches) {
+				const rounded = Math.round((match.row / totalRows) * trackH);
+				if (seen.has(rounded)) continue;
+				seen.add(rounded);
+				html += `<div style="position:absolute;right:0;width:100%;height:2px;top:${rounded}px;background:#e8984c"></div>`;
+			}
+		}
+		scrollbarMarksContainer.innerHTML = html;
 	}
 
 	// --- Suggest / Intent overlay ---
@@ -671,17 +837,22 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	}
 
 	function startBlink() {
-		stopBlink();
+		if (blinkInterval != null) return;
 		cursorBlinkOn = true;
+		blinkResetAt = performance.now();
 		blinkInterval = setInterval(() => {
-			cursorBlinkOn = !cursorBlinkOn;
-			if (rafId === undefined) {
-				rafId = requestAnimationFrame(() => {
-					rafId = undefined;
-					if (!alive || hidden) return;
-					const m = metrics();
-					if (currentFrame && m) repaintCursorOnly(currentFrame, m);
-				});
+			const elapsed = performance.now() - blinkResetAt;
+			const phase = Math.floor(elapsed / 700) % 2 === 0;
+			if (cursorBlinkOn !== phase) {
+				cursorBlinkOn = phase;
+				if (rafId === undefined) {
+					rafId = requestAnimationFrame(() => {
+						rafId = undefined;
+						if (!alive || hidden) return;
+						const m = metrics();
+						if (currentFrame && m) repaintCursorOnly(currentFrame, m);
+					});
+				}
 			}
 		}, 700);
 	}
@@ -695,7 +866,8 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 	function resetBlink() {
 		cursorBlinkOn = true;
-		startBlink();
+		blinkResetAt = performance.now();
+		if (blinkInterval == null) startBlink();
 	}
 
 	function drawBoxDrawingChar(cp: number, x: number, y: number, m: CellMetrics): boolean {
@@ -1909,6 +2081,12 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 	function onFrame(data: ArrayBuffer | number[]) {
 		const buffer = data instanceof ArrayBuffer ? data : new Uint8Array(data).buffer;
+
+		// Ack before decode. The backend ack path only clears the in-flight flag —
+		// the ticker sends the next frame on its own 8ms schedule. Acking before
+		// decode ensures the flag is cleared even if decodeBinaryFrame throws.
+		invokeRef?.("ack_terminal_frame", { sessionId: props.sessionId }).catch(ipcErr("ack_terminal_frame"));
+
 		const frame = decodeBinaryFrame(buffer);
 		if (!frame) return;
 
@@ -1946,11 +2124,16 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 			fullRepaintNeeded = true;
 		} else if (scrollChanged && !geomChanged) {
-			// Scroll changed but only partial rows arrived — old row indices are stale.
-			// DON'T clear rowMap (would cause blank flash). Instead request a full frame;
-			// when it arrives, the >= screenRowCount branch above will replace rowMap.
+			// Scroll changed but only partial rows arrived. Old rowMap entries are keyed
+			// to the previous viewportTop — rendering them with the new displayOffset maps
+			// them to wrong screen positions, producing ghost content.
+			// Clear immediately (brief blank < ~5ms) and request a full frame.
+			rowMap.clear();
+			detectedLinks.clear();
 			fullRepaintNeeded = true;
 			invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(ipcErr("terminal_request_frame"));
+			currentFrame = frame;
+			return;
 		}
 		for (const row of frame.rows) {
 			rowMap.set(row.index, row);
@@ -1960,7 +2143,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 		currentFrame = frame;
 
-		if (selectionStart && cachedSelectionText && frame.rows.length >= screenRowCount) {
+		// Only compare content when the selection is fully on-screen — off-screen rows return empty
+		// strings from getLocalSelectionText() causing spurious mismatches that clear the selection.
+		if (selectionStart && cachedSelectionText && frame.rows.length >= screenRowCount && !selectionSpansOffscreen()) {
 			const nowText = getLocalSelectionText();
 			if (nowText !== cachedSelectionText) {
 				selectionStart = null;
@@ -1968,11 +2153,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				cachedSelectionText = "";
 			}
 		}
-
-		// Ack on receive, not after paint. Otherwise the backend is forced to wait
-		// until the frontend has displayed an intermediate PTY state (for example a
-		// newline carrying the previous SGR background before the CLI writes reset/text).
-		invokeRef?.("ack_terminal_frame", { sessionId: props.sessionId }).catch(ipcErr("ack_terminal_frame"));
 
 		if (hidden) return;
 		scheduleRepaint();
@@ -2028,6 +2208,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		const ref = invokeRef;
 		if (!ref || !alive) return;
 		const maxRow = currentFrame?.screenRows || lastResizeRows;
+		const cols = lastScreenCols > 0 ? lastScreenCols : currentFrame?.screenCols || 80;
 		const now = Date.now();
 		const toCheck: { text: string; candidates: { colStart: number; colEnd: number; raw: string }[] }[] = [];
 
@@ -2056,13 +2237,12 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			if (candidates.length > 0) toCheck.push({ text, candidates });
 		}
 
-		if (toCheck.length === 0) return;
-
 		const termId = terminalsStore.getTerminalForSession(props.sessionId);
 		const termData = termId ? terminalsStore.get(termId) : undefined;
 		const cwd = termData?.cwd || "";
 		let anyFound = false;
 
+		// Single-row verification
 		for (const item of toCheck) {
 			if (!alive) return;
 			const verified: { colStart: number; colEnd: number }[] = [];
@@ -2083,6 +2263,59 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			}
 			fileLinkCache.set(item.text, { spans: verified.length > 0 ? verified : null, ts: Date.now() });
 			if (verified.length > 0) anyFound = true;
+		}
+
+		// Multi-row pass: detect file:// URLs spanning soft-wrapped rows.
+		// Check each row that is full-width (likely wrapped) for partial file:// prefix.
+		const checkedLogicalStarts = new Set<number>();
+		for (let i = 0; i < maxRow; i++) {
+			if (!alive) return;
+			const row = rowMap.get(i);
+			if (!row) continue;
+			const text = rowToText(row);
+			if (text.length < cols) continue; // not full-width, not wrapped
+			if (!text.includes("file://")) continue;
+			if (checkedLogicalStarts.has(i)) continue;
+			try {
+				const [startRow, logicalText] = (await ref("terminal_get_logical_line", {
+					sessionId: props.sessionId,
+					row: i,
+				})) as [number, string];
+				if (!alive) return;
+				if (startRow === i && logicalText === text) continue; // single row
+				checkedLogicalStarts.add(startRow);
+				FILE_URL_RE.lastIndex = 0;
+				let m: RegExpExecArray | null;
+				while ((m = FILE_URL_RE.exec(logicalText)) !== null) {
+					const matchEnd = m.index + m[0].length;
+					// Only process if this match spans multiple rows
+					if (Math.floor(m.index / cols) === Math.floor((matchEnd - 1) / cols)) continue;
+					try {
+						const r = (await ref("resolve_terminal_path", { cwd, candidate: m[1] })) as {
+							absolute_path: string;
+							is_directory: boolean;
+						} | null;
+						if (!r) continue;
+						// Add spans to detectedLinks for each row
+						for (let offset = m.index; offset < matchEnd; ) {
+							const spanRow = startRow + Math.floor(offset / cols);
+							const spanColStart = offset % cols;
+							const remaining = matchEnd - offset;
+							const spanColEnd = Math.min(spanColStart + remaining, cols);
+							const existing = detectedLinks.get(spanRow) || [];
+							existing.push({ colStart: spanColStart, colEnd: spanColEnd });
+							detectedLinks.set(spanRow, existing);
+							offset += spanColEnd - spanColStart;
+						}
+						anyFound = true;
+					} catch {
+						/* resolve failed */
+					}
+				}
+			} catch {
+				/* terminal_get_logical_line not available */
+				break;
+			}
 		}
 
 		if (anyFound) {
@@ -2237,6 +2470,82 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				}
 			}
 		}
+
+		// If no single-row link found, try logical line (joins soft-wrapped rows)
+		if (!hoveredLink && ref) {
+			try {
+				const [startRow, logicalText] = (await ref("terminal_get_logical_line", {
+					sessionId: props.sessionId,
+					row,
+				})) as [number, string];
+				if (!alive || gen !== linkCheckGeneration) return;
+				if (startRow !== row || logicalText !== rowText) {
+					const cols = lastScreenCols > 0 ? lastScreenCols : currentFrame?.screenCols || 80;
+					const colOffset = (row - startRow) * cols;
+					const logicalCol = colOffset + col;
+					const fuRe = FILE_URL_RE;
+					const fpRe = FILE_PATH_RE;
+					const webRe = WEB_URL_RE;
+					const logicalMatches: { text: string; candidate: string; index: number; isUrl: boolean }[] = [];
+
+					fuRe.lastIndex = 0;
+					let m: RegExpExecArray | null;
+					while ((m = fuRe.exec(logicalText)) !== null) {
+						logicalMatches.push({ text: m[0], candidate: m[1], index: m.index, isUrl: false });
+					}
+					fpRe.lastIndex = 0;
+					while ((m = fpRe.exec(logicalText)) !== null) {
+						const idx = logicalText.indexOf(m[1], m.index);
+						logicalMatches.push({ text: m[1], candidate: m[1], index: idx, isUrl: false });
+					}
+					webRe.lastIndex = 0;
+					while ((m = webRe.exec(logicalText)) !== null) {
+						logicalMatches.push({ text: m[0], candidate: m[0], index: m.index, isUrl: true });
+					}
+
+					for (const lm of logicalMatches) {
+						const matchEnd = lm.index + lm.text.length;
+						if (logicalCol >= lm.index && logicalCol < matchEnd) {
+							let resolvedPath = lm.candidate;
+							if (!lm.isUrl) {
+								const termId = terminalsStore.getTerminalForSession(props.sessionId);
+								const termData = termId ? terminalsStore.get(termId) : undefined;
+								const cwd = termData?.cwd || "";
+								const r = (await ref("resolve_terminal_path", { cwd, candidate: lm.candidate })) as {
+									absolute_path: string;
+									is_directory: boolean;
+								} | null;
+								if (!alive || gen !== linkCheckGeneration) return;
+								if (!r) break;
+								resolvedPath = r.absolute_path;
+							}
+							// Build multi-row spans
+							const spans: { row: number; colStart: number; colEnd: number }[] = [];
+							for (let offset = lm.index; offset < matchEnd; ) {
+								const spanRow = startRow + Math.floor(offset / cols);
+								const spanColStart = offset % cols;
+								const remaining = matchEnd - offset;
+								const spanColEnd = Math.min(spanColStart + remaining, cols);
+								spans.push({ row: spanRow, colStart: spanColStart, colEnd: spanColEnd });
+								offset += spanColEnd - spanColStart;
+							}
+							const firstSpan = spans[0];
+							hoveredLink = {
+								row: firstSpan.row,
+								colStart: firstSpan.colStart,
+								colEnd: firstSpan.colEnd,
+								path: resolvedPath,
+								spans,
+							};
+							break;
+						}
+					}
+				}
+			} catch {
+				/* terminal_get_logical_line not available */
+			}
+		}
+
 		canvasRef.style.cursor = hoveredLink ? "pointer" : "text";
 		if (currentFrame) {
 			const m = metrics();
@@ -2277,15 +2586,39 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				const isVisible = entries[0]?.isIntersecting ?? false;
 				if (isVisible && hidden) {
 					hidden = false;
-					rowMap.clear();
-					detectedLinks.clear();
 					fullRepaintNeeded = true;
-					currentFrame = null;
 					lastDisplayOffset = -1;
+					// Don't clear rowMap/currentFrame here — keep showing the
+					// last painted content until the fresh frame arrives.
+					// onFrame() replaces rowMap when a full frame arrives
+					// (rows.length >= screenRowCount), so stale data is
+					// naturally discarded without a blank flash.
 					remeasure();
-					invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(ipcErr("terminal_request_frame"));
+					if (focused()) startBlink();
+					// If remeasure saw 0x0 (layout not yet computed after
+					// display:none → display:block), retry after a frame.
+					const rect = containerRef.getBoundingClientRect();
+					if (rect.width <= 0 || rect.height <= 0) {
+						requestAnimationFrame(() => {
+							remeasure();
+							invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(
+								ipcErr("terminal_request_frame"),
+							);
+						});
+					} else {
+						invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(
+							ipcErr("terminal_request_frame"),
+						);
+					}
 				} else if (!isVisible && !hidden) {
 					hidden = true;
+					stopBlink();
+					canvasRef.width = 1;
+					canvasRef.height = 1;
+					overlayCanvasRef.width = 1;
+					overlayCanvasRef.height = 1;
+					rowMap.clear();
+					fileLinkCache.clear();
 				}
 			},
 			{ threshold: 0 },
@@ -2332,6 +2665,10 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 		// --- Keyboard ---
 		const composition = createCompositionState();
+		keyInputRef.addEventListener("compositionstart", () => {
+			const m = metrics();
+			if (currentFrame && m) syncImePosition(currentFrame.cursorRow, currentFrame.cursorCol, m);
+		});
 		keyInputRef.addEventListener("compositionend", (e) => {
 			const data = composition.onCompositionEnd(e.data);
 			if (data) writePty(data);
@@ -2348,6 +2685,12 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				return;
 			}
 			resetBlink();
+
+			if (e.ctrlKey && e.metaKey && !blockTimestampsVisible) {
+				blockTimestampsVisible = true;
+				fullRepaintNeeded = true;
+				if (currentFrame && metrics()) paintFrame(currentFrame, metrics()!);
+			}
 
 			// Arrow Down with no modifiers: snap to bottom when scrolled up
 			if (
@@ -2400,6 +2743,33 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 						return;
 					}
 				}
+			}
+
+			// Cmd+Shift+. (macOS) or Ctrl+Shift+. (Win/Linux): toggle fold on current block
+			if (
+				(e.metaKey || e.ctrlKey) &&
+				e.shiftKey &&
+				e.key === "." &&
+				!e.altKey &&
+				settingsStore.state.blockFoldingEnabled
+			) {
+				const term = terminalsStore.get(props.terminalId);
+				if (term && currentFrame) {
+					const viewTop = currentFrame.historySize - currentFrame.displayOffset;
+					const blocks = [...term.commandBlocks, term.activeBlock].filter(
+						Boolean,
+					) as import("../../stores/terminals").CommandBlock[];
+					const current = blocks.find(
+						(b) => b.promptLine <= viewTop + (lastResizeRows >> 1) && (b.endLine ?? Infinity) >= viewTop,
+					);
+					if (current) {
+						terminalsStore.toggleBlockFold(props.terminalId, current.promptLine);
+						fullRepaintNeeded = true;
+						if (metrics()) paintFrame(currentFrame, metrics()!);
+					}
+				}
+				e.preventDefault();
+				return;
 			}
 
 			// Force re-render: clear accumulated buffer and request fresh frame from Rust
@@ -2456,8 +2826,13 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				return;
 			}
 
-			// Ctrl/Cmd+C with selection → copy instead of interrupt
-			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c" && selectionStart && selectionEnd) {
+			// Ctrl/Cmd+C with selection → copy instead of interrupt.
+			// Also fires when coords were cleared by mouseup (auto-copy) but cache is still warm.
+			if (
+				(e.ctrlKey || e.metaKey) &&
+				e.key.toLowerCase() === "c" &&
+				((selectionStart && selectionEnd) || cachedSelectionText)
+			) {
 				e.preventDefault();
 				e.stopPropagation();
 				copySelection();
@@ -2482,9 +2857,16 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				return;
 			}
 
-			// Any keypress clears selection — full repaint to remove ghost highlights
-			// Skip pure modifier keys so Cmd+C / Ctrl+C can fire as a chord
-			if (selectionStart && e.key !== "Meta" && e.key !== "Control" && e.key !== "Alt" && e.key !== "Shift") {
+			// Any keypress clears selection — full repaint to remove ghost highlights.
+			// Skip modifier keys and Cmd+C/V so the chord completes before selection is dropped.
+			if (
+				selectionStart &&
+				e.key !== "Meta" &&
+				e.key !== "Control" &&
+				e.key !== "Alt" &&
+				e.key !== "Shift" &&
+				!((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === "c" || e.key.toLowerCase() === "v"))
+			) {
 				selectionStart = null;
 				selectionEnd = null;
 				cachedSelectionText = "";
@@ -2567,6 +2949,11 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		// Track Alt key release for macOS left-option state
 		keyInputRef.addEventListener("keyup", (e: KeyboardEvent) => {
 			if (e.code === "AltLeft") leftOptionHeld = false;
+			if (blockTimestampsVisible && (!e.ctrlKey || !e.metaKey)) {
+				blockTimestampsVisible = false;
+				fullRepaintNeeded = true;
+				if (currentFrame && metrics()) paintFrame(currentFrame, metrics()!);
+			}
 		});
 
 		keyInputRef.addEventListener("paste", (e: ClipboardEvent) => {
@@ -2609,6 +2996,35 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			const pos = canvasToGrid(e);
 			const absRow = viewportRowToAbs(pos.row);
 			if (absRow === null) return;
+
+			// Gutter click: select entire block output
+			{
+				const rect = canvasRef.getBoundingClientRect();
+				const rawX = e.clientX - rect.left;
+				if (rawX < GUTTER_PX) {
+					const term = terminalsStore.get(props.terminalId);
+					if (term) {
+						const allBlocks = [...term.commandBlocks, term.activeBlock].filter(
+							Boolean,
+						) as import("../../stores/terminals").CommandBlock[];
+						const block = allBlocks.find((b) => b.promptLine <= absRow && (b.endLine ?? Infinity) >= absRow);
+						if (block) {
+							const startRow = (block.executionLine ?? block.promptLine) + 1;
+							const endRow = (block.endLine ?? absRow) - 1;
+							if (endRow >= startRow) {
+								selectionStart = { row: startRow, col: 0 };
+								selectionEnd = { row: endRow, col: lastResizeCols - 1 };
+								selecting = false;
+								fullRepaintNeeded = true;
+								scheduleRepaint();
+								e.preventDefault();
+								return;
+							}
+						}
+					}
+				}
+			}
+
 			const absPos = { col: pos.col, row: absRow };
 
 			// Shift+click: extend selection from existing anchor
@@ -2684,12 +3100,27 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			}
 
 			if (selecting && selectionStart) {
+				const rect = canvasRef.getBoundingClientRect();
+				const m = metrics();
+				if (m) {
+					const yAbove = rect.top - e.clientY;
+					const yBelow = e.clientY - rect.bottom;
+					if (yAbove > 0) {
+						const rows = Math.ceil(yAbove / m.cellHeight);
+						startSelectionScroll(rows);
+					} else if (yBelow > 0) {
+						const rows = Math.ceil(yBelow / m.cellHeight);
+						startSelectionScroll(-rows);
+					} else {
+						stopSelectionScroll();
+					}
+				}
 				const pos = canvasToGrid(e);
 				const absRow = viewportRowToAbs(pos.row);
 				if (absRow === null) return;
 				selectionEnd = { col: pos.col, row: absRow };
-				const m = metrics();
-				if (currentFrame && m) paintFrame(currentFrame, m);
+				const mRepaint = metrics();
+				if (currentFrame && mRepaint) paintFrame(currentFrame, mRepaint);
 			}
 
 			// Link detection (throttled)
@@ -2710,6 +3141,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				}
 				return;
 			}
+			stopSelectionScroll();
 			if (selecting && selectionStart && selectionEnd) {
 				if (selectionStart.row !== selectionEnd.row || selectionStart.col !== selectionEnd.col) {
 					copySelection();
@@ -2881,6 +3313,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				document.removeEventListener("mouseup", onMouseUp);
 				document.removeEventListener("mousemove", onScrollDragMove);
 				document.removeEventListener("mouseup", onScrollDragUp);
+				stopSelectionScroll();
 				transport?.unsubscribe();
 			};
 		} catch (e) {
@@ -2893,6 +3326,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				document.removeEventListener("mouseup", onMouseUp);
 				document.removeEventListener("mousemove", onScrollDragMove);
 				document.removeEventListener("mouseup", onScrollDragUp);
+				stopSelectionScroll();
 			};
 		}
 
@@ -2922,10 +3356,15 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				fullRepaintNeeded = true;
 				currentFrame = null;
 				lastDisplayOffset = -1;
+				lastResizeCols = 0;
+				lastResizeRows = 0;
 				remeasure();
 				invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(ipcErr("terminal_request_frame"));
 			},
-			searchFind: async (query: string) => {
+			resubscribe: async () => {
+				await transport?.resubscribe();
+			},
+			searchFind: async (query: string, blockScope?: boolean) => {
 				if (!query || !invokeRef) {
 					searchMatches = [];
 					activeSearchIndex = -1;
@@ -2933,10 +3372,19 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 					if (currentFrame && m) paintFrame(currentFrame, m);
 					return { index: -1, count: 0 };
 				}
-				const matches = (await invokeRef("terminal_search", {
+				let matches = (await invokeRef("terminal_search", {
 					sessionId: props.sessionId,
 					query,
 				})) as { row: number; col_start: number; col_end: number }[];
+				if (blockScope && currentFrame) {
+					const term = terminalsStore.get(props.terminalId);
+					if (term) {
+						const allBlocks = term.activeBlock ? [...term.commandBlocks, term.activeBlock] : term.commandBlocks;
+						const viewTop = currentFrame.historySize - currentFrame.displayOffset;
+						const viewCenter = viewTop + Math.floor(currentFrame.screenRows / 2);
+						matches = filterMatchesToBlock(matches, allBlocks, viewCenter);
+					}
+				}
 				searchMatches = matches;
 				if (matches.length > 0) {
 					activeSearchIndex = findNearestVisibleMatch(matches);
@@ -2969,6 +3417,13 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				activeSearchIndex = -1;
 				const m = metrics();
 				if (currentFrame && m) paintFrame(currentFrame, m);
+			},
+			paste: (text: string) => {
+				if (currentFrame?.bracketedPaste) {
+					writePty(`\x1b[200~${text}\x1b[201~`);
+				} else {
+					writePty(text);
+				}
 			},
 		});
 	});
@@ -3092,18 +3547,20 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				type="text"
 				aria-hidden="true"
 				style={{
-					position: "fixed",
-					top: "-9999px",
-					left: "-9999px",
-					width: "0",
-					height: "0",
+					position: "absolute",
+					top: "0",
+					left: "0",
+					width: "1px",
+					height: "1em",
 					opacity: "0",
 					border: "none",
 					outline: "none",
 					padding: "0",
 					margin: "0",
+					overflow: "hidden",
 					"pointer-events": "none",
 					"font-size": "1px",
+					"z-index": "-1",
 				}}
 				tabIndex={-1}
 				autocomplete="off"

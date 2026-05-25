@@ -196,8 +196,6 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn linux_keyring_paths_use_uid() {
-        use std::os::unix::fs::symlink;
-
         let dir = tempfile::tempdir().expect("tempdir");
         let uid = unsafe { libc::getuid() };
 
@@ -210,6 +208,5 @@ mod tests {
         let path = PathBuf::from(format!("/run/user/{uid}/keyring/ssh"));
         assert!(path.to_string_lossy().starts_with(&expected_prefix));
         let _ = dir; // keep alive
-        let _ = symlink; // suppress unused warning
     }
 }

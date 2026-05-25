@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -174,6 +175,8 @@ const RATE_BUDGET_CRITICAL: u32 = 100;
 const ACTIVE_WINDOW: Duration = Duration::from_secs(15 * 60);
 /// Idle repos are included every Nth poll cycle.
 const IDLE_POLL_DIVISOR: u32 = 5;
+/// Cold repos (no active terminals) are included every Nth poll cycle (~10min at 60s base).
+const DORMANT_POLL_DIVISOR: u32 = 10;
 
 pub(crate) enum PollerCmd {
     SetVisibility(bool),
@@ -206,7 +209,10 @@ struct PollMutableState {
     prev: PrevState,
     fail_count: u32,
     last_changed: HashMap<String, Instant>,
-    etag_cache: HashMap<String, String>,
+    /// Per-repo max PR updated_at — `None` means known-empty PR set.
+    last_pr_updated_at: HashMap<String, Option<String>>,
+    /// Per-repo max issue updated_at — `None` means known-empty issue set.
+    last_issue_updated_at: HashMap<String, Option<String>>,
 }
 
 #[cfg(feature = "desktop")]
@@ -219,13 +225,16 @@ async fn poll_loop(state: Arc<AppState>, handle: AppHandle, mut rx: mpsc::Receiv
         prev: HashMap::new(),
         fail_count: 0,
         last_changed: HashMap::new(),
-        etag_cache: HashMap::new(),
+        last_pr_updated_at: HashMap::new(),
+        last_issue_updated_at: HashMap::new(),
     };
     let mut startup = true;
     let mut poll_cycle: u32 = 0;
     // Pending on-demand poll: set by PollRepo/SetIssueFilter to fire the batch
     // early rather than spawning a separate single-repo API call.
     let mut pending_poll_at: Option<tokio::time::Instant> = None;
+    // Scoped paths for on-demand polls (PollRepo). Empty = use all paths.
+    let mut pending_poll_paths: Vec<String> = Vec::new();
 
     let mut interval = tokio::time::interval(current_interval(visible, ps.fail_count, u32::MAX));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -243,8 +252,11 @@ async fn poll_loop(state: Arc<AppState>, handle: AppHandle, mut rx: mpsc::Receiv
             _ = pending_sleep => {
                 pending_poll_at = None;
                 let rate_budget = state.github_rate_limit_remaining.load(std::sync::atomic::Ordering::Relaxed);
-                poll_batch(&state, &handle, &paths, false, &issue_filter, pr_hide_drafts, &mut ps, false).await;
-                interval = tokio::time::interval(current_interval(visible, ps.fail_count, rate_budget));
+                let batch = if pending_poll_paths.is_empty() { &paths } else { &pending_poll_paths };
+                poll_batch(&state, &handle, batch, false, &issue_filter, pr_hide_drafts, &mut ps).await;
+                pending_poll_paths.clear();
+                let dur = current_interval(visible, ps.fail_count, rate_budget);
+                interval = tokio::time::interval_at(tokio::time::Instant::now() + dur, dur);
                 interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             }
             _ = interval.tick() => {
@@ -252,14 +264,16 @@ async fn poll_loop(state: Arc<AppState>, handle: AppHandle, mut rx: mpsc::Receiv
                 let batch_paths = if startup {
                     paths.clone()
                 } else {
-                    tiered_paths(&paths, &ps.last_changed, poll_cycle)
+                    let hot = state.hot_repo_paths.read();
+                    tiered_paths(&paths, &ps.last_changed, poll_cycle, &hot)
                 };
-                let use_etag = !startup;
-                poll_batch(&state, &handle, &batch_paths, startup, &issue_filter, pr_hide_drafts, &mut ps, use_etag).await;
+                poll_batch(&state, &handle, &batch_paths, startup, &issue_filter, pr_hide_drafts, &mut ps).await;
                 startup = false;
                 poll_cycle = poll_cycle.wrapping_add(1);
                 pending_poll_at = None;
-                interval = tokio::time::interval(current_interval(visible, ps.fail_count, rate_budget));
+                pending_poll_paths.clear();
+                let dur = current_interval(visible, ps.fail_count, rate_budget);
+                interval = tokio::time::interval_at(tokio::time::Instant::now() + dur, dur);
                 interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             }
             cmd = rx.recv() => {
@@ -272,10 +286,10 @@ async fn poll_loop(state: Arc<AppState>, handle: AppHandle, mut rx: mpsc::Receiv
                             pending_poll_at = Some(tokio::time::Instant::now());
                         }
                     }
-                    Some(PollerCmd::PollRepo(_path)) => {
-                        // Coalesce into the next batch rather than firing a separate
-                        // single-repo API call. Advance the timer by DEBOUNCE_WINDOW
-                        // so rapid UI actions (merge, approve) still get a quick refresh.
+                    Some(PollerCmd::PollRepo(path)) => {
+                        if !pending_poll_paths.contains(&path) {
+                            pending_poll_paths.push(path);
+                        }
                         let at = tokio::time::Instant::now() + DEBOUNCE_WINDOW;
                         if pending_poll_at.is_none_or(|existing| at < existing) {
                             pending_poll_at = Some(at);
@@ -285,14 +299,16 @@ async fn poll_loop(state: Arc<AppState>, handle: AppHandle, mut rx: mpsc::Receiv
                         paths = new_paths;
                     }
                     Some(PollerCmd::SetIssueFilter(filter)) => {
-                        issue_filter = filter;
-                        // Fire immediately so the new filter takes effect without waiting
-                        // for the next scheduled tick.
-                        pending_poll_at = Some(tokio::time::Instant::now());
+                        if filter != issue_filter {
+                            issue_filter = filter;
+                            pending_poll_at = Some(tokio::time::Instant::now());
+                        }
                     }
                     Some(PollerCmd::SetPrHideDrafts(hide)) => {
-                        pr_hide_drafts = hide;
-                        pending_poll_at = Some(tokio::time::Instant::now());
+                        if hide != pr_hide_drafts {
+                            pr_hide_drafts = hide;
+                            pending_poll_at = Some(tokio::time::Instant::now());
+                        }
                     }
                     Some(PollerCmd::Stop) | None => break,
                 }
@@ -301,25 +317,41 @@ async fn poll_loop(state: Arc<AppState>, handle: AppHandle, mut rx: mpsc::Receiv
     }
 }
 
+/// Deterministic hash of a path to a u32 — used for jitter offset.
+fn path_hash(path: &str) -> u32 {
+    let mut hasher = std::hash::DefaultHasher::new();
+    path.hash(&mut hasher);
+    hasher.finish() as u32
+}
+
 /// Select which repos to include in this poll cycle.
 /// Active repos (PR data changed within ACTIVE_WINDOW) are polled every tick.
 /// Idle repos are polled every IDLE_POLL_DIVISOR ticks.
+/// Dormant repos (cold — no active terminals) are polled every DORMANT_POLL_DIVISOR
+/// ticks with per-path jitter so they don't all fire on the same cycle.
 /// Repos never seen yet are always included (ensures first fetch).
 fn tiered_paths(
     all_paths: &[String],
     last_changed: &HashMap<String, Instant>,
     cycle: u32,
+    hot_paths: &HashSet<String>,
 ) -> Vec<String> {
     let now = Instant::now();
     all_paths
         .iter()
-        .filter(|p| match last_changed.get(p.as_str()) {
-            None => true,
-            Some(t) => {
-                if now.duration_since(*t) < ACTIVE_WINDOW {
-                    true
-                } else {
-                    cycle.is_multiple_of(IDLE_POLL_DIVISOR)
+        .filter(|p| {
+            let is_hot = hot_paths.contains(p.as_str());
+            match last_changed.get(p.as_str()) {
+                None => true,
+                Some(t) => {
+                    if now.duration_since(*t) < ACTIVE_WINDOW {
+                        true
+                    } else if is_hot {
+                        cycle.is_multiple_of(IDLE_POLL_DIVISOR)
+                    } else {
+                        let offset = path_hash(p) % DORMANT_POLL_DIVISOR;
+                        cycle % DORMANT_POLL_DIVISOR == offset
+                    }
                 }
             }
         })
@@ -349,7 +381,6 @@ fn current_interval(visible: bool, fail_count: u32, rate_budget: u32) -> Duratio
 }
 
 #[cfg(feature = "desktop")]
-#[allow(clippy::too_many_arguments)]
 async fn poll_batch(
     state: &AppState,
     handle: &AppHandle,
@@ -358,7 +389,6 @@ async fn poll_batch(
     issue_filter: &str,
     pr_hide_drafts: bool,
     ps: &mut PollMutableState,
-    use_etag: bool,
 ) {
     if paths.is_empty() {
         return;
@@ -367,18 +397,12 @@ async fn poll_batch(
         return;
     }
 
-    let etag = if use_etag {
-        Some(&mut ps.etag_cache)
-    } else {
-        None
-    };
     match crate::github::get_all_batch_impl(
         paths,
         include_merged,
         issue_filter,
         pr_hide_drafts,
         state,
-        etag,
     )
     .await
     {
@@ -386,39 +410,63 @@ async fn poll_batch(
             ps.fail_count = 0;
             let now = Instant::now();
 
-            for (repo_path, statuses) in &result.prs {
-                let changed = process_repo_update(state, handle, repo_path, statuses, &mut ps.prev);
+            for (repo_path, statuses) in result.prs {
+                let changed =
+                    process_repo_update(state, handle, &repo_path, &statuses, &mut ps.prev);
                 if changed {
                     ps.last_changed.insert(repo_path.clone(), now);
                 } else {
                     ps.last_changed.entry(repo_path.clone()).or_insert(now);
                 }
-            }
-            for (repo_path, statuses) in result.prs {
-                let _ = handle.emit(
-                    "github-pr-update",
-                    PrUpdatePayload {
-                        repo_path: repo_path.clone(),
-                        statuses: statuses.clone(),
-                    },
-                );
-                let _ = state.event_bus.send(AppEvent::GitHubPrUpdate {
-                    repo_path,
-                    statuses,
-                });
+
+                let cur_ts = statuses
+                    .iter()
+                    .map(|s| s.updated_at.as_str())
+                    .filter(|s| !s.is_empty())
+                    .max()
+                    .map(|s| s.to_string());
+                let prev_ts = ps.last_pr_updated_at.get(&repo_path);
+                let data_changed = prev_ts.is_none_or(|p| *p != cur_ts);
+                ps.last_pr_updated_at.insert(repo_path.clone(), cur_ts);
+
+                if data_changed {
+                    let _ = handle.emit(
+                        "github-pr-update",
+                        PrUpdatePayload {
+                            repo_path: repo_path.clone(),
+                            statuses: statuses.clone(),
+                        },
+                    );
+                    let _ = state.event_bus.send(AppEvent::GitHubPrUpdate {
+                        repo_path,
+                        statuses,
+                    });
+                }
             }
 
             for (repo_path, issues) in result.issues {
-                let _ = handle.emit(
-                    "github-issues-update",
-                    IssuesUpdatePayload {
-                        repo_path: repo_path.clone(),
-                        issues: issues.clone(),
-                    },
-                );
-                let _ = state
-                    .event_bus
-                    .send(AppEvent::GitHubIssuesUpdate { repo_path, issues });
+                let cur_ts = issues
+                    .iter()
+                    .map(|i| i.updated_at.as_str())
+                    .filter(|s| !s.is_empty())
+                    .max()
+                    .map(|s| s.to_string());
+                let prev_ts = ps.last_issue_updated_at.get(&repo_path);
+                let data_changed = prev_ts.is_none_or(|p| *p != cur_ts);
+                ps.last_issue_updated_at.insert(repo_path.clone(), cur_ts);
+
+                if data_changed {
+                    let _ = handle.emit(
+                        "github-issues-update",
+                        IssuesUpdatePayload {
+                            repo_path: repo_path.clone(),
+                            issues: issues.clone(),
+                        },
+                    );
+                    let _ = state
+                        .event_bus
+                        .send(AppEvent::GitHubIssuesUpdate { repo_path, issues });
+                }
             }
         }
         Err(e) => {
@@ -463,9 +511,15 @@ fn process_repo_update(
         if is_new {
             changed = true;
         }
+    }
+    let old_len = old_map.len();
+    let new_branches: std::collections::HashSet<&str> =
+        statuses.iter().map(|s| s.branch.as_str()).collect();
+    old_map.retain(|branch, _| new_branches.contains(branch.as_str()));
+    for new_pr in statuses {
         old_map.insert(new_pr.branch.clone(), new_pr.clone());
     }
-    if old_map.len() != statuses.len() {
+    if old_len != statuses.len() {
         changed = true;
     }
     changed
@@ -776,5 +830,68 @@ mod tests {
         let new = make_pr("OPEN", "UNKNOWN", "", 0, 3);
         let t = detect_transitions("/repo", &old, &new);
         assert!(t.is_empty());
+    }
+
+    #[test]
+    fn dormant_repo_appears_every_10th_cycle() {
+        let paths = vec!["/cold/repo".to_string()];
+        let mut last_changed = HashMap::new();
+        last_changed.insert(
+            "/cold/repo".to_string(),
+            Instant::now() - Duration::from_secs(3600),
+        );
+        let hot_paths = HashSet::new();
+
+        let offset = path_hash("/cold/repo") % DORMANT_POLL_DIVISOR;
+        let mut included_cycles = Vec::new();
+        for cycle in 0..20 {
+            let batch = tiered_paths(&paths, &last_changed, cycle, &hot_paths);
+            if !batch.is_empty() {
+                included_cycles.push(cycle);
+            }
+        }
+        assert_eq!(
+            included_cycles.len(),
+            2,
+            "dormant repo should appear twice in 20 cycles"
+        );
+        assert_eq!(included_cycles[0], offset);
+        assert_eq!(included_cycles[1], offset + DORMANT_POLL_DIVISOR);
+    }
+
+    #[test]
+    fn hot_repo_uses_idle_divisor_not_dormant() {
+        let paths = vec!["/hot/repo".to_string()];
+        let mut last_changed = HashMap::new();
+        last_changed.insert(
+            "/hot/repo".to_string(),
+            Instant::now() - Duration::from_secs(3600),
+        );
+        let mut hot_paths = HashSet::new();
+        hot_paths.insert("/hot/repo".to_string());
+
+        let mut count = 0;
+        for cycle in 0..10 {
+            let batch = tiered_paths(&paths, &last_changed, cycle, &hot_paths);
+            if !batch.is_empty() {
+                count += 1;
+            }
+        }
+        assert_eq!(
+            count, 2,
+            "hot idle repo should appear every 5th cycle = 2 times in 10"
+        );
+    }
+
+    #[test]
+    fn path_hash_distributes_across_cycles() {
+        let offsets: HashSet<u32> = ["/repo/a", "/repo/b", "/repo/c", "/repo/d", "/repo/e"]
+            .iter()
+            .map(|p| path_hash(p) % DORMANT_POLL_DIVISOR)
+            .collect();
+        assert!(
+            offsets.len() >= 2,
+            "hash should produce at least 2 distinct offsets for 5 paths"
+        );
     }
 }

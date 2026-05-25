@@ -28,7 +28,10 @@ pub enum Event {
     ///
     /// The attached function is a formatter which will correctly transform the clipboard content
     /// into the expected escape sequence format.
-    ClipboardLoad(ClipboardType, Arc<dyn Fn(&str) -> String + Sync + Send + 'static>),
+    ClipboardLoad(
+        ClipboardType,
+        Arc<dyn Fn(&str) -> String + Sync + Send + 'static>,
+    ),
 
     /// Request to write the RGB value of a color to the PTY.
     ///
@@ -58,13 +61,21 @@ pub enum Event {
     ChildExit(ExitStatus),
 
     /// OSC 133 shell integration marker.
-    Osc133 { command: char, params: String, line: usize },
+    Osc133 {
+        command: char,
+        params: String,
+        line: usize,
+    },
 
     /// OSC 7 current working directory (file://hostname/path).
     Osc7(String),
 
     /// OSC 7770 TUIC protocol event (verb=payload).
-    Tuic { verb: String, payload: String },
+    Tuic {
+        verb: String,
+        payload: String,
+        line: usize,
+    },
 }
 
 impl Debug for Event {
@@ -83,9 +94,17 @@ impl Debug for Event {
             Event::Bell => write!(f, "Bell"),
             Event::Exit => write!(f, "Exit"),
             Event::ChildExit(status) => write!(f, "ChildExit({status:?})"),
-            Event::Osc133 { command, params, line } => write!(f, "Osc133({command}, {params:?}, line={line})"),
+            Event::Osc133 {
+                command,
+                params,
+                line,
+            } => write!(f, "Osc133({command}, {params:?}, line={line})"),
             Event::Osc7(url) => write!(f, "Osc7({url})"),
-            Event::Tuic { verb, payload } => write!(f, "Tuic({verb}={payload})"),
+            Event::Tuic {
+                verb,
+                payload,
+                line,
+            } => write!(f, "Tuic({verb}={payload}, line={line})"),
         }
     }
 }

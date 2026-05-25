@@ -3,6 +3,7 @@ import { invoke, listen } from "../invoke";
 import type { UpstreamMcpConfig, UpstreamMcpServer } from "../transport";
 import { appLogger } from "./appLogger";
 import { repoSettingsStore } from "./repoSettings";
+import { toastsStore } from "./toasts";
 
 /** Mirrors the status snapshot returned by get_mcp_upstream_status */
 export interface UpstreamStatusEntry {
@@ -81,7 +82,8 @@ function createMcpPopupStore() {
 
 		try {
 			await invoke("save_mcp_upstreams", { config: { servers: updated } });
-			// Config saved — status will update via event
+			// CC doesn't handle tools/list_changed (anthropics/claude-code#4118)
+			toastsStore.add("MCP servers changed", "Active AI sessions won't see this change until restarted.", "warn");
 		} catch (err) {
 			appLogger.error("mcp", `Toggle failed for ${name}`, err);
 			// Rollback optimistic update

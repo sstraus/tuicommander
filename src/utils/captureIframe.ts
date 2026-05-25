@@ -6,6 +6,9 @@
  * Returns null if the iframe content is not accessible.
  */
 export async function captureIframeAsWebp(iframe: HTMLIFrameElement, quality = 0.75): Promise<string | null> {
+	// URL-mode iframes are cross-origin — canvas toBlob throws SecurityError.
+	if (iframe.src && !iframe.srcdoc) return null;
+
 	const doc = iframe.contentDocument;
 	if (!doc?.documentElement) return null;
 

@@ -587,6 +587,8 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         // Orchestrator
         .route("/stats", get(session::get_stats))
         .route("/metrics", get(session::get_metrics))
+        .route("/process/stats", get(session::get_process_stats))
+        .route("/process/monitor", get(session::process_monitor_panel))
         // Git/GitHub
         .route("/repo/info", get(git_routes::repo_info))
         .route("/repo/remote-url", get(git_routes::remote_url))
@@ -637,6 +639,10 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route(
             "/repo/github-poller/set-issue-filter",
             post(github_routes::poller_set_issue_filter),
+        )
+        .route(
+            "/repo/github-poller/api-debug",
+            get(github_routes::api_debug_get).post(github_routes::api_debug_set),
         )
         // Watchers (for browser/mobile clients)
         .route(
@@ -833,6 +839,10 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/fs/list", get(fs_routes::list_directory_http))
         .route("/fs/search", get(fs_routes::search_files_http))
         .route("/fs/search-content", get(fs_routes::search_content_http))
+        .route(
+            "/fs/search-content-all",
+            get(fs_routes::search_content_all_http),
+        )
         .route("/fs/read", get(fs_routes::fs_read_file_http))
         .route("/fs/read-external", get(fs_routes::read_external_file_http))
         .route("/fs/write", post(fs_routes::write_file_http))
@@ -1046,6 +1056,8 @@ pub fn build_remote_router(state: Arc<AppState>) -> Router {
         // Orchestrator stats
         .route("/stats", get(session::get_stats))
         .route("/metrics", get(session::get_metrics))
+        .route("/process/stats", get(session::get_process_stats))
+        .route("/process/monitor", get(session::process_monitor_panel))
         // Git operations
         .route("/repo/info", get(git_routes::repo_info))
         .route("/repo/remote-url", get(git_routes::remote_url))
@@ -1073,6 +1085,10 @@ pub fn build_remote_router(state: Arc<AppState>) -> Router {
             "/watchers/dir",
             post(watcher_routes::start_dir_watcher_http)
                 .delete(watcher_routes::stop_dir_watcher_http),
+        )
+        .route(
+            "/watchers/hot-repos",
+            put(watcher_routes::set_hot_repos_http),
         )
         // Logs
         .route(
@@ -1154,6 +1170,10 @@ pub fn build_remote_router(state: Arc<AppState>) -> Router {
         .route("/fs/list", get(fs_routes::list_directory_http))
         .route("/fs/search", get(fs_routes::search_files_http))
         .route("/fs/search-content", get(fs_routes::search_content_http))
+        .route(
+            "/fs/search-content-all",
+            get(fs_routes::search_content_all_http),
+        )
         .route("/fs/read", get(fs_routes::fs_read_file_http))
         .route("/fs/read-external", get(fs_routes::read_external_file_http))
         .route("/fs/write", post(fs_routes::write_file_http))
@@ -1299,6 +1319,10 @@ pub async fn start_server(
         crate::mcp_proxy::registry::UpstreamRegistry::spawn_health_checker(Arc::clone(
             &state.mcp_upstream_registry,
         ));
+
+        // Spawn standby checker: SIGSTOP idle+unfocused sessions after timeout
+        #[cfg(unix)]
+        crate::pty::spawn_standby_checker(Arc::clone(&state));
 
         // --- Unix socket listener (always on, no auth) ---
         #[cfg(unix)]
@@ -1629,6 +1653,8 @@ mod tests {
                 crate::tool_search::ToolSearchIndex::build(&[]),
             )),
             content_indices: DashMap::new(),
+            index_in_flight: std::sync::Arc::new(dashmap::DashSet::new()),
+            index_build_sem: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
             indexer_throttle: std::sync::Arc::new(crate::content_index::IndexerThrottle::default()),
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
@@ -1683,6 +1709,8 @@ mod tests {
             )),
             connections_lock: tokio::sync::Mutex::new(()),
             screenshot_responses: DashMap::new(),
+            standby_sessions: DashMap::new(),
+            hot_repo_paths: parking_lot::RwLock::new(std::collections::HashSet::new()),
         });
         // Override default disabled_native_tools so all 8 tools are visible in tests
         state.config.write().disabled_native_tools = Vec::new();

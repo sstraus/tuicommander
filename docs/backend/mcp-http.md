@@ -65,6 +65,8 @@ The socket at `<config_dir>/mcp.sock` is managed with three safety layers to sur
 | `GET` | `/health` | Health check |
 | `GET` | `/stats` | Orchestrator stats (active/max/available) |
 | `GET` | `/metrics` | Session metrics (spawned, failed, bytes) |
+| `GET` | `/process/stats` | CPU% and RSS memory for TUIC and all child process trees |
+| `GET` | `/process/monitor` | Self-contained HTML dashboard for process metrics (for remote/PWA/mobile) |
 
 ### Git Operations
 

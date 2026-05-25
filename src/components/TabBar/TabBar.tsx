@@ -1,4 +1,16 @@
-import { batch, type Component, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import {
+	batch,
+	type Component,
+	createEffect,
+	createMemo,
+	createSignal,
+	For,
+	Match,
+	onCleanup,
+	onMount,
+	Show,
+	Switch,
+} from "solid-js";
 import { openPathsAsTabs } from "../../hooks/useFileDrop";
 import { initMouseDrag } from "../../hooks/useMouseDrag";
 import { useSmartPrompts } from "../../hooks/useSmartPrompts";
@@ -13,7 +25,9 @@ import { globalWorkspaceStore } from "../../stores/globalWorkspace";
 import { mdTabsStore, type PluginPanelTab } from "../../stores/mdTabs";
 import { paneLayoutStore } from "../../stores/paneLayout";
 import { repositoriesStore } from "../../stores/repositories";
+import { settingsStore } from "../../stores/settings";
 import { makeBranchKey } from "../../stores/tabManager";
+import { tabOrderingStore } from "../../stores/tabOrdering";
 import { terminalsStore } from "../../stores/terminals";
 import { cx } from "../../utils";
 import { keyFor } from "../../utils/hotkey";
@@ -71,7 +85,7 @@ const AWAITING_CLASSES: Record<string, string> = {
 export interface TabBarProps {
 	quickSwitcherActive?: boolean;
 	onTabSelect: (id: string) => void;
-	onTabClose: (id: string) => void;
+	onTabClose: (id: string, skipConfirm?: boolean) => void;
 	onCloseOthers: (id: string) => void;
 	onCloseToRight: (id: string) => void;
 	onNewTab: () => void;
@@ -89,6 +103,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
 	const [dragOverId, setDragOverId] = createSignal<string | null>(null);
 	const [dragOverSide, setDragOverSide] = createSignal<"left" | "right" | null>(null);
 	const [draggingId, setDraggingId] = createSignal<string | null>(null);
+	const [dragInvalid, setDragInvalid] = createSignal(false);
 	const [editingId, setEditingId] = createSignal<string | null>(null);
 	const smartPrompts = useSmartPrompts();
 
@@ -440,6 +455,19 @@ export const TabBar: Component<TabBarProps> = (props) => {
 	const visibleMdIds = () => mdTabsStore.getVisibleIds(activeBranchKey());
 	const visibleEditIds = () => editorTabsStore.getVisibleIds(activeBranchKey());
 
+	const isGroupedMode = () => settingsStore.state.tabOrderingMode === "grouped-by-type";
+	const isFreeMode = () => settingsStore.state.tabOrderingMode === "free";
+
+	const mergedNonTerminalIds = () => {
+		if (isGroupedMode()) return [];
+		if (isFreeMode()) {
+			const allIds = new Set([...activeTerminals(), ...visibleDiffIds(), ...visibleMdIds(), ...visibleEditIds()]);
+			return tabOrderingStore.getOrdered(allIds);
+		}
+		const allIds = new Set([...visibleDiffIds(), ...visibleMdIds(), ...visibleEditIds()]);
+		return tabOrderingStore.getOrdered(allIds);
+	};
+
 	// Deactivate non-terminal tabs that become invisible after branch switch
 	createEffect(() => {
 		const diffActive = diffTabsStore.state.activeId;
@@ -463,6 +491,14 @@ export const TabBar: Component<TabBarProps> = (props) => {
 		mdTabsStore.evictNonPinnedPluginPanelsForOtherRepos(current);
 	});
 
+	const tabTypeOf = (tabId: string): "terminal" | "markdown" | "diff" | "editor" | null => {
+		if (activeTerminals().includes(tabId)) return "terminal";
+		if (visibleMdIds().includes(tabId)) return "markdown";
+		if (visibleDiffIds().includes(tabId)) return "diff";
+		if (visibleEditIds().includes(tabId)) return "editor";
+		return null;
+	};
+
 	// Mouse-based drag — replaces HTML5 DnD which conflicts with Tauri dragDropEnabled=true
 	const handleMouseDrag = (
 		e: MouseEvent,
@@ -475,12 +511,23 @@ export const TabBar: Component<TabBarProps> = (props) => {
 				const el = document.elementFromPoint(x, y);
 				const tabEl = el?.closest("[data-tab-id]") as HTMLElement | null;
 				if (tabEl && tabEl.dataset.tabId !== id) {
+					const targetId = tabEl.dataset.tabId!;
 					const rect = tabEl.getBoundingClientRect();
-					setDragOverId(tabEl.dataset.tabId!);
+					setDragOverId(targetId);
 					setDragOverSide(x < rect.left + rect.width / 2 ? "left" : "right");
+					if (isGroupedMode()) {
+						setDragInvalid(tabTypeOf(id) !== tabTypeOf(targetId));
+					} else if (isFreeMode()) {
+						setDragInvalid(false);
+					} else {
+						const srcType = tabTypeOf(id);
+						const tgtType = tabTypeOf(targetId);
+						setDragInvalid((srcType === "terminal") !== (tgtType === "terminal"));
+					}
 				} else {
 					setDragOverId(null);
 					setDragOverSide(null);
+					setDragInvalid(false);
 				}
 			},
 			onDrop: (x, y) => {
@@ -492,7 +539,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
 					const termIds = activeTerminals();
 					const fromIndex = termIds.indexOf(sourceId);
 					const toIndex = termIds.indexOf(overId);
-					if (fromIndex !== -1 && toIndex !== -1) {
+					if (fromIndex !== -1 && toIndex !== -1 && !isFreeMode()) {
 						let adjustedTo = toIndex;
 						if (overSide === "left" && fromIndex < toIndex) adjustedTo--;
 						else if (overSide === "right" && fromIndex > toIndex) adjustedTo++;
@@ -500,15 +547,29 @@ export const TabBar: Component<TabBarProps> = (props) => {
 						if (fromIndex !== clampedTo) {
 							props.onReorder?.(fromIndex, clampedTo);
 						}
-					} else if (visibleMdIds().includes(sourceId) && visibleMdIds().includes(overId)) {
+					} else if (isGroupedMode()) {
+						if (visibleMdIds().includes(sourceId) && visibleMdIds().includes(overId)) {
+							const side = overSide === "left" ? "before" : "after";
+							mdTabsStore.reorderByIds(sourceId, overId, side);
+						} else if (visibleDiffIds().includes(sourceId) && visibleDiffIds().includes(overId)) {
+							const side = overSide === "left" ? "before" : "after";
+							diffTabsStore.reorderByIds(sourceId, overId, side);
+						} else if (visibleEditIds().includes(sourceId) && visibleEditIds().includes(overId)) {
+							const side = overSide === "left" ? "before" : "after";
+							editorTabsStore.reorderByIds(sourceId, overId, side);
+						}
+					} else {
 						const side = overSide === "left" ? "before" : "after";
-						mdTabsStore.reorderByIds(sourceId, overId, side);
-					} else if (visibleDiffIds().includes(sourceId) && visibleDiffIds().includes(overId)) {
-						const side = overSide === "left" ? "before" : "after";
-						diffTabsStore.reorderByIds(sourceId, overId, side);
-					} else if (visibleEditIds().includes(sourceId) && visibleEditIds().includes(overId)) {
-						const side = overSide === "left" ? "before" : "after";
-						editorTabsStore.reorderByIds(sourceId, overId, side);
+						tabOrderingStore.reorder(sourceId, overId, side);
+						if (fromIndex !== -1 && toIndex !== -1) {
+							let adjustedTo = toIndex;
+							if (overSide === "left" && fromIndex < toIndex) adjustedTo--;
+							else if (overSide === "right" && fromIndex > toIndex) adjustedTo++;
+							const clampedTo = Math.max(0, Math.min(adjustedTo, termIds.length - 1));
+							if (fromIndex !== clampedTo) {
+								props.onReorder?.(fromIndex, clampedTo);
+							}
+						}
 					}
 					resetDragState();
 					return;
@@ -567,6 +628,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
 		setDraggingId(null);
 		setDragOverId(null);
 		setDragOverSide(null);
+		setDragInvalid(false);
 	};
 
 	const commitRename = (id: string, input: HTMLInputElement) => {
@@ -585,7 +647,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
 	const updateScrollState = () => {
 		const el = tabsRef;
 		if (!el) return;
-		const threshold = 4;
+		const threshold = 8;
 		const hasOverflow = el.scrollWidth > el.clientWidth + threshold;
 		batch(() => {
 			setCanScrollLeft(hasOverflow && el.scrollLeft > threshold);
@@ -616,6 +678,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
 			if (!tabsRef) return;
 			const activeEl = tabsRef.querySelector(`.${s.active}`) as HTMLElement | null;
 			activeEl?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+			updateScrollState();
 		});
 	});
 
@@ -711,372 +774,770 @@ export const TabBar: Component<TabBarProps> = (props) => {
 				<div class={cx(s.fadeGradient, s.fadeLeft, canScrollLeft() && s.visible)} />
 
 				<div class={s.tabs} ref={tabsRef} onScroll={updateScrollState}>
-					{/* Terminal tabs */}
-					<For each={activeTerminals()}>
-						{(id, index) => {
-							const terminal = () => terminalsStore.get(id);
-							const isActive = () => terminalsStore.state.activeId === id;
-							const isDetached = () => terminalsStore.isDetached(id);
-							const isBusy = () => terminalsStore.isBusy(id);
-							const isIdle = () => !isBusy() && terminal()?.shellState === "idle";
-							const isExited = () => terminal()?.shellState === "exited";
-							const isUnseen = () => !isActive() && terminal()?.unseen;
-							const awaitingInput = () => terminal()?.awaitingInput;
-							const isDragging = () => draggingId() === id;
-							const isDragOver = () => dragOverId() === id && draggingId() !== id;
-							const progress = () => terminal()?.progress;
-							const isRemote = () => terminal()?.isRemote;
-							const isEditing = () => editingId() === id;
+					{/* Terminal tabs (not rendered here in free mode — included in merged list) */}
+					<Show when={!isFreeMode()}>
+						<For each={activeTerminals()}>
+							{(id, index) => {
+								const terminal = () => terminalsStore.get(id);
+								const isActive = () => terminalsStore.state.activeId === id;
+								const isDetached = () => terminalsStore.isDetached(id);
+								const isBusy = () => terminalsStore.isBusy(id);
+								const isIdle = () => !isBusy() && terminal()?.shellState === "idle";
+								const isExited = () => terminal()?.shellState === "exited";
+								const isUnseen = () => !isActive() && terminal()?.unseen;
+								const awaitingInput = () => terminal()?.awaitingInput;
+								const isDragging = () => draggingId() === id;
+								const isDragOver = () => dragOverId() === id && draggingId() !== id;
+								const progress = () => terminal()?.progress;
+								const isRemote = () => terminal()?.isRemote;
+								const isEditing = () => editingId() === id;
 
-							const isPromoted = () => globalWorkspaceStore.isPromoted(id);
-							const [hovered, setHovered] = createSignal(false);
-							const repoName = () => repositoriesStore.getRepoForTerminal(id);
-							const repoColor = () => {
-								if (!globalWorkspaceStore.isActive()) return undefined;
-								const path = repositoriesStore.getRepoPathForTerminal(id);
-								return path ? getRepoColor(path) : undefined;
-							};
+								const isPromoted = () => globalWorkspaceStore.isPromoted(id);
+								const [hovered, setHovered] = createSignal(false);
+								const repoName = () => repositoriesStore.getRepoForTerminal(id);
+								const repoColor = () => {
+									if (!globalWorkspaceStore.isActive()) return undefined;
+									const path = repositoriesStore.getRepoPathForTerminal(id);
+									return path ? getRepoColor(path) : undefined;
+								};
 
-							const handleTabClick = () => {
-								if (isDetached()) {
-									props.onFocusDetachedTab?.(id);
-								} else {
-									props.onTabSelect(id);
-								}
-							};
+								const handleTabClick = () => {
+									if (isDetached()) {
+										props.onFocusDetachedTab?.(id);
+									} else {
+										props.onTabSelect(id);
+									}
+								};
 
-							const handleCloseTab = (e: Event) => {
-								e.preventDefault();
-								e.stopPropagation();
-								props.onTabClose(id);
-							};
+								const handleCloseTab = (e: Event) => {
+									e.preventDefault();
+									e.stopPropagation();
+									props.onTabClose(id);
+								};
 
-							return (
-								<Show when={terminal()}>
-									<div
-										class={cx(
-											s.tab,
-											isActive() && !isDetached() && s.active,
-											isDetached() && s.detached,
-											awaitingInput() && s.awaitingInput,
-											awaitingInput() && AWAITING_CLASSES[awaitingInput()!],
-											!awaitingInput() && isBusy() && s.shellBusy,
-											!awaitingInput() && !isBusy() && isUnseen() && s.shellUnseen,
-											!awaitingInput() && isIdle() && !isUnseen() && s.shellIdle,
-											isExited() && s.shellExited,
-											isRemote() && s.remoteTab,
-											isDragging() && s.dragging,
-											isDragOver() && dragOverSide() === "left" && s.dragOverLeft,
-											isDragOver() && dragOverSide() === "right" && s.dragOverRight,
-										)}
-										data-tab-id={id}
-										style={repoColor() ? ({ "--repo-color": repoColor() } as Record<string, string>) : undefined}
-										onClick={handleTabClick}
-										onAuxClick={(e) => {
-											if (e.button === 1) handleCloseTab(e);
-										}}
-										onContextMenu={(e) => openTabContextMenu(e, id)}
-										title={`${terminal()?.alias ?? `Terminal ${index() + 1}`}${index() < 9 ? ` (${keyFor(`switch-tab-${index() + 1}`)})` : ""}`}
-										onMouseDown={(e) => !isEditing() && handleMouseDrag(e, id)}
-										onMouseEnter={() => setHovered(true)}
-										onMouseLeave={() => setHovered(false)}
-										onDblClick={(e) => {
-											e.stopPropagation();
-											setEditingId(id);
-										}}
-									>
-										<span class={s.tabIcon}>●</span>
-										<Show
-											when={isEditing()}
-											fallback={
-												<span class={s.tabName}>
-													{terminal()?.name}
-													<Show when={isDetached()}>
-														<svg
-															class={s.detachedIcon}
-															viewBox="0 0 12 12"
-															width="10"
-															height="10"
-															fill="none"
-															stroke="currentColor"
-															stroke-width="1.5"
-														>
-															<path d="M7 1h4v4M11 1L6 6M5 2H2v8h8V7" />
-														</svg>
-													</Show>
-												</span>
-											}
+								return (
+									<Show when={terminal()}>
+										<div
+											class={cx(
+												s.tab,
+												isActive() && !isDetached() && s.active,
+												isDetached() && s.detached,
+												awaitingInput() && s.awaitingInput,
+												awaitingInput() && AWAITING_CLASSES[awaitingInput()!],
+												!awaitingInput() && isBusy() && s.shellBusy,
+												!awaitingInput() && !isBusy() && isUnseen() && s.shellUnseen,
+												!awaitingInput() && isIdle() && !isUnseen() && s.shellIdle,
+												isExited() && s.shellExited,
+												isRemote() && s.remoteTab,
+												terminal()?.standby && s.standby,
+												isDragging() && s.dragging,
+												isDragOver() && dragOverSide() === "left" && s.dragOverLeft,
+												isDragOver() && dragOverSide() === "right" && s.dragOverRight,
+												isDragOver() && dragInvalid() && s.dragInvalid,
+											)}
+											data-tab-id={id}
+											style={repoColor() ? ({ "--repo-color": repoColor() } as Record<string, string>) : undefined}
+											onClick={handleTabClick}
+											onAuxClick={(e) => {
+												if (e.button === 1) {
+													e.preventDefault();
+													e.stopPropagation();
+													props.onTabClose(id, true);
+												}
+											}}
+											onContextMenu={(e) => openTabContextMenu(e, id)}
+											title={`${terminal()?.alias ?? `Terminal ${index() + 1}`}${index() < 9 ? ` (${keyFor(`switch-tab-${index() + 1}`)})` : ""}`}
+											onMouseDown={(e) => !isEditing() && handleMouseDrag(e, id)}
+											onMouseEnter={() => setHovered(true)}
+											onMouseLeave={() => setHovered(false)}
+											onDblClick={(e) => {
+												e.stopPropagation();
+												setEditingId(id);
+											}}
 										>
-											<input
-												class={s.tabNameInput}
-												type="text"
-												value={terminal()?.name || ""}
-												ref={(el) => {
-													// Auto-focus and select all text when entering edit mode
-													requestAnimationFrame(() => {
-														el.focus();
-														el.select();
-													});
-												}}
-												onClick={(e) => e.stopPropagation()}
-												onBlur={(e) => commitRename(id, e.currentTarget)}
-												onKeyDown={(e) => {
-													if (e.key === "Enter") {
-														commitRename(id, e.currentTarget);
-													} else if (e.key === "Escape") {
-														setEditingId(null);
-													}
-												}}
-											/>
-										</Show>
-										{progress() !== null && progress() !== undefined && (
-											<div class={s.progress} style={{ width: `${progress()}%` }} />
-										)}
-										<PanePositionIcon tabId={id} rects={paneRects()} />
-										<Show when={isPromoted() && !globalWorkspaceStore.isActive()}>
+											<span class={s.tabIcon}>●</span>
+											<Show
+												when={isEditing()}
+												fallback={
+													<span class={s.tabName}>
+														{terminal()?.name}
+														<Show when={terminal()?.standby}>
+															<span class={s.standbyBadge} title="Standby (paused)">
+																<svg viewBox="0 0 8 10" width="8" height="10" fill="currentColor">
+																	<rect x="0" y="0" width="3" height="10" />
+																	<rect x="5" y="0" width="3" height="10" />
+																</svg>
+															</span>
+														</Show>
+														<Show when={isDetached()}>
+															<svg
+																class={s.detachedIcon}
+																viewBox="0 0 12 12"
+																width="10"
+																height="10"
+																fill="none"
+																stroke="currentColor"
+																stroke-width="1.5"
+															>
+																<path d="M7 1h4v4M11 1L6 6M5 2H2v8h8V7" />
+															</svg>
+														</Show>
+													</span>
+												}
+											>
+												<input
+													class={s.tabNameInput}
+													type="text"
+													value={terminal()?.name || ""}
+													ref={(el) => {
+														// Auto-focus and select all text when entering edit mode
+														requestAnimationFrame(() => {
+															el.focus();
+															el.select();
+														});
+													}}
+													onClick={(e) => e.stopPropagation()}
+													onBlur={(e) => commitRename(id, e.currentTarget)}
+													onKeyDown={(e) => {
+														if (e.key === "Enter") {
+															commitRename(id, e.currentTarget);
+														} else if (e.key === "Escape") {
+															setEditingId(null);
+														}
+													}}
+												/>
+											</Show>
+											{progress() !== null && progress() !== undefined && (
+												<div class={s.progress} style={{ width: `${progress()}%` }} />
+											)}
+											<PanePositionIcon tabId={id} rects={paneRects()} />
+											<Show when={isPromoted() && !globalWorkspaceStore.isActive()}>
+												<button
+													class={s.globeIcon}
+													title={t("tabBar.removeFromWorkspace", "Remove from Global Workspace")}
+													onClick={(e) => {
+														e.stopPropagation();
+														globalWorkspaceStore.unpromote(id);
+													}}
+												>
+													<GlobeIcon size={11} />
+												</button>
+											</Show>
+											<Show when={props.quickSwitcherActive && index() < 9}>
+												<span class={s.shortcutBadge}>{keyFor(`switch-tab-${index() + 1}`)}</span>
+											</Show>
+											<Show when={hovered() && globalWorkspaceStore.isActive() && repoName()}>
+												<span class={s.repoOverlay}>{repoName()}</span>
+											</Show>
+											<button class={s.tabClose} title={t("tabBar.close", "Close")} onClick={handleCloseTab}>
+												×
+											</button>
+										</div>
+									</Show>
+								);
+							}}
+						</For>
+					</Show>
+
+					{/* Non-terminal tabs: grouped mode renders 3 separate For blocks */}
+					<Show when={isGroupedMode()}>
+						{/* Diff tabs */}
+						<For each={visibleDiffIds()}>
+							{(id) => {
+								const diffTab = () => diffTabsStore.get(id);
+								const isActive = () => diffTabsStore.state.activeId === id;
+
+								return (
+									<Show when={diffTab()}>
+										<div
+											class={cx(
+												s.tab,
+												s.diffTab,
+												isActive() && s.active,
+												draggingId() === id && s.dragging,
+												dragOverId() === id && draggingId() !== id && dragOverSide() === "left" && s.dragOverLeft,
+												dragOverId() === id && draggingId() !== id && dragOverSide() === "right" && s.dragOverRight,
+												dragOverId() === id && draggingId() !== id && dragInvalid() && s.dragInvalid,
+											)}
+											data-tab-id={id}
+											onClick={() => {
+												diffTabsStore.setActive(id);
+												props.onTabSelect(id);
+											}}
+											onAuxClick={(e) => {
+												if (e.button === 1) {
+													e.preventDefault();
+													diffTabsStore.remove(id);
+													props.onTabClose(id, true);
+												}
+											}}
+											onContextMenu={(e) => openTabContextMenu(e, id)}
+											title={diffTab()?.filePath}
+											onMouseDown={(e) => handleMouseDrag(e, id, "diff")}
+										>
+											<span class={s.tabIcon}>
+												{diffTab()?.filePath ? (
+													<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+														<path
+															fill-rule="evenodd"
+															d="M3 1a1 1 0 00-1 1v12a1 1 0 001 1h10a1 1 0 001-1V5.5L9.5 1H3zm6.5 1.5v2.5H12L9.5 2.5zM8 6a.5.5 0 01.5.5v1h1a.5.5 0 010 1h-1v1a.5.5 0 01-1 0v-1h-1a.5.5 0 010-1h1v-1A.5.5 0 018 6zm-3 5a.5.5 0 000 1h5a.5.5 0 000-1H5z"
+														/>
+													</svg>
+												) : (
+													<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+														<path d="M2 2h12v1H2zm0 3h12v1H2zm0 3h10v1H2zm0 3h8v1H2z" />
+													</svg>
+												)}
+											</span>
+											<Show when={diffTab()?.pinned}>
+												<span class={s.pinIcon}>
+													<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
+														<circle cx="8" cy="4" r="3.5" />
+														<path d="M6.2 7l-1.7 4.5a.5.5 0 0 0 .13.54l2.84 2.84a.75.75 0 0 0 1.06 0l2.84-2.84a.5.5 0 0 0 .13-.54L9.8 7H6.2z" />
+													</svg>
+												</span>
+											</Show>
+											<span class={s.tabName}>
+												{diffTab()?.fileName}
+												{diffTab()?.scope ? ` (${diffTab()?.scope?.slice(0, 7)})` : ""}
+											</span>
+											<PanePositionIcon tabId={id} rects={paneRects()} />
 											<button
-												class={s.globeIcon}
-												title={t("tabBar.removeFromWorkspace", "Remove from Global Workspace")}
+												class={s.tabClose}
+												title={t("tabBar.close", "Close")}
 												onClick={(e) => {
 													e.stopPropagation();
-													globalWorkspaceStore.unpromote(id);
+													diffTabsStore.remove(id);
+													props.onTabClose(id);
 												}}
 											>
-												<GlobeIcon size={11} />
+												×
 											</button>
-										</Show>
-										<Show when={props.quickSwitcherActive && index() < 9}>
-											<span class={s.shortcutBadge}>{keyFor(`switch-tab-${index() + 1}`)}</span>
-										</Show>
-										<Show when={hovered() && globalWorkspaceStore.isActive() && repoName()}>
-											<span class={s.repoOverlay}>{repoName()}</span>
-										</Show>
-										<button class={s.tabClose} title={t("tabBar.close", "Close")} onClick={handleCloseTab}>
-											×
-										</button>
-									</div>
-								</Show>
-							);
-						}}
-					</For>
+										</div>
+									</Show>
+								);
+							}}
+						</For>
 
-					{/* Diff tabs */}
-					<For each={visibleDiffIds()}>
-						{(id) => {
-							const diffTab = () => diffTabsStore.get(id);
-							const isActive = () => diffTabsStore.state.activeId === id;
+						{/* Markdown tabs */}
+						<For each={visibleMdIds()}>
+							{(id) => {
+								const mdTab = () => mdTabsStore.get(id);
+								const isActive = () => mdTabsStore.state.activeId === id;
 
-							return (
-								<Show when={diffTab()}>
-									<div
-										class={cx(s.tab, s.diffTab, isActive() && s.active)}
-										data-tab-id={id}
-										onClick={() => {
-											diffTabsStore.setActive(id);
-											props.onTabSelect(id);
-										}}
-										onAuxClick={(e) => {
-											if (e.button === 1) {
-												e.preventDefault();
-												diffTabsStore.remove(id);
-												props.onTabClose(id);
-											}
-										}}
-										onContextMenu={(e) => openTabContextMenu(e, id)}
-										title={diffTab()?.filePath}
-										onMouseDown={(e) => handleMouseDrag(e, id, "diff")}
-									>
-										<span class={s.tabIcon}>
-											{diffTab()?.filePath ? (
-												<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-													<path
-														fill-rule="evenodd"
-														d="M3 1a1 1 0 00-1 1v12a1 1 0 001 1h10a1 1 0 001-1V5.5L9.5 1H3zm6.5 1.5v2.5H12L9.5 2.5zM8 6a.5.5 0 01.5.5v1h1a.5.5 0 010 1h-1v1a.5.5 0 01-1 0v-1h-1a.5.5 0 010-1h1v-1A.5.5 0 018 6zm-3 5a.5.5 0 000 1h5a.5.5 0 000-1H5z"
-													/>
-												</svg>
-											) : (
-												<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-													<path d="M2 2h12v1H2zm0 3h12v1H2zm0 3h10v1H2zm0 3h8v1H2z" />
-												</svg>
+								return (
+									<Show when={mdTab()}>
+										<div
+											class={cx(
+												s.tab,
+												mdTab()?.type === "file" ? s.mdTab : mdTab()?.type === "pr-diff" ? s.diffTab : s.panelTab,
+												isActive() && s.active,
+												draggingId() === id && s.dragging,
+												dragOverId() === id && draggingId() !== id && dragOverSide() === "left" && s.dragOverLeft,
+												dragOverId() === id && draggingId() !== id && dragOverSide() === "right" && s.dragOverRight,
+												dragOverId() === id && draggingId() !== id && dragInvalid() && s.dragInvalid,
 											)}
-										</span>
-										<Show when={diffTab()?.pinned}>
-											<span class={s.pinIcon}>
-												<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
-													<circle cx="8" cy="4" r="3.5" />
-													<path d="M6.2 7l-1.7 4.5a.5.5 0 0 0 .13.54l2.84 2.84a.75.75 0 0 0 1.06 0l2.84-2.84a.5.5 0 0 0 .13-.54L9.8 7H6.2z" />
-												</svg>
-											</span>
-										</Show>
-										<span class={s.tabName}>
-											{diffTab()?.fileName}
-											{diffTab()?.scope ? ` (${diffTab()?.scope?.slice(0, 7)})` : ""}
-										</span>
-										<PanePositionIcon tabId={id} rects={paneRects()} />
-										<button
-											class={s.tabClose}
-											title={t("tabBar.close", "Close")}
-											onClick={(e) => {
-												e.stopPropagation();
-												diffTabsStore.remove(id);
-												props.onTabClose(id);
+											data-tab-id={id}
+											onClick={() => {
+												mdTabsStore.setActive(id);
+												props.onTabSelect(id);
 											}}
-										>
-											×
-										</button>
-									</div>
-								</Show>
-							);
-						}}
-					</For>
-
-					{/* Markdown tabs */}
-					<For each={visibleMdIds()}>
-						{(id) => {
-							const mdTab = () => mdTabsStore.get(id);
-							const isActive = () => mdTabsStore.state.activeId === id;
-
-							return (
-								<Show when={mdTab()}>
-									<div
-										class={cx(
-											s.tab,
-											mdTab()?.type === "file" ? s.mdTab : mdTab()?.type === "pr-diff" ? s.diffTab : s.panelTab,
-											isActive() && s.active,
-										)}
-										data-tab-id={id}
-										onClick={() => {
-											mdTabsStore.setActive(id);
-											props.onTabSelect(id);
-										}}
-										onAuxClick={(e) => {
-											if (e.button === 1) {
-												e.preventDefault();
-												mdTabsStore.remove(id);
-												props.onTabClose(id);
-											}
-										}}
-										onContextMenu={(e) => openTabContextMenu(e, id)}
-										title={(() => {
-											const tab = mdTab();
-											return tab?.type === "file"
-												? tab.filePath
-												: tab?.type === "pr-diff"
-													? `PR #${tab.prNumber}: ${tab.prTitle}`
-													: tab?.title;
-										})()}
-										onMouseDown={(e) => handleMouseDrag(e, id, "markdown")}
-									>
-										<span class={s.tabIcon}>
-											{mdTab()?.type === "pr-diff" ? (
-												<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-													<path
-														fill-rule="evenodd"
-														d="M7.177 3.073L9.573.677A.25.25 0 0110 .854v4.792a.25.25 0 01-.427.177L7.177 3.427a.25.25 0 010-.354zM3.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122v5.256a2.251 2.251 0 11-1.5 0V5.372A2.25 2.25 0 011.5 3.25zM11 2.5h-1V4h1a1 1 0 011 1v5.628a2.251 2.251 0 101.5 0V5A2.5 2.5 0 0011 2.5zm1 10.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0zM3.75 12a.75.75 0 100 1.5.75.75 0 000-1.5z"
-													/>
-												</svg>
-											) : (
-												<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-													<path
-														fill-rule="evenodd"
-														d="M3 1a1 1 0 00-1 1v12a1 1 0 001 1h10a1 1 0 001-1V5.5L9.5 1H3zm6.5 1.5v2.5H12L9.5 2.5zM4.5 7.5h7a.5.5 0 010 1h-7a.5.5 0 010-1zm0 2.5h7a.5.5 0 010 1h-7a.5.5 0 010-1zm0 2.5h4a.5.5 0 010 1h-4a.5.5 0 010-1z"
-													/>
-												</svg>
-											)}
-										</span>
-										<Show when={mdTab()?.pinned}>
-											<span class={s.pinIcon}>
-												<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
-													<circle cx="8" cy="4" r="3.5" />
-													<path d="M6.2 7l-1.7 4.5a.5.5 0 0 0 .13.54l2.84 2.84a.75.75 0 0 0 1.06 0l2.84-2.84a.5.5 0 0 0 .13-.54L9.8 7H6.2z" />
-												</svg>
-											</span>
-										</Show>
-										<span class={s.tabName}>
-											{(() => {
+											onAuxClick={(e) => {
+												if (e.button === 1) {
+													e.preventDefault();
+													mdTabsStore.remove(id);
+													props.onTabClose(id, true);
+												}
+											}}
+											onContextMenu={(e) => openTabContextMenu(e, id)}
+											title={(() => {
 												const tab = mdTab();
-												return tab?.type === "file" ? tab.fileName : tab?.title;
+												return tab?.type === "file"
+													? tab.filePath
+													: tab?.type === "pr-diff"
+														? `PR #${tab.prNumber}: ${tab.prTitle}`
+														: tab?.title;
 											})()}
-										</span>
-										<PanePositionIcon tabId={id} rects={paneRects()} />
-										<button
-											class={s.tabClose}
-											title={t("tabBar.close", "Close")}
-											onClick={(e) => {
-												e.stopPropagation();
-												mdTabsStore.remove(id);
-												props.onTabClose(id);
-											}}
+											onMouseDown={(e) => handleMouseDrag(e, id, "markdown")}
 										>
-											×
-										</button>
-									</div>
-								</Show>
-							);
-						}}
-					</For>
-
-					{/* Editor tabs */}
-					<For each={visibleEditIds()}>
-						{(id) => {
-							const editTab = () => editorTabsStore.get(id);
-							const isActive = () => editorTabsStore.state.activeId === id;
-
-							return (
-								<Show when={editTab()}>
-									<div
-										class={cx(s.tab, s.editTab, isActive() && s.active)}
-										data-tab-id={id}
-										onClick={() => {
-											editorTabsStore.setActive(id);
-											props.onTabSelect(id);
-										}}
-										onAuxClick={(e) => {
-											if (e.button === 1) {
-												e.preventDefault();
-												props.onTabClose(id);
-											}
-										}}
-										onContextMenu={(e) => openTabContextMenu(e, id)}
-										title={editTab()?.filePath}
-										onMouseDown={(e) => handleMouseDrag(e, id, "editor")}
-									>
-										<span class={s.tabIcon}>
-											{editTab()?.isDirty ? (
-												<svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
-													<circle cx="4" cy="4" r="4" />
-												</svg>
-											) : (
-												<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-													<path d="M11.13 1.47a1.5 1.5 0 012.12 0l1.28 1.28a1.5 1.5 0 010 2.12L5.9 13.5a1 1 0 01-.5.27l-3.5.87a.5.5 0 01-.6-.6l.87-3.5a1 1 0 01.27-.5L11.13 1.47zm1.07 1.06L3.74 11l-.58 2.34 2.34-.58 8.47-8.46-1.77-1.77z" />
-												</svg>
-											)}
-										</span>
-										<Show when={editTab()?.pinned}>
-											<span class={s.pinIcon}>
-												<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
-													<circle cx="8" cy="4" r="3.5" />
-													<path d="M6.2 7l-1.7 4.5a.5.5 0 0 0 .13.54l2.84 2.84a.75.75 0 0 0 1.06 0l2.84-2.84a.5.5 0 0 0 .13-.54L9.8 7H6.2z" />
-												</svg>
+											<span class={s.tabIcon}>
+												{mdTab()?.type === "pr-diff" ? (
+													<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+														<path
+															fill-rule="evenodd"
+															d="M7.177 3.073L9.573.677A.25.25 0 0110 .854v4.792a.25.25 0 01-.427.177L7.177 3.427a.25.25 0 010-.354zM3.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122v5.256a2.251 2.251 0 11-1.5 0V5.372A2.25 2.25 0 011.5 3.25zM11 2.5h-1V4h1a1 1 0 011 1v5.628a2.251 2.251 0 101.5 0V5A2.5 2.5 0 0011 2.5zm1 10.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0zM3.75 12a.75.75 0 100 1.5.75.75 0 000-1.5z"
+														/>
+													</svg>
+												) : (
+													<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+														<path
+															fill-rule="evenodd"
+															d="M3 1a1 1 0 00-1 1v12a1 1 0 001 1h10a1 1 0 001-1V5.5L9.5 1H3zm6.5 1.5v2.5H12L9.5 2.5zM4.5 7.5h7a.5.5 0 010 1h-7a.5.5 0 010-1zm0 2.5h7a.5.5 0 010 1h-7a.5.5 0 010-1zm0 2.5h4a.5.5 0 010 1h-4a.5.5 0 010-1z"
+														/>
+													</svg>
+												)}
 											</span>
-										</Show>
-										<span class={s.tabName}>{editTab()?.fileName}</span>
-										<PanePositionIcon tabId={id} rects={paneRects()} />
-										<button
-											class={s.tabClose}
-											title={t("tabBar.close", "Close")}
-											onClick={(e) => {
-												e.stopPropagation();
-												props.onTabClose(id);
+											<Show when={mdTab()?.pinned}>
+												<span class={s.pinIcon}>
+													<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
+														<circle cx="8" cy="4" r="3.5" />
+														<path d="M6.2 7l-1.7 4.5a.5.5 0 0 0 .13.54l2.84 2.84a.75.75 0 0 0 1.06 0l2.84-2.84a.5.5 0 0 0 .13-.54L9.8 7H6.2z" />
+													</svg>
+												</span>
+											</Show>
+											<span class={s.tabName}>
+												{(() => {
+													const tab = mdTab();
+													return tab?.type === "file" ? tab.fileName : tab?.title;
+												})()}
+											</span>
+											<PanePositionIcon tabId={id} rects={paneRects()} />
+											<button
+												class={s.tabClose}
+												title={t("tabBar.close", "Close")}
+												onClick={(e) => {
+													e.stopPropagation();
+													mdTabsStore.remove(id);
+													props.onTabClose(id);
+												}}
+											>
+												×
+											</button>
+										</div>
+									</Show>
+								);
+							}}
+						</For>
+
+						{/* Editor tabs */}
+						<For each={visibleEditIds()}>
+							{(id) => {
+								const editTab = () => editorTabsStore.get(id);
+								const isActive = () => editorTabsStore.state.activeId === id;
+
+								return (
+									<Show when={editTab()}>
+										<div
+											class={cx(
+												s.tab,
+												s.editTab,
+												isActive() && s.active,
+												draggingId() === id && s.dragging,
+												dragOverId() === id && draggingId() !== id && dragOverSide() === "left" && s.dragOverLeft,
+												dragOverId() === id && draggingId() !== id && dragOverSide() === "right" && s.dragOverRight,
+												dragOverId() === id && draggingId() !== id && dragInvalid() && s.dragInvalid,
+											)}
+											data-tab-id={id}
+											onClick={() => {
+												editorTabsStore.setActive(id);
+												props.onTabSelect(id);
 											}}
+											onAuxClick={(e) => {
+												if (e.button === 1) {
+													e.preventDefault();
+													props.onTabClose(id, true);
+												}
+											}}
+											onContextMenu={(e) => openTabContextMenu(e, id)}
+											title={editTab()?.filePath}
+											onMouseDown={(e) => handleMouseDrag(e, id, "editor")}
 										>
-											×
-										</button>
-									</div>
-								</Show>
-							);
-						}}
-					</For>
+											<span class={s.tabIcon}>
+												{editTab()?.isDirty ? (
+													<svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
+														<circle cx="4" cy="4" r="4" />
+													</svg>
+												) : (
+													<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+														<path d="M11.13 1.47a1.5 1.5 0 012.12 0l1.28 1.28a1.5 1.5 0 010 2.12L5.9 13.5a1 1 0 01-.5.27l-3.5.87a.5.5 0 01-.6-.6l.87-3.5a1 1 0 01.27-.5L11.13 1.47zm1.07 1.06L3.74 11l-.58 2.34 2.34-.58 8.47-8.46-1.77-1.77z" />
+													</svg>
+												)}
+											</span>
+											<Show when={editTab()?.pinned}>
+												<span class={s.pinIcon}>
+													<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
+														<circle cx="8" cy="4" r="3.5" />
+														<path d="M6.2 7l-1.7 4.5a.5.5 0 0 0 .13.54l2.84 2.84a.75.75 0 0 0 1.06 0l2.84-2.84a.5.5 0 0 0 .13-.54L9.8 7H6.2z" />
+													</svg>
+												</span>
+											</Show>
+											<span class={s.tabName}>{editTab()?.fileName}</span>
+											<PanePositionIcon tabId={id} rects={paneRects()} />
+											<button
+												class={s.tabClose}
+												title={t("tabBar.close", "Close")}
+												onClick={(e) => {
+													e.stopPropagation();
+													props.onTabClose(id);
+												}}
+											>
+												×
+											</button>
+										</div>
+									</Show>
+								);
+							}}
+						</For>
+					</Show>
+
+					{/* Non-terminal tabs: merged mode (terminals-first / free) */}
+					<Show when={!isGroupedMode()}>
+						<For each={mergedNonTerminalIds()}>
+							{(id) => {
+								const type = () => tabTypeOf(id);
+								return (
+									<Switch>
+										<Match when={type() === "terminal"}>
+											{(() => {
+												const terminal = () => terminalsStore.get(id);
+												const isActive = () => terminalsStore.state.activeId === id;
+												const isDetached = () => terminalsStore.isDetached(id);
+												const isBusy = () => terminalsStore.isBusy(id);
+												const isIdle = () => !isBusy() && terminal()?.shellState === "idle";
+												const isExited = () => terminal()?.shellState === "exited";
+												const isUnseen = () => !isActive() && terminal()?.unseen;
+												const awaitingInput = () => terminal()?.awaitingInput;
+												const isDragging = () => draggingId() === id;
+												const isDragOver = () => dragOverId() === id && draggingId() !== id;
+												const progress = () => terminal()?.progress;
+												const isRemote = () => terminal()?.isRemote;
+												const isEditing = () => editingId() === id;
+												const termIndex = () => activeTerminals().indexOf(id);
+
+												const handleTabClick = () => {
+													if (isDetached()) {
+														props.onFocusDetachedTab?.(id);
+													} else {
+														props.onTabSelect(id);
+													}
+												};
+
+												const handleCloseTab = (e: Event) => {
+													e.preventDefault();
+													e.stopPropagation();
+													props.onTabClose(id);
+												};
+
+												return (
+													<Show when={terminal()}>
+														<div
+															class={cx(
+																s.tab,
+																isActive() && !isDetached() && s.active,
+																isDetached() && s.detached,
+																awaitingInput() && s.awaitingInput,
+																awaitingInput() && AWAITING_CLASSES[awaitingInput()!],
+																!awaitingInput() && isBusy() && s.shellBusy,
+																!awaitingInput() && !isBusy() && isUnseen() && s.shellUnseen,
+																!awaitingInput() && isIdle() && !isUnseen() && s.shellIdle,
+																isExited() && s.shellExited,
+																isRemote() && s.remoteTab,
+																terminal()?.standby && s.standby,
+																isDragging() && s.dragging,
+																isDragOver() && dragOverSide() === "left" && s.dragOverLeft,
+																isDragOver() && dragOverSide() === "right" && s.dragOverRight,
+																isDragOver() && dragInvalid() && s.dragInvalid,
+															)}
+															data-tab-id={id}
+															onClick={handleTabClick}
+															onAuxClick={(e) => {
+																if (e.button === 1) {
+																	e.preventDefault();
+																	e.stopPropagation();
+																	props.onTabClose(id, true);
+																}
+															}}
+															onContextMenu={(e) => openTabContextMenu(e, id)}
+															title={`${terminal()?.alias ?? `Terminal ${termIndex() + 1}`}${termIndex() < 9 ? ` (${keyFor(`switch-tab-${termIndex() + 1}`)})` : ""}`}
+															onMouseDown={(e) => !isEditing() && handleMouseDrag(e, id)}
+															onDblClick={(e) => {
+																e.stopPropagation();
+																setEditingId(id);
+															}}
+														>
+															<span class={s.tabIcon}>●</span>
+															<Show
+																when={isEditing()}
+																fallback={
+																	<span class={s.tabName}>
+																		{terminal()?.name}
+																		<Show when={terminal()?.standby}>
+																			<span class={s.standbyBadge} title="Standby (paused)">
+																				<svg viewBox="0 0 8 10" width="8" height="10" fill="currentColor">
+																					<rect x="0" y="0" width="3" height="10" />
+																					<rect x="5" y="0" width="3" height="10" />
+																				</svg>
+																			</span>
+																		</Show>
+																		<Show when={isDetached()}>
+																			<svg
+																				class={s.detachedIcon}
+																				viewBox="0 0 12 12"
+																				width="10"
+																				height="10"
+																				fill="none"
+																				stroke="currentColor"
+																				stroke-width="1.5"
+																			>
+																				<path d="M7 1h4v4M11 1L6 6M5 2H2v8h8V7" />
+																			</svg>
+																		</Show>
+																	</span>
+																}
+															>
+																<input
+																	class={s.tabNameInput}
+																	type="text"
+																	value={terminal()?.name || ""}
+																	ref={(el) => {
+																		requestAnimationFrame(() => {
+																			el.focus();
+																			el.select();
+																		});
+																	}}
+																	onClick={(e) => e.stopPropagation()}
+																	onBlur={(e) => commitRename(id, e.currentTarget)}
+																	onKeyDown={(e) => {
+																		if (e.key === "Enter") {
+																			commitRename(id, e.currentTarget);
+																		} else if (e.key === "Escape") {
+																			setEditingId(null);
+																		}
+																	}}
+																/>
+															</Show>
+															{progress() !== null && progress() !== undefined && (
+																<div class={s.progress} style={{ width: `${progress()}%` }} />
+															)}
+															<PanePositionIcon tabId={id} rects={paneRects()} />
+															<Show when={props.quickSwitcherActive && termIndex() < 9}>
+																<span class={s.shortcutBadge}>{keyFor(`switch-tab-${termIndex() + 1}`)}</span>
+															</Show>
+															<button class={s.tabClose} title={t("tabBar.close", "Close")} onClick={handleCloseTab}>
+																×
+															</button>
+														</div>
+													</Show>
+												);
+											})()}
+										</Match>
+										<Match when={type() === "diff"}>
+											{(() => {
+												const diffTab = () => diffTabsStore.get(id);
+												const isActive = () => diffTabsStore.state.activeId === id;
+												return (
+													<Show when={diffTab()}>
+														<div
+															class={cx(
+																s.tab,
+																s.diffTab,
+																isActive() && s.active,
+																draggingId() === id && s.dragging,
+																dragOverId() === id &&
+																	draggingId() !== id &&
+																	dragOverSide() === "left" &&
+																	s.dragOverLeft,
+																dragOverId() === id &&
+																	draggingId() !== id &&
+																	dragOverSide() === "right" &&
+																	s.dragOverRight,
+																dragOverId() === id && draggingId() !== id && dragInvalid() && s.dragInvalid,
+															)}
+															data-tab-id={id}
+															onClick={() => {
+																diffTabsStore.setActive(id);
+																props.onTabSelect(id);
+															}}
+															onAuxClick={(e) => {
+																if (e.button === 1) {
+																	e.preventDefault();
+																	diffTabsStore.remove(id);
+																	props.onTabClose(id, true);
+																}
+															}}
+															onContextMenu={(e) => openTabContextMenu(e, id)}
+															title={diffTab()?.filePath}
+															onMouseDown={(e) => handleMouseDrag(e, id, "diff")}
+														>
+															<span class={s.tabIcon}>
+																<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+																	<path
+																		fill-rule="evenodd"
+																		d="M3 1a1 1 0 00-1 1v12a1 1 0 001 1h10a1 1 0 001-1V5.5L9.5 1H3zm6.5 1.5v2.5H12L9.5 2.5zM8 6a.5.5 0 01.5.5v1h1a.5.5 0 010 1h-1v1a.5.5 0 01-1 0v-1h-1a.5.5 0 010-1h1v-1A.5.5 0 018 6zm-3 5a.5.5 0 000 1h5a.5.5 0 000-1H5z"
+																	/>
+																</svg>
+															</span>
+															<span class={s.tabName}>
+																{diffTab()?.fileName}
+																{diffTab()?.scope ? ` (${diffTab()?.scope?.slice(0, 7)})` : ""}
+															</span>
+															<PanePositionIcon tabId={id} rects={paneRects()} />
+															<button
+																class={s.tabClose}
+																title={t("tabBar.close", "Close")}
+																onClick={(e) => {
+																	e.stopPropagation();
+																	diffTabsStore.remove(id);
+																	props.onTabClose(id);
+																}}
+															>
+																×
+															</button>
+														</div>
+													</Show>
+												);
+											})()}
+										</Match>
+										<Match when={type() === "markdown"}>
+											{(() => {
+												const mdTab = () => mdTabsStore.get(id);
+												const isActive = () => mdTabsStore.state.activeId === id;
+												return (
+													<Show when={mdTab()}>
+														<div
+															class={cx(
+																s.tab,
+																mdTab()?.type === "file"
+																	? s.mdTab
+																	: mdTab()?.type === "pr-diff"
+																		? s.diffTab
+																		: s.panelTab,
+																isActive() && s.active,
+																draggingId() === id && s.dragging,
+																dragOverId() === id &&
+																	draggingId() !== id &&
+																	dragOverSide() === "left" &&
+																	s.dragOverLeft,
+																dragOverId() === id &&
+																	draggingId() !== id &&
+																	dragOverSide() === "right" &&
+																	s.dragOverRight,
+																dragOverId() === id && draggingId() !== id && dragInvalid() && s.dragInvalid,
+															)}
+															data-tab-id={id}
+															onClick={() => {
+																mdTabsStore.setActive(id);
+																props.onTabSelect(id);
+															}}
+															onAuxClick={(e) => {
+																if (e.button === 1) {
+																	e.preventDefault();
+																	mdTabsStore.remove(id);
+																	props.onTabClose(id, true);
+																}
+															}}
+															onContextMenu={(e) => openTabContextMenu(e, id)}
+															title={(() => {
+																const tab = mdTab();
+																return tab?.type === "file"
+																	? tab.filePath
+																	: tab?.type === "pr-diff"
+																		? `PR #${tab.prNumber}: ${tab.prTitle}`
+																		: tab?.title;
+															})()}
+															onMouseDown={(e) => handleMouseDrag(e, id, "markdown")}
+														>
+															<span class={s.tabIcon}>
+																<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+																	<path
+																		fill-rule="evenodd"
+																		d="M3 1a1 1 0 00-1 1v12a1 1 0 001 1h10a1 1 0 001-1V5.5L9.5 1H3zm6.5 1.5v2.5H12L9.5 2.5zM4.5 7.5h7a.5.5 0 010 1h-7a.5.5 0 010-1zm0 2.5h7a.5.5 0 010 1h-7a.5.5 0 010-1zm0 2.5h4a.5.5 0 010 1h-4a.5.5 0 010-1z"
+																	/>
+																</svg>
+															</span>
+															<span class={s.tabName}>
+																{(() => {
+																	const tab = mdTab();
+																	return tab?.type === "file" ? tab.fileName : tab?.title;
+																})()}
+															</span>
+															<PanePositionIcon tabId={id} rects={paneRects()} />
+															<button
+																class={s.tabClose}
+																title={t("tabBar.close", "Close")}
+																onClick={(e) => {
+																	e.stopPropagation();
+																	mdTabsStore.remove(id);
+																	props.onTabClose(id);
+																}}
+															>
+																×
+															</button>
+														</div>
+													</Show>
+												);
+											})()}
+										</Match>
+										<Match when={type() === "editor"}>
+											{(() => {
+												const editTab = () => editorTabsStore.get(id);
+												const isActive = () => editorTabsStore.state.activeId === id;
+												return (
+													<Show when={editTab()}>
+														<div
+															class={cx(
+																s.tab,
+																s.editTab,
+																isActive() && s.active,
+																draggingId() === id && s.dragging,
+																dragOverId() === id &&
+																	draggingId() !== id &&
+																	dragOverSide() === "left" &&
+																	s.dragOverLeft,
+																dragOverId() === id &&
+																	draggingId() !== id &&
+																	dragOverSide() === "right" &&
+																	s.dragOverRight,
+																dragOverId() === id && draggingId() !== id && dragInvalid() && s.dragInvalid,
+															)}
+															data-tab-id={id}
+															onClick={() => {
+																editorTabsStore.setActive(id);
+																props.onTabSelect(id);
+															}}
+															onAuxClick={(e) => {
+																if (e.button === 1) {
+																	e.preventDefault();
+																	props.onTabClose(id, true);
+																}
+															}}
+															onContextMenu={(e) => openTabContextMenu(e, id)}
+															title={editTab()?.filePath}
+															onMouseDown={(e) => handleMouseDrag(e, id, "editor")}
+														>
+															<span class={s.tabIcon}>
+																{editTab()?.isDirty ? (
+																	<svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
+																		<circle cx="4" cy="4" r="4" />
+																	</svg>
+																) : (
+																	<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+																		<path d="M11.13 1.47a1.5 1.5 0 012.12 0l1.28 1.28a1.5 1.5 0 010 2.12L5.9 13.5a1 1 0 01-.5.27l-3.5.87a.5.5 0 01-.6-.6l.87-3.5a1 1 0 01.27-.5L11.13 1.47zm1.07 1.06L3.74 11l-.58 2.34 2.34-.58 8.47-8.46-1.77-1.77z" />
+																	</svg>
+																)}
+															</span>
+															<span class={s.tabName}>{editTab()?.fileName}</span>
+															<PanePositionIcon tabId={id} rects={paneRects()} />
+															<button
+																class={s.tabClose}
+																title={t("tabBar.close", "Close")}
+																onClick={(e) => {
+																	e.stopPropagation();
+																	props.onTabClose(id);
+																}}
+															>
+																×
+															</button>
+														</div>
+													</Show>
+												);
+											})()}
+										</Match>
+									</Switch>
+								);
+							}}
+						</For>
+					</Show>
 				</div>
 				{/* end .tabs */}
 

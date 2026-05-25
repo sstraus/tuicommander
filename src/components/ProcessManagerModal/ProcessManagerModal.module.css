@@ -1,0 +1,130 @@
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: var(--font-md);
+}
+
+.table th {
+  text-align: left;
+  padding: 6px 12px;
+  color: var(--fg-muted);
+  font-weight: 500;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.table th.right,
+.table td.right {
+  text-align: right;
+}
+
+.table th.sortable {
+  cursor: pointer;
+}
+
+.table th.sortable:hover {
+  color: var(--fg-primary);
+}
+
+.table td {
+  padding: 4px 12px;
+  color: var(--fg-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.table tr:hover td {
+  background: var(--bg-highlight);
+}
+
+.tuicRow td {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.sessionGroup td {
+  padding-top: 8px;
+}
+
+.childRow td:first-child {
+  padding-left: 28px;
+}
+
+.pid {
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+.barCell {
+  width: 100px;
+  min-width: 100px;
+}
+
+.bar {
+  height: 10px;
+  border-radius: 2px;
+  background: var(--bg-highlight);
+  overflow: hidden;
+}
+
+.barFill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.cpuFill {
+  background: var(--accent);
+}
+
+.memFill {
+  background: var(--warning, #e5c07b);
+}
+
+.highCpu {
+  background: var(--error);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.refreshIndicator {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success, #98c379);
+  margin-right: 6px;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.scrollBody {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--fg-muted);
+}

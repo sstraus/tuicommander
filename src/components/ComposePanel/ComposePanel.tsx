@@ -1,7 +1,7 @@
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { drawSelection, EditorView, keymap } from "@codemirror/view";
 import { createCodeMirror } from "solid-codemirror";
-import { type Accessor, type Component, createEffect, onCleanup } from "solid-js";
+import { type Accessor, type Component, createEffect, on, onCleanup } from "solid-js";
 import { cx } from "../../utils";
 import s from "./ComposePanel.module.css";
 
@@ -76,24 +76,32 @@ export const ComposePanel: Component<ComposePanelProps> = (props) => {
 		]),
 	);
 
-	createEffect(() => {
-		if (!props.isOpen()) return;
-		const initial = props.initialText();
-		requestAnimationFrame(() =>
-			requestAnimationFrame(() => {
-				const view = editorView();
-				if (!view) return;
-				const current = view.state.doc.toString();
-				if (current !== initial) {
-					view.dispatch({
-						changes: { from: 0, to: view.state.doc.length, insert: initial },
-						selection: { anchor: initial.length },
-					});
-				}
-				view.focus();
-			}),
-		);
-	});
+	// Re-initialise content only when the panel opens — NOT on every keystroke.
+	// Tracking initialText() here would re-run on every user keystroke (since
+	// onTextChange feeds back into the same signal), causing a 2-RAF delay loop
+	// that overwrites the current content with content from ~32ms ago (ghost text).
+	createEffect(
+		on(props.isOpen, (open) => {
+			if (!open) return;
+			// Read initialText outside reactive tracking — we only want the value
+			// at open time, not to subscribe to further changes while typing.
+			const initial = props.initialText();
+			requestAnimationFrame(() =>
+				requestAnimationFrame(() => {
+					const view = editorView();
+					if (!view) return;
+					const current = view.state.doc.toString();
+					if (current !== initial) {
+						view.dispatch({
+							changes: { from: 0, to: view.state.doc.length, insert: initial },
+							selection: { anchor: initial.length },
+						});
+					}
+					view.focus();
+				}),
+			);
+		}),
+	);
 
 	createEffect(() => {
 		if (!props.isOpen()) return;

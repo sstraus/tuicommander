@@ -73,7 +73,14 @@ export const TUIC_SDK_SCRIPT = `<script id="tuic-sdk">
     while(a&&a.tagName!=="A")a=a.parentElement;
     if(!a||!a.href)return;
     var href=a.getAttribute("href");
-    if(!href||href.indexOf("tuic://")!==0)return;
+    if(!href)return;
+    if(href.indexOf("tuic://")!==0){
+      // Block all non-tuic navigation — relative links in srcdoc resolve
+      // to the app origin and would load TUIC inside its own iframe.
+      if(href.charAt(0)==="#")return;
+      e.preventDefault();
+      return;
+    }
     e.preventDefault();
     try{
       var url=new URL(href);

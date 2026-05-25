@@ -29,6 +29,7 @@ pub enum TermEvent {
     Tuic {
         verb: String,
         payload: String,
+        line: usize,
     },
 }
 
@@ -85,11 +86,16 @@ impl EventListener for TermEventCollector {
             Event::Osc7(url) => {
                 self.events.lock().unwrap().push(TermEvent::Osc7(url));
             }
-            Event::Tuic { verb, payload } => {
-                self.events
-                    .lock()
-                    .unwrap()
-                    .push(TermEvent::Tuic { verb, payload });
+            Event::Tuic {
+                verb,
+                payload,
+                line,
+            } => {
+                self.events.lock().unwrap().push(TermEvent::Tuic {
+                    verb,
+                    payload,
+                    line,
+                });
             }
             Event::ClipboardLoad(..)
             | Event::ColorRequest(..)
@@ -358,7 +364,7 @@ impl TerminalGrid {
             last_frame_columns: None,
             bell_flag,
             events,
-            reflow_history: false,
+            reflow_history: true,
         }
     }
 
@@ -847,6 +853,18 @@ impl TerminalGrid {
         self.term.grid().history_size() + self.term.grid().screen_lines()
     }
 
+    pub fn read_rows_in_range(&self, start_abs: usize, end_abs: usize) -> Vec<String> {
+        let history = self.term.grid().history_size();
+        let mut rows = Vec::new();
+        for abs in start_abs..=end_abs {
+            let line = Line(abs as i32 - history as i32);
+            if let Some(text) = self.row_to_text(line) {
+                rows.push(text);
+            }
+        }
+        rows
+    }
+
     // --- Search API ---
 
     /// Regex search across visible grid + scrollback using alacritty's native DFA engine.
@@ -953,6 +971,60 @@ impl TerminalGrid {
         self.row_to_text(line).unwrap_or_default()
     }
 
+    /// Get the full logical line containing the given screen row, joining
+    /// soft-wrapped (WRAPLINE) rows. Returns (start_row, joined_text).
+    pub fn get_logical_line(&self, row: usize) -> (usize, String) {
+        let grid = self.term.grid();
+        let display_offset = grid.display_offset();
+        let num_cols = grid.columns();
+        let num_lines = grid.screen_lines();
+
+        // Walk backwards to find the first row of this logical line.
+        let mut start = row;
+        while start > 0 {
+            let prev_line = Line((start - 1) as i32) - display_offset;
+            if prev_line.0 < -(grid.history_size() as i32) {
+                break;
+            }
+            let last_col = Column(num_cols - 1);
+            if grid[prev_line][last_col].flags.contains(Flags::WRAPLINE) {
+                start -= 1;
+            } else {
+                break;
+            }
+        }
+
+        // Walk forward, joining rows connected by WRAPLINE.
+        let mut text = String::new();
+        let mut i = start;
+        loop {
+            if i >= num_lines {
+                break;
+            }
+            let line = Line(i as i32) - display_offset;
+            if line.0 >= grid.screen_lines() as i32 {
+                break;
+            }
+            for col in 0..num_cols {
+                let cell = &grid[line][Column(col)];
+                if cell.flags.contains(Flags::WIDE_CHAR_SPACER) {
+                    continue;
+                }
+                text.push(cell.c);
+            }
+            let last_col = Column(num_cols - 1);
+            if grid[line][last_col].flags.contains(Flags::WRAPLINE) {
+                i += 1;
+            } else {
+                break;
+            }
+        }
+
+        let trimmed_len = text.trim_end().len();
+        text.truncate(trimmed_len);
+        (start, text)
+    }
+
     /// Extract text for a selection range using absolute row coordinates.
     ///
     /// Absolute rows: 0 = oldest history line, historySize = first screen line.
@@ -967,7 +1039,6 @@ impl TerminalGrid {
         let grid = self.term.grid();
         let history_size = grid.history_size();
         let num_cols = grid.columns();
-        let mut lines = Vec::new();
 
         let (r0, c0, r1, c1) =
             if start_row < end_row || (start_row == end_row && start_col <= end_col) {
@@ -976,10 +1047,12 @@ impl TerminalGrid {
                 (end_row, end_col, start_row, start_col)
             };
 
+        let mut result = String::new();
+
         for abs_row in r0..=r1 {
             let line = Line(abs_row as i32 - history_size as i32);
             if line < grid.topmost_line() || line > grid.bottommost_line() {
-                lines.push(String::new());
+                result.push('\n');
                 continue;
             }
 
@@ -1003,14 +1076,19 @@ impl TerminalGrid {
             }
             let trimmed_len = text.trim_end().len();
             text.truncate(trimmed_len);
-            lines.push(text);
+            result.push_str(&text);
+
+            if abs_row < r1 {
+                let last_col = num_cols.saturating_sub(1);
+                let is_wrapped = grid[line][Column(last_col)].flags.contains(Flags::WRAPLINE);
+                if !is_wrapped {
+                    result.push('\n');
+                }
+            }
         }
 
-        while lines.last().is_some_and(|l| l.is_empty()) {
-            lines.pop();
-        }
-
-        lines.join("\n")
+        let trimmed = result.trim_end_matches('\n');
+        trimmed.to_owned()
     }
 
     /// Serialize dirty rows as a compact binary frame.
@@ -1826,6 +1904,69 @@ mod tests {
         assert_eq!(text, "world");
     }
 
+    #[test]
+    fn get_selection_text_unwraps_soft_wrapped_lines() {
+        // 10-col terminal: "abcdefghijklmno" wraps at col 10 → two visual rows, one logical line
+        let mut grid = TerminalGrid::new(3, 10, 0);
+        let _ = grid.process(b"abcdefghijklmno");
+        // Row 0 has WRAPLINE (cols 0-9 = "abcdefghij"), row 1 = "klmno"
+        let text = grid.get_selection_text(0, 0, 1, 4);
+        assert_eq!(text, "abcdefghijklmno");
+    }
+
+    #[test]
+    fn get_selection_text_mixed_wrap_and_newline() {
+        // 10-col terminal: wrap + explicit newline
+        let mut grid = TerminalGrid::new(5, 10, 0);
+        let _ = grid.process(b"abcdefghijklmno\r\nsecond");
+        // Row 0: "abcdefghij" (WRAPLINE), Row 1: "klmno" (no wrap), Row 2: "second"
+        let text = grid.get_selection_text(0, 0, 2, 5);
+        assert_eq!(text, "abcdefghijklmno\nsecond");
+    }
+
+    // --- Logical line tests ---
+
+    #[test]
+    fn get_logical_line_single_row() {
+        let mut grid = TerminalGrid::new(5, 20, 0);
+        let _ = grid.process(b"short text\r\nnext");
+        let (start, text) = grid.get_logical_line(0);
+        assert_eq!(start, 0);
+        assert_eq!(text, "short text");
+    }
+
+    #[test]
+    fn get_logical_line_wrapped_rows() {
+        // 10-col terminal: "file:///tmp/longpath.png" wraps across rows
+        let mut grid = TerminalGrid::new(5, 10, 0);
+        let _ = grid.process(b"file:///tmp/longpath.png");
+        // Row 0: "file:///tm" (WRAPLINE), Row 1: "p/longpath" (WRAPLINE), Row 2: ".png"
+        let (start, text) = grid.get_logical_line(0);
+        assert_eq!(start, 0);
+        assert_eq!(text, "file:///tmp/longpath.png");
+        // Querying from middle row should return same logical line
+        let (start, text) = grid.get_logical_line(1);
+        assert_eq!(start, 0);
+        assert_eq!(text, "file:///tmp/longpath.png");
+        // Querying from last row of logical line
+        let (start, text) = grid.get_logical_line(2);
+        assert_eq!(start, 0);
+        assert_eq!(text, "file:///tmp/longpath.png");
+    }
+
+    #[test]
+    fn get_logical_line_stops_at_newline() {
+        let mut grid = TerminalGrid::new(5, 10, 0);
+        let _ = grid.process(b"abcdefghij\r\nsecond");
+        // Row 0 is full but has explicit newline after → NOT WRAPLINE
+        // Actually in terminals, "abcdefghij" fills 10 cols, next char is on new line
+        // If the cursor advances past col 10, the terminal wraps. With explicit \r\n
+        // the row does NOT get WRAPLINE.
+        let (start, text) = grid.get_logical_line(1);
+        assert_eq!(start, 1);
+        assert_eq!(text, "second");
+    }
+
     // --- Scrollback reading tests ---
 
     #[test]
@@ -1993,7 +2134,7 @@ mod tests {
             .collect();
         assert_eq!(tuic.len(), 1);
         match &tuic[0] {
-            TermEvent::Tuic { verb, payload } => {
+            TermEvent::Tuic { verb, payload, .. } => {
                 assert_eq!(verb, "state");
                 assert_eq!(payload, "idle");
             }
@@ -2013,7 +2154,7 @@ mod tests {
             .collect();
         assert_eq!(tuic.len(), 1);
         match &tuic[0] {
-            TermEvent::Tuic { verb, payload } => {
+            TermEvent::Tuic { verb, payload, .. } => {
                 assert_eq!(verb, "suggest");
                 assert_eq!(payload, "Fix the bug|Run tests|Deploy");
             }
@@ -2032,7 +2173,7 @@ mod tests {
             .collect();
         assert_eq!(tuic.len(), 1);
         match &tuic[0] {
-            TermEvent::Tuic { verb, payload } => {
+            TermEvent::Tuic { verb, payload, .. } => {
                 assert_eq!(verb, "intent");
                 assert_eq!(payload, "Refactoring auth module (Auth Refactor)");
             }
@@ -2063,7 +2204,7 @@ mod tests {
             .collect();
         assert_eq!(tuic.len(), 1);
         match &tuic[0] {
-            TermEvent::Tuic { verb, payload } => {
+            TermEvent::Tuic { verb, payload, .. } => {
                 assert_eq!(verb, "state");
                 assert_eq!(payload, "busy");
             }
@@ -2185,7 +2326,7 @@ mod tests {
             .collect();
         assert_eq!(tuic.len(), 1);
         match &tuic[0] {
-            TermEvent::Tuic { verb, payload } => {
+            TermEvent::Tuic { verb, payload, .. } => {
                 assert_eq!(verb, "state");
                 assert_eq!(payload, "");
             }
@@ -2231,7 +2372,7 @@ mod tests {
     #[test]
     fn reflow_history_disabled_truncates_scrollback() {
         let mut grid = TerminalGrid::new(3, 20, 100);
-        // reflow_history defaults to false
+        grid.reflow_history = false;
 
         let _ = grid.process(b"AAAAAAAAAABBBBBBBBBB\r\n");
         let _ = grid.process(b"CCCCCCCCCCDDDDDDDDDD\r\n");
@@ -2434,6 +2575,36 @@ mod tests {
         assert_eq!(
             history_after_none, history_before_none,
             "without reflow, history count should be unchanged (but content truncated)"
+        );
+    }
+
+    /// Shrink then grow with ReflowMode::All: cursor-row content round-trips.
+    /// Regression: grow_columns blank-padding must land at the topmost screen
+    /// row, not at the cursor row (inner[0]).
+    #[test]
+    fn reflow_all_shrink_grow_cursor_row_roundtrip() {
+        let mut grid = TerminalGrid::new(4, 20, 10);
+        let _ = grid.process(b"ABCDEFGHIJKLMNOPQRST");
+        let (line_before, _) = grid.cursor_point();
+
+        // Shrink 20→10 with All reflow: prompt wraps into two rows.
+        grid.resize_with_mode(4, 10, ReflowMode::All);
+
+        // Grow back 10→20 with All reflow: rows should merge.
+        grid.resize_with_mode(4, 20, ReflowMode::All);
+
+        let rows_after = grid.screen_text_rows();
+        let (line_after, _) = grid.cursor_point();
+
+        // The prompt must be on the cursor's line, not displaced.
+        assert_eq!(
+            rows_after[line_after as usize].trim_end(),
+            "ABCDEFGHIJKLMNOPQRST",
+            "prompt must be on cursor row after shrink-grow roundtrip"
+        );
+        assert_eq!(
+            line_after, line_before,
+            "cursor line must return to original position"
         );
     }
 

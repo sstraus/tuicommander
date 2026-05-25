@@ -40,12 +40,19 @@ extern "system" fn child_exit_callback(ctx: *mut c_void, timed_out: BOOLEAN) {
     let mut exit_code = 0_u32;
     let child_handle = event_tx.child_handle.load(Ordering::Relaxed) as HANDLE;
     let status = unsafe { GetExitCodeProcess(child_handle, &mut exit_code) };
-    let exit_status = if status == FALSE { None } else { Some(ExitStatus::from_raw(exit_code)) };
+    let exit_status = if status == FALSE {
+        None
+    } else {
+        Some(ExitStatus::from_raw(exit_code))
+    };
     event_tx.sender.send(ChildEvent::Exited(exit_status)).ok();
 
     let interest = event_tx.interest.lock().unwrap();
     if let Some(interest) = interest.as_ref() {
-        interest.poller.post(CompletionPacket::new(interest.event)).ok();
+        interest
+            .poller
+            .post(CompletionPacket::new(interest.event))
+            .ok();
     }
 }
 
@@ -99,7 +106,10 @@ impl ChildExitWatcher {
     }
 
     pub fn register(&self, poller: &Arc<Poller>, event: Event) {
-        *self.interest.lock().unwrap() = Some(Interest { poller: poller.clone(), event });
+        *self.interest.lock().unwrap() = Some(Interest {
+            poller: poller.clone(),
+            event,
+        });
     }
 
     pub fn deregister(&self) {

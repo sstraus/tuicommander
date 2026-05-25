@@ -1,7 +1,14 @@
-import { type Component, createEffect, createSignal, Show } from "solid-js";
+import { type Component, createEffect, createSignal, For, type JSX, Show } from "solid-js";
 import { cx } from "../../utils";
 import type { SearchOptions } from "./DomSearchEngine";
 import s from "./SearchBar.module.css";
+
+export interface ExtraToggle {
+	active: boolean;
+	title: string;
+	icon: () => JSX.Element;
+	onToggle: () => void;
+}
 
 export interface SearchBarProps {
 	visible: boolean;
@@ -16,6 +23,8 @@ export interface SearchBarProps {
 	matchCount: number;
 	/** Optional label override for match count (e.g. "500+" for truncated results) */
 	matchLabel?: string;
+	/** Additional toggle buttons after the built-in ones */
+	extraToggles?: ExtraToggle[];
 }
 
 /** SVG icons for toggle buttons and navigation (VS Code style) */
@@ -175,6 +184,18 @@ export const SearchBar: Component<SearchBarProps> = (props) => {
 				>
 					<RegexIcon />
 				</button>
+
+				<For each={props.extraToggles}>
+					{(toggle) => (
+						<button
+							class={cx(s.toggleBtn, toggle.active && s.toggleActive)}
+							onClick={toggle.onToggle}
+							title={toggle.title}
+						>
+							{toggle.icon()}
+						</button>
+					)}
+				</For>
 
 				<div class={s.separator} />
 

@@ -834,8 +834,10 @@ pub(crate) async fn get_file_diff(
     tokio::task::spawn_blocking(move || {
         let repo_path = PathBuf::from(&path);
 
-        // For untracked files, use --no-index to generate a diff against the null device
-        if scope.is_none() {
+        // For untracked files, use --no-index to generate a diff against the null device.
+        // Deleted files don't exist on disk — skip this block entirely and fall
+        // through to the regular `git diff` which reads from the index.
+        if scope.is_none() && repo_path.join(&file).exists() {
             let full_path = repo_path.join(&file);
 
             // Security: prevent path traversal (e.g. "../../etc/passwd")

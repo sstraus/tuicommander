@@ -29,6 +29,8 @@ export interface PostMergeCleanupDialogProps {
 	stepStatuses?: Partial<Record<StepId, StepStatus>>;
 	/** Per-step error messages */
 	stepErrors?: Partial<Record<StepId, string>>;
+	/** Per-step info notes (e.g. "worktree kept with detached HEAD") */
+	stepNotes?: Partial<Record<StepId, string>>;
 	/** When set, adds a worktree archive/delete step as the first step */
 	worktreeAction?: "archive" | "delete";
 	/** Called when the user toggles between archive/delete for the worktree step */
@@ -129,6 +131,7 @@ export const PostMergeCleanupDialog: Component<PostMergeCleanupDialogProps> = (p
 							{(step) => {
 								const status = () => props.stepStatuses?.[step.id] ?? "pending";
 								const error = () => props.stepErrors?.[step.id];
+								const note = () => props.stepNotes?.[step.id];
 								return (
 									<li>
 										<div class={s.step}>
@@ -191,6 +194,11 @@ export const PostMergeCleanupDialog: Component<PostMergeCleanupDialogProps> = (p
 										<Show when={error()}>
 											<div class={s.stepError} data-testid={`step-error-${step.id}`}>
 												{error()}
+											</div>
+										</Show>
+										<Show when={note()}>
+											<div class={s.stepNote} data-testid={`step-note-${step.id}`}>
+												{note()}
 											</div>
 										</Show>
 									</li>

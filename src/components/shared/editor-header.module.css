@@ -10,13 +10,15 @@
 }
 
 .filename {
-  flex: 1;
   font-family: var(--font-ui);
   color: var(--fg-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex-shrink: 1;
+  min-width: 0;
 }
+
 
 .dirtyDot {
   width: 8px;
@@ -27,6 +29,10 @@
 }
 
 .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
   background: none;
   border: 1px solid var(--border);
   color: var(--fg-secondary);
@@ -42,5 +48,20 @@
 }
 
 .btn svg {
-  display: block;
+  flex-shrink: 0;
+}
+
+.breadcrumb {
+  flex: 1;
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.breadcrumbSep {
+  margin: 0 2px;
+  opacity: 0.5;
 }

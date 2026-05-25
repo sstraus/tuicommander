@@ -71,8 +71,11 @@ pub fn named_color_to_index(n: NamedColor) -> Option<u8> {
         NamedColor::DimMagenta => Some(5),
         NamedColor::DimCyan => Some(6),
         NamedColor::DimWhite => Some(7),
-        NamedColor::Foreground | NamedColor::Background | NamedColor::Cursor
-        | NamedColor::BrightForeground | NamedColor::DimForeground => None,
+        NamedColor::Foreground
+        | NamedColor::Background
+        | NamedColor::Cursor
+        | NamedColor::BrightForeground
+        | NamedColor::DimForeground => None,
     }
 }
 

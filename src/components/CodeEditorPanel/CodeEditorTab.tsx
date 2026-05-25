@@ -3,9 +3,11 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirro
 import type { LanguageSupport } from "@codemirror/language";
 import { bracketMatching, foldGutter, foldKeymap, indentOnInput } from "@codemirror/language";
 import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
-import type { Extension } from "@codemirror/state";
+import { type Extension, StateEffect, StateField } from "@codemirror/state";
 import {
 	crosshairCursor,
+	Decoration,
+	type DecorationSet,
 	drawSelection,
 	dropCursor,
 	EditorView,
@@ -50,7 +52,42 @@ export interface CodeEditorTabProps {
 }
 
 function wordAtCursor(view: EditorView): string | null {
-	const pos = view.state.selection.main.head;
+	const range = wordRangeAt(view, view.state.selection.main.head);
+	if (!range) return null;
+	return view.state.doc.sliceString(range.from, range.to) || null;
+}
+
+/** Large file threshold — skip syntax highlighting above this size */
+const LARGE_FILE_BYTES = 500 * 1024;
+
+// --- Cmd+Hover underline (VS Code-style go-to-definition hint) ---
+
+const setHoverLink = StateEffect.define<{ from: number; to: number } | null>();
+
+const hoverLinkMark = Decoration.mark({ class: "cm-hover-link" });
+
+const hoverLinkField = StateField.define<DecorationSet>({
+	create: () => Decoration.none,
+	update(decos, tr) {
+		for (const e of tr.effects) {
+			if (e.is(setHoverLink)) {
+				return e.value ? Decoration.set([hoverLinkMark.range(e.value.from, e.value.to)]) : Decoration.none;
+			}
+		}
+		return decos;
+	},
+	provide: (f) => EditorView.decorations.from(f),
+});
+
+const hoverLinkTheme = EditorView.baseTheme({
+	".cm-hover-link": {
+		textDecoration: "underline",
+		cursor: "pointer",
+		color: "var(--fg-link, #4fc1ff)",
+	},
+});
+
+function wordRangeAt(view: EditorView, pos: number): { from: number; to: number } | null {
 	const line = view.state.doc.lineAt(pos);
 	const text = line.text;
 	const col = pos - line.from;
@@ -59,12 +96,42 @@ function wordAtCursor(view: EditorView): string | null {
 	let end = col;
 	while (start > 0 && wordChars.test(text[start - 1])) start--;
 	while (end < text.length && wordChars.test(text[end])) end++;
-	const word = text.slice(start, end);
-	return word || null;
+	if (start === end) return null;
+	return { from: line.from + start, to: line.from + end };
 }
 
-/** Large file threshold — skip syntax highlighting above this size */
-const LARGE_FILE_BYTES = 500 * 1024;
+function hoverLinkHandlers(): Extension {
+	return EditorView.domEventHandlers({
+		mousemove(event: MouseEvent, view: EditorView) {
+			const modKey = isMacOS() ? event.metaKey : event.ctrlKey;
+			if (!modKey) {
+				if (view.state.field(hoverLinkField) !== Decoration.none) {
+					view.dispatch({ effects: setHoverLink.of(null) });
+				}
+				return false;
+			}
+			const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+			if (pos === null) {
+				view.dispatch({ effects: setHoverLink.of(null) });
+				return false;
+			}
+			const range = wordRangeAt(view, pos);
+			view.dispatch({ effects: setHoverLink.of(range) });
+			return false;
+		},
+		mouseleave(_event: MouseEvent, view: EditorView) {
+			view.dispatch({ effects: setHoverLink.of(null) });
+			return false;
+		},
+		keyup(event: KeyboardEvent, view: EditorView) {
+			const modKey = isMacOS() ? "Meta" : "Control";
+			if (event.key === modKey) {
+				view.dispatch({ effects: setHoverLink.of(null) });
+			}
+			return false;
+		},
+	});
+}
 
 export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 	const [langSupport, setLangSupport] = createSignal<LanguageSupport | null>(null);
@@ -80,6 +147,10 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 	const [diskConflict, setDiskConflict] = createSignal(false);
 	/** Reactive dirty flag — only transitions on save/load, not every keystroke */
 	const [dirty, setDirty] = createSignal(false);
+	/** Current symbol under cursor (for breadcrumb) */
+	const [currentSymbol, setCurrentSymbol] = createSignal<string | null>(null);
+	let outlineSymbols: { name: string; lineStart: number; lineEnd: number | null }[] = [];
+	let outlineGeneration = 0;
 	const contextMenu = createContextMenu();
 	const fb = useFileBrowser();
 
@@ -142,6 +213,31 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 					setDirty(false);
 				} finally {
 					setLoading(false);
+				}
+			},
+		),
+	);
+
+	// Fetch outline symbols for breadcrumb (non-blocking)
+	createEffect(
+		on(
+			() => [props.repoPath, props.filePath] as const,
+			async ([repoPath, filePath]) => {
+				if (!repoPath || !filePath) {
+					outlineSymbols = [];
+					setCurrentSymbol(null);
+					return;
+				}
+				const gen = ++outlineGeneration;
+				try {
+					const symbols = await invoke<{ name: string; lineStart: number; lineEnd: number | null }[]>("mdkb_outline", {
+						repoPath,
+						filePath,
+					});
+					if (gen === outlineGeneration) outlineSymbols = symbols;
+				} catch (err) {
+					if (gen === outlineGeneration) outlineSymbols = [];
+					appLogger.debug("editor", "mdkb_outline failed", err);
 				}
 			},
 		),
@@ -251,6 +347,11 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 	createExtension(search());
 	createExtension(highlightSelectionMatches());
 
+	// Cmd+Hover underline (VS Code-style link hint)
+	createExtension(hoverLinkField);
+	createExtension(hoverLinkTheme);
+	createExtension(hoverLinkHandlers());
+
 	// Cmd+Click (Mac) / Ctrl+Click (other) → go to definition via mdkb
 	createExtension(
 		EditorView.domEventHandlers({
@@ -295,6 +396,21 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 
 	// Reactive language extension
 	createExtension((): Extension => langSupport() ?? []);
+
+	// Update breadcrumb on cursor movement
+	createExtension(
+		EditorView.updateListener.of((update) => {
+			if (!update.selectionSet || outlineSymbols.length === 0) return;
+			const line = update.state.doc.lineAt(update.state.selection.main.head).number;
+			let best: string | null = null;
+			for (const sym of outlineSymbols) {
+				if (line >= sym.lineStart && (sym.lineEnd === null || line <= sym.lineEnd)) {
+					best = sym.name;
+				}
+			}
+			setCurrentSymbol(best);
+		}),
+	);
 
 	// Force CodeMirror to recalculate layout when the editor container resizes.
 	// The container starts as display:none (.terminal-pane without .active),
@@ -353,6 +469,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 			}
 		} catch (err) {
 			appLogger.error("app", "Failed to save file", err);
+			setError(String(err));
 		}
 	};
 
@@ -386,6 +503,12 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 				<span class={e.filename} title={props.filePath}>
 					{props.filePath}
 				</span>
+				<Show when={currentSymbol()}>
+					<span class={e.breadcrumb} title={currentSymbol()!}>
+						<span class={e.breadcrumbSep}>{"›"}</span>
+						{currentSymbol()}
+					</span>
+				</Show>
 				<Show when={dirty()}>
 					<span class={e.dirtyDot} title={t("codeEditor.unsaved", "Unsaved changes")} />
 				</Show>

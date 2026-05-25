@@ -1,16 +1,28 @@
 [workspace]
-members = [".", "crates/tuic-bridge", "crates/tuic-cli"]
+members = [".", "crates/tuic-bridge", "crates/tuic-cli", "patches/alacritty_terminal"]
+resolver = "2"
 
 [package]
 name = "tuicommander"
-version = "1.2.2"
+version = "1.2.7-nightly"
 description = "TUICommander - Native platform for AI coding agents"
 authors = ["Stefano Straus <github.com/sstraus>"]
 edition = "2024"
 default-run = "tuicommander"
 
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2
+
 [profile.release]
-incremental = true
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"
+
+[profile.release.package."*"]
+codegen-units = 16
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
@@ -98,7 +110,13 @@ dashmap = "6"
 parking_lot = "0.12"
 regex = "1"
 lazy_static = "1"
-uuid = { version = "1", features = ["v4"] }
+uuid = { version = "1", features = ["v4", "v7"] }
+ulid = "1"
+cuid2 = "0.1"
+base32 = "0.4"
+zeroize = { version = "1", features = ["alloc"] }
+hex = "0.4"
+ring = "0.17"
 dirs = "6"
 tauri-plugin-dialog = { version = "2.7", optional = true }
 tauri-plugin-single-instance = { version = "2", optional = true }
@@ -125,7 +143,7 @@ tauri-plugin-process = { version = "2", optional = true }
 tauri-plugin-deep-link = { version = "2", optional = true }
 tauri-plugin-clipboard-manager = { version = "2", optional = true }
 tauri-plugin-global-shortcut = { version = "2", optional = true }
-tauri-plugin-drag = { version = "2", optional = true }
+drag = { version = "2.1", features = ["serde"], optional = true }
 zip = "8"
 glob = "0.3"
 ignore = "0.4"
@@ -174,7 +192,7 @@ desktop = [
     "dep:tauri-plugin-deep-link",
     "dep:tauri-plugin-clipboard-manager",
     "dep:tauri-plugin-global-shortcut",
-    "dep:tauri-plugin-drag",
+    "dep:drag",
     "dep:whisper-rs",
     "dep:cpal",
     "dep:rodio",
@@ -197,7 +215,7 @@ block2 = { version = "0.6", optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 whisper-rs = { version = "0.16", features = ["vulkan"], optional = true }
-windows-sys = { version = "0.61", features = ["Win32_System_Diagnostics_ToolHelp", "Win32_System_Diagnostics_Debug", "Win32_System_Threading", "Win32_Foundation", "Wdk_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_System_Diagnostics_ToolHelp", "Win32_System_Diagnostics_Debug", "Win32_System_Threading", "Win32_Foundation", "Win32_System_ProcessStatus", "Wdk_System_Threading"] }
 
 [patch.crates-io]
 alacritty_terminal = { path = "patches/alacritty_terminal" }

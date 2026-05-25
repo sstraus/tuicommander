@@ -51,10 +51,12 @@ export interface TerminalData {
 	progress: number | null; // OSC 9;4 progress (0-100), null when inactive
 	shellState: ShellState;
 	agentType: AgentType | null; // Detected foreground agent process (e.g. "claude")
+	agentLaunchCommand: string | null; // Run-config command used to launch (e.g. "c"), for accurate resume
 	pendingResumeCommand: string | null; // Set at restore time, consumed on first shell idle
 	pendingInitCommand: string | null; // Setup/run script to auto-execute on first shell idle
 	usageLimit: { percentage: number; limitType: string } | null; // Claude Code usage limit
 	lastDataAt: number | null; // Timestamp of last PTY output
+	idleSince: number | null; // Timestamp when shellState transitioned to idle
 	lastPrompt: string | null; // Last relevant user prompt (>= 10 words), set by Rust
 	agentIntent: string | null; // LLM-declared intent via intent: token
 	currentTask: string | null; // Current agent task from status-line parsing (e.g. "Reading files")
@@ -66,7 +68,9 @@ export interface TerminalData {
 	suggestDismissed: boolean; // true after user dismissed/selected/typed — resets on shell-state:idle
 	commandBlocks: CommandBlock[]; // Completed command blocks from OSC 133
 	activeBlock: CommandBlock | null; // Current in-progress block (A received, D not yet)
+	foldedBlocks: Set<number>; // promptLine values of folded blocks
 	alias: string | null; // Human-friendly alias from Rust (e.g. "tc-1")
+	standby: boolean; // Session is SIGSTOP'd (auto-standby)
 }
 
 /** Fields auto-populated with defaults when creating a terminal — callers only provide the remaining fields. */
@@ -79,10 +83,12 @@ type TerminalCreateData = Omit<
 	| "shellState"
 	| "nameIsCustom"
 	| "agentType"
+	| "agentLaunchCommand"
 	| "pendingResumeCommand"
 	| "pendingInitCommand"
 	| "usageLimit"
 	| "lastDataAt"
+	| "idleSince"
 	| "lastPrompt"
 	| "agentIntent"
 	| "currentTask"
@@ -95,8 +101,16 @@ type TerminalCreateData = Omit<
 	| "awaitingInputConfident"
 	| "commandBlocks"
 	| "activeBlock"
+	| "foldedBlocks"
 	| "alias"
-> & { tuicSession?: string | null; isRemote?: boolean; agentType?: AgentType | null; agentSessionId?: string | null };
+	| "standby"
+> & {
+	tuicSession?: string | null;
+	isRemote?: boolean;
+	agentType?: AgentType | null;
+	agentSessionId?: string | null;
+	agentLaunchCommand?: string | null;
+};
 
 /** Terminal component ref interface */
 export interface TerminalRef {
@@ -122,6 +136,8 @@ export interface TerminalRef {
 	scrollPages: (pages: number) => void;
 	/** Read buffer lines between two absolute line indices (exclusive end) */
 	getBufferLines: (startLine: number, endLine: number) => string[] | Promise<string[]>;
+	/** Paste text into the terminal, applying bracketed paste wrapping based on terminal state */
+	paste: (text: string) => void;
 }
 
 /** Combined terminal state */
@@ -172,6 +188,44 @@ function createTerminalsStore() {
 	// Used to distinguish "busy from .zshrc startup" from "busy from a user-launched process".
 	const reachedIdleSet = new Set<string>();
 
+	// OSC133 block-completed batching: during burst replay (e.g. session restore),
+	// hundreds of D markers arrive in a single event loop tick. Buffer completed
+	// blocks and flush once per animation frame to avoid N separate setState calls.
+	const _osc133Pending = new Map<string, CommandBlock[]>();
+	const _osc133FlushTimers = new Map<string, number>();
+	const MAX_BLOCKS = 500;
+
+	function _scheduleOsc133Flush(id: string): void {
+		if (_osc133FlushTimers.has(id)) return;
+		_osc133FlushTimers.set(
+			id,
+			requestAnimationFrame(() => {
+				_osc133FlushTimers.delete(id);
+				const pending = _osc133Pending.get(id);
+				if (!pending?.length) return;
+				_osc133Pending.delete(id);
+				batch(() => {
+					setState("terminals", id, "commandBlocks", (prev) => {
+						const next = [...prev, ...pending];
+						if (next.length <= MAX_BLOCKS) return next;
+						const evicted = next.slice(0, next.length - MAX_BLOCKS);
+						const evictedLines = new Set(evicted.map((b) => b.promptLine));
+						setState("terminals", id, "foldedBlocks", (folds) => {
+							const cleaned = new Set(folds);
+							for (const line of evictedLines) cleaned.delete(line);
+							return cleaned;
+						});
+						return next.slice(-MAX_BLOCKS);
+					});
+				});
+				appLogger.debug(
+					"terminal",
+					`[OSC133] ${id} flushed ${pending.length} blocks, total=${state.terminals[id]?.commandBlocks.length ?? 0}`,
+				);
+			}) as unknown as number,
+		);
+	}
+
 	/** Guard: check terminal exists before mutating. SolidJS setState creates keys
 	 *  implicitly — calling setState("terminals", id, ...) on a removed terminal
 	 *  resurrects it as a ghost entry with partial data. */
@@ -193,6 +247,7 @@ function createTerminalsStore() {
 				appLogger.debug("terminal", `[ShellDebounce] ${id} cooldown cancelled (re-entered busy)`);
 			}
 			setState("debouncedBusy", id, true);
+			setState("terminals", id, "idleSince", null);
 			if (!hadCooldown) {
 				busySinceMap.set(id, Date.now());
 				for (const cb of idleToBusyCallbacks) cb(id);
@@ -210,6 +265,7 @@ function createTerminalsStore() {
 		} else if (next === "idle" && prev !== "busy") {
 			// Direct null→idle (e.g. Rust sync on tab switch) — mark startup complete
 			reachedIdleSet.add(id);
+			if (!state.terminals[id]?.idleSince) setState("terminals", id, "idleSince", Date.now());
 		} else if (next === null && state.terminals[id]?.awaitingInput) {
 			// Process exit (shellState reset to null) — clear any stuck error/question
 			// badge so the next session doesn't inherit stale state from the last child.
@@ -218,6 +274,7 @@ function createTerminalsStore() {
 		} else if (next !== "busy" && prev === "busy") {
 			// First idle marks shell startup as complete
 			if (next === "idle") reachedIdleSet.add(id);
+			setState("terminals", id, "idleSince", Date.now());
 			// Leaving busy: freeze duration, start cooldown
 			const since = busySinceMap.get(id);
 			const duration = since != null ? Date.now() - since : 0;
@@ -289,10 +346,12 @@ function createTerminalsStore() {
 				shellState: null,
 				nameIsCustom: false,
 				agentType: null,
+				agentLaunchCommand: null,
 				pendingResumeCommand: null,
 				pendingInitCommand: null,
 				usageLimit: null,
 				lastDataAt: null,
+				idleSince: null,
 				lastPrompt: null,
 				agentIntent: null,
 				currentTask: null,
@@ -305,7 +364,9 @@ function createTerminalsStore() {
 				awaitingInputConfident: false,
 				commandBlocks: [],
 				activeBlock: null,
+				foldedBlocks: new Set<number>(),
 				alias: null,
+				standby: false,
 				...data,
 			});
 			if (data.sessionId) sessionToTerminal.set(data.sessionId, id);
@@ -322,10 +383,12 @@ function createTerminalsStore() {
 				shellState: null,
 				nameIsCustom: false,
 				agentType: null,
+				agentLaunchCommand: null,
 				pendingResumeCommand: null,
 				pendingInitCommand: null,
 				usageLimit: null,
 				lastDataAt: null,
+				idleSince: null,
 				lastPrompt: null,
 				agentIntent: null,
 				currentTask: null,
@@ -338,7 +401,9 @@ function createTerminalsStore() {
 				awaitingInputConfident: false,
 				commandBlocks: [],
 				activeBlock: null,
+				foldedBlocks: new Set<number>(),
 				alias: null,
+				standby: false,
 				...data,
 			});
 			if (data.sessionId) sessionToTerminal.set(data.sessionId, id);
@@ -468,7 +533,8 @@ function createTerminalsStore() {
 					// without a D marker (e.g. Ctrl+C), finalize it first.
 					if (term.activeBlock) {
 						const completed: CommandBlock = { ...term.activeBlock, endedAt: now };
-						setState("terminals", id, "commandBlocks", (prev) => [...prev, completed]);
+						_osc133Pending.get(id)?.push(completed) ?? _osc133Pending.set(id, [completed]);
+						_scheduleOsc133Flush(id);
 					}
 					setState("terminals", id, "activeBlock", {
 						promptLine: line,
@@ -501,18 +567,25 @@ function createTerminalsStore() {
 							exitCode: exitCode ?? null,
 							endedAt: now,
 						};
-						batch(() => {
-							setState("terminals", id, "commandBlocks", (prev) => [...prev, completed]);
-							setState("terminals", id, "activeBlock", null);
-						});
-						appLogger.debug(
-							"terminal",
-							`[OSC133] ${id} block completed, exit=${exitCode ?? "?"}, blocks=${term.commandBlocks.length + 1}`,
-						);
+						_osc133Pending.get(id)?.push(completed) ?? _osc133Pending.set(id, [completed]);
+						_scheduleOsc133Flush(id);
+						setState("terminals", id, "activeBlock", null);
 					}
 					break;
 				}
 			}
+		},
+
+		toggleBlockFold(id: string, promptLine: number): void {
+			const term = state.terminals[id];
+			if (!term) return;
+			const next = new Set(term.foldedBlocks);
+			if (next.has(promptLine)) {
+				next.delete(promptLine);
+			} else {
+				next.add(promptLine);
+			}
+			setState("terminals", id, "foldedBlocks", next);
 		},
 
 		/** Update agent-declared intent (via intent: token) */
@@ -680,12 +753,12 @@ function createTerminalsStore() {
 
 		/** Check if a tab is currently detached */
 		isDetached(tabId: string): boolean {
-			return tabId in state.detachedWindows;
+			return state.detachedWindows[tabId] !== undefined;
 		},
 
 		/** Get all non-detached terminal IDs */
 		getAttachedIds(): string[] {
-			return Object.keys(state.terminals).filter((id) => !(id in state.detachedWindows));
+			return Object.keys(state.terminals).filter((id) => state.detachedWindows[id] === undefined);
 		},
 
 		/** Record last PTY output timestamp without triggering reactive graph */

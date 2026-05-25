@@ -688,7 +688,7 @@ describe("TabBar", () => {
 				/>
 			));
 			fireEvent(container.querySelector(".diffTab")!, new MouseEvent("auxclick", { button: 1, bubbles: true }));
-			expect(handleClose).toHaveBeenCalledWith(id);
+			expect(handleClose).toHaveBeenCalledWith(id, true);
 		});
 	});
 
@@ -980,7 +980,7 @@ describe("TabBar", () => {
 			));
 			const tab = container.querySelector(".tab")!;
 			fireEvent(tab, new MouseEvent("auxclick", { button: 1, bubbles: true }));
-			expect(handleClose).toHaveBeenCalledWith(id1);
+			expect(handleClose).toHaveBeenCalledWith(id1, true);
 			expect(handleSelect).not.toHaveBeenCalled();
 		});
 

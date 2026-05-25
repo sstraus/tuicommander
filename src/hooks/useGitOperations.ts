@@ -1820,6 +1820,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
 		worktreeDialogState,
 		setWorktreeDialogState,
 		creatingWorktreeRepos,
+		removingBranches,
 		handleNewTab,
 		handleRunCommand,
 		executeRunCommand,

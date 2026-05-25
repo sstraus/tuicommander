@@ -60,7 +60,7 @@ Use `appLogger` from `src/stores/appLogger.ts` — never `console.log/warn/error
 
 ## Releases
 
-See [`docs/release-checklist.md`](docs/release-checklist.md) for version bump, tag, and GitHub release steps.
+See [`docs/release-checklist.md`](docs/release-checklist.md) for version bump, tag, and GitHub release steps. After creating any release or nightly tag, **verify CI completes successfully** — check `gh run list`, inspect failures, and confirm all platform assets (macOS .dmg, Linux .deb/.rpm/.AppImage, Windows .exe) are uploaded before reporting done.
 
 ## Implementation Memory
 

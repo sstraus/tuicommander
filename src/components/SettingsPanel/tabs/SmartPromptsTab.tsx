@@ -1,5 +1,5 @@
 import { type Component, createMemo, createSignal, For, onMount, Show } from "solid-js";
-import { AGENTS, type AgentType } from "../../../agents";
+import { AGENT_TYPES, AGENTS, type AgentType } from "../../../agents";
 import { SMART_PROMPTS_BUILTIN } from "../../../data/smartPromptsBuiltIn";
 import { useAgentDetection } from "../../../hooks/useAgentDetection";
 import { useConfirmDialog } from "../../../hooks/useConfirmDialog";
@@ -223,6 +223,7 @@ const VariableDropdown: Component<{
 const PromptEditor: Component<{
 	prompt: SavedPrompt;
 	onClose: () => void;
+	headlessAgents: AgentType[];
 }> = (props) => {
 	const isBuiltIn = () => !!props.prompt.builtIn;
 	const builtInDefault = () => BUILTIN_BY_ID.get(props.prompt.id);
@@ -396,6 +397,30 @@ const PromptEditor: Component<{
 				</Show>
 			</div>
 
+			{/* Preferred Agent (headless mode only) */}
+			<Show when={props.prompt.executionMode === "headless"}>
+				<div class={sp.editorSection}>
+					<label class={sp.editorLabel}>Preferred Agent</label>
+					<select
+						class={sp.editorInput}
+						value={props.prompt.preferredAgent ?? ""}
+						onChange={(e) => {
+							const val = e.currentTarget.value || undefined;
+							promptLibraryStore.updatePrompt(props.prompt.id, {
+								preferredAgent: val && AGENT_TYPES.includes(val as AgentType) ? (val as AgentType) : undefined,
+							});
+						}}
+					>
+						<option value="">Use global default</option>
+						<For each={props.headlessAgents}>
+							{(type) => <option value={type}>{AGENTS[type]?.name ?? type}</option>}
+						</For>
+						<option value="api">External API</option>
+					</select>
+					<p class={sp.fieldHint}>Override the global headless agent for this prompt</p>
+				</div>
+			</Show>
+
 			{/* Shell-mode warning for repo-controlled variable substitution.
           Even though values are shell-quoted in the backend, authors should
           know which values come from the repo so they can design the
@@ -492,7 +517,7 @@ const PromptEditor: Component<{
 };
 
 /** Single prompt row with toggle, badges, and click-to-expand */
-const PromptRow: Component<{ prompt: SavedPrompt }> = (props) => {
+const PromptRow: Component<{ prompt: SavedPrompt; headlessAgents: AgentType[] }> = (props) => {
 	const [expanded, setExpanded] = createSignal(false);
 
 	const isEnabled = () => props.prompt.enabled !== false;
@@ -550,14 +575,14 @@ const PromptRow: Component<{ prompt: SavedPrompt }> = (props) => {
 			</div>
 
 			<Show when={expanded()}>
-				<PromptEditor prompt={props.prompt} onClose={() => setExpanded(false)} />
+				<PromptEditor prompt={props.prompt} onClose={() => setExpanded(false)} headlessAgents={props.headlessAgents} />
 			</Show>
 		</div>
 	);
 };
 
 /** Collapsible category group */
-const CategoryGroup: Component<{ category: string; prompts: SavedPrompt[] }> = (props) => {
+const CategoryGroup: Component<{ category: string; prompts: SavedPrompt[]; headlessAgents: AgentType[] }> = (props) => {
 	const [open, setOpen] = createSignal(true);
 
 	return (
@@ -570,7 +595,9 @@ const CategoryGroup: Component<{ category: string; prompts: SavedPrompt[] }> = (
 				<span class={sp.categoryCount}>{props.prompts.length}</span>
 			</div>
 			<Show when={open()}>
-				<For each={props.prompts}>{(prompt) => <PromptRow prompt={prompt} />}</For>
+				<For each={props.prompts}>
+					{(prompt) => <PromptRow prompt={prompt} headlessAgents={props.headlessAgents} />}
+				</For>
 			</Show>
 		</>
 	);
@@ -635,7 +662,9 @@ export const SmartPromptsTab: Component = () => {
 					value={agentConfigsStore.getHeadlessAgent() ?? ""}
 					onChange={(e) => {
 						const val = e.currentTarget.value;
-						agentConfigsStore.setHeadlessAgent(val ? (val as AgentType) : null);
+						agentConfigsStore.setHeadlessAgent(
+							val && AGENT_TYPES.includes(val as AgentType) ? (val as AgentType) : null,
+						);
 					}}
 				>
 					<option value="">— Not configured —</option>
@@ -662,14 +691,15 @@ export const SmartPromptsTab: Component = () => {
 					<option value="api">External API</option>
 				</select>
 				<p class={s.hint}>
-					Agent CLI used for headless prompts (e.g. generate commit message) when no agent is running in the active
-					terminal.
+					Default agent for headless prompts. Individual prompts can override this in their settings.
 					{detection.loading() ? " Detecting..." : ""}
 				</p>
 			</div>
 
 			<div class={sp.promptList}>
-				<For each={orderedCategories()}>{(cat) => <CategoryGroup category={cat} prompts={groups().get(cat)!} />}</For>
+				<For each={orderedCategories()}>
+					{(cat) => <CategoryGroup category={cat} prompts={groups().get(cat)!} headlessAgents={headlessAgents()} />}
+				</For>
 			</div>
 
 			<button class={sp.addBtn} onClick={handleNewPrompt}>

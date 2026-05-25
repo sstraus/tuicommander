@@ -24,6 +24,7 @@ interface RustAppConfig {
 	confirm_before_closing_tab: boolean;
 	max_tab_name_length: number;
 	split_tab_mode: string;
+	tab_ordering_mode: string;
 	auto_show_pr_popover: boolean;
 	prevent_sleep_when_busy: boolean;
 	auto_update_enabled: boolean;
@@ -37,6 +38,7 @@ interface RustAppConfig {
 	intent_tab_title: boolean;
 	suggest_followups: boolean;
 	copy_on_select: boolean;
+	show_last_prompt: boolean;
 	bell_style: string;
 	global_hotkey: string | null;
 	issue_filter?: string;
@@ -50,6 +52,11 @@ interface RustAppConfig {
 	scrollback_reflow?: boolean;
 	cursor_style?: string;
 	terminal_renderer?: string;
+	show_block_timestamps?: boolean;
+	show_scrollbar_marks?: boolean;
+	block_folding_enabled?: boolean;
+	index_strategy?: string;
+	standby_timeout_minutes?: number;
 }
 
 // Default values
@@ -255,6 +262,9 @@ function validateTerminalRenderer(value: string | null): TerminalRenderer {
 /** Split tab mode */
 export type SplitTabMode = "separate" | "unified";
 
+/** Tab ordering mode */
+export type TabOrderingMode = "grouped-by-type" | "terminals-first" | "free";
+
 /** Terminal renderer backend */
 export type TerminalRenderer = "webgl" | "canvas" | "native";
 
@@ -273,6 +283,7 @@ interface SettingsStoreState {
 	confirmBeforeClosingTab: boolean;
 	maxTabNameLength: number;
 	splitTabMode: SplitTabMode;
+	tabOrderingMode: TabOrderingMode;
 	autoShowPrPopover: boolean;
 	preventSleepWhenBusy: boolean;
 	autoUpdateEnabled: boolean;
@@ -283,6 +294,7 @@ interface SettingsStoreState {
 	intentTabTitle: boolean;
 	suggestFollowups: boolean;
 	copyOnSelect: boolean;
+	showLastPrompt: boolean;
 	bellStyle: "none" | "visual" | "sound" | "both";
 	globalHotkey: string | null;
 	issueFilter: IssueFilterMode;
@@ -296,6 +308,11 @@ interface SettingsStoreState {
 	scrollbackReflow: boolean;
 	cursorStyle: "bar" | "block" | "underline";
 	terminalRenderer: TerminalRenderer;
+	showBlockTimestamps: boolean;
+	showScrollbarMarks: boolean;
+	blockFoldingEnabled: boolean;
+	indexStrategy: "disabled" | "active_only" | "active_and_switch" | "all_sequential";
+	standbyTimeoutMinutes: number;
 }
 
 const SAVE_DEBOUNCE_MS = 500;
@@ -313,6 +330,7 @@ function createSettingsStore() {
 		confirmBeforeClosingTab: true,
 		maxTabNameLength: 25,
 		splitTabMode: "separate",
+		tabOrderingMode: "grouped-by-type",
 		autoShowPrPopover: true,
 		preventSleepWhenBusy: false,
 		autoUpdateEnabled: true,
@@ -323,6 +341,7 @@ function createSettingsStore() {
 		intentTabTitle: true,
 		suggestFollowups: true,
 		copyOnSelect: true,
+		showLastPrompt: true,
 		bellStyle: "visual",
 		globalHotkey: null,
 		issueFilter: "assigned",
@@ -336,6 +355,11 @@ function createSettingsStore() {
 		scrollbackReflow: false,
 		cursorStyle: "bar" as SettingsStoreState["cursorStyle"],
 		terminalRenderer: "webgl",
+		showBlockTimestamps: true,
+		showScrollbarMarks: true,
+		blockFoldingEnabled: true,
+		indexStrategy: "active_and_switch",
+		standbyTimeoutMinutes: 5,
 	});
 
 	// Shadow copy of the last loaded config — preserves fields not tracked in SolidJS store
@@ -358,6 +382,7 @@ function createSettingsStore() {
 			confirm_before_closing_tab: state.confirmBeforeClosingTab,
 			max_tab_name_length: state.maxTabNameLength,
 			split_tab_mode: state.splitTabMode,
+			tab_ordering_mode: state.tabOrderingMode,
 			auto_show_pr_popover: state.autoShowPrPopover,
 			prevent_sleep_when_busy: state.preventSleepWhenBusy,
 			auto_update_enabled: state.autoUpdateEnabled,
@@ -368,6 +393,7 @@ function createSettingsStore() {
 			intent_tab_title: state.intentTabTitle,
 			suggest_followups: state.suggestFollowups,
 			copy_on_select: state.copyOnSelect,
+			show_last_prompt: state.showLastPrompt,
 			bell_style: state.bellStyle,
 			global_hotkey: state.globalHotkey,
 			issue_filter: state.issueFilter,
@@ -381,6 +407,11 @@ function createSettingsStore() {
 			scrollback_reflow: state.scrollbackReflow,
 			cursor_style: state.cursorStyle,
 			terminal_renderer: state.terminalRenderer,
+			show_block_timestamps: state.showBlockTimestamps,
+			show_scrollbar_marks: state.showScrollbarMarks,
+			block_folding_enabled: state.blockFoldingEnabled,
+			index_strategy: state.indexStrategy,
+			standby_timeout_minutes: state.standbyTimeoutMinutes,
 			services: baseConfig?.services ?? { auth: { session_token_duration_secs: 86400 } },
 			mcp_server_enabled: baseConfig?.mcp_server_enabled ?? true,
 		};
@@ -428,6 +459,8 @@ function createSettingsStore() {
 				setState("confirmBeforeClosingTab", config.confirm_before_closing_tab ?? true);
 				setState("maxTabNameLength", config.max_tab_name_length || 25);
 				setState("splitTabMode", config.split_tab_mode === "unified" ? "unified" : "separate");
+				const tom = config.tab_ordering_mode;
+				setState("tabOrderingMode", tom === "terminals-first" || tom === "free" ? tom : "grouped-by-type");
 				setState("autoShowPrPopover", config.auto_show_pr_popover ?? true);
 				setState("preventSleepWhenBusy", config.prevent_sleep_when_busy ?? false);
 				setState("autoUpdateEnabled", config.auto_update_enabled ?? true);
@@ -439,6 +472,7 @@ function createSettingsStore() {
 				setState("disabledAgents", config.disabled_agents ?? []);
 				setState("intentTabTitle", config.intent_tab_title ?? true);
 				setState("copyOnSelect", config.copy_on_select ?? true);
+				setState("showLastPrompt", config.show_last_prompt ?? false);
 				setState("bellStyle", (config.bell_style || "visual") as SettingsStoreState["bellStyle"]);
 				setState("suggestFollowups", config.suggest_followups ?? true);
 				setState("globalHotkey", config.global_hotkey ?? null);
@@ -454,6 +488,14 @@ function createSettingsStore() {
 				const cs = config.cursor_style;
 				setState("cursorStyle", cs === "block" || cs === "underline" ? cs : "bar");
 				setState("terminalRenderer", validateTerminalRenderer(config.terminal_renderer || null));
+				setState("showBlockTimestamps", config.show_block_timestamps ?? true);
+				setState("showScrollbarMarks", config.show_scrollbar_marks ?? true);
+				setState("blockFoldingEnabled", config.block_folding_enabled ?? true);
+				setState(
+					"indexStrategy",
+					(config.index_strategy as SettingsStoreState["indexStrategy"]) ?? "active_and_switch",
+				);
+				setState("standbyTimeoutMinutes", config.standby_timeout_minutes ?? 5);
 			} catch (err) {
 				appLogger.error("config", "Failed to hydrate settings", err);
 			}
@@ -513,6 +555,11 @@ function createSettingsStore() {
 			save();
 		},
 
+		setTabOrderingMode(mode: TabOrderingMode): void {
+			setState("tabOrderingMode", mode);
+			save();
+		},
+
 		/** Set auto-show PR popover preference */
 		setAutoShowPrPopover(enabled: boolean): void {
 			setState("autoShowPrPopover", enabled);
@@ -522,6 +569,16 @@ function createSettingsStore() {
 		/** Set prevent-sleep-when-busy preference */
 		setPreventSleepWhenBusy(enabled: boolean): void {
 			setState("preventSleepWhenBusy", enabled);
+			save();
+		},
+
+		setStandbyTimeoutMinutes(minutes: number): void {
+			setState("standbyTimeoutMinutes", Math.max(0, Math.min(60, minutes)));
+			save();
+		},
+
+		setIndexStrategy(strategy: SettingsStoreState["indexStrategy"]): void {
+			setState("indexStrategy", strategy);
 			save();
 		},
 
@@ -586,6 +643,11 @@ function createSettingsStore() {
 		/** Set copy-on-select preference */
 		setCopyOnSelect(enabled: boolean): void {
 			setState("copyOnSelect", enabled);
+			save();
+		},
+
+		setShowLastPrompt(enabled: boolean): void {
+			setState("showLastPrompt", enabled);
 			save();
 		},
 
@@ -722,6 +784,7 @@ registerDebugSnapshot("settings", () => {
 		theme: s.theme,
 		language: s.language,
 		splitTabMode: s.splitTabMode,
+		tabOrderingMode: s.tabOrderingMode,
 		bellStyle: s.bellStyle,
 		updateChannel: s.updateChannel,
 		intentTabTitle: s.intentTabTitle,

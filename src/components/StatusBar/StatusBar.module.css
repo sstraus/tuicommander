@@ -51,16 +51,14 @@
   flex: 1 1 0;
   min-width: 60px;
   overflow: hidden;
+  transition: color 600ms ease-out;
 }
 
 .infoPulse {
-  animation: statusPulse 600ms ease-out;
+  color: var(--accent);
+  transition: color 600ms ease-out;
 }
 
-@keyframes statusPulse {
-  0% { color: var(--accent); }
-  100% { color: var(--fg-secondary); }
-}
 
 /* Pendulum ticker for overflowing notifications */
 .infoTicker {
@@ -100,6 +98,14 @@
 .cwd:hover {
   color: var(--fg-secondary);
   background: var(--bg-tertiary);
+}
+
+.cwdRoot {
+  opacity: 0.5;
+}
+
+.cwdSub {
+  color: var(--fg-primary);
 }
 
 .agentBadge {
@@ -379,6 +385,7 @@
 }
 
 .toggleBtn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -390,7 +397,7 @@
   font-size: var(--font-xs);
   cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .toggleBtn:focus-visible {

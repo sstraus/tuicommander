@@ -92,7 +92,7 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev mold
 
       - name: Install Vulkan SDK (Windows)
         if: matrix.platform == 'windows-latest'
@@ -120,6 +120,9 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -174,6 +177,14 @@ jobs:
         timeout-minutes: 60
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # sccache
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
+          CARGO_INCREMENTAL: "0"
+          CMAKE_C_COMPILER_LAUNCHER: "sccache"
+          CMAKE_CXX_COMPILER_LAUNCHER: "sccache"
+          # mold linker on Linux
+          RUSTFLAGS: ${{ matrix.label == 'Linux-x64' && '-C link-arg=-fuse-ld=mold' || '' }}
           APPLE_CERTIFICATE: ${{ secrets.DEVELOPER_ID_CERT_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
@@ -182,8 +193,9 @@ jobs:
           APPLE_API_KEY: ${{ secrets.NOTARIZE_KEY_ID }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          CMAKE_C_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Linux-x64' && '-fPIC' || '' }}
-          CMAKE_CXX_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Linux-x64' && '-fPIC' || '' }}
+          # whisper.cpp build flags per platform + /Z7 for sccache MSVC compat
+          CMAKE_C_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Linux-x64' && '-fPIC' || matrix.label == 'Windows-x64' && '/Z7' || '' }}
+          CMAKE_CXX_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Linux-x64' && '-fPIC' || matrix.label == 'Windows-x64' && '/Z7' || '' }}
         with:
           tauriScript: npx tauri
           tagName: nightly
@@ -252,6 +264,38 @@ jobs:
 
           gh release edit nightly --repo "$GITHUB_REPOSITORY" --notes-file "$NOTES"
           rm -f "$NOTES"
+
+      - name: Create versioned nightly release
+        if: needs.build.result == 'success'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(python3 -c "import json; print(json.load(open('src-tauri/tauri.conf.json'))['version'])")
+
+          # Only create versioned release when version contains -nightly
+          if [[ "$VERSION" != *-nightly* ]]; then
+            echo "Version $VERSION is not a nightly — skipping"
+            exit 0
+          fi
+
+          # Strip timestamp suffix to get base tag (1.2.6-nightly.20260525.t1343 → 1.2.6-nightly)
+          BASE="${VERSION%%-nightly*}-nightly"
+          TAG="v${BASE}"
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" &>/dev/null; then
+            echo "Release $TAG already exists — skipping"
+            exit 0
+          fi
+
+          echo "Creating versioned release: $TAG"
+          git tag -f "$TAG"
+          git push origin "$TAG" --force
+
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "TUICommander $TAG" \
+            --notes "Nightly build from \`main\`. Download the latest rolling build from the [nightly release](https://github.com/sstraus/tuicommander/releases/tag/nightly)." \
+            --prerelease
 
   retry-failed:
     needs: build

@@ -141,6 +141,19 @@
 - Theme-synced: ANSI CSS variables follow the active terminal theme
 - Grid-aligned positioning matches the underlying terminal metrics
 
+### 1.18 Command Blocks
+
+Terminal output is segmented into command blocks — one per prompt+output cycle. Blocks are detected via OSC 133 shell integration markers (A/C/D sequences) or OSC 7770;block= agent-emitted markers. For Claude Code, heuristic detection synthesizes blocks from tool call headers (`⏺ ToolName(args)`).
+
+- **Scrollbar marks** — Color-coded indicators on the scrollbar for each command block boundary. Provides a visual map of command history at a glance
+- **Timestamp overlay** — Hold `Ctrl+Cmd` to reveal timestamps showing when each block started, displayed as relative time (e.g. "2m ago")
+- **Gutter click** — Click the gutter area to select the entire block output for easy copying
+- **Block folding** — Collapse/expand block output with `Cmd+Shift+.` toggle. Folded blocks show a summary line. Backend stores fold state per session via `set_block_fold` Tauri command
+- **Block-scoped search** — Toggle with `Cmd+Shift+B` to restrict terminal search to the current block only
+- **Block navigation** — `Cmd+Shift+Up/Down` jumps between block boundaries
+- **Block cap** — Sessions are capped at 500 command blocks; oldest blocks are evicted when the cap is reached
+- **Settings** — Configure block features at Settings > Terminal > Blocks: show/hide timestamps, enable/disable folding
+
 ---
 
 ## 2. Sidebar
@@ -410,7 +423,7 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
   - **Video** — MP4, WebM, OGG, MOV — rendered as `<video>` with native controls
   - **Audio** — MP3, WAV, FLAC, AAC, M4A — rendered as `<audio>` with native controls
   - **Text / data** — TXT, JSON, CSV, LOG, XML, YAML, TOML, INI, CFG, CONF — raw text in a `<pre>` block
-- Header bar shows shortened file path with "Open in browser" / "Open externally" button
+- Header bar shows shortened file path with **Edit** button (pencil icon — opens file in code editor) and **Open externally** button
 - File content auto-refreshes on repository revision bumps (git change detection)
 - Uses Tauri's `convertFileSrc()` asset protocol for binary files, `read_external_file` IPC for text content
 - CSP allows `asset:` and `http://asset.localhost` in `frame-src` and `media-src`
@@ -1052,6 +1065,7 @@ Variables are resolved from the Rust backend (`resolve_context_variables`) and f
 - Terminal font: 11 bundled monospace fonts (JetBrains Mono default)
 - Default font size: 8-32px slider
 - Split tab mode: separate / unified
+- Tab ordering mode: grouped-by-type (default, tabs grouped by kind), terminals-first (terminals left, others freely interleaved), free (any tab anywhere)
 - Max tab name length: 10-60 slider
 - Repository groups: create, rename, delete, color-coded
 - Reset panel sizes: restore sidebar and panel widths to defaults
@@ -1176,7 +1190,16 @@ All data persisted to platform config directory via Rust:
 - Call graph queries (calls, callers, impact analysis) via `code_graph` tool
 - Requires `mdkb` binary on PATH (installed separately)
 
-### 14.8 macOS Dock Badge
+### 14.8 Code Intelligence (MDKB integration)
+- Go-to-definition: Cmd+Click on symbols in the editor navigates to the definition via `mdkb_goto_definition`
+- Find references: Shift+F12 finds all callers of a symbol via `mdkb_references` (uses code_graph callers query)
+- Symbol outline: file-level symbol tree via `mdkb_outline` (functions, types, structs)
+- Install/uninstall managed from Settings → General → Code Intelligence
+- `is_available()` checks binary existence on disk (not cached path) — survives external uninstalls
+- Homebrew-managed installs show `brew uninstall mdkb` guidance instead of silent failure
+- Graceful fallback: all commands return empty results when mdkb is unavailable
+
+### 14.9 macOS Dock Badge
 - Badge count for attention-requiring notifications (questions, errors)
 
 ### 14.9 Tailscale HTTPS
@@ -1211,6 +1234,10 @@ All data persisted to platform config directory via Rust:
 | `Shift+PageDown` | Scroll one page down |
 | `Cmd+R` | Run saved command |
 | `Cmd+Shift+R` | Edit and run command |
+| `Cmd+Shift+.` | Toggle block folding |
+| `Cmd+Shift+Up` | Jump to previous block |
+| `Cmd+Shift+Down` | Jump to next block |
+| `Cmd+Shift+B` | Toggle block-scoped search |
 
 ### Zoom
 | Shortcut | Action |
@@ -1839,3 +1866,26 @@ TUICommander aggregates upstream MCP servers and exposes them through its own `/
 - `remoteEventBridge.ts` subscribes to server-sent events from remote daemons
 - Bridges remote events (repo changes, PTY output, agent status) into local stores
 - Automatic reconnection on connection loss
+
+---
+
+## 25. Generators
+
+Secure value generators accessible from the command palette (`open-generators` action).
+
+### 25.1 Available Generators
+- **Password** — Configurable length, character classes (uppercase, lowercase, digits, symbols)
+- **UUID v4** — Standard random UUID (RFC 4122)
+- **UUID v7** — Time-ordered UUID (RFC 9562)
+- **ULID** — Universally unique lexicographic identifier
+- **CUID2** — Collision-resistant unique identifier
+- **JWT Secret** — 256-bit random hex key
+- **TOTP Secret** — RFC 4226 base32 secret (160-bit)
+- **Nano ID** — URL-friendly random ID with configurable length
+- **Slug** — adjective-noun-NNNN random slug
+- **Ed25519 Key Pair** — Public + private key pair
+
+### 25.2 Architecture
+- All generation happens in the Rust backend (`generators.rs`) via the `ring` crate for cryptographic randomness
+- Frontend is a modal dialog with copy-to-clipboard and regenerate actions
+- Password and Nano ID have configurable options (length, character classes)

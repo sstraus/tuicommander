@@ -80,7 +80,10 @@ where
     P: AsRef<Path>,
 {
     let mut res = Vec::new();
-    File::open(path.as_ref()).unwrap().read_to_end(&mut res).unwrap();
+    File::open(path.as_ref())
+        .unwrap()
+        .read_to_end(&mut res)
+        .unwrap();
 
     res
 }
@@ -107,8 +110,10 @@ fn ref_test(dir: &Path) {
     let grid: Grid<Cell> = json::from_str(&serialized_grid).unwrap();
     let ref_config: RefConfig = json::from_str(&serialized_cfg).unwrap();
 
-    let options =
-        Config { scrolling_history: ref_config.history_size as usize, ..Default::default() };
+    let options = Config {
+        scrolling_history: ref_config.history_size as usize,
+        ..Default::default()
+    };
 
     let mut terminal = Term::new(options, &size, Mock);
     let mut parser: ansi::Processor = ansi::Processor::new();
@@ -121,6 +126,13 @@ fn ref_test(dir: &Path) {
     term_grid.truncate();
 
     if grid != term_grid {
+        if std::env::var("ALACRITTY_REGEN_FIXTURES").is_ok() {
+            let new_json = json::to_string(&term_grid).unwrap();
+            fs::write(dir.join("grid.json"), new_json).unwrap();
+            println!("Regenerated {}", dir.display());
+            return;
+        }
+
         for i in 0..grid.total_lines() {
             for j in 0..grid.columns() {
                 let cell = &term_grid[Line(i as i32)][Column(j)];

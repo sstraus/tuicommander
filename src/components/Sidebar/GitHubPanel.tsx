@@ -56,6 +56,7 @@ export const GitHubPanel: Component<{
 	const [cleanupExecuting, setCleanupExecuting] = createSignal(false);
 	const [cleanupStepStatuses, setCleanupStepStatuses] = createSignal<Partial<Record<StepId, StepStatus>>>({});
 	const [cleanupStepErrors, setCleanupStepErrors] = createSignal<Partial<Record<StepId, string>>>({});
+	const [cleanupStepNotes, setCleanupStepNotes] = createSignal<Partial<Record<StepId, string>>>({});
 
 	createEffect(() => {
 		props.onCleanupActive?.(!!cleanupCtx());
@@ -88,6 +89,7 @@ export const GitHubPanel: Component<{
 		setCleanupExecuting(true);
 		setCleanupStepStatuses({});
 		setCleanupStepErrors({});
+		setCleanupStepNotes({});
 
 		await executeCleanup({
 			repoPath: props.repoPath,
@@ -103,6 +105,7 @@ export const GitHubPanel: Component<{
 				setCleanupStepStatuses((prev) => ({ ...prev, [id]: result }));
 				if (error) setCleanupStepErrors((prev) => ({ ...prev, [id]: error }));
 			},
+			onStepNote: (id, note) => setCleanupStepNotes((prev) => ({ ...prev, [id]: note })),
 		});
 
 		setCleanupExecuting(false);
@@ -197,6 +200,7 @@ export const GitHubPanel: Component<{
 						executing={cleanupExecuting()}
 						stepStatuses={cleanupStepStatuses()}
 						stepErrors={cleanupStepErrors()}
+						stepNotes={cleanupStepNotes()}
 					/>
 				)}
 			</Show>

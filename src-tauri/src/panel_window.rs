@@ -1,7 +1,28 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[cfg(feature = "desktop")]
 use tauri::{Emitter, Manager};
+
+const PANEL_GEOMETRY_FILE: &str = "panel-geometry.json";
+
+#[derive(Clone, Default, Serialize, Deserialize)]
+struct PanelGeometry {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+type PanelGeometryMap = HashMap<String, PanelGeometry>;
+
+fn load_geometry() -> PanelGeometryMap {
+    crate::config::load_json_config(PANEL_GEOMETRY_FILE)
+}
+
+fn save_geometry(map: &PanelGeometryMap) {
+    let _ = crate::config::save_json_config(PANEL_GEOMETRY_FILE, map);
+}
 
 fn validate_panel_id(id: &str) -> Result<(), String> {
     if id.is_empty() || id.len() > 64 || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
@@ -38,23 +59,71 @@ pub async fn open_panel_window(
             query.push_str(&encoded);
         }
     }
+
+    let saved = load_geometry();
+    let geo = saved.get(&panel_id);
+
+    let w = geo.map_or_else(|| width.unwrap_or(500.0), |g| f64::from(g.width));
+    let h = geo.map_or_else(|| height.unwrap_or(600.0), |g| f64::from(g.height));
+
     let url = tauri::WebviewUrl::App(format!("/?{query}").into());
-    let window = tauri::WebviewWindowBuilder::new(&app, &label, url)
+    let mut builder = tauri::WebviewWindowBuilder::new(&app, &label, url)
         .title(&title)
-        .inner_size(width.unwrap_or(500.0), height.unwrap_or(600.0))
-        .min_inner_size(300.0, 300.0)
+        .inner_size(w, h)
+        .min_inner_size(300.0, 300.0);
+
+    if let Some(g) = geo {
+        builder = builder.position(f64::from(g.x), f64::from(g.y));
+    }
+
+    let window = builder
         .build()
         .map_err(|e| format!("Failed to create panel window: {e}"))?;
 
+    let panel_id_close = panel_id.clone();
     let app_handle = app.clone();
-    window.on_window_event(move |event| {
-        if let tauri::WindowEvent::Destroyed = event
-            && let Err(e) = app_handle.emit("panel-window-closed", &panel_id)
-        {
-            tracing::warn!("Failed to emit panel-window-closed for {panel_id}: {e}");
+    window.on_window_event(move |event| match event {
+        tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed => {
+            if let tauri::WindowEvent::CloseRequested { .. } = event
+                && let Some(w) = app_handle.get_webview_window(&format!("panel-{panel_id_close}"))
+            {
+                save_window_geometry(&panel_id_close, &w);
+            }
+            if let tauri::WindowEvent::Destroyed = event
+                && let Err(e) = app_handle.emit("panel-window-closed", &panel_id_close)
+            {
+                tracing::warn!(
+                    "Failed to emit panel-window-closed for {}: {e}",
+                    panel_id_close
+                );
+            }
         }
+        _ => {}
     });
     Ok(())
+}
+
+fn save_window_geometry(panel_id: &str, window: &tauri::WebviewWindow) {
+    let Ok(pos) = window.outer_position() else {
+        return;
+    };
+    let Ok(size) = window.inner_size() else {
+        return;
+    };
+    if size.width < 100 || size.height < 100 {
+        return;
+    }
+    let mut map = load_geometry();
+    map.insert(
+        panel_id.to_string(),
+        PanelGeometry {
+            x: pos.x,
+            y: pos.y,
+            width: size.width,
+            height: size.height,
+        },
+    );
+    save_geometry(&map);
 }
 
 #[tauri::command]
@@ -72,6 +141,7 @@ pub async fn close_panel_window(app: tauri::AppHandle, panel_id: String) -> Resu
     validate_panel_id(&panel_id)?;
     let label = format!("panel-{panel_id}");
     if let Some(w) = app.get_webview_window(&label) {
+        save_window_geometry(&panel_id, &w);
         w.destroy().map_err(|e| e.to_string())?;
     }
     Ok(())

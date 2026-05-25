@@ -13,9 +13,9 @@
 
 /* File drag-over highlight (applied by dragDrop.ts via global class) */
 .tabBarWrapper:global(.drop-target-hover) {
-  background: rgba(var(--accent-rgb, 99, 102, 241), 0.08);
-  outline: 1px dashed var(--accent);
-  outline-offset: -1px;
+  background: rgba(var(--accent-rgb, 99, 102, 241), 0.18);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 /* Scroll region — contains arrows, fades, and the scrollable tab list */
@@ -298,6 +298,16 @@
   font-size: var(--font-3xs);
 }
 
+.tab.standby {
+  opacity: 0.5;
+}
+
+.standbyBadge {
+  opacity: 0.6;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
 /* Awaiting input — override tabIcon to show state via left dot */
 .tab.awaitingInput .tabIcon {
   opacity: 1;
@@ -461,18 +471,17 @@
   opacity: 0.8;
 }
 
-/* Detached to floating window */
+/* Detached to floating window — dim name but keep status dot colors */
 .tab.detached {
-  opacity: 0.5;
   border-bottom: 2px dashed var(--text-secondary, #848d97);
 }
 
-.tab.detached:hover {
-  opacity: 0.75;
+.tab.detached .tabName {
+  opacity: 0.5;
 }
 
-.tab.detached .tabIcon {
-  opacity: 0.4;
+.tab.detached:hover .tabName {
+  opacity: 0.75;
 }
 
 .detachedIcon {
@@ -487,26 +496,20 @@
   opacity: 0.4;
 }
 
-.tab.dragOverLeft::before {
-  content: "";
-  position: absolute;
-  left: -1px;
-  top: 4px;
-  bottom: 4px;
-  width: 2px;
-  background: var(--accent);
-  z-index: 10;
+.tab.dragOverLeft {
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
-.tab.dragOverRight::after {
-  content: "";
-  position: absolute;
-  right: -1px;
-  top: 4px;
-  bottom: 4px;
-  width: 2px;
-  background: var(--accent);
-  z-index: 10;
+.tab.dragOverRight {
+  box-shadow: inset -2px 0 0 var(--accent);
+}
+
+.tab.dragOverLeft.dragInvalid {
+  box-shadow: inset 2px 0 0 var(--color-error, #ef4444);
+}
+
+.tab.dragOverRight.dragInvalid {
+  box-shadow: inset -2px 0 0 var(--color-error, #ef4444);
 }
 
 /* Quick switcher shortcut badges */
