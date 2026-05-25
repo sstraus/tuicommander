@@ -40,6 +40,7 @@ pub(crate) mod mcp_upstream_config;
 #[allow(dead_code)] // Used by OAuth discovery (story 1193-7f78), not yet wired
 pub(crate) mod mcp_upstream_credentials;
 pub(crate) mod mdkb_client;
+#[cfg(feature = "desktop")]
 pub(crate) mod mdkb_commands;
 pub(crate) mod mdkb_daemon;
 #[cfg(feature = "desktop")]
