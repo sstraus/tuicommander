@@ -52,7 +52,7 @@ export interface GitOperationsDeps {
 			branchName: string,
 			createBranch?: boolean,
 			baseRef?: string,
-		) => Promise<{ name: string; path: string; branch: string; base_repo: string }>;
+		) => Promise<{ status: "ok" | "pending"; name: string; path: string; branch: string; base_repo: string }>;
 		renameBranch: (repoPath: string, oldName: string, newName: string) => Promise<void>;
 		generateWorktreeName: (existingNames: string[]) => Promise<string>;
 		generateCloneBranchName: (sourceBranch: string, existingNames: string[]) => Promise<string>;
@@ -113,6 +113,8 @@ export function useGitOperations(deps: GitOperationsDeps) {
 	const [repoStatus, setRepoStatus] = createSignal<"clean" | "dirty" | "conflict" | "merge" | "unknown">("unknown");
 	const [branchToRename, setBranchToRename] = createSignal<{ repoPath: string; branchName: string } | null>(null);
 	const [creatingWorktreeRepos, setCreatingWorktreeRepos] = createSignal<Set<string>>(new Set());
+	// Key: `${repoPath}::${branchName}` — prevents concurrent remove calls for same branch
+	const [removingBranches, setRemovingBranches] = createSignal<Set<string>>(new Set());
 	const [worktreeDialogState, setWorktreeDialogState] = createSignal<{
 		repoPath: string;
 		suggestedName: string;
@@ -394,10 +396,15 @@ export function useGitOperations(deps: GitOperationsDeps) {
 							continue;
 						}
 						appLogger.debug("git", `refreshAllBranchStats: setBranch "${branchName}"`, { worktreePath: wtPath });
-						repositoriesStore.setBranch(repoPath, branchName, {
+						const update: Partial<import("../stores/repositories").BranchState> = {
 							worktreePath: wtPath,
 							isMerged: mergedSet.has(branchName),
-						});
+						};
+						// Branch finished background preparation — clear placeholder state
+						if (liveRepo?.branches[branchName]?.isPreparing) {
+							update.isPreparing = false;
+						}
+						repositoriesStore.setBranch(repoPath, branchName, update);
 					}
 					// Migrate terminal state from stale activeBranch to its replacement
 					if (active && activeBranchReplacement && toRemove.includes(active)) {
@@ -846,15 +853,32 @@ export function useGitOperations(deps: GitOperationsDeps) {
 	};
 
 	const handleRemoveBranch = async (repoPath: string, branchName: string) => {
+		const removeKey = `${repoPath}::${branchName}`;
+		// Lock IMMEDIATELY (synchronously) to prevent concurrent invocations that race the awaits below
+		if (removingBranches().has(removeKey)) return;
+		setRemovingBranches((prev) => new Set([...prev, removeKey]));
+
+		const clearLock = () => {
+			setRemovingBranches((prev) => {
+				const next = new Set(prev);
+				next.delete(removeKey);
+				return next;
+			});
+		};
+
 		const repoState = repositoriesStore.get(repoPath);
 		const branch = repoState?.branches[branchName];
 		if (!branch?.worktreePath) {
 			deps.setStatusInfo(`Cannot remove ${branchName}: not a worktree`);
+			clearLock();
 			return;
 		}
 
 		const confirmed = await deps.dialogs.confirmRemoveWorktree(branchName);
-		if (!confirmed) return;
+		if (!confirmed) {
+			clearLock();
+			return;
+		}
 
 		for (const termId of branch.terminals) {
 			await deps.closeTerminal(termId, true);
@@ -868,6 +892,10 @@ export function useGitOperations(deps: GitOperationsDeps) {
 			worktreePath: branch.worktreePath,
 			deleteBranch,
 		});
+
+		// Show "Removing…" in sidebar (user has confirmed)
+		repositoriesStore.setBranch(repoPath, branchName, { isRemoving: true });
+
 		// Tracks whether to remove the branch from the store at the end.
 		// Set to true on success or non-fatal non-lock errors (old "remove from UI" behavior).
 		// Stays false when: locked+cancelled, or force-remove failed (worktree still in git).
@@ -881,12 +909,15 @@ export function useGitOperations(deps: GitOperationsDeps) {
 			const reason = err instanceof Error ? err.message : String(err);
 			if (reason.startsWith("worktree_locked:")) {
 				// Worktree is locked by a Claude agent — ask user to confirm force removal
+				repositoriesStore.setBranch(repoPath, branchName, { isRemoving: false });
 				appLogger.warn("git", `handleRemoveBranch: worktree locked — showing confirmation dialog`, { branchName, reason });
 				const forceConfirmed = await (deps.dialogs.confirmRemoveLockedWorktree?.(branchName) ?? false);
 				if (!forceConfirmed) {
 					appLogger.info("git", `handleRemoveBranch: user cancelled force removal of locked worktree`, { branchName });
-					return; // user cancelled — do NOT touch the store
+					clearLock();
+					return;
 				}
+				repositoriesStore.setBranch(repoPath, branchName, { isRemoving: true });
 				try {
 					await deps.repo.removeWorktree(repoPath, branchName, deleteBranch, true);
 					appLogger.info("git", `handleRemoveBranch: force remove_worktree SUCCESS`, { branchName });
@@ -896,26 +927,33 @@ export function useGitOperations(deps: GitOperationsDeps) {
 					const forceReason = forceErr instanceof Error ? forceErr.message : String(forceErr);
 					appLogger.error("git", `handleRemoveBranch: force remove_worktree FAILED`, { branchName, reason: forceReason });
 					deps.setStatusInfo(`Failed to remove ${branchName}: ${forceReason}`);
-					return; // worktree still exists in git — don't remove from store or it'll resurrect
+					repositoriesStore.setBranch(repoPath, branchName, { isRemoving: false });
+					clearLock();
+					return;
 				}
 			} else if (reason.startsWith("worktree_is_main:")) {
-				// Branch is checked out in the main repo directory, not a linked worktree.
-				// Do NOT remove from store — the branch is legitimately there.
 				appLogger.warn("git", `handleRemoveBranch: branch is in main worktree — cannot remove as worktree`, { branchName });
 				deps.setStatusInfo(`Cannot remove ${branchName}: branch is in the main worktree, not a linked worktree`);
+				repositoriesStore.setBranch(repoPath, branchName, { isRemoving: false });
+				clearLock();
 				return;
 			} else {
 				appLogger.error("git", `handleRemoveBranch: remove_worktree FAILED — branch will be removed from UI only`, {
 					branchName,
 					reason,
 				});
-				shouldRemoveFromStore = true; // preserve old behavior for non-lock failures
+				shouldRemoveFromStore = true;
 				deps.setStatusInfo(`Removed ${branchName} from UI (worktree removal failed)`);
 			}
 		}
 
-		if (!shouldRemoveFromStore) return;
+		if (!shouldRemoveFromStore) {
+			repositoriesStore.setBranch(repoPath, branchName, { isRemoving: false });
+			clearLock();
+			return;
+		}
 		appLogger.info("git", `handleRemoveBranch: calling removeBranch on store`, { branchName });
+		clearLock();
 		repositoriesStore.removeBranch(repoPath, branchName);
 		repoSettingsStore.setLabel(repoPath, branchName, null);
 	};
@@ -1183,9 +1221,20 @@ export function useGitOperations(deps: GitOperationsDeps) {
 				options.baseRef,
 			);
 
-			// Close dialog only on success
 			setWorktreeDialogState(null);
-			await setupNewWorktree(repoPath, result, options.branchName);
+
+			if (result.status === "pending") {
+				// Stale directory being cleaned up in background — show placeholder
+				markRecentlyCreated(repoPath, result.branch);
+				repositoriesStore.setBranch(repoPath, result.branch, {
+					worktreePath: result.path,
+					isPreparing: true,
+				});
+				repositoriesStore.setActiveBranch(repoPath, result.branch);
+				deps.setStatusInfo(`Preparing worktree ${options.branchName}...`);
+			} else {
+				await setupNewWorktree(repoPath, result, options.branchName);
+			}
 		} catch (err) {
 			appLogger.error("git", "Failed to create worktree", err);
 			deps.setStatusInfo(`Failed to create worktree: ${err}`);

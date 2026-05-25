@@ -339,7 +339,37 @@ export const BranchItem: Component<{
 		return items;
 	};
 
+	const isPendingOp = () => props.branch.isPreparing || props.branch.isRemoving;
+	const pendingLabel = () => (props.branch.isRemoving ? "Removing…" : "Preparing…");
+
 	return (
+		<Show
+			when={!isPendingOp()}
+			fallback={
+				<div
+					class={cx(s.branchItem, s.branchPreparing)}
+					aria-busy="true"
+					aria-label={`${pendingLabel()} ${props.branch.name}`}
+				>
+					<BranchIcon
+						isMainBranch={false}
+						isMainWorktree={false}
+						isShell={false}
+						hasError={false}
+						hasQuestion={false}
+						hasBusy={true}
+						hasUnseen={false}
+						repoHasTerminals={false}
+					/>
+					<div class={s.branchContent}>
+						<span class={s.branchName} style={{ opacity: "0.5" }}>
+							{props.branch.name}
+						</span>
+						<span class={b.subLabel}>{pendingLabel()}</span>
+					</div>
+				</div>
+			}
+		>
 		<div class={cx(s.branchItem, props.isActive && s.active)} onClick={props.onSelect} onContextMenu={ctxMenu.open}>
 			<BranchIcon
 				isMainBranch={props.branch.isMain}
@@ -443,6 +473,7 @@ export const BranchItem: Component<{
 				onClose={ctxMenu.close}
 			/>
 		</div>
+		</Show>
 	);
 };
 

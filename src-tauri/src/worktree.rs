@@ -133,13 +133,23 @@ pub(crate) fn create_worktree_internal(
     let worktree_name = sanitize_name(&config.task_name);
     let worktree_path = worktrees_dir.join(&worktree_name);
 
-    // Check if worktree already exists
+    // Check if worktree already exists (idempotent return — stale cleanup is caller's responsibility)
     if worktree_path.exists() {
-        // Return existing worktree info
+        let actual_branch = crate::git::read_branch_from_head(&worktree_path);
+        if let Some(ref expected) = config.branch {
+            if actual_branch.as_deref() != Some(expected.as_str()) {
+                return Err(format!(
+                    "STALE_DIR: directory '{}' is checked out on branch '{}', not '{}'",
+                    worktree_path.display(),
+                    actual_branch.as_deref().unwrap_or("<detached>"),
+                    expected,
+                ));
+            }
+        }
         return Ok(WorktreeInfo {
             name: worktree_name,
             path: worktree_path,
-            branch: config.branch.clone(),
+            branch: actual_branch,
             base_repo: PathBuf::from(&config.base_repo),
         });
     }
@@ -183,10 +193,21 @@ pub(crate) fn create_worktree_internal(
         Err(crate::git_cli::GitError::NonZeroExit { ref stderr, .. })
             if stderr.contains("already exists") || stderr.contains("already checked out") =>
         {
+            let actual_branch = crate::git::read_branch_from_head(&worktree_path);
+            if let Some(ref expected) = config.branch {
+                if actual_branch.as_deref() != Some(expected.as_str()) {
+                    return Err(format!(
+                        "Directory '{}' already exists and is checked out on branch '{}', not '{}'",
+                        worktree_path.display(),
+                        actual_branch.as_deref().unwrap_or("<detached>"),
+                        expected,
+                    ));
+                }
+            }
             return Ok(WorktreeInfo {
                 name: worktree_name,
                 path: worktree_path,
-                branch: config.branch.clone(),
+                branch: actual_branch,
                 base_repo: PathBuf::from(&config.base_repo),
             });
         }
@@ -412,7 +433,7 @@ pub(crate) fn generate_clone_branch_name(source_branch: &str, existing: &[String
 /// Create a worktree without a PTY session
 #[cfg(feature = "desktop")]
 #[tauri::command]
-pub(crate) fn create_worktree(
+pub(crate) async fn create_worktree(
     state: State<'_, Arc<AppState>>,
     base_repo: String,
     branch_name: String,
@@ -428,15 +449,99 @@ pub(crate) fn create_worktree(
 
     let worktrees_dir =
         resolve_worktree_dir_for_repo(Path::new(&config.base_repo), &state.worktrees_dir);
-    let worktree = create_worktree_internal(&worktrees_dir, &config, base_ref.as_deref())?;
-    state.invalidate_repo_caches(&config.base_repo);
 
-    Ok(serde_json::json!({
-        "name": worktree.name,
-        "path": worktree.path.to_string_lossy(),
-        "branch": worktree.branch,
-        "base_repo": worktree.base_repo.to_string_lossy(),
-    }))
+    // All git operations are blocking — run them off the async executor
+    let first = {
+        let d = worktrees_dir.clone();
+        let c = config.clone();
+        let r = base_ref.clone();
+        tokio::task::spawn_blocking(move || create_worktree_internal(&d, &c, r.as_deref()))
+            .await
+            .map_err(|e| format!("Task panic: {e}"))?
+    };
+
+    match first {
+        Ok(worktree) => {
+            state.invalidate_repo_caches(&config.base_repo);
+            Ok(serde_json::json!({
+                "status": "ok",
+                "name": worktree.name,
+                "path": worktree.path.to_string_lossy(),
+                "branch": worktree.branch,
+                "base_repo": worktree.base_repo.to_string_lossy(),
+            }))
+        }
+        Err(ref e) if e.starts_with("STALE_DIR:") => {
+            // Stale directory: return immediately with pending status, clean up + recreate in background
+            let stale_path = worktrees_dir.join(sanitize_name(&config.task_name));
+            let worktree_name = sanitize_name(&config.task_name);
+            let state_arc = Arc::clone(&*state);
+            let config_bg = config.clone();
+            let worktrees_dir_bg = worktrees_dir.clone();
+            let base_ref_bg = base_ref.clone();
+
+            tokio::spawn(async move {
+                // Try git worktree remove first (for registered worktrees)
+                let git_ok = tokio::task::spawn_blocking({
+                    let p = stale_path.clone();
+                    let r = PathBuf::from(&config_bg.base_repo);
+                    move || {
+                        git_cmd(&r)
+                            .args(["worktree", "remove", "--force", &p.to_string_lossy()])
+                            .run()
+                            .is_ok()
+                    }
+                })
+                .await
+                .unwrap_or(false);
+
+                if !git_ok {
+                    if let Err(e) = tokio::fs::remove_dir_all(&stale_path).await {
+                        tracing::error!("create_worktree: failed to remove stale dir: {e}");
+                        return;
+                    }
+                }
+
+                // Recreate worktree
+                let result = tokio::task::spawn_blocking({
+                    let d = worktrees_dir_bg.clone();
+                    let c = config_bg.clone();
+                    let r = base_ref_bg.clone();
+                    move || create_worktree_internal(&d, &c, r.as_deref())
+                })
+                .await;
+
+                match result {
+                    Ok(Ok(_)) => {
+                        state_arc.invalidate_repo_caches(&config_bg.base_repo);
+                        // Emit repo-changed so the JS refresh picks up the new worktree
+                        // and clears the isPreparing placeholder
+                        if let Some(ref handle) = *state_arc.app_handle.read() {
+                            use tauri::Emitter as _;
+                            let _ = handle.emit(
+                                "repo-changed",
+                                crate::repo_watcher::RepoChangedPayload {
+                                    repo_path: config_bg.base_repo.clone(),
+                                },
+                            );
+                        }
+                    }
+                    Ok(Err(e)) => tracing::error!("create_worktree background: recreation failed: {e}"),
+                    Err(e) => tracing::error!("create_worktree background: task panicked: {e}"),
+                }
+            });
+
+            // Return pending immediately — JS will show placeholder until repo-changed fires
+            Ok(serde_json::json!({
+                "status": "pending",
+                "name": worktree_name,
+                "path": worktrees_dir.join(sanitize_name(&config.task_name)).to_string_lossy(),
+                "branch": config.branch,
+                "base_repo": config.base_repo,
+            }))
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// Get worktrees directory path.
@@ -538,7 +643,7 @@ pub(crate) fn remove_worktree_by_branch(
 /// `delete_branch` defaults to `true` when omitted (preserving existing behavior).
 #[cfg(feature = "desktop")]
 #[tauri::command]
-pub(crate) fn remove_worktree(
+pub(crate) async fn remove_worktree(
     state: State<'_, Arc<AppState>>,
     repo_path: String,
     branch_name: String,
@@ -556,7 +661,15 @@ pub(crate) fn remove_worktree(
         "remove_worktree command: invoked"
     );
     let script = resolve_archive_script(&repo_path);
-    match remove_worktree_by_branch(&repo_path, &branch_name, delete_branch, script.as_deref(), force) {
+    let repo_path_clone = repo_path.clone();
+    let branch_name_clone = branch_name.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        remove_worktree_by_branch(&repo_path_clone, &branch_name_clone, delete_branch, script.as_deref(), force)
+    })
+    .await
+    .map_err(|e| format!("Task panic: {e}"))?;
+
+    match result {
         Ok(()) => {
             tracing::info!(source = "worktree", branch = %branch_name, "remove_worktree command: SUCCESS — invalidating caches");
             crate::config::remove_branch_label(&repo_path, &branch_name);
@@ -1505,6 +1618,65 @@ mod tests {
 
         // Both should return same path
         assert_eq!(result1.unwrap().path, result2.unwrap().path);
+    }
+
+    #[test]
+    fn test_create_worktree_stale_dir_returns_stale_error() {
+        // Scenario: directory exists but is checked out on a DIFFERENT branch
+        // than the one requested → create_worktree_internal must return STALE_DIR error.
+        let repo = setup_test_repo();
+        let worktrees_dir = repo.path().join("worktrees");
+
+        // Create branch-a worktree first
+        let config_a = WorktreeConfig {
+            task_name: "shared-name".to_string(),
+            base_repo: repo.path().to_string_lossy().to_string(),
+            branch: Some("branch-a".to_string()),
+            create_branch: true,
+        };
+        create_worktree_internal(&worktrees_dir, &config_a, None)
+            .expect("Failed to create branch-a worktree");
+
+        // Now attempt to create at same path but with branch-b → should be STALE_DIR
+        let config_b = WorktreeConfig {
+            task_name: "shared-name".to_string(),
+            base_repo: repo.path().to_string_lossy().to_string(),
+            branch: Some("branch-b".to_string()),
+            create_branch: true,
+        };
+        let result = create_worktree_internal(&worktrees_dir, &config_b, None);
+
+        assert!(result.is_err(), "expected STALE_DIR error, got Ok");
+        let err = result.unwrap_err();
+        assert!(
+            err.starts_with("STALE_DIR:"),
+            "expected STALE_DIR prefix, got: {err}"
+        );
+        assert!(err.contains("branch-a"), "expected actual branch 'branch-a' in error: {err}");
+        assert!(err.contains("branch-b"), "expected expected branch 'branch-b' in error: {err}");
+    }
+
+    #[test]
+    fn test_create_worktree_same_branch_is_idempotent() {
+        // Scenario: directory exists with the SAME branch → should succeed (idempotent)
+        let repo = setup_test_repo();
+        let worktrees_dir = repo.path().join("worktrees");
+
+        let config = WorktreeConfig {
+            task_name: "same-task".to_string(),
+            base_repo: repo.path().to_string_lossy().to_string(),
+            branch: Some("feature/x".to_string()),
+            create_branch: true,
+        };
+        let first = create_worktree_internal(&worktrees_dir, &config, None)
+            .expect("First create should succeed");
+
+        // Second call with same branch should succeed and return same path with actual branch
+        let second = create_worktree_internal(&worktrees_dir, &config, None)
+            .expect("Second create should succeed (idempotent same-branch)");
+
+        assert_eq!(first.path, second.path);
+        assert_eq!(second.branch, Some("feature/x".to_string()));
     }
 
     #[test]

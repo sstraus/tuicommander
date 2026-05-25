@@ -402,6 +402,12 @@
   padding-left: 6px;
 }
 
+.branchPreparing {
+  cursor: default;
+  pointer-events: none;
+  opacity: 0.6;
+}
+
 .branchIcon {
   font-size: var(--font-md);
   width: 18px;

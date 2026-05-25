@@ -87,6 +87,7 @@ export function useRepository() {
 		createBranch?: boolean,
 		baseRef?: string,
 	): Promise<{
+		status: "ok" | "pending";
 		name: string;
 		path: string;
 		branch: string;
