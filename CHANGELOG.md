@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.6-nightly] - 2026-05-25
+
 ### Added
 - **Command block system** — Terminal output is segmented into command blocks (one per prompt+output cycle). Features include: semantic scrollbar marks with color-coded indicators, block timestamp overlay (hold `Ctrl+Cmd`), gutter click to select entire block output, block folding with `Cmd+Shift+.` toggle, block-scoped search with `Cmd+Shift+B` toggle, block navigation with `Cmd+Shift+Up/Down`, cap at 500 blocks per session (oldest evicted), and OSC 7770;block= agent-emitted block markers. Settings at `Settings > Terminal > Blocks`.
 - **Heuristic agent-block detection** — Claude Code tool calls (`⏺ ToolName(args)`) are now detected heuristically and synthesized into AgentBlock start/end events, so the block system works without CC emitting OSC 7770 sequences.
