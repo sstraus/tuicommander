@@ -135,11 +135,21 @@ pub(crate) fn create_worktree_internal(
 
     // Check if worktree already exists
     if worktree_path.exists() {
-        // Return existing worktree info
+        let actual_branch = crate::git::read_branch_from_head(&worktree_path);
+        if let Some(ref requested) = config.branch {
+            if let Some(ref actual) = actual_branch {
+                if actual != requested {
+                    return Err(format!(
+                        "Directory already exists but is on branch '{actual}', not '{requested}'. \
+                         Remove the stale worktree first."
+                    ));
+                }
+            }
+        }
         return Ok(WorktreeInfo {
             name: worktree_name,
             path: worktree_path,
-            branch: config.branch.clone(),
+            branch: actual_branch.or_else(|| config.branch.clone()),
             base_repo: PathBuf::from(&config.base_repo),
         });
     }
@@ -183,10 +193,11 @@ pub(crate) fn create_worktree_internal(
         Err(crate::git_cli::GitError::NonZeroExit { ref stderr, .. })
             if stderr.contains("already exists") || stderr.contains("already checked out") =>
         {
+            let actual_branch = crate::git::read_branch_from_head(&worktree_path);
             return Ok(WorktreeInfo {
                 name: worktree_name,
                 path: worktree_path,
-                branch: config.branch.clone(),
+                branch: actual_branch.or_else(|| config.branch.clone()),
                 base_repo: PathBuf::from(&config.base_repo),
             });
         }
@@ -1392,6 +1403,63 @@ mod tests {
 
         // Both should return same path
         assert_eq!(result1.unwrap().path, result2.unwrap().path);
+    }
+
+    #[test]
+    fn test_create_worktree_stale_dir_wrong_branch_errors() {
+        let repo = setup_test_repo();
+        let worktrees_dir = repo.path().join("worktrees");
+
+        // Create a worktree on the default branch (main/master)
+        let config_a = WorktreeConfig {
+            task_name: "stale-test".to_string(),
+            base_repo: repo.path().to_string_lossy().to_string(),
+            branch: None,
+            create_branch: false,
+        };
+        let result = create_worktree_internal(&worktrees_dir, &config_a, None);
+        assert!(result.is_ok());
+
+        // Now try to create a worktree with a DIFFERENT branch at the same path
+        let config_b = WorktreeConfig {
+            task_name: "stale-test".to_string(),
+            base_repo: repo.path().to_string_lossy().to_string(),
+            branch: Some("nonexistent-branch".to_string()),
+            create_branch: false,
+        };
+        let result = create_worktree_internal(&worktrees_dir, &config_b, None);
+        assert!(result.is_err(), "Should error when directory exists on a different branch");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("already exists but is on branch"),
+            "Error should mention branch mismatch, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_create_worktree_idempotent_returns_actual_branch() {
+        let repo = setup_test_repo();
+        let worktrees_dir = repo.path().join("worktrees");
+
+        // Create a branch and worktree
+        git_cmd(repo.path())
+            .args(["branch", "feature/actual"])
+            .run()
+            .expect("branch create");
+
+        let config = WorktreeConfig {
+            task_name: "branch-check".to_string(),
+            base_repo: repo.path().to_string_lossy().to_string(),
+            branch: Some("feature/actual".to_string()),
+            create_branch: false,
+        };
+        let result = create_worktree_internal(&worktrees_dir, &config, None);
+        assert!(result.is_ok());
+
+        // Second call should return the actual branch, not just echo the requested one
+        let result2 = create_worktree_internal(&worktrees_dir, &config, None);
+        assert!(result2.is_ok());
+        assert_eq!(result2.unwrap().branch, Some("feature/actual".to_string()));
     }
 
     #[test]

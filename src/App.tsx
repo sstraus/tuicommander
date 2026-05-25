@@ -2412,6 +2412,7 @@ const App: Component = () => {
 						gitOps.handleMergeAndArchive(repoPath, branchName, mainBranch, afterMerge);
 					}}
 					creatingWorktreeRepos={gitOps.creatingWorktreeRepos()}
+					removingBranches={gitOps.removingBranches()}
 					onAddRepo={gitOps.handleAddRepo}
 					onRepoSettings={(repoPath) =>
 						gitOps.handleRepoSettings(repoPath, (ctx) => {

@@ -112,6 +112,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
 	const [repoStatus, setRepoStatus] = createSignal<"clean" | "dirty" | "conflict" | "merge" | "unknown">("unknown");
 	const [branchToRename, setBranchToRename] = createSignal<{ repoPath: string; branchName: string } | null>(null);
 	const [creatingWorktreeRepos, setCreatingWorktreeRepos] = createSignal<Set<string>>(new Set());
+	const [removingBranches, setRemovingBranches] = createSignal<Set<string>>(new Set());
 	const [worktreeDialogState, setWorktreeDialogState] = createSignal<{
 		repoPath: string;
 		suggestedName: string;
@@ -797,6 +798,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
 	};
 
 	const handleRemoveBranch = async (repoPath: string, branchName: string) => {
+		const removeKey = `${repoPath}::${branchName}`;
+		if (removingBranches().has(removeKey)) return;
+
 		const repoState = repositoriesStore.get(repoPath);
 		const branch = repoState?.branches[branchName];
 		if (!branch?.worktreePath) {
@@ -807,23 +811,32 @@ export function useGitOperations(deps: GitOperationsDeps) {
 		const confirmed = await deps.dialogs.confirmRemoveWorktree(branchName);
 		if (!confirmed) return;
 
-		for (const termId of branch.terminals) {
-			await deps.closeTerminal(termId, true);
-		}
-
-		const effective = repoSettingsStore.getEffective(repoPath);
-		const deleteBranch = effective?.deleteBranchOnRemove ?? true;
+		setRemovingBranches((prev) => new Set(prev).add(removeKey));
 		try {
-			await deps.repo.removeWorktree(repoPath, branchName, deleteBranch);
-			deps.setStatusInfo(`Removed ${branchName}`);
-		} catch (err) {
-			const reason = err instanceof Error ? err.message : String(err);
-			appLogger.error("git", `Failed to remove worktree for ${branchName}: ${reason}`);
-			deps.setStatusInfo(`Removed ${branchName} from UI (worktree removal failed)`);
-		}
+			for (const termId of branch.terminals) {
+				await deps.closeTerminal(termId, true);
+			}
 
-		repositoriesStore.removeBranch(repoPath, branchName);
-		repoSettingsStore.setLabel(repoPath, branchName, null);
+			const effective = repoSettingsStore.getEffective(repoPath);
+			const deleteBranch = effective?.deleteBranchOnRemove ?? true;
+			try {
+				await deps.repo.removeWorktree(repoPath, branchName, deleteBranch);
+				deps.setStatusInfo(`Removed ${branchName}`);
+			} catch (err) {
+				const reason = err instanceof Error ? err.message : String(err);
+				appLogger.error("git", `Failed to remove worktree for ${branchName}: ${reason}`);
+				deps.setStatusInfo(`Removed ${branchName} from UI (worktree removal failed)`);
+			}
+
+			repositoriesStore.removeBranch(repoPath, branchName);
+			repoSettingsStore.setLabel(repoPath, branchName, null);
+		} finally {
+			setRemovingBranches((prev) => {
+				const next = new Set(prev);
+				next.delete(removeKey);
+				return next;
+			});
+		}
 	};
 
 	const handleOpenRenameBranchDialog = (repoPath: string, branchName: string) => {
@@ -1662,6 +1675,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
 		worktreeDialogState,
 		setWorktreeDialogState,
 		creatingWorktreeRepos,
+		removingBranches,
 		handleNewTab,
 		handleRunCommand,
 		executeRunCommand,

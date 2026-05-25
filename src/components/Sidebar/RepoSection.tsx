@@ -203,6 +203,7 @@ export const BranchItem: Component<{
 	agentMenuItems?: () => ContextMenuItem[];
 	onSelect: () => void;
 	onAddTerminal: () => void;
+	isRemoving?: boolean;
 	onRemove: () => void;
 	onRename: () => void;
 	onShowPrDetail: () => void;
@@ -287,7 +288,12 @@ export const BranchItem: Component<{
 				items.push({ label: "Merge & Archive", action: props.onMergeAndArchive });
 			}
 			if (!props.branch.isMain && isLinkedWorktree && props.canRemove) {
-				items.push({ label: "Delete Worktree", action: props.onRemove, separator: true });
+				items.push({
+					label: props.isRemoving ? "Removing…" : "Delete Worktree",
+					action: props.onRemove,
+					separator: true,
+					disabled: props.isRemoving,
+				});
 			}
 		}
 		// "Switch Branch" submenu — only on main worktree row (worktreePath === repoPath)
@@ -422,13 +428,16 @@ export const BranchItem: Component<{
 				<Show when={!props.branch.isMain && props.branch.worktreePath && props.canRemove}>
 					<button
 						class={s.branchRemoveBtn}
+						disabled={props.isRemoving}
 						onClick={(e) => {
 							e.stopPropagation();
 							props.onRemove();
 						}}
-						title={t("sidebar.removeWorktree", "Remove worktree")}
+						title={props.isRemoving
+							? t("sidebar.removingWorktree", "Removing…")
+							: t("sidebar.removeWorktree", "Remove worktree")}
 					>
-						×
+						{props.isRemoving ? "…" : "×"}
 					</button>
 				</Show>
 			</div>
@@ -457,6 +466,7 @@ export const RepoSection: Component<{
 	isDragging?: boolean;
 	dragOverClass?: string;
 	isCreatingWorktree?: boolean;
+	removingBranches?: Set<string>;
 	quickSwitcherActive?: boolean;
 	branchShortcutStart: number;
 	onBranchSelect: (branchName: string) => void;
@@ -700,6 +710,7 @@ export const RepoSection: Component<{
 								agentMenuItems={props.buildAgentMenuItems ? () => props.buildAgentMenuItems!(branch.name) : undefined}
 								onSelect={() => props.onBranchSelect(branch.name)}
 								onAddTerminal={() => props.onAddTerminal(branch.name)}
+								isRemoving={props.removingBranches?.has(`${props.repo.path}::${branch.name}`)}
 								onRemove={() => props.onRemoveBranch(branch.name)}
 								onRename={() => props.onRenameBranch(branch.name)}
 								onSetLabel={(current) => setLabelDialogBranch({ name: branch.name, current })}
