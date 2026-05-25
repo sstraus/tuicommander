@@ -431,6 +431,7 @@ pub async fn search_files(
     search_files_impl(repo_path, query, limit)
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub fn warm_content_index(
     app_state: tauri::State<'_, std::sync::Arc<crate::state::AppState>>,
@@ -1397,7 +1398,7 @@ pub fn add_to_gitignore(repo_path: String, pattern: String) -> Result<(), String
 /// close (any registered repo could be outside home, e.g. `/opt/proj`).
 pub(crate) fn validate_external_write_path(
     path: &std::path::Path,
-    home: &std::path::Path,
+    _home: &std::path::Path,
 ) -> Result<(), String> {
     if !path.is_absolute() {
         return Err("write_external_file requires an absolute path".to_string());
@@ -1411,15 +1412,9 @@ pub(crate) fn validate_external_write_path(
     let parent = path
         .parent()
         .ok_or_else(|| "Access denied: path has no parent directory".to_string())?;
-    let canonical_parent = parent
+    parent
         .canonicalize()
         .map_err(|e| format!("Failed to resolve parent directory: {e}"))?;
-    let canonical_home = home
-        .canonicalize()
-        .map_err(|e| format!("Failed to resolve home directory: {e}"))?;
-    if !canonical_parent.starts_with(&canonical_home) {
-        return Err("Access denied: path must be within the user's home directory".to_string());
-    }
     Ok(())
 }
 
@@ -2322,12 +2317,11 @@ mod tests {
     }
 
     #[test]
-    fn validate_external_write_rejects_path_outside_home() {
+    fn validate_external_write_accepts_path_outside_home() {
         let home = TempDir::new().unwrap();
-        let other = TempDir::new().unwrap(); // sibling tempdir, NOT inside `home`
-        let result = validate_external_write_path(&other.path().join("victim.txt"), home.path());
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("within the user's home"));
+        let other = TempDir::new().unwrap();
+        let result = validate_external_write_path(&other.path().join("file.txt"), home.path());
+        assert!(result.is_ok(), "paths outside home should be allowed for local tool");
     }
 
     #[test]
@@ -2361,21 +2355,15 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn validate_external_write_rejects_symlink_escaping_home() {
+    fn validate_external_write_accepts_symlink_target() {
         use std::os::unix::fs::symlink;
         let home = TempDir::new().unwrap();
         let outside = TempDir::new().unwrap();
-        // Create `home/escape -> outside/` so a file path like
-        // `home/escape/pwned.txt` would resolve outside home.
         let link = home.path().join("escape");
         symlink(outside.path(), &link).unwrap();
-        let target = link.join("pwned.txt");
+        let target = link.join("file.txt");
         let result = validate_external_write_path(&target, home.path());
-        assert!(
-            result.is_err(),
-            "symlink-based escape must be rejected, got {:?}",
-            result
-        );
+        assert!(result.is_ok(), "symlinks should be allowed — user is the trust boundary");
     }
 
     // --- fs_transfer_paths tests ---

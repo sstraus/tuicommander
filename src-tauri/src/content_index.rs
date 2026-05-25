@@ -353,12 +353,16 @@ pub fn ensure_index(
     let in_flight = Arc::clone(&state.index_in_flight);
     let sem = Arc::clone(&state.index_build_sem);
     let repo_for_log = repo.clone();
-    // Use tauri::async_runtime::handle() so this is safe to call from the
-    // Tauri main thread (synchronous IPC handlers), which has no implicit
-    // tokio runtime context.
+    #[cfg(feature = "desktop")]
     let rt = tauri::async_runtime::handle();
+    #[cfg(not(feature = "desktop"))]
+    let rt = tokio::runtime::Handle::current();
+
     spawn_build(
+        #[cfg(feature = "desktop")]
         rt.inner(),
+        #[cfg(not(feature = "desktop"))]
+        &rt,
         repo_for_log,
         move || {
             let built = ContentIndex::build(PathBuf::from(&repo), Some(&throttle), HashMap::new());
@@ -402,9 +406,16 @@ pub fn rebuild_index(state: &Arc<crate::state::AppState>, repo_path: &str) {
     let sem = Arc::clone(&state.index_build_sem);
     let repo_for_log = repo.clone();
     let prior_binaries = index.read().known_binaries.clone();
+    #[cfg(feature = "desktop")]
     let rt = tauri::async_runtime::handle();
+    #[cfg(not(feature = "desktop"))]
+    let rt = tokio::runtime::Handle::current();
+
     spawn_build(
+        #[cfg(feature = "desktop")]
         rt.inner(),
+        #[cfg(not(feature = "desktop"))]
+        &rt,
         repo_for_log,
         move || {
             let built = ContentIndex::build(PathBuf::from(&repo), Some(&throttle), prior_binaries);
