@@ -2944,7 +2944,7 @@ pub(crate) fn spawn_reader_thread(
     let ticker_state = state.clone();
     let ticker_sid = session_id.clone();
     std::thread::spawn(move || {
-        const TICK: std::time::Duration = std::time::Duration::from_millis(8);
+        const TICK: std::time::Duration = std::time::Duration::from_millis(16);
         // Safety net: if in_flight stays true for this long (~500 ms),
         // force-reset it so frame delivery resumes. Prevents permanent blank
         // terminal when the frontend fails to ack (crash, corrupt frame, etc.).

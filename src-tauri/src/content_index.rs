@@ -294,17 +294,23 @@ fn spawn_build<F>(
     repo: String,
     build_fn: F,
     in_flight: Option<Arc<DashSet<String>>>,
+    sem: Arc<tokio::sync::Semaphore>,
 ) where
     F: FnOnce() + Send + 'static,
 {
-    let handle = rt.spawn_blocking(build_fn);
-    rt.spawn(async move {
+    let rt = rt.clone();
+    rt.clone().spawn(async move {
+        // Acquire global build semaphore (permits=1) to serialize concurrent builds.
+        // Callers do not need to coordinate — whichever acquires first runs, others queue.
+        let _permit = sem.acquire_owned().await.ok();
+        let handle = rt.spawn_blocking(build_fn);
         if let Err(e) = handle.await {
             tracing::error!(repo = %repo, error = ?e, "content index build task panicked");
         }
         if let Some(set) = in_flight {
             set.remove(&repo);
         }
+        // _permit drops here, releasing the semaphore for the next queued build
     });
 }
 
@@ -345,6 +351,7 @@ pub fn ensure_index(
     let repo = repo_path.to_string();
     let throttle = Arc::clone(&state.indexer_throttle);
     let in_flight = Arc::clone(&state.index_in_flight);
+    let sem = Arc::clone(&state.index_build_sem);
     let repo_for_log = repo.clone();
     // Use tauri::async_runtime::handle() so this is safe to call from the
     // Tauri main thread (synchronous IPC handlers), which has no implicit
@@ -359,6 +366,7 @@ pub fn ensure_index(
             tracing::info!(repo = %repo, "content index built");
         },
         Some(in_flight),
+        sem,
     );
 
     index
@@ -394,6 +402,7 @@ pub fn rebuild_index(
 
     let repo = repo_path.to_string();
     let throttle = Arc::clone(&state.indexer_throttle);
+    let sem = Arc::clone(&state.index_build_sem);
     let repo_for_log = repo.clone();
     let prior_binaries = index.read().known_binaries.clone();
     let rt = tauri::async_runtime::handle();
@@ -406,6 +415,7 @@ pub fn rebuild_index(
             tracing::debug!(repo = %repo, "content index rebuilt");
         },
         Some(Arc::clone(in_flight)),
+        sem,
     );
 }
 

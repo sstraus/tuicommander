@@ -950,6 +950,9 @@ pub struct AppState {
     /// Repos whose content index build is currently in-flight (shared by
     /// `ensure_index` and `rebuild_index` to prevent duplicate concurrent builds).
     pub(crate) index_in_flight: Arc<DashSet<String>>,
+    /// Global semaphore limiting concurrent index builds to 1. Prevents startup
+    /// pre-warm from spawning N simultaneous BM25 builds that saturate the CPU.
+    pub(crate) index_build_sem: Arc<tokio::sync::Semaphore>,
     /// Per-session slash command mode (true when input starts with `/`).
     /// Used to suppress false-positive slash menu detection on PTY output.
     pub(crate) slash_mode: DashMap<String, std::sync::atomic::AtomicBool>,
@@ -1148,6 +1151,7 @@ impl AppState {
             content_indices: DashMap::new(),
             indexer_throttle: Arc::new(crate::content_index::IndexerThrottle::default()),
             index_in_flight: Arc::new(DashSet::new()),
+            index_build_sem: Arc::new(tokio::sync::Semaphore::new(1)),
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
             shell_states: DashMap::new(),
@@ -3098,6 +3102,7 @@ mod tests {
             content_indices: DashMap::new(),
             indexer_throttle: Arc::new(crate::content_index::IndexerThrottle::default()),
             index_in_flight: Arc::new(DashSet::new()),
+            index_build_sem: Arc::new(tokio::sync::Semaphore::new(1)),
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
             shell_states: DashMap::new(),
