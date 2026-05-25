@@ -1386,12 +1386,16 @@ fn parse_suggest_with_line(clean: &str, agent_active: bool) -> Option<(ParsedEve
     if !agent_active {
         return None;
     }
-    // First pass: dewrap mid-word wrap of the keyword `suggest:` itself.
+    // Pass 1: dewrap mid-word wrap of the keyword `suggest:` itself.
     // On very narrow terminals the VT buffer can split the word across two
     // physical rows (e.g. `sugges\nt:` or `suggest\n:`). We rejoin these so
     // the downstream regex can match at column 0.
-    let cow = dewrap_suggest_keyword(clean);
-    let clean = cow.as_ref();
+    let kw_cow = dewrap_suggest_keyword(clean);
+    // Pass 2: when the terminal is so narrow that `suggest: ` fills the row
+    // entirely (≤9 cols for a plain prefix), the content lands on the next
+    // physical row.  Remove the stray newline so SUGGEST_START_RE can see it.
+    let content_cow = dewrap_suggest_content(kw_cow.as_ref());
+    let clean = content_cow.as_ref();
     if !clean.contains("suggest:") {
         return None;
     }
@@ -1404,10 +1408,6 @@ fn parse_suggest_with_line(clean: &str, agent_active: bool) -> Option<(ParsedEve
     let caps = SUGGEST_START_RE.captures(clean)?;
     let first_line = caps[1].trim();
     let match_end = caps.get(0).unwrap().end();
-    // Canonical suggest line (leading whitespace/bullet trimmed) — used by the
-    // caller to remember this parse across chunks when a continuation tail
-    // may still arrive on its own row.
-    let canonical_line = format!("suggest: {first_line}");
 
     // Collect continuation lines: text after the matched line that is part of
     // the same suggest token (wrapped by the terminal). A continuation line
@@ -1481,7 +1481,46 @@ fn parse_suggest_with_line(clean: &str, agent_active: bool) -> Option<(ParsedEve
     if items.len() < 2 {
         return None;
     }
+    // Canonical line includes the fully-joined content (all continuation rows
+    // merged), not just `first_line`. This ensures that when the suggestion
+    // wraps across multiple physical rows and `pending_suggest_line` is later
+    // used to reconstruct the event (e.g. on a spinner-tick chunk where only
+    // the spinner row changed), all items are present — not just those that
+    // fit on the first physical row.
+    let canonical_line = format!("suggest: {full}");
     Some((ParsedEvent::Suggest { items }, canonical_line))
+}
+
+/// Rejoin a `suggest:` line when the terminal is so narrow that the keyword
+/// plus its trailing space/tab fills the entire physical row, pushing the
+/// item content onto the next line.
+///
+/// Example (9-col terminal):
+/// ```text
+/// suggest: \nA | B | C
+/// ```
+/// → `suggest: A | B | C`
+///
+/// Returns `Cow::Borrowed` when no such split is detected.
+fn dewrap_suggest_content(text: &str) -> std::borrow::Cow<'_, str> {
+    if !text.contains("suggest:") || !text.contains('\n') {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    lazy_static::lazy_static! {
+        // Matches a `suggest:` prefix line (with optional whitespace/bullet)
+        // that ends with only whitespace before the newline — no item content.
+        // Capture group 1: everything up to (but not including) trailing space+\n.
+        static ref SUGGEST_TRAILING_RE: regex::Regex = regex::Regex::new(
+            r"(?m)^([\t ]*(?:[\x{25CF}\x{23FA}][\t ]+)?suggest:[\t ]+)[ \t]*\n"
+        )
+        .unwrap();
+    }
+    if !SUGGEST_TRAILING_RE.is_match(text) {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    // Replace `suggest: <trailing spaces>\n` with `suggest: ` so the next
+    // physical row's content is treated as the first item line.
+    std::borrow::Cow::Owned(SUGGEST_TRAILING_RE.replace_all(text, "$1").to_string())
 }
 
 /// Rejoin a `suggest:` keyword that got split across a newline by terminal
@@ -4079,6 +4118,64 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         assert_eq!(items[0], "1) tutti stessa size, minimo 11px, implemento");
         assert_eq!(items[1], "2) diverso, spiegami");
         assert_eq!(items[2], "3) prima fix Bug 1 (parser), poi CSS");
+    }
+
+    #[test]
+    fn test_suggest_canonical_includes_all_continuation_rows() {
+        // Bug: canonical_line was built from `first_line` (first physical row only).
+        // On a narrow terminal `suggest: A | B |` wraps to a second row `C`.
+        // The canonical must include `C` so that a later spinner-tick chunk
+        // (where only the spinner row is in changed_rows) can reconstruct all 3
+        // items via pending_suggest_line without truncating to 2 items.
+        let input = "suggest: A | B |\nC";
+        let result = parse_suggest_with_line(input, true);
+        let (evt, canonical) = result.expect("should parse");
+        match evt {
+            ParsedEvent::Suggest { ref items } => {
+                assert_eq!(items.len(), 3, "primary parse must yield 3 items");
+                assert_eq!(items[2], "C");
+            }
+            _ => panic!("expected Suggest event"),
+        }
+        // canonical must be self-sufficient (roundtrip produces same items)
+        let roundtrip =
+            parse_suggest(&canonical, true).expect("canonical must re-parse to same items");
+        match roundtrip {
+            ParsedEvent::Suggest { items } => {
+                assert_eq!(
+                    items.len(),
+                    3,
+                    "canonical roundtrip must yield 3 items, got {items:?}"
+                );
+                assert_eq!(items[2], "C");
+            }
+            _ => panic!("expected Suggest event from canonical"),
+        }
+    }
+
+    #[test]
+    fn test_suggest_keyword_alone_on_narrow_row() {
+        // Terminal so narrow (≤9 cols) that `suggest: ` fills the row entirely;
+        // item content lands on the next physical row.
+        let input = "suggest: \nA | B | C";
+        let items = parse_suggest(input, true);
+        let items = match items {
+            Some(ParsedEvent::Suggest { items }) => items,
+            _ => panic!("should parse when suggest: fills its row"),
+        };
+        assert_eq!(items, vec!["A", "B", "C"]);
+    }
+
+    #[test]
+    fn test_suggest_bullet_keyword_alone_on_narrow_row() {
+        // With bullet prefix (⏺): `⏺ suggest: ` takes ~12 cols; content on next row.
+        let input = "⏺ suggest: \nA | B | C";
+        let items = parse_suggest(input, true);
+        let items = match items {
+            Some(ParsedEvent::Suggest { items }) => items,
+            _ => panic!("should parse with bullet when suggest: fills row"),
+        };
+        assert_eq!(items, vec!["A", "B", "C"]);
     }
 
     // --- Agent-gating tests for parse_intent / parse_suggest ---
