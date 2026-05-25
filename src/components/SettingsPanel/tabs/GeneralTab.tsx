@@ -287,13 +287,14 @@ export const GeneralTab: Component = () => {
 			<SettingSelect
 				label="Content Indexing"
 				value={settingsStore.state.indexStrategy}
-				onChange={(v) => settingsStore.setIndexStrategy(v as "active_only" | "active_and_switch" | "all_sequential")}
+				onChange={(v) => settingsStore.setIndexStrategy(v as "active_only" | "active_and_switch" | "all_sequential" | "disabled")}
 				options={[
+					{ value: "disabled", label: "Disabled" },
 					{ value: "active_only", label: "Active repo only" },
 					{ value: "active_and_switch", label: "Active + on switch" },
 					{ value: "all_sequential", label: "All repos at boot" },
 				]}
-				hint="When to build search indexes. 'Active + on switch' indexes a repo when you switch to it."
+				hint="When to build search indexes. Set to Disabled to turn off background indexing entirely."
 			/>
 
 			<h3>{t("general.heading.updates", "Updates")}</h3>

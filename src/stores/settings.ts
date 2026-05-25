@@ -311,7 +311,7 @@ interface SettingsStoreState {
 	showBlockTimestamps: boolean;
 	showScrollbarMarks: boolean;
 	blockFoldingEnabled: boolean;
-	indexStrategy: "active_only" | "active_and_switch" | "all_sequential";
+	indexStrategy: "disabled" | "active_only" | "active_and_switch" | "all_sequential";
 	standbyTimeoutMinutes: number;
 }
 

@@ -1,5 +1,5 @@
 use alacritty_terminal::grid::ReflowMode;
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -947,6 +947,9 @@ pub struct AppState {
     /// Cooperative CPU throttle for content-index builders. Search handlers
     /// acquire a guard here so indexers pause and yield priority to the user.
     pub(crate) indexer_throttle: Arc<crate::content_index::IndexerThrottle>,
+    /// Repos whose content index build is currently in-flight (shared by
+    /// `ensure_index` and `rebuild_index` to prevent duplicate concurrent builds).
+    pub(crate) index_in_flight: Arc<DashSet<String>>,
     /// Per-session slash command mode (true when input starts with `/`).
     /// Used to suppress false-positive slash menu detection on PTY output.
     pub(crate) slash_mode: DashMap<String, std::sync::atomic::AtomicBool>,
@@ -1144,6 +1147,7 @@ impl AppState {
             )),
             content_indices: DashMap::new(),
             indexer_throttle: Arc::new(crate::content_index::IndexerThrottle::default()),
+            index_in_flight: Arc::new(DashSet::new()),
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
             shell_states: DashMap::new(),
@@ -3093,6 +3097,7 @@ mod tests {
             )),
             content_indices: DashMap::new(),
             indexer_throttle: Arc::new(crate::content_index::IndexerThrottle::default()),
+            index_in_flight: Arc::new(DashSet::new()),
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
             shell_states: DashMap::new(),

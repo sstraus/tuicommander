@@ -27,6 +27,10 @@ const REBUILD_COOLDOWN: Duration = Duration::from_secs(60);
 const THROTTLE_CHECKPOINT_INTERVAL: usize = 50;
 /// Poll interval while an indexer is paused waiting for searches to finish.
 const THROTTLE_SEARCH_POLL: Duration = Duration::from_millis(100);
+/// Unconditional sleep injected at every checkpoint so index builds don't
+/// saturate CPU cores — important in debug builds where corpus construction
+/// is significantly slower and runs unoptimised.
+const THROTTLE_BUILD_YIELD: Duration = Duration::from_millis(10);
 
 /// Cooperative throttle that yields CPU during index builds and pauses
 /// indexing while user-initiated searches are in flight.
@@ -61,12 +65,13 @@ impl IndexerThrottle {
     }
 
     /// Called from the indexer loop every `THROTTLE_CHECKPOINT_INTERVAL` files.
-    /// Blocks (via `thread::sleep`) while any search is active. Yielding is
-    /// the OS scheduler's job when no searches are running.
+    /// Blocks (via `thread::sleep`) while any search is active, then yields
+    /// unconditionally so index builds don't saturate CPU cores.
     pub fn checkpoint(&self) {
         while self.search_active.load(Ordering::Acquire) > 0 {
             std::thread::sleep(THROTTLE_SEARCH_POLL);
         }
+        std::thread::sleep(THROTTLE_BUILD_YIELD);
     }
 }
 
@@ -305,31 +310,42 @@ fn spawn_build<F>(
 
 /// Ensure a content index exists for the given repo, building it in background
 /// if needed. Returns immediately — callers should check `is_ready()`.
+///
+/// Uses `state.index_in_flight` to prevent duplicate concurrent builds: if a
+/// build is already running (started by this function or by `rebuild_index`),
+/// the call returns the existing placeholder without spawning a second task.
 pub fn ensure_index(
     state: &Arc<crate::state::AppState>,
     repo_path: &str,
 ) -> Arc<parking_lot::RwLock<ContentIndex>> {
-    // Fast path: index already exists
-    if let Some(existing) = state.content_indices.get(repo_path) {
-        return Arc::clone(existing.value());
-    }
+    use dashmap::mapref::entry::Entry;
 
-    // Create an empty placeholder and spawn background build
-    let index = Arc::new(parking_lot::RwLock::new(ContentIndex::empty(
-        PathBuf::from(repo_path),
-    )));
-    state
-        .content_indices
-        .insert(repo_path.to_string(), Arc::clone(&index));
+    // Atomically check-and-insert: if the entry already exists return it,
+    // otherwise insert a placeholder and proceed to spawn the build.
+    let index = match state.content_indices.entry(repo_path.to_string()) {
+        Entry::Occupied(e) => return Arc::clone(e.get()),
+        Entry::Vacant(e) => {
+            let idx = Arc::new(parking_lot::RwLock::new(ContentIndex::empty(
+                PathBuf::from(repo_path),
+            )));
+            e.insert(Arc::clone(&idx));
+            idx
+            // Entry (and its shard lock) is dropped here before we spawn.
+        }
+    };
+
+    // Guard against a concurrent rebuild_index for the same repo.
+    // If the key is already in in_flight (e.g. RepoChanged fired first),
+    // the placeholder is in the map but no second build is needed.
+    if !state.index_in_flight.insert(repo_path.to_string()) {
+        return index;
+    }
 
     let index_ref = Arc::clone(&index);
     let repo = repo_path.to_string();
     let throttle = Arc::clone(&state.indexer_throttle);
+    let in_flight = Arc::clone(&state.index_in_flight);
     let repo_for_log = repo.clone();
-    // Low-priority: spawn_blocking uses the Tokio blocking pool.
-    // Cooperative yielding via `throttle` keeps CPU usage gentle and
-    // pauses indexing while the user is running a search.
-    //
     // Use tauri::async_runtime::handle() so this is safe to call from the
     // Tauri main thread (synchronous IPC handlers), which has no implicit
     // tokio runtime context.
@@ -342,7 +358,7 @@ pub fn ensure_index(
             *index_ref.write() = built;
             tracing::info!(repo = %repo, "content index built");
         },
-        None,
+        Some(in_flight),
     );
 
     index
@@ -350,12 +366,13 @@ pub fn ensure_index(
 
 /// Rebuild the content index for a repo (called on RepoChanged events).
 /// Runs in background, does not block. Skips if a build is already in-flight
-/// for this repo — the next `RepoChanged` will pick up any missed changes.
+/// for this repo (via `state.index_in_flight`) — the next `RepoChanged` will
+/// pick up any missed changes.
 pub fn rebuild_index(
     state: &Arc<crate::state::AppState>,
     repo_path: &str,
-    in_flight: &Arc<DashSet<String>>,
 ) {
+    let in_flight = &state.index_in_flight;
     let index = if let Some(existing) = state.content_indices.get(repo_path) {
         Arc::clone(existing.value())
     } else {
@@ -396,12 +413,13 @@ pub fn rebuild_index(
 /// content indices when repos change. Should be called once at startup.
 pub fn spawn_content_index_updater(state: Arc<crate::state::AppState>) {
     let mut rx = state.event_bus.subscribe();
-    let in_flight: Arc<DashSet<String>> = Arc::new(DashSet::new());
     tokio::spawn(async move {
         loop {
             match rx.recv().await {
                 Ok(crate::state::AppEvent::RepoChanged { repo_path }) => {
-                    rebuild_index(&state, &repo_path, &in_flight);
+                    if crate::config::load_app_config().index_strategy != "disabled" {
+                        rebuild_index(&state, &repo_path);
+                    }
                 }
                 Ok(other) => {
                     // Other AppEvent variants intentionally ignored by the

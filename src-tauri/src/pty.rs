@@ -5025,26 +5025,15 @@ pub(crate) fn subscribe_terminal_grid(
 }
 
 /// Acknowledge that the frontend has painted the last grid frame.
-/// Clears the in-flight flag so the PTY reader can send the next frame.
-/// If the VT grid has accumulated dirty rows while in-flight (PTY went idle
-/// before the reader could send another frame), flush them immediately.
+/// Clears the in-flight flag so the ticker can send the next frame.
+/// The ticker (8ms interval) is the sole frame sender — the ack path only
+/// releases the backpressure gate. This caps frame rate at ~125Hz and prevents
+/// the tight ack→flush→ack loop that saturated the main thread.
 #[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn ack_terminal_frame(state: State<'_, Arc<AppState>>, session_id: String) {
     if let Some(flag) = state.grid_frame_in_flight.get(&session_id) {
-        let was_in_flight = flag.swap(false, std::sync::atomic::Ordering::Relaxed);
-        // Only flush if this ACK corresponds to a real in-flight frame
-        // (reader set it). Prevents flush→ACK→flush loop when the flush
-        // itself sends a frame that gets ACKed.
-        if was_in_flight && let Some(vt) = state.vt_log_buffers.get(&session_id) {
-            let frame = vt.lock().serialize_dirty_rows();
-            if !frame.is_empty() {
-                // Use send_grid_frame instead of ch.send directly so that
-                // in_flight is properly tracked and the ticker doesn't send
-                // a duplicate frame concurrently.
-                send_grid_frame(&state, &session_id, frame);
-            }
-        }
+        flag.store(false, std::sync::atomic::Ordering::Relaxed);
     }
 }
 

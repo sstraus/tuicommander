@@ -2071,10 +2071,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	function onFrame(data: ArrayBuffer | number[]) {
 		const buffer = data instanceof ArrayBuffer ? data : new Uint8Array(data).buffer;
 
-		// Ack BEFORE decode. If decodeBinaryFrame returns null (corrupt/truncated
-		// frame) or throws, the in-flight flag is still cleared so the backend
-		// can send the next frame. Previously a failed decode left in_flight
-		// stuck at true, permanently blocking frame delivery → blank terminal.
+		// Ack before decode. The backend ack path only clears the in-flight flag —
+		// the ticker sends the next frame on its own 8ms schedule. Acking before
+		// decode ensures the flag is cleared even if decodeBinaryFrame throws.
 		invokeRef?.("ack_terminal_frame", { sessionId: props.sessionId }).catch(ipcErr("ack_terminal_frame"));
 
 		const frame = decodeBinaryFrame(buffer);
