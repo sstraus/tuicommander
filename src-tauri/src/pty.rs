@@ -2949,7 +2949,13 @@ pub(crate) fn spawn_reader_thread(
         // force-reset it so frame delivery resumes. Prevents permanent blank
         // terminal when the frontend fails to ack (crash, corrupt frame, etc.).
         const MAX_IN_FLIGHT_MS: u64 = 500;
+        // After this many consecutive force-resets, sleep for STUCK_PAUSE_MS
+        // to let the JS event loop drain the Tauri channel backlog before
+        // sending more frames.
+        const MAX_STUCK_BEFORE_PAUSE: u32 = 3;
+        const STUCK_PAUSE_MS: u64 = 5_000;
         let mut stuck_since: Option<std::time::Instant> = None;
+        let mut stuck_count: u32 = 0;
         while ticker_running.load(Ordering::Relaxed) {
             std::thread::sleep(TICK);
             if !ticker_dirty.swap(false, Ordering::Relaxed) {
@@ -2965,21 +2971,31 @@ pub(crate) fn spawn_reader_thread(
                 let since = stuck_since.get_or_insert(now);
                 let elapsed = now.duration_since(*since).as_millis() as u64;
                 if elapsed > MAX_IN_FLIGHT_MS {
+                    stuck_count += 1;
                     tracing::warn!(
                         session_id = %ticker_sid,
                         elapsed_ms = elapsed,
+                        stuck_count,
                         "grid_frame_in_flight stuck, force-resetting"
                     );
                     if let Some(flag) = ticker_state.grid_frame_in_flight.get(&ticker_sid) {
                         flag.store(false, Ordering::Relaxed);
                     }
                     stuck_since = None;
+                    if stuck_count >= MAX_STUCK_BEFORE_PAUSE {
+                        // Pause to let JS drain the channel backlog before retrying
+                        stuck_count = 0;
+                        std::thread::sleep(std::time::Duration::from_millis(STUCK_PAUSE_MS));
+                    }
+                    ticker_dirty.store(true, Ordering::Relaxed);
+                    continue;
                 } else {
                     ticker_dirty.store(true, Ordering::Relaxed);
                     continue;
                 }
             } else {
                 stuck_since = None;
+                stuck_count = 0;
             }
             if let Some(vt) = ticker_state.vt_log_buffers.get(&ticker_sid) {
                 let frame = vt.lock().serialize_dirty_rows();
